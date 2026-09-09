@@ -319,14 +319,14 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	configPaths := []string{
+	domesticConfigPaths := []string{
 		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
 		"argocd/services/service-gateway/beijing-sandbox-2/config.yaml",
 		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
-		"argocd/services/service-gateway/sgprod/config.yaml",
 		"argocd/services/service-gateway/shprod/config.yaml",
 	}
-	want := map[string]struct{}{
+	globalConfigPath := "argocd/services/service-gateway/sgprod/config.yaml"
+	baseWant := map[string]struct{}{
 		http.MethodGet + " /v1/instances":                                                                   {},
 		http.MethodPost + " /v1/instances":                                                                  {},
 		http.MethodGet + " /v1/instances/{instance_id}":                                                     {},
@@ -341,43 +341,67 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodGet + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/events":  {},
 		http.MethodPost + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel": {},
 	}
+	domesticWant := make(map[string]struct{}, len(baseWant)+8)
+	for key := range baseWant {
+		domesticWant[key] = struct{}{}
+	}
+	for _, key := range []string{
+		http.MethodGet + " /v1/instances/{instance_id}/bots",
+		http.MethodPost + " /v1/instances/{instance_id}/bots",
+		http.MethodPut + " /v1/instances/{instance_id}/bots/{bot_id}",
+		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}",
+		http.MethodPost + " /v1/instances/{instance_id}/bots/{bot_id}/retry",
+		http.MethodPut + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
+		http.MethodPost + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
+		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
+	} {
+		domesticWant[key] = struct{}{}
+	}
 
-	for _, configPath := range configPaths {
+	assertAllowlist := func(t *testing.T, configPath string, want map[string]struct{}) {
+		t.Helper()
+		cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		for _, route := range cfg.Routes {
+			if route.Prefix != "/v1/instances" {
+				continue
+			}
+			if route.PathPolicy != "allowlist" {
+				t.Fatalf("instance route path_policy = %q, want allowlist", route.PathPolicy)
+			}
+			got := make(map[string]struct{}, len(route.PathAllow))
+			for _, rule := range route.PathAllow {
+				got[rule.Method+" "+rule.Path] = struct{}{}
+			}
+			if _, exposed := got[http.MethodGet+" /v1/instances/{instance_id}/borncard"]; exposed {
+				t.Fatal("borncard must not be exposed by the gateway")
+			}
+			if len(got) != len(want) {
+				t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+			}
+			for key := range want {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("instance path allowlist missing %s", key)
+				}
+			}
+			if _, exposed := got[http.MethodPost+" /v1/instances/{instance_id}/resume"]; exposed {
+				t.Fatal("resume must not be exposed by the gateway")
+			}
+			return
+		}
+		t.Fatal("instance route not found")
+	}
+
+	for _, configPath := range domesticConfigPaths {
 		t.Run(configPath, func(t *testing.T) {
-			cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
-			if err != nil {
-				t.Fatalf("load config: %v", err)
-			}
-			for _, route := range cfg.Routes {
-				if route.Prefix != "/v1/instances" {
-					continue
-				}
-				if route.PathPolicy != "allowlist" {
-					t.Fatalf("instance route path_policy = %q, want allowlist", route.PathPolicy)
-				}
-				got := make(map[string]struct{}, len(route.PathAllow))
-				for _, rule := range route.PathAllow {
-					got[rule.Method+" "+rule.Path] = struct{}{}
-				}
-				if _, exposed := got[http.MethodGet+" /v1/instances/{instance_id}/borncard"]; exposed {
-					t.Fatal("borncard must not be exposed by the gateway")
-				}
-				if len(got) != len(want) {
-					t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
-				}
-				for key := range want {
-					if _, ok := got[key]; !ok {
-						t.Fatalf("instance path allowlist missing %s", key)
-					}
-				}
-				if _, exposed := got[http.MethodPost+" /v1/instances/{instance_id}/resume"]; exposed {
-					t.Fatal("resume must not be exposed by the gateway")
-				}
-				return
-			}
-			t.Fatal("instance route not found")
+			assertAllowlist(t, configPath, domesticWant)
 		})
 	}
+	t.Run(globalConfigPath, func(t *testing.T) {
+		assertAllowlist(t, globalConfigPath, baseWant)
+	})
 }
 
 func TestProductionChatOriginsArePathScoped(t *testing.T) {

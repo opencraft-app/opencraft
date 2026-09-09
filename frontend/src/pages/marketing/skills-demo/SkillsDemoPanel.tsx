@@ -1815,17 +1815,16 @@ function CreateSkillPanel({
 
 export function SkillsDemoPanel({
   botId,
+  profileId,
   execDebugCommand,
   execDebugCommandStream,
   mode = "global",
-  learnSkillTrigger,
-  learnSkillPanel,
-  learnSkillTriggerFactory,
   expertsPanel,
   initialTab = "discover",
   onTabChange,
 }: {
   botId: string;
+  profileId?: string;
   execDebugCommand: ExpertsExecDebugCommand;
   execDebugCommandStream?: SkillsExecDebugCommandStream;
   mode?: SkillsDemoMode;
@@ -1892,8 +1891,8 @@ export function SkillsDemoPanel({
     },
   };
   const dataLayer = useMemo(
-    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream),
-    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode],
+    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream, profileId),
+    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode, profileId],
   );
 
   const [keyword, setKeyword] = useState("");

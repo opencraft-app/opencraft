@@ -42,10 +42,11 @@ import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
@@ -74,7 +75,9 @@ import type {
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
+  AGENT_BOT_QUERY_KEY,
   AGENT_SECTION_PATH_BY_ID,
+  getAgentBotSectionHref,
   getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
@@ -205,6 +208,7 @@ function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
 
 type TeaSdkInstanceInfo = {
   InstanceId: string;
+  ProfileId?: string;
   RegionId: number;
   Zone?: string;
 };
@@ -2503,10 +2507,12 @@ export const AgentSettingsPage = ({
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
+  const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
+  const multiBotEnabled = useMultiBotEnabled();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
@@ -2544,15 +2550,29 @@ export const AgentSettingsPage = ({
   const [showCreateConfirm, setShowCreateConfirm] = useState(false);
   const [directCreating, setDirectCreating] = useState(false);
   const [directCreateError, setDirectCreateError] = useState<string | null>(null);
+  const [createBotName, setCreateBotName] = useState("");
+  const [createBotSoul, setCreateBotSoul] = useState("");
+  const [createBotMode, setCreateBotMode] = useState<"clone-current" | "clone-main" | "blank">("blank");
+  const [isCreateAdvancedOpen, setIsCreateAdvancedOpen] = useState(false);
+  const [botSearch, setBotSearch] = useState("");
   const visibleBots = useMemo(
-    () => bots.filter((bot) => bot.status !== "provisioning" && bot.status !== "deleting"),
-    [bots],
+    () => bots.filter((bot) => (
+      bot.status !== "provisioning"
+      && bot.status !== "deleting"
+      && (multiBotEnabled || bot.isDefault)
+    )),
+    [bots, multiBotEnabled],
   );
+  const searchedBots = useMemo(() => {
+    const keyword = botSearch.trim().toLocaleLowerCase();
+    if (!keyword) return visibleBots;
+    return visibleBots.filter((bot) => bot.name.toLocaleLowerCase().includes(keyword));
+  }, [botSearch, visibleBots]);
   const createLimitMessage = useMemo(
     () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots),
     [bots, user.plan.maxBots],
   );
-  const canCreateBot = createLimitMessage === null;
+  const canCreateBot = multiBotEnabled && createLimitMessage === null;
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
@@ -2567,7 +2587,7 @@ export const AgentSettingsPage = ({
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
   /* Tab 切换 */
-  const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
+  const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
@@ -2614,6 +2634,7 @@ export const AgentSettingsPage = ({
   };
 
   const handleSidebarChatTabClick = () => {
+    if (!isActiveBotDefault) return;
     setSidebarTab("chat");
     if (activeSection !== "chat") {
       navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
@@ -2745,12 +2766,40 @@ export const AgentSettingsPage = ({
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
+    if (requestedBotId && visibleBots.some((bot) => bot.id === requestedBotId)) {
+      setActiveTabId(requestedBotId);
+      return;
+    }
     if (visibleBots.length > 0 && !visibleBots.some((b) => b.id === activeTabId)) {
       setActiveTabId(visibleBots[0]!.id);
     }
-  }, [visibleBots, activeTabId, isCreating]);
+  }, [visibleBots, activeTabId, isCreating, requestedBotId]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
+  const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
+
+  useEffect(() => {
+    if (activeSection !== "chat" || !activeBot || isActiveBotDefault) return;
+    setSidebarTab("settings");
+    navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, activeBot.id), { replace: true });
+  }, [activeBot?.id, activeSection, isActiveBotDefault, navigate]);
+
+  const weixinOccupiedByOther = Boolean(
+    activeBot?.weixinOwner && activeBot.weixinOwner.botId !== activeBot.id,
+  );
+  const handleSelectBot = (botId: string) => {
+    setActiveTabId(botId);
+    setIsAgentMenuOpen(false);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set(AGENT_BOT_QUERY_KEY, botId);
+    const selectedBot = visibleBots.find((bot) => bot.id === botId);
+    const nextSection = activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection;
+    if (nextSection !== activeSection) setSidebarTab("settings");
+    navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[nextSection], nextParams), { replace: true });
+  };
   const activeBotStatus = activeBot?.status;
+  const activeBotId = activeBot?.id;
+  const activeRuntimeInstanceId = activeBot?.instanceId ?? activeBotId;
   const passExpiryReminder = useMemo(
     () => (isGlobal || paidBillingActive ? getPassExpiryReminder(activePass) : null),
     [activePass, paidBillingActive],
@@ -2781,8 +2830,6 @@ export const AgentSettingsPage = ({
   const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
   const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
-
-  const activeBotId = activeBot?.id;
 
   /**
    * 拉取一个 launch token（纯请求，不碰 state），供首帧拉取与 SDK 续期回调共用。
@@ -2837,8 +2884,8 @@ export const AgentSettingsPage = ({
   );
 
   useEffect(() => {
-    // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
-    if (activeSection !== "chat" || !activeBotId) {
+    // AgentChat 暂时只支持主 Bot；非主 Bot 不发起 token 请求。
+    if (activeSection !== "chat" || !isActiveBotDefault || !activeBotId || !activeRuntimeInstanceId) {
       return;
     }
     if (!accountId) {
@@ -2854,7 +2901,7 @@ export const AgentSettingsPage = ({
       setLaunchTokenStatus("loading");
       setLaunchTokenError(null);
       try {
-        const { token, expiresAt } = await fetchLaunchTokenValue(activeBotId, controller.signal);
+        const { token, expiresAt } = await fetchLaunchTokenValue(activeRuntimeInstanceId, controller.signal);
         if (cancelled) return;
         setLaunchToken(token);
         setLaunchTokenExpiresAt(typeof expiresAt === "number" ? expiresAt : null);
@@ -2872,18 +2919,21 @@ export const AgentSettingsPage = ({
       cancelled = true;
       controller.abort();
     };
-  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick, fetchLaunchTokenValue]);
+  }, [activeSection, activeBotId, activeRuntimeInstanceId, accountId, isActiveBotDefault, launchTokenRefreshTick, fetchLaunchTokenValue]);
 
   /**
    * SDK 续期入口：token 将过期时调用，拿新 token 返回给面板。不写 state，故不触发
    * 重渲染 / 重连（保活不断连的关键）。expiresAt 为 Unix 秒，供面板判断复用。
    */
   const refreshLaunchToken = useCallback(async (): Promise<{ token: string; expiresAt?: number }> => {
-    if (!activeBotId) {
+    if (!isActiveBotDefault) {
+      throw new Error("AgentChat 目前仅支持主 Bot");
+    }
+    if (!activeRuntimeInstanceId) {
       throw new Error("无有效实例，无法续期 AgentChat token");
     }
-    return fetchLaunchTokenValue(activeBotId);
-  }, [activeBotId, fetchLaunchTokenValue]);
+    return fetchLaunchTokenValue(activeRuntimeInstanceId);
+  }, [activeRuntimeInstanceId, fetchLaunchTokenValue, isActiveBotDefault]);
 
   // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
   useEffect(() => {
@@ -2936,7 +2986,7 @@ export const AgentSettingsPage = ({
     setMemoryStatus("loading");
     setMemoryError(null);
     try {
-      const snapshot = await fetchHermesMemorySnapshot(repositories.bots, requestedBotId);
+      const snapshot = await fetchHermesMemorySnapshot(repositories.bots, requestedBotId, activeBot?.profileId);
       if (!isHermesMemoryOperationCurrent({
         activeBotId: activeMemoryBotIdRef.current,
         requestedBotId,
@@ -2959,7 +3009,7 @@ export const AgentSettingsPage = ({
       }));
       return null;
     }
-  }, [activeBotId, activeBotStatus, repositories]);
+  }, [activeBot?.profileId, activeBotId, activeBotStatus, repositories]);
 
   const clearHermesMemoryLimitSaveError = useCallback((target: HermesMemoryLimitTarget) => {
     setMemoryLimitSaveError((prev) => prev?.target === target ? null : prev);
@@ -3004,11 +3054,12 @@ export const AgentSettingsPage = ({
       const saveResult = await executeHermesMemoryLimitSave({
         bots: repositories.bots,
         botId: requestedBotId,
+        profileId: activeBot?.profileId,
         target,
         value,
         existingChars,
         getGatewayRestartCommand: async () => {
-          return (await getHermesScriptCommands()).getGatewayRestartCommand();
+          return (await getHermesScriptCommands(activeBot?.profileId)).getGatewayRestartCommand();
         },
       });
       if (!isCurrentRequest()) return false;
@@ -3072,15 +3123,46 @@ export const AgentSettingsPage = ({
    * executor 占位（实际操作路径不会触发）。
    */
   const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
-    () =>
-      activeBotId
-        ? createLocalCommandExecutor({
-          repositories,
-          botId: activeBotId,
-          commandLifecycle: sdkCommandLifecycle,
-        })
-        : undefined,
-    [repositories, activeBotId, sdkCommandLifecycle],
+    () => {
+      if (!activeBotId) return undefined;
+      const executor = createLocalCommandExecutor({
+        repositories,
+        botId: activeBotId,
+        commandLifecycle: sdkCommandLifecycle,
+      });
+      const runWithWeixinBinding = async <T extends { success: boolean }>(
+        command: string,
+        run: () => Promise<T>,
+      ): Promise<T> => {
+        const isWeixinConnect = /acli gateway qr-url\b/.test(command) && /--platform\s+'?weixin'?\b/.test(command);
+        const isWeixinDelete = /acli channel delete\b/.test(command) && /--platform\s+'?weixin'?\b/.test(command);
+        if (isWeixinConnect) await repositories.bots.claimUniqueChannel(activeBotId, "weixin");
+        try {
+          const result = await run();
+          if (isWeixinConnect && !result.success) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, "weixin").catch(() => undefined);
+          }
+          if (isWeixinDelete && result.success) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, "weixin");
+          }
+          if (isWeixinConnect && result.success) {
+            await repositories.bots.confirmUniqueChannel(activeBotId, "weixin");
+          }
+          if ((isWeixinConnect || isWeixinDelete) && result.success) await refreshBots();
+          return result;
+        } catch (error) {
+          if (isWeixinConnect) {
+            await repositories.bots.releaseUniqueChannel(activeBotId, "weixin").catch(() => undefined);
+          }
+          throw error;
+        }
+      };
+      return {
+        run: (options) => runWithWeixinBinding(options.command, () => executor.run(options)),
+        runWithProgress: (options) => runWithWeixinBinding(options.command, () => executor.runWithProgress(options)),
+      };
+    },
+    [repositories, activeBotId, refreshBots, sdkCommandLifecycle],
   );
 
   /**
@@ -3108,6 +3190,32 @@ export const AgentSettingsPage = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [repairingBotIds, setRepairingBotIds] = useState<Set<string>>(new Set());
+
+  const handleRetryBot = async () => {
+    if (!activeBot || activeBot.status !== "failed") return;
+    const botId = activeBot.id;
+    setRepairingBotIds((previous) => new Set(previous).add(botId));
+    try {
+      const retried = await repositories.bots.retryBot(botId);
+      await refreshBots();
+      if (retried) {
+        handleSelectBot(retried.id);
+        toast.success(t("Bot 已恢复"));
+      } else {
+        if (defaultBot) handleSelectBot(defaultBot.id);
+        toast.success(t("异常 Bot 已清理"));
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("Bot 修复失败，请稍后重试。"));
+    } finally {
+      setRepairingBotIds((previous) => {
+        const next = new Set(previous);
+        next.delete(botId);
+        return next;
+      });
+    }
+  };
 
   const handleDelete = async () => {
     if (!activeBot || deleteInput !== activeBot.name) return;
@@ -3173,7 +3281,7 @@ export const AgentSettingsPage = ({
         );
       }
 
-      const hermesScriptCommands = await getHermesScriptCommands();
+      const hermesScriptCommands = await getHermesScriptCommands(activeBot?.profileId);
       const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
@@ -3295,7 +3403,7 @@ export const AgentSettingsPage = ({
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const gatewayRestartCommand = (await getHermesScriptCommands()).getGatewayRestartCommand();
+      const gatewayRestartCommand = (await getHermesScriptCommands(activeBot?.profileId)).getGatewayRestartCommand();
       const result = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
@@ -3493,10 +3601,11 @@ export const AgentSettingsPage = ({
   const sdkInstance = useMemo<TeaSdkInstanceInfo | null>(() => {
     if (!activeBot) return null;
     return {
-      InstanceId: activeBot.id,
+      InstanceId: activeBot.instanceId ?? activeBot.id,
+      ProfileId: activeBot.profileId ?? "main",
       RegionId: 1,
     };
-  }, [activeBot?.id]);
+  }, [activeBot?.instanceId, activeBot?.profileId]);
 
   /**
    * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
@@ -3522,14 +3631,14 @@ export const AgentSettingsPage = ({
     adpChannel: false,
     wecomLongConn: true,
     yuanbaoChannel: false,
-    weixinChannel: true,
+    weixinChannel: !weixinOccupiedByOther,
     qrConfig: true,
     skills: true,
     webUI: false,
     memoryManagement: false,
     memoryV2: false,
     qqbotplugin: false,
-  }), []);
+  }), [weixinOccupiedByOther]);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
   const useEnglish = shouldUseEnglishProviderData(i18n.language);
@@ -3574,7 +3683,7 @@ export const AgentSettingsPage = ({
       setIsCreating(false);
       setCreationError(null);
       setActiveTabId(completedCreatingBot.id);
-      navigate(AGENTS_HOME_PATH, { replace: true });
+      navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, completedCreatingBot.id), { replace: true });
       return;
     }
     if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
@@ -3618,16 +3727,17 @@ export const AgentSettingsPage = ({
    *   模式 B：URL 不指定 botId —— 无 provisioning bot 且有可见 bot 时退出。
    *
    * 不放 botsLoading 在 deps 里 —— refreshBots 期间必须能继续兜底，否则错过时机。
-   */
+  */
   useEffect(() => {
-    if (!isCreating || creationError) return;
+    // 等路由先确认创建流程，避免确认按钮的 state 更新早于 ?creating= 导航时误退出。
+    if (!isCreating || creationError || !creatingParam) return;
     if (requestedCreatingBotId) {
       const targetBot = bots.find((b) => b.id === requestedCreatingBotId);
       if (targetBot && targetBot.status !== "provisioning" && targetBot.status !== "deleting") {
         setIsCreating(false);
         setCreationError(null);
         setActiveTabId(targetBot.id);
-        navigate(AGENTS_HOME_PATH, { replace: true });
+        navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBot.id), { replace: true });
       }
       return;
     }
@@ -3636,7 +3746,7 @@ export const AgentSettingsPage = ({
       setCreationError(null);
       navigate(AGENTS_HOME_PATH, { replace: true });
     }
-  }, [isCreating, creationError, requestedCreatingBotId, bots, provisioningBot, navigate]);
+  }, [isCreating, creationError, creatingParam, requestedCreatingBotId, bots, provisioningBot, navigate]);
 
   /* 创建态只以后端真实状态为准：Running 才进入设置页，Failed/Deleting 停在错误态。 */
   useEffect(() => {
@@ -3673,7 +3783,7 @@ export const AgentSettingsPage = ({
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
-          navigate(AGENTS_HOME_PATH, { replace: true });
+          navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBotId), { replace: true });
           await refreshBots();
           return;
         }
@@ -3682,7 +3792,7 @@ export const AgentSettingsPage = ({
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
-          navigate(AGENTS_HOME_PATH, { replace: true });
+          navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBotId), { replace: true });
           await refreshBots();
           return;
         }
@@ -3699,7 +3809,7 @@ export const AgentSettingsPage = ({
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
-          navigate(AGENTS_HOME_PATH, { replace: true });
+          navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBotId), { replace: true });
           await refreshBots();
           return;
         }
@@ -3746,12 +3856,16 @@ export const AgentSettingsPage = ({
       setDirectCreateError(createLimitMessage);
       return;
     }
-    if (isSubscribed) {
-      // 已订阅：弹确认框，直接创建，不跳套餐页
+    if (activeBot || isSubscribed) {
+      // 已有实例时创建实例内 Bot；没有实例的已订阅用户也可直接创建。
       setDirectCreateError(null);
+      setCreateBotName(t("新 Bot"));
+      setCreateBotSoul("");
+      setCreateBotMode(activeBot ? "clone-current" : "blank");
+      setIsCreateAdvancedOpen(false);
       setShowCreateConfirm(true);
     } else {
-      // 未订阅：跳转套餐订阅页
+      // 没有实例且未订阅：先进入套餐订阅页。
       navigate("/subscribe");
     }
   };
@@ -3765,13 +3879,27 @@ export const AgentSettingsPage = ({
     setDirectCreateError(null);
     const createStart = Date.now();
     try {
+      const normalizedName = createBotName.trim();
+      if (!normalizedName) {
+        setDirectCreateError(t("请输入 Bot 名称"));
+        return;
+      }
+      const sourceBot = createBotMode === "clone-current" ? activeBot : defaultBot;
+      if (createBotMode !== "blank" && !sourceBot) {
+        setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
+        return;
+      }
       const newBot = await addBot({
-        name: t("我的Hermes"),
+        name: normalizedName,
+        description: undefined,
         personality: t("默认设定"),
         personalityEmoji: "✨",
         intro: "",
         soulTemplateId: undefined,
         status: "running",
+        createMode: createBotMode === "blank" ? "blank" : "clone",
+        sourceBotId: createBotMode === "blank" ? undefined : sourceBot?.id,
+        initialSoul: createBotSoul.trim() || undefined,
       });
       trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
         pgid: DATONG_PAGE_IDS.AGENT_CREATING,
@@ -4353,7 +4481,7 @@ export const AgentSettingsPage = ({
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            className="mx-4 w-full max-w-md rounded-lg border bg-white p-6 shadow-2xl"
             style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -4514,7 +4642,7 @@ export const AgentSettingsPage = ({
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            className="mx-4 max-h-[calc(100dvh-2rem)] w-full max-w-[42rem] overflow-y-auto rounded-lg border bg-white p-6 shadow-2xl"
             style={{ borderColor: "rgba(238,238,238,0.4)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -4522,17 +4650,110 @@ export const AgentSettingsPage = ({
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
                 <Plus className="h-5 w-5" style={{ color: "#07C160" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建智能体")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建 Bot")}</h3>
             </div>
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("即刻创建全新的 Hermes Agent")}
-            </p>
+            <div className="space-y-4">
+              <label className="block space-y-1.5 text-sm font-medium text-black/70">
+                <span>{t("Bot 名称")}</span>
+                <input
+                  value={createBotName}
+                  onChange={(event) => setCreateBotName(event.target.value)}
+                  maxLength={64}
+                  disabled={directCreating}
+                  className="h-10 w-full rounded-md border border-black/10 px-3 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
+                />
+              </label>
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium text-black/70">{t("创建方式")}</legend>
+                <div
+                  className={cn(
+                    "grid overflow-hidden rounded-md border border-black/10",
+                    isActiveBotDefault ? "grid-cols-2" : "grid-cols-3",
+                  )}
+                  role="radiogroup"
+                >
+                  {([
+                    ["clone-current", isActiveBotDefault ? t("复制当前（主 Bot）") : t("复制当前")],
+                    ...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : []),
+                    ["blank", t("空白创建")],
+                  ] as const).map(([mode, label]) => {
+                    const selected = createBotMode === mode;
+                    const unavailable = mode !== "blank" && (mode === "clone-current" ? !activeBot : !defaultBot);
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={directCreating || unavailable}
+                        onClick={() => setCreateBotMode(mode)}
+                        className={cn(
+                          "min-h-10 border-r border-black/10 px-2 text-xs font-medium last:border-r-0",
+                          selected ? "bg-black text-white" : "bg-white text-black/55 hover:bg-black/[0.03]",
+                          unavailable && "cursor-not-allowed opacity-40",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                {createBotMode === "blank"
+                  ? t("使用 Hermes 默认配置创建独立 Bot。")
+                  : t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")}
+              </p>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateAdvancedOpen((open) => !open)}
+                  disabled={directCreating}
+                  className="flex w-full items-center gap-1.5 text-sm font-medium text-black/60 transition-colors hover:text-black/85 disabled:opacity-50"
+                  aria-expanded={isCreateAdvancedOpen}
+                  aria-controls="create-bot-advanced-settings"
+                >
+                  <span>{t("高级设置")}</span>
+                  <ChevronDown
+                    className={cn("size-4 transition-transform", isCreateAdvancedOpen && "rotate-180")}
+                    aria-hidden="true"
+                  />
+                </button>
+                {isCreateAdvancedOpen && (
+                  <div id="create-bot-advanced-settings" className="mt-3 rounded-md bg-black/[0.025] p-3">
+                    <label className="block space-y-1.5 text-sm font-medium text-black/70">
+                      <span>{t("初始人设（可选）")}</span>
+                      <textarea
+                        value={createBotSoul}
+                        onChange={(event) => setCreateBotSoul(event.target.value)}
+                        maxLength={12000}
+                        rows={4}
+                        disabled={directCreating}
+                        className="w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
+                        placeholder={createBotMode === "blank"
+                          ? t("留空时会生成基础人设")
+                          : t("留空时保留来源 Bot 的人设")}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
-            <div className="flex flex-col gap-2">
+            <div className="mt-5 flex justify-end gap-2">
               <button
+                type="button"
+                onClick={() => setShowCreateConfirm(false)}
+                disabled={directCreating}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-medium text-black/60 transition-colors hover:bg-black/[0.035] hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("取消")}
+              </button>
+              <button
+                type="button"
                 onClick={() => void handleConfirmCreate()}
                 disabled={directCreating}
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="inline-flex h-9 min-w-24 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor: directCreating ? "#9CA3AF" : "var(--lw-fg)",
                   cursor: directCreating ? "not-allowed" : "pointer",
@@ -4542,14 +4763,6 @@ export const AgentSettingsPage = ({
               >
                 {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
                 {directCreating ? t("创建中...") : directCreateError ? t("重试") : t("确认创建")}
-              </button>
-              <button
-                onClick={() => setShowCreateConfirm(false)}
-                disabled={directCreating}
-                className="py-2 text-sm transition-colors hover:opacity-70"
-                style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer", fontSize: "14px", lineHeight: "20px" }}
-              >
-                {t("取消")}
               </button>
             </div>
           </motion.div>
@@ -4652,7 +4865,9 @@ export const AgentSettingsPage = ({
                 },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
-              const restartTooltip = t("重启");
+              const isRepairingBot = repairingBotIds.has(activeBot.id);
+              const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
+              const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
               const resetBlockReason = getResetBlockReason(activeBot, resetting);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
               const resetTooltip =
@@ -4665,8 +4880,8 @@ export const AgentSettingsPage = ({
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
                   : t("重装 Agent（保留数据）");
-              const deleteDisabled = resettingAcli;
-              const deleteTooltip = t("删除");
+              const deleteDisabled = resettingAcli || Boolean(activeBot.isDefault);
+              const deleteTooltip = activeBot.isDefault ? t("默认 Bot 不能删除") : t("删除");
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
@@ -4681,200 +4896,219 @@ export const AgentSettingsPage = ({
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
-                      <div
-                        role={visibleBots.length > 1 ? "button" : undefined}
-                        tabIndex={visibleBots.length > 1 ? 0 : undefined}
-                        onClick={() => {
-                          if (visibleBots.length > 1) setIsAgentMenuOpen((open) => !open);
+                      <Popover
+                        open={visibleBots.length > 1 && isAgentMenuOpen}
+                        onOpenChange={(open) => {
+                          if (visibleBots.length > 1) setIsAgentMenuOpen(open);
                         }}
-                        onKeyDown={(event) => {
-                          if (visibleBots.length <= 1) return;
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setIsAgentMenuOpen((open) => !open);
-                          }
-                        }}
-                        className={cn(
-                          "lv-agent-profile",
-                          visibleBots.length > 1 ? "hover:bg-black/[0.025]" : "cursor-default",
-                        )}
-                        aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                       >
-                        <span className="lv-agent-avatar">
-                          <img src={avatarUrl} alt="" />
-                        </span>
-                        <span className="lv-agent-profile-text">
-                          <span className="lv-agent-profile-name" title={activeBotDisplayName}>
-                            {truncateBotName(activeBotDisplayName)}
-                          </span>
-                          <span className="lv-agent-status-row">
-                            <span className="lv-agent-status">
-                              {isActiveBotRestarting ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <span
-                                  className="inline-block h-1.5 w-1.5 rounded-full"
-                                  style={{ background: getBotStatusColor(activeBot.status) }}
-                                />
-                              )}
-                              {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                        <PopoverTrigger asChild>
+                          <div
+                            role={visibleBots.length > 1 ? "button" : undefined}
+                            tabIndex={visibleBots.length > 1 ? 0 : undefined}
+                            onKeyDown={(event) => {
+                              if (visibleBots.length <= 1) return;
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setIsAgentMenuOpen((open) => !open);
+                              }
+                            }}
+                            className={cn(
+                              "lv-agent-profile",
+                              visibleBots.length > 1 ? "hover:bg-black/[0.025]" : "cursor-default",
+                            )}
+                            aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
+                          >
+                            <span className="lv-agent-avatar">
+                              <img src={avatarUrl} alt="" />
                             </span>
-                            {passExpiryReminder && passExpiryReminderCopy && activePass && (
-                              renewalAvailable ? (
-                                <span className="group relative inline-flex">
-                                  <button
-                                    type="button"
-                                    className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
-                                    aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminderCopy.tooltip })}
-                                    aria-describedby={passExpiryTooltipId}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setRenewPassModalOpen(true);
-                                    }}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter" || event.key === " ") {
-                                        event.stopPropagation();
-                                      }
-                                    }}
-                                  >
-                                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                                    {passExpiryReminderCopy.label}
-                                  </button>
-                                  <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                            <span className="lv-agent-profile-text">
+                              <span className="lv-agent-profile-name" title={activeBotDisplayName}>
+                                {truncateBotName(activeBotDisplayName)}
+                              </span>
+                              <span className="lv-agent-status-row">
+                                <span className="lv-agent-status">
+                                  {isActiveBotRestarting ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
                                     <span
-                                      id={passExpiryTooltipId}
-                                      role="tooltip"
-                                      className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
-                                    >
-                                      {passExpiryReminderCopy.tooltip}
+                                      className="inline-block h-1.5 w-1.5 rounded-full"
+                                      style={{ background: getBotStatusColor(activeBot.status) }}
+                                    />
+                                  )}
+                                  {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                </span>
+                                {passExpiryReminder && passExpiryReminderCopy && activePass && (
+                                  renewalAvailable ? (
+                                    <span className="group relative inline-flex">
                                       <button
                                         type="button"
-                                        className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
+                                        className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
+                                        aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminderCopy.tooltip })}
+                                        aria-describedby={passExpiryTooltipId}
                                         onClick={(event) => {
                                           event.stopPropagation();
                                           setRenewPassModalOpen(true);
                                         }}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter" || event.key === " ") {
+                                            event.stopPropagation();
+                                          }
+                                        }}
                                       >
-                                        {t("立即续费")}
+                                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                        {passExpiryReminderCopy.label}
                                       </button>
-                                      <span
-                                        aria-hidden="true"
-                                        className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
-                                      />
+                                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                        <span
+                                          id={passExpiryTooltipId}
+                                          role="tooltip"
+                                          className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+                                        >
+                                          {passExpiryReminderCopy.tooltip}
+                                          <button
+                                            type="button"
+                                            className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              setRenewPassModalOpen(true);
+                                            }}
+                                          >
+                                            {t("立即续费")}
+                                          </button>
+                                          <span
+                                            aria-hidden="true"
+                                            className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                          />
+                                        </span>
+                                      </span>
                                     </span>
-                                  </span>
-                                </span>
-                              ) : (
-                                <span
-                                  className={cn(
-                                    "lv-agent-renewal-badge is-disabled",
-                                    `is-${passExpiryReminder.level}`,
-                                  )}
-                                >
-                                  {passExpiryReminderCopy.label}
-                                  <span className="sr-only"> {passExpiryReminderCopy.tooltip}</span>
-                                </span>
-                              )
-                            )}
-                          </span>
-                        </span>
-                        <div
-                          className="lv-agent-actions"
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.stopPropagation();
-                            }
-                          }}
-                        >
-                          <span className="lv-agent-action-item">
-                            <button
-                              type="button"
-                              aria-label={restartTooltip}
-                              disabled={isRestartDisabled}
-                              className="lv-agent-action-button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (isRestartDisabled) return;
-                                setShowRestartConfirm(true);
-                              }}
-                            >
-                              <RefreshCw className={cn("h-3.5 w-3.5", isActiveBotRestarting && "animate-spin")} aria-hidden="true" />
-                            </button>
-                            <span className="lv-agent-action-tooltip">
-                              {restartTooltip}
-                              <span className="lv-agent-action-tooltip-arrow" />
-                            </span>
-                          </span>
-                          <span className="lv-agent-action-item">
-                            <button
-                              type="button"
-                              aria-label={deleteTooltip}
-                              disabled={deleteDisabled}
-                              className="lv-agent-action-button is-danger"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (deleteDisabled) return;
-                                setDeleteInput("");
-                                setShowDeleteConfirm(true);
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                            </button>
-                            <span className="lv-agent-action-tooltip">
-                              {deleteTooltip}
-                              <span className="lv-agent-action-tooltip-arrow" />
-                            </span>
-                          </span>
-                        </div>
-                        {visibleBots.length > 1 && (
-                          <ChevronDown
-                            className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
-                          />
-                        )}
-                      </div>
-                      {visibleBots.length > 1 && isAgentMenuOpen && (
-                        <div className="mt-1 rounded-md bg-black/[0.025] p-1">
-                          {visibleBots.map((bot) => {
-                            const isActive = bot.id === activeTabId;
-                            const botDisplayName = resolveAgentDisplayName(bot.name, t);
-                            return (
-                              <button
-                                key={bot.id}
-                                type="button"
-                                onClick={() => {
-                                  setActiveTabId(bot.id);
-                                  setIsAgentMenuOpen(false);
-                                }}
-                                className={cn(
-                                  "flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors",
-                                  isActive ? "bg-white text-black/90 shadow-sm" : "text-black/55 hover:bg-white/70 hover:text-black/80",
+                                  ) : (
+                                    <span
+                                      className={cn(
+                                        "lv-agent-renewal-badge is-disabled",
+                                        `is-${passExpiryReminder.level}`,
+                                      )}
+                                    >
+                                      {passExpiryReminderCopy.label}
+                                      <span className="sr-only"> {passExpiryReminderCopy.tooltip}</span>
+                                    </span>
+                                  )
                                 )}
-                              >
-                                <img src={getAvatarForBot(bot.id)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
-                                <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
-                                  {truncateBotName(botDisplayName)}
+                              </span>
+                            </span>
+                            <div
+                              className="lv-agent-actions"
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.stopPropagation();
+                                }
+                              }}
+                            >
+                              <span className="lv-agent-action-item">
+                                <button
+                                  type="button"
+                                  aria-label={restartTooltip}
+                                  disabled={restartOrRepairDisabled}
+                                  className="lv-agent-action-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (restartOrRepairDisabled) return;
+                                    if (activeBot.status === "failed") {
+                                      void handleRetryBot();
+                                      return;
+                                    }
+                                    setShowRestartConfirm(true);
+                                  }}
+                                >
+                                  <RefreshCw className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" />
+                                </button>
+                                <span className="lv-agent-action-tooltip">
+                                  {restartTooltip}
+                                  <span className="lv-agent-action-tooltip-arrow" />
                                 </span>
-                                {isActive && <Check className="h-3.5 w-3.5 text-black/55" />}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
+                              </span>
+                              <span className="lv-agent-action-item">
+                                <button
+                                  type="button"
+                                  aria-label={deleteTooltip}
+                                  disabled={deleteDisabled}
+                                  className="lv-agent-action-button is-danger"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    if (deleteDisabled) return;
+                                    setDeleteInput("");
+                                    setShowDeleteConfirm(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                </button>
+                                <span className="lv-agent-action-tooltip">
+                                  {deleteTooltip}
+                                  <span className="lv-agent-action-tooltip-arrow" />
+                                </span>
+                              </span>
+                            </div>
+                            {visibleBots.length > 1 && (
+                              <ChevronDown
+                                className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
+                              />
+                            )}
+                          </div>
+                        </PopoverTrigger>
+                        {visibleBots.length > 1 && (
+                          <PopoverContent
+                            align="start"
+                            side="bottom"
+                            sideOffset={8}
+                            className="max-h-80 w-[var(--radix-popover-trigger-width)] overflow-y-auto !rounded-[8px] border-white/75 bg-white/[0.46] p-1.5 shadow-xl ring-1 ring-black/[0.04] backdrop-blur-sm backdrop-saturate-150"
+                          >
+                            <label className="mb-1 block">
+                              <span className="sr-only">{t("搜索 Bot")}</span>
+                              <input
+                                type="search"
+                                value={botSearch}
+                                onChange={(event) => setBotSearch(event.target.value)}
+                                onClick={(event) => event.stopPropagation()}
+                                placeholder={t("搜索 Bot")}
+                                className="h-8 w-full rounded-md border border-white/80 bg-white/35 px-2 text-xs text-black/75 outline-none placeholder:text-black/35 focus:border-black/20 focus:bg-white/60"
+                              />
+                            </label>
+                            {searchedBots.map((bot) => {
+                              const isActive = bot.id === activeTabId;
+                              const botDisplayName = resolveAgentDisplayName(bot.name, t);
+                              return (
+                                <button
+                                  key={bot.id}
+                                  type="button"
+                                  onClick={() => {
+                                    handleSelectBot(bot.id);
+                                  }}
+                                  className={cn(
+                                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15",
+                                    isActive ? "bg-white/55 text-black/90 shadow-sm" : "text-black/60 hover:bg-white/35 hover:text-black/80",
+                                  )}
+                                  aria-current={isActive ? "true" : undefined}
+                                >
+                                  <img src={getAvatarForBot(bot.id)} alt="" className="size-5 flex-shrink-0 rounded object-contain" />
+                                  <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
+                                    {truncateBotName(botDisplayName)}
+                                  </span>
+                                  {isActive && <Check className="size-3.5 text-black/55" />}
+                                </button>
+                              );
+                            })}
+                            {searchedBots.length === 0 && (
+                              <p className="px-2 py-3 text-center text-xs text-black/40">{t("未找到 Bot")}</p>
+                            )}
+                          </PopoverContent>
+                        )}
+                      </Popover>
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                       )}
 
-                      {canCreateBot && (
-                        <button
-                          type="button"
-                          onClick={handleCreateNew}
-                          className="lv-agent-create-button"
-                        >
-                          <Plus className="h-4 w-4" aria-hidden="true" />
-                          {t("立即创建")}
-                        </button>
-                      )}
                     </div>
 
                     {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
@@ -4891,15 +5125,18 @@ export const AgentSettingsPage = ({
                       <button
                         type="button"
                         role="tab"
-                        aria-selected={sidebarTab === "chat"}
-                        className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && "is-active")}
+                        aria-selected={sidebarTab === "chat" && isActiveBotDefault}
+                        aria-disabled={!isActiveBotDefault}
+                        disabled={!isActiveBotDefault}
+                        title={isActiveBotDefault ? undefined : t("AgentChat 目前仅支持主 Bot")}
+                        className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotDefault && "is-active")}
                         onClick={handleSidebarChatTabClick}
                       >
                         {t("对话")}
                       </button>
                     </div>
 
-                    {sidebarTab === "chat" ? (
+                    {sidebarTab === "chat" && isActiveBotDefault ? (
                       <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
                         <div className="lv-agents-nav-group" role="group">
                           <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
@@ -5135,13 +5372,31 @@ export const AgentSettingsPage = ({
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (
-                            <TeaSdkSettingsPanel
-                              kind="channel"
-                              instance={sdkInstance}
-                              featureFlags={sdkFeatureFlags}
-                              commandExecutor={teaSdkCommandExecutor}
-                              useEnglish={useEnglish}
-                            />
+                            <>
+                              {weixinOccupiedByOther && activeBot.weixinOwner && (
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                  <span>
+                                    {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
+                                      name: activeBot.weixinOwner.botName || t("其他 Bot"),
+                                    })}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="font-medium text-amber-950 underline underline-offset-2"
+                                    onClick={() => handleSelectBot(activeBot.weixinOwner!.botId)}
+                                  >
+                                    {t("前往管理")}
+                                  </button>
+                                </div>
+                              )}
+                              <TeaSdkSettingsPanel
+                                kind="channel"
+                                instance={sdkInstance}
+                                featureFlags={sdkFeatureFlags}
+                                commandExecutor={teaSdkCommandExecutor}
+                                useEnglish={useEnglish}
+                              />
+                            </>
                           )}
                           {activeSection === "model" && (
                             <TeaSdkSettingsPanel
@@ -5156,18 +5411,22 @@ export const AgentSettingsPage = ({
                           {activeSection === "skill" && (
                             <HermesAgentSkillsPanel
                               botId={activeBot.id}
+                              profileId={activeBot.profileId}
                               execDebugCommand={repositories.bots.execDebugCommand}
                               initialSectionSlug={initialSectionSlug}
                             />
                           )}
                           {activeSection === "buddy" && (
-                            <BuddyPanel botId={activeBot.id} />
+                            <BuddyPanel botId={activeBot.id} profileId={activeBot.profileId} />
                           )}
                           {activeSection === "achievement" && (
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
-                            <HermesAgentAutomationsPanel botId={activeBot.id} />
+                            <HermesAgentAutomationsPanel botId={{
+                              instanceId: activeBot.instanceId ?? activeBot.id,
+                              profileId: activeBot.profileId ?? "main",
+                            }} />
                           )}
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
@@ -5196,7 +5455,7 @@ export const AgentSettingsPage = ({
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}
-                          {activeSection === "chat" && (
+                          {activeSection === "chat" && isActiveBotDefault && (
                             /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
                                与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
                                重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
@@ -5236,7 +5495,7 @@ export const AgentSettingsPage = ({
                               botStatus={activeBot.status}
                               bots={repositories.bots}
                               getGatewayRestartCommand={async () => {
-                                return (await getHermesScriptCommands()).getGatewayRestartCommand();
+                                return (await getHermesScriptCommands(activeBot.profileId)).getGatewayRestartCommand();
                               }}
                             />
                           )}
@@ -5285,7 +5544,7 @@ export const AgentSettingsPage = ({
                   )}
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
-                  {canCreateBot ? t("立即创建") : t("暂不可创建")}
+                  {canCreateBot ? t("新建 Bot") : t("暂不可创建")}
                 </button>
               </div>
             )

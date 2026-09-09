@@ -17,6 +17,7 @@ const _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS = (t: Translate) => [
   t("当前资源暂时售罄，请稍后再试。"),
   t("创建超时，请稍后重试。"),
   t("网络异常，请检查网络后重试。"),
+  t("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。"),
   t("创建失败，请稍后重试。"),
 ];
 void _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS;
@@ -34,6 +35,10 @@ export const getAgentCreateErrorMessage = (
       : typeof error === "string"
         ? error
         : "";
+
+  if (code === "INSTANCE_BOT_UNSUPPORTED" || code === "INSTANCE_BOT_DISABLED") {
+    return translate("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。");
+  }
 
   if (/quota|limit|exceed/i.test(raw)) {
     return translate("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。");

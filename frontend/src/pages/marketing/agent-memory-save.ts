@@ -23,6 +23,7 @@ interface HermesMemoryOperationScope {
 interface SaveHermesMemoryLimitOptions {
   bots: BotRepository;
   botId: string;
+  profileId?: string;
   target: HermesMemoryLimitTarget;
   value: number;
   existingChars: number;
@@ -55,13 +56,13 @@ function snapshotLimit(snapshot: HermesMemorySnapshot, target: HermesMemoryLimit
 export async function saveHermesMemoryLimit(
   options: SaveHermesMemoryLimitOptions,
 ): Promise<HermesMemoryLimitSaveResult> {
-  const { bots, botId, target, value, existingChars, getGatewayRestartCommand } = options;
+  const { bots, botId, profileId = "main", target, value, existingChars, getGatewayRestartCommand } = options;
   let configSaved = false;
 
   try {
     const configResult = await bots.execDebugCommand(
       botId,
-      buildHermesMemoryLimitCommand(target, value, existingChars),
+      buildHermesMemoryLimitCommand(target, value, existingChars, profileId),
       { timeoutMs: HERMES_MEMORY_COMMAND_TIMEOUT_MS },
     );
     if (!isExecCommandSucceeded(configResult)) {
@@ -79,7 +80,7 @@ export async function saveHermesMemoryLimit(
       throw commandError("restart", restartResult.output, restartResult.status);
     }
 
-    const snapshot = await fetchHermesMemorySnapshot(bots, botId);
+    const snapshot = await fetchHermesMemorySnapshot(bots, botId, profileId);
     if (snapshotLimit(snapshot, target) !== value) {
       throw new Error("Hermes memory reread limit did not match the saved value");
     }

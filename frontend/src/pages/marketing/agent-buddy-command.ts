@@ -7,19 +7,19 @@ import {
   CUSTOM_PERSONA_SOURCE_FIELD,
   PERSONA_MARKDOWN_MAX_BYTES,
 } from "@/pages/marketing/agent-persona-upload";
+import { getHermesProfileRootCommand } from "@/lib/hermes-agent-command";
 
 export const HERMES_PERSONA_COMMAND_TIMEOUT_MS = 120_000;
 export const HERMES_PERSONA_COMMAND_MAX_BYTES = 32 * 1024;
 
-const HERMES_ROOT_COMMAND = 'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"';
-
 export function buildHermesSoulWriteCommand(
   markdownBase64: string,
   timestamp: string,
+  profileId = "main",
 ): string {
   const command = [
     "set -eo pipefail",
-    HERMES_ROOT_COMMAND,
+    getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     'BACKUP_DIR="$HERMES_ROOT/.soul-backups"',
     'mkdir -p "$HERMES_ROOT" "$BACKUP_DIR"',
     'TARGET="$HERMES_ROOT/SOUL.md"',
@@ -40,10 +40,10 @@ export function buildHermesSoulWriteCommand(
   return command;
 }
 
-export function buildHermesSoulClearCommand(timestamp: string): string {
+export function buildHermesSoulClearCommand(timestamp: string, profileId = "main"): string {
   return [
     "set -eo pipefail",
-    HERMES_ROOT_COMMAND,
+    getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     'BACKUP_DIR="$HERMES_ROOT/.soul-backups"',
     'TARGET="$HERMES_ROOT/SOUL.md"',
     'if [ -s "$TARGET" ]; then',
@@ -54,10 +54,10 @@ export function buildHermesSoulClearCommand(timestamp: string): string {
   ].join("\n");
 }
 
-export function buildHermesSoulReadCommand(): string {
+export function buildHermesSoulReadCommand(profileId = "main"): string {
   return [
     "set +e",
-    HERMES_ROOT_COMMAND,
+    getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     'TARGET="$HERMES_ROOT/SOUL.md"',
     'if [ -s "$TARGET" ]; then',
     "  printf '%s\\n' 'Exists: yes'",
@@ -79,10 +79,10 @@ export function buildHermesSoulReadCommand(): string {
   ].join("\n");
 }
 
-export function buildHermesSoulContentReadCommand(): string {
+export function buildHermesSoulContentReadCommand(profileId = "main"): string {
   return [
     "set +e",
-    HERMES_ROOT_COMMAND,
+    getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     'TARGET="$HERMES_ROOT/SOUL.md"',
     'if [ ! -s "$TARGET" ]; then',
     "  printf '%s\\n' 'Exists: no'",

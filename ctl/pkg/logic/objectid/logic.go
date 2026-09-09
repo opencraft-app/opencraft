@@ -16,6 +16,7 @@ import (
 // Logic 定义业务对象 ID 生成接口。
 type Logic interface {
 	GenerateInstanceId() string
+	GenerateProfileId() string
 	GenerateTaskId() string
 	GenerateOperationId() string
 	GenerateWxLoginSessionId() string
@@ -29,7 +30,8 @@ func NewLogic() Logic {
 	return &logic{}
 }
 
-func (l *logic) GenerateInstanceId() string      { return generate("ins") }
+func (l *logic) GenerateInstanceId() string       { return generate("ins") }
+func (l *logic) GenerateProfileId() string        { return generate("profile") }
 func (l *logic) GenerateTaskId() string           { return generate("task") }
 func (l *logic) GenerateOperationId() string      { return generate("op") }
 func (l *logic) GenerateWxLoginSessionId() string { return generate("wxs") }

@@ -155,9 +155,11 @@ function UnappliedSoulIcon({ className = "h-3 w-3" }: { className?: string }) {
 
 export function BuddyPanel({
   botId,
+  profileId,
 }: {
   /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 soul.md */
   botId?: string | null;
+  profileId?: string;
 } = {}) {
   const t = useT();
   const { i18n } = useTranslation();
@@ -607,7 +609,7 @@ export function BuddyPanel({
           .replace("T", "_")
           .replace("Z", "");
 
-        const bash = buildHermesSoulWriteCommand(mdBase64, ts);
+        const bash = buildHermesSoulWriteCommand(mdBase64, ts, profileId);
         await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
         await ensureMinSpin();
         if (!isCurrentRequest()) return false;
@@ -724,7 +726,7 @@ export function BuddyPanel({
       .replace("Z", "");
     // 防御性：ts 只含 [0-9_-]，避免未来上游污染导致 shell 注入
     if (!/^[0-9_-]+$/.test(ts)) return false;
-    const bash = buildHermesSoulClearCommand(ts);
+    const bash = buildHermesSoulClearCommand(ts, profileId);
     try {
       await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
       return isCurrentRequest();
@@ -760,7 +762,7 @@ export function BuddyPanel({
       return;
     }
     // 只读取顶层 Soul 元数据区的存在性、Slug、Source 和 Name，避免把整份 markdown 扛到前端。
-    const bash = buildHermesSoulReadCommand();
+    const bash = buildHermesSoulReadCommand(profileId);
     try {
       const result = await executeHermesPersonaCommand(
         repositories.bots,
@@ -811,6 +813,7 @@ export function BuddyPanel({
     const command = buildHermesSoulWriteCommand(
       encodeUtf8Base64(markdown),
       timestamp,
+      profileId,
     );
     const startedAt = Date.now();
 
@@ -883,7 +886,7 @@ export function BuddyPanel({
       const result = await executeHermesPersonaCommand(
         repositories.bots,
         requestBotId,
-        buildHermesSoulContentReadCommand(),
+        buildHermesSoulContentReadCommand(profileId),
       );
       if (!isCurrentRequest()) return null;
       const content = parseHermesSoulContent(result.output ?? "");

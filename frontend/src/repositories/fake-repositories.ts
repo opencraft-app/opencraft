@@ -278,6 +278,10 @@ const ensureLocalPreviewBot = (): Bot | null => {
 
   const bot: Bot = {
     id: LOCAL_PREVIEW_BOT_ID,
+    instanceId: LOCAL_PREVIEW_BOT_ID,
+    profileId: "main",
+    isDefault: true,
+    createdFrom: "blank",
     name: "我的Hermes",
     type: "support",
     template: "通用对话模板",
@@ -1434,8 +1438,15 @@ const createBotRepository = (): BotRepository => {
 
     async createBot(input) {
       await wait(NETWORK_DELAY_MS);
+      const suffix = Math.random().toString(36).slice(2, 8);
       const bot: Bot = {
-        id: `bot_${Math.random().toString(36).slice(2, 8)}`,
+        id: `bot_${suffix}`,
+        instanceId: LOCAL_PREVIEW_BOT_ID,
+        profileId: `profile_${suffix}`,
+        isDefault: false,
+        description: input?.description,
+        createdFrom: input?.createMode ?? "blank",
+        sourceBotId: input?.sourceBotId,
         name: input?.name ?? "Hermes 新助手",
         type: "support",
         template: "通用对话模板",
@@ -1454,6 +1465,15 @@ const createBotRepository = (): BotRepository => {
       await wait(NETWORK_DELAY_MS);
       botStore.delete(botId);
       messageStore.delete(botId);
+    },
+
+    async retryBot(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) return null;
+      const updated = { ...bot, status: "active" as const };
+      botStore.set(botId, updated);
+      return updated;
     },
 
     async renameBot(botId, name) {
@@ -1651,6 +1671,12 @@ const createBotRepository = (): BotRepository => {
       }
       return { sessionId: `wxlogin_fake_${Date.now()}`, status: "starting" };
     },
+
+    async claimUniqueChannel() {},
+
+    async confirmUniqueChannel() {},
+
+    async releaseUniqueChannel() {},
 
     async getWeixinLoginSession(_botId, sessionId) {
       await wait(NETWORK_DELAY_MS);
