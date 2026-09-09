@@ -104,7 +104,7 @@ const cnDocs = [
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '功能与配置', description: '安装技能包，扩展 Hermes 能力。', hideDescription: true },
   { slug: 'configuration/personality', title: '人设', file: 'configuration/personality.md', group: '功能与配置', description: '选择并注入 Soul，定义 Hermes Agent 的角色、语气、优先级与行为边界。', hideDescription: true },
   { slug: 'configuration/memory', title: '记忆管理', file: 'configuration/memory.md', group: '功能与配置', description: '了解 Hermes 如何保存和管理长期记忆与用户画像。', hideDescription: true },
-  { slug: 'configuration/automation', title: '自动任务', file: 'configuration/automation.md', group: '功能与配置', description: '为 Hermes Agent 创建定时自动任务。', hideDescription: true },
+  { slug: 'configuration/automation', title: '定时任务', file: 'configuration/automation.md', group: '功能与配置', description: '为 Hermes Agent 创建定时自动任务。', hideDescription: true },
   { slug: 'configuration/files', title: '云存储', file: 'configuration/files.md', group: '功能与配置', description: '管理 Agent 使用的云端文件和工作资料。', hideDescription: true },
   { slug: 'configuration/agent-chat', title: '对话', file: 'configuration/agent-chat.md', group: '功能与配置', description: '通过聊天窗口与 Hermes Agent 交互。', hideDescription: true },
   { slug: 'configuration/diagnostics', title: '诊断中心', file: 'configuration/diagnostics.md', group: '功能与配置', description: '查看日志并排查 Hermes Agent 的异常情况。', hideDescription: true },
@@ -429,7 +429,7 @@ const globalDocs = [
   },
   {
     slug: 'configuration/automation',
-    title: { 'en-US': 'Automations', 'zh-CN': '自动任务' },
+    title: { 'en-US': 'Scheduled Tasks', 'zh-CN': '定时任务' },
     file: 'configuration/automation.md',
     group: { 'en-US': 'Features & Configuration', 'zh-CN': '功能与配置' },
     description: {
@@ -973,7 +973,7 @@ const ES_DOC_METADATA = {
     description: 'Aprende cómo Hermes almacena y administra recuerdos a largo plazo y perfiles de usuario entre dispositivos y canales de mensajería.',
   },
   'configuration/automation': {
-    title: 'Automatizaciones',
+    title: 'Tareas programadas',
     description: 'Crea automatizaciones programadas para tu Hermes Agent.',
   },
   'configuration/files': {
@@ -1248,7 +1248,7 @@ const ID_DOC_METADATA = {
     description: 'Lihat cara Hermes Agent menyimpan memori jangka panjang dan bagaimana kapasitasnya ditampilkan.',
   },
   'configuration/automation': {
-    title: 'Otomasi',
+    title: 'Tugas Terjadwal',
     description: 'Atur tugas otomatis agar Hermes Agent dapat menjalankan rutinitas terjadwal di cloud.',
   },
   'configuration/files': {
