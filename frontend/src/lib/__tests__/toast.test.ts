@@ -20,11 +20,11 @@ describe("toast", () => {
       return 1;
     });
 
-    toast.success("自动任务同步成功");
+    toast.success("定时任务同步成功");
 
     const container = document.getElementById("_lh-message-container");
     expect(container).not.toBeNull();
-    expect(container?.textContent).toContain("自动任务同步成功");
+    expect(container?.textContent).toContain("定时任务同步成功");
 
     const sdkMessage = document.createElement("div");
     sdkMessage.textContent = "模型切换成功";
@@ -33,7 +33,7 @@ describe("toast", () => {
     expect(container?.children).toHaveLength(2);
     expect(container?.style.flexDirection).toBe("column");
     expect(container?.style.gap).toBe("8px");
-    expect(container?.children[0]?.textContent).toContain("自动任务同步成功");
+    expect(container?.children[0]?.textContent).toContain("定时任务同步成功");
     expect(container?.children[1]?.textContent).toBe("模型切换成功");
   });
 

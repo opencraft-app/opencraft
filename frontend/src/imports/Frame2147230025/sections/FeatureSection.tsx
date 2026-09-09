@@ -300,7 +300,7 @@ function Button12() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[55.71px] w-[39.623px]" data-name="Button">
       <Text26 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("自动任务")}</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("定时任务")}</p>
     </div>
   );
 }

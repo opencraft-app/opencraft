@@ -7,6 +7,7 @@
     {"id": "cloudagent", "path": "cloudagent", "catalog": "cloudagent/catalog-info.yaml"},
     {"id": "cloudladdergateway", "path": "cloudladdergateway", "catalog": "cloudladdergateway/catalog-info.yaml"},
     {"id": "codesign", "path": "codesign", "catalog": "codesign/catalog-info.yaml"},
+    {"id": "credit", "path": "credit", "catalog": "credit/catalog-info.yaml"},
     {"id": "ctl", "path": "ctl", "catalog": "ctl/catalog-info.yaml"},
     {"id": "frontend", "path": "frontend", "catalog": "frontend/catalog-info.yaml"},
     {"id": "gateway-dashboard", "path": "gateway-dashboard", "catalog": "gateway-dashboard/catalog-info.yaml"},

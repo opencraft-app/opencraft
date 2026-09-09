@@ -2,7 +2,7 @@
 
 ## 요약
 
-**Discord 이벤트 봇은 구성된 Hermes Agent 하나를 통해 승인된 이벤트 정보를 설명하고, 반복 질문에 답하고, 신규 참가자를 안내하고, 예약된 미리 알림을 보낼 수 있을 때 더 유용해집니다.** LightVela에서는 Discord를 연결하고 에이전트에 이벤트 브리프와 안전 경계를 제공하고, 실제 참가자 질문으로 테스트한 뒤 미리 알림 또는 요약에 범위가 좁은 자동 작업을 추가하는 방식으로 구현합니다.
+**Discord 이벤트 봇은 구성된 Hermes Agent 하나를 통해 승인된 이벤트 정보를 설명하고, 반복 질문에 답하고, 신규 참가자를 안내하고, 예약된 미리 알림을 보낼 수 있을 때 더 유용해집니다.** LightVela에서는 Discord를 연결하고 에이전트에 이벤트 브리프와 안전 경계를 제공하고, 실제 참가자 질문으로 테스트한 뒤 미리 알림 또는 요약에 범위가 좁은 예약 작업을 추가하는 방식으로 구현합니다.
 
 이 방식은 반복 토너먼트, 레이드, 스터디 그룹, 커뮤니티 출시처럼 같은 정보를 여러 대화에서 반복해야 하는 이벤트에 가장 적합합니다.
 
@@ -25,7 +25,7 @@
 
 - 일정 업데이트를 담당하고 공지를 승인하는 모더레이터 또는 주최자.
 
-- [Discord 채널 설정 가이드](../configuration/channel-discord.md)와 [자동 작업 가이드](../configuration/automation.md).
+- [Discord 채널 설정 가이드](../configuration/channel-discord.md)와 [예약 작업 가이드](../configuration/automation.md).
 
 ## 단계
 
@@ -117,12 +117,12 @@ The schedule changed. Can you announce the new time?
 
 ### 5. 예약된 미리 알림 및 요약 추가
 
-예측 가능한 주기로 진행되는 이벤트에는 자동 작업을 사용합니다.
+예측 가능한 주기로 진행되는 이벤트에는 예약 작업을 사용합니다.
 LightVela는 일회성 실행, 고정 요일, 고정 간격과 선택적인 유효 기간 및 알림 채널을 지원합니다.
 고정 요일, 고정 간격 또는 일회성 실행을 선택할 수 있습니다.
-나중에 자동 작업을 일시 중지, 편집 또는 삭제할 수도 있습니다.
+나중에 예약 작업을 일시 중지, 편집 또는 삭제할 수도 있습니다.
 
-![Discord 이벤트용 자동 작업 구성](../images/automation-2-global-en.webp)
+![Discord 이벤트용 예약 작업 구성](../images/automation-2-global-en.webp)
 
 ```text
 One day before the tournament, remind the event channel about the start time, time zone, registration deadline, and rules channel.
@@ -130,7 +130,7 @@ Use only the approved event brief.
 If the brief is missing a detail, tell the organizer which detail needs review.
 ```
 
-이 예시에서 봇은 "Game tournament reminder" 자동 작업을 실행합니다.
+이 예시에서 봇은 "Game tournament reminder" 예약 작업을 실행합니다.
 
 ![토너먼트 미리 알림을 보내는 Discord 봇](../images/discord-event-reminder.webp)
 
@@ -142,7 +142,7 @@ Do not infer winners, penalties, or policy decisions from incomplete information
 ```
 
 일련의 미리 알림을 추가하기 전에 첫 예약 출력부터 검토하세요.
-[자동 작업 설정 가이드](../configuration/automation.md)는 일정, 작업 지침, 유효 기간, 알림 설정 위치를 설명합니다.
+[예약 작업 설정 가이드](../configuration/automation.md)는 일정, 작업 지침, 유효 기간, 알림 설정 위치를 설명합니다.
 
 ## 실무 체크리스트
 
@@ -151,8 +151,8 @@ Do not infer winners, penalties, or policy decisions from incomplete information
 | 출시 전 | 검토된 일정, 시간대, 규칙, 링크, 지원 요청 경로 추가 | 에이전트 컨텍스트 | 참가자에게 동일한 승인 답변을 제공할 수 있음 |
 | 연결 | Bot을 초대하고 원하는 대화에서 테스트 | Discord 채널 | Bot이 답하고 필요한 최소 권한만 보유함 |
 | 참가자 지원 | 일정, 등록, 준비 사항 질문 | Hermes Agent | 답변이 간결하고 구체적이며 브리프에 근거함 |
-| 미리 알림 | 이벤트 전 메시지 하나 예약 | 자동 작업 | 예상 시각에 선택한 채널로 메시지가 도착함 |
-| 이벤트 후 | 주최자용 요약 생성 | 자동 작업 또는 Chat | 알려진 결과, 미해결 질문, 사람의 후속 조치를 구분함 |
+| 미리 알림 | 이벤트 전 메시지 하나 예약 | 예약 작업 | 예상 시각에 선택한 채널로 메시지가 도착함 |
+| 이벤트 후 | 주최자용 요약 생성 | 예약 작업 또는 Chat | 알려진 결과, 미해결 질문, 사람의 후속 조치를 구분함 |
 
 ## 검증 및 경계
 
@@ -180,10 +180,10 @@ Do not infer winners, penalties, or policy decisions from incomplete information
 이벤트 브리프에 기준 시간대가 있고 참가자가 대상 시간대를 제공하면 게시된 이벤트 시간을 설명할 수 있습니다.
 참가자가 결과를 확인할 수 있도록 원래 시각과 변환된 시각을 모두 포함하도록 요청하세요.
 
-### 자동 작업이 Discord 이벤트 미리 알림을 보낼 수 있나요?
+### 예약 작업이 Discord 이벤트 미리 알림을 보낼 수 있나요?
 
 네. Discord 채널 문서는 채널 계층에서 능동적 메시지를 지원한다고 설명합니다.
-미리 알림 텍스트, 일정, 유효 기간, 알림 채널을 포함한 자동 작업을 만들고 중요한 마감에 의존하기 전에 첫 전송을 테스트하세요.
+미리 알림 텍스트, 일정, 유효 기간, 알림 채널을 포함한 예약 작업을 만들고 중요한 마감에 의존하기 전에 첫 전송을 테스트하세요.
 
 ### 에이전트가 이벤트 일정을 직접 업데이트할 수 있나요?
 
@@ -199,7 +199,7 @@ Do not infer winners, penalties, or policy decisions from incomplete information
 
 ## 결론
 
-에이전트에 검토된 이벤트 브리프를 제공하고, Discord에 연결하고, 실제 참가자 질문으로 테스트하고, 미리 알림 또는 요약용 범위가 좁은 자동 작업 하나를 추가하세요.
+에이전트에 검토된 이벤트 브리프를 제공하고, Discord에 연결하고, 실제 참가자 질문으로 테스트하고, 미리 알림 또는 요약용 범위가 좁은 예약 작업 하나를 추가하세요.
 이 순서를 따르면 이벤트 권한, 정책 변경, 민감한 결정은 사람 주최자에게 남겨 두면서 이벤트 봇에 유용한 AI 에이전트 행동을 추가할 수 있습니다.
 
 더 폭넓은 커뮤니티 활용 방식은 [Discord용 LightVela: 채널을 지원하는 AI 에이전트 Discord 봇](./discord-community-agent.md)을 참고하세요.

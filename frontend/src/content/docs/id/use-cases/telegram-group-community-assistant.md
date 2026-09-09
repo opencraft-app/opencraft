@@ -58,10 +58,10 @@ Gunakan prompt grup yang jelas agar anggota mengetahui kapan mereka meminta Agen
 |---|---|---|
 | FAQ | `@username_bot jawab hanya dari FAQ yang sudah disiapkan` | Jawaban memakai materi yang disiapkan atau meminta pengalihan ke manusia |
 | Ringkasan diskusi | `@username_bot rangkum keputusan, tindakan, penanggung jawab, dan pertanyaan terbuka` | Balasan memisahkan keputusan yang telah dikonfirmasi dari hal yang belum selesai |
-| Draf pengingat | `@username_bot buat draf pengingat berisi waktu, audiens, tujuan, dan cara membatalkan` | Tinjau draf sebelum memakai otomasi untuk mengirimnya |
+| Draf pengingat | `@username_bot buat draf pengingat berisi waktu, audiens, tujuan, dan cara membatalkan` | Tinjau draf sebelum memakai tugas terjadwal untuk mengirimnya |
 
 Untuk pengambilan referensi, ringkasan, atau konten terjadwal, pilih Skill tepercaya dan tinjau izinnya di [Konfigurasi Skill](../configuration/skill.md).
-Validasi otomasi secara terpisah di kanal tujuan yang didukung sebelum mengandalkannya untuk pesan terjadwal.
+Validasi tugas terjadwal secara terpisah di kanal tujuan yang didukung sebelum mengandalkannya untuk pesan terjadwal.
 
 ## Batas keamanan dan operasional
 

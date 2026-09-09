@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Check,
   CheckCircle2,
   ChevronDown,
   CircleHelp,
@@ -417,7 +416,7 @@ export function AgentModelConfigPanel({
   const pageHeader = (
     <AgentSectionHeader
       title={resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
-      description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")}
+      description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型")}
     />
   );
 
@@ -753,10 +752,9 @@ export function AgentModelConfigPanel({
                                     size="sm"
                                     variant="outline"
                                     className="rounded-md text-xs font-normal"
-                                    disabled={busy || model.requiresSetup === true || primary}
-                                    onClick={() => void controller.assign(model, "primary")}
-                                  >
-                                    <Check className="size-3.5" aria-hidden="true" />
+                                  disabled={busy || model.requiresSetup === true || primary}
+                                  onClick={() => void controller.assign(model, "primary")}
+                                >
                                     {t("设为主模型")}
                                   </Button>
                                 </ModelActionTooltip>

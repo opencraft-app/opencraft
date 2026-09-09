@@ -2,7 +2,7 @@
 
 ## Summary
 
-**A Hermes Agent stays available around the clock because it runs on a cloud instance rather than your local machine. Once a model and at least one channel are configured, it uses the same memory and behaviour no matter which entry point you message from.** Three things must be in place for genuine long-term availability: a configured model with usable account quota (exhausted trial credits cause silent non-replies), at least one channel showing as connected, and automations to cover scheduled work while you are away. Do not judge availability from the console status alone — send a real message through an actual channel. When something breaks, view and export recent logs in Diagnostics (selectable 1, 3, 6, 12, or 24-hour ranges) to locate the cause.
+**A Hermes Agent stays available around the clock because it runs on a cloud instance rather than your local machine. Once a model and at least one channel are configured, it uses the same memory and behaviour no matter which entry point you message from.** Three things must be in place for genuine long-term availability: a configured model with usable account quota (exhausted trial credits cause silent non-replies), at least one channel showing as connected, and scheduled tasks to cover scheduled work while you are away. Do not judge availability from the console status alone — send a real message through an actual channel. When something breaks, view and export recent logs in Diagnostics (selectable 1, 3, 6, 12, or 24-hour ranges) to locate the cause.
 
 ![A Hermes Agent online in the LightVela console](../images/use-case-hermes-online.webp)
 
@@ -53,16 +53,16 @@ This lets a message sent from a different device or supported channel continue t
 
 ### 4. Add a scheduled task when availability should lead to action
 
-An online Hermes can wait for your messages, but a small automation lets it begin a known routine at the right time. Start with one task that has a clear success condition:
+An online Hermes can wait for your messages, but a small scheduled task lets it begin a known routine at the right time. Start with one task that has a clear success condition:
 
 ```text
 Every weekday at 8:30 AM, prepare a short briefing with today’s
 calendar priorities, open follow-ups, and the first action to take.
 ```
 
-Create the schedule in [Automations](../configuration/automation.md), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another automation immediately.
+Create the schedule in [Scheduled Tasks](../configuration/automation.md), select a notification channel if appropriate, and check the first few runs. If the result is too broad, make the instruction more specific rather than adding another scheduled task immediately.
 
-![Recent automation runs from a Hermes Agent](../images/use-case-hermes-online-automation.png)
+![Recent scheduled task runs from a Hermes Agent](../images/use-case-hermes-online-automation.png)
 
 ## FAQ
 
@@ -80,11 +80,11 @@ Yes. Supported channels can point to the same Hermes Agent. They share the same 
 
 ### Is a 24/7 Agent safe to automate?
 
-Use only well-scoped instructions and trusted skills. Begin with read-only or low-risk routines, review the output, and avoid giving an automation authority to perform actions you would not want repeated automatically.
+Use only well-scoped instructions and trusted skills. Begin with read-only or low-risk routines, review the output, and avoid giving a scheduled task authority to perform actions you would not want repeated automatically.
 
 ## Next steps
 
-- [Automations](../configuration/automation.md) — schedule the work that should happen without a manual prompt.
+- [Scheduled Tasks](../configuration/automation.md) — schedule the work that should happen without a manual prompt.
 
 - [Memory Management](../configuration/memory.md) — keep useful preferences available across conversations.
 

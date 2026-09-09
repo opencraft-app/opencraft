@@ -54,7 +54,7 @@ Una vez que la instancia esté lista, abra el consuelo y complete la configuraci
 
 2. **Conecte un canal** — Añada Telegram, WhatsApp, Discord, Slack, WeChat o otro canal compatible, luego hable con su Agent desde la aplicación de mensajería
 
-3. **Opcionalmente añada Skills y automatizaciones** — Extienda lo que puede hacer su Agent; consulte [Configurar Automatizaciones](./configuration/automation.md)
+3. **Opcionalmente añada Skills y tareas programadas** — Extienda lo que puede hacer su Agent; consulte [Configurar Tareas programadas](./configuration/automation.md)
 
 Su primer Agent de Hermes ya está listo para permanecer en línea en la nube las 24 horas del día, los 7 días de la semana.
 

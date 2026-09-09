@@ -45,9 +45,9 @@ You might use Hermes to:
 - Track information over time.
 - Answer questions from Telegram, WhatsApp, Discord, Slack, or WeChat.
 - Use Skills to extend what it can do.
-- Run [automations](https://lightvela.ai/docs/configuration/automation) on a schedule.
+- Run [scheduled tasks](https://lightvela.ai/docs/configuration/automation) on a schedule.
 
-The automation page is especially relevant here. The point is not only to ask Hermes for a report today. It is to have the Agent continue handling the same class of work tomorrow.
+The scheduled task page is especially relevant here. The point is not only to ask Hermes for a report today. It is to have the Agent continue handling the same class of work tomorrow.
 
 That is a different kind of usefulness from Genspark’s “one prompt, finished work” model.
 
@@ -94,7 +94,7 @@ Choose LightVela if you:
 - **Want a dedicated host:** You want to host a personal Hermes Agent.
 - **Want continuity:** You want the Agent to stay available 24/7.
 - **Prefer messaging:** You want to reach your Agent through everyday channels.
-- **Want direct control:** You want to manage its model, persona, Skills, and automations.
+- **Want direct control:** You want to manage its model, persona, Skills, and scheduled tasks.
 - **Want a long-term relationship:** You care about building habits around one consistent Agent.
 
 Choose Genspark if you:

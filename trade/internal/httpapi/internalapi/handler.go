@@ -46,6 +46,8 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditorder"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditusage"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
@@ -63,6 +65,17 @@ type Deps struct {
 
 	// PlaceOrder 提供下单 / pay-url 业务能力。
 	PlaceOrder *placeorder.Service
+
+	// CreditOrder 提供积分包询价 / 下单能力。
+	CreditOrder *creditorder.Service
+
+	// CreditUsage 接收 credit worker 的日用量并同步推送计费。
+	CreditUsage interface {
+		Report(context.Context, creditusage.ReportRequest) (json.RawMessage, error)
+	}
+
+	// CreditDefinitionStore 提供积分包退款出向 jifei 所需的 product metadata。
+	CreditDefinitionStore store.CreditDefinitionStore
 
 	// FlowStore 提供 trade_flow 写端能力（Sub-4 ctl→trade callback 用）。
 	//
@@ -121,6 +134,9 @@ type Deps struct {
 	// DeleteResource handler 装配期一同透传给 region.Resolve。
 	RegionOverride string
 
+	// CreditRegionOverride 仅用于积分包退款出向地域；空值由 config.Load 回退到 RegionOverride。
+	CreditRegionOverride string
+
 	// DianshiAdminStore 提供点石订单和活动参与记录的后台管理能力。
 	//
 	// 用途：GET/DELETE /internal/trade/dianshi/*，供 ctl admin 后台查询/删除点石下单记录，
@@ -156,6 +172,15 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders/modify", placeModifyOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/modify/place-and-pay", placeModifyOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/:dealName/pay-url", payURLHandler(deps.PlaceOrder))
+	group.POST("/modify-checkout", modifyCheckoutHandler(deps.PlaceOrder))
+	if deps.CreditOrder != nil {
+		group.POST("/credit/inquiry", creditInquiryHandler(deps.CreditOrder))
+		group.POST("/credit/orders", creditPlaceOrderHandler(deps.CreditOrder))
+		group.POST("/credit/orders/pay", creditPlaceOrderAndPayHandler(deps.CreditOrder))
+	}
+	if deps.CreditUsage != nil {
+		group.POST("/credit/resources/usage/report", creditUsageReportHandler(deps.CreditUsage))
+	}
 	if deps.ProvisionedOrderStore != nil {
 		group.GET("/orders/by-resource/:resourceID", provisionedCreateOrderHandler(deps.ProvisionedOrderStore))
 	}
@@ -184,6 +209,11 @@ func Install(router *gin.Engine, deps Deps) {
 		// Q8b=b 拍板：无状态翻译层，不写 trade_flow，jifei OnlineRefund 同步翻译给 ctl。
 		group.POST("/resources/:resourceID/refund",
 			refundResourceHandler(deps.JifeiClient, deps.BundleStore, lhRegion))
+		if deps.CreditDefinitionStore != nil {
+			creditRegion := region.Resolve(deps.SiteKind, deps.CreditRegionOverride)
+			group.POST("/credit/resources/:resourceID/refund",
+				creditRefundResourceHandler(deps.JifeiClient, deps.CreditDefinitionStore, creditRegion))
+		}
 	}
 
 	// v1.7.32 ctl→trade 订单状态反查（设计稿 .tmp/ctl-order-status-query-design.md §5.4）：
@@ -197,6 +227,24 @@ func Install(router *gin.Engine, deps Deps) {
 		group.GET("/dianshi/orders", listDianshiRecordsHandler(deps.DianshiAdminStore))
 		group.DELETE("/dianshi/orders/:dealName", deleteDianshiOrderHandler(deps.DianshiAdminStore))
 		group.DELETE("/dianshi/participations/:id", deleteDianshiParticipationHandler(deps.DianshiAdminStore))
+	}
+}
+
+func creditUsageReportHandler(reporter interface {
+	Report(context.Context, creditusage.ReportRequest) (json.RawMessage, error)
+}) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req creditusage.ReportRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": err.Error()})
+			return
+		}
+		response, err := reporter.Report(c.Request.Context(), req)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"code": "ReportCreditUsageFailed", "message": err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "application/json", response)
 	}
 }
 
@@ -626,6 +674,192 @@ func grantDianshiSubscriptionHandler(svc *placeorder.Service) gin.HandlerFunc {
 }
 
 // ============================================================================
+// credit order
+// ============================================================================
+
+type creditOrderRequest struct {
+	ExternalUserID      string `json:"externalUserId"`
+	ExternalUserIDSnake string `json:"external_user_id"`
+	Uin                 string `json:"uin"`
+	AppID               string `json:"appId"`
+	AppIDSnake          string `json:"app_id"`
+	ProductID           string `json:"productId"`
+	ProductIDSnake      string `json:"product_id"`
+	TimeSpan            int    `json:"timeSpan"`
+	TimeSpanSnake       int    `json:"time_span"`
+	TimeUnit            string `json:"timeUnit"`
+	TimeUnitSnake       string `json:"time_unit"`
+	GoodsNum            int    `json:"goodsNum"`
+	PayMode             int    `json:"payMode"`
+}
+
+func (r creditOrderRequest) toServiceRequest() creditorder.Request {
+	externalUserID := r.ExternalUserID
+	if externalUserID == "" {
+		externalUserID = r.ExternalUserIDSnake
+	}
+	appID := r.AppID
+	if appID == "" {
+		appID = r.AppIDSnake
+	}
+	productID := r.ProductID
+	if productID == "" {
+		productID = r.ProductIDSnake
+	}
+	timeSpan := r.TimeSpan
+	if timeSpan == 0 {
+		timeSpan = r.TimeSpanSnake
+	}
+	timeUnit := r.TimeUnit
+	if timeUnit == "" {
+		timeUnit = r.TimeUnitSnake
+	}
+	return creditorder.Request{
+		ExternalUserID: externalUserID,
+		Uin:            r.Uin,
+		AppID:          appID,
+		ProductID:      productID,
+		TimeSpan:       timeSpan,
+		TimeUnit:       timeUnit,
+		GoodsNum:       r.GoodsNum,
+		PayMode:        r.PayMode,
+	}
+}
+
+func creditInquiryHandler(svc *creditorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req creditOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		res, err := svc.Quote(c.Request.Context(), req.toServiceRequest())
+		if err != nil {
+			code, status := classifyCreditOrderError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, res)
+	}
+}
+
+func creditPlaceOrderHandler(svc *creditorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req creditOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		res, err := svc.PlaceOrder(c.Request.Context(), req.toServiceRequest())
+		if err != nil {
+			code, status := classifyCreditOrderError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"dealName": res.DealName, "bigOrderId": res.BigOrderID})
+	}
+}
+
+func creditPlaceOrderAndPayHandler(svc *creditorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req creditOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		res, err := svc.PlaceOrderAndPay(c.Request.Context(), req.toServiceRequest())
+		if err != nil {
+			code, status := classifyCreditOrderError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"dealName": res.DealName, "bigOrderId": res.BigOrderID})
+	}
+}
+
+func classifyCreditOrderError(err error) (string, int) {
+	switch {
+	case errors.Is(err, creditorder.ErrInvalidInput):
+		return "InvalidRequest", http.StatusBadRequest
+	case errors.Is(err, creditorder.ErrProductNotFound):
+		return "ProductNotFound", http.StatusNotFound
+	case errors.Is(err, creditorder.ErrBindingNotFound):
+		return "BindingNotFound", http.StatusUnprocessableEntity
+	case errors.Is(err, creditorder.ErrDealNameDuplicate):
+		return "DealNameConflict", http.StatusConflict
+	case errors.Is(err, creditorder.ErrJifeiResponseInvalid):
+		return "UpstreamInvalidResponse", http.StatusBadGateway
+	default:
+		return "UpstreamError", http.StatusBadGateway
+	}
+}
+
+type creditRefundResourceRequest struct {
+	OwnerUin  string `json:"ownerUin"`
+	UIN       string `json:"uin"`
+	AppID     int64  `json:"appId"`
+	ProductID string `json:"productId"`
+}
+
+func creditRefundResourceHandler(
+	jifeiClient jifeiclient.Client,
+	defStore store.CreditDefinitionStore,
+	lighthouseRegion region.LighthouseRegion,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resourceID := strings.TrimSpace(c.Param("resourceID"))
+		if resourceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "resourceID path param is required"})
+			return
+		}
+		var req creditRefundResourceRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "decode JSON: " + err.Error()})
+			return
+		}
+		if strings.TrimSpace(req.OwnerUin) == "" || strings.TrimSpace(req.UIN) == "" || req.AppID <= 0 || strings.TrimSpace(req.ProductID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "InvalidRequest", "message": "ownerUin, uin, appId and productId are required"})
+			return
+		}
+		def, err := defStore.GetCreditDefinitionByProductID(c.Request.Context(), strings.TrimSpace(req.ProductID))
+		if err != nil {
+			if errors.Is(err, store.ErrCreditDefinitionNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"code": "CreditDefinitionNotFound", "message": "credit definition not found: " + req.ProductID})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"code": "InternalError", "message": "lookup credit definition: " + err.Error()})
+			return
+		}
+		resp, err := jifeiClient.OnlineRefund(c.Request.Context(), &jifeiclient.OnlineRefundRequest{
+			OwnerUin:    req.OwnerUin,
+			UIN:         req.UIN,
+			AppID:       req.AppID,
+			FromConsole: jifeiclient.FromConsoleYes,
+			GoodsInfo: map[string]jifeiclient.OnlineRefundGoodsEntry{
+				def.SubProductCode: {
+					PayMode:        jifeiclient.PayModePrepaid,
+					RegionID:       lighthouseRegion.RegionID,
+					ResourceIDList: []string{resourceID},
+				},
+			},
+		})
+		if err != nil {
+			code, status := classifyRefundResourceError(err)
+			c.JSON(status, gin.H{"code": code, "message": err.Error()})
+			return
+		}
+		if len(resp.DealNames) == 0 || len(resp.BigDealIDs) == 0 {
+			c.JSON(http.StatusBadGateway, gin.H{
+				"code":    "UpstreamInvalidResponse",
+				"message": fmt.Sprintf("jifei returnCode=0 but dealNames/bigDealIds is empty: dealNames=%v bigDealIds=%v", resp.DealNames, resp.BigDealIDs),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, refundResourceResponse{DealName: resp.DealNames[0], BigDealID: resp.BigDealIDs[0]})
+	}
+}
+
+// ============================================================================
 // place order and pay (8B-1.5)
 // ============================================================================
 
@@ -918,22 +1152,32 @@ func payURLHandler(svc *placeorder.Service) gin.HandlerFunc {
 		// v1.7.31 接口拆分：解析可选 body（body 为空 / nil 时兼容现有行为）
 		var opts *placeorder.GeneratePayURLOptions
 		var body struct {
-			Platform  string `json:"platform"`
-			WxOpenID  string `json:"wx_open_id"`
-			WxAppID   string `json:"wx_app_id"`
-			CancelURL string `json:"cancel_url"`
-			ReturnURL string `json:"return_url"`
+			AuthorizationOnly bool     `json:"authorization_only"`
+			ExternalUserID    string   `json:"external_user_id"`
+			ResourceID        string   `json:"resource_id"`
+			OrderType         string   `json:"order_type"`
+			AllowedBundleIDs  []string `json:"allowed_bundle_ids"`
+			Platform          string   `json:"platform"`
+			WxOpenID          string   `json:"wx_open_id"`
+			WxAppID           string   `json:"wx_app_id"`
+			CancelURL         string   `json:"cancel_url"`
+			ReturnURL         string   `json:"return_url"`
 		}
 		// 尝试解析 body；忽略 EOF / 空 body 错误（兼容无 body 调用）
 		if err := c.ShouldBindJSON(&body); err == nil {
 			if body.Platform != "" || body.WxOpenID != "" || body.WxAppID != "" ||
-				body.CancelURL != "" || body.ReturnURL != "" {
+				body.CancelURL != "" || body.ReturnURL != "" || body.OrderType != "" {
 				opts = &placeorder.GeneratePayURLOptions{
-					Platform:  body.Platform,
-					WxOpenID:  body.WxOpenID,
-					WxAppID:   body.WxAppID,
-					CancelURL: body.CancelURL,
-					ReturnURL: body.ReturnURL,
+					AuthorizationOnly: body.AuthorizationOnly,
+					ExternalUserID:    body.ExternalUserID,
+					ResourceID:        body.ResourceID,
+					OrderType:         body.OrderType,
+					AllowedBundleIDs:  body.AllowedBundleIDs,
+					Platform:          body.Platform,
+					WxOpenID:          body.WxOpenID,
+					WxAppID:           body.WxAppID,
+					CancelURL:         body.CancelURL,
+					ReturnURL:         body.ReturnURL,
 				}
 			}
 		}
@@ -961,6 +1205,10 @@ func payURLHandler(svc *placeorder.Service) gin.HandlerFunc {
 
 func classifyPayURLError(err error) (string, int) {
 	switch {
+	case errors.Is(err, placeorder.ErrModifyOrderNotPayable):
+		return "OrderNotPayable", http.StatusConflict
+	case errors.Is(err, placeorder.ErrModifyCheckoutNotFound):
+		return "OrderNotFound", http.StatusNotFound
 	case errors.Is(err, placeorder.ErrInvalidInput):
 		return "InvalidRequest", http.StatusBadRequest
 	case errors.Is(err, placeorder.ErrPayURLUnavailable):

@@ -9,6 +9,7 @@
 #   - TRADE_TENCENT_BILLING_SIGNATURE_KEY
 #   - JIFEI_BILLING_APP_ID
 #   - JIFEI_BILLING_APP_SECRET
+#   - TRADE_CLOUDLADDER_HMAC_SECRET
 #
 # 注意：
 #   - LIGHTCLAW_INTERNAL_SERVICE_TOKEN 需要与 ctl 内部 token 对齐。
@@ -22,6 +23,13 @@ defaults:
 items:
   - id: trade-runtime-secrets
     secret_name: mono-shprod-trade-runtime-secrets
+    required_keys:
+      - TRADE_DB_PASSWORD
+      - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+      - TRADE_TENCENT_BILLING_SIGNATURE_KEY
+      - JIFEI_BILLING_APP_ID
+      - JIFEI_BILLING_APP_SECRET
+      - TRADE_CLOUDLADDER_HMAC_SECRET
     namespace: trade
     kubernetes_resource_name: trade-runtime-secrets
     kubernetes_resource_kind: Secret

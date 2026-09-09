@@ -65,6 +65,15 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_PAYMENT_HMAC_SECRET
               name: cloudladdergateway-runtime-secrets
+        - name: CLOUDLADDER_TRADE_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: CLOUDLADDER_PAYMENT_HMAC_SECRET
+              name: cloudladdergateway-runtime-secrets
+        # Enable strict caller authentication only on the Guangzhou production
+        # ingress. Staging and testing migrate independently.
+        - name: CLOUDLADDERGATEWAY_AUTH_MODE
+          value: required
         - name: CLOUDLADDER_SHADOW_HMAC_SECRET
           valueFrom:
             secretKeyRef:
@@ -97,6 +106,29 @@ spec:
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_CD_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_NJ_BASE_URL
+          value: https://lightclaw.tech
+        # Credit 资源包回调与 Pass 隔离；北京验证完成前所有地域统一回北京预发布。
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_BJ_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_SH_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_GZ_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_CD_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_NJ_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_HK_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_JP_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_KR_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_JKT_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_SG_BASE_URL
+          value: https://lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_TH_BASE_URL
           value: https://lightclaw.tech
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always

@@ -78,6 +78,19 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
             'export TRADE_MYSQL_DSN="${TRADE_DB_USER}:${TRADE_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${TRADE_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/trade-migrate',
         ],
     },
+    ("credit", "migration"): {
+        "namespace": "credit",
+        "deployment": "credit",
+        "configmap": "credit-config",
+        "secret": "credit-runtime-secrets",
+        "platform_env_file": "argocd/services/credit/{env}/credit-platform.env",
+        "image_env_key": "CREDIT_IMAGE",
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export CREDIT_MYSQL_DSN="${CREDIT_DB_USER}:${CREDIT_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${CREDIT_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/credit-migrate',
+        ],
+    },
     ("lightclaw-auth", "migration"): {
         "namespace": "user-auth",
         "deployment": "lightclaw-auth",

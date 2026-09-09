@@ -103,12 +103,29 @@ routes:
         path: /v1/passes/order-url
       - method: POST
         path: /v1/passes/{pass_id}/renew/order-url
+      - method: POST
+        path: /v1/passes/{pass_id}/modify/order-url
   - name: ctl-orders
     prefix: /v1/orders
     methods: [GET, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     auth_strategy: session
+  - name: credit
+    prefix: /v1/credit
+    methods: [GET, POST, OPTIONS]
+    upstream: http://credit.credit.svc.cluster.local
+    access: authenticated
+    require_realname: true
+    auth_strategy: session
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/credit/products" }
+      - { method: POST, path: "/v1/credit/inquiry" }
+      - { method: POST, path: "/v1/credit/packages/order" }
+      - { method: POST, path: "/v1/credit/packages/order-and-pay" }
+      - { method: GET, path: "/v1/credit/packages" }
+      - { method: POST, path: "/v1/credit/packages/{package_id}/refund" }
   - name: subscriptions
     prefix: /subscriptions
     methods: [GET, POST, OPTIONS]

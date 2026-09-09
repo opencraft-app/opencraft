@@ -12,15 +12,19 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/cloudbillingclient"
 	"git.woa.com/wisp/mono/trade/internal/config"
+	"git.woa.com/wisp/mono/trade/internal/creditclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/httpapi"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/activity"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditorder"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditusage"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/region"
+	"git.woa.com/wisp/mono/trade/internal/resourcebillingclient"
 	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
 	"git.woa.com/wisp/mono/trade/internal/worker"
@@ -43,6 +47,10 @@ func main() {
 	//   - createResource 阶段（迭代 6）：CompletePass
 	//   - 询价 / 下单（迭代 8A）：GetBundleByID（确认 bundle 存在 + 在售）
 	ctlClient := ctlclient.New(cfg.CtlInternalBaseURL, cfg.InternalServiceToken)
+	var creditClient creditclient.Client
+	if cfg.CreditInternalBaseURL != "" {
+		creditClient = creditclient.New(cfg.CreditInternalBaseURL, cfg.InternalServiceToken)
+	}
 
 	// account binding 反向调用客户端（迭代 8B-1）：
 	//   - 询价 (inquiry.Service.Quote) / 下单 (placeorder.Service.PlaceOrder) 在调用方
@@ -77,9 +85,10 @@ func main() {
 		cfg.JifeiCGWGatewayURL,
 		cfg.JifeiCGWXQCloudUserID,
 		jifeiclient.Options{
-			BillingAPIGWBaseURL: cfg.JifeiBillingAPIGWURL,
-			BillingAppID:        cfg.JifeiBillingAppID,
-			BillingAppSecret:    cfg.JifeiBillingAppSecret,
+			BillingAPIGWBaseURL:   cfg.JifeiBillingAPIGWURL,
+			BillingAppID:          cfg.JifeiBillingAppID,
+			BillingAppSecret:      cfg.JifeiBillingAppSecret,
+			CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
 			// v1.7.x 国际站接入 A3：出向 envelope.interface.extraPara 按 site 注入
 			// site / language（intl → site="2" language="en"；cn / 空 / 非法 → 不注入）。
 			SiteKind: cfg.SiteKind,
@@ -95,7 +104,7 @@ func main() {
 			CloudLadder: cloudbillingclient.CloudLadderConfig{
 				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
 				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
-				Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
+				Secret:         cfg.CloudLadderHMACSecret,
 			},
 		})
 		if billingErr != nil {
@@ -121,7 +130,10 @@ func main() {
 		dianshiClient = dianshiclient.New(
 			cfg.DianshiPriceBaseURL,
 			cfg.DianshiOrderBaseURL,
-			dianshiclient.Options{Preview: cfg.DianshiPreview},
+			dianshiclient.Options{
+				Preview:               cfg.DianshiPreview,
+				CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
+			},
 		)
 		activityResolver = activity.NewResolver(mysqlStore)
 		log.Printf("[dianshi] activated: priceBaseURL=%s orderBaseURL=%s",
@@ -171,6 +183,28 @@ func main() {
 		DianshiClient:    dianshiClient,
 		ModifyFlowReader: mysqlStore,
 	})
+	creditOrderSvc := creditorder.New(creditorder.Deps{
+		CreditDefinitionStore: mysqlStore,
+		JifeiClient:           jifeiClient,
+		OrderWriter:           mysqlStore,
+		ShadowClient:          shadowClient,
+		SiteKind:              cfg.SiteKind,
+		RegionOverride:        cfg.CreditRegionOverride,
+	})
+	var creditUsageSvc *creditusage.Service
+	if cfg.CreditSendResourceURL != "" {
+		creditUsageSvc = creditusage.New(creditusage.Deps{
+			DefinitionStore: mysqlStore,
+			BillingClient: resourcebillingclient.New(
+				cfg.CreditSendResourceURL,
+				cfg.CreditSendResourceHost,
+				nil,
+			),
+			CID:            cfg.CreditSendResourceCID,
+			SiteKind:       cfg.SiteKind,
+			RegionOverride: cfg.CreditRegionOverride,
+		})
+	}
 
 	// v1.7.32：订单状态反查业务 service（设计稿 .tmp/ctl-order-status-query-design.md §5.2）。
 	orderStatusSvc := orderstatus.New(orderstatus.Deps{
@@ -211,20 +245,25 @@ func main() {
 		// 点石后台管理查询/删除入口：用于 admin 侧清理订单/参与记录后重试下单。
 		DianshiAdminStore: mysqlStore,
 		// 迭代 8A 起：内部 RPC 业务 service。
-		InquiryService:    inquirySvc,
-		PlaceOrderService: placeOrderSvc,
+		InquiryService:        inquirySvc,
+		PlaceOrderService:     placeOrderSvc,
+		CreditOrderService:    creditOrderSvc,
+		CreditUsageService:    creditUsageSvc,
+		CreditDefinitionStore: mysqlStore,
 		// D-2 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q26）：
 		// internalapi.deleteResourceHandler 调 JifeiClient.ModifyResourceStatus(PRE_DESTROY)。
 		JifeiClient: jifeiClient,
 		// v1.7.32 订单状态反查业务 service。
 		OrderStatusService: orderStatusSvc,
+		CreditClient:       creditClient,
 		// v1.7.x 国际站接入 A6.1 + A6.2 + A6.3：由 server.NewRouter 内部贯穿到
 		// internalapi.Deps.SiteKind / destroyresource.Deps.SiteKind / isolateresource.Deps.SiteKind /
 		// queryflow.Deps.SiteKind / resourcequery.Deps.SiteKind 五个下游注入点。
 		SiteKind: cfg.SiteKind,
 		// 北京 2 预发布接入 2026-06-12：region 字段 override，与 SiteKind 同路径贯穿到
 		// 上述 5 个下游注入点。
-		RegionOverride: cfg.RegionOverride,
+		RegionOverride:       cfg.RegionOverride,
+		CreditRegionOverride: cfg.CreditRegionOverride,
 	})
 
 	server := &http.Server{
@@ -258,13 +297,13 @@ func main() {
 		}
 	}()
 
-	// v1.7.x 国际站接入：启动日志加 site/region 一行，便于排障时一眼看出当前 Pod
-	// 跳到哪个站点 / 哪个地域（cn=广州 1/100001 / intl=Singapore 9/900001）。
-	// 北京 2 预发布接入 2026-06-12：region 字段受 LIGHTVELA_TRADE_REGION env override（例：
-	// SiteKind=cn + RegionOverride=ap-beijing → 8/800001/北京）。
-	lhRegion := region.Resolve(cfg.SiteKind, cfg.RegionOverride)
-	log.Printf("trade listening on %s (siteKind=%q regionOverride=%q regionId=%d zoneId=%d regionName=%s)",
-		cfg.Addr, cfg.SiteKind, cfg.RegionOverride, lhRegion.RegionID, lhRegion.ZoneID, lhRegion.RegionName)
+	// 启动日志同时输出 Pass/default 与 Credit 的计费地域，便于核对独立地域配置。
+	passRegion := region.Resolve(cfg.SiteKind, cfg.RegionOverride)
+	creditRegion := region.Resolve(cfg.SiteKind, cfg.CreditRegionOverride)
+	log.Printf("trade listening on %s (siteKind=%q passRegionOverride=%q passRegionId=%d passZoneId=%d passRegionName=%s creditRegionOverride=%q creditRegionId=%d creditZoneId=%d creditRegionName=%s)",
+		cfg.Addr, cfg.SiteKind,
+		cfg.RegionOverride, passRegion.RegionID, passRegion.ZoneID, passRegion.RegionName,
+		cfg.CreditRegionOverride, creditRegion.RegionID, creditRegion.ZoneID, creditRegion.RegionName)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen and serve: %v", err)
 	}

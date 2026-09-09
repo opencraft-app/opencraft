@@ -179,7 +179,7 @@ export function useAutomationAwareModelSwitch(): {
           target,
           candidates: [],
           unknownJobCount: 0,
-          checkError: error instanceof Error ? error.message : t("自动任务检查失败"),
+          checkError: error instanceof Error ? error.message : t("定时任务检查失败"),
         });
         return { target, candidates: [], choice } satisfies ModelSwitchPlan;
       }
@@ -203,15 +203,15 @@ export function useAutomationAwareModelSwitch(): {
       try {
         const summary = await pinAutomationModels(botId, plan.candidates, plan.target);
         if (summary.failed.length === 0) {
-          toast.success(t("模型已切换，并同步更新 {{count}} 个自动任务。", { count: summary.succeeded }));
+          toast.success(t("模型已切换，并同步更新 {{count}} 个定时任务。", { count: summary.succeeded }));
           return;
         }
-        toast.error(t("模型已切换；自动任务同步成功 {{succeeded}} 个，失败 {{failed}} 个。", {
+        toast.error(t("模型已切换；定时任务同步成功 {{succeeded}} 个，失败 {{failed}} 个。", {
           succeeded: summary.succeeded,
           failed: summary.failed.length,
         }), 5000);
       } catch (error) {
-        toast.error(t("模型已切换，但自动任务同步失败：{{message}}", {
+        toast.error(t("模型已切换，但定时任务同步失败：{{message}}", {
           message: error instanceof Error ? error.message : t("未知错误"),
         }), 5000);
       }
@@ -258,11 +258,11 @@ export function AutomationModelSwitchDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="rounded-md border border-black/[0.08] bg-white p-5 shadow-xl md:w-[32rem]">
         <DialogHeader className="mb-5 pr-8">
-          <DialogTitle>{t("自动任务更新提示")}</DialogTitle>
+          <DialogTitle>{t("定时任务更新提示")}</DialogTitle>
           {hasSyncCandidates ? (
             <DialogDescription className="space-y-2 text-pretty leading-relaxed">
               <span className="block">
-                {t("检测到 {{count}} 个自动任务需要更新。", { count: request.candidates.length })}
+                {t("检测到 {{count}} 个定时任务需要更新。", { count: request.candidates.length })}
               </span>
               <span className="block">
                 {t("切换模型后，如不同时更新任务使用的模型，这些任务将无法正常执行。建议同步更新，后续执行时将按新模型来消耗 Token。")}
@@ -276,8 +276,8 @@ export function AutomationModelSwitchDialog({
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <p className="leading-relaxed">
               {request.checkError
-                ? t("暂时无法检查自动任务。为避免误改任务，只能继续切换聊天模型或取消。")
-                : t("有 {{count}} 个自动任务的模型绑定状态暂时无法确认，本次不会修改这些任务。", { count: request.unknownJobCount })}
+                ? t("暂时无法检查定时任务。为避免误改任务，只能继续切换聊天模型或取消。")
+                : t("有 {{count}} 个定时任务的模型绑定状态暂时无法确认，本次不会修改这些任务。", { count: request.unknownJobCount })}
             </p>
           </div>
         ) : null}
@@ -291,7 +291,7 @@ export function AutomationModelSwitchDialog({
           </Button>
           {hasSyncCandidates ? (
             <Button type="button" onClick={() => onChoose("sync-automations")}>
-              {t("同步更新自动任务")}
+              {t("同步更新定时任务")}
             </Button>
           ) : null}
         </div>

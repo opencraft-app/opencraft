@@ -21,6 +21,10 @@ import type {
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassModifyBundles,
+  PassModifyOrder,
+  PassModifyCheckout,
+  PassOrderStatus,
   PassRenewPrice,
   ToolBinding,
   User,
@@ -1687,6 +1691,24 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
 });
 
 const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
+  async listModifyBundles(passId) {
+    return requestEnvelope<PassModifyBundles>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/bundles`, { method: 'GET' });
+  },
+  async getModifyCheckout(passId) {
+    return requestEnvelope<PassModifyCheckout>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/checkout`, { method: 'GET' });
+  },
+  async createModifyOrder(passId, input) {
+    return requestEnvelope<PassModifyOrder>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/order`, { method: 'POST', body: input });
+  },
+  async getModifyOrderUrl(passId, input) {
+    return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/order-url`, { method: 'POST', body: input });
+  },
+  async refreshModifyPaymentAuthorization(passId, input) {
+    return requestEnvelope<{ auth_code: string }>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/payment-authorization`, { method: 'POST', body: input });
+  },
+  async getOrderStatus(dealName) {
+    return requestEnvelope<PassOrderStatus>(baseUrl, `/v1/orders/${encodeURIComponent(dealName)}/status`, { method: 'GET' });
+  },
   async getCurrentSubscription() {
     return fetchCurrentSubscription(baseUrl);
   },

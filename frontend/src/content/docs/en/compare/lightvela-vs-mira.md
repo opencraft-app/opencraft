@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Choose LightVela if you want one personal Hermes Agent shaped around your routines, reusable Skills, Automations, and the messaging Channels you choose.** Choose Mira if Telegram is where your work and communities already live, and you want to turn conversations into follow-ups, summaries, reminders, and actions.
+**Choose LightVela if you want one personal Hermes Agent shaped around your routines, reusable Skills, Scheduled Tasks, and the messaging Channels you choose.** Choose Mira if Telegram is where your work and communities already live, and you want to turn conversations into follow-ups, summaries, reminders, and actions.
 
 Both products go beyond a chat window, but they start from different centers of gravity: Mira is a Telegram-first assistant, while LightVela is a configurable personal Agent that can grow into a wider workflow system.
 
@@ -14,7 +14,7 @@ Both products go beyond a chat window, but they start from different centers of 
 | - | - | - |
 | **Best for** | A personal, long-running AI Agent | A personal or team assistant inside Telegram |
 | **Core experience** | Configure one Agent around your routines and preferences | Ask an Agent to understand chats and act from the conversation |
-| **Setup focus** | Skills, Automations, memory, persona, models, and Channels | Telegram chats, group context, connected tools, and recurring actions |
+| **Setup focus** | Skills, Scheduled Tasks, memory, persona, models, and Channels | Telegram chats, group context, connected tools, and recurring actions |
 | **Everyday value** | A consistent Agent that keeps working beyond one conversation | Less context switching between chats, tasks, and connected tools |
 | **Strongest use case** | Personal workflows that should keep improving over time | Chat-based follow-ups, briefings, content, and team coordination |
 
@@ -24,7 +24,7 @@ The practical difference is not which product gives the better answer to one pro
 It is where the Agent lives in your day and how much of its operating model you want to shape.
 
 With LightVela, you configure a hosted Hermes Agent around how you work, then keep talking to the same Agent as your needs evolve.
-You can install reusable [Skills](../configuration/skill.md), schedule [Automations](../configuration/automation.md), choose a [model](../configuration/model.md), and connect the Channels you actually use.
+You can install reusable [Skills](../configuration/skill.md), create [Scheduled Tasks](../configuration/automation.md), choose a [model](../configuration/model.md), and connect the Channels you actually use.
 That turns a useful one-off interaction into a workflow that can keep working for you.
 
 You might ask for a daily briefing, a recurring watchlist, a content draft, or a reminder without rebuilding the process every time.
@@ -48,8 +48,8 @@ You might want an Agent that checks information every morning, watches competito
 The useful part is not one perfect answer.
 It is being able to turn a useful interaction into something that keeps working.
 
-That is where Skills and Automations matter.
-A Skill gives your Agent a reusable capability, while an Automation lets routine work happen on a schedule instead of relying on you to remember the prompt at exactly the right time.
+That is where Skills and Scheduled Tasks matter.
+A Skill gives your Agent a reusable capability, while a Scheduled Task lets routine work happen on a schedule instead of relying on you to remember the prompt at exactly the right time.
 You can start with a morning briefing, add a research Skill, and send the result through the Channel you are most likely to see.
 
 LightVela is also the more direct choice if you care about configuring the Agent's role rather than accepting a fixed product experience.
@@ -75,7 +75,7 @@ Mira's official documentation also highlights a broad tool and integration layer
 
 The boundary is focus.
 Mira is optimized around the Telegram interface and the social context inside it.
-If you want to design one Agent's persona, model, Skills, Automations, and Channels as a longer-term personal system, LightVela gives you the more explicit control surface.
+If you want to design one Agent's persona, model, Skills, Scheduled Tasks, and Channels as a longer-term personal system, LightVela gives you the more explicit control surface.
 
 ## Which should you choose?
 
@@ -83,7 +83,7 @@ Choose LightVela if you:
 
 - **Want one personal Agent:** You want a hosted Hermes Agent that becomes more useful as you refine it.
 - **Want continuity:** You want the same Agent to stay available and keep your setup over time.
-- **Prefer configurable routines:** You want reusable Skills and recurring Automations around your own habits.
+- **Prefer configurable routines:** You want reusable Skills and recurring Scheduled Tasks around your own habits.
 - **Want flexible access:** You want to reach your Agent through the Channels that fit your workflow.
 - **Want direct control:** You want to manage the model, persona, capabilities, and workflow shape.
 

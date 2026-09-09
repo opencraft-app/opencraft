@@ -26,7 +26,7 @@ LightVela ofrece cuatro niveles de planes—**Launch, Cruise, Launch AI y Cruise
 
 Un plan es el paquete de recursos que activa un Hermes Agent en LightVela. Después de activar cualquier plan actualmente disponible, LightVela te asigna un **entorno de ejecución en la nube dedicado** con su propio CPU, memoria y almacenamiento. Tu Hermes Agent puede permanecer en línea 24/7 sin que requieras comprar un servidor ni implementar nada localmente.
 
-Las principales diferencias entre los niveles son los **recursos de ejecución, almacenamiento dedicado y asignación mensual de créditos de IA**. Las capacidades centrales del Agent, incluyendo comportamiento adaptativo, múltiples canales, Skills, automatizaciones y memoria a largo plazo, permanecen disponibles en todos los niveles.
+Las principales diferencias entre los niveles son los **recursos de ejecución, almacenamiento dedicado y asignación mensual de créditos de IA**. Las capacidades centrales del Agent, incluyendo comportamiento adaptativo, múltiples canales, Skills, tareas programadas y memoria a largo plazo, permanecen disponibles en todos los niveles.
 
 Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de compra se muestran en la [página de suscripción](/subscribe). Los valores a continuación describen la estructura actual de recursos, los precios estándar de lista y la asignación de créditos de IA.
 
@@ -34,7 +34,7 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 
 ## Detalles del plan
 
-Cuatro planes están actualmente disponibles: **Launch, Cruise, Launch AI y Cruise AI**. Launch y Cruise son para usuarios que ya tienen su propia llave de API de modelo grande. Launch AI y Cruise AI proporcionan asignaciones más altas de créditos de IA para conversaciones más frecuentes, Skills y automatizaciones.
+Cuatro planes están actualmente disponibles: **Launch, Cruise, Launch AI y Cruise AI**. Launch y Cruise son para usuarios que ya tienen su propia llave de API de modelo grande. Launch AI y Cruise AI proporcionan asignaciones más altas de créditos de IA para conversaciones más frecuentes, Skills y tareas programadas.
 
 Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de compra se muestran en la [página de suscripción](/subscribe). La tabla a continuación lista solo los precios estándar de lista actuales.
 
@@ -47,7 +47,7 @@ Los precios en tiempo real, el inventario, los descuentos y la disponibilidad de
 | Launch | Usuarios que ya tienen su propia llave de API de modelo grande y desean tener un Agent funcionando a un costo menor | 1 | 2 núcleos de CPU, 4 GB de memoria | 50 GB | 100 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
 | Cruise | Usuarios que ya tienen su propia llave de API de modelo grande y desean más recursos para el uso diario regular | 1 | 4 núcleos de CPU, 8 GB de memoria | 80 GB | 200 créditos / mes, solo para uso de prueba. Una vez se agoten los créditos de IA, puedes configurar tu propia llave de API de modelo grande. |
 | Launch AI | Uso ligero con más créditos de IA | 1 | 2 núcleos de CPU, 4 GB de memoria | 50 GB | 4,500 créditos / mes |
-| Cruise AI | Conversaciones frecuentes, Skills y automatizaciones | 1 | 4 núcleos de CPU, 8 GB de memoria | 80 GB | 10,000 créditos / mes |
+| Cruise AI | Conversaciones frecuentes, Skills y tareas programadas | 1 | 4 núcleos de CPU, 8 GB de memoria | 80 GB | 10,000 créditos / mes |
 
 </div>
 
@@ -84,7 +84,7 @@ Cada Hermes Agent incluye las siguientes capacidades centrales:
 
 - **Skills y paquetes de Skills curadas** — Instala capacidades reutilizables para tu Agent
 
-- **Personalización, automatizaciones, memoria a largo plazo y diagnóstico** — Cubre el uso diario, ejecución programada, acumulación de contexto y resolución de problemas de ejecución
+- **Personalización, tareas programadas, memoria a largo plazo y diagnóstico** — Cubre el uso diario, ejecución programada, acumulación de contexto y resolución de problemas de ejecución
 
 Para saber cómo se asignan y consumen los créditos de IA, consulta [Créditos](./credits.md).
 
@@ -116,7 +116,7 @@ Si una solicitud de reembolso es aprobada depende de la revisión del equipo de 
 
 1. Revisa las reglas de reembolso y confirma que cumples con las condiciones relevantes.
 
-2. Envía un correo electrónico a [lightvela@tencent.com](mailto:lightvela@tencent.com). En el correo, proporciona claramente tu información de cuenta, como correo de inicio de sesión / método de inicio de sesión, ID de usuario de LightVela, nombre del plan y fecha del pedido; la razón del reembolso; y el estado actual de uso de tu cuenta, como si se ha creado o ejecutado un Agent, si se han utilizado créditos de IA y si se han conectado canales, Skills o automatizaciones.
+2. Envía un correo electrónico a [lightvela@tencent.com](mailto:lightvela@tencent.com). En el correo, proporciona claramente tu información de cuenta, como correo de inicio de sesión / método de inicio de sesión, ID de usuario de LightVela, nombre del plan y fecha del pedido; la razón del reembolso; y el estado actual de uso de tu cuenta, como si se ha creado o ejecutado un Agent, si se han utilizado créditos de IA y si se han conectado canales, Skills o tareas programadas.
 
 3. El equipo de soporte de LightVela procesará tu solicitud dentro de **3 días hábiles**.
 

@@ -1466,12 +1466,21 @@ type PayURLDetail struct {
 
 // GeneratePayURLOptions 拉取支付 URL 时的可选参数（v1.7.31 接口拆分新增）。
 // 全部字段可选；空值时不透传（兼容现有行为）。
+var ErrModifyCheckoutNotFound = fmt.Errorf("modify checkout: %w", store.ErrTradeOrderNotFound)
+var ErrModifyOrderNotPayable = errors.New("modify order is not pending payment; refresh order status")
+
 type GeneratePayURLOptions struct {
-	Platform  string `json:"platform,omitempty"`
-	WxOpenID  string `json:"wx_open_id,omitempty"`
-	WxAppID   string `json:"wx_app_id,omitempty"`
-	CancelURL string `json:"cancel_url,omitempty"`
-	ReturnURL string `json:"return_url,omitempty"`
+	AuthorizationOnly bool `json:"authorization_only,omitempty"`
+	// Internal checkout binding. Public callers cannot supply these values.
+	ExternalUserID   string   `json:"external_user_id,omitempty"`
+	ResourceID       string   `json:"resource_id,omitempty"`
+	OrderType        string   `json:"order_type,omitempty"`
+	AllowedBundleIDs []string `json:"allowed_bundle_ids,omitempty"`
+	Platform         string   `json:"platform,omitempty"`
+	WxOpenID         string   `json:"wx_open_id,omitempty"`
+	WxAppID          string   `json:"wx_app_id,omitempty"`
+	CancelURL        string   `json:"cancel_url,omitempty"`
+	ReturnURL        string   `json:"return_url,omitempty"`
 }
 
 func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *GeneratePayURLOptions) (*PayURLDetail, error) {
@@ -1483,13 +1492,43 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 	order, err := s.deps.OrderStore.GetOrderByDealName(ctx, dealName)
 	if err != nil {
 		if errors.Is(err, store.ErrTradeOrderNotFound) {
+			if opts != nil && opts.OrderType == store.OrderTypeModify {
+				return nil, ErrModifyCheckoutNotFound
+			}
 			return nil, fmt.Errorf("placeorder: trade_order not found: dealName=%s: %w",
 				dealName, err)
 		}
 		return nil, fmt.Errorf("placeorder: get trade_order dealName=%s: %w", dealName, err)
 	}
-	// 命中缓存：同一 dealName 复用首次拿到的 URL（Q-PAY-2）；从 URL 反解析协议外字段。
-	if order.PayURL != "" {
+	// Modify checkout must bind to the authenticated owner and the path's pass,
+	// even when a caller reaches this shared endpoint through a create/renew route.
+	if order.OrderType == store.OrderTypeModify || (opts != nil && opts.OrderType == store.OrderTypeModify) {
+		allowed := false
+		if opts != nil {
+			for _, bundleID := range opts.AllowedBundleIDs {
+				if bundleID == order.BundleID {
+					allowed = true
+				}
+			}
+		}
+		if opts == nil || opts.ExternalUserID == "" || opts.ResourceID == "" ||
+			opts.ExternalUserID != order.ExternalUserID || opts.ResourceID != order.ResourceID ||
+			opts.OrderType != store.OrderTypeModify || order.OrderType != store.OrderTypeModify || !allowed {
+			return nil, ErrModifyCheckoutNotFound
+		}
+		if order.Status != store.OrderStatusPendingPay {
+			return nil, ErrModifyOrderNotPayable
+		}
+	}
+	// Legacy cache has no platform/OpenID key. Modify always obtains a fresh URL
+	// for its existing order, without changing create/renew cache semantics.
+	if opts != nil && opts.AuthorizationOnly {
+		if opts.OrderType != store.OrderTypeModify {
+			return nil, ErrInvalidInput
+		}
+		return &PayURLDetail{}, nil
+	}
+	if order.PayURL != "" && order.OrderType != store.OrderTypeModify {
 		tokenID, orderID, midasAppID := parsePayURLAuxFields(order.PayURL)
 		return &PayURLDetail{
 			PayURL:     order.PayURL,
@@ -1541,7 +1580,7 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 
 	// 写回 trade_order.pay_url 缓存（最佳努力 — 失败不阻塞返 URL）
 	// needCharge=0 时 resp.URL 为空，跳过缓存写回（避免空串污染缓存命中分支）
-	if resp.URL != "" {
+	if resp.URL != "" && order.OrderType != store.OrderTypeModify {
 		if writeErr := s.deps.OrderWriter.UpdatePayURL(ctx, dealName, resp.URL); writeErr != nil {
 			// 落库失败走 ELK 日志兜底（Q-PAY-1 b）；不阻塞用户支付。
 			// 这里用 fmt.Println 仅作为 placeholder — 实际会被框架级 logger（zap / slog）替换；
@@ -1663,9 +1702,10 @@ func (s *Service) generatePayURLByCloudAPI(
 	if strings.TrimSpace(resp.URL) == "" {
 		return nil, fmt.Errorf("placeorder: billing CreatePayUrl returned empty url for dealName=%s", dealName)
 	}
-	if writeErr := s.deps.OrderWriter.UpdatePayURL(ctx, dealName, resp.URL); writeErr != nil {
-		fmt.Printf("WARN placeorder: cache pay_url failed dealName=%s url=%s err=%v\n",
-			dealName, resp.URL, writeErr)
+	if order.OrderType != store.OrderTypeModify {
+		if writeErr := s.deps.OrderWriter.UpdatePayURL(ctx, dealName, resp.URL); writeErr != nil {
+			fmt.Printf("WARN placeorder: cache pay_url failed dealName=%s err=%v\n", dealName, writeErr)
+		}
 	}
 	tokenID, orderID, midasAppID := parsePayURLAuxFields(resp.URL)
 	return &PayURLDetail{

@@ -85,7 +85,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260908-home-refinements-v16"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260908-hero-suffix-v21"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -206,8 +206,9 @@ describe("international v2 homepage rendering", () => {
     expect(runtimeSource).not.toContain("createPortal");
   });
 
-  it("passes the active homepage locale into the production header actions", () => {
+  it("keeps the product entry out of the international homepage header", () => {
     (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = true;
     headerAuthMock.mockClear();
 
     renderToStaticMarkup(<InternationalHomePage locale="es" />);
@@ -218,13 +219,13 @@ describe("international v2 homepage rendering", () => {
         loginOnly: true,
         promoteFreeTrial: false,
         showLanguageSwitcher: true,
-        showProductEntry: true,
+        showProductEntry: false,
       }),
       undefined,
     );
   });
 
-  it("keeps domestic free trial in the hero and uses the shared login-only header", async () => {
+  it("keeps the domestic hero and shared header behavior unchanged", async () => {
     (globalThis as { React?: typeof React }).React = React;
     regionMock.isGlobal = false;
     sessionMock.authReady = true;

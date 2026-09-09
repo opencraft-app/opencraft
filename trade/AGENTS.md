@@ -5,6 +5,8 @@
 ## 边界
 
 - 订阅、pass、配额和支付任务通过 `subscription-entitlements` 路由。
+- Credit 积分包的计费协议、订单和回调适配由 Trade 承载，业务生命周期与用量真源归 `credit` 服务。
+- `LIGHTVELA_TRADE_REGION` 是 Pass/default 计费地域；Credit 可通过 `LIGHTVELA_CREDIT_REGION` 独立覆盖，未配置时继承前者。
 - 详细实现历史延后至 [trade 服务详情](../docs/context/project/services/trade.md)。
 - 外部 jifei 与腾讯云计费规则是外部 authority；不得复制为仓库事实。
 

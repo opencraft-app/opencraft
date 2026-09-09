@@ -45,11 +45,11 @@ const CHANNEL_GUIDE_LINKS: Record<string, string> = {
 };
 
 function getChannelDesc(channelType: string): string {
-  if (channelType === 'qqbot') return t('扫码或通过 App ID / Secret 绑定');
-  if (channelType === 'telegram') return t('通过 Bot Token 绑定');
-  if (channelType === 'discord') return t('通过 Bot Token 绑定');
-  if (channelType === 'slack') return t('通过 Bot Token 和 App Token 绑定');
-  if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 绑定');
+  if (channelType === 'qqbot') return t('扫码或通过 App ID / Secret 连接');
+  if (channelType === 'telegram') return t('通过 Bot Token 连接');
+  if (channelType === 'discord') return t('通过 Bot Token 连接');
+  if (channelType === 'slack') return t('通过 Bot Token 和 App Token 连接');
+  if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');
   if (channelType === 'whatsapp') return t('使用手机 WhatsApp 扫码登录');
   return t('扫码授权连接');
 }
@@ -332,17 +332,17 @@ export function ChannelPanel(props: ChannelPanelProps) {
                   </div>
                 </div>
                 <div className={`${CLS}__card-action`}>
-                  {ops.productConfig.isI18n && CHANNEL_GUIDE_LINKS[channel.value] && (
-                    <a
-                      className={`${CLS}__guide-btn`}
-                      href={CHANNEL_GUIDE_LINKS[channel.value]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t('配置教程')}
-                    </a>
-                  )}
                   <div className={`${CLS}__card-action-right`}>
+                    {ops.productConfig.isI18n && CHANNEL_GUIDE_LINKS[channel.value] && (
+                      <a
+                        className={`${CLS}__guide-btn`}
+                        href={CHANNEL_GUIDE_LINKS[channel.value]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t('配置教程')}
+                      </a>
+                    )}
                     {isBound && (
                       <button
                         type="button"

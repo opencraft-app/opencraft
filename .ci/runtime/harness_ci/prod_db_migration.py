@@ -93,7 +93,16 @@ def resolve_python_bin() -> str:
 
 
 PYTHON_BIN = resolve_python_bin()
-SUPPORTED_SERVICES = {"payment", "subscription", "ai-gateway", "ctl", "sandbox", "user-auth", "lightclaw-auth"}
+SUPPORTED_SERVICES = {
+    "payment",
+    "subscription",
+    "trade",
+    "ai-gateway",
+    "ctl",
+    "sandbox",
+    "user-auth",
+    "lightclaw-auth",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -139,12 +148,12 @@ def run(command: list[str], *, cwd: Path = REPO_ROOT, capture: bool = False) -> 
 
 
 def map_service(service: str) -> tuple[str, str]:
-    if service in {"payment", "subscription", "ai-gateway", "ctl", "sandbox"}:
+    if service in {"payment", "subscription", "trade", "ai-gateway", "ctl", "sandbox"}:
         return service, service
     if service in {"user-auth", "lightclaw-auth"}:
         return "user-auth", "lightclaw-auth"
     raise ValueError(
-        "SERVICE must be one of: payment, subscription, user-auth, "
+        "SERVICE must be one of: payment, subscription, trade, user-auth, "
         f"lightclaw-auth, ai-gateway, ctl, sandbox; got: {service}"
     )
 

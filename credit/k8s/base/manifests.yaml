@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: credit
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: credit
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: credit-config
+  namespace: credit
+data:
+  CREDIT_ADDR: ":8080"
+  TRADE_INTERNAL_BASE_URL: "REPLACE_CREDIT_TRADE_INTERNAL_BASE_URL"
+  LLMGATEWAY_INTERNAL_BASE_URL: "REPLACE_CREDIT_LLMGATEWAY_INTERNAL_BASE_URL"
+  MYSQL_HOST: "REPLACE_CREDIT_MYSQL_HOST"
+  MYSQL_PORT: "REPLACE_CREDIT_MYSQL_PORT"
+  CREDIT_DB: "credit"
+  CREDIT_DB_USER: "credit"
+  CREDIT_REGION: "REPLACE_CREDIT_REGION"
+  CREDIT_OBJECT_ID_PASSWORD_SUFFIX: "REPLACE_CREDIT_OBJECT_ID_PASSWORD_SUFFIX"
+  CREDIT_TOKEN_RATIO: "10000"
+  CREDIT_USAGE_WORKER_POLL_INTERVAL: "10s"
+  CREDIT_USAGE_WORKER_LEASE_DURATION: "30s"
+  CREDIT_USAGE_WORKER_BATCH_SIZE: "50"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit
+  namespace: credit
+  labels:
+    app: credit
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: credit
+  template:
+    metadata:
+      labels:
+        app: credit
+    spec:
+      nodeSelector:
+        pool: REPLACE_CREDIT_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: credit
+      containers:
+        - name: credit
+          image: REPLACE_CREDIT_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: credit-config
+            - secretRef:
+                name: credit-runtime-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: credit
+  namespace: credit
+  labels:
+    app: credit
+spec:
+  selector:
+    app: credit
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

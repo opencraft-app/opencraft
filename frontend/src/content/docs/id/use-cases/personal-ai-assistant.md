@@ -2,13 +2,13 @@
 
 Sebagian besar percakapan AI berguna untuk satu jawaban, lalu menghilang ke tab berikutnya. Sebuah asisten pribadi menjadi berguna ketika ia dapat tetap tersedia di tempat Anda sudah biasa berkirim pesan, mengingat cara Anda bekerja, dan mengambil alih beberapa tugas yang berulang.
 
-LightVela adalah platform AI agent pribadi berbasis cloud: sebuah Hermes Agent dapat terus bekerja dengan model, kanal, memori, Skill, dan otomasi pilihan Anda. Panduan ini menunjukkan cara mengubah kumpulan komponen tersebut menjadi asisten yang sudah terasa berguna sejak pekan pertama, tanpa berusaha mengotomasikan segalanya sekaligus.
+LightVela adalah platform AI agent pribadi berbasis cloud: sebuah Hermes Agent dapat terus bekerja dengan model, kanal, memori, Skill, dan tugas terjadwal pilihan Anda. Panduan ini menunjukkan cara mengubah kumpulan komponen tersebut menjadi asisten yang sudah terasa berguna sejak pekan pertama, tanpa berusaha mengtugas terjadwalkan segalanya sekaligus.
 
 ![Asisten AI pribadi dengan LightVela di berbagai kanal](../images/use-case-personal-ai-assistant.webp)
 
 ## Ringkasan
 
-**Urutan yang tepat untuk membangun asisten AI pribadi bukan mengotomasikan semuanya sekaligus. Mulailah dengan membuat Hermes Agent di cloud dapat dijangkau di aplikasi chat yang sudah Anda pakai, lalu tambahkan memori, Skill, dan otomasi secara berlapis.** Lima komponen masing-masing menyelesaikan satu masalah: model menentukan kualitas reasoning, kanal menentukan di mana Anda menjangkaunya, memori membuatnya dapat mempertahankan cara Anda bekerja, Skill memberinya metode yang dapat dipakai ulang, dan otomasi membuatnya menyelesaikan pekerjaan yang disepakati saat Anda tidak hadir. Untuk pekan pertama, lakukan hanya tiga hal: konfigurasikan satu model, hubungkan satu kanal, dan pastikan memorinya benar-benar bertahan lintas sesi. Begitu jalur itu andal, tambahkan Skill dan otomasi — dengan cara ini, ketika ada yang bermasalah, Anda dapat mengetahui lapisan mana penyebabnya.
+**Urutan yang tepat untuk membangun asisten AI pribadi bukan mengtugas terjadwalkan semuanya sekaligus. Mulailah dengan membuat Hermes Agent di cloud dapat dijangkau di aplikasi chat yang sudah Anda pakai, lalu tambahkan memori, Skill, dan tugas terjadwal secara berlapis.** Lima komponen masing-masing menyelesaikan satu masalah: model menentukan kualitas reasoning, kanal menentukan di mana Anda menjangkaunya, memori membuatnya dapat mempertahankan cara Anda bekerja, Skill memberinya metode yang dapat dipakai ulang, dan tugas terjadwal membuatnya menyelesaikan pekerjaan yang disepakati saat Anda tidak hadir. Untuk pekan pertama, lakukan hanya tiga hal: konfigurasikan satu model, hubungkan satu kanal, dan pastikan memorinya benar-benar bertahan lintas sesi. Begitu jalur itu andal, tambahkan Skill dan tugas terjadwal — dengan cara ini, ketika ada yang bermasalah, Anda dapat mengetahui lapisan mana penyebabnya.
 
 ## Untuk siapa ini
 
@@ -64,7 +64,7 @@ Telusuri opsi yang sesuai di ClawHub, lalu pakai [Konfigurasi Skill](https://lig
 
 ### 4. Ubah percakapan yang berguna menjadi pemeriksaan berkala
 
-Begitu sebuah prompt terbukti berguna secara konsisten, putuskan apakah ia sebaiknya berjalan sesuai jadwal. Otomasi sederhana dapat meminta rencana pagi, tinjauan akhir hari, atau reset pekanan kepada Hermes tanpa Anda perlu ingat untuk memulai percakapannya.
+Begitu sebuah prompt terbukti berguna secara konsisten, putuskan apakah ia sebaiknya berjalan sesuai jadwal. Tugas Terjadwal sederhana dapat meminta rencana pagi, tinjauan akhir hari, atau reset pekanan kepada Hermes tanpa Anda perlu ingat untuk memulai percakapannya.
 
 Misalnya:
 
@@ -73,15 +73,15 @@ Setiap hari kerja pukul 08.00, siapkan rencana ringkas untuk hari ini.
 Mulai dengan tenggat waktu dan rapat, lalu sarankan tiga tindakan berikutnya yang terfokus.
 ```
 
-Atur jadwal dan kanal notifikasinya di [Otomasi](https://lightvela.ai/docs/configuration/automation). Jaga otomasi pertama tetap kecil; Anda dapat memperhalus instruksinya setelah melihat beberapa hasil nyata.
+Atur jadwal dan kanal notifikasinya di [Tugas Terjadwal](https://lightvela.ai/docs/configuration/automation). Jaga tugas terjadwal pertama tetap kecil; Anda dapat memperhalus instruksinya setelah melihat beberapa hasil nyata.
 
-![Halaman Automations di konsol LightVela](../images/personal-ai-assistant-automations.webp)
+![Halaman Tugas Terjadwal di konsol LightVela](../images/personal-ai-assistant-automations.webp)
 
 ## FAQ
 
 ### Apakah saya perlu mengonfigurasi setiap fitur sebelum Hermes berguna?
 
-Tidak. Satu kanal dan satu model yang berfungsi sudah cukup untuk memulai. Tambahkan memori, Skill, dan otomasi secara bertahap sambil Anda menemukan tugas berulang mana yang layak dipertahankan.
+Tidak. Satu kanal dan satu model yang berfungsi sudah cukup untuk memulai. Tambahkan memori, Skill, dan tugas terjadwal secara bertahap sambil Anda menemukan tugas berulang mana yang layak dipertahankan.
 
 ### Apakah Hermes akan mengingat setiap pesan yang saya kirim?
 
@@ -91,7 +91,7 @@ Tidak. Memori dimaksudkan untuk informasi yang tetap berguna lintas percakapan, 
 
 Bisa. Beberapa kanal terhubung dapat mengarah ke Hermes Agent yang sama, sehingga asisten tersebut dapat mempertahankan konteks yang sama saat Anda berpindah antar platform pesan yang didukung.
 
-### Apa yang sebaiknya saya otomasikan lebih dulu?
+### Apa yang sebaiknya saya tugas terjadwalkan lebih dulu?
 
 Pilih tugas yang sudah Anda ulangi pada waktu yang dapat diprediksi. Perencanaan pagi, tinjauan harian singkat, atau pemeriksaan prioritas pekanan adalah kandidat pertama yang baik karena Anda dapat cepat menilai apakah keluarannya membantu.
 
@@ -101,4 +101,4 @@ Pilih tugas yang sudah Anda ulangi pada waktu yang dapat diprediksi. Perencanaan
 
 - [Pengelolaan Memori](https://lightvela.ai/docs/configuration/memory) — tinjau apa yang dipertahankan asisten Anda lintas percakapan.
 
-- [Otomasi](https://lightvela.ai/docs/configuration/automation) — jadwalkan rutinitas yang terbukti berguna.
+- [Tugas Terjadwal](https://lightvela.ai/docs/configuration/automation) — jadwalkan rutinitas yang terbukti berguna.

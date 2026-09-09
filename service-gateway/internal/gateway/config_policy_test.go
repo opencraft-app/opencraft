@@ -188,6 +188,74 @@ func TestKoreaPaymentMethodRoutesAreAuthenticatedAndAllowlisted(t *testing.T) {
 	t.Fatal("auth-payment-methods route not found")
 }
 
+func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, wantUpstream string) {
+	t.Helper()
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	wantPaths := map[string]struct{}{
+		http.MethodGet + " /v1/credit/products":                      {},
+		http.MethodPost + " /v1/credit/inquiry":                      {},
+		http.MethodPost + " /v1/credit/packages/order":               {},
+		http.MethodPost + " /v1/credit/packages/order-and-pay":       {},
+		http.MethodGet + " /v1/credit/packages":                      {},
+		http.MethodPost + " /v1/credit/packages/{package_id}/refund": {},
+	}
+	for _, route := range cfg.Routes {
+		if route.Name != "credit" {
+			continue
+		}
+		if route.Prefix != "/v1/credit" || route.Access != AccessAuthenticated {
+			t.Fatalf("credit route must use authenticated session access: %+v", route)
+		}
+		if route.Upstream != wantUpstream {
+			t.Fatalf("credit upstream=%q", route.Upstream)
+		}
+		if !route.RequireRealname {
+			t.Fatal("credit route must require realname")
+		}
+		if route.PathPolicy != PathPolicyAllowlist {
+			t.Fatalf("credit path_policy=%q, want allowlist", route.PathPolicy)
+		}
+		gotPaths := make(map[string]struct{}, len(route.PathAllow))
+		for _, rule := range route.PathAllow {
+			gotPaths[rule.Method+" "+rule.Path] = struct{}{}
+		}
+		if len(gotPaths) != len(wantPaths) {
+			t.Fatalf("credit allowlist=%+v, want=%+v", gotPaths, wantPaths)
+		}
+		for path := range wantPaths {
+			if _, exists := gotPaths[path]; !exists {
+				t.Fatalf("credit allowlist missing %s", path)
+			}
+		}
+		return
+	}
+	t.Fatal("credit route not found")
+}
+
+func TestBeijing7CreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
+		"http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local",
+	)
+}
+
+func TestBeijingCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T) {
+	testCreditRouteIsAuthenticatedAndAllowlisted(
+		t,
+		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
+		"http://credit.credit.svc.cluster.local",
+	)
+}
+
 func TestDeployConfigsScopePhoneAuthPublicRoutes(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -312,7 +380,7 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 }
 
-func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
+func TestProductionChatOriginsArePathScoped(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
@@ -344,9 +412,23 @@ func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
 			},
 		},
 	}
-	wantRules := map[string]struct{}{
-		http.MethodGet + " /v1/instances":                            {},
-		http.MethodPost + " /v1/instances/{instance_id}/tat/session": {},
+	wantRules := map[string]map[string]struct{}{
+		http.MethodGet + " /v1/instances": {
+			"https://chat.lightvela.com":      {},
+			"https://localhost.lightvela.com": {},
+			"https://chat.lightvela.ai":       {},
+			"https://localhost.lightvela.ai":  {},
+		},
+		http.MethodPost + " /v1/instances/{instance_id}/tat/session": {
+			"https://chat.lightvela.com":      {},
+			"https://localhost.lightvela.com": {},
+			"https://chat.lightvela.ai":       {},
+			"https://localhost.lightvela.ai":  {},
+		},
+		http.MethodPost + " /v1/instances/{instance_id}/debug/exec": {
+			"https://chat.lightvela.com": {},
+			"https://chat.lightvela.ai":  {},
+		},
 	}
 
 	for _, tt := range tests {
@@ -370,14 +452,15 @@ func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
 				gotRules := make(map[string]struct{}, len(route.CORSAllow))
 				for _, rule := range route.CORSAllow {
 					key := rule.Method + " " + rule.Path
-					if _, wanted := wantRules[key]; !wanted {
+					wantOriginsForRule, wanted := wantRules[key]
+					if !wanted {
 						t.Fatalf("unexpected scoped CORS rule: %+v", rule)
 					}
-					if len(rule.AllowedOrigins) != len(tt.wantOrigins) {
+					if len(rule.AllowedOrigins) != len(wantOriginsForRule) {
 						t.Fatalf("unexpected scoped CORS origins for %s: %+v", key, rule.AllowedOrigins)
 					}
 					for _, origin := range rule.AllowedOrigins {
-						if _, wanted := tt.wantOrigins[origin]; !wanted {
+						if _, wanted := wantOriginsForRule[origin]; !wanted {
 							t.Fatalf("unexpected scoped CORS origin %q for %s", origin, key)
 						}
 					}
@@ -389,6 +472,53 @@ func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
 					}
 				}
 				return
+			}
+			t.Fatal("ctl route not found")
+		})
+	}
+}
+
+func TestProductionDebugExecCORSIsScopedToChatOrigins(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+	wantOrigins := map[string]struct{}{
+		"https://chat.lightvela.com": {},
+		"https://chat.lightvela.ai":  {},
+	}
+
+	for _, env := range []string{"shprod", "sgprod"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, origin := range cfg.AllowedOrigins {
+				if _, scoped := wantOrigins[origin]; scoped {
+					t.Fatalf("debug chat origin %q must remain path-scoped", origin)
+				}
+			}
+			for _, route := range cfg.Routes {
+				if route.Name != "ctl" {
+					continue
+				}
+				for _, rule := range route.CORSAllow {
+					if rule.Method != http.MethodPost || rule.Path != "/v1/instances/{instance_id}/debug/exec" {
+						continue
+					}
+					if len(rule.AllowedOrigins) != len(wantOrigins) {
+						t.Fatalf("debug/exec origins = %+v", rule.AllowedOrigins)
+					}
+					for _, origin := range rule.AllowedOrigins {
+						if _, wanted := wantOrigins[origin]; !wanted {
+							t.Fatalf("unexpected debug/exec origin %q", origin)
+						}
+					}
+					return
+				}
+				t.Fatal("missing scoped CORS rule for debug/exec")
 			}
 			t.Fatal("ctl route not found")
 		})

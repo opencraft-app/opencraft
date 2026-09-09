@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Elige LightVela si quieres un Hermes Agent personal que puedas configurar alrededor de tus rutinas, ampliar con Skills reutilizables y mantener activo mediante automatizaciones y los canales que prefieras.** Elige Grok Bot si quieres compañeros de IA persistentes en la nube que trabajen entre aplicaciones, usen un ordenador cloud y ejecuten tareas delegadas en paralelo. Ambos van más allá de un chatbot normal, pero organizan esa capacidad para trabajos distintos.
+**Elige LightVela si quieres un Hermes Agent personal que puedas configurar alrededor de tus rutinas, ampliar con Skills reutilizables y mantener activo mediante tareas programadas y los canales que prefieras.** Elige Grok Bot si quieres compañeros de IA persistentes en la nube que trabajen entre aplicaciones, usen un ordenador cloud y ejecuten tareas delegadas en paralelo. Ambos van más allá de un chatbot normal, pero organizan esa capacidad para trabajos distintos.
 
 ![LightVela comparado con Grok Bot para ejecutar un AI Agent personal](../images/lightvela-vs-grok-bot.png)
 
@@ -12,7 +12,7 @@
 | - | - | - |
 | **Mejor para** | Un AI Agent personal y duradero | Trabajo delegado entre aplicaciones y sitios web |
 | **Sensación principal** | Tu Agent configurado, disponible cuando lo necesitas | Un Bot persistente al que puedes tratar como compañero |
-| **Enfoque de configuración** | Skills, automatizaciones, memoria, personalidad, modelos y canales | Bots, ordenadores cloud, conectores, rutinas y aprobaciones |
+| **Enfoque de configuración** | Skills, tareas programadas, memoria, personalidad, modelos y canales | Bots, ordenadores cloud, conectores, rutinas y aprobaciones |
 | **Acceso diario** | Canales de mensajería y un espacio de trabajo persistente | Experiencias de Grok Bot en escritorio y iOS |
 | **Caso más fuerte** | Flujos personales que mejoran contigo | Trabajo de varios pasos que necesita navegador y aplicaciones |
 
@@ -20,7 +20,7 @@
 
 La diferencia no depende tanto de qué sistema suena más inteligente en un solo prompt. Depende de dónde vive el Agent en tu día y de si quieres formar un asistente persistente o delegar el trabajo en Bots con nombre.
 
-Con LightVela, configuras un Hermes Agent alojado en la nube según tu forma de trabajar y sigues hablando con el mismo Agent mientras cambian tus necesidades. Puedes instalar [Skills reutilizables](../configuration/skill.md), programar [automatizaciones](../configuration/automation.md), elegir un [modelo](../configuration/model.md) y conectar los canales que realmente utilizas. Así, una interacción útil puede convertirse en un flujo que sigue funcionando para ti.
+Con LightVela, configuras un Hermes Agent alojado en la nube según tu forma de trabajar y sigues hablando con el mismo Agent mientras cambian tus necesidades. Puedes instalar [Skills reutilizables](../configuration/skill.md), programar [tareas programadas](../configuration/automation.md), elegir un [modelo](../configuration/model.md) y conectar los canales que realmente utilizas. Así, una interacción útil puede convertirse en un flujo que sigue funcionando para ti.
 
 Puedes pedir un resumen diario, una lista de seguimiento recurrente, un borrador de contenido o un recordatorio sin reconstruir el flujo cada vez. LightVela está pensado para esa continuidad: un Agent, una configuración que evoluciona y una forma de colaboración que puedes ajustar.
 
@@ -34,7 +34,7 @@ LightVela encaja mejor si quieres que tu AI Agent sea una parte constante de tu 
 
 Podrías usar un Agent para revisar información cada mañana, vigilar a competidores, convertir novedades de producto en publicaciones sociales o resumir un tema de investigación cada semana. Lo importante no es una respuesta perfecta. Es convertir una interacción útil en algo que siga ocurriendo.
 
-Ahí es donde Skills y automatizaciones marcan la diferencia. Una Skill aporta una capacidad reutilizable, mientras que una automatización permite que el trabajo recurrente ocurra según un calendario sin depender de que recuerdes el prompt en el momento exacto. Puedes empezar con un resumen matutino, añadir una Skill de investigación y enviar el resultado por el canal que más probablemente verás.
+Ahí es donde Skills y las tareas programadas marcan la diferencia. Una Skill aporta una capacidad reutilizable, mientras que una tarea programada permite que el trabajo recurrente ocurra según un calendario sin depender de que recuerdes el prompt en el momento exacto. Puedes empezar con un resumen matutino, añadir una Skill de investigación y enviar el resultado por el canal que más probablemente verás.
 
 LightVela también es la opción más directa si te importa configurar el papel del Agent en lugar de aceptar una experiencia fija. Eliges el modelo, el comportamiento que quieres fomentar, las capacidades que quieres añadir y los canales donde debe aparecer. La [visión general de LightVela](../01-overview.md) explica cómo encajan esas piezas.
 
@@ -56,7 +56,7 @@ Elige LightVela si:
 
 - **Quieres un Agent personal:** Buscas un Hermes Agent alojado que se vuelva más útil al perfeccionarlo.
 - **Quieres continuidad:** Quieres que el mismo Agent siga disponible y conserve tu configuración.
-- **Prefieres rutinas configurables:** Quieres Skills reutilizables y automatizaciones recurrentes alrededor de tus hábitos.
+- **Prefieres rutinas configurables:** Quieres Skills reutilizables y tareas programadas recurrentes alrededor de tus hábitos.
 - **Prefieres la mensajería:** Quieres llegar a tu Agent por los canales que ya utilizas.
 - **Quieres control directo:** Quieres gestionar el modelo, la personalidad, las capacidades y la forma del flujo.
 

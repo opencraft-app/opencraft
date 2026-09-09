@@ -42,7 +42,7 @@ Manus 将自己定位为拥有虚拟电脑的自主通用 AI Agent：你给出�
 
 这和“帮我完成这个任务”带来的便利不同。它更像一个始终在身边的助手，当你想到什么时，随时可以发消息给它。
 
-如果你希望围绕自己的习惯塑造 Agent，LightVela 也更合适：你可以配置模型、选择对话发生的通道，并通过技能扩展 Hermes。如果还有重复性工作，也可以设置[自动任务](https://lightvela.ai/zh-sg/docs/configuration/automation)，而不是每次都把请求当成一个全新的项目。
+如果你希望围绕自己的习惯塑造 Agent，LightVela 也更合适：你可以配置模型、选择对话发生的通道，并通过技能扩展 Hermes。如果还有重复性工作，也可以设置[定时任务](https://lightvela.ai/zh-sg/docs/configuration/automation)，而不是每次都把请求当成一个全新的项目。
 
 ## 哪些情况下 Manus 更适合
 

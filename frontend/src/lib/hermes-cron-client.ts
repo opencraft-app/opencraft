@@ -2016,7 +2016,7 @@ async function resolveFallbackHomeChannel(botId: string): Promise<string | null>
  *
  * 两级还原：
  * 1. 原任务持久化了 concrete origin（`{platform, chat_id}`）→ 换成 `platform:chat_id`；
- * 2. 原任务 `origin` 为空（典型：在网页「自动任务」面板创建的任务——网页不是
+ * 2. 原任务 `origin` 为空（典型：在网页「定时任务」面板创建的任务——网页不是
  *    IM 会话，没有"原对话"上下文，`origin` 存成 null）→ 此时若原样保留 `origin`，
  *    临时任务投递会**静默丢弃**（任务照记 ok，但用户啥也收不到）。改为兜底到该
  *    bot 已连接的 home channel（如 `wecom`），保证测试运行的通知能真正到达用户。
@@ -2190,7 +2190,7 @@ async function waitForCronJobExecuted(
  * 实测证实 `hermes cron run` 在这套 CLI/debug-exec 环境下"强制立即触发"这
  * 条路径不可靠——触发后轮询等满 90s（覆盖一个完整 60s tick 周期）仍可能
  * 完全没有执行。而**普通一次性任务到点被调度器自然扫到执行**这条路径已经
- * 被生产环境反复验证是可靠工作的（这也是「自动任务」功能本身能用的前提）。
+ * 被生产环境反复验证是可靠工作的（这也是「定时任务」功能本身能用的前提）。
  * 所以这里完全复用后一条已验证路径：只创建临时任务、只等待，不再额外调用
  * `run` 去催——用「确定能跑但慢」换掉「可能更快但已知不可靠」。
  *

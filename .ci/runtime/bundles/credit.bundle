@@ -1,0 +1,45 @@
+bundles:
+  credit:
+    owner: credit
+    source: credit
+    db_contract:
+      mode: migration
+      db_job_service: credit
+      migration_operation: migration
+      migration_paths:
+      - credit/migrations/**
+      expected_migration_source: credit/migrations
+      verifier:
+        namespace: credit
+        configmap: credit-config
+        secret: credit-runtime-secrets
+        database_env: CREDIT_DB
+        user_env: CREDIT_DB_USER
+        password_env: CREDIT_DB_PASSWORD
+    reason: Credit service release bundle for the independent paid credit package runtime.
+    allowed_paths:
+    - credit/k8s/base
+    - credit/Dockerfile
+    - credit/migrations
+    exit_condition: Can be removed only after credit is folded into another billing runtime.
+    publish_paths:
+    - argocd/services/credit/{env}/**
+    - argocd/services/credit/common/**
+    - argocd/catalogs/playground/beijing-playground/{env}/credit.yaml
+    - argocd/secrets/{env}/credit-runtime-secrets.sops.yaml
+    - credit/k8s/base/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/credit/beijing-sandbox/**
+      - argocd/services/credit/common/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/credit.yaml
+      - argocd/secrets/beijing-sandbox/credit-runtime-secrets.sops.yaml
+      - credit/k8s/base/**
+    dockerfile: credit/Dockerfile
+    build_context: credit
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/credit
+      sandbox-bj-*: lightclaw-bj8.tencentcloudcr.com/lightclaw/credit
+      sandbox-kr-*: null
+      sandbox-jp-*: null

@@ -15,6 +15,23 @@ func testOIDCCodeStore() oidc.CodeStore {
 	return oidc.NewMemoryCodeStore(time.Now)
 }
 
+func TestOIDCRegistryAddsNativeWithoutWideningSites(t *testing.T) {
+	clients := []oidc.Client{
+		{ID: "site-gateway", DisplayName: "Sites", RedirectURIs: []string{"https://sites-auth.lightvela.site/auth/lightvela/callback", "https://sites-auth.lightvela.tech/auth/lightvela/callback"}},
+		{ID: oidc.NativeClientID, DisplayName: "Vela", RedirectURIs: []string{oidc.NativeRedirectURI}},
+	}
+	if err := validateSiteGatewayOIDCClients(clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oidc.NewRegistry(clients); err != nil {
+		t.Fatal(err)
+	}
+	clients[1].RedirectURIs = []string{"opencraft://evil/lightvela"}
+	if err := validateSiteGatewayOIDCClients(clients); err == nil {
+		t.Fatal("unregistered native callback accepted")
+	}
+}
+
 func TestBuildOIDCConfigIsDisabledByDefault(t *testing.T) {
 	t.Setenv("LIGHTCLAW_OIDC_ENABLED", "")
 	if config := buildOIDCConfig(slog.New(slog.NewTextHandler(io.Discard, nil)), nil); config != nil {

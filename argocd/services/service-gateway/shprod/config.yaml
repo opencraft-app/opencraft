@@ -88,6 +88,11 @@ routes:
           - https://localhost.lightvela.com
           - https://chat.lightvela.ai
           - https://localhost.lightvela.ai
+      - method: POST
+        path: "/v1/instances/{instance_id}/debug/exec"
+        allowed_origins:
+          - https://chat.lightvela.com
+          - https://chat.lightvela.ai
     require_realname: true
     response_header_timeout: 60s
   - name: sandbox-legacy
@@ -115,6 +120,8 @@ routes:
         path: /v1/passes/order-url
       - method: POST
         path: /v1/passes/{pass_id}/renew/order-url
+      - method: POST
+        path: /v1/passes/{pass_id}/modify/order-url
   - name: ctl-orders
     prefix: /v1/orders
     methods: [GET, OPTIONS]

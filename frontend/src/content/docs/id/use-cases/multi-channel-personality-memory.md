@@ -2,13 +2,13 @@
 
 Telegram dan WhatsApp dapat menjadi pintu masuk yang berbeda ke Hermes Agent yang sama.
 
-Ketika kedua kanal terhubung ke Agent yang sama, keduanya dapat berbagi persona, Skill, otomasi, dan memori jangka panjang di tingkat Agent, sementara tiap kanal mempertahankan otorisasi dan batas pesannya sendiri.
+Ketika kedua kanal terhubung ke Agent yang sama, keduanya dapat berbagi persona, Skill, tugas terjadwal, dan memori jangka panjang di tingkat Agent, sementara tiap kanal mempertahankan otorisasi dan batas pesannya sendiri.
 
 ![Satu Agent terhubung ke Telegram dan WhatsApp dengan satu kepribadian dan memori jangka panjang](../images/use-case-07-multi-channel-personality-memory.png)
 
 ## Ringkasan
 
-**Telegram dan WhatsApp dapat berperan sebagai dua pintu masuk ke Hermes Agent yang sama. Selama kedua kanal terhubung ke Agent yang sama, keduanya berbagi persona, Skill, otomasi, dan memori jangka panjang di tingkat Agent, tanpa konfigurasi yang perlu diduplikasi per platform.** Namun "terpadu" memiliki cakupan yang terdefinisi: yang dibagikan adalah aset tingkat Agent, sementara tiap kanal mempertahankan alur otorisasi dan batas pesannya sendiri, sehingga menghubungkan keduanya adalah dua langkah otorisasi yang independen. Cara paling langsung untuk memastikan berbaginya adalah menyatakan sesuatu di satu kanal lalu menanyakannya di kanal lain — jawaban yang benar membuktikan kedua pintu masuk mengarah ke Agent yang sama. Setelah terhubung, pastikan juga balasannya mendarat di percakapan tempat Anda mengirim pesan, bukan percakapan lain.
+**Telegram dan WhatsApp dapat berperan sebagai dua pintu masuk ke Hermes Agent yang sama. Selama kedua kanal terhubung ke Agent yang sama, keduanya berbagi persona, Skill, tugas terjadwal, dan memori jangka panjang di tingkat Agent, tanpa konfigurasi yang perlu diduplikasi per platform.** Namun "terpadu" memiliki cakupan yang terdefinisi: yang dibagikan adalah aset tingkat Agent, sementara tiap kanal mempertahankan alur otorisasi dan batas pesannya sendiri, sehingga menghubungkan keduanya adalah dua langkah otorisasi yang independen. Cara paling langsung untuk memastikan berbaginya adalah menyatakan sesuatu di satu kanal lalu menanyakannya di kanal lain — jawaban yang benar membuktikan kedua pintu masuk mengarah ke Agent yang sama. Setelah terhubung, pastikan juga balasannya mendarat di percakapan tempat Anda mengirim pesan, bukan percakapan lain.
 
 ## Untuk siapa ini
 
@@ -116,11 +116,11 @@ Kepribadian dan memori jangka panjang seharusnya tetap konsisten, tetapi format 
     ├── satu SOUL.md
     ├── satu memori Agent dan profil pengguna
     ├── satu kumpulan Skill terpasang
-    ├── satu kumpulan otomasi
+    ├── satu kumpulan tugas terjadwal
     ├── pintu masuk Telegram
     └── pintu masuk WhatsApp
 
-Metode notifikasi otomasi tetap membutuhkan kanal tujuan yang eksplisit.
+Metode notifikasi tugas terjadwal tetap membutuhkan kanal tujuan yang eksplisit.
 
 Jangan mengasumsikan bahwa Agent yang dibagikan membuat setiap pengingat terkirim ke Telegram sekaligus WhatsApp.
 
@@ -151,11 +151,11 @@ Telegram mendukung pesan grup setelah Anda menonaktifkan Group Privacy, menambah
 
 Berbagi lintas kanal menjaga lapisan Agent tetap konsisten, tetapi ia tidak menambahkan kemampuan chat grup ke kanal mana pun.
 
-### Apakah otomasi akan mengirim ke kedua kanal secara otomatis?
+### Apakah tugas terjadwal akan mengirim ke kedua kanal secara otomatis?
 
 Tidak.
 
-Ketika Anda membuat atau menyunting otomasi, pastikan metode notifikasi dan kanal tujuannya, lalu uji hasil pengirimannya secara terpisah.
+Ketika Anda membuat atau menyunting tugas terjadwal, pastikan metode notifikasi dan kanal tujuannya, lalu uji hasil pengirimannya secara terpisah.
 
 ## Langkah berikutnya
 

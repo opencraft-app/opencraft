@@ -14,6 +14,12 @@ const DefaultMaxBodyBytes int64 = 10 << 20
 
 const RouteModeSignedHTTPTunnel = "signed_http_tunnel"
 
+const (
+	AuthModeDisabled = "disabled"
+	AuthModeOptional = "optional"
+	AuthModeRequired = "required"
+)
+
 type Config struct {
 	Addr         string          `yaml:"addr"`
 	MaxBodyBytes int64           `yaml:"max_body_bytes"`
@@ -53,6 +59,7 @@ type BackendConfig struct {
 
 type AuthConfig struct {
 	Enabled              bool           `yaml:"enabled"`
+	Mode                 string         `yaml:"mode"`
 	TimestampSkew        string         `yaml:"timestamp_skew"`
 	Callers              []CallerConfig `yaml:"callers"`
 	AllowUnauthenticated []string       `yaml:"allow_unauthenticated"`
@@ -225,6 +232,7 @@ func Load(path string) (Config, error) {
 	if !cfg.Audit.Stdout && !cfg.Audit.OTLP.Enabled {
 		cfg.Audit.Stdout = true
 	}
+	applyAuthEnvOverrides(&cfg)
 	applyBackendEnvOverrides(&cfg)
 	applyRouteEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
@@ -234,6 +242,9 @@ func Load(path string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if mode := c.Auth.EffectiveMode(); mode != AuthModeDisabled && mode != AuthModeOptional && mode != AuthModeRequired {
+		return fmt.Errorf("auth.mode must be one of disabled, optional, required; got %q", c.Auth.Mode)
+	}
 	if _, err := ParseDuration(c.Auth.TimestampSkew, 5*time.Minute); err != nil {
 		return fmt.Errorf("auth.timestamp_skew: %w", err)
 	}
@@ -430,6 +441,18 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// EffectiveMode preserves the historical enabled boolean while allowing a
+// staged disabled -> optional -> required authentication rollout.
+func (c AuthConfig) EffectiveMode() string {
+	if mode := strings.ToLower(strings.TrimSpace(c.Mode)); mode != "" {
+		return mode
+	}
+	if c.Enabled {
+		return AuthModeRequired
+	}
+	return AuthModeDisabled
+}
+
 func normalizeRouteMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
 }
@@ -453,6 +476,31 @@ func applyBackendEnvOverrides(cfg *Config) {
 			}
 			cfg.Backends[i].Upstream.Headers["Host"] = value
 		}
+	}
+}
+
+func applyAuthEnvOverrides(cfg *Config) {
+	if mode := strings.TrimSpace(os.Getenv("CLOUDLADDERGATEWAY_AUTH_MODE")); mode != "" {
+		cfg.Auth.Mode = strings.ToLower(mode)
+	}
+	appendRaw := strings.TrimSpace(os.Getenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND"))
+	if appendRaw == "" {
+		return
+	}
+	seen := make(map[string]struct{}, len(cfg.Auth.AllowUnauthenticated))
+	for _, routeID := range cfg.Auth.AllowUnauthenticated {
+		seen[routeID] = struct{}{}
+	}
+	for _, routeID := range strings.Split(appendRaw, ",") {
+		routeID = strings.TrimSpace(routeID)
+		if routeID == "" {
+			continue
+		}
+		if _, ok := seen[routeID]; ok {
+			continue
+		}
+		cfg.Auth.AllowUnauthenticated = append(cfg.Auth.AllowUnauthenticated, routeID)
+		seen[routeID] = struct{}{}
 	}
 }
 

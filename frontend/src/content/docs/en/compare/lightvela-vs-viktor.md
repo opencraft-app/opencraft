@@ -16,7 +16,7 @@ It is where the Agent lives, who it belongs to, and what kind of work it is desi
 | **Primary role** | Personal cloud AI Agent | Shared AI coworker for teams |
 | **Main interface** | Web console and messaging Channels | Slack, Microsoft Teams, web app, and Discord |
 | **Memory model** | Personal Agent memory across conversations and Channels | Shared workspace context and memory |
-| **Integrations** | Messaging Channels, Skills, Automations, and model providers | 3,200+ business-tool integrations |
+| **Integrations** | Messaging Channels, Skills, Scheduled Tasks, and model providers | 3,200+ business-tool integrations |
 | **Setup model** | Managed cloud Agent with no server maintenance | Connect Viktor, authorize tools, and delegate work |
 | **Best fit** | Personal assistance and long-term collaboration | Cross-tool business operations |
 
@@ -24,7 +24,7 @@ It is where the Agent lives, who it belongs to, and what kind of work it is desi
 
 LightVela is built around the idea of owning a long-lived personal Agent.
 Your Hermes Agent runs in the cloud, stays available when your devices are offline, and can be reached through supported messaging Channels.
-Its memory, personality, model, Skills, and Automations are configured around one continuing relationship.
+Its memory, personality, model, Skills, and Scheduled Tasks are configured around one continuing relationship.
 The [LightVela overview](../01-overview.md) explains how those pieces work together.
 
 Viktor.com takes a different approach.
@@ -41,12 +41,12 @@ Mira starts from Telegram conversations, while Viktor starts from shared busines
 ## Where LightVela is the better fit
 
 LightVela is a strong fit when your Agent needs to be available across the places where you already communicate.
-You can connect Channels, configure a model, install [Skills](../configuration/skill.md), and create recurring [Automations](../configuration/automation.md) from the LightVela environment.
+You can connect Channels, configure a model, install [Skills](../configuration/skill.md), and create recurring [Scheduled Tasks](../configuration/automation.md) from the LightVela environment.
 The same Agent can support reminders, research, information organization, content work, and everyday conversations without requiring you to maintain a server.
 
 The model is also intentionally flexible.
 You can configure supported model providers through LightVela and change the model layer without rebuilding the Agent relationship.
-Skills extend what Hermes can do, while Automations determine when it should proactively run work.
+Skills extend what Hermes can do, while Scheduled Tasks determine when it should proactively run work.
 
 LightVela also gives you room to explore more than one Agent runtime from the same cloud-hosted environment.
 The [DeepSeek Harness](../configuration/deepseek-harness.md) runs alongside Hermes Agent as a separately managed service, with its own WebUI, provider configuration, and plugin-enabled profile.
@@ -94,7 +94,7 @@ Choose LightVela if you:
 - **Want a personal Agent:** You want an AI companion that stays available and becomes more useful around your routines.
 - **Value continuity:** Long-term memory and one continuing Agent relationship matter more than team-wide context.
 - **Prefer messaging access:** You want to reach the Agent through the Channels you already use.
-- **Want configuration control:** You want to manage models, Skills, Automations, and Agent behavior around your own workflow.
+- **Want configuration control:** You want to manage models, Skills, Scheduled Tasks, and Agent behavior around your own workflow.
 - **Want runtime flexibility:** You want to explore Hermes and additional Agent runtimes from one cloud-hosted environment.
 
 Choose Viktor.com if you:

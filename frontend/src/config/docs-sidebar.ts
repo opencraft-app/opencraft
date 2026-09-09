@@ -251,7 +251,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       {
         slug: "use-cases/whatsapp-24-7-customer-service",
         title: "如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？",
-        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations",
+        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks",
       },
       {
         slug: "use-cases/lifelike-im-agent-rhythm-social-memory",

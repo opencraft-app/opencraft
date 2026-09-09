@@ -3,6 +3,7 @@ go 1.26
 use (
 	./ai-gateway
 	./cloudladdergateway
+	./credit
 	./ctl
 	./images/envd
 	./velagw

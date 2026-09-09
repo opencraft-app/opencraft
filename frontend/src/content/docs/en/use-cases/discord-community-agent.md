@@ -13,7 +13,7 @@ LightVela brings that pattern to Discord communities without requiring you to bu
 
 This use case is for gaming communities, developer communities, interest groups, and event servers that want a reliable AI helper in the conversation space they already use.
 
-The expected outcome is a well-briefed Discord Agent that can answer approved questions, point members to the right channel or event information, support onboarding, and send configured reminders when an Automation is appropriate.
+The expected outcome is a well-briefed Discord Agent that can answer approved questions, point members to the right channel or event information, support onboarding, and send configured reminders when a Scheduled Task is appropriate.
 
 It is not a replacement for human moderators.
 Sensitive moderation decisions, account actions, disputes, and anything outside the approved knowledge boundary should go to a human.
@@ -28,7 +28,7 @@ Sensitive moderation decisions, account actions, disputes, and anything outside 
 
 - A clear boundary for what the Agent may answer, what it must decline, and when it should escalate.
 
-- The [Discord channel configuration guide](../configuration/channel-discord.md) and [Automation guide](../configuration/automation.md) available for reference.
+- The [Discord channel configuration guide](../configuration/channel-discord.md) and [Scheduled Task guide](../configuration/automation.md) available for reference.
 
 ## Steps
 
@@ -95,8 +95,8 @@ If the bot does not reply, first confirm the Discord channel shows as connected,
 
 ### 5. Add recurring support only after the core path works
 
-Once question answering is reliable, add a narrow Automation for recurring work such as a registration reminder, an event countdown, or a moderator summary.
-LightVela Automations support a one-time run, fixed weekdays, or fixed intervals, with an optional effective window and notification channels.
+Once question answering is reliable, add a narrow Scheduled Task for recurring work such as a registration reminder, an event countdown, or a moderator summary.
+LightVela Scheduled Tasks support a one-time run, fixed weekdays, or fixed intervals, with an optional effective window and notification channels.
 
 For example, you could configure:
 
@@ -108,7 +108,7 @@ If any detail is missing, say which detail needs a moderator update instead of g
 ```
 
 Start with one reminder and review its output before adding more scheduled work.
-See [Automations](../configuration/automation.md) for the available schedule and notification settings.
+See [Scheduled Tasks](../configuration/automation.md) for the available schedule and notification settings.
 
 ## Practical checklist
 
@@ -117,8 +117,8 @@ See [Automations](../configuration/automation.md) for the available schedule and
 | Define | Write the community role, approved facts, and escalation rules | Agent instructions | A moderator can explain what the Agent may and may not answer |
 | Connect | Add the Discord Bot token and invite the bot with least-privilege permissions | Discord channel | Discord appears as connected and the bot is present in the server |
 | Test | Ask a known FAQ question and an unknown or sensitive question | Discord conversation | The first gets a grounded answer and the second is declined or escalated |
-| Repeat | Add one reminder or summary with a narrow schedule | Automation | The message arrives in the selected notification channel at the expected time |
-| Review | Check answers, schedules, and changed event information | Agent and Automation management | Stale rules and announcements are corrected before they cause confusion |
+| Repeat | Add one reminder or summary with a narrow schedule | Scheduled Task | The message arrives in the selected notification channel at the expected time |
+| Review | Check answers, schedules, and changed event information | Agent and Scheduled Task management | Stale rules and announcements are corrected before they cause confusion |
 
 ## What a shared Discord Agent can help with
 
@@ -163,7 +163,7 @@ LightVela starts with the Agent and lets you describe its behavior in the consol
 | --- | --- |
 | Write commands and event handlers | Describe what the Agent should do |
 | Store FAQs and rules in code or a database | Give the Agent approved context and boundaries |
-| Build schedulers for reminders | Create Automations in the console |
+| Build schedulers for reminders | Create Scheduled Tasks in the console |
 | Deploy behavior changes | Update the Agent instructions and review the result |
 | Maintain bot infrastructure and logic | Focus on community operations and moderation |
 
@@ -197,7 +197,7 @@ Have it point members to a human moderator when the rule is unclear or the issue
 ### Can it send event reminders automatically?
 
 Yes, the Discord channel documentation lists proactive messages as supported at the channel layer.
-Use [Automations](../configuration/automation.md) to define the schedule, task instructions, effective window, and notification channel.
+Use [Scheduled Tasks](../configuration/automation.md) to define the schedule, task instructions, effective window, and notification channel.
 
 ### Should the Agent make moderation decisions?
 
@@ -206,7 +206,7 @@ Use it for explanations, routing, reminders, and summaries, while human moderato
 
 ## Conclusion
 
-Create the Hermes Agent, give it approved community context, connect Discord, invite the bot, and test it with real questions before adding Automation.
+Create the Hermes Agent, give it approved community context, connect Discord, invite the bot, and test it with real questions before adding Scheduled Task.
 That sequence turns a private AI Agent into a useful community-facing helper while keeping the server's rules, permissions, and human escalation boundaries under your control.
 
 For a more focused version of this pattern, see [Empower your Discord Event Bot with AI-Agentic Capabilities](./discord-event-agent.md).
