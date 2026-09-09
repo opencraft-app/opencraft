@@ -1288,13 +1288,14 @@ input.lh-std-input::placeholder {
 .lh-std-channel-panel__guide-btn {
   display: inline-flex;
   align-items: center;
-  padding: 7px 16px;
+  min-height: 36px;
+  padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
   color: #1f2937;
   background: #f3f4f6;
   border: 1px solid #e5e7eb;
-  border-radius: 14px;
+  border-radius: 999px;
   cursor: pointer;
   text-decoration: none;
   transition: all 0.15s ease;
@@ -1309,13 +1310,14 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__card-unbind {
-  padding: 6px 12px;
+  min-height: 36px;
+  padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
   color: var(--lh-std-text-secondary);
   background: transparent;
   border: 1px solid var(--lh-std-border-color);
-  border-radius: 14px;
+  border-radius: 999px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -1332,13 +1334,14 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__connect-btn {
-  padding: 7px 16px;
+  min-height: 36px;
+  padding: 0 18px;
   font-size: 13px;
   font-weight: 500;
   color: #fff;
   background: #1f2937;
   border: 1px solid #1f2937;
-  border-radius: 14px;
+  border-radius: 999px;
   cursor: pointer;
   transition: all 0.15s ease;
 }

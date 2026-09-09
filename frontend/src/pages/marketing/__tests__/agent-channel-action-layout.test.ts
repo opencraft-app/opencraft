@@ -106,7 +106,10 @@ describe("channel card action button radius", () => {
       ".lh-std-channel-panel__connect-btn",
     ]) {
       expect(getRuleBody(standardPanelStyles, selector)).toContain(
-        "border-radius: 14px;",
+        "border-radius: 999px;",
+      );
+      expect(getRuleBody(standardPanelStyles, selector)).toContain(
+        "min-height: 36px;",
       );
     }
   });
