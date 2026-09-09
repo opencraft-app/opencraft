@@ -22,6 +22,10 @@
   回调采用相同的同步销毁语义。
 - 积分包用量使用定点小数存储，并通过带 CAS 租约的每日 outbox 调用 `sendResource`；普通零用量
   也要上报，到期或已归档资源不再推量。
+- Trade migration 版本号必须唯一；积分包定义表使用独立版本，不能与既有 Pass/变配 migration
+  共用版本号。北京测试首次初始化时必须先完成 Trade/Credit schema migration，再分别用对应库账号
+  幂等执行 `scripts/seed_trade_beijing_sandbox_credit_definitions.sql` 和
+  `scripts/seed_credit_beijing_sandbox_products.sql`；商品引用同一 LLMGateway 控制面已有的 plan。
 - 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
 - Trade 出向计费地域也按产品类型隔离：`LIGHTVELA_TRADE_REGION` 控制 Pass/default 链路，
   `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
