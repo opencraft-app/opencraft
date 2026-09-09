@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UpgradePassModal } from '../upgrade-pass-modal';
 import type { Pass, PassModifyOption } from '@/domain/types';
@@ -22,7 +22,7 @@ beforeEach(() => {
   plans.listMyPasses.mockResolvedValue([pass]);
   plans.getModifyCheckout.mockResolvedValue({ checkout: null });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 function mount(onSuccess = vi.fn()) { render(<UpgradePassModal pass={pass} targetBundleId="target" onClose={vi.fn()} onSuccess={onSuccess} />); return onSuccess; }
 describe('upgrade checkout modal', () => {
   it('clears only a server-confirmed cancelled checkout so the user can quote again', async () => {
@@ -47,12 +47,9 @@ describe('upgrade checkout modal', () => {
     await screen.findByText('USD 1.67');
     fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
     await screen.findByRole('alert');
-    fireEvent.click(screen.getByRole('button', { name: '刷新升级结果' }));
-    await waitFor(() => expect(plans.getOrderStatus.mock.calls.length).toBeGreaterThan(1));
-    await waitFor(() => expect(screen.getByRole('button', { name: '刷新升级结果' })).toBeTruthy());
-    expect(screen.getByRole('alert').textContent).toContain('url unavailable');
-    fireEvent.click(screen.getByRole('button', { name: '继续支付' }));
-    await waitFor(() => expect(plans.getModifyOrderUrl).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(plans.getModifyOrderUrl).toHaveBeenCalledTimes(2), { timeout: 4500 });
+    expect(screen.queryByRole('button', { name: '继续支付' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '刷新升级结果' })).toBeNull();
     expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
     expect(plans.getModifyOrderUrl.mock.calls[1]?.[1].deal_names).toEqual(['d']);
   });
@@ -64,11 +61,9 @@ describe('upgrade checkout modal', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认升级并支付' }));
     await screen.findByText('已支付，套餐升级中');
     expect(success).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByRole('button', { name: '刷新升级结果' })).not.toBeDisabled());
     plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', local_status: 'provisioned', status: 'success', source: 'local' });
     plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
-    fireEvent.click(screen.getByRole('button', { name: '刷新升级结果' }));
-    await waitFor(() => expect(success).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(1), { timeout: 4500 });
   });
   it('requires confirmation again if the fresh quote changes', async () => {
     mount(); await screen.findByText('USD 1.67');
@@ -97,8 +92,45 @@ describe('upgrade checkout modal', () => {
     mount();
     await screen.findByText('等待支付');
     expect(plans.createModifyOrder).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '继续支付' }));
     await waitFor(() => expect(plans.getModifyOrderUrl).toHaveBeenCalledWith('p', expect.objectContaining({ deal_names: ['d'] })));
+  });
+  it('automatically shows the restored domestic QR without manual payment controls', async () => {
+    region.global = false;
+    plans.refreshModifyPaymentAuthorization.mockResolvedValue({ auth_code: 'test-only' });
+    plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', target_bundle_id: 'target', local_status: 'pending_pay' } });
+    mount();
+    await screen.findByLabelText('微信扫码支付');
+    expect(screen.queryByRole('link', { name: '已在微信中？点击支付' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '继续支付' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '刷新升级结果' })).toBeNull();
+    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+  });
+  it('refreshes an expired QR for the same order and keeps polling beyond ten minutes until delivery', async () => {
+    vi.useFakeTimers(); region.global = false;
+    plans.refreshModifyPaymentAuthorization.mockResolvedValue({ auth_code: 'test-only' });
+    plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', target_bundle_id: 'target', local_status: 'pending_pay' } });
+    const success = vi.fn();
+    await act(async () => { mount(success); });
+    expect(screen.getByLabelText('微信扫码支付')).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(11 * 60 * 1000); });
+    expect(plans.refreshModifyPaymentAuthorization).toHaveBeenCalledTimes(2);
+    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', local_status: 'provisioned', status: 'success', source: 'local' });
+    plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(success).toHaveBeenCalledTimes(1);
+    const calls = plans.getOrderStatus.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(calls);
+  });
+  it('stops polling when the modal is unmounted', async () => {
+    vi.useFakeTimers();
+    plans.getModifyCheckout.mockResolvedValue({ checkout: { deal_name: 'd', target_bundle_id: 'target', local_status: 'pending_pay' } });
+    await act(async () => { mount(); });
+    cleanup();
+    const calls = plans.getOrderStatus.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(calls);
   });
   it('keeps an unknown creation locked when no durable server order can be found', async () => {
     window.localStorage.setItem('lightvela-upgrade-v1:u:p', JSON.stringify({ targetBundleId: 'target', phase: 'creating' }));
