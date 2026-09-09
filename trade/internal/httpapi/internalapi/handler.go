@@ -134,6 +134,9 @@ type Deps struct {
 	// DeleteResource handler 装配期一同透传给 region.Resolve。
 	RegionOverride string
 
+	// CreditRegionOverride 仅用于积分包退款出向地域；空值由 config.Load 回退到 RegionOverride。
+	CreditRegionOverride string
+
 	// DianshiAdminStore 提供点石订单和活动参与记录的后台管理能力。
 	//
 	// 用途：GET/DELETE /internal/trade/dianshi/*，供 ctl admin 后台查询/删除点石下单记录，
@@ -206,8 +209,9 @@ func Install(router *gin.Engine, deps Deps) {
 		group.POST("/resources/:resourceID/refund",
 			refundResourceHandler(deps.JifeiClient, deps.BundleStore, lhRegion))
 		if deps.CreditDefinitionStore != nil {
+			creditRegion := region.Resolve(deps.SiteKind, deps.CreditRegionOverride)
 			group.POST("/credit/resources/:resourceID/refund",
-				creditRefundResourceHandler(deps.JifeiClient, deps.CreditDefinitionStore, lhRegion))
+				creditRefundResourceHandler(deps.JifeiClient, deps.CreditDefinitionStore, creditRegion))
 		}
 	}
 
