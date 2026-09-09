@@ -73,6 +73,30 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 
+it('routes upgrade payment to the existing-order endpoint with mobile authorization', async () => {
+  setUserAgent(WECHAT_UA);
+  fetchMock.mockResolvedValue(jsonResponse({ data: mockOrderUrlResult({ need_charge: 0 }) }));
+  renderPage(`/auth/wechat-pay?d=upgrade-1&ac=test-ticket&pid=pass-1&op=modify&e=${Date.now() + 60000}&openid=wx-test`);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  const call = fetchMock.mock.calls.find(([url]) => String(url).includes('order-url'));
+  expect(String(call?.[0])).toContain('/v1/passes/pass-1/modify/order-url');
+  expect(JSON.parse(call?.[1].body)).toMatchObject({ deal_names: ['upgrade-1'], platform: 'mobile', auth_code: 'test-ticket', wx_open_id: 'wx-test' });
+});
+
+it('does not spin forever for an upgrade opened outside WeChat', async () => {
+  setUserAgent(SAFARI_UA);
+  renderPage(`/auth/wechat-pay?d=upgrade-1&ac=test-ticket&pid=pass-1&op=modify&e=${Date.now() + 60000}`);
+  await screen.findByText('请在微信中打开此页面，或返回电脑使用微信扫码。');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('rejects an upgrade link missing its pass binding before requesting payment', async () => {
+  setUserAgent(WECHAT_UA);
+  renderPage(`/auth/wechat-pay?d=upgrade-1&ac=test-ticket&op=modify&e=${Date.now() + 60000}&openid=wx-test`);
+  await screen.findByText('升级支付信息不完整，请返回原页面重新获取二维码。');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();

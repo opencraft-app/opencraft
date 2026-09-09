@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Pass, User } from "@/domain/types";
 import { AccountPage } from "@/pages/marketing/account-page";
+import { saveUpgradeCheckout } from "@/lib/upgrade-checkout";
+vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId }: { targetBundleId: string }) => <div role="dialog">Upgrade {targetBundleId}</div> }));
 
 const updateProfile = vi.fn();
 const uploadAvatar = vi.fn();
@@ -14,6 +16,8 @@ const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const refreshPasses = vi.fn();
 const listMyPasses = vi.fn();
+const listModifyBundles = vi.fn();
+const getModifyCheckout = vi.fn();
 const getRenewPrice = vi.fn();
 const createRenewOrder = vi.fn();
 
@@ -109,6 +113,8 @@ vi.mock("@/contexts/repository-context", () => ({
     },
     plans: {
       listMyPasses,
+      listModifyBundles,
+      getModifyCheckout,
       getRenewPrice,
       createRenewOrder,
     },
@@ -133,6 +139,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 const buildActivePass = (): Pass => ({
+  status: "active",
   pass_id: "pass_global_renew",
   user_id: "usr_global_renew",
   bundle_id: "bundle_launch",
@@ -177,6 +184,8 @@ describe("AccountPage global renewal action", () => {
     activePass = buildActivePass();
     paidBillingEnabled = true;
     listMyPasses.mockResolvedValue([]);
+    listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [] });
+    getModifyCheckout.mockResolvedValue({ checkout: null });
   });
 
   afterEach(() => {
@@ -218,6 +227,23 @@ describe("AccountPage global renewal action", () => {
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();
     expect(createRenewOrder).not.toHaveBeenCalled();
+  });
+
+  it("loads upgrade eligibility without a click and places an explicit pass link beside renewal", async () => {
+    listMyPasses.mockResolvedValue([activePass]);
+    listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target" }, modify_price: { real_total_cost: 100 } }] });
+    renderAccountPage();
+    expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", "/subscribe/?upgrade_pass_id=pass_global_renew");
+    expect(screen.getByRole("button", { name: "立即续费" })).toBeEnabled();
+  });
+  it("can reopen a pending upgrade while the source pass is modifying", async () => {
+    activePass = { ...buildActivePass(), status: "modifying" };
+    listMyPasses.mockResolvedValue([activePass]);
+    saveUpgradeCheckout(window.localStorage, currentUser.id, activePass.pass_id, { phase: "ordered", targetBundleId: "target", dealName: "deal" });
+    renderAccountPage();
+    await userEvent.click(await screen.findByRole("button", { name: "查看升级进度" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade target");
+    expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
   });
 
   it("opens the global renewal flow when paid billing is enabled", async () => {
