@@ -637,7 +637,11 @@ stages:
               ci_init_repo_root
               ci_export_gongfeng_defaults
 
-              SOURCE_SHA="$(git rev-parse HEAD)"
+              SOURCE_SHA='${{ ci.sha }}'
+              if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" == *'${{'* ]]; then
+                SOURCE_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              test -n "$SOURCE_SHA"
               CI_RUNTIME_REF="${CI_RUNTIME_REF:-${{ ci.branch }}}"
               CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$SOURCE_SHA}"
               export CI_RUNTIME_REF CI_RUNTIME_COMMIT
