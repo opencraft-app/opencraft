@@ -62,6 +62,9 @@ master 源码
   Service Gateway 用户路由，最后才开放真实购买流量。
 - `sandbox-bj-7` 是首个验证环境；北京验证通过后由 `master` 为 `beijing-sandbox` 构建并
   auto-pin Credit。北京使用独立 `credit` 库/用户和 SSM Secret，不沿用 playground 敏感输入。
+- `beijing-sandbox` 的 Pass/default 计费地域保持 `LIGHTVELA_TRADE_REGION=ap-guangzhou`；
+  Credit 通过环境 patch 单独设置 `LIGHTVELA_CREDIT_REGION=ap-beijing`。其他环境未声明 Credit
+  专用地域时继承 Trade 地域，避免仅引入新配置键就改变存量行为。
 - 上海 Credit 仍按生产晋级流程单独接线；在上海验证完成前，Credit 的地域计费回调统一指向
   北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
