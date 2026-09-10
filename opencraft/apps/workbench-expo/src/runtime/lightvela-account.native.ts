@@ -31,8 +31,11 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
     ...pendingStorage,
     open: (url, redirect) => WebBrowser.openAuthSessionAsync(url, redirect),
     exchange: async (input, signal) => {
-      const response = await fetch(`${API_BASE}/auth/native/token`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal,
+      const response = await fetch(`${API_BASE}/auth/session/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: "opencraft-native-v1", ...input }),
+        signal,
       });
       if (!response.ok) throw new Error(response.status === 404 || response.status === 503
         ? "Native login is not enabled on the server yet"
