@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+
+const readSettingsPageSource = () =>
+  readFileSync(join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"), "utf8");
 
 const loadRoute = async (isGlobal: boolean) => {
   vi.resetModules();
@@ -16,6 +21,18 @@ const loadRoute = async (isGlobal: boolean) => {
 };
 
 describe("Agent common settings region boundary", () => {
+  it("passes the active Bot Profile to advanced settings", () => {
+    const page = readSettingsPageSource();
+    const panelStart = page.indexOf("<AgentCommonSettingsPanel");
+    const panelEnd = page.indexOf('{activeSection === "files"');
+    expect(panelStart).toBeGreaterThanOrEqual(0);
+    expect(panelEnd).toBeGreaterThan(panelStart);
+    const panel = page.slice(panelStart, panelEnd);
+
+    expect(panel).toContain("botId={activeBot.id}");
+    expect(panel).toContain("profileId={activeBot.profileId}");
+  });
+
   it("generates and resolves the settings route on the domestic site", async () => {
     const { notFound, route } = await loadRoute(false);
 

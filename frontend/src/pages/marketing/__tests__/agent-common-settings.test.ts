@@ -44,7 +44,9 @@ describe("Hermes common settings reader", () => {
   it("reads the eight allowlisted resolved values and detects raw YAML defaults", () => {
     const command = buildHermesCommonSettingsReadCommand();
 
+    expect(command).toContain('HERMES_BASE="${HERMES_HOME:-$HOME/.hermes}"');
     expect(command).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(command).toContain('HERMES_HOME="$HERMES_ROOT" "$HERMES_PYTHON"');
     expect(command).toContain("yaml.safe_load");
     expect(command).toContain('["hermes", "config", "path"]');
     expect(command).toContain('["hermes", "config", "get", dotted_key, "--json"]');
@@ -58,6 +60,16 @@ describe("Hermes common settings reader", () => {
     expect(command).toContain('"approvals.destructive_slash_confirm"');
     expect(command).not.toContain("shell=True");
     expect(command).toContain("valid_value");
+  });
+
+  it("binds named Profile reads without treating main as a named Profile directory", () => {
+    const namedCommand = buildHermesCommonSettingsReadCommand("profile-2");
+    const mainCommand = buildHermesCommonSettingsReadCommand("main");
+
+    expect(namedCommand).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'profile-2\'');
+    expect(namedCommand).toContain('HERMES_HOME="$HERMES_ROOT" "$HERMES_PYTHON"');
+    expect(mainCommand).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(mainCommand).not.toContain("profiles/'main'");
   });
 
   it("parses values together with defaulted and unsupported field metadata", () => {
@@ -160,7 +172,7 @@ exit 1
       },
     } as Pick<BotRepository, "execDebugCommand"> as BotRepository;
 
-    await expect(fetchHermesCommonSettingsSnapshot(bots, "bot-a")).resolves.toMatchObject({
+    await expect(fetchHermesCommonSettingsSnapshot(bots, "bot-a", "profile-2")).resolves.toMatchObject({
       values: { persistentMemory: true },
     });
     expect(receivedOptions).toEqual({ timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS });
@@ -209,14 +221,14 @@ describe("Hermes common setting validation", () => {
 
   it("builds approval commands from the static allowlist", () => {
     expect(buildHermesCommonSettingCommand("approvalMode", "smart")).toBe(
-      "hermes config set approvals.mode smart",
+      "hermes -p 'default' config set approvals.mode smart",
     );
     expect(buildHermesCommonSettingUnsetCommand("approvalMode")).toBe(
-      "hermes config unset approvals.mode",
+      "hermes -p 'default' config unset approvals.mode",
     );
     expect(() => buildHermesCommonSettingCommand("approvalMode", "always" as never)).toThrow("invalid");
     expect(buildHermesCommonSettingCommand("destructiveSlashConfirm", false)).toBe(
-      "hermes config set approvals.destructive_slash_confirm false",
+      "hermes -p 'default' config set approvals.destructive_slash_confirm false",
     );
     expect(validateHermesCommonSetting("destructiveSlashConfirm", true)).toEqual({ ok: true, value: true });
     expect(validateHermesCommonSetting("destructiveSlashConfirm", "false")).toEqual({ ok: false, reason: "type" });
@@ -242,10 +254,10 @@ describe("Hermes common setting validation", () => {
 
   it("builds unset commands only from the static setting allowlist", () => {
     expect(buildHermesCommonSettingUnsetCommand("persistentMemory")).toBe(
-      "hermes config unset memory.memory_enabled",
+      "hermes -p 'default' config unset memory.memory_enabled",
     );
-    expect(buildHermesCommonSettingUnsetCommand("compressionTarget")).toBe(
-      "hermes config unset compression.target_ratio",
+    expect(buildHermesCommonSettingUnsetCommand("compressionTarget", "profile-2")).toBe(
+      "hermes -p 'profile-2' config unset compression.target_ratio",
     );
   });
 
@@ -267,13 +279,13 @@ describe("Hermes common setting validation", () => {
 
   it("only builds commands for typed values and static allowlisted keys", () => {
     expect(buildHermesCommonSettingCommand("persistentMemory", false)).toBe(
-      "hermes config set memory.memory_enabled false",
+      "hermes -p 'default' config set memory.memory_enabled false",
     );
-    expect(buildHermesCommonSettingCommand("compressionThreshold", 0.65)).toBe(
-      "hermes config set compression.threshold 0.65",
+    expect(buildHermesCommonSettingCommand("compressionThreshold", 0.65, "profile-2")).toBe(
+      "hermes -p 'profile-2' config set compression.threshold 0.65",
     );
     expect(buildHermesCommonSettingCommand("protectedRecentMessages", 30)).toBe(
-      "hermes config set compression.protect_last_n 30",
+      "hermes -p 'default' config set compression.protect_last_n 30",
     );
     expect(() => buildHermesCommonSettingCommand("compressionTarget", 0.01)).toThrow("invalid");
   });
