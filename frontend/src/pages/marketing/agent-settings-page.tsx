@@ -289,6 +289,7 @@ function TeaSdkSettingsPanel({
     return (
       <AgentModelConfigPanel
         botId={instance.InstanceId}
+        profileId={instance.ProfileId}
         execDebugCommand={execDebugCommand}
         providers={resolveProductModelProviderOptions(productConfig, modelProviders, {
           region: instance.Zone,
@@ -5112,7 +5113,7 @@ export const AgentSettingsPage = ({
                             align="start"
                             side="bottom"
                             sideOffset={8}
-                            className="max-h-80 w-[var(--radix-popover-trigger-width)] overflow-y-auto !rounded-[8px] border-white/75 bg-white/[0.46] p-1.5 shadow-xl ring-1 ring-black/[0.04] backdrop-blur-sm backdrop-saturate-150"
+                            className="max-h-80 w-[var(--radix-popover-trigger-width)] overflow-y-auto !rounded-[8px] border-black/10 bg-white p-1.5 shadow-xl"
                           >
                             {visibleBots.map((bot) => {
                               const isActive = bot.id === activeTabId;
@@ -5126,11 +5127,10 @@ export const AgentSettingsPage = ({
                                   }}
                                   className={cn(
                                     "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15",
-                                    isActive ? "bg-white/55 text-black/90 shadow-sm" : "text-black/60 hover:bg-white/35 hover:text-black/80",
+                                    isActive ? "text-black/90" : "text-black/60 hover:bg-black/[0.04] hover:text-black/80",
                                   )}
                                   aria-current={isActive ? "true" : undefined}
                                 >
-                                  <img src={getAvatarForBot(bot.id)} alt="" className="size-5 flex-shrink-0 rounded object-contain" />
                                   <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
                                     {truncateBotName(botDisplayName)}
                                   </span>

@@ -180,8 +180,14 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("<PopoverTrigger asChild>");
     expect(page).toContain("<PopoverContent");
     expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
-    expect(page).toContain("bg-white/[0.46]");
-    expect(page).toContain("backdrop-blur-sm");
+    const menu = page.slice(page.indexOf("<PopoverContent"), page.indexOf("</PopoverContent>"));
+    expect(menu).toContain("border-black/10 bg-white p-1.5 shadow-xl");
+    expect(menu).not.toContain("backdrop-");
+    expect(menu).not.toContain("<img");
+    expect(menu).not.toContain("bg-white/");
+    expect(menu).not.toContain("shadow-sm");
+    expect(menu).toContain('isActive ? "text-black/90"');
+    expect(menu).toContain("{isActive && <Check");
     expect(page).not.toContain("visibleBots.length > 1 && isAgentMenuOpen &&");
     expect(page).toContain("{visibleBots.map((bot) => {");
     expect(page).not.toContain("botSearch");
