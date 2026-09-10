@@ -12,6 +12,7 @@ write source for OpenCraft.
 - Import commit: `327368646e4e4dda2505caa108736f2d2a58cdb6`
 - Login migration-tail source/merge: `c3daab35df63fb3e083792cbbab4930cd4922f3c` / `5865a68a9796d5af2fcd61392bcb12d9a3934da8`
 - Runtime migration-tail source/merge: `a3e981f543d3662616a72930d12c52cbaa9adccd` / `84625b756a13d6b78b109116d1de9f694ef39962`
+- Host-catalog recovery source/merge: `4b0d4e6b51b323c75d89d80aed311c47b028e157` / `36a3eb0011a76e8670b48663a5dc661ca6942aa8` (upstream feature `7ff9f46a1128d5f4c406cb38a0a94b53390d706a`)
 - Refreshed mono2 base: `a8d70ca376455e41a72d6efac680e9eaeb708ad4` (merged by `70d009c3e0b9598537c40bcbd7bd0eda11e43894`)
 - Prefix: `opencraft`
 - Commands executed during the bounded migration window:

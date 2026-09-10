@@ -44,7 +44,7 @@ derived: false
 ## history_context
 
 - `current_design_refs`：`docs/context/project/upstream-subtrees.md@2.0.0`、`docs/engineering/catalog/services.yaml@7f636c34d`、`velalink/MONO2_SUBTREE.md@7f636c34d`。
-- `relevant_evolution`：OpenCraft 独立仓库迁移源为 `/vela` 分支 `codex/mono2-migration-source`，初始快照 `af7e7d0`、登录增量 `c3daab3`、最终运行时增量 `a3e981f`；mono2 初始导入基线 `7f636c34d`，同步时刷新至 `a8d70ca37`。
+- `relevant_evolution`：OpenCraft 独立仓库迁移源为 `/vela` 分支 `codex/mono2-migration-source`，初始快照 `af7e7d0`、登录增量 `c3daab3`、运行时增量 `a3e981f`、Host Catalog 恢复最终快照 `4b0d4e6`；mono2 初始导入基线 `7f636c34d`，同步时刷新至 `a8d70ca37`。
 - `superseded_refs`：OpenCraft 旧仓库在迁移完成后仅作为只读历史与回退源，不再接受双向同步。
 
 ## acceptance
@@ -90,11 +90,13 @@ derived: false
 - mono2 基线 `7f636c34d155f31bdfc6df4c7d83a3d36c5d11d3`；Task Pack 提交 `06f04e2d2`；non-squash subtree 导入提交 `327368646e4e4dda2505caa108736f2d2a58cdb6`，提交包含 `git-subtree-split: af7e7d04...`；迁移窗口尾部同步提交为 `5865a68a9796d5af2fcd61392bcb12d9a3934da8`，第二父提交为 `c3daab3...`。
 - 用户再次请求同步后，源仓库的 Hermes 恢复/工具语义、跨平台消息折叠与原生 polyfill 增量提交为 `a3e981f543d3662616a72930d12c52cbaa9adccd`；mono2 先通过 `70d009c3e` 合并最新 `origin/master@a8d70ca37`，再通过 `84625b756` non-squash subtree pull 保留该源提交为第二父历史。
 - 最新 mono2 `frontend/` 共享闭包已重新生成并验证 125 个文件，清单来源仍为 `frontend/src`，`sourceRevision` 为 `4126d39cd43258321df3991b81d4cecff2156971`。
+- Host 恢复后 Catalog 自动恢复增量来自上游 `7ff9f46a`，合并后的源快照为 `4b0d4e6b`；mono2 通过 `36a3eb001` non-squash subtree pull 保留完整第二父历史。
 - `npm ci` 从空依赖目录成功安装 1,326 个包；`npm audit --omit=dev --audit-level=high` 无 high/critical，报告 13 个需要破坏性 Expo 降级/变更才能自动修复的 moderate 间接依赖问题，本轮未执行 `--force`。
 - `npm run check:mono2-agent-console` 验证 125 个共享前端文件；清单来源为 `frontend/src`，不含 worktree 绝对路径。
 - `npm run gate` 通过：边界、全 workspace 类型检查、扩展/AppServer/AppServer Lab/Chat/Workbench/Web release 测试以及 Web、Expo Web、Expo iOS 构建全部完成。
 - 迁移窗口尾部登录增量：账户认证聚焦测试 10/10 通过，Hermes 插件、Workbench Web 与 Expo 类型检查通过。
 - 最新运行时增量：8 个受影响测试文件共 177/177 通过，全 workspace TypeScript 检查通过。
+- Host Catalog 恢复增量：Catalog readiness、BFCache 页面生命周期与账户认证聚焦测试共 14/14 通过，Workbench Web 类型检查通过。
 - 文档系统 8/8 单测、Service Catalog 25/25 覆盖、42 个路由 smoke case、docs-impact 和 CI runtime 501 个测试通过。
 - 全仓 Context Validator 的既有失败从 `origin/master` 的 387 条变为当前 386 条（重建 catalog 后消除 stale 提示）；剩余为 master 已存在的旧 Task Pack metadata 和 5 个历史文档明文扫描命中，本迁移没有新增失败。
 
