@@ -25,7 +25,7 @@ stages:
         name: 构建、验证并同步 Hermes CVM 镜像
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -136,7 +136,7 @@ stages:
         name: 只读预检北京主沙箱 Hermes pools 和 VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -252,7 +252,7 @@ stages:
         name: 等待人工确认刷新并修补北京主沙箱 Hermes
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 北京主沙箱 Hermes 刷新修补已确认
             shell: bash
@@ -266,7 +266,7 @@ stages:
         name: 刷新北京主沙箱 Hermes pools
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -345,7 +345,7 @@ stages:
         name: 通过 TAT 升级存量北京主沙箱 Hermes VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -379,7 +379,7 @@ stages:
         name: 只读预检新加坡生产 Hermes pools 和 VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -497,7 +497,7 @@ stages:
         name: 等待人工确认刷新并修补新加坡生产 Hermes
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 新加坡生产 Hermes 刷新修补已确认
             shell: bash
@@ -511,7 +511,7 @@ stages:
         name: 刷新新加坡生产 Hermes pools
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -590,7 +590,7 @@ stages:
         name: 通过 TAT 升级存量新加坡生产 Hermes VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -642,7 +642,7 @@ stages:
         name: 等待人工确认刷新并修补上海生产 Hermes
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 上海生产 Hermes 刷新修补已确认
             shell: bash
@@ -656,7 +656,7 @@ stages:
         name: 刷新上海生产 Hermes pools
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -735,7 +735,7 @@ stages:
         name: 通过 TAT 升级存量上海生产 Hermes VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码

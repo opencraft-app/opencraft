@@ -146,11 +146,30 @@ func validateSiteGatewayOIDCClients(clients []oidc.Client) error {
 		"https://sites-auth.lightvela.site/auth/lightvela/callback",
 		"https://sites-auth.lightvela.tech/auth/lightvela/callback",
 	}
+	expectedWebRedirects := []string{
+		oidc.WebCNRedirectURI,
+		oidc.WebInternationalRedirectURI,
+	}
 	var sites []oidc.Client
 	for _, client := range clients {
-		if client.ID == oidc.NativeClientID {
+		switch client.ID {
+		case oidc.NativeClientID:
 			if len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != oidc.NativeRedirectURI {
 				return fmt.Errorf("invalid native client redirect")
+			}
+			continue
+		case oidc.WebClientID:
+			if len(client.RedirectURIs) != len(expectedWebRedirects) {
+				return fmt.Errorf("invalid web client redirects")
+			}
+			got := append([]string(nil), client.RedirectURIs...)
+			want := append([]string(nil), expectedWebRedirects...)
+			slices.Sort(got)
+			slices.Sort(want)
+			for index := range want {
+				if got[index] != want[index] {
+					return fmt.Errorf("invalid web client redirect %q", got[index])
+				}
 			}
 			continue
 		}

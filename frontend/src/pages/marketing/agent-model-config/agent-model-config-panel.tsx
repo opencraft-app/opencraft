@@ -262,11 +262,13 @@ function ModelConfigLoading() {
 
 export function AgentModelConfigPanel({
   botId,
+  profileId,
   execDebugCommand,
   providers,
   isGlobalRegion = false,
 }: {
   botId: string;
+  profileId?: string;
   execDebugCommand: HermesModelConfigExecDebugCommand;
   providers: ModelProviderOption[];
   isGlobalRegion?: boolean;
@@ -274,7 +276,7 @@ export function AgentModelConfigPanel({
   const t = useT();
   const { i18n } = useTranslation();
   const autoModelDisplayName = t("自动");
-  const controller = useModelConfig({ botId, execDebugCommand });
+  const controller = useModelConfig({ botId, profileId, execDebugCommand });
   const addSectionRef = useRef<HTMLElement>(null);
   const configuredHeadingRef = useRef<HTMLHeadingElement>(null);
   const providerTriggerRef = useRef<HTMLButtonElement>(null);

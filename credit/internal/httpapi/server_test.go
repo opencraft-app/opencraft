@@ -99,6 +99,9 @@ type httpFakeLLMGateway struct {
 
 type httpFakeTrade struct {
 	orderAndPayRequest tradeclient.OrderRequest
+	payURLDealName     string
+	payURLRequest      tradeclient.PayURLRequest
+	payURLError        error
 }
 
 func (f *httpFakeTrade) Inquiry(context.Context, tradeclient.InquiryRequest) (map[string]any, error) {
@@ -112,6 +115,20 @@ func (f *httpFakeTrade) PlaceOrder(context.Context, tradeclient.OrderRequest) (m
 func (f *httpFakeTrade) PlaceOrderAndPay(_ context.Context, req tradeclient.OrderRequest) (map[string]any, error) {
 	f.orderAndPayRequest = req
 	return map[string]any{"deal_name": "deal-1", "big_order_id": "big-1"}, nil
+}
+
+func (f *httpFakeTrade) GeneratePayURL(_ context.Context, dealName string, req tradeclient.PayURLRequest) (*tradeclient.PayURLResult, error) {
+	f.payURLDealName = dealName
+	f.payURLRequest = req
+	if f.payURLError != nil {
+		return nil, f.payURLError
+	}
+	tokenID := "token-1"
+	return &tradeclient.PayURLResult{
+		PayURL:     "https://buy.cloud.tencent.com/credit",
+		TokenID:    &tokenID,
+		NeedCharge: 1,
+	}, nil
 }
 
 func (f *httpFakeTrade) RefundPackage(context.Context, string, tradeclient.RefundRequest) (map[string]any, error) {
@@ -264,6 +281,57 @@ func TestUserOrderAndPayUsesTrustedHeaderIdentity(t *testing.T) {
 	}
 	if trade.orderAndPayRequest.ExternalUserID != "usr_trusted" {
 		t.Fatalf("external_user_id=%q, want trusted header identity", trade.orderAndPayRequest.ExternalUserID)
+	}
+}
+
+func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"deal-credit-1",
+		"external_user_id":"usr_spoofed",
+		"platform":"pc",
+		"wx_open_id":"openid-1",
+		"wx_app_id":"spoofed-app-id",
+		"return_url":"https://lightvela.com/credit?paid=1"
+	}`))
+	req.Header.Set("X-User-Id", "usr_trusted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.payURLDealName != "deal-credit-1" || trade.payURLRequest.ExternalUserID != "usr_trusted" {
+		t.Fatalf("deal_name=%q request=%+v", trade.payURLDealName, trade.payURLRequest)
+	}
+	if trade.payURLRequest.WxAppID != wechatPaymentAppID {
+		t.Fatalf("wx_app_id=%q", trade.payURLRequest.WxAppID)
+	}
+	if !strings.Contains(rec.Body.String(), `"pay_url":"https://buy.cloud.tencent.com/credit"`) ||
+		!strings.Contains(rec.Body.String(), `"need_charge":1`) {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestUserOrderURLPreservesTradeNotFound(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{payURLError: &tradeclient.Error{
+		Status:  http.StatusNotFound,
+		Code:    "OrderNotFound",
+		Message: "order not found",
+	}}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{"deal_name":"missing"}`))
+	req.Header.Set("X-User-Id", "usr_trusted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

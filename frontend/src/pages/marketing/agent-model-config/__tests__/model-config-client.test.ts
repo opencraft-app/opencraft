@@ -371,6 +371,17 @@ describe("Hermes model configuration client", () => {
     expect(catalogProvider.catalogModels).toEqual([{ id: model.id, name: "DeepSeek V3" }]);
   });
 
+  it("scopes model configuration data to the selected Hermes profile", () => {
+    const mainCommand = buildHermesModelConfigCommand({ type: "read" }, "main");
+    const profileCommand = buildHermesModelConfigCommand({ type: "read" }, "profile-2");
+
+    expect(mainCommand).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(mainCommand).toContain('export HERMES_HOME="$HERMES_PROFILE_ROOT"');
+    expect(profileCommand).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'profile-2\'');
+    expect(profileCommand).toContain('HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"');
+    expect(profileCommand).toContain('export HERMES_HOME="$HERMES_PROFILE_ROOT"');
+  });
+
   it("transports long credentials as one-time ciphertext and consumes the private envelope", () => {
     const longCredential = `lv-${"sensitive-value-".repeat(40)}结尾`;
     const added = runHelper({ type: "add", apiKey: longCredential, model, purpose: "idle" }, {});
