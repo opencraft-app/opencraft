@@ -3509,7 +3509,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   }
 }
 
-.workspace-picker-dialog {
+.modal-surface.workspace-picker-dialog {
   display: flex;
   width: min(560px, calc(100vw - 32px));
   max-height: min(620px, calc(100vh - 48px));
@@ -6206,7 +6206,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
 .thread-generated-image-lightbox__toolbar {
   position: absolute;
   z-index: 1;
-  inset-inline-end: 8px;
+  inset-inline-end: 50px;
   top: 8px;
   display: flex;
   gap: 6px;
@@ -8008,7 +8008,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
-.thread-tool-raw-dialog {
+.modal-surface.thread-tool-raw-dialog {
   width: min(640px, calc(100vw - 32px));
   max-height: min(680px, calc(100vh - 32px));
   overflow: hidden;

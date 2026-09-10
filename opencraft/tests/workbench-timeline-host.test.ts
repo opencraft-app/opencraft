@@ -75,6 +75,20 @@ const nativeComposerSource = readFileSync(
   ),
   "utf8",
 );
+const workspaceDirectoryPickerSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/workspace-directory-picker.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const toolRenderersSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/conversation-renderers/tool/tool-renderers.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const managementSettingsContentSource = readFileSync(
   new URL(
     "../apps/workbench-web/src/components/modal/management-settings-content.tsx",
@@ -428,6 +442,10 @@ test("the platform resolves modal identity and Expo adapts the same semantic con
   assert.match(nativeModalSurfaceSource, /onRequestClose=\{\(\) => onDismiss\("system"\)\}/u);
   assert.match(nativeComposerSource, /<ModalSurface[\s\S]*?label="Model"/u);
   assert.doesNotMatch(nativeComposerSource, /<Modal\b|modalScrim|modalRoot/u);
+  assert.match(workspaceDirectoryPickerSource, /<ModalSurface/u);
+  assert.doesNotMatch(workspaceDirectoryPickerSource, /createPortal|event\.key|addEventListener/u);
+  assert.equal(Array.from(toolRenderersSource.matchAll(/<ModalSurface/gu)).length, 2);
+  assert.doesNotMatch(toolRenderersSource, /createPortal|event\.key\s*===\s*"Escape"/u);
 });
 
 test("Draft menus consume one design-system rhythm and stay out of the hero title", () => {
