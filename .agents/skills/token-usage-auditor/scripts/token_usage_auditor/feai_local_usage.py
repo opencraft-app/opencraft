@@ -31,6 +31,17 @@ CODEBUDDY_IDE_LOG_TIME_RE = re.compile(r"^\[(\d{4})/(\d{1,2})/(\d{1,2}) (\d{1,2}
 ABSOLUTE_PATH_RE = re.compile(r"(?<![\w.-])(?:~|/)[^\s,;:]+")
 
 
+def model_name(*values: object) -> str | None:
+    for value in values:
+        if isinstance(value, dict):
+            value = value.get("id") or value.get("modelID") or value.get("modelId") or value.get("name")
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized[:120]
+    return None
+
+
 def main(argv: list[str] | None = None, stdout: TextIO | None = None, stderr: TextIO | None = None) -> int:
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
@@ -262,8 +273,19 @@ def read_codebuddycode_records(roots: tuple[Path, ...]) -> list[dict]:
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.jsonl")):
-            records.extend(read_provider_data_jsonl(path, CODEBUDDYCODE_PROVIDER))
-            records.extend(read_anthropic_jsonl(path, CODEBUDDYCODE_PROVIDER))
+            provider_records = read_provider_data_jsonl(path, CODEBUDDYCODE_PROVIDER)
+            usable_provider_message_ids = {
+                record["_messageId"]
+                for record in provider_records
+                if record.get("_messageId") and record.get("timestamp") is not None
+            }
+            anthropic_records = [
+                record
+                for record in read_anthropic_jsonl(path, CODEBUDDYCODE_PROVIDER)
+                if not record.get("_messageId") or record["_messageId"] not in usable_provider_message_ids
+            ]
+            records.extend(provider_records)
+            records.extend(anthropic_records)
     return records
 
 
@@ -298,8 +320,13 @@ def read_codex_records(roots: tuple[Path, ...]) -> list[dict]:
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.jsonl")):
-            session_id = path.stem
-            previous_total: dict[str, int] | None = None
+            physical_rollout_id = codex_trailing_id(path) or path.stem
+            session_id = codex_leading_id(path) or physical_rollout_id
+            session_model = None
+            total_high_water: dict[str, int] | None = None
+            last_signature_by_source: dict[str | None, tuple] = {}
+            seen_full_signatures: set[tuple] = set()
+            previous_signature = None
             event_index = 0
             for obj in read_jsonl(path):
                 event_type = obj.get("type")
@@ -308,27 +335,52 @@ def read_codex_records(roots: tuple[Path, ...]) -> list[dict]:
                     meta_id = payload.get("session_id") or payload.get("sessionId") or payload.get("id")
                     if isinstance(meta_id, str) and meta_id:
                         session_id = meta_id
+                    session_model = model_name(payload.get("model"), payload.get("model_id"), payload.get("modelId"))
+                    continue
+                if event_type == "turn_context":
+                    session_model = model_name(
+                        payload.get("model"),
+                        payload.get("model_id"),
+                        payload.get("modelId"),
+                        session_model,
+                    )
                     continue
 
                 if payload.get("type") != "token_count" and event_type != "token_count":
                     continue
                 info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
-                usage = info.get("total_token_usage")
-                cumulative = True
-                if not isinstance(usage, dict):
-                    usage = info.get("last_token_usage")
-                    cumulative = False
-                if not isinstance(usage, dict):
+                total_usage = info.get("total_token_usage") if isinstance(info.get("total_token_usage"), dict) else None
+                last_usage = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else None
+                if total_usage is None and last_usage is None:
                     continue
                 timestamp = parse_datetime(obj.get("timestamp") or payload.get("timestamp"))
                 if timestamp is None:
                     continue
-                current = codex_usage_values(usage)
-                if cumulative:
-                    values = delta_usage(previous_total, current)
-                    previous_total = current
+                signature = codex_usage_signature(total_usage, last_usage)
+                source = string_or_none(
+                    json_dict(payload.get("rate_limits")).get("limit_id")
+                )
+                duplicate_snapshot = total_usage is not None and (
+                    last_signature_by_source.get(source) == signature
+                    or previous_signature == signature
+                    or signature in seen_full_signatures
+                )
+                if total_usage is not None:
+                    last_signature_by_source[source] = signature
+                    seen_full_signatures.add(signature)
+                previous_signature = signature
+
+                current_total = codex_usage_values(total_usage) if total_usage is not None else None
+                if duplicate_snapshot:
+                    values = empty_codex_usage()
+                elif last_usage is not None:
+                    values = codex_usage_values(last_usage)
+                elif current_total is not None:
+                    values = delta_usage(total_high_water, current_total)
                 else:
-                    values = current
+                    continue
+                if current_total is not None:
+                    total_high_water = max_usage(total_high_water, current_total)
                 values["cacheReadTokens"] = min(values["cacheReadTokens"], values["inputTokens"])
                 if (
                     values["inputTokens"] == 0
@@ -339,7 +391,7 @@ def read_codex_records(roots: tuple[Path, ...]) -> list[dict]:
                     continue
 
                 event_index += 1
-                request_id = f"{session_id}:{event_index}"
+                request_id = f"{physical_rollout_id}:{event_index}"
                 if request_id in seen_request_ids:
                     continue
                 seen_request_ids.add(request_id)
@@ -354,8 +406,11 @@ def read_codex_records(roots: tuple[Path, ...]) -> list[dict]:
                         "cacheWriteTokens": 0,
                         "outputTokens": values["outputTokens"],
                         "reasoningOutputTokens": values["reasoningOutputTokens"],
-                        "reasoningOutputAvailable": "reasoning_output_tokens" in usage,
+                        "reasoningOutputAvailable": (
+                            "reasoning_output_tokens" in (last_usage or total_usage or {})
+                        ),
                         "credit": None,
+                        "model": model_name(payload.get("model"), info.get("model"), session_model),
                         "notes": (),
                     }
                 )
@@ -414,6 +469,12 @@ def read_codebuddy_vscode_records(roots: tuple[Path, ...]) -> list[dict]:
                             "reasoningOutputTokens": int_value(completion_details.get("reasoning_tokens")),
                             "reasoningOutputAvailable": bool(completion_details),
                             "credit": None,
+                            "model": model_name(
+                                raw_event.get("model"),
+                                raw_event.get("model_id"),
+                                raw_event.get("modelName"),
+                                message.get("model"),
+                            ),
                             "notes": (),
                         }
                     )
@@ -482,6 +543,7 @@ def read_gemini_records(roots: tuple[Path, ...]) -> list[dict]:
                         "reasoningOutputTokens": reasoning_tokens,
                         "reasoningOutputAvailable": True,
                         "credit": None,
+                        "model": model_name(message.get("model"), obj.get("model")),
                         "notes": (),
                     }
                 )
@@ -540,6 +602,11 @@ def read_opencode_records(roots: tuple[Path, ...]) -> list[dict]:
                         "reasoningOutputTokens": reasoning_tokens,
                         "reasoningOutputAvailable": True,
                         "credit": None,
+                        "model": model_name(
+                            message.get("modelID"),
+                            message.get("modelId"),
+                            message.get("model"),
+                        ),
                         "notes": (
                             "opencode input normalized as fresh input + cache read + cache write",
                         ),
@@ -556,11 +623,25 @@ def read_provider_data_jsonl(path: Path, provider: str) -> list[dict]:
     records: list[dict] = []
     for obj in read_jsonl(path):
         provider_data = obj.get("providerData") if isinstance(obj.get("providerData"), dict) else {}
+        message = obj.get("message") if isinstance(obj.get("message"), dict) else {}
         usage = provider_data.get("usage") if isinstance(provider_data.get("usage"), dict) else None
         if not usage:
             continue
         raw_usage = provider_data.get("rawUsage") if isinstance(provider_data.get("rawUsage"), dict) else {}
-        cache_write = int_value(raw_usage.get("prompt_cache_write_tokens")) or int_value(raw_usage.get("cache_creation_input_tokens"))
+        cache_write = (
+            int_value(raw_usage.get("prompt_cache_write_tokens"))
+            or int_value(raw_usage.get("cache_creation_input_tokens"))
+            or detail_token(usage, "inputTokensDetails", "cache_write_tokens")
+            or detail_token(raw_usage, "input_tokens_details", "cache_write_tokens")
+            or detail_token(raw_usage, "prompt_tokens_details", "cache_write_tokens")
+        )
+        cache_read = (
+            sum_detail_tokens(usage.get("inputTokensDetails"), "cached_tokens")
+            or int_value(raw_usage.get("cache_read_input_tokens"))
+            or detail_token(raw_usage, "input_tokens_details", "cached_tokens")
+            or detail_token(raw_usage, "prompt_tokens_details", "cached_tokens")
+            or int_value(raw_usage.get("prompt_cache_hit_tokens"))
+        )
         reasoning_output = sum_detail_tokens(usage.get("outputTokensDetails"), "reasoning_tokens")
         if reasoning_output == 0:
             completion_details = raw_usage.get("completion_tokens_details")
@@ -575,12 +656,24 @@ def read_provider_data_jsonl(path: Path, provider: str) -> list[dict]:
                 "timestamp": parse_datetime(obj.get("timestamp")),
                 "calls": int_value(usage.get("requests"), default=1),
                 "inputTokens": int_value(usage.get("inputTokens")),
-                "cacheReadTokens": sum_detail_tokens(usage.get("inputTokensDetails"), "cached_tokens"),
+                "cacheReadTokens": cache_read,
                 "cacheWriteTokens": cache_write,
                 "outputTokens": int_value(usage.get("outputTokens")),
                 "reasoningOutputTokens": reasoning_output,
                 "reasoningOutputAvailable": True,
                 "credit": optional_float(raw_usage.get("credit")),
+                "model": model_name(
+                    provider_data.get("requestModelId"),
+                    provider_data.get("model"),
+                    provider_data.get("requestModelName"),
+                    message.get("model"),
+                    obj.get("model"),
+                ),
+                "_messageId": string_or_none(
+                    provider_data.get("messageId")
+                    or message.get("id")
+                    or obj.get("id")
+                ),
                 "notes": (),
             }
         )
@@ -614,6 +707,8 @@ def read_anthropic_jsonl(path: Path, provider: str) -> list[dict]:
             "reasoningOutputTokens": None,
             "reasoningOutputAvailable": False,
             "credit": None,
+            "model": model_name(message.get("model"), obj.get("model")),
+            "_messageId": message_id,
             "notes": (f"reasoning output unavailable in {provider} logs",),
         }
         previous = messages.get(message_id)
@@ -658,6 +753,15 @@ def read_codebuddy_ide_history(root: Path) -> list[dict]:
                 "reasoningOutputTokens": reasoning_output,
                 "reasoningOutputAvailable": "thinkingTokens" in stats,
                 "credit": credit,
+                "model": model_name(
+                    extra.get("requestModelId"),
+                    extra.get("modelId"),
+                    extra.get("model"),
+                    extra.get("modelName"),
+                    stats.get("model"),
+                    message.get("model"),
+                    obj.get("model"),
+                ),
                 "notes": (),
             }
         )
@@ -696,6 +800,12 @@ def read_codebuddy_ide_logs(root: Path) -> list[dict]:
                     "reasoningOutputTokens": None,
                     "reasoningOutputAvailable": False,
                     "credit": optional_float(usage.get("credit")),
+                    "model": model_name(
+                        usage.get("requestModelId"),
+                        usage.get("model"),
+                        usage.get("modelId"),
+                        usage.get("modelName"),
+                    ),
                     "notes": ("reasoning output unavailable in CodeBuddy IDE logs",),
                 }
             )
@@ -713,10 +823,54 @@ def codex_usage_values(usage: dict) -> dict[str, int]:
     }
 
 
+def empty_codex_usage() -> dict[str, int]:
+    return {
+        "inputTokens": 0,
+        "cacheReadTokens": 0,
+        "outputTokens": 0,
+        "reasoningOutputTokens": 0,
+    }
+
+
+def codex_usage_signature(total_usage: dict | None, last_usage: dict | None) -> tuple:
+    keys = (
+        "input_tokens",
+        "cached_input_tokens",
+        "cache_read_input_tokens",
+        "output_tokens",
+        "reasoning_output_tokens",
+        "total_tokens",
+    )
+    return tuple(
+        tuple(usage.get(key) for key in keys) if usage is not None else None
+        for usage in (total_usage, last_usage)
+    )
+
+
+def max_usage(previous: dict[str, int] | None, current: dict[str, int]) -> dict[str, int]:
+    if previous is None:
+        return dict(current)
+    return {key: max(previous.get(key, 0), current.get(key, 0)) for key in current}
+
+
 def delta_usage(previous: dict[str, int] | None, current: dict[str, int]) -> dict[str, int]:
     if previous is None:
         return dict(current)
     return {key: max(0, current.get(key, 0) - previous.get(key, 0)) for key in current}
+
+
+def codex_trailing_id(path: Path) -> str | None:
+    match = re.search(r"([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$", path.stem)
+    return match.group(1).lower() if match else None
+
+
+def codex_leading_id(path: Path) -> str | None:
+    match = re.search(
+        r"([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})_"
+        r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$",
+        path.stem,
+    )
+    return match.group(1).lower() if match else None
 
 
 def aggregate(records: list[dict], start: datetime, end: datetime, provider: str) -> tuple[dict, set[str]]:
@@ -732,6 +886,10 @@ def aggregate(records: list[dict], start: datetime, end: datetime, provider: str
         "totalTokens": 0,
         "credit": 0.0,
         "creditAvailable": False,
+        "recordsWithCredit": 0,
+        "recordsWithoutCredit": 0,
+        "models": set(),
+        "modelUsage": {},
     }
     notes: set[str] = set()
     for record in records:
@@ -752,6 +910,34 @@ def aggregate(records: list[dict], start: datetime, end: datetime, provider: str
         if record["credit"] is not None:
             totals["creditAvailable"] = True
             totals["credit"] += record["credit"]
+            totals["recordsWithCredit"] += 1
+        else:
+            totals["recordsWithoutCredit"] += 1
+        if record.get("model"):
+            totals["models"].add(record["model"])
+            model_totals = totals["modelUsage"].setdefault(
+                record["model"],
+                {
+                    "calls": 0,
+                    "inputTokens": 0,
+                    "cacheReadTokens": 0,
+                    "cacheWriteTokens": 0,
+                    "outputTokens": 0,
+                    "reasoningOutputTokens": 0,
+                    "reasoningOutputAvailable": False,
+                    "credit": 0.0,
+                    "creditAvailable": False,
+                },
+            )
+            model_totals["calls"] += max(1, record["calls"])
+            for key in ("inputTokens", "cacheReadTokens", "cacheWriteTokens", "outputTokens"):
+                model_totals[key] += record[key]
+            if record["reasoningOutputAvailable"]:
+                model_totals["reasoningOutputAvailable"] = True
+                model_totals["reasoningOutputTokens"] += record["reasoningOutputTokens"] or 0
+            if record["credit"] is not None:
+                model_totals["creditAvailable"] = True
+                model_totals["credit"] += record["credit"]
         notes.update(record["notes"])
     if not totals["sessions"]:
         notes.add(f"{provider}: no records in range")
@@ -941,14 +1127,86 @@ def aggregate_with_session_fallback(
 def build_audit(ctx: dict, session_ids: tuple[str, ...], start: datetime, end: datetime, totals: dict, notes: set[str], provider: str) -> dict:
     input_tokens = totals["inputTokens"]
     cache_hit_rate = totals["cacheReadTokens"] / input_tokens if input_tokens > 0 else None
-    credit = totals["credit"] if totals["creditAvailable"] else None
+    project_scoped = bool(ctx["projectRoot"] and provider == CODEBUDDYCODE_PROVIDER)
+    cost_attributable = provider != "codebuddy" or bool(session_ids)
+    usage_attributable = bool(session_ids) or project_scoped
+    credit = totals["credit"] if totals["creditAvailable"] and cost_attributable else None
+    if totals["creditAvailable"] and not cost_attributable:
+        notes.add(
+            f"{provider}: credit suppressed because no captured sessionIds can attribute cost to this requirement"
+        )
+    long_session_window = provider == CODEBUDDYCODE_PROVIDER and bool(session_ids) and end - start > timedelta(days=7)
+    if long_session_window:
+        notes.add(
+            "codebuddycode: usage window exceeds 7 days; a reused session may include work unrelated to this requirement"
+        )
+    confidence = local_confidence(ctx["projectRoot"], session_ids, ctx["windowSource"], provider)
+    if long_session_window and confidence == "high":
+        confidence = "medium"
+    flags = []
+    if not session_ids:
+        flags.append("SESSION_MISSING")
+    if not project_scoped:
+        flags.append("PROJECT_SCOPE_UNAVAILABLE")
+    if totals["creditAvailable"] and not cost_attributable:
+        flags.append("COST_SUPPRESSED")
+    elif credit is not None:
+        flags.append("COST_ESTIMATED")
+    if totals["recordsWithCredit"] and totals["recordsWithoutCredit"]:
+        flags.append("PARTIAL_CREDIT")
+    if long_session_window:
+        flags.append("LONG_SESSION_WINDOW")
+    if totals["sessions"] and not totals["models"]:
+        flags.append("MODEL_UNAVAILABLE")
+
+    model_usage = []
+    if usage_attributable:
+        for model in sorted(totals["modelUsage"])[:LOCAL_USAGE_AUDIT_MAX_ITEMS]:
+            item = totals["modelUsage"][model]
+            model_credit = item["credit"] if item["creditAvailable"] and cost_attributable else None
+            model_usage.append(
+                {
+                    "model": model,
+                    "calls": item["calls"],
+                    "inputTokens": item["inputTokens"],
+                    "cacheReadTokens": item["cacheReadTokens"],
+                    "cacheWriteTokens": item["cacheWriteTokens"],
+                    "outputTokens": item["outputTokens"],
+                    "reasoningOutputTokens": (
+                        item["reasoningOutputTokens"] if item["reasoningOutputAvailable"] else None
+                    ),
+                    "credit": model_credit,
+                    "estimatedCnyCost": cny_cost(model_credit),
+                }
+            )
+
+    attribution_method = "window"
+    if project_scoped and session_ids:
+        attribution_method = "project-session-window"
+    elif project_scoped:
+        attribution_method = "project-window"
+    elif session_ids:
+        attribution_method = "session-window"
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "source": "token-usage-auditor",
         "scope": "feai-requirement",
-        "confidence": local_confidence(ctx["projectRoot"], session_ids, ctx["windowSource"], provider),
+        "confidence": confidence,
         "provider": provider,
-        "projectScoped": bool(ctx["projectRoot"]),
+        "projectScoped": project_scoped,
+        "models": bounded_strings(
+            sorted(totals["models"]) if usage_attributable else (),
+            max_items=LOCAL_USAGE_AUDIT_MAX_ITEMS,
+            max_length=LOCAL_USAGE_AUDIT_MAX_SESSION_TEXT,
+        ),
+        "modelUsage": model_usage,
+        "attribution": {
+            "projectScoped": project_scoped,
+            "sessionScoped": bool(session_ids),
+            "windowScoped": has_feai_window(ctx["windowSource"]),
+            "method": attribution_method,
+            "confidence": confidence,
+        },
         "changeName": ctx["changeName"],
         "sessionIds": bounded_strings(
             session_ids,
@@ -971,6 +1229,16 @@ def build_audit(ctx: dict, session_ids: tuple[str, ...], start: datetime, end: d
             "cnyCost": cny_cost(credit),
             "costRecognized": credit is not None,
         },
+        "cost": {
+            "recognized": credit is not None,
+            "source": "provider-credit-fixed-rate" if credit is not None else "unavailable",
+            "credit": credit,
+            "currency": "CNY",
+            "conversionRate": float(CNY_PER_CREDIT),
+            "estimatedAmount": cny_cost(credit),
+            "verified": False,
+        },
+        "flags": flags,
         "generatedAt": datetime.now().astimezone().isoformat(),
         "notes": bounded_strings(safe_note(note) for note in sorted(set(ctx["notes"]) | notes)),
     }
@@ -1219,6 +1487,13 @@ def sum_detail_tokens(details, key: str) -> int:
     if not isinstance(details, list):
         return 0
     return sum(int_value(item.get(key)) for item in details if isinstance(item, dict))
+
+
+def detail_token(value: dict, details_key: str, token_key: str) -> int:
+    details = value.get(details_key)
+    if isinstance(details, dict):
+        return int_value(details.get(token_key))
+    return sum_detail_tokens(details, token_key)
 
 
 if __name__ == "__main__":
