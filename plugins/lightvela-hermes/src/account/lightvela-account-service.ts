@@ -1,6 +1,10 @@
 import { HostConnectionInterventionError, throwIfSignalAborted } from "@opencraft/workbench-runtime";
 import type { LightVelaRuntimeCommandPort } from "./lightvela-runtime-command-port";
 import { Utf8StreamDecoder } from "../lib/utf8";
+import {
+  consumeLightVelaWebLoginCallback,
+  startLightVelaWebLogin,
+} from "./lightvela-web-login";
 
 export const LIGHTVELA_API_BASE = "https://api.lightvela.ai";
 export const LIGHTVELA_TOKEN_KEY = "vela.lightvela.session-token.v1";
@@ -137,6 +141,8 @@ interface PassListResponse {
 export interface LightVelaAccountServiceOptions {
   readonly apiBase?: string;
   readonly storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  /** Browser-navigation-scoped PKCE transaction state; never stores credentials. */
+  readonly transactionStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   readonly fetchImpl?: typeof fetch;
   readonly location?: Pick<Location, "origin" | "pathname" | "search" | "hash" | "assign">;
   readonly history?: Pick<History, "state" | "replaceState">;
@@ -149,6 +155,8 @@ export interface LightVelaOAuthCallbackOptions {
   readonly location?: Pick<Location, "pathname" | "search" | "hash">;
   readonly history?: Pick<History, "state" | "replaceState">;
 }
+
+export interface LightVelaWebLoginCallbackOptions extends LightVelaAccountServiceOptions {}
 
 /**
  * Consumes the OAuth credential before the asynchronous Workbench graph is
@@ -172,6 +180,34 @@ export function bootstrapLightVelaOAuthCallback(options: LightVelaOAuthCallbackO
     "",
     `${location?.pathname ?? "/"}${location?.search ?? ""}${nextHash ? `#${nextHash}` : ""}`,
   );
+  return true;
+}
+
+export async function bootstrapLightVelaWebLoginCallback(options: LightVelaWebLoginCallbackOptions = {}): Promise<boolean> {
+  const storage = options.storage ?? globalThis.localStorage;
+  const transactionStorage = options.transactionStorage ?? globalThis.sessionStorage;
+  const location = options.location ?? globalThis.location;
+  const history = options.history ?? globalThis.history;
+  if (storage === undefined || transactionStorage === undefined || location === undefined || history === undefined) return false;
+  let result: Awaited<ReturnType<typeof consumeLightVelaWebLoginCallback>>;
+  try {
+    result = await consumeLightVelaWebLoginCallback({
+      storage: transactionStorage,
+      location,
+      history,
+      fetchImpl: options.fetchImpl ?? globalThis.fetch.bind(globalThis),
+      apiBases: { cn: LIGHTVELA_REGIONS.cn.apiBase, intl: LIGHTVELA_REGIONS.intl.apiBase },
+    });
+  } catch {
+    // A failed or cancelled callback must not prevent the Workbench graph from
+    // starting. The transaction owner has already retired its verifier and
+    // restored the initiating same-origin route.
+    return false;
+  }
+  if (result === null) return false;
+  storage.setItem(LIGHTVELA_TOKEN_KEY, result.token);
+  storage.setItem(LIGHTVELA_REGION_KEY, result.region);
+  storage.removeItem(SIGNED_OUT_KEY);
   return true;
 }
 
@@ -272,6 +308,7 @@ export class LightVelaAccountService {
   private authGeneration = 0;
   private credentialScope: string = crypto.randomUUID();
   private authority = new AbortController();
+  private signInOperation: Promise<void> | null = null;
   private signOutOperation: Promise<void> | null = null;
   private readonly onStorage = (event: StorageEvent): void => {
     if (event.key !== SIGNED_OUT_KEY || event.newValue !== "true") return;
@@ -285,6 +322,7 @@ export class LightVelaAccountService {
     this.publish("anonymous", [], null, null);
   };
   private readonly storage: LightVelaAccountServiceOptions["storage"];
+  private readonly transactionStorage: LightVelaAccountServiceOptions["transactionStorage"];
   private readonly fetchImpl: typeof fetch;
   private readonly location: LightVelaAccountServiceOptions["location"];
   private readonly history: LightVelaAccountServiceOptions["history"];
@@ -310,6 +348,7 @@ export class LightVelaAccountService {
   constructor(options: LightVelaAccountServiceOptions = {}) {
     this.apiBaseOverride = options.apiBase?.replace(/\/$/u, "");
     this.storage = options.storage ?? globalThis.localStorage;
+    this.transactionStorage = options.transactionStorage ?? globalThis.sessionStorage;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.location = options.location ?? globalThis.location;
     this.history = options.history ?? globalThis.history;
@@ -329,7 +368,7 @@ export class LightVelaAccountService {
   selectRegion(region: LightVelaRegion): void {
     if (region !== "cn" && region !== "intl") throw new Error("Invalid LightVela region");
     if (region === this.region) return;
-    if (this.hasStoredSession() || this.snapshot.phase === "authenticated" || this.signOutOperation) {
+    if (this.hasStoredSession() || this.snapshot.phase === "authenticated" || this.signInOperation || this.signOutOperation) {
       throw new Error("Please sign out before switching LightVela region");
     }
     this.invalidateAuthority();
@@ -363,14 +402,23 @@ export class LightVelaAccountService {
     return true;
   }
 
-  signIn(): void {
+  async signIn(): Promise<void> {
+    if (this.signInOperation) return this.signInOperation;
     if (this.signOutOperation) throw new Error("Sign out is still in progress");
     if (this.location === undefined) throw new Error("LightVela login requires a browser location");
-    const returnTo = `${this.location.origin}${this.location.pathname}${this.location.search}`;
     this.storage?.setItem(LIGHTVELA_REGION_KEY, this.region);
-    const login = new URL("/auth/sign-in", LIGHTVELA_REGIONS[this.region].frontendBase);
-    login.searchParams.set("return_to", returnTo);
-    this.location.assign(login.toString());
+    if (this.transactionStorage === undefined) throw new Error("LightVela login requires browser session storage");
+    const operation = startLightVelaWebLogin({
+      apiBase: this.apiBase,
+      region: this.region,
+      storage: this.transactionStorage,
+      location: this.location,
+    }).catch((error: unknown) => {
+      if (this.signInOperation === operation) this.signInOperation = null;
+      throw error;
+    });
+    this.signInOperation = operation;
+    return operation;
   }
 
   private invalidateAuthority(): void {

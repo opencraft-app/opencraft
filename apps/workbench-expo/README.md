@@ -25,7 +25,7 @@ theme is explicitly light.
 ## Native LightVela login
 
 The native build uses the existing `GET https://api.lightvela.ai/oauth2/authorize` page and
-`POST /auth/native/token`, with the fixed callback `opencraft://auth/lightvela`.
+`POST /auth/session/exchange`, with the fixed callback `opencraft://auth/lightvela`.
 Explicitly register OIDC client `opencraft-native-v1` with that exact callback alongside the existing site-gateway client. The shared login page owns provider selection; native never selects Google directly. The server must support these endpoints and the API gateway must allow them
 without an existing session. Updating this app alone cannot enable that backend
 contract; an unavailable backend must not fall back to session tokens in URLs.

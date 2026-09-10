@@ -27,7 +27,10 @@ import {
 } from "./panel-runtime-context";
 import type { WorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
 import type { WorkbenchTerminalSessionRegistry } from "@opencraft/plugin-terminal";
-import { bootstrapLightVelaOAuthCallback } from "@opencraft/plugin-lightvela-hermes";
+import {
+  bootstrapLightVelaOAuthCallback,
+  bootstrapLightVelaWebLoginCallback,
+} from "@opencraft/plugin-lightvela-hermes";
 
 export interface WebWorkbenchApplication {
   readonly cordis: Context;
@@ -73,6 +76,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
   // OAuth can return into any Workbench route. Consume its one-time fragment
   // before IndexedDB, Cordis and extension activation so authentication does
   // not depend on the latency or success of the rest of application startup.
+  await bootstrapLightVelaWebLoginCallback();
   bootstrapLightVelaOAuthCallback();
   const cordis = new Context();
   const conversationBindings = createConversationBindingStore({
