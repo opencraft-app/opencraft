@@ -1952,7 +1952,7 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       startURL.searchParams.set("relay_mode", "issuer");
       startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
     }
-    const returnTo = currentOAuthReturnTo();
+    const returnTo = options?.returnTo ?? currentOAuthReturnTo();
     if (returnTo) {
       startURL.searchParams.set("return_to", returnTo);
     }

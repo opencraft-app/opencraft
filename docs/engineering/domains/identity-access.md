@@ -43,6 +43,13 @@ OIDC 服务校验客户端/地址/参数，MySQL 存储授权码及绑定关系�
 该客户端在标准 `/oauth2/token` 被拒绝，不能另取 JWT；其他 OIDC client 不能兑换普通
 App session。消费时重新核验 registry，不把 OIDC JWT 冒充现有 API session_token。
 
+Workbench Web 不注册为 native OIDC client，也不消费 OIDC JWT。它可以把 provider
+选择委托给现有 `/auth/sign-in` 页面；该页面复用 OIDC 授权页同一个 LoginModal，并只向
+OAuth start 转发精确的第一方 Workbench origin。渠道回调仍由 UserAuth 的 Web
+`return_to` 白名单最终校验并交付普通 Web session。跨 origin handoff 只展示能由 OAuth
+回调交付凭据的渠道，不展示无法单独完成跨站交接的手机号或游客入口。这样复用同一套
+地区登录渠道与界面，同时不混淆 Web session 和 native code。
+
 SecureStore 待完成事务寿命 10 分钟。进程共享存储串行化写入及 compare/delete，
 旧 owner 仅可删除自己创建的记录；过期/伪造 callback 不得阻断已有 session 恢复。
 授权页与登录弹窗共用受 visualViewport 约束的可滚动容器，支持小屏、键盘和长账号。

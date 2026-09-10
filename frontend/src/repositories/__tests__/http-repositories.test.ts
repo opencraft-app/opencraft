@@ -1921,6 +1921,16 @@ describe("http repositories auth token bootstrap", () => {
     expect(parsed.searchParams.get("return_to")).toBe("https://lightclaw.pages.dev/auth/sign-in");
   });
 
+  it("uses an explicitly delegated OAuth return target", () => {
+    stubHostname("lightvela.com");
+    const returnTo = "https://chat.lightvela.com/local/thread-1?hostId=velahermes0";
+
+    const repositories = createHttpRepositories("https://api.lightvela.com");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("qq", { returnTo })!);
+
+    expect(parsed.searchParams.get("return_to")).toBe(returnTo);
+  });
+
   it("uses the live auth backend on the primary site domain even without an explicit env var", () => {
     vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
     stubHostname("lightclaw.tech");

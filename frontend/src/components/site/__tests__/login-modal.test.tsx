@@ -31,21 +31,22 @@ const repositories = {
   auth: {
     getOAuthStartUrl: vi.fn((
       provider: OAuthProvider,
-      options?: { switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
+      options?: { returnTo?: string; switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
     ) => {
       const query = new URLSearchParams();
       if (provider === "wechat" && options?.wechatMode) query.set("mode", options.wechatMode);
       if (options?.switchAccount) query.set("switch_account", "true");
+      if (options?.returnTo) query.set("return_to", options.returnTo);
       const querySuffix = query.size > 0 ? `?${query.toString()}` : "";
       switch (provider) {
         case "qq":
-          return "https://lightclaw.tech/auth/oauth/qq/start";
+          return `https://lightclaw.tech/auth/oauth/qq/start${querySuffix}`;
         case "wechat":
           return `https://lightclaw.tech/auth/oauth/wechat/start${querySuffix}`;
         case "google":
-          return "https://lightclaw.tech/auth/oauth/google/start";
+          return `https://lightclaw.tech/auth/oauth/google/start${querySuffix}`;
         case "github":
-          return "https://lightclaw.tech/auth/oauth/github/start";
+          return `https://lightclaw.tech/auth/oauth/github/start${querySuffix}`;
         default:
           return null;
       }
@@ -113,6 +114,27 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     expect(screen.getByRole("button", { name: "QQ" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "GitHub 登录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Google 登录" })).not.toBeInTheDocument();
+  });
+
+  it("Workbench Web handoff 复用统一弹窗且只提供可跨站交接的 OAuth 渠道", () => {
+    const returnTo = "https://chat.lightvela.com/local/thread-1?hostId=velahermes0";
+    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+
+    render(<LoginModal open oauthHandoff={{ returnTo }} onClose={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: "手机" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "QQ" }));
+    fireEvent.click(screen.getByRole("button", { name: "QQ账号登录" }));
+
+    expect(repositories.auth.getOAuthStartUrl).toHaveBeenLastCalledWith("qq", {
+      returnTo,
+      switchAccount: true,
+    });
+    const redirected = new URL(vi.mocked(redirectSpy).mock.calls.at(-1)?.[0] ?? "");
+    expect(redirected.searchParams.get("return_to")).toBe(returnTo);
+    expect(redirected.searchParams.get("switch_account")).toBe("true");
+    redirectSpy.mockRestore();
   });
 
   it("切换到手机登录后，微信和 QQ 出现在底部其他登录选项", () => {
@@ -427,6 +449,26 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("Workbench Web handoff 不会被 LightVela 域上的既有会话提前关闭", async () => {
+    currentSession = { stage: "authenticated", user: { id: "usr_current", name: "当前账号" } };
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+
+    render(
+      <LoginModal
+        open
+        oauthHandoff={{ returnTo: "https://chat.lightvela.com/" }}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    await Promise.resolve();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "微信账号登录" })).toBeInTheDocument();
   });
 
   it("切换账号模式保留当前会话并为 OAuth 添加切换意图", async () => {

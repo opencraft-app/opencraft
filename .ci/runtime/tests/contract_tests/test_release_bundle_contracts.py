@@ -716,10 +716,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
 
         oidc_clients = json.loads(values["AUTH_OIDC_CLIENTS_JSON"])
-        self.assertEqual(len(oidc_clients), 1)
-        self.assertEqual(oidc_clients[0]["id"], "site-gateway")
+        self.assertEqual(len(oidc_clients), 2)
+        clients_by_id = {client["id"]: client for client in oidc_clients}
         self.assertEqual(
-            set(oidc_clients[0]["redirect_uris"]),
+            clients_by_id["site-gateway"]["redirect_uris"],
+            [
+                "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+                "https://sites-auth.lightvela.site/auth/lightvela/callback",
+            ],
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-native-v1"],
+            {
+                "id": "opencraft-native-v1",
+                "display_name": "Vela",
+                "redirect_uris": ["opencraft://auth/lightvela"],
+            },
+        )
+        self.assertEqual(
+            set(clients_by_id["site-gateway"]["redirect_uris"]),
             {
                 "https://sites-auth.lightvela.site/auth/lightvela/callback",
                 "https://sites-auth.lightvela.tech/auth/lightvela/callback",
