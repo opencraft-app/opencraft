@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -16,6 +16,8 @@ const botRepository = { execDebugCommand, getRescueExportStatus, getHermesImport
 
 let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
+let maxBots = 1;
+let multiBotEnabled = true;
 
 vi.mock("@/i18n/t", () => ({
   t: (text: string) => text,
@@ -36,7 +38,7 @@ vi.mock("@/lib/region", () => ({
 
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
-  useMultiBotEnabled: () => true,
+  useMultiBotEnabled: () => multiBotEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -66,7 +68,7 @@ vi.mock("@/contexts/agent-context", () => ({
         aiCredits: 1000,
         usedCredits: 100,
         totalRequests: 0,
-        maxBots: 1,
+        maxBots,
       },
     },
     refreshBots: vi.fn(),
@@ -131,9 +133,17 @@ const page = (botId: string) => (
   </AppNavigationProvider>
 );
 
+const revealHiddenTools = () => {
+  const show = (window as Window & { show?: unknown }).show;
+  if (typeof show !== "function") throw new Error("show() helper is not installed");
+  act(() => { show(); });
+};
+
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    maxBots = 1;
+    multiBotEnabled = true;
     currentSessionUser = {
       id: "usr-test", name: "Agent User", email: "user@example.com",
       inviteRequired: false, realnameVerified: true, realnameLevel: "idcard_2fa",
@@ -157,6 +167,11 @@ describe("multi-Bot diagnostics", () => {
 
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
+    const chatTab = screen.getByRole("tab", { name: "对话" });
+    expect(chatTab).toBeDisabled();
+    expect(chatTab).not.toHaveAttribute("title");
+    expect(chatTab).toHaveAccessibleDescription("对话功能目前仅支持主 Bot");
+    expect(screen.getByRole("tooltip", { name: "对话功能目前仅支持主 Bot" })).toHaveClass("lv-agent-action-tooltip");
     expect(screen.queryByText("重装 Agent（保留数据）")).not.toBeInTheDocument();
     expect(screen.queryByText("root log")).not.toBeInTheDocument();
     expect(resetInstanceConfig).not.toHaveBeenCalled();
@@ -187,5 +202,28 @@ describe("multi-Bot diagnostics", () => {
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
     expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
+  });
+
+  it("reveals Bot creation with show() and resets visibility on page remount", async () => {
+    maxBots = 5;
+    const view = render(page("ins-1"));
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    revealHiddenTools();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
+    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    view.rerender(page("sales"));
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
+    view.unmount();
+    render(page("ins-1"));
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+  });
+
+  it.each(["capacity", "feature flag"])("does not bypass the %s gate with show()", (gate) => {
+    maxBots = gate === "capacity" ? 1 : 5;
+    multiBotEnabled = gate !== "feature flag";
+    render(page("ins-1"));
+    revealHiddenTools();
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });

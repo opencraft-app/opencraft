@@ -2556,7 +2556,6 @@ export const AgentSettingsPage = ({
   const [createBotSoul, setCreateBotSoul] = useState("");
   const [createBotMode, setCreateBotMode] = useState<"clone-current" | "clone-main" | "blank">("blank");
   const [isCreateAdvancedOpen, setIsCreateAdvancedOpen] = useState(false);
-  const [botSearch, setBotSearch] = useState("");
   const visibleBots = useMemo(
     () => bots.filter((bot) => (
       bot.status !== "provisioning"
@@ -2565,17 +2564,12 @@ export const AgentSettingsPage = ({
     )),
     [bots, multiBotEnabled],
   );
-  const searchedBots = useMemo(() => {
-    const keyword = botSearch.trim().toLocaleLowerCase();
-    if (!keyword) return visibleBots;
-    return visibleBots.filter((bot) => bot.name.toLocaleLowerCase().includes(keyword));
-  }, [botSearch, visibleBots]);
   const createLimitMessage = useMemo(
     () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots),
     [bots, user.plan.maxBots],
   );
-  // Keep additional Bot creation hidden until the Profile flow is released.
-  const showCreateBotEntry = false;
+  const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const showCreateBotEntry = showHiddenAgentTools;
   const canCreateBot = multiBotEnabled && createLimitMessage === null;
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
@@ -2816,6 +2810,7 @@ export const AgentSettingsPage = ({
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
   const passExpiryTooltipId = useId();
+  const chatAvailabilityTooltipId = useId();
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
     await refreshPasses();
@@ -3406,7 +3401,6 @@ export const AgentSettingsPage = ({
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
-  const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
   const [exportingInstanceIds, setExportingInstanceIds] = useState<Set<string>>(new Set());
   const [exportStatusByInstanceId, setExportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [exportStatusLoadingInstanceIds, setExportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
@@ -4937,7 +4931,7 @@ export const AgentSettingsPage = ({
               const deleteRequiresOtherBotsRemoved = Boolean(activeBot.isDefault && remainingInstanceBotCount > 0);
               const deleteDisabled = resettingAcli || deleteRequiresOtherBotsRemoved;
               const deleteTooltip = deleteRequiresOtherBotsRemoved
-                ? t("请先删除其他 Bot，再删除整个 Agent")
+                ? t("请先删除其他 Bot，再删除主 Bot")
                 : activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
@@ -4972,7 +4966,7 @@ export const AgentSettingsPage = ({
                             }}
                             className={cn(
                               "lv-agent-profile",
-                              visibleBots.length > 1 ? "hover:bg-black/[0.025]" : "cursor-default",
+                              visibleBots.length <= 1 && "cursor-default",
                             )}
                             aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                           >
@@ -5108,7 +5102,7 @@ export const AgentSettingsPage = ({
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
-                                className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
+                                className={cn("-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                               />
                             )}
                           </div>
@@ -5120,18 +5114,7 @@ export const AgentSettingsPage = ({
                             sideOffset={8}
                             className="max-h-80 w-[var(--radix-popover-trigger-width)] overflow-y-auto !rounded-[8px] border-white/75 bg-white/[0.46] p-1.5 shadow-xl ring-1 ring-black/[0.04] backdrop-blur-sm backdrop-saturate-150"
                           >
-                            <label className="mb-1 block">
-                              <span className="sr-only">{t("搜索 Bot")}</span>
-                              <input
-                                type="search"
-                                value={botSearch}
-                                onChange={(event) => setBotSearch(event.target.value)}
-                                onClick={(event) => event.stopPropagation()}
-                                placeholder={t("搜索 Bot")}
-                                className="h-8 w-full rounded-md border border-white/80 bg-white/35 px-2 text-xs text-black/75 outline-none placeholder:text-black/35 focus:border-black/20 focus:bg-white/60"
-                              />
-                            </label>
-                            {searchedBots.map((bot) => {
+                            {visibleBots.map((bot) => {
                               const isActive = bot.id === activeTabId;
                               const botDisplayName = resolveAgentDisplayName(bot.name, t);
                               return (
@@ -5155,9 +5138,6 @@ export const AgentSettingsPage = ({
                                 </button>
                               );
                             })}
-                            {searchedBots.length === 0 && (
-                              <p className="px-2 py-3 text-center text-xs text-black/40">{t("未找到 Bot")}</p>
-                            )}
                           </PopoverContent>
                         )}
                       </Popover>
@@ -5189,18 +5169,30 @@ export const AgentSettingsPage = ({
                       >
                         {t("探索")}
                       </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={sidebarTab === "chat" && isActiveBotDefault}
-                        aria-disabled={!isActiveBotDefault}
-                        disabled={!isActiveBotDefault}
-                        title={isActiveBotDefault ? undefined : t("AgentChat 目前仅支持主 Bot")}
-                        className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotDefault && "is-active")}
-                        onClick={handleSidebarChatTabClick}
+                      <span
+                        className="lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30"
+                        tabIndex={isActiveBotDefault ? undefined : 0}
+                        aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
                       >
-                        {t("对话")}
-                      </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={sidebarTab === "chat" && isActiveBotDefault}
+                          aria-disabled={!isActiveBotDefault}
+                          aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
+                          disabled={!isActiveBotDefault}
+                          className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotDefault && "is-active")}
+                          onClick={handleSidebarChatTabClick}
+                        >
+                          {t("对话")}
+                        </button>
+                        {!isActiveBotDefault && (
+                          <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
+                            {t("对话功能目前仅支持主 Bot")}
+                            <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
+                          </span>
+                        )}
+                      </span>
                     </div>
 
                     {sidebarTab === "chat" && isActiveBotDefault ? (
