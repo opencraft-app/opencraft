@@ -376,6 +376,7 @@ export function BuddyPanel({
       setDrawnSouls(drawnSouls);
       setAppliedSlug(appliedSlug);
       setLoadStatus("loaded");
+      setEquippedRefreshTick((tick) => tick + 1);
     },
     [botId],
   );
@@ -967,7 +968,7 @@ export function BuddyPanel({
     }
   }, [readCurrentCustomPersona, showToast, t]);
 
-  // mount / 切 botId / apply / clear 后读取真实 SOUL.md，让卡片的已注入状态与文件事实一致。
+  // mount / 切 botId / 卡片状态加载 / apply / clear 后读取真实 SOUL.md，让文件事实最终生效。
   useEffect(() => {
     void refreshEquippedSoul();
   }, [refreshEquippedSoul, equippedRefreshTick]);

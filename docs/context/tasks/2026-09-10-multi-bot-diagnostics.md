@@ -24,6 +24,10 @@ Separate current-Profile diagnostics from instance-wide maintenance.
 - Named and root logs explicitly select native Profile.
 - Model reset fails closed for multiple or unverified Profiles before key changes.
 - Instance maintenance only accessible from main Bot; progress survives sibling switching.
+- A completed Bot creation refreshes the shared Bot list before leaving the loading page, without requiring a manual browser refresh.
+- The English creation state says `Getting your LightVela Bot ready` and continues to use the existing animated ellipsis.
+- Both first-Bot and additional-Bot dialogs start with an empty name field and show the localized `请输入 Bot 名称` placeholder.
+- A cloned Bot with empty card state still shows the persona injected in its copied `SOUL.md`; file state wins after asynchronous card-state loading.
 - Import explicitly targets root home. Focused frontend and Go tests plus type/i18n checks.
 
 ## affected_paths
@@ -52,22 +56,27 @@ Separate current-Profile diagnostics from instance-wide maintenance.
 
 ## evidence
 - Worktree clean at start; bounded searches located command builders, reset key rotation and recovery state.
+- A user screenshot showed the creation page remaining in loading state until a manual refresh; the completion branches navigated before `refreshBots`, allowing the destination page to observe stale shared state.
+- Source inspection confirmed both creation entry paths prefilled `新 Bot`; they now clear the shared name state and rely on the existing required-name validation.
+- Runtime file checks confirmed the source and cloned Bot `SOUL.md` files were byte-identical while the cloned Bot's separately keyed card state was empty; the UI loads these sources independently.
 
 ## risks
 - Installed runtime compatibility and full multi-Profile restore need isolated runtime verification; no production maintenance execution.
 
 ## validation
+- Bot 创建流程：创建相关 3 个前端测试套件通过，49 tests passed；覆盖完成后刷新、首个 Bot 与追加 Bot 空名称初始化，以及本地化占位提示。
+- 人设展示：`BuddyPanel` 36 tests passed；竞态回归覆盖空卡片状态晚于 `SOUL.md` 返回的场景，最终展示以目标 Bot 的真实文件为准。
 - Frontend: 5 focused suites, 115 passed / 1 skipped; includes rendered main/sibling switching, stale log removal, pending instance progress, single-Bot maintenance and hidden creation entry.
-- `pnpm check` passed; final `pnpm typecheck` reports 175 existing diagnostics, 276 baseline, zero new. `pnpm build:cn` passed (96 static pages).
+- `pnpm check` passed; final baseline check reports 174 existing diagnostics, 276 baseline, zero new. `pnpm build:cn` passed (96 static pages).
 - `CGO_ENABLED=0 go test ./pkg/instance -run TestResetInstanceConfig -count=1` passed; `ctl/main/api` passed. `CGO_ENABLED=0 go vet ./pkg/instance ./pkg/errcode` passed.
 - Worker `go test ./...` and `go vet ./...` passed.
 - Full CTL package tests blocked by missing Docker; native CGO test linking blocked by local macOS Security symbol, so targeted checks used CGO_ENABLED=0.
-- Documentation validation passed (zero broken first-party links); explicit changed-path design-impact validation passed and flags runtime owner review. Staged check has no files because changes are not staged.
+- Documentation validation passed (zero broken first-party links); staged changed-path design-impact validation and diff checks passed.
 - Local port 5174 owned by this worktree; HTTP GET /agents/diagnostics/ returned 200. Browser screenshot validation unavailable on the stale connection-error tab.
 - Report: /tmp/lightvela-diagnostics-validation/report.html. No production mutation or deployment.
 
 ## handoff
-- User authorized a separate diagnostics MR after !3836 merged. Submit on codex/multi-bot-diagnostics targeting master.
+- MR !3848 merged; follow-up UX and state fixes are submitted from `codex/bot-create-followups` targeting `master`.
 - Local CN preview now uses the Beijing backend through process environment only; no proxy or deployment configuration is included in this change.
 
 ## stage
@@ -87,4 +96,4 @@ Implementation and local verification complete; preparing the separately authori
 - Worktree: /Users/pablozhong/codex/lightvela-master-preview-3832; baseline 45f9d13fe84ea0da9d43d16b5f0b9195a621b692.
 
 ## next_action
-- Recheck focused tests and staged impact, commit/push the diagnostics-only branch, and verify the new MR and CI state without merging.
+- Validate the creation polling order fix, then update MR !3848 and verify its CI state without merging.
