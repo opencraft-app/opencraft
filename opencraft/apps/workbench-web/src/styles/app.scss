@@ -1531,7 +1531,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   background: var(--color-border-subtle);
 }
 
-.account-center-dialog {
+.modal-surface.account-center-dialog {
   width: min(920px, calc(100vw - 48px));
   height: min(820px, calc(100vh - 64px));
 }
@@ -1684,7 +1684,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 .account-center__credits a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 720px) {
-  .account-center-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  .modal-surface.account-center-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
   .account-center { padding: 28px 16px 36px; }
   .account-center__header { padding-right: 36px; }
   .account-center__profile-card { grid-template-columns: 54px minmax(0, 1fr); padding: 18px; }
@@ -2209,6 +2209,23 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
     font: inherit;
     font-size: 13px;
     cursor: pointer;
+  }
+}
+
+.lightvela-bot-creation-guide {
+  h1 {
+    margin-top: 16px;
+  }
+
+  .hostless-empty-view__actions {
+    justify-content: center;
+  }
+
+  .lightvela-bot-creation-guide__primary {
+    height: 44px;
+    border-radius: 999px;
+    padding-inline: 24px;
+    font-size: 15px;
   }
 }
 

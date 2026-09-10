@@ -19,6 +19,7 @@ import {
   resolveThreadEdgeScroll,
   THREAD_EDGE_SCROLL_MINIMUM_WIDTH_REM,
 } from "../apps/workbench-web/src/app-shell-edge-scroll-model";
+import { resolveModalStack } from "../apps/workbench-web/src/components/modal/modal-controller";
 
 const workbenchStyles = readFileSync(
   new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
@@ -53,9 +54,30 @@ const modalSurfaceSource = readFileSync(
   ),
   "utf8",
 );
-const managementSettingsDialogSource = readFileSync(
+const modalHostSource = readFileSync(
   new URL(
-    "../apps/workbench-web/src/components/modal/management-settings-dialog.tsx",
+    "../apps/workbench-web/src/components/modal/modal-host.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const nativeModalSurfaceSource = readFileSync(
+  new URL(
+    "../apps/workbench-expo/src/components/ui/modal-surface.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const nativeComposerSource = readFileSync(
+  new URL(
+    "../apps/workbench-expo/src/components/workbench-composer.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const managementSettingsContentSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/modal/management-settings-content.tsx",
     import.meta.url,
   ),
   "utf8",
@@ -336,18 +358,22 @@ test("application Settings owns route slots while target management owns a modal
   assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen \|\| managementSettingsOpen/u);
   assert.match(workbenchApp, /hidden=\{!conversationSurfaceVisible\}/u);
   assert.match(workbenchApp, /inert=\{!conversationRouteOpen \|\| undefined\}/u);
-  assert.match(workbenchApp, /<ManagementSettingsDialog[\s\S]*?navigation=\{settingsNavigation\}/u);
+  assert.match(workbenchApp, /<ManagementSettingsContent[\s\S]*?navigation=\{settingsNavigation\}/u);
+  assert.match(workbenchApp, /<ModalHost requests=\{modalRequests\}/u);
   assert.doesNotMatch(workbenchApp, /ApplicationShellRoot/u);
   assert.doesNotMatch(settingsPageSource, /ApplicationShellRoot/u);
   assert.match(settingsPageSource, /export function SettingsNavigation/u);
   assert.match(settingsPageSource, /export function SettingsContent/u);
-  assert.match(modalSurfaceSource, /aria-modal="true"/u);
-  assert.match(modalSurfaceSource, /createPortal\(/u);
-  assert.match(modalSurfaceSource, /className="modal-surface__host"/u);
+  assert.match(modalSurfaceSource, /from "@radix-ui\/react-dialog"/u);
+  assert.match(modalSurfaceSource, /<Dialog\.Root/u);
+  assert.match(modalSurfaceSource, /<Dialog\.Portal/u);
+  assert.match(modalSurfaceSource, /<Dialog\.Overlay/u);
+  assert.match(modalSurfaceSource, /<Dialog\.Content/u);
   assert.match(modalSurfaceSource, /className="modal-surface__scrim"/u);
-  assert.match(modalSurfaceSource, /event\.key === "Escape"/u);
-  assert.match(modalSurfaceSource, /event\.key !== "Tab"/u);
-  assert.match(managementSettingsDialogSource, /<ModalSurface/u);
+  assert.doesNotMatch(modalSurfaceSource, /createPortal|addEventListener|setAttribute\("inert"\)|onEscapeKeyDown|event\.key/u);
+  assert.doesNotMatch(managementSettingsContentSource, /ModalSurface|Dialog\./u);
+  assert.match(modalHostSource, /resolveModalStack\(requests\)/u);
+  assert.match(modalHostSource, /<ModalSurface/u);
   assert.match(
     workbenchStyles,
     /\.workbench-conversation-route\[hidden\]\s*\{\s*display:\s*none;/u,
@@ -370,11 +396,11 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     modalStyles,
-    /\.modal-surface__scrim\s*\{[^}]*pointer-events:\s*none;[^}]*backdrop-filter:\s*blur\(7px\)/u,
+    /\.modal-surface__scrim\s*\{[^}]*position:\s*fixed;[^}]*backdrop-filter:\s*blur\(7px\)/u,
   );
   assert.match(
     modalStyles,
-    /\.modal-surface__host\s*\{[^}]*z-index:\s*var\(--layer-application-modal,\s*230\)/u,
+    /--modal-layer-base:\s*var\(--layer-application-modal,\s*230\)/u,
   );
   assert.match(
     modalStyles,
@@ -384,6 +410,24 @@ test("application Settings owns route slots while target management owns a modal
     modalStyles,
     /\.modal-surface\s*\{[^}]*background:\s*var\(--color-background-primary\)/u,
   );
+});
+
+test("the platform resolves modal identity and Expo adapts the same semantic contract", () => {
+  const dismiss = () => undefined;
+  const stack = resolveModalStack([
+    { id: "settings", label: "Settings", content: null, onDismiss: dismiss },
+    { id: "account", label: "Account", content: null, onDismiss: dismiss },
+    { id: "settings", label: "Settings updated", content: null, onDismiss: dismiss },
+  ]);
+  assert.deepEqual(stack.map(({ id, label, stackIndex }) => ({ id, label, stackIndex })), [
+    { id: "account", label: "Account", stackIndex: 0 },
+    { id: "settings", label: "Settings updated", stackIndex: 1 },
+  ]);
+  assert.match(nativeModalSurfaceSource, /from "@opencraft\/design-system\/modal"/u);
+  assert.match(nativeModalSurfaceSource, /<Modal/u);
+  assert.match(nativeModalSurfaceSource, /onRequestClose=\{\(\) => onDismiss\("system"\)\}/u);
+  assert.match(nativeComposerSource, /<ModalSurface[\s\S]*?label="Model"/u);
+  assert.doesNotMatch(nativeComposerSource, /<Modal\b|modalScrim|modalRoot/u);
 });
 
 test("Draft menus consume one design-system rhythm and stay out of the hero title", () => {

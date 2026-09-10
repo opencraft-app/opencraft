@@ -5,6 +5,19 @@ import {
   consumeLightVelaWebLoginCallback,
   startLightVelaWebLogin,
 } from "./lightvela-web-login";
+import {
+  LIGHTVELA_REGIONS,
+  type LightVelaAccountPhase,
+  type LightVelaBotInstance,
+  type LightVelaRegion,
+} from "./lightvela-account-contract";
+
+export {
+  LIGHTVELA_REGIONS,
+  type LightVelaAccountPhase,
+  type LightVelaBotInstance,
+  type LightVelaRegion,
+} from "./lightvela-account-contract";
 
 export const LIGHTVELA_API_BASE = "https://api.lightvela.ai";
 export const LIGHTVELA_TOKEN_KEY = "vela.lightvela.session-token.v1";
@@ -13,34 +26,6 @@ export const LIGHTVELA_REGION_KEY = "vela.lightvela.region.v1";
 const SIGNED_OUT_KEY = "vela.lightvela.signed-out.v1";
 const CACHE_SCOPE_KEY = "vela.lightvela.credential-scope.v1";
 const UPSTREAM_AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
-export type LightVelaRegion = "cn" | "intl";
-export const LIGHTVELA_REGIONS = {
-  cn: {
-    label: "国内版 · lightvela.com",
-    apiBase: "https://api.lightvela.com",
-    frontendBase: "https://lightvela.com",
-  },
-  intl: {
-    label: "国际版 · lightvela.ai",
-    apiBase: "https://api.lightvela.ai",
-    frontendBase: "https://lightvela.ai",
-  },
-} as const;
-
-export interface LightVelaBotInstance {
-  readonly createdAt: string;
-  readonly instanceId: string;
-  readonly name: string;
-  /** The account catalog contains only executable instances. */
-  readonly status: "running";
-}
-
-export type LightVelaAccountPhase =
-  | "anonymous"
-  | "loading"
-  | "authenticated"
-  | "error";
-
 export interface LightVelaAccountSnapshot {
   readonly region: LightVelaRegion;
   readonly authGeneration: number;

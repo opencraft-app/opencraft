@@ -1,10 +1,16 @@
 import type { LightVelaAccountPort } from "@opencraft/plugin-lightvela-hermes/transport";
+import type {
+  LightVelaAccountPhase,
+  LightVelaRegion,
+} from "@opencraft/plugin-lightvela-hermes/account-contract";
 
-export type MobileLightVelaPhase = "loading" | "anonymous" | "authenticated" | "error";
+export type MobileLightVelaPhase = LightVelaAccountPhase;
 
 export interface MobileLightVelaSnapshot {
   readonly revision: number;
+  readonly region: LightVelaRegion;
   readonly phase: MobileLightVelaPhase;
+  readonly botCount: number;
   readonly activeBotId: string | null;
   readonly botName: string | null;
   readonly error: string | null;

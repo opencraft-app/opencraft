@@ -61,6 +61,11 @@ export interface TatPtyOpenOptions {
   readonly args?: readonly string[];
   readonly cwd?: string;
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * Keeps this PTY's own TAT session alive without writing bytes into the
+   * shell. This is deliberately independent from proxy/dashboard keepalive.
+   */
+  readonly keepaliveIntervalMs?: number;
 }
 
 export interface TatPtyChannel {
@@ -275,6 +280,9 @@ export class TencentTatSessionMultiplexer {
   private resolvePtyReady: ((channel: TatPtyChannel) => void) | null = null;
   private rejectPtyReady: ((error: Error) => void) | null = null;
   private ptyReadyTimer: ReturnType<typeof setTimeout> | null = null;
+  private ptyKeepaliveTimer: ReturnType<typeof setTimeout> | null = null;
+  private ptyKeepaliveIntervalMs = 0;
+  private ptyDimensions: { cols: number; rows: number } | null = null;
   private lastInboundSequence = -1;
   private inboundRevision = 0;
   private healthProbe: Promise<void> | null = null;
@@ -450,6 +458,10 @@ export class TencentTatSessionMultiplexer {
           connection.markClosed();
         }
         this.connections.clear();
+        // A terminal may use a dedicated TAT socket while the dashboard Host
+        // remains healthy. Project that socket loss into the PTY owner instead
+        // of leaving a process that still claims to accept input.
+        this.failPty(error);
         this.options.onClose?.(event);
       };
     });
@@ -624,12 +636,23 @@ export class TencentTatSessionMultiplexer {
     if (this.ptyStarted || this.ptyReadyPromise !== null) {
       throw new Error("TAT session already owns a PTY channel");
     }
+    const cols = options.cols ?? this.bootstrap.cols;
+    const rows = options.rows ?? this.bootstrap.rows;
+    this.ptyDimensions = { cols, rows };
+    this.ptyKeepaliveIntervalMs = typeof options.keepaliveIntervalMs === "number"
+      && Number.isFinite(options.keepaliveIntervalMs)
+      && options.keepaliveIntervalMs > 0
+      ? options.keepaliveIntervalMs
+      : 0;
     this.ptyHandlers = handlers;
     const channel: TatPtyChannel = Object.freeze({
       sendInput: (input: string) => this.sendPtyInput(input),
       resize: (cols: number, rows: number) => this.resizePty(cols, rows),
       release: () => {
-        if (this.ptyHandlers === handlers) this.ptyHandlers = null;
+        if (this.ptyHandlers === handlers) {
+          this.stopPtyKeepalive();
+          this.ptyHandlers = null;
+        }
       },
     });
     this.ptyChannel = channel;
@@ -643,8 +666,8 @@ export class TencentTatSessionMultiplexer {
       Data: {
         SessionId: this.bootstrap.sessionId,
         ChannelId: "",
-        Cols: options.cols ?? this.bootstrap.cols,
-        Rows: options.rows ?? this.bootstrap.rows,
+        Cols: cols,
+        Rows: rows,
         UserName: this.bootstrap.username?.trim() || "agentuser",
         Cwd: options.cwd ?? (this.bootstrap.workingDirectory?.trim() || "/home/agentuser"),
         Envs: { ...options.env },
@@ -740,7 +763,10 @@ export class TencentTatSessionMultiplexer {
         this.ptyReadyPromise = null;
         if (this.ptyReadyTimer !== null) globalThis.clearTimeout(this.ptyReadyTimer);
         this.ptyReadyTimer = null;
-        if (resolve !== null && channel !== null) resolve(channel);
+        if (resolve !== null && channel !== null) {
+          this.startPtyKeepalive();
+          resolve(channel);
+        }
         return;
       }
 
@@ -867,6 +893,7 @@ export class TencentTatSessionMultiplexer {
 
   private resizePty(cols: number, rows: number): boolean {
     if (!this.ptyStarted) return false;
+    this.ptyDimensions = { cols, rows };
     return this.sendJson({
       Type: "PtyResize",
       Data: {
@@ -878,9 +905,57 @@ export class TencentTatSessionMultiplexer {
     });
   }
 
+  private startPtyKeepalive(): void {
+    this.stopPtyKeepalive();
+    if (this.ptyKeepaliveIntervalMs <= 0 || !this.ptyStarted || this.retired) return;
+    this.schedulePtyKeepalive(this.ptyKeepaliveIntervalMs);
+  }
+
+  private schedulePtyKeepalive(delayMs: number): void {
+    if (this.ptyKeepaliveIntervalMs <= 0 || !this.ptyStarted || this.retired) return;
+    this.stopPtyKeepalive();
+    const timer = globalThis.setTimeout(() => {
+      if (this.ptyKeepaliveTimer !== timer) return;
+      this.ptyKeepaliveTimer = null;
+      if (!this.ptyStarted || this.retired) return;
+      const idleMs = Date.now() - this.lastTransportActivityAt;
+      if (idleMs < this.ptyKeepaliveIntervalMs) {
+        this.schedulePtyKeepalive(this.ptyKeepaliveIntervalMs - idleMs);
+        return;
+      }
+      const size = this.ptyDimensions;
+      if (size === null || !this.sendJson({
+        Type: "PtyResize",
+        Data: {
+          SessionId: this.bootstrap.sessionId,
+          ChannelId: "",
+          Cols: size.cols,
+          Rows: size.rows,
+        },
+      })) {
+        this.failPty(new TatTransportError(
+          "connection_lost",
+          "TAT PTY keepalive could not be sent",
+          { phase: "websocket" },
+        ));
+        return;
+      }
+      this.schedulePtyKeepalive(this.ptyKeepaliveIntervalMs);
+    }, Math.max(1, delayMs));
+    (timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+    this.ptyKeepaliveTimer = timer;
+  }
+
+  private stopPtyKeepalive(): void {
+    if (this.ptyKeepaliveTimer === null) return;
+    globalThis.clearTimeout(this.ptyKeepaliveTimer);
+    this.ptyKeepaliveTimer = null;
+  }
+
   private failPty(error: Error): void {
     const reject = this.rejectPtyReady;
     const handlers = this.ptyHandlers;
+    this.stopPtyKeepalive();
     if (this.ptyReadyTimer !== null) globalThis.clearTimeout(this.ptyReadyTimer);
     this.ptyReadyTimer = null;
     this.resolvePtyReady = null;
@@ -889,6 +964,8 @@ export class TencentTatSessionMultiplexer {
     this.ptyHandlers = null;
     this.ptyChannel = null;
     this.ptyStarted = false;
+    this.ptyKeepaliveIntervalMs = 0;
+    this.ptyDimensions = null;
     if (reject !== null) reject(error);
     else handlers?.onError?.(error);
   }

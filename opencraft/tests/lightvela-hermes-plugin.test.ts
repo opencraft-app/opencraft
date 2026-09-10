@@ -25,6 +25,8 @@ import {
   LightVelaAccountService,
   LightVelaHermesTransport,
   LIGHTVELA_TOKEN_KEY,
+  lightVelaBotCreationUrl,
+  projectLightVelaBotOnboarding,
 } from "@opencraft/plugin-lightvela-hermes";
 import { preflightHostConnection, type HostConnectionProvider } from "@opencraft/workbench-runtime";
 import {
@@ -98,10 +100,43 @@ class FakeTatWebSocket {
     this.onmessage?.call(this as unknown as WebSocket, { data } as MessageEvent);
   }
   close() { this.readyState = WebSocket.CLOSED; }
+  remoteClose(code = 1006, reason = "connection lost") {
+    this.readyState = WebSocket.CLOSED;
+    this.onclose?.call(this as unknown as WebSocket, {
+      code,
+      reason,
+      wasClean: false,
+    } as CloseEvent);
+  }
 }
 
 const FakeTatWebSocketImpl = FakeTatWebSocket as unknown as typeof WebSocket;
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
+
+test("LightVela first-Bot onboarding is shared and region-aware", () => {
+  assert.deepEqual(projectLightVelaBotOnboarding({
+    region: "cn",
+    phase: "authenticated",
+    botCount: 0,
+    error: null,
+  }), {
+    kind: "bot-required",
+    createUrl: "https://lightvela.com/dashboard/create",
+  });
+  assert.deepEqual(projectLightVelaBotOnboarding({
+    region: "intl",
+    phase: "authenticated",
+    botCount: 1,
+    error: null,
+  }), { kind: "ready" });
+  assert.equal(lightVelaBotCreationUrl("intl"), "https://lightvela.ai/dashboard/create");
+  assert.throws(() => projectLightVelaBotOnboarding({
+    region: "intl",
+    phase: "authenticated",
+    botCount: -1,
+    error: null,
+  }), /non-negative integer/u);
+});
 
 test("Hermes dashboard ensure detaches the Host backend from the transient TAT PTY", () => {
   const command = createHermesDashboardEnsureCommand();
@@ -431,6 +466,10 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(managementPages.filter(({ contribution }) => contribution.management?.scope === "agent").length, 6);
   assert.equal(managementPages.filter(({ contribution }) => contribution.management?.scope === "host").length, 3);
   assert.equal(supervisor.contributions.getSnapshot().workbenchSurfaces[0]?.contribution.viewId, "lightvela.hermes.empty-view");
+  assert.ok(supervisor.contributions.getSnapshot().workbenchSurfaces.some(({ contribution }) =>
+    contribution.surface === "host-connection-intervention"
+      && contribution.providerId === "lightvela.hermes"
+      && contribution.intervention === "configuration-required"));
   // The extension contributes transport/settings only. Bot identity is
   // discovered from the AppServer `bot/*` catalog after the Host connects.
   assert.deepEqual(supervisor.contributions.getSnapshot().bots, []);
@@ -440,6 +479,10 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(provider?.id, "lightvela.hermes");
   assert.equal(provider?.settingsPageId, "lightvela.hermes.settings");
   assert.equal(platformAccount?.viewId, "lightvela.hermes.account-view");
+  assert.deepEqual(platformAccount?.getSnapshot().applicationIntervention, {
+    providerId: "lightvela.hermes",
+    code: "authentication-required",
+  });
   assert.deepEqual(provider?.targets, ["web", "electron"]);
   assert.deepEqual(
     provider?.validate({ botId: " bot-1 " }, { platform: "web", hostId: LIGHTVELA_HERMES_HOST_ID, profileRevision: 1 }),
@@ -560,6 +603,35 @@ test("one authenticated TAT socket multiplexes PTY and proxy channels", async ()
   assert.equal(proxy.proxyId, "dashboard");
   assert.equal(FakeTatWebSocket.instances.length, 1);
   assert.equal(jsonFrames.filter((frame) => frame.Type === "SessionAuth").length, 1);
+  client.close();
+});
+
+test("a dedicated TAT PTY keeps itself alive and projects socket loss", async () => {
+  FakeTatWebSocket.instances = [];
+  const client = new TencentTatSessionMultiplexer(tatBootstrap, {
+    WebSocketImpl: FakeTatWebSocketImpl,
+    connectDelayMs: 0,
+  });
+  const errors: Error[] = [];
+  const ptyPromise = client.openPty({ onError: error => errors.push(error) }, {
+    keepaliveIntervalMs: 5,
+  });
+  const socket = FakeTatWebSocket.instances[0]!;
+  socket.open();
+  await flush();
+  socket.receive(JSON.stringify({ Type: "PtyReady", Data: {} }));
+  const pty = await ptyPromise;
+
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const frames = socket.sent
+    .filter((frame): frame is string => typeof frame === "string")
+    .map(frame => JSON.parse(frame) as { Type: string });
+  assert.ok(frames.some(frame => frame.Type === "PtyResize"));
+
+  socket.remoteClose();
+  assert.equal(pty.sendInput("echo stale\n"), false);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!.message, /websocket closed/u);
   client.close();
 });
 
