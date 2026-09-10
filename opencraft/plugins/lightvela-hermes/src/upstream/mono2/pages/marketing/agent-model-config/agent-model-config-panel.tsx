@@ -49,6 +49,8 @@ import type {
   ModelProviderOption,
 } from "./model-config-client";
 import { ModelActionTooltip } from "./model-action-tooltip";
+import { ConfiguredProviderModelForm } from "./configured-provider-model-form";
+import { MODEL_CONTROL_CLASS, MODEL_SELECT_CONTENT_CLASS, ModelCompoundActionContent, modelCompoundClasses } from "./model-form-controls";
 import {
   getHermesModelIdentity,
   type HermesModelIdentityInput,
@@ -81,45 +83,13 @@ const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
  */
 const CUSTOM_CREDENTIAL_SCOPE = "custom-draft";
 
-const CUSTOM_MODEL_SUGGESTION_LIST_ID = "custom-model-suggestions";
 
 const MODEL_FIELD_CLASS = "grid gap-y-2";
-const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
-const MODEL_COMPOUND_CONTROL_BASE_CLASS = "min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
-const MODEL_COMPOUND_FIELD_BASE_CLASS = "min-w-0 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
-const MODEL_COMPOUND_ACTION_BASE_CLASS = "shrink-0 whitespace-nowrap rounded-none border-0 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset";
-const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
 const MODEL_RADIO_CLASS = "shrink-0 appearance-none rounded-full border border-black/20 bg-white checked:border-[#2F6BFF] checked:bg-[#2F6BFF] checked:shadow-[inset_0_0_0_3px_white] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30 focus-visible:ring-offset-2";
 const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
 } as const;
-
-function ModelCompoundActionContent({
-  idleLabel,
-  loadingLabel,
-  loading,
-}: {
-  idleLabel: string;
-  loadingLabel: string;
-  loading: boolean;
-}) {
-  return (
-    <span className="relative grid place-items-center">
-      <span
-        aria-hidden="true"
-        data-slot="model-compound-action-width-label"
-        className="invisible whitespace-nowrap"
-      >
-        {idleLabel}
-      </span>
-      <span className="absolute inset-0 inline-flex items-center justify-center gap-2 whitespace-nowrap">
-        {loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
-        {loading ? loadingLabel : idleLabel}
-      </span>
-    </span>
-  );
-}
 
 function captureAgentSidebarPosition() {
   const sidebar = document.querySelector<HTMLElement>(".lv-agents-sidebar-scroll-isolated");
@@ -128,9 +98,12 @@ function captureAgentSidebarPosition() {
   }
 }
 
+const MANAGED_PROVIDER_PREFIX = "lightvela-";
+const USER_CUSTOM_PROVIDER_PREFIX = `${MANAGED_PROVIDER_PREFIX}custom-`;
+
 function managedProviderKey(value: string) {
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return slug.startsWith("lightvela-") ? slug : `lightvela-${slug || "provider"}`;
+  return slug.startsWith(MANAGED_PROVIDER_PREFIX) ? slug : `${MANAGED_PROVIDER_PREFIX}${slug || "provider"}`;
 }
 
 function stableProviderHash(value: string) {
@@ -143,7 +116,7 @@ function stableProviderHash(value: string) {
 
 function customManagedProviderKey(name: string, baseUrl: string) {
   const endpointHash = stableProviderHash(baseUrl.trim().toLowerCase());
-  return managedProviderKey(`custom-${name}-${endpointHash}`);
+  return managedProviderKey(`${USER_CUSTOM_PROVIDER_PREFIX}${name}-${endpointHash}`);
 }
 
 function sameModel(
@@ -170,9 +143,21 @@ function modelMatchesProductProvider(model: HermesConfiguredModel, provider: Mod
     && model.apiMode.trim().toLowerCase() === provider.apiMode.trim().toLowerCase();
 }
 
+function isUserCustomProviderGroup(group: ConfiguredProviderGroup) {
+  // 仅自定义创建流程拥有该命名空间；可编辑的显示名称不能用于判定来源。
+  return group.models.length > 0 && group.models.every((model) => (
+    model.providerKey.trim().toLowerCase().startsWith(USER_CUSTOM_PROVIDER_PREFIX)
+  ));
+}
+
 function isBuiltInProviderGroup(group: ConfiguredProviderGroup) {
-  return group.providerName.trim().toLowerCase() === "custom"
+  return !isUserCustomProviderGroup(group)
+    && group.providerName.trim().toLowerCase() === "custom"
     && group.models.some((model) => displayConfiguredModelId(model.id) === "Auto");
+}
+
+function canAppendToProviderGroup(group: ConfiguredProviderGroup) {
+  return isUserCustomProviderGroup(group);
 }
 
 function groupConfiguredModelsByProvider(
@@ -244,10 +229,6 @@ function displayError(message: string, localizedFallback: string) {
   return message;
 }
 
-function supportsModelRequestProbe(apiMode: string) {
-  return apiMode === "chat_completions" || apiMode === "anthropic_messages";
-}
-
 function ModelConfigLoading() {
   const t = useT();
   return (
@@ -281,6 +262,7 @@ export function AgentModelConfigPanel({
   const addSectionRef = useRef<HTMLElement>(null);
   const configuredHeadingRef = useRef<HTMLHeadingElement>(null);
   const providerTriggerRef = useRef<HTMLButtonElement>(null);
+  const providerAddTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusAfterDelete = useRef(false);
   const [category, setCategory] = useState<ProviderCategory>("coding_plan");
   const [providerKey, setProviderKey] = useState("");
@@ -297,7 +279,9 @@ export function AgentModelConfigPanel({
   const [connectionResult, setConnectionResult] = useState<HermesConnectionProbeResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<HermesConfiguredModel | null>(null);
   const [expandedConfiguredProviderKey, setExpandedConfiguredProviderKey] = useState<string | null>(null);
-  const [selectedConfiguredModelByProvider, setSelectedConfiguredModelByProvider] = useState<Record<string, string>>({});
+  const [addingProviderKey, setAddingProviderKey] = useState<string | null>(null);
+  const [providerDraftDirty, setProviderDraftDirty] = useState(false);
+  const [pendingAddingProviderKey, setPendingAddingProviderKey] = useState<string | null>(null);
   const probeUiRevision = useRef(0);
 
   const providerOptions = useMemo(
@@ -332,22 +316,7 @@ export function AgentModelConfigPanel({
   const canRefreshModels = !activeProvider?.fixedModelSelection
     && (category === "custom" || (activeProvider?.supportsLiveModelRefresh ?? true));
 
-  const compoundControlClassName = cn(
-    MODEL_COMPOUND_CONTROL_BASE_CLASS,
-    isGlobalRegion
-      ? "grid h-auto grid-cols-1 sm:h-12 sm:grid-cols-[minmax(0,1fr)_max-content]"
-      : "flex h-12",
-  );
-  const compoundFieldClassName = cn(
-    MODEL_COMPOUND_FIELD_BASE_CLASS,
-    isGlobalRegion ? "h-12 w-full sm:h-full" : "h-full flex-1",
-  );
-  const compoundActionClassName = cn(
-    MODEL_COMPOUND_ACTION_BASE_CLASS,
-    isGlobalRegion
-      ? "h-12 w-full border-t border-black/10 sm:h-full sm:w-auto sm:min-w-max sm:border-l sm:border-t-0 sm:px-4"
-      : "h-full min-w-max border-l border-black/10 px-4",
-  );
+  const { control: compoundControlClassName, field: compoundFieldClassName, action: compoundActionClassName } = modelCompoundClasses(isGlobalRegion);
 
   useEffect(() => {
     if (category === "custom") return;
@@ -393,7 +362,7 @@ export function AgentModelConfigPanel({
   providerFingerprintRef.current = providerFingerprint;
   const credentialScope = category === "custom" ? CUSTOM_CREDENTIAL_SCOPE : providerFingerprint;
   const previousCredentialScopeRef = useRef(credentialScope);
-  const selectedModel = providerDraft && effectiveSelectedModelId
+  const selectedModel = providerDraft && availableModelOptions.some((option) => option.id === effectiveSelectedModelId)
     ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
   const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
@@ -416,6 +385,36 @@ export function AgentModelConfigPanel({
     && configuredProviderGroups.some((group) => group.key === expandedConfiguredProviderKey)
     ? expandedConfiguredProviderKey
     : null;
+  const closeProviderForm = () => {
+    controller.cancelProbe();
+    controller.clearOperationError();
+    setAddingProviderKey(null);
+    setPendingAddingProviderKey(null);
+    setProviderDraftDirty(false);
+    requestAnimationFrame(() => providerAddTriggerRef.current?.focus({ preventScroll: true }));
+  };
+  const openProviderForm = (key: string) => {
+    const group = configuredProviderGroups.find((candidate) => candidate.key === key);
+    if (!group || !canAppendToProviderGroup(group)) return;
+    if (addingProviderKey === key) {
+      setExpandedConfiguredProviderKey(key);
+      return;
+    }
+    if (addingProviderKey && addingProviderKey !== key && providerDraftDirty) {
+      setPendingAddingProviderKey(key);
+      return;
+    }
+    controller.cancelProbe();
+    controller.clearOperationError();
+    setProviderDraftDirty(false);
+    setAddingProviderKey(key);
+    setExpandedConfiguredProviderKey(key);
+  };
+  useEffect(() => {
+    setAddingProviderKey(null);
+    setPendingAddingProviderKey(null);
+    setProviderDraftDirty(false);
+  }, [botId]);
   const pageHeader = (
     <AgentSectionHeader
       title={resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
@@ -522,7 +521,7 @@ export function AgentModelConfigPanel({
       apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
-      // 手输的模型 ID 未经探测验证，写入 discover_models=false 让 Hermes 以配置内列表为权威。
+      // 自定义模型从发现结果中选择；固定目录供应商仍以产品目录为准。
       discoverModels: category === "custom"
         ? modelOptions.some((modelOption) => modelOption.id === selectedModelId)
         : activeProvider?.discoveryStrategy !== "catalog",
@@ -540,18 +539,11 @@ export function AgentModelConfigPanel({
     bindCustomCredentialToProvider();
     const requestFingerprint = providerFingerprint;
     const revision = probeUiRevision.current;
-    const selectedCustomModelWasDiscovered = category === "custom"
-      && modelOptions.some((modelOption) => modelOption.id === selectedModelId);
     setConnectionResult(null);
     const result = await controller.testConnection({
       apiKey: apiKey.trim(),
       model: selectedModel,
-      strategy: activeProvider?.discoveryStrategy === "catalog"
-        || (category === "custom"
-          && !selectedCustomModelWasDiscovered
-          && supportsModelRequestProbe(providerDraft?.apiMode ?? ""))
-        ? "model_request"
-        : "model_list",
+      strategy: activeProvider?.discoveryStrategy === "catalog" ? "model_request" : "model_list",
     });
     if (result && revision === probeUiRevision.current && requestFingerprint === providerFingerprintRef.current) {
       setConnectionResult(result);
@@ -636,28 +628,23 @@ export function AgentModelConfigPanel({
               const fallbackModels = group.models.filter((model) => (
                 snapshot.fallbacks.some((candidate) => sameModel(candidate, model))
               ));
-              const legacyCustomProvider = group.providerName.trim().toLowerCase() === "custom";
+              const legacyCustomProvider = !isUserCustomProviderGroup(group) && group.providerName.trim().toLowerCase() === "custom";
               const providerDisplayName = legacyCustomProvider
                 ? (isBuiltInProviderGroup(group) ? t("内置模型") : t("自定义模型"))
                 : group.providerName;
-              const retainedSelectedModel = group.models.find(
-                (model) => getHermesModelIdentity(model) === selectedConfiguredModelByProvider[group.key],
-              );
-              const selectedConfiguredModel = retainedSelectedModel
-                ?? group.models.find((model) => sameModel(snapshot.primary, model))
-                ?? group.models[0]
-                ?? null;
-              const selectedIdentity = selectedConfiguredModel
-                ? getHermesModelIdentity(selectedConfiguredModel)
-                : null;
+              const savedModels = group.models.filter((model) => !model.catalogOnly);
+              const anchor = savedModels[0];
+              const canAppend = !!anchor && canAppendToProviderGroup(group);
               const groupPanelId = `configured-provider-${groupIndex}`;
               return (
                 <li key={group.key}>
+                  <div className="flex items-center gap-2 pr-5">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-black/[0.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2F6BFF]"
+                    className="flex min-w-0 flex-1 flex-wrap items-center gap-3 px-5 py-4 text-left hover:bg-black/[0.015] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2F6BFF] sm:flex-nowrap"
                     aria-expanded={expanded}
                     aria-controls={groupPanelId}
+                    disabled={controller.operation === "append"}
                     onClick={() => setExpandedConfiguredProviderKey(expanded ? null : group.key)}
                   >
                     <ChevronDown
@@ -668,7 +655,7 @@ export function AgentModelConfigPanel({
                       {providerDisplayName}
                     </span>
                     {primaryModel || fallbackModels.length > 0 ? (
-                      <span className="flex max-w-[60%] shrink-0 flex-row flex-wrap items-center justify-end gap-1">
+                      <span className="flex w-full shrink-0 flex-row flex-wrap items-center gap-1 sm:w-auto sm:max-w-[60%] sm:justify-end">
                         {primaryModel ? (
                           <Badge
                             variant="success"
@@ -694,15 +681,20 @@ export function AgentModelConfigPanel({
                       </span>
                     ) : null}
                   </button>
+                  {canAppend ? <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-md text-xs font-normal" disabled={busy} onClick={(event) => { providerAddTriggerRef.current = event.currentTarget; openProviderForm(group.key); }}>
+                    <Plus className="size-3.5" aria-hidden="true" />{t("添加模型")}
+                  </Button> : null}
+                  </div>
 
-                  {expanded ? (
+                  {expanded || addingProviderKey === group.key ? (
                     <div
                       id={groupPanelId}
                       role="group"
                       aria-label={`${providerDisplayName} ${t("已配置模型")}`}
-                      className="border-t border-black/[0.06] bg-black/[0.015] px-4 py-4 sm:px-5"
+                      hidden={!expanded}
+                      className="bg-white pl-4 pr-5 sm:pl-10"
                     >
-                      <ul className="overflow-hidden rounded-md border border-black/[0.06] bg-white divide-y divide-black/[0.06]">
+                      <ul className="divide-y divide-black/[0.06]">
                         {group.models.map((model) => {
                           const primary = sameModel(snapshot.primary, model);
                           const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
@@ -713,20 +705,7 @@ export function AgentModelConfigPanel({
                               key={modelIdentity}
                               className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                             >
-                              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
-                                <input
-                                  type="radio"
-                                  name={`configured-model-${groupIndex}`}
-                                  aria-label={displayConfiguredModelName(model, autoModelDisplayName)}
-                                  value={modelIdentity}
-                                  checked={selectedIdentity === modelIdentity}
-                                  disabled={busy}
-                                  onChange={() => setSelectedConfiguredModelByProvider((current) => ({
-                                    ...current,
-                                    [group.key]: modelIdentity,
-                                  }))}
-                                  className={cn(MODEL_RADIO_CLASS, "size-4")}
-                                />
+                              <div className="flex min-w-0 flex-1 items-center gap-3">
                                 <span className="min-w-0">
                                   <span className="flex flex-wrap items-center gap-2">
                                     <span className="break-all text-sm font-normal text-black/85">
@@ -746,9 +725,9 @@ export function AgentModelConfigPanel({
                                     ) : null}
                                   </span>
                                 </span>
-                              </label>
+                              </div>
 
-                              <div className="flex flex-wrap items-center gap-2 pl-7 sm:pl-0">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <ModelActionTooltip content={primary ? t("当前模型已经是主模型") : undefined}>
                                   <Button
                                     type="button"
@@ -758,7 +737,7 @@ export function AgentModelConfigPanel({
                                   disabled={busy || model.requiresSetup === true || primary}
                                   onClick={() => void controller.assign(model, "primary")}
                                 >
-                                    {t("设为主模型")}
+                                    {primary ? t("已是主模型") : t("设为主模型")}
                                   </Button>
                                 </ModelActionTooltip>
                                 <ModelActionTooltip content={primary ? t("主模型不能同时设为备用模型") : undefined}>
@@ -797,6 +776,22 @@ export function AgentModelConfigPanel({
                             </li>
                           );
                         })}
+                      {addingProviderKey === group.key && anchor && canAppend ? (
+                        <li className="px-4 py-3">
+                        <ConfiguredProviderModelForm
+                          key={JSON.stringify([botId, group.key, anchor.id, anchor.baseUrl, anchor.apiMode, anchor.keyEnv])}
+                          anchor={anchor}
+                          savedModels={savedModels}
+                          controller={controller}
+                          isGlobalRegion={isGlobalRegion}
+                          onCancel={closeProviderForm}
+                          onSaved={closeProviderForm}
+                          onDirtyChange={setProviderDraftDirty}
+                          onSelectInteraction={captureAgentSidebarPosition}
+                          onConnectionResult={setConnectionResult}
+                        />
+                        </li>
+                      ) : null}
                       </ul>
                     </div>
                   ) : null}
@@ -806,6 +801,23 @@ export function AgentModelConfigPanel({
           </ul>
         )}
       </section>
+
+      <Dialog open={pendingAddingProviderKey !== null} onOpenChange={(open) => { if (!open) setPendingAddingProviderKey(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("放弃当前添加？")}</DialogTitle>
+            <DialogDescription>{t("当前填写的模型尚未添加，切换后将清空。")}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingAddingProviderKey(null)}>{t("取消")}</Button>
+            <Button onClick={() => {
+              const key = pendingAddingProviderKey;
+              closeProviderForm();
+              if (key) { setAddingProviderKey(key); setExpandedConfiguredProviderKey(key); }
+            }}>{t("放弃并切换")}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <section
         ref={addSectionRef}
@@ -1008,30 +1020,6 @@ export function AgentModelConfigPanel({
               {t("模型")}
             </label>
             <div data-slot="model-option-control" className={compoundControlClassName}>
-              {category === "custom" ? (
-                // 自定义 endpoint 常常没有实现 /v1/models，探测结果只能作为建议，必须允许手动填写。
-                <>
-                  <Input
-                    id="detected-model"
-                    list={CUSTOM_MODEL_SUGGESTION_LIST_ID}
-                    autoComplete="off"
-                    value={selectedModelId}
-                    disabled={busy}
-                    placeholder={t("输入或选择模型")}
-                    className={compoundFieldClassName}
-                    onChange={(event) => {
-                      setSelectedModelId(event.target.value);
-                      setConnectionResult(null);
-                      controller.clearOperationError();
-                    }}
-                  />
-                  <datalist id={CUSTOM_MODEL_SUGGESTION_LIST_ID}>
-                    {modelOptions.map((modelOption) => (
-                      <option key={modelOption.id} value={modelOption.id}>{modelOption.name}</option>
-                    ))}
-                  </datalist>
-                </>
-              ) : (
                 <Select
                   value={effectiveSelectedModelId}
                   disabled={busy || availableModelOptions.length === 0}
@@ -1062,7 +1050,6 @@ export function AgentModelConfigPanel({
                     ))}
                   </SelectContent>
                 </Select>
-              )}
               <Button
                 type="button"
                 variant="outline"

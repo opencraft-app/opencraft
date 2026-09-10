@@ -73,6 +73,9 @@ export interface ModelProviderOption {
 export type HermesModelConfigAction =
   | { type: "prepareCredentialEnvelope" }
   | { type: "read" }
+  | { type: "probeConfiguredProvider"; anchor: HermesConfiguredModel }
+  | { type: "probeConfiguredModel"; anchor: HermesConfiguredModel; modelId: string }
+  | { type: "appendProviderModel"; anchor: HermesConfiguredModel; modelId: string }
   | { type: "probe"; credentialEnvelope: HermesCredentialEnvelope; baseUrl: string; apiMode?: string }
   | { type: "connectivityProbe"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; strategy?: HermesConnectionProbeStrategy }
   | { type: "add"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean }
@@ -89,6 +92,7 @@ function encodeBase64(value: string): string {
 
 const PYTHON_HELPER = String.raw`import base64
 import copy
+import fcntl
 import inspect
 import json
 import os
@@ -147,9 +151,31 @@ TRANSPORTS = {
     "anthropic_messages": "anthropic_messages", "bedrock_converse": "bedrock_converse",
 }
 ENVELOPE_TTL_SECONDS = 600
+MAX_MODEL_ID_LENGTH = 512
+ASCII_CONTROL_CHARACTER_LIMIT = 32
+MODEL_DISCOVERY_TIMEOUT_SECONDS = 30
+MAX_MODEL_DISCOVERY_RESPONSE_BYTES = 2 * 1024 * 1024
 
 class ConfigurationRollbackError(RuntimeError):
     pass
+
+class ProviderOperationError(RuntimeError):
+    pass
+
+def log_provider_discovery_failure(error):
+    # 只保留本 helper 的堆栈行号；异常原文、源码行、路径与局部变量可能含凭据。
+    helper_lines = []
+    frame = error.__traceback__
+    while frame is not None and len(helper_lines) < 20:
+        if frame.tb_frame.f_code.co_filename == "<stdin>":
+            helper_lines.append(frame.tb_lineno)
+        frame = frame.tb_next
+    try:
+        sys.stderr.write("LIGHTVELA_MODEL_DIAGNOSTIC " + json.dumps({
+            "operation": "probe_saved_provider", "code": "discovery_failed", "helperLines": helper_lines,
+        }) + "\n")
+    except Exception:
+        pass
 
 def envelope_directory():
     root = os.environ.get("HERMES_HOME") or os.environ.get("HERMES_ROOT") or os.path.expanduser("~/.hermes")
@@ -260,16 +286,7 @@ def remove_env_credential_only(key):
 def get_fallback_chain(config):
     helper = getattr(fallback_config, "get_fallback_chain", None) if fallback_config else None
     if callable(helper): return helper(config)
-    values = []
-    for key in ("fallback_providers", "fallback_model"):
-        candidate = config.get(key)
-        entries = candidate if isinstance(candidate, list) else [candidate]
-        for entry in entries:
-            if isinstance(entry, dict): values.append(dict(entry))
-            elif isinstance(entry, str) and entry.strip():
-                primary = config.get("model") if isinstance(config.get("model"), dict) else {}
-                values.append({"provider": primary.get("provider"), "model": entry.strip()})
-    return values
+    return [entry for entry in raw_fallback_routes(config) if isinstance(entry, dict)]
 
 def probe_api_models(api_key, base_url, timeout, mode):
     helper = getattr(hermes_models, "probe_api_models", None)
@@ -301,20 +318,25 @@ def model_request_url(model):
         return (base_url if base_url.endswith("/v1") else base_url + "/v1") + "/messages"
     if mode == "chat_completions":
         return base_url + "/chat/completions"
+    if mode == "codex_responses":
+        return base_url + "/responses"
     raise ValueError("Model request probe is unavailable for this API mode")
 
-def probe_model_request(credential, model, fallback, started_at):
+def probe_model_request(credential, model, fallback, started_at, extra_headers=None):
     mode = model["apiMode"]
     headers = {"Content-Type": "application/json", "User-Agent": "lightvela-model-config"}
     if mode == "anthropic_messages":
         headers.update({"x-api-key": credential, "anthropic-version": "2023-06-01"})
     else:
         headers["Authorization"] = "Bearer " + credential
+    headers.update(extra_headers or {})
     payload = {
         "model": model["id"],
         "max_tokens": 1,
         "messages": [{"role": "user", "content": "ping"}],
     }
+    if mode == "codex_responses":
+        payload = {"model": model["id"], "input": "ping", "max_output_tokens": 16}
     request = urllib.request.Request(
         model_request_url(model),
         data=json.dumps(payload).encode("utf-8"),
@@ -324,6 +346,7 @@ def probe_model_request(credential, model, fallback, started_at):
     try:
         if not callable(open_credentialed_url):
             raise RuntimeError("Hermes credential-safe HTTP transport is unavailable")
+        # 安全传输会清除跨来源重定向中的凭据；不可回退到 urllib.request.urlopen。
         with open_credentialed_url(request, timeout=60) as response:
             status = int(getattr(response, "status", 200))
             if status < 200 or status >= 300:
@@ -384,9 +407,9 @@ def provider_schema_supported(config):
     except Exception:
         return False
 
-def fail(message="Model configuration operation failed"):
+def fail(message="Model configuration operation failed", code=None):
     print(START)
-    print(json.dumps({"ok": False, "error": message}))
+    print(json.dumps({"ok": False, "error": message, **({"errorCode": code} if code else {})}))
     print(END)
 
 def as_dict(value, field):
@@ -577,7 +600,7 @@ def route_identity(model):
     route_base_url = model.get("routeBaseUrl") if "routeBaseUrl" in model else model.get("baseUrl")
     return (
         str(model.get("providerKey") or "").strip().lower(),
-        str(model.get("id") or "").strip().lower(),
+        str(model.get("id") or "").strip(),
         normalized_route_base_url(route_base_url),
     )
 
@@ -586,6 +609,8 @@ def same_route(left, right):
 
 def same_runtime_deployment(left, right):
     if not left or not right: return False
+    # 配置管理保留模型 ID 大小写，避免运行时的宽松身份归一化合并不同模型。
+    if route_identity(left)[1] != route_identity(right)[1]: return False
     left_base_url = left.get("routeBaseUrl") or left.get("baseUrl")
     right_base_url = right.get("routeBaseUrl") or right.get("baseUrl")
     if HermesBackendIdentity and callable(hermes_same_deployment):
@@ -711,14 +736,17 @@ def read_snapshot(config):
             and provider.get("models_discovered") is not True
             and discover_models is False
         )
-        model_ids = provider_catalog_model_ids(provider) if managed_models else []
+        model_ids = provider_catalog_model_ids(provider) if managed_models else [
+            model_id for model_id, metadata in (provider_models.items() if isinstance(provider_models, dict) else [])
+            if isinstance(metadata, dict) and metadata.get("lightvela_configured") is True
+        ]
         projected_model_id = provider_model_id(provider) or (model_ids[0] if model_ids else "")
         try:
             candidate = model_from_provider(str(provider_key), provider, projected_model_id)
             if candidate and not idle_provider_is_usable(str(provider_key), provider, projected_model_id): candidate = None
         except (KeyError, TypeError, ValueError): candidate = None
         append_projected(projected, candidate, provider_keys)
-        if candidate and managed_models:
+        if candidate:
             for model_id in model_ids:
                 configured = dict(candidate)
                 configured["id"] = model_id
@@ -733,13 +761,21 @@ def read_snapshot(config):
     for candidate in configured_models(config): append_projected(projected, candidate, provider_keys)
     append_projected(projected, primary, provider_keys)
     for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
+    # 有效备用链可能已被运行时去重，仍保留原始配置中的其他模型供精确管理。
+    for route in raw_fallback_routes(config):
+        if not isinstance(route, dict): continue
+        try: candidate = model_from_route(config, route)
+        except (TypeError, ValueError): continue
+        # 只补充遗漏模型，不用备用别名的显式端点覆盖既有的继承端点身份。
+        if candidate and not any(same_configured_deployment(candidate, current, provider_keys) for current in projected):
+            projected.append(dict(candidate))
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
     matches = [
         model for model in read_snapshot(config)["configuredModels"]
         if model["providerKey"].strip().lower() == provider_key.strip().lower()
-        and model["id"].strip().lower() == model_id.strip().lower()
+        and model["id"].strip() == model_id.strip()
     ]
     if route_base_url is not None:
         target_url = normalized_route_base_url(route_base_url)
@@ -788,7 +824,9 @@ def save_and_reload(config):
 
 def save_validate_or_rollback(original_config, config, validator):
     try:
-        return validator(save_and_reload(config))
+        saved = save_and_reload(config)
+        expect_fallback_config_saved(saved, config)
+        return validator(saved)
     except Exception:
         try:
             save_config(original_config)
@@ -844,6 +882,9 @@ def ensure_provider_model(config, model, discover_models=None, preserve_credenti
         provider.pop(alias, None)
     provider["name"] = model["providerName"]
     if model.get("baseUrl"): provider["base_url"] = model["baseUrl"]
+    previous_model = provider_model_id(provider)
+    if previous_model:
+        mark_provider_model(provider, previous_model)
     provider["model"] = model["id"]
     provider.pop("default_model", None)
     provider["transport"] = TRANSPORTS[model["apiMode"]]
@@ -851,10 +892,167 @@ def ensure_provider_model(config, model, discover_models=None, preserve_credenti
     else: provider.setdefault("discover_models", True)
     if model.get("keyEnv") and (not preserve_credentials or not existing_declares_credentials):
         provider["key_env"] = model["keyEnv"]
-    add_provider_model(provider, model["id"])
+    mark_provider_model(provider, model["id"])
     providers[model["providerKey"]] = provider
     config["providers"] = providers
     return provider
+
+def mark_provider_model(provider, model_id):
+    add_provider_model(provider, model_id)
+    metadata = provider["models"].get(model_id)
+    provider["models"][model_id] = {**(metadata if isinstance(metadata, dict) else {}), "lightvela_configured": True}
+
+def saved_provider_target(config, action):
+    anchor = as_dict(action.get("anchor"), "anchor")
+    try:
+        model = find_configured(config, text(anchor.get("providerKey"), "providerKey"), text(anchor.get("id"), "id"),
+            text(anchor.get("baseUrl"), "baseUrl", False), anchor.get("routeBaseUrl"))
+    except ValueError:
+        raise ProviderOperationError("provider_changed")
+    if any(str(model.get(key) or "") != str(anchor.get(key) or "") for key in ("apiMode", "keyEnv")):
+        raise ProviderOperationError("provider_changed")
+    if normalized_route_base_url(model.get("baseUrl")) != normalized_route_base_url(anchor.get("baseUrl")):
+        raise ProviderOperationError("provider_changed")
+    related = [item for item in read_snapshot(config)["configuredModels"]
+        if item["providerKey"] == model["providerKey"] and route_identity(item)[2] == route_identity(model)[2]]
+    if len({(item["apiMode"], item["keyEnv"]) for item in related}) != 1:
+        raise ProviderOperationError("provider_ambiguous")
+    if model.get("requiresSetup") or not model.get("baseUrl"):
+        raise ProviderOperationError("provider_unsupported")
+    return model
+
+def append_saved_provider_model(config, action):
+    model = saved_provider_target(config, action)
+    model_id = text(action.get("modelId"), "modelId")
+    if len(model_id) > MAX_MODEL_ID_LENGTH or any(ord(char) < ASCII_CONTROL_CHARACTER_LIMIT for char in model_id):
+        raise ProviderOperationError("invalid_model")
+    if any(item["providerKey"] == model["providerKey"]
+        and route_identity(item)[2] == route_identity(model)[2]
+        and item["id"].strip() == model_id
+        for item in read_snapshot(config)["configuredModels"]):
+        return {"snapshot": read_snapshot(config)}
+    if not provider_schema_supported(config): raise ProviderOperationError("provider_unsupported")
+    original = copy.deepcopy(config)
+    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    provider = providers.get(model["providerKey"])
+    if not isinstance(provider, dict):
+        # Legacy entries are normalized only after resolving an exact saved anchor.
+        legacy = [entry for entry in config.get("custom_providers", [])
+            if isinstance(entry, dict) and same_runtime_deployment(model_from_custom_provider(entry), model)]
+        if len(legacy) > 1: raise ProviderOperationError("provider_ambiguous")
+        if legacy:
+            providers[model["providerKey"]] = copy.deepcopy(legacy[0])
+            config["providers"] = providers
+        provider = ensure_provider_model(config, model, preserve_credentials=True)
+        remove_legacy_configured_model(config, model)
+        remove_legacy_custom_provider(config, model)
+    elif normalized_route_base_url(provider_base_url(provider)) != normalized_route_base_url(model["baseUrl"]):
+        raise ProviderOperationError("provider_ambiguous")
+    else:
+        provider = copy.deepcopy(provider)
+        config["providers"][model["providerKey"]] = provider
+    previous_model = provider_model_id(provider)
+    if previous_model: mark_provider_model(provider, previous_model)
+    mark_provider_model(provider, model_id)
+    def validate(saved):
+        if saved != config: raise ValueError("saved configuration differs")
+        result = read_snapshot(saved)
+        if not any(item["providerKey"] == model["providerKey"] and item["id"] == model_id for item in result["configuredModels"]):
+            raise ValueError("model was not saved")
+        return result
+    if (load_config() or {}) != original: raise ProviderOperationError("provider_changed")
+    try:
+        return {"snapshot": save_validate_or_rollback(original, config, validate)}
+    except ConfigurationRollbackError:
+        raise
+    except Exception:
+        raise ProviderOperationError("save_failed")
+
+def saved_provider_connection(config, action):
+    model = saved_provider_target(config, action)
+    mode = model["apiMode"]
+    if mode not in ("chat_completions", "codex_responses", "anthropic_messages"):
+        raise ProviderOperationError("discovery_unsupported")
+    provider = (config.get("providers") or {}).get(model["providerKey"])
+    if not isinstance(provider, dict):
+        legacy = [entry for entry in config.get("custom_providers", [])
+            if isinstance(entry, dict) and same_runtime_deployment(model_from_custom_provider(entry), model)]
+        if len(legacy) > 1: raise ProviderOperationError("provider_ambiguous")
+        if not legacy: raise ProviderOperationError("provider_unsupported")
+        provider = legacy[0]
+    credential = str(provider.get("api_key") or "").strip()
+    key_env = model.get("keyEnv")
+    if key_env and not credential: credential = str(load_env().get(key_env) or os.environ.get(key_env) or "").strip()
+    headers = provider.get("extra_headers") or {}
+    if not isinstance(headers, dict): raise ProviderOperationError("discovery_unsupported")
+    if provider.get("key_cmd") or provider_credential_pool_state(model["providerKey"], provider):
+        try:
+            from hermes_cli.runtime_provider import _resolve_named_custom_runtime
+            runtime = _resolve_named_custom_runtime(requested_provider=model["providerKey"], target_model=model["id"])
+            if not runtime or normalized_route_base_url(runtime.get("base_url")) != normalized_route_base_url(model["baseUrl"]):
+                raise ProviderOperationError("provider_ambiguous")
+            credential = runtime.get("api_key")
+            if callable(credential): credential = credential()
+            headers = runtime.get("extra_headers") or headers
+        except ProviderOperationError:
+            raise
+        except Exception:
+            raise ProviderOperationError("credential_unavailable")
+    if not credential or credential == "no-key-required":
+        if key_env or "api_key" in provider or provider.get("key_cmd"):
+            raise ProviderOperationError("credential_unavailable")
+        credential = ""
+    endpoint = model["baseUrl"].rstrip("/")
+    if model.get("routeBaseUrl") and normalized_route_base_url(model["routeBaseUrl"]) != normalized_route_base_url(endpoint):
+        raise ProviderOperationError("provider_ambiguous")
+    return model, credential, headers
+
+def probe_saved_model(config, action):
+    model, credential, headers = saved_provider_connection(config, action)
+    model = {**model, "id": text(action.get("modelId"), "modelId")}
+    if len(model["id"]) > MAX_MODEL_ID_LENGTH or any(ord(char) < ASCII_CONTROL_CHARACTER_LIMIT for char in model["id"]):
+        raise ProviderOperationError("invalid_model")
+    fallback = {"success": False, "provider": model["providerKey"], "model": model["id"],
+        "baseUrl": model["baseUrl"], "errorMessage": "Model connectivity check failed"}
+    try:
+        return {"connection": probe_model_request(credential, model, fallback, time.time(), headers)}
+    except Exception:
+        return {"connection": fallback}
+
+def probe_saved_provider(config, action):
+    model, credential, headers = saved_provider_connection(config, action)
+    mode = model["apiMode"]
+    endpoint = model["baseUrl"].rstrip("/")
+    request_headers = {"Accept": "application/json"}
+    if credential:
+        request_headers.update({"x-api-key": credential, "anthropic-version": "2023-06-01"} if mode == "anthropic_messages" else {"Authorization": "Bearer " + credential})
+    request_headers.update(headers)
+    # 凭据不得随重定向发送到其他来源。
+    if open_credentialed_url is None: raise ProviderOperationError("discovery_unsupported")
+    try:
+        request = urllib.request.Request(endpoint + "/models", headers=request_headers)
+        with open_credentialed_url(request, timeout=MODEL_DISCOVERY_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read(MAX_MODEL_DISCOVERY_RESPONSE_BYTES).decode("utf-8"))
+        items = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(items, list): raise ProviderOperationError("discovery_unsupported")
+        models = list(dict.fromkeys(item["id"].strip() for item in items
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()))
+        snapshot = read_snapshot(config)
+        return {"snapshot": {**snapshot, "probedModels": models, "probeSucceeded": True}}
+    except urllib.error.HTTPError as error:
+        raise ProviderOperationError("credential_rejected" if error.code in (401, 403) else "discovery_unsupported" if error.code in (404, 405) else "discovery_failed")
+    except TimeoutError:
+        raise ProviderOperationError("discovery_timeout")
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, TimeoutError):
+            raise ProviderOperationError("discovery_timeout")
+        log_provider_discovery_failure(error)
+        raise ProviderOperationError("discovery_failed")
+    except ProviderOperationError:
+        raise
+    except Exception as error:
+        log_provider_discovery_failure(error)
+        raise ProviderOperationError("discovery_failed")
 
 def remove_provider_model(provider, model_id):
     existing = provider.get("models")
@@ -899,19 +1097,23 @@ def fallback_entry(model):
     return entry
 
 def raw_fallback_routes(config):
+    # 写操作必须读取原始条目，不能用 Hermes 已按小写去重的有效链覆盖配置。
     entries = []
-    seen = set()
-    for value in get_fallback_chain(config) or []:
-        if not isinstance(value, dict): continue
-        identity = (
-            str(value.get("provider") or "").strip().lower(),
-            str(value.get("model") or "").strip().lower(),
-            normalized_route_base_url(value.get("base_url")),
-        )
-        if not identity[0] or not identity[1] or identity in seen: continue
-        seen.add(identity)
-        entries.append(copy.deepcopy(value))
+    for key in ("fallback_providers", "fallback_model"):
+        value = config.get(key)
+        if value is None: continue
+        for entry in value if isinstance(value, list) else [value]:
+            if isinstance(entry, str) and entry.strip():
+                primary = config.get("model") if isinstance(config.get("model"), dict) else {}
+                entries.append({"provider": primary.get("provider"), "model": entry.strip()})
+            else:
+                entries.append(copy.deepcopy(entry))
     return entries
+
+def expect_fallback_config_saved(saved, expected):
+    # Hermes 会为缺省备用链补空列表；比较完整条目，兼容空值的序列化差异。
+    if raw_fallback_routes(saved) != raw_fallback_routes(expected):
+        raise ValueError("fallback configuration differs after save")
 
 def write_fallback_routes(config, entries):
     if entries: config["fallback_providers"] = entries
@@ -923,7 +1125,7 @@ def apply_fallback(config, model):
     matched = False
     provider_keys = configured_provider_keys(config)
     for entry in raw_fallback_routes(config):
-        try: candidate = model_from_route(config, entry)
+        try: candidate = model_from_route(config, entry) if isinstance(entry, dict) else None
         except (TypeError, ValueError): candidate = None
         if same_configured_deployment(candidate, model, provider_keys):
             if not matched: entries.append(entry)
@@ -936,7 +1138,7 @@ def remove_fallback(config, model, *, all_runtime_aliases=False):
     retained = []
     provider_keys = configured_provider_keys(config)
     for entry in raw_fallback_routes(config):
-        try: candidate = model_from_route(config, entry)
+        try: candidate = model_from_route(config, entry) if isinstance(entry, dict) else None
         except (TypeError, ValueError): candidate = None
         matches = same_runtime_deployment(candidate, model) if all_runtime_aliases else same_configured_deployment(candidate, model, provider_keys)
         if not matches: retained.append(entry)
@@ -958,7 +1160,7 @@ def expect_fallback_removed(saved, model):
     if is_fallback(saved, snapshot, model): raise ValueError("fallback was not removed")
     return snapshot
 
-def execute(action):
+def execute_unlocked(action):
     action = as_dict(action, "action")
     kind = text(action.get("type"), "type")
     if kind == "prepareCredentialEnvelope": return {"credentialEnvelope": prepare_credential_envelope()}
@@ -966,6 +1168,9 @@ def execute(action):
     config = load_config() or {}
     if not isinstance(config, dict): raise ValueError("Hermes config must be an object")
     if kind == "read": return {"snapshot": read_snapshot(config)}
+    if kind == "appendProviderModel": return append_saved_provider_model(config, action)
+    if kind == "probeConfiguredProvider": return probe_saved_provider(config, action)
+    if kind == "probeConfiguredModel": return probe_saved_model(config, action)
     if kind == "probe":
         result = probe_api_models(credential, text(action.get("baseUrl"), "baseUrl"), timeout=90, mode=api_mode(action.get("apiMode") or "chat_completions", "apiMode"))
         models = probed_model_ids(result)
@@ -1006,6 +1211,7 @@ def execute(action):
             save_config(config)
             saved = load_config() or {}
             if not isinstance(saved, dict): raise ValueError("saved config is invalid")
+            expect_fallback_config_saved(saved, config)
             return {"snapshot": expect_role(saved, purpose, model)}
         except Exception:
             try: save_config(original_config)
@@ -1062,7 +1268,7 @@ def execute(action):
         if provider is not None:
             provider = dict(provider)
             remove_key = model["keyEnv"] or text(provider.get("key_env") or provider.get("api_key_env"), "keyEnv", required=False) or custom_endpoint_key_env(model["providerKey"])
-            if provider_model_id(provider).strip().lower() == model["id"].strip().lower():
+            if provider_model_id(provider).strip() == model["id"].strip():
                 provider.pop("model", None)
                 provider.pop("default_model", None)
             remove_provider_model(provider, model["id"])
@@ -1074,6 +1280,7 @@ def execute(action):
         previous_credential = current_credential(remove_key) if remove_key else None
         try:
             saved = save_and_reload(config)
+            expect_fallback_config_saved(saved, config)
             if any(same_route(item, model) for item in read_snapshot(saved)["configuredModels"]): raise ValueError("model was not removed")
             if remove_key and not credential_key_referenced(saved, remove_key):
                 remove_provider_env_credential(remove_key)
@@ -1085,6 +1292,22 @@ def execute(action):
             raise
     raise ValueError("unsupported action")
 
+def execute(action):
+    if action.get("type") not in ("add", "assign", "removeFallback", "remove", "appendProviderModel"):
+        return execute_unlocked(action)
+    root = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, ".lightvela-model-config.lock"), "a") as lock:
+        started = time.monotonic()
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() - started > 5: raise ProviderOperationError("configuration_busy")
+                time.sleep(0.05)
+        return execute_unlocked(action)
+
 try:
     payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
     result = execute(payload)
@@ -1092,7 +1315,9 @@ try:
     print(json.dumps({"ok": True, **result}, ensure_ascii=False))
     print(END)
 except ConfigurationRollbackError:
-    fail("Model configuration rollback failed")
+    fail("Model configuration rollback failed", "rollback_failed" if payload.get("type") == "appendProviderModel" else None)
+except ProviderOperationError as error:
+    fail("Model configuration operation failed", str(error))
 except Exception:
     fail()
 `;
