@@ -41,7 +41,8 @@ import {
 } from "@next-site/international-home-runtime";
 
 const frontendRoot = process.cwd();
-const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-domestic-home-hero-cta class="btn-dark" href="/subscribe"><span data-domestic-home-hero-cta-label>免费试用</span></a></div></main>';
+const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="开始使用" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="免费试用" data-home-hero-cta-anon-href="/subscribe" class="btn-dark" href="/subscribe"><span data-home-hero-cta-label>免费试用</span></a></div></main>';
+const globalHeroMarkup = '<main id="lightvela-intl-home" data-locale="ja-JP"><div class="hero__cta"><a class="btn-dark" href="/agents">私のAIパートナー</a></div></main>';
 
 beforeEach(() => {
   (globalThis as { React?: typeof React }).React = React;
@@ -85,7 +86,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260908-hero-suffix-v21"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260910-hero-rotator-brand-icons-v26"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -242,16 +243,16 @@ describe("international v2 homepage rendering", () => {
     expect(headerAuthMock).toHaveBeenCalledWith(
       expect.objectContaining({
         locale: "zh-CN",
-        loginOnly: true,
-        promoteFreeTrial: false,
+        loginOnly: false,
+        promoteFreeTrial: true,
         showProductEntry: true,
       }),
       undefined,
     );
     await waitFor(() => {
-      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("免费试用");
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("免费试用");
     });
-    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
   });
 
   it("switches the domestic hero action to the signed-in product entry", async () => {
@@ -268,9 +269,32 @@ describe("international v2 homepage rendering", () => {
     );
 
     await waitFor(() => {
-      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("开始使用");
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("开始使用");
     });
-    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/agents");
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  it("leaves the international hero action untouched by the domestic stateful CTA logic", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = true;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = false;
+
+    render(
+      <InternationalHomeRuntime
+        locale="ja-JP"
+        markup={globalHeroMarkup}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector(".hero__cta .btn-dark")).toBeInTheDocument();
+    });
+    /* 国际站 Hero 无状态化标记，未登录时也应保持固定文案与 /agents 链接。 */
+    const heroCta = document.querySelector(".hero__cta .btn-dark");
+    expect(heroCta).toHaveAttribute("href", "/agents");
+    expect(heroCta?.hasAttribute("data-home-hero-cta")).toBe(false);
+    expect(heroCta?.textContent).toContain("私のAIパートナー");
   });
 
   it("keeps the global zh-CN runtime on the international login-only treatment", () => {

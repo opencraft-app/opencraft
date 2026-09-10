@@ -7,7 +7,6 @@ import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { useSession } from '@/contexts/session-context';
-import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 
@@ -17,7 +16,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260908-hero-suffix-v21';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260910-hero-rotator-brand-icons-v26';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -29,7 +28,6 @@ const InternationalHomeMarkup = memo(function InternationalHomeMarkup({ markup }
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
   const { authReady, isAuthenticated } = useSession();
-  const isDomesticHomepage = !isGlobal && locale === 'zh-CN';
 
   useEffect(() => {
     let cancelled = false;
@@ -62,16 +60,26 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     };
   }, [locale, markup]);
 
+  /* Hero CTA 状态化：仅国内站 zh-CN 产物带 data-home-hero-cta 标记，
+     未登录进入 /subscribe、登录态进入 /agents。国际站产物不带该标记，
+     保持固定文案与链接不变（沿用 2026-09-04 fix-cn-home-cta 的约定）。
+     文案与目标全部由产物的 data-* 提供，运行时不硬编码任何文案。 */
   useEffect(() => {
-    if (!isDomesticHomepage || !authReady) return;
+    if (!authReady) return;
 
-    const heroAction = document.querySelector<HTMLAnchorElement>('[data-domestic-home-hero-cta]');
-    const heroActionLabel = heroAction?.querySelector<HTMLElement>('[data-domestic-home-hero-cta-label]');
+    const heroAction = document.querySelector<HTMLAnchorElement>('[data-home-hero-cta]');
+    const heroActionLabel = heroAction?.querySelector<HTMLElement>('[data-home-hero-cta-label]');
     if (!heroAction || !heroActionLabel) return;
 
-    heroAction.href = isAuthenticated ? AGENTS_HOME_PATH : SUBSCRIBE_PATH;
-    heroActionLabel.textContent = isAuthenticated ? '开始使用' : '免费试用';
-  }, [authReady, isAuthenticated, isDomesticHomepage]);
+    const { homeHeroCtaSignedLabel, homeHeroCtaSignedHref, homeHeroCtaAnonLabel, homeHeroCtaAnonHref } =
+      heroAction.dataset;
+    const label = isAuthenticated ? homeHeroCtaSignedLabel : homeHeroCtaAnonLabel;
+    const href = isAuthenticated ? homeHeroCtaSignedHref : homeHeroCtaAnonHref;
+    if (!label || !href) return;
+
+    heroAction.href = href;
+    heroActionLabel.textContent = label;
+  }, [authReady, isAuthenticated]);
 
   return (
     <>
@@ -86,13 +94,16 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
       <InternationalHomeMarkup markup={markup} />
       <div className="international-home-header-actions-layer">
+        {/* 国内站首页保留 2026-09-04 fix-cn-home-cta 约定的转化入口：
+            未登录展示「免费试用」+「登录」，登录态展示「开始使用」+ 头像；
+            国际站继续 loginOnly，不展示产品入口。 */}
         <PublicHeaderAuthIsland
           appearance="immersive"
           locale={locale}
           showLanguageSwitcher
           showProductEntry={!isGlobal}
-          loginOnly
-          promoteFreeTrial={false}
+          loginOnly={isGlobal}
+          promoteFreeTrial={!isGlobal}
         />
         <HomeMobileNavigation locale={locale} />
       </div>

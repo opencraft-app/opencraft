@@ -127,7 +127,7 @@ describe("international v2 homepage artifact", () => {
     expect(hrefs.every((href) => !href.startsWith("/zh-cn"))).toBe(true);
     expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain("免费试用");
     expect(document.querySelector(".hero__cta .btn-dark")?.getAttribute("href")).toBe("/subscribe");
-    expect(document.querySelector("[data-domestic-home-hero-cta-label]")?.textContent).toBe("免费试用");
+    expect(document.querySelector("[data-home-hero-cta-label]")?.textContent).toBe("免费试用");
     expect(tabLabels).toEqual(["微信", "QQ", "企业微信", "钉钉", "飞书"]);
     expect(document.querySelector(".wcard__thumb--1 img")?.getAttribute("alt")).toBe(
       "微信、企业微信、钉钉、飞书、QQ 等当前支持的平台",
@@ -884,15 +884,15 @@ describe("international v2 homepage artifact", () => {
 
   it("uses the approved companion roles in every localized hero rotator", () => {
     const expectedWordsByFragment = {
-      "index-fragment.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
-      "index-fragment.en-US.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
-      "index-fragment.zh-CN.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
-      "index-fragment.zh-SG.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
-      "index-fragment.zh-Hant.html": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
-      "index-fragment.id-ID.html": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
-      "index-fragment.es.html": ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
-      "index-fragment.ja-JP.html": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
-      "index-fragment.ko-KR.html": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
+      "index-fragment.html": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
+      "index-fragment.en-US.html": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
+      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "計畫執行官", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
+      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "計画実行役", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
+      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "계획 실행자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
+      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
+      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
     } as const;
 
     for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
@@ -908,7 +908,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     expect(readFileSync(runtimePath, "utf8")).toContain(
-      "if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+      "if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
     );
   });
 
@@ -1026,7 +1026,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
-    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，30秒极速部署");
+    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，10秒极速开通");
     expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
       "LightVela免费体验 14 天",
       "AI Token 套餐免费体验 3 天",
@@ -1125,9 +1125,11 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["예약 작업", "워크벤치", "DeepSeek Harness"],
     } as const;
 
+    /* Hero CTA：国际站为固定文案直接进入 /agents；仅国内站 zh-CN 为状态化双态
+       （未登录「免费试用」→ /subscribe，登录态由 InternationalHomeRuntime 切换）。 */
     const expectedCtaLabels = {
       "en-US": "My AI Companion",
-      "zh-CN": "我的智能体伙伴",
+      "zh-CN": "免费试用",
       "zh-SG": "我的智能体伙伴",
       "zh-Hant": "我的智能體夥伴",
       "id-ID": "Pendamping AI saya",
@@ -1142,7 +1144,18 @@ describe("international v2 homepage artifact", () => {
         expect(html).toContain(`<span>${label}</span>`);
       }
       const document = new DOMParser().parseFromString(html, "text/html");
-      expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain(expectedCtaLabels[locale]);
+      const heroCta = document.querySelector<HTMLAnchorElement>(".hero__cta .btn-dark");
+      expect(heroCta?.textContent).toContain(expectedCtaLabels[locale]);
+      if (locale === "zh-CN") {
+        /* 国内站保持状态化：静态产物输出未登录态，登录态由 data-* 提供。 */
+        expect(heroCta?.getAttribute("href")).toBe("/subscribe");
+        expect(heroCta?.getAttribute("data-home-hero-cta-signed-label")).toBe("开始使用");
+        expect(heroCta?.getAttribute("data-home-hero-cta-signed-href")).toBe("/agents");
+      } else {
+        /* 国际站保持固定文案与链接，不引入状态化。 */
+        expect(heroCta?.getAttribute("href")).toBe("/agents");
+        expect(heroCta?.hasAttribute("data-home-hero-cta")).toBe(false);
+      }
       expect(html).toContain("play__new-badge");
       expect(html).not.toContain("Separate runtime");
       expect(html).not.toContain("独立运行时");

@@ -29,6 +29,32 @@ const secondaryButtonClass: Record<HeaderAppearance, string> = {
   solid: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
 };
 
+/**
+ * 首屏体验优化：`authReady` 需要等待 Session 网络往返，期间头部只能显示骨架。
+ * 这里把上一次已知的登录态缓存到 localStorage，客户端挂载后立即据此乐观渲染，
+ * 把骨架停留时间从「一次网络往返」降到「一帧」。Session 返回后仍以真实结果为准。
+ * 仅用于渲染时机优化，不参与任何鉴权判断。
+ */
+const LAST_AUTH_HINT_KEY = 'lightvela-last-auth-hint-v1';
+
+function readLastAuthHint(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(LAST_AUTH_HINT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeLastAuthHint(isAuthenticated: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LAST_AUTH_HINT_KEY, isAuthenticated ? '1' : '0');
+  } catch {
+    /* 隐私模式或存储配额受限时忽略，仅影响首屏渲染时机 */
+  }
+}
+
 const copyByLocale: Record<
   PublicSiteLocale,
   { createNow: string; enterProduct: string; freeTrial: string; login: string }
@@ -111,6 +137,8 @@ function PublicHeaderAuthControls({
   const { authReady, isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
+  // null 表示尚未读取缓存（SSR 与首帧），此时保持骨架以避免 hydration 不一致。
+  const [lastAuthHint, setLastAuthHint] = useState<boolean | null>(null);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale = locale;
   const copy = copyByLocale[activeLocale];
@@ -146,6 +174,16 @@ function PublicHeaderAuthControls({
     }
   }, [oauthError]);
 
+  // 挂载后立即读取缓存，使骨架最多只出现一帧。
+  useEffect(() => {
+    setLastAuthHint(readLastAuthHint());
+  }, []);
+
+  // Session 就绪后回写真实结果，供下次访问首屏使用。
+  useEffect(() => {
+    if (authReady) writeLastAuthHint(isAuthenticated);
+  }, [authReady, isAuthenticated]);
+
   const goToCreate = () => {
     const target = !isAuthenticated
       ? promoteFreeTrial
@@ -180,13 +218,16 @@ function PublicHeaderAuthControls({
     router.push(subscribePath);
   };
 
-  if (!authReady) {
+  /* 登录态解析优先级：真实 Session > localStorage 乐观提示 > 未知（骨架）。
+     语言切换与登录态无关，任何阶段都直接渲染，不跟随 Session 等待。 */
+  const resolvedAuthenticated = authReady ? isAuthenticated : lastAuthHint;
+
+  if (resolvedAuthenticated === null) {
     return (
       <>
-        <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
-          {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
-          {!loginOnly && <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />}
-          <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
+        <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
+          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+          <span aria-hidden="true" className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
         </div>
         <div className="ml-auto flex items-center gap-2 lg:hidden" aria-hidden="true">
           <span className="h-[32px] w-[58px] rounded-[100px] bg-black/[0.05]" />
@@ -195,7 +236,7 @@ function PublicHeaderAuthControls({
     );
   }
 
-  if (isAuthenticated) {
+  if (resolvedAuthenticated) {
     return (
       <>
         <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
