@@ -268,8 +268,9 @@ func (p *Provider) CreateAuthorizationCode(ctx context.Context, userID string, r
 	}
 	now := p.now().UTC()
 	ttl := p.codeTTL
-	if context.ClientID == NativeClientID {
-		// Native cold starts must not inherit the sites gateway's five-second budget.
+	if IsFirstPartySessionClient(context.ClientID) {
+		// Public-client round trips must not inherit the sites gateway's
+		// server-to-server five-second budget.
 		ttl = 2 * time.Minute
 	}
 	expiresAt := now.Add(ttl)
