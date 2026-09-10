@@ -341,18 +341,18 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       sourceBotId?: string;
       initialSoul?: string;
     }): Promise<OpenClawBot> => {
-      const isInitialBotCreation = bots.length === 0;
       const created = await repositories.bots.createBot({
         name: bot.name,
         description: bot.description,
         soulTemplateId: bot.soulTemplateId || undefined,
-        createMode: isInitialBotCreation ? "blank" : bot.createMode,
-        sourceBotId: isInitialBotCreation ? undefined : bot.sourceBotId,
+        createMode: bot.createMode,
+        sourceBotId: bot.sourceBotId,
         initialSoul: bot.initialSoul,
       });
+      const isInitialInstanceCreation = created.id === (created.instanceId ?? created.id);
 
       // A newly created instance is still provisioning. Profile reads must wait until it is Running.
-      if (!isInitialBotCreation) {
+      if (!isInitialInstanceCreation) {
         await repositories.bots.updateBotProfile(created.id, {
           template: bot.personality,
           mission: bot.intro || undefined,
@@ -380,7 +380,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setBots((prev) => [...prev, openClawBot]);
       return openClawBot;
     },
-    [bots.length, repositories.bots],
+    [repositories.bots],
   );
 
   const updateBot = useCallback((botId: string, updates: Partial<OpenClawBot>) => {

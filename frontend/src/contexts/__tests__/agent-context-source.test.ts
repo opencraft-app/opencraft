@@ -18,9 +18,8 @@ describe("OpenClawProvider local preview backend boundary", () => {
   it("keeps initial instance creation blank and defers Hermes profile access", () => {
     const source = readSource("src/contexts/agent-context.tsx");
 
-    expect(source).toContain("const isInitialBotCreation = bots.length === 0;");
-    expect(source).toContain('createMode: isInitialBotCreation ? "blank" : bot.createMode');
-    expect(source).toContain("sourceBotId: isInitialBotCreation ? undefined : bot.sourceBotId");
-    expect(source).toMatch(/if \(!isInitialBotCreation\) \{[\s\S]*repositories\.bots\.updateBotProfile/);
+    expect(source).toContain("const isInitialInstanceCreation = created.id === (created.instanceId ?? created.id);");
+    expect(source).toMatch(/if \(!isInitialInstanceCreation\) \{[\s\S]*repositories\.bots\.updateBotProfile/);
+    expect(source).not.toContain("const isInitialBotCreation = bots.length === 0;");
   });
 });
