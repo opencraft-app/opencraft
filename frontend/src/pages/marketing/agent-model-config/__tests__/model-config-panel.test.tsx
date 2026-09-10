@@ -77,7 +77,7 @@ const thirdAlphaModel: HermesConfiguredModel = {
 
 const idleModel: HermesConfiguredModel = {
   id: "model-idle",
-  providerKey: "lightvela-gamma",
+  providerKey: "lightvela-custom-gamma",
   providerName: "Gamma API",
   baseUrl: "https://gamma.example.com/v1",
   apiMode: "anthropic_messages",
@@ -347,14 +347,27 @@ describe("AgentModelConfigPanel", () => {
     vi.clearAllMocks();
   });
 
+  it("only exposes group addition for user-created custom providers", async () => {
+    const defaults = { ...autoModel, id: "kimi-k2.5", providerKey: "custom", providerName: "custom" };
+    const plan = { ...fallbackModel, providerKey: "lightvela-beta-plan" };
+    renderPanel(createRemote({ primary: defaults, fallbacks: [], configuredModels: [defaults, primaryModel, plan, idleModel] }));
+    const customRow = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
+    expect(within(customRow).getByRole("button", { name: "添加模型" })).toBeEnabled();
+    for (const name of [/自定义模型/, /Alpha API/, /Beta API/]) {
+      const row = screen.getByRole("button", { name }).closest("li")!;
+      expect(within(row).queryByRole("button", { name: "添加模型" })).not.toBeInTheDocument();
+    }
+  });
+
   it("appends a custom model inside its Provider without asking for credentials or changing the primary", async () => {
-    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] });
+    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] }, [idleModel.id, "model-new"]);
     renderPanel(remote);
     const trigger = await screen.findByRole("button", { name: "Gamma API" });
     const groupRow = trigger.closest("li")!;
     await userEvent.click(within(groupRow).getByRole("button", { name: "添加模型" }));
     const form = within(groupRow).getByRole("group", { name: "添加模型" });
     expect(form.closest("li")?.parentElement?.tagName).toBe("UL");
+    expect(form.closest("ul")).not.toHaveClass("border", "rounded-md");
     for (const name of ["保存", "取消"]) {
       expect(within(form).getByRole("button", { name })).toHaveClass("rounded-md", "text-xs", "font-normal");
     }
@@ -363,6 +376,10 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions).toContainEqual({ type: "probeConfiguredProvider", anchor: idleModel });
     expect(within(form).getByRole("button", { name: "检测模型状态" })).toBeDisabled();
     await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
+    const savedOption = screen.getByRole("option", { name: /model-idle/ });
+    expect(savedOption).toHaveAttribute("data-disabled");
+    expect(within(savedOption).getByText("已添加")).toHaveClass("rounded-full");
+    expect(screen.queryByRole("option", { name: "输入模型 ID" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("option", { name: "model-new" }));
     await userEvent.click(within(form).getByRole("button", { name: "检测模型状态" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent("模型可用性检测通过");
@@ -377,19 +394,21 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByText("主模型：model-primary")).toBeInTheDocument();
   });
 
-  it("retains the custom draft on collapse, blocks duplicates, and cancels without writing", async () => {
-    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] }, []);
+  it("retains the custom draft on collapse and cancels without writing", async () => {
+    const customPrimary = { ...primaryModel, providerKey: "lightvela-custom-alpha" };
+    const remote = createRemote({ primary: customPrimary, fallbacks: [], configuredModels: [customPrimary, idleModel] }, ["new-model"]);
     renderPanel(remote);
     const trigger = await screen.findByRole("button", { name: "Gamma API" });
     const row = trigger.closest("li")!;
     await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
     let form = within(row).getByRole("group", { name: "添加模型" });
-    await userEvent.type(await within(form).findByPlaceholderText("输入模型 ID"), idleModel.id);
-    expect(within(form).getByRole("button", { name: "保存" })).toBeDisabled();
+    await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
+    await userEvent.click(screen.getByRole("option", { name: "new-model" }));
+    expect(within(form).getByRole("button", { name: "保存" })).toBeEnabled();
     await userEvent.click(trigger);
     await userEvent.click(trigger);
     form = within(row).getByRole("group", { name: "添加模型" });
-    expect(within(form).getByLabelText("模型")).toHaveValue(idleModel.id);
+    expect(within(form).getByRole("combobox", { name: "模型" })).toHaveTextContent("new-model");
     await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
     await userEvent.click(within(screen.getByRole("button", { name: /Alpha API/ }).closest("li")!).getByRole("button", { name: "添加模型" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("放弃当前添加？");
@@ -398,20 +417,28 @@ describe("AgentModelConfigPanel", () => {
     expect(remote.actions.map((action) => action.type)).toEqual(["read", "probeConfiguredProvider"]);
   });
 
-  it("uses the existing product catalog when adding inside a predefined Provider", async () => {
+  it("does not offer group addition for predefined providers even with a catalog", async () => {
     const anchor = { ...primaryModel, providerKey: "lightvela-catalog-plan", id: "catalog-first" };
     const remote = createRemote({ primary: anchor, fallbacks: [], configuredModels: [anchor] });
     renderPanel(remote, false, [catalogPlan]);
     const row = (await screen.findByRole("button", { name: /Alpha API/ })).closest("li")!;
+    expect(within(row).queryByRole("button", { name: "添加模型" })).not.toBeInTheDocument();
+    expect(remote.actions.map((action) => action.type)).toEqual(["read"]);
+  });
+
+  it("keeps an empty custom group discovery uneditable and unsavable", async () => {
+    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] }, []);
+    renderPanel(remote);
+    const row = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
     await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
     const form = within(row).getByRole("group", { name: "添加模型" });
-    expect(within(form).queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
-    await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
-    expect(screen.getByRole("option", { name: "Catalog First (已添加)" })).toHaveAttribute("data-disabled");
-    await userEvent.click(screen.getByRole("option", { name: "Catalog Second" }));
-    await userEvent.click(within(form).getByRole("button", { name: "保存" }));
-    expect(remote.actions.map((action) => action.type)).toEqual(["read", "appendProviderModel"]);
-    expect(remote.actions.at(-1)).toMatchObject({ modelId: "catalog-second", anchor });
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("未获取到可用模型，请检查API Key是否正确或有效"));
+    expect(within(form).getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(within(form).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(form).getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(within(form).getByRole("button", { name: "检测模型状态" })).toBeDisabled();
+    await userEvent.click(within(form).getByRole("button", { name: "取消" }));
+    expect(remote.actions.map((action) => action.type)).toEqual(["read", "probeConfiguredProvider"]);
   });
 
   it("groups configured models by Provider and switches the primary model without re-adding credentials", async () => {
@@ -1636,7 +1663,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
     await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
-    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveValue(primaryModel.id));
+    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveTextContent(primaryModel.id));
 
     await userEvent.type(screen.getByLabelText("Base URL"), "/new");
     expect(screen.getByLabelText("模型")).toHaveValue("");
@@ -1760,7 +1787,7 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.queryByRole("dialog", { name: "模型可用性检测通过" })).not.toBeInTheDocument();
   });
 
-  it("lets a custom Provider add a hand-written model when discovery returns nothing", async () => {
+  it("does not allow custom model entry or saving when discovery returns nothing", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, []);
     renderPanel(remote);
     await screen.findByText("暂未配置模型");
@@ -1772,20 +1799,15 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
 
     const modelField = screen.getByLabelText("模型");
-    expect(modelField).toBeEnabled();
-    await userEvent.type(modelField, "relay-gpt-4o");
-    expect(screen.getByRole("button", { name: "检测模型状态" })).toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "确认配置" }));
-
-    await waitFor(() => expect(toastMocks.success).toHaveBeenLastCalledWith("模型已添加"));
-    expect(remote.actions).toContainEqual(expect.objectContaining({
-      type: "add",
-      discoverModels: false,
-      model: expect.objectContaining({ id: "relay-gpt-4o", providerName: "Private Relay" }),
-    }));
+    expect(modelField).toBeDisabled();
+    expect(modelField).toHaveAttribute("role", "combobox");
+    expect(document.querySelector("datalist")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "检测模型状态" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "确认配置" })).toBeDisabled();
+    expect(remote.actions.some((action) => action.type === "add")).toBe(false);
   });
 
-  it("tests a hand-written custom model with a model request when the API mode supports it", async () => {
+  it("requires discovery before testing or saving a custom model", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
     renderPanel(remote);
     await screen.findByText("暂未配置模型");
@@ -1794,19 +1816,14 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("Provider 名称"), "Private Relay");
     await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
     await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
-    await userEvent.type(screen.getByLabelText("模型"), "relay-gpt-4o");
-    await userEvent.click(screen.getByRole("button", { name: "检测模型状态" }));
-
-    expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
-    expect(remote.actions).toContainEqual(expect.objectContaining({
-      type: "connectivityProbe",
-      strategy: "model_request",
-      model: expect.objectContaining({ id: "relay-gpt-4o" }),
-    }));
+    expect(screen.getByRole("combobox", { name: "模型" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "检测模型状态" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "确认配置" })).toBeDisabled();
+    expect(remote.actions.map((action) => action.type)).toEqual(["read"]);
   });
 
-  it("falls back to model-list validation when a hand-written model does not support model requests", async () => {
-    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] });
+  it("tests a discovered responses model with model-list validation", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["codex-mini"]);
     renderPanel(remote);
     await screen.findByText("暂未配置模型");
 
@@ -1815,7 +1832,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("Base URL"), "https://codex-relay.example.com/v1");
     await selectOption("兼容协议", "OpenAI Responses");
     await userEvent.type(screen.getByLabelText("API Key"), "codex-relay-secret");
-    await userEvent.type(screen.getByLabelText("模型"), "codex-mini");
+    await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
     await userEvent.click(screen.getByRole("button", { name: "检测模型状态" }));
 
     expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
@@ -1826,7 +1843,7 @@ describe("AgentModelConfigPanel", () => {
     }));
   });
 
-  it("still offers discovered models as suggestions for a custom Provider", async () => {
+  it("shows every discovered custom model in the shared Select regardless of the selected value", async () => {
     const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [] }, ["relay-model-a", "relay-model-b"]);
     renderPanel(remote);
     await screen.findByText("暂未配置模型");
@@ -1838,9 +1855,15 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
 
     const modelField = screen.getByLabelText("模型");
-    await waitFor(() => expect(modelField).toHaveValue("relay-model-a"));
-    const suggestions = document.querySelectorAll<HTMLOptionElement>("#custom-model-suggestions option");
-    expect([...suggestions].map((option) => option.value)).toEqual(["relay-model-a", "relay-model-b"]);
+    await waitFor(() => expect(modelField).toHaveTextContent("relay-model-a"));
+    expect(document.querySelector("datalist")).not.toBeInTheDocument();
+    await userEvent.click(modelField);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["relay-model-a", "relay-model-b"]);
+    expect(screen.getByRole("listbox")).toHaveStyle({ width: "var(--radix-select-trigger-width)" });
+    await userEvent.click(screen.getByRole("option", { name: "relay-model-b" }));
+    await userEvent.click(modelField);
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("option", { name: "relay-model-a" }));
 
     await userEvent.click(screen.getByRole("button", { name: "确认配置" }));
     expect(remote.actions).toContainEqual(expect.objectContaining({
@@ -1860,7 +1883,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("Base URL"), "https://relay.example.com/v1");
     await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
-    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveValue("relay-model-a"));
+    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveTextContent("relay-model-a"));
     await userEvent.click(screen.getByRole("button", { name: "检测模型状态" }));
 
     expect(await screen.findByRole("dialog", { name: "模型可用性检测通过" })).toBeInTheDocument();
@@ -1904,7 +1927,7 @@ describe("AgentModelConfigPanel", () => {
     await userEvent.type(screen.getByLabelText("Base URL"), "https://relay-a.example.com/v1");
     await userEvent.type(screen.getByLabelText("API Key"), "relay-secret");
     await userEvent.click(screen.getByRole("button", { name: "获取可用模型" }));
-    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveValue("custom-model"));
+    await waitFor(() => expect(screen.getByLabelText("模型")).toHaveTextContent("custom-model"));
 
     await userEvent.clear(screen.getByLabelText("Base URL"));
     await userEvent.type(screen.getByLabelText("Base URL"), "https://relay-b.example.com/v1");

@@ -82,7 +82,6 @@ const PROVIDER_CATEGORIES: Array<{ id: ProviderCategory; label: string }> = [
  */
 const CUSTOM_CREDENTIAL_SCOPE = "custom-draft";
 
-const CUSTOM_MODEL_SUGGESTION_LIST_ID = "custom-model-suggestions";
 
 const MODEL_FIELD_CLASS = "grid gap-y-2";
 const MODEL_RADIO_CLASS = "shrink-0 appearance-none rounded-full border border-black/20 bg-white checked:border-[#2F6BFF] checked:bg-[#2F6BFF] checked:shadow-[inset_0_0_0_3px_white] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30 focus-visible:ring-offset-2";
@@ -143,6 +142,13 @@ function modelMatchesProductProvider(model: HermesConfiguredModel, provider: Mod
 function isBuiltInProviderGroup(group: ConfiguredProviderGroup) {
   return group.providerName.trim().toLowerCase() === "custom"
     && group.models.some((model) => displayConfiguredModelId(model.id) === "Auto");
+}
+
+function canAppendToProviderGroup(group: ConfiguredProviderGroup) {
+  // Only the custom creation flow owns this namespace; provider names are user-editable.
+  return !isBuiltInProviderGroup(group) && group.models.every((model) => (
+    model.providerKey.trim().toLowerCase().startsWith("lightvela-custom-")
+  ));
 }
 
 function groupConfiguredModelsByProvider(
@@ -212,10 +218,6 @@ function displayError(message: string, localizedFallback: string) {
     return localizedFallback;
   }
   return message;
-}
-
-function supportsModelRequestProbe(apiMode: string) {
-  return apiMode === "chat_completions" || apiMode === "anthropic_messages";
 }
 
 function ModelConfigLoading() {
@@ -349,7 +351,7 @@ export function AgentModelConfigPanel({
   providerFingerprintRef.current = providerFingerprint;
   const credentialScope = category === "custom" ? CUSTOM_CREDENTIAL_SCOPE : providerFingerprint;
   const previousCredentialScopeRef = useRef(credentialScope);
-  const selectedModel = providerDraft && effectiveSelectedModelId
+  const selectedModel = providerDraft && availableModelOptions.some((option) => option.id === effectiveSelectedModelId)
     ? { ...providerDraft, id: effectiveSelectedModelId, keyEnv: "" }
     : null;
   const selectedModelIsPrimary = sameModel(controller.snapshot?.primary, selectedModel);
@@ -381,6 +383,8 @@ export function AgentModelConfigPanel({
     requestAnimationFrame(() => providerAddTriggerRef.current?.focus({ preventScroll: true }));
   };
   const openProviderForm = (key: string) => {
+    const group = configuredProviderGroups.find((candidate) => candidate.key === key);
+    if (!group || !canAppendToProviderGroup(group)) return;
     if (addingProviderKey === key) {
       setExpandedConfiguredProviderKey(key);
       return;
@@ -506,7 +510,7 @@ export function AgentModelConfigPanel({
       apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
-      // 手输的模型 ID 未经探测验证，写入 discover_models=false 让 Hermes 以配置内列表为权威。
+      // Custom selections now always come from discovery; fixed catalogs remain authoritative.
       discoverModels: category === "custom"
         ? modelOptions.some((modelOption) => modelOption.id === selectedModelId)
         : activeProvider?.discoveryStrategy !== "catalog",
@@ -524,18 +528,11 @@ export function AgentModelConfigPanel({
     bindCustomCredentialToProvider();
     const requestFingerprint = providerFingerprint;
     const revision = probeUiRevision.current;
-    const selectedCustomModelWasDiscovered = category === "custom"
-      && modelOptions.some((modelOption) => modelOption.id === selectedModelId);
     setConnectionResult(null);
     const result = await controller.testConnection({
       apiKey: apiKey.trim(),
       model: selectedModel,
-      strategy: activeProvider?.discoveryStrategy === "catalog"
-        || (category === "custom"
-          && !selectedCustomModelWasDiscovered
-          && supportsModelRequestProbe(providerDraft?.apiMode ?? ""))
-        ? "model_request"
-        : "model_list",
+      strategy: activeProvider?.discoveryStrategy === "catalog" ? "model_request" : "model_list",
     });
     if (result && revision === probeUiRevision.current && requestFingerprint === providerFingerprintRef.current) {
       setConnectionResult(result);
@@ -626,8 +623,7 @@ export function AgentModelConfigPanel({
                 : group.providerName;
               const savedModels = group.models.filter((model) => !model.catalogOnly);
               const anchor = savedModels[0];
-              const matchingProviders = providers.filter((provider) => savedModels.every((model) => modelMatchesProductProvider(model, provider)));
-              const configuredProductProvider = matchingProviders.length === 1 ? matchingProviders[0] : undefined;
+              const canAppend = !!anchor && canAppendToProviderGroup(group);
               const groupPanelId = `configured-provider-${groupIndex}`;
               return (
                 <li key={group.key}>
@@ -674,9 +670,9 @@ export function AgentModelConfigPanel({
                       </span>
                     ) : null}
                   </button>
-                  <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-md text-xs font-normal" disabled={busy || !anchor || isBuiltInProviderGroup(group)} onClick={(event) => { providerAddTriggerRef.current = event.currentTarget; openProviderForm(group.key); }}>
+                  {canAppend ? <Button type="button" variant="outline" size="sm" className="shrink-0 rounded-md text-xs font-normal" disabled={busy} onClick={(event) => { providerAddTriggerRef.current = event.currentTarget; openProviderForm(group.key); }}>
                     <Plus className="size-3.5" aria-hidden="true" />{t("添加模型")}
-                  </Button>
+                  </Button> : null}
                   </div>
 
                   {expanded || addingProviderKey === group.key ? (
@@ -685,9 +681,9 @@ export function AgentModelConfigPanel({
                       role="group"
                       aria-label={`${providerDisplayName} ${t("已配置模型")}`}
                       hidden={!expanded}
-                      className="border-t border-black/[0.06] bg-white px-4 py-4 sm:px-5"
+                      className="bg-white pl-4 pr-5 sm:pl-10"
                     >
-                      <ul className="overflow-hidden rounded-md border border-black/[0.06] bg-white divide-y divide-black/[0.06]">
+                      <ul className="divide-y divide-black/[0.06]">
                         {group.models.map((model) => {
                           const primary = sameModel(snapshot.primary, model);
                           const fallback = snapshot.fallbacks.some((candidate) => sameModel(candidate, model));
@@ -769,13 +765,12 @@ export function AgentModelConfigPanel({
                             </li>
                           );
                         })}
-                      {addingProviderKey === group.key && anchor ? (
+                      {addingProviderKey === group.key && anchor && canAppend ? (
                         <li className="px-4 py-3">
                         <ConfiguredProviderModelForm
                           key={`${botId}:${group.key}`}
                           anchor={anchor}
                           savedModels={savedModels}
-                          provider={configuredProductProvider}
                           controller={controller}
                           isGlobalRegion={isGlobalRegion}
                           onCancel={closeProviderForm}
@@ -1014,30 +1009,6 @@ export function AgentModelConfigPanel({
               {t("模型")}
             </label>
             <div data-slot="model-option-control" className={compoundControlClassName}>
-              {category === "custom" ? (
-                // 自定义 endpoint 常常没有实现 /v1/models，探测结果只能作为建议，必须允许手动填写。
-                <>
-                  <Input
-                    id="detected-model"
-                    list={CUSTOM_MODEL_SUGGESTION_LIST_ID}
-                    autoComplete="off"
-                    value={selectedModelId}
-                    disabled={busy}
-                    placeholder={t("输入或选择模型")}
-                    className={compoundFieldClassName}
-                    onChange={(event) => {
-                      setSelectedModelId(event.target.value);
-                      setConnectionResult(null);
-                      controller.clearOperationError();
-                    }}
-                  />
-                  <datalist id={CUSTOM_MODEL_SUGGESTION_LIST_ID}>
-                    {modelOptions.map((modelOption) => (
-                      <option key={modelOption.id} value={modelOption.id}>{modelOption.name}</option>
-                    ))}
-                  </datalist>
-                </>
-              ) : (
                 <Select
                   value={effectiveSelectedModelId}
                   disabled={busy || availableModelOptions.length === 0}
@@ -1068,7 +1039,6 @@ export function AgentModelConfigPanel({
                     ))}
                   </SelectContent>
                 </Select>
-              )}
               <Button
                 type="button"
                 variant="outline"
