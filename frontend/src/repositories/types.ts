@@ -40,6 +40,8 @@ import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 export interface OAuthStartOptions {
   switchAccount?: boolean;
   wechatMode?: WeChatOAuthMode;
+  /** Validated relying-party location that owns the browser login result. */
+  returnTo?: string;
 }
 
 export interface FederationAuthorizationInput {
