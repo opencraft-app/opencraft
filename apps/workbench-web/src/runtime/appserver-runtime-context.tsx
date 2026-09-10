@@ -15,6 +15,7 @@ import {
   AppServerBotDirectory,
   createCordisBotConversationRuntime,
 } from "@opencraft/bot-conversation-appserver";
+import { createCordisProfileSkillsRuntime } from "@opencraft/profile-skills-appserver";
 import type { Context as CordisContext } from "@deepseek-ai/cordis";
 import { BlobResourceService } from "@opencraft/blob-resources";
 import { ImageProcessingService } from "@opencraft/image-processing";
@@ -130,6 +131,7 @@ import { BuiltinThemePackExtension } from "./builtin-theme-extension";
 import { createPlatformViewRendererContributionAdapter } from "./platform-view-renderers";
 import { createComposerActionRendererContributionAdapter } from "./composer-action-renderers";
 import { HostProfileContributionRegistry } from "./host-profile-contributions";
+import { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import {
   createWorkbenchNavigationTransaction,
@@ -147,6 +149,7 @@ export interface AppServerHostCatalog {
   readonly extensionContributions: ExtensionContributionStore;
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
+  readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
   readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
@@ -207,6 +210,7 @@ interface AppServerApplicationContextValue extends AppServerHostCatalog {
   readonly extensionSettings: ExtensionSettingsStore;
   readonly extensionContributions: ExtensionContributionStore;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
+  readonly platformAccounts: PlatformAccountContributionRegistry;
 }
 
 interface ConversationViewRuntimeContextValue {
@@ -452,6 +456,7 @@ interface WebWorkbenchApplicationBase {
   readonly extensionManager: ExtensionManager;
   readonly extensionSettings: ExtensionSettingsStore;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
+  readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
   readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
@@ -823,6 +828,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => appServerRegistry.dispose());
     const botConversations = await createCordisBotConversationRuntime(cordis);
     startupRollback.push(() => botConversations.dispose());
+    const profileSkills = await createCordisProfileSkillsRuntime(cordis);
+    startupRollback.push(() => profileSkills.dispose());
     const botDirectory = new AppServerBotDirectory(
       botConversations.service,
       appServerRegistry.clients,
@@ -835,6 +842,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     );
     const hostProfileContributions = new HostProfileContributionRegistry();
     const platformViewRenderers = new PlatformViewRendererRegistry();
+    const platformAccounts = new PlatformAccountContributionRegistry();
     const composerActionRenderers = new ComposerActionRendererRegistry();
     const platform = currentWorkbenchPlatform();
     const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
@@ -846,6 +854,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         hostConnectionProvider: hostConnectionProviderAdapter,
         [HOST_PROFILE_CONTRIBUTION_CHANNEL]: hostProfileContributions.createAdapter(),
         platformViewRenderer: createPlatformViewRendererContributionAdapter(platformViewRenderers),
+        platformAccount: platformAccounts.createAdapter(),
         composerActionRenderer: createComposerActionRendererContributionAdapter(composerActionRenderers),
       },
     });
@@ -890,7 +899,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const createLightVelaHermesExtension = (
       await import("@opencraft/plugin-lightvela-hermes/runtime-entry")
     ).default;
-    await extensions.activate(createLightVelaHermesExtension());
+    await extensions.activate(createLightVelaHermesExtension({
+      profileSkills: profileSkills.service,
+      appServerClients: appServerRegistry.clients,
+    }));
     const extensionInstallationPersistence = await IndexedDbExtensionInstallationPersistence.open({
       databaseName: currentProductDatabaseName("vela-extension-installations"),
     });
@@ -942,6 +954,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       extensionManager,
       extensionSettings,
       platformViewRenderers,
+      platformAccounts,
       composerActionRenderers,
       botDirectory,
       sidebarLayout,
@@ -962,6 +975,7 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => extensions.dispose(),
           disconnectAppearanceThemes,
           () => botDirectory.dispose(),
+          () => profileSkills.dispose(),
           () => botConversations.dispose(),
           () => appServerRegistry.dispose(),
           () => electronAppHost?.close(),
@@ -1156,6 +1170,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     extensionManager,
     extensionSettings,
     platformViewRenderers,
+    platformAccounts,
     composerActionRenderers,
     botDirectory,
     sidebarLayout,
@@ -1196,6 +1211,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => extensions.dispose(),
         disconnectAppearanceThemes,
         () => botDirectory.dispose(),
+        () => profileSkills.dispose(),
         () => botConversations.dispose(),
         () => appServerRegistry.dispose(),
         () => connectionProviders.dispose(),
@@ -1248,6 +1264,7 @@ export function AppServerRuntimeProvider({
     extensionManager,
     extensions,
     platformViewRenderers,
+    platformAccounts,
     composerActionRenderers,
     botDirectory,
     sidebarLayout,
@@ -1291,6 +1308,7 @@ export function AppServerRuntimeProvider({
     extensionManager,
     extensionContributions: extensions.contributions,
     platformViewRenderers,
+    platformAccounts,
     composerActionRenderers,
     botDirectory,
     sidebarLayout,

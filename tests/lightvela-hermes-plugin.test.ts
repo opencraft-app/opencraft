@@ -13,6 +13,7 @@ import {
 } from "@opencraft/extension-runtime";
 import {
   PlatformViewRendererRegistry,
+  type PlatformAccountContribution,
   type PlatformViewRendererContribution,
 } from "@opencraft/extension-react";
 import {
@@ -240,6 +241,7 @@ test("LightVela account consumes OAuth fragment and owns the Bot catalog", async
   assert.equal(authorization, "Bearer secret-token");
   assert.equal(requestCache, "no-store");
   assert.deepEqual(bots.map(({ instanceId }) => instanceId), ["bot-running"]);
+  assert.equal(bots[0]?.status, "running", "the account boundary normalizes executable instance state");
   assert.equal(service.getSnapshot().phase, "authenticated");
   assert.equal(service.getSnapshot().activeBotId, "bot-running");
   assert.equal(storage.getItem(LIGHTVELA_ACTIVE_BOT_KEY), "bot-running");
@@ -369,6 +371,7 @@ test("LightVela account catalog refresh is one authoritative single-flight", asy
 test("LightVela plugin contributes generic settings, empty-Workbench, and Host provider seams", async () => {
   const storage = new MemoryStorage();
   const renderers = new PlatformViewRendererRegistry();
+  let platformAccount: PlatformAccountContribution | null = null;
   let provider: HostConnectionProvider | null = null;
   const adapters: Record<string, InternalContributionAdapter> = {
     platformViewRenderer: {
@@ -381,6 +384,16 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
       prepare(_owner, value) {
         provider = value as HostConnectionProvider;
         return { commit: () => () => { provider = null; } };
+      },
+    },
+    platformAccount: {
+      prepare(_owner, value) {
+        return {
+          commit: () => {
+            platformAccount = value as PlatformAccountContribution;
+            return () => { platformAccount = null; };
+          },
+        };
       },
     },
   };
@@ -402,11 +415,15 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   }));
 
   const views = supervisor.contributions.getSnapshot().views;
-  assert.equal(views.length, 11);
+  assert.equal(views.length, 12);
+  assert.ok(views.some(({ contribution }) => contribution.id === "lightvela.hermes.account-view"));
   assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.models"));
   assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.diagnostics"));
   assert.ok(supervisor.contributions.getSnapshot().settingsPages.some(({ contribution }) => contribution.viewId === "lightvela.hermes.settings-view"));
-  assert.ok(supervisor.contributions.getSnapshot().settingsPages.some(({ contribution }) => contribution.viewId === "lightvela.hermes.connectors-view"));
+  const connectorsPage = supervisor.contributions.getSnapshot().settingsPages.find(
+    ({ contribution }) => contribution.viewId === "lightvela.hermes.connectors-view",
+  )?.contribution;
+  assert.equal(connectorsPage?.audience, "internal");
   const managementPages = supervisor.contributions.getSnapshot().settingsPages.filter(
     ({ contribution }) => contribution.management?.familyId === "lightvela.hermes.manage",
   );
@@ -422,6 +439,7 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(renderers.resolve("lightvela.hermes.empty-workbench") !== null, true);
   assert.equal(provider?.id, "lightvela.hermes");
   assert.equal(provider?.settingsPageId, "lightvela.hermes.settings");
+  assert.equal(platformAccount?.viewId, "lightvela.hermes.account-view");
   assert.deepEqual(provider?.targets, ["web", "electron"]);
   assert.deepEqual(
     provider?.validate({ botId: " bot-1 " }, { platform: "web", hostId: LIGHTVELA_HERMES_HOST_ID, profileRevision: 1 }),
@@ -909,6 +927,7 @@ test("Hermes durable projection joins tool declarations and results by tool_call
   assert.deepEqual(turns[0]?.items.map(({ type }) => type), [
     "userMessage",
     "reasoning",
+    "agentMessage",
     "dynamicToolCall",
     "agentMessage",
     "agentMessage",
@@ -919,20 +938,30 @@ test("Hermes durable projection joins tool declarations and results by tool_call
     summary: [],
     content: ["Need to read the file."],
   });
-  assert.deepEqual(turns[0]?.items[2], {
+  assert.equal(turns[0]?.items[2]?.text, "I will inspect it.");
+  assert.equal(turns[0]?.items[2]?.phase, "commentary");
+  assert.deepEqual(turns[0]?.items[3], {
     type: "dynamicToolCall",
     id: "hermes-tool-stored-tools-call-read",
+    callId: "call-read",
     namespace: "hermes",
     tool: "read_file",
     arguments: { path: "README.md" },
     status: "completed",
     contentItems: [{ type: "inputText", text: "file contents" }],
-    success: true,
+    success: null,
     durationMs: null,
+    activityPresentation: {
+      operation: "read",
+      grouping: "groupable",
+      icon: "read",
+      active: "Reading",
+      completed: "Read",
+    },
   });
-  assert.equal(turns[0]?.items[3]?.text, "I will inspect it.");
-  assert.equal(turns[0]?.items[3]?.phase, "final_answer");
-  assert.equal(turns[0]?.items[4]?.text, "Done.");
+  assert.equal(turns[0]?.items[4]?.text, "I will inspect it.");
+  assert.equal(turns[0]?.items[4]?.phase, "final_answer");
+  assert.equal(turns[0]?.items[5]?.text, "Done.");
 });
 
 test("Hermes durable projection gives final text ownership over repeated reasoning", () => {
@@ -949,6 +978,40 @@ test("Hermes durable projection gives final text ownership over repeated reasoni
 
   assert.deepEqual(turns[0]?.items.map(({ type }) => type), ["userMessage", "agentMessage"]);
   assert.equal(turns[0]?.items[1]?.text, "Hello. How can I help?");
+});
+
+test("Hermes durable projection restores staged file attachments as typed mentions instead of @file text", () => {
+  const path = "/home/agentuser/.hermes/opencraft-attachments/e3a8d764-afc4-4a38-afa3-4aacf3bad0f9-1-1-3-构建-Hermes-CVM-镜像-3.log";
+  const turns = mapMessages("stored-file-attachment", [
+    { role: "user", content: `这是啥 @file:${path}`, id: 1 },
+    { role: "assistant", content: "这是构建日志。", id: 2 },
+  ]);
+
+  assert.deepEqual(turns[0]?.items[0], {
+    type: "userMessage",
+    id: "hermes-stored-file-attachment-1",
+    clientId: null,
+    content: [
+      { type: "text", text: "这是啥", text_elements: [] },
+      {
+        type: "mention",
+        name: "1-1-3-构建-Hermes-CVM-镜像-3.log",
+        path,
+      },
+    ],
+  });
+});
+
+test("Hermes durable projection restores ordinary quoted @file references as typed mentions", () => {
+  const turns = mapMessages("stored-file-reference", [
+    { role: "user", content: "review @file:`/workspace/My File.log` please", id: 1 },
+    { role: "assistant", content: "Done.", id: 2 },
+  ]);
+
+  assert.deepEqual(turns[0]?.items[0]?.content, [
+    { type: "text", text: "review please", text_elements: [] },
+    { type: "mention", name: "/workspace/My File.log", path: "/workspace/My File.log" },
+  ]);
 });
 
 test("Hermes durable history restores Turn wall-clock duration without inventing missing time", () => {
@@ -1194,7 +1257,7 @@ test("Hermes resume does not hide a missing durable history that should contain 
   );
 });
 
-test("Hermes history cursor pages by durable message offset without reloading the full transcript", async () => {
+test("Hermes history cursor pages by durable message offset from the bounded transcript window", async () => {
   const allMessages = [
     { role: "user", text: "one", row_id: 1 },
     { role: "assistant", text: "first", row_id: 2 },
@@ -1220,8 +1283,9 @@ test("Hermes history cursor pages by durable message offset without reloading th
   };
   const rpc: HermesRpcClient = {
     async call<T>(method: string): Promise<T> {
+      if (method === "profiles.list") return { profiles: [{ name: "main" }] } as T;
       if (method === "session.resume") return { session_id: "live", messages: [], message_count: 6 } as T;
-      if (method === "session.list") return { sessions: [] } as T;
+      if (method === "session.list") return { sessions: [{ id: "stored" }] } as T;
       throw new Error(`Unexpected ${method}`);
     },
     onEvent: () => () => undefined,
@@ -1242,7 +1306,7 @@ test("Hermes history cursor pages by durable message offset without reloading th
   }) as { data: Array<{ items: Array<{ content?: Array<{ text?: string }> }> }>; nextCursor: string | null };
   assert.deepEqual(older.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["one"]);
   assert.equal(older.nextCursor, null);
-  assert.deepEqual(requests.map(({ offset }) => offset), [0, 4]);
+  assert.deepEqual(requests.map(({ offset }) => offset), [0]);
 });
 
 test("Hermes model.options is projected as a provider-safe AppServer catalog", async () => {
@@ -1610,6 +1674,17 @@ test("Hermes browser Handler keeps the dormant Bot protocol out of its public ca
     capabilities: { extensions: Record<string, unknown> };
   };
   assert.deepEqual(initialized.capabilities.extensions, {
+    "opencraft/message-window-history": {
+      version: 1,
+      pageRows: 120,
+      previewNotification: "thread/history/preview",
+    },
+    "opencraft/thread-queue": {
+      version: 2,
+      reorder: true,
+      atomicSteer: true,
+      perItemPause: true,
+    },
     "opencraft/scoped-model-catalog": { version: 1 },
   });
 
@@ -2767,7 +2842,7 @@ test("Hermes promotes an interim preview into the authoritative final Item", () 
   projection.project({ type: "message.delta", payload: { text: "北京今天天气：晴朗" } }, 11_000);
   projection.project({ type: "message.interim", payload: { text: "北京今天天气：晴朗" } }, 12_000);
   assert.equal(turn.items.length, 1);
-  assert.equal(turn.items[0]?.phase, "commentary");
+  assert.equal(turn.items[0]?.phase, null, "an interim preview remains unclassified until a semantic boundary");
 
   // Hermes can emit another start for a chained/compressed continuation. The
   // Item-owned interim identity must survive this transport-level frame.

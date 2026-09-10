@@ -239,6 +239,32 @@ try {
   await settle();
   assert.equal(await page.evaluate(() => (window as any).placementReads), external.reads);
 
+  // Capturing a restore checkpoint is a pure persistence projection. The
+  // response API may publish a new facade at this phase boundary, but that
+  // cleanup must not promote prework_watch to prework_follow in the live
+  // viewport and accidentally dispose the response spacer on the first
+  // final-answer character.
+  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?submissions`);
+  await page.waitForFunction(() => (window as any).api && document.querySelector('[data-probe="text-5"]'));
+  await settle();
+  await page.evaluate(() => { (window as any).api.scrollToBottom(); (window as any).submit({ phase: "commentary", height: 60 }); });
+  await settle();
+  const preworkBoundary = await page.locator('[data-probe="text-6"]').evaluate((element: HTMLElement) => ({
+    top: element.getBoundingClientRect().top,
+    spacer: document.querySelector(".thread-response-spacer")!.getBoundingClientRect().height,
+  }));
+  await page.evaluate(() => (window as any).setPhase("final_answer"));
+  await settle();
+  const finalBoundary = await page.locator('[data-probe="text-6"]').evaluate((element: HTMLElement) => ({
+    top: element.getBoundingClientRect().top,
+    spacer: document.querySelector(".thread-response-spacer")!.getBoundingClientRect().height,
+  }));
+  assert.ok(Math.abs(finalBoundary.top - preworkBoundary.top) < 2, "a non-following prework → first-answer handoff must redraw in place");
+  assert.ok(
+    finalBoundary.spacer > 24,
+    `restore snapshot capture cannot dispose live response space: ${JSON.stringify({ preworkBoundary, finalBoundary })}`,
+  );
+
   // Codex OD has no "long final answer => follow" transition. A directly
   // streamed final answer retains its starting position until bottom intent.
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?submissions`);

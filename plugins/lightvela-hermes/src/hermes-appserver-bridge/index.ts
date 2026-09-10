@@ -7,7 +7,9 @@ import type { HermesHostFileSystem } from "./dashboard-file-system";
 import type { HermesHistoryClient } from "./history-client";
 import type { HermesHostTerminal } from "./tat-terminal";
 import type { HermesProcessService } from "./process-service";
-import type { HermesComposerQueueStore } from "./composer-queue-store";
+import type { HermesComposerQueueService } from "./composer-queue/service";
+import type { HermesDashboardProfileSkillsHandler } from "./profile-skills-handler";
+import type { HermesDashboardWhatsAppOnboardingHandler } from "./whatsapp-onboarding-handler";
 import { dispatchAppServerRequest } from "./protocol";
 import {
   HermesRpcError,
@@ -30,11 +32,18 @@ export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptio
   defaultCwd?: string;
   fileSystem?: HermesHostFileSystem;
   history?: HermesHistoryClient;
+  /** Host-owned command executor; survives replaceable bridge generations. */
   terminal?: HermesHostTerminal;
   /** Borrowed from the Host transport; a bridge only owns its subscription. */
   processes?: HermesProcessService;
   /** Client-owned editable queue; survives Gateway/WebSocket bridge renewal. */
-  composerQueue?: HermesComposerQueueStore;
+  composerQueue?: HermesComposerQueueService;
+  /** Host-owned Profile Skills projection; survives Gateway/WebSocket renewal. */
+  profileSkills?: HermesDashboardProfileSkillsHandler;
+  /** Host-owned WhatsApp pairing transaction over Hermes Dashboard REST. */
+  whatsappOnboarding?: HermesDashboardWhatsAppOnboardingHandler;
+  /** Physical instance currently bound beneath the stable logical Host id. */
+  instanceId?: string;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
@@ -62,6 +71,7 @@ export class BrowserHermesAppServerBridge {
   private readonly stopServerRequests: () => void;
   private readonly stopTerminalNotifications: () => void;
   private readonly stopProcessNotifications: () => void;
+  private readonly stopProfileSkillsNotifications: () => void;
   private disposed = false;
 
   constructor(socket: HermesSocket, private readonly options: BrowserHermesBridgeOptions = {}) {
@@ -99,6 +109,10 @@ export class BrowserHermesAppServerBridge {
     this.stopProcessNotifications = options.processes?.subscribeNotification((notification) => {
       for (const listener of this.notificationListeners) listener(notification);
     }) ?? (() => undefined);
+    this.stopProfileSkillsNotifications = options.profileSkills?.subscribe((event) => {
+      const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
+      for (const listener of this.notificationListeners) listener(notification);
+    }) ?? (() => undefined);
   }
 
   onNotification(listener: (event: AppServerOutboundMessage) => void): () => void {
@@ -112,6 +126,9 @@ export class BrowserHermesAppServerBridge {
       fileSystem: this.options.fileSystem,
       terminal: this.options.terminal,
       processes: this.options.processes,
+      profileSkills: this.options.profileSkills,
+      whatsappOnboarding: this.options.whatsappOnboarding,
+      instanceId: this.options.instanceId,
       ...(this.bots === null ? {} : { bots: this.bots }),
     });
   }
@@ -137,6 +154,9 @@ export class BrowserHermesAppServerBridge {
           fileSystem: this.options.fileSystem,
           terminal: this.options.terminal,
           processes: this.options.processes,
+          profileSkills: this.options.profileSkills,
+          whatsappOnboarding: this.options.whatsappOnboarding,
+          instanceId: this.options.instanceId,
           ...(this.bots === null ? {} : { bots: this.bots }),
         }),
       };
@@ -181,11 +201,13 @@ export class BrowserHermesAppServerBridge {
     this.stopServerRequests();
     this.stopTerminalNotifications();
     this.stopProcessNotifications();
+    this.stopProfileSkillsNotifications();
     this.notificationListeners.clear();
     this.adapter.dispose();
     this.options.fileSystem?.dispose();
     this.options.history?.dispose();
-    this.options.terminal?.dispose();
+    // Terminal lifetime belongs to the Host/process service, not to this
+    // replaceable dashboard WebSocket bridge generation.
     this.transport.dispose();
   }
 }
@@ -230,11 +252,26 @@ export { HermesTatTerminalService } from "./tat-terminal";
 export type { HermesHostTerminal } from "./tat-terminal";
 export { HermesReplayCheckpoint } from "./rpc-transport";
 export {
-  browserHermesComposerQueueStore,
-  LocalStorageHermesComposerQueueStore,
-  MemoryHermesComposerQueueStore,
-} from "./composer-queue-store";
+  browserHermesComposerQueueService,
+  BrowserHermesComposerQueueService,
+  MemoryHermesComposerQueueService,
+} from "./composer-queue/service";
 export type {
   HermesComposerQueueStorage,
-  HermesComposerQueueStore,
-} from "./composer-queue-store";
+  HermesComposerQueueService,
+} from "./composer-queue/service";
+export {
+  browserProfileSkillsJournalStorage,
+  HermesDashboardProfileSkillsHandler,
+  ProfileSkillsDomainError,
+} from "./profile-skills-handler";
+export type { ProfileSkillsJournalStorage } from "./profile-skills-handler";
+export {
+  HermesDashboardWhatsAppOnboardingHandler,
+  isHermesWhatsAppOnboardingMethod,
+} from "./whatsapp-onboarding-handler";
+export type {
+  HermesWhatsAppOnboardingApplyResult,
+  HermesWhatsAppOnboardingSession,
+  HermesWhatsAppOnboardingStatus,
+} from "./whatsapp-onboarding-handler";

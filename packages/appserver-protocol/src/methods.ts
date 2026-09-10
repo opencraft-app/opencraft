@@ -18,17 +18,12 @@ import type {
 } from "./replica";
 import type {
   ThreadQueueAddParams as GeneratedThreadQueueAddParams,
-  ThreadQueueAddResponse as GeneratedThreadQueueAddResponse,
   ThreadQueueDeleteParams as GeneratedThreadQueueDeleteParams,
-  ThreadQueueDeleteResponse as GeneratedThreadQueueDeleteResponse,
   ThreadQueueListParams as GeneratedThreadQueueListParams,
-  ThreadQueueListResponse as GeneratedThreadQueueListResponse,
   ThreadQueueReorderParams as GeneratedThreadQueueReorderParams,
-  ThreadQueueReorderResponse as GeneratedThreadQueueReorderResponse,
   ThreadQueueStartParams as GeneratedThreadQueueStartParams,
   ThreadQueueStartResponse as GeneratedThreadQueueStartResponse,
   ThreadQueueUpdateParams as GeneratedThreadQueueUpdateParams,
-  ThreadQueueUpdateResponse as GeneratedThreadQueueUpdateResponse,
   ThreadForkParams as GeneratedThreadForkParams,
   ThreadForkResponse as GeneratedThreadForkResponse,
   ThreadListParams as GeneratedThreadListParams,
@@ -63,6 +58,7 @@ import type {
   TurnStartResponse as GeneratedTurnStartResponse,
   TurnSteerParams as GeneratedTurnSteerParams,
   TurnSteerResponse as GeneratedTurnSteerResponse,
+  UserInput,
   CommandExecParams as GeneratedCommandExecParams,
   CommandExecResponse as GeneratedCommandExecResponse,
   CommandExecWriteParams as GeneratedCommandExecWriteParams,
@@ -83,6 +79,7 @@ import type {
   FuzzyFileSearchSessionUpdateResponse,
 } from "./generated";
 import type { AppServerBotMethodMap } from "./bot-conversations";
+import type { ProfileSkillsMethodMap } from "./profile-skills";
 import type {
   RuntimeCredentialSetParams,
   RuntimeCredentialUnsetParams,
@@ -208,21 +205,52 @@ export type ThreadListResponse = GeneratedThreadListResponse;
 export type TurnStartParams = GeneratedTurnStartParams;
 export type TurnStartResponse = GeneratedTurnStartResponse;
 export type TurnSteerParams = GeneratedTurnSteerParams;
-export type TurnSteerResponse = GeneratedTurnSteerResponse;
+export type TurnSteerResponse = GeneratedTurnSteerResponse & {
+  /**
+   * Extension used by Hosts that preserve a steer racing Turn completion.
+   * Omitted by an unextended Codex AppServer and therefore equivalent to
+   * `steered`.
+   */
+  readonly disposition?: "steered" | "queued";
+};
 export type TurnInterruptParams = GeneratedTurnInterruptParams;
 export type TurnInterruptResponse = GeneratedTurnInterruptResponse;
 export type ThreadQueueAddParams = GeneratedThreadQueueAddParams;
-export type ThreadQueueAddResponse = GeneratedThreadQueueAddResponse;
+export interface QueuedSubmission {
+  readonly id: string;
+  readonly input: readonly UserInput[];
+  readonly clientUserMessageId: string;
+  readonly createdAt: number;
+  readonly pausedReason: string | null;
+}
+export interface ThreadQueueAddResponse {
+  readonly queuedSubmission: QueuedSubmission;
+}
 export type ThreadQueueListParams = GeneratedThreadQueueListParams;
-export type ThreadQueueListResponse = GeneratedThreadQueueListResponse;
+export interface ThreadQueueListResponse {
+  readonly data: readonly QueuedSubmission[];
+  readonly nextCursor: string | null;
+}
 export type ThreadQueueUpdateParams = GeneratedThreadQueueUpdateParams;
-export type ThreadQueueUpdateResponse = GeneratedThreadQueueUpdateResponse;
+export interface ThreadQueueUpdateResponse {
+  readonly queuedSubmission: QueuedSubmission;
+}
 export type ThreadQueueDeleteParams = GeneratedThreadQueueDeleteParams;
-export type ThreadQueueDeleteResponse = GeneratedThreadQueueDeleteResponse;
+export interface ThreadQueueDeleteResponse {
+  readonly deleted: boolean;
+}
 export type ThreadQueueReorderParams = GeneratedThreadQueueReorderParams;
-export type ThreadQueueReorderResponse = GeneratedThreadQueueReorderResponse;
+export type ThreadQueueReorderResponse = Record<string, never>;
 export type ThreadQueueStartParams = GeneratedThreadQueueStartParams;
 export type ThreadQueueStartResponse = GeneratedThreadQueueStartResponse;
+export interface ThreadQueueSteerParams {
+  readonly threadId: string;
+  readonly queuedSubmissionId: string;
+  readonly expectedTurnId: string;
+}
+export interface ThreadQueueSteerResponse {
+  readonly turnId: string;
+}
 export type FsGetMetadataParams = GeneratedFsGetMetadataParams;
 export type FsGetMetadataResponse = GeneratedFsGetMetadataResponse;
 export type FsWatchParams = GeneratedFsWatchParams;
@@ -271,7 +299,7 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProcessMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProcessMethodMap, ProfileSkillsMethodMap {
   "runtime/status/read": {
     params: Record<string, never>;
     result: RuntimeStatusResponse;
@@ -395,6 +423,10 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
   "thread/queue/start": {
     params: ThreadQueueStartParams;
     result: ThreadQueueStartResponse;
+  };
+  "thread/queue/steer": {
+    params: ThreadQueueSteerParams;
+    result: ThreadQueueSteerResponse;
   };
   "thread/archive": {
     params: ThreadArchiveParams;

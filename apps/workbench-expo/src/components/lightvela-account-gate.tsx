@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 import type { MobileLightVelaAccount } from "../runtime/lightvela-account";
+import { Button } from "./ui/button";
 
 export function LightVelaAccountGate({ account, children }: { readonly account: MobileLightVelaAccount; readonly children: ReactNode }) {
   const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
@@ -13,27 +15,53 @@ export function LightVelaAccountGate({ account, children }: { readonly account: 
       <Text style={styles.title}>OpenCraft</Text>
       <Text style={styles.subtitle}>Connect to your LightVela Bot to continue.</Text>
       {snapshot.error ? <Text style={styles.error}>{snapshot.error}</Text> : null}
-      <Pressable
-        accessibilityRole="button"
+      <Button
         disabled={busy}
+        loading={busy}
         onPress={() => { void (snapshot.phase === "error" ? account.retry() : account.signIn()).catch(() => undefined); }}
-        style={({ pressed }) => [styles.button, pressed && styles.pressed, busy && styles.disabled]}
+        size="lg"
+        style={styles.signInButton}
       >
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>{snapshot.phase === "error" ? "Try again" : "Sign in with LightVela"}</Text>}
-      </Pressable>
+        {snapshot.phase === "error" ? "Try again" : "Sign in with LightVela"}
+      </Button>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, backgroundColor: "#fff" },
-  mark: { width: 64, height: 64, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "#111" },
-  markText: { color: "#fff", fontSize: 30, fontWeight: "700" },
-  title: { marginTop: 24, color: "#111", fontSize: 32, fontWeight: "700" },
-  subtitle: { marginTop: 10, maxWidth: 360, color: "#747474", fontSize: 17, lineHeight: 24, textAlign: "center" },
-  error: { marginTop: 18, maxWidth: 360, color: "#b42318", fontSize: 14, lineHeight: 20, textAlign: "center" },
-  button: { marginTop: 28, minWidth: 240, minHeight: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, backgroundColor: "#111" },
-  buttonText: { color: "#fff", fontSize: 17, fontWeight: "600" },
-  pressed: { opacity: 0.76 },
-  disabled: { opacity: 0.55 },
-});
+const styles = StyleSheet.create((theme) => ({
+  root: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing[8],
+    backgroundColor: theme.material.content,
+  },
+  mark: {
+    width: 64,
+    height: 64,
+    borderRadius: theme.radii.xxl,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.color.button.primary,
+  },
+  markText: { color: theme.color.button.primaryForeground, fontSize: 30, fontWeight: "700" },
+  title: { marginTop: theme.spacing[6], color: theme.color.text.primary, fontSize: 32, fontWeight: "700" },
+  subtitle: {
+    marginTop: theme.spacing[3],
+    maxWidth: 360,
+    color: theme.color.text.secondary,
+    textAlign: "center",
+    ...theme.platformTypography.body,
+  },
+  error: {
+    marginTop: theme.spacing[5],
+    maxWidth: 360,
+    color: theme.color.accent.negative,
+    textAlign: "center",
+    ...theme.platformTypography.label,
+  },
+  signInButton: {
+    marginTop: theme.spacing[6],
+    minWidth: 240,
+  },
+}));

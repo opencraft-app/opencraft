@@ -5,9 +5,11 @@ import {
   encodeClientWebSocketFrame,
   validateServerHandshake,
   type ClientHandshake,
+  type Rfc6455Sha1,
   type Rfc6455Frame,
 } from "./rfc6455-client";
 import type { TencentTatProxyConnection, TencentTatSessionMultiplexer } from "./tencent-tat-session-multiplexer";
+import { decodeUtf8, encodeUtf8 } from "./utf8";
 
 const CONNECTING = 0;
 const OPEN = 1;
@@ -26,10 +28,59 @@ export interface TatWebSocketOptions {
   maxMessageBytes?: number;
   onError?: (error: Error) => void;
   origin?: string;
+  /** Platform crypto boundary; React Native supplies this via expo-crypto. */
+  sha1?: Rfc6455Sha1;
 }
 
-const encoder = new TextEncoder();
-const strictDecoder = new TextDecoder("utf-8", { fatal: true });
+const createCompatibleCloseEvent = (code: number, reason: string, wasClean: boolean): CloseEvent => {
+  const CloseEventConstructor = globalThis.CloseEvent;
+  if (typeof CloseEventConstructor === "function") {
+    return new CloseEventConstructor("close", { code, reason, wasClean });
+  }
+
+  // React Native implements EventTarget/Event but does not expose the browser's
+  // CloseEvent constructor. Keep the WebSocket-facing contract without making
+  // the transport lifecycle depend on a DOM-only global.
+  const event = new Event("close") as CloseEvent;
+  Object.defineProperties(event, {
+    code: { configurable: true, enumerable: true, value: code },
+    reason: { configurable: true, enumerable: true, value: reason },
+    wasClean: { configurable: true, enumerable: true, value: wasClean },
+  });
+  return event;
+};
+
+const createCompatibleErrorEvent = (error: Error): Event => {
+  const event = new Event("error") as Event & { readonly error?: Error; readonly message?: string };
+  Object.defineProperties(event, {
+    error: { configurable: true, enumerable: true, value: error },
+    message: { configurable: true, enumerable: true, value: error.message },
+  });
+  return event;
+};
+
+const createCompatibleMessageEvent = (
+  data: string | Blob | ArrayBuffer,
+  origin: string,
+): MessageEvent => {
+  const MessageEventConstructor = globalThis.MessageEvent;
+  if (typeof MessageEventConstructor === "function") {
+    return new MessageEventConstructor("message", { data, origin });
+  }
+
+  // React Native exposes EventTarget/Event but not MessageEvent. Construct the
+  // smallest standards-compatible event at the platform boundary so every
+  // consumer can continue to speak the ordinary WebSocket contract.
+  const event = new Event("message") as MessageEvent;
+  Object.defineProperties(event, {
+    data: { configurable: true, enumerable: true, value: data },
+    origin: { configurable: true, enumerable: true, value: origin },
+    lastEventId: { configurable: true, enumerable: true, value: "" },
+    ports: { configurable: true, enumerable: true, value: [] },
+    source: { configurable: true, enumerable: true, value: null },
+  });
+  return event;
+};
 
 const concatBytes = (chunks: Uint8Array[]) => {
   const result = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
@@ -63,7 +114,7 @@ const isValidReceivedCloseCode = (code: number) =>
 
 const isValidApplicationCloseCode = (code: number) => code === 1000 || (code >= 3000 && code <= 4999);
 
-const encodeClosePayload = (code: number, reasonBytes = new Uint8Array()) => {
+const encodeClosePayload = (code: number, reasonBytes: Uint8Array = new Uint8Array()) => {
   const payload = new Uint8Array(2 + reasonBytes.byteLength);
   new DataView(payload.buffer).setUint16(0, code);
   payload.set(reasonBytes, 2);
@@ -80,7 +131,7 @@ const applicationClosePayload = (code?: number, reason = "") => {
   if (!isValidApplicationCloseCode(code)) {
     throw new DOMException(`Invalid WebSocket close code: ${code}`, "InvalidAccessError");
   }
-  const reasonBytes = encoder.encode(reason);
+  const reasonBytes = encodeUtf8(reason);
   if (reasonBytes.byteLength > 123) {
     throw new DOMException("WebSocket close reason exceeds 123 UTF-8 bytes", "SyntaxError");
   }
@@ -99,7 +150,7 @@ const parseClosePayload = (payload: Uint8Array) => {
     throw new Rfc6455ProtocolError(`WebSocket peer sent an invalid close code: ${code}`);
   }
   try {
-    return { code, reason: strictDecoder.decode(payload.slice(2)) };
+    return { code, reason: decodeUtf8(payload.slice(2), { fatal: true }) };
   } catch {
     throw new Rfc6455ProtocolError("WebSocket close reason is not valid UTF-8", 1007);
   }
@@ -107,7 +158,7 @@ const parseClosePayload = (payload: Uint8Array) => {
 
 const prepareData = (data: SocketData) => {
   if (typeof data === "string") {
-    const payload = encoder.encode(data);
+    const payload = encodeUtf8(data);
     return { size: payload.byteLength, materialize: async () => ({ opcode: 0x1, payload }) };
   }
   if (data instanceof Blob) {
@@ -310,6 +361,7 @@ export const createTatWebSocketConstructor = (
           this.handshakeHead,
           this.handshake.key,
           this.offeredProtocols,
+          options.sha1,
         );
         if (this.finalized) {
           return;
@@ -431,7 +483,7 @@ export const createTatWebSocketConstructor = (
       let data: string | Blob | ArrayBuffer;
       if (opcode === 0x1) {
         try {
-          data = strictDecoder.decode(payload);
+          data = decodeUtf8(payload, { fatal: true });
         } catch {
           throw new Rfc6455ProtocolError("WebSocket text message is not valid UTF-8", 1007);
         }
@@ -440,7 +492,7 @@ export const createTatWebSocketConstructor = (
       } else {
         data = new Blob([payload.slice()]);
       }
-      this.emit(new MessageEvent("message", { data, origin: this.target.origin }));
+      this.emit(createCompatibleMessageEvent(data, this.target.origin));
     }
 
     private handlePeerClose(payload: Uint8Array) {
@@ -467,7 +519,7 @@ export const createTatWebSocketConstructor = (
         }
       }
       options.onError?.(normalizedError);
-      this.emit(new Event("error"));
+      this.emit(createCompatibleErrorEvent(normalizedError));
       this.finalizeClose(1006, "", false);
     }
 
@@ -491,7 +543,7 @@ export const createTatWebSocketConstructor = (
       } catch {
         // The raw transport may already be closed by the peer.
       }
-      this.emit(new CloseEvent("close", { code, reason, wasClean }));
+      this.emit(createCompatibleCloseEvent(code, reason, wasClean));
     }
 
     private emit(event: Event) {

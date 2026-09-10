@@ -146,6 +146,8 @@ export interface QueuedSubmission {
   id: string;
   input: unknown[];
   clientUserMessageId: string;
+  createdAt: number;
+  pausedReason: string | null;
 }
 export interface AppServerTurn {
   id: string; items: AppServerThreadItem[]; itemsView: "full" | "summary" | "notLoaded";

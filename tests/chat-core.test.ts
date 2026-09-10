@@ -183,7 +183,7 @@ test("Timeline projection groups consecutive assistant Items into a stable Frame
   assert.equal(snapshot.anchorFrameIds.get("call:call-1"), snapshot.frames[1]?.id);
 });
 
-test("a Turn owns one assistant surface and one live placeholder across split assistant Frames", () => {
+test("a Turn folds split assistant Frames and arbitrates Thinking to its Activity group", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-split-assistant",
     status: "streaming",
@@ -208,8 +208,9 @@ test("a Turn owns one assistant surface and one live placeholder across split as
   ]);
   assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 1);
   assert.equal(plan.assistant?.slots[0]?.id, "turn-split-assistant:slot:agent-activity");
-  assert.equal(plan.showThinking, true);
-  assert.equal(plan.thinkingId, "turn-split-assistant:slot:thinking-placeholder");
+  assert.equal(plan.thinkingOwner.type, "activity");
+  if (plan.thinkingOwner.type !== "activity") throw new Error("Expected Activity Thinking owner");
+  assert.equal(plan.thinkingOwner.activityId, "turn-split-assistant:slot:agent-activity");
 });
 
 test("only the most recent Turn may materialize transient Thinking chrome", () => {
@@ -225,12 +226,16 @@ test("only the most recent Turn may materialize transient Thinking chrome", () =
 
   const latest = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   assert.equal(latest.assistantFrame?.id, "turn-awaiting-first-item:assistant-surface");
-  assert.equal(latest.showThinking, true);
+  assert.deepEqual(latest.thinkingOwner, {
+    type: "turn",
+    placeholderId: "turn-awaiting-first-item:slot:thinking-placeholder",
+    label: "Thinking",
+  });
   assert.equal(latest.topLevelSlotCount, 2);
 
   const historical = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: false });
   assert.equal(historical.assistantFrame, null);
-  assert.equal(historical.showThinking, false);
+  assert.deepEqual(historical.thinkingOwner, { type: "none" });
   assert.equal(historical.topLevelSlotCount, 1);
 });
 
@@ -253,7 +258,7 @@ test("a pending Composer-owned interaction suppresses generic Turn Thinking", ()
 
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 1);
-  assert.equal(plan.showThinking, false);
+  assert.notEqual(plan.thinkingOwner.type, "turn");
 });
 
 test("final answer actions remain owned by one synthesized assistant surface", () => {
@@ -272,7 +277,7 @@ test("final answer actions remain owned by one synthesized assistant surface", (
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   assert.equal(plan.assistantFrame?.blocks.filter((block) => block.type === "text").length, 1);
   assert.deepEqual(plan.assistant?.slots.map((slot) => slot.type), ["agent-activity", "assistant-content"]);
-  assert.equal(plan.showThinking, false);
+  assert.notEqual(plan.thinkingOwner.type, "turn");
 });
 
 test("UserMessage projection preserves the typed AppServer input union and message kinds", () => {
@@ -1177,6 +1182,60 @@ test("completed list/read tool suffix bridges live calls without a transient Thi
   ]);
   assert.equal(hasContinuingLiveDynamicToolActivity(brokenSuffixFrame.blocks, brokenSuffixFrame.status), false);
   assert.equal(shouldRenderAgentThinkingPlaceholder(brokenSuffixFrame), true);
+  const brokenSuffixGroup = createAgentActivityContentUnits(
+    brokenSuffixFrame.blocks,
+    brokenSuffixFrame.status,
+  ).find((unit) => unit.type === "group");
+  if (brokenSuffixGroup === undefined) throw new Error("Expected completed Activity group");
+  assert.equal(brokenSuffixGroup.lifecycle.inProgress, true);
+  assert.equal(deriveAgentActivityHeaderPresentation(brokenSuffixGroup).state, "thinking");
+});
+
+test("Turn gap and Activity group never both own Thinking", () => {
+  const snapshot = projectTimeline(source([{
+    id: "turn-single-thinking-owner",
+    status: "streaming",
+    items: [
+      { id: "command-a", type: "commandExecution", payload: { command: "pwd", status: "completed", exitCode: 0 } },
+      { id: "command-b", type: "commandExecution", payload: { command: "git status", status: "completed", exitCode: 0 } },
+    ],
+  }]), createDefaultTimelineProjectorRegistry());
+  const turn = groupTimelineFramesByTurn(snapshot)[0];
+  if (turn === undefined) throw new Error("Expected Turn");
+
+  const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
+  const activity = plan.assistant?.slots.find((slot) => slot.type === "agent-activity");
+  if (activity?.type !== "agent-activity") throw new Error("Expected Agent Activity");
+  const group = activity.contentUnits.find((unit) => unit.type === "group");
+  if (group?.type !== "group") throw new Error("Expected Activity group");
+
+  assert.equal(plan.thinkingOwner.type, "activity");
+  if (plan.thinkingOwner.type !== "activity") throw new Error("Expected Activity Thinking owner");
+  assert.equal(plan.thinkingOwner.activityId, activity.id);
+  assert.equal(plan.thinkingOwner.groupId, group.id);
+  assert.equal(group.lifecycle.inProgress, true);
+  assert.equal(deriveAgentActivityHeaderPresentation(group).state, "thinking");
+});
+
+test("reasoning-only live Turn leaves Thinking ownership at the Turn parent", () => {
+  const snapshot = projectTimeline(source([{
+    id: "turn-reasoning-thinking-owner",
+    status: "streaming",
+    items: [
+      { id: "reasoning", type: "reasoning", payload: { summary: ["Inspecting"], status: "inProgress" } },
+    ],
+  }]), createDefaultTimelineProjectorRegistry());
+  const turn = groupTimelineFramesByTurn(snapshot)[0];
+  if (turn === undefined) throw new Error("Expected Turn");
+
+  const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
+  const activity = plan.assistant?.slots.find((slot) => slot.type === "agent-activity");
+  assert.equal(activity, undefined);
+  assert.deepEqual(plan.thinkingOwner, {
+    type: "turn",
+    placeholderId: "turn-reasoning-thinking-owner:slot:thinking-placeholder",
+    label: "Thinking",
+  });
 });
 
 test("unfinished read, search and list commands stay retrospective until authority finishes them", () => {

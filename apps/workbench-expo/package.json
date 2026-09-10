@@ -29,6 +29,7 @@
     "@opencraft/react-runtime": "0.1.0",
     "@opencraft/timeline-react": "0.1.0",
     "@opencraft/timeline-render-react": "0.1.0",
+    "@opencraft/timeline-host-native": "0.1.0",
     "@opencraft/timeline-virtualizer": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
     "@tanstack/react-query": "^5.102.8",

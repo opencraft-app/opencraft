@@ -21,11 +21,14 @@ import {
 } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
+import type { AppServerProfileSkillsService } from "@opencraft/profile-skills-appserver";
 import { HermesChannelsManagementView } from "./hermes-channels-management-view";
+import { HermesDiagnosticsManagementView } from "./hermes-diagnostics-management-view";
 import { HermesMemoryManagementView } from "./hermes-memory-management-view";
 import { HermesModelsManagementView } from "./hermes-models-management-view";
 import { HermesSchedulesManagementView } from "./hermes-schedules-management-view";
 import { HermesSkillsManagementView } from "./hermes-skills-management-view";
+import { HermesStorageManagementView } from "./hermes-storage-management-view";
 
 export type LightVelaHermesManagementPage =
   | "channels"
@@ -103,6 +106,7 @@ function pageIcon(page: LightVelaHermesManagementPage) {
 export function createLightVelaHermesManagementView(
   account: LightVelaAccountService,
   page: LightVelaHermesManagementPage,
+  profileSkills?: AppServerProfileSkillsService,
 ) {
   const copy = PAGE_COPY[page];
   return function LightVelaHermesManagementView(_props: ExtensionSettingsViewProps) {
@@ -116,9 +120,17 @@ export function createLightVelaHermesManagementView(
       }
     }, []);
 
+    const isAgentConsolePage = page === "channels"
+      || page === "models"
+      || page === "skills"
+      || page === "memory"
+      || page === "schedules"
+      || page === "storage"
+      || page === "diagnostics";
+
     return (
       <>
-        <SettingsPageHeader title={copy.title} description={copy.description} />
+        {!isAgentConsolePage ? <SettingsPageHeader title={copy.title} description={copy.description} /> : null}
         {snapshot.phase === "loading" ? <SettingsNotice>Loading the Hermes control plane…</SettingsNotice> : null}
         {snapshot.error !== null ? <SettingsNotice tone="error">{snapshot.error}</SettingsNotice> : null}
         {snapshot.phase !== "authenticated" ? (
@@ -127,27 +139,29 @@ export function createLightVelaHermesManagementView(
           <SettingsNotice>Select a running Bot from Overview first.</SettingsNotice>
         ) : (
           <>
-            <SettingsSection title="Agent deployment" description="The selected Agent is the authority for this page; velahermes0 is only its current execution Host.">
-              <SettingsGroup>
-                <SettingsListItem icon={pageIcon(page)} label={activeBot.name} description={activeBot.instanceId} metadata={`via velahermes0 · ${activeBot.status}`} />
-              </SettingsGroup>
-            </SettingsSection>
+            {!isAgentConsolePage ? (
+              <SettingsSection title="Agent deployment" description="The selected Agent is the authority for this page; velahermes0 is only its current execution Host.">
+                <SettingsGroup>
+                  <SettingsListItem icon={pageIcon(page)} label={activeBot.name} description={activeBot.instanceId} metadata={`via velahermes0 · ${activeBot.status}`} />
+                </SettingsGroup>
+              </SettingsSection>
+            ) : null}
             {page === "channels" ? (
               <HermesChannelsManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "models" ? (
               <HermesModelsManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "skills" ? (
-              <HermesSkillsManagementView account={account} botId={activeBot.instanceId} />
+              <HermesSkillsManagementView account={account} botId={activeBot.instanceId} profileSkills={profileSkills} />
             ) : page === "memory" ? (
               <HermesMemoryManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "schedules" ? (
               <HermesSchedulesManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "diagnostics" ? (
-              <SettingsSection title={copy.sectionTitle} icon={pageIcon(page)}><HermesCommandPanel account={account} botId={activeBot.instanceId} command="hermes logs --since 1h" actionLabel="Load recent logs" /></SettingsSection>
+              <HermesDiagnosticsManagementView account={account} botId={activeBot.instanceId} botStatus={activeBot.status} />
             ) : page === "runtime" ? (
               <SettingsSection title={copy.sectionTitle} icon={pageIcon(page)}><HermesCommandPanel account={account} botId={activeBot.instanceId} command="hermes --version" actionLabel="Inspect runtime" /></SettingsSection>
             ) : page === "storage" ? (
-              <SettingsSection title={copy.sectionTitle} icon={pageIcon(page)}><SettingsNotice>Storage management remains on the Host boundary. Its file browser and blob cache are available from the Work view.</SettingsNotice></SettingsSection>
+              <HermesStorageManagementView account={account} botId={activeBot.instanceId} />
             ) : null}
           </>
         )}

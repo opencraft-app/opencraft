@@ -1,3 +1,5 @@
+import { decodeUtf8, encodeUtf8 } from "./utf8";
+
 const RFC6455_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const DEFAULT_MAX_FRAME_PAYLOAD_BYTES = 16 * 1024 * 1024;
 const CONTROL_OPCODES = new Set([0x8, 0x9, 0xa]);
@@ -20,14 +22,15 @@ export interface ClientFrameOptions {
   maskKey?: Uint8Array;
 }
 
+/** Platform-owned SHA-1 primitive used only by the RFC 6455 handshake. */
+export type Rfc6455Sha1 = (data: Uint8Array) => Promise<Uint8Array>;
+
 export class Rfc6455ProtocolError extends Error {
   constructor(message: string, readonly closeCode = 1002) {
     super(message);
     this.name = "Rfc6455ProtocolError";
   }
 }
-
-const encoder = new TextEncoder();
 
 const concatBytes = (left: Uint8Array, right: Uint8Array) => {
   if (left.byteLength === 0) {
@@ -120,7 +123,7 @@ export const createClientHandshake = (
     lines.push(`Sec-WebSocket-Protocol: ${normalizedProtocols.join(", ")}`);
   }
   return {
-    bytes: encoder.encode(`${lines.join("\r\n")}\r\n\r\n`),
+    bytes: encodeUtf8(`${lines.join("\r\n")}\r\n\r\n`),
     key,
   };
 };
@@ -129,16 +132,22 @@ export const validateServerHandshake = async (
   head: string | Uint8Array,
   requestKey: string,
   offeredProtocols: string | string[],
+  sha1: Rfc6455Sha1 = async (data) => {
+    const bytes = new Uint8Array(data.byteLength);
+    bytes.set(data);
+    const digest = await globalThis.crypto.subtle.digest("SHA-1", bytes);
+    return new Uint8Array(digest);
+  },
 ) => {
-  const headers = parseResponseHeaders(typeof head === "string" ? head : new TextDecoder().decode(head));
+  const headers = parseResponseHeaders(typeof head === "string" ? head : decodeUtf8(head));
   if (!headerHasToken(headers.get("upgrade"), "websocket")) {
     throw new Rfc6455ProtocolError("WebSocket Upgrade response is missing Upgrade: websocket");
   }
   if (!headerHasToken(headers.get("connection"), "upgrade")) {
     throw new Rfc6455ProtocolError("WebSocket Upgrade response is missing Connection: Upgrade");
   }
-  const digest = await crypto.subtle.digest("SHA-1", encoder.encode(`${requestKey}${RFC6455_GUID}`));
-  const expectedAccept = bytesToBase64(new Uint8Array(digest));
+  const digest = await sha1(encodeUtf8(`${requestKey}${RFC6455_GUID}`));
+  const expectedAccept = bytesToBase64(digest);
   if (headers.get("sec-websocket-accept") !== expectedAccept) {
     throw new Rfc6455ProtocolError("WebSocket Upgrade response has an invalid Sec-WebSocket-Accept value");
   }

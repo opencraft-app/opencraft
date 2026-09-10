@@ -81,6 +81,17 @@
   --menu-surface-padding: 5px;
   --menu-item-gap: 2px;
   --menu-item-radius: var(--radius-md);
+  // Browser presentation planes are owned by the application shell. Feature
+  // packages may choose a semantic plane, but must never compare or invent
+  // z-index numbers of their own. In particular, a dialog opened from inside
+  // an application modal must paint above that modal, while its popovers,
+  // tooltips and transient notices remain ordered deterministically.
+  --layer-application-modal: 230;
+  --layer-nested-modal: 240;
+  --layer-confirmation-modal: 245;
+  --layer-floating-control: 250;
+  --layer-tooltip: 260;
+  --layer-toast: 300;
   --elevation-stroke: 0 0 0 0.5px var(--color-border-strong);
   --elevation-sidebar:
     var(--elevation-stroke),

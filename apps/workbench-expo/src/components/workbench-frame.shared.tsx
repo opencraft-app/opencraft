@@ -15,7 +15,6 @@ import {
   encodeWorkbenchLocation,
   type WorkbenchInteractionAction,
 } from "@opencraft/workbench-runtime";
-import { demoChangedFiles } from "@opencraft/workbench-runtime/demo";
 import { setStringAsync } from "expo-clipboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, useWindowDimensions, View } from "react-native";
@@ -24,6 +23,8 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 
 import {
   useThreadCatalog,
+  useComposerModelCatalog,
+  useActiveHostDescriptor,
   useConversationScopeRegistry,
   useConversationScopeRegistrySnapshot,
   useRootComposerController,
@@ -39,7 +40,6 @@ import {
   type WorkbenchConversationRestoreSnapshot,
 } from "./workbench-conversation";
 import { WorkbenchHeader } from "./workbench-header";
-import { WorkbenchRightPanel } from "./workbench-right-panel";
 import { WorkbenchSidebar } from "./workbench-sidebar";
 
 interface WorkbenchFrameSharedProps {
@@ -63,13 +63,14 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
     : draftSnapshot.drafts.find((candidate) => candidate.id === draftSnapshot.activeDraftId) ?? null;
   const composerController = useRootComposerController();
   const catalog = useThreadCatalog();
+  const modelCatalog = useComposerModelCatalog();
+  const activeHost = useActiveHostDescriptor();
   const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const metrics = theme.metrics;
   const split = width >= metrics.layout.splitBreakpoint;
   const phone = width < metrics.layout.phoneBreakpoint;
-  const roomy = width >= metrics.layout.roomyBreakpoint;
   const previousSplit = useRef(split);
   const conversationRestoreSnapshots = useRef(new Map<string, WorkbenchConversationRestoreSnapshot>());
   const conversationScrollApiRef = useRef<TurnConversationScrollApi | null>(null);
@@ -81,7 +82,6 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
   }, []);
   const [composerHeight, setComposerHeight] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(split);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const activeThread = catalog.threads.find((thread) => thread.id === snapshot.activeThreadId);
   const activeConversationRestoreKey = snapshot.activeThreadId === null
     ? null
@@ -212,10 +212,9 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
 
         <View style={[styles.mainSurface, dockedSidebar && styles.mainSurfaceDocked, phone && styles.mainSurfacePhone]}>
           <WorkbenchHeader
-            onToggleRightPanel={() => setDetailsOpen((value) => !value)}
+            hostLabel={activeHost.label}
+            hostPhase={snapshot.phase}
             onToggleSidebar={() => setSidebarOpen((value) => !value)}
-            rightPanelOpen={detailsOpen}
-            roomy={roomy}
             sidebarOpen={dockedSidebar}
             thread={activeThread}
             topInset={topInset}
@@ -245,6 +244,8 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
                   bottomInset={bottomInset}
                   controller={composerController}
                   isStreaming={isStreaming}
+                  models={modelCatalog.models}
+                  modelsLoading={modelCatalog.isFetching}
                   onCancel={() => {
                     const turnId = activeThreadLease?.getSnapshot().activeTurn?.turnId;
                     if (turnId !== undefined) void activeThreadLease?.interrupt(turnId);
@@ -269,14 +270,6 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
           </View>
         ) : null}
 
-        {detailsOpen ? (
-          <View style={styles.overlay}>
-            <Pressable accessibilityLabel="Close task details" onPress={() => setDetailsOpen(false)} style={styles.scrim} />
-            <View style={styles.detailsSheet}>
-              <WorkbenchRightPanel files={demoChangedFiles} onClose={() => setDetailsOpen(false)} topInset={topInset} />
-            </View>
-          </View>
-        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -318,15 +311,4 @@ const styles = StyleSheet.create((theme) => ({
     elevation: theme.shadow.prominent.elevation,
   },
   sidebarSheetPhone: { margin: 0, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 },
-  detailsSheet: {
-    width: theme.metrics.details.width,
-    margin: theme.metrics.layout.canvasInset,
-    marginLeft: "auto",
-    borderRadius: theme.metrics.details.surfaceRadius,
-    shadowColor: theme.shadow.prominent.color,
-    shadowOpacity: theme.shadow.prominent.opacity,
-    shadowRadius: theme.shadow.prominent.radius,
-    shadowOffset: { width: 0, height: theme.shadow.prominent.offsetY },
-    elevation: theme.shadow.prominent.elevation,
-  },
 }));

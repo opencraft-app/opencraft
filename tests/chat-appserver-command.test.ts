@@ -311,6 +311,8 @@ async function harness(): Promise<Harness> {
               id: "queue-1",
               input: [],
               clientUserMessageId: "message-1",
+              createdAt: 1,
+              pausedReason: null,
             },
           };
           break;
@@ -320,6 +322,8 @@ async function harness(): Promise<Harness> {
               id: "queue-1",
               input: (message.params as { input?: unknown[] }).input ?? [],
               clientUserMessageId: "message-1",
+              createdAt: 1,
+              pausedReason: null,
             },
           };
           break;
@@ -331,6 +335,9 @@ async function harness(): Promise<Harness> {
           break;
         case "thread/queue/start":
           result = { turn: { id: "turn-from-queue" } };
+          break;
+        case "thread/queue/steer":
+          result = { turnId: "turn-active" };
           break;
         case "turn/interrupt":
           result = {};
@@ -583,6 +590,68 @@ test("new, fork, steer, queue and interrupt targets use their native Codex metho
   await h.close();
 });
 
+test("steer rebinds once only when the Host names the replacement active Turn", async () => {
+  const expectedTurnIds: string[] = [];
+  const server: InMemoryAppServer = {
+    receive(frame, peer) {
+      const message = parseJsonRpcMessage(frame);
+      if (!isJsonRpcRequest(message)) return;
+      if (message.method === "initialize") {
+        peer.send(encodeJsonRpcMessage({
+          id: message.id,
+          result: {
+            codexHome: "/tmp",
+            platformFamily: "unix",
+            platformOs: "linux",
+            userAgent: "test",
+          },
+        }));
+        return;
+      }
+      if (message.method !== "turn/steer") throw new Error(`Unexpected ${message.method}`);
+      const expectedTurnId = String((message.params as { expectedTurnId?: unknown }).expectedTurnId ?? "");
+      expectedTurnIds.push(expectedTurnId);
+      if (expectedTurnIds.length === 1) {
+        peer.send(encodeJsonRpcMessage({
+          id: message.id,
+          error: {
+            code: -32009,
+            message: "active Turn changed",
+            data: {
+              code: "EXPECTED_TURN_MISMATCH",
+              retryable: true,
+              actualTurnId: "turn-rebound",
+            },
+          },
+        }));
+        return;
+      }
+      peer.send(encodeJsonRpcMessage({ id: message.id, result: { turnId: expectedTurnId } }));
+    },
+  };
+  const client = new JsonRpcAppServerClient({
+    hostId,
+    transport: new MemoryTransport(server),
+  });
+  await client.connect({
+    clientInfo: { name: "steer-rebind-test", version: "1" },
+    capabilities: { experimentalApi: true },
+  });
+  const port = createAppServerConversationCommandPort({
+    hostId,
+    client,
+    interactions: { respond: async () => undefined },
+  });
+  const result = await port.submit(intent({
+    type: "steer-active-turn",
+    key: existingKey,
+    turnId: asTurnId("turn-obsolete"),
+  }));
+  assert.equal(result.turnId, "turn-rebound");
+  assert.deepEqual(expectedTurnIds, ["turn-obsolete", "turn-rebound"]);
+  await client.close();
+});
+
 test("host identity is enforced before any network request", async () => {
   const h = await harness();
   const port = commandPort(h);
@@ -618,6 +687,8 @@ test("queued-message command port preserves the AppServer queue ABI", async () =
       id: "queue-2",
       clientUserMessageId: "message-2",
       input,
+      createdAt: 1,
+      pausedReason: null,
     },
     asTurnId("turn-active"),
   );
@@ -628,8 +699,7 @@ test("queued-message command port preserves the AppServer queue ABI", async () =
       "thread/queue/update",
       "thread/queue/reorder",
       "thread/queue/start",
-      "turn/steer",
-      "thread/queue/delete",
+      "thread/queue/steer",
       "thread/queue/delete",
     ],
   );

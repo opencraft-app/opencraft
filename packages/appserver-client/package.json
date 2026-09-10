@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./transport": "./src/transport.ts"
+    "./transport": "./src/transport.ts",
+    "./utf8": "./src/utf8.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

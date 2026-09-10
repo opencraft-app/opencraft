@@ -648,6 +648,7 @@ export interface ComposerQueuedSubmissionPresentation {
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
+  readonly pausedReason?: string | null;
   readonly error?: string | null;
 }
 
@@ -664,6 +665,8 @@ export interface CodexComposerProps {
   /** Host-owned trusted extension actions placed before built-in end actions. */
   endActions?: ReactNode;
   catalog?: ComposerCatalog;
+  /** Whether this surface can resolve `@` references through its Host. */
+  mentionSuggestionsEnabled?: boolean;
   isStreaming: boolean;
   disabled?: boolean;
   /**
@@ -679,7 +682,6 @@ export interface CodexComposerProps {
   defaultFollowUpAction?: ComposerFollowUpAction;
   /** Thread-owned queue projection. The Composer only renders this state. */
   queuedSubmissions?: readonly ComposerQueuedSubmissionPresentation[];
-  queuePausedReason?: "interrupted" | null;
   onUpdateQueuedSubmission?: (
     id: string,
     intent: SubmitIntent,
@@ -715,6 +717,7 @@ export const CodexComposer = forwardRef<
     chromeHeader,
     endActions,
     catalog,
+    mentionSuggestionsEnabled = true,
     isStreaming,
     disabled = false,
     submissionDisabled = false,
@@ -724,7 +727,6 @@ export const CodexComposer = forwardRef<
     executionTarget,
     defaultFollowUpAction = "queue",
     queuedSubmissions = [],
-    queuePausedReason = null,
     onUpdateQueuedSubmission,
     onDeleteQueuedSubmission,
     onReorderQueuedSubmissions,
@@ -914,12 +916,15 @@ export const CodexComposer = forwardRef<
   }, [catalog, catalogQueryKind, catalogQueryText, catalogTargetKey]);
 
   const syncSuggestions = useCallback((state: EditorState) => {
-    const next = querySuggestion(state);
+    const candidate = querySuggestion(state);
+    const next = candidate?.kind === "mention" && !mentionSuggestionsEnabled
+      ? null
+      : candidate;
     suggestionQueryRef.current = next;
     selectedSuggestionRef.current = 0;
     setSuggestionQuery(next);
     setSelectedSuggestion(0);
-  }, []);
+  }, [mentionSuggestionsEnabled]);
 
   const appendFiles = useCallback(
     (files: File[]) => {
@@ -1656,7 +1661,6 @@ export const CodexComposer = forwardRef<
               item.id === editingQueuedSubmissionId),
           editing: item.id === editingQueuedSubmissionId,
         }))}
-        pausedReason={queuePausedReason}
         isResponseInProgress={isStreaming}
         onEdit={beginQueueEdit}
         onCancelEdit={cancelQueueEdit}
@@ -2110,14 +2114,16 @@ export const CodexComposer = forwardRef<
           </div>
           <div ref={footerLayout.endRef} className="codex-composer-footer__end">
             {endActions}
-            <button
-              className="codex-composer-icon-button codex-composer-icon-button--context"
-              type="button"
-              title="Mention files and context"
-              onClick={() => insertTrigger("@")}
-            >
-              <AtSign size={15} />
-            </button>
+            {mentionSuggestionsEnabled ? (
+              <button
+                className="codex-composer-icon-button codex-composer-icon-button--context"
+                type="button"
+                title="Mention files and context"
+                onClick={() => insertTrigger("@")}
+              >
+                <AtSign size={15} />
+              </button>
+            ) : null}
             <button
               className="codex-composer-icon-button codex-composer-icon-button--context"
               type="button"

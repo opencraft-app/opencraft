@@ -1,5 +1,6 @@
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import type { HostConnectionJson, HostConnectionProvider, HostConnectionProviderContext } from "./host-connections";
+import { throwIfSignalAborted } from "./abort-signal";
 
 /** A disposable protocol session, never a resident Host or a conversation. */
 export async function preflightHostConnection(
@@ -8,7 +9,7 @@ export async function preflightHostConnection(
   context: HostConnectionProviderContext,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<void> {
-  options.signal?.throwIfAborted();
+  throwIfSignalAborted(options.signal);
   const abort = new AbortController();
   const cancel = () => abort.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", cancel, { once: true });
@@ -30,7 +31,7 @@ export async function preflightHostConnection(
       } finally {
         if (rejectAborted !== null) abort.signal.removeEventListener("abort", rejectAborted);
       }
-      abort.signal.throwIfAborted();
+      throwIfSignalAborted(abort.signal);
       return;
     }
     client = new JsonRpcAppServerClient({ hostId: context.hostId, transport: provider.createTransport(config, context) });
@@ -41,7 +42,7 @@ export async function preflightHostConnection(
     if (!result || typeof result.userAgent !== "string" || !result.userAgent.trim()) {
       throw new Error("Endpoint did not return a valid AppServer initialize response");
     }
-    abort.signal.throwIfAborted();
+    throwIfSignalAborted(abort.signal);
   } catch (error) {
     throw new Error(`Connection verification failed: ${abort.signal.aborted
       ? String(abort.signal.reason instanceof Error ? abort.signal.reason.message : "Cancelled")

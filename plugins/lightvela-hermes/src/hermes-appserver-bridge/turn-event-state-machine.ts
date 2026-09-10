@@ -147,6 +147,38 @@ export class HermesTurnEventStateMachine {
     return [this.notification("turn/started", { turn: structuredClone(this.turn) })];
   }
 
+  /**
+   * `session.steer` acknowledgement is projected as a UserMessage inside the
+   * active Turn. The client-side steering item remains the visual owner; this
+   * server Item is its identity/provenance acknowledgement.
+   */
+  acceptSteeringUserMessage(
+    input: readonly unknown[],
+    clientUserMessageId: string | null,
+    occurredAtMs = Date.now(),
+  ): HermesProjectionNotification[] {
+    if (this.completed) return [];
+    const existing = this.turn.items.find((item) => (
+      item.type === "userMessage"
+      && clientUserMessageId !== null
+      && item.clientId === clientUserMessageId
+    ));
+    if (existing !== undefined) return [];
+    const item: AppServerThreadItem = {
+      type: "userMessage",
+      id: `hermes-steer-${this.turn.id}-${clientUserMessageId ?? this.createId()}`,
+      clientId: clientUserMessageId,
+      content: structuredClone(input),
+      completed: true,
+    };
+    this.upsertItem(item);
+    return [this.notification("item/completed", {
+      turnId: this.turn.id,
+      item: structuredClone(item),
+      completedAtMs: occurredAtMs,
+    })];
+  }
+
   project(event: Record<string, unknown>, occurredAtMs = Date.now()): HermesProjectionNotification[] {
     if (this.completed) return [];
     const type = typeof event.type === "string" ? event.type : "";

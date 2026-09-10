@@ -18,7 +18,7 @@ export interface BrowserSurfaceEvents {
 
 export interface BrowserSurfaceHost {
   setRoot(root: HTMLElement | null): void;
-  navigate(pageId: BrowserPageId, title: string, url: BrowserUrl | null, events: BrowserSurfaceEvents, force?: boolean): boolean;
+  navigate(pageId: BrowserPageId, title: string, url: BrowserUrl | null, events: BrowserSurfaceEvents, force?: boolean, trustedHostProxy?: boolean): boolean;
   stop(pageId: BrowserPageId): void;
   automation(pageId: BrowserPageId): BrowserAutomation | null;
   commit(pageId: BrowserPageId, layout: BrowserViewportLayout, phase: "staged" | "visible"): void;
@@ -34,6 +34,7 @@ interface SurfaceRecord {
   readonly iframe: HTMLIFrameElement;
   events: BrowserSurfaceEvents;
   loadedUrl: BrowserUrl | null;
+  trustedHostProxy: boolean;
   automationGeneration: number;
   automation: BrowserAutomation | null;
   disposeInjectedRuntime: (() => void) | null;
@@ -78,6 +79,30 @@ function setVisible(record: SurfaceRecord, visible: boolean): void {
   container.style.zIndex = visible ? "1" : "0";
 }
 
+export function browserSurfaceSandboxForNavigation(trustedHostProxy: boolean): string | null {
+  // Chromium does not consistently route sandboxed frame navigations through
+  // the controlling Service Worker. A URL already authenticated as belonging
+  // to this Workbench's Host proxy may therefore run without iframe sandboxing.
+  // This exception must never be inferred from generic origin characteristics.
+  if (trustedHostProxy) return null;
+  const capabilities = [
+    "allow-downloads",
+    "allow-forms",
+    "allow-modals",
+    "allow-popups",
+    "allow-popups-to-escape-sandbox",
+    "allow-scripts",
+  ];
+  capabilities.push("allow-same-origin");
+  return capabilities.join(" ");
+}
+
+function configureSandbox(iframe: HTMLIFrameElement, trustedHostProxy: boolean): void {
+  const sandbox = browserSurfaceSandboxForNavigation(trustedHostProxy);
+  if (sandbox === null) iframe.removeAttribute("sandbox");
+  else iframe.setAttribute("sandbox", sandbox);
+}
+
 /** Web physical-page owner. It knows iframe mechanics, never Tabs or panel Views. */
 export class WebIframeSurfaceHost implements BrowserSurfaceHost {
   private readonly surfaces = new Map<BrowserPageId, SurfaceRecord>();
@@ -94,18 +119,24 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     url: BrowserUrl | null,
     events: BrowserSurfaceEvents,
     force = false,
+    trustedHostProxy = false,
   ): boolean {
     const record = this.ensure(pageId, title, events);
     record.events = events;
     if (url === null) {
-      if (!force && record.loadedUrl === null && record.iframe.hasAttribute("srcdoc")) return false;
+      if (!force && record.loadedUrl === null && !record.trustedHostProxy
+        && record.iframe.hasAttribute("srcdoc")) return false;
       record.loadedUrl = null;
+      record.trustedHostProxy = false;
+      configureSandbox(record.iframe, false);
       record.iframe.removeAttribute("src");
       record.iframe.srcdoc = newTabDocument();
       return true;
     }
-    if (!force && record.loadedUrl === url) return false;
+    if (!force && record.loadedUrl === url && record.trustedHostProxy === trustedHostProxy) return false;
     record.loadedUrl = url;
+    record.trustedHostProxy = trustedHostProxy;
+    configureSandbox(record.iframe, trustedHostProxy);
     record.iframe.removeAttribute("srcdoc");
     record.iframe.src = url;
     return true;
@@ -181,13 +212,14 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     iframe.dataset.browserPageId = pageId;
     iframe.title = title;
     iframe.referrerPolicy = "strict-origin-when-cross-origin";
-    iframe.setAttribute("sandbox", "allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts");
+    configureSandbox(iframe, false);
     const record: SurfaceRecord = {
       pageId,
       container,
       iframe,
       events,
       loadedUrl: null,
+      trustedHostProxy: false,
       automationGeneration: 0,
       automation: null,
       disposeInjectedRuntime: null,
@@ -230,15 +262,22 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     if (frameWindow === null) return;
     const generation = ++record.automationGeneration;
     let targetOrigin: string;
-    try {
-      targetOrigin = frameWindow.location.origin;
-      record.disposeInjectedRuntime = installPreviewBridgeRuntime({
-        window: frameWindow,
-        parentOrigin: window.location.origin,
-      });
-    } catch {
-      if (record.loadedUrl === null) return;
-      targetOrigin = new URL(record.loadedUrl).origin;
+    if (record.trustedHostProxy) {
+      // Host proxy documents import the bridge injected by the Service Worker.
+      // They are unsandboxed and same-origin, so both sides can use the exact
+      // application origin; wildcard messaging is neither needed nor allowed.
+      targetOrigin = window.location.origin;
+    } else {
+      try {
+        targetOrigin = frameWindow.location.origin;
+        record.disposeInjectedRuntime = installPreviewBridgeRuntime({
+          window: frameWindow,
+          parentOrigin: window.location.origin,
+        });
+      } catch {
+        if (record.loadedUrl === null) return;
+        targetOrigin = new URL(record.loadedUrl).origin;
+      }
     }
     record.automation = new PreviewBridgeAdapter({
       hostWindow: window,

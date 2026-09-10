@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./button": "./src/button.shared.ts",
     "./theme": "./src/theme.ts",
     "./theme-engine": "./src/theme-engine.ts",
     "./tokens": "./src/tokens.shared.ts",

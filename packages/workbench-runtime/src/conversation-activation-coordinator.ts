@@ -20,6 +20,8 @@ import type {
 
 export interface ConversationActivationCoordinator<TRuntime extends WorkbenchActivatableRuntime> {
   scopeIdFor(location: WorkbenchLocation): ConversationScopeId;
+  /** Publishes only local Scope/View identity; it never starts a Host. */
+  mountInitial(location: WorkbenchLocation, viewId: string): void;
   /**
    * Commits the initial local Scope/View before Host hydration. The returned
    * operation owns only remote readiness and may finish after React mounts.
@@ -211,13 +213,16 @@ export function createConversationActivationCoordinator<
       const prepared = await prepareLocation(location);
       return prepared?.commit() ?? false;
     },
-    presentInitial(location, viewId) {
+    mountInitial(location, viewId) {
       ensureOpen();
       const scopeId = ensureLocationScope(location);
       if (location.kind === "draft") scopes.activateDraft(location.draftId);
       else scopes.deactivateDraft();
       coordinator.presentInitial(location, viewId);
       commitActiveView(scopeId, viewId);
+    },
+    presentInitial(location, viewId) {
+      this.mountInitial(location, viewId);
       return prepareLocation(location).then((prepared) =>
         prepared?.commit(viewId) ?? false);
     },

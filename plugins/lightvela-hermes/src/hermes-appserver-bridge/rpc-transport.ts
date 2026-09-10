@@ -1,5 +1,6 @@
 type JsonObject = Record<string, unknown>;
 import type { HermesSessionPayload } from "./types";
+import { decodeUtf8 } from "../lib/utf8";
 
 export interface HermesSocket extends EventTarget {
   readonly readyState: number;
@@ -53,10 +54,10 @@ export class HermesRpcError extends Error {
 
 const frameText = async (data: unknown): Promise<string | null> => {
   if (typeof data === "string") return data;
-  if (data instanceof Blob) return data.text();
-  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (data instanceof Blob) return decodeUtf8(new Uint8Array(await data.arrayBuffer()));
+  if (data instanceof ArrayBuffer) return decodeUtf8(new Uint8Array(data));
   if (ArrayBuffer.isView(data)) {
-    return new TextDecoder().decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    return decodeUtf8(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
   }
   return null;
 };

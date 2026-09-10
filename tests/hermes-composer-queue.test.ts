@@ -3,9 +3,9 @@ import test from "node:test";
 
 import { HermesAppServerAdapter } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 import {
-  LocalStorageHermesComposerQueueStore,
-  MemoryHermesComposerQueueStore,
-} from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/composer-queue-store";
+  BrowserHermesComposerQueueService,
+  MemoryHermesComposerQueueService,
+} from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/composer-queue/service";
 import type { HermesRpcClient } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/rpc-transport";
 
 class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem"> {
@@ -15,26 +15,75 @@ class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem
   removeItem(key: string): void { this.values.delete(key); }
 }
 
-test("Hermes composer queues persist by credential and Bot scope", () => {
+test("Hermes composer queues persist by credential and Bot scope", async () => {
   const storage = new MemoryStorage();
-  const first = new LocalStorageHermesComposerQueueStore("account-a:bot-a", storage);
-  first.replace("stored-thread", [{
+  const first = new BrowserHermesComposerQueueService("account-a:bot-a", storage);
+  await first.add("stored-thread", {
     id: "queued-1",
     input: [{ type: "text", text: "persist me" }],
     clientUserMessageId: "client-1",
-  }]);
+    createdAt: 1,
+    pausedReason: null,
+  });
 
-  const restored = new LocalStorageHermesComposerQueueStore("account-a:bot-a", storage);
+  const restored = new BrowserHermesComposerQueueService("account-a:bot-a", storage);
   assert.deepEqual(restored.read("stored-thread"), [{
     id: "queued-1",
     input: [{ type: "text", text: "persist me" }],
     clientUserMessageId: "client-1",
+    createdAt: 1,
+    pausedReason: null,
   }]);
   assert.deepEqual(
-    new LocalStorageHermesComposerQueueStore("account-a:bot-b", storage).read("stored-thread"),
+    new BrowserHermesComposerQueueService("account-a:bot-b", storage).read("stored-thread"),
     [],
     "a different physical Bot must not inherit another Bot's pending queue",
   );
+});
+
+test("an empty queue is a revisioned tombstone visible to every queue owner", async () => {
+  const storage = new MemoryStorage();
+  const first = new BrowserHermesComposerQueueService("shared", storage);
+  await first.add("thread", {
+    id: "queued",
+    input: [{ type: "text", text: "once" }],
+    clientUserMessageId: "client-once",
+    createdAt: 1,
+    pausedReason: null,
+  });
+  const second = new BrowserHermesComposerQueueService("shared", storage);
+  assert.equal(second.read("thread").length, 1);
+  await first.remove("thread", "queued");
+  assert.deepEqual(second.read("thread"), []);
+  first.dispose();
+  second.dispose();
+});
+
+test("one Thread queue has exactly one consumption owner", async () => {
+  const storage = new MemoryStorage();
+  const first = new BrowserHermesComposerQueueService("lease", storage);
+  const second = new BrowserHermesComposerQueueService("lease", storage);
+  await first.add("thread", {
+    id: "queued",
+    input: [{ type: "text", text: "once" }],
+    clientUserMessageId: "client-once",
+    createdAt: 1,
+    pausedReason: null,
+  });
+  let release!: () => void;
+  const consuming = first.withConsumptionLease("thread", "queued", async () => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    return "accepted";
+  });
+  while (release === undefined) await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    await second.withConsumptionLease("thread", "queued", async () => "duplicate"),
+    { acquired: false },
+  );
+  release();
+  assert.deepEqual(await consuming, { acquired: true, value: "accepted" });
+  first.dispose();
+  second.dispose();
 });
 
 test("Hermes queue removes an entry only after Gateway admission accepts it", async () => {
@@ -58,10 +107,10 @@ test("Hermes queue removes an entry only after Gateway admission accepts it", as
     },
     onEvent: () => () => undefined,
   };
-  const queue = new MemoryHermesComposerQueueStore();
+  const queue = new MemoryHermesComposerQueueService();
   const adapter = new HermesAppServerAdapter(rpc, "/workspace", undefined, undefined, undefined, queue);
   const thread = await adapter.startThread();
-  const queued = adapter.addQueuedSubmission(
+  const queued = await adapter.addQueuedSubmission(
     thread.id,
     [{ type: "text", text: "next" }],
     "client-next",
@@ -93,10 +142,10 @@ test("Hermes queue retains an entry when Gateway admission fails", async () => {
     },
     onEvent: () => () => undefined,
   };
-  const queue = new MemoryHermesComposerQueueStore();
+  const queue = new MemoryHermesComposerQueueService();
   const adapter = new HermesAppServerAdapter(rpc, "/workspace", undefined, undefined, undefined, queue);
   const thread = await adapter.startThread();
-  const queued = adapter.addQueuedSubmission(
+  const queued = await adapter.addQueuedSubmission(
     thread.id,
     [{ type: "text", text: "do not lose me" }],
     "client-retry",
@@ -104,9 +153,68 @@ test("Hermes queue retains an entry when Gateway admission fails", async () => {
 
   await assert.rejects(adapter.startQueuedSubmission(thread.id, queued.id), /admission rejected/u);
   assert.deepEqual(
-    adapter.listQueuedSubmissions(thread.id, null, null).data.map((entry) => entry.id),
-    [queued.id],
+    adapter.listQueuedSubmissions(thread.id, null, null).data.map((entry) => ({
+      id: entry.id,
+      pausedReason: entry.pausedReason,
+    })),
+    [{ id: queued.id, pausedReason: "admission rejected" }],
   );
+  adapter.dispose();
+  queue.dispose();
+});
+
+test("an automatic queue admission failure pauses once and never retries itself", async () => {
+  let attempts = 0;
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "session.resume") {
+        return {
+          session_id: "live-no-retry",
+          stored_session_id: "stored-no-retry",
+          message_count: 0,
+          messages: [],
+          running: false,
+        } as T;
+      }
+      if (method === "session.list") {
+        return { sessions: [{
+          id: "stored-no-retry",
+          title: "No retry",
+          preview: "",
+          started_at: 1,
+          message_count: 0,
+          source: "desktop",
+          profile: "default",
+        }] } as T;
+      }
+      if (method === "profiles.list") return { profiles: [{ name: "default" }] } as T;
+      if (method === "prompt.submit") {
+        attempts += 1;
+        throw new Error("outcome unknown");
+      }
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const queue = new MemoryHermesComposerQueueService();
+  await queue.add("stored-no-retry", {
+    id: "queued-no-retry",
+    input: [{ type: "text", text: "exactly once" }],
+    clientUserMessageId: "client-no-retry",
+    createdAt: 1,
+    pausedReason: null,
+  });
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace", undefined, undefined, undefined, queue);
+  await adapter.loadThread("stored-no-retry", false);
+  adapter.resumeQueuedSubmissions("stored-no-retry");
+  for (let index = 0; index < 4; index += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.equal(attempts, 1);
+  assert.equal(queue.read("stored-no-retry")[0]?.pausedReason, "outcome unknown");
+  adapter.resumeQueuedSubmissions("stored-no-retry");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(attempts, 1, "level-triggered resume cannot consume a paused item");
   adapter.dispose();
   queue.dispose();
 });
@@ -146,12 +254,14 @@ test("an idle resumed Hermes Thread level-triggers its restored queue", async ()
     },
     onEvent: () => () => undefined,
   };
-  const queue = new MemoryHermesComposerQueueStore();
-  queue.replace("stored-restored", [{
+  const queue = new MemoryHermesComposerQueueService();
+  await queue.add("stored-restored", {
     id: "queued-restored",
     input: [{ type: "text", text: "resume me" }],
     clientUserMessageId: "client-restored",
-  }]);
+    createdAt: 1,
+    pausedReason: null,
+  });
   const adapter = new HermesAppServerAdapter(rpc, "/workspace", undefined, undefined, undefined, queue);
   await adapter.loadThread("stored-restored", false);
 
@@ -185,10 +295,10 @@ test("explicit interrupt parks queued Hermes work until a manual resume", async 
     },
     onEvent: () => () => undefined,
   };
-  const queue = new MemoryHermesComposerQueueStore();
+  const queue = new MemoryHermesComposerQueueService();
   const adapter = new HermesAppServerAdapter(rpc, "/workspace", undefined, undefined, undefined, queue);
   const thread = await adapter.startThread();
-  const queued = adapter.addQueuedSubmission(
+  const queued = await adapter.addQueuedSubmission(
     thread.id,
     [{ type: "text", text: "wait for me" }],
     "client-parked",

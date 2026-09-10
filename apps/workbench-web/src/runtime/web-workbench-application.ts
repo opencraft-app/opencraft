@@ -15,6 +15,7 @@ import { BrowserWorkbenchCoordinator } from "../browser/browser-workbench-coordi
 import { WebBrowserPageRuntime } from "../browser/web-browser-runtime";
 import { WebIframeSurfaceHost } from "../browser/web-browser-surface-host";
 import { WebBrowserDynamicToolHost } from "../browser/web-browser-tool-host";
+import { WebHostProxyBroker } from "../browser/web-host-proxy-broker";
 import { BuiltinWorkbenchPanelPlugin } from "../panels/builtin-panel-plugin";
 import { BuiltinTimelineRendererPlugin } from "../components/conversation-renderers/builtin-timeline-renderer-plugin";
 import {
@@ -26,6 +27,7 @@ import {
 } from "./panel-runtime-context";
 import type { WorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
 import type { WorkbenchTerminalSessionRegistry } from "@opencraft/plugin-terminal";
+import { bootstrapLightVelaOAuthCallback } from "@opencraft/plugin-lightvela-hermes";
 
 export interface WebWorkbenchApplication {
   readonly cordis: Context;
@@ -68,10 +70,11 @@ function loadConversationBindings(): readonly PersistedConversationBinding[] {
 
 /** Single application owner for every long-lived renderer service. */
 export async function createWebWorkbenchApplication(): Promise<WebWorkbenchApplication> {
+  // OAuth can return into any Workbench route. Consume its one-time fragment
+  // before IndexedDB, Cordis and extension activation so authentication does
+  // not depend on the latency or success of the rest of application startup.
+  bootstrapLightVelaOAuthCallback();
   const cordis = new Context();
-  const browserSurfaces = new WebIframeSurfaceHost();
-  const browserPages = new WebBrowserPageRuntime(browserSurfaces);
-  const browserPresentations = new BrowserPresentationCoordinator(browserPages, browserSurfaces);
   const conversationBindings = createConversationBindingStore({
     persistence: {
       load: loadConversationBindings,
@@ -84,6 +87,23 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       },
     },
   });
+  let supervisor: WebWorkbenchApplicationSupervisor;
+  const hostProxy = new WebHostProxyBroker(async (hostId, targetUrl, init) => {
+    if (supervisor.mode !== "active") {
+      throw new Error("Host proxy is unavailable without an active AppServer runtime");
+    }
+    const runtime = await supervisor.registry.ensureConnected(hostId);
+    return runtime.resources.host.fetchLoopback(targetUrl, init);
+  });
+  const browserSurfaces = new WebIframeSurfaceHost();
+  const browserPages = new WebBrowserPageRuntime(
+    browserSurfaces,
+    hostProxy,
+    (ownerId) => conversationBindings.resolve(
+      ownerId as Parameters<typeof conversationBindings.resolve>[0],
+    )?.hostId ?? null,
+  );
+  const browserPresentations = new BrowserPresentationCoordinator(browserPages, browserSurfaces);
   const panelRuntime = await createWorkbenchPanelRuntime(cordis);
   let chatRenderRuntime: ChatRenderRuntime;
   try {
@@ -97,7 +117,6 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     throw error;
   }
   let browserWorkbench: BrowserWorkbenchCoordinator;
-  let supervisor: WebWorkbenchApplicationSupervisor;
   let terminalSessions: WorkbenchTerminalSessionRegistry | null = null;
   try {
     await panelRuntime.install(TimelineBlockRendererRegistryService);
@@ -140,6 +159,21 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     );
     if (supervisor.mode === "active") {
       const activeSupervisor = supervisor;
+      const desktopKind = (
+        globalThis as typeof globalThis & { readonly opencraftDesktop?: { readonly kind?: string } }
+      ).opencraftDesktop?.kind;
+      if (desktopKind !== "electron") {
+        try {
+          const proxyReady = await hostProxy.start();
+          if (!proxyReady) {
+            console.warn("[host-proxy] Service Worker is unavailable; remote loopback previews are disabled");
+          } else {
+            console.info("[host-proxy] Service Worker broker ready", { brokerId: hostProxy.brokerId });
+          }
+        } catch (error) {
+          console.warn("[host-proxy] Service Worker registration failed", error);
+        }
+      }
       const {
         WorkbenchTerminalSessionRegistry,
         createTerminalWorkbenchPanelPlugin,
@@ -153,6 +187,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       browserWorkbench.restorePersistedTabs();
     }
   } catch (error) {
+    hostProxy.dispose();
     browserPresentations.dispose();
     browserPages.dispose();
     browserSurfaces.dispose();
@@ -178,6 +213,8 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       if (disposed) return;
       disposed = true;
       const failures: unknown[] = [];
+      // Retire consumers before their Host transport provider.
+      hostProxy.dispose();
       try {
         await terminalSessions?.dispose();
       } catch (error) {

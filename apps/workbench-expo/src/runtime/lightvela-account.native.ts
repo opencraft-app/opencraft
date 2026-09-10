@@ -72,7 +72,7 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
   const refresh = async () => {
     const result = await request<BotListResponse>("/v1/instances?page=1&page_size=100");
     bots = result.items.filter(bot => bot.status.toLowerCase() === "running").map(bot => Object.freeze({
-      createdAt: bot.created_at, instanceId: bot.instance_id, name: bot.name?.trim() || "Untitled Bot", status: bot.status,
+      createdAt: bot.created_at, instanceId: bot.instance_id, name: bot.name?.trim() || "Untitled Bot", status: "running" as const,
     }));
     if (bots.length === 0) throw new Error("No running LightVela Bot is available");
     const storedBotId = await SecureStore.getItemAsync(ACTIVE_BOT_KEY);

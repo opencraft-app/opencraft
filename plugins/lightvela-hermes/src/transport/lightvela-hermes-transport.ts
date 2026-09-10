@@ -7,18 +7,30 @@ import {
   HermesDashboardFileSystem,
   HermesDashboardHistoryClient,
   HermesProjectionRecovery,
+  HermesDashboardProfileSkillsHandler,
+  HermesDashboardWhatsAppOnboardingHandler,
   HermesTatTerminalService,
-  browserHermesComposerQueueStore,
+  browserProfileSkillsJournalStorage,
+  browserHermesComposerQueueService,
   type HermesComposerQueueStorage,
-  type HermesComposerQueueStore,
+  type HermesComposerQueueService,
+  type ProfileSkillsJournalStorage,
 } from "../hermes-appserver-bridge";
 import { ensureHermesDashboard } from "../lib/hermes-dashboard-ensure";
 import type { HermesSessionTokenCache } from "../lib/hermes-session-token-cache";
 import { resolveHermesDashboardWebSocketUrl } from "../lib/hermes-dashboard-session";
 import { createTatWebSocketConstructor } from "../lib/tat-websocket";
+import type { Rfc6455Sha1 } from "../lib/rfc6455-client";
 import { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
 import { TencentTatSessionMultiplexer } from "../lib/tencent-tat-session-multiplexer";
 import type { LightVelaBotInstance } from "../account/lightvela-account-service";
+import { LIGHTVELA_HERMES_HOST_ID } from "../host/lightvela-hermes-host-identity";
+
+const HERMES_DASHBOARD_PORT = 9119;
+// The observed forwarding path retires a fully idle socket after roughly 75s.
+// Chromium may throttle background timers to one wake-up per minute, so this
+// remains below that network deadline without coupling liveness to Hermes RPC.
+const TAT_IDLE_KEEPALIVE_INTERVAL_MS = 20_000;
 
 export interface LightVelaAccountPort {
   getSnapshot(): { readonly phase: string; readonly activeBotId: string | null; readonly authGeneration?: number; readonly credentialScope?: string };
@@ -31,9 +43,14 @@ export interface LightVelaHermesTransportOptions {
   readonly account: LightVelaAccountPort;
   readonly dashboardUrl?: string;
   readonly WebSocketImpl?: typeof WebSocket;
+  readonly sha1?: Rfc6455Sha1;
+  /** React Native Response cannot consume a custom streaming response body. */
+  readonly bufferHttpResponses?: boolean;
   readonly sessionTokenCache?: HermesSessionTokenCache;
   /** Test/platform override. Browsers default to their origin-local storage. */
   readonly composerQueueStorage?: HermesComposerQueueStorage;
+  /** Test/platform override. Browser journals default to origin-local storage. */
+  readonly profileSkillsJournalStorage?: ProfileSkillsJournalStorage;
 }
 
 function abortError(): Error {
@@ -52,7 +69,11 @@ function waitForOpen(socket: WebSocket, signal?: AbortSignal): Promise<void> {
       signal?.removeEventListener("abort", abort);
     };
     const open = () => { cleanup(); resolve(); };
-    const error = () => { cleanup(); reject(new Error("Hermes dashboard WebSocket failed")); };
+    const error = (event: Event) => {
+      cleanup();
+      const cause = (event as Event & { readonly error?: unknown }).error;
+      reject(cause instanceof Error ? cause : new Error("Hermes dashboard WebSocket failed"));
+    };
     const close = () => { cleanup(); reject(new Error("Hermes dashboard WebSocket closed before opening")); };
     const abort = () => {
       cleanup();
@@ -77,15 +98,20 @@ export class LightVelaHermesTransport implements DuplexTransport {
   private readonly replayCheckpoint = new HermesProjectionRecovery();
   private socket: WebSocket | null = null;
   private proxy: TencentTatSessionMultiplexer | null = null;
+  private loopbackHttp: TatHttpVirtualClient | null = null;
   private boundBotId: string | null = null;
   private resolvingBinding = false;
   private disposed = false;
   private processes: HermesProcessService | null = null;
+  private terminal: HermesTatTerminalService | null = null;
   private readonly removeAccountListener: () => void;
   private connectionStartedAt = 0;
   private accountGeneration: number | undefined;
-  private composerQueue: HermesComposerQueueStore | null = null;
+  private composerQueue: HermesComposerQueueService | null = null;
   private composerQueueScope: string | null = null;
+  private profileSkills: HermesDashboardProfileSkillsHandler | null = null;
+  private profileSkillsScope: string | null = null;
+  private whatsappOnboarding: HermesDashboardWhatsAppOnboardingHandler | null = null;
 
   constructor(private readonly options: LightVelaHermesTransportOptions) {
     this.accountGeneration = options.account.getSnapshot().authGeneration;
@@ -134,16 +160,53 @@ export class LightVelaHermesTransport implements DuplexTransport {
     const requestStartedAt = Date.now();
     if (method === "initialize") this.logConnection("appserver:initialize:start", this.generation);
     const response = await bridge.handle(request, signal);
+    if (
+      response !== null
+      && typeof response === "object"
+      && "error" in response
+      && (response as { error?: unknown }).error !== undefined
+    ) {
+      this.logConnection("appserver:request-failed", this.generation, {
+        method,
+        responseError: (response as { error?: unknown }).error,
+      });
+    }
     // A response from an expired request or detached bridge has no owner.
     // Turn notifications remain independent and reconcile accepted work.
     if (signal?.aborted || this.bridge !== bridge) return;
     if (method === "initialize") {
-      this.logConnection("appserver:initialize:ready", this.generation, {
+      this.logConnection("appserver:initialize:response", this.generation, {
         stageMs: Date.now() - requestStartedAt,
       });
     }
     this.emit(JSON.stringify(response));
     bridge.didDeliverResponse(request, response);
+  }
+
+  /** Uses the Host-owned TAT session; it never creates a second tunnel owner. */
+  async fetchLoopback(input: string, init: RequestInit = {}): Promise<Response> {
+    const url = new URL(input);
+    const loopbackHost = new Set(["localhost", "0.0.0.0", "[::1]", "::1"]).has(url.hostname)
+      || /^127(?:\.\d{1,3}){3}$/u.test(url.hostname);
+    if (url.protocol !== "http:" || !loopbackHost) {
+      throw new Error("Hermes loopback HTTP only supports plain HTTP loopback URLs");
+    }
+    if (this.currentStatus.state !== "open" || this.loopbackHttp === null) {
+      throw new Error("LightVela Hermes loopback HTTP is not ready");
+    }
+    let body: Uint8Array | ArrayBuffer | string | undefined;
+    if (typeof init.body === "string" || init.body instanceof ArrayBuffer) {
+      body = init.body;
+    } else if (ArrayBuffer.isView(init.body)) {
+      body = new Uint8Array(init.body.buffer, init.body.byteOffset, init.body.byteLength);
+    } else if (init.body != null) {
+      throw new TypeError("Hermes loopback HTTP requires a buffered request body");
+    }
+    const { body: _requestBody, ...requestInit } = init;
+    return this.loopbackHttp.fetch(url, {
+      ...requestInit,
+      ...(body === undefined ? {} : { body }),
+    });
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {
@@ -159,13 +222,20 @@ export class LightVelaHermesTransport implements DuplexTransport {
 
   async close(): Promise<void> {
     if (this.disposed) return;
+    this.logConnection("dispose:start", this.generation);
     this.disposed = true;
     this.removeAccountListener();
     this.processes?.dispose();
     this.processes = null;
+    this.terminal = null;
     this.composerQueue?.dispose();
     this.composerQueue = null;
     this.composerQueueScope = null;
+    this.profileSkills?.dispose();
+    this.profileSkills = null;
+    this.profileSkillsScope = null;
+    this.whatsappOnboarding?.dispose();
+    this.whatsappOnboarding = null;
     this.generation += 1;
     this.connectPromise = null;
     this.setStatus({ state: "closing" });
@@ -202,19 +272,30 @@ export class LightVelaHermesTransport implements DuplexTransport {
     const cacheKey = scope ? `${scope}:${botId}` : botId;
     if (this.composerQueueScope !== cacheKey) {
       this.composerQueue?.dispose();
-      this.composerQueue = browserHermesComposerQueueStore(
+      this.composerQueue = browserHermesComposerQueueService(
         cacheKey,
         this.options.composerQueueStorage,
       );
       this.composerQueueScope = cacheKey;
     }
+    if (this.profileSkillsScope !== cacheKey) {
+      this.profileSkills?.dispose();
+      this.profileSkills = new HermesDashboardProfileSkillsHandler(
+        `vela.hermes.profile-skills.v1:${cacheKey}`,
+        this.options.profileSkillsJournalStorage ?? browserProfileSkillsJournalStorage(),
+      );
+      this.profileSkillsScope = cacheKey;
+    }
+    this.whatsappOnboarding ??= new HermesDashboardWhatsAppOnboardingHandler();
     stageStartedAt = Date.now();
     const bootstrap = await createSession();
     this.logConnection("tat:session-created", generation, { stageMs: Date.now() - stageStartedAt });
     if (signal?.aborted || generation !== this.generation) throw abortError();
     const proxy = new TencentTatSessionMultiplexer(bootstrap, {
       WebSocketImpl,
-      diagnosticContext: { hostId: "velahermes0", generation },
+      diagnosticContext: { hostId: LIGHTVELA_HERMES_HOST_ID, generation },
+      idleKeepaliveIntervalMs: TAT_IDLE_KEEPALIVE_INTERVAL_MS,
+      idleKeepaliveTarget: { ip: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
       onUnhealthy: () => {
         if (this.disposed || generation !== this.generation) return;
         const retiredGeneration = ++this.generation;
@@ -227,6 +308,12 @@ export class LightVelaHermesTransport implements DuplexTransport {
       },
     });
     this.proxy = proxy;
+    this.loopbackHttp = new TatHttpVirtualClient(bootstrap, {
+      bufferResponseBody: this.options.bufferHttpResponses,
+      proxyClient: proxy,
+      responseHeaderTimeoutMs: 30_000,
+      responseBodyChunkTimeoutMs: 300_000,
+    });
     stageStartedAt = Date.now();
     let sessionToken: string | null = null;
     try {
@@ -281,21 +368,48 @@ export class LightVelaHermesTransport implements DuplexTransport {
       );
     }
     if (generation !== this.generation) throw abortError();
-    this.processes ??= new HermesProcessService(new HermesTatTerminalService({ createSession, WebSocketImpl }));
+    this.terminal ??= new HermesTatTerminalService({ createSession, WebSocketImpl });
+    this.processes ??= new HermesProcessService(this.terminal);
+    const profileSkills = this.profileSkills;
+    if (profileSkills === null) throw new Error("Hermes Profile Skills owner was not initialized");
+    profileSkills.attach(
+      new TatHttpVirtualClient(bootstrap, {
+        bufferResponseBody: this.options.bufferHttpResponses,
+        proxyClient: proxy,
+        target: { host: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
+        responseHeaderTimeoutMs: 45_000,
+        responseBodyChunkTimeoutMs: 45_000,
+      }),
+      sessionToken,
+    );
+    const whatsappOnboarding = this.whatsappOnboarding;
+    if (whatsappOnboarding === null) throw new Error("Hermes WhatsApp onboarding owner was not initialized");
+    whatsappOnboarding.attach(
+      new TatHttpVirtualClient(bootstrap, {
+        bufferResponseBody: this.options.bufferHttpResponses,
+        proxyClient: proxy,
+        target: { host: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
+        responseHeaderTimeoutMs: 45_000,
+        responseBodyChunkTimeoutMs: 45_000,
+      }),
+      sessionToken,
+    );
     const bridge = new BrowserHermesAppServerBridge(socket, {
       defaultCwd: bootstrap.workingDirectory ?? "/",
       projectionRecovery: this.replayCheckpoint,
       fileSystem: new HermesDashboardFileSystem(
         new TatHttpVirtualClient(bootstrap, {
+          bufferResponseBody: this.options.bufferHttpResponses,
           proxyClient: proxy,
-          target: { host: "127.0.0.1", port: 9119 },
+          target: { host: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
         }),
         sessionToken,
       ),
       history: new HermesDashboardHistoryClient(
         new TatHttpVirtualClient(bootstrap, {
+          bufferResponseBody: this.options.bufferHttpResponses,
           proxyClient: proxy,
-          target: { host: "127.0.0.1", port: 9119 },
+          target: { host: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
           // Desktop fetchJson uses req.setTimeout(30s): inactivity, not the
           // total duration of an actively progressing transcript download.
           responseHeaderTimeoutMs: 30_000,
@@ -303,8 +417,12 @@ export class LightVelaHermesTransport implements DuplexTransport {
         }),
         sessionToken,
       ),
+      terminal: this.terminal,
       processes: this.processes,
       composerQueue: this.composerQueue ?? undefined,
+      profileSkills,
+      whatsappOnboarding,
+      instanceId: botId,
     });
     bridge.onNotification((notification) => this.emit(JSON.stringify(notification)));
     this.bridge = bridge;
@@ -319,8 +437,12 @@ export class LightVelaHermesTransport implements DuplexTransport {
       this.bridge?.dispose();
       this.bridge = null;
       this.socket = null;
+      this.loopbackHttp?.close();
+      this.loopbackHttp = null;
       this.proxy?.close();
       this.proxy = null;
+      this.profileSkills?.detach();
+      this.whatsappOnboarding?.detach();
       this.setStatus({
         state: "closed",
         ...(closeEvent.wasClean ? {} : { reason: closeEvent.reason || `Hermes closed with code ${closeEvent.code}` }),
@@ -348,6 +470,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     });
     const TatWebSocket = createTatWebSocketConstructor(proxy, {
       origin: `http://${dashboardUrl.host}`,
+      sha1: this.options.sha1,
       onError: (error) => this.logConnection("hermes:websocket-error", this.generation, {
         reason: error.message.replace(/([?&]token=)[^&\s]+/g, "$1[redacted]"),
       }),
@@ -376,8 +499,12 @@ export class LightVelaHermesTransport implements DuplexTransport {
     if (socket !== null && socket.readyState < WebSocket.CLOSING) {
       try { socket.close(1000, "OpenCraft Host closing"); } catch { /* best effort */ }
     }
+    this.loopbackHttp?.close();
+    this.loopbackHttp = null;
     this.proxy?.close();
     this.proxy = null;
+    this.profileSkills?.detach();
+    this.whatsappOnboarding?.detach();
   }
 
   private emit(frame: string): void {
@@ -416,11 +543,23 @@ export class LightVelaHermesTransport implements DuplexTransport {
       if (snapshot.activeBotId === this.boundBotId) return;
     }
     const retiredBotId = this.boundBotId;
+    this.logConnection("binding:retire", this.generation, {
+      activeBotId: snapshot.activeBotId,
+      authorityChanged,
+      retiredBotId,
+      accountPhase: snapshot.phase,
+    });
     this.processes?.dispose();
     this.processes = null;
+    this.terminal = null;
     this.composerQueue?.dispose();
     this.composerQueue = null;
     this.composerQueueScope = null;
+    this.profileSkills?.dispose();
+    this.profileSkills = null;
+    this.profileSkillsScope = null;
+    this.whatsappOnboarding?.dispose();
+    this.whatsappOnboarding = null;
     const generation = ++this.generation;
     this.connectPromise = null;
     this.boundBotId = null;

@@ -121,6 +121,37 @@ export function createAppServerConversationCommandPort(
     }
   };
 
+  const actualTurnIdFromMismatch = (error: unknown): string | null => {
+    if (!(error instanceof AppServerRpcError)) return null;
+    const data = error.data as { code?: unknown; actualTurnId?: unknown } | undefined;
+    return data?.code === "EXPECTED_TURN_MISMATCH" && typeof data.actualTurnId === "string"
+      ? data.actualTurnId
+      : null;
+  };
+
+  const steer = async (
+    threadId: string,
+    expectedTurnId: string,
+    clientUserMessageId: string,
+    input: readonly UserInput[],
+    additionalContext?: NonNullable<ReturnType<typeof compileSubmitIntent>["additionalContext"]>,
+  ) => {
+    const request = (turnId: string) => config.client.request("turn/steer", {
+      threadId,
+      expectedTurnId: turnId,
+      clientUserMessageId,
+      input: [...input],
+      ...(additionalContext === undefined ? {} : { additionalContext }),
+    });
+    try {
+      return await request(expectedTurnId);
+    } catch (error) {
+      const actualTurnId = actualTurnIdFromMismatch(error);
+      if (actualTurnId === null) throw error;
+      return await request(actualTurnId);
+    }
+  };
+
   const execute = async (
     intent: SubmitIntent,
   ): Promise<SubmissionReceipt> => {
@@ -136,6 +167,7 @@ export function createAppServerConversationCommandPort(
       config.onDiagnostic?.(diagnostic, intent);
     let threadId: string;
     let turnId: string | null;
+    let disposition: SubmissionReceipt["disposition"];
 
     switch (intent.target.type) {
       case "new-thread": {
@@ -202,16 +234,15 @@ export function createAppServerConversationCommandPort(
       }
       case "steer-active-turn": {
         threadId = intent.target.key.threadId;
-        const turn = await config.client.request("turn/steer", {
+        const turn = await steer(
           threadId,
-          clientUserMessageId: intent.clientMessageId,
-          input: [...compiled.input],
-          expectedTurnId: intent.target.turnId,
-          ...(compiled.additionalContext === null
-            ? {}
-            : { additionalContext: compiled.additionalContext }),
-        });
-        turnId = turn.turnId;
+          intent.target.turnId,
+          intent.clientMessageId,
+          compiled.input,
+          compiled.additionalContext ?? undefined,
+        );
+        disposition = turn.disposition === "queued" ? "queue" : undefined;
+        turnId = disposition === "queue" ? null : turn.turnId;
         break;
       }
       case "enqueue-follow-up": {
@@ -234,6 +265,7 @@ export function createAppServerConversationCommandPort(
       turnId,
       acceptedAt: now(),
       replayed: false,
+      ...(disposition === undefined ? {} : { disposition }),
     };
     return receipt;
   };
@@ -365,22 +397,20 @@ export function createAppServerConversationCommandPort(
     },
     async steerQueuedSubmission(key, queuedSubmission, activeTurnId) {
       assertConversationHost(key);
-      const response = await config.client.request("turn/steer", {
-        threadId: key.threadId,
-        expectedTurnId: activeTurnId,
-        clientUserMessageId: queuedSubmission.clientUserMessageId,
-        input: [...queuedSubmission.input],
-      });
-      const deleted = await config.client.request("thread/queue/delete", {
+      const request = (expectedTurnId: string) => config.client.request("thread/queue/steer", {
         threadId: key.threadId,
         queuedSubmissionId: queuedSubmission.id,
+        expectedTurnId,
       });
-      if (!deleted.deleted) {
-        throw new Error(
-          `Steered queued submission ${queuedSubmission.id}, but AppServer did not remove it from the queue`,
-        );
+      try {
+        const response = await request(activeTurnId);
+        return asTurnId(response.turnId);
+      } catch (error) {
+        const actualTurnId = actualTurnIdFromMismatch(error);
+        if (actualTurnId === null) throw error;
+        const response = await request(actualTurnId);
+        return asTurnId(response.turnId);
       }
-      return asTurnId(response.turnId);
     },
   };
 }

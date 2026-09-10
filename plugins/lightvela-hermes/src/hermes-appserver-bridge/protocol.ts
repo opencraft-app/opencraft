@@ -5,12 +5,38 @@ import {
 import {
   OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
+  OPENCRAFT_PROFILE_SKILLS_CAPABILITY,
+  OPENCRAFT_PROFILE_SKILLS_EXTENSION,
+  OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  type ProfileSkillsMethod,
 } from "@opencraft/appserver-protocol";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
 import type { HermesHostTerminal } from "./tat-terminal";
 import type { HermesProcessService } from "./process-service";
 import type { AppServerTurn, JsonRpcRequest } from "./types";
 import type { HermesBotAppServerHandler } from "./bot-protocol-handler";
+import type { HermesDashboardProfileSkillsHandler } from "./profile-skills-handler";
+import {
+  isHermesWhatsAppOnboardingMethod,
+  type HermesDashboardWhatsAppOnboardingHandler,
+} from "./whatsapp-onboarding-handler";
+import { LIGHTVELA_HOST_BINDING_EXTENSION } from "../host/lightvela-hermes-host-identity";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
+
+const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
+  "skills/installed/list",
+  "skills/installed/content/read",
+  "skills/enabled/set",
+  "skills/catalog/sources/list",
+  "skills/catalog/official/list",
+  "skills/catalog/search",
+  "skills/catalog/preview",
+  "skills/catalog/scan",
+  "skills/install",
+  "skills/uninstall",
+  "skills/update",
+  "skills/action/read",
+]);
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -57,9 +83,12 @@ export const dispatchAppServerRequest = async (
     readonly terminal?: HermesHostTerminal;
     readonly processes?: HermesProcessService;
     readonly bots?: HermesBotAppServerHandler;
+    readonly profileSkills?: HermesDashboardProfileSkillsHandler;
+    readonly whatsappOnboarding?: HermesDashboardWhatsAppOnboardingHandler;
+    readonly instanceId?: string;
   } = {},
 ): Promise<unknown> => {
-  services.signal?.throwIfAborted();
+  throwIfSignalAborted(services.signal);
   const value = requestParams(request);
   if (request.method.startsWith("process/")) {
     if (!services.processes) throw new Error("Hermes process service is unavailable");
@@ -67,6 +96,16 @@ export const dispatchAppServerRequest = async (
   }
   if (request.method.startsWith("bot/") && services.bots !== undefined) {
     return services.bots.handle(request.method, value);
+  }
+  if (PROFILE_SKILLS_METHODS.has(request.method as ProfileSkillsMethod)) {
+    if (services.profileSkills === undefined) throw new Error("Hermes Profile Skills service is unavailable");
+    return services.profileSkills.handle(request.method as ProfileSkillsMethod, value);
+  }
+  if (isHermesWhatsAppOnboardingMethod(request.method)) {
+    if (services.whatsappOnboarding === undefined) {
+      throw new Error("Hermes WhatsApp onboarding service is unavailable");
+    }
+    return services.whatsappOnboarding.handle(request.method, value);
   }
   switch (request.method) {
     case "initialize":
@@ -78,9 +117,24 @@ export const dispatchAppServerRequest = async (
         serverInfo: { name: "opencraft-hermes-browser-handler", version: "0.1.0" },
         capabilities: {
           extensions: {
+            ...(services.instanceId === undefined ? {} : {
+              [LIGHTVELA_HOST_BINDING_EXTENSION]: {
+                version: 1,
+                instanceId: services.instanceId,
+              },
+            }),
             "opencraft/message-window-history": { version: 1, pageRows: 120, previewNotification: "thread/history/preview" },
+            [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
+              version: 2,
+              reorder: true,
+              atomicSteer: true,
+              perItemPause: true,
+            },
             [OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION]:
               OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
+            ...(services.profileSkills === undefined ? {} : {
+              [OPENCRAFT_PROFILE_SKILLS_EXTENSION]: OPENCRAFT_PROFILE_SKILLS_CAPABILITY,
+            }),
             ...(services.bots === undefined ? {} : {
               "vela/bot-conversations": {
                 version: 1,
@@ -132,7 +186,7 @@ export const dispatchAppServerRequest = async (
         ? adapter.prepareTurnsPage(threadId, requestedLimit, "desc", services.signal)
         : adapter.readTurnsPage(threadId, 0, requestedLimit, "desc", services.signal);
       const historyPromise = historyRead.then(page => {
-        services.signal?.throwIfAborted();
+        throwIfSignalAborted(services.signal);
         if (typeof value.historyPreviewToken === "string") {
           adapter.publishHistoryPreview(threadId, value.historyPreviewToken, page.chronological);
         }
@@ -146,7 +200,7 @@ export const dispatchAppServerRequest = async (
           .then((page) => ({ page, error: null as unknown }))
           .catch((error: unknown) => ({ page: null, error })),
       ]);
-      services.signal?.throwIfAborted();
+      throwIfSignalAborted(services.signal);
       // A failed runtime activation must not revoke an independent REST
       // preview still in flight. Settle both legs, then report readiness error.
       if (runtimeResult.thread === null) throw runtimeResult.error;
@@ -271,10 +325,13 @@ export const dispatchAppServerRequest = async (
         String(value.threadId ?? ""),
         typeof value.expectedTurnId === "string" ? value.expectedTurnId : null,
         value.input,
+        typeof value.clientUserMessageId === "string"
+          ? value.clientUserMessageId
+          : null,
       );
     case "thread/queue/add":
       return {
-        queuedSubmission: adapter.addQueuedSubmission(
+        queuedSubmission: await adapter.addQueuedSubmission(
           String(value.threadId ?? ""),
           value.input,
           String(value.clientUserMessageId ?? ""),
@@ -288,7 +345,7 @@ export const dispatchAppServerRequest = async (
       );
     case "thread/queue/update":
       return {
-        queuedSubmission: adapter.updateQueuedSubmission(
+        queuedSubmission: await adapter.updateQueuedSubmission(
           String(value.threadId ?? ""),
           String(value.queuedSubmissionId ?? ""),
           value.input,
@@ -296,13 +353,13 @@ export const dispatchAppServerRequest = async (
       };
     case "thread/queue/delete":
       return {
-        deleted: adapter.deleteQueuedSubmission(
+        deleted: await adapter.deleteQueuedSubmission(
           String(value.threadId ?? ""),
           String(value.queuedSubmissionId ?? ""),
         ),
       };
     case "thread/queue/reorder":
-      adapter.reorderQueuedSubmissions(
+      await adapter.reorderQueuedSubmissions(
         String(value.threadId ?? ""),
         Array.isArray(value.queuedSubmissionIds) ? value.queuedSubmissionIds.map(String) : [],
       );
@@ -314,6 +371,12 @@ export const dispatchAppServerRequest = async (
       );
       return { turn };
     }
+    case "thread/queue/steer":
+      return await adapter.steerQueuedSubmission(
+        String(value.threadId ?? ""),
+        String(value.queuedSubmissionId ?? ""),
+        String(value.expectedTurnId ?? ""),
+      );
     case "turn/interrupt":
       await adapter.cancelTurn(String(value.threadId ?? ""));
       return {};

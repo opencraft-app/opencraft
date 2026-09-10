@@ -108,6 +108,8 @@ export interface SubmissionReceipt {
   readonly turnId: string | null;
   readonly acceptedAt: number;
   readonly replayed: boolean;
+  /** Where the Host durably admitted this submission. */
+  readonly disposition?: "turn" | "queue";
 }
 
 export interface ComposerCatalogQuery {

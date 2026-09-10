@@ -14,8 +14,10 @@ export * from "./thread-catalog";
 export * from "./interaction-response";
 export * from "./setup-codex";
 export * from "./submission-pipeline";
+export * from "./composer-model-catalog";
 export * from "./adaptive-navigation";
 export * from "./adaptive-panel";
+export * from "./abort-signal";
 export { getActiveTimeline } from "./models";
 export type {
   ThreadStatus,

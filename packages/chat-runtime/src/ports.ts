@@ -1,9 +1,9 @@
 import type { ReplicaClientSnapshot } from "@opencraft/appserver-replica";
-import type { ReplicaJsonValue } from "@opencraft/appserver-protocol";
 import type {
   QueuedSubmission,
-  UserInput,
-} from "@opencraft/appserver-protocol/generated/v2";
+  ReplicaJsonValue,
+} from "@opencraft/appserver-protocol";
+import type { UserInput } from "@opencraft/appserver-protocol/generated/v2";
 import type { ConversationKey, TurnId } from "@opencraft/chat-core";
 import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 

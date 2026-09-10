@@ -28,6 +28,7 @@ import type {
   ThreadListParams,
   ThreadListResponse,
   ThreadQueueListResponse,
+  QueuedSubmission as ProtocolQueuedSubmission,
   ThreadStartParams,
 } from "@opencraft/appserver-protocol";
 import {
@@ -40,7 +41,6 @@ import type {
   FsGetMetadataResponse,
   FsWatchResponse,
   FsWriteFileResponse,
-  QueuedSubmission as ProtocolQueuedSubmission,
   ThreadQueueChangedNotification,
   Thread as ProtocolThread,
   UserInput,
@@ -192,10 +192,29 @@ export interface AppServerProjectResourcePort {
   create(params: ProjectCreateParams): Promise<ProjectCreateResponse>;
 }
 
-/** Read-only physical Host facts established by the initialize handshake. */
+/** Host-scoped facts and capabilities; it never owns Conversation state. */
 export interface AppServerHostResourcePort {
   getInitializeResult(): AppServerInitializeResponse | null;
   getConnectionGeneration?(): number;
+  /**
+   * Fetches an HTTP endpoint in the physical Host's loopback namespace.
+   * The Host transport owns the tunnel; callers only own the request signal.
+   */
+  fetchLoopback(input: string, init?: RequestInit): Promise<Response>;
+}
+
+interface AppServerLoopbackHttpTransport {
+  fetchLoopback(input: string, init?: RequestInit): Promise<Response>;
+}
+
+function loopbackHttpTransport(
+  transport: DuplexTransport,
+): AppServerLoopbackHttpTransport | null {
+  const candidate = transport as DuplexTransport & Partial<AppServerLoopbackHttpTransport>;
+  if (typeof candidate.fetchLoopback !== "function") return null;
+  return {
+    fetchLoopback: (input, init) => candidate.fetchLoopback!(input, init),
+  };
 }
 
 export interface AppServerFileSystemResourcePort {
@@ -943,6 +962,11 @@ export function createAppServerWorkbenchRuntime(
       });
     })()
       .catch(async (cause) => {
+        console.log("[appserver-runtime] service initialization failed", {
+          hostId,
+          errorType: cause instanceof Error ? cause.name : "Error",
+          message: cause instanceof Error ? cause.message : String(cause),
+        });
         removeTransportListener?.();
         removeTransportListener = null;
         removeClientHandlers?.();
@@ -981,6 +1005,13 @@ export function createAppServerWorkbenchRuntime(
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
           return client?.initializeResult ?? null;
+        },
+        fetchLoopback(input, init) {
+          const transport = loopbackHttpTransport(config.transport);
+          if (transport === null) {
+            return Promise.reject(new Error(`Host ${hostId} does not provide loopback HTTP`));
+          }
+          return transport.fetchLoopback(input, init);
         },
       },
       threads: {
@@ -1211,7 +1242,13 @@ export function createAppServerWorkbenchRuntime(
           console.log("[appserver-reconnect] succeeded", { hostId, attempt, elapsedMs: Date.now() - reconnectStartedAt });
           publish();
         } catch (cause) {
-          console.log("[appserver-reconnect] failed", { hostId, attempt, errorType: cause instanceof Error ? cause.name : "Error", elapsedMs: Date.now() - reconnectStartedAt });
+          console.log("[appserver-reconnect] failed", {
+            hostId,
+            attempt,
+            errorType: cause instanceof Error ? cause.name : "Error",
+            message: cause instanceof Error ? cause.message : String(cause),
+            elapsedMs: Date.now() - reconnectStartedAt,
+          });
           error = cause instanceof Error ? cause : new Error(String(cause));
           phase = "error";
           publish();

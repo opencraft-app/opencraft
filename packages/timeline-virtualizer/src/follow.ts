@@ -9,6 +9,19 @@ export const CODEX_LATEST_TURN_PLACEMENT_THRESHOLD_PX = 300;
 export const CODEX_RESPONSE_SPACER_VIEWPORT_RATIO = 2 / 3;
 export const CODEX_RESPONSE_SPACER_MIN_CONTENT_HEIGHT_PX = 240;
 
+/**
+ * Codex latest-Turn placement uses a 500ms, zero-bounce duration spring.
+ * React Native cannot express duration springs directly, so the equivalent
+ * unit-mass critical-damping coefficients are published with the semantics.
+ */
+export const CODEX_LATEST_TURN_PLACEMENT_SPRING = Object.freeze({
+  bounce: 0,
+  durationMs: 500,
+  damping: 36.933653905806345,
+  mass: 1,
+  stiffness: 341.02369770847105,
+});
+
 export type LatestTurnPhase = "idle" | "prework" | "final_answer";
 export type TurnFollowMode = "static" | "prework_watch" | "prework_follow" | "user_follow";
 
@@ -175,6 +188,19 @@ export function shouldPlaceLatestTurnFromPendingSubmit(
   placement: LatestTurnPlacementSnapshot | null,
 ): boolean {
   return placement?.shouldPlaceLatestTurn === true;
+}
+
+/** Preserve the reading position when an unplaced submit changes content height. */
+export function distanceAfterUnplacedLatestTurnContentResize({
+  nextScrollHeightPx,
+  placement,
+}: {
+  readonly nextScrollHeightPx: number;
+  readonly placement: LatestTurnPlacementSnapshot;
+}): number {
+  return placement.distanceFromBottomPx
+    + nextScrollHeightPx
+    - placement.scrollHeightPx;
 }
 
 /** Exact typed form of the recovered response-spacer height clamp (recovered dO). */

@@ -4,6 +4,7 @@ import {
   useInfiniteQuery,
 } from "@tanstack/react-query";
 import type { Thread } from "@opencraft/appserver-protocol/generated/v2";
+import { OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import type { DuplexTransport } from "@opencraft/appserver-client/transport";
 import { asHostId, createConversationKey } from "@opencraft/chat-core";
@@ -27,6 +28,7 @@ import {
   encodeWorkbenchLocation,
   HostRuntimeRegistry,
   projectAppServerThread,
+  projectComposerModelChoices,
   type AppServerWorkbenchRuntime,
   type AppServerWorkbenchViewSnapshot,
   type AppServerThreadRuntimeLease,
@@ -34,6 +36,8 @@ import {
   type ConversationScopeRegistry,
   type ConversationBindingStore,
   type WorkbenchThread,
+  type WorkbenchComposerModelChoice,
+  type HostRuntimeDescriptor,
 } from "@opencraft/workbench-runtime";
 import {
   createContext,
@@ -48,6 +52,7 @@ import { Platform } from "react-native";
 
 interface WorkbenchRuntimeContextValue {
   readonly runtime: AppServerWorkbenchRuntime;
+  readonly host: HostRuntimeDescriptor;
   readonly activeThreadLease: AppServerThreadRuntimeLease | null;
   readonly conversationScopes: ConversationScopeRegistry;
   readonly composerController: ComposerController;
@@ -58,6 +63,7 @@ interface WorkbenchRuntimeContextValue {
 
 export interface ExpoWorkbenchApplication {
   readonly runtime: AppServerWorkbenchRuntime;
+  readonly host: HostRuntimeDescriptor;
   readonly conversationScopes: ConversationScopeRegistry;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
   readonly coordinator: ReturnType<typeof createWorkbenchCoordinator<AppServerWorkbenchRuntime>>;
@@ -138,15 +144,16 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     });
     const draft = conversationScopes.getActiveDraft();
     if (draft === null) throw new Error("Expo Workbench requires an initial Conversation Scope");
-    const registry = new HostRuntimeRegistry([{
-      descriptor: {
+    const host: HostRuntimeDescriptor = Object.freeze({
         hostId,
         label: options.hostLabel ?? "AppServer",
         kind: "remote-control",
         transportEndpoint: options.transportEndpoint === undefined ? appServerUrl() : options.transportEndpoint,
         executionLocation: options.hostLabel ?? "AppServer",
         workspaceBrowseRoots: [],
-      },
+    });
+    const registry = new HostRuntimeRegistry([{
+      descriptor: host,
       createRuntime: () => runtime,
     }]);
     const initialLocation = createWorkbenchDraftLocation(hostId, draft.id);
@@ -168,7 +175,7 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     // Native React renders immediately. Publish the locally owned Draft/View
     // identity synchronously; Host connection and hydration may finish later.
     // Supplying an initial coordinator viewId alone does not create its View.
-    const initialActivation = conversationActivation.presentInitial(initialLocation, initialViewId);
+    conversationActivation.mountInitial(initialLocation, initialViewId);
     const queryClient = createWorkbenchQueryClient();
     const submissionPipeline = createWorkbenchSubmissionPipeline({
       scopes: conversationScopes,
@@ -207,6 +214,7 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     let disposed = false;
     return {
       runtime,
+      host,
       conversationScopes,
       registry,
       coordinator,
@@ -218,8 +226,10 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
       submissionPipeline,
       start() {
         if (disposed) return Promise.reject(new Error("Expo Workbench application is disposed"));
-        startPromise ??= initialActivation.then((activated) => {
-          if (!activated) throw coordinator.getSnapshot().error ?? new Error("Initial activation failed");
+        startPromise ??= conversationActivation.prepare(initialLocation).then((prepared) => {
+          if (prepared === null || !prepared.commit(initialViewId)) {
+            throw coordinator.getSnapshot().error ?? new Error("Initial activation failed");
+          }
         });
         return startPromise;
       },
@@ -267,6 +277,7 @@ export function WorkbenchRuntimeProvider({
   const composerController = conversationView.composer;
   const contextValue = useMemo<WorkbenchRuntimeContextValue>(() => ({
     runtime,
+    host: application.host,
     activeThreadLease,
     conversationScopes: application.conversationScopes,
     composerController,
@@ -307,6 +318,10 @@ export function useWorkbenchRuntime(): AppServerWorkbenchRuntime {
   return useWorkbenchController().runtime;
 }
 
+export function useActiveHostDescriptor(): HostRuntimeDescriptor {
+  return useWorkbenchController().host;
+}
+
 export function useActiveWorkbenchThread(): AppServerThreadRuntimeLease | null {
   return useWorkbenchController().activeThreadLease;
 }
@@ -343,6 +358,48 @@ export function useWorkbenchSnapshot(): AppServerWorkbenchViewSnapshot {
     activeThreadId: activeThreadLease?.threadId ?? null,
     conversation,
   }), [activeThreadLease?.threadId, conversation, hostSnapshot]);
+}
+
+export function useComposerModelCatalog(): {
+  readonly models: readonly WorkbenchComposerModelChoice[];
+  readonly isFetching: boolean;
+  readonly error: Error | null;
+  readonly refetch: () => Promise<unknown>;
+} {
+  const runtime = useWorkbenchRuntime();
+  const snapshot = useWorkbenchSnapshot();
+  const enabled = snapshot.phase === "ready" || snapshot.phase === "reconnecting";
+  const supportsScopedModelCatalog = runtime.resources.host.getInitializeResult()
+    ?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined;
+  const owner = supportsScopedModelCatalog ? snapshot.activeThreadId : null;
+  const query = useInfiniteQuery({
+    queryKey: ["appserver", snapshot.hostId, "composer-models", owner ?? "host"] as const,
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listModels({
+      cursor: pageParam,
+      limit: 100,
+      includeHidden: false,
+      ...(owner === null ? {} : { threadId: owner }),
+    }),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+  }, [query.fetchNextPage, query.hasNextPage, query.isFetchingNextPage]);
+  const models = useMemo(
+    () => projectComposerModelChoices(query.data?.pages.flatMap((page) => page.data) ?? []),
+    [query.data],
+  );
+  return {
+    models,
+    isFetching: query.isFetching,
+    error: query.error == null
+      ? null
+      : query.error instanceof Error ? query.error : new Error(String(query.error)),
+    refetch: query.refetch,
+  };
 }
 
 export function useThreadCatalog(): {

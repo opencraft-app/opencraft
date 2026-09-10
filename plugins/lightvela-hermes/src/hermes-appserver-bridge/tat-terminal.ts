@@ -3,6 +3,7 @@ import {
   TencentTatSessionMultiplexer,
   type TatPtyChannel,
 } from "../lib/tencent-tat-session-multiplexer";
+import { decodeUtf8, encodeUtf8 } from "../lib/utf8";
 
 export interface HermesCommandExecNotification {
   readonly jsonrpc: "2.0";
@@ -58,7 +59,7 @@ interface OwnedProcess {
   channel: TatPtyChannel | null;
   markerBuffer: string;
   exitBuffer: string;
-  markerSeen: boolean;
+  framingPhase: "awaiting-start" | "streaming" | "awaiting-exit";
   pendingInput: string[];
   pendingSize: { readonly cols: number; readonly rows: number } | null;
   settled: boolean;
@@ -103,7 +104,7 @@ function commandVector(value: unknown): string[] {
 }
 
 function base64EncodeUtf8(value: string): string {
-  const bytes = new TextEncoder().encode(value);
+  const bytes = encodeUtf8(value);
   let binary = "";
   const stride = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += stride) {
@@ -116,14 +117,26 @@ function base64DecodeUtf8(value: string): string {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return new TextDecoder().decode(bytes);
+  return decodeUtf8(bytes);
 }
 
-function randomMarker(): string {
-  return `__OPENCRAFT_TAT_EXIT_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}__`;
+function randomMarker(kind: "START" | "EXIT"): string {
+  return `__OPENCRAFT_TAT_${kind}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}__`;
 }
 
-function commandScript(params: HermesCommandExecParams, marker: string): string {
+function markerPrintf(marker: string, suffix: string): string {
+  const split = Math.ceil(marker.length / 2);
+  // The complete sentinel must exist only in shell output. TAT's interactive
+  // PTY echoes submitted input, so embedding it verbatim in the script would
+  // make the echo indistinguishable from the framing boundary.
+  return `printf '%s%s${suffix}' ${shellQuote(marker.slice(0, split))} ${shellQuote(marker.slice(split))}`;
+}
+
+function commandScript(
+  params: HermesCommandExecParams,
+  startMarker: string,
+  exitMarker: string,
+): string {
   const command = commandVector(params.command).map(shellQuote).join(" ");
   const setup: string[] = [];
   if (typeof params.cwd === "string" && params.cwd !== "") {
@@ -136,13 +149,13 @@ function commandScript(params: HermesCommandExecParams, marker: string): string 
     }
   }
   return [
+    `${markerPrintf(startMarker, "")};`,
     "(",
     ...setup.map((line) => `${line};`),
     command,
     ");",
     "opencraft_command_status=$?;",
-    // Assemble the sentinel only in output: an interactive PTY echoes the command.
-    `printf '\\n%s%s%s\\n' ${shellQuote(marker.slice(0, 20))} ${shellQuote(marker.slice(20))} "$opencraft_command_status"`,
+    `${markerPrintf(exitMarker, "%s\\n")} "$opencraft_command_status"`,
   ].join(" ");
 }
 
@@ -178,7 +191,8 @@ export class HermesTatTerminalService implements HermesHostTerminal {
     if (this.processes.has(processId)) throw new Error(`Terminal process already exists: ${processId}`);
     commandVector(params.command);
     const initialSize = params.size === undefined ? null : terminalSize(params.size);
-    const marker = randomMarker();
+    const startMarker = randomMarker("START");
+    const exitMarker = randomMarker("EXIT");
 
     return new Promise((resolve, reject) => {
       let markReady!: () => void;
@@ -192,7 +206,9 @@ export class HermesTatTerminalService implements HermesHostTerminal {
         channel: null,
         markerBuffer: "",
         exitBuffer: "",
-        markerSeen: false,
+        framingPhase: params.tty === true && params.streamStdin === true
+          ? "streaming"
+          : "awaiting-start",
         pendingInput: [],
         pendingSize: initialSize,
         settled: false,
@@ -200,14 +216,15 @@ export class HermesTatTerminalService implements HermesHostTerminal {
         reject,
       };
       this.processes.set(processId, owned);
-      void this.start(owned, params, marker);
+      void this.start(owned, params, startMarker, exitMarker);
     });
   }
 
   private async start(
     owned: OwnedProcess,
     params: HermesCommandExecParams,
-    marker: string,
+    startMarker: string,
+    exitMarker: string,
   ): Promise<void> {
     try {
       const command = commandVector(params.command);
@@ -228,7 +245,7 @@ export class HermesTatTerminalService implements HermesHostTerminal {
       const channel = await multiplexer.openPty({
         onOutput: (output) => {
           if (directPty) this.emitOutput(owned.processId, output);
-          else this.acceptOutput(owned, marker, output);
+          else this.acceptOutput(owned, startMarker, exitMarker, output);
         },
         onError: (error) => {
           if (directPty && /logout/iu.test(error.message)) this.finish(owned, 0);
@@ -253,7 +270,7 @@ export class HermesTatTerminalService implements HermesHostTerminal {
         return;
       }
       if (!directPty) {
-        if (!channel.sendInput(`${commandScript(params, marker)}\r`)) {
+        if (!channel.sendInput(`${commandScript(params, startMarker, exitMarker)}\r`)) {
           this.fail(owned, new Error("TAT PTY rejected the terminal command"));
           return;
         }
@@ -323,22 +340,45 @@ export class HermesTatTerminalService implements HermesHostTerminal {
     return owned;
   }
 
-  private acceptOutput(owned: OwnedProcess, marker: string, output: string): void {
+  private acceptOutput(
+    owned: OwnedProcess,
+    startMarker: string,
+    exitMarker: string,
+    output: string,
+  ): void {
     if (owned.settled) return;
-    if (owned.markerSeen) {
+    if (owned.framingPhase === "awaiting-start") {
+      const combined = owned.markerBuffer + output;
+      const markerIndex = combined.indexOf(startMarker);
+      if (markerIndex >= 0) {
+        owned.markerBuffer = "";
+        owned.framingPhase = "streaming";
+        this.acceptOutput(
+          owned,
+          startMarker,
+          exitMarker,
+          combined.slice(markerIndex + startMarker.length),
+        );
+        return;
+      }
+      const retainedLength = this.markerPrefixSuffixLength(combined, startMarker);
+      owned.markerBuffer = combined.slice(combined.length - retainedLength);
+      return;
+    }
+    if (owned.framingPhase === "awaiting-exit") {
       this.acceptExitCode(owned, output);
       return;
     }
     const combined = owned.markerBuffer + output;
-    const markerIndex = combined.indexOf(marker);
+    const markerIndex = combined.indexOf(exitMarker);
     if (markerIndex >= 0) {
       this.emitOutput(owned.processId, combined.slice(0, markerIndex));
       owned.markerBuffer = "";
-      owned.markerSeen = true;
-      this.acceptExitCode(owned, combined.slice(markerIndex + marker.length));
+      owned.framingPhase = "awaiting-exit";
+      this.acceptExitCode(owned, combined.slice(markerIndex + exitMarker.length));
       return;
     }
-    const retainedLength = this.markerPrefixSuffixLength(combined, marker);
+    const retainedLength = this.markerPrefixSuffixLength(combined, exitMarker);
     const emitLength = combined.length - retainedLength;
     this.emitOutput(owned.processId, combined.slice(0, emitLength));
     owned.markerBuffer = combined.slice(emitLength);
@@ -378,7 +418,9 @@ export class HermesTatTerminalService implements HermesHostTerminal {
     if (owned.settled) return;
     owned.settled = true;
     owned.rejectReady(new Error("Terminal exited before becoming ready"));
-    this.emitOutput(owned.processId, owned.markerBuffer);
+    if (owned.framingPhase === "streaming") {
+      this.emitOutput(owned.processId, owned.markerBuffer);
+    }
     owned.markerBuffer = "";
     owned.pendingInput.length = 0;
     owned.pendingSize = null;
@@ -392,7 +434,9 @@ export class HermesTatTerminalService implements HermesHostTerminal {
     if (owned.settled) return;
     owned.settled = true;
     owned.rejectReady(error);
-    this.emitOutput(owned.processId, owned.markerBuffer);
+    if (owned.framingPhase === "streaming") {
+      this.emitOutput(owned.processId, owned.markerBuffer);
+    }
     owned.markerBuffer = "";
     owned.pendingInput.length = 0;
     owned.pendingSize = null;

@@ -2,6 +2,7 @@ import type {
   HostConnectionJson,
   HostConnectionProvider,
 } from "@opencraft/workbench-runtime";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
 import type { HermesSessionTokenCache } from "../lib/hermes-session-token-cache";
@@ -38,7 +39,7 @@ export function createLightVelaHermesHostProvider(
     configVersion: 1,
     validate: validateConfig,
     preflight(_config, _context, { signal }) {
-      signal.throwIfAborted();
+      throwIfSignalAborted(signal);
       const snapshot = account.getSnapshot();
       const activeBot = snapshot.activeBotId === null
         ? undefined

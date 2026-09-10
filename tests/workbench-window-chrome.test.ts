@@ -9,10 +9,11 @@ import {
   resolveWindowChrome,
 } from "../apps/workbench-web/src/window-chrome";
 
-test("workspace panel launchers follow route visibility, not panel animation lifetime", () => {
+test("management modal preserves panel geometry while launchers follow conversation interaction ownership", () => {
   const app = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
   assert.match(app, /toolbarActions=\{conversationRouteOpen \? panelToolbarActions : \[\]\}/);
-  assert.match(app, /rightPanelOpen=\{conversationRouteOpen && presentedRightPanelOpen\}/);
+  assert.match(app, /const conversationSurfaceVisible = conversationRouteOpen \|\| managementSettingsOpen;/);
+  assert.match(app, /rightPanelOpen=\{conversationSurfaceVisible && presentedRightPanelOpen\}/);
 });
 
 test("renderer host identity is installed above body for the viewport contract", () => {

@@ -1,4 +1,5 @@
 import type { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
 
 export interface HermesHostFileMetadata {
   readonly isDirectory: boolean;
@@ -78,7 +79,7 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
   }
 
   async getMetadata(path: string, signal?: AbortSignal): Promise<HermesHostFileMetadata> {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     if (path === "/") return this.metadata(true);
     const { parent, name } = parentAndName(path);
     const entries = (await this.list(parent, signal)).entries ?? [];
@@ -100,7 +101,7 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
   }
 
   async readFile(path: string, signal?: AbortSignal) {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     try {
       const response = await this.get<{ readonly dataUrl: string }>(
         `/api/fs/read-data-url?path=${encodePath(path)}`,
@@ -108,7 +109,7 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
       );
       return { dataBase64: base64FromDataUrl(response.dataUrl) };
     } catch (primaryError) {
-      signal?.throwIfAborted();
+      throwIfSignalAborted(signal);
       // Only a missing route warrants trying the older endpoint. An expired
       // read or a transport failure must never start a second download.
       if (!(primaryError instanceof Error) || !/^HTTP (404|405|501):/.test(primaryError.message)) throw primaryError;
@@ -154,7 +155,7 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
     try {
       return await this.get<HermesFsListResponse>(`/api/fs/list?path=${encodePath(path)}`, signal);
     } catch (primaryError) {
-      signal?.throwIfAborted();
+      throwIfSignalAborted(signal);
       try {
         const fallback = await this.get<HermesManagedFileListResponse>(
           `/api/files?path=${encodePath(path)}`,

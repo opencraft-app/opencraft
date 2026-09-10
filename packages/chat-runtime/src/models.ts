@@ -37,6 +37,7 @@ export interface QueuedSubmission {
   readonly state: "submitting" | "queued" | "failed";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly createdAt: number;
+  readonly pausedReason: string | null;
   readonly error: Error | null;
 }
 
@@ -85,9 +86,6 @@ export interface ConversationRuntimeSnapshot {
   readonly pendingInteractions: readonly PendingInteraction[];
   readonly pendingSubmissions: readonly PendingSubmission[];
   readonly queuedSubmissions: readonly QueuedSubmission[];
-  readonly queue: {
-    readonly pausedReason: "interrupted" | null;
-  };
   readonly history: {
     readonly hasOlder: boolean;
     readonly loading: boolean;

@@ -150,6 +150,8 @@ function commands(
         id: queuedSubmissionId,
         clientUserMessageId: "queued-client",
         input: [...input],
+        createdAt: 1,
+        pausedReason: null,
       };
     },
     async deleteQueuedSubmission() {
@@ -1317,6 +1319,192 @@ test("ordinary submission is an optimistic Turn and never a queued follow-up", a
   runtime.dispose();
 });
 
+test("an acknowledged Turn cannot jump ahead of an older failed local Turn", async () => {
+  const replica = new FakeReplica(threadView({ pendingInteractions: [] }));
+  const key = createConversationKey("local", "thread-one");
+  let submission = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica,
+    commands: commands({
+      submit: async (intent) => {
+        submission += 1;
+        if (submission === 1) throw new Error("Attachment is not ready");
+        return receipt(intent.commandId, intent.clientMessageId);
+      },
+    }),
+    history: { async loadOlder() {} },
+  });
+  let id = 0;
+  const composer = createComposerController(
+    { type: "existing-thread", key },
+    { now: () => 100 + id * 100, createId: () => `ordered-${++id}` },
+  );
+  const setText = (text: string) => composer.dispatch({
+    type: "set-document",
+    document: {
+      version: 1,
+      blocks: [{ type: "paragraph", children: [{ type: "text", text }] }],
+    },
+  });
+  const userMessages = () => runtime.getSnapshot().timeline.frames
+    .flatMap((frame) => frame.blocks)
+    .filter((block) => block.type === "user-message")
+    .map((block) => block.type === "user-message" ? block.message : "");
+
+  setText("Failed locally");
+  const failedIntent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(failedIntent), /Attachment is not ready/);
+
+  setText("Delivered later");
+  const deliveredIntent = composer.createSubmitIntent();
+  await runtime.submit(deliveredIntent);
+  assert.deepEqual(userMessages(), ["Run tests", "Failed locally", "Delivered later"]);
+
+  replica.setEntity(threadView({
+    pendingInteractions: [],
+    turns: [
+      {
+        id: "turn-one",
+        status: "completed",
+        startedAt: 1_728_000_000,
+        params: {
+          clientUserMessageId: "client-user-one",
+          input: [{ type: "text", text: "Run tests" }],
+        },
+        items: [
+          {
+            id: "user-one",
+            type: "userMessage",
+            clientId: "client-user-one",
+            content: [{ type: "text", text: "Run tests" }],
+          },
+          { id: "assistant-one", type: "agentMessage", text: "Done." },
+        ],
+      },
+      {
+        id: "turn-two",
+        status: "inProgress",
+        startedAtMs: 300,
+        params: {
+          clientUserMessageId: deliveredIntent.clientMessageId,
+          input: [{ type: "text", text: "Delivered later" }],
+        },
+        items: [
+          {
+            id: "user-two",
+            type: "userMessage",
+            clientId: deliveredIntent.clientMessageId,
+            content: [{ type: "text", text: "Delivered later" }],
+          },
+        ],
+      },
+    ],
+  }));
+
+  assert.deepEqual(
+    userMessages(),
+    ["Run tests", "Failed locally", "Delivered later"],
+    "authority may replace identity and delivery state, but never insertion order",
+  );
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 1);
+  assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.commandId, failedIntent.commandId);
+  runtime.dispose();
+});
+
+test("a newer failed local Turn stays after an older Turn when its acknowledgement arrives", async () => {
+  const replica = new FakeReplica(threadView({ pendingInteractions: [] }));
+  const key = createConversationKey("local", "thread-one");
+  let submission = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica,
+    commands: commands({
+      submit: async (intent) => {
+        submission += 1;
+        if (submission === 2) throw new Error("Hermes input is empty");
+        return receipt(intent.commandId, intent.clientMessageId);
+      },
+    }),
+    history: { async loadOlder() {} },
+  });
+  let id = 0;
+  const composer = createComposerController(
+    { type: "existing-thread", key },
+    { now: () => 100 + id * 100, createId: () => `inverse-${++id}` },
+  );
+  const setText = (text: string) => composer.dispatch({
+    type: "set-document",
+    document: {
+      version: 1,
+      blocks: [{ type: "paragraph", children: [{ type: "text", text }] }],
+    },
+  });
+  const userMessages = () => runtime.getSnapshot().timeline.frames
+    .flatMap((frame) => frame.blocks)
+    .filter((block) => block.type === "user-message")
+    .map((block) => block.type === "user-message" ? block.message : "");
+
+  setText("Delivered first");
+  const deliveredIntent = composer.createSubmitIntent();
+  await runtime.submit(deliveredIntent);
+  setText("Failed afterward");
+  const failedIntent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(failedIntent), /Hermes input is empty/);
+  assert.deepEqual(userMessages(), ["Run tests", "Delivered first", "Failed afterward"]);
+
+  replica.setEntity(threadView({
+    pendingInteractions: [],
+    turns: [
+      {
+        id: "turn-one",
+        status: "completed",
+        startedAt: 1_728_000_000,
+        params: {
+          clientUserMessageId: "client-user-one",
+          input: [{ type: "text", text: "Run tests" }],
+        },
+        items: [
+          {
+            id: "user-one",
+            type: "userMessage",
+            clientId: "client-user-one",
+            content: [{ type: "text", text: "Run tests" }],
+          },
+          { id: "assistant-one", type: "agentMessage", text: "Done." },
+        ],
+      },
+      {
+        id: "turn-two",
+        status: "completed",
+        startedAtMs: 200,
+        params: {
+          clientUserMessageId: deliveredIntent.clientMessageId,
+          input: [{ type: "text", text: "Delivered first" }],
+        },
+        items: [
+          {
+            id: "user-two",
+            type: "userMessage",
+            clientId: deliveredIntent.clientMessageId,
+            content: [{ type: "text", text: "Delivered first" }],
+          },
+          { id: "assistant-two", type: "agentMessage", text: "Done too." },
+        ],
+      },
+    ],
+  }));
+
+  assert.deepEqual(
+    userMessages(),
+    ["Run tests", "Delivered first", "Failed afterward"],
+    "a delayed acknowledgement must carry later local slots across its new identity",
+  );
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 1);
+  assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.commandId, failedIntent.commandId);
+  runtime.dispose();
+});
+
 test("authoritative Turn acknowledgement retires the optimistic submission", async () => {
   let resolveSubmission!: (receipt: SubmissionReceipt) => void;
   const pending = new Promise<SubmissionReceipt>((resolve) => {
@@ -1393,6 +1581,151 @@ test("authoritative Turn acknowledgement retires the optimistic submission", asy
   runtime.dispose();
 });
 
+test("steer remains visible until its authoritative user-message identity joins it", async () => {
+  let resolveSubmission!: (receipt: SubmissionReceipt) => void;
+  const pending = new Promise<SubmissionReceipt>((resolve) => {
+    resolveSubmission = resolve;
+  });
+  const replica = new FakeReplica(threadView());
+  const key = createConversationKey("local", "thread-one");
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica,
+    commands: commands({ submit: async () => pending }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController(
+    { type: "steer-active-turn", key, turnId: asTurnId("turn-one") },
+    { now: () => 100, createId: () => "steer-command" },
+  );
+  composer.dispatch({
+    type: "set-document",
+    document: {
+      version: 1,
+      blocks: [{ type: "paragraph", children: [{ type: "text", text: "Do this instead" }] }],
+    },
+  });
+  const intent = composer.createSubmitIntent();
+  const operation = runtime.submit(intent);
+  const countSteers = () => runtime.getSnapshot().timeline.frames
+    .flatMap((frame) => frame.blocks)
+    .filter((block) => block.type === "user-message" && block.message === "Do this instead").length;
+  assert.equal(countSteers(), 1);
+
+  resolveSubmission({
+    commandId: intent.commandId,
+    clientMessageId: intent.clientMessageId,
+    hostId: "local",
+    threadId: "thread-one",
+    turnId: "turn-one",
+    acceptedAt: 101,
+    replayed: false,
+  });
+  await operation;
+  assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "submitting");
+  assert.equal(countSteers(), 1, "RPC admission alone cannot accept or remove a steer");
+
+  replica.setEntity(threadView({
+    turns: [{
+      id: "turn-one",
+      status: "inProgress",
+      startedAt: 1_728_000_000,
+      params: {
+        clientUserMessageId: "client-user-one",
+        input: [{ type: "text", text: "Run tests" }],
+      },
+      items: [
+        { id: "user-one", type: "userMessage", clientId: "client-user-one", content: [{ type: "text", text: "Run tests" }] },
+        { id: "assistant-one", type: "agentMessage", text: "Running them." },
+        { id: "server-steer", type: "userMessage", clientId: null, content: [{ type: "text", text: "Do this instead" }] },
+      ],
+    }],
+    pendingInteractions: [],
+  }));
+  assert.equal(countSteers(), 1, "local and server identities must normalize into one row");
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 1);
+  assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "accepted");
+  assert.equal(countSteers(), 1, "RPC acceptance is not user-message acknowledgement");
+
+  replica.setEntity(threadView({
+    turns: [{
+      id: "turn-one",
+      status: "completed",
+      startedAt: 1_728_000_000,
+      params: {
+        clientUserMessageId: "client-user-one",
+        input: [{ type: "text", text: "Run tests" }],
+      },
+      items: [
+        { id: "user-one", type: "userMessage", clientId: "client-user-one", content: [{ type: "text", text: "Run tests" }] },
+        { id: "assistant-one", type: "agentMessage", text: "Done." },
+        { id: "server-steer", type: "userMessage", clientId: null, content: [{ type: "text", text: "Do this instead" }] },
+      ],
+    }],
+    pendingInteractions: [],
+  }));
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+  assert.equal(countSteers(), 1);
+  runtime.dispose();
+});
+
+test("a steer restored by the Host transfers display ownership to the queue", async () => {
+  let resolveSubmission!: (receipt: SubmissionReceipt) => void;
+  const pending = new Promise<SubmissionReceipt>((resolve) => {
+    resolveSubmission = resolve;
+  });
+  const replica = new FakeReplica(threadView());
+  const key = createConversationKey("local", "thread-one");
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica,
+    commands: commands({ submit: async () => pending }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController(
+    { type: "steer-active-turn", key, turnId: asTurnId("turn-one") },
+    { now: () => 100, createId: () => "racing-steer" },
+  );
+  composer.dispatch({
+    type: "set-document",
+    document: {
+      version: 1,
+      blocks: [{ type: "paragraph", children: [{ type: "text", text: "Do this later" }] }],
+    },
+  });
+  const intent = composer.createSubmitIntent();
+  const operation = runtime.submit(intent);
+  assert.equal(runtime.getSnapshot().pendingSubmissions.length, 1);
+  runtime.replaceQueuedSubmissions([{
+    id: "restored-queue",
+    input: [{ type: "text", text: "Do this later", text_elements: [] }],
+    clientUserMessageId: intent.clientMessageId,
+    createdAt: 100,
+    pausedReason: "Run ended before this message could be steered.",
+  }]);
+  resolveSubmission({
+    commandId: intent.commandId,
+    clientMessageId: intent.clientMessageId,
+    hostId: "local",
+    threadId: "thread-one",
+    turnId: null,
+    acceptedAt: 101,
+    replayed: false,
+    disposition: "queue",
+  });
+  await operation;
+  const snapshot = runtime.getSnapshot();
+  assert.equal(snapshot.pendingSubmissions.length, 0);
+  assert.equal(snapshot.queuedSubmissions.length, 1);
+  assert.equal(snapshot.queuedSubmissions[0]?.pausedReason, "Run ended before this message could be steered.");
+  assert.equal(
+    snapshot.timeline.frames.flatMap((frame) => frame.blocks)
+      .filter((block) => block.type === "user-message" && block.message === "Do this later").length,
+    0,
+  );
+  runtime.dispose();
+});
+
 test("explicit follow-up submission alone owns optimistic queue state", async () => {
   let resolveSubmission!: (receipt: SubmissionReceipt) => void;
   const pending = new Promise<SubmissionReceipt>((resolve) => {
@@ -1448,6 +1781,8 @@ test("authoritative AppServer queue replaces optimistic follow-up state", () => 
       input: [
         { type: "text", text: "Run the release checks", text_elements: [] },
       ],
+      createdAt: 1,
+      pausedReason: null,
     },
   ]);
   assert.deepEqual(
@@ -1475,7 +1810,13 @@ test("queued submissions support optimistic edit, reorder, steer, pause, resume,
     commands: commands({
       async updateQueuedSubmission(_key, id, input) {
         calls.push(`update:${id}`);
-        return { id, clientUserMessageId: `client-${id}`, input: [...input] };
+        return {
+          id,
+          clientUserMessageId: `client-${id}`,
+          input: [...input],
+          createdAt: 1,
+          pausedReason: null,
+        };
       },
       async reorderQueuedSubmissions(_key, ids) {
         calls.push(`reorder:${ids.join(",")}`);
@@ -1503,11 +1844,15 @@ test("queued submissions support optimistic edit, reorder, steer, pause, resume,
       id: "one",
       clientUserMessageId: "client-one",
       input: [{ type: "text", text: "One", text_elements: [] }],
+      createdAt: 1,
+      pausedReason: null,
     },
     {
       id: "two",
       clientUserMessageId: "client-two",
       input: [{ type: "text", text: "Two", text_elements: [] }],
+      createdAt: 2,
+      pausedReason: null,
     },
   ]);
 
@@ -1533,14 +1878,14 @@ test("queued submissions support optimistic edit, reorder, steer, pause, resume,
     ["one"],
   );
   await runtime.interrupt(asTurnId("turn-one"));
-  assert.equal(runtime.getSnapshot().queue.pausedReason, "interrupted");
   await runtime.startQueuedSubmission();
-  assert.equal(runtime.getSnapshot().queue.pausedReason, null);
   runtime.replaceQueuedSubmissions([
     {
       id: "one",
       clientUserMessageId: "client-one",
       input: [{ type: "text", text: "Edited one", text_elements: [] }],
+      createdAt: 1,
+      pausedReason: null,
     },
   ]);
   await runtime.deleteQueuedSubmission("one");

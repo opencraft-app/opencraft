@@ -31,6 +31,7 @@ import {
   createWorkbenchThreadLocation,
   draftSubmissionOwnsNavigation,
   findHostConnectionInterventionError,
+  projectComposerModelChoices,
 } from "@opencraft/workbench-runtime";
 import { OPENCRAFT_THREAD_QUEUE_EXTENSION } from "@opencraft/appserver-protocol";
 import {
@@ -66,6 +67,8 @@ import {
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { RightPanel } from "./components/right-panel";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
+import { InternalDeveloperModeGate } from "./components/internal-developer-mode-gate";
+import { ManagementSettingsDialog, ModalSurface } from "./components/modal";
 import { PendingConversationPage } from "./components/pending-conversation-page";
 import { Sidebar } from "./components/sidebar";
 import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
@@ -138,29 +141,6 @@ function humanizeCatalogValue(value: string): string {
     .join(" ");
 }
 
-function reasoningEffortLabel(value: string): string {
-  switch (value.toLowerCase()) {
-    case "none":
-      return "None";
-    case "minimal":
-      return "Minimal";
-    case "low":
-      return "Light";
-    case "medium":
-      return "Medium";
-    case "high":
-      return "High";
-    case "xhigh":
-      return "Extra High";
-    case "max":
-      return "Max";
-    case "ultra":
-      return "Ultra";
-    default:
-      return humanizeCatalogValue(value);
-  }
-}
-
 function permissionProfileLabel(id: string): string {
   switch (id) {
     case ":read-only":
@@ -190,7 +170,44 @@ function hostKindDescription(kind: string): string {
   }
 }
 
+function ConversationHydration({
+  detail,
+  errorMessage,
+  onRetry,
+  state,
+}: {
+  readonly detail: string;
+  readonly errorMessage?: string | null;
+  readonly onRetry?: (() => void) | null;
+  readonly state: "loading" | "error";
+}) {
+  const failed = state === "error";
+  return (
+    <div className="conversation-hydration-stage">
+      <section
+        aria-busy={!failed}
+        aria-live="polite"
+        className="conversation-hydration"
+        data-state={state}
+        role={failed ? "alert" : "status"}
+      >
+        <span className="conversation-hydration__indicator" aria-hidden="true">
+          <span />
+        </span>
+        <div className="conversation-hydration__copy">
+          <strong>{failed ? "Could not restore this conversation" : "Restoring conversation"}</strong>
+          <p>{failed ? errorMessage ?? "The conversation could not be loaded." : detail}</p>
+        </div>
+        {failed && onRetry != null ? (
+          <button type="button" onClick={onRetry}>Try again</button>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 export function App() {
+  const [accountOpen, setAccountOpen] = useState(false);
   const appearanceTheme = useAppearanceTheme();
   const windowChrome = useWindowChrome();
   const chromePolicy = getWindowChromePolicy(windowChrome);
@@ -358,7 +375,6 @@ export function App() {
   const settingsOpen =
     workbenchNavigationSnapshot.applicationRoute.kind === "settings";
   const settingsPresentation = useSettingsPresentation(sidebarWidth);
-  const shellSidebarOpen = settingsOpen ? settingsPresentation.showIndex : sidebarOpen;
   const extensionViewOpen =
     workbenchNavigationSnapshot.applicationRoute.kind === "extension-view";
   const conversationRouteOpen =
@@ -367,6 +383,22 @@ export function App() {
     workbenchNavigationSnapshot.applicationRoute.kind === "settings"
       ? workbenchNavigationSnapshot.applicationRoute.slug
       : "connections";
+  const settingsContributionSnapshot = useSyncExternalStore(
+    hostCatalog.extensionContributions.subscribe,
+    hostCatalog.extensionContributions.getSnapshot,
+    hostCatalog.extensionContributions.getSnapshot,
+  );
+  const selectedSettingsContribution = settingsContributionSnapshot.settingsPages.find(
+    ({ contribution }) => contribution.id === settingsSection,
+  )?.contribution ?? null;
+  const managementSettingsOpen = settingsOpen
+    && selectedSettingsContribution?.management !== undefined;
+  const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
+  // A target-management route is a modal semantic surface. The underlying
+  // conversation keeps its physical shell and geometry, but is inert while
+  // the dialog owns interaction and focus.
+  const conversationSurfaceVisible = conversationRouteOpen || managementSettingsOpen;
+  const shellSidebarOpen = routeSettingsOpen ? settingsPresentation.showIndex : sidebarOpen;
   const openSettingsFromConversation = useCallback(() => {
     const focusedElement = document.activeElement;
     if (
@@ -385,16 +417,21 @@ export function App() {
     removeHost: hostCatalog.removeHost,
     openView: workbenchNavigation.openExtensionView,
     replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
-  }), [extensionPlatform, hostCatalog, snapshot.hostId, workbenchNavigation]);
+    prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
+  }), [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation]);
   const extensionProjection = useExtensionWorkbenchProjection({
     contributions: hostCatalog.extensionContributions,
     renderers: hostCatalog.platformViewRenderers,
+    accounts: hostCatalog.platformAccounts,
     botDirectory: hostCatalog.botDirectory,
     host: extensionViewHost,
     applicationRoute: workbenchNavigationSnapshot.applicationRoute,
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
+  useEffect(() => {
+    if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
+  }, [extensionProjection.account?.snapshot.phase]);
   const connectionIntervention = findHostConnectionInterventionError(
     conversationViewActivation.error,
   );
@@ -688,10 +725,11 @@ export function App() {
     (initialUrl?: string) => {
       browserWorkbench.open(conversationResourceOwnerId, {
         panelOwnerId,
+        hostId: snapshot.hostId,
         ...(initialUrl === undefined ? {} : { initialUrl }),
       });
     },
-    [browserWorkbench, conversationResourceOwnerId, panelOwnerId],
+    [browserWorkbench, conversationResourceOwnerId, panelOwnerId, snapshot.hostId],
   );
 
   useLayoutEffect(() => {
@@ -847,21 +885,7 @@ export function App() {
         available: agent.available,
         unavailableReason: agent.unavailableReason,
       })),
-      models: composerCatalog.models
-        .filter((model) => !model.hidden)
-        .map((model) => ({
-          id: model.id,
-          value: model.model,
-          label: model.displayName,
-          description: model.description || null,
-          isDefault: model.isDefault,
-          defaultEffort: model.defaultReasoningEffort || null,
-          efforts: model.supportedReasoningEfforts.map((effort) => ({
-            value: effort.reasoningEffort,
-            label: reasoningEffortLabel(effort.reasoningEffort),
-            description: effort.description || null,
-          })),
-        })),
+      models: projectComposerModelChoices(composerCatalog.models),
       permissionProfiles: composerCatalog.permissionProfiles.map((profile) => ({
         id: profile.id,
         value: profile.id,
@@ -930,14 +954,14 @@ export function App() {
     activeHost.workspaceBrowseRoots[0] ??
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
-  const closeSettings = () => {
+  const closeSettings = useCallback(() => {
     settingsPresentation.openContent();
     workbenchNavigation.closeSettings();
-  };
-  const selectSettingsSection = (section: string) => {
+  }, [settingsPresentation, workbenchNavigation]);
+  const selectSettingsSection = useCallback((section: string) => {
     workbenchNavigation.openSettings(section);
     settingsPresentation.openContent();
-  };
+  }, [settingsPresentation, workbenchNavigation]);
   const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
@@ -947,56 +971,68 @@ export function App() {
         profiles={hostCatalog.profiles}
         activeHostId={snapshot.hostId}
         onBack={closeSettings}
+        presentation={managementSettingsOpen ? "dialog" : "route"}
       />
     </Suspense>
   ) : null;
-  const settingsRoute = settingsOpen ? (
+  const settingsContent = settingsOpen ? (
+    <Suspense
+      fallback={
+        <div className="settings-page-loading" role="status">
+          Loading settings…
+        </div>
+      }
+    >
+      <SettingsContent
+        section={settingsSection}
+        onSectionChange={selectSettingsSection}
+        profiles={hostCatalog.profiles}
+        activeHostId={snapshot.hostId}
+        onAdd={hostCatalog.addWebSocketHost}
+        onRemove={hostCatalog.removeHost}
+        onProvisionHost={hostCatalog.provisionHost}
+        onOpenView={workbenchNavigation.openExtensionView}
+        onReplaceViewResource={workbenchNavigation.replaceExtensionViewResource}
+        extensionContributions={hostCatalog.extensionContributions}
+        extensionManager={hostCatalog.extensionManager}
+        platformViewRenderers={hostCatalog.platformViewRenderers}
+        themes={appearanceTheme.availableThemes}
+        themeId={appearanceTheme.themeId}
+        themePreference={appearanceTheme.preference}
+        onThemeChange={setAppearanceThemeId}
+        onThemePreferenceChange={setThemePreference}
+      />
+    </Suspense>
+  ) : null;
+  const settingsRoute = routeSettingsOpen ? (
     <section className="settings-page" aria-label="Settings" inert={settingsPresentation.indexOnly || undefined} aria-hidden={settingsPresentation.indexOnly || undefined}>
       {settingsPresentation.compact ? <nav className="settings-page__compact-navigation" aria-label="Settings navigation"><button className="settings-navigation-link" type="button" onClick={settingsPresentation.openIndex}><span aria-hidden="true">‹</span>Settings</button></nav> : null}
-      <Suspense
-        fallback={
-          <div className="settings-page-loading" role="status">
-            Loading settings…
-          </div>
-        }
-      >
-        <SettingsContent
-          section={settingsSection}
-          onSectionChange={selectSettingsSection}
-          profiles={hostCatalog.profiles}
-          activeHostId={snapshot.hostId}
-          onAdd={hostCatalog.addWebSocketHost}
-          onRemove={hostCatalog.removeHost}
-          onProvisionHost={hostCatalog.provisionHost}
-          onOpenView={workbenchNavigation.openExtensionView}
-          onReplaceViewResource={workbenchNavigation.replaceExtensionViewResource}
-          extensionContributions={hostCatalog.extensionContributions}
-          extensionManager={hostCatalog.extensionManager}
-          platformViewRenderers={hostCatalog.platformViewRenderers}
-          themes={appearanceTheme.availableThemes}
-          themeId={appearanceTheme.themeId}
-          themePreference={appearanceTheme.preference}
-          onThemeChange={setAppearanceThemeId}
-          onThemePreferenceChange={setThemePreference}
-        />
-      </Suspense>
+      {settingsContent}
     </section>
+  ) : null;
+  const managementSettingsDialog = managementSettingsOpen ? (
+    <ManagementSettingsDialog
+      navigation={settingsNavigation}
+      onClose={closeSettings}
+      title={`${hostCatalog.profiles.find((profile) => profile.hostId === snapshot.hostId)?.displayName ?? "Hermes"} settings`}
+    >
+      {settingsContent}
+    </ManagementSettingsDialog>
   ) : null;
   const presentedRightPanelOpen =
     panelState.right.open && !rightPanelResponsiveBlocked;
   const presentedRightPanelFullWidth =
     panelState.rightPanelFullWidth && !rightPanelResponsiveBlocked;
-  // Settings is an application-level route with its own navigation and back
-  // transaction. Workbench history controls do not exist in that route; an
-  // empty action rail also leaves the native titlebar as one continuous drag
-  // surface instead of mounting disabled conversation controls.
-  const headerNavigationActions = settingsOpen
+  // Device-wide Settings is an application-level route with its own shell.
+  // Target management remains a dialog over the conversation shell, so only
+  // the former replaces Workbench navigation controls.
+  const headerNavigationActions = routeSettingsOpen
     ? []
     : chromePolicy.leadingNavigationActions;
   const header = (
     <AppShellHeader
       title={
-        settingsOpen
+        routeSettingsOpen
           ? null
           : extensionViewOpen
             ? (extensionProjection.activeView?.title ?? null)
@@ -1005,16 +1041,16 @@ export function App() {
             : null
       }
       project={
-        settingsOpen || extensionViewOpen
+        routeSettingsOpen || extensionViewOpen
           ? null
           : draft === null
             ? (activeThread?.project ?? "OpenCraft")
             : null
       }
       sidebarOpen={shellSidebarOpen}
-      rightPanelOpen={conversationRouteOpen && presentedRightPanelOpen}
-      rightPanelFullWidth={conversationRouteOpen && presentedRightPanelFullWidth}
-      showRightPanelAction={conversationRouteOpen}
+      rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
+      rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
+      showRightPanelAction={conversationSurfaceVisible}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -1028,19 +1064,21 @@ export function App() {
 
   return (
     <>
+      <InternalDeveloperModeGate />
       <AppShell
-          layoutScope={`${workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
+          layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
+          mainContentLayout={conversationSurfaceVisible ? "thread-edge-scroll" : "default"}
           sidebarOpen={shellSidebarOpen}
-          sidebarTransientEnabled={!settingsOpen}
-          sidebarResizable={!settingsOpen}
-          sidebarCollapsible={!settingsOpen}
-          sidebarWidth={settingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
+          sidebarTransientEnabled={!routeSettingsOpen}
+          sidebarResizable={!routeSettingsOpen}
+          sidebarCollapsible={!routeSettingsOpen}
+          sidebarWidth={routeSettingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
           windowChrome={windowChrome}
-          onSidebarCollapse={settingsOpen ? () => undefined : collapseSidebar}
+          onSidebarCollapse={routeSettingsOpen ? () => undefined : collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
-          rightPanelOpen={conversationRouteOpen && presentedRightPanelOpen}
-          rightPanelFullWidth={conversationRouteOpen && presentedRightPanelFullWidth}
+          rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
+          rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
               type: "set-region-open",
@@ -1064,7 +1102,7 @@ export function App() {
             />
           )}
           leftPanel={
-            settingsOpen ? settingsNavigation : <Sidebar
+            routeSettingsOpen ? settingsNavigation : <Sidebar
               threads={multiHostCatalog.threads}
               renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
               onNewTaskForTarget={(hostId) => hostCatalog.openDraft({
@@ -1123,6 +1161,12 @@ export function App() {
               // The route adapter consumes both the DOM event and the old
               // route's focus before issuing a semantic navigation command.
               onOpenSettings={openSettingsFromConversation}
+              account={extensionProjection.account === null || extensionProjection.account.snapshot.phase === "anonymous" ? null : {
+                snapshot: extensionProjection.account.snapshot,
+                onOpen: () => setAccountOpen(true),
+                onRefresh: extensionProjection.account.provider.refresh,
+                onSignOut: extensionProjection.account.provider.signOut,
+              }}
             />
           }
           rightPanel={
@@ -1156,7 +1200,7 @@ export function App() {
           <div
             aria-hidden={!conversationRouteOpen || undefined}
             className="workbench-conversation-route"
-            hidden={!conversationRouteOpen}
+            hidden={!conversationSurfaceVisible}
             inert={!conversationRouteOpen || undefined}
           >
         {draft !== null && draft.submission === null ? (
@@ -1201,104 +1245,76 @@ export function App() {
                 <div className="hostless-workbench__empty-stage">
                   {connectionInterventionNode}
                 </div>
-              ) : <section className="conversation-hydration" role="status">
-                <span
-                  className="conversation-hydration__pulse"
-                  aria-hidden="true"
+              ) : (
+                <ConversationHydration
+                  detail={`Connecting to ${activeHost.label}…`}
+                  errorMessage={conversationViewActivation.error?.message}
+                  onRetry={conversationViewActivation.phase === "error" && hostCatalog.currentLocation.kind === "thread"
+                    ? () => {
+                        void hostCatalog.navigate(
+                          hostCatalog.currentLocation,
+                          "replace",
+                        );
+                      }
+                    : null}
+                  state={conversationViewActivation.phase === "error" ? "error" : "loading"}
                 />
-                <div>
-                  <strong>
-                    {conversationViewActivation.phase === "error"
-                      ? "Could not restore this conversation"
-                      : "Restoring conversation"}
-                  </strong>
-                  <p>
-                    {conversationViewActivation.error?.message ??
-                      `Connecting to ${activeHost.label}…`}
-                  </p>
-                </div>
-                {conversationViewActivation.phase === "error" &&
-                hostCatalog.currentLocation.kind === "thread" ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void hostCatalog.navigate(
-                        hostCatalog.currentLocation,
-                        "replace",
-                      );
-                    }}
-                  >
-                    Try again
-                  </button>
-                ) : null}
-              </section>
+              )
             ) : (
-              <Conversation
-                scrollPolicy="response-placement"
-                key={activeConversationRestoreKey ?? "empty"}
-                documentContext={{
-                  conversationId: activeThreadId,
-                  cwd: activeProtocolThread?.cwd ?? null,
-                  hostId: snapshot.hostId,
-                  loadMediaSource,
-                  onOpenResource: openChatResource,
-                  theme: appearanceTheme.resolvedTheme,
-                }}
-                timeline={timeline}
-                consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
-                navigationSource={navigationSource}
-                initialRestoreSnapshot={
-                  activeThreadId === null
-                    ? null
-                    : routeRestoreCheckpoints.get(activeConversationRestoreKey!)
-                }
-                onRestoreSnapshotChange={(restoreSnapshot) => {
-                  if (activeConversationRestoreKey !== null)
-                    routeRestoreCheckpoints.set(
-                      activeConversationRestoreKey,
-                      restoreSnapshot,
+              <>
+                <Conversation
+                  scrollPolicy="response-placement"
+                  key={activeConversationRestoreKey ?? "empty"}
+                  documentContext={{
+                    conversationId: activeThreadId,
+                    cwd: activeProtocolThread?.cwd ?? null,
+                    hostId: snapshot.hostId,
+                    loadMediaSource,
+                    onOpenResource: openChatResource,
+                    theme: appearanceTheme.resolvedTheme,
+                  }}
+                  timeline={timeline}
+                  consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
+                  navigationSource={navigationSource}
+                  initialRestoreSnapshot={
+                    activeThreadId === null
+                      ? null
+                      : routeRestoreCheckpoints.get(activeConversationRestoreKey!)
+                  }
+                  onRestoreSnapshotChange={(restoreSnapshot) => {
+                    if (activeConversationRestoreKey !== null)
+                      routeRestoreCheckpoints.set(
+                        activeConversationRestoreKey,
+                        restoreSnapshot,
+                      );
+                  }}
+                  onLoadOlder={
+                    snapshot.conversation?.history.hasOlder
+                      ? loadOlderConversation
+                      : undefined
+                  }
+                  onOpenSubagent={(threadId) => {
+                    void hostCatalog.navigate(
+                      createWorkbenchThreadLocation(snapshot.hostId, threadId),
                     );
-                }}
-                onLoadOlder={
-                  snapshot.conversation?.history.hasOlder
-                    ? loadOlderConversation
-                    : undefined
-                }
-                onOpenSubagent={(threadId) => {
-                  void hostCatalog.navigate(
-                    createWorkbenchThreadLocation(snapshot.hostId, threadId),
-                  );
-                }}
-                continuableTurnId={snapshot.conversation?.continuation.turnId}
-                onContinueTurn={(turnId) => {
-                  const placement = captureLatestTurnPlacement();
-                  void activeThreadLease?.continueTurn(turnId).catch(() => {
-                    clearLatestTurnPlacement(placement);
-                  });
-                }}
-                onRespondInteraction={respondToInteraction}
-                onConversationScrollApiChange={(api) => {
-                  conversationScrollApiRef.current = api;
-                }}
-                surfaceCapabilities={timelineSurfaceCapabilities}
-                footer={
-                  <div
-                    className="thread-composer-region"
-                    data-thread-find-composer="true"
-                  >
-                    {!snapshot.conversation?.authoritative ? (
-                      <section className="conversation-hydration" role={snapshot.conversation?.error ? "alert" : "status"}>
-                        <div>
-                          <strong>{snapshot.conversation?.error ? "Could not restore this conversation" : "Restoring conversation"}</strong>
-                          <p>{snapshot.conversation?.error?.message ?? "Loading conversation history…"}</p>
-                        </div>
-                        {snapshot.conversation?.error ? (
-                          <button type="button" onClick={() => { void activeThreadLease?.retryRestore().catch(() => undefined); }}>
-                            Try again
-                          </button>
-                        ) : null}
-                      </section>
-                    ) : null}
+                  }}
+                  continuableTurnId={snapshot.conversation?.continuation.turnId}
+                  onContinueTurn={(turnId) => {
+                    const placement = captureLatestTurnPlacement();
+                    void activeThreadLease?.continueTurn(turnId).catch(() => {
+                      clearLatestTurnPlacement(placement);
+                    });
+                  }}
+                  onRespondInteraction={respondToInteraction}
+                  onConversationScrollApiChange={(api) => {
+                    conversationScrollApiRef.current = api;
+                  }}
+                  surfaceCapabilities={timelineSurfaceCapabilities}
+                  footer={
+                    <div
+                      className="thread-composer-region"
+                      data-thread-find-composer="true"
+                    >
                     {snapshot.conversation?.continuation.error ? (
                       <p role="alert">{snapshot.conversation.continuation.error.message}</p>
                     ) : null}
@@ -1307,9 +1323,6 @@ export function App() {
                         controller={composerController}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
-                        queuePausedReason={
-                          snapshot.conversation?.queue.pausedReason ?? null
-                        }
                         queuedSubmissions={(
                           snapshot.conversation?.queuedSubmissions ?? []
                         ).map((submission) => ({
@@ -1322,6 +1335,7 @@ export function App() {
                           actionable: submission.serverSubmissionId !== null,
                           reorderable: queueReorderable,
                           editableContent: restoreQueuedInput(submission.input),
+                          pausedReason: submission.pausedReason,
                           error: submission.error?.message ?? null,
                         }))}
                         onUpdateQueuedSubmission={updateQueuedSubmission}
@@ -1333,6 +1347,7 @@ export function App() {
                         endActions={composerEndActions}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
+                        mentionSuggestionsEnabled={false}
                         effectiveSelections={{
                           model: snapshot.conversation?.execution.model,
                           effort: snapshot.conversation?.execution.effort,
@@ -1348,9 +1363,20 @@ export function App() {
                         onRespondInteraction={respondToInteraction}
                       />
                     )}
-                  </div>
-                }
-              />
+                    </div>
+                  }
+                />
+                {!snapshot.conversation?.authoritative ? (
+                  <ConversationHydration
+                    detail="Loading conversation history…"
+                    errorMessage={snapshot.conversation?.error?.message}
+                    onRetry={() => {
+                      void activeThreadLease.retryRestore().catch(() => undefined);
+                    }}
+                    state={snapshot.conversation?.error ? "error" : "loading"}
+                  />
+                ) : null}
+              </>
             )}
           </div>
         )}
@@ -1363,6 +1389,12 @@ export function App() {
           ) : null}
         </div>
         </AppShell>
+        {managementSettingsDialog}
+        {accountOpen && extensionProjection.account !== null ? (
+          <ModalSurface className="account-center-dialog" label="Account Settings" onDismiss={() => setAccountOpen(false)}>
+            {extensionProjection.account.content}
+          </ModalSurface>
+        ) : null}
         <WorkspaceDirectoryPicker
           open={
             !settingsOpen &&

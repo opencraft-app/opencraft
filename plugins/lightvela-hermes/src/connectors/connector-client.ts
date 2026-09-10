@@ -3,6 +3,8 @@ import type { BotTerminalSession } from "../domain/types";
 import { HermesTatTerminalService } from "../hermes-appserver-bridge/tat-terminal";
 import { createTatPortFetch, type TatHttpVirtualFetch } from "../lib/tat-http-virtual-client";
 import { installerScript } from "./installer-script";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
+import { decodeUtf8 } from "../lib/utf8";
 
 export interface ConnectorCard {
   id: string; name: string; description: string; type: string; authMode: string;
@@ -71,23 +73,23 @@ export class HermesConnectorClient {
     this.terminal = new HermesTatTerminalService({ createSession: () => this.createSession() });
   }
   private createSession() {
-    this.abort.signal.throwIfAborted();
+    throwIfSignalAborted(this.abort.signal);
     return this.account.request<BotTerminalSession>(`/v1/instances/${encodeURIComponent(this.botId)}/tat/session`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: this.abort.signal,
     });
   }
   private async exec(command: string[]): Promise<string> {
-    this.abort.signal.throwIfAborted();
+    throwIfSignalAborted(this.abort.signal);
     const processId = `overmind-${++this.sequence}`;
     let output = "";
     const unsubscribe = this.terminal.subscribeNotification(({ params }) => {
       if (params.processId !== processId) return;
-      output = (output + new TextDecoder().decode(Uint8Array.from(atob(params.deltaBase64), (c) => c.charCodeAt(0)))).slice(-131072);
+      output = (output + decodeUtf8(Uint8Array.from(atob(params.deltaBase64), (c) => c.charCodeAt(0)))).slice(-131072);
     });
     const timer = setTimeout(() => { void this.terminal.terminate({ processId }).catch(() => undefined); }, 180000);
     try {
       const result = await this.terminal.exec({ command, processId });
-      this.abort.signal.throwIfAborted();
+      throwIfSignalAborted(this.abort.signal);
       if (result.exitCode !== 0) throw new Error(`远端命令失败（${result.exitCode}）。请检查 VM 的 ~/.overmind/daemon.log；未将日志或凭据回传到界面。`);
       return output;
     } finally { clearTimeout(timer); unsubscribe(); }
@@ -107,7 +109,7 @@ export class HermesConnectorClient {
       throw new Error("Sidecar 本地连接信息无效");
     }
     const bootstrap = await this.createSession();
-    this.abort.signal.throwIfAborted();
+    throwIfSignalAborted(this.abort.signal);
     this.fetch?.close();
     // This client performs mutations: never replay a request after an ambiguous keep-alive failure.
     this.fetch = createTatPortFetch(bootstrap, url.port, { keepAlive: false });
@@ -115,7 +117,7 @@ export class HermesConnectorClient {
     await this.request("/v1/state");
   }
   async request<T>(path: string, body?: unknown, method?: string): Promise<T> {
-    this.abort.signal.throwIfAborted();
+    throwIfSignalAborted(this.abort.signal);
     if (!this.fetch) throw new Error("尚未连接 Sidecar");
     const response = await this.fetch(path, { method: method ?? (body === undefined ? "GET" : "POST"),
       headers: { Authorization: `Bearer ${this.secret}` }, signal: this.abort.signal,

@@ -66,5 +66,17 @@ target 'OpenCraft' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # Expo 57's source pods currently opt into Swift 6 even though their event
+    # emitter still captures a non-Sendable JSI handle. Xcode 26 promotes that
+    # diagnostic to an error. Keep third-party Swift pods on the supported 5.9
+    # language mode until Expo ships the ownership annotation upstream.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        if build_config.build_settings['SWIFT_VERSION'] == '6.0'
+          build_config.build_settings['SWIFT_VERSION'] = '5.9'
+        end
+      end
+    end
   end
 end
