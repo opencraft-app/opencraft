@@ -103,6 +103,12 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     require_realname: true
+  - name: ctl-orders
+    prefix: /v1/orders
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
   - name: subscriptions
     prefix: /subscriptions
     methods: [GET, POST, OPTIONS]
