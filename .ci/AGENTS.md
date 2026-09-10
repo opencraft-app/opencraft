@@ -11,7 +11,7 @@ Devcloud/BlueKing CI 定义与发布运行时脚本。
 ## 命令
 
 ```bash
-python3 .ci/runtime/check_ci_runtime.py
+bash .ci/runtime/check_ci_runtime.sh
 python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 ```
 

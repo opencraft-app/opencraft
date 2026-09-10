@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
+import { useAppLocation, useAppNavigate } from "@/lib/app-navigation";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
@@ -55,8 +55,8 @@ const PROVIDER_VISUALS: Record<OAuthProvider, ProviderVisual> = {
 };
 
 export const SignInPage = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
+  const location = useAppLocation();
+  const navigate = useAppNavigate();
   const repositories = useRepositories();
   const { signInAsGuest } = useSession();
   const t = useT();

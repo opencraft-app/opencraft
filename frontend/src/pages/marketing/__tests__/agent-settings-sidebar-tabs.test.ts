@@ -29,9 +29,35 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
     expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
-    expect(page).toContain("{showCreateBotEntry && canCreateBot && (");
-    expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
+    expect(page).toContain("{showCreateBotEntry && canCreateAdditionalBot && (");
+    expect(page).toContain("if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
+    expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
+    expect(page).not.toContain("const canCreateBot = multiBotEnabled");
+  });
+
+  it("opens a name-only dialog before creating the first Bot as blank", () => {
+    const page = readPageSource();
+    const initialCreation = page.slice(
+      page.indexOf("const handleCreateNew"),
+      page.indexOf("const handleConfirmCreate"),
+    );
+    const noActiveBotBranch = initialCreation.slice(
+      initialCreation.indexOf("if (!activeBot)"),
+      initialCreation.indexOf('setCreateBotMode("clone-current")'),
+    );
+
+    expect(noActiveBotBranch).toContain('setCreateBotMode("blank")');
+    expect(noActiveBotBranch).toContain("setShowCreateConfirm(true)");
+    expect(noActiveBotBranch).not.toContain("createInitialBot");
+
+    expect(page).toContain("const isFirstBotCreation = !activeBot");
+    expect(page).toContain("const requestedCreateMode = isFirstBotCreation ? \"blank\" : createBotMode");
+    expect(page).toContain("const requestedInitialSoul = isFirstBotCreation ? undefined : createBotSoul.trim() || undefined");
+    expect(page).toContain("{!isFirstBotCreation && (");
+    expect(page).toContain('createMode: requestedCreateMode === "blank" ? "blank" : "clone"');
+    expect(page).toContain('sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id');
+    expect(page).toContain("initialSoul: requestedInitialSoul");
   });
 
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
@@ -215,7 +241,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
 
-    expect(page).toContain("if (activeBot || isSubscribed)");
+    expect(page).toContain("if (!activeBot)");
+    expect(page).toContain("setShowCreateConfirm(true)");
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');

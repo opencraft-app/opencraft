@@ -81,7 +81,8 @@ VALUES
         1060103,
         JSON_ARRAY(
             JSON_OBJECT('scene', 'purchase', 'category', 2025273),
-            JSON_OBJECT('scene', 'renew', 'category', 2025274)
+            JSON_OBJECT('scene', 'renew', 'category', 2025274),
+            JSON_OBJECT('scene', 'modify', 'category', 2025275)
         ),
         JSON_OBJECT(
             'sv_lighthouse_lv_ai_slot_launch_mc_01', 1,
@@ -101,7 +102,8 @@ VALUES
         1060103,
         JSON_ARRAY(
             JSON_OBJECT('scene', 'purchase', 'category', 2025273),
-            JSON_OBJECT('scene', 'renew', 'category', 2025274)
+            JSON_OBJECT('scene', 'renew', 'category', 2025274),
+            JSON_OBJECT('scene', 'modify', 'category', 2025275)
         ),
         JSON_OBJECT(
             'sv_lighthouse_lv_ai_slot_cruise_mc_01', 1,
@@ -121,7 +123,8 @@ VALUES
         1060103,
         JSON_ARRAY(
             JSON_OBJECT('scene', 'purchase', 'category', 2025273),
-            JSON_OBJECT('scene', 'renew', 'category', 2025274)
+            JSON_OBJECT('scene', 'renew', 'category', 2025274),
+            JSON_OBJECT('scene', 'modify', 'category', 2025275)
         ),
         JSON_OBJECT(
             'sv_lighthouse_lv_ai_slot_voyage_mc_01', 3,

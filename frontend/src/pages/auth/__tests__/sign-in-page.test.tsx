@@ -35,6 +35,7 @@ vi.mock("@/contexts/repository-context", () => ({
 
 describe("SignInPage (国内站 默认 isGlobal=false)", () => {
   beforeEach(async () => {
+    window.history.replaceState({}, "", "/auth/sign-in");
     await i18n.changeLanguage("zh-CN");
     setGitHubLoginVisible(false);
     setPhoneLoginVisible(false);
@@ -48,7 +49,11 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
       configurable: true,
     });
     repositories.auth.getOAuthStartUrl.mockReset();
-    repositories.auth.getOAuthStartUrl.mockImplementation((provider: OAuthProvider, options?: { wechatMode?: WeChatOAuthMode }) => {
+    repositories.auth.getOAuthStartUrl.mockImplementation((provider: OAuthProvider, options?: {
+      returnTo?: string;
+      switchAccount?: boolean;
+      wechatMode?: WeChatOAuthMode;
+    }) => {
       if (provider === "wechat" && options?.wechatMode) {
         return `${oauthStartUrls.wechat}?mode=${options.wechatMode}`;
       }

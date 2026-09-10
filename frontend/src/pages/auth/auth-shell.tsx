@@ -1,7 +1,7 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { GrammarPanel } from "@/components/site/homepage-grammar";
+import { AppLink } from "@/lib/app-navigation";
 import { cn } from "@/lib/utils";
 
 interface AuthShellProps extends PropsWithChildren {
@@ -80,10 +80,10 @@ export const AuthShell = ({ title, subtitle, aside, children, showShowcase = fal
         </div>
         <div className="space-y-5 px-1 pt-6">
           {children}
-          <Link to="/" className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--lw-accent)" }}>
+          <AppLink to="/" className="inline-flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--lw-accent)" }}>
             返回 LightVela 首页
             <ArrowRight className="size-4" />
-          </Link>
+          </AppLink>
         </div>
       </div>
       </div>

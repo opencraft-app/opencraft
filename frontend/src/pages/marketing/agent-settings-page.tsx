@@ -125,7 +125,11 @@ import {
   shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "@/pages/marketing/agent-workspace-recovery";
-import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/agent-create-availability";
+import {
+  findCompletedCreatingBot,
+  getOpenClawCreateLimitMessage,
+  resolveOpenClawCreatePermissions,
+} from "@/pages/marketing/agent-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -2571,7 +2575,10 @@ export const AgentSettingsPage = ({
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
   const showCreateBotEntry = showHiddenAgentTools;
-  const canCreateBot = multiBotEnabled && createLimitMessage === null;
+  const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
+    multiBotEnabled,
+    createLimitMessage,
+  );
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
@@ -2776,6 +2783,7 @@ export const AgentSettingsPage = ({
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
+  const isFirstBotCreation = !activeBot;
   const remainingInstanceBotCount = activeBot
     ? bots.filter((bot) => (
       bot.id !== activeBot.id
@@ -3879,64 +3887,32 @@ export const AgentSettingsPage = ({
     navigate,
   ]);
 
-  const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
-    trackDatongClick("agent_create_start_btn", {
-      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
-      params: { bots_count: bots.length },
-    });
-    if (createLimitMessage) {
-      setDirectCreateError(createLimitMessage);
-      return;
-    }
-    if (activeBot || isSubscribed) {
-      // 已有实例时创建实例内 Bot；没有实例的已订阅用户也可直接创建。
-      setDirectCreateError(null);
-      setCreateBotName(t("新 Bot"));
-      setCreateBotSoul("");
-      setCreateBotMode(activeBot ? "clone-current" : "blank");
-      setIsCreateAdvancedOpen(false);
-      setShowCreateConfirm(true);
-    } else {
-      // 没有实例且未订阅：先进入套餐订阅页。
-      navigate("/subscribe");
-    }
-  };
-
-  const handleConfirmCreate = async () => {
-    trackDatongClick("agent_create_confirm_btn", {
-      pgid: DATONG_PAGE_IDS.AGENT_CREATING,
-      params: {},
-    });
+  const createBotAndNavigate = async ({
+    name,
+    createMode,
+    sourceBotId,
+    initialSoul,
+  }: {
+    name: string;
+    createMode: "blank" | "clone";
+    sourceBotId?: string;
+    initialSoul?: string;
+  }) => {
     setDirectCreating(true);
     setDirectCreateError(null);
     const createStart = Date.now();
     try {
-      const normalizedName = createBotName.trim();
-      if (!normalizedName) {
-        setDirectCreateError(t("请输入 Bot 名称"));
-        return;
-      }
-      if (Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH) {
-        setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
-        return;
-      }
-      const sourceBot = createBotMode === "clone-current" ? activeBot : defaultBot;
-      if (createBotMode !== "blank" && !sourceBot) {
-        setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
-        return;
-      }
       const newBot = await addBot({
-        name: normalizedName,
+        name,
         description: undefined,
         personality: t("默认设定"),
         personalityEmoji: "✨",
         intro: "",
         soulTemplateId: undefined,
         status: "running",
-        createMode: createBotMode === "blank" ? "blank" : "clone",
-        sourceBotId: createBotMode === "blank" ? undefined : sourceBot?.id,
-        initialSoul: createBotSoul.trim() || undefined,
+        createMode,
+        sourceBotId,
+        initialSoul,
       });
       trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
         pgid: DATONG_PAGE_IDS.AGENT_CREATING,
@@ -3946,7 +3922,6 @@ export const AgentSettingsPage = ({
         },
       });
       setShowCreateConfirm(false);
-      // 进入页面内 loading 状态，带上新 bot id 供轮询定位
       setIsCreating(true);
       navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
     } catch (err) {
@@ -3954,6 +3929,67 @@ export const AgentSettingsPage = ({
     } finally {
       setDirectCreating(false);
     }
+  };
+
+  const handleCreateNew = () => {
+    if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;
+    trackDatongClick("agent_create_start_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bots_count: bots.length },
+    });
+    if (createLimitMessage) {
+      setDirectCreateError(createLimitMessage);
+      return;
+    }
+    if (!activeBot) {
+      if (isSubscribed) {
+        setDirectCreateError(null);
+        setCreateBotName(t("新 Bot"));
+        setCreateBotSoul("");
+        setCreateBotMode("blank");
+        setIsCreateAdvancedOpen(false);
+        setShowCreateConfirm(true);
+        return;
+      }
+      navigate("/subscribe");
+      return;
+    }
+
+    setDirectCreateError(null);
+    setCreateBotName(t("新 Bot"));
+    setCreateBotSoul("");
+    setCreateBotMode("clone-current");
+    setIsCreateAdvancedOpen(false);
+    setShowCreateConfirm(true);
+  };
+
+  const handleConfirmCreate = async () => {
+    trackDatongClick("agent_create_confirm_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CREATING,
+      params: {},
+    });
+    const normalizedName = createBotName.trim();
+    if (!normalizedName) {
+      setDirectCreateError(t("请输入 Bot 名称"));
+      return;
+    }
+    if (Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH) {
+      setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
+      return;
+    }
+    const requestedCreateMode = isFirstBotCreation ? "blank" : createBotMode;
+    const requestedInitialSoul = isFirstBotCreation ? undefined : createBotSoul.trim() || undefined;
+    const sourceBot = requestedCreateMode === "clone-current" ? activeBot : defaultBot;
+    if (requestedCreateMode !== "blank" && !sourceBot) {
+      setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
+      return;
+    }
+    await createBotAndNavigate({
+      name: normalizedName,
+      createMode: requestedCreateMode === "blank" ? "blank" : "clone",
+      sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id,
+      initialSoul: requestedInitialSoul,
+    });
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
@@ -4711,81 +4747,85 @@ export const AgentSettingsPage = ({
                   className="h-10 w-full rounded-md border border-black/10 px-3 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
                 />
               </label>
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium text-black/70">{t("创建方式")}</legend>
-                <div
-                  className={cn(
-                    "grid overflow-hidden rounded-md border border-black/10",
-                    isActiveBotDefault ? "grid-cols-2" : "grid-cols-3",
-                  )}
-                  role="radiogroup"
-                >
-                  {([
-                    ["clone-current", isActiveBotDefault ? t("复制当前（主 Bot）") : t("复制当前")],
-                    ...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : []),
-                    ["blank", t("空白创建")],
-                  ] as const).map(([mode, label]) => {
-                    const selected = createBotMode === mode;
-                    const unavailable = mode !== "blank" && (mode === "clone-current" ? !activeBot : !defaultBot);
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        disabled={directCreating || unavailable}
-                        onClick={() => setCreateBotMode(mode)}
-                        className={cn(
-                          "min-h-10 border-r border-black/10 px-2 text-xs font-medium last:border-r-0",
-                          selected ? "bg-black text-white" : "bg-white text-black/55 hover:bg-black/[0.03]",
-                          unavailable && "cursor-not-allowed opacity-40",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
-              <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
-                {createBotMode === "blank"
-                  ? t("使用 LightVela 默认配置创建一个独立 Bot。")
-                  : t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")}
-              </p>
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateAdvancedOpen((open) => !open)}
-                  disabled={directCreating}
-                  className="flex w-full items-center gap-1.5 text-sm font-medium text-black/60 transition-colors hover:text-black/85 disabled:opacity-50"
-                  aria-expanded={isCreateAdvancedOpen}
-                  aria-controls="create-bot-advanced-settings"
-                >
-                  <span>{t("高级设置")}</span>
-                  <ChevronDown
-                    className={cn("size-4 transition-transform", isCreateAdvancedOpen && "rotate-180")}
-                    aria-hidden="true"
-                  />
-                </button>
-                {isCreateAdvancedOpen && (
-                  <div id="create-bot-advanced-settings" className="mt-3 rounded-md bg-black/[0.025] p-3">
-                    <label className="block space-y-1.5 text-sm font-medium text-black/70">
-                      <span>{t("初始人设（可选）")}</span>
-                      <textarea
-                        value={createBotSoul}
-                        onChange={(event) => setCreateBotSoul(event.target.value)}
-                        maxLength={12000}
-                        rows={4}
-                        disabled={directCreating}
-                        className="w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
-                        placeholder={createBotMode === "blank"
-                          ? t("留空时会生成基础人设")
-                          : t("留空时保留来源 Bot 的人设")}
+              {!isFirstBotCreation && (
+                <>
+                  <fieldset className="space-y-2">
+                    <legend className="text-sm font-medium text-black/70">{t("创建方式")}</legend>
+                    <div
+                      className={cn(
+                        "grid overflow-hidden rounded-md border border-black/10",
+                        isActiveBotDefault ? "grid-cols-2" : "grid-cols-3",
+                      )}
+                      role="radiogroup"
+                    >
+                      {([
+                        ["clone-current", isActiveBotDefault ? t("复制当前（主 Bot）") : t("复制当前")],
+                        ...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : []),
+                        ["blank", t("空白创建")],
+                      ] as const).map(([mode, label]) => {
+                        const selected = createBotMode === mode;
+                        const unavailable = mode !== "blank" && (mode === "clone-current" ? !activeBot : !defaultBot);
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            disabled={directCreating || unavailable}
+                            onClick={() => setCreateBotMode(mode)}
+                            className={cn(
+                              "min-h-10 border-r border-black/10 px-2 text-xs font-medium last:border-r-0",
+                              selected ? "bg-black text-white" : "bg-white text-black/55 hover:bg-black/[0.03]",
+                              unavailable && "cursor-not-allowed opacity-40",
+                            )}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                  <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                    {createBotMode === "blank"
+                      ? t("使用 LightVela 默认配置创建一个独立 Bot。")
+                      : t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")}
+                  </p>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateAdvancedOpen((open) => !open)}
+                      disabled={directCreating}
+                      className="flex w-full items-center gap-1.5 text-sm font-medium text-black/60 transition-colors hover:text-black/85 disabled:opacity-50"
+                      aria-expanded={isCreateAdvancedOpen}
+                      aria-controls="create-bot-advanced-settings"
+                    >
+                      <span>{t("高级设置")}</span>
+                      <ChevronDown
+                        className={cn("size-4 transition-transform", isCreateAdvancedOpen && "rotate-180")}
+                        aria-hidden="true"
                       />
-                    </label>
+                    </button>
+                    {isCreateAdvancedOpen && (
+                      <div id="create-bot-advanced-settings" className="mt-3 rounded-md bg-black/[0.025] p-3">
+                        <label className="block space-y-1.5 text-sm font-medium text-black/70">
+                          <span>{t("初始人设（可选）")}</span>
+                          <textarea
+                            value={createBotSoul}
+                            onChange={(event) => setCreateBotSoul(event.target.value)}
+                            maxLength={12000}
+                            rows={4}
+                            disabled={directCreating}
+                            className="w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
+                            placeholder={createBotMode === "blank"
+                              ? t("留空时会生成基础人设")
+                              : t("留空时保留来源 Bot 的人设")}
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
             </div>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
             <div className="mt-5 flex justify-end gap-2">
@@ -5146,7 +5186,7 @@ export const AgentSettingsPage = ({
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                       )}
 
-                      {showCreateBotEntry && canCreateBot && (
+                      {showCreateBotEntry && canCreateAdditionalBot && (
                         <button
                           type="button"
                           onClick={handleCreateNew}
@@ -5595,18 +5635,24 @@ export const AgentSettingsPage = ({
                     {createLimitMessage}
                   </p>
                 )}
+                {directCreateError && (
+                  <p className="mt-3 max-w-sm text-xs leading-relaxed text-red-500">
+                    {directCreateError}
+                  </p>
+                )}
                 <button
                   onClick={handleCreateNew}
-                  disabled={!canCreateBot}
+                  disabled={!canCreateInitialAgent || directCreating}
                   className={cn(
                     "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 font-semibold text-white transition-all",
-                    canCreateBot
+                    canCreateInitialAgent && !directCreating
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
-                  {canCreateBot ? t("新建 Bot") : t("暂不可创建")}
+                  {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
                 </button>
               </div>
             )

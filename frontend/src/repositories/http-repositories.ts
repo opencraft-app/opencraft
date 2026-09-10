@@ -857,6 +857,9 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const bots = isGlobal
       ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
       : (await Promise.all(instances.map(async (instance) => {
+        if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
+          return [projectInstanceToBot(instance, drafts[instance.instance_id])];
+        }
         try {
           const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
             baseUrl,
@@ -975,6 +978,17 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
 
       if (!isGlobal) {
+        if (mapInstanceStatusToBotStatus(created.status) !== "active") {
+          const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
+          botScopeCache.set(bot.id, {
+            instanceId: created.instance_id,
+            profileId: "main",
+            isDefault: true,
+            legacy: true,
+          });
+          instanceCache.set(created.instance_id, created);
+          return bot;
+        }
         try {
           const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
             baseUrl,
@@ -1952,7 +1966,7 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       startURL.searchParams.set("relay_mode", "issuer");
       startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
     }
-    const returnTo = currentOAuthReturnTo();
+    const returnTo = options?.returnTo ?? currentOAuthReturnTo();
     if (returnTo) {
       startURL.searchParams.set("return_to", returnTo);
     }

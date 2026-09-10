@@ -78,6 +78,10 @@ master 源码
   北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
+- 积分包控制台 checkout 新增用户路由时，先发布支持订单归属和资源类型校验的 Trade 与 Credit，
+  再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
+  `POST /v1/credit/packages/order-url`。首轮只更新 `sandbox-bj-7` 与 `beijing-sandbox`；不得因共享
+  源码或策略测试把该路由自动扩散到上海、新加坡等尚未完成 Credit 接线的环境。
 
 ## CloudLadder Gateway 回调环境
 
@@ -125,16 +129,19 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 网关匹配，并已在 optional 阶段观察到签名请求成功。广州生产不追加 `jifei-test` 例外，
 sandbox-bj-7 继续使用独立 testing 入口。
 
-## Native OIDC 配置与镜像门禁
+## OpenCraft 第一方 OIDC 配置与镜像门禁
 
-原生客户端复用现有 OIDC 登录渠道，不是新增身份渠道。国际站仅登记
-`opencraft-native-v1` 与精确回调 `opencraft://auth/lightvela`，保留既有
-`site-gateway` 的两个精确 HTTPS 回调；网关仅公开 `POST /auth/native/token`。
+原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记
+`opencraft-native-v1`、`opencraft-web-v1` 及各自精确回调，同时保留各环境既有
+`site-gateway` 精确 HTTPS 回调；对应 Service Gateway 只公开精确的
+`POST /auth/session/exchange`（旧 native 路径仅作兼容）。客户端注册与兑换路由是同一能力的两个发布输入，必须在每个
+地域成对审查、成对做配置契约测试，并分别证明 `GET`、后缀路径及旧的 native start/session
+路径仍受保护；一个地域已发布不能替代另一个地域的验收。
 
 sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，提前加入 native client
 会使整个 OIDC 配置失效。因此必须先完成支持 MR !3762 的 Auth 镜像晋级和环境门禁，
 再批准包含新 registry 的部署候选；配置与镜像一起审核，不能把“源码已合入”当作部署前置完成。
-配置先回填 `master`，再通过正常晋级或经审核的 `gitops` MR 下发，禁止仅改 live。
+配置先回填 `master`，再通过正常晋级生成的 `gitops` MR 下发，禁止直接修改 `gitops` 或仅改 live。
 回滚至旧镜像前须移除 native client。发布验收同时覆盖 App 回跳/兑换和存量 Sites 登录。
 
 ## Secret 交付

@@ -5,7 +5,8 @@
 ## 服务边界
 
 - `credit` 持有积分商品、live 积分包、历史积分包和每日用量真源。
-- 用户通过 `credit` 发起询价、下单、下单并支付、退款和查询，不提供续费能力。
+- 用户通过 `credit` 发起询价、下单、获取支付链接、退款和查询，不提供续费能力。
+- 控制台购买固定使用“下单 -> 获取支付链接”两段式链路；`order-and-pay` 仅供内部联调和自动化测试，不能作为真实用户购买入口。
 - `trade` 持有订单、jifei 回调和 qbilling 协议适配；`credit` 不拼计费协议。
 - 积分额度由 `llm_gateway_plan_id` 对应的 LLMGateway plan 决定，底层 plan 使用长期有效期。
 - `credit_package.expired_time` 来自真实资源包周期，资源包到期生命周期由 Credit 自主管理；计费不会在自然到期时回调隔离。
@@ -72,9 +73,14 @@
 - `GET /v1/credit/products`
 - `POST /v1/credit/inquiry`
 - `POST /v1/credit/packages/order`
+- `POST /v1/credit/packages/order-url`
 - `POST /v1/credit/packages/order-and-pay`
-- `GET /v1/credit/packages?user_id=...`
+- `GET /v1/credit/packages`
 - `POST /v1/credit/packages/{package_id}/refund`
+
+`order-url` 只接受当前鉴权用户通过 `order` 创建的 `credit_package` 订单。Credit 从可信的
+`X-User-Id` 注入订单持有人，并要求 Trade 同时校验 `external_user_id` 和
+`resource_type=credit_package`；归属或资源类型不匹配统一按订单不存在处理。
 
 查询结果只返回 `credit_type/credit_total/credit_available/expired_time`。`credit_type` 按 LLMGateway subscription name 判断：`credit-package:` 为 `paid`，`free-credit:` 为 `free`。isolated 或已到期积分包不返回。
 

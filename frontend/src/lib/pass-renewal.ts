@@ -78,8 +78,8 @@ export const getPassExpiryReminder = (
   if (!Number.isFinite(expiredAt)) return null;
 
   const remainingMs = expiredAt - now;
-  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-  if (remainingMs <= 0 || remainingMs > sevenDaysMs) return null;
+  const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+  if (remainingMs <= 0 || remainingMs > fiveDaysMs) return null;
 
   const oneDayMs = 24 * 60 * 60 * 1000;
   const oneHourMs = 60 * 60 * 1000;

@@ -130,9 +130,9 @@ func (h *Handler) ExchangeOidcToken(ctx context.Context, request api.ExchangeOid
 	if request.Body == nil {
 		return api.ExchangeOidcToken400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(federationError("invalid_request", "The token request is invalid."))}, nil
 	}
-	// This first-party client consumes the same OIDC grant through the native
-	// session adapter; it must not have a second, JWT-producing redemption path.
-	if request.Body.ClientId == oidc.NativeClientID {
+	// First-party session clients consume the same OIDC grant through the
+	// session adapter; they must not have a second, JWT-producing redemption path.
+	if oidc.IsFirstPartySessionClient(request.Body.ClientId) {
 		return api.ExchangeOidcToken400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(federationError("invalid_grant", "Use the registered client session exchange."))}, nil
 	}
 	record, err := h.oidc.Provider.ConsumeAuthorizationCode(ctx, oidc.TokenRequest{

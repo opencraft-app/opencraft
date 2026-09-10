@@ -15,6 +15,7 @@ const subscribe = (listener: () => void) => {
   return () => { listeners.delete(listener); };
 };
 const testingHosts = new Set(['localhost', '127.0.0.1', 'lightclaw.pages.dev']);
+const productionHosts = new Set(['lightvela.com', 'www.lightvela.com', 'lightvela.ai', 'www.lightvela.ai']);
 
 export function isPassUpgradeVisible(
   userId: string | null | undefined,
@@ -22,7 +23,7 @@ export function isPassUpgradeVisible(
 ): boolean {
   if (!userId) return false;
   if (testingHosts.has(hostname)) return true;
-  return (hostname === 'lightvela.com' || hostname === 'www.lightvela.com') && revealed;
+  return productionHosts.has(hostname) && revealed;
 }
 
 export function usePassUpgradeVisible(userId: string | null | undefined): boolean {
