@@ -28,9 +28,26 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("keeps additional Bot creation hidden while preserving initial Agent creation", () => {
     const page = readPageSource();
     expect(page).toContain("const showCreateBotEntry = false;");
+    expect(page).toContain("const canCreateBot = createLimitMessage === null && (bots.length === 0 || multiBotEnabled);");
     expect(page).toContain("{showCreateBotEntry && canCreateBot && (");
     expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
+  });
+
+  it("creates the first Bot as blank without opening the creation choices", () => {
+    const page = readPageSource();
+    const initialCreation = page.slice(
+      page.indexOf("const createInitialBot"),
+      page.indexOf("const handleConfirmCreate"),
+    );
+    const noActiveBotBranch = initialCreation.slice(
+      initialCreation.indexOf("if (!activeBot)"),
+      initialCreation.indexOf("setDirectCreateError(null)"),
+    );
+
+    expect(initialCreation).toContain('createMode: "blank"');
+    expect(noActiveBotBranch).toContain("void createInitialBot()");
+    expect(noActiveBotBranch).not.toContain("setShowCreateConfirm(true)");
   });
 
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
@@ -186,7 +203,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
 
-    expect(page).toContain("if (activeBot || isSubscribed)");
+    expect(page).toContain("if (!activeBot)");
+    expect(page).toContain("setShowCreateConfirm(true)");
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');

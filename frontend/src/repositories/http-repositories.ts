@@ -857,6 +857,9 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const bots = isGlobal
       ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
       : (await Promise.all(instances.map(async (instance) => {
+        if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
+          return [projectInstanceToBot(instance, drafts[instance.instance_id])];
+        }
         try {
           const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
             baseUrl,

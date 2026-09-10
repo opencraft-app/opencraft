@@ -683,6 +683,44 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_provisioning",
+              status: "Creating",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected Hermes profile request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_provisioning", status: "provisioning" }),
+    ]);
+    expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
+  });
+
   it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const jsonResponse = (data: unknown) => new Response(

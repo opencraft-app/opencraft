@@ -14,4 +14,13 @@ describe("OpenClawProvider local preview backend boundary", () => {
     expect(source).toMatch(/setBots\(\(prev\) => \(prev\.length > 0 \? prev : \[buildLocalPreviewBot\(\)\]\)\)/);
     expect(source).not.toMatch(/LOCAL_PREVIEW_AUTH_ENABLED && session\.authReady[\s\S]{0,200}setBots\(\(prev\) => \(prev\.length > 0 \? prev : \[buildLocalPreviewBot\(\)\]\)\);[\s\S]{0,80}\} else if \(isAuthenticated/);
   });
+
+  it("keeps initial instance creation blank and defers Hermes profile access", () => {
+    const source = readSource("src/contexts/agent-context.tsx");
+
+    expect(source).toContain("const isInitialBotCreation = bots.length === 0;");
+    expect(source).toContain('createMode: isInitialBotCreation ? "blank" : bot.createMode');
+    expect(source).toContain("sourceBotId: isInitialBotCreation ? undefined : bot.sourceBotId");
+    expect(source).toMatch(/if \(!isInitialBotCreation\) \{[\s\S]*repositories\.bots\.updateBotProfile/);
+  });
 });

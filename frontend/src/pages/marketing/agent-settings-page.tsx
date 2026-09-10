@@ -2576,7 +2576,7 @@ export const AgentSettingsPage = ({
   );
   // Keep additional Bot creation hidden until the Profile flow is released.
   const showCreateBotEntry = false;
-  const canCreateBot = multiBotEnabled && createLimitMessage === null;
+  const canCreateBot = createLimitMessage === null && (bots.length === 0 || multiBotEnabled);
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
@@ -3864,6 +3864,55 @@ export const AgentSettingsPage = ({
     navigate,
   ]);
 
+  const createBotAndNavigate = async ({
+    name,
+    createMode,
+    sourceBotId,
+    initialSoul,
+  }: {
+    name: string;
+    createMode: "blank" | "clone";
+    sourceBotId?: string;
+    initialSoul?: string;
+  }) => {
+    setDirectCreating(true);
+    setDirectCreateError(null);
+    const createStart = Date.now();
+    try {
+      const newBot = await addBot({
+        name,
+        description: undefined,
+        personality: t("默认设定"),
+        personalityEmoji: "✨",
+        intro: "",
+        soulTemplateId: undefined,
+        status: "running",
+        createMode,
+        sourceBotId,
+        initialSoul,
+      });
+      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CREATING,
+        params: {
+          bot_id: newBot.id,
+          create_duration_ms: Date.now() - createStart,
+        },
+      });
+      setShowCreateConfirm(false);
+      setIsCreating(true);
+      navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
+    } catch (err) {
+      setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
+    } finally {
+      setDirectCreating(false);
+    }
+  };
+
+  const createInitialBot = () => createBotAndNavigate({
+    name: t("新 Bot"),
+    createMode: "blank",
+  });
+
   const handleCreateNew = () => {
     if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
@@ -3874,18 +3923,21 @@ export const AgentSettingsPage = ({
       setDirectCreateError(createLimitMessage);
       return;
     }
-    if (activeBot || isSubscribed) {
-      // 已有实例时创建实例内 Bot；没有实例的已订阅用户也可直接创建。
-      setDirectCreateError(null);
-      setCreateBotName(t("新 Bot"));
-      setCreateBotSoul("");
-      setCreateBotMode(activeBot ? "clone-current" : "blank");
-      setIsCreateAdvancedOpen(false);
-      setShowCreateConfirm(true);
-    } else {
-      // 没有实例且未订阅：先进入套餐订阅页。
+    if (!activeBot) {
+      if (isSubscribed) {
+        void createInitialBot();
+        return;
+      }
       navigate("/subscribe");
+      return;
     }
+
+    setDirectCreateError(null);
+    setCreateBotName(t("新 Bot"));
+    setCreateBotSoul("");
+    setCreateBotMode("clone-current");
+    setIsCreateAdvancedOpen(false);
+    setShowCreateConfirm(true);
   };
 
   const handleConfirmCreate = async () => {
@@ -3893,52 +3945,26 @@ export const AgentSettingsPage = ({
       pgid: DATONG_PAGE_IDS.AGENT_CREATING,
       params: {},
     });
-    setDirectCreating(true);
-    setDirectCreateError(null);
-    const createStart = Date.now();
-    try {
-      const normalizedName = createBotName.trim();
-      if (!normalizedName) {
-        setDirectCreateError(t("请输入 Bot 名称"));
-        return;
-      }
-      if (Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH) {
-        setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
-        return;
-      }
-      const sourceBot = createBotMode === "clone-current" ? activeBot : defaultBot;
-      if (createBotMode !== "blank" && !sourceBot) {
-        setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
-        return;
-      }
-      const newBot = await addBot({
-        name: normalizedName,
-        description: undefined,
-        personality: t("默认设定"),
-        personalityEmoji: "✨",
-        intro: "",
-        soulTemplateId: undefined,
-        status: "running",
-        createMode: createBotMode === "blank" ? "blank" : "clone",
-        sourceBotId: createBotMode === "blank" ? undefined : sourceBot?.id,
-        initialSoul: createBotSoul.trim() || undefined,
-      });
-      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
-        pgid: DATONG_PAGE_IDS.AGENT_CREATING,
-        params: {
-          bot_id: newBot.id,
-          create_duration_ms: Date.now() - createStart,
-        },
-      });
-      setShowCreateConfirm(false);
-      // 进入页面内 loading 状态，带上新 bot id 供轮询定位
-      setIsCreating(true);
-      navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
-    } catch (err) {
-      setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
-    } finally {
-      setDirectCreating(false);
+    const normalizedName = createBotName.trim();
+    if (!normalizedName) {
+      setDirectCreateError(t("请输入 Bot 名称"));
+      return;
     }
+    if (Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH) {
+      setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
+      return;
+    }
+    const sourceBot = createBotMode === "clone-current" ? activeBot : defaultBot;
+    if (createBotMode !== "blank" && !sourceBot) {
+      setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
+      return;
+    }
+    await createBotAndNavigate({
+      name: normalizedName,
+      createMode: createBotMode === "blank" ? "blank" : "clone",
+      sourceBotId: createBotMode === "blank" ? undefined : sourceBot?.id,
+      initialSoul: createBotSoul.trim() || undefined,
+    });
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
@@ -5579,18 +5605,24 @@ export const AgentSettingsPage = ({
                     {createLimitMessage}
                   </p>
                 )}
+                {directCreateError && (
+                  <p className="mt-3 max-w-sm text-xs leading-relaxed text-red-500">
+                    {directCreateError}
+                  </p>
+                )}
                 <button
                   onClick={handleCreateNew}
-                  disabled={!canCreateBot}
+                  disabled={!canCreateBot || directCreating}
                   className={cn(
                     "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 font-semibold text-white transition-all",
-                    canCreateBot
+                    canCreateBot && !directCreating
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
-                  {canCreateBot ? t("新建 Bot") : t("暂不可创建")}
+                  {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {directCreating ? t("创建中...") : canCreateBot ? t("新建 Bot") : t("暂不可创建")}
                 </button>
               </div>
             )
