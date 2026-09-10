@@ -9,8 +9,8 @@ export interface IHermesScriptCommands {
   getModelSwitchCommand: (modelFullId: string) => string;
 }
 
-export function getHermesScriptCommands(): IHermesScriptCommands {
-  const commands = createHermesCommandBuilder();
+export function getHermesScriptCommands(agentId?: string): IHermesScriptCommands {
+  const commands = createHermesCommandBuilder(agentId);
   return {
     getGatewayRestartCommand: commands.gateway.getRestartCommand,
     getProviderSaveCommand: commands.model.getProviderSaveCommand,

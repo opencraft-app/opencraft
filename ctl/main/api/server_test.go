@@ -25,9 +25,32 @@ import (
 )
 
 type stubLogic struct {
+	listInstanceBotsResp                   *transport.ListInstanceBotsResponse
+	listInstanceBotsErr                    error
+	listInstanceBotsInstanceID             string
+	createInstanceBotResp                  *transport.InstanceBotResponse
+	createInstanceBotErr                   error
+	createInstanceBotReq                   *transport.CreateInstanceBotRequest
+	createInstanceBotInstanceID            string
+	updateInstanceBotResp                  *transport.InstanceBotResponse
+	updateInstanceBotErr                   error
+	updateInstanceBotReq                   *transport.UpdateInstanceBotRequest
+	updateInstanceBotInstanceID            string
+	updateInstanceBotID                    string
+	deleteInstanceBotResp                  *transport.InstanceBotResponse
+	deleteInstanceBotErr                   error
+	deleteInstanceBotInstanceID            string
+	deleteInstanceBotID                    string
+	retryInstanceBotResp                   *transport.InstanceBotResponse
+	retryInstanceBotErr                    error
+	retryInstanceBotInstanceID             string
+	retryInstanceBotID                     string
 	createResp                             *transport.InstanceResponse
 	createErr                              error
 	createReq                              *transport.CreateInstanceRequest
+	destroyResp                            *transport.InstanceResponse
+	destroyErr                             error
+	destroyInstanceID                      string
 	createPrerequisitesResp                *transport.CreatePrerequisitesResponse
 	createPrerequisitesErr                 error
 	updateResp                             *transport.InstanceResponse
@@ -119,6 +142,54 @@ type stubLogic struct {
 	debugErr                               error
 	debugStreamEvents                      []transport.ExecDebugCommandStreamEvent
 	debugStreamErr                         error
+}
+
+func (s *stubLogic) ListInstanceBots(ctx pctx.Context, instanceID string) (*transport.ListInstanceBotsResponse, error) {
+	s.listInstanceBotsInstanceID = instanceID
+	return s.listInstanceBotsResp, s.listInstanceBotsErr
+}
+
+func (s *stubLogic) CreateInstanceBot(ctx pctx.Context, instanceID string, req *transport.CreateInstanceBotRequest) (*transport.InstanceBotResponse, error) {
+	s.createInstanceBotInstanceID = instanceID
+	if req != nil {
+		cloned := *req
+		s.createInstanceBotReq = &cloned
+	}
+	return s.createInstanceBotResp, s.createInstanceBotErr
+}
+
+func (s *stubLogic) UpdateInstanceBot(ctx pctx.Context, instanceID, botID string, req *transport.UpdateInstanceBotRequest) (*transport.InstanceBotResponse, error) {
+	s.updateInstanceBotInstanceID = instanceID
+	s.updateInstanceBotID = botID
+	if req != nil {
+		cloned := *req
+		s.updateInstanceBotReq = &cloned
+	}
+	return s.updateInstanceBotResp, s.updateInstanceBotErr
+}
+
+func (s *stubLogic) DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error) {
+	s.deleteInstanceBotInstanceID = instanceID
+	s.deleteInstanceBotID = botID
+	return s.deleteInstanceBotResp, s.deleteInstanceBotErr
+}
+
+func (s *stubLogic) RetryInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error) {
+	s.retryInstanceBotInstanceID = instanceID
+	s.retryInstanceBotID = botID
+	return s.retryInstanceBotResp, s.retryInstanceBotErr
+}
+
+func (s *stubLogic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) (*transport.InstanceChannelBindingResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
+	return errors.New("unexpected call")
+}
+
+func (s *stubLogic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, channel string) error {
+	return errors.New("unexpected call")
 }
 
 type stubRetryAfterError struct {
@@ -216,6 +287,10 @@ func (s *stubLogic) ListInstances(ctx pctx.Context, page, pageSize int) (*transp
 }
 
 func (s *stubLogic) DestroyInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error) {
+	s.destroyInstanceID = instanceID
+	if s.destroyResp != nil || s.destroyErr != nil {
+		return s.destroyResp, s.destroyErr
+	}
 	return nil, errors.New("unexpected call")
 }
 
@@ -486,7 +561,7 @@ func (s *stubLogic) DeleteChatClawConversation(ctx pctx.Context, instanceID, con
 	return errors.New("unexpected call")
 }
 
-func (s *stubLogic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*transport.CreateWeixinLoginSessionResponse, error) {
+func (s *stubLogic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string, req *transport.CreateWeixinLoginSessionRequest) (*transport.CreateWeixinLoginSessionResponse, error) {
 	return nil, errors.New("unexpected call")
 }
 
@@ -623,6 +698,182 @@ func TestUpdateInstanceUsesSuccessEnvelope(t *testing.T) {
 	}
 	if handler.logic.(*stubLogic).updateReq == nil || handler.logic.(*stubLogic).updateReq.Name == nil || *handler.logic.(*stubLogic).updateReq.Name != "Renamed Bot" {
 		t.Fatalf("expected name to be forwarded, got %+v", handler.logic.(*stubLogic).updateReq)
+	}
+}
+
+func TestListInstanceBotsUsesNestedInstanceRoute(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/instances/ins-1/bots", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{
+		listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{{
+			BotID:      "bot-main",
+			InstanceID: "ins-1",
+			ProfileID:  "main",
+			Name:       "Main Bot",
+			IsDefault:  true,
+			Status:     "ready",
+		}}},
+	}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.listInstanceBotsInstanceID != "ins-1" {
+		t.Fatalf("expected instance id to be forwarded, got %q", stub.listInstanceBotsInstanceID)
+	}
+	var payload struct {
+		Data transport.ListInstanceBotsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(payload.Data.Items) != 1 || payload.Data.Items[0].ProfileID != "main" {
+		t.Fatalf("unexpected payload: %s", rec.Body.String())
+	}
+}
+
+func TestCreateInstanceBotForwardsCloneSource(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/bots", strings.NewReader(`{"name":"Ops Bot","create_mode":"clone","source_bot_id":"bot-main","initial_soul":"# Ops Bot"}`))
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{createInstanceBotResp: &transport.InstanceBotResponse{
+		BotID:      "bot-2",
+		InstanceID: "ins-1",
+		ProfileID:  "profile-2",
+		Name:       "Ops Bot",
+		Status:     "ready",
+	}}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.createInstanceBotInstanceID != "ins-1" || stub.createInstanceBotReq == nil {
+		t.Fatalf("unexpected create call: instance=%q req=%+v", stub.createInstanceBotInstanceID, stub.createInstanceBotReq)
+	}
+	if stub.createInstanceBotReq.CreateMode != "clone" || stub.createInstanceBotReq.SourceBotID != "bot-main" || stub.createInstanceBotReq.InitialSoul != "# Ops Bot" {
+		t.Fatalf("clone fields not forwarded: %+v", stub.createInstanceBotReq)
+	}
+}
+
+func TestCreateInstanceBotHonorsBackendFeatureFlag(t *testing.T) {
+	t.Setenv("MULTI_BOT_ENABLED", "false")
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/bots", strings.NewReader(`{"name":"Ops Bot","create_mode":"blank"}`))
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if stub.createInstanceBotReq != nil {
+		t.Fatalf("disabled feature must not call create logic: %+v", stub.createInstanceBotReq)
+	}
+}
+
+func TestUpdateInstanceBotForwardsDistinctIDs(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPut, "/v1/instances/ins-1/bots/bot-2", strings.NewReader(`{"name":"Renamed Bot"}`))
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	name := "Renamed Bot"
+	handler := &instanceHandler{logic: &stubLogic{updateInstanceBotResp: &transport.InstanceBotResponse{
+		BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2", Name: name, Status: "ready",
+	}}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.updateInstanceBotInstanceID != "ins-1" || stub.updateInstanceBotID != "bot-2" {
+		t.Fatalf("unexpected ids: instance=%q bot=%q", stub.updateInstanceBotInstanceID, stub.updateInstanceBotID)
+	}
+	if stub.updateInstanceBotReq == nil || stub.updateInstanceBotReq.Name == nil || *stub.updateInstanceBotReq.Name != name {
+		t.Fatalf("unexpected update request: %+v", stub.updateInstanceBotReq)
+	}
+}
+
+func TestDeleteInstanceBotForwardsDistinctIDs(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1/bots/bot-2", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	handler := &instanceHandler{logic: &stubLogic{deleteInstanceBotResp: &transport.InstanceBotResponse{
+		BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2", Status: "deleted",
+	}}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.deleteInstanceBotInstanceID != "ins-1" || stub.deleteInstanceBotID != "bot-2" {
+		t.Fatalf("unexpected ids: instance=%q bot=%q", stub.deleteInstanceBotInstanceID, stub.deleteInstanceBotID)
+	}
+}
+
+func TestDeleteInstanceRequiresSingleBotRejectsRemainingBots(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1?require_single_bot=true", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{
+		{BotID: "ins-1", InstanceID: "ins-1", ProfileID: "main", IsDefault: true},
+		{BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2"},
+	}}}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), errcode.ErrInstanceBotsRemain.Code) {
+		t.Fatalf("expected remaining Bots error, got %s", rec.Body.String())
+	}
+	if stub.destroyInstanceID != "" {
+		t.Fatalf("instance destroy must not run while another Bot remains, got %q", stub.destroyInstanceID)
+	}
+}
+
+func TestDeleteInstanceRequiresSingleBotDestroysLastBot(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1?require_single_bot=true", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{
+		listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{{
+			BotID: "ins-1", InstanceID: "ins-1", ProfileID: "main", IsDefault: true,
+		}}},
+		destroyResp: &transport.InstanceResponse{InstanceID: "ins-1", Status: "Deleting"},
+	}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if stub.listInstanceBotsInstanceID != "ins-1" || stub.destroyInstanceID != "ins-1" {
+		t.Fatalf("unexpected calls: list=%q destroy=%q", stub.listInstanceBotsInstanceID, stub.destroyInstanceID)
+	}
+}
+
+func TestRetryInstanceBotForwardsDistinctIDs(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/bots/bot-2/retry", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	handler := &instanceHandler{logic: &stubLogic{retryInstanceBotResp: &transport.InstanceBotResponse{
+		BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2", Status: "ready",
+	}}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.retryInstanceBotInstanceID != "ins-1" || stub.retryInstanceBotID != "bot-2" {
+		t.Fatalf("unexpected ids: instance=%q bot=%q", stub.retryInstanceBotInstanceID, stub.retryInstanceBotID)
 	}
 }
 

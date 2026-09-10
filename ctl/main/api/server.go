@@ -56,6 +56,18 @@ type instanceHandler struct {
 	logic instancelogic.Logic
 }
 
+func readRuntimeFeatureFlag(name string, fallback bool) bool {
+	raw, ok := os.LookupEnv(name)
+	if !ok {
+		return fallback
+	}
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
 // errorResponse 错误响应
 type errorResponse struct {
 	// 错误码，例如 400, 404, 500
@@ -191,6 +203,7 @@ func newRouterWithWebsiteAuth(
 			"features": map[string]bool{
 				"paidBillingEnabled":               true,
 				"realnamePhoneVerificationEnabled": true,
+				"multiBotEnabled":                  readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true),
 			},
 		})
 	})
@@ -642,6 +655,17 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
+		if r.URL.Query().Get("require_single_bot") == "true" {
+			bots, err := h.logic.ListInstanceBots(ctx, instanceID)
+			if err != nil {
+				writeHTTPError(w, r, err)
+				return
+			}
+			if bots != nil && len(bots.Items) > 1 {
+				writeHTTPError(w, r, errcode.ErrInstanceBotsRemain)
+				return
+			}
+		}
 		resp, err := h.logic.DestroyInstance(ctx, instanceID)
 		if err != nil {
 			writeHTTPError(w, r, err)
@@ -660,6 +684,80 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.UpdateInstance(ctx, instanceID, &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 2 && parts[1] == "bots" && r.Method == http.MethodGet:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.ListInstanceBots(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 2 && parts[1] == "bots" && r.Method == http.MethodPost:
+		if !readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true) {
+			writeHTTPError(w, r, errcode.ErrInstanceBotDisabled)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var req transport.CreateInstanceBotRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err.Error()))
+			return
+		}
+		resp, err := h.logic.CreateInstanceBot(ctx, instanceID, &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusCreated, resp)
+	case len(parts) == 3 && parts[1] == "bots" && r.Method == http.MethodPut:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var req transport.UpdateInstanceBotRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err.Error()))
+			return
+		}
+		resp, err := h.logic.UpdateInstanceBot(ctx, instanceID, parts[2], &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "bots" && r.Method == http.MethodDelete:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.DeleteInstanceBot(ctx, instanceID, parts[2])
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 4 && parts[1] == "bots" && parts[3] == "retry" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.RetryInstanceBot(ctx, instanceID, parts[2])
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return
@@ -846,6 +944,40 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, map[string]bool{"deleted": true})
+	case len(parts) == 5 && parts[1] == "bots" && parts[3] == "channel-bindings" && r.Method == http.MethodPut:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.ClaimInstanceBotChannel(ctx, instanceID, parts[2], parts[4])
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 5 && parts[1] == "bots" && parts[3] == "channel-bindings" && r.Method == http.MethodDelete:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, map[string]bool{"released": true})
+	case len(parts) == 5 && parts[1] == "bots" && parts[3] == "channel-bindings" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, map[string]bool{"connected": true})
 	case len(parts) == 3 && parts[1] == "chatclaw" && parts[2] == "teams" && r.Method == http.MethodPost:
 		ctx, ok := newRequestContext(r)
 		if !ok {

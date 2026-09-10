@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Pass, PassModifyOption } from "@/domain/types";
 import { useRepositories } from "@/contexts/repository-context";
-import { readUpgradeCheckout, saveUpgradeCheckout, type UpgradeCheckoutRecord } from "@/lib/upgrade-checkout";
+import type { UpgradeCheckoutRecord } from "@/lib/upgrade-checkout";
 import { usePassUpgradeVisible } from "@/lib/pass-upgrade-rollout";
 
 const isActive = (pass: Pass) => pass.status === "active" && !pass.deleted_time && !pass.isolated_time && Date.parse(pass.expired_time) > Date.now();
@@ -16,7 +16,7 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
   currentPass?: Pass | null;
 }) {
   const { plans } = useRepositories();
-  const { listMyPasses, listModifyBundles, getModifyCheckout } = plans;
+  const { listMyPasses, listModifyBundles } = plans;
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const currentInvalid = currentPass != null && (currentPass.user_id !== userId || !isActive(currentPass));
@@ -30,7 +30,7 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
     let cancelled = false;
     setState({ key, ...empty, loading: true });
     void (async () => {
-      let resume: UpgradeResume | null = null;
+      const resume: UpgradeResume | null = null;
       try {
         const own = (await listMyPasses()).filter((pass) => pass.user_id === userId && !pass.deleted_time && pass.status !== "deleted");
         const active = own.filter(isActive);
@@ -39,17 +39,7 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
           if (!cancelled) setState({ key, ...empty });
           return;
         }
-        const record = readUpgradeCheckout(window.localStorage, userId!, pass.pass_id);
-        resume = record ? { pass, record } : null;
-        const { checkout } = await getModifyCheckout(pass.pass_id);
         if (cancelled) return;
-        if (checkout) {
-          if (!checkout.target_bundle_id || !checkout.deal_name) throw new Error("Invalid upgrade checkout");
-          const recovered: UpgradeCheckoutRecord = { phase: "ordered", targetBundleId: checkout.target_bundle_id, dealName: checkout.deal_name };
-          // The modal reads this same non-secret record, including on a newly signed-in device.
-          saveUpgradeCheckout(window.localStorage, userId!, pass.pass_id, recovered);
-          resume = { pass, record: recovered };
-        }
         if (!isActive(pass) || (currentInvalid && currentPass?.pass_id === pass.pass_id)) {
           if (!cancelled) setState({ key, ...empty, resume });
           return;
@@ -63,7 +53,7 @@ export function usePassUpgrade({ userId, passId, enabled, currentPass }: {
       }
     })();
     return () => { cancelled = true; };
-  }, [canLoad, key, passId, listMyPasses, listModifyBundles, getModifyCheckout, userId, currentInvalid, currentPass?.pass_id]);
+  }, [canLoad, key, passId, listMyPasses, listModifyBundles, userId, currentInvalid, currentPass?.pass_id]);
 
   useEffect(() => {
     if (!canLoad || state.key !== key || !state.pass) return;

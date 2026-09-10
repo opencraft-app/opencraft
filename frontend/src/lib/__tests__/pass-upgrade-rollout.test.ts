@@ -25,9 +25,13 @@ describe('pass upgrade rollout', () => {
     act(() => controls.hide());
     expect(result.current).toBe(false);
   });
-  it('does not enable international production or unknown hosts', () => {
+  it('reveals international production but still rejects unknown hosts', () => {
     controls.show();
-    for (const host of ['lightvela.ai', 'www.lightvela.ai', 'evil.example', 'lightvela.com.evil.example', '']) {
+    for (const host of ['lightvela.ai', 'www.lightvela.ai']) {
+      expect(isPassUpgradeVisible(canary, host)).toBe(true);
+      expect(isPassUpgradeVisible(undefined, host)).toBe(false);
+    }
+    for (const host of ['evil.example', 'lightvela.com.evil.example', 'lightvela.ai.evil.example', '']) {
       expect(isPassUpgradeVisible(canary, host)).toBe(false);
     }
   });

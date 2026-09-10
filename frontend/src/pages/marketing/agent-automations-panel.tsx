@@ -94,6 +94,7 @@ import {
   type CronScriptLanguage,
   type CronZeroTokenKind,
   type CronRunRecord,
+  type HermesCronTarget,
   type HermesAutomationBlueprint,
 } from "@/lib/hermes-cron-client";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -577,7 +578,7 @@ export function AutomationScenarioTemplatesSection({
 }
 
 async function sendScenarioStartNotice(
-  botId: string,
+  botId: HermesCronTarget,
   draft: ScenarioTaskDraft,
   t: ReturnType<typeof useT>,
 ): Promise<void> {
@@ -761,10 +762,20 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
   );
 }
 
-export function HermesAgentAutomationsPanel({ botId }: { botId: string | null }) {
+export function HermesAgentAutomationsPanel({ botId: rawBotId }: { botId: HermesCronTarget | null }) {
   const t = useT();
   const { i18n } = useTranslation();
   const displayLocale = getAutomationDisplayLocale(i18n.language);
+  const runtimeBotId = typeof rawBotId === "string" ? rawBotId : rawBotId?.instanceId ?? null;
+  const profileId = typeof rawBotId === "string" ? "main" : rawBotId?.profileId ?? "main";
+  const legacyBotTarget = typeof rawBotId === "string";
+  const botId = useMemo<HermesCronTarget | null>(() => (
+    runtimeBotId
+      ? legacyBotTarget
+        ? runtimeBotId
+        : { instanceId: runtimeBotId, profileId }
+      : null
+  ), [legacyBotTarget, profileId, runtimeBotId]);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>(
     "loading",
@@ -911,7 +922,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       error: null,
     });
     try {
-      const slugs = await listInstalledSkillSlugs(botId);
+      const slugs = await listInstalledSkillSlugs(runtimeBotId ?? "", profileId);
       installedSkillSlugsRef.current = slugs;
       const nextState: InstalledSkillLoadState = { status: "ready", slugs, error: null };
       setInstalledSkillLoadState(nextState);
@@ -925,7 +936,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       setInstalledSkillLoadState(nextState);
       return nextState;
     }
-  }, [botId]);
+  }, [botId, profileId, runtimeBotId]);
 
   const requestCreate = useCallback(() => {
     if (jobLimitReached) {
@@ -941,7 +952,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     trackDatongClick("automation_template_card", {
       pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
       params: {
-        bot_id: botId ?? "",
+        bot_id: runtimeBotId ?? "",
         template_id: template.id,
         template_source: template.source,
         template_category: template.category,
@@ -954,7 +965,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       return;
     }
     setCreatingFromTemplate(template);
-  }, [botId, jobLimitReached]);
+  }, [jobLimitReached, runtimeBotId]);
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -1251,10 +1262,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     }
     trackDatongEvent(DATONG_EVENTS.AUTOMATION_DELETE, {
       pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-      params: { bot_id: botId, task_id: latestTarget.id },
+      params: { bot_id: runtimeBotId ?? "", task_id: latestTarget.id },
     });
     await handleAction(latestTarget, "remove", latestDependents);
-  }, [botId, confirmDeleteDependents, confirmDeleteJob, handleAction, refreshCreatedJobs, t]);
+  }, [botId, confirmDeleteDependents, confirmDeleteJob, handleAction, refreshCreatedJobs, runtimeBotId, t]);
 
   /**
    * 测试运行：立即真实执行一次（`startCronTestRun`）。
@@ -1520,7 +1531,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
               pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-              params: { bot_id: botId ?? "" },
+              params: { bot_id: runtimeBotId ?? "" },
             });
             setCreating(false);
             setActiveView("created");
@@ -1533,7 +1544,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       {!isGlobal && scenarioInstallPack && (
         <ScenarioInstallModal
           pack={scenarioInstallPack}
-          botId={botId}
+          botId={runtimeBotId ?? ""}
           submitting={scenarioPreviewStatus === "creating" || scenarioPreviewStatus === "enabling"}
           initialValues={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.values : undefined}
           initialDeliver={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.generatedDeliver : undefined}
@@ -1576,7 +1587,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
               pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
               params: {
-                bot_id: botId ?? "",
+                bot_id: runtimeBotId ?? "",
                 template_id: creatingFromTemplate.id,
                 template_source: creatingFromTemplate.source,
                 template_category: creatingFromTemplate.category,
@@ -3570,7 +3581,7 @@ export function AutomationFormModal({
   onSaved,
   onError,
 }: {
-  botId: string;
+  botId: HermesCronTarget;
   mode: "create" | "edit";
   initialJob?: CronJob;
   template?: AutomationTemplate;
@@ -3589,6 +3600,7 @@ export function AutomationFormModal({
   onError: (message: string) => void;
 }) {
   const t = useT();
+  const runtimeBotId = typeof botId === "string" ? botId : botId.instanceId;
   const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
   const testRunHintId = useId();
   const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
@@ -3955,7 +3967,7 @@ export function AutomationFormModal({
     if (mode === "create") {
       trackDatongClick("automation_create_btn", {
         pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-        params: { bot_id: botId },
+        params: { bot_id: runtimeBotId },
       });
     }
     const effectiveWindow = shouldShowEffectiveWindow
@@ -4223,7 +4235,7 @@ export function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, executionRules, selectedSkills, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
+  }, [botId, runtimeBotId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, executionRules, selectedSkills, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">

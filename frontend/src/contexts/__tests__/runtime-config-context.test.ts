@@ -17,6 +17,7 @@ describe("runtime config normalization", () => {
     expect(normalizeRuntimeConfig(null).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig(null).features.realnamePhoneVerificationEnabled).toBe(true);
     expect(normalizeRuntimeConfig(null).features.zeroTokenAutomationsEnabled).toBe(true);
+    expect(normalizeRuntimeConfig(null).features.multiBotEnabled).toBe(true);
     expect(normalizeRuntimeConfig({}).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: null }).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { paidBillingEnabled: "true" } }).features.paidBillingEnabled).toBe(false);
@@ -25,6 +26,13 @@ describe("runtime config normalization", () => {
         .features
         .realnamePhoneVerificationEnabled,
     ).toBe(false);
+  });
+
+  it("defaults multi-bot on but accepts an explicit runtime rollback", () => {
+    expect(normalizeRuntimeConfig({}).features.multiBotEnabled).toBe(true);
+    expect(normalizeRuntimeConfig({ features: { multiBotEnabled: true } }).features.multiBotEnabled).toBe(true);
+    expect(normalizeRuntimeConfig({ features: { multiBotEnabled: false } }).features.multiBotEnabled).toBe(false);
+    expect(normalizeRuntimeConfig({ features: { multiBotEnabled: "true" } }).features.multiBotEnabled).toBe(true);
   });
 
   it("defaults zero-token automations on unless explicitly disabled", () => {

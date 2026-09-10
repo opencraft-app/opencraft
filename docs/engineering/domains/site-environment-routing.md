@@ -70,6 +70,11 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国内站与国际站 Agent 设置页使用的 Hermes Provider、模型、通道和 Gateway 命令由 `frontend/src/pages/marketing/agent-config/hermes-command-builder.ts` 本地生成，不在浏览器运行时加载 Tea SDK 命令工厂。
 - 本地命令生成器应保持 acli 命令文本与既有行为兼容；Hermes Profile 路由属于独立能力，只有产品侧具备明确 Profile 标识与完整回归验证后才能统一增加 `--agent`。
 
+## Agent 多 Bot 区域边界
+
+- 实例内多 Bot 一期只在国内站开放。前端入口同时受国内区域判断和运行时功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，但新增 Bot 由服务端开关再次校验。
+- 国内 service-gateway 环境允许 `/v1/instances/{instance_id}/bots` 及其修复、唯一通道绑定子路由，全球 `sgprod` 不允许这些路径。配置策略测试必须分别断言国内放行和全球不暴露，不能用前端隐藏替代公共 API 边界。
+
 ## 公共账号菜单边界
 
 - 登录态头像菜单的主要入口固定为“我的智能体伙伴”与“账号管理”，并在底部保留退出登录；个人工作台仍从 Agent 控制台左侧导航进入，不在头像菜单重复展示。

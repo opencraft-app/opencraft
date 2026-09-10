@@ -29,8 +29,10 @@ const (
 )
 
 type weixinRuntime struct {
-	cancel  stdctx.CancelFunc
-	closing atomic.Bool
+	cancel    stdctx.CancelFunc
+	botID     string
+	profileID string
+	closing   atomic.Bool
 }
 
 type weixinProtocolPID int64
@@ -143,7 +145,7 @@ func (h *weixinLoginHub) publish(sessionID string, event transport.WeixinLoginSe
 	}
 }
 
-func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*transport.CreateWeixinLoginSessionResponse, error) {
+func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string, req *transport.CreateWeixinLoginSessionRequest) (*transport.CreateWeixinLoginSessionResponse, error) {
 	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
 		return nil, errcode.ErrInstanceMissingUserID
 	}
@@ -157,11 +159,37 @@ func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*
 	if err := l.requireActivePass(ctx); err != nil {
 		return nil, activePassGuardError("create weixin login session", err)
 	}
-	existing, err := l.channelLoginSessionDao.GetActiveByInstance(ctx, instanceID, channelloginsession.ChannelWeixin)
+	botID := ""
+	profileID := ""
+	if req != nil {
+		botID = strings.TrimSpace(req.BotID)
+		profileID = strings.TrimSpace(req.ProfileID)
+	}
+	var bot *transport.InstanceBotResponse
+	if botID == "" {
+		bot, err = l.getInstanceBotByProfileID(ctx, instanceID, rootProfileID)
+	} else {
+		bot, err = l.getInstanceBotResponse(ctx, instanceID, botID)
+	}
 	if err != nil {
 		return nil, err
 	}
+	if bot.Status != instanceBotStatusReady {
+		return nil, errcode.Wrap(errcode.ErrInstanceBotConflict, "bot status is %s", bot.Status)
+	}
+	if profileID != "" && profileID != bot.ProfileID {
+		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "profile_id does not match bot")
+	}
+	if _, err := l.ClaimInstanceBotChannel(ctx, instanceID, bot.BotID, uniqueChannelWeixin); err != nil {
+		return nil, err
+	}
+	existing, err := l.channelLoginSessionDao.GetActiveByInstance(ctx, instanceID, channelloginsession.ChannelWeixin)
+	if err != nil {
+		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID)
+		return nil, err
+	}
 	if existing != nil {
+		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID)
 		return nil, errcode.Wrap(errcode.ErrChannelLoginConflict, "active session already exists: %s", existing.SessionID)
 	}
 
@@ -176,13 +204,14 @@ func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*
 		ExpiresAt:  now.Add(weixinLoginTTL),
 	}
 	if err := l.channelLoginSessionDao.Create(ctx, record); err != nil {
+		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID)
 		return nil, err
 	}
 
 	bgCtx := pctx.NewContext(stdctx.Background()).WithUserID(ctx.GetUserID()).WithRegion(ctx.GetRegion())
 	bgCtx.SetRequestId(ctx.GetRequestId())
 	bgCtx.SetAction("weixin_login_session")
-	l.startWeixinLoginSession(bgCtx, entity, record)
+	l.startWeixinLoginSession(bgCtx, entity, record, bot.BotID, bot.ProfileID)
 
 	return &transport.CreateWeixinLoginSessionResponse{
 		SessionID: sessionID,
@@ -198,7 +227,7 @@ func (l *logic) GetWeixinLoginSession(ctx pctx.Context, instanceID, sessionID st
 		}
 		return nil, err
 	}
-	return toWeixinSessionResponse(entity), nil
+	return toWeixinSessionResponse(entity, l.weixinHub.runtime(sessionID)), nil
 }
 
 func (l *logic) CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error) {
@@ -225,7 +254,11 @@ func (l *logic) CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID
 			}
 		}()
 	}
-	protocolResp, err := l.execWeixinProtocolCommand(ctx, inst.SandboxId, "cancel", sessionID, 20)
+	botID, profileID, err := l.weixinSessionTarget(ctx, instanceID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	protocolResp, err := l.execWeixinProtocolCommandForProfile(ctx, inst.SandboxId, profileID, "cancel", sessionID, 20)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +290,22 @@ func (l *logic) CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID
 	if snapshot != nil {
 		l.weixinHub.publish(sessionID, transport.WeixinLoginSessionEvent{Type: "finished", Status: snapshot.Status, Data: snapshot})
 	}
+	_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, botID)
 	return snapshot, nil
+}
+
+func (l *logic) weixinSessionTarget(ctx pctx.Context, instanceID, sessionID string) (string, string, error) {
+	if runtime := l.weixinHub.runtime(sessionID); runtime != nil {
+		return runtime.botID, runtime.profileID, nil
+	}
+	binding, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWeixin)
+	if err != nil {
+		return "", "", err
+	}
+	if binding == nil {
+		return "", "", errcode.Wrap(errcode.ErrChannelLoginNotFound, "weixin session target is unavailable")
+	}
+	return binding.BotID, binding.ProfileID, nil
 }
 
 func (l *logic) SubscribeWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, <-chan transport.WeixinLoginSessionEvent, func(), error) {
@@ -275,13 +323,14 @@ func (l *logic) SubscribeWeixinLoginSession(ctx pctx.Context, instanceID, sessio
 	return snapshot, ch, cancel, nil
 }
 
-func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity, session *channelloginsession.Entity) {
+func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity, session *channelloginsession.Entity, botID, profileID string) {
 	runCtx, cancel := stdctx.WithDeadline(ctx, session.ExpiresAt)
-	l.weixinHub.setRuntime(session.SessionID, &weixinRuntime{cancel: cancel})
+	l.weixinHub.setRuntime(session.SessionID, &weixinRuntime{cancel: cancel, botID: botID, profileID: profileID})
 
 	go func() {
 		defer l.weixinHub.setRuntime(session.SessionID, nil)
 		defer cancel()
+		defer func() { _ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID) }()
 
 		update := func(updates map[string]interface{}, event transport.WeixinLoginSessionEvent) {
 			if err := l.channelLoginSessionDao.UpdateFields(ctx, session.InstanceID, session.SessionID, updates); err != nil {
@@ -347,6 +396,12 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 			}
 
 			terminal := !isWeixinSessionActive(nextStatus)
+			if nextStatus == channelloginsession.StatusSuccess {
+				if err := l.finishWeixinLoginSuccess(ctx, inst.SandboxId, session, botID, profileID, update); err != nil {
+					_ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID)
+				}
+				return true
+			}
 			if terminal {
 				now := time.Now().UTC()
 				updates[channelloginsession.ColumnFinishedAt] = &now
@@ -374,13 +429,17 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 				}
 				stateMu.Unlock()
 			}
+			if terminal {
+				_ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID)
+			}
 
 			return terminal
 		}
 
-		startResp, err := l.execWeixinProtocolCommand(
+		startResp, err := l.execWeixinProtocolCommandForProfile(
 			ctx,
 			inst.SandboxId,
+			profileID,
 			"start",
 			session.SessionID,
 			weixinProtocolCommandTimeout,
@@ -417,9 +476,10 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 			select {
 			case <-ticker.C:
 				var pollErr error
-				statusResp, pollErr = l.execWeixinProtocolCommand(
+				statusResp, pollErr = l.execWeixinProtocolCommandForProfile(
 					ctx,
 					inst.SandboxId,
+					profileID,
 					"status",
 					session.SessionID,
 					weixinProtocolCommandTimeout,
@@ -449,11 +509,15 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 }
 
 func (l *logic) execWeixinProtocolCommand(ctx pctx.Context, sandboxID, subcommand, sessionID string, timeoutSec int, extraArgs ...string) (*weixinProtocolResponse, error) {
+	return l.execWeixinProtocolCommandForProfile(ctx, sandboxID, rootProfileID, subcommand, sessionID, timeoutSec, extraArgs...)
+}
+
+func (l *logic) execWeixinProtocolCommandForProfile(ctx pctx.Context, sandboxID, profileID, subcommand, sessionID string, timeoutSec int, extraArgs ...string) (*weixinProtocolResponse, error) {
 	args := []string{"--session-id", sessionID}
 	args = append(args, extraArgs...)
 	result, err := l.execSandboxProcessCommand(ctx, sandboxID, "weixin_protocol_"+subcommand, &psandbox.ProcessStartRequest{
 		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", openclawWeixinProtocolCommand(subcommand, args...)},
+		Args: []string{"-l", "-c", openclawWeixinProtocolCommandForProfile(profileID, subcommand, args...)},
 		Pty:  false,
 	}, timeoutSec)
 	if err != nil {
@@ -563,10 +627,16 @@ func (l *logic) readWeixinProtocolState(ctx pctx.Context, sandboxID, sessionID s
 }
 
 func openclawWeixinProtocolCommand(subcommand string, args ...string) string {
+	return openclawWeixinProtocolCommandForProfile(rootProfileID, subcommand, args...)
+}
+
+func openclawWeixinProtocolCommandForProfile(profileID, subcommand string, args ...string) string {
 	parts := []string{
 		`env -i`,
 		`HOME="$HOME"`,
 		`USER="$USER"`,
+		`HERMES_HOME=` + hermesProfileHomeShellValue(profileID),
+		`HERMES_PROFILE=` + shellQuoteArg(hermesNativeProfileID(profileID)),
 		`PATH=/usr/bin:/bin`,
 		`openclaw-weixin-login-session`,
 		shellQuoteArg(subcommand),
@@ -575,6 +645,13 @@ func openclawWeixinProtocolCommand(subcommand string, args ...string) string {
 		parts = append(parts, shellQuoteArg(arg))
 	}
 	return openclawRuntimeUserCommand(strings.Join(parts, " "))
+}
+
+func hermesProfileHomeShellValue(profileID string) string {
+	if profileID == rootProfileID {
+		return `"$HOME/.hermes"`
+	}
+	return `"$HOME/.hermes/profiles/"` + shellQuoteArg(profileID)
 }
 
 func normalizeWeixinProtocolStatus(status string, ok bool) string {
@@ -600,7 +677,7 @@ func normalizeWeixinProtocolStatus(status string, ok bool) string {
 	}
 }
 
-func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, session *channelloginsession.Entity, update func(map[string]interface{}, transport.WeixinLoginSessionEvent)) error {
+func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, session *channelloginsession.Entity, botID, profileID string, update func(map[string]interface{}, transport.WeixinLoginSessionEvent)) error {
 	restartStatus := "running"
 	update(map[string]interface{}{
 		channelloginsession.ColumnRestartStatus: restartStatus,
@@ -608,7 +685,7 @@ func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, ses
 
 	result, err := l.execSandboxProcessCommand(ctx, sandboxID, "weixin_gateway_restart", &psandbox.ProcessStartRequest{
 		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", openclawGatewayRestartCommand()},
+		Args: []string{"-l", "-c", fmt.Sprintf("acli gateway restart --agent %s", shellQuoteArg(profileID))},
 		Pty:  false,
 	}, 60)
 	now := time.Now().UTC()
@@ -625,6 +702,19 @@ func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, ses
 			channelloginsession.ColumnErrorMessage:  "gateway restart failed after login success",
 		}, transport.WeixinLoginSessionEvent{Type: "finished", Status: channelloginsession.StatusFailed, Error: restartErr.Error()})
 		return restartErr
+	}
+	binding, err := l.runChannelBindingAction(ctx, session.InstanceID, "confirm", botID, profileID)
+	if err != nil || !binding.OK {
+		if err == nil {
+			err = errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)
+		}
+		update(map[string]interface{}{
+			channelloginsession.ColumnStatus:        channelloginsession.StatusFailed,
+			channelloginsession.ColumnFinishedAt:    &now,
+			channelloginsession.ColumnRestartStatus: "success",
+			channelloginsession.ColumnErrorMessage:  "failed to persist channel owner after login success",
+		}, transport.WeixinLoginSessionEvent{Type: "finished", Status: channelloginsession.StatusFailed, Error: err.Error()})
+		return err
 	}
 	update(map[string]interface{}{
 		channelloginsession.ColumnStatus:        channelloginsession.StatusSuccess,
@@ -725,11 +815,11 @@ func jsonQuoted(value string) string {
 	return string(data)
 }
 
-func toWeixinSessionResponse(entity *channelloginsession.Entity) *transport.WeixinLoginSessionResponse {
+func toWeixinSessionResponse(entity *channelloginsession.Entity, runtime *weixinRuntime) *transport.WeixinLoginSessionResponse {
 	if entity == nil {
 		return nil
 	}
-	return &transport.WeixinLoginSessionResponse{
+	response := &transport.WeixinLoginSessionResponse{
 		SessionID:     entity.SessionID,
 		Status:        entity.Status,
 		QRURL:         entity.QRURL,
@@ -742,6 +832,11 @@ func toWeixinSessionResponse(entity *channelloginsession.Entity) *transport.Weix
 		RestartStatus: entity.RestartStatus,
 		RestartError:  entity.RestartError,
 	}
+	if runtime != nil {
+		response.BotID = runtime.botID
+		response.ProfileID = runtime.profileID
+	}
+	return response
 }
 
 func isWeixinSessionActive(status string) bool {

@@ -9,6 +9,8 @@ allowed_origins:
   - https://www.lightvela.com
   - https://lightclaw.site
   - https://api.lightclaw.site
+  - https://chat.lightvela.com
+  - https://chat.lightvela.ai
 trusted_proxy_cidrs:
   - 100.64.0.0/10
 worker_actions:
@@ -55,7 +57,7 @@ routes:
     access: public
   - name: ctl
     prefix: /v1/instances
-    methods: [GET, POST, DELETE, OPTIONS]
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     path_policy: allowlist
@@ -64,6 +66,14 @@ routes:
       - { method: POST, path: "/v1/instances" }
       - { method: GET, path: "/v1/instances/{instance_id}" }
       - { method: DELETE, path: "/v1/instances/{instance_id}" }
+      - { method: GET, path: "/v1/instances/{instance_id}/bots" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots" }
+      - { method: PUT, path: "/v1/instances/{instance_id}/bots/{bot_id}" }
+      - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots/{bot_id}/retry" }
+      - { method: PUT, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
+      - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
       - { method: POST, path: "/v1/instances/{instance_id}/debug/exec" }
       - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
       - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }
@@ -77,22 +87,13 @@ routes:
       - method: GET
         path: "/v1/instances"
         allowed_origins:
-          - https://chat.lightvela.com
           - https://localhost.lightvela.com
-          - https://chat.lightvela.ai
           - https://localhost.lightvela.ai
       - method: POST
         path: "/v1/instances/{instance_id}/tat/session"
         allowed_origins:
-          - https://chat.lightvela.com
           - https://localhost.lightvela.com
-          - https://chat.lightvela.ai
           - https://localhost.lightvela.ai
-      - method: POST
-        path: "/v1/instances/{instance_id}/debug/exec"
-        allowed_origins:
-          - https://chat.lightvela.com
-          - https://chat.lightvela.ai
     require_realname: true
     response_header_timeout: 60s
   - name: sandbox-legacy

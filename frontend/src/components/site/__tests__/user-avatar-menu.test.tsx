@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
@@ -50,6 +51,14 @@ const stubLocation = (hostname: string) => {
     },
   });
 };
+
+const createNavigationValue = (navigate = vi.fn()): AppNavigationValue => ({
+  Link: ({ to, ...props }) => <a href={to} {...props} />,
+  navigate,
+  pathname: "/agents",
+  search: "",
+  setSearchParams: vi.fn(),
+});
 
 afterEach(() => {
   cleanup();
@@ -123,6 +132,33 @@ describe("UserAvatarMenu", () => {
 
     expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
+  });
+
+  it("returns to the public home after signing out from the console menu", () => {
+    const signOut = vi.fn();
+    const navigate = vi.fn();
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut,
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(
+      <AppNavigationProvider value={createNavigationValue(navigate)}>
+        <UserAvatarMenu />
+      </AppNavigationProvider>,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(navigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(signOut).toHaveBeenCalledTimes(1);
   });
 
   it("links the shared account menu to the agents workbench on local hosts", () => {

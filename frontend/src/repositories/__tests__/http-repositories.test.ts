@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
+import { isGlobal } from "@/lib/region";
 import {
   AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
@@ -540,6 +541,237 @@ describe("http repositories auth token bootstrap", () => {
         method: "GET",
       }),
     );
+  });
+
+  it.skipIf(isGlobal)("loads nested product bots and routes unique channels by stable bot id", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: Array<{ url: string; method: string }> = [];
+    const jsonResponse = (data: unknown) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (url.endsWith("/v1/instances")) {
+        return jsonResponse({
+          total: 1,
+          page: 1,
+          page_size: 20,
+          items: [{
+            instance_id: "ins_multi",
+            sandbox_id: "sandbox_multi",
+            status: "Running",
+            created_at: "2026-09-09T00:00:00Z",
+          }],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots")) {
+        return jsonResponse({ items: [
+          {
+            bot_id: "bot_main",
+            instance_id: "ins_multi",
+            profile_id: "main",
+            name: "主 Bot",
+            is_default: true,
+            status: "ready",
+            created_from: "blank",
+            created_at: "2026-09-09T00:00:00Z",
+            updated_at: "2026-09-09T00:00:00Z",
+            weixin_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
+          },
+          {
+            bot_id: "bot_sales",
+            instance_id: "ins_multi",
+            profile_id: "sales-123",
+            name: "销售 Bot",
+            is_default: false,
+            status: "ready",
+            created_from: "clone",
+            source_bot_id: "bot_main",
+            created_at: "2026-09-09T01:00:00Z",
+            updated_at: "2026-09-09T01:00:00Z",
+          },
+        ] });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots/bot_sales/retry")) {
+        return jsonResponse({
+          bot_id: "bot_sales",
+          instance_id: "ins_multi",
+          profile_id: "sales-123",
+          name: "销售 Bot",
+          is_default: false,
+          status: "ready",
+          created_from: "clone",
+          source_bot_id: "bot_main",
+          created_at: "2026-09-09T01:00:00Z",
+          updated_at: "2026-09-09T02:00:00Z",
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots/bot_sales") && method === "DELETE") {
+        return jsonResponse({
+          bot_id: "bot_sales",
+          instance_id: "ins_multi",
+          profile_id: "sales-123",
+          name: "销售 Bot",
+          is_default: false,
+          status: "deleted",
+          created_from: "clone",
+          created_at: "2026-09-09T01:00:00Z",
+          updated_at: "2026-09-09T02:00:00Z",
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi?require_single_bot=true") && method === "DELETE") {
+        return jsonResponse({
+          instance_id: "ins_multi",
+          status: "Deleting",
+          created_at: "2026-09-09T00:00:00Z",
+        });
+      }
+      if (url.includes("/channel-bindings/weixin")) {
+        return jsonResponse({});
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "bot_main",
+        instanceId: "ins_multi",
+        profileId: "main",
+        isDefault: true,
+        weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+      }),
+      expect.objectContaining({
+        id: "bot_sales",
+        instanceId: "ins_multi",
+        profileId: "sales-123",
+        sourceBotId: "bot_main",
+      }),
+    ]);
+
+    await expect(repositories.bots.retryBot("bot_sales")).resolves.toEqual(
+      expect.objectContaining({ id: "bot_sales", profileId: "sales-123", status: "active" }),
+    );
+    await repositories.bots.claimUniqueChannel("bot_sales", "weixin");
+    await repositories.bots.confirmUniqueChannel("bot_sales", "weixin");
+    await repositories.bots.releaseUniqueChannel("bot_sales", "weixin");
+    expect(calls.slice(-4)).toEqual([
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/retry", method: "POST" },
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "PUT" },
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
+    ]);
+    await repositories.bots.destroyBot("bot_sales");
+    expect(calls[calls.length - 1]).toEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",
+      method: "DELETE",
+    });
+    await repositories.bots.destroyBot("bot_main");
+    expect(calls[calls.length - 1]).toEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_multi?require_single_bot=true",
+      method: "DELETE",
+    });
+  });
+
+  it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const jsonResponse = (data: unknown) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return jsonResponse({
+          total: 1,
+          page: 1,
+          page_size: 20,
+          items: [{
+            instance_id: "ins_multi",
+            status: "Running",
+            created_at: "2026-09-09T00:00:00Z",
+          }],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots")) {
+        return jsonResponse({ items: [{
+          bot_id: "ins_multi",
+          instance_id: "ins_multi",
+          profile_id: "main",
+          name: "default",
+          is_default: true,
+          status: "ready",
+          created_from: "blank",
+          created_at: "2026-09-09T00:00:00Z",
+          updated_at: "2026-09-09T00:00:00Z",
+        }] });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_multi",
+        name: "我的Hermes",
+        profileId: "main",
+        isDefault: true,
+      }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("does not hide nested bot authorization failures behind the legacy fallback", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{ instance_id: "ins_multi", status: "Running", created_at: "2026-09-09T00:00:00Z" }],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ code: "FORBIDDEN", message: "无权访问 Bot 列表" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.bots.getDashboardSnapshot("live")).rejects.toMatchObject({
+      status: 403,
+      code: "FORBIDDEN",
+    });
+  });
+
+  it.skipIf(!isGlobal)("keeps unique channel coordination on the legacy global path", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await repositories.bots.claimUniqueChannel("ins-global", "weixin");
+    await repositories.bots.confirmUniqueChannel("ins-global", "weixin");
+    await repositories.bots.releaseUniqueChannel("ins-global", "weixin");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses ctl instance name before stale local bot drafts", async () => {

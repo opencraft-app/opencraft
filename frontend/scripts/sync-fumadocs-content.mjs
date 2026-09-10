@@ -973,7 +973,7 @@ const ES_DOC_METADATA = {
     description: 'Aprende cómo Hermes almacena y administra recuerdos a largo plazo y perfiles de usuario entre dispositivos y canales de mensajería.',
   },
   'configuration/automation': {
-    title: 'Automatizaciones',
+    title: 'Tareas programadas',
     description: 'Crea automatizaciones programadas para tu Hermes Agent.',
   },
   'configuration/files': {
@@ -1248,7 +1248,7 @@ const ID_DOC_METADATA = {
     description: 'Lihat cara Hermes Agent menyimpan memori jangka panjang dan bagaimana kapasitasnya ditampilkan.',
   },
   'configuration/automation': {
-    title: 'Otomasi',
+    title: 'Tugas Terjadwal',
     description: 'Atur tugas otomatis agar Hermes Agent dapat menjalankan rutinitas terjadwal di cloud.',
   },
   'configuration/files': {

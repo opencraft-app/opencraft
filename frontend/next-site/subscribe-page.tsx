@@ -1902,7 +1902,7 @@ const PlanCard = ({
               />
             </div>
           )}
-          {isComingSoon ? (
+          {isComingSoon && !isUpgradeTarget ? (
             <button
               disabled
               style={{
@@ -1924,7 +1924,7 @@ const PlanCard = ({
             >
               {plan.ctaLabel}
             </button>
-          ) : plan.ctaStyle === "primary" ? (
+          ) : isUpgradeTarget || plan.ctaStyle === "primary" ? (
             <button
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
@@ -1937,8 +1937,8 @@ const PlanCard = ({
                 padding: "12px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.15)" : colors.primary,
-                color: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.40)" : colors.white,
+                background: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.15)" : colors.primary,
+                color: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.40)" : colors.white,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
@@ -1952,7 +1952,7 @@ const PlanCard = ({
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isSoldOut && !quotaWouldExceed) {
+                if (isUpgradeTarget || (!isSoldOut && !quotaWouldExceed)) {
                   e.currentTarget.style.background = colors.primary;
                 }
               }}
@@ -3801,7 +3801,6 @@ export const SubscribePage = ({
             <>
               {upgrade.error && <p role="alert" className="mb-4 text-center text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
               {upgradeSucceededFor && upgradeSucceededFor === session.user?.id && <p role="status" className="mb-4 text-center text-sm">{t("套餐升级成功")}</p>}
-              {upgrade.resume && <div className="mb-4 text-center"><button type="button" className="rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold" onClick={() => setUpgradeSelection({ passId: upgrade.resume!.pass.pass_id, targetBundleId: upgrade.resume!.record.targetBundleId })}>{t("查看升级进度")}</button></div>}
               <motion.div
                 variants={staggerContainer}
                 initial="hidden"

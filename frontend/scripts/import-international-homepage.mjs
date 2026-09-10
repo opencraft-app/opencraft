@@ -4185,8 +4185,13 @@ let inlineScripts = [];
 const domesticFragment = await readFile(path.join(targetRoot, "index-fragment.zh-CN.html"), "utf8");
 const domesticDocument = new JSDOM(domesticFragment).window.document;
 const domesticChannels = Array.from(domesticDocument.querySelectorAll(".hero__tabs label"), (label) => label.textContent.trim());
-if (domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书" || domesticFragment.includes('href="/zh-cn')) {
-  throw new Error("Domestic homepage must retain its approved channels and unprefixed routes before international import");
+if (
+  domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书"
+  || domesticFragment.includes('href="/zh-cn')
+  || domesticFragment.includes("Copyright © 2026 LightVela 版权所有")
+  || domesticFragment.includes("© 2026 LightVela 版权所有")
+) {
+  throw new Error("Domestic homepage must retain its approved channels, unprefixed routes, and concise copyright before international import");
 }
 
 const preservedHarnessAssets = await Promise.all(

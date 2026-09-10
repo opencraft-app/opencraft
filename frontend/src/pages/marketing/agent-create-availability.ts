@@ -24,6 +24,7 @@ export const getOpenClawCreateLimitMessage = (
   bots: readonly OpenClawCreateAvailabilityBot[],
   maxBots: number,
 ): string | null => {
+  if (maxBots <= 0) return null;
   if (bots.length < maxBots) return null;
 
   if (bots.some((bot) => bot.status === "provisioning")) {

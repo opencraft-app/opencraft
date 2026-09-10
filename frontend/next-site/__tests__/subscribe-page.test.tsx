@@ -324,6 +324,8 @@ describe("SubscribePage", () => {
     const { rerender } = render(<SubscribePage />);
     const upgrade = await screen.findByRole("button", { name: "升级套餐" });
     expect(upgrade).toBeEnabled();
+    expect(upgrade).toHaveStyle({ background: "rgba(0,0,0,0.90)", color: "#FFFFFF" });
+    expect(screen.queryByRole("button", { name: "查看升级进度" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "当前订阅" })).toBeDisabled();
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
