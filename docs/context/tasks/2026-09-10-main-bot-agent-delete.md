@@ -4,6 +4,8 @@ type: task
 scope: 主 Bot 条件式实例删除与新建入口发布约束。
 triggers:
   - main bot deletion
+  - instance deletion guard
+  - hide bot creation
 owner: pablozhong
 authority: primary
 source_of_truth:
@@ -109,7 +111,7 @@ derived: false
 - 本地实现完成，分支 `codex/main-bot-delete-hide-create` 基于最新 `origin/master`；正在提交前验证，尚未合并或发布。
 
 ## checkpoint
-- stage：实现与聚焦验证完成，准备提交 MR。
+- stage：实现与聚焦验证完成，已提交，正在推送并创建 MR。
 - verified：创建入口隐藏、删除语义和 60 字符名称限制的测试通过；国内站构建通过。
 - unverified：真实实例销毁未执行；Docker 依赖的实例包全量测试待 CI 环境验证。
 - discard：此前主 Bot 永久禁止删除的产品约定已被替代。

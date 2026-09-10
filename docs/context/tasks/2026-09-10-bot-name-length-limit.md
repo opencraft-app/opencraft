@@ -4,6 +4,8 @@ type: task
 scope: Bot 名称长度限制与创建表单调整。
 triggers:
   - bot name length
+  - bot creation form
+  - profile display name
 owner: pablozhong
 authority: primary
 source_of_truth:
