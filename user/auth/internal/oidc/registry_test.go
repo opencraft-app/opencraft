@@ -20,6 +20,29 @@ func TestNativeRedirectIsAnExplicitClientCapability(t *testing.T) {
 	}
 }
 
+func TestWebClientRequiresOnlyTheTwoCanonicalCallbacks(t *testing.T) {
+	registry, err := NewRegistry([]Client{{
+		ID: WebClientID, DisplayName: "OpenCraft Web",
+		RedirectURIs: []string{WebInternationalRedirectURI, WebCNRedirectURI},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, redirectURI := range []string{WebCNRedirectURI, WebInternationalRedirectURI} {
+		if _, err := registry.ValidateRedirectURI(WebClientID, redirectURI); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, redirects := range [][]string{
+		{WebCNRedirectURI},
+		{WebCNRedirectURI, "https://evil.example/auth/lightvela/callback"},
+	} {
+		if _, err := NewRegistry([]Client{{ID: WebClientID, DisplayName: "OpenCraft Web", RedirectURIs: redirects}}); err == nil {
+			t.Fatalf("accepted web redirects: %v", redirects)
+		}
+	}
+}
+
 func TestRegistryAcceptsExactRedirectURIsOnly(t *testing.T) {
 	t.Parallel()
 

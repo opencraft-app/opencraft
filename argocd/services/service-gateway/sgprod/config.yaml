@@ -181,6 +181,8 @@ routes:
     access: authenticated
     public_allow:
       - method: POST
+        path: /auth/session/exchange
+      - method: POST
         path: /auth/native/token
       - method: GET
         path: /auth/federation/context

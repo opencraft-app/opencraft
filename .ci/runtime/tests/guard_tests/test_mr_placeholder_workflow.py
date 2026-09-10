@@ -5,6 +5,13 @@ REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (paren
 
 
 class MRPlaceholderWorkflowTests(unittest.TestCase):
+    def test_runs_on_the_domestic_runner_pool(self) -> None:
+        workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
+
+        job_block = workflow.split("      changed_guards:\n", 1)[1].split("        steps:\n", 1)[0]
+        self.assertIn("          pool-name: cn-pool", job_block)
+        self.assertNotIn("          pool-name: env", job_block)
+
     def test_only_mr_events_trigger_the_placeholder_check(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
 

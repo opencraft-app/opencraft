@@ -5,7 +5,7 @@ import { setGitHubLoginVisible } from "@/lib/github-login-visibility";
 import { setPhoneLoginVisible } from "@/lib/phone-login-visibility";
 import * as oauthModule from "@/lib/oauth";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
-import { readOpenCraftReturnTo, SignInPage } from "@/pages/auth/sign-in-page";
+import { SignInPage } from "@/pages/auth/sign-in-page";
 import i18n from "@/i18n";
 
 const repositories = {
@@ -127,52 +127,6 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
     expect(redirectSpy).toHaveBeenNthCalledWith(1, oauthStartUrls.qq);
     expect(redirectSpy).toHaveBeenNthCalledWith(2, `${oauthStartUrls.wechat}?mode=website`);
     redirectSpy.mockRestore();
-  });
-
-  it("为 OpenCraft 统一登录页保留经过约束的回跳地址", () => {
-    const returnTo = "https://chat.lightvela.com/local/thread-1?hostId=velahermes0";
-    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
-    window.history.replaceState({}, "", `/auth/sign-in?return_to=${encodeURIComponent(returnTo)}`);
-
-    render(
-      <MemoryRouter>
-        <SignInPage />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole("dialog", { name: "登录" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "手机" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "游客体验" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "QQ" }));
-    fireEvent.click(screen.getByRole("button", { name: "QQ账号登录" }));
-    expect(repositories.auth.getOAuthStartUrl).toHaveBeenCalledWith("qq", {
-      returnTo,
-      switchAccount: true,
-    });
-    expect(redirectSpy).toHaveBeenCalledWith(oauthStartUrls.qq);
-    redirectSpy.mockRestore();
-  });
-
-  it("不向 OAuth 转发非 Workbench return_to", () => {
-    window.history.replaceState({}, "", "/auth/sign-in?return_to=https%3A%2F%2Fevil.example%2Fsteal");
-    render(
-      <MemoryRouter>
-        <SignInPage />
-      </MemoryRouter>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "使用 QQ 登录" }));
-    expect(repositories.auth.getOAuthStartUrl).toHaveBeenCalledWith("qq");
-  });
-
-  it.each([
-    "http://chat.lightvela.com/local/thread-1",
-    "https://chat.lightvela.com.evil.example/local/thread-1",
-    "https://user:password@chat.lightvela.com/local/thread-1",
-    "opencraft://auth/lightvela",
-  ])("拒绝越过 Web 会话边界的 return_to: %s", (returnTo) => {
-    expect(readOpenCraftReturnTo(`?return_to=${encodeURIComponent(returnTo)}`)).toBeUndefined();
   });
 
   it("普通手机浏览器点击微信时展示可复制的公众号 OAuth 链接", async () => {

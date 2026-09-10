@@ -125,7 +125,11 @@ import {
   shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "@/pages/marketing/agent-workspace-recovery";
-import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/agent-create-availability";
+import {
+  findCompletedCreatingBot,
+  getOpenClawCreateLimitMessage,
+  resolveOpenClawCreatePermissions,
+} from "@/pages/marketing/agent-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -2576,7 +2580,10 @@ export const AgentSettingsPage = ({
   );
   // Keep additional Bot creation hidden until the Profile flow is released.
   const showCreateBotEntry = false;
-  const canCreateBot = createLimitMessage === null && (bots.length === 0 || multiBotEnabled);
+  const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
+    multiBotEnabled,
+    createLimitMessage,
+  );
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
@@ -3914,7 +3921,7 @@ export const AgentSettingsPage = ({
   });
 
   const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
+    if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -5171,7 +5178,7 @@ export const AgentSettingsPage = ({
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                       )}
 
-                      {showCreateBotEntry && canCreateBot && (
+                      {showCreateBotEntry && canCreateAdditionalBot && (
                         <button
                           type="button"
                           onClick={handleCreateNew}
@@ -5612,17 +5619,17 @@ export const AgentSettingsPage = ({
                 )}
                 <button
                   onClick={handleCreateNew}
-                  disabled={!canCreateBot || directCreating}
+                  disabled={!canCreateInitialAgent || directCreating}
                   className={cn(
                     "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 font-semibold text-white transition-all",
-                    canCreateBot && !directCreating
+                    canCreateInitialAgent && !directCreating
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {directCreating ? t("创建中...") : canCreateBot ? t("新建 Bot") : t("暂不可创建")}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
                 </button>
               </div>
             )
