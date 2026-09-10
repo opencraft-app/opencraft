@@ -243,14 +243,6 @@ interface LoginModalProps {
   mode?: "login" | "switch-account";
   onReturnToCurrentAccount?: () => void;
   initialError?: string | null;
-  /**
-   * First-party browser handoff owned by a caller outside the LightVela origin.
-   * Provider OAuth receives the validated return target and is forced through a
-   * fresh provider transaction so the callback can deliver a session token.
-   * Password/phone login stays hidden because it cannot hand a credential
-   * across origins by itself.
-   */
-  oauthHandoff?: { returnTo: string };
 }
 
 /* ─── Login Modal Component ─── */
@@ -263,7 +255,6 @@ export const LoginModal = ({
   mode = "login",
   onReturnToCurrentAccount,
   initialError = null,
-  oauthHandoff,
 }: LoginModalProps) => {
   const repositories = useRepositories();
   const { session } = useSession();
@@ -275,9 +266,7 @@ export const LoginModal = ({
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
   const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
-  const oauthHandoffReturnTo = oauthHandoff?.returnTo;
-  const hasOAuthHandoff = Boolean(oauthHandoffReturnTo);
-  const forceProviderSwitch = mode === "switch-account" || hasOAuthHandoff;
+  const forceProviderSwitch = mode === "switch-account";
 
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
@@ -300,10 +289,9 @@ export const LoginModal = ({
     }
     return repositories.auth.getOAuthStartUrl("wechat", {
       ...(forceProviderSwitch ? { switchAccount: true } : {}),
-      ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
       wechatMode: "official_account",
     });
-  }, [forceProviderSwitch, oauthHandoffReturnTo, repositories.auth]);
+  }, [forceProviderSwitch, repositories.auth]);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
 
@@ -324,7 +312,7 @@ export const LoginModal = ({
 
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
-    if (!open || mode === "switch-account" || hasOAuthHandoff) return;
+    if (!open || mode === "switch-account") return;
     if (session.stage === "authenticated" && session.user) {
       if (!loginReportedRef.current) {
         loginReportedRef.current = true;
@@ -339,7 +327,7 @@ export const LoginModal = ({
       if (closeOnSuccess) onClose();
       onSuccess?.();
     }
-  }, [closeOnSuccess, hasOAuthHandoff, mode, open, session.stage, session.user, onClose, onSuccess]);
+  }, [closeOnSuccess, mode, open, session.stage, session.user, onClose, onSuccess]);
 
   useEffect(() => {
     if (!open) return;
@@ -377,7 +365,6 @@ export const LoginModal = ({
       }
       const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
         ...(forceProviderSwitch ? { switchAccount: true } : {}),
-        ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
         wechatMode: target,
       });
       if (!loginUrl) return;
@@ -389,12 +376,7 @@ export const LoginModal = ({
     }
     const loginUrl = repositories.auth.getOAuthStartUrl(
       provider,
-      forceProviderSwitch || oauthHandoffReturnTo
-        ? {
-            ...(forceProviderSwitch ? { switchAccount: true } : {}),
-            ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
-          }
-        : undefined,
+      forceProviderSwitch ? { switchAccount: true } : undefined,
     );
     if (!loginUrl) return;
     setError(null);
@@ -560,12 +542,7 @@ export const LoginModal = ({
                   return providers.map((provider) => {
                     const loginUrl = repositories.auth.getOAuthStartUrl(
                       provider,
-                      forceProviderSwitch || oauthHandoffReturnTo
-                        ? {
-                            ...(forceProviderSwitch ? { switchAccount: true } : {}),
-                            ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
-                          }
-                        : undefined,
+                      forceProviderSwitch ? { switchAccount: true } : undefined,
                     );
                     if (!loginUrl) return null;
                     const visual = PROVIDER_BUTTON_VISUALS[provider];
@@ -643,7 +620,6 @@ export const LoginModal = ({
                   <span className="text-xs text-slate-500">{t("其他登录方式")}</span>
                   <div className="flex flex-wrap items-center justify-center">
                     {DOMESTIC_LOGIN_METHODS
-                      .filter((method) => !hasOAuthHandoff || method !== "phone")
                       .filter((method) => method !== domesticLoginMethod)
                       .map((method, index) => {
                         const visual = DOMESTIC_LOGIN_METHOD_VISUALS[method];

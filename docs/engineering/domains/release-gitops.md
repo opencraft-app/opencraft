@@ -125,12 +125,12 @@ CloudLadder 公网代理认证必须分阶段收敛，不能从完全关闭直�
 网关匹配，并已在 optional 阶段观察到签名请求成功。广州生产不追加 `jifei-test` 例外，
 sandbox-bj-7 继续使用独立 testing 入口。
 
-## Native OIDC 配置与镜像门禁
+## OpenCraft 第一方 OIDC 配置与镜像门禁
 
-原生客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境都只登记
-`opencraft-native-v1` 与精确回调 `opencraft://auth/lightvela`，同时保留各环境既有
+原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记
+`opencraft-native-v1`、`opencraft-web-v1` 及各自精确回调，同时保留各环境既有
 `site-gateway` 精确 HTTPS 回调；对应 Service Gateway 只公开精确的
-`POST /auth/native/token`。客户端注册与兑换路由是同一能力的两个发布输入，必须在每个
+`POST /auth/session/exchange`（旧 native 路径仅作兼容）。客户端注册与兑换路由是同一能力的两个发布输入，必须在每个
 地域成对审查、成对做配置契约测试，并分别证明 `GET`、后缀路径及旧的 native start/session
 路径仍受保护；一个地域已发布不能替代另一个地域的验收。
 
