@@ -156,6 +156,8 @@ import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
+const MAX_BOT_NAME_LENGTH = 60;
+
 const AgentChatPanel = lazy(() =>
   import("@/pages/marketing/agent-chat-panel").then((module) => ({ default: module.AgentChatPanel })),
 );
@@ -2572,6 +2574,8 @@ export const AgentSettingsPage = ({
     () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots),
     [bots, user.plan.maxBots],
   );
+  // Keep additional Bot creation hidden until the Profile flow is released.
+  const showCreateBotEntry = false;
   const canCreateBot = multiBotEnabled && createLimitMessage === null;
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
@@ -2777,6 +2781,12 @@ export const AgentSettingsPage = ({
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
+  const remainingInstanceBotCount = activeBot
+    ? bots.filter((bot) => (
+      bot.id !== activeBot.id
+      && (bot.instanceId ?? bot.id) === (activeBot.instanceId ?? activeBot.id)
+    )).length
+    : 0;
 
   useEffect(() => {
     if (activeSection !== "chat" || !activeBot || isActiveBotDefault) return;
@@ -3229,7 +3239,14 @@ export const AgentSettingsPage = ({
       setShowDeleteConfirm(false);
       setDeleteInput("");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("删除失败，请稍后重试。"));
+      const errorCode = err && typeof err === "object" && "code" in err
+        ? (err as { code?: unknown }).code
+        : undefined;
+      setDeleteError(
+        errorCode === "INSTANCE_BOTS_REMAIN"
+          ? t("请先删除其他 Bot，再删除整个 Agent。")
+          : err instanceof Error ? err.message : t("删除失败，请稍后重试。"),
+      );
     }
   };
 
@@ -3848,6 +3865,7 @@ export const AgentSettingsPage = ({
   ]);
 
   const handleCreateNew = () => {
+    if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -3882,6 +3900,10 @@ export const AgentSettingsPage = ({
       const normalizedName = createBotName.trim();
       if (!normalizedName) {
         setDirectCreateError(t("请输入 Bot 名称"));
+        return;
+      }
+      if (Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH) {
+        setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
         return;
       }
       const sourceBot = createBotMode === "clone-current" ? activeBot : defaultBot;
@@ -4386,16 +4408,22 @@ export const AgentSettingsPage = ({
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>
+                {activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")}
+              </h3>
             </div>
             <p className="rounded-xl border border-red-100 bg-red-50/70 px-3.5 py-3 text-sm leading-relaxed text-red-700" style={{ marginBottom: "6px" }}>
               <span className="block font-semibold">{t("风险提示：")}</span>
-              <span className="mt-1 block">{t("删除后会话将立即断开，智能体的配置、已安装技能、记忆等相关数据将无法恢复。请谨慎操作！")}</span>
+              <span className="mt-1 block">
+                {activeBot.isDefault
+                  ? t("删除后，整个 Agent 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")
+                  : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
+              </span>
             </p>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
               <span className="block">{t("已购买的套餐不受影响，不会因删除智能体而失效。")}</span>
               <span className="block">
-                {t("如确认删除智能体，请输入名称")}{" "}
+                {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
                 <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
                   {activeBot.name}
                 </span>
@@ -4422,7 +4450,7 @@ export const AgentSettingsPage = ({
                   fontSize: "16px",
                 }}
               >
-                {t("我已知晓风险，确认删除")}
+                {activeBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
@@ -4653,12 +4681,17 @@ export const AgentSettingsPage = ({
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建 Bot")}</h3>
             </div>
             <div className="space-y-4">
-              <label className="block space-y-1.5 text-sm font-medium text-black/70">
-                <span>{t("Bot 名称")}</span>
+              <label className="block space-y-2 text-sm font-medium text-black/70">
+                <span className="flex items-center justify-between gap-3">
+                  <span>{t("Bot 名称")}</span>
+                  <span className="text-xs font-normal tabular-nums text-black/40">
+                    {Array.from(createBotName).length}/{MAX_BOT_NAME_LENGTH}
+                  </span>
+                </span>
                 <input
                   value={createBotName}
                   onChange={(event) => setCreateBotName(event.target.value)}
-                  maxLength={64}
+                  maxLength={MAX_BOT_NAME_LENGTH}
                   disabled={directCreating}
                   className="h-10 w-full rounded-md border border-black/10 px-3 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
                 />
@@ -4701,7 +4734,7 @@ export const AgentSettingsPage = ({
               </fieldset>
               <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
                 {createBotMode === "blank"
-                  ? t("使用 Hermes 默认配置创建独立 Bot。")
+                  ? t("使用 LightVela 默认配置创建一个独立 Bot。")
                   : t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")}
               </p>
               <div>
@@ -4880,8 +4913,11 @@ export const AgentSettingsPage = ({
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
                   : t("重装 Agent（保留数据）");
-              const deleteDisabled = resettingAcli || Boolean(activeBot.isDefault);
-              const deleteTooltip = activeBot.isDefault ? t("默认 Bot 不能删除") : t("删除");
+              const deleteRequiresOtherBotsRemoved = Boolean(activeBot.isDefault && remainingInstanceBotCount > 0);
+              const deleteDisabled = resettingAcli || deleteRequiresOtherBotsRemoved;
+              const deleteTooltip = deleteRequiresOtherBotsRemoved
+                ? t("请先删除其他 Bot，再删除整个 Agent")
+                : activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
@@ -5109,7 +5145,7 @@ export const AgentSettingsPage = ({
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                       )}
 
-                      {canCreateBot && (
+                      {showCreateBotEntry && canCreateBot && (
                         <button
                           type="button"
                           onClick={handleCreateNew}

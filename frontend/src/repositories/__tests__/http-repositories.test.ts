@@ -614,6 +614,26 @@ describe("http repositories auth token bootstrap", () => {
           updated_at: "2026-09-09T02:00:00Z",
         });
       }
+      if (url.endsWith("/v1/instances/ins_multi/bots/bot_sales") && method === "DELETE") {
+        return jsonResponse({
+          bot_id: "bot_sales",
+          instance_id: "ins_multi",
+          profile_id: "sales-123",
+          name: "销售 Bot",
+          is_default: false,
+          status: "deleted",
+          created_from: "clone",
+          created_at: "2026-09-09T01:00:00Z",
+          updated_at: "2026-09-09T02:00:00Z",
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi?require_single_bot=true") && method === "DELETE") {
+        return jsonResponse({
+          instance_id: "ins_multi",
+          status: "Deleting",
+          created_at: "2026-09-09T00:00:00Z",
+        });
+      }
       if (url.includes("/channel-bindings/weixin")) {
         return jsonResponse({});
       }
@@ -651,6 +671,16 @@ describe("http repositories auth token bootstrap", () => {
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
     ]);
+    await repositories.bots.destroyBot("bot_sales");
+    expect(calls[calls.length - 1]).toEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",
+      method: "DELETE",
+    });
+    await repositories.bots.destroyBot("bot_main");
+    expect(calls[calls.length - 1]).toEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_multi?require_single_bot=true",
+      method: "DELETE",
+    });
   });
 
   it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
