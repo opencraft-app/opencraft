@@ -16,6 +16,7 @@ export * from "./setup-codex";
 export * from "./submission-pipeline";
 export * from "./composer-model-catalog";
 export * from "./adaptive-navigation";
+export * from "./shell-navigation";
 export * from "./adaptive-panel";
 export * from "./abort-signal";
 export { getActiveTimeline } from "./models";

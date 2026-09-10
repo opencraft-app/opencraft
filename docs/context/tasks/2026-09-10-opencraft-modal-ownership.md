@@ -11,7 +11,7 @@
 
 ## interface_refs / data_structure_refs
 - `opencraft/packages/design-system/src/modal.shared.ts`：跨端 Modal 描述、尺寸、层级和关闭原因。
-- `opencraft/apps/workbench-web/src/components/modal/`：Web Controller/Host/Radix Surface。
+- `opencraft/apps/workbench-web/src/components/modal/`：Web Controller/Host/Radix Surface 与业务内容槽。
 - `opencraft/apps/workbench-expo/src/components/ui/modal-surface.tsx`：Native Modal Surface。
 - 不变量：业务内容不得拥有 Portal、scrim、焦点陷阱或 Escape 监听。
 
@@ -54,7 +54,11 @@
 | `opencraft/MONO2_MIGRATION.md@worktree` | 生成闭包与唯一真源 | 禁止直接编辑生成上游代码 |
 
 ## evidence
-- 待实现后记录。
+- `packages/design-system/modal` 提供 renderer-neutral descriptor、尺寸、层级和 dismissal 语义。
+- Web `ModalHost` 统一投影设置和账户窗口；Radix Dialog 独占 Portal、Overlay、焦点、Escape 与 outside interaction。
+- 目录选择器、工具原始输出和图片预览已删除自建 Portal/Escape，复用平台 `ModalSurface`。
+- Expo 模型选择器已删除业务自建 `Modal`、scrim 和关闭控件，改用 Unistyles 驱动的 Native `ModalSurface`。
+- `npm run gate` 通过（边界、全 workspace typecheck、扩展/AppServer/Chat/Workbench tests、Web/Expo Web/Expo iOS builds）。
 
 ## risks
 - Radix Portal 与业务内 Select/Popover 的 DOM 顺序和层级冲突；由语义 layer token 和 Host 栈顺序覆盖。
@@ -84,4 +88,4 @@
 - 有界源码检查记录在本任务命令输出中，无额外生成物。
 
 ## handoff
-- 实现中。
+- 实现完成，未提交、未推送、未发布。
