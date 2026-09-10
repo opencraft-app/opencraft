@@ -19,7 +19,7 @@ class Socket {
   }
 }
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-async function fixture() {
+async function fixture(options: { idleKeepaliveIntervalMs?: number } = {}) {
   let socket!: Socket;
   let failures = 0;
   const mux = new TencentTatSessionMultiplexer({
@@ -28,12 +28,48 @@ async function fixture() {
     timeoutSeconds: 60, username: "test", workingDirectory: "/",
   }, {
     connectDelayMs: 0, requestTimeoutMs: 30,
+    ...(options.idleKeepaliveIntervalMs === undefined ? {} : {
+      idleKeepaliveIntervalMs: options.idleKeepaliveIntervalMs,
+      idleKeepaliveTarget: { ip: "127.0.0.1", port: 9119 },
+    }),
     WebSocketImpl: class extends Socket { constructor() { super(); socket = this; } } as unknown as typeof WebSocket,
     onUnhealthy: () => { failures++; },
   });
   await mux.connect();
   return { mux, get socket() { return socket; }, failures: () => failures };
 }
+
+test("an idle physical tunnel owns one keepalive probe and closes its temporary channel", async () => {
+  const f = await fixture({ idleKeepaliveIntervalMs: 10 });
+  await pause(15);
+  const requests = f.socket.sent.filter(frame => frame.Type === "PtyProxyNew");
+  assert.equal(requests.length, 1);
+  const id = requests[0]!.Data.Data.ProxyId;
+  f.socket.receive("PtyProxyReady", id);
+  await pause(2);
+  assert.equal(f.failures(), 0);
+  assert(f.socket.sent.some(frame => frame.Type === "PtyProxyClose" && frame.Data.Data.ProxyId === id));
+  f.mux.close();
+});
+
+test("real tunnel traffic postpones the idle keepalive lease probe", async () => {
+  const f = await fixture({ idleKeepaliveIntervalMs: 20 });
+  await pause(12);
+  f.socket.receive("PtyProxyData", "unknown-but-live-channel");
+  await pause(12);
+  assert.equal(f.socket.sent.filter(frame => frame.Type === "PtyProxyNew").length, 0);
+  await pause(12);
+  assert.equal(f.socket.sent.filter(frame => frame.Type === "PtyProxyNew").length, 1);
+  f.mux.close();
+});
+
+test("an unanswered idle keepalive retires the dead physical tunnel", async () => {
+  const f = await fixture({ idleKeepaliveIntervalMs: 5 });
+  await pause(45);
+  assert.equal(f.failures(), 1);
+  assert.equal(f.socket.readyState, WebSocket.CLOSED);
+  await assert.rejects(f.mux.connect(), /retired/);
+});
 
 test("simultaneous timeouts have one confirmation probe and one tunnel failure", async () => {
   const f = await fixture();

@@ -386,7 +386,8 @@ export function VirtualizedConversationTurns({
     finishTurnMeasurementTransaction(transaction);
   }, [finishTurnMeasurementTransaction, measuredHeightsByKey]);
   useLayoutEffect(() => {
-    viewportOwner.setMeasurementListener(({ measurements }) => {
+    viewportOwner.setMeasurementListener(({ generation, measurements }) => {
+      if (!viewportOwner.isCurrentGeneration(generation)) return;
       commitTurnMeasurements(measurements);
     });
     return () => viewportOwner.setMeasurementListener(null);

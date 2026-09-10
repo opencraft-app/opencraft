@@ -31,6 +31,17 @@ async function listFiles(directory) {
   return result;
 }
 
+async function unlinkIfPresent(path) {
+  try {
+    await unlink(path);
+  } catch (error) {
+    // Multiple manifest entries can canonicalize to the same emitted chunk.
+    // Cleanup is a set operation: once that old name is absent, the invariant
+    // is already satisfied and a second removal must remain idempotent.
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+}
+
 const deepOptions = {
   ...JavaScriptObfuscator.getOptionsByPreset("high-obfuscation"),
   debugProtection: false,
@@ -152,15 +163,16 @@ for (const [path, source] of contents) {
 }
 // Generated output is disposable. Remove the old names only after every new
 // chunk and every reference has been committed.
+const destinations = new Set(renamed.values());
 for (const [from, to] of renamed) {
-  if (from !== to) await unlink(from);
+  if (from !== to && !destinations.has(from)) await unlinkIfPresent(from);
 }
 
 const remainingFiles = await listFiles(outputRoot);
 for (const path of remainingFiles) {
   const relativePath = relative(outputRoot, path).split(sep).join("/");
   if (relativePath.endsWith(".map")) {
-    await unlink(path);
+    await unlinkIfPresent(path);
     continue;
   }
   if (relativePath.startsWith("assets/") && /\.(?:js|css)$/u.test(relativePath)

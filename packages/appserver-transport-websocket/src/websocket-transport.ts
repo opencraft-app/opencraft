@@ -2,6 +2,7 @@ import type {
   DuplexTransport,
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
+import { decodeUtf8 } from "@opencraft/appserver-client/utf8";
 
 interface WebSocketEventMap {
   open: Event;
@@ -52,11 +53,13 @@ function abortError(message: string): Error {
 
 async function messageDataToText(data: unknown): Promise<string> {
   if (typeof data === "string") return data;
-  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (data instanceof ArrayBuffer) return decodeUtf8(new Uint8Array(data));
   if (ArrayBuffer.isView(data)) {
-    return new TextDecoder().decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    return decodeUtf8(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
   }
-  if (typeof Blob !== "undefined" && data instanceof Blob) return data.text();
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    return decodeUtf8(new Uint8Array(await data.arrayBuffer()));
+  }
   throw new TypeError("AppServer WebSocket received a non-text frame");
 }
 

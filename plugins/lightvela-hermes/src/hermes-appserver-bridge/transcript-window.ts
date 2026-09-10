@@ -1,5 +1,6 @@
 import type { HermesHistoryClient } from "./history-client";
 import type { HermesMessage, HermesMessagesPage } from "./types";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
 
 /** Hermes Desktop api/sessions.ts: paging is in rows, not AppServer Turns. */
 export const LATEST_SESSION_MESSAGES_LIMIT = 120;
@@ -59,7 +60,7 @@ export class HermesTranscriptWindow {
   }
 
   readOlder(signal?: AbortSignal, expectedOffset = this.snapshot.nextOffset): Promise<HermesTranscriptWindowSnapshot> {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     if (expectedOffset < this.snapshot.nextOffset) return Promise.resolve(this.snapshot);
     if (expectedOffset > this.snapshot.nextOffset) return Promise.reject(new Error("Stale Hermes history cursor; resume the transcript window"));
     if (this.older !== null) return this.older;
@@ -83,12 +84,12 @@ export class HermesTranscriptWindow {
   }
 
   private async fetch(offset: number, signal?: AbortSignal): Promise<HermesMessagesPage> {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const page = await this.history.readMessages(this.storedSessionId, {
       limit: LATEST_SESSION_MESSAGES_LIMIT, offset, order: "latest", includeCompacted: true,
       ...(this.profile ? { profile: this.profile } : {}),
     }, signal);
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     return page;
   }
 }

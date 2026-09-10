@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { useState, useSyncExternalStore } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 import { AdaptivePanel, projectPanel, type PanelPage } from "@opencraft/workbench-runtime";
+import { Button } from "./ui/button";
 
 interface NativePanelPage extends PanelPage {
   readonly title: string;
@@ -22,14 +24,14 @@ export function AdaptivePanelView({ controller, pages }: {
       const shown = visible.includes(page.id);
       return <View key={page.id} accessibilityElementsHidden={!shown} importantForAccessibility={shown ? "auto" : "no-hide-descendants"}
         style={[styles.pane, page.id === visible[visible.length - 1] ? styles.trailing : { width: page.minWidth }, !shown && styles.hidden]}>
-        {index > 0 && canGoBack ? <Pressable accessibilityRole="button" accessibilityLabel={`Back to ${pages[0].title}`} onPress={controller.back} style={styles.back}><Text>‹ {pages[0].title}</Text></Pressable> : null}
+        {index > 0 && canGoBack ? <Button accessibilityLabel={`Back to ${pages[0].title}`} onPress={controller.back} style={styles.back} variant="ghost">{`‹ ${pages[0].title}`}</Button> : null}
         {page.content}
       </View>;
     })}
   </View>;
 }
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   root: { flex: 1, flexDirection: "row", minWidth: 0 },
   pane: { minWidth: 0 }, trailing: { flex: 1 }, hidden: { display: "none" },
-  back: { padding: 16, minHeight: 44 },
-});
+  back: { alignSelf: "flex-start", margin: theme.spacing[2] },
+}));

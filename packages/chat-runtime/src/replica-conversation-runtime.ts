@@ -1,10 +1,13 @@
-import type { ReplicaJsonValue } from "@opencraft/appserver-protocol";
 import type {
   QueuedSubmission as ProtocolQueuedSubmission,
+  ReplicaJsonValue,
+} from "@opencraft/appserver-protocol";
+import type {
   UserInput,
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
   asTurnId,
+  codexUserMessageCompareKey,
   createDefaultTimelineProjectorRegistry,
   projectTimeline,
   summarizeHookRuns,
@@ -820,6 +823,13 @@ function queuedInputPreview(input: readonly UserInput[]): string {
 interface OptimisticSubmissionState extends PendingSubmission {
   readonly kind: "turn" | "steer";
   readonly targetTurnId: TurnId | null;
+  /**
+   * Authoritative Turn that immediately preceded this local Turn when the
+   * submission crossed the Composer boundary. `null` is a resolved beginning
+   * of transcript; `undefined` means the initial Resume baseline has not
+   * arrived yet and placement must remain append-only until it does.
+   */
+  readonly predecessorTurnId: string | null | undefined;
   readonly input: readonly UserInput[];
   readonly attachments: SubmitIntent["attachments"];
 }
@@ -879,6 +889,34 @@ function sourceClientMessageIds(turns: readonly TimelineSourceTurn[]): Set<strin
   return ids;
 }
 
+function sameUserMessageInput(left: unknown, right: unknown): boolean {
+  const leftKey = codexUserMessageCompareKey(left);
+  const rightKey = codexUserMessageCompareKey(right);
+  return leftKey.rawText === rightKey.rawText
+    && leftKey.imageCount === rightKey.imageCount;
+}
+
+function steeringAcknowledgementIndex(
+  turn: TimelineSourceTurn,
+  state: OptimisticSubmissionState,
+): number {
+  return turn.items.findIndex((candidate, index) => {
+    if (candidate.type !== "userMessage" || !isRecord(candidate.payload as ReplicaJsonValue)) return false;
+    const payload = candidate.payload as JsonRecord;
+    const clientId = string(payload.clientId) ?? string(payload.clientUserMessageId);
+    if (clientId !== null) return clientId === state.clientMessageId;
+    // Reconstructed Hermes history can omit client ids. Only compare content
+    // after the Turn has crossed an assistant-owned boundary, otherwise a
+    // repeated steer could steal the primary Composer message.
+    const followsAssistantOutput = turn.items.slice(0, index).some((item) =>
+      item.type !== "userMessage"
+      && item.type !== "steeringUserMessage"
+      && item.type !== "hookPrompt");
+    return followsAssistantOutput
+      && sameUserMessageInput(payload.content ?? payload.input, state.input);
+  });
+}
+
 function optimisticItem(state: OptimisticSubmissionState): TimelineSourceItem {
   return {
     id: `optimistic-user:${state.clientMessageId}`,
@@ -891,7 +929,11 @@ function optimisticItem(state: OptimisticSubmissionState): TimelineSourceItem {
       clientId: state.clientMessageId,
       clientUserMessageId: state.clientMessageId,
       attachments: [...state.attachments],
-      status: state.state === "failed" ? "cancelled" : "pending",
+      status: state.state === "failed"
+        ? "cancelled"
+        : state.state === "accepted"
+          ? "accepted"
+          : "pending",
       deliveryStatus:
         state.state === "unknown" ? "unknown" : state.state === "failed"
           ? "failed"
@@ -910,11 +952,19 @@ function mergeOptimisticSubmissions(
   const result = turns.map((turn) => ({ ...turn, items: [...turn.items] }));
   const clientIds = sourceClientMessageIds(turns);
   const turnIds = new Set(turns.map((turn) => String(turn.id)));
+  const localTurns: Array<{
+    readonly state: OptimisticSubmissionState;
+    readonly turn: TimelineSourceTurn;
+  }> = [];
   for (const state of submissions) {
-    if (
-      clientIds.has(state.clientMessageId) ||
-      (state.turnId !== null && turnIds.has(String(state.turnId)))
-    ) {
+    // A steer response returns the already-active Turn id. That is only a
+    // target binding, never acknowledgement of this user message. Keep the
+    // local steering item as display owner until the Turn settles; the server
+    // UserMessage is then joined to it by client id/compare key.
+    if (state.kind === "turn" && (
+      clientIds.has(state.clientMessageId)
+      || (state.turnId !== null && turnIds.has(String(state.turnId)))
+    )) {
       continue;
     }
     const item = optimisticItem(state);
@@ -922,7 +972,13 @@ function mergeOptimisticSubmissions(
       const target = result.find(
         (turn) => String(turn.id) === String(state.targetTurnId),
       );
-      if (target !== undefined) target.items = [...target.items, item];
+      if (target !== undefined) {
+        const acknowledgementIndex = steeringAcknowledgementIndex(target, state);
+        const nextItems = [...target.items];
+        if (acknowledgementIndex < 0) nextItems.push(item);
+        else nextItems.splice(acknowledgementIndex, 0, item);
+        target.items = nextItems;
+      }
       continue;
     }
     const errorItem: TimelineSourceItem[] =
@@ -937,35 +993,158 @@ function mergeOptimisticSubmissions(
             },
           ]
         : [];
-    result.push({
-      id: state.turnId ?? asTurnId(`optimistic:${state.commandId}`),
-      status: state.state === "failed" ? "failed" : "pending",
-      startedAtMs: state.createdAt,
-      params: {
-        clientUserMessageId: state.clientMessageId,
-        input: [...state.input],
-        attachments: [...state.attachments],
+    localTurns.push({
+      state,
+      turn: {
+        id: state.turnId ?? asTurnId(`optimistic:${state.commandId}`),
+        status: state.state === "failed" ? "failed" : "pending",
+        startedAtMs: state.createdAt,
+        params: {
+          clientUserMessageId: state.clientMessageId,
+          input: [...state.input],
+          attachments: [...state.attachments],
+        },
+        items: [item, ...errorItem],
       },
-      items: [item, ...errorItem],
     });
   }
-  return result;
+
+  // Transcript order is causal, not source-grouped. A failed local Turn stays
+  // at the boundary where it was submitted even after a later Turn moves from
+  // the optimistic projection into authoritative history. Grouping every
+  // local Turn after every authoritative Turn makes an acknowledgement visibly
+  // jump backwards across older failures.
+  const beforeFirst: TimelineSourceTurn[] = [];
+  const afterTurn = new Map<string, TimelineSourceTurn[]>();
+  const unresolved: typeof localTurns = [];
+  for (const candidate of localTurns) {
+    const predecessor = candidate.state.predecessorTurnId;
+    if (predecessor === null) {
+      beforeFirst.push(candidate.turn);
+    } else if (predecessor !== undefined && turnIds.has(predecessor)) {
+      const group = afterTurn.get(predecessor) ?? [];
+      group.push(candidate.turn);
+      afterTurn.set(predecessor, group);
+    } else {
+      unresolved.push(candidate);
+    }
+  }
+
+  const ordered: TimelineSourceTurn[] = [...beforeFirst];
+  for (const turn of result) {
+    ordered.push(turn);
+    ordered.push(...(afterTurn.get(String(turn.id)) ?? []));
+  }
+  for (const candidate of unresolved) {
+    const insertionIndex = ordered.findIndex(
+      (turn) => turn.startedAtMs !== null
+        && turn.startedAtMs !== undefined
+        && turn.startedAtMs > candidate.state.createdAt,
+    );
+    if (insertionIndex < 0) ordered.push(candidate.turn);
+    else ordered.splice(insertionIndex, 0, candidate.turn);
+  }
+  return ordered;
+}
+
+function resolveOptimisticTurnPlacements(
+  turns: readonly TimelineSourceTurn[],
+  authoritative: boolean,
+  submissions: Map<string, OptimisticSubmissionState>,
+): void {
+  if (!authoritative) return;
+  const predecessorTurnId = turns.at(-1)?.id ?? null;
+  for (const [commandId, state] of submissions) {
+    if (state.kind !== "turn" || state.predecessorTurnId !== undefined) continue;
+    submissions.set(commandId, { ...state, predecessorTurnId });
+  }
+}
+
+function authoritativeTurnForSubmission(
+  turns: readonly TimelineSourceTurn[],
+  state: OptimisticSubmissionState,
+): TimelineSourceTurn | undefined {
+  if (state.kind !== "turn") return undefined;
+  return turns.find((turn) =>
+    sourceClientMessageIds([turn]).has(state.clientMessageId)
+    || (state.turnId !== null && String(turn.id) === String(state.turnId))
+  );
+}
+
+/**
+ * Move the insertion boundary forward when an older local Turn acquires its
+ * authoritative identity. Several rapid submissions can share the same
+ * predecessor because the Replica has not painted the earlier acknowledgement
+ * yet. Map insertion order is their causal order; acknowledgement may replace
+ * a slot, but it must never let a later local slot cross that slot.
+ */
+function rebaseOptimisticTurnPlacements(
+  turns: readonly TimelineSourceTurn[],
+  submissions: Map<string, OptimisticSubmissionState>,
+): void {
+  let latestAcknowledgedTurnId: string | null = null;
+  for (const [commandId, state] of submissions) {
+    if (state.kind !== "turn") continue;
+    const authoritativeTurn = authoritativeTurnForSubmission(turns, state);
+    if (authoritativeTurn !== undefined) {
+      latestAcknowledgedTurnId = String(authoritativeTurn.id);
+      continue;
+    }
+    if (
+      latestAcknowledgedTurnId !== null
+      && state.predecessorTurnId !== latestAcknowledgedTurnId
+    ) {
+      submissions.set(commandId, {
+        ...state,
+        predecessorTurnId: latestAcknowledgedTurnId,
+      });
+    }
+  }
 }
 
 function pruneAcknowledgedSubmissions(
   turns: readonly TimelineSourceTurn[],
   submissions: Map<string, OptimisticSubmissionState>,
+  confirmedSteers: Map<string, OptimisticSubmissionState>,
 ): void {
   const clientIds = sourceClientMessageIds(turns);
   const turnIds = new Set(turns.map((turn) => String(turn.id)));
   for (const [commandId, state] of submissions) {
+    if (state.state !== "accepted" && state.state !== "unknown") continue;
+    const target = state.targetTurnId === null
+      ? undefined
+      : turns.find((turn) => String(turn.id) === String(state.targetTurnId));
+    const acknowledged = state.kind === "steer"
+      ? target !== undefined && steeringAcknowledgementIndex(target, state) >= 0
+      : clientIds.has(state.clientMessageId);
+    const turnAcknowledged = state.turnId !== null && turnIds.has(String(state.turnId));
+    const targetSettled = target !== undefined
+      && target.status !== "streaming"
+      && target.status !== "pending";
     if (
-      (state.state === "accepted" || state.state === "unknown") &&
-      (clientIds.has(state.clientMessageId) ||
-        (state.turnId !== null && turnIds.has(String(state.turnId))))
+      (state.kind === "turn" && (acknowledged || turnAcknowledged))
     ) {
       submissions.delete(commandId);
+    } else if (state.kind === "steer" && acknowledged && targetSettled) {
+      // Codex does not delete an accepted steeringUserMessage. The Turn owns
+      // that display item permanently; only its pending-command bookkeeping
+      // retires when the target Turn settles.
+      confirmedSteers.set(commandId, state);
+      submissions.delete(commandId);
     }
+  }
+}
+
+function reconcileSteeringAcknowledgements(
+  turns: readonly TimelineSourceTurn[],
+  submissions: Map<string, OptimisticSubmissionState>,
+): void {
+  for (const [commandId, state] of submissions) {
+    if (state.kind !== "steer" || state.targetTurnId === null) continue;
+    const target = turns.find((turn) => String(turn.id) === String(state.targetTurnId));
+    if (target === undefined || steeringAcknowledgementIndex(target, state) < 0) continue;
+    if (state.state === "accepted" && state.error === null) continue;
+    submissions.set(commandId, { ...state, state: "accepted", error: null });
   }
 }
 
@@ -977,6 +1156,7 @@ export function createReplicaConversationRuntime(
   const listeners = new Set<() => void>();
   const queued = new Map<string, QueuedSubmission>();
   const pendingSubmissions = new Map<string, OptimisticSubmissionState>();
+  const confirmedSteers = new Map<string, OptimisticSubmissionState>();
   const authoritativeQueue = new Map<string, QueuedSubmission>();
   let pendingQueueOrder: readonly string[] | null = null;
   let localRevision = 0;
@@ -986,7 +1166,6 @@ export function createReplicaConversationRuntime(
   // The statement "You stopped" belongs to this client's command intent,
   // not every remote/interrupted Turn. Never persist it as a server fact.
   const interruptedByThisClient = new Set<string>();
-  let queuePausedReason: "interrupted" | null = null;
   let disposed = false;
   let snapshot: ConversationRuntimeSnapshot;
   let continuationPending = false;
@@ -1007,9 +1186,19 @@ export function createReplicaConversationRuntime(
     );
     const source = sourceTurns(view.turns ?? thread.turns).map((turn) =>
       interruptedByThisClient.has(turn.id) ? { ...turn, interruptedByThisClient: true } : turn);
-    pruneAcknowledgedSubmissions(source, pendingSubmissions);
+    resolveOptimisticTurnPlacements(
+      source,
+      replica.authoritative,
+      pendingSubmissions,
+    );
+    rebaseOptimisticTurnPlacements(source, pendingSubmissions);
+    reconcileSteeringAcknowledgements(source, pendingSubmissions);
+    pruneAcknowledgedSubmissions(source, pendingSubmissions, confirmedSteers);
     const reviewedTurns = attachGuardianApprovalReviews(
-      mergeOptimisticSubmissions(source, pendingSubmissions.values()),
+      mergeOptimisticSubmissions(source, [
+        ...confirmedSteers.values(),
+        ...pendingSubmissions.values(),
+      ]),
       sourceGuardianApprovalReviews(view.guardianApprovalReviews),
     );
     const turns = splitCommandExecutionActions(
@@ -1084,7 +1273,14 @@ export function createReplicaConversationRuntime(
             },
       pendingInteractions,
       pendingSubmissions: [...pendingSubmissions.values()].map(
-        ({ kind: _kind, targetTurnId: _targetTurnId, input: _input, attachments: _attachments, ...submission }) =>
+        ({
+          kind: _kind,
+          targetTurnId: _targetTurnId,
+          predecessorTurnId: _predecessorTurnId,
+          input: _input,
+          attachments: _attachments,
+          ...submission
+        }) =>
           submission,
       ),
       queuedSubmissions: [
@@ -1097,7 +1293,6 @@ export function createReplicaConversationRuntime(
             ),
         ),
       ],
-      queue: { pausedReason: queuePausedReason },
       history: {
         hasOlder:
           replica.authoritative &&
@@ -1168,9 +1363,22 @@ export function createReplicaConversationRuntime(
           state: "submitting",
           operation: "idle",
           createdAt: intent.createdAt,
+          pausedReason: null,
           error: null,
         });
       } else {
+        const replicaAtSubmission = config.replica.getSnapshot();
+        const viewAtSubmission = isRecord(
+          replicaAtSubmission.entities.get(config.key.threadId),
+        )
+          ? replicaAtSubmission.entities.get(config.key.threadId) as JsonRecord
+          : {};
+        const threadAtSubmission = isRecord(viewAtSubmission.thread)
+          ? viewAtSubmission.thread
+          : {};
+        const sourceAtSubmission = sourceTurns(
+          viewAtSubmission.turns ?? threadAtSubmission.turns,
+        );
         pendingSubmissions.set(intent.commandId, {
           commandId: intent.commandId,
           clientMessageId: intent.clientMessageId,
@@ -1184,6 +1392,11 @@ export function createReplicaConversationRuntime(
             intent.target.type === "steer-active-turn"
               ? intent.target.turnId
               : null,
+          predecessorTurnId: intent.target.type === "steer-active-turn"
+            ? null
+            : replicaAtSubmission.authoritative
+              ? sourceAtSubmission.at(-1)?.id ?? null
+              : undefined,
           input: optimisticInput(intent),
           attachments: intent.attachments,
         });
@@ -1202,16 +1415,32 @@ export function createReplicaConversationRuntime(
             state: "queued",
             operation: "idle",
             createdAt: intent.createdAt,
+            pausedReason: null,
             error: null,
           });
         } else {
           const previous = pendingSubmissions.get(intent.commandId);
           if (previous !== undefined) {
+            if (previous.kind === "steer" && receipt.disposition === "queue") {
+              // The Host accepted the bytes but the target Turn settled before
+              // it could acknowledge them. Its authoritative paused Queue now
+              // owns presentation and retry; the dead Turn must not retain a
+              // phantom optimistic steering item.
+              pendingSubmissions.delete(intent.commandId);
+              return receipt;
+            }
             pendingSubmissions.set(intent.commandId, {
               ...previous,
               turnId:
                 receipt.turnId === null ? null : asTurnId(receipt.turnId),
-              state: "accepted",
+              targetTurnId:
+                previous.kind === "steer" && receipt.turnId !== null
+                  ? asTurnId(receipt.turnId)
+                  : previous.targetTurnId,
+              // Codex treats the steer RPC as transport admission only. The
+              // steering Item becomes accepted exclusively when a matching
+              // authoritative userMessage arrives.
+              state: previous.kind === "steer" ? previous.state : "accepted",
               error: null,
             });
           }
@@ -1230,6 +1459,7 @@ export function createReplicaConversationRuntime(
             state: "failed",
             operation: "idle",
             createdAt: intent.createdAt,
+            pausedReason: null,
             error: submissionError,
           });
         } else {
@@ -1266,13 +1496,6 @@ export function createReplicaConversationRuntime(
           ),
         );
         await config.commands.interrupt(config.key, turnId);
-        if (
-          snapshot.queuedSubmissions.some(
-            (submission) => submission.state === "queued",
-          )
-        ) {
-          queuePausedReason = "interrupted";
-        }
       } catch (error) {
         interruptedByThisClient.delete(turnId);
         throw error;
@@ -1322,7 +1545,8 @@ export function createReplicaConversationRuntime(
           preview: queuedInputPreview(submission.input),
           state: "queued",
           operation: previous?.operation ?? "idle",
-          createdAt: 0,
+          createdAt: submission.createdAt,
+          pausedReason: submission.pausedReason,
           error: previous?.error ?? null,
         });
       }
@@ -1348,7 +1572,6 @@ export function createReplicaConversationRuntime(
         )
           queued.delete(commandId);
       }
-      if (submissions.length === 0) queuePausedReason = null;
       localRevision += 1;
       publish();
     },
@@ -1379,6 +1602,8 @@ export function createReplicaConversationRuntime(
           input: [...updated.input],
           preview: queuedInputPreview(updated.input),
           operation: "idle",
+          createdAt: updated.createdAt,
+          pausedReason: updated.pausedReason,
           error: null,
         });
       } catch (error) {
@@ -1416,7 +1641,6 @@ export function createReplicaConversationRuntime(
             `AppServer did not delete queued submission ${queuedSubmissionId}`,
           );
         authoritativeQueue.delete(queuedSubmissionId);
-        if (authoritativeQueue.size === 0) queuePausedReason = null;
       } catch (error) {
         authoritativeQueue.set(queuedSubmissionId, {
           ...previous,
@@ -1475,6 +1699,7 @@ export function createReplicaConversationRuntime(
         authoritativeQueue.set(targetId, {
           ...previous,
           operation: "starting",
+          pausedReason: null,
           error: null,
         });
         localRevision += 1;
@@ -1486,13 +1711,13 @@ export function createReplicaConversationRuntime(
           queuedSubmissionId,
         );
         if (targetId !== undefined) authoritativeQueue.delete(targetId);
-        queuePausedReason = null;
         return turnId;
       } catch (error) {
         if (targetId !== undefined && previous !== undefined) {
           authoritativeQueue.set(targetId, {
             ...previous,
             operation: "idle",
+            pausedReason: error instanceof Error ? error.message : String(error),
             error: error instanceof Error ? error : new Error(String(error)),
           });
         }
@@ -1516,7 +1741,6 @@ export function createReplicaConversationRuntime(
           queuedSubmissionId,
         );
         authoritativeQueue.delete(queuedSubmissionId);
-        queuePausedReason = null;
         localRevision += 1;
         publish();
         return turnId;
@@ -1524,6 +1748,7 @@ export function createReplicaConversationRuntime(
       authoritativeQueue.set(queuedSubmissionId, {
         ...previous,
         operation: "starting",
+        pausedReason: null,
         error: null,
       });
       localRevision += 1;
@@ -1535,6 +1760,8 @@ export function createReplicaConversationRuntime(
             id: previous.serverSubmissionId,
             clientUserMessageId: previous.clientMessageId,
             input: [...previous.input],
+            createdAt: previous.createdAt,
+            pausedReason: previous.pausedReason,
           },
           activeTurnId,
         );
@@ -1544,6 +1771,7 @@ export function createReplicaConversationRuntime(
         authoritativeQueue.set(queuedSubmissionId, {
           ...previous,
           operation: "idle",
+          pausedReason: error instanceof Error ? error.message : String(error),
           error: error instanceof Error ? error : new Error(String(error)),
         });
         throw error;
@@ -1570,9 +1798,9 @@ export function createReplicaConversationRuntime(
       listeners.clear();
       queued.clear();
       pendingSubmissions.clear();
+      confirmedSteers.clear();
       authoritativeQueue.clear();
       pendingQueueOrder = null;
-      queuePausedReason = null;
     },
   };
 }

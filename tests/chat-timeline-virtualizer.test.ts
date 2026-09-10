@@ -6,6 +6,7 @@ import {
   buildTurnLayout,
   buildTimelineLayout,
   calculateSoftwareKeyboardInset,
+  CODEX_LATEST_TURN_PLACEMENT_SPRING,
   CODEX_TURN_VIRTUALIZER_CONFIG,
   compensateDistanceFromBottom,
   computeTurnRange,
@@ -20,6 +21,7 @@ import {
   createTimelineViewportState,
   createTimelineWindowSlice,
   distanceFromBottomToCenterTurn,
+  distanceAfterUnplacedLatestTurnContentResize,
   distanceFromBottomToTargetWithinTurn,
   distanceFromBottomToTopTurn,
   findMeasuredViewportAnchor,
@@ -55,6 +57,7 @@ import {
   updateTurnViewportState,
   type VirtualizedTurnEntry,
   TurnScrollController,
+  TurnResponsePositioningController,
   TIMELINE_VIRTUALIZER_CONFIG,
 } from "@opencraft/timeline-virtualizer";
 
@@ -368,6 +371,22 @@ test("only an explicit composer submit snapshot places a changed latest Turn", (
   }), false);
 });
 
+test("an unplaced latest Turn preserves position across signed content resize", () => {
+  const placement = createLatestTurnPlacementSnapshot({
+    distanceFromBottomPx: 500,
+    responseSpacerHeightPx: 100,
+    scrollHeightPx: 2_000,
+  });
+  assert.equal(distanceAfterUnplacedLatestTurnContentResize({
+    nextScrollHeightPx: 2_120,
+    placement,
+  }), 620);
+  assert.equal(distanceAfterUnplacedLatestTurnContentResize({
+    nextScrollHeightPx: 1_850,
+    placement,
+  }), 350);
+});
+
 test("a ResizeObserver batch commits height table, layout, window and scroll as one transaction", () => {
   const entries = turns(4);
   const previousLayout = buildTurnLayout(entries, {}, config);
@@ -650,6 +669,13 @@ test("response placement does not give final-answer growth ownership of followin
 });
 
 test("latest Turn placement and response spacer retain recovered Codex constants", () => {
+  assert.deepEqual(CODEX_LATEST_TURN_PLACEMENT_SPRING, {
+    bounce: 0,
+    durationMs: 500,
+    damping: 36.933653905806345,
+    mass: 1,
+    stiffness: 341.02369770847105,
+  });
   assert.equal(createLatestTurnPlacementSnapshot({
     distanceFromBottomPx: 340,
     responseSpacerHeightPx: 40,
@@ -796,6 +822,139 @@ test("footer resize compensation and smooth bottom curve match ThreadScrollLayou
   assert.equal(scrollToBottomDistanceAtTime(800, 0), 800);
   assert.equal(scrollToBottomDistanceAtTime(800, 260), 0);
   assert.equal(scrollToBottomDistanceAtTime(800, 130), 100);
+});
+
+test("response positioning atomically yields restore and follow ownership to the user", () => {
+  const controller = new TurnResponsePositioningController({
+    distanceFromBottomPx: 180,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "prework",
+  });
+
+  assert.equal(controller.isRestorePending(), true);
+  controller.reduceFollow({
+    type: "latest_turn_phase_changed",
+    previousLatestTurnPhase: "idle",
+    latestTurnPhase: "prework",
+  });
+  assert.equal(controller.getFollowState().followMode, "prework_watch");
+
+  controller.userTakeover();
+  controller.reduceFollow({
+    type: "scroll_distance_changed",
+    distanceFromBottomPx: 240,
+    latestTurnPhase: "prework",
+  });
+
+  assert.deepEqual(controller.getRestoreState(), { phase: "settled", reason: "user-takeover" });
+  assert.equal(controller.attemptRestore(0), null);
+  assert.equal(controller.getPendingRestoreDistanceFromBottomPx(), null);
+});
+
+test("response positioning exposes one padded restore target and follow can settle it", () => {
+  const controller = new TurnResponsePositioningController({
+    distanceFromBottomPx: 320,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "prework",
+    restoredLatestTurn: {
+      turnKey: "turn-1",
+      isLatestTurnInProgress: true,
+      latestTurnPhase: "prework",
+      followMode: "prework_watch",
+      latestTurnHeightPx: 500,
+      latestTurnFollowContentHeightPx: 300,
+    },
+  });
+
+  assert.equal(controller.getPendingRestoreDistanceFromBottomPx(120), 200);
+  controller.adjustPendingRestoreForHeightDelta(40);
+  assert.equal(controller.getPendingRestoreDistanceFromBottomPx(120), 240);
+  controller.settleRestoreForFollowMode();
+  assert.equal(controller.getPendingRestoreDistanceFromBottomPx(120), null);
+});
+
+test("capturing a restore checkpoint cannot grant live follow ownership", () => {
+  const controller = new TurnResponsePositioningController({
+    distanceFromBottomPx: 180,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "prework",
+  });
+  controller.reduceFollow({
+    type: "latest_turn_phase_changed",
+    previousLatestTurnPhase: "idle",
+    latestTurnPhase: "prework",
+  });
+  assert.equal(controller.getFollowState().followMode, "prework_watch");
+
+  const checkpoint = controller.captureRestorePosition({
+    distanceFromBottomPx: 1,
+    latestTurnPhase: "prework",
+    responseSpacerHeightPx: 320,
+    scrollPaddingBottomPx: 160,
+  });
+
+  // The checkpoint is normalized for a future mount, exactly like Codex fO,
+  // while the mounted viewport keeps its existing read-position ownership.
+  assert.equal(checkpoint.distanceFromBottomPx, 0);
+  assert.equal(checkpoint.scrollState.followMode, "prework_follow");
+  assert.equal(controller.getFollowState().followMode, "prework_watch");
+  const transition = controller.transitionLatestTurnPhase("prework", "final_answer");
+  assert.equal(transition.transferFollowToFinalAnswer, false);
+  assert.equal(transition.followState.followMode, "static");
+});
+
+test("response completion reports a fact without acquiring bottom ownership", () => {
+  const controller = new TurnResponsePositioningController({
+    distanceFromBottomPx: 320,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "final_answer",
+  });
+
+  const transition = controller.transitionLatestTurnPhase(
+    "final_answer",
+    "idle",
+  );
+
+  assert.equal(transition.completed, true);
+  assert.equal(transition.transferFollowToFinalAnswer, false);
+  assert.equal(transition.followState.followMode, "static");
+  assert.equal(controller.ownsFollowPosition("idle"), false);
+});
+
+test("response completion retains existing user follow without creating a new reason", () => {
+  const controller = new TurnResponsePositioningController({
+    distanceFromBottomPx: 0,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "final_answer",
+  });
+
+  const transition = controller.transitionLatestTurnPhase(
+    "final_answer",
+    "idle",
+  );
+
+  assert.equal(transition.completed, true);
+  assert.equal(transition.previousFollowMode, "user_follow");
+  assert.equal(transition.transferFollowToFinalAnswer, false);
+  assert.equal(controller.ownsFollowPosition("idle"), true);
+});
+
+test("only prework follow transfer owns an explicit phase-transition bottom command", () => {
+  const controller = new TurnResponsePositioningController({
+    distanceFromBottomPx: 0,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "prework",
+  });
+
+  const transition = controller.transitionLatestTurnPhase(
+    "prework",
+    "final_answer",
+  );
+
+  assert.equal(transition.completed, false);
+  assert.equal(transition.previousFollowMode, "prework_follow");
+  assert.equal(transition.transferFollowToFinalAnswer, true);
+  assert.equal(transition.followState.followMode, "user_follow");
 });
 
 test("shared scroll controller preserves layout and runs the recovered 260ms bottom animation", () => {

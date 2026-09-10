@@ -15,6 +15,7 @@ import {
 } from "@opencraft/timeline-host-web";
 import { ScrollToBottomButton } from "../apps/workbench-web/src/components/scroll-to-bottom-button";
 import {
+  resolveAppShellMainContentChrome,
   resolveThreadEdgeScroll,
   THREAD_EDGE_SCROLL_MINIMUM_WIDTH_REM,
 } from "../apps/workbench-web/src/app-shell-edge-scroll-model";
@@ -31,9 +32,37 @@ const workbenchApp = readFileSync(
   new URL("../apps/workbench-web/src/app.tsx", import.meta.url),
   "utf8",
 );
+const composerModelCatalogSource = readFileSync(
+  new URL(
+    "../packages/workbench-runtime/src/composer-model-catalog.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const settingsPageSource = readFileSync(
   new URL(
     "../apps/workbench-web/src/components/settings-page.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const modalSurfaceSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/modal/modal-surface.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const managementSettingsDialogSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/modal/management-settings-dialog.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const modalStyles = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/modal/modal.scss",
     import.meta.url,
   ),
   "utf8",
@@ -118,6 +147,20 @@ const expoConversationSource = readFileSync(
   ),
   "utf8",
 );
+const nativeResponseSource = readFileSync(
+  new URL(
+    "../apps/workbench-expo/src/components/native-response-positioned-turns.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const nativeVirtualizedTurnsSource = readFileSync(
+  new URL(
+    "../apps/workbench-expo/src/components/native-virtualized-conversation-turns.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const stableEventSource = readFileSync(
   new URL("../packages/react-runtime/src/use-stable-event.ts", import.meta.url),
   "utf8",
@@ -160,11 +203,11 @@ const rightPanelTabsSource = readFileSync(
 
 test("panel creation picker is outlet-owned and shares its actions with the empty state", () => {
   assert.doesNotMatch(rightPanelTabsSource, /action\.tabKind|emptyPanelActions|emptyPanelLabel/);
-  assert.match(rightPanelTabsSource, /state\.right\.tabs\.length > 0 \? <PanelCreationMenu/);
+  assert.match(rightPanelTabsSource, /state\.right\.tabs\.length > 0 \?\s*\(\s*<PanelCreationMenu/);
   assert.match(rightPanelTabsSource, /actions=\{creationActions\}/);
-  assert.match(rightPanelTabsSource, /creationActions\.map\(action/);
+  assert.match(rightPanelTabsSource, /creationActions\.map\(\(?action\)?\s*=>/);
   assert.match(rightPanelTabsSource, /aria-label="New tab"/);
-  assert.match(rightPanelTabsSource, /onCloseAutoFocus=\{event =>/);
+  assert.match(rightPanelTabsSource, /onCloseAutoFocus=\{\(?event\)?\s*=>/);
 });
 const browserPanelSource = readFileSync(
   new URL(
@@ -254,27 +297,38 @@ test("theme bootstrap is owned by the application root, not a removable header c
   }
 });
 
-test("Settings swaps route slots inside the one physical AppShell", () => {
+test("application Settings owns route slots while target management owns a modal surface", () => {
   assert.match(
     workbenchApp,
-    /const settingsRoute = settingsOpen \? \(/u,
+    /const settingsRoute = routeSettingsOpen \? \(/u,
   );
   assert.match(
     workbenchApp,
-    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?settingsOpen \? settingsNavigation : <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
+    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
   );
-  assert.match(workbenchApp, /hidden=\{!conversationRouteOpen\}/u);
+  assert.match(workbenchApp, /const managementSettingsOpen = settingsOpen[\s\S]*?selectedSettingsContribution\?\.management !== undefined/u);
+  assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen \|\| managementSettingsOpen/u);
+  assert.match(workbenchApp, /hidden=\{!conversationSurfaceVisible\}/u);
+  assert.match(workbenchApp, /inert=\{!conversationRouteOpen \|\| undefined\}/u);
+  assert.match(workbenchApp, /<ManagementSettingsDialog[\s\S]*?navigation=\{settingsNavigation\}/u);
   assert.doesNotMatch(workbenchApp, /ApplicationShellRoot/u);
   assert.doesNotMatch(settingsPageSource, /ApplicationShellRoot/u);
   assert.match(settingsPageSource, /export function SettingsNavigation/u);
   assert.match(settingsPageSource, /export function SettingsContent/u);
+  assert.match(modalSurfaceSource, /aria-modal="true"/u);
+  assert.match(modalSurfaceSource, /createPortal\(/u);
+  assert.match(modalSurfaceSource, /className="modal-surface__host"/u);
+  assert.match(modalSurfaceSource, /className="modal-surface__scrim"/u);
+  assert.match(modalSurfaceSource, /event\.key === "Escape"/u);
+  assert.match(modalSurfaceSource, /event\.key !== "Tab"/u);
+  assert.match(managementSettingsDialogSource, /<ModalSurface/u);
   assert.match(
     workbenchStyles,
     /\.workbench-conversation-route\[hidden\]\s*\{\s*display:\s*none;/u,
   );
   assert.match(
     workbenchApp,
-    /const headerNavigationActions = settingsOpen\s*\? \[\]\s*:\s*chromePolicy\.leadingNavigationActions/u,
+    /const headerNavigationActions = routeSettingsOpen\s*\? \[\]\s*:\s*chromePolicy\.leadingNavigationActions/u,
   );
   assert.match(
     workbenchStyles,
@@ -283,6 +337,26 @@ test("Settings swaps route slots inside the one physical AppShell", () => {
   assert.match(
     workbenchStyles,
     /\.settings-page__viewport\s*\{[^}]*height:\s*100%;[^}]*overflow-y:\s*auto;/u,
+  );
+  assert.match(
+    modalStyles,
+    /\.management-settings-dialog\s*\{[^}]*grid-template-columns:\s*238px minmax\(0, 1fr\);/u,
+  );
+  assert.match(
+    modalStyles,
+    /\.modal-surface__scrim\s*\{[^}]*pointer-events:\s*none;[^}]*backdrop-filter:\s*blur\(7px\)/u,
+  );
+  assert.match(
+    modalStyles,
+    /\.modal-surface__host\s*\{[^}]*z-index:\s*var\(--layer-application-modal,\s*230\)/u,
+  );
+  assert.match(
+    modalStyles,
+    /\.modal-surface\s*\{[^}]*isolation:\s*isolate;[^}]*background:\s*var\(--color-background-elevated-primary-opaque,\s*var\(--color-background-surface\)\);/u,
+  );
+  assert.doesNotMatch(
+    modalStyles,
+    /\.modal-surface\s*\{[^}]*background:\s*var\(--color-background-primary\)/u,
   );
 });
 
@@ -368,6 +442,11 @@ test("renderer measurement requests are generation fenced before Web layout work
     }),
     false,
   );
+  assert.match(
+    webVirtualizedTurnsSource,
+    /isCurrentGeneration\(generation\)/u,
+    "the virtualizer must reject a batch from a retired viewport lifetime",
+  );
 });
 
 const webResponseSource = readFileSync(new URL("../apps/workbench-web/src/components/conversation/response-positioned-turns.tsx", import.meta.url), "utf8");
@@ -404,6 +483,37 @@ test("row height and follow-content observations share one policy consumer witho
   );
 });
 
+test("Native virtualizer publishes live Turn height while response policy owns compensation", () => {
+  assert.match(
+    nativeResponseSource,
+    /preserveMeasuredTurnViewport=\{!isLatestTurnInProgress\}/u,
+  );
+  assert.match(
+    nativeVirtualizedTurnsSource,
+    /transaction\.latestTurnHeightChange !== null[\s\S]{0,140}?onLatestTurnMeasurement\(transaction\.latestTurnHeightChange\)/u,
+  );
+  assert.match(
+    nativeResponseSource,
+    /responsePositioning\.shouldPreserveMeasuredViewport\(\)[\s\S]{0,80}?compensateHeightDelta\(change\.heightDeltaPx\)/u,
+  );
+  assert.match(
+    nativeResponseSource,
+    /viewportOwner\.commitContentGeometry\(\s*height,[\s\S]{0,4000}?return requestedDistance/u,
+    "a Native content-size event must merge policy candidates before the viewport owner performs one write",
+  );
+  assert.doesNotMatch(
+    nativeResponseSource,
+    /reportContentHeight\(height\)[\s\S]{0,160}?consumePendingGeometryDistanceFromBottomPx/u,
+    "React must not split one Native content-size transaction into separate geometry and scroll owners",
+  );
+  assert.match(
+    nativeResponseSource,
+    /Animated\.spring\(latestTurnOffset,[\s\S]{0,520}?Animated\.spring\(responseSpacerHeight/u,
+    "Native translation and spacer height must share the recovered zero-bounce spring",
+  );
+  assert.match(webResponseSource, /CODEX_LATEST_TURN_PLACEMENT_SPRING\.durationMs/u);
+});
+
 test("footer geometry and response placement have disjoint Codex owners", () => {
   assert.match(webViewportOwnerSource, /readonly attachFooterElement/u);
   assert.match(
@@ -426,18 +536,46 @@ test("footer geometry and response placement have disjoint Codex owners", () => 
     /maximumResponseSpacerHeightPx\(\{[\s\S]{0,180}?scrollPaddingBottomPx: viewportOwner\.getFooterScrollPaddingPx\(\)/u,
     "follow policy reads footer padding directly from the platform owner",
   );
-  assert.doesNotMatch(expoConversationSource, /bottomScrollPaddingPx|bottomPaddingRef/u);
-  assert.match(expoConversationSource, /footerPaddingRef = useRef\(footerScrollPaddingPx\)/u);
+  assert.doesNotMatch(nativeResponseSource, /bottomScrollPaddingPx|bottomPaddingRef/u);
+  assert.match(nativeResponseSource, /footerPaddingRef = useRef\(footerScrollPaddingPx\)/u);
   assert.match(
-    expoConversationSource,
-    /reconcileTurnLayoutViewport\(\{[\s\S]{0,420}?bottomPaddingPx: responseSpacerHeightRef\.current/u,
+    nativeVirtualizedTurnsSource,
+    /reconcileTurnLayoutViewport\(\{[\s\S]{0,420}?bottomPaddingPx: getBottomPaddingPx\(\)/u,
     "Native uses the same footer/response-spacer ownership boundary",
+  );
+});
+
+test("Native conversation page, response policy, and virtualizer keep disjoint ownership", () => {
+  assert.match(expoConversationSource, /<NativeResponsePositionedTurns/u);
+  assert.doesNotMatch(
+    expoConversationSource,
+    /createTurnMeasurementTransaction|createTurnWindowSlice|TurnResponsePositioningController|NativeConversationViewportOwner/u,
+  );
+  assert.match(nativeResponseSource, /TurnResponsePositioningController/u);
+  assert.match(nativeResponseSource, /ref=\{attachScrollView\}/u);
+  assert.doesNotMatch(
+    nativeResponseSource,
+    /scrollRef\.current\?\.scrollTo/u,
+    "Native physical writers must attach at the ref commit boundary, not mutate during render",
+  );
+  assert.doesNotMatch(
+    nativeResponseSource,
+    /createTurnMeasurementTransaction|createTurnWindowSlice/u,
+  );
+  assert.match(
+    nativeVirtualizedTurnsSource,
+    /createTurnMeasurementTransaction/u,
+  );
+  assert.match(nativeVirtualizedTurnsSource, /createTurnWindowSlice/u);
+  assert.doesNotMatch(
+    nativeVirtualizedTurnsSource,
+    /TurnResponsePositioningController|responseSpacerHeight/u,
   );
 });
 
 test("physical scroll distance and input classification have one platform transaction owner", () => {
   assert.doesNotMatch(webConversationSource, /distanceRef|inputDirectionRef|touchPointRef|previousPointerSnapshotRef/u);
-  assert.doesNotMatch(expoConversationSource, /distanceRef/u);
+  assert.doesNotMatch(nativeResponseSource, /distanceRef/u);
   assert.doesNotMatch(botConversationViewportSource, /distanceRef/u);
 
   assert.match(
@@ -453,7 +591,7 @@ test("physical scroll distance and input classification have one platform transa
   assert.match(webConversationSource, /viewportOwner\.bindScrollBehavior\(/u);
   assert.match(webResponseSource, /scrollController\.subscribe\(handlePlatformScroll\)/u);
   assert.match(webResponseSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
-  assert.match(expoConversationSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
+  assert.match(nativeResponseSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
   assert.match(botConversationViewportSource, /owner\.bindScrollBehavior\(/u);
   assert.doesNotMatch(botConversationViewportSource, /scrollTop\s*</u);
   assert.doesNotMatch(botChatViewSource, /onTranscriptScroll|onScroll=\{onTranscriptScroll\}/u);
@@ -543,8 +681,11 @@ test("Composer intelligence keeps model and reasoning in one catalog-owned menu"
   );
   assert.doesNotMatch(workbenchStyles, /\.codex-composer-power-track\s*\{/u);
   assert.doesNotMatch(workbenchStyles, /codex-composer-selection-menu__item--field/u);
-  assert.match(workbenchApp, /function reasoningEffortLabel\(value: string\)/u);
-  assert.match(workbenchApp, /case "low":\s*return "Light"/u);
+  assert.match(
+    composerModelCatalogSource,
+    /function reasoningEffortLabel\(value: string\)/u,
+  );
+  assert.match(composerModelCatalogSource, /case "low":\s*return "Light"/u);
 });
 
 test("Composer EditorView and submission callbacks are fenced by Conversation View ownership", () => {
@@ -627,7 +768,7 @@ test("local-submit placement is page-owned and consumed once by the Conversation
   assert.match(workbenchApp, /!followsActiveTurn \|\| context\.followUpAction === "steer"/u);
   assert.match(expoFrameSource, /!followsActiveTurn \|\| context\.followUpAction === "steer"/u);
   assert.match(webResponseSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
-  assert.match(expoConversationSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
+  assert.match(nativeResponseSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
   assert.match(
     webResponseSource,
     /previousLatestTurnActivityKey !== latestTurnActivityKey/u,
@@ -641,7 +782,10 @@ test("response lifecycle keeps row identity and uses one mount/submit transition
   assert.equal(webResponseSource.match(/consumePendingLatestTurnSubmitPlacement\?\.\(\)/gu)?.length, 1);
   assert.equal(webResponseSource.match(/scrollToDistanceFromBottomPx\(1, "instant"\)/gu)?.length, 1);
   assert.match(webResponseSource, /initialPlacementPendingRef\.current = false;\s*const placement = consumePendingLatestTurnSubmitPlacement/u);
-  assert.match(webResponseSource, /const scrollHeightDelta = element\.scrollHeight - placement\.scrollHeightPx;/u);
+  assert.match(
+    webResponseSource,
+    /distanceAfterUnplacedLatestTurnContentResize\(\{[\s\S]{0,160}?nextScrollHeightPx: element\.scrollHeight,[\s\S]{0,80}?placement/u,
+  );
   assert.match(webResponseSource, /previousInProgress && !isLatestTurnInProgress\) \{\s*stopResponseAnimations\(\);\s*latestTurnOffset\.set\(0\);\s*\}/u);
   assert.doesNotMatch(webResponseSource, /stopResponseAnimations\((?:true|false)\)/u);
   assert.match(webResponseSource, /<VirtualizedConversationTurns/u);
@@ -793,7 +937,7 @@ test("a full-width right panel exclusively owns the center toolbar", () => {
   );
   assert.match(
     workbenchApp,
-    /rightPanelFullWidth=\{conversationRouteOpen && presentedRightPanelFullWidth\}/u,
+    /rightPanelFullWidth=\{conversationSurfaceVisible && presentedRightPanelFullWidth\}/u,
   );
   assert.match(
     workbenchStyles,
@@ -982,7 +1126,7 @@ test("history pagination keeps one callback identity across viewport measurement
   assert.match(expoFrameSource, /\? loadOlderConversation : undefined/u);
   assert.match(stableEventSource, /useInsertionEffect\(\(\) => \{/u);
   assert.match(stableEventSource, /return useCallback\([\s\S]*?\[\]\);/u);
-  for (const source of [webConversationSource, expoConversationSource]) {
+  for (const source of [webConversationSource, nativeVirtualizedTurnsSource]) {
     assert.match(source, /useTurnHistoryBackfill\(\{/u);
     assert.doesNotMatch(source, /loadOlderPendingRef/u);
   }
@@ -1069,6 +1213,29 @@ test("browser presentation retires with the physical panel presence", () => {
 });
 
 test("thread edge-scroll is one measured AppShell state", () => {
+  assert.deepEqual(
+    resolveAppShellMainContentChrome({
+      layout: "default",
+      threadEdgeScrollEligible: true,
+    }),
+    { headerEdgeScroll: false, threadEdgeDivider: false },
+    "default routes reserve titlebar geometry without borrowing the thread divider",
+  );
+  assert.deepEqual(
+    resolveAppShellMainContentChrome({
+      layout: "thread-edge-scroll",
+      threadEdgeScrollEligible: false,
+    }),
+    { headerEdgeScroll: false, threadEdgeDivider: true },
+  );
+  assert.deepEqual(
+    resolveAppShellMainContentChrome({
+      layout: "thread-edge-scroll",
+      threadEdgeScrollEligible: true,
+    }),
+    { headerEdgeScroll: true, threadEdgeDivider: false },
+  );
+
   const threshold = THREAD_EDGE_SCROLL_MINIMUM_WIDTH_REM * 16;
   assert.equal(
     resolveThreadEdgeScroll({
@@ -1122,7 +1289,23 @@ test("thread edge-scroll is one measured AppShell state", () => {
   );
   assert.match(
     appShellSource,
+    /data-app-shell-main-content-layout=\{mainContentLayout\}/u,
+  );
+  assert.match(
+    workbenchApp,
+    /mainContentLayout=\{conversationSurfaceVisible \? "thread-edge-scroll" : "default"\}/u,
+  );
+  assert.match(
+    appShellSource,
     /data-app-shell-thread-edge-scroll=\{isHeaderEdgeScroll\}/u,
+  );
+  assert.match(
+    appShellSource,
+    /data-app-shell-thread-edge-divider=\{threadEdgeDivider\}/u,
+  );
+  assert.doesNotMatch(
+    workbenchStyles,
+    /\.settings-page__titlebar-spacer/u,
   );
   assert.match(
     workbenchStyles,

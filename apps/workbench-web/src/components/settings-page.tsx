@@ -13,6 +13,7 @@ import {
   Palette,
   Plus,
   RefreshCw,
+  Search,
   Server,
   SlidersHorizontal,
   Sparkles,
@@ -39,6 +40,7 @@ import {
 } from "@opencraft/extension-react";
 import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import type { AppearanceThemeDescriptor } from "../appearance-theme";
+import { useInternalDeveloperMode } from "../internal-developer-mode";
 
 export type SettingsSection = "appearance" | "connections" | "plugins" | string;
 
@@ -73,6 +75,7 @@ export interface SettingsNavigationProps {
   readonly profiles: readonly HostConnectionProfile[];
   readonly activeHostId: string;
   readonly onBack: () => void;
+  readonly presentation?: "route" | "dialog";
 }
 
 function providerUrl(profile: HostConnectionProfile): string {
@@ -89,6 +92,7 @@ function useSettingsExtensionPages(
   extensionContributions: ExtensionContributionStore,
   platform: "web" | "electron",
 ) {
+  const internalDeveloperMode = useInternalDeveloperMode();
   const contributionSnapshot = useSyncExternalStore(
     extensionContributions.subscribe,
     extensionContributions.getSnapshot,
@@ -99,10 +103,11 @@ function useSettingsExtensionPages(
       contributionSnapshot.settingsPages
         .map(({ contribution }) => contribution)
         .filter(
-          (page) => page.platforms?.includes(platform) ?? true,
+          (page) => (page.platforms?.includes(platform) ?? true)
+            && (page.audience !== "internal" || internalDeveloperMode),
         )
         .sort((left, right) => (left.order ?? 0) - (right.order ?? 0)),
-    [contributionSnapshot, platform],
+    [contributionSnapshot, internalDeveloperMode, platform],
   );
 }
 
@@ -119,7 +124,9 @@ export function SettingsNavigation({
   profiles,
   activeHostId,
   onBack,
+  presentation = "route",
 }: SettingsNavigationProps) {
+  const [managementQuery, setManagementQuery] = useState("");
   const extensionPages = useSettingsExtensionPages(extensionContributions, currentPlatform());
   const selectedPage = extensionPages.find((page) => page.id === section) ?? null;
   const managementFamilyId = selectedPage?.management?.familyId ?? null;
@@ -132,28 +139,55 @@ export function SettingsNavigation({
   const activeProfile = profiles.find((profile) => profile.hostId === activeHostId) ?? profiles[0] ?? null;
 
   if (managementFamilyId !== null) {
-    const agentPages = managementPages.filter((page) => page.management?.scope === "agent");
-    const hostPages = managementPages.filter((page) => page.management?.scope === "host");
+    const normalizedQuery = managementQuery.trim().toLocaleLowerCase();
+    const visiblePages = normalizedQuery.length === 0
+      ? managementPages
+      : managementPages.filter((page) => page.title.toLocaleLowerCase().includes(normalizedQuery));
+    const agentPages = visiblePages.filter((page) => page.management?.scope === "agent");
+    const hostPages = visiblePages.filter((page) => page.management?.scope === "host");
     return (
-      <div className="settings-page__navigation settings-page__navigation--management" data-selection="chrome">
+      <div
+        className={`settings-page__navigation settings-page__navigation--management settings-page__navigation--${presentation}`}
+        data-selection="chrome"
+      >
         <nav aria-label="Agent management">
-          <button type="button" className="settings-page__back" onClick={onBack}>
-            <ArrowLeft size={15} />
-            <span>Back to workbench</span>
-          </button>
+          {presentation === "route" ? (
+            <>
+              <button type="button" className="settings-page__back" onClick={onBack}>
+                <ArrowLeft size={15} />
+                <span>Back to workbench</span>
+              </button>
 
-          <div className="management-navigation__subject" aria-label="Current agent">
-            <span className="management-navigation__avatar"><Bot size={19} /></span>
-            <span className="management-navigation__subject-copy">
-              <strong>{activeProfile?.displayName ?? "My Hermes"}</strong>
-              <small><i aria-hidden="true" /> Agent · via {activeProfile?.hostId ?? "Hermes cloud"}</small>
-            </span>
-          </div>
+              <div className="management-navigation__subject" aria-label="Current agent">
+                <span className="management-navigation__avatar"><Bot size={19} /></span>
+                <span className="management-navigation__subject-copy">
+                  <strong>{activeProfile?.displayName ?? "My Hermes"}</strong>
+                  <small><i aria-hidden="true" /> Agent · via {activeProfile?.hostId ?? "Hermes cloud"}</small>
+                </span>
+              </div>
 
-          <div className="management-navigation__mode" role="group" aria-label="Workbench mode">
-            <button type="button" onClick={onBack}>Work</button>
-            <button type="button" aria-current="page">Manage</button>
-          </div>
+              <div className="management-navigation__mode" role="group" aria-label="Workbench mode">
+                <button type="button" onClick={onBack}>Work</button>
+                <button type="button" aria-current="page">Manage</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="management-navigation__dialog-title">
+                {activeProfile?.displayName ?? "My Hermes"}
+              </div>
+              <label className="management-navigation__search">
+                <Search size={15} aria-hidden="true" />
+                <span className="sr-only">Search agent settings</span>
+                <input
+                  type="search"
+                  value={managementQuery}
+                  onChange={(event) => setManagementQuery(event.currentTarget.value)}
+                  placeholder="Search"
+                />
+              </label>
+            </>
+          )}
 
           <ManagementNavigationGroup
             title="Agent"
@@ -167,6 +201,9 @@ export function SettingsNavigation({
             section={section}
             onSectionChange={onSectionChange}
           />
+          {visiblePages.length === 0 ? (
+            <p className="management-navigation__empty">No matching settings</p>
+          ) : null}
         </nav>
       </div>
     );

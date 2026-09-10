@@ -10,6 +10,7 @@ function harness() {
   const prompts: Record<string, unknown>[] = [];
   const calls: Array<{ method: string; params: unknown }> = [];
   let respond: () => Promise<unknown> = async () => ({ ok: true });
+  let steer: () => Promise<{ status: string }> = async () => ({ status: "accepted" });
   const notifications: Array<{ method: string; params: Record<string, unknown> }> = [];
   let submit: () => Promise<{ status: string }> = async () => ({ status: "streaming" });
   const rpc: HermesRpcClient = {
@@ -17,7 +18,7 @@ function harness() {
     async call<T>(method: string, params?: unknown): Promise<T> {
       calls.push({ method, params });
       if (method === "clarify.respond") return await respond() as T;
-      if (method === "session.steer") return { status: "accepted" } as T;
+      if (method === "session.steer") return await steer() as T;
       if (method === "session.create") return {
         session_id: "live", stored_session_id: "stored", messages: [],
         message_count: 0, running: false,
@@ -36,6 +37,7 @@ function harness() {
   return {
     adapter, prompts, notifications, calls,
     setRespond(next: typeof respond) { respond = next; },
+    setSteer(next: typeof steer) { steer = next; },
     setSubmit(next: typeof submit) { submit = next; },
     event(type: string, payload: Record<string, unknown> = {}) {
       receive({ session_id: "live", type, payload });
@@ -92,12 +94,78 @@ test("typed steer skips Clarify on the owning gateway without waiting for the sk
   await h.adapter.startThread(); const turn = await h.start("first"); h.event("message.start");
   h.event("clarify.request", { request_id: "q", question: "Choose?" });
   h.setRespond(() => new Promise(() => {}));
-  await h.adapter.steerTurn("stored", turn.id, [{ type: "text", text: "Do this instead" }]);
+  await h.adapter.steerTurn(
+    "stored",
+    turn.id,
+    [{ type: "text", text: "Do this instead" }],
+    "client-steer",
+  );
   assert.deepEqual(h.calls.slice(-2), [
     { method: "clarify.respond", params: { request_id: "q", answer: "" } },
     { method: "session.steer", params: { session_id: "live", text: "Do this instead" } },
   ]);
+  const accepted = h.notifications.find((notification) =>
+    notification.method === "item/completed"
+    && (notification.params.item as AppServerTurn["items"][number] | undefined)?.type === "userMessage"
+    && (notification.params.item as AppServerTurn["items"][number] | undefined)?.clientId === "client-steer"
+  );
+  assert.ok(accepted, "Gateway admission must publish an authoritative user-message identity");
   assert.equal(h.turnIds("turn/completed").length, 0);
+});
+
+test("steer rejects an obsolete expected Turn without touching Hermes", async (t) => {
+  const h = harness(); t.after(() => h.adapter.dispose());
+  await h.adapter.startThread(); await h.start("first"); h.event("message.start");
+  const steerCallsBefore = h.calls.filter((call) => call.method === "session.steer").length;
+  await assert.rejects(
+    h.adapter.steerTurn(
+      "stored",
+      "obsolete-turn",
+      [{ type: "text", text: "Do this instead" }],
+      "client-obsolete",
+    ),
+    (error: unknown) => {
+      const candidate = error as { domainData?: { code?: string; actualTurnId?: string } };
+      return candidate.domainData?.code === "EXPECTED_TURN_MISMATCH"
+        && candidate.domainData.actualTurnId !== undefined;
+    },
+  );
+  assert.equal(
+    h.calls.filter((call) => call.method === "session.steer").length,
+    steerCallsBefore,
+  );
+});
+
+test("steer racing Turn completion is restored as one paused follow-up", async (t) => {
+  const h = harness(); t.after(() => h.adapter.dispose());
+  await h.adapter.startThread(); const turn = await h.start("first"); h.event("message.start");
+  let release!: () => void;
+  h.setSteer(() => new Promise((resolve) => {
+    release = () => resolve({ status: "accepted" });
+  }));
+  const steering = h.adapter.steerTurn(
+    "stored",
+    turn.id,
+    [{ type: "text", text: "Do this instead" }],
+    "client-racing-steer",
+  );
+  while (h.calls.at(-1)?.method !== "session.steer") await new Promise((resolve) => setImmediate(resolve));
+  h.event("message.complete", { text: "Already done" });
+  h.event("session.info", { running: false });
+  release();
+  assert.deepEqual(await steering, { turnId: turn.id, disposition: "queued" });
+  const queue = h.adapter.listQueuedSubmissions("stored", null, null).data;
+  assert.equal(queue.length, 1);
+  assert.equal(queue[0]?.clientUserMessageId, "client-racing-steer");
+  assert.match(queue[0]?.pausedReason ?? "", /Run ended/);
+  assert.equal(
+    h.notifications.filter((notification) =>
+      notification.method === "item/completed"
+      && (notification.params.item as AppServerTurn["items"][number] | undefined)?.clientId === "client-racing-steer"
+    ).length,
+    0,
+    "a completed Turn must not receive a manufactured steering acknowledgement",
+  );
 });
 
 test("failed answer retains ownership and late tool completion cannot release a newer question", async (t) => {

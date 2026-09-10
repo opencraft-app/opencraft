@@ -557,7 +557,10 @@ export class JsonRpcAppServerClient implements AppServerClient {
     const pending = this.pending.get(id);
     if (pending === undefined) return;
     this.cleanupPending(id, pending);
-    pending.controller.abort(error);
+    // React Native exposes the standards-compatible abort notification but its
+    // type surface still declares abort() without the optional DOM reason.
+    // The request promise and lifecycle event already carry the exact error.
+    pending.controller.abort();
     pending.reject(error);
     const endedAtMs = this.clock.now();
     this.emitRequestLifecycle({

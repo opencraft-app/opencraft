@@ -19,6 +19,8 @@ export interface PlatformViewHost {
   removeHost(hostId: string): Promise<boolean>;
   openView(viewId: string, resourceUri?: string | null): void;
   replaceViewResource(viewId: string, resourceUri: string): void;
+  /** Host-owned image pipeline shared by chat attachments and trusted Views. */
+  prepareImageUpload?(blob: Blob): Promise<Blob>;
 }
 
 /** @deprecated Use the location-neutral PlatformViewHost name. */
@@ -36,6 +38,30 @@ export interface ExtensionSettingsViewProps {
 export interface PlatformViewRendererContribution {
   readonly viewType: string;
   readonly Component: ComponentType<ExtensionSettingsViewProps>;
+}
+
+export interface PlatformAccountSnapshot {
+  readonly revision: number;
+  readonly phase: "anonymous" | "loading" | "authenticated" | "error";
+  readonly name: string | null;
+  readonly avatarUrl: string | null;
+  readonly planLabel: string | null;
+  readonly usageRemainingPercent: number | null;
+  readonly error: string | null;
+}
+
+/**
+ * Trusted product adapter for an account authority. The shell owns only the
+ * menu/modal chrome; authentication, refresh and account content remain owned
+ * by the contributing product extension.
+ */
+export interface PlatformAccountContribution {
+  readonly id: string;
+  readonly viewId: string;
+  getSnapshot(): PlatformAccountSnapshot;
+  subscribe(listener: () => void): () => void;
+  refresh(): Promise<unknown>;
+  signOut(): Promise<void>;
 }
 
 export interface OwnedPlatformViewRenderer extends PlatformViewRendererContribution {

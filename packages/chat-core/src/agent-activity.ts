@@ -182,6 +182,19 @@ export interface AssistantTurnPresentationPlan {
   readonly slots: readonly AssistantRenderUnit[];
 }
 
+export type TimelineTurnThinkingOwner =
+  | { readonly type: "none" }
+  | {
+      readonly type: "activity";
+      readonly activityId: string;
+      readonly groupId: string;
+    }
+  | {
+      readonly type: "turn";
+      readonly placeholderId: string;
+      readonly label: "Thinking" | "Planning";
+    };
+
 /**
  * The only renderer-neutral presentation authority for one AppServer Turn.
  *
@@ -197,9 +210,8 @@ export interface TimelineTurnPresentationPlan {
   readonly assistantFrame: AssistantTimelineFrame | null;
   readonly assistant: AssistantTurnPresentationPlan | null;
   readonly auxiliaryFrames: readonly (EventTimelineFrame | InteractionTimelineFrame)[];
-  readonly showThinking: boolean;
-  readonly thinkingId: string;
-  readonly thinkingLabel: "Thinking" | "Planning";
+  /** Turn-parent arbitration: one discriminated owner, with no parallel visibility flag. */
+  readonly thinkingOwner: TimelineTurnThinkingOwner;
   readonly topLevelSlotCount: number;
 }
 
@@ -349,12 +361,6 @@ export function createAgentActivityContentUnits(
     }
   }
   flushGroup();
-  if (preliminaryUnits.length === 0 && (status === "pending" || status === "streaming")) {
-    const liveReasoning = [...blocks].reverse().find((block) => block.type === "reasoning" && block.streaming);
-    if (liveReasoning !== undefined) {
-      preliminaryUnits.push({ type: "group", id: `agent-activity-group:${liveReasoning.id}`, blocks: [liveReasoning] });
-    }
-  }
   const lastVisibleIndex = preliminaryUnits.length - 1;
   return preliminaryUnits.reduce<AgentActivityContentUnit[]>((result, unit, index) => {
     if (unit.type === "standalone") {
@@ -363,6 +369,11 @@ export function createAgentActivityContentUnits(
     }
     const isLatestVisibleUnit = index === lastVisibleIndex;
     const isExploring = isTrailingExploration(unit.blocks);
+    // Codex's group display reducer does not infer liveness from the group's
+    // Items. The latest visible group owns the open Activity slice for as long
+    // as the Turn is live; if it has no active Item, its header becomes the
+    // Activity-local Thinking fallback. The Turn parent arbitrates that
+    // fallback against the outer placeholder later.
     const inProgress = isLatestVisibleUnit
       && !isActivitySliceClosed
       && (status === "pending" || status === "streaming");
@@ -553,12 +564,20 @@ function lowerInitial(value: string): string {
   return value.length === 0 ? value : value[0].toLocaleLowerCase() + value.slice(1);
 }
 
+/** Deterministic English conjunction formatting for Web and Hermes runtimes. */
+function formatConjunctionList(values: readonly string[]): string {
+  if (values.length === 0) return "";
+  if (values.length === 1) return values[0]!;
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+}
+
 export function agentActivityHeaderAccessibleLabel(summary: AgentActivityHeaderSummary): string {
   if (summary.kind === "text") return summary.text;
   if (summary.parts.length === 0) return "Worked";
   if (summary.parts.length === 1) return summary.parts[0]!.text;
   const labels = [summary.parts[0]!.text, ...summary.parts.slice(1).map((part) => lowerInitial(part.text))];
-  return new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(labels);
+  return formatConjunctionList(labels);
 }
 
 function textHeader(
@@ -705,7 +724,7 @@ export function deriveAgentActivityHeaderPresentation(
   const parts: AgentActivitySummaryPart[] = [];
   if (mcpSources.size > 0) {
     const sources = [...mcpSources.values()];
-    const sourceNames = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(sources.map(({ name }) => name));
+    const sourceNames = formatConjunctionList(sources.map(({ name }) => name));
     const integration = sources.every(({ isIntegration }) => isIntegration);
     parts.push({
       key: `sources:${sources.map(({ key }) => key).join("|")}`,
@@ -751,8 +770,9 @@ function isPendingNonActivityBlock(block: TimelineBlock): boolean {
 
 /**
  * Renderer-neutral form of Codex's trailing Thinking placeholder decision.
- * Completed list/read calls can deliberately bridge the gap to the next call;
- * ordinary completed tools show a separate Thinking row while the Turn lives.
+ * Completed list/read calls can deliberately bridge the gap to the next call.
+ * This function returns the Turn-level candidate only; the Turn parent still
+ * gives a live Activity group first refusal before mounting that candidate.
  */
 export function shouldRenderAgentThinkingPlaceholder(
   frame: AssistantTimelineFrame,
@@ -760,14 +780,48 @@ export function shouldRenderAgentThinkingPlaceholder(
 ): boolean {
   if (frame.status !== "pending" && frame.status !== "streaming") return false;
   if (frame.blocks.some(isDisplayableAssistantText)) return false;
-  if (frame.blocks.some((block) => isActiveAgentActivityBlock(block, registry))) return false;
   if (frame.blocks.some(isPendingNonActivityBlock)) return false;
+  // Recovered `renderableAgentItems` deliberately excludes bare reasoning.
+  // Reasoning therefore cannot suppress the Turn-level fallback by itself.
+  // A trailing live exploration owns the separate Exploring state; otherwise
+  // only the latest renderable non-exploration Item may suppress Thinking.
+  if (isTrailingExploration(frame.blocks)
+    && frame.blocks.some((block) => isActiveAgentActivityBlock(block, registry))) return false;
+  const trailingRenderableActivity = [...frame.blocks].reverse().find((block) =>
+    isAgentActivityBlock(block)
+    && block.type !== "reasoning"
+    && block.type !== "text");
+  if (trailingRenderableActivity !== undefined
+    && isActiveAgentActivityBlock(trailingRenderableActivity, registry)) return false;
   // Todo records are immutable observations. Only a trailing observation can
   // describe current work; an earlier unfinished snapshot cannot stay active
   // after a newer update or another Item has taken over.
   const trailing = frame.blocks.filter(isAgentActivityBlock).at(-1);
   if (trailing?.type === "todo" && trailing.entries.some((entry) => entry.status !== "complete")) return false;
   return !hasContinuingLiveDynamicToolActivity(frame.blocks, frame.status, registry);
+}
+
+/**
+ * Codex resolves the Activity-local fallback before mounting the Turn-level
+ * placeholder. This selector mirrors the recovered `innerThinkingCandidate`
+ * boundary: only the latest group in the still-open pre-answer Activity slice
+ * can take ownership.
+ */
+function findAgentActivityThinkingOwner(
+  assistant: AssistantTurnPresentationPlan | null,
+  registry?: ToolActivityPresenterRegistry,
+): Extract<TimelineTurnThinkingOwner, { readonly type: "activity" }> | null {
+  if (assistant === null) return null;
+  const activity = assistant.slots.find((slot): slot is AgentActivityRenderUnit =>
+    slot.type === "agent-activity" && slot.phase === "before-final-answer");
+  if (activity === undefined || activity.hasFinalAssistantStarted) return null;
+  const latestUnit = [...activity.contentUnits]
+    .reverse()
+    .find((unit) => unit.type !== "worked-for");
+  return latestUnit?.type === "group"
+    && deriveAgentActivityHeaderPresentation(latestUnit, registry).state === "thinking"
+    ? { type: "activity", activityId: activity.id, groupId: latestUnit.id }
+    : null;
 }
 
 /** Renderer-neutral Turn-level disclosure reducer, audited against Codex r2440. */
@@ -983,14 +1037,27 @@ export function createTimelineTurnPresentationPlan(
     && !assistantFrame?.blocks.some((block) => block.type === "command-execution"
       && block.actions.some((action) => action.type === "read" || action.type === "search" || action.type === "list-files")
       && isActiveAgentActivityBlock(block, registry));
-  const showThinking = isMostRecentTurn
+  const turnThinkingCandidate = isMostRecentTurn
     && assistantFrame !== null
     && (isPlanning || (!hasPendingInteraction && shouldRenderAgentThinkingPlaceholder(assistantFrame, registry)));
+  const activityThinkingOwner = isMostRecentTurn
+    && !isPlanning
+    ? findAgentActivityThinkingOwner(assistant, registry)
+    : null;
+  const thinkingOwner: TimelineTurnThinkingOwner = activityThinkingOwner !== null
+    ? activityThinkingOwner
+    : turnThinkingCandidate
+      ? {
+          type: "turn",
+          placeholderId: `${turn.turnKey}:slot:thinking-placeholder`,
+          label: isPlanning ? "Planning" : "Thinking",
+        }
+      : { type: "none" };
   const topLevelSlotCount = userFrames.reduce(
     (count, frame) => count + (frame.blocks.length > 0 ? 1 : 0),
     0,
   ) + (assistant?.slots.length ?? 0)
-    + (showThinking ? 1 : 0)
+    + (thinkingOwner.type === "turn" ? 1 : 0)
     + auxiliaryFrames.reduce((count, frame) => count + frame.blocks.length, 0);
 
   return {
@@ -998,9 +1065,7 @@ export function createTimelineTurnPresentationPlan(
     assistantFrame,
     assistant,
     auxiliaryFrames,
-    showThinking,
-    thinkingId: `${turn.turnKey}:slot:thinking-placeholder`,
-    thinkingLabel: isPlanning ? "Planning" : "Thinking",
+    thinkingOwner,
     topLevelSlotCount,
   };
 }

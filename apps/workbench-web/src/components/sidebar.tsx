@@ -12,7 +12,11 @@ import {
   Server,
   Settings,
   SquarePen,
+  Gauge,
+  LogOut,
+  User,
 } from "lucide-react";
+import type { PlatformAccountSnapshot } from "@opencraft/extension-react";
 import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import type {
   SidebarEntity,
@@ -43,7 +47,14 @@ export interface SidebarCatalogItem {
   readonly initiallyCollapsed?: boolean;
   readonly content: ReactNode;
 }
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+export interface SidebarAccountItem {
+  readonly snapshot: PlatformAccountSnapshot;
+  readonly onOpen: () => void;
+  readonly onRefresh: () => Promise<unknown>;
+  readonly onSignOut: () => Promise<void>;
+}
 
 interface SidebarProps {
   threads: readonly SidebarThread[];
@@ -63,6 +74,87 @@ interface SidebarProps {
   onOpenTargetSettings?(hostId: string): void;
   renderTargetStatus?(hostId: string): ReactNode;
   onOpenSettings(): void;
+  account?: SidebarAccountItem | null;
+}
+
+function SidebarAccount({ account, onOpenSettings }: {
+  readonly account: SidebarAccountItem;
+  readonly onOpenSettings: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const root = useRef<HTMLDivElement | null>(null);
+  const { snapshot } = account;
+  const name = snapshot.name || "LightVela";
+  const initial = (name.trim()[0] || "L").toLocaleUpperCase();
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    void account.onRefresh().catch(() => undefined);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [account.onRefresh, open]);
+
+  return (
+    <div className="sidebar-account" ref={root}>
+      {open ? (
+        <div className="sidebar-account-menu" role="menu" aria-label="Account menu">
+          <button className="sidebar-account-menu__identity" type="button" role="menuitem" onClick={() => { setOpen(false); account.onOpen(); }}>
+            <span className="sidebar-account__avatar">
+              {snapshot.avatarUrl ? <img src={snapshot.avatarUrl} alt="" /> : initial}
+            </span>
+            <span className="sidebar-account-menu__copy">
+              <strong>{name}</strong>
+              <small>{snapshot.planLabel || (snapshot.phase === "loading" ? "Loading account…" : "Account Settings")}</small>
+            </span>
+          </button>
+          <div className="sidebar-account-menu__separator" />
+          {snapshot.usageRemainingPercent === null ? null : (
+            <button type="button" role="menuitem" onClick={() => { setOpen(false); account.onOpen(); }}>
+              <Gauge size={16} /><span>Usage</span><small>{snapshot.usageRemainingPercent}% left</small>
+            </button>
+          )}
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); account.onOpen(); }}>
+            <User size={16} /><span>Account</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }}>
+            <Settings size={16} /><span>Settings</span>
+          </button>
+          <div className="sidebar-account-menu__separator" />
+          <button
+            type="button"
+            role="menuitem"
+            disabled={signingOut}
+            onClick={() => {
+              if (signingOut) return;
+              setSigningOut(true);
+              void account.onSignOut()
+                .catch(() => undefined)
+                .finally(() => { setSigningOut(false); setOpen(false); });
+            }}
+          >
+            <LogOut size={16} /><span>{signingOut ? "Signing out…" : "Sign out"}</span>
+          </button>
+        </div>
+      ) : null}
+      <button
+        className="sidebar-account__trigger"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="sidebar-account__avatar">
+          {snapshot.avatarUrl ? <img src={snapshot.avatarUrl} alt="" /> : initial}
+        </span>
+        <span className="sidebar-account__name">{name}</span>
+        <ChevronDown size={14} className={open ? "is-open" : undefined} />
+      </button>
+    </div>
+  );
 }
 
 function SidebarContributionIcon({ name, size = 15 }: { name?: string; size?: number }) {
@@ -134,6 +226,7 @@ export function Sidebar({
   onOpenTargetSettings,
   renderTargetStatus,
   onOpenSettings,
+  account = null,
 }: SidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [collapsedTargets, setCollapsedTargets] = useState<ReadonlySet<string>>(new Set());
@@ -294,14 +387,12 @@ export function Sidebar({
             <span>{action.title}</span>
           </button>
         ))}
-        <button
-          className="sidebar-action"
-          type="button"
-          onClick={onOpenSettings}
-        >
-          <Settings size={15} />
-          <span>Settings</span>
-        </button>
+        {account === null ? (
+          <button className="sidebar-action" type="button" onClick={onOpenSettings}>
+            <Settings size={15} />
+            <span>Settings</span>
+          </button>
+        ) : <SidebarAccount account={account} onOpenSettings={onOpenSettings} />}
       </div>
       </div>
     </SidebarEntityDndCoordinator>

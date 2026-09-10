@@ -151,6 +151,7 @@ export class BrowserWorkbenchCoordinator {
     readonly initialUrl?: string;
     readonly tabId?: BrowserTabId;
     readonly panelOwnerId?: string;
+    readonly hostId?: string;
   } = {}) {
     const created = options.tabId === undefined;
     const normalizedUrl = options.initialUrl === undefined
@@ -160,6 +161,9 @@ export class BrowserWorkbenchCoordinator {
     if (options.tabId === undefined) {
       const pageId = this.pages.create({
         ownerId,
+        hostId: options.hostId
+          ?? this.bindings.resolve(ownerId as ConversationScopeId)?.hostId
+          ?? null,
         ...(normalizedUrl === undefined ? {} : { initialUrl: normalizedUrl }),
       });
       tab = {

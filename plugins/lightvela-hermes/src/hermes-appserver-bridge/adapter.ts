@@ -24,13 +24,24 @@ import { HermesTranscriptWindow, type HermesTranscriptWindowSnapshot } from "./t
 import { appendLiveSessionProjection } from "./live-session-projection";
 import type { HermesProjectionRecovery } from "./projection-recovery";
 import {
-  MemoryHermesComposerQueueStore,
-  type HermesComposerQueueStore,
-} from "./composer-queue-store";
+  MemoryHermesComposerQueueService,
+  type HermesComposerQueueService,
+} from "./composer-queue/service";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-const MAX_AUTO_QUEUE_DRAIN_ATTEMPTS = 4;
-const AUTO_QUEUE_DRAIN_RETRY_MS = 750;
+
+class HermesAppServerDomainError extends Error {
+  readonly rpcCode = -32009;
+
+  constructor(
+    message: string,
+    readonly domainData: Readonly<Record<string, unknown>>,
+  ) {
+    super(message);
+    this.name = "HermesAppServerDomainError";
+  }
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
@@ -147,7 +158,11 @@ async function remoteImage(url: string, index: number): Promise<HermesImageInput
 }
 
 function referenceValue(path: string): string {
-  return /\s/u.test(path) ? `\`${path.replaceAll("`", "\\`")}\`` : path;
+  if (!/[\s()[\]{}<>"'`]/u.test(path)) return path;
+  if (!path.includes("`")) return `\`${path}\``;
+  if (!path.includes('"')) return `"${path}"`;
+  if (!path.includes("'")) return `'${path}'`;
+  return path;
 }
 
 async function parseInput(input: unknown): Promise<ParsedInput> {
@@ -198,11 +213,40 @@ function imageDirective(value: string): string | null {
   return raw.startsWith("`") && raw.endsWith("`") ? raw.slice(1, -1).replaceAll("\\`", "`") : raw;
 }
 
+const HERMES_FILE_REFERENCE_RE = /@file:(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/gu;
+const HERMES_REFERENCE_TRAILING_PUNCTUATION_RE = /[,.;!?]+$/u;
+const STAGED_ATTACHMENT_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-(.+)$/iu;
+
+function unwrapHermesReferenceValue(raw: string): string {
+  if (raw.length >= 2) {
+    const head = raw[0];
+    const tail = raw.at(-1);
+    if ((head === "`" && tail === "`") || (head === '"' && tail === '"') || (head === "'" && tail === "'")) {
+      return raw.slice(1, -1);
+    }
+  }
+  return raw.replace(HERMES_REFERENCE_TRAILING_PUNCTUATION_RE, "");
+}
+
+function fileReferenceName(path: string, explicitName?: string): string {
+  if (explicitName?.trim()) return explicitName.trim();
+  const normalized = path.replace(/\\/gu, "/");
+  const basename = normalized.split("/").at(-1) ?? path;
+  if (!/(?:^|\/)opencraft-attachments\/[^/]+$/u.test(normalized)) return path;
+  return STAGED_ATTACHMENT_NAME_RE.exec(basename)?.[1] ?? basename;
+}
+
 function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
   const source = Array.isArray(message.content) ? message.content : [message.text ?? message.content];
   const result: Record<string, unknown>[] = [];
+  const referencedPaths = new Set<string>();
   const deferredPaths: string[] = [];
   let hasNativeImage = false;
+  const appendFileReference = (path: string, name?: string) => {
+    if (path === "" || referencedPaths.has(path)) return;
+    referencedPaths.add(path);
+    result.push({ type: "mention", name: fileReferenceName(path, name), path });
+  };
   const appendText = (value: string) => {
     const kept: string[] = [];
     const before = deferredPaths.length;
@@ -213,7 +257,13 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
     }
     let body = kept.join("\n").trim();
     if (deferredPaths.length > before) body = body.replace(/^\[screenshot\]\n?/gmu, "").trim();
+    const fileReferences: string[] = [];
+    body = body.replace(HERMES_FILE_REFERENCE_RE, (_match, raw: string) => {
+      fileReferences.push(unwrapHermesReferenceValue(raw));
+      return "";
+    }).replace(/[ \t]{2,}/gu, " ").trim();
     if (body !== "") result.push({ type: "text", text: body, text_elements: [] });
+    for (const path of fileReferences) appendFileReference(path);
   };
   for (const rawPart of source) {
     if (typeof rawPart === "string") {
@@ -223,6 +273,10 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
     const part = record(rawPart);
     if (part.type === "text" && typeof part.text === "string") {
       appendText(part.text);
+      continue;
+    }
+    if (part.type === "mention" && typeof part.path === "string") {
+      appendFileReference(part.path, typeof part.name === "string" ? part.name : undefined);
       continue;
     }
     const nestedImageUrl = record(part.image_url).url;
@@ -680,14 +734,8 @@ export class HermesAppServerAdapter {
    */
   private readonly admissionByLive = new Map<string, HermesAdmissionProjection>();
   private readonly settlementTimerByLive = new Map<string, unknown>();
-  private readonly composerQueue: HermesComposerQueueStore;
-  /** One accepted queue submission per durable Thread at a time. */
-  private readonly drainingQueueByStored = new Set<string>();
+  private readonly composerQueue: HermesComposerQueueService;
   private readonly scheduledQueueDrainByStored = new Set<string>();
-  /** Explicit Stop/Esc intent; deliberately not persisted across a new bridge. */
-  private readonly parkedQueueByStored = new Set<string>();
-  private readonly queueDrainFailuresBySubmission = new Map<string, number>();
-  private readonly queueRetryTimerByStored = new Map<string, unknown>();
   private readonly itemsByTurnId = new Map<string, AppServerTurn["items"]>();
   private readonly itemCacheOrder: string[] = [];
   private readonly transcriptWindows = new Map<string, HermesTranscriptWindow>();
@@ -715,7 +763,7 @@ export class HermesAppServerAdapter {
     private readonly history?: HermesHistoryClient,
     private readonly projectionScheduler: HermesProjectionScheduler = DEFAULT_PROJECTION_SCHEDULER,
     recovery?: HermesProjectionRecovery,
-    composerQueue: HermesComposerQueueStore = new MemoryHermesComposerQueueStore(),
+    composerQueue: HermesComposerQueueService = new MemoryHermesComposerQueueService(),
   ) {
     this.composerQueue = composerQueue;
     this.activeByLive = recovery?.owners ?? new Map();
@@ -734,8 +782,6 @@ export class HermesAppServerAdapter {
     this.stopComposerQueue();
     for (const handle of this.settlementTimerByLive.values()) this.projectionScheduler.cancel(handle);
     this.settlementTimerByLive.clear();
-    for (const handle of this.queueRetryTimerByStored.values()) this.projectionScheduler.cancel(handle);
-    this.queueRetryTimerByStored.clear();
     this.admissionByLive.clear();
     this.notificationListeners.clear();
     this.serverRequestListeners.clear();
@@ -839,16 +885,16 @@ export class HermesAppServerAdapter {
 
   async readThreadMetadata(threadId: string, signal?: AbortSignal): Promise<AppServerThread> {
     const profile = await this.resolveThreadProfile(threadId);
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const list = await this.gateway.call<{ sessions: HermesSessionSummary[] }>("session.list", { profile, limit: 1000 });
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const summary = list.sessions.find(session => session.id === threadId);
     if (!summary) throw new Error(`Hermes session not found: ${threadId}`);
     return makeThread(summary, this.payloadByStored.get(threadId)?.info?.cwd ?? this.defaultCwd);
   }
 
   async loadThread(threadId: string, includeTurns: boolean, requestedProfile?: string | null, signal?: AbortSignal): Promise<AppServerThread> {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const profile = requestedProfile?.trim()
       || this.profileByStored.get(threadId)
       || await this.resolveThreadProfile(threadId);
@@ -862,7 +908,7 @@ export class HermesAppServerAdapter {
       }),
       historyPromise,
     ]);
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const summary = list.sessions.find((row) => row.id === threadId) ?? {
       id: threadId, title: "New chat", preview: "", started_at: Date.now() / 1000,
       message_count: payload.message_count, source: "desktop", profile: profile ?? "default",
@@ -914,7 +960,7 @@ export class HermesAppServerAdapter {
     chronological: AppServerTurn[];
     nextOffset: number | null;
   }> {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const prepared = this.preparedHistoryByStored.get(threadId);
     if (
       offset === 0
@@ -943,7 +989,7 @@ export class HermesAppServerAdapter {
     nextOffset: number | null;
   }> {
     const page = await this.fetchTurnsPage(threadId, 0, limit, sortDirection, signal);
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     this.preparedHistoryByStored.set(threadId, { limit, sortDirection, page });
     return page;
   }
@@ -964,7 +1010,7 @@ export class HermesAppServerAdapter {
     // Turn. A window may start inside an assistant/tool sequence. Its groups
     // are presentation projections and can regroup when older rows arrive.
     const profile = this.profileByStored.get(threadId) ?? await this.resolveThreadProfile(threadId);
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const key = JSON.stringify([profile, threadId]);
     let window = this.transcriptWindows.get(key);
     if (!window) {
@@ -972,7 +1018,7 @@ export class HermesAppServerAdapter {
       this.transcriptWindows.set(key, window);
     }
     const page = offset === 0 ? await window.readTail(signal) : await window.readOlder(signal, offset);
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     if (this.transcriptWindows.get(key) !== window) throw new Error("Hermes history window was invalidated");
     this.transcriptSnapshots.delete(key);
     this.transcriptSnapshots.set(key, page);
@@ -983,11 +1029,25 @@ export class HermesAppServerAdapter {
       this.transcriptWindows.get(oldest)?.invalidate();
       this.transcriptWindows.delete(oldest);
     }
-    const chronological = mapMessages(threadId, [...page.messages]).map(turn => ({
+    // The durable transport is row-paged while AppServer is Turn-paged. Keep
+    // the larger Desktop-compatible row window cached, but project only the
+    // requested Turn slice. The cursor remains a count from the newest row,
+    // so subsequent pages can be served from this window until its older edge
+    // is reached and the transport must backfill again.
+    const end = Math.max(0, page.messages.length - offset);
+    const eligible = mapMessageRanges(threadId, [...page.messages])
+      .filter(({ end: rangeEnd }) => rangeEnd <= end);
+    const selected = eligible.slice(-limit);
+    const chronological = selected.map(({ turn }) => ({
       ...turn, historyWindowId: key,
     }));
     for (const turn of chronological) this.cacheTurnItems(turn);
-    const nextOffset = page.possiblyTruncated ? page.nextOffset : null;
+    const consumedOffset = selected.length > 0
+      ? page.messages.length - selected[0]!.start
+      : Math.max(offset, page.nextOffset);
+    const nextOffset = eligible.length > selected.length || page.possiblyTruncated
+      ? consumedOffset
+      : null;
     return {
       data: sortDirection === "desc" ? [...chronological].reverse() : chronological,
       chronological,
@@ -1380,17 +1440,28 @@ export class HermesAppServerAdapter {
     }
   }
 
-  async steerTurn(threadId: string, expectedTurnId: string | null, input: unknown): Promise<{ turnId: string }> {
+  async steerTurn(
+    threadId: string,
+    expectedTurnId: string | null,
+    input: unknown,
+    clientUserMessageId: string | null,
+  ): Promise<{ turnId: string; disposition: "steered" | "queued" }> {
     const parsed = await parseInput(input);
     if (parsed.images.length > 0) throw new Error("Hermes session.steer accepts text only; send the image as a queued follow-up");
     if (parsed.body.trim() === "") throw new Error("Hermes steer input is empty");
     const live = await this.ensureLive(threadId);
     const active = this.activeByLive.get(live);
     if (active === undefined || active.isCompleted) {
-      throw new Error(`Hermes thread has no active turn: ${threadId}`);
+      throw new HermesAppServerDomainError(
+        `Hermes thread has no active turn: ${threadId}`,
+        { code: "TURN_INACTIVE", retryable: false },
+      );
     }
     if (expectedTurnId !== null && expectedTurnId !== active.turn.id) {
-      throw new Error(`Hermes active turn changed: expected ${expectedTurnId}, got ${active.turn.id}`);
+      throw new HermesAppServerDomainError(
+        `Hermes active turn changed: expected ${expectedTurnId}, got ${active.turn.id}`,
+        { code: "EXPECTED_TURN_MISMATCH", retryable: true, actualTurnId: active.turn.id },
+      );
     }
     // Like Desktop's typed follow-up, skip only Clarify before steering.
     // Both calls use this session's owning Gateway and are issued in order;
@@ -1398,22 +1469,42 @@ export class HermesAppServerAdapter {
     this.skipPendingClarify(live);
     const result = await this.gateway.call<{ status?: string }>("session.steer", { session_id: live, text: parsed.body });
     if (result.status === "rejected") throw new Error("Hermes rejected the active-turn steer");
-    return { turnId: active.turn.id };
+    const acknowledgement = active.acceptSteeringUserMessage(
+      parsed.content,
+      clientUserMessageId,
+      this.projectionScheduler.now(),
+    );
+    if (acknowledgement.length === 0) {
+      // Codex restores an unacknowledged steeringUserMessage when its target
+      // Turn settles. Preserve the accepted input as a paused follow-up instead
+      // of manufacturing an acknowledgement on a dead Turn or dropping it.
+      await this.addQueuedSubmission(
+        threadId,
+        parsed.content,
+        clientUserMessageId ?? `hermes-steer-${crypto.randomUUID()}`,
+        "Run ended before this message could be steered. Resume it to send as a follow-up.",
+      );
+      return { turnId: active.turn.id, disposition: "queued" };
+    }
+    this.emitProjection(acknowledgement);
+    return { turnId: active.turn.id, disposition: "steered" };
   }
 
-  addQueuedSubmission(threadId: string, input: unknown, clientUserMessageId: string): QueuedSubmission {
+  async addQueuedSubmission(
+    threadId: string,
+    input: unknown,
+    clientUserMessageId: string,
+    pausedReason: string | null = null,
+  ): Promise<QueuedSubmission> {
     this.validateQueuedInput(input);
     const submission: QueuedSubmission = {
       id: `hermes-queue-${crypto.randomUUID()}`,
       input: Array.isArray(input) ? structuredClone(input) : [],
       clientUserMessageId,
+      createdAt: this.projectionScheduler.now(),
+      pausedReason,
     };
-    const queue = this.composerQueue.read(threadId);
-    this.composerQueue.replace(threadId, [...queue, submission]);
-    // Like Hermes Desktop, queueing fresh work resumes a previously parked
-    // queue. A stale Stop must not silently hold new user intent.
-    this.parkedQueueByStored.delete(threadId);
-    return structuredClone(submission);
+    return await this.composerQueue.add(threadId, submission);
   }
 
   listQueuedSubmissions(threadId: string, cursor: string | null, limit: number | null) {
@@ -1426,63 +1517,36 @@ export class HermesAppServerAdapter {
     };
   }
 
-  updateQueuedSubmission(threadId: string, queuedSubmissionId: string, input: unknown): QueuedSubmission {
+  async updateQueuedSubmission(threadId: string, queuedSubmissionId: string, input: unknown): Promise<QueuedSubmission> {
     this.validateQueuedInput(input);
-    const queue = this.composerQueue.read(threadId);
-    const index = queue.findIndex((item) => item.id === queuedSubmissionId);
-    if (index < 0) throw new Error(`Hermes queued submission not found: ${queuedSubmissionId}`);
-    const updated = { ...queue[index]!, input: Array.isArray(input) ? structuredClone(input) : [] };
-    queue[index] = updated;
-    this.composerQueue.replace(threadId, queue);
-    return structuredClone(updated);
+    return await this.composerQueue.update(threadId, queuedSubmissionId, (submission) => ({
+      ...submission,
+      input: Array.isArray(input) ? structuredClone(input) : [],
+      pausedReason: null,
+    }));
   }
 
-  deleteQueuedSubmission(threadId: string, queuedSubmissionId: string): boolean {
-    const queue = this.composerQueue.read(threadId);
-    const index = queue.findIndex((item) => item.id === queuedSubmissionId);
-    if (index < 0) return false;
-    queue.splice(index, 1);
-    this.composerQueue.replace(threadId, queue);
-    if (queue.length === 0) this.parkedQueueByStored.delete(threadId);
-    return true;
+  async deleteQueuedSubmission(threadId: string, queuedSubmissionId: string): Promise<boolean> {
+    return await this.composerQueue.remove(threadId, queuedSubmissionId);
   }
 
-  reorderQueuedSubmissions(threadId: string, queuedSubmissionIds: string[]): void {
-    const queue = this.composerQueue.read(threadId);
-    if (queuedSubmissionIds.length !== queue.length || new Set(queuedSubmissionIds).size !== queue.length) {
-      throw new Error("queuedSubmissionIds must contain every queued submission exactly once");
-    }
-    const byId = new Map(queue.map((item) => [item.id, item]));
-    const reordered = queuedSubmissionIds.map((id) => {
-      const item = byId.get(id);
-      if (item === undefined) throw new Error(`Hermes queued submission not found: ${id}`);
-      return item;
-    });
-    this.composerQueue.replace(threadId, reordered);
+  async reorderQueuedSubmissions(threadId: string, queuedSubmissionIds: string[]): Promise<void> {
+    await this.composerQueue.reorder(threadId, queuedSubmissionIds);
   }
 
   async startQueuedSubmission(threadId: string, queuedSubmissionId?: string | null): Promise<AppServerTurn> {
-    if (this.drainingQueueByStored.has(threadId)) {
-      throw new Error(`Hermes thread queue is already advancing: ${threadId}`);
-    }
-    const retryHandle = this.queueRetryTimerByStored.get(threadId);
-    if (retryHandle !== undefined) {
-      this.projectionScheduler.cancel(retryHandle);
-      this.queueRetryTimerByStored.delete(threadId);
-    }
-    this.drainingQueueByStored.add(threadId);
-    try {
+    const queue = this.composerQueue.read(threadId);
+    const selected = queuedSubmissionId == null
+      ? queue[0]
+      : queue.find((item) => item.id === queuedSubmissionId);
+    if (selected === undefined) throw new Error("Hermes queue is empty or the submission no longer exists");
+    const leased = await this.composerQueue.withConsumptionLease(threadId, selected.id, async (submission) => {
       const live = await this.ensureLive(threadId);
       const owner = this.activeByLive.get(live);
       if (owner !== undefined && !owner.isCompleted) {
         throw new Error(`Hermes thread is already running: ${threadId}`);
       }
-      const queue = this.composerQueue.read(threadId);
-      const index = queuedSubmissionId == null ? 0 : queue.findIndex((item) => item.id === queuedSubmissionId);
-      const submission = queue[index];
-      if (index < 0 || submission === undefined) {
-        throw new Error("Hermes queue is empty or the submission no longer exists");
-      }
+      await this.composerQueue.resume(threadId, submission.id);
       const turn = (await this.submitTurn(
         threadId,
         submission.input,
@@ -1491,23 +1555,62 @@ export class HermesAppServerAdapter {
         submission.clientUserMessageId,
         true,
       )).turn;
-      // Hermes Desktop's invariant is send-then-remove. Read the latest queue
-      // again so an edit/reorder in another View is not overwritten while the
-      // Gateway admission was pending.
-      this.composerQueue.replace(
-        threadId,
-        this.composerQueue.read(threadId).filter((item) => item.id !== submission.id),
-      );
-      this.parkedQueueByStored.delete(threadId);
-      this.queueDrainFailuresBySubmission.delete(submission.id);
+      await this.composerQueue.remove(threadId, submission.id);
       return turn;
-    } finally {
-      this.drainingQueueByStored.delete(threadId);
+    }).catch(async (error: unknown) => {
+      if (this.composerQueue.read(threadId).some((candidate) => candidate.id === selected.id)) {
+        await this.composerQueue.pause(
+          threadId,
+          selected.id,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      throw error;
+    });
+    if (!leased.acquired) {
+      throw new Error(`Hermes thread queue is already advancing: ${threadId}`);
     }
+    return leased.value;
+  }
+
+  async steerQueuedSubmission(
+    threadId: string,
+    queuedSubmissionId: string,
+    expectedTurnId: string,
+  ): Promise<{ turnId: string }> {
+    const leased = await this.composerQueue.withConsumptionLease(
+      threadId,
+      queuedSubmissionId,
+      async (submission) => {
+        await this.composerQueue.resume(threadId, submission.id);
+        const result = await this.steerTurn(
+          threadId,
+          expectedTurnId,
+          submission.input,
+          submission.clientUserMessageId,
+        );
+        await this.composerQueue.remove(threadId, submission.id);
+        return result;
+      },
+    ).catch(async (error: unknown) => {
+      if (this.composerQueue.read(threadId).some((candidate) => candidate.id === queuedSubmissionId)) {
+        await this.composerQueue.pause(
+          threadId,
+          queuedSubmissionId,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      throw error;
+    });
+    if (!leased.acquired) throw new Error(`Hermes thread queue is already advancing: ${threadId}`);
+    return leased.value;
   }
 
   async cancelTurn(threadId: string): Promise<void> {
-    if (this.composerQueue.read(threadId).length > 0) this.parkedQueueByStored.add(threadId);
+    await this.composerQueue.pauseAll(
+      threadId,
+      "Interrupted before this queued message could run.",
+    );
     await this.gateway.call("session.interrupt", { session_id: await this.ensureLive(threadId) });
   }
 
@@ -1945,36 +2048,23 @@ export class HermesAppServerAdapter {
     const entry = this.composerQueue.read(threadId)[0];
     if (
       entry === undefined
-      || this.drainingQueueByStored.has(threadId)
       || this.scheduledQueueDrainByStored.has(threadId)
-      || this.parkedQueueByStored.has(threadId)
-      || this.queueRetryTimerByStored.has(threadId)
-      || (this.queueDrainFailuresBySubmission.get(entry.id) ?? 0) >= MAX_AUTO_QUEUE_DRAIN_ATTEMPTS
+      || entry.pausedReason !== null
     ) return;
     this.scheduledQueueDrainByStored.add(threadId);
     queueMicrotask(() => {
       this.scheduledQueueDrainByStored.delete(threadId);
       void this.startQueuedSubmission(threadId, entry.id).catch((error) => {
         if (!this.composerQueue.read(threadId).some((candidate) => candidate.id === entry.id)) {
-          this.queueDrainFailuresBySubmission.delete(entry.id);
           this.drainQueue(threadId);
           return;
         }
-        const failures = (this.queueDrainFailuresBySubmission.get(entry.id) ?? 0) + 1;
-        this.queueDrainFailuresBySubmission.set(entry.id, failures);
-        if (failures >= MAX_AUTO_QUEUE_DRAIN_ATTEMPTS) {
-          this.emit("error", {
-            error: { message: error instanceof Error ? error.message : String(error) },
-            threadId,
-          });
-          return;
-        }
-        const handle = this.projectionScheduler.schedule(() => {
-          if (this.queueRetryTimerByStored.get(threadId) !== handle) return;
-          this.queueRetryTimerByStored.delete(threadId);
-          this.drainQueue(threadId);
-        }, AUTO_QUEUE_DRAIN_RETRY_MS);
-        this.queueRetryTimerByStored.set(threadId, handle);
+        // Codex never retries a failed/unknown queue admission automatically:
+        // the same intent may already have crossed the transport boundary.
+        this.emit("error", {
+          error: { message: error instanceof Error ? error.message : String(error) },
+          threadId,
+        });
       });
     });
   }

@@ -136,6 +136,40 @@ test("PreviewBridgeAdapter fences wrong origin and stale generations", async () 
   adapter.dispose();
 });
 
+test("opaque proxy previews accept null origin while retaining source and nonce fences", async () => {
+  const host = new FakeHostWindow();
+  const frame = new FakeFrameWindow();
+  const otherFrame = new FakeFrameWindow();
+  const adapter = new PreviewBridgeAdapter({
+    hostWindow: host as unknown as Window,
+    frameWindow: frame as unknown as Window,
+    targetOrigin: "*",
+    previewId: "preview-opaque",
+    generation: 1,
+    nonce: "opaque-nonce",
+    handshakeTimeoutMs: 100,
+  });
+  try {
+    const connect = frame.sent[0]!.message;
+    assert.equal(frame.sent[0]?.targetOrigin, "*");
+    host.emit(otherFrame, "null", childMessage(connect, readyBody));
+    host.emit(frame, "null", childMessage(connect, readyBody));
+    const inspection = adapter.inspect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const call = frame.sent.at(-1)!.message;
+    if (call.type !== "platform:call") throw new Error("missing call");
+    host.emit(frame, "null", childMessage(call, {
+      type: "preview:call-result",
+      callId: call.callId,
+      ok: true,
+      result: { url: "http://127.0.0.1:4180/", title: "Preview", revision: 1, elements: [] },
+    }));
+    assert.equal((await inspection).title, "Preview");
+  } finally {
+    adapter.dispose();
+  }
+});
+
 test("PreviewBridgeAdapter cancels timed-out calls and ignores late results", async () => {
   const host = new FakeHostWindow();
   const frame = new FakeFrameWindow();

@@ -5,6 +5,7 @@ import {
   type AppServerWebSocket,
   WebSocketTransport,
 } from "@opencraft/appserver-transport-websocket";
+import { encodeUtf8 } from "@opencraft/appserver-client/utf8";
 
 type SocketEventName = "open" | "message" | "error" | "close";
 
@@ -98,16 +99,17 @@ test("WebSocket transport sends only while its socket is open", async () => {
   await assert.rejects(fixture.transport.send("after"), /not open/);
 });
 
-test("WebSocket transport decodes string, ArrayBuffer, and typed-array frames in order", async () => {
+test("WebSocket transport decodes every binary frame as UTF-8 in order", async () => {
   const fixture = transportFixture();
   const messages: string[] = [];
   fixture.transport.subscribeMessage((frame) => messages.push(frame));
   const socket = await connectCurrent(fixture);
   socket.emitMessage("one");
-  socket.emitMessage(new TextEncoder().encode("two").buffer);
-  socket.emitMessage(new TextEncoder().encode("three"));
+  socket.emitMessage(encodeUtf8("你好").buffer);
+  socket.emitMessage(encodeUtf8("世界"));
+  socket.emitMessage(new Blob([encodeUtf8("👋")]));
   await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
-  assert.deepEqual(messages, ["one", "two", "three"]);
+  assert.deepEqual(messages, ["one", "你好", "世界", "👋"]);
   await fixture.transport.close();
 });
 

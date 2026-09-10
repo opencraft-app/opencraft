@@ -1,5 +1,6 @@
 import type { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
 import type { HermesMessagesPage } from "./types";
+import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
 
 export interface HermesHistoryPageRequest {
   readonly limit: number;
@@ -24,7 +25,7 @@ export class HermesDashboardHistoryClient implements HermesHistoryClient {
   ) {}
 
   async readMessages(sessionId: string, request: HermesHistoryPageRequest, signal?: AbortSignal): Promise<HermesMessagesPage> {
-    signal?.throwIfAborted();
+    throwIfSignalAborted(signal);
     const query = new URLSearchParams({
       limit: String(Math.min(Math.max(Math.floor(request.limit), 1), 500)),
       offset: String(Math.max(Math.floor(request.offset), 0)),

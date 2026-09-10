@@ -28,7 +28,9 @@ import {
 } from "../window-chrome";
 import {
   readRootFontSizePx,
+  resolveAppShellMainContentChrome,
   resolveThreadEdgeScroll,
+  type AppShellMainContentLayout,
 } from "../app-shell-edge-scroll-model";
 import {
   resolveSidebarPresentation,
@@ -51,6 +53,7 @@ import { useSidebarDockIntent } from "./use-sidebar-dock-intent";
 
 interface AppShellProps {
   layoutScope: string;
+  mainContentLayout: AppShellMainContentLayout;
   header: ReactNode;
   floatingSidebarHeader(onDock: () => void): ReactNode;
   leftPanel: ReactNode;
@@ -183,6 +186,7 @@ export function useAppShellLayoutMotion(): AppShellLayoutMotion {
 
 export function AppShell({
   layoutScope,
+  mainContentLayout,
   header,
   floatingSidebarHeader,
   leftPanel,
@@ -217,9 +221,15 @@ export function AppShell({
   const [rightPanelPresentationActive, setRightPanelPresentationActive] =
     useState(rightPanelOpen || rightPanelAnimation.get() > 0.001);
   const mainContentViewportRef = useRef<HTMLDivElement | null>(null);
-  const [conversationSupportsEdgeScroll, setConversationSupportsEdgeScroll] =
+  const [threadEdgeScrollEligible, setThreadEdgeScrollEligible] =
     useState(false);
-  const isHeaderEdgeScroll = conversationSupportsEdgeScroll;
+  const {
+    headerEdgeScroll: isHeaderEdgeScroll,
+    threadEdgeDivider,
+  } = resolveAppShellMainContentChrome({
+    layout: mainContentLayout,
+    threadEdgeScrollEligible,
+  });
   const [layoutResizing, setLayoutResizing] = useState(false);
   const [floatingResizing, setFloatingResizing] = useState(false);
   const {
@@ -405,11 +415,15 @@ export function AppShell({
   }, [shellHeight, shellWidth]);
 
   useLayoutEffect(() => {
+    if (mainContentLayout !== "thread-edge-scroll") {
+      setThreadEdgeScrollEligible(false);
+      return;
+    }
     const viewport = mainContentViewportRef.current;
     if (viewport === null) return;
     const update = () => {
       const width = viewport.getBoundingClientRect().width;
-      setConversationSupportsEdgeScroll(
+      setThreadEdgeScrollEligible(
         resolveThreadEdgeScroll({
           mainContentWidthPx: width,
           leftChromeWidthPx: animatedSidebarWidth.get(),
@@ -422,7 +436,7 @@ export function AppShell({
     const observer = new ResizeObserver(update);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [animatedSidebarWidth, rightPanelFullWidth]);
+  }, [animatedSidebarWidth, mainContentLayout, rightPanelFullWidth]);
 
   const floatingIntent = useSidebarDockIntent({
     docked: sidebarOpen,
@@ -521,13 +535,13 @@ export function AppShell({
                 style={{ width: mainViewportWidth, flex: "0 0 auto", overflow: "hidden" }}
                 inert={rightPanelFullWidth || undefined}
                 aria-hidden={rightPanelFullWidth || undefined}
-                data-app-shell-main-content-layout="thread-edge-scroll"
+                data-app-shell-main-content-layout={mainContentLayout}
                 data-app-shell-thread-edge-scroll={isHeaderEdgeScroll}
                 data-app-shell-right-panel-full-width={rightPanelFullWidth}
               >
                 <div
                   className="main-content-frame"
-                  data-app-shell-thread-edge-divider={!isHeaderEdgeScroll}
+                  data-app-shell-thread-edge-divider={threadEdgeDivider}
                 >
                   <div className="main-content-frame__inner">
                     <div

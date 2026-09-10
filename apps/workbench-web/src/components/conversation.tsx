@@ -617,6 +617,9 @@ function Turn({
     () => createTimelineTurnPresentationPlan(turn, toolActivityPresenters, { isMostRecentTurn }),
     [isMostRecentTurn, toolActivityPresenterVersion, toolActivityPresenters, turn],
   );
+  const turnThinking = presentation.thinkingOwner.type === "turn"
+    ? presentation.thinkingOwner
+    : null;
   const virtualizeSingleSlot = presentation.topLevelSlotCount === 1;
   return (
     <section className="thread-turn" data-selection="text" data-turn-key={turn.turnKey} data-turn-status={turn.status}>
@@ -644,8 +647,8 @@ function Turn({
           onActivityCollapsedChange={onActivityCollapsedChange}
           onRetry={onRetry}
           showActions
-          thinkingId={presentation.showThinking ? presentation.thinkingId : null}
-          thinkingLabel={presentation.thinkingLabel}
+          thinkingId={turnThinking?.placeholderId ?? null}
+          thinkingLabel={turnThinking?.label}
           threadDetailLevel={threadDetailLevel}
         />
       )}

@@ -140,6 +140,12 @@ export interface SettingsPageContribution {
   readonly order?: number;
   readonly icon?: string;
   readonly platforms?: readonly ExtensionPlatform[];
+  /**
+   * Presentation audience only. `internal` pages remain registered but are
+   * omitted from the normal Settings projection until the Workbench enables
+   * its device-local developer mode. This is not an authorization boundary.
+   */
+  readonly audience?: "public" | "internal";
   /** The settings shell owns viewport geometry for collection/detail pages. */
   readonly layout?: "document" | "master-detail";
   readonly group?: string;
@@ -147,7 +153,9 @@ export interface SettingsPageContribution {
    * Declares that this page belongs to one target-management surface instead
    * of the device-global Settings index. Pages in the same family share the
    * shell's selected Agent/Host context; the extension still owns their data
-   * and rendering.
+   * and rendering. The platform shell owns presentation: Web may adapt the
+   * surface to an application modal while Native may adapt it to a Stack
+   * route. Extensions must not choose a platform container themselves.
    */
   readonly management?: {
     readonly familyId: string;

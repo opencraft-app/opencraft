@@ -6,6 +6,7 @@ import {
   extractTencentTatError,
   extractTencentPtyOutput,
 } from "./tencent-tat-frame-codec";
+import { encodeUtf8 } from "./utf8";
 
 const DEFAULT_PROXY_CONNECT_DELAY_MS = 200;
 const DEFAULT_PROXY_REQUEST_TIMEOUT_MS = 30_000;
@@ -18,6 +19,13 @@ export type TsshProxyConnectionState = "connecting" | "ready" | "closed" | "erro
 export interface TsshProxyClientOptions {
   connectDelayMs?: number;
   requestTimeoutMs?: number;
+  /**
+   * Keeps the physical TAT tunnel active when all logical channels are idle.
+   * The probe is owned here (not by Hermes RPC, HTTP, or PTY) because those
+   * protocols have independent lifecycles and may legitimately be silent.
+   */
+  idleKeepaliveIntervalMs?: number;
+  idleKeepaliveTarget?: TsshProxyTarget;
   WebSocketImpl?: new (url: string | URL, protocols?: string | string[]) => WebSocket;
   onStateChange?: (state: TsshProxyClientState) => void;
   onError?: (message: string) => void;
@@ -64,6 +72,7 @@ export interface TatPtyChannel {
 
 type PendingProxy = {
   proxyId: string;
+  healthProbe: boolean;
   resolve: (connection: TencentTatProxyConnection) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -75,7 +84,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(v
 const asString = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
 
 const encodeBase64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
+  const bytes = encodeUtf8(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
@@ -195,7 +204,7 @@ export class TencentTatProxyConnection {
     if (this.state !== "ready") {
       return false;
     }
-    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+    const bytes = typeof data === "string" ? encodeUtf8(data) : data instanceof ArrayBuffer ? new Uint8Array(data) : data;
     return this.client.sendProxyData(this, bytes);
   }
 
@@ -269,6 +278,8 @@ export class TencentTatSessionMultiplexer {
   private lastInboundSequence = -1;
   private inboundRevision = 0;
   private healthProbe: Promise<void> | null = null;
+  private idleKeepaliveTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastTransportActivityAt = Date.now();
   private retired = false;
 
   private readonly connectDelayMs: number;
@@ -349,6 +360,7 @@ export class TencentTatSessionMultiplexer {
       this.rejectReady = rejectReady;
       const socket = new this.WebSocketImpl(this.bootstrap.wsUrl);
       this.lastInboundSequence = -1;
+      this.lastTransportActivityAt = Date.now();
       socket.binaryType = "arraybuffer";
       this.socket = socket;
 
@@ -380,6 +392,7 @@ export class TencentTatSessionMultiplexer {
             return;
           }
           this.setState("ready");
+          this.startIdleKeepalive();
           resolveReady();
         }, this.connectDelayMs);
       };
@@ -400,6 +413,7 @@ export class TencentTatSessionMultiplexer {
       };
 
       socket.onclose = (event) => {
+        this.stopIdleKeepalive();
         const error = new TatTransportError(
           "connection_lost",
           "TAT proxy websocket closed",
@@ -448,11 +462,13 @@ export class TencentTatSessionMultiplexer {
     const proxyId = target.proxyId ?? makeProxyId();
     const channelId = target.channelId ?? proxyId;
     const connection = new TencentTatProxyConnection(proxyId, channelId, this, handlers);
-    this.logDebug("open proxy requested", {
-      channelId,
-      proxyId,
-      target,
-    });
+    if (!healthProbe) {
+      this.logDebug("open proxy requested", {
+        channelId,
+        proxyId,
+        target,
+      });
+    }
 
     return new Promise<TencentTatProxyConnection>((resolve, reject) => {
       const timer = globalThis.setTimeout(() => {
@@ -463,18 +479,20 @@ export class TencentTatSessionMultiplexer {
           "TAT proxy request timed out",
           { phase: "open_proxy" },
         );
-        this.logDebug("open proxy timed out", {
-          channelId,
-          proxyId,
-          target,
-        }, error);
+        if (!healthProbe) {
+          this.logDebug("open proxy timed out", {
+            channelId,
+            proxyId,
+            target,
+          }, error);
+        }
         connection.fail(error);
         reject(error);
         this.sendBson("PtyProxyClose", channelId, { ProxyId: proxyId });
         if (!healthProbe) this.checkHealth(target);
       }, this.requestTimeoutMs);
 
-      this.pending.set(proxyId, { proxyId, resolve, reject, timer, connection });
+      this.pending.set(proxyId, { proxyId, healthProbe, resolve, reject, timer, connection });
       this.connections.set(proxyId, connection);
       const sent = this.sendBson("PtyProxyNew", channelId, {
         ProxyId: proxyId,
@@ -501,29 +519,97 @@ export class TencentTatSessionMultiplexer {
     });
   }
 
-  private checkHealth(target: TsshProxyTarget): void {
-    if (this.retired || this.healthProbe !== null) return;
+  private checkHealth(
+    target: TsshProxyTarget,
+    reason: "open_proxy_timeout" | "idle_keepalive" = "open_proxy_timeout",
+  ): Promise<void> | null {
+    if (this.retired) return null;
+    if (this.healthProbe !== null) return this.healthProbe;
     const inboundRevision = this.inboundRevision;
-    console.log("[tat-health] suspect", { ...this.options.diagnosticContext, reason: "open_proxy_timeout", targetPort: target.port });
+    if (reason === "open_proxy_timeout") {
+      console.log("[tat-health] suspect", { ...this.options.diagnosticContext, reason, targetPort: target.port });
+    }
     // A fresh logical TCP channel checks the existing tunnel without minting a
     // session, touching the PTY, or replaying the failed business request.
     const operation = this.openProxy({ ip: target.ip, port: target.port }, {}, true)
       .then(connection => {
         connection.close();
-        if (!this.retired) console.log("[tat-health] recovered", { ...this.options.diagnosticContext, evidence: "proxy_ready" });
+        if (!this.retired && reason === "open_proxy_timeout") {
+          console.log("[tat-health] recovered", { ...this.options.diagnosticContext, evidence: "proxy_ready" });
+        }
       }, () => {
         if (this.retired) return;
         if (this.inboundRevision !== inboundRevision) {
-          console.log("[tat-health] degraded", { ...this.options.diagnosticContext, reason: "proxy_unavailable_but_tunnel_receiving" });
+          console.log("[tat-health] degraded", {
+            ...this.options.diagnosticContext,
+            reason: "proxy_unavailable_but_tunnel_receiving",
+            trigger: reason,
+          });
           return;
         }
-        console.log("[tat-health] unhealthy", { ...this.options.diagnosticContext, reason: "probe_failed_without_inbound_progress" });
+        console.log("[tat-health] unhealthy", {
+          ...this.options.diagnosticContext,
+          reason: "probe_failed_without_inbound_progress",
+          trigger: reason,
+        });
         this.close();
         this.options.onUnhealthy?.();
       }).finally(() => {
         if (this.healthProbe === operation) this.healthProbe = null;
       });
     this.healthProbe = operation;
+    return operation;
+  }
+
+  private startIdleKeepalive(): void {
+    const intervalMs = this.options.idleKeepaliveIntervalMs ?? 0;
+    const target = this.options.idleKeepaliveTarget;
+    if (intervalMs <= 0 || target === undefined || this.retired) return;
+    this.stopIdleKeepalive();
+    console.log("[tat-health] idle keepalive started", {
+      ...this.options.diagnosticContext,
+      intervalMs,
+      targetPort: target.port,
+    });
+    this.scheduleIdleKeepalive(intervalMs);
+  }
+
+  private scheduleIdleKeepalive(delayMs: number): void {
+    if (this.retired || this.state !== "ready") return;
+    const intervalMs = this.options.idleKeepaliveIntervalMs ?? 0;
+    const target = this.options.idleKeepaliveTarget;
+    if (intervalMs <= 0 || target === undefined) return;
+    this.stopIdleKeepalive();
+    const timer = globalThis.setTimeout(() => {
+      if (this.idleKeepaliveTimer !== timer) return;
+      this.idleKeepaliveTimer = null;
+      if (this.retired || this.state !== "ready") return;
+      const idleMs = Date.now() - this.lastTransportActivityAt;
+      if (idleMs < intervalMs) {
+        this.scheduleIdleKeepalive(intervalMs - idleMs);
+        return;
+      }
+      const operation = this.checkHealth(target, "idle_keepalive");
+      if (operation === null) return;
+      void operation.finally(() => {
+        if (!this.retired && this.state === "ready") {
+          this.scheduleIdleKeepalive(intervalMs);
+        }
+      });
+    }, Math.max(1, delayMs));
+    // Node-based contract tests must not be kept alive by a browser timer.
+    (timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+    this.idleKeepaliveTimer = timer;
+  }
+
+  private stopIdleKeepalive(): void {
+    if (this.idleKeepaliveTimer === null) return;
+    globalThis.clearTimeout(this.idleKeepaliveTimer);
+    this.idleKeepaliveTimer = null;
+  }
+
+  private markTransportActivity(): void {
+    this.lastTransportActivityAt = Date.now();
   }
 
   /**
@@ -606,6 +692,7 @@ export class TencentTatSessionMultiplexer {
   close() {
     if (this.retired) return;
     this.retired = true;
+    this.stopIdleKeepalive();
     const error = new TatTransportError("connection_lost", "TAT tunnel retired", { phase: "websocket" });
     for (const pending of this.pending.values()) {
       globalThis.clearTimeout(pending.timer);
@@ -630,6 +717,9 @@ export class TencentTatSessionMultiplexer {
     try {
       const message = await decodeTencentTatFrame(data);
       if (this.retired) return;
+      // Even a duplicate protocol sequence proves that the physical tunnel is
+      // receiving, so activity is sampled before replay suppression.
+      this.markTransportActivity();
       const sequence = isRecord(message) && typeof message.Seq === "number"
         ? message.Seq
         : null;
@@ -705,7 +795,7 @@ export class TencentTatSessionMultiplexer {
         globalThis.clearTimeout(pending.timer);
         this.pending.delete(proxyId);
         pending.connection.markReady();
-        this.logDebug("proxy ready", { proxyId });
+        if (!pending.healthProbe) this.logDebug("proxy ready", { proxyId });
         pending.resolve(pending.connection);
         return;
       }
@@ -744,6 +834,7 @@ export class TencentTatSessionMultiplexer {
   }
 
   private fail(error: Error) {
+    this.stopIdleKeepalive();
     this.logDebug("client failed", {}, error);
     this.setState("error");
     this.readyPromise = null;
@@ -822,6 +913,7 @@ export class TencentTatSessionMultiplexer {
         },
       }),
     );
+    this.markTransportActivity();
     return true;
   }
 
@@ -834,6 +926,7 @@ export class TencentTatSessionMultiplexer {
       return false;
     }
     this.socket.send(JSON.stringify(frame));
+    this.markTransportActivity();
     return true;
   }
 

@@ -39,21 +39,11 @@ export function LightVelaLoginOptions({ account, snapshot, disabled = false }: {
           onValueChange={(value) => account.selectRegion(value === "cn" ? "cn" : "intl")}
         />
         <SettingsActions>
-          {isChina ? (
-            <>
-              <SettingsButton type="button" disabled={disabled} onClick={() => account.signIn("qq")}>
-                QQ 登录
-              </SettingsButton>
-              <SettingsButton variant="primary" type="button" disabled={disabled} onClick={() => account.signIn("wechat")}>
-                微信登录
-              </SettingsButton>
-            </>
-          ) : (
-            <SettingsButton variant="primary" type="button" disabled={disabled} onClick={() => account.signIn("google")}>
-              使用 Google 登录
-            </SettingsButton>
-          )}
+          <SettingsButton variant="primary" type="button" disabled={disabled} onClick={() => account.signIn()}>
+            继续登录
+          </SettingsButton>
         </SettingsActions>
+        <small>登录方式将在 LightVela 安全页面中选择。</small>
       </div>
     </div>
   );

@@ -3,7 +3,12 @@ import type {
 } from "@opencraft/bot-conversation-appserver";
 import type { BotContribution, ExtensionPlatform, ViewContribution } from "@opencraft/extension-contract";
 import type { ExtensionContributionStore } from "@opencraft/extension-runtime";
-import type { PlatformViewHost, PlatformViewRendererRegistry } from "@opencraft/extension-react";
+import type {
+  PlatformAccountContribution,
+  PlatformAccountSnapshot,
+  PlatformViewHost,
+  PlatformViewRendererRegistry,
+} from "@opencraft/extension-react";
 import {
   createSidebarEntityKey,
   type SidebarEntity,
@@ -20,6 +25,25 @@ import {
   projectAppServerBotSidebarEntity,
 } from "./appserver-bot-sidebar-adapter";
 import type { ApplicationRoute } from "./workbench-navigation";
+import type { PlatformAccountContributionRegistry } from "./platform-account-contributions";
+
+const EMPTY_ACCOUNT_SNAPSHOT: PlatformAccountSnapshot = Object.freeze({
+  revision: 0,
+  phase: "anonymous",
+  name: null,
+  avatarUrl: null,
+  planLabel: null,
+  usageRemainingPercent: null,
+  error: null,
+});
+const subscribeEmptyAccount = (): (() => void) => () => undefined;
+const readEmptyAccount = (): PlatformAccountSnapshot => EMPTY_ACCOUNT_SNAPSHOT;
+
+export interface ExtensionAccountProjection {
+  readonly provider: PlatformAccountContribution;
+  readonly snapshot: PlatformAccountSnapshot;
+  readonly content: ReactNode;
+}
 
 export interface ExtensionWorkbenchProjection {
   readonly primaryActions: readonly SidebarActionItem[];
@@ -35,11 +59,13 @@ export interface ExtensionWorkbenchProjection {
     readonly intervention: "authentication-required" | "configuration-required";
     readonly node: ReactNode;
   }[];
+  readonly account: ExtensionAccountProjection | null;
 }
 
 export interface ExtensionWorkbenchProjectionOptions {
   readonly contributions: ExtensionContributionStore;
   readonly renderers: PlatformViewRendererRegistry;
+  readonly accounts: PlatformAccountContributionRegistry;
   readonly botDirectory: AppServerBotDirectory;
   readonly host: PlatformViewHost;
   readonly applicationRoute: ApplicationRoute;
@@ -70,6 +96,7 @@ function byOrderThenId(
 export function useExtensionWorkbenchProjection({
   contributions,
   renderers,
+  accounts,
   botDirectory,
   host,
   applicationRoute,
@@ -85,6 +112,17 @@ export function useExtensionWorkbenchProjection({
     renderers.subscribe,
     renderers.getSnapshot,
     renderers.getSnapshot,
+  );
+  const accountRegistrySnapshot = useSyncExternalStore(
+    accounts.subscribe,
+    accounts.getSnapshot,
+    accounts.getSnapshot,
+  );
+  const accountProvider = accountRegistrySnapshot.contribution;
+  const accountSnapshot = useSyncExternalStore(
+    accountProvider?.subscribe ?? subscribeEmptyAccount,
+    accountProvider?.getSnapshot ?? readEmptyAccount,
+    accountProvider?.getSnapshot ?? readEmptyAccount,
   );
   const botDirectorySnapshot = useSyncExternalStore(
     botDirectory.subscribe,
@@ -234,6 +272,7 @@ export function useExtensionWorkbenchProjection({
             node: renderView(surface.viewId),
           }]
         : []);
+    const accountContent = accountProvider === null ? null : renderView(accountProvider.viewId);
 
     return {
       primaryActions: navigation
@@ -263,9 +302,14 @@ export function useExtensionWorkbenchProjection({
           ),
       emptyWorkbenchNode: emptySurface === null ? null : renderView(emptySurface.viewId),
       connectionInterventions,
+      account: accountProvider === null || accountContent === null
+        ? null
+        : { provider: accountProvider, snapshot: accountSnapshot, content: accountContent },
     };
   }, [
     applicationRoute,
+    accountProvider,
+    accountSnapshot,
     botDirectorySnapshot,
     contributionSnapshot,
     contributions,

@@ -4,18 +4,14 @@ import {
   type TimelineTurnView,
 } from "@opencraft/chat-core";
 import {
-  createInitialTurnFollowState,
   createLatestTurnPlacementSnapshot,
-  createTurnRestoreState,
-  createTurnFollowState,
-  distanceExcludingBottomPadding,
+  CODEX_LATEST_TURN_PLACEMENT_SPRING,
+  distanceAfterUnplacedLatestTurnContentResize,
   maximumResponseSpacerHeightPx,
-  normalizeFollowRestorePosition,
   normalizeInitialScrollDistance,
   normalizeInvertedWebViewportMetrics,
-  reduceTurnFollowState,
-  reduceTurnRestoreState,
   responseSpacerOverflowPx,
+  TurnResponsePositioningController,
   isViewportPreservingTurnFollowMode,
   type LatestTurnPlacementSnapshot,
 } from "@opencraft/timeline-virtualizer";
@@ -45,8 +41,8 @@ function distanceFromBottom(element: HTMLDivElement): number {
 }
 
 const CODEX_LATEST_TURN_SPRING = Object.freeze({
-  bounce: 0,
-  duration: 0.5,
+  bounce: CODEX_LATEST_TURN_PLACEMENT_SPRING.bounce,
+  duration: CODEX_LATEST_TURN_PLACEMENT_SPRING.durationMs / 1_000,
   type: "spring" as const,
 });
 
@@ -96,12 +92,14 @@ export function ResponsePositionedTurns({
   const restoredLatestTurn = initialRestoreSnapshot?.turnFollow?.turnKey === latestTurnKey
     ? initialRestoreSnapshot.turnFollow
     : null;
-  const followStateRef = useRef(createInitialTurnFollowState({
+  const responsePositioningRef = useRef<TurnResponsePositioningController | null>(null);
+  if (responsePositioningRef.current === null) responsePositioningRef.current = new TurnResponsePositioningController({
     distanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
     isLatestTurnInProgress,
     latestTurnPhase,
-    restoredFollowMode: restoredLatestTurn?.followMode,
-  }));
+    restoredLatestTurn,
+  });
+  const responsePositioning = responsePositioningRef.current;
   // r3562 U/ee: first live mount is an allowance consumed by the SAME
   // Activity transition as subsequent submits, never a second placement path.
   const initialPlacementPendingRef = useRef(
@@ -133,9 +131,6 @@ export function ResponsePositionedTurns({
       ? initialRestoreSnapshot.turnFollow.latestTurnFollowContentHeightPx
       : null,
   );
-  const restoreStateRef = useRef(createTurnRestoreState(
-    normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx),
-  ));
   const responseSpacerIntersectsBottomRef = useRef(false);
   const responseSpacerAnimationRef = useRef<AnimationPlaybackControls | null>(null);
   const latestTurnOffsetAnimationRef = useRef<AnimationPlaybackControls | null>(null);
@@ -157,15 +152,15 @@ export function ResponsePositionedTurns({
   const updateFooterPreservationPolicy = useCallback(() => {
     viewportOwner.setFooterResizeViewportPreserveDisabled(
       isLatestTurnInProgress
-        && isViewportPreservingTurnFollowMode(followStateRef.current.followMode),
+        && isViewportPreservingTurnFollowMode(responsePositioning.getFollowState().followMode),
     );
-  }, [isLatestTurnInProgress, viewportOwner]);
+  }, [isLatestTurnInProgress, responsePositioning, viewportOwner]);
 
-  const setFollowState = useCallback((event: Parameters<typeof reduceTurnFollowState>[1]) => {
-    followStateRef.current = reduceTurnFollowState(followStateRef.current, event);
+  const setFollowState = useCallback((event: Parameters<TurnResponsePositioningController["reduceFollow"]>[0]) => {
+    const next = responsePositioning.reduceFollow(event);
     updateFooterPreservationPolicy();
-    return followStateRef.current;
-  }, [updateFooterPreservationPolicy]);
+    return next;
+  }, [responsePositioning, updateFooterPreservationPolicy]);
 
   const shrinkResponseSpacer = useCallback((requestedHeightPx: number) => {
     const currentHeight = responseSpacerHeight.get();
@@ -185,10 +180,7 @@ export function ResponsePositionedTurns({
   }, [latestTurnOffset, responseSpacerHeight, scrollController, stopResponseAnimations]);
 
   const handleUserScroll = useCallback((distance: number, previousDistance: number) => {
-    restoreStateRef.current = reduceTurnRestoreState(
-      restoreStateRef.current,
-      { type: "user_takeover" },
-    ).state;
+    responsePositioning.userTakeover();
     const spacerHeight = responseSpacerHeight.get();
     if (distance <= 24) {
       if (
@@ -213,7 +205,7 @@ export function ResponsePositionedTurns({
         || (isLatestTurnInProgress && distance > previousDistance)
       )
     ) shrinkResponseSpacer(spacerHeight - distance);
-  }, [isLatestTurnInProgress, latestTurnPhase, responseSpacerHeight, scrollController, setFollowState, shrinkResponseSpacer]);
+  }, [isLatestTurnInProgress, latestTurnPhase, responsePositioning, responseSpacerHeight, scrollController, setFollowState, shrinkResponseSpacer]);
 
   const handlePlatformScroll = useStableEvent((snapshot: {
     readonly distanceFromBottomPx: number;
@@ -280,20 +272,17 @@ export function ResponsePositionedTurns({
       && Math.abs(change.heightPx - restoredHeightBaseline) > 24
     ) {
       const heightDeltaPx = change.heightPx - restoredHeightBaseline;
-      if (restoreStateRef.current.phase === "pending") {
-        restoreStateRef.current = reduceTurnRestoreState(
-          restoreStateRef.current,
-          { type: "height_delta_below_viewport", heightDeltaPx },
-        ).state;
+      if (responsePositioning.isRestorePending()) {
+        responsePositioning.adjustPendingRestoreForHeightDelta(heightDeltaPx);
       }
       compensateHeightDelta(heightDeltaPx);
     }
 
-    if (followStateRef.current.followMode === "user_follow") {
+    if (responsePositioning.getFollowState().followMode === "user_follow") {
       scrollController.scrollToDistanceFromBottomPx(0, "instant");
       return;
     }
-    if (followStateRef.current.followMode === "prework_follow" && latestTurnPhase === "prework") {
+    if (responsePositioning.getFollowState().followMode === "prework_follow" && latestTurnPhase === "prework") {
       scrollController.scrollToDistanceFromBottomPx(0, "instant");
       return;
     }
@@ -302,13 +291,13 @@ export function ResponsePositionedTurns({
       restoredHeightBaseline === null
       && change.kind === "turn-height"
       && change.heightDeltaPx !== 0
-      && isViewportPreservingTurnFollowMode(followStateRef.current.followMode)
+      && responsePositioning.shouldPreserveMeasuredViewport()
     ) {
       compensateHeightDelta(change.heightDeltaPx);
     }
 
     if (
-      followStateRef.current.followMode !== "prework_watch"
+      responsePositioning.getFollowState().followMode !== "prework_watch"
       || latestTurnPhase !== "prework"
       || responseSpacerHeight.get() <= 24
       || element === null
@@ -346,10 +335,7 @@ export function ResponsePositionedTurns({
       updateFooterPreservationPolicy();
     },
     scrollToBottom: () => {
-      restoreStateRef.current = reduceTurnRestoreState(
-        restoreStateRef.current,
-        { type: "user_takeover" },
-      ).state;
+      responsePositioning.userTakeover();
       if (isLatestTurnInProgress) {
         clearResponseSpacer();
         setFollowState({ type: "scroll_to_bottom", latestTurnPhase });
@@ -361,7 +347,7 @@ export function ResponsePositionedTurns({
         scrollController.scrollToBottom();
       }
     },
-  }), [clearResponseSpacer, isLatestTurnInProgress, latestTurnPhase, responseSpacerHeight, scrollController, setFollowState, updateFooterPreservationPolicy]);
+  }), [clearResponseSpacer, isLatestTurnInProgress, latestTurnPhase, responsePositioning, responseSpacerHeight, scrollController, setFollowState, updateFooterPreservationPolicy]);
 
   // r3562 ScrollLayout publishes this bit in the controller context. Crossing
   // its 24px boundary changes that context and renews the response observer.
@@ -379,27 +365,16 @@ export function ResponsePositionedTurns({
   const restoreInitialPosition = useCallback(() => {
     const element = scrollRef.current;
     if (element === null) return;
-    if (followStateRef.current.followMode === "prework_follow") {
-      restoreStateRef.current = reduceTurnRestoreState(
-        restoreStateRef.current,
-        { type: "follow_mode_owned" },
-      ).state;
+    if (responsePositioning.getFollowState().followMode === "prework_follow") {
+      responsePositioning.settleRestoreForFollowMode();
       return;
     }
-    let transition = reduceTurnRestoreState(restoreStateRef.current, {
-      type: "attempt",
-      observedDistanceFromBottomPx: distanceFromBottom(element),
-    });
-    restoreStateRef.current = transition.state;
-    if (transition.scrollToDistanceFromBottomPx !== null) {
-      scrollController.scrollToDistanceFromBottomPx(transition.scrollToDistanceFromBottomPx, "instant");
-      transition = reduceTurnRestoreState(restoreStateRef.current, {
-        type: "attempt",
-        observedDistanceFromBottomPx: distanceFromBottom(element),
-      });
-      restoreStateRef.current = transition.state;
+    const requestedDistance = responsePositioning.attemptRestore(distanceFromBottom(element));
+    if (requestedDistance !== null) {
+      scrollController.scrollToDistanceFromBottomPx(requestedDistance, "instant");
+      responsePositioning.attemptRestore(distanceFromBottom(element));
     }
-  }, [scrollController]);
+  }, [responsePositioning, scrollController]);
 
   /**
    * r3562 oO/Ye: parent response policy, after the virtualizer child's layout
@@ -434,9 +409,11 @@ export function ResponsePositionedTurns({
         clearResponseSpacer();
         if (placement !== null) {
           // Signed delta: removing old spacer/content can shrink scrollHeight.
-          const scrollHeightDelta = element.scrollHeight - placement.scrollHeightPx;
           scrollController.scrollToDistanceFromBottomPx(
-            placement.distanceFromBottomPx + scrollHeightDelta,
+            distanceAfterUnplacedLatestTurnContentResize({
+              nextScrollHeightPx: element.scrollHeight,
+              placement,
+            }),
             "instant",
           );
         }
@@ -458,17 +435,12 @@ export function ResponsePositionedTurns({
         responseSpacerAnimationRef.current = animate(responseSpacerHeight, maximumSpacer, CODEX_LATEST_TURN_SPRING);
       }
     }
-    const previousFollowMode = followStateRef.current.followMode;
-    setFollowState({
-      type: "latest_turn_phase_changed",
+    const phaseTransition = responsePositioning.transitionLatestTurnPhase(
       previousLatestTurnPhase,
       latestTurnPhase,
-    });
-    if (
-      previousLatestTurnPhase === "prework"
-      && latestTurnPhase === "final_answer"
-      && previousFollowMode === "prework_follow"
-    ) {
+    );
+    updateFooterPreservationPolicy();
+    if (phaseTransition.transferFollowToFinalAnswer) {
       clearResponseSpacer();
       scrollController.scrollToDistanceFromBottomPx(0, "instant");
     }
@@ -529,22 +501,18 @@ export function ResponsePositionedTurns({
   }, [isScrolledFromBottom, responseSpacerHeight, shrinkResponseSpacer, viewportOwner]);
 
   const getPendingRestoreScrollDistanceFromBottomPx = useStableEvent(() => {
-    const restore = restoreStateRef.current;
-    return restore.phase !== "pending" || followStateRef.current.followMode === "prework_follow"
-      ? null
-      : distanceExcludingBottomPadding(restore.distanceFromBottomPx, responseSpacerHeight.get());
+    return responsePositioning.getPendingRestoreDistanceFromBottomPx(responseSpacerHeight.get());
   });
 
   const captureRestoreSnapshot = useStableEvent(() => {
     const element = scrollRef.current;
-    const normalized = normalizeFollowRestorePosition({
+    const normalized = responsePositioning.captureRestorePosition({
       distanceFromBottomPx: element === null
         ? scrollController.getLastScrollDistanceFromBottomPx()
         : distanceFromBottom(element),
       latestTurnPhase: latestTurnPhaseRef.current,
       responseSpacerHeightPx: responseSpacerHeight.get(),
       scrollPaddingBottomPx: viewportOwner.getFooterScrollPaddingPx(),
-      scrollState: followStateRef.current,
     });
     const currentLatestTurnKey = latestTurnKeyRef.current;
     return {
@@ -578,9 +546,10 @@ export function ResponsePositionedTurns({
 
   const getBottomScrollPaddingPx = useCallback(() => responseSpacerHeight.get(), [responseSpacerHeight]);
   const onBeforeTargetPosition = useCallback(() => {
-    followStateRef.current = createTurnFollowState("static");
+    responsePositioning.userTakeover();
+    responsePositioning.resetFollowToStatic();
     updateFooterPreservationPolicy();
-  }, [updateFooterPreservationPolicy]);
+  }, [responsePositioning, updateFooterPreservationPolicy]);
   return <>
     <VirtualizedConversationTurns
       entries={entries}

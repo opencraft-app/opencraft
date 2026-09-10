@@ -367,8 +367,10 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
     try {
       const initialized = await request(socket, 50, "initialize", {});
       assert.deepEqual(initialized.capabilities.extensions["opencraft/thread-queue"], {
-        version: 1,
+        version: 2,
         reorder: false,
+        atomicSteer: true,
+        perItemPause: false,
       });
       const started = await request(socket, 51, "thread/start", { cwd: "/workspace/demo" });
       await request(socket, 52, "turn/start", {
@@ -395,22 +397,16 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
       });
       assert.equal(updated.queuedSubmission.input[0].text, "edited");
 
-      const steered = await request(socket, 56, "turn/steer", {
+      const steered = await request(socket, 56, "thread/queue/steer", {
         threadId: started.thread.id,
         expectedTurnId: `dsh-turn-${started.thread.id}-1`,
-        clientUserMessageId: "queued-client-message",
-        input: updated.queuedSubmission.input,
+        queuedSubmissionId: added.queuedSubmission.id,
       });
       assert.equal(steered.turnId, `dsh-turn-${started.thread.id}-1`);
       assert.equal(dsh.calls.findLast((call) => call.method === "session.updateQueue")?.payload.action.kind, "steer");
       assert.equal(dsh.calls.filter((call) => call.method === "session.prompt" && call.payload.mode === "steer").length, 0);
 
-      const deletedAfterAtomicSteer = await request(socket, 57, "thread/queue/delete", {
-        threadId: started.thread.id,
-        queuedSubmissionId: added.queuedSubmission.id,
-      });
-      assert.equal(deletedAfterAtomicSteer.deleted, true);
-      const empty = await request(socket, 58, "thread/queue/list", { threadId: started.thread.id });
+      const empty = await request(socket, 57, "thread/queue/list", { threadId: started.thread.id });
       assert.deepEqual(empty.data, []);
     } finally {
       socket.close();

@@ -1,6 +1,7 @@
 import type { BotTerminalSession } from "../domain/types";
 import { TatTransportError, normalizeTatTransportError } from "./tat-transport-error";
 import { TencentTatSessionMultiplexer, type TsshProxyClientOptions, type TsshProxyTarget } from "./tencent-tat-session-multiplexer";
+import { decodeUtf8, encodeUtf8 } from "./utf8";
 
 const DEFAULT_HTTP_PROXY_HOST = "127.0.0.1";
 const DEFAULT_HEADER_LIMIT_BYTES = 64 * 1024;
@@ -18,6 +19,12 @@ export interface TatHttpVirtualTarget {
 }
 
 export interface TatHttpVirtualClientOptions extends TsshProxyClientOptions {
+  /**
+   * Buffer the decoded HTTP entity before constructing Response. React Native's
+   * Response implementation does not accept a WHATWG ReadableStream body even
+   * when ReadableStream itself exists.
+   */
+  bufferResponseBody?: boolean;
   target?: TatHttpVirtualTarget;
   headerLimitBytes?: number;
   keepAlive?: boolean;
@@ -51,9 +58,6 @@ interface LeasedProxyConnection {
   reused: boolean;
 }
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
 export const HERMES_TAT_API_TARGET: TatHttpVirtualTarget = {
   ip: "127.0.0.1",
   host: "127.0.0.1",
@@ -77,6 +81,22 @@ const concatBytes = (chunks: Uint8Array[]) => {
     offset += chunk.byteLength;
   }
   return output;
+};
+
+const bufferBody = async (body: ReadableStream<Uint8Array>): Promise<ArrayBuffer> => {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      chunks.push(result.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = concatBytes(chunks);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 };
 
 const indexOfHeaderEnd = (bytes: Uint8Array) => {
@@ -104,10 +124,10 @@ const encodeBody = (init: TatHttpVirtualFetchInit) => {
     throw new Error("body and json cannot be used together");
   }
   if (init.json !== undefined) {
-    return { bytes: encoder.encode(JSON.stringify(init.json)), contentType: "application/json" };
+    return { bytes: encodeUtf8(JSON.stringify(init.json)), contentType: "application/json" };
   }
   if (typeof init.body === "string") {
-    return { bytes: encoder.encode(init.body), contentType: "text/plain;charset=UTF-8" };
+    return { bytes: encodeUtf8(init.body), contentType: "text/plain;charset=UTF-8" };
   }
   if (init.body instanceof ArrayBuffer) {
     return { bytes: new Uint8Array(init.body), contentType: null };
@@ -218,11 +238,11 @@ const buildRequestBytes = (resolved: ResolvedRequest, init: TatHttpVirtualFetchI
   headers.forEach((value, key) => {
     headerLines.push(`${key}: ${value}`);
   });
-  return concatBytes([encoder.encode(`${headerLines.join("\r\n")}\r\n\r\n`), body.bytes]);
+  return concatBytes([encodeUtf8(`${headerLines.join("\r\n")}\r\n\r\n`), body.bytes]);
 };
 
 const parseResponseHead = (headBytes: Uint8Array) => {
-  const head = decoder.decode(headBytes);
+  const head = decodeUtf8(headBytes);
   const [statusLine = "", ...headerLines] = head.split("\r\n");
   const statusMatch = /^HTTP\/\d(?:\.\d)?\s+(\d{3})(?:\s+(.*))?$/i.exec(statusLine);
   if (!statusMatch) {
@@ -492,7 +512,7 @@ const makeChunkedBodyStream = (
         while (true) {
           await ensureLine();
           const lineEnd = indexOfLineEnd(buffer);
-          const sizeLine = decoder.decode(sliceBytes(buffer, 0, lineEnd)).split(";", 1)[0]?.trim() ?? "";
+          const sizeLine = decodeUtf8(sliceBytes(buffer, 0, lineEnd)).split(";", 1)[0]?.trim() ?? "";
           const size = Number.parseInt(sizeLine, 16);
           if (!Number.isFinite(size)) {
             throw new Error(`invalid HTTP chunk size: ${sizeLine}`);
@@ -711,6 +731,9 @@ export class TatHttpVirtualClient {
         status: responseHead.status,
         transferEncoding: transferEncoding || null,
       });
+      if (this.options.bufferResponseBody === true) {
+        return new Response(await bufferBody(body), responseHead);
+      }
       return new Response(body, responseHead);
     } catch (error) {
       signal?.removeEventListener("abort", abort);
@@ -734,6 +757,10 @@ export class TatHttpVirtualClient {
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    if (this.options.bufferResponseBody === true) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return JSON.parse(decodeUtf8(bytes)) as T;
     }
     return (await response.json()) as T;
   }

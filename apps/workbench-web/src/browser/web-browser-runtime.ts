@@ -23,6 +23,7 @@ const STORAGE_KEY = "vela.browser-pages.v1";
 interface StoredBrowserPage {
   readonly id: string;
   readonly ownerId: string;
+  readonly hostId?: string | null;
   readonly createdAt: number;
   readonly entries: readonly { readonly url: string; readonly title: string }[];
   readonly index: number;
@@ -31,6 +32,7 @@ interface StoredBrowserPage {
 interface BrowserPageRecord {
   readonly id: BrowserPageId;
   readonly ownerId: string;
+  readonly hostId: string | null;
   readonly createdAt: number;
   history: BrowserHistoryState;
   snapshot: BrowserPageSnapshot;
@@ -71,7 +73,14 @@ export interface WebBrowserInspection {
 
 export interface CreateWebBrowserPageInput {
   readonly ownerId: string;
+  readonly hostId?: string | null;
   readonly initialUrl?: string;
+}
+
+export interface BrowserNavigationUrlMapper {
+  toPhysicalUrl(url: BrowserUrl, hostId: string): BrowserUrl;
+  toLogicalUrl(url: string, hostId: string): string;
+  isPhysicalProxyUrl(url: string): boolean;
 }
 
 function createPageId(): BrowserPageId {
@@ -110,7 +119,11 @@ function createSnapshot(input: {
 export class WebBrowserPageRuntime {
   private readonly pages = new Map<BrowserPageId, BrowserPageRecord>();
 
-  constructor(private readonly surfaces: BrowserSurfaceHost = new WebIframeSurfaceHost()) {
+  constructor(
+    private readonly surfaces: BrowserSurfaceHost = new WebIframeSurfaceHost(),
+    private readonly navigationMapper: BrowserNavigationUrlMapper | null = null,
+    private readonly resolveOwnerHostId: (ownerId: string) => string | null = () => null,
+  ) {
     this.restore();
   }
 
@@ -125,6 +138,7 @@ export class WebBrowserPageRuntime {
     this.pages.set(id, {
       id,
       ownerId: input.ownerId,
+      hostId: input.hostId ?? this.resolveOwnerHostId(input.ownerId),
       createdAt,
       history,
       snapshot: createSnapshot({ id, ownerId: input.ownerId, createdAt, history }),
@@ -161,12 +175,14 @@ export class WebBrowserPageRuntime {
   prepareSurface(pageId: BrowserPageId): void {
     const record = this.requireRecord(pageId);
     const current = currentBrowserHistoryEntry(record.history);
-    const started = this.surfaces.navigate(
-      pageId,
-      record.snapshot.title,
-      current?.url ?? null,
-      this.surfaceEvents(record),
-    );
+    const started = current === null
+      ? this.surfaces.navigate(
+          pageId,
+          record.snapshot.title,
+          null,
+          this.surfaceEvents(record),
+        )
+      : this.load(record, current.url);
     if (started && current !== null && !record.snapshot.navigation.isLoading)
       this.publish(record, { isLoading: true, error: null });
   }
@@ -266,7 +282,17 @@ export class WebBrowserPageRuntime {
   }
 
   private load(record: BrowserPageRecord, url: BrowserUrl, force = false): boolean {
-    return this.surfaces.navigate(record.id, record.snapshot.title, url, this.surfaceEvents(record), force);
+    const physicalUrl = record.hostId === null || this.navigationMapper === null
+      ? url
+      : this.navigationMapper.toPhysicalUrl(url, record.hostId);
+    return this.surfaces.navigate(
+      record.id,
+      record.snapshot.title,
+      physicalUrl,
+      this.surfaceEvents(record),
+      force,
+      this.navigationMapper?.isPhysicalProxyUrl(physicalUrl) ?? false,
+    );
   }
 
   private surfaceEvents(record: BrowserPageRecord): BrowserSurfaceEvents {
@@ -298,7 +324,10 @@ export class WebBrowserPageRuntime {
   private onAutomationEvent(record: BrowserPageRecord, event: PreviewBridgeChildMessage): void {
     if (event.type === "preview:url-changed") {
       try {
-        const url = parseBrowserUrl(event.url);
+        const logicalUrl = record.hostId === null || this.navigationMapper === null
+          ? event.url
+          : this.navigationMapper.toLogicalUrl(event.url, record.hostId);
+        const url = parseBrowserUrl(logicalUrl);
         record.history = reduceBrowserHistory(record.history, {
           type: "navigate",
           entry: { url, title: event.title || browserUrlTitle(url) },
@@ -366,6 +395,7 @@ export class WebBrowserPageRuntime {
     const stored: StoredBrowserPage[] = [...this.pages.values()].map((record) => ({
       id: record.id,
       ownerId: record.ownerId,
+      hostId: record.hostId,
       createdAt: record.createdAt,
       entries: record.history.entries.map((entry) => ({ url: entry.url, title: entry.title })),
       index: record.history.index,
@@ -407,6 +437,9 @@ export class WebBrowserPageRuntime {
       this.pages.set(id, {
         id,
         ownerId: row.ownerId,
+        hostId: typeof row.hostId === "string" && row.hostId.trim()
+          ? row.hostId
+          : this.resolveOwnerHostId(row.ownerId),
         createdAt: row.createdAt,
         history,
         snapshot: createSnapshot({ id, ownerId: row.ownerId, createdAt: row.createdAt, history }),

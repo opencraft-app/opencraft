@@ -181,6 +181,11 @@ export class WebConversationViewportOwner {
     this.footerResizeViewportPreserveDisabled = disabled;
   }
 
+  /** Async geometry from a retired viewport lifetime must fail closed. */
+  isCurrentGeneration(generation: number): boolean {
+    return !this.disposed && generation === this.generation;
+  }
+
   setMeasurementListener(listener: WebConversationMeasurementListener | null): void {
     if (this.disposed) return;
     this.measurementListener = listener;

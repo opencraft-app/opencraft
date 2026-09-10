@@ -150,6 +150,9 @@ function validateSettingsPage(owner: ExtensionActivationIdentity, value: Setting
   assertOwnedContributionId(owner.extensionId, value.id);
   assertOwnedContributionId(owner.extensionId, value.viewId);
   requireLabel(value.title, `Settings page ${value.id} title`);
+  if (value.audience !== undefined && value.audience !== "public" && value.audience !== "internal") {
+    throw new RangeError(`Settings page ${value.id} has an invalid audience`);
+  }
   if (value.layout !== undefined && value.layout !== "document" && value.layout !== "master-detail") throw new RangeError("Invalid settings page layout");
   if (value.management !== undefined) {
     assertOwnedContributionId(owner.extensionId, value.management.familyId);

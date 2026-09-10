@@ -1,4 +1,4 @@
-import { Bot, LogOut, RefreshCw, ServerCog } from "lucide-react";
+import { Bot, RefreshCw } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
@@ -12,16 +12,15 @@ import {
 } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
-import { LightVelaLoginOptions } from "./lightvela-login-options";
+import { LIGHTVELA_HERMES_HOST_ID } from "../host/lightvela-hermes-host-identity";
 
-export const LIGHTVELA_HERMES_HOST_ID = "velahermes0";
+export { LIGHTVELA_HERMES_HOST_ID };
 
 export function createLightVelaHermesSettingsView(account: LightVelaAccountService) {
   return function LightVelaHermesSettingsView({ host }: ExtensionSettingsViewProps) {
     const accountSnapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
     const [pendingBotId, setPendingBotId] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
-    const [signingOut, setSigningOut] = useState(false);
     const installed = host.profiles.find((profile) => profile.hostId === LIGHTVELA_HERMES_HOST_ID) ?? null;
 
     useEffect(() => {
@@ -59,45 +58,6 @@ export function createLightVelaHermesSettingsView(account: LightVelaAccountServi
     return (
       <>
         <SettingsPageHeader title="Overview" description="Manage the selected Hermes Agent and its current Host deployment." />
-
-        <SettingsSection
-          title="Account"
-          icon={<ServerCog size={15} />}
-          description="Authentication belongs to this extension and is never written into AppServer frames."
-        >
-          <SettingsGroup>
-            <SettingsListItem
-              icon={<Bot size={16} />}
-              label={accountSnapshot.phase === "authenticated" ? "LightVela connected" : "LightVela account"}
-              description={(
-                <>
-                  {accountSnapshot.phase === "loading"
-                    ? "Checking account…"
-                    : accountSnapshot.phase === "authenticated"
-                      ? `${accountSnapshot.bots.length} running Bot${accountSnapshot.bots.length === 1 ? "" : "s"}`
-                      : "Choose a LightVela region to sign in"}
-                </>
-              )}
-              actions={accountSnapshot.phase === "authenticated" || account.hasStoredSession() ? (
-                <SettingsButton variant="ghost" type="button" title="Sign out" aria-label="Sign out" disabled={signingOut} onClick={() => {
-                  setSigningOut(true);
-                  setActionError(null);
-                  void account.signOut().catch(() => setActionError("本地已登出，但服务器会话注销失败；其他已登录客户端可能仍在线。"))
-                    .finally(() => setSigningOut(false));
-                }}>
-                  <LogOut size={15} />
-                </SettingsButton>
-              ) : undefined}
-            />
-            {accountSnapshot.phase === "authenticated" || account.hasStoredSession() ? null : (
-              <LightVelaLoginOptions account={account} snapshot={accountSnapshot} disabled={signingOut} />
-            )}
-          </SettingsGroup>
-          {accountSnapshot.error !== null && accountSnapshot.phase !== "anonymous"
-            ? <SettingsNotice tone="error">{accountSnapshot.error}</SettingsNotice>
-            : null}
-          {actionError !== null ? <SettingsNotice tone="error">{actionError}</SettingsNotice> : null}
-        </SettingsSection>
 
         {accountSnapshot.phase === "authenticated" ? (
           <SettingsSection

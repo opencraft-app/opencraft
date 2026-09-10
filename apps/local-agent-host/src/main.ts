@@ -15,6 +15,16 @@ type JsonRpcMessage = Record<string, unknown>;
 
 function rpcError(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof DshClientError) return { code: -32001, message: error.message, data: { code: error.code, retryable: error.retryable } };
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as { rpcCode?: unknown; domainData?: unknown; message?: unknown };
+    if (typeof candidate.rpcCode === "number") {
+      return {
+        code: candidate.rpcCode,
+        message: typeof candidate.message === "string" ? candidate.message : "AppServer request failed",
+        ...(candidate.domainData === undefined ? {} : { data: candidate.domainData }),
+      };
+    }
+  }
   return { code: -32603, message: error instanceof Error ? error.message : String(error) };
 }
 

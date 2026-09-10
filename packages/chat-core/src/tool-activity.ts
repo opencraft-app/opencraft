@@ -981,7 +981,6 @@ export function presentToolActivity(
       grouping: "groupable",
       icon: semantic?.icon ?? (state === "interrupted" ? "stop" : "terminal"),
       summary: semantic?.summary ?? (state === "running" ? "Running command"
-        : state === "failed" ? "Command failed"
         : state === "interrupted" ? "Stopped command"
         : "Ran command"),
       detail: semantic?.detail ?? null,

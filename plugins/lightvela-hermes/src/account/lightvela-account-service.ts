@@ -1,4 +1,6 @@
-import { HostConnectionInterventionError } from "@opencraft/workbench-runtime";
+import { HostConnectionInterventionError, throwIfSignalAborted } from "@opencraft/workbench-runtime";
+import type { LightVelaRuntimeCommandPort } from "./lightvela-runtime-command-port";
+import { Utf8StreamDecoder } from "../lib/utf8";
 
 export const LIGHTVELA_API_BASE = "https://api.lightvela.ai";
 export const LIGHTVELA_TOKEN_KEY = "vela.lightvela.session-token.v1";
@@ -6,17 +8,27 @@ export const LIGHTVELA_ACTIVE_BOT_KEY = "vela.lightvela.active-bot.v1";
 export const LIGHTVELA_REGION_KEY = "vela.lightvela.region.v1";
 const SIGNED_OUT_KEY = "vela.lightvela.signed-out.v1";
 const CACHE_SCOPE_KEY = "vela.lightvela.credential-scope.v1";
+const UPSTREAM_AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 export type LightVelaRegion = "cn" | "intl";
 export const LIGHTVELA_REGIONS = {
-  cn: { label: "国内版 · lightvela.com", apiBase: "https://api.lightvela.com" },
-  intl: { label: "国际版 · lightvela.ai", apiBase: "https://api.lightvela.ai" },
+  cn: {
+    label: "国内版 · lightvela.com",
+    apiBase: "https://api.lightvela.com",
+    frontendBase: "https://lightvela.com",
+  },
+  intl: {
+    label: "国际版 · lightvela.ai",
+    apiBase: "https://api.lightvela.ai",
+    frontendBase: "https://lightvela.ai",
+  },
 } as const;
 
 export interface LightVelaBotInstance {
   readonly createdAt: string;
   readonly instanceId: string;
   readonly name: string;
-  readonly status: string;
+  /** The account catalog contains only executable instances. */
+  readonly status: "running";
 }
 
 export type LightVelaAccountPhase =
@@ -34,6 +46,42 @@ export interface LightVelaAccountSnapshot {
   readonly bots: readonly LightVelaBotInstance[];
   /** Current physical Bot binding for the stable velahermes0 Host. */
   readonly activeBotId: string | null;
+  readonly error: string | null;
+  /** Account-center data is independent from the executable Bot catalog. */
+  readonly details: LightVelaAccountDetailsSnapshot;
+}
+
+export interface LightVelaAccountProfile {
+  readonly id: string;
+  readonly name: string;
+  readonly avatarUrl: string | null;
+  readonly pendingName: string | null;
+  readonly nameAuditStatus: "pending" | "passed" | "failed" | null;
+}
+
+export interface LightVelaAccountSubscription {
+  readonly code: string;
+  readonly status: string;
+  readonly currentPeriodStart: string | null;
+  readonly currentPeriodEnd: string | null;
+}
+
+export interface LightVelaAccountPass {
+  readonly passId: string;
+  readonly bundleName: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly isolatedAt: string | null;
+  readonly deletedAt: string | null;
+  readonly creditsTotal: number;
+  readonly creditsAvailable: number;
+}
+
+export interface LightVelaAccountDetailsSnapshot {
+  readonly phase: "idle" | "loading" | "ready" | "error";
+  readonly profile: LightVelaAccountProfile | null;
+  readonly subscription: LightVelaAccountSubscription | null;
+  readonly pass: LightVelaAccountPass | null;
   readonly error: string | null;
 }
 
@@ -53,12 +101,78 @@ interface BotListResponse {
   }[];
 }
 
+interface AccountProfileResponse {
+  readonly user: {
+    readonly id: string;
+    readonly name: string;
+    readonly avatarUrl?: string;
+    readonly pendingName?: string;
+    readonly nameAuditStatus?: "pending" | "passed" | "failed";
+  };
+}
+
+interface CurrentSubscriptionResponse {
+  readonly hasSubscription: boolean;
+  readonly subscription?: {
+    readonly code: string;
+    readonly status: string;
+    readonly currentPeriodStart?: string;
+    readonly currentPeriodEnd?: string;
+  } | null;
+}
+
+interface PassListResponse {
+  readonly passes?: readonly {
+    readonly pass_id: string;
+    readonly bundle_name: string;
+    readonly created_time: string;
+    readonly expired_time: string;
+    readonly isolated_time?: string | null;
+    readonly deleted_time?: string | null;
+    readonly credit_total: number;
+    readonly credit_available: number;
+  }[];
+}
+
 export interface LightVelaAccountServiceOptions {
   readonly apiBase?: string;
   readonly storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   readonly fetchImpl?: typeof fetch;
   readonly location?: Pick<Location, "origin" | "pathname" | "search" | "hash" | "assign">;
   readonly history?: Pick<History, "state" | "replaceState">;
+  /** Optional data-plane command owner used while the matching Host is open. */
+  readonly runtimeCommands?: LightVelaRuntimeCommandPort;
+}
+
+export interface LightVelaOAuthCallbackOptions {
+  readonly storage?: Pick<Storage, "setItem" | "removeItem">;
+  readonly location?: Pick<Location, "pathname" | "search" | "hash">;
+  readonly history?: Pick<History, "state" | "replaceState">;
+}
+
+/**
+ * Consumes the OAuth credential before the asynchronous Workbench graph is
+ * constructed. The callback belongs to the browser navigation lifetime: an
+ * extension View may mount much later, or not mount at all on the returned
+ * route.
+ */
+export function bootstrapLightVelaOAuthCallback(options: LightVelaOAuthCallbackOptions = {}): boolean {
+  const storage = options.storage ?? globalThis.localStorage;
+  const location = options.location ?? globalThis.location;
+  const history = options.history ?? globalThis.history;
+  const fragment = new URLSearchParams(location?.hash.slice(1) ?? "");
+  const token = fragment.get("session_token")?.trim();
+  if (!token || storage === undefined) return false;
+  storage.setItem(LIGHTVELA_TOKEN_KEY, token);
+  storage.removeItem(SIGNED_OUT_KEY);
+  fragment.delete("session_token");
+  const nextHash = fragment.toString();
+  history?.replaceState(
+    history.state,
+    "",
+    `${location?.pathname ?? "/"}${location?.search ?? ""}${nextHash ? `#${nextHash}` : ""}`,
+  );
+  return true;
 }
 
 export interface LightVelaDebugCommandResult {
@@ -70,6 +184,48 @@ export interface LightVelaDebugCommandResult {
 export interface LightVelaDebugCommandChunk {
   readonly stream: string;
   readonly chunk: string;
+}
+
+export interface LightVelaBotInstanceConfigResetResult {
+  readonly keyId: string;
+  readonly keyPrefix: string;
+  readonly config: {
+    readonly providerName: string;
+    readonly baseUrl: string;
+    readonly modelId: string;
+    readonly api: string;
+    readonly apiKey: string;
+  };
+}
+
+export type LightVelaWhatsAppOnboardingStatus =
+  | "installing"
+  | "starting"
+  | "waiting"
+  | "connected"
+  | "error"
+  | "expired"
+  | "cancelled";
+
+export interface LightVelaWhatsAppOnboardingSession {
+  readonly pairing_id: string;
+  readonly status: LightVelaWhatsAppOnboardingStatus;
+  readonly qr_payload?: string | null;
+  readonly expires_at: string;
+  readonly mode: "bot" | "self-chat";
+  readonly allowed_users: string;
+  readonly account_id?: string | null;
+  readonly account_name?: string | null;
+  readonly account_phone?: string | null;
+  readonly error?: string | null;
+}
+
+export interface LightVelaWhatsAppOnboardingApplyResult {
+  readonly ok: boolean;
+  readonly platform: "whatsapp";
+  readonly needs_restart?: boolean;
+  readonly restart_started?: boolean;
+  readonly restart_error?: string | null;
 }
 
 interface DebugExecStreamEvent {
@@ -122,14 +278,23 @@ export class LightVelaAccountService {
     this.invalidateAuthority();
     this.publish("anonymous", [], null, null);
   };
+  private readonly onUpstreamUnauthorized = (): void => {
+    this.storage?.removeItem(LIGHTVELA_TOKEN_KEY);
+    this.storage?.setItem(SIGNED_OUT_KEY, "true");
+    this.invalidateAuthority();
+    this.publish("anonymous", [], null, null);
+  };
   private readonly storage: LightVelaAccountServiceOptions["storage"];
   private readonly fetchImpl: typeof fetch;
   private readonly location: LightVelaAccountServiceOptions["location"];
   private readonly history: LightVelaAccountServiceOptions["history"];
+  private readonly runtimeCommands: LightVelaRuntimeCommandPort | undefined;
   private readonly listeners = new Set<() => void>();
   private revision = 0;
   private refreshGeneration = 0;
   private refreshOperation: Promise<readonly LightVelaBotInstance[]> | null = null;
+  private detailsGeneration = 0;
+  private detailsOperation: Promise<LightVelaAccountDetailsSnapshot> | null = null;
   private snapshot: LightVelaAccountSnapshot = Object.freeze({
     revision: 0,
     region: "intl",
@@ -139,6 +304,7 @@ export class LightVelaAccountService {
     bots: Object.freeze([]),
     activeBotId: null,
     error: null,
+    details: Object.freeze({ phase: "idle", profile: null, subscription: null, pass: null, error: null }),
   });
 
   constructor(options: LightVelaAccountServiceOptions = {}) {
@@ -147,11 +313,13 @@ export class LightVelaAccountService {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.location = options.location ?? globalThis.location;
     this.history = options.history ?? globalThis.history;
+    this.runtimeCommands = options.runtimeCommands;
     this.region = this.storage?.getItem(LIGHTVELA_REGION_KEY) === "cn" ? "cn" : "intl";
     this.credentialScope = this.storage?.getItem(CACHE_SCOPE_KEY) || this.credentialScope;
     this.storage?.setItem(CACHE_SCOPE_KEY, this.credentialScope);
     this.snapshot = Object.freeze({ ...this.snapshot, region: this.region, credentialScope: this.credentialScope });
     globalThis.addEventListener?.("storage", this.onStorage);
+    globalThis.addEventListener?.(UPSTREAM_AUTH_UNAUTHORIZED_EVENT, this.onUpstreamUnauthorized);
   }
 
   private get apiBase(): string {
@@ -184,29 +352,25 @@ export class LightVelaAccountService {
   }
 
   bootstrapOAuthFragment(): boolean {
-    const fragment = new URLSearchParams(this.location?.hash.slice(1) ?? "");
-    const token = fragment.get("session_token")?.trim();
-    if (!token || this.storage === undefined) return false;
     if (this.signOutOperation) return false;
+    const accepted = bootstrapLightVelaOAuthCallback({
+      storage: this.storage,
+      location: this.location,
+      history: this.history,
+    });
+    if (!accepted) return false;
     this.invalidateAuthority();
-    this.storage.setItem(LIGHTVELA_TOKEN_KEY, token);
-    this.storage.removeItem(SIGNED_OUT_KEY);
-    fragment.delete("session_token");
-    const nextHash = fragment.toString();
-    this.history?.replaceState(
-      this.history.state,
-      "",
-      `${this.location?.pathname ?? "/"}${this.location?.search ?? ""}${nextHash ? `#${nextHash}` : ""}`,
-    );
     return true;
   }
 
-  signIn(provider: "google" | "wechat" | "qq" = this.region === "cn" ? "wechat" : "google"): void {
+  signIn(): void {
     if (this.signOutOperation) throw new Error("Sign out is still in progress");
     if (this.location === undefined) throw new Error("LightVela login requires a browser location");
     const returnTo = `${this.location.origin}${this.location.pathname}${this.location.search}`;
     this.storage?.setItem(LIGHTVELA_REGION_KEY, this.region);
-    this.location.assign(`${this.apiBase}/auth/oauth/${provider}/start?return_to=${encodeURIComponent(returnTo)}&switch_account=true${provider === "wechat" ? "&mode=website" : ""}`);
+    const login = new URL("/auth/sign-in", LIGHTVELA_REGIONS[this.region].frontendBase);
+    login.searchParams.set("return_to", returnTo);
+    this.location.assign(login.toString());
   }
 
   private invalidateAuthority(): void {
@@ -217,6 +381,8 @@ export class LightVelaAccountService {
     this.authority = new AbortController();
     this.refreshGeneration += 1;
     this.refreshOperation = null;
+    this.detailsGeneration += 1;
+    this.detailsOperation = null;
   }
 
   signOut(): Promise<void> {
@@ -243,6 +409,11 @@ export class LightVelaAccountService {
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const payload = await this.requestJson<ApiEnvelope<T>>(path, init);
+    return payload.data;
+  }
+
+  private async requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (this.storage?.getItem(SIGNED_OUT_KEY) === "true") {
       throw new LightVelaApiError("Please sign in to LightVela", 401);
     }
@@ -260,11 +431,225 @@ export class LightVelaAccountService {
       cache: "no-store",
       headers,
     });
-    authority.signal.throwIfAborted();
+    throwIfSignalAborted(authority.signal);
     if (!response.ok) throw new LightVelaApiError(await errorMessage(response), response.status);
-    const result = (await response.json() as ApiEnvelope<T>).data;
-    authority.signal.throwIfAborted();
+    const result = await response.json() as T;
+    throwIfSignalAborted(authority.signal);
     return result;
+  }
+
+  resolveAssetUrl(path: string | null | undefined): string | null {
+    const value = path?.trim();
+    if (!value) return null;
+    if (/^(?:https?:|data:|blob:)/iu.test(value)) return value;
+    return `${this.apiBase}${value.startsWith("/") ? value : `/${value}`}`;
+  }
+
+  refreshAccountDetails(): Promise<LightVelaAccountDetailsSnapshot> {
+    if (this.detailsOperation !== null) return this.detailsOperation;
+    const operation = this.performAccountDetailsRefresh().finally(() => {
+      if (this.detailsOperation === operation) this.detailsOperation = null;
+    });
+    this.detailsOperation = operation;
+    return operation;
+  }
+
+  private async performAccountDetailsRefresh(): Promise<LightVelaAccountDetailsSnapshot> {
+    const generation = ++this.detailsGeneration;
+    this.publishDetails({ ...this.snapshot.details, phase: "loading", error: null });
+    try {
+      const profilePayload = await this.requestJson<AccountProfileResponse>("/auth/profile", { method: "GET" });
+      const [subscriptionResult, passesResult] = await Promise.allSettled([
+        this.requestJson<CurrentSubscriptionResponse>("/subscriptions/current", { method: "GET" }),
+        this.request<PassListResponse>("/v1/passes", { method: "GET" }),
+      ]);
+      const subscriptionPayload = subscriptionResult.status === "fulfilled" ? subscriptionResult.value : null;
+      const passPayload = passesResult.status === "fulfilled" ? passesResult.value : null;
+      const latestPass = [...(passPayload?.passes ?? [])]
+        .filter((pass) => !pass.deleted_time)
+        .sort((left, right) => Date.parse(right.expired_time) - Date.parse(left.expired_time))[0] ?? null;
+      const details: LightVelaAccountDetailsSnapshot = Object.freeze({
+        phase: "ready",
+        profile: Object.freeze({
+          id: profilePayload.user.id,
+          name: profilePayload.user.name?.trim() || "LightVela user",
+          avatarUrl: this.resolveAssetUrl(profilePayload.user.avatarUrl),
+          pendingName: profilePayload.user.pendingName?.trim() || null,
+          nameAuditStatus: profilePayload.user.nameAuditStatus ?? null,
+        }),
+        subscription: subscriptionPayload?.hasSubscription && subscriptionPayload.subscription
+          ? Object.freeze({
+              code: subscriptionPayload.subscription.code,
+              status: subscriptionPayload.subscription.status,
+              currentPeriodStart: subscriptionPayload.subscription.currentPeriodStart ?? null,
+              currentPeriodEnd: subscriptionPayload.subscription.currentPeriodEnd ?? null,
+            })
+          : null,
+        pass: latestPass === null ? null : Object.freeze({
+          passId: latestPass.pass_id,
+          bundleName: latestPass.bundle_name,
+          createdAt: latestPass.created_time,
+          expiresAt: latestPass.expired_time,
+          isolatedAt: latestPass.isolated_time ?? null,
+          deletedAt: latestPass.deleted_time ?? null,
+          creditsTotal: Math.max(0, latestPass.credit_total ?? 0),
+          creditsAvailable: Math.max(0, latestPass.credit_available ?? 0),
+        }),
+        error: null,
+      });
+      if (generation === this.detailsGeneration) this.publishDetails(details);
+      return details;
+    } catch (error) {
+      if (error instanceof LightVelaApiError && error.status === 401) {
+        this.storage?.removeItem(LIGHTVELA_TOKEN_KEY);
+        this.storage?.removeItem(LIGHTVELA_ACTIVE_BOT_KEY);
+        this.storage?.setItem(SIGNED_OUT_KEY, "true");
+        this.invalidateAuthority();
+        this.publish("anonymous", [], null, null);
+      }
+      const details: LightVelaAccountDetailsSnapshot = Object.freeze({
+        phase: "error",
+        profile: null,
+        subscription: null,
+        pass: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (generation === this.detailsGeneration) this.publishDetails(details);
+      throw error;
+    }
+  }
+
+  async updateProfileName(name: string): Promise<LightVelaAccountProfile> {
+    const normalized = name.trim();
+    if (!normalized) throw new Error("Display name cannot be empty");
+    const payload = await this.requestJson<AccountProfileResponse>("/auth/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: normalized }),
+    });
+    const profile: LightVelaAccountProfile = Object.freeze({
+      id: payload.user.id,
+      name: payload.user.name?.trim() || normalized,
+      avatarUrl: this.resolveAssetUrl(payload.user.avatarUrl),
+      pendingName: payload.user.pendingName?.trim() || null,
+      nameAuditStatus: payload.user.nameAuditStatus ?? null,
+    });
+    this.publishDetails({ ...this.snapshot.details, phase: "ready", profile, error: null });
+    return profile;
+  }
+
+  async uploadProfileAvatar(file: File): Promise<LightVelaAccountProfile> {
+    const form = new FormData();
+    form.append("file", file);
+    const payload = await this.requestJson<AccountProfileResponse>("/auth/profile/avatar", {
+      method: "PUT",
+      body: form,
+    });
+    const profile: LightVelaAccountProfile = Object.freeze({
+      id: payload.user.id,
+      name: payload.user.name?.trim() || "LightVela user",
+      avatarUrl: this.resolveAssetUrl(payload.user.avatarUrl),
+      pendingName: payload.user.pendingName?.trim() || null,
+      nameAuditStatus: payload.user.nameAuditStatus ?? null,
+    });
+    this.publishDetails({ ...this.snapshot.details, phase: "ready", profile, error: null });
+    return profile;
+  }
+
+  async resetInstanceConfig(botId: string): Promise<LightVelaBotInstanceConfigResetResult> {
+    const payload = await this.request<{
+      readonly key_id: string;
+      readonly key_prefix: string;
+      readonly config: {
+        readonly provider_name: string;
+        readonly base_url: string;
+        readonly model_id: string;
+        readonly api: string;
+        readonly api_key: string;
+      };
+    }>(`/v1/instances/${encodeURIComponent(botId)}/config/reset`, { method: "POST" });
+    return {
+      keyId: payload.key_id,
+      keyPrefix: payload.key_prefix,
+      config: {
+        providerName: payload.config.provider_name,
+        baseUrl: payload.config.base_url,
+        modelId: payload.config.model_id,
+        api: payload.config.api,
+        apiKey: payload.config.api_key,
+      },
+    };
+  }
+
+  async startWhatsAppOnboarding(
+    botId: string,
+    input: { readonly mode?: "bot" | "self-chat"; readonly allowedUsers?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<LightVelaWhatsAppOnboardingSession> {
+    return this.requestRuntimeOrThrow(botId, "hermes/whatsapp/onboarding/start", {
+      mode: input.mode ?? "bot",
+      allowedUsers: input.allowedUsers ?? "",
+    }, signal);
+  }
+
+  async getWhatsAppOnboarding(
+    botId: string,
+    pairingId: string,
+    signal?: AbortSignal,
+  ): Promise<LightVelaWhatsAppOnboardingSession> {
+    return this.requestRuntimeOrThrow(
+      botId,
+      "hermes/whatsapp/onboarding/read",
+      { pairingId },
+      signal,
+    );
+  }
+
+  async applyWhatsAppOnboarding(
+    botId: string,
+    pairingId: string,
+    input: { readonly mode?: "bot" | "self-chat"; readonly allowedUsers?: string } = {},
+    signal?: AbortSignal,
+  ): Promise<LightVelaWhatsAppOnboardingApplyResult> {
+    return this.requestRuntimeOrThrow(botId, "hermes/whatsapp/onboarding/apply", {
+      pairingId,
+      mode: input.mode ?? "bot",
+      allowedUsers: input.allowedUsers ?? "",
+    }, signal);
+  }
+
+  async cancelWhatsAppOnboarding(
+    botId: string,
+    pairingId: string,
+    signal?: AbortSignal,
+  ): Promise<{ readonly ok: boolean }> {
+    return this.requestRuntimeOrThrow(
+      botId,
+      "hermes/whatsapp/onboarding/cancel",
+      { pairingId },
+      signal,
+    );
+  }
+
+  private async requestRuntimeOrThrow<TResult>(
+    botId: string,
+    method: string,
+    params: unknown,
+    signal?: AbortSignal,
+  ): Promise<TResult> {
+    const runtime = this.runtimeCommands?.requestIfAvailable;
+    if (runtime === undefined) throw new Error("Hermes Host must be connected before WhatsApp setup");
+    const authority = this.authority;
+    const combinedSignal = signal === undefined
+      ? authority.signal
+      : AbortSignal.any([authority.signal, signal]);
+    const result = await runtime.call(this.runtimeCommands, botId, method, params, {
+      signal: combinedSignal,
+      timeoutMs: 45_000,
+    });
+    throwIfSignalAborted(authority.signal);
+    if (result === null) throw new Error("Hermes Host must be connected before WhatsApp setup");
+    return result as TResult;
   }
 
   /**
@@ -282,9 +667,16 @@ export class LightVelaAccountService {
     const timeout = options.timeoutMs === undefined
       ? undefined
       : globalThis.setTimeout(() => controller.abort(), options.timeoutMs);
+    const authority = this.authority;
     try {
+      const signal = AbortSignal.any([authority.signal, controller.signal]);
+      const native = await this.runtimeCommands?.execIfAvailable(botId, command, undefined, {
+        timeoutMs: options.timeoutMs,
+        signal,
+      });
+      throwIfSignalAborted(authority.signal);
+      if (native !== undefined && native !== null) return native;
       const path = `/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
-      const authority = this.authority;
       const headers = new Headers({ "Content-Type": "application/json" });
       const token = this.storage?.getItem(LIGHTVELA_TOKEN_KEY)?.trim();
       if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -294,13 +686,13 @@ export class LightVelaAccountService {
         cache: "no-store",
         headers,
         body: JSON.stringify({ command, run_as_user: "agentuser" }),
-        signal: AbortSignal.any([authority.signal, controller.signal]),
+        signal,
       });
       const body = await response.json().catch(() => null) as {
         readonly data?: { readonly status?: string; readonly exit_code?: number; readonly output?: string };
         readonly details?: { readonly status?: string; readonly exit_code?: number; readonly output?: string };
       } | null;
-      authority.signal.throwIfAborted();
+      throwIfSignalAborted(authority.signal);
       const result = body?.details ?? body?.data;
       if (result && (typeof result.output === "string" || typeof result.exit_code === "number")) {
         return {
@@ -322,7 +714,7 @@ export class LightVelaAccountService {
       }
       throw new LightVelaApiError("Invalid debug command response", response.status);
     } catch (error) {
-      if (controller.signal.aborted && !this.authority.signal.aborted) {
+      if (controller.signal.aborted && !authority.signal.aborted) {
         throw new Error(`Hermes command timed out after ${options.timeoutMs ?? 0} ms`);
       }
       throw error;
@@ -344,6 +736,13 @@ export class LightVelaAccountService {
       : undefined;
     const authority = this.authority;
     try {
+      const signal = AbortSignal.any([authority.signal, controller.signal]);
+      const native = await this.runtimeCommands?.execIfAvailable(botId, command, onChunk, {
+        timeoutMs: options.timeoutMs,
+        signal,
+      });
+      throwIfSignalAborted(authority.signal);
+      if (native !== undefined && native !== null) return native;
       const headers = new Headers({ "Content-Type": "application/json", Accept: "text/event-stream" });
       const token = this.storage?.getItem(LIGHTVELA_TOKEN_KEY)?.trim();
       if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -353,12 +752,12 @@ export class LightVelaAccountService {
         cache: "no-store",
         headers,
         body: JSON.stringify({ command, run_as_user: "agentuser" }),
-        signal: AbortSignal.any([authority.signal, controller.signal]),
+        signal,
       });
       if (!response.ok) throw new LightVelaApiError(await errorMessage(response), response.status);
       const reader = response.body?.getReader();
       if (!reader) throw new Error("Command output stream is not readable.");
-      const decoder = new TextDecoder();
+      const decoder = new Utf8StreamDecoder();
       let buffer = "";
       let output = "";
       let finalResponse: DebugExecStreamEvent["response"];
@@ -388,7 +787,7 @@ export class LightVelaAccountService {
         buffer += decoder.decode();
         if (buffer.trim()) consume(buffer);
       } finally { reader.releaseLock(); }
-      authority.signal.throwIfAborted();
+      throwIfSignalAborted(authority.signal);
       if (finalResponse) return {
         status: finalResponse.status || "FAILED",
         exitCode: typeof finalResponse.exit_code === "number" ? finalResponse.exit_code : -1,
@@ -418,12 +817,12 @@ export class LightVelaAccountService {
     try {
       const result = await this.request<BotListResponse>("/v1/instances?page=1&page_size=100");
       const bots = result.items
-        .filter((bot) => bot.status.toLowerCase() === "running")
+        .filter((bot) => bot.status.trim().toLowerCase() === "running")
         .map((bot) => Object.freeze({
           createdAt: bot.created_at,
           instanceId: bot.instance_id,
           name: bot.name?.trim() || "Untitled Bot",
-          status: bot.status,
+          status: "running" as const,
         }));
       if (generation === this.refreshGeneration) {
         this.publish("authenticated", bots, null, this.reconcileActiveBot(bots));
@@ -494,6 +893,7 @@ export class LightVelaAccountService {
 
   dispose(): void {
     globalThis.removeEventListener?.("storage", this.onStorage);
+    globalThis.removeEventListener?.(UPSTREAM_AUTH_UNAUTHORIZED_EVENT, this.onUpstreamUnauthorized);
     this.invalidateAuthority();
     this.listeners.clear();
   }
@@ -513,6 +913,18 @@ export class LightVelaAccountService {
       bots: Object.freeze([...bots]),
       activeBotId,
       error,
+      details: phase === "anonymous"
+        ? Object.freeze({ phase: "idle", profile: null, subscription: null, pass: null, error: null })
+        : this.snapshot.details,
+    });
+    for (const listener of this.listeners) listener();
+  }
+
+  private publishDetails(details: LightVelaAccountDetailsSnapshot): void {
+    this.snapshot = Object.freeze({
+      ...this.snapshot,
+      revision: ++this.revision,
+      details: Object.freeze(details),
     });
     for (const listener of this.listeners) listener();
   }

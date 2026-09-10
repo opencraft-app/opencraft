@@ -55,6 +55,8 @@ interface QueuedSubmission {
   id: string;
   input: RecordValue[];
   clientUserMessageId: string;
+  createdAt: number;
+  pausedReason: string | null;
 }
 
 const object = (value: unknown): RecordValue => (
@@ -397,8 +399,8 @@ export class DshAppServerAdapter {
   /** Read-through projection of DSH's authoritative session/queue snapshots. */
   private readonly queues = new Map<string, QueuedSubmission[]>();
   private readonly queueItemWaiters = new Map<string, Map<string, Set<(item: QueuedSubmission) => void>>>();
-  /** Correlates the generic AppServer steer-then-delete pair with one atomic DSH steer. */
-  private readonly atomicallySteeredQueueItems = new Set<string>();
+  private readonly queueRemovalWaiters = new Map<string, Map<string, Set<() => void>>>();
+  private readonly queueConsumptionTailBySession = new Map<string, Promise<void>>();
   private streamsReady: Promise<void> | null = null;
 
   private readonly providers: RuntimeProviderService;
@@ -467,7 +469,6 @@ export class DshAppServerAdapter {
         // old generation immediately so absence cannot leave stale rows.
         const projectedSessions = [...this.queues.keys()];
         this.queues.clear();
-        this.atomicallySteeredQueueItems.clear();
         for (const threadId of projectedSessions) {
           this.emit("thread/queue/changed", { threadId });
         }
@@ -510,6 +511,7 @@ export class DshAppServerAdapter {
     if (frame.type === "session/queue") {
       const sessionId = string(frame.sessionId);
       if (sessionId === "") return;
+      const previousById = new Map(this.queue(sessionId).map((submission) => [submission.id, submission]));
       const submissions = (Array.isArray(frame.items) ? frame.items : []).flatMap<QueuedSubmission>((raw) => {
         const item = object(raw);
         if (item.placement !== "queued") return [];
@@ -521,6 +523,9 @@ export class DshAppServerAdapter {
           id,
           input: userContent(message.content),
           clientUserMessageId: string(source.rpcId, id),
+          createdAt: previousById.get(id)?.createdAt
+            ?? number(item.createdAt, number(message.createdAt, Date.now())),
+          pausedReason: null,
         }];
       });
       this.queues.set(sessionId, submissions);
@@ -533,6 +538,16 @@ export class DshAppServerAdapter {
           waiters.delete(submission.clientUserMessageId);
         }
         if (waiters.size === 0) this.queueItemWaiters.delete(sessionId);
+      }
+      const removalWaiters = this.queueRemovalWaiters.get(sessionId);
+      if (removalWaiters !== undefined) {
+        const presentIds = new Set(submissions.map((submission) => submission.id));
+        for (const [itemId, matching] of removalWaiters) {
+          if (presentIds.has(itemId)) continue;
+          for (const resolve of matching) resolve();
+          removalWaiters.delete(itemId);
+        }
+        if (removalWaiters.size === 0) this.queueRemovalWaiters.delete(sessionId);
       }
       this.emit("thread/queue/changed", { threadId: sessionId });
       return;
@@ -689,6 +704,64 @@ export class DshAppServerAdapter {
     return this.queues.get(sessionId) ?? [];
   }
 
+  private waitForQueueRemoval(
+    sessionId: string,
+    itemId: string,
+    timeoutMs = 5_000,
+  ): { promise: Promise<void>; cancel(): void } {
+    if (!this.queue(sessionId).some((submission) => submission.id === itemId)) {
+      return { promise: Promise.resolve(), cancel() {} };
+    }
+    let cancel = () => {};
+    const promise = new Promise<void>((resolve, reject) => {
+      const byItem = this.queueRemovalWaiters.get(sessionId) ?? new Map();
+      const waiters = byItem.get(itemId) ?? new Set();
+      let settled = false;
+      const cleanup = () => {
+        waiters.delete(finish);
+        if (waiters.size === 0) byItem.delete(itemId);
+        if (byItem.size === 0) this.queueRemovalWaiters.delete(sessionId);
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve();
+      };
+      waiters.add(finish);
+      byItem.set(itemId, waiters);
+      this.queueRemovalWaiters.set(sessionId, byItem);
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error(`DSH accepted queue consumption but did not remove ${itemId} from session/queue`));
+      }, timeoutMs);
+      cancel = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+      };
+    });
+    return { promise, cancel };
+  }
+
+  private async consumeQueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.queueConsumptionTailBySession.get(sessionId) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(() => undefined, () => undefined);
+    this.queueConsumptionTailBySession.set(sessionId, tail);
+    try {
+      return await result;
+    } finally {
+      if (this.queueConsumptionTailBySession.get(sessionId) === tail) {
+        this.queueConsumptionTailBySession.delete(sessionId);
+      }
+    }
+  }
+
   private inProgressTurn(sessionId: string, turn: number): RecordValue {
     return {
       id: turnId(sessionId, turn),
@@ -836,7 +909,12 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
-              [OPENCRAFT_THREAD_QUEUE_EXTENSION]: { version: 1, reorder: false },
+              [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
+                version: 2,
+                reorder: false,
+                atomicSteer: true,
+                perItemPause: false,
+              },
             },
           },
         };
@@ -928,7 +1006,6 @@ export class DshAppServerAdapter {
       case "thread/queue/delete": {
         const sessionId = string(value.threadId);
         const queuedSubmissionId = string(value.queuedSubmissionId);
-        if (this.atomicallySteeredQueueItems.delete(queuedSubmissionId)) return { deleted: true };
         if (!this.queue(sessionId).some((item) => item.id === queuedSubmissionId)) return { deleted: false };
         await this.client.call("session.updateQueue", {
           sessionId,
@@ -948,23 +1025,73 @@ export class DshAppServerAdapter {
       }
       case "thread/queue/start": {
         const sessionId = string(value.threadId);
-        const queue = this.queue(sessionId);
-        const target = typeof value.queuedSubmissionId === "string"
-          ? queue.find((item) => item.id === value.queuedSubmissionId)
-          : queue[0];
-        if (target === undefined) throw new Error("Queued submission is no longer pending");
-        const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
-        if (liveTurn >= 0) {
-          await this.client.call("session.updateQueue", {
-            sessionId,
-            itemId: target.id,
-            action: { kind: "steer" },
-          });
-          return { turn: this.inProgressTurn(sessionId, liveTurn) };
-        }
-        if (target !== queue[0]) throw new Error("DeepSeek Harness resumes queued work in FIFO order");
-        const nextTurn = this.waitForNextTurn(sessionId);
-        return { turn: this.inProgressTurn(sessionId, await nextTurn.promise) };
+        return await this.consumeQueue(sessionId, async () => {
+          const queue = this.queue(sessionId);
+          const target = typeof value.queuedSubmissionId === "string"
+            ? queue.find((item) => item.id === value.queuedSubmissionId)
+            : queue[0];
+          if (target === undefined) throw new Error("Queued submission is no longer pending");
+          const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
+          if (liveTurn >= 0) {
+            const removed = this.waitForQueueRemoval(sessionId, target.id);
+            try {
+              await this.client.call("session.updateQueue", {
+                sessionId,
+                itemId: target.id,
+                action: { kind: "steer" },
+              });
+              await removed.promise;
+            } catch (error) {
+              removed.cancel();
+              throw error;
+            }
+            return { turn: this.inProgressTurn(sessionId, liveTurn) };
+          }
+          if (target !== queue[0]) throw new Error("DeepSeek Harness resumes queued work in FIFO order");
+          const nextTurn = this.waitForNextTurn(sessionId);
+          return { turn: this.inProgressTurn(sessionId, await nextTurn.promise) };
+        });
+      }
+      case "thread/queue/steer": {
+        const sessionId = string(value.threadId);
+        return await this.consumeQueue(sessionId, async () => {
+          const queuedSubmissionId = string(value.queuedSubmissionId);
+          const expectedTurnId = string(value.expectedTurnId);
+          const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
+          if (liveTurn < 0) {
+            throw Object.assign(new Error(`DSH thread has no active turn: ${sessionId}`), {
+              rpcCode: -32009,
+              domainData: { code: "TURN_INACTIVE", retryable: false },
+            });
+          }
+          const actualTurnId = turnId(sessionId, liveTurn);
+          if (expectedTurnId !== actualTurnId) {
+            throw Object.assign(new Error(`Active DSH turn changed; expected ${expectedTurnId}, got ${actualTurnId}`), {
+              rpcCode: -32009,
+              domainData: {
+                code: "EXPECTED_TURN_MISMATCH",
+                retryable: true,
+                actualTurnId,
+              },
+            });
+          }
+          if (!this.queue(sessionId).some((item) => item.id === queuedSubmissionId)) {
+            throw new Error(`Queued submission ${queuedSubmissionId} is no longer pending`);
+          }
+          const removed = this.waitForQueueRemoval(sessionId, queuedSubmissionId);
+          try {
+            await this.client.call("session.updateQueue", {
+              sessionId,
+              itemId: queuedSubmissionId,
+              action: { kind: "steer" },
+            });
+            await removed.promise;
+          } catch (error) {
+            removed.cancel();
+            throw error;
+          }
+          return { turnId: actualTurnId };
+        });
       }
       case "thread/start": {
         const created = await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", {
@@ -1009,34 +1136,17 @@ export class DshAppServerAdapter {
           throw new Error(`Active DSH turn changed; expected ${expectedTurnId}`);
         }
         const clientUserMessageId = string(value.clientUserMessageId);
-        const queued = clientUserMessageId === "" ? undefined : this.queue(sessionId).find(
-          (item) => item.clientUserMessageId === clientUserMessageId,
+        await this.client.call(
+          "session.prompt",
+          {
+            sessionId,
+            mode: "steer",
+            content: await promptContent(value.input),
+            clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+          undefined,
+          clientUserMessageId || undefined,
         );
-        if (queued !== undefined) {
-          this.atomicallySteeredQueueItems.add(queued.id);
-          try {
-            await this.client.call("session.updateQueue", {
-              sessionId,
-              itemId: queued.id,
-              action: { kind: "steer" },
-            });
-          } catch (error) {
-            this.atomicallySteeredQueueItems.delete(queued.id);
-            throw error;
-          }
-        } else {
-          await this.client.call(
-            "session.prompt",
-            {
-              sessionId,
-              mode: "steer",
-              content: await promptContent(value.input),
-              clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            },
-            undefined,
-            clientUserMessageId || undefined,
-          );
-        }
         return { turnId: expectedTurnId || (liveTurn >= 0 ? turnId(sessionId, liveTurn) : "") };
       }
       case "turn/interrupt": await this.client.call("session.cancel", { sessionId: string(value.threadId) }); return {};

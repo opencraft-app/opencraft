@@ -23,6 +23,8 @@ import { useExtensionWorkbenchProjection } from "../runtime/extension-workbench-
 import { parseApplicationRouteUrl, type ApplicationRoute } from "../runtime/workbench-navigation";
 import { getWindowChromePolicy, useWindowChrome } from "../window-chrome";
 import { AppShell } from "./app-shell";
+import { InternalDeveloperModeGate } from "./internal-developer-mode-gate";
+import { ManagementSettingsDialog, ModalSurface } from "./modal";
 import {
   AppShellHeader,
   AppShellNavigationControls,
@@ -68,6 +70,7 @@ export function HostlessWorkbench({
 }: {
   readonly supervisor: HostlessWebWorkbenchApplicationSupervisor;
 }) {
+  const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearanceTheme();
   const windowChrome = useWindowChrome();
   const chromePolicy = getWindowChromePolicy(windowChrome);
@@ -90,6 +93,17 @@ export function HostlessWorkbench({
   const settingsSection = applicationRoute.kind === "settings" ? applicationRoute.slug : null;
   const settingsOpen = settingsSection !== null;
   const settingsPresentation = useSettingsPresentation(sidebarWidth);
+  const settingsContributionSnapshot = useSyncExternalStore(
+    supervisor.extensions.contributions.subscribe,
+    supervisor.extensions.contributions.getSnapshot,
+    supervisor.extensions.contributions.getSnapshot,
+  );
+  const selectedSettingsContribution = settingsContributionSnapshot.settingsPages.find(
+    ({ contribution }) => contribution.id === settingsSection,
+  )?.contribution ?? null;
+  const managementSettingsOpen = settingsOpen
+    && selectedSettingsContribution?.management !== undefined;
+  const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
   const applicationReturnsToPreviousEntry = useRef(
     applicationRoute.kind !== "conversation" && hasHostlessApplicationReturn(window.history.state),
   );
@@ -201,17 +215,22 @@ export function HostlessWorkbench({
     removeHost: supervisor.removeHost,
     openView: openExtensionView,
     replaceViewResource: replaceExtensionViewResource,
+    prepareImageUpload: async (blob) => (await supervisor.images.compress(blob)).blob,
   }), [applicationRoute, profileSnapshot.profiles, supervisor]);
   const extensionProjection = useExtensionWorkbenchProjection({
     contributions: supervisor.extensions.contributions,
     renderers: supervisor.platformViewRenderers,
+    accounts: supervisor.platformAccounts,
     botDirectory: supervisor.botDirectory,
     host: extensionHost,
     applicationRoute,
     openSettings,
     openView: openExtensionView,
   });
-  const sharedSidebarOpen = settingsOpen ? settingsPresentation.showIndex : sidebarOpen;
+  useEffect(() => {
+    if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
+  }, [extensionProjection.account?.snapshot.phase]);
+  const sharedSidebarOpen = routeSettingsOpen ? settingsPresentation.showIndex : sidebarOpen;
   const selectSettingsSection = (section: string) => { openSettings(section); settingsPresentation.openContent(); };
   const collapseSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
   const expandSidebar = useCallback(() => setSidebarOpen(true), [setSidebarOpen]);
@@ -224,8 +243,8 @@ export function HostlessWorkbench({
     applicationReturnsToPreviousEntry.current;
   const canGoForward = false;
   const toggleSidebar = useCallback(() => {
-    if (!settingsOpen) setSidebarOpen((open) => !open);
-  }, [setSidebarOpen, settingsOpen]);
+    if (!routeSettingsOpen) setSidebarOpen((open) => !open);
+  }, [routeSettingsOpen, setSidebarOpen]);
   const navigateBack = useCallback(() => window.history.back(), []);
   const navigateForward = useCallback(() => window.history.forward(), []);
   const header = (
@@ -247,10 +266,10 @@ export function HostlessWorkbench({
       canGoForward={canGoForward}
       onBack={navigateBack}
       onForward={navigateForward}
-      navigationActions={settingsOpen ? [] : chromePolicy.leadingNavigationActions}
+      navigationActions={routeSettingsOpen ? [] : chromePolicy.leadingNavigationActions}
     />
   );
-  const leftPanel = settingsOpen ? (
+  const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
         section={settingsSection ?? "connections"}
@@ -259,9 +278,11 @@ export function HostlessWorkbench({
         profiles={profileSnapshot.profiles}
         activeHostId=""
         onBack={() => { settingsPresentation.openContent(); closeApplicationRoute(); }}
+        presentation={managementSettingsOpen ? "dialog" : "route"}
       />
     </Suspense>
-  ) : (
+  ) : null;
+  const leftPanel = routeSettingsOpen ? settingsNavigation : (
     <Sidebar
       activeHostId=""
       activeThreadId=""
@@ -273,15 +294,56 @@ export function HostlessWorkbench({
       botCreation={extensionProjection.botCreation}
       onNewTask={() => undefined}
       onOpenSettings={() => openSettings()}
+      account={extensionProjection.account === null || extensionProjection.account.snapshot.phase === "anonymous" ? null : {
+        snapshot: extensionProjection.account.snapshot,
+        onOpen: () => setAccountOpen(true),
+        onRefresh: extensionProjection.account.provider.refresh,
+        onSignOut: extensionProjection.account.provider.signOut,
+      }}
       onSelectThread={() => undefined}
       threads={[]}
     />
   );
+  const settingsContent = settingsOpen ? (
+    <Suspense
+      fallback={
+        <div className="settings-page-loading" role="status">
+          Loading settings…
+        </div>
+      }
+    >
+      <SettingsContent
+        section={settingsSection ?? "connections"}
+        onSectionChange={selectSettingsSection}
+        activeHostId=""
+        extensionContributions={supervisor.extensions.contributions}
+        extensionManager={supervisor.extensionManager}
+        onAdd={supervisor.addWebSocketHost}
+        onProvisionHost={supervisor.provisionHost}
+        onOpenView={openExtensionView}
+        onReplaceViewResource={replaceExtensionViewResource}
+        onRemove={supervisor.removeHost}
+        onThemeChange={setAppearanceThemeId}
+        onThemePreferenceChange={setThemePreference}
+        platformViewRenderers={supervisor.platformViewRenderers}
+        profiles={profileSnapshot.profiles}
+        themeId={appearance.themeId}
+        themePreference={appearance.preference}
+        themes={appearance.availableThemes}
+      />
+    </Suspense>
+  ) : null;
 
   return (
     <QueryClientProvider client={supervisor.queryClient}>
+      <InternalDeveloperModeGate />
       <AppShell
         layoutScope="hostless"
+        mainContentLayout={
+          applicationRoute.kind === "conversation" || managementSettingsOpen
+            ? "thread-edge-scroll"
+            : "default"
+        }
         header={header}
         floatingSidebarHeader={(onDock) => (
           <AppShellNavigationControls
@@ -300,54 +362,28 @@ export function HostlessWorkbench({
         rightPanel={null}
         rightPanelOpen={false}
         rightPanelFullWidth={false}
-        sidebarCollapsible={!settingsOpen}
-        sidebarTransientEnabled={!settingsOpen}
-        sidebarResizable={!settingsOpen}
+        sidebarCollapsible={!routeSettingsOpen}
+        sidebarTransientEnabled={!routeSettingsOpen}
+        sidebarResizable={!routeSettingsOpen}
         sidebarOpen={sharedSidebarOpen}
-        sidebarWidth={settingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
+        sidebarWidth={routeSettingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
         windowChrome={windowChrome}
-        onSidebarCollapse={settingsOpen ? () => undefined : collapseSidebar}
+        onSidebarCollapse={routeSettingsOpen ? () => undefined : collapseSidebar}
         onSidebarExpand={expandSidebar}
         onSidebarResizeEnd={commitSidebarWidth}
         onRightPanelOpenChange={() => undefined}
       >
         <div
           className={
-            settingsOpen
+            routeSettingsOpen
               ? "hostless-workbench__main settings-page__main"
               : "hostless-workbench__main"
           }
         >
-            {settingsOpen ? (
+            {routeSettingsOpen ? (
               <section className="settings-page" aria-label="Settings" inert={settingsPresentation.indexOnly || undefined} aria-hidden={settingsPresentation.indexOnly || undefined}>
                 {settingsPresentation.compact ? <nav className="settings-page__compact-navigation" aria-label="Settings navigation"><button className="settings-navigation-link" type="button" onClick={settingsPresentation.openIndex}><span aria-hidden="true">‹</span>Settings</button></nav> : null}
-                <Suspense
-                  fallback={
-                    <div className="settings-page-loading" role="status">
-                      Loading settings…
-                    </div>
-                  }
-                >
-                  <SettingsContent
-                    section={settingsSection ?? "connections"}
-                    onSectionChange={selectSettingsSection}
-                    activeHostId=""
-                    extensionContributions={supervisor.extensions.contributions}
-                    extensionManager={supervisor.extensionManager}
-                    onAdd={supervisor.addWebSocketHost}
-                    onProvisionHost={supervisor.provisionHost}
-                    onOpenView={openExtensionView}
-                    onReplaceViewResource={replaceExtensionViewResource}
-                    onRemove={supervisor.removeHost}
-                    onThemeChange={setAppearanceThemeId}
-                    onThemePreferenceChange={setThemePreference}
-                    platformViewRenderers={supervisor.platformViewRenderers}
-                    profiles={profileSnapshot.profiles}
-                    themeId={appearance.themeId}
-                    themePreference={appearance.preference}
-                    themes={appearance.availableThemes}
-                  />
-                </Suspense>
+                {settingsContent}
               </section>
             ) : applicationRoute.kind === "extension-view" ? (
               <section className="extension-view-route" aria-label={extensionProjection.activeView?.title}>
@@ -360,6 +396,20 @@ export function HostlessWorkbench({
             )}
         </div>
       </AppShell>
+      {managementSettingsOpen ? (
+        <ManagementSettingsDialog
+          navigation={settingsNavigation}
+          onClose={() => { settingsPresentation.openContent(); closeApplicationRoute(); }}
+          title="Hermes settings"
+        >
+          {settingsContent}
+        </ManagementSettingsDialog>
+      ) : null}
+      {accountOpen && extensionProjection.account !== null ? (
+        <ModalSurface className="account-center-dialog" label="Account Settings" onDismiss={() => setAccountOpen(false)}>
+          {extensionProjection.account.content}
+        </ModalSurface>
+      ) : null}
     </QueryClientProvider>
   );
 }

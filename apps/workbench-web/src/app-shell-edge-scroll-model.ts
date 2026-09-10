@@ -1,6 +1,34 @@
 export const THREAD_EDGE_SCROLL_MINIMUM_WIDTH_REM = 96;
 export const FALLBACK_ROOT_FONT_SIZE_PX = 16;
 
+export type AppShellMainContentLayout = "default" | "thread-edge-scroll";
+
+export interface AppShellMainContentChromeInput {
+  readonly layout: AppShellMainContentLayout;
+  readonly threadEdgeScrollEligible: boolean;
+}
+
+export interface AppShellMainContentChrome {
+  readonly headerEdgeScroll: boolean;
+  readonly threadEdgeDivider: boolean;
+}
+
+/**
+ * Route layout owns the shell presentation. Geometry may only choose between
+ * the two thread-edge-scroll presentations; it must never promote a default
+ * route (settings, extensions, and other application pages) into thread mode.
+ */
+export function resolveAppShellMainContentChrome({
+  layout,
+  threadEdgeScrollEligible,
+}: AppShellMainContentChromeInput): AppShellMainContentChrome {
+  const threadEdgeScroll = layout === "thread-edge-scroll";
+  return {
+    headerEdgeScroll: threadEdgeScroll && threadEdgeScrollEligible,
+    threadEdgeDivider: threadEdgeScroll && !threadEdgeScrollEligible,
+  };
+}
+
 export interface ThreadEdgeScrollInput {
   readonly mainContentWidthPx: number;
   readonly leftChromeWidthPx: number;

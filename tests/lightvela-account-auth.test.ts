@@ -3,7 +3,11 @@ import test from "node:test";
 import { LightVelaHermesTransport } from "../plugins/lightvela-hermes/src/transport/lightvela-hermes-transport";
 import { IDBFactory } from "fake-indexeddb";
 import { IndexedDbHermesSessionTokenCache } from "../plugins/lightvela-hermes/src/lib/hermes-session-token-cache";
-import { LightVelaAccountService, LIGHTVELA_TOKEN_KEY } from "../plugins/lightvela-hermes/src/account/lightvela-account-service";
+import {
+  bootstrapLightVelaOAuthCallback,
+  LightVelaAccountService,
+  LIGHTVELA_TOKEN_KEY,
+} from "../plugins/lightvela-hermes/src/account/lightvela-account-service";
 import { findHostConnectionInterventionError } from "@opencraft/workbench-runtime";
 
 function fixture(fetchImpl: typeof fetch) {
@@ -18,19 +22,44 @@ function fixture(fetchImpl: typeof fetch) {
   return { service, storage, location, redirects };
 }
 
-test("region routes OAuth and survives reload without carrying credentials", () => {
+test("OAuth callback is consumed independently of extension and View startup", () => {
+  const values = new Map<string, string>([["vela.lightvela.signed-out.v1", "true"]]);
+  const replacements: string[] = [];
+  const accepted = bootstrapLightVelaOAuthCallback({
+    storage: {
+      setItem: (key, value) => { values.set(key, value); },
+      removeItem: (key) => { values.delete(key); },
+    },
+    location: {
+      pathname: "/local/thread-1",
+      search: "?hostId=velahermes0",
+      hash: "#panel=account&session_token=oauth-token",
+    },
+    history: {
+      state: { route: "thread-1" },
+      replaceState: (_state, _unused, url) => { replacements.push(String(url)); },
+    },
+  });
+
+  assert.equal(accepted, true);
+  assert.equal(values.get(LIGHTVELA_TOKEN_KEY), "oauth-token");
+  assert.equal(values.has("vela.lightvela.signed-out.v1"), false);
+  assert.deepEqual(replacements, ["/local/thread-1?hostId=velahermes0#panel=account"]);
+});
+
+test("region delegates provider selection to the shared LightVela sign-in page", () => {
   const f = fixture(async () => { throw new Error("unexpected fetch"); });
   f.service.selectRegion("cn");
   f.service.signIn();
   const url = new URL(f.redirects[0]!);
-  assert.equal(url.origin, "https://api.lightvela.com");
-  assert.equal(url.pathname, "/auth/oauth/wechat/start");
-  assert.equal(url.searchParams.get("mode"), "website");
+  assert.equal(url.origin, "https://lightvela.com");
+  assert.equal(url.pathname, "/auth/sign-in");
   assert.equal(url.searchParams.get("return_to"), "https://chat.lightvela.com/");
+  assert.equal(url.searchParams.has("provider"), false);
   assert.equal(new LightVelaAccountService({ storage: f.storage }).getSnapshot().region, "cn");
   f.service.selectRegion("intl");
   f.service.signIn();
-  assert.equal(new URL(f.redirects[1]!).origin, "https://api.lightvela.ai");
+  assert.equal(new URL(f.redirects[1]!).origin, "https://lightvela.ai");
   f.storage.setItem(LIGHTVELA_TOKEN_KEY, "test-token");
   assert.throws(() => f.service.selectRegion("cn"), /sign out/);
 });
@@ -112,4 +141,77 @@ test("logout cache erasure deletes persisted backend credentials", async () => {
   await cache.clear();
   assert.equal(await cache.get("old-scope:bot"), null);
   cache.close();
+});
+
+test("account center reuses mono2 profile, subscription and pass authorities", async () => {
+  const calls: Request[] = [];
+  const f = fixture(async (input, init) => {
+    const request = new Request(input, init);
+    calls.push(request);
+    switch (new URL(request.url).pathname) {
+      case "/v1/instances":
+        return Response.json({ data: { items: [] } });
+      case "/auth/profile":
+        if (request.method === "PUT") {
+          assert.deepEqual(await request.json(), { name: "New name" });
+          return Response.json({ user: { id: "usr-1", name: "New name", avatarUrl: "/auth/profile/avatar" } });
+        }
+        return Response.json({ user: { id: "usr-1", name: "Jindong Zhang", avatarUrl: "/auth/profile/avatar" } });
+      case "/subscriptions/current":
+        return Response.json({
+          hasSubscription: true,
+          subscription: {
+            code: "pro",
+            status: "active",
+            currentPeriodStart: "2026-05-16T00:00:00Z",
+            currentPeriodEnd: "2026-09-27T00:00:00Z",
+          },
+        });
+      case "/v1/passes":
+        return Response.json({ data: { passes: [{
+          pass_id: "pass-1",
+          bundle_name: "Launch",
+          created_time: "2026-05-16T00:00:00Z",
+          expired_time: "2026-09-27T00:00:00Z",
+          credit_total: 100,
+          credit_available: 31,
+        }] } });
+      default:
+        throw new Error(`Unexpected request ${request.url}`);
+    }
+  });
+  f.storage.setItem(LIGHTVELA_TOKEN_KEY, "account-token");
+  await f.service.refreshBots();
+  const details = await f.service.refreshAccountDetails();
+  assert.equal(details.profile?.name, "Jindong Zhang");
+  assert.equal(details.profile?.avatarUrl, "https://api.lightvela.ai/auth/profile/avatar");
+  assert.equal(details.subscription?.code, "pro");
+  assert.deepEqual(details.pass, {
+    passId: "pass-1",
+    bundleName: "Launch",
+    createdAt: "2026-05-16T00:00:00Z",
+    expiresAt: "2026-09-27T00:00:00Z",
+    isolatedAt: null,
+    deletedAt: null,
+    creditsTotal: 100,
+    creditsAvailable: 31,
+  });
+  assert.ok(calls.every((request) => request.headers.get("authorization") === "Bearer account-token"));
+
+  await f.service.updateProfileName(" New name ");
+  assert.equal(f.service.getSnapshot().details.profile?.name, "New name");
+  await f.service.signOut().catch(() => undefined);
+  assert.equal(f.service.getSnapshot().details.phase, "idle");
+});
+
+test("account detail 401 retires the shared login authority", async () => {
+  const f = fixture(async () => Response.json({ message: "Unauthorized" }, { status: 401 }));
+  f.storage.setItem(LIGHTVELA_TOKEN_KEY, "expired-token");
+
+  await assert.rejects(f.service.refreshAccountDetails(), /Unauthorized/);
+
+  assert.equal(f.storage.getItem(LIGHTVELA_TOKEN_KEY), null);
+  assert.equal(f.service.getSnapshot().phase, "anonymous");
+  assert.equal(f.service.getSnapshot().details.phase, "idle");
+  await assert.rejects(f.service.request("/v1/instances"), /sign in/);
 });

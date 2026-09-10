@@ -457,6 +457,7 @@ export function NewThreadDraftPage({
                   endActions={composerEndActions}
                   selectionCatalog={selectionCatalog}
                   catalog={catalog}
+                  mentionSuggestionsEnabled={false}
                   effectiveSelections={effectiveSelections}
                   onSubmit={onSubmit}
                   onCancel={() => undefined}

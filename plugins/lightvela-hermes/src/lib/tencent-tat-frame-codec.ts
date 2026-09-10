@@ -1,4 +1,5 @@
 import { deserialize } from "bson";
+import { decodeUtf8 } from "./utf8";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object"
@@ -9,7 +10,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function decodeBase64(value: string): string {
   const binary = atob(value);
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
+  return decodeUtf8(bytes);
 }
 
 export async function decodeTencentTatFrame(
@@ -21,7 +22,7 @@ export async function decodeTencentTatFrame(
   try {
     return deserialize(bytes);
   } catch {
-    return JSON.parse(new TextDecoder().decode(bytes));
+    return JSON.parse(decodeUtf8(bytes));
   }
 }
 
@@ -42,8 +43,8 @@ export function extractTencentPtyOutput(message: unknown): string {
         return candidate;
       }
     }
-    if (candidate instanceof Uint8Array) return new TextDecoder().decode(candidate);
-    if (candidate instanceof ArrayBuffer) return new TextDecoder().decode(candidate);
+    if (candidate instanceof Uint8Array) return decodeUtf8(candidate);
+    if (candidate instanceof ArrayBuffer) return decodeUtf8(new Uint8Array(candidate));
   }
   return "";
 }

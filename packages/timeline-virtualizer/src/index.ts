@@ -3,6 +3,7 @@ export * from "./history-backfill";
 export * from "./measurement";
 export * from "./ports";
 export * from "./restoration";
+export * from "./response-positioning";
 export * from "./scroll";
 export * from "./scroll-controller";
 export * from "./scroll-to-bottom";

@@ -1,0 +1,155 @@
+.modal-surface__host {
+  position: fixed;
+  z-index: var(--layer-application-modal, 230);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vh, 48px);
+}
+
+.modal-surface__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, #000 44%, transparent);
+  backdrop-filter: blur(7px) saturate(.82);
+  -webkit-backdrop-filter: blur(7px) saturate(.82);
+}
+
+.modal-surface {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 20px;
+  background: var(--color-background-elevated-primary-opaque, var(--color-background-surface));
+  box-shadow: 0 28px 90px color-mix(in srgb, #000 34%, transparent);
+  color: var(--color-text);
+  outline: none;
+}
+
+.modal-surface__close {
+  position: absolute;
+  z-index: 2;
+  top: 17px;
+  right: 17px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--color-text) 7%, transparent);
+    color: var(--color-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-border-focus, var(--color-text-secondary));
+    outline-offset: 2px;
+  }
+}
+
+.management-settings-dialog {
+  display: grid;
+  width: min(1120px, calc(100vw - 48px));
+  height: min(840px, calc(100vh - 64px));
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: 238px minmax(0, 1fr);
+}
+
+.management-settings-dialog__navigation {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--color-border-subtle);
+  background: var(--color-background-elevated-secondary-opaque, var(--color-surface-secondary));
+}
+
+.management-settings-dialog__body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+
+  > .settings-page__viewport,
+  > .settings-page-loading {
+    width: 100%;
+    height: 100%;
+  }
+
+  .settings-page__content {
+    width: min(790px, calc(100% - 64px));
+    padding-top: 28px;
+  }
+}
+
+@media (max-width: 720px) {
+  .modal-surface__host {
+    padding: 0;
+  }
+
+  .modal-surface__close {
+    top: 12px;
+    right: 12px;
+  }
+
+  .management-settings-dialog {
+    width: 100vw;
+    height: 100dvh;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 0;
+    border-radius: 0;
+  }
+
+  .management-settings-dialog__navigation {
+    max-height: 210px;
+    overflow-y: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+
+  .settings-page__navigation--dialog {
+    height: auto;
+    padding: 14px 56px 10px 10px;
+
+    .management-navigation__dialog-title {
+      margin-bottom: 10px;
+    }
+
+    .management-navigation__search {
+      margin-bottom: 10px;
+    }
+
+    .management-navigation__group {
+      margin-bottom: 6px;
+    }
+
+    .settings-page__navigation-heading {
+      display: none;
+    }
+
+    .settings-page__navigation-list {
+      flex-direction: row;
+      overflow-x: auto;
+      padding-bottom: 2px;
+
+      button {
+        width: auto;
+        flex: 0 0 auto;
+      }
+    }
+  }
+
+  .management-settings-dialog__body .settings-page__content {
+    width: calc(100% - 28px);
+    padding-top: 24px;
+  }
+}

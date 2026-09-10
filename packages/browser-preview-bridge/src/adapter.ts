@@ -171,7 +171,8 @@ export class PreviewBridgeAdapter implements BrowserAutomation {
   }
 
   private onMessage(event: MessageEvent): void {
-    if (event.source !== this.options.frameWindow || event.origin !== this.options.targetOrigin) return;
+    if (event.source !== this.options.frameWindow
+      || (this.options.targetOrigin !== "*" && event.origin !== this.options.targetOrigin)) return;
     if (!isPreviewBridgeChildMessage(event.data)) return;
     const message = event.data;
     if (message.previewId !== this.options.previewId ||

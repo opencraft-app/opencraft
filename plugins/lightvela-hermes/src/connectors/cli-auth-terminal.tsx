@@ -1,7 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
+import type { Terminal } from "@xterm/xterm";
 
 export function CliAuthTerminal({ output, offset, ready, onData, onResize }: {
   output: string; offset: number; ready: boolean;
@@ -13,13 +11,38 @@ export function CliAuthTerminal({ output, offset, ready, onData, onResize }: {
   const callbacks = useRef({onData, onResize, ready});
   callbacks.current = {onData, onResize, ready};
   useEffect(() => {
-    const term = new Terminal({cols: 80, rows: 24, fontSize: 14, scrollback: 1000, disableStdin: !callbacks.current.ready});
-    const fit = new FitAddon(); term.loadAddon(fit);
-    term.open(element.current!); terminal.current = term; cursor.current = 0;
-    const input = term.onData(data => { if (callbacks.current.ready) callbacks.current.onData(data); });
-    const resize = term.onResize(({cols, rows}) => callbacks.current.onResize(cols, rows));
-    const observer = new ResizeObserver(() => fit.fit()); observer.observe(element.current!); fit.fit();
-    return () => {observer.disconnect(); input.dispose(); resize.dispose(); terminal.current = null; term.dispose();};
+    let disposed = false;
+    let mountedTerminal: Terminal | null = null;
+    let observer: ResizeObserver | null = null;
+    let input: { dispose(): void } | null = null;
+    let resize: { dispose(): void } | null = null;
+
+    const mount = async () => {
+      // Xterm and its CSS are renderer resources. Loading both from the View
+      // lifetime keeps the extension module importable by Node hosts/tests.
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import("@xterm/xterm"),
+        import("@xterm/addon-fit"),
+        import("@xterm/xterm/css/xterm.css"),
+      ]);
+      const slot = element.current;
+      if (disposed || slot === null) return;
+      const term = new Terminal({cols: 80, rows: 24, fontSize: 14, scrollback: 1000, disableStdin: !callbacks.current.ready});
+      const fit = new FitAddon(); term.loadAddon(fit);
+      term.open(slot); terminal.current = term; mountedTerminal = term; cursor.current = 0;
+      input = term.onData(data => { if (callbacks.current.ready) callbacks.current.onData(data); });
+      resize = term.onResize(({cols, rows}) => callbacks.current.onResize(cols, rows));
+      observer = new ResizeObserver(() => fit.fit()); observer.observe(slot); fit.fit();
+    };
+    void mount();
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+      input?.dispose();
+      resize?.dispose();
+      terminal.current = null;
+      mountedTerminal?.dispose();
+    };
   }, []);
   useEffect(() => {
     const term = terminal.current; if (!term) return;

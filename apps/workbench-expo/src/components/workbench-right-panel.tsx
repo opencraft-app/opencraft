@@ -1,7 +1,8 @@
 import type { WorkbenchFileChange } from "@opencraft/workbench-runtime";
 import { Check, FileCode2, X } from "lucide-react-native";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { Button, IconButton } from "./ui/button";
 
 interface WorkbenchRightPanelProps {
   files: readonly WorkbenchFileChange[];
@@ -15,9 +16,9 @@ export function WorkbenchRightPanel({ files, topInset, onClose }: WorkbenchRight
     <View style={[styles.panel, { paddingTop: topInset }]}> 
       <View style={styles.header}>
         <Text style={styles.title}>Changes</Text>
-        <Pressable accessibilityLabel="Close task details" onPress={onClose} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
+        <IconButton accessibilityLabel="Close task details" onPress={onClose} size="lg">
           <X color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-        </Pressable>
+        </IconButton>
       </View>
       <ScrollView contentContainerStyle={styles.fileList} showsVerticalScrollIndicator={false}>
         {files.map((file) => (
@@ -30,10 +31,10 @@ export function WorkbenchRightPanel({ files, topInset, onClose }: WorkbenchRight
         ))}
       </ScrollView>
       <View style={styles.footer}>
-        <Pressable style={({ pressed }) => [styles.reviewButton, pressed && styles.pressed]}>
+        <Button size="lg" style={styles.reviewButton}>
           <Check color={theme.color.button.primaryForeground} size={theme.metrics.control.iconSmall} strokeWidth={2} />
           <Text style={styles.reviewButtonText}>Review changes</Text>
-        </Pressable>
+        </Button>
       </View>
     </View>
   );
@@ -57,13 +58,6 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[3],
   },
   title: { color: theme.color.text.primary, ...theme.platformTypography.navigationTitle },
-  close: {
-    width: theme.metrics.toolbar.touchTarget,
-    height: theme.metrics.toolbar.touchTarget,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: theme.metrics.control.radius,
-  },
   fileList: { paddingHorizontal: theme.spacing[2], paddingBottom: theme.spacing[4] },
   fileRow: {
     minHeight: theme.metrics.details.fileRowHeight,
@@ -78,14 +72,7 @@ const styles = StyleSheet.create((theme) => ({
   deletions: { color: theme.color.accent.negative, ...theme.platformTypography.code },
   footer: { padding: theme.spacing[3], borderTopWidth: 1, borderTopColor: theme.material.separator },
   reviewButton: {
-    height: theme.metrics.toolbar.touchTarget,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing[2],
-    borderRadius: theme.metrics.control.radius,
-    backgroundColor: theme.color.button.primary,
+    width: "100%",
   },
   reviewButtonText: { color: theme.color.button.primaryForeground, ...theme.platformTypography.label },
-  pressed: { opacity: theme.metrics.interaction.pressedOpacity },
 }));

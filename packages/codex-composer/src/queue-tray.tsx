@@ -34,12 +34,12 @@ export interface ComposerQueueTrayItem {
   readonly actionable: boolean;
   readonly reorderable?: boolean;
   readonly editing: boolean;
+  readonly pausedReason?: string | null;
   readonly error?: string | null;
 }
 
 export interface ComposerQueueTrayProps {
   readonly items: readonly ComposerQueueTrayItem[];
-  readonly pausedReason: "interrupted" | null;
   readonly isResponseInProgress: boolean;
   readonly onEdit?: (id: string) => void;
   readonly onCancelEdit?: () => void;
@@ -88,7 +88,7 @@ function SortableQueueItem({
         transform: CSS.Transform.toString(sortable.transform),
         transition: sortable.transition,
       }}
-      title={item.error ?? item.preview}
+      title={item.error ?? item.pausedReason ?? item.preview}
     >
       <button
         ref={sortable.setActivatorNodeRef}
@@ -99,7 +99,7 @@ function SortableQueueItem({
         {...sortable.attributes}
         {...sortable.listeners}
       >
-        {item.state === "failed" ? (
+        {item.state === "failed" || item.pausedReason ? (
           <CircleAlert size={12} aria-hidden="true" />
         ) : (
           <>
@@ -175,7 +175,6 @@ function SortableQueueItem({
 
 export function ComposerQueueTray({
   items,
-  pausedReason,
   isResponseInProgress,
   onEdit,
   onCancelEdit,
@@ -191,6 +190,7 @@ export function ComposerQueueTray({
     }),
   );
   const ids = items.map((item) => item.id);
+  const pausedReason = items.find((item) => item.pausedReason)?.pausedReason ?? null;
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     if (over === null || active.id === over.id) return;
@@ -207,10 +207,10 @@ export function ComposerQueueTray({
       data-queue-size={items.length}
       aria-label="Queued follow-ups"
     >
-      {pausedReason === "interrupted" ? (
+      {pausedReason !== null ? (
         <div className="codex-composer-queue-tray__heading">
           <CircleAlert size={13} aria-hidden="true" />
-          <span>Queue paused because you interrupted</span>
+          <span>{pausedReason}</span>
           <button
             className="codex-composer-queue-tray__resume"
             type="button"

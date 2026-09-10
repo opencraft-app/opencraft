@@ -14,8 +14,6 @@ import {
   agentActivityHeaderAccessibleLabel,
   deriveAgentActivityHeaderPresentation,
   deriveSubagentActivityGroupPresentation,
-  deriveTimelineLatestTurnActivityKey,
-  deriveTimelineLatestTurnPhase,
   extractToolCallContentParts,
   formatThreadHandoffStepLabel,
   formatCodexToolDuration,
@@ -66,7 +64,6 @@ import {
 } from "@opencraft/chat-core";
 import type { Context } from "@deepseek-ai/cordis";
 import { NativeChatDocument } from "@opencraft/chat-render-native";
-import { useTurnHistoryBackfill } from "@opencraft/timeline-react";
 import {
   TimelineBlockView,
   useWorkStatusLabel,
@@ -74,37 +71,9 @@ import {
   type TimelineBlockRendererRegistration,
 } from "@opencraft/timeline-render-react";
 import {
-  buildTurnLayout,
-  CODEX_TURN_VIRTUALIZER_CONFIG,
-  createInitialTurnFollowState,
-  createLatestTurnPlacementSnapshot,
-  createTurnFollowState,
-  createTurnViewportState,
-  createTurnWindowSlice,
-  distanceExcludingBottomPadding,
-  distanceFromBottomToCenterTurn,
-  distanceFromBottomToTopTurn,
-  getTurnGeometry,
-  isViewportPreservingTurnFollowMode,
-  maximumResponseSpacerHeightPx,
-  normalizeFollowRestorePosition,
-  normalizeInitialScrollDistance,
-  normalizeTurnViewportMetrics,
-  reconcileRenderedRangeForEntries,
-  reconcileTurnLayoutViewport,
-  resolveTimelineViewportPolicy,
-  reduceTurnFollowState,
-  serializeTurnRestoreState,
-  topOffsetForDistanceFromBottom,
-  updateTurnViewportState,
-  shouldFollowLatestTurn,
-  TurnScrollController,
   type TurnConversationScrollApi,
-  type TurnFollowRestoreState,
   type LatestTurnPlacementSnapshot,
-  type VirtualizedTurnRestoreState,
   type VirtualizedTurnListApi,
-  type VirtualizedTurnViewportState,
 } from "@opencraft/timeline-virtualizer";
 import {
   AlertCircle,
@@ -141,7 +110,7 @@ import {
   type WorkbenchInteractionAction,
 } from "@opencraft/workbench-runtime";
 import type { ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Animated,
   ActivityIndicator,
@@ -150,10 +119,7 @@ import {
   Image,
   Linking,
   type LayoutChangeEvent,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -163,6 +129,13 @@ import {
 } from "react-native";
 import Svg, { Circle as SvgCircle, Path as SvgPath } from "react-native-svg";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+
+import {
+  NativeResponsePositionedTurns,
+  type WorkbenchConversationRestoreSnapshot,
+} from "./native-response-positioned-turns";
+import { Button, IconButton } from "./ui/button";
+import { InteractiveSurface } from "./ui/interactive-surface";
 
 function JsonPreview({ value }: { value: unknown }) {
   if (value === null || value === undefined) return null;
@@ -179,6 +152,7 @@ const DEFAULT_TOOL_ACTIVITY_PRESENTERS = createDefaultToolActivityPresenterRegis
 const NativeToolActivityPresenterContext = createContext<ToolActivityPresenterRegistry>(DEFAULT_TOOL_ACTIVITY_PRESENTERS);
 const NativeConversationDetailContext = createContext<ConversationDetailLevel>("STEPS_COMMANDS");
 const NativeCopyTextContext = createContext<((text: string) => Promise<void>) | null>(null);
+const NativeLatestTurnFollowContentContext = createContext<((event: LayoutChangeEvent) => void) | null>(null);
 
 export type NativeToolCallContentRenderer = (
   block: Extract<TimelineBlock, { type: "tool-call" }>,
@@ -328,11 +302,11 @@ function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reas
   const { theme } = useUnistyles();
   return (
     <View style={styles.reasoning}>
-      <Pressable onPress={() => setOpen((value) => !value)} style={({ pressed }) => [styles.reasoningButton, pressed && styles.pressed]}>
+      <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>
         <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
         <Text numberOfLines={open ? undefined : 1} style={styles.reasoningTitle}>{block.summary || "Reasoning"}</Text>
         <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} />
-      </Pressable>
+      </InteractiveSurface>
       {open && block.detail ? <Text style={styles.reasoningDetail}>{block.detail}</Text> : null}
     </View>
   );
@@ -344,14 +318,14 @@ function NativeAutomaticApprovalReviewRow({ review }: { readonly review: Automat
   const warning = isAutomaticApprovalReviewWarning(review);
   return (
     <View style={styles.autoReview}>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((value) => !value)} style={({ pressed }) => [styles.autoReviewHeader, pressed && styles.pressed]}>
+      <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((value) => !value)} style={styles.autoReviewHeader}>
         <NativeCadencedText
           active={review.status === "inProgress"}
           numberOfLines={1}
           style={[styles.autoReviewTitle, warning && styles.autoReviewWarning]}
         >{formatAutomaticApprovalReviewTitle(review)}</NativeCadencedText>
         <ChevronRight color={warning ? theme.color.accent.negative : theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} />
-      </Pressable>
+      </InteractiveSurface>
       {open ? <Text style={styles.autoReviewSummary}>{formatAutomaticApprovalReviewSummary(review)}</Text> : null}
     </View>
   );
@@ -433,7 +407,7 @@ function PatchBlock({ block }: { block: Extract<TimelineBlock, { type: "patch" }
           <View style={styles.diffCounts}><Text style={styles.additions}>+{change.additions ?? 0}</Text><Text style={styles.deletions}>−{change.deletions ?? 0}</Text></View>
         </View>
       ))}
-      <Pressable style={({ pressed }) => [styles.viewChanges, pressed && styles.pressed]}><Check color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} /><Text style={styles.viewChangesText}>View changes</Text></Pressable>
+      <InteractiveSurface style={styles.viewChanges}><Check color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} /><Text style={styles.viewChangesText}>View changes</Text></InteractiveSurface>
       <NativeAutomaticApprovalReviewList reviews={block.automaticApprovalReviews} />
     </View>
   );
@@ -454,9 +428,9 @@ function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-
       <View style={styles.turnDiffHeader}>
         <View style={styles.turnDiffIcon}><FileCode2 color={theme.color.icon.secondary} size={24} strokeWidth={1.8} /></View>
         <View style={styles.turnDiffCopy}><Text numberOfLines={1} style={styles.turnDiffTitle}>{single === null ? `Edited ${block.files.length} files` : `Edited ${basename}`}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{block.additions}</Text><Text style={styles.deletions}>−{block.deletions}</Text></View></View>
-        <Pressable style={styles.turnDiffReview}><Text style={styles.turnDiffReviewText}>Review</Text></Pressable>
+        <Button size="sm" style={styles.turnDiffReview} textStyle={styles.turnDiffReviewText} variant="secondary">Review</Button>
       </View>
-      {block.files.length > 1 ? <View style={styles.turnDiffFiles}>{visible.map((file) => <Pressable key={file.path} style={styles.fileRow}><Text numberOfLines={1} style={styles.filePath}>{file.path}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{file.additions}</Text><Text style={styles.deletions}>−{file.deletions}</Text></View></Pressable>)}{block.files.length > 3 ? <Pressable onPress={() => setExpanded((value) => !value)} style={styles.viewChanges}><Text style={styles.viewChangesText}>{expanded ? "Collapse files" : `Show ${block.files.length - 3} more files`}</Text></Pressable> : null}</View> : null}
+      {block.files.length > 1 ? <View style={styles.turnDiffFiles}>{visible.map((file) => <InteractiveSurface key={file.path} style={styles.fileRow}><Text numberOfLines={1} style={styles.filePath}>{file.path}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{file.additions}</Text><Text style={styles.deletions}>−{file.deletions}</Text></View></InteractiveSurface>)}{block.files.length > 3 ? <InteractiveSurface onPress={() => setExpanded((value) => !value)} style={styles.viewChanges}><Text style={styles.viewChangesText}>{expanded ? "Collapse files" : `Show ${block.files.length - 3} more files`}</Text></InteractiveSurface> : null}</View> : null}
     </View>
   );
 }
@@ -469,12 +443,12 @@ function AutomationUpdateBlock({ block }: { readonly block: AutomationUpdateTime
   const presentation = presentAutomationUpdate(block);
   const canOpen = presentation.canOpen && openAutomation !== null;
   return (
-    <Pressable
+    <InteractiveSurface
       accessibilityLabel={[presentation.actionLabel, presentation.scheduleLabel, presentation.title].filter(Boolean).join(" · ")}
       accessibilityRole="button"
       disabled={!canOpen}
       onPress={() => openAutomation?.(block)}
-      style={({ pressed }) => [styles.automationUpdateCard, pressed && canOpen && styles.pressed]}
+      style={styles.automationUpdateCard}
     >
       <View style={styles.turnDiffIcon}><CalendarClock color={theme.color.icon.secondary} size={24} strokeWidth={1.8} /></View>
       <View style={styles.turnDiffCopy}>
@@ -482,7 +456,7 @@ function AutomationUpdateBlock({ block }: { readonly block: AutomationUpdateTime
         <Text numberOfLines={1} style={styles.automationUpdateSubtitle}>{presentation.subtitle}</Text>
       </View>
       {canOpen ? <View style={styles.turnDiffReview}><Text style={styles.turnDiffReviewText}>Open</Text></View> : null}
-    </Pressable>
+    </InteractiveSurface>
   );
 }
 
@@ -527,13 +501,13 @@ function NativeWebMcpToolActivity({ call }: { readonly call: WebMcpToolSurfaceCa
   const output = parseNativeWebMcpJson(call.outputJson, call.outputTruncated);
   return (
     <View style={styles.toolCard}>
-      <Pressable onPress={() => setOpen((value) => !value)} style={({ pressed }) => [styles.toolHeader, pressed && styles.pressed]}>
+      <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.toolHeader}>
         <View style={styles.toolTitleRow}>
           <Globe2 color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
           <Text numberOfLines={2} style={styles.toolTitle}>{summary}</Text>
         </View>
         <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} />
-      </Pressable>
+      </InteractiveSurface>
       {open ? <View style={styles.webMcpBody}>
         <Text style={styles.codeLabel}>{call.inputTruncated ? "Tool (input truncated)" : "Tool"}</Text>
         <JsonPreview value={tool} />
@@ -552,12 +526,12 @@ function NativeCreatedThreadToolCard({ result }: {
   const { theme } = useUnistyles();
   const openThread = useContext(NativeThreadNavigationContext);
   return (
-    <Pressable
+    <InteractiveSurface
       accessibilityLabel="Open chat"
       accessibilityRole="button"
       disabled={openThread === null}
       onPress={() => openThread?.(result.threadId, result.title)}
-      style={({ pressed }) => [styles.createdThreadCard, pressed && styles.pressed]}
+      style={styles.createdThreadCard}
     >
       <View style={styles.createdThreadIcon}>
         <MessageSquare color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
@@ -569,7 +543,7 @@ function NativeCreatedThreadToolCard({ result }: {
         <Text style={styles.createdThreadActionText}>Open chat</Text>
         <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} />
       </View>
-    </Pressable>
+    </InteractiveSurface>
   );
 }
 
@@ -587,16 +561,16 @@ function NativeCodexAppThreadToolRow({ block, presentation }: {
   if (handoff !== null && handoffSteps.length > 0) {
     return (
       <View style={styles.handoffTool}>
-        <Pressable
+        <InteractiveSurface
           accessibilityRole="button"
           accessibilityState={{ expanded: handoffOpen }}
           onPress={() => setHandoffOpen(!handoffOpen)}
-          style={({ pressed }) => [styles.codexAppToolRow, pressed && styles.pressed]}
+          style={styles.codexAppToolRow}
         >
           <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
           <NativeCadencedText active={presentation.state === "running"} numberOfLines={1} style={styles.codexAppToolTitle}>{presentation.summary}</NativeCadencedText>
           <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={handoffOpen ? styles.chevronOpen : undefined} />
-        </Pressable>
+        </InteractiveSurface>
         {handoffOpen ? <View style={styles.handoffSteps}>
           {handoffSteps.map((step) => {
             const color = step.status === "failed" ? theme.color.accent.negative
@@ -617,18 +591,18 @@ function NativeCodexAppThreadToolRow({ block, presentation }: {
     );
   }
   return (
-    <Pressable
+    <InteractiveSurface
       accessibilityLabel={canOpen ? `Open ${target.displayName.toLocaleLowerCase()}` : undefined}
       accessibilityRole={canOpen ? "button" : undefined}
       disabled={!canOpen}
       onPress={() => {
         if (target !== null) openThread?.(target.threadId, target.displayName);
       }}
-      style={({ pressed }) => [styles.codexAppToolRow, pressed && styles.pressed]}
+      style={styles.codexAppToolRow}
     >
       <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
       <NativeCadencedText active={presentation.state === "running"} numberOfLines={1} style={styles.codexAppToolTitle}>{presentation.summary}</NativeCadencedText>
-    </Pressable>
+    </InteractiveSurface>
   );
 }
 
@@ -646,19 +620,19 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
   const [open, setOpen] = useState(false);
   return (
     <View style={styles.imageViewActivity}>
-      <Pressable
+      <InteractiveSurface
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         disabled={paths.length === 0}
         onPress={() => setOpen((value) => !value)}
-        style={({ pressed }) => [styles.toolHeader, pressed && styles.pressed]}
+        style={styles.toolHeader}
       >
         <View style={styles.toolTitleRow}>
           <ImageIcon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
           <Text numberOfLines={1} style={styles.imageViewSummary}>{presentation.summary}</Text>
         </View>
         {paths.length > 0 ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-      </Pressable>
+      </InteractiveSurface>
       {open ? (
         <ScrollView
           contentContainerStyle={styles.imageViewStrip}
@@ -668,17 +642,17 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
           {paths.map((path, index) => {
             const source = host.resolveSource?.(path) ?? defaultNativeImageSource(path);
             return (
-              <Pressable
+              <InteractiveSurface
                 accessibilityLabel={`Open inspected image ${index + 1}`}
                 accessibilityRole="button"
                 key={`${path}:${index}`}
                 onPress={() => host.open?.(path)}
-                style={({ pressed }) => [styles.imageViewPreview, pressed && styles.pressed]}
+                style={styles.imageViewPreview}
               >
                 {source === null
                   ? <ImageIcon color={theme.color.icon.tertiary} size={24} strokeWidth={1.6} />
                   : <Image accessibilityLabel="Inspected image" resizeMode="cover" source={{ uri: source }} style={styles.imageViewImage} />}
-              </Pressable>
+              </InteractiveSurface>
             );
           })}
         </ScrollView>
@@ -697,7 +671,7 @@ function NativeGeneratedImageBlock({ block }: { readonly block: Extract<Timeline
     return <View accessibilityLabel="Generating image" accessibilityRole="progressbar" style={styles.generatedImagePlaceholder} />;
   }
   return (
-    <Pressable
+    <InteractiveSurface
       accessibilityLabel="Generated image 1"
       accessibilityRole="imagebutton"
       disabled={host.open === null}
@@ -715,7 +689,7 @@ function NativeGeneratedImageBlock({ block }: { readonly block: Extract<Timeline
         source={{ uri: source }}
         style={[styles.generatedImage, { aspectRatio: aspectRatio ?? 1 }]}
       />
-    </Pressable>
+    </InteractiveSurface>
   );
 }
 
@@ -746,7 +720,7 @@ function ToolCallBlock({ block }: { readonly block: Extract<TimelineBlock, { typ
   return (
     <>
       <View style={styles.toolCard}>
-      <Pressable disabled={!canExpand} onPress={() => setOpen(!open)} style={({ pressed }) => [styles.toolHeader, pressed && styles.pressed]}>
+      <InteractiveSurface disabled={!canExpand} onPress={() => setOpen(!open)} style={styles.toolHeader}>
         <View style={styles.toolTitleRow}>
           {icon}
           <NativeCadencedText active={presentation.state === "running"} numberOfLines={2} style={styles.toolTitle}>{presentation.summary}{presentation.detail ? ` ${presentation.detail}` : ""}</NativeCadencedText>
@@ -755,7 +729,7 @@ function ToolCallBlock({ block }: { readonly block: Extract<TimelineBlock, { typ
           {block.automaticApprovalReviews.length > 0 ? <View accessibilityLabel="Automatic approval review" accessible style={styles.toolAccessory}><ShieldCheck color={theme.color.icon.tertiary} size={16} strokeWidth={1.8} /></View> : null}
           {canExpand ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
         </View> : null}
-      </Pressable>
+      </InteractiveSurface>
       {open ? <View style={styles.toolParts}>
         {hasCustomContent
           ? customContent
@@ -778,13 +752,13 @@ function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRende
   const [open, setOpen] = useState(unit.blocks.some((block) => block.status === "running" || block.status === "pending"));
   return (
     <View style={styles.subagentActivity}>
-      <Pressable disabled={!presentation.expandable} onPress={() => setOpen((value) => !value)} style={({ pressed }) => [styles.subagentHeader, pressed && styles.pressed]}>
+      <InteractiveSurface disabled={!presentation.expandable} onPress={() => setOpen((value) => !value)} style={styles.subagentHeader}>
         <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
         <View style={styles.subagentChips}>{presentation.agents.slice(0, 3).map((agent) => <View key={agent.threadId} style={styles.subagentChip}><Text style={styles.subagentAvatar}>{agent.displayName.slice(0, 1).toUpperCase()}</Text><Text numberOfLines={1} style={styles.subagentName}>{agent.displayName}</Text></View>)}</View>
         {presentation.agents.length > 3 ? <Text style={styles.subagentStatus}>{presentation.agents.length - 3} more</Text> : null}
         <Text style={styles.subagentStatus}>{presentation.groupStatusLabel}</Text>
         {presentation.expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-      </Pressable>
+      </InteractiveSurface>
       {open ? <View style={styles.subagentRows}>{presentation.agents.map((agent) => <View key={agent.threadId} style={styles.subagentRow}><Text style={styles.subagentName}>{agent.displayName}</Text><Text style={styles.subagentStatus}>{agent.statusLabel}</Text>{agent.statusMessage ? <Text style={styles.semanticBody}>{agent.statusMessage}</Text> : null}</View>)}</View> : null}
     </View>
   );
@@ -807,11 +781,11 @@ function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupC
   const hasExpandableContent = visibleBlocks.length > 0;
   return (
     <View style={styles.agentActivity}>
-      <Pressable disabled={!hasExpandableContent} onPress={() => setOpen((value) => !value)} style={({ pressed }) => [styles.reasoningButton, pressed && styles.pressed]}>
+      <InteractiveSurface disabled={!hasExpandableContent} onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>
         {header.icon === null ? null : nativeActivityIcon(header.icon, theme.color.icon.secondary, theme.metrics.control.icon)}
         <Text numberOfLines={1} style={styles.reasoningTitle}>{agentActivityHeaderAccessibleLabel(header.summary)}</Text>
         {hasExpandableContent ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-      </Pressable>
+      </InteractiveSurface>
       {open && hasExpandableContent ? (
         <View style={styles.agentActivityRows}>
           {visibleBlocks.map((block) => <Block block={block} key={block.id} />)}
@@ -882,14 +856,14 @@ function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit 
   return <View style={styles.activityContent}>
     {layout.preToggleUnits.length > 0 ? <NativeActivityContent units={layout.preToggleUnits} /> : null}
     {layout.showToggle ? <View>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: !layout.isCollapsed }}
+      <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded: !layout.isCollapsed }}
         onPress={() => setPersistedCollapsed(!layout.isCollapsed)} style={styles.workStatusButton}>
         {layout.workedForItem !== null ? <NativeWorkStatusLabel item={layout.workedForItem} />
           : <Text style={styles.workStatusLabel}>{unit.workedDurationMs !== null
             ? `Worked for ${formatWorkDuration(unit.workedDurationMs)}`
             : `${layout.collapsedItemCount} previous message${layout.collapsedItemCount === 1 ? "" : "s"}`}</Text>}
         <ChevronRight size={12} color={theme.color.icon.tertiary} style={!layout.isCollapsed ? styles.chevronOpen : undefined} />
-      </Pressable>
+      </InteractiveSurface>
       <View style={styles.workStatusRuleRow}><View style={styles.workStatusRule} /></View>
     </View> : null}
     {layout.persistentUnits.length > 0 ? <NativeActivityContent units={layout.persistentUnits} /> : null}
@@ -939,10 +913,10 @@ function NativeApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: 
       {presentation.description ? <Text style={styles.semanticBody}>{presentation.description}</Text> : null}
       {presentation.details.map((detail) => <View key={detail.label} style={styles.approvalDetail}><Text style={styles.semanticStatus}>{detail.label}</Text><Text selectable style={styles.semanticBody}>{detail.value}</Text></View>)}
       {block.state === "pending" ? <View style={styles.interactionActions}>
-        {presentation.leadingApproval ? <Pressable disabled={submitting} onPress={() => submit({ type: "approve-network-host" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>{presentation.leadingApproval.label}</Text></Pressable> : null}
-        {presentation.allowSession && presentation.scopedApproval !== null && scopedAction !== null ? <Pressable disabled={submitting} onPress={() => submit(scopedAction)} style={styles.interactionButton}><Text style={styles.interactionButtonText}>{presentation.scopedApproval.label}</Text></Pressable> : null}
-        <Pressable disabled={submitting} onPress={() => submit({ type: "decline" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Deny</Text></Pressable>
-        <Pressable disabled={submitting} onPress={() => submit({ type: "approve-once" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>{presentation.approveLabel}</Text></Pressable>
+        {presentation.leadingApproval ? <Button disabled={submitting} onPress={() => submit({ type: "approve-network-host" })} size="sm" variant="secondary">{presentation.leadingApproval.label}</Button> : null}
+        {presentation.allowSession && presentation.scopedApproval !== null && scopedAction !== null ? <Button disabled={submitting} onPress={() => submit(scopedAction)} size="sm" variant="secondary">{presentation.scopedApproval.label}</Button> : null}
+        <Button disabled={submitting} onPress={() => submit({ type: "decline" })} size="sm" variant="secondary">Deny</Button>
+        <Button disabled={submitting} onPress={() => submit({ type: "approve-once" })} size="sm">{presentation.approveLabel}</Button>
       </View> : null}
     </SemanticCard>
   );
@@ -950,6 +924,7 @@ function NativeApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: 
 
 function NativeQuestionBlock({ block }: { block: Extract<TimelineBlock, { type: "question" }> }) {
   const respond = useContext(NativeInteractionContext);
+  const { theme } = useUnistyles();
   const [questionIndex, setQuestionIndex] = useState(0);
   const [drafts, setDrafts] = useState<readonly UserInputQuestionDraft[]>(() => createUserInputQuestionDrafts(block.questions));
   const [submitting, setSubmitting] = useState(false);
@@ -985,14 +960,16 @@ function NativeQuestionBlock({ block }: { block: Extract<TimelineBlock, { type: 
       <View style={styles.questionHeader}>
         {question.header ? <Text style={styles.semanticBody}>{question.prompt}</Text> : <View />}
         {block.questions.length > 1 ? <View style={styles.questionPagination}>
-          <Pressable disabled={questionIndex === 0} onPress={() => setQuestionIndex((current) => Math.max(0, current - 1))}><ChevronLeft size={15} /></Pressable>
+          <IconButton accessibilityLabel="Previous question" disabled={questionIndex === 0} onPress={() => setQuestionIndex((current) => Math.max(0, current - 1))} size="sm"><ChevronLeft size={15} /></IconButton>
           <Text style={styles.semanticStatus}>{questionIndex + 1} of {block.questions.length}</Text>
-          <Pressable disabled={isLast} onPress={() => setQuestionIndex((current) => Math.min(block.questions.length - 1, current + 1))}><ChevronRight size={15} /></Pressable>
+          <IconButton accessibilityLabel="Next question" disabled={isLast} onPress={() => setQuestionIndex((current) => Math.min(block.questions.length - 1, current + 1))} size="sm"><ChevronRight size={15} /></IconButton>
         </View> : null}
       </View>
       {block.state === "pending" ? <>
         <View style={styles.questionOptions}>{question.options.map((option, index) => (
-          <Pressable
+          <InteractiveSurface
+            accessibilityRole="radio"
+            accessibilityState={{ checked: draft?.selectedOptionId === option.id }}
             key={option.id}
             onPress={() => complete(updateDraft({ selectedOptionId: option.id, freeformText: draft?.freeformText ?? "" }))}
             style={[styles.questionOption, draft?.selectedOptionId === option.id && styles.questionOptionSelected]}
@@ -1000,20 +977,20 @@ function NativeQuestionBlock({ block }: { block: Extract<TimelineBlock, { type: 
             <Text style={styles.questionOptionKey}>{index + 1}</Text>
             <View style={styles.questionOptionCopy}><Text style={styles.interactionButtonText}>{option.label}</Text>{option.description ? <Text style={styles.semanticStatus}>{option.description}</Text> : null}</View>
             {draft?.selectedOptionId === option.id ? <Check size={15} /> : null}
-          </Pressable>
+          </InteractiveSurface>
         ))}</View>
         {question.options.length === 0 || question.isOther ? <TextInput
           onChangeText={(value) => updateDraft({ selectedOptionId: null, freeformText: value })}
           onSubmitEditing={() => complete(drafts)}
           placeholder={question.options.length > 0 ? "Other" : "Type here"}
-          placeholderTextColor="#8e8e93"
+          placeholderTextColor={theme.color.text.tertiary}
           secureTextEntry={question.isSecret}
           style={styles.questionInput}
           value={draft?.freeformText ?? ""}
         /> : null}
         <View style={styles.interactionActions}>
-          <Pressable disabled={submitting} onPress={() => { if (respond !== null) void respond(block.requestId, { type: "cancel" }); }} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Skip</Text></Pressable>
-          <Pressable disabled={submitting} onPress={() => complete(drafts)} style={styles.interactionButton}><Text style={styles.interactionButtonText}>{isLast ? "Submit" : "Continue"}</Text></Pressable>
+          <Button disabled={submitting} onPress={() => { if (respond !== null) void respond(block.requestId, { type: "cancel" }); }} size="sm" variant="ghost">Skip</Button>
+          <Button disabled={submitting} onPress={() => complete(drafts)} size="sm">{isLast ? "Submit" : "Continue"}</Button>
         </View>
       </> : null}
     </SemanticCard>
@@ -1049,12 +1026,12 @@ function NativeOptionPickerBlock({ block }: { block: Extract<TimelineBlock, { ty
     <View accessibilityLabel={block.question} style={styles.optionPicker}>
       <View style={styles.optionPickerHeader}>
         <Text style={styles.optionPickerQuestion}>{block.question}</Text>
-        <Pressable accessibilityLabel="Dismiss" disabled={submitting} hitSlop={8} onPress={() => reply("dismiss")} style={styles.optionPickerDismiss}><X color={theme.color.icon.secondary} size={12} /></Pressable>
+        <IconButton accessibilityLabel="Dismiss" disabled={submitting} onPress={() => reply("dismiss")} size="sm"><X color={theme.color.icon.secondary} size={12} /></IconButton>
       </View>
       <View style={styles.optionPickerChoices}>
         {block.options.map((option) => {
           const selected = selectedOptions.includes(option.label);
-          return <Pressable accessibilityRole={block.allowMultiple ? "checkbox" : "radio"} accessibilityState={{ checked: selected }} disabled={submitting} key={option.id} onPress={() => toggle(option.label)} style={[styles.optionPickerChoice, selected && styles.optionPickerChoiceSelected]}><Text style={styles.optionPickerChoiceText}>{option.label}</Text></Pressable>;
+          return <InteractiveSurface accessibilityRole={block.allowMultiple ? "checkbox" : "radio"} accessibilityState={{ checked: selected }} disabled={submitting} key={option.id} onPress={() => toggle(option.label)} style={[styles.optionPickerChoice, selected && styles.optionPickerChoiceSelected]}><Text style={styles.optionPickerChoiceText}>{option.label}</Text></InteractiveSurface>;
         })}
         <TextInput
           accessibilityLabel="Something else"
@@ -1069,8 +1046,8 @@ function NativeOptionPickerBlock({ block }: { block: Extract<TimelineBlock, { ty
         />
       </View>
       <View style={styles.optionPickerFooter}>
-        <Pressable disabled={submitting} onPress={() => reply("skip")} style={styles.optionPickerSkip}><Text style={styles.optionPickerSkipText}>{block.skipLabel ?? "Skip"}</Text></Pressable>
-        <Pressable disabled={submitting || !hasAnswer} onPress={() => reply("submit")} style={[styles.optionPickerSubmit, (submitting || !hasAnswer) && styles.optionPickerDisabled]}><Text style={styles.optionPickerSubmitText}>{block.submitLabel ?? "Submit"}  ↵</Text></Pressable>
+        <Button disabled={submitting} onPress={() => reply("skip")} size="sm" variant="ghost">{block.skipLabel ?? "Skip"}</Button>
+        <Button disabled={submitting || !hasAnswer} onPress={() => reply("submit")} size="sm">{`${block.submitLabel ?? "Submit"}  ↵`}</Button>
       </View>
     </View>
   );
@@ -1092,12 +1069,12 @@ function NativeSetupRolePickerBlock({ block }: { block: Extract<TimelineBlock, {
     void respond(block.requestId, { type: "submit-setup-role", action, selectedRoles: action === "submit" ? selected : [] }).finally(() => setSubmitting(false));
   };
   return <View style={styles.optionPicker}>
-    <View style={styles.optionPickerHeader}><Text style={styles.optionPickerQuestion}>What type of work do you do?</Text><Pressable accessibilityLabel="Dismiss" onPress={() => reply("dismiss")} style={styles.optionPickerDismiss}><X size={12} /></Pressable></View>
+    <View style={styles.optionPickerHeader}><Text style={styles.optionPickerQuestion}>What type of work do you do?</Text><IconButton accessibilityLabel="Dismiss" onPress={() => reply("dismiss")} size="sm"><X size={12} /></IconButton></View>
     <View style={styles.optionPickerChoices}>{codexSetupRoleOptions.map((option) => {
       const checked = selected.includes(option.id);
-      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} disabled={submitting} key={option.id} onPress={() => setSelected((current) => current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id])} style={[styles.optionPickerChoice, checked && styles.optionPickerChoiceSelected]}><Text style={styles.optionPickerChoiceText}>{option.label}</Text></Pressable>;
+      return <InteractiveSurface accessibilityRole="checkbox" accessibilityState={{ checked }} disabled={submitting} key={option.id} onPress={() => setSelected((current) => current.includes(option.id) ? current.filter((id) => id !== option.id) : [...current, option.id])} style={[styles.optionPickerChoice, checked && styles.optionPickerChoiceSelected]}><Text style={styles.optionPickerChoiceText}>{option.label}</Text></InteractiveSurface>;
     })}</View>
-    <View style={styles.optionPickerFooter}><Pressable disabled={submitting || selected.length === 0} onPress={() => reply("submit")} style={[styles.optionPickerSubmit, (submitting || selected.length === 0) && styles.optionPickerDisabled]}><Text style={styles.optionPickerSubmitText}>Continue  ↵</Text></Pressable></View>
+    <View style={styles.optionPickerFooter}><Button disabled={submitting || selected.length === 0} onPress={() => reply("submit")} size="sm">Continue  ↵</Button></View>
   </View>;
 }
 
@@ -1114,10 +1091,10 @@ function NativeSetupTaskPickerBlock({ block }: { block: Extract<TimelineBlock, {
     void respond(block.requestId, { type: "submit-setup-task", action, answers: action === "submit" && answer ? { first_task: [answer] } : {} }).finally(() => setSubmitting(false));
   };
   return <View style={styles.setupTask}>
-    <View style={styles.optionPickerHeader}><View style={styles.setupTaskHeaderCopy}><Text style={styles.semanticStatus}>First task</Text><Text style={styles.optionPickerQuestion}>What's something we can knock off your list today?</Text></View><Pressable accessibilityLabel="Dismiss" onPress={() => reply("dismiss")} style={styles.optionPickerDismiss}><X size={12} /></Pressable></View>
-    <View style={styles.questionOptions}>{codexSetupTaskOptions.map((option) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: selected === option.label }} key={option.id} onPress={() => { setSelected(option.label); setOther(""); }} style={[styles.questionOption, selected === option.label && styles.questionOptionSelected]}><View style={styles.questionOptionCopy}><Text style={styles.interactionButtonText}>{option.label}</Text><Text style={styles.semanticStatus}>{option.description}</Text></View>{selected === option.label ? <Check size={14} /> : null}</Pressable>)}</View>
+    <View style={styles.optionPickerHeader}><View style={styles.setupTaskHeaderCopy}><Text style={styles.semanticStatus}>First task</Text><Text style={styles.optionPickerQuestion}>What's something we can knock off your list today?</Text></View><IconButton accessibilityLabel="Dismiss" onPress={() => reply("dismiss")} size="sm"><X size={12} /></IconButton></View>
+    <View style={styles.questionOptions}>{codexSetupTaskOptions.map((option) => <InteractiveSurface accessibilityRole="radio" accessibilityState={{ checked: selected === option.label }} key={option.id} onPress={() => { setSelected(option.label); setOther(""); }} style={[styles.questionOption, selected === option.label && styles.questionOptionSelected]}><View style={styles.questionOptionCopy}><Text style={styles.interactionButtonText}>{option.label}</Text><Text style={styles.semanticStatus}>{option.description}</Text></View>{selected === option.label ? <Check size={14} /> : null}</InteractiveSurface>)}</View>
     <TextInput onChangeText={(value) => { setOther(value); setSelected(null); }} placeholder="Something else" style={styles.questionInput} value={other} />
-    <View style={styles.optionPickerFooter}><Pressable disabled={submitting} onPress={() => reply("skip")} style={styles.optionPickerSkip}><Text style={styles.optionPickerSkipText}>Skip</Text></Pressable><Pressable disabled={submitting || !answer} onPress={() => reply("submit")} style={[styles.optionPickerSubmit, (submitting || !answer) && styles.optionPickerDisabled]}><Text style={styles.optionPickerSubmitText}>Continue  ↵</Text></Pressable></View>
+    <View style={styles.optionPickerFooter}><Button disabled={submitting} onPress={() => reply("skip")} size="sm" variant="ghost">Skip</Button><Button disabled={submitting || !answer} onPress={() => reply("submit")} size="sm">Continue  ↵</Button></View>
   </View>;
 }
 
@@ -1146,13 +1123,13 @@ function NativeSetupContextPickerBlock({ block }: { block: Extract<TimelineBlock
     } finally { setConnecting(null); }
   };
   return <View style={styles.setupContext}>
-    <View style={styles.optionPickerHeader}><Text style={styles.optionPickerQuestion}>Where can we pull context from?</Text><Pressable accessibilityLabel="Dismiss" onPress={() => reply("dismiss")} style={styles.optionPickerDismiss}><X size={12} /></Pressable></View>
+    <View style={styles.optionPickerHeader}><Text style={styles.optionPickerQuestion}>Where can we pull context from?</Text><IconButton accessibilityLabel="Dismiss" onPress={() => reply("dismiss")} size="sm"><X size={12} /></IconButton></View>
     <ScrollView style={styles.setupContextList}>{catalog.sources.map((source) => {
       const checked = selected.includes(source.id);
-      return <Pressable disabled={submitting || connecting === source.id || !source.connected && (!source.available || catalog.connect === null)} key={source.id} onPress={() => void choose(source)} style={[styles.setupContextRow, checked && styles.questionOptionSelected]}><View style={styles.setupContextLogo}><Text style={styles.semanticStatus}>{source.label.slice(0, 1)}</Text></View><View style={styles.questionOptionCopy}><Text style={styles.interactionButtonText}>{source.label}</Text><Text numberOfLines={1} style={styles.semanticStatus}>{source.description}</Text></View><Text style={styles.semanticStatus}>{connecting === source.id ? "Connecting…" : checked || source.connected ? "Connected" : "Connect"}</Text>{checked ? <Check size={14} /> : null}</Pressable>;
+      return <InteractiveSurface disabled={submitting || connecting === source.id || !source.connected && (!source.available || catalog.connect === null)} key={source.id} onPress={() => void choose(source)} style={[styles.setupContextRow, checked && styles.questionOptionSelected]}><View style={styles.setupContextLogo}><Text style={styles.semanticStatus}>{source.label.slice(0, 1)}</Text></View><View style={styles.questionOptionCopy}><Text style={styles.interactionButtonText}>{source.label}</Text><Text numberOfLines={1} style={styles.semanticStatus}>{source.description}</Text></View><Text style={styles.semanticStatus}>{connecting === source.id ? "Connecting…" : checked || source.connected ? "Connected" : "Connect"}</Text>{checked ? <Check size={14} /> : null}</InteractiveSurface>;
     })}</ScrollView>
-    <Pressable disabled={catalog.loading} style={styles.setupBrowseAll}><Text style={styles.interactionButtonText}>Browse all</Text><Search size={12} /></Pressable>
-    <View style={styles.optionPickerFooter}><Pressable disabled={submitting} onPress={() => reply("skip")} style={styles.optionPickerSkip}><Text style={styles.optionPickerSkipText}>Skip</Text></Pressable><Pressable disabled={submitting || catalog.loading} onPress={() => reply("continue")} style={styles.optionPickerSubmit}><Text style={styles.optionPickerSubmitText}>Continue  ↵</Text></Pressable></View>
+    <Button disabled={catalog.loading} size="sm" style={styles.setupBrowseAll} variant="ghost"><Text style={styles.interactionButtonText}>Browse all</Text><Search size={12} /></Button>
+    <View style={styles.optionPickerFooter}><Button disabled={submitting} onPress={() => reply("skip")} size="sm" variant="ghost">Skip</Button><Button disabled={submitting || catalog.loading} onPress={() => reply("continue")} size="sm">Continue  ↵</Button></View>
   </View>;
 }
 
@@ -1200,16 +1177,16 @@ function NativeMcpToolApprovalBlock({ block }: { block: Extract<TimelineBlock, {
           <Text numberOfLines={1} style={styles.mcpApprovalParamLabel}>{entry.displayName}</Text>
           <View style={styles.mcpApprovalParamValue}>
             <Text numberOfLines={!open && value.kind === "text" && expandable ? 4 : undefined} selectable style={styles.semanticBody}>{open ? value.expandedText : value.previewText}</Text>
-            {expandable ? <Pressable onPress={() => setExpanded((current) => ({ ...current, [key]: !open }))}><Text style={styles.semanticStatus}>{open ? "Collapse" : "Expand"}</Text></Pressable> : null}
+            {expandable ? <Button onPress={() => setExpanded((current) => ({ ...current, [key]: !open }))} size="sm" variant="link">{open ? "Collapse" : "Expand"}</Button> : null}
           </View>
         </View>;
       })}</View> : null}
-      {entries.length > 4 ? <Pressable onPress={() => setShowAll((value) => !value)}><Text style={styles.semanticStatus}>{showAll ? "Show fewer items" : `Show ${entries.length - 4} more items`}</Text></Pressable> : null}
+      {entries.length > 4 ? <Button onPress={() => setShowAll((value) => !value)} size="sm" variant="link">{showAll ? "Show fewer items" : `Show ${entries.length - 4} more items`}</Button> : null}
       {block.state === "pending" ? <View style={styles.interactionActions}>
-        <Pressable disabled={submitting} onPress={() => submit({ type: "decline" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Deny</Text></Pressable>
-        <Pressable disabled={submitting} onPress={() => submit({ type: "accept-elicitation" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Allow once</Text></Pressable>
-        {block.persist.includes("session") ? <Pressable disabled={submitting} onPress={() => submit({ type: "accept-elicitation", persist: "session" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Allow this conversation</Text></Pressable> : null}
-        {block.persist.includes("always") ? <Pressable disabled={submitting} onPress={() => submit({ type: "accept-elicitation", persist: "always" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Always allow</Text></Pressable> : null}
+        <Button disabled={submitting} onPress={() => submit({ type: "decline" })} size="sm" variant="secondary">Deny</Button>
+        <Button disabled={submitting} onPress={() => submit({ type: "accept-elicitation" })} size="sm">Allow once</Button>
+        {block.persist.includes("session") ? <Button disabled={submitting} onPress={() => submit({ type: "accept-elicitation", persist: "session" })} size="sm" variant="secondary">Allow this conversation</Button> : null}
+        {block.persist.includes("always") ? <Button disabled={submitting} onPress={() => submit({ type: "accept-elicitation", persist: "always" })} size="sm" variant="secondary">Always allow</Button> : null}
       </View> : null}
     </SemanticCard>
   );
@@ -1242,10 +1219,10 @@ function NativeToolSuggestionBlock({ block }: { block: Extract<TimelineBlock, { 
       <Text style={styles.semanticBody}>{suggestion.suggestReason}</Text>
       {block.subtitle ? <Text style={styles.semanticStatus}>{block.subtitle}</Text> : null}
       {block.state === "pending" ? <View style={styles.externalToolFooter}>
-        {suggestion.persistAlways ? <Pressable onPress={() => setPersistChecked((value) => !value)} style={styles.externalToolPersist}><View style={[styles.externalToolCheckbox, persistChecked && styles.externalToolCheckboxChecked]}>{persistChecked ? <Check size={11} /> : null}</View><Text style={styles.semanticStatus}>Don't show again</Text></Pressable> : <View />}
+        {suggestion.persistAlways ? <InteractiveSurface accessibilityRole="checkbox" accessibilityState={{ checked: persistChecked }} onPress={() => setPersistChecked((value) => !value)} style={styles.externalToolPersist}><View style={[styles.externalToolCheckbox, persistChecked && styles.externalToolCheckboxChecked]}>{persistChecked ? <Check size={11} /> : null}</View><Text style={styles.semanticStatus}>Don't show again</Text></InteractiveSurface> : <View />}
         <View style={styles.interactionActions}>
-          <Pressable disabled={submitting} onPress={() => submit({ type: "decline", ...(persistChecked && suggestion.persistAlways ? { persist: "always" as const } : {}) })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Not now</Text></Pressable>
-          <Pressable disabled={submitting || !setupStarted && suggestion.installUrl === null} onPress={primary} style={styles.interactionButton}><Text style={styles.interactionButtonText}>{setupStarted ? "Continue" : suggestion.suggestType === "install" ? "Install" : "Enable"}</Text></Pressable>
+          <Button disabled={submitting} onPress={() => submit({ type: "decline", ...(persistChecked && suggestion.persistAlways ? { persist: "always" as const } : {}) })} size="sm" variant="ghost">Not now</Button>
+          <Button disabled={submitting || !setupStarted && suggestion.installUrl === null} onPress={primary} size="sm">{setupStarted ? "Continue" : suggestion.suggestType === "install" ? "Install" : "Enable"}</Button>
         </View>
       </View> : null}
     </SemanticCard>
@@ -1282,8 +1259,8 @@ function NativeConnectorAuthBlock({ block }: { block: Extract<TimelineBlock, { t
       <Text style={styles.semanticBody}>{block.message}</Text>
       {auth.requestedScopes.length > 0 ? <Text style={styles.semanticStatus}>{auth.requestedScopes.join(" · ")}</Text> : null}
       {block.state === "pending" ? <View style={styles.interactionActions}>
-        <Pressable disabled={submitting} onPress={() => submit({ type: "decline" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Not now</Text></Pressable>
-        <Pressable disabled={submitting} onPress={primary} style={styles.interactionButton}><Text style={styles.interactionButtonText}>{primaryLabel}</Text></Pressable>
+        <Button disabled={submitting} onPress={() => submit({ type: "decline" })} size="sm" variant="ghost">Not now</Button>
+        <Button disabled={submitting} onPress={primary} size="sm">{primaryLabel}</Button>
       </View> : null}
     </SemanticCard>
   );
@@ -1316,22 +1293,22 @@ function NativeMcpFormElicitationBlock({ block }: { block: Extract<TimelineBlock
   return (
     <SemanticCard title={block.serverName === null ? "Additional information required" : `${block.serverName} needs more information`} status={submitting ? "submitting" : block.state}>
       <Text style={styles.semanticBody}>{block.message}</Text>
-      {block.state === "pending" && block.mode === "url" ? <Pressable disabled={block.url === null} onPress={() => { if (block.url !== null && /^https?:\/\//u.test(block.url)) void Linking.openURL(block.url); }} style={styles.elicitationUrl}><Text style={styles.elicitationUrlText}>{block.url ?? "No URL supplied"}</Text></Pressable> : null}
+      {block.state === "pending" && block.mode === "url" ? <InteractiveSurface disabled={block.url === null} onPress={() => { if (block.url !== null && /^https?:\/\//u.test(block.url)) void Linking.openURL(block.url); }} style={styles.elicitationUrl}><Text style={styles.elicitationUrlText}>{block.url ?? "No URL supplied"}</Text></InteractiveSurface> : null}
       {block.state === "pending" && block.mode !== "url" ? <View style={styles.elicitationForm}>{fields.map((field) => <View key={field.name} style={styles.elicitationField}>
         <View style={styles.elicitationLabel}><Text style={styles.interactionButtonText}>{field.title}</Text>{field.required ? <Text style={styles.semanticStatus}>Required</Text> : null}</View>
         {field.description ? <Text style={styles.semanticStatus}>{field.description}</Text> : null}
-        {field.kind === "boolean" ? <Pressable onPress={() => update(field.name, draft[field.name] !== true)} style={[styles.interactionButton, draft[field.name] === true && styles.questionOptionSelected]}><Text style={styles.interactionButtonText}>{draft[field.name] === true ? "Enabled" : "Disabled"}</Text></Pressable>
+        {field.kind === "boolean" ? <InteractiveSurface accessibilityRole="checkbox" accessibilityState={{ checked: draft[field.name] === true }} onPress={() => update(field.name, draft[field.name] !== true)} style={[styles.interactionButton, draft[field.name] === true && styles.questionOptionSelected]}><Text style={styles.interactionButtonText}>{draft[field.name] === true ? "Enabled" : "Disabled"}</Text></InteractiveSurface>
           : field.kind === "select" || field.kind === "multi-select" ? <View style={styles.questionOptions}>{field.options.map((option) => {
               const values = Array.isArray(draft[field.name]) ? draft[field.name] as readonly string[] : [];
               const selected = field.kind === "multi-select" ? values.includes(option.value) : draft[field.name] === option.value;
-              return <Pressable key={option.value} onPress={() => update(field.name, field.kind === "multi-select" ? selected ? values.filter((value) => value !== option.value) : [...values, option.value] : option.value)} style={[styles.questionOption, selected && styles.questionOptionSelected]}><Text style={styles.interactionButtonText}>{option.label}</Text>{selected ? <Check size={15} /> : null}</Pressable>;
+              return <InteractiveSurface accessibilityRole={field.kind === "multi-select" ? "checkbox" : "radio"} accessibilityState={{ checked: selected }} key={option.value} onPress={() => update(field.name, field.kind === "multi-select" ? selected ? values.filter((value) => value !== option.value) : [...values, option.value] : option.value)} style={[styles.questionOption, selected && styles.questionOptionSelected]}><Text style={styles.interactionButtonText}>{option.label}</Text>{selected ? <Check size={15} /> : null}</InteractiveSurface>;
             })}</View>
           : <TextInput keyboardType={field.kind === "number" ? "numeric" : field.format === "email" ? "email-address" : "default"} onChangeText={(value) => update(field.name, value)} secureTextEntry={field.format === "password"} style={styles.questionInput} value={elicitationDraftText(draft[field.name])} />}
         {errors[field.name] ? <Text style={styles.elicitationError}>{errors[field.name]}</Text> : null}
       </View>)}</View> : null}
       {block.state === "pending" ? <View style={styles.interactionActions}>
-        <Pressable disabled={submitting} onPress={() => submit({ type: "decline" })} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Decline</Text></Pressable>
-        <Pressable disabled={submitting} onPress={block.mode === "url" ? () => submit({ type: "accept-elicitation" }) : submitForm} style={styles.interactionButton}><Text style={styles.interactionButtonText}>Continue</Text></Pressable>
+        <Button disabled={submitting} onPress={() => submit({ type: "decline" })} size="sm" variant="ghost">Decline</Button>
+        <Button disabled={submitting} onPress={block.mode === "url" ? () => submit({ type: "accept-elicitation" }) : submitForm} size="sm">Continue</Button>
       </View> : null}
     </SemanticCard>
   );
@@ -1416,18 +1393,18 @@ function NativeUserMessageAttachments({ block }: { readonly block: UserMessageTi
         if (part.type === "image" || part.type === "local-image") {
           const source = part.type === "local-image" ? host.resolveSource?.(part.source) ?? null : part.source;
           return (
-            <Pressable accessibilityLabel="Open attached image" accessibilityRole="button" key={`${part.type}:${part.source}:${index}`} onPress={() => openNativeUserMessageResource(part.source, host)} style={styles.userImage}>
+            <InteractiveSurface accessibilityLabel="Open attached image" accessibilityRole="button" key={`${part.type}:${part.source}:${index}`} onPress={() => openNativeUserMessageResource(part.source, host)} style={styles.userImage}>
               {source === null
                 ? <ImageIcon color={theme.color.icon.tertiary} size={22} />
                 : <Image resizeMode="cover" source={{ uri: source }} style={styles.userImageContent} />}
-            </Pressable>
+            </InteractiveSurface>
           );
         }
         if (part.type === "audio" || part.type === "local-audio") {
-          return <Pressable accessibilityRole="button" key={`${part.type}:${part.source}:${index}`} onPress={() => openNativeUserMessageResource(part.source, host)} style={styles.userAttachmentChip}><Text style={styles.userAttachmentChipText}>Audio</Text></Pressable>;
+          return <InteractiveSurface accessibilityRole="button" key={`${part.type}:${part.source}:${index}`} onPress={() => openNativeUserMessageResource(part.source, host)} style={styles.userAttachmentChip}><Text style={styles.userAttachmentChipText}>Audio</Text></InteractiveSurface>;
         }
         if (part.type === "skill" || part.type === "mention") {
-          return <Pressable accessibilityRole="button" key={`${part.type}:${part.path}:${index}`} onPress={() => openNativeUserMessageResource(part.path, host)} style={styles.userAttachmentChip}><Text style={styles.userAttachmentChipText}>{part.type === "mention" ? "@" : "/"}{part.name}</Text></Pressable>;
+          return <InteractiveSurface accessibilityRole="button" key={`${part.type}:${part.path}:${index}`} onPress={() => openNativeUserMessageResource(part.path, host)} style={styles.userAttachmentChip}><Text style={styles.userAttachmentChipText}>{part.type === "mention" ? "@" : "/"}{part.name}</Text></InteractiveSurface>;
         }
         return null;
       })}
@@ -1454,10 +1431,10 @@ function NativeUserMessageBlock({ block }: { readonly block: UserMessageTimeline
           </View>
           {!expanded && collapsible ? <Text accessibilityElementsHidden style={styles.userMessageEllipsis}>…</Text> : null}
           {!collapsible ? null : (
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded }} hitSlop={8} onPress={() => setExpanded((current) => !current)} style={styles.userMessageExpansion}>
+            <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded }} hitSlop={8} onPress={() => setExpanded((current) => !current)} style={styles.userMessageExpansion}>
               <Text style={styles.userMessageExpansionText}>{expanded ? "Show less" : "Show more"}</Text>
               <ChevronRight color={theme.color.icon.tertiary} size={11} style={expanded ? styles.userMessageExpansionOpen : styles.userMessageExpansionClosed} />
-            </Pressable>
+            </InteractiveSurface>
           )}
         </View>
       )}
@@ -1477,7 +1454,7 @@ function NativePlanTimelineRenderer({ block }: TimelineBlockRendererProps) {
   if (block.type !== "plan") return null;
   return <SemanticCard title={block.completed ? block.title ?? "Plan" : "Writing plan"}>
     <View style={collapsed ? { height: 320, overflow: "hidden" } : undefined}><NativeChatDocument documentId={block.id} source={block.text} streaming={!block.completed} /></View>
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded: !collapsed }} onPress={() => setCollapsed(!collapsed)}><Text>{collapsed ? "Expand plan" : "Collapse plan"}</Text></Pressable>
+    <Button accessibilityState={{ expanded: !collapsed }} onPress={() => setCollapsed(!collapsed)} size="sm" variant="link">{collapsed ? "Expand plan" : "Collapse plan"}</Button>
     {block.completed && block.text.trim() ? <NativeResponseCopyButton text={block.text} label="Copy plan" /> : null}
   </SemanticCard>;
 }
@@ -1487,7 +1464,7 @@ function NativeTodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
   const [open, setOpen] = useState(false);
   if (block.type !== "todo") return null;
   if (block.entries.length === 0) return null;
-  return <View><Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Text style={styles.semanticBody}>{todoSummary(block)}</Text></Pressable>{open ? <SemanticCard icon={<ListChecks color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} />} title={block.explanation ?? "Steps"}>{block.entries.map((entry) => <Text key={entry.id} style={styles.semanticBody}>{entry.status === "complete" ? "✓" : "○"} {entry.text}</Text>)}</SemanticCard> : null}</View>;
+  return <View><InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)}><Text style={styles.semanticBody}>{todoSummary(block)}</Text></InteractiveSurface>{open ? <SemanticCard icon={<ListChecks color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} />} title={block.explanation ?? "Steps"}>{block.entries.map((entry) => <Text key={entry.id} style={styles.semanticBody}>{entry.status === "complete" ? "✓" : "○"} {entry.text}</Text>)}</SemanticCard> : null}</View>;
 }
 
 function NativeCompactionBlock({ block }: { block: Extract<TimelineBlock, { type: "compaction" }> }) {
@@ -1623,10 +1600,10 @@ function NativeResponseCopyButton({ text, label = "Copy response" }: { text: str
     return () => clearTimeout(timeout);
   }, [copied]);
   if (copyText === null) return null;
-  return <Pressable accessibilityLabel={copied ? "Copied" : label} accessibilityRole="button" hitSlop={8}
+  return <IconButton accessibilityLabel={copied ? "Copied" : label} size="sm"
     onPress={() => { void copyText(text).then(() => setCopied(true)).catch(() => setCopied(false)); }}>
     {copied ? <Check color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} /> : <Copy color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} />}
-  </Pressable>;
+  </IconButton>;
 }
 
 function Frame({
@@ -1669,9 +1646,9 @@ function Frame({
           <View style={styles.messageActions}>
             {actions?.completed && actions.copyText ? <NativeResponseCopyButton text={actions.copyText} /> : null}
             {frame.hookStats == null ? null : (
-              <Pressable accessibilityLabel="Hooks" accessibilityRole="button" hitSlop={8} onPress={() => setShowHookStats((current) => !current)}>
+              <IconButton accessibilityLabel="Hooks" onPress={() => setShowHookStats((current) => !current)} selected={showHookStats} size="sm">
                 <NativeHookLifecycleIcon color={theme.color.icon.tertiary} />
-              </Pressable>
+              </IconButton>
             )}
             {actions?.sentAtMs == null ? null : <Text style={styles.eventText}>{new Date(actions.sentAtMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>}
           </View>
@@ -1696,26 +1673,32 @@ function Turn({
   turn: TimelineTurnView;
 }) {
   const registry = useContext(NativeToolActivityPresenterContext);
+  const reportLatestFollowContentLayout = useContext(NativeLatestTurnFollowContentContext);
   const version = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
   const presentation = useMemo(
     () => createTimelineTurnPresentationPlan(turn, registry, { isMostRecentTurn }),
     [isMostRecentTurn, registry, turn, version],
   );
+  const turnThinking = presentation.thinkingOwner.type === "turn"
+    ? presentation.thinkingOwner
+    : null;
   return (
     <View style={styles.turn}>
       {presentation.userFrames.map((frame) => (
         <Frame assistantPlan={null} frame={frame} key={frame.id} showActions={false} thinkingId={null} threadDetailLevel={threadDetailLevel} />
       ))}
       {presentation.assistantFrame === null ? null : (
-        <Frame
-          assistantPlan={presentation.assistant}
-          frame={presentation.assistantFrame}
-          key={presentation.assistantFrame.id}
-          showActions
-          thinkingId={presentation.showThinking ? presentation.thinkingId : null}
-          thinkingLabel={presentation.thinkingLabel}
-          threadDetailLevel={threadDetailLevel}
-        />
+        <View onLayout={reportLatestFollowContentLayout ?? undefined}>
+          <Frame
+            assistantPlan={presentation.assistant}
+            frame={presentation.assistantFrame}
+            key={presentation.assistantFrame.id}
+            showActions
+            thinkingId={turnThinking?.placeholderId ?? null}
+            thinkingLabel={turnThinking?.label}
+            threadDetailLevel={threadDetailLevel}
+          />
+        </View>
       )}
       {presentation.auxiliaryFrames.map((frame) => (
         <Frame assistantPlan={null} frame={frame} key={frame.id} showActions={false} thinkingId={null} threadDetailLevel={threadDetailLevel} />
@@ -1754,16 +1737,12 @@ function EmptyConversation({ onSuggestion }: { onSuggestion(text: string): void 
       <View style={styles.emptyMark}><WandSparkles color={theme.color.accent.blue} size={theme.metrics.conversation.heroIcon} strokeWidth={1.8} /></View>
       <Text style={styles.emptyTitle}>What are we building?</Text>
       <Text style={styles.emptyText}>Start with a goal. OpenCraft can inspect your workspace, make changes, and show its work.</Text>
-      <View style={styles.suggestions}>{suggestions.map(({ icon: Icon, label, prompt }) => <Pressable key={label} onPress={() => onSuggestion(prompt)} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]}><Icon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} /><Text style={styles.suggestionText}>{label}</Text><ArrowRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.9} /></Pressable>)}</View>
+      <View style={styles.suggestions}>{suggestions.map(({ icon: Icon, label, prompt }) => <InteractiveSurface key={label} onPress={() => onSuggestion(prompt)} style={styles.suggestion}><Icon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} /><Text style={styles.suggestionText}>{label}</Text><ArrowRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.9} /></InteractiveSurface>)}</View>
     </View>
   );
 }
 
-export interface WorkbenchConversationRestoreSnapshot {
-  readonly distanceFromBottomPx: number;
-  readonly virtualizedTurnList: VirtualizedTurnRestoreState | null;
-  readonly turnFollow?: TurnFollowRestoreState | null;
-}
+export type { WorkbenchConversationRestoreSnapshot } from "./native-response-positioned-turns";
 
 interface WorkbenchConversationProps {
   readonly timeline: TimelineSnapshot | null;
@@ -1812,483 +1791,86 @@ export function WorkbenchConversation({
   threadDetailLevel = "STEPS_COMMANDS",
   onCopyText,
 }: WorkbenchConversationProps) {
-  const viewportPolicy = resolveTimelineViewportPolicy({
-    kind: Platform.OS === "web" ? "browser" : "native",
-    platform: Platform.OS === "ios"
-      ? "ios"
-      : Platform.OS === "android"
-        ? "android"
-        : "linux",
-  });
-  const entries = useMemo(() => timeline === null ? [] : groupTimelineFramesByTurn(timeline), [timeline]);
-  const latestTurn = entries.length === 0 ? null : entries[entries.length - 1] ?? null;
-  const latestTurnKey = latestTurn?.turnKey ?? null;
-  const latestTurnActivityKey = deriveTimelineLatestTurnActivityKey(latestTurn);
-  const latestTurnPhase = deriveTimelineLatestTurnPhase(latestTurn);
-  const isLatestTurnInProgress = latestTurn?.status === "pending" || latestTurn?.status === "streaming";
-  const initialDistanceFromBottomPx = normalizeInitialScrollDistance(
-    initialRestoreSnapshot?.distanceFromBottomPx,
+  const entries = useMemo(
+    () => timeline === null ? [] : groupTimelineFramesByTurn(timeline),
+    [timeline],
   );
-  const [measuredHeightsByKey, setMeasuredHeightsByKey] = useState<Readonly<Record<string, number>>>(() => initialRestoreSnapshot?.virtualizedTurnList?.turnHeightsByKey ?? {});
-  const layout = useMemo(() => buildTurnLayout(entries, measuredHeightsByKey), [entries, measuredHeightsByKey]);
-  const [viewport, setViewport] = useState<VirtualizedTurnViewportState>(() => createTurnViewportState(
-    layout,
-    distanceExcludingBottomPadding(
-      initialDistanceFromBottomPx,
-      0,
-    ),
-    CODEX_TURN_VIRTUALIZER_CONFIG.fallbackViewportHeightPx,
-    initialRestoreSnapshot?.virtualizedTurnList ?? null,
-  ));
-  const scrollRef = useRef<ScrollView>(null);
-  const contentHeightRef = useRef(0);
-  const viewportHeightRef = useRef(CODEX_TURN_VIRTUALIZER_CONFIG.fallbackViewportHeightPx);
-  const topOffsetRef = useRef(0);
-  const footerPaddingRef = useRef(footerScrollPaddingPx);
-  footerPaddingRef.current = footerScrollPaddingPx;
-  const restoredFollow = initialRestoreSnapshot?.turnFollow?.turnKey === latestTurnKey
-    ? initialRestoreSnapshot.turnFollow.followMode
-    : null;
-  const followStateRef = useRef(createInitialTurnFollowState({
-    distanceFromBottomPx: initialDistanceFromBottomPx,
-    isLatestTurnInProgress,
-    latestTurnPhase,
-    restoredFollowMode: restoredFollow,
-  }));
-  const latestTurnKeyRef = useRef(latestTurnKey);
-  const latestTurnActivityKeyRef = useRef(latestTurnActivityKey);
-  const latestTurnPhaseRef = useRef(latestTurnPhase);
-  const latestTurnInProgressRef = useRef(isLatestTurnInProgress);
-  const didRestoreRef = useRef(false);
-  const isDraggingRef = useRef(false);
-  const isMomentumScrollingRef = useRef(false);
-  const pendingNonPlacementRef = useRef<ReturnType<typeof createLatestTurnPlacementSnapshot> | null>(null);
-  const pendingRestoreDistanceRef = useRef<number | null>(normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx));
-  const responseSpacerHeightRef = useRef(0);
-  const responseSpacerHeight = useRef(new Animated.Value(0)).current;
-  const latestTurnOffset = useRef(new Animated.Value(0)).current;
-  const previousLayout = useRef(layout);
-  const layoutRef = useRef(layout);
-  layoutRef.current = layout;
-  const measuredHeightsRef = useRef(measuredHeightsByKey);
-  measuredHeightsRef.current = measuredHeightsByKey;
-  const viewportRef = useRef(viewport);
-  viewportRef.current = viewport;
-  const scrollControllerRef = useRef<TurnScrollController | null>(null);
-  if (scrollControllerRef.current === null) {
-    scrollControllerRef.current = new TurnScrollController({
-      getMetrics: () => normalizeTurnViewportMetrics({
-        contentHeightPx: contentHeightRef.current,
-        viewportHeightPx: viewportHeightRef.current,
-        topOffsetPx: topOffsetRef.current,
-      }),
-      writeDistanceFromBottomPx: (distance) => {
-        const y = topOffsetForDistanceFromBottom(
-          contentHeightRef.current,
-          viewportHeightRef.current,
-          distance,
-        );
-        topOffsetRef.current = y;
-        scrollRef.current?.scrollTo({ y, animated: false });
-      },
-      now: () => performance.now(),
-      requestFrame: (callback) => requestAnimationFrame(callback),
-      cancelFrame: (handle) => cancelAnimationFrame(handle),
-    }, initialDistanceFromBottomPx);
-  }
-  const scrollController = scrollControllerRef.current;
-
-  const applyDistance = useCallback((distance: number) => {
-    scrollController.scrollToDistanceFromBottomPx(distance, "instant");
-  }, [scrollController]);
-  const updateViewport = useCallback((distance: number) => {
-    const normalizedDistance = Math.max(0, distance);
-    setViewport((current) => updateTurnViewportState(
-      current,
-      layoutRef.current,
-      distanceExcludingBottomPadding(normalizedDistance, responseSpacerHeightRef.current),
-      viewportHeightRef.current,
-    ));
-  }, []);
-
-  const historyBackfill = useTurnHistoryBackfill({
-    historyKey: timeline === null
-      ? null
-      : JSON.stringify([timeline.key.hostId, timeline.key.threadId]),
-    loadPage: onLoadOlder,
-    readMetrics: () => ({
-      distanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
-      viewportHeightPx: viewportHeightRef.current,
-      scrollHeightPx: contentHeightRef.current,
-    }),
-    afterLayout: () => new Promise<void>((resolve) => requestAnimationFrame(() => (
-      requestAnimationFrame(() => resolve())
-    ))),
-  });
-  const loadOlderUntilScrollable = historyBackfill.request;
-
-  const shrinkResponseSpacer = useCallback((requestedHeightPx: number) => {
-    const current = responseSpacerHeightRef.current;
-    const next = requestedHeightPx <= 24 ? 0 : Math.min(current, Math.max(0, requestedHeightPx));
-    if (current - next <= 24) return;
-    responseSpacerHeight.stopAnimation();
-    latestTurnOffset.stopAnimation();
-    latestTurnOffset.setValue(0);
-    responseSpacerHeightRef.current = next;
-    responseSpacerHeight.setValue(next);
-    applyDistance(Math.max(
-      0,
-      scrollController.getLastScrollDistanceFromBottomPx() + next - current,
-    ));
-  }, [applyDistance, latestTurnOffset, responseSpacerHeight, scrollController]);
-
-  const handleUserScroll = useCallback((distance: number, previousDistance: number) => {
-    if (distance <= 24 && previousDistance > 24 && isLatestTurnInProgress) {
-      followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-        type: "scroll_to_bottom",
-        latestTurnPhase,
-      });
-    } else if (distance > 24) {
-      followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-        type: "scroll_distance_changed",
-        distanceFromBottomPx: distance,
-        latestTurnPhase,
-      });
-      if (responseSpacerHeightRef.current > 24 && distance > previousDistance) {
-        shrinkResponseSpacer(responseSpacerHeightRef.current - distance);
-      }
-    }
-    if (topOffsetRef.current <= 64) void loadOlderUntilScrollable();
-  }, [isLatestTurnInProgress, latestTurnPhase, loadOlderUntilScrollable, shrinkResponseSpacer]);
-
-  useLayoutEffect(() => {
-    const releaseViewport = scrollController.subscribe((snapshot) => {
-      updateViewport(snapshot.distanceFromBottomPx);
-    });
-    const releaseUserScroll = scrollController.addUserScrollListener(handleUserScroll);
-    return () => {
-      releaseViewport();
-      releaseUserScroll();
-    };
-  }, [handleUserScroll, scrollController, updateViewport]);
-
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    contentHeightRef.current = contentSize.height;
-    viewportHeightRef.current = layoutMeasurement.height;
-    topOffsetRef.current = contentOffset.y;
-    const origin = isDraggingRef.current || isMomentumScrollingRef.current ? "user" : "system";
-    scrollController.reportPlatformScroll(origin);
-  }, [scrollController]);
-  const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
-    viewportHeightRef.current = event.nativeEvent.layout.height;
-    updateViewport(scrollController.getLastScrollDistanceFromBottomPx());
-  }, [scrollController, updateViewport]);
-  const handleContentSizeChange = useCallback((_width: number, height: number) => {
-    contentHeightRef.current = height;
-    const nonPlacement = pendingNonPlacementRef.current;
-    if (nonPlacement !== null && height !== nonPlacement.scrollHeightPx) {
-      pendingNonPlacementRef.current = null;
-      applyDistance(nonPlacement.distanceFromBottomPx + Math.max(0, height - nonPlacement.scrollHeightPx));
-    }
-    if (!didRestoreRef.current) {
-      didRestoreRef.current = true;
-      applyDistance(normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx));
-    } else if (shouldFollowLatestTurn(followStateRef.current, latestTurnPhase)) applyDistance(0);
-    const pendingRestore = pendingRestoreDistanceRef.current;
-    if (pendingRestore !== null) {
-      applyDistance(pendingRestore);
-      const actual = normalizeTurnViewportMetrics({
-        contentHeightPx: height,
-        viewportHeightPx: viewportHeightRef.current,
-        topOffsetPx: topOffsetForDistanceFromBottom(height, viewportHeightRef.current, pendingRestore),
-      }).distanceFromBottomPx;
-      if (Math.abs(actual - pendingRestore) <= 24) pendingRestoreDistanceRef.current = null;
-    }
-    void loadOlderUntilScrollable();
-  }, [applyDistance, initialRestoreSnapshot?.distanceFromBottomPx, latestTurnPhase, loadOlderUntilScrollable]);
-  const measureTurn = useCallback((turnKey: string, event: LayoutChangeEvent) => {
-    const height = Math.max(1, event.nativeEvent.layout.height);
-    setMeasuredHeightsByKey((current) => Math.abs((current[turnKey] ?? 0) - height) <= 0.5 ? current : { ...current, [turnKey]: height });
-  }, []);
-
-  const virtualizedTurnListApi = useMemo<VirtualizedTurnListApi>(() => ({
-    getEntryGeometry: (turnKey) => getTurnGeometry(layoutRef.current, turnKey),
-    getViewportState: () => viewportRef.current,
-    positionTarget: (options) => new Promise((resolve) => {
-      if (options.signal?.aborted === true) {
-        resolve("cancelled");
-        return;
-      }
-      // Native item-level geometry will be supplied by its measurement registry.
-      // Until then, fail closed instead of pretending the Turn top is exact.
-      if (options.targetKey !== undefined) {
-        resolve("unavailable");
-        return;
-      }
-      const currentLayout = layoutRef.current;
-      const align = options.align ?? "center";
-      const distance = align === "top"
-        ? distanceFromBottomToTopTurn({
-            layout: currentLayout,
-            turnKey: options.turnKey,
-            topAlignmentInsetPx: options.topAlignmentInsetPx,
-            viewportHeightPx: viewportHeightRef.current,
-          })
-        : distanceFromBottomToCenterTurn(currentLayout, options.turnKey, viewportHeightRef.current);
-      if (distance === null) {
-        resolve("unavailable");
-        return;
-      }
-      followStateRef.current = createTurnFollowState("static");
-      applyDistance(distance + responseSpacerHeightRef.current);
-      setViewport((current) => updateTurnViewportState(
-        current,
-        currentLayout,
-        distance,
-        viewportHeightRef.current,
-      ));
-      requestAnimationFrame(() => resolve(options.signal?.aborted === true ? "cancelled" : "positioned"));
-    }),
-  }), [applyDistance]);
-
-  useEffect(() => {
-    onVirtualizedTurnListApiChange?.(virtualizedTurnListApi);
-    return () => onVirtualizedTurnListApiChange?.(null);
-  }, [onVirtualizedTurnListApiChange, virtualizedTurnListApi]);
-
-  const conversationScrollApi = useMemo<TurnConversationScrollApi>(() => ({
-    captureLatestTurnSubmitPlacement: () => {
-      return createLatestTurnPlacementSnapshot({
-        distanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
-        responseSpacerHeightPx: responseSpacerHeightRef.current,
-        scrollHeightPx: contentHeightRef.current,
-      });
-    },
-    releaseLatestTurnSubmitPlacementCapture: () => undefined,
-    scrollToBottom: () => {
-      if (isLatestTurnInProgress) {
-        responseSpacerHeight.stopAnimation();
-        latestTurnOffset.stopAnimation();
-        responseSpacerHeightRef.current = 0;
-        responseSpacerHeight.setValue(0);
-        latestTurnOffset.setValue(0);
-        followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-          type: "scroll_to_bottom",
-          latestTurnPhase,
-        });
-        applyDistance(0);
-      } else {
-        scrollController.scrollToBottom();
-      }
-    },
-  }), [applyDistance, isLatestTurnInProgress, latestTurnOffset, latestTurnPhase, responseSpacerHeight, scrollController]);
-
-  useEffect(() => {
-    onConversationScrollApiChange?.(conversationScrollApi);
-    return () => onConversationScrollApiChange?.(null);
-  }, [conversationScrollApi, onConversationScrollApiChange]);
-
-  useLayoutEffect(() => {
-    const previous = previousLayout.current;
-    previousLayout.current = layout;
-    if (!didRestoreRef.current) return;
-    const frame = requestAnimationFrame(() => {
-      const previousLatestTurnActivityKey = latestTurnActivityKeyRef.current;
-      const previousLatestTurnPhase = latestTurnPhaseRef.current;
-      latestTurnKeyRef.current = latestTurnKey;
-      latestTurnActivityKeyRef.current = latestTurnActivityKey;
-      latestTurnPhaseRef.current = latestTurnPhase;
-      let ownsLatestTurnPolicy = true;
-
-      if (previousLatestTurnActivityKey !== latestTurnActivityKey) {
-        const placement = consumePendingLatestTurnSubmitPlacement?.() ?? null;
-        if (latestTurnKey !== null && consumePendingLatestTurnSubmitPlacement !== undefined && placement === null) {
-          ownsLatestTurnPolicy = false;
-        } else {
-          followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-            type: latestTurnKey === null ? "latest_turn_removed" : "latest_turn_placed",
-          });
-          if (latestTurnKey === null) {
-            responseSpacerHeight.stopAnimation();
-            latestTurnOffset.stopAnimation();
-            responseSpacerHeightRef.current = 0;
-            responseSpacerHeight.setValue(0);
-            latestTurnOffset.setValue(0);
-          } else if (!(placement?.shouldPlaceLatestTurn ?? true)) {
-            pendingNonPlacementRef.current = placement;
-          } else {
-            const maximumSpacer = maximumResponseSpacerHeightPx({
-              scrollElementHeightPx: viewportHeightRef.current,
-              scrollPaddingBottomPx: footerPaddingRef.current,
-            });
-            const currentSpacer = responseSpacerHeightRef.current;
-            latestTurnOffset.setValue(currentSpacer);
-            applyDistance(1);
-            responseSpacerHeightRef.current = maximumSpacer;
-            Animated.parallel([
-              Animated.timing(latestTurnOffset, {
-                duration: 500,
-                easing: Easing.out(Easing.cubic),
-                toValue: 0,
-                useNativeDriver: true,
-              }),
-              Animated.timing(responseSpacerHeight, {
-                duration: 500,
-                easing: Easing.out(Easing.cubic),
-                toValue: maximumSpacer,
-                useNativeDriver: false,
-              }),
-            ]).start();
-          }
-        }
-      }
-      if (ownsLatestTurnPolicy && previousLatestTurnPhase !== latestTurnPhase) {
-        followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-          type: "latest_turn_phase_changed",
-          previousLatestTurnPhase,
-          latestTurnPhase,
-        });
-      }
-
-      const latestTurnIndex = latestTurnKey === null ? -1 : layout.turnIndexByKey.get(latestTurnKey) ?? -1;
-      const latestTurnIsMounted = latestTurnIndex >= viewportRef.current.renderedRange.startIndex
-        && latestTurnIndex < viewportRef.current.renderedRange.endIndex;
-      if (ownsLatestTurnPolicy && latestTurnIsMounted && followStateRef.current.followMode === "prework_watch") {
-        followStateRef.current = reduceTurnFollowState(followStateRef.current, {
-          type: "latest_turn_follow_content_changed",
-          latestTurnPhase,
-          followContentOverflowPx: scrollController.getLastScrollDistanceFromBottomPx(),
-        });
-      }
-
-      if (ownsLatestTurnPolicy && shouldFollowLatestTurn(followStateRef.current, latestTurnPhase)) {
-        applyDistance(0);
-        updateViewport(0);
-        return;
-      }
-      const compensated = reconcileTurnLayoutViewport({
-        previousLayout: previous,
-        nextLayout: layout,
-        measuredHeightsByKey,
-        currentDistanceFromBottomPx: scrollController.getLastScrollDistanceFromBottomPx(),
-        viewportHeightPx: viewportHeightRef.current,
-        bottomPaddingPx: responseSpacerHeightRef.current,
-        preserveViewport: !isLatestTurnInProgress,
-        layoutOwnedByMeasurement: false,
-        restorePending: false,
-      });
-      if (compensated !== null) {
-        applyDistance(compensated);
-        updateViewport(compensated);
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [applyDistance, consumePendingLatestTurnSubmitPlacement, isLatestTurnInProgress, latestTurnActivityKey, latestTurnKey, latestTurnOffset, latestTurnPhase, layout, measuredHeightsByKey, responseSpacerHeight, scrollController, updateViewport]);
-
-  const restoreCallbackRef = useRef(onRestoreSnapshotChange);
-  restoreCallbackRef.current = onRestoreSnapshotChange;
-  latestTurnInProgressRef.current = isLatestTurnInProgress;
-  useEffect(() => () => {
-    const distanceFromBottomPx = scrollController.getLastScrollDistanceFromBottomPx();
-    const normalized = normalizeFollowRestorePosition({
-      distanceFromBottomPx,
-      latestTurnPhase: latestTurnPhaseRef.current,
-      responseSpacerHeightPx: responseSpacerHeightRef.current,
-      scrollPaddingBottomPx: footerPaddingRef.current,
-      scrollState: followStateRef.current,
-    });
-    const currentLatestKey = latestTurnKeyRef.current;
-    restoreCallbackRef.current?.({
-      distanceFromBottomPx: normalized.distanceFromBottomPx,
-      virtualizedTurnList: serializeTurnRestoreState(
-        measuredHeightsRef.current,
-        layoutRef.current.turnKeys,
-        viewportRef.current.renderedRange,
-      ),
-      turnFollow: currentLatestKey === null ? null : {
-        turnKey: currentLatestKey,
-        isLatestTurnInProgress: latestTurnInProgressRef.current,
-        latestTurnPhase: latestTurnPhaseRef.current,
-        followMode: normalized.scrollState.followMode,
-        latestTurnHeightPx: isViewportPreservingTurnFollowMode(normalized.scrollState.followMode)
-          ? measuredHeightsRef.current[currentLatestKey] ?? null
-          : null,
-        latestTurnFollowContentHeightPx: measuredHeightsRef.current[currentLatestKey] ?? null,
-      },
-    });
-    scrollController.dispose();
-  }, [scrollController]);
-
-  const renderedRange = reconcileRenderedRangeForEntries(viewport, layout);
-  const windowSlice = createTurnWindowSlice(entries, layout, renderedRange);
+  const historyKey = timeline === null
+    ? null
+    : JSON.stringify([timeline.key.hostId, timeline.key.threadId]);
   return (
     <NativeConversationDetailContext.Provider value={threadDetailLevel}>
-    <NativeCopyTextContext.Provider value={onCopyText ?? null}>
-    <NativeToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
-    <NativeToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
-    <NativeToolCallContentRendererContext.Provider value={renderToolCallContent ?? null}>
-    <NativeThreadNavigationContext.Provider value={onOpenSubagent ?? null}>
-    <NativeAutomationNavigationContext.Provider value={onOpenAutomation ?? null}>
-    <NativeGeneratedImageHostContext.Provider value={{ open: onOpenGeneratedImage ?? null, resolveSource: resolveGeneratedImageSource ?? null }}>
-    <NativeImageViewHostContext.Provider value={{ open: onOpenInspectedImage ?? null, resolveSource: resolveInspectedImageSource ?? null }}>
-    <NativeInteractionContext.Provider value={onRespondInteraction ?? null}>
-    <ScrollView
-      ref={scrollRef}
-      alwaysBounceVertical={viewportPolicy.localElasticEffect}
-      automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-      bounces={viewportPolicy.localElasticEffect}
-      contentContainerStyle={[styles.scrollContent, { paddingBottom: footerScrollPaddingPx }]}
-      keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-      keyboardShouldPersistTaps="handled"
-      onContentSizeChange={handleContentSizeChange}
-      onLayout={handleViewportLayout}
-      onMomentumScrollBegin={() => { isMomentumScrollingRef.current = true; }}
-      onMomentumScrollEnd={() => { isMomentumScrollingRef.current = false; }}
-      onScrollBeginDrag={() => {
-        isDraggingRef.current = true;
-        scrollController.cancelScrollAnimation();
-      }}
-      onScrollEndDrag={() => { isDraggingRef.current = false; }}
-      onScroll={handleScroll}
-      overScrollMode={viewportPolicy.threadOverscroll === "none" ? "never" : "auto"}
-      scrollEventThrottle={16}
-      showsVerticalScrollIndicator={false}
-      style={styles.scroll}
-    >
-      <View style={styles.content}>
-        {entries.length === 0 ? <EmptyConversation onSuggestion={onSuggestion} /> : (
-          <View style={[styles.virtualSpacer, { height: windowSlice.totalHeightPx }]}>
-            <View style={{ gap: windowSlice.gapPx, marginTop: windowSlice.marginTopPx }}>
-              {windowSlice.entries.map((turn, sliceIndex) => {
-                const index = windowSlice.range.startIndex + sliceIndex;
-                const constrainedHeight = index !== entries.length - 1 && measuredHeightsByKey[turn.turnKey] === undefined ? layout.heightsPx[index] : undefined;
-                return <View key={turn.turnKey} style={constrainedHeight === undefined ? undefined : { height: constrainedHeight, overflow: "hidden" }}><View onLayout={(event) => measureTurn(turn.turnKey, event)}><AnimatedTurn isLatest={index === entries.length - 1} offset={latestTurnOffset} threadDetailLevel={threadDetailLevel} turn={turn} /></View></View>;
-              })}
-            </View>
-          </View>
-        )}
-        <Animated.View pointerEvents="none" style={{ height: responseSpacerHeight }} />
-      </View>
-    </ScrollView>
-    </NativeInteractionContext.Provider>
-    </NativeImageViewHostContext.Provider>
-    </NativeGeneratedImageHostContext.Provider>
-    </NativeAutomationNavigationContext.Provider>
-    </NativeThreadNavigationContext.Provider>
-    </NativeToolCallContentRendererContext.Provider>
-    </NativeToolCallIconRendererContext.Provider>
-    </NativeToolActivityPresenterContext.Provider>
-    </NativeCopyTextContext.Provider>
+      <NativeCopyTextContext.Provider value={onCopyText ?? null}>
+        <NativeToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
+          <NativeToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
+            <NativeToolCallContentRendererContext.Provider value={renderToolCallContent ?? null}>
+              <NativeThreadNavigationContext.Provider value={onOpenSubagent ?? null}>
+                <NativeAutomationNavigationContext.Provider value={onOpenAutomation ?? null}>
+                  <NativeGeneratedImageHostContext.Provider value={{
+                    open: onOpenGeneratedImage ?? null,
+                    resolveSource: resolveGeneratedImageSource ?? null,
+                  }}>
+                    <NativeImageViewHostContext.Provider value={{
+                      open: onOpenInspectedImage ?? null,
+                      resolveSource: resolveInspectedImageSource ?? null,
+                    }}>
+                      <NativeInteractionContext.Provider value={onRespondInteraction ?? null}>
+                        <NativeResponsePositionedTurns
+                          entries={entries}
+                          historyKey={historyKey}
+                          footerScrollPaddingPx={footerScrollPaddingPx}
+                          initialRestoreSnapshot={initialRestoreSnapshot}
+                          onRestoreSnapshotChange={onRestoreSnapshotChange}
+                          onLoadOlder={onLoadOlder}
+                          onConversationScrollApiChange={onConversationScrollApiChange}
+                          consumePendingLatestTurnSubmitPlacement={
+                            consumePendingLatestTurnSubmitPlacement
+                          }
+                          onVirtualizedTurnListApiChange={
+                            onVirtualizedTurnListApiChange
+                          }
+                          renderEmpty={() => (
+                            <EmptyConversation onSuggestion={onSuggestion} />
+                          )}
+                          renderTurn={(
+                            turn,
+                            isLatest,
+                            latestTurnOffset,
+                            onLatestFollowContentLayout,
+                          ) => (
+                            <NativeLatestTurnFollowContentContext.Provider
+                              value={isLatest
+                                ? onLatestFollowContentLayout
+                                : null}
+                            >
+                              <AnimatedTurn
+                                isLatest={isLatest}
+                                offset={latestTurnOffset}
+                                threadDetailLevel={threadDetailLevel}
+                                turn={turn}
+                              />
+                            </NativeLatestTurnFollowContentContext.Provider>
+                          )}
+                          scrollStyle={styles.scroll}
+                          scrollContentStyle={styles.scrollContent}
+                          contentStyle={styles.content}
+                        />
+                      </NativeInteractionContext.Provider>
+                    </NativeImageViewHostContext.Provider>
+                  </NativeGeneratedImageHostContext.Provider>
+                </NativeAutomationNavigationContext.Provider>
+              </NativeThreadNavigationContext.Provider>
+            </NativeToolCallContentRendererContext.Provider>
+          </NativeToolCallIconRendererContext.Provider>
+        </NativeToolActivityPresenterContext.Provider>
+      </NativeCopyTextContext.Provider>
     </NativeConversationDetailContext.Provider>
   );
 }
-
 const styles = StyleSheet.create((theme) => ({
   scroll: { flex: 1, minHeight: 0, backgroundColor: theme.color.surface.main },
   scrollContent: { flexGrow: 1 },
   content: { width: "100%", maxWidth: theme.metrics.conversation.maximumWidth, flexGrow: 1, alignSelf: "center", paddingHorizontal: theme.metrics.conversation.horizontalInset, paddingTop: theme.metrics.conversation.topInset, paddingBottom: theme.metrics.conversation.bottomInset },
-  virtualSpacer: { position: "relative", minHeight: 1 },
   turn: { gap: theme.metrics.conversation.userBottomGap, marginBottom: theme.metrics.conversation.turnGap },
   frame: { gap: theme.spacing[4] },
   userFrame: { width: "100%", minWidth: 0 },

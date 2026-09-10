@@ -7,9 +7,13 @@ export const OPENCRAFT_AGENT_CATALOG_CAPABILITY = Object.freeze({ version: 1 });
 export const OPENCRAFT_THREAD_QUEUE_EXTENSION = "opencraft/thread-queue";
 
 export interface OpenCraftThreadQueueCapability {
-  readonly version: 1;
+  /** V2 makes queue-to-active-Turn consumption one AppServer command. */
+  readonly version: 2;
   /** False for runtimes such as DSH whose inbox order is an invariant. */
   readonly reorder: boolean;
+  readonly atomicSteer: true;
+  /** Whether pause reasons are durable queue-item state rather than UI state. */
+  readonly perItemPause: boolean;
 }
 
 /**
