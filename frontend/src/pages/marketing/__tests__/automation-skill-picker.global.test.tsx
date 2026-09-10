@@ -27,7 +27,7 @@ it("keeps the international selected Skill option read-only", async () => {
 
   render(
     <AutomationSkillPicker
-      value="finance-news"
+      value={["finance-news"]}
       loadState={{ status: "ready", slugs: ["finance-news"], error: null }}
       onChange={onChange}
       onRetry={vi.fn()}
@@ -42,5 +42,5 @@ it("keeps the international selected Skill option read-only", async () => {
 
   await user.click(selectedOption);
 
-  expect(onChange).toHaveBeenCalledWith("finance-news");
+  expect(onChange).toHaveBeenCalledWith(["finance-news"]);
 });

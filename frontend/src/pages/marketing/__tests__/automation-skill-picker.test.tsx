@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InstalledSkillLoadState } from "@/lib/hermes-skills-client";
 import { fetchSkillDetail, fetchSkillFile, fetchSkillFiles } from "@/lib/skillhub-api";
+import type { AutomationCatalogTemplate } from "../automation-template-catalog";
 import {
   AutomationSkillBindingSummary,
   AutomationSkillPicker,
@@ -36,14 +37,14 @@ function ready(slugs: string[]): InstalledSkillLoadState {
 }
 
 function renderPicker({
-  value = "",
+  value = [],
   loadState = ready(["finance-news", "legal-review"]),
   onChange = vi.fn(),
   onRetry = vi.fn(),
 }: {
-  value?: string;
+  value?: string[];
   loadState?: InstalledSkillLoadState;
-  onChange?: (slug: string) => void;
+  onChange?: (slugs: string[]) => void;
   onRetry?: () => void;
 } = {}) {
   render(
@@ -57,18 +58,25 @@ function renderPicker({
   return { onChange, onRetry };
 }
 
-function renderAutomationFormModal() {
+function renderAutomationFormModal({
+  template,
+  skillLoadState = ready(["builder-radar", "finance-news"]),
+}: {
+  template?: AutomationCatalogTemplate;
+  skillLoadState?: InstalledSkillLoadState;
+} = {}) {
   render(
     <AutomationFormModal
       botId="bot-1"
       mode="create"
+      template={template}
       jobs={[]}
       contextCapability="supported"
       onRetryContextCapability={vi.fn()}
       enabledChannels={new Set()}
       channelStatus="ready"
-      skillLoadState={ready(["builder-radar", "finance-news"])}
-      onRefreshSkills={async () => ready(["builder-radar", "finance-news"])}
+      skillLoadState={skillLoadState}
+      onRefreshSkills={async () => skillLoadState}
       onRefreshJobs={async () => []}
       testState="idle"
       onTestRun={vi.fn()}
@@ -112,7 +120,7 @@ describe("AutomationSkillPicker", () => {
     render(
       <div>
         <AutomationSkillPicker
-          value=""
+          value={[]}
           loadState={ready(["finance-news", "legal-review"])}
           onChange={vi.fn()}
           onRetry={vi.fn()}
@@ -133,7 +141,7 @@ describe("AutomationSkillPicker", () => {
     expect(screen.getByText("Legal Review")).toBeInTheDocument();
   });
 
-  it("defaults to no Skill and selects a real installed slug after search", async () => {
+  it("defaults to no Skill and adds a real installed slug after search", async () => {
     const user = userEvent.setup();
     const { onChange } = renderPicker();
     const trigger = screen.getByRole("button", { name: "调用技能" });
@@ -163,43 +171,32 @@ describe("AutomationSkillPicker", () => {
     expect(screen.queryByText("Legal Review")).not.toBeInTheDocument();
 
     await user.click(financeOption);
-    expect(onChange).toHaveBeenCalledWith("finance-news");
+    expect(onChange).toHaveBeenCalledWith(["finance-news"]);
   });
 
-  it("turns the selected dropdown icon into a clear action on hover", async () => {
+  it("renders every selected Skill as a removable tag", async () => {
     const user = userEvent.setup();
-    const { onChange } = renderPicker({ value: "finance-news" });
-    const trigger = screen.getByRole("button", { name: "调用技能" });
-    const clearButton = screen.getByRole("button", { name: "移除已选择的技能" });
-    const icons = clearButton.querySelectorAll("svg");
+    const { onChange } = renderPicker({ value: ["finance-news", "legal-review"] });
+    const financeTag = screen.getByText("Finance News").closest("span");
+    const clearButton = screen.getByRole("button", { name: "移除技能 Finance News" });
 
-    expect(icons).toHaveLength(2);
-    expect(icons[0]).toHaveClass("group-hover/clear:opacity-0");
-    expect(icons[1]).toHaveClass("group-hover/clear:opacity-100");
+    expect(financeTag).toBeInTheDocument();
+    expect(screen.getByText("Legal Review")).toBeInTheDocument();
 
     await user.click(clearButton);
 
-    expect(onChange).toHaveBeenCalledWith("");
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onChange).toHaveBeenCalledWith(["legal-review"]);
   });
 
-  it("turns the selected Skill option check into a clear action and clears it when clicked", async () => {
+  it("keeps the picker open so multiple Skills can be selected in one pass", async () => {
     const user = userEvent.setup();
-    const { onChange } = renderPicker({ value: "finance-news" });
+    const { onChange } = renderPicker({ value: ["finance-news"] });
 
     await user.click(screen.getByRole("button", { name: "调用技能" }));
-    const selectedOption = screen.getByRole("option", { name: /Finance News.*finance-news/ });
-    const checkIcon = selectedOption.querySelector(".lucide-check");
-    const clearIcon = selectedOption.querySelector(".lucide-x");
+    await user.click(screen.getByRole("option", { name: /Legal Review.*legal-review/ }));
 
-    expect(checkIcon).toHaveClass("opacity-100", "group-hover/option:opacity-0");
-    expect(clearIcon).toHaveClass("opacity-0", "group-hover/option:opacity-100");
-
-    await user.click(selectedOption);
-
-    expect(onChange).toHaveBeenCalledWith("");
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onChange).toHaveBeenCalledWith(["finance-news", "legal-review"]);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
   it("shows loading without adding a no-Skill option", async () => {
@@ -237,9 +234,9 @@ describe("AutomationSkillPicker", () => {
 
   it("preserves and marks an installed binding that is now unavailable", async () => {
     const user = userEvent.setup();
-    renderPicker({ value: "removed-skill", loadState: ready(["finance-news"]) });
+    renderPicker({ value: ["removed-skill"], loadState: ready(["finance-news"]) });
 
-    expect(screen.getByRole("button", { name: "调用技能" })).toHaveTextContent("Removed Skill");
+    expect(screen.getByText("Removed Skill")).toBeInTheDocument();
     expect(screen.getByText("不可用")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "调用技能" }));
@@ -256,6 +253,38 @@ describe("AutomationSkillPicker", () => {
 });
 
 describe("AutomationFormModal", () => {
+  const competitorTemplate: AutomationCatalogTemplate = {
+    id: "competitor-watch",
+    source: "hermes",
+    name: "竞品动态监控",
+    description: "跟踪竞品的重要变化",
+    category: "monitoring",
+    tags: [],
+    prompt: "监控竞品的重要变化。",
+    schedule: { kind: "recurring", period: "weekly", time: "10:00" },
+    scheduleLabel: "每周定时 · 10:00",
+    skills: ["competitor-news-monitor"],
+    notificationPolicy: "only-when-needed",
+    previewKind: "monitor",
+  };
+
+  it("does not preselect a recommended template Skill that is not installed", () => {
+    renderAutomationFormModal({ template: competitorTemplate, skillLoadState: ready([]) });
+
+    expect(screen.queryByText("Competitor News Monitor")).not.toBeInTheDocument();
+    expect(screen.queryByText("不可用")).not.toBeInTheDocument();
+  });
+
+  it("preselects a recommended template Skill when it is installed", () => {
+    renderAutomationFormModal({
+      template: competitorTemplate,
+      skillLoadState: ready(["competitor-news-monitor"]),
+    });
+
+    expect(screen.getByText("Competitor News Monitor")).toBeInTheDocument();
+    expect(screen.queryByText("不可用")).not.toBeInTheDocument();
+  });
+
   it("opens the controlled one-time date and time picker", async () => {
     const user = userEvent.setup();
     renderAutomationFormModal();
@@ -316,9 +345,8 @@ describe("AutomationFormModal", () => {
 
     await user.click(screen.getByRole("button", { name: "调用技能" }));
     await user.click(screen.getByRole("option", { name: /Builder Radar.*builder-radar/ }));
-    await user.click(screen.getByRole("button", { name: "调用技能" }));
     await user.click(screen.getByRole("option", { name: /Finance News.*finance-news/ }));
-    await user.click(screen.getByRole("button", { name: "移除已选择的技能" }));
+    await user.click(screen.getByRole("button", { name: "移除技能 Builder Radar" }));
 
     expect(prompt).toHaveValue("只整理我关注的产品动态");
   });
@@ -326,13 +354,13 @@ describe("AutomationFormModal", () => {
 
 describe("AutomationSkillBindingSummary", () => {
   it("renders the no-Skill fallback", () => {
-    render(<AutomationSkillBindingSummary value="" loadState={ready([])} />);
+    render(<AutomationSkillBindingSummary value={[]} loadState={ready([])} />);
 
     expect(screen.getByText("未配置")).toBeInTheDocument();
   });
 
   it("renders the readable name and persisted slug for an available binding", () => {
-    render(<AutomationSkillBindingSummary value="finance-news" loadState={ready(["finance-news"])} />);
+    render(<AutomationSkillBindingSummary value={["finance-news"]} loadState={ready(["finance-news"])} />);
 
     expect(screen.getByText("Finance News")).toBeInTheDocument();
     expect(screen.getByText("finance-news")).toBeInTheDocument();
@@ -341,13 +369,13 @@ describe("AutomationSkillBindingSummary", () => {
 
   it("distinguishes unavailable and unknown bindings", () => {
     const { rerender } = render(
-      <AutomationSkillBindingSummary value="removed-skill" loadState={ready([])} />,
+      <AutomationSkillBindingSummary value={["removed-skill"]} loadState={ready([])} />,
     );
     expect(screen.getByText("不可用")).toBeInTheDocument();
 
     rerender(
       <AutomationSkillBindingSummary
-        value="removed-skill"
+        value={["removed-skill"]}
         loadState={{ status: "loading", slugs: [], error: null }}
       />,
     );
@@ -355,10 +383,24 @@ describe("AutomationSkillBindingSummary", () => {
 
     rerender(
       <AutomationSkillBindingSummary
-        value="removed-skill"
+        value={["removed-skill"]}
         loadState={{ status: "error", slugs: [], error: "network failed" }}
       />,
     );
     expect(screen.getByText("暂无法确认")).toBeInTheDocument();
+  });
+
+  it("renders every persisted Skill binding", () => {
+    render(
+      <AutomationSkillBindingSummary
+        value={["finance-news", "legal-review"]}
+        loadState={ready(["finance-news", "legal-review"])}
+      />,
+    );
+
+    expect(screen.getByText("Finance News")).toBeInTheDocument();
+    expect(screen.getByText("finance-news")).toBeInTheDocument();
+    expect(screen.getByText("Legal Review")).toBeInTheDocument();
+    expect(screen.getByText("legal-review")).toBeInTheDocument();
   });
 });

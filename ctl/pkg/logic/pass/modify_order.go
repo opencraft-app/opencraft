@@ -2,6 +2,7 @@ package pass
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	adapterfactory "ctl/pkg/adapter/factory"
 	tradeadapter "ctl/pkg/adapter/trade"
+	"ctl/pkg/authcode"
 	"ctl/pkg/errcode"
 	bundlemodel "ctl/pkg/model/bundle"
 	modelfactory "ctl/pkg/model/factory"
@@ -145,8 +147,53 @@ func (l *logic) ModifyPassOrder(
 	userID, passID string,
 	req *transport.ModifyPassOrderRequest,
 ) (*transport.ModifyPassOrderResult, error) {
-	return l.placeModifyOrder(userID, passID, req, "modify_pass_order",
-		adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceModifyOrder)
+	if req == nil || strings.TrimSpace(req.TargetBundleID) == "" {
+		return nil, errcode.ErrPassInvalidParam
+	}
+	// Each explicit checkout starts a new billing order, as in purchase.
+	// Ownership, current Pass state and legal targets remain server-validated.
+	result, err := l.placeModifyOrder(userID, passID, req, "modify_pass_order", adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceModifyOrder)
+	if err != nil {
+		return nil, err
+	}
+	if store := authcode.DefaultStore; store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		code, issueErr := store.Issue(ctx, &authcode.Ticket{UserID: userID, PassID: passID, DealNames: result.DealNames})
+		cancel()
+		if issueErr == nil {
+			result.AuthCode = code
+		} else {
+			modifyOrderLogger(userID, passID, "modify_pass_order").Warn("issue auth_code failed; bearer checkout remains available", zap.Error(issueErr))
+		}
+	}
+	return result, nil
+}
+
+// GetModifyCheckout recovers only durable local orders. No match is not proof
+// that an upstream request with an unknown outcome did not create an order.
+func (l *logic) GetModifyCheckout(userID, passID string) (*tradeadapter.ModifyCheckoutResult, error) {
+	entity, _, err := l.loadPassForModify(userID, passID, "recover_modify_checkout")
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reader, ok := adapterfactory.DefaultAdapterFactory.TradeAdapter().(tradeadapter.ModifyCheckoutReader)
+	if !ok {
+		return nil, errcode.ErrInternalServer
+	}
+	result, err := reader.FindModifyCheckout(ctx, userID, entity.PassID)
+	if err != nil {
+		var upstream *tradeadapter.Error
+		if errors.As(err, &upstream) && upstream.Status == 409 {
+			return nil, errcode.ErrModifyCheckoutConflict
+		}
+		return nil, fmt.Errorf("recover modify checkout: %w", err)
+	}
+	if result == nil {
+		return nil, errcode.ErrInternalServer
+	}
+	return result, nil
 }
 
 // ModifyPassOrderAndPay 详见 Logic 接口注释。
@@ -161,33 +208,80 @@ func (l *logic) ModifyPassOrderAndPay(
 // ModifyPassOrderUrl 详见 Logic 接口注释。
 func (l *logic) ModifyPassOrderUrl(
 	userID, passID string,
-	req *transport.ModifyPassOrderRequest,
+	req *transport.ModifyPassOrderUrlRequest,
 ) (*transport.ModifyPassOrderUrlResult, error) {
-	order, err := l.placeModifyOrder(userID, passID, req, "modify_pass_order_url",
-		adapterfactory.DefaultAdapterFactory.TradeAdapter().PlaceModifyOrder)
+	return l.modifyPassCheckout(userID, passID, req, false)
+}
+
+// ModifyPassPaymentAuthorization renews the short-lived ticket for an existing
+// order. The handler requires Bearer identity; no payment provider is called.
+func (l *logic) ModifyPassPaymentAuthorization(userID, passID string, req *transport.ModifyPassOrderUrlRequest) (*transport.ModifyPaymentAuthorizationResult, error) {
+	if _, err := l.modifyPassCheckout(userID, passID, req, true); err != nil {
+		return nil, err
+	}
+	if authcode.DefaultStore == nil {
+		return nil, errcode.ErrInternalServer
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	code, err := authcode.DefaultStore.Issue(ctx, &authcode.Ticket{UserID: userID, PassID: passID, DealNames: req.DealNames})
+	if err != nil {
+		return nil, errcode.ErrInternalServer
+	}
+	return &transport.ModifyPaymentAuthorizationResult{AuthCode: code}, nil
+}
+
+func (l *logic) modifyPassCheckout(userID, passID string, req *transport.ModifyPassOrderUrlRequest, authorizationOnly bool) (*transport.ModifyPassOrderUrlResult, error) {
+	if req == nil || len(req.DealNames) != 1 || strings.TrimSpace(req.DealNames[0]) == "" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "exactly one deal_name is required")
+	}
+	if req.Platform != "" && req.Platform != "pc" && req.Platform != "mobile" {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "invalid platform")
+	}
+	passEntity, _, err := l.loadPassForModify(userID, passID, "modify_pass_order_url")
 	if err != nil {
 		return nil, err
+	}
+	dealName := strings.TrimSpace(req.DealNames[0])
+	opts := &tradeadapter.GeneratePayURLOptions{
+		AuthorizationOnly: authorizationOnly,
+		ExternalUserID:    userID, ResourceID: passEntity.PassID, OrderType: "modify",
+		AllowedBundleIDs: AllowedModifyTargets(passEntity.BundleID),
+		Platform:         req.Platform, WxOpenID: req.WxOpenID, CancelURL: req.CancelURL, ReturnURL: req.ReturnURL,
+	}
+	if req.WxOpenID != "" {
+		opts.WxAppID = "wxf95ea3ae45d5304f"
 	}
 
 	urlCtx, cancel := context.WithTimeout(context.Background(), payURLRequestTimeout)
 	urlResp, urlErr := adapterfactory.DefaultAdapterFactory.TradeAdapter().
-		GeneratePayURL(urlCtx, order.DealName, nil)
+		GeneratePayURL(urlCtx, dealName, opts)
 	cancel()
 	if urlErr != nil {
-		// 单已经建出来了，只是支付页没拉到。返错但把 deal_name 写进日志：用户重试
-		// 会建第二张单，这里是排查"为什么有一张没付的变配单"的唯一线索。
+		var tradeErr *tradeadapter.Error
+		if errors.As(urlErr, &tradeErr) && tradeErr.Status == 404 {
+			return nil, errcode.ErrOrderNotFound
+		}
+		if errors.As(urlErr, &tradeErr) && tradeErr.Status == 409 && tradeErr.Code == "OrderNotPayable" {
+			return nil, errcode.ErrOrderNotPayable
+		}
 		modifyOrderLogger(userID, passID, "modify_pass_order_url").Warn(
-			"trade.GeneratePayURL failed after modify order placed",
-			zap.String("deal_name", order.DealName), zap.Error(urlErr))
+			"trade.GeneratePayURL failed for existing modify order",
+			zap.String("deal_name", dealName), zap.Error(urlErr))
 		return nil, fmt.Errorf("trade generate pay url: %w", urlErr)
 	}
 	if urlResp == nil {
 		return nil, fmt.Errorf("trade generate pay url returned nil response")
 	}
+	if urlResp.PayURL == "" && urlResp.NeedCharge != 0 {
+		return nil, fmt.Errorf("trade generate pay url: empty pay_url")
+	}
 
 	return &transport.ModifyPassOrderUrlResult{
-		DealName: order.DealName,
+		DealName: dealName,
 		PayURL:   urlResp.PayURL,
+		TokenID:  urlResp.TokenID, OrderID: urlResp.OrderID, MidasAppID: urlResp.MidasAppID,
+		NeedCharge: urlResp.NeedCharge, Uin: urlResp.Uin, AppID: urlResp.AppID,
 	}, nil
 }
 
@@ -245,6 +339,7 @@ func (l *logic) placeModifyOrder(
 	)
 	return &transport.ModifyPassOrderResult{
 		DealName:   resp.DealName,
+		DealNames:  []string{resp.DealName},
 		BigOrderID: resp.BigOrderID,
 	}, nil
 }

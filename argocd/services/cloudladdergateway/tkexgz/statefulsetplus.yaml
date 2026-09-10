@@ -70,6 +70,10 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_PAYMENT_HMAC_SECRET
               name: cloudladdergateway-runtime-secrets
+        # Enable strict caller authentication only on the Guangzhou production
+        # ingress. Staging and testing migrate independently.
+        - name: CLOUDLADDERGATEWAY_AUTH_MODE
+          value: required
         - name: CLOUDLADDER_SHADOW_HMAC_SECRET
           valueFrom:
             secretKeyRef:

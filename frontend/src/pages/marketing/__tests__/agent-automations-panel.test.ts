@@ -9,6 +9,7 @@ const cronClientMocks = vi.hoisted(() => ({
   editCronJob: vi.fn(),
   editCronJobWithContext: vi.fn(),
   execCommand: vi.fn(),
+  listAutomationBlueprints: vi.fn(),
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
   removeCronJob: vi.fn(),
@@ -82,6 +83,7 @@ import {
   toEditCronSkills,
   wouldCreateCronContextCycle,
 } from "../agent-automations-panel";
+import { composeAutomationExecutionPrompt } from "../automation-template-catalog";
 import { CronCommandError, type CronJob, type CronRunRecord } from "@/lib/hermes-cron-client";
 import { isGlobal } from "@/lib/region";
 
@@ -101,6 +103,7 @@ beforeEach(() => {
     exit_code: 0,
     output: JSON.stringify({ success: true, data: { platforms: [] } }),
   });
+  cronClientMocks.listAutomationBlueprints.mockResolvedValue([]);
   cronClientMocks.listCronJobs.mockResolvedValue([]);
   cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
@@ -121,7 +124,7 @@ afterEach(() => {
 });
 
 describe("automation scenario templates section", () => {
-  it("keeps template prompts concise and separate from schedule defaults", () => {
+  it("keeps every template prompt concise and separate from internal rules", () => {
     const t = (text: string) => text;
     const templates = getUnifiedAutomationTemplates(t, "zh-CN");
     const scenarioTemplates = templates.slice(0, 6);
@@ -134,29 +137,30 @@ describe("automation scenario templates section", () => {
       expect(template.prompt).not.toContain("不构成");
       expect(template.prompt).not.toContain("如果我补充");
       expect(template.prompt).not.toContain("说明书/链接");
-      expect(template.prompt).toContain("写了新的就以新的为准");
+      expect(template.prompt).not.toContain("写了新的就以新的为准");
+      expect(template.prompt.length).toBeLessThanOrEqual(90);
     }
 
     const medication = templates.find((template) => template.id === "medication-once");
-    expect(medication?.prompt).toContain("请帮我轻提醒喝水");
-    expect(medication?.prompt).toContain("按医嘱服用我的常用药");
+    expect(medication?.prompt).toContain("提醒我喝水");
+    expect(medication?.prompt).toContain("按医嘱服用常用药");
     expect(medication?.prompt).not.toContain("本提醒不构成用药建议");
     expect(medication?.prompt).not.toContain("08:00");
     expect(medication?.prompt).not.toContain("20:00");
 
     const rent = templates.find((template) => template.id === "rent-reminder");
-    expect(rent?.prompt).toContain("请帮我记得交房租和物业费");
-    expect(rent?.prompt).toContain("房租 2000 元、物业费 800 元");
+    expect(rent?.prompt).toContain("账期临近时提醒我");
+    expect(rent?.prompt).toContain("房租 2000 元和物业费 800 元");
     expect(rent?.prompt).not.toContain("水电、车位费、付款备注或房东信息");
     expect(rent?.prompt).not.toContain("09:00");
 
     const fx = templates.find((template) => template.id === "country-fx-alert");
-    expect(fx?.prompt).toContain("美元 USD 到人民币 CNY");
+    expect(fx?.prompt).toContain("USD/CNY");
     expect(fx?.prompt).not.toContain("换出币种：");
     expect(fx?.prompt).not.toContain("10:00");
 
     const fitness = templates.find((template) => template.id === "calorie-fitness-checkin");
-    expect(fitness?.prompt).toContain("写了新的就以新的为准：目标减脂并保持力量训练");
+    expect(fitness?.prompt).toContain("目标减脂并保持力量训练");
     expect(fitness?.prompt).toContain("168cm、62kg、目标 58kg");
     expect(fitness?.prompt).not.toContain("21:30");
   });
@@ -194,6 +198,76 @@ describe("automation scenario templates section", () => {
 
     expect(screen.getByText("2 / 2")).toBeTruthy();
     expect(screen.getByRole("button", { name: "启用每日工作小结" })).toBeTruthy();
+  });
+
+  it("filters the catalog by category and exposes useful template facts", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "健康生活" })).toBeTruthy();
+    expect(screen.getByText("每天 08:00")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "监控提醒" }));
+
+    expect(screen.getByRole("button", { name: "监控提醒" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByText("有变化才提醒").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+  });
+
+  it("hides categories that have no templates and keeps catalog loading static", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn(), loading: true }));
+
+    expect(screen.queryByRole("button", { name: "学习成长" })).toBeNull();
+    expect(screen.getByLabelText("正在加载官方模板")).not.toHaveClass("animate-spin");
+  });
+
+  it("shows the concrete required skill and summarizes additional skills", () => {
+    const t = (text: string) => text;
+    const template = {
+      ...getUnifiedAutomationTemplates(t, "zh-CN")[0]!,
+      skills: ["google-workspace", "weather"],
+    };
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates: [template], onEnable: vi.fn() }));
+
+    expect(screen.getByText("google-workspace")).toBeTruthy();
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(screen.queryByText("需要技能")).toBeNull();
+  });
+
+  it("keeps upgraded Hermes templates in the original compact card treatment", () => {
+    const t = (text: string) => text;
+    const baseTemplate = getUnifiedAutomationTemplates(t, "zh-CN")[0]!;
+    const templates = [
+      { ...baseTemplate, id: "morning-brief", source: "hermes" as const, name: "晨间简报", scheduleLabel: "每天 08:00" },
+      { ...baseTemplate, id: "price-watch", source: "hermes" as const, name: "价格与库存监控", scheduleLabel: "每 6 小时" },
+      { ...baseTemplate, id: "learn-daily", source: "hermes" as const, name: "每日学习", scheduleLabel: "每天 20:00" },
+      { ...baseTemplate, id: "meal-plan", source: "hermes" as const, name: "每周膳食计划", scheduleLabel: "每周日 18:00" },
+    ];
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.getByText("每天 08:00")).toBeTruthy();
+    expect(screen.getByText("每 6 小时")).toBeTruthy();
+    expect(screen.getAllByText("Hermes")).toHaveLength(4);
+  });
+
+  it("does not fabricate conversation previews for untested templates", () => {
+    const t = (text: string) => text;
+    const template = getUnifiedAutomationTemplates(t, "zh-CN")[0]!;
+
+    render(createElement(AutomationScenarioTemplatesSection, { templates: [template], onEnable: vi.fn() }));
+
+    expect(screen.queryByText("示例对话")).toBeNull();
+    expect(screen.queryByText(`请帮我设置「${template.name}」`)).toBeNull();
+    expect(screen.queryByRole("img")).toBeNull();
   });
 
   it("opens on first visit and remembers when templates are collapsed", () => {
@@ -236,7 +310,7 @@ describe("automation scenario templates section", () => {
     setItemSpy.mockRestore();
   });
 
-  it("renders templates without an outer card frame", () => {
+  it("renders the template section inside a restrained outer card", () => {
     const t = (text: string) => text;
     const templates = getUnifiedAutomationTemplates(t, "zh-CN");
 
@@ -245,16 +319,19 @@ describe("automation scenario templates section", () => {
     const region = screen.getByRole("region", { name: "任务模板" });
     const enableButton = screen.getByRole("button", { name: "启用喝水与吃药提醒" });
     const collapseButton = screen.getByRole("button", { name: "收起任务模板" });
-    const iconBox = enableButton.querySelector("span");
+    const iconBox = enableButton.querySelector(".size-9");
+    const grid = region.querySelector("#automation-scenario-templates-grid");
 
-    expect(region).toHaveClass("border-0", "bg-transparent", "p-0", "shadow-none");
-    expect(region).not.toHaveClass("rounded-sm", "rounded-xl", "rounded-lg", "rounded-full", "border", "bg-white", "p-4");
+    expect(region).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-4", "shadow-none");
+    expect(region).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
     expect(enableButton).toHaveClass("rounded-sm");
     expect(collapseButton).toHaveClass("rounded-sm");
     expect(iconBox).toHaveClass("rounded-sm");
     expect(enableButton).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
     expect(collapseButton).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
     expect(iconBox).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
+    expect(grid).toHaveClass("min-h-[248px]", "content-start");
+    expect(grid).not.toHaveClass("auto-rows-[330px]");
   });
 
   it("keeps collapse and expand controls beside the subtitle", () => {
@@ -286,11 +363,11 @@ describe("automation scenario templates section", () => {
 
     const enableButton = screen.getByRole("button", { name: "启用喝水与吃药提醒" });
 
-    expect(enableButton).toHaveClass("bg-white", "border-black/[0.04]", "hover:bg-white", "hover:border-black/[0.08]");
+    expect(enableButton).toHaveClass("bg-white", "border-black/[0.06]", "hover:bg-white", "hover:border-black/[0.12]");
     expect(enableButton).not.toHaveClass("bg-black/[0.015]", "hover:bg-black/[0.035]", "border-black/[0.06]");
   });
 
-  it("turns the collapsed template area into a quiet subtitle row", () => {
+  it("keeps the restrained outer card when templates are collapsed", () => {
     const t = (text: string) => text;
     const templates = getUnifiedAutomationTemplates(t, "zh-CN");
 
@@ -302,8 +379,8 @@ describe("automation scenario templates section", () => {
     const title = screen.getByRole("heading", { name: "任务模板" });
     const expandButton = screen.getByRole("button", { name: "展开任务模板" });
 
-    expect(region).toHaveClass("border-0", "bg-transparent", "p-0", "shadow-none");
-    expect(region).not.toHaveClass("rounded-sm", "border", "bg-white", "p-4");
+    expect(region).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-4", "shadow-none");
+    expect(region).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
     expect(title).toHaveClass("text-xs", "text-black/45");
     expect(expandButton).toHaveClass("h-6", "border-0", "text-[11px]", "text-black/40");
     expect(expandButton).not.toHaveClass("rounded-full", "bg-white", "border");
@@ -389,6 +466,26 @@ describe("recent run limit hint", () => {
     expect(screen.getByText("未配置")).toBeTruthy();
   });
 
+  it("hides internal execution rules from recent-run summaries and details", () => {
+    const jobPrompt = composeAutomationExecutionPrompt(
+      "监控 AirPods Pro，低于 1500 元时提醒。",
+      "Deduplicate alerts. If nothing changed, return exactly [SILENT].",
+    );
+    render(createElement(RecentCronRunsPanel, {
+      runs: [makeCronRun({ job_prompt: jobPrompt })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("监控 AirPods Pro，低于 1500 元时提醒。")).toBeTruthy();
+    expect(screen.queryByText(/lightvela_internal_rules/)).toBeNull();
+    expect(screen.queryByText(/SILENT/)).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: localizedText("查看任务详情", "View job details") })[0]!);
+    expect(screen.getAllByText("监控 AirPods Pro，低于 1500 元时提醒。")).toHaveLength(2);
+    expect(screen.queryByText(/lightvela_internal_rules/)).toBeNull();
+    expect(screen.queryByText(/SILENT/)).toBeNull();
+  });
+
   it("shows the 0 Token subtype in the recent-run list and hides Agent-only detail rows", () => {
     render(createElement(RecentCronRunsPanel, {
       runs: [makeCronRun({
@@ -419,35 +516,33 @@ describe("recent run limit hint", () => {
 });
 
 describe("automation Skill form mapping", () => {
-  it("omits Skill input for ordinary tasks and stores one selected slug", () => {
-    expect(toCreateCronSkills("")).toBeUndefined();
-    expect(toCreateCronSkills("finance-news")).toEqual(["finance-news"]);
+  it("omits empty Skill input and stores every selected slug", () => {
+    expect(toCreateCronSkills([])).toBeUndefined();
+    expect(toCreateCronSkills(["finance-news", "market-data"])).toEqual(["finance-news", "market-data"]);
   });
 
-  it("distinguishes keeping, replacing and clearing an edit binding", () => {
-    expect(toEditCronSkills(["finance-news"], "finance-news")).toBeUndefined();
-    expect(toEditCronSkills(["finance-news"], "market-data")).toEqual(["market-data"]);
-    expect(toEditCronSkills(["finance-news"], "")).toEqual([]);
+  it("distinguishes keeping, replacing and clearing every edit binding", () => {
+    expect(toEditCronSkills(["finance-news", "market-data"], ["finance-news", "market-data"])).toBeUndefined();
+    expect(toEditCronSkills(["finance-news"], ["finance-news", "market-data"])).toEqual(["finance-news", "market-data"]);
+    expect(toEditCronSkills(["finance-news"], [])).toEqual([]);
   });
 
-  it("does not collapse an external multi-Skill task when its first binding is unchanged", () => {
-    expect(toEditCronSkills(["first", "second"], "first")).toBeUndefined();
+  it("does not collapse or reorder an external multi-Skill task", () => {
+    expect(toEditCronSkills(["first", "second"], ["first", "second"])).toBeUndefined();
   });
 
-  it("rejects a new or changed binding that is missing or cannot be verified", () => {
+  it("rejects any newly selected binding that is missing or cannot be verified", () => {
     expect(getAutomationSkillSelectionIssue({
       mode: "create",
       initialSkills: [],
-      selectedSkill: "finance-news",
-      initialSkillWasAvailable: null,
+      selectedSkills: ["finance-news", "market-data"],
       verificationState: { status: "ready", slugs: [], error: null },
     })).toBe("unavailable");
 
     expect(getAutomationSkillSelectionIssue({
       mode: "edit",
       initialSkills: ["finance-news"],
-      selectedSkill: "market-data",
-      initialSkillWasAvailable: true,
+      selectedSkills: ["finance-news", "market-data"],
       verificationState: { status: "error", slugs: ["finance-news"], error: "network failed" },
     })).toBe("unverified");
   });
@@ -456,28 +551,69 @@ describe("automation Skill form mapping", () => {
     expect(getAutomationSkillSelectionIssue({
       mode: "create",
       initialSkills: [],
-      selectedSkill: "",
-      initialSkillWasAvailable: null,
+      selectedSkills: [],
       verificationState: { status: "error", slugs: [], error: "network failed" },
     })).toBeNull();
 
     expect(getAutomationSkillSelectionIssue({
       mode: "edit",
       initialSkills: ["removed-skill"],
-      selectedSkill: "removed-skill",
-      initialSkillWasAvailable: false,
+      selectedSkills: ["removed-skill"],
       verificationState: { status: "ready", slugs: [], error: null },
     })).toBeNull();
   });
 
-  it("detects a binding that became unavailable while the edit form was open", () => {
+  it("allows removing one historical unavailable binding while preserving the others", () => {
     expect(getAutomationSkillSelectionIssue({
       mode: "edit",
-      initialSkills: ["finance-news"],
-      selectedSkill: "finance-news",
-      initialSkillWasAvailable: true,
+      initialSkills: ["removed-skill", "other-removed-skill"],
+      selectedSkills: ["other-removed-skill"],
       verificationState: { status: "ready", slugs: [], error: null },
-    })).toBe("unavailable");
+    })).toBeNull();
+  });
+});
+
+describe("multi-Skill automation form", () => {
+  it("submits every selected Skill when creating a task", async () => {
+    const installed = { status: "ready" as const, slugs: ["finance-news", "market-data"], error: null };
+    renderAutomationForm({
+      skillLoadState: installed,
+      onRefreshSkills: vi.fn().mockResolvedValue(installed),
+    });
+
+    fillCreateFields("多技能任务");
+    fireEvent.click(screen.getByRole("button", { name: localizedText("调用技能", "Use Skill") }));
+    fireEvent.click(screen.getByRole("option", { name: /Finance News.*finance-news/ }));
+    fireEvent.click(screen.getByRole("option", { name: /Market Data.*market-data/ }));
+    fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
+
+    await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1",
+      expect.objectContaining({ skills: ["finance-news", "market-data"] }),
+      undefined,
+    ));
+  });
+
+  it("preserves old bindings while adding another Skill to an edited task", async () => {
+    const installed = { status: "ready" as const, slugs: ["finance-news", "market-data"], error: null };
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({ skills: ["removed-skill", "finance-news"] }),
+      skillLoadState: installed,
+      onRefreshSkills: vi.fn().mockResolvedValue(installed),
+    });
+
+    expect(screen.getByText("Removed Skill")).toBeInTheDocument();
+    expect(screen.getByText("Finance News")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: localizedText("调用技能", "Use Skill") }));
+    fireEvent.click(screen.getByRole("option", { name: /Market Data.*market-data/ }));
+    fireEvent.click(screen.getByRole("button", { name: localizedText("保存", "Save") }));
+
+    await waitFor(() => expect(cronClientMocks.editCronJob).toHaveBeenCalledWith(
+      "bot-1",
+      "job-1",
+      expect.objectContaining({ skills: ["removed-skill", "finance-news", "market-data"] }),
+    ));
   });
 });
 
@@ -556,6 +692,30 @@ describe("cron context relationship helpers", () => {
 });
 
 describe("cron context panel integration", () => {
+  it("hides internal execution rules from task cards and details", async () => {
+    const prompt = composeAutomationExecutionPrompt(
+      "监控 AirPods Pro，低于 1500 元时提醒。",
+      "Deduplicate alerts. If nothing changed, return exactly [SILENT].",
+    );
+    cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({
+      id: "templated-monitor",
+      name: "价格监控",
+      prompt,
+    })]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const card = await getCronJobCard("价格监控");
+    expect(card).toHaveTextContent("监控 AirPods Pro，低于 1500 元时提醒。");
+    expect(card).not.toHaveTextContent("lightvela_internal_rules");
+    expect(card).not.toHaveTextContent("SILENT");
+
+    fireEvent.click(within(card).getByRole("button", { name: localizedText("查看", "View") }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("监控 AirPods Pro，低于 1500 元时提醒。")).toBeTruthy();
+    expect(within(dialog).queryByText(/lightvela_internal_rules/)).toBeNull();
+    expect(within(dialog).queryByText(/SILENT/)).toBeNull();
+  });
+
   it("shows plain zero-token task types in details and omits model metadata", async () => {
     const notificationJob = makeCronJob({
       id: "zero-fixed",
@@ -678,6 +838,79 @@ describe("cron context panel integration", () => {
       name: localizedText("查看", "View"),
     }));
     expect(within(screen.getByRole("dialog")).getByText(localizedText("智能任务", "AI-powered"))).toBeInTheDocument();
+  });
+
+  it("merges runtime-only Hermes blueprints into the template catalog", async () => {
+    skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue(["google-workspace"]);
+    cronClientMocks.listAutomationBlueprints.mockResolvedValue([{
+      key: "morning-brief",
+      title: "Morning briefing",
+      description: "Calendar, weather, and urgent items.",
+      category: "daily",
+      tags: ["daily", "briefing"],
+      fields: [],
+      scheduleHuman: "daily at 08:00",
+      spec: {
+        name: "Morning briefing",
+        prompt: "Produce a concise morning briefing.",
+        schedule: "0 8 * * *",
+        deliver: "local",
+        skills: ["google-workspace", "weather"],
+      },
+    }]);
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: isGlobal ? "Daily assistant" : "每日助理" }));
+    const enable = await screen.findByRole("button", { name: isGlobal ? "Enable Morning briefing" : "启用晨间简报" });
+    expect(enable).toBeTruthy();
+    expect(screen.getByText("google-workspace")).toBeTruthy();
+    fireEvent.click(enable);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Google Workspace")).toBeTruthy();
+    expect(within(dialog).queryByText("Weather")).toBeNull();
+  });
+
+  it("falls back to the official baseline while a new Agent catalog is loading", async () => {
+    let resolveSecond: ((value: []) => void) | undefined;
+    cronClientMocks.listAutomationBlueprints
+      .mockResolvedValueOnce([{
+        key: "morning-brief",
+        title: "Morning briefing",
+        description: "Calendar, weather, and urgent items.",
+        category: "daily",
+        tags: ["daily"],
+        fields: [],
+        scheduleHuman: "daily at 08:00",
+        spec: {
+          name: "Morning briefing",
+          prompt: "Produce a concise morning briefing.",
+          schedule: "0 8 * * *",
+          deliver: "local",
+          skills: ["runtime-only-skill"],
+        },
+      }])
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+
+    const { rerender } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+    fireEvent.click(await screen.findByRole("button", { name: isGlobal ? "Daily assistant" : "每日助理" }));
+    expect(await screen.findByRole("button", { name: isGlobal ? "Enable Morning briefing" : "启用晨间简报" })).toBeTruthy();
+    expect(screen.getByText("runtime-only-skill")).toBeTruthy();
+
+    rerender(createElement(HermesAgentAutomationsPanel, { botId: "bot-2" }));
+    await waitFor(() => expect(cronClientMocks.listAutomationBlueprints).toHaveBeenCalledWith("bot-2"));
+    expect(screen.getByRole("button", { name: isGlobal ? "Enable Morning briefing" : "启用晨间简报" })).toBeTruthy();
+    expect(screen.queryByText("runtime-only-skill")).toBeNull();
+
+    resolveSecond?.([]);
+  });
+
+  it("keeps LightVela templates available when the runtime catalog cannot be read", async () => {
+    cronClientMocks.listAutomationBlueprints.mockRejectedValue(new Error("catalog unavailable"));
+
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByRole("button", { name: isGlobal ? "Enable Water & medication reminders" : "启用喝水与吃药提醒" })).toBeTruthy();
   });
 
   it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", (mode) => {
@@ -2405,6 +2638,102 @@ describe("once execution time picker", () => {
 });
 
 describe("automation form test run", () => {
+  it("uses the existing form defaults without leaking the chat-only origin target", async () => {
+    if (isGlobal) return;
+    renderAutomationForm({
+      template: {
+        id: "morning-brief",
+        source: "hermes",
+        name: "晨间简报",
+        description: "每天汇总日历和天气",
+        category: "daily",
+        tags: [],
+        prompt: "生成晨间简报。",
+        executionRules: "Use connected sources. If none are available, give a useful fallback.",
+        schedule: { kind: "recurring", period: "daily", time: "08:00" },
+        scheduleLabel: "每天 08:00",
+        deliver: "origin",
+        skills: [],
+        notificationPolicy: "always",
+        previewKind: "briefing",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+        "bot-1",
+        expect.objectContaining({
+          name: "晨间简报",
+          prompt: expect.stringContaining("Use connected sources"),
+          schedule: "0 8 * * *",
+          deliver: "local",
+        }),
+        undefined,
+      );
+    });
+
+    expect(screen.getByDisplayValue("生成晨间简报。")).toBeInTheDocument();
+  });
+
+  it("test-runs a template with its internal execution rules", () => {
+    const onTestRun = vi.fn();
+    renderAutomationForm({
+      template: {
+        id: "price-watch",
+        source: "hermes",
+        name: "价格与库存监控",
+        description: "达到条件时提醒",
+        category: "monitoring",
+        tags: [],
+        prompt: "监控 AirPods Pro，低于 1500 元时提醒。",
+        executionRules: "Deduplicate alerts. If nothing changed, return exactly [SILENT].",
+        schedule: { kind: "interval", intervalNum: 6, intervalUnit: "h" },
+        scheduleLabel: "每 6 小时",
+        deliver: "local",
+        skills: [],
+        notificationPolicy: "only-when-needed",
+        previewKind: "monitor",
+      },
+      onTestRun,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("测试运行", "Test run") }));
+
+    expect(onTestRun).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringMatching(/AirPods Pro[\s\S]*Deduplicate alerts[\s\S]*\[SILENT\]/),
+    }));
+    expect(screen.getByDisplayValue("监控 AirPods Pro，低于 1500 元时提醒。")).toBeInTheDocument();
+  });
+
+  it("keeps internal rules hidden and preserves them when editing a template-created task", async () => {
+    const executionRules = "Alert only on meaningful change. Otherwise return exactly [SILENT].";
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({
+        id: "templated-job",
+        name: "价格监控",
+        prompt: composeAutomationExecutionPrompt("监控 AirPods Pro。", executionRules),
+      }),
+    });
+
+    expect(screen.getByDisplayValue("监控 AirPods Pro。")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/lightvela_internal_rules/)).toBeNull();
+    fireEvent.change(screen.getByDisplayValue("监控 AirPods Pro。"), {
+      target: { value: "监控 MacBook Air。" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: localizedText("保存", "Save") }));
+
+    await waitFor(() => expect(cronClientMocks.editCronJob).toHaveBeenCalledWith(
+      "bot-1",
+      "templated-job",
+      expect.objectContaining({
+        prompt: composeAutomationExecutionPrompt("监控 MacBook Air。", executionRules),
+      }),
+    ));
+  });
+
   it("test-runs the current unsaved create form without saving it", () => {
     if (isGlobal) return;
     const onTestRun = vi.fn();
@@ -2489,6 +2818,23 @@ describe("automation form test run", () => {
     expect(testButton).toHaveAccessibleDescription("请先填写名称和任务说明");
     expect(testButton.parentElement).toHaveAttribute("title", "请先填写名称和任务说明");
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+  });
+
+  it("does not allow clearing the visible instructions from an existing intelligent task", () => {
+    renderAutomationForm({
+      mode: "edit",
+      initialJob: makeCronJob({
+        id: "templated-job",
+        prompt: composeAutomationExecutionPrompt(
+          "监控 AirPods Pro。",
+          "If nothing changed, return exactly [SILENT].",
+        ),
+      }),
+    });
+
+    fireEvent.change(screen.getByDisplayValue("监控 AirPods Pro。"), { target: { value: "" } });
+
+    expect(screen.getByRole("button", { name: localizedText("保存", "Save") })).toBeDisabled();
   });
 
   it("shows the form test run as busy while it is starting", () => {

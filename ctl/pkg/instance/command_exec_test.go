@@ -1521,8 +1521,54 @@ func TestConfigureQQChannelEnsuresPluginBeforeAdd(t *testing.T) {
 	}
 }
 
+func TestConfigureQQChannelRoutesNamedHermesProfile(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		processBatches: [][]psandbox.ProcessStreamEvent{
+			{{Stdout: `{"items":[{"native_id":"sales-123","display_name":"Sales","description":"","is_default":false,"gateway_running":false,"modified_at":"2026-09-09T00:00:00Z"}]}`}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
+			{{Stdout: "ok"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
+			{{Stdout: "ok"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1",
+			SandboxId:  "sbx-1",
+			Status:     modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+	ctx := pctx.NewContext(nil).WithUserID("user-1")
+
+	resp, err := logic.ConfigureChannel(ctx, "ins-1", &transport.ConfigureChannelRequest{
+		Channel: "qqbot", Token: "123456:secret", ProfileID: "sales-123",
+	})
+	if err != nil {
+		t.Fatalf("configure profile channel: %v", err)
+	}
+	if resp == nil || !resp.GatewayRestarted {
+		t.Fatalf("expected successful profile channel response, got %+v", resp)
+	}
+	if len(adapter.processCalls) != 3 {
+		t.Fatalf("expected profile lookup, configure and restart calls, got %d", len(adapter.processCalls))
+	}
+	configureCommand := adapter.processCalls[1].Args[2]
+	if !strings.Contains(configureCommand, "acli configure gateway qqbot") ||
+		!strings.Contains(configureCommand, "--agent") || !strings.Contains(configureCommand, "sales-123") {
+		t.Fatalf("expected profile-scoped configure command, got %s", configureCommand)
+	}
+	restartCommand := adapter.processCalls[2].Args[2]
+	if !strings.Contains(restartCommand, "acli gateway restart") ||
+		!strings.Contains(restartCommand, "--agent") || !strings.Contains(restartCommand, "sales-123") {
+		t.Fatalf("expected profile-scoped restart command, got %s", restartCommand)
+	}
+}
+
 func TestFinishWeixinLoginSuccessFailsOnCommandFailure(t *testing.T) {
 	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
 		sandboxAdapter: &commandSandboxAdapterStub{
 			processEvents: []psandbox.ProcessStreamEvent{
 				{Stdout: "restart failed"},
@@ -1538,7 +1584,7 @@ func TestFinishWeixinLoginSuccessFailsOnCommandFailure(t *testing.T) {
 	err := logic.finishWeixinLoginSuccess(ctx, "sbx-1", &channelloginsession.Entity{
 		SessionID:  "sess-1",
 		InstanceID: "ins-1",
-	}, func(updates map[string]interface{}, event transport.WeixinLoginSessionEvent) {
+	}, "ins-1", rootProfileID, func(updates map[string]interface{}, event transport.WeixinLoginSessionEvent) {
 		lastUpdates = updates
 		lastEvent = event
 	})
@@ -1558,10 +1604,13 @@ func TestFinishWeixinLoginSuccessFailsOnCommandFailure(t *testing.T) {
 
 func TestFinishWeixinLoginSuccessUsesProcessGatewayRestartCommand(t *testing.T) {
 	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
 		sandboxAdapter: &commandSandboxAdapterStub{
-			processEvents: []psandbox.ProcessStreamEvent{
-				{Stdout: "restarted"},
-				{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			processBatches: [][]psandbox.ProcessStreamEvent{
+				{{Stdout: "restarted"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
+				{{Stdout: `{"ok":true,"channel":"weixin","bot_id":"ins-1","profile_id":"default","status":"connected"}`}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
 			},
 		},
 		logger: zap.NewNop(),
@@ -1571,7 +1620,7 @@ func TestFinishWeixinLoginSuccessUsesProcessGatewayRestartCommand(t *testing.T) 
 	err := logic.finishWeixinLoginSuccess(ctx, "sbx-1", &channelloginsession.Entity{
 		SessionID:  "sess-1",
 		InstanceID: "ins-1",
-	}, func(map[string]interface{}, transport.WeixinLoginSessionEvent) {})
+	}, "ins-1", rootProfileID, func(map[string]interface{}, transport.WeixinLoginSessionEvent) {})
 	if err != nil {
 		t.Fatalf("finish weixin login success: %v", err)
 	}
@@ -1580,19 +1629,15 @@ func TestFinishWeixinLoginSuccessUsesProcessGatewayRestartCommand(t *testing.T) 
 	if len(adapter.calls) != 0 {
 		t.Fatalf("expected weixin login restart to avoid TAT ExecCommand, got %d calls", len(adapter.calls))
 	}
-	if len(adapter.processCalls) != 1 {
-		t.Fatalf("expected one process restart command, got %d", len(adapter.processCalls))
+	if len(adapter.processCalls) != 2 {
+		t.Fatalf("expected process restart and channel binding confirmation, got %d", len(adapter.processCalls))
 	}
 	restartReq := adapter.processCalls[0]
 	if restartReq.Cmd != "/bin/bash" || len(restartReq.Args) != 3 {
 		t.Fatalf("expected bash -l -c restart request, got %#v", restartReq)
 	}
 	restartCmd := restartReq.Args[2]
-	if !strings.Contains(restartCmd, `runtime_uid="$(id -u)"`) ||
-		!strings.Contains(restartCmd, `export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${runtime_uid}}"`) {
-		t.Fatalf("expected XDG_RUNTIME_DIR bootstrap in restart command, got %s", restartCmd)
-	}
-	if !strings.Contains(restartCmd, `loginctl enable-linger "$(id -un)" 2>/dev/null || true`) {
-		t.Fatalf("expected loginctl bootstrap in restart command, got %s", restartCmd)
+	if !strings.Contains(restartCmd, "acli gateway restart") || !strings.Contains(restartCmd, "--agent 'main'") {
+		t.Fatalf("expected profile-scoped acli restart command, got %s", restartCmd)
 	}
 }

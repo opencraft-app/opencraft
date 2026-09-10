@@ -591,6 +591,12 @@ func TestModifyResourceCTLErrorClassification(t *testing.T) {
 			wantMarkFail: true,
 		},
 		{
+			name:         "another order already changed the source bundle refunds",
+			err:          &ctlclient.Error{HTTPStatus: 409, Code: "PASS_MODIFY_CONFIG_MISMATCH", Message: "source differs from current pass"},
+			wantCode:     jifei.RefundReturnCode,
+			wantMarkFail: true,
+		},
+		{
 			name:     "ctl 5xx retries",
 			err:      &ctlclient.Error{HTTPStatus: 503, Code: "UNAVAILABLE", Message: "boom"},
 			wantCode: ReturnCodeUpstreamUnavailable,

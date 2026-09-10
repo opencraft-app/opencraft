@@ -716,10 +716,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
 
         oidc_clients = json.loads(values["AUTH_OIDC_CLIENTS_JSON"])
-        self.assertEqual(len(oidc_clients), 1)
-        self.assertEqual(oidc_clients[0]["id"], "site-gateway")
+        self.assertEqual(len(oidc_clients), 2)
+        clients_by_id = {client["id"]: client for client in oidc_clients}
         self.assertEqual(
-            set(oidc_clients[0]["redirect_uris"]),
+            clients_by_id["site-gateway"]["redirect_uris"],
+            [
+                "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+                "https://sites-auth.lightvela.site/auth/lightvela/callback",
+            ],
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-native-v1"],
+            {
+                "id": "opencraft-native-v1",
+                "display_name": "Vela",
+                "redirect_uris": ["opencraft://auth/lightvela"],
+            },
+        )
+        self.assertEqual(
+            set(clients_by_id["site-gateway"]["redirect_uris"]),
             {
                 "https://sites-auth.lightvela.site/auth/lightvela/callback",
                 "https://sites-auth.lightvela.tech/auth/lightvela/callback",
@@ -2276,7 +2291,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
         self.assertEqual(
             approval_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
         )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
@@ -2313,6 +2328,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
         self.assertIn("check-in", stages[0])
+        release_reviews = (((stages[0].get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        self.assertEqual(
+            release_reviews.get("reviewers"),
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+        )
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
         self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
@@ -3152,7 +3172,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"', template_text)
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)
-        self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
+        release_image_dir = (
+            'RELEASE_IMAGE_DIR="${TMPDIR:-/tmp}/lightclaw-ci/release-images/'
+            '${BK_CI_BUILD_ID:?BK_CI_BUILD_ID is required}/'
+            '${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"'
+        )
+        self.assertEqual(template_text.count(release_image_dir), 2)
+        self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
         self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)

@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
 	"ctl/pkg/errcode"
+	"ctl/pkg/transport"
 )
 
 func (h *instanceHandler) createWeixinLoginSession(w http.ResponseWriter, r *http.Request, instanceID string) {
@@ -14,7 +16,12 @@ func (h *instanceHandler) createWeixinLoginSession(w http.ResponseWriter, r *htt
 		writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 		return
 	}
-	resp, err := h.logic.CreateWeixinLoginSession(ctx, instanceID)
+	var req transport.CreateWeixinLoginSessionRequest
+	if err := decodeJSONBody(r, &req); err != nil && err != io.EOF {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err.Error()))
+		return
+	}
+	resp, err := h.logic.CreateWeixinLoginSession(ctx, instanceID, &req)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return

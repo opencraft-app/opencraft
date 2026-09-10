@@ -15,6 +15,70 @@ func TestValidateRejectsUnknownAuthMode(t *testing.T) {
 	}
 }
 
+func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+auth:
+  mode: optional
+  allow_unauthenticated:
+    - callback
+routes:
+  - id: callback
+    upstream:
+      base_url: http://callback.internal
+  - id: jifei-test
+    upstream:
+      base_url: http://jifei-test.internal
+  - id: devtunnel
+    upstream:
+      base_url: http://devtunnel.internal
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Auth.EffectiveMode(); got != AuthModeRequired {
+		t.Fatalf("auth mode = %q, want required", got)
+	}
+	want := []string{"callback", "jifei-test", "devtunnel"}
+	if !slices.Equal(cfg.Auth.AllowUnauthenticated, want) {
+		t.Fatalf("allow_unauthenticated = %#v, want %#v", cfg.Auth.AllowUnauthenticated, want)
+	}
+}
+
+func TestLoadKeepsYAMLAuthWhenEnvironmentOverridesAreEmpty(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", "")
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+auth:
+  mode: optional
+  allow_unauthenticated: [callback]
+routes:
+  - id: callback
+    upstream:
+      base_url: http://callback.internal
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Auth.EffectiveMode(); got != AuthModeOptional {
+		t.Fatalf("auth mode = %q, want optional", got)
+	}
+	if !slices.Equal(cfg.Auth.AllowUnauthenticated, []string{"callback"}) {
+		t.Fatalf("allow_unauthenticated = %#v", cfg.Auth.AllowUnauthenticated)
+	}
+}
+
 func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {

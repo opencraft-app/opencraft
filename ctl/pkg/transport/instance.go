@@ -177,6 +177,49 @@ type ListInstancesResponse struct {
 	Items []*InstanceResponse `json:"items"`
 }
 
+// InstanceBotResponse describes one product Bot hosted by an instance.
+type InstanceBotResponse struct {
+	BotID        string                          `json:"bot_id" example:"bot-550e8400e29b41d4a716446655440000"`
+	InstanceID   string                          `json:"instance_id" example:"ins-123"`
+	ProfileID    string                          `json:"profile_id" example:"main"`
+	Name         string                          `json:"name" example:"我的助手"`
+	Description  string                          `json:"description,omitempty"`
+	IsDefault    bool                            `json:"is_default"`
+	Status       string                          `json:"status" example:"ready"`
+	CreatedFrom  string                          `json:"created_from" example:"blank"`
+	SourceBotID  string                          `json:"source_bot_id,omitempty"`
+	ErrorCode    string                          `json:"error_code,omitempty"`
+	ErrorMessage string                          `json:"error_message,omitempty"`
+	CreatedAt    time.Time                       `json:"created_at"`
+	UpdatedAt    time.Time                       `json:"updated_at"`
+	WeixinOwner  *InstanceChannelBindingResponse `json:"weixin_owner,omitempty"`
+}
+
+type InstanceChannelBindingResponse struct {
+	Channel   string `json:"channel"`
+	BotID     string `json:"bot_id"`
+	ProfileID string `json:"profile_id"`
+	BotName   string `json:"bot_name,omitempty"`
+	Status    string `json:"status"`
+}
+
+type ListInstanceBotsResponse struct {
+	Items []*InstanceBotResponse `json:"items"`
+}
+
+type CreateInstanceBotRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	CreateMode  string `json:"create_mode" example:"blank"`
+	SourceBotID string `json:"source_bot_id,omitempty"`
+	InitialSoul string `json:"initial_soul,omitempty"`
+}
+
+type UpdateInstanceBotRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
 // BotSummaryResponse 只读 bot 归属摘要
 type BotSummaryResponse struct {
 	// Bot 对应的 ctl instance_id
@@ -547,8 +590,15 @@ type CreateWeixinLoginSessionResponse struct {
 	Status    string `json:"status" example:"starting"`
 }
 
+type CreateWeixinLoginSessionRequest struct {
+	BotID     string `json:"bot_id,omitempty"`
+	ProfileID string `json:"profile_id,omitempty"`
+}
+
 type WeixinLoginSessionResponse struct {
 	SessionID     string     `json:"session_id" example:"wxlogin_123"`
+	BotID         string     `json:"bot_id,omitempty"`
+	ProfileID     string     `json:"profile_id,omitempty"`
 	Status        string     `json:"status" example:"waiting_qr"`
 	QRURL         string     `json:"qr_url,omitempty" example:"https://example.com/qr"`
 	QRASCII       string     `json:"qr_ascii,omitempty"`
@@ -569,6 +619,8 @@ type ConfigureChannelRequest struct {
 	Token string `json:"token" example:"123456789:app-secret"`
 	// 同通道多账号标识（可选）
 	Account string `json:"account,omitempty" example:"bot1"`
+	// Hermes Profile 选择器；空值保持存量实例级配置链路。
+	ProfileID string `json:"profile_id,omitempty" example:"main"`
 }
 
 // ConfigureChannelResponse 配置通道响应

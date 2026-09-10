@@ -145,9 +145,19 @@ chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/python"
 chmod +x "$HOME/.hermes/bin/uv"
 mkdir -p "$HOME/.hermes/skills/software-development/plan" \
+  "$HOME/.hermes/skills/productivity/google-workspace" \
+  "$HOME/.hermes/skills/productivity/weekly-review-planning" \
+  "$HOME/.hermes/skills/email/email-inbox-triage" \
+  "$HOME/.hermes/skills/productivity/product-price-monitor" \
+  "$HOME/.hermes/skills/research/competitor-news-monitor" \
   "$HOME/.hermes/skills/software-development/noisy-skill" \
   "$HOME/.hermes/skills/empty-category"
 printf 'keep\n' >"$HOME/.hermes/skills/software-development/plan/SKILL.md"
+printf 'keep\n' >"$HOME/.hermes/skills/productivity/google-workspace/SKILL.md"
+printf 'keep\n' >"$HOME/.hermes/skills/productivity/weekly-review-planning/SKILL.md"
+printf 'keep\n' >"$HOME/.hermes/skills/email/email-inbox-triage/SKILL.md"
+printf 'keep\n' >"$HOME/.hermes/skills/productivity/product-price-monitor/SKILL.md"
+printf 'keep\n' >"$HOME/.hermes/skills/research/competitor-news-monitor/SKILL.md"
 printf 'remove\n' >"$HOME/.hermes/skills/software-development/noisy-skill/SKILL.md"
 printf 'description\n' >"$HOME/.hermes/skills/empty-category/DESCRIPTION.md"
 exit 0
@@ -501,6 +511,11 @@ grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " 
 ! grep -q "ln -sfn ${HOME}/.hermes/hermes-agent/venv/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
 ! grep -q "ln -sfn ${HOME}/.local/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
 test -f "${RUNTIME_HOME}/.hermes/skills/software-development/plan/SKILL.md"
+test -f "${RUNTIME_HOME}/.hermes/skills/productivity/google-workspace/SKILL.md"
+test -f "${RUNTIME_HOME}/.hermes/skills/productivity/weekly-review-planning/SKILL.md"
+test -f "${RUNTIME_HOME}/.hermes/skills/email/email-inbox-triage/SKILL.md"
+test -f "${RUNTIME_HOME}/.hermes/skills/productivity/product-price-monitor/SKILL.md"
+test -f "${RUNTIME_HOME}/.hermes/skills/research/competitor-news-monitor/SKILL.md"
 test ! -e "${RUNTIME_HOME}/.hermes/skills/software-development/noisy-skill"
 test ! -e "${RUNTIME_HOME}/.hermes/skills/empty-category"
 

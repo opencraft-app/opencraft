@@ -319,14 +319,14 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
 
-	configPaths := []string{
+	domesticConfigPaths := []string{
 		"argocd/services/service-gateway/beijing-sandbox/config.yaml",
 		"argocd/services/service-gateway/beijing-sandbox-2/config.yaml",
 		"argocd/services/service-gateway/sandbox-bj-7/config.yaml",
-		"argocd/services/service-gateway/sgprod/config.yaml",
 		"argocd/services/service-gateway/shprod/config.yaml",
 	}
-	want := map[string]struct{}{
+	globalConfigPath := "argocd/services/service-gateway/sgprod/config.yaml"
+	baseWant := map[string]struct{}{
 		http.MethodGet + " /v1/instances":                                                                   {},
 		http.MethodPost + " /v1/instances":                                                                  {},
 		http.MethodGet + " /v1/instances/{instance_id}":                                                     {},
@@ -341,117 +341,130 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodGet + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/events":  {},
 		http.MethodPost + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel": {},
 	}
+	domesticWant := make(map[string]struct{}, len(baseWant)+8)
+	for key := range baseWant {
+		domesticWant[key] = struct{}{}
+	}
+	for _, key := range []string{
+		http.MethodGet + " /v1/instances/{instance_id}/bots",
+		http.MethodPost + " /v1/instances/{instance_id}/bots",
+		http.MethodPut + " /v1/instances/{instance_id}/bots/{bot_id}",
+		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}",
+		http.MethodPost + " /v1/instances/{instance_id}/bots/{bot_id}/retry",
+		http.MethodPut + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
+		http.MethodPost + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
+		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
+	} {
+		domesticWant[key] = struct{}{}
+	}
 
-	for _, configPath := range configPaths {
+	assertAllowlist := func(t *testing.T, configPath string, want map[string]struct{}) {
+		t.Helper()
+		cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		for _, route := range cfg.Routes {
+			if route.Prefix != "/v1/instances" {
+				continue
+			}
+			if route.PathPolicy != "allowlist" {
+				t.Fatalf("instance route path_policy = %q, want allowlist", route.PathPolicy)
+			}
+			got := make(map[string]struct{}, len(route.PathAllow))
+			for _, rule := range route.PathAllow {
+				got[rule.Method+" "+rule.Path] = struct{}{}
+			}
+			if _, exposed := got[http.MethodGet+" /v1/instances/{instance_id}/borncard"]; exposed {
+				t.Fatal("borncard must not be exposed by the gateway")
+			}
+			if len(got) != len(want) {
+				t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
+			}
+			for key := range want {
+				if _, ok := got[key]; !ok {
+					t.Fatalf("instance path allowlist missing %s", key)
+				}
+			}
+			if _, exposed := got[http.MethodPost+" /v1/instances/{instance_id}/resume"]; exposed {
+				t.Fatal("resume must not be exposed by the gateway")
+			}
+			return
+		}
+		t.Fatal("instance route not found")
+	}
+
+	for _, configPath := range domesticConfigPaths {
 		t.Run(configPath, func(t *testing.T) {
-			cfg, err := LoadConfigFile(filepath.Join(repoRoot, configPath))
-			if err != nil {
-				t.Fatalf("load config: %v", err)
-			}
-			for _, route := range cfg.Routes {
-				if route.Prefix != "/v1/instances" {
-					continue
-				}
-				if route.PathPolicy != "allowlist" {
-					t.Fatalf("instance route path_policy = %q, want allowlist", route.PathPolicy)
-				}
-				got := make(map[string]struct{}, len(route.PathAllow))
-				for _, rule := range route.PathAllow {
-					got[rule.Method+" "+rule.Path] = struct{}{}
-				}
-				if _, exposed := got[http.MethodGet+" /v1/instances/{instance_id}/borncard"]; exposed {
-					t.Fatal("borncard must not be exposed by the gateway")
-				}
-				if len(got) != len(want) {
-					t.Fatalf("instance path allowlist has %d rules, want %d: %+v", len(got), len(want), got)
-				}
-				for key := range want {
-					if _, ok := got[key]; !ok {
-						t.Fatalf("instance path allowlist missing %s", key)
-					}
-				}
-				if _, exposed := got[http.MethodPost+" /v1/instances/{instance_id}/resume"]; exposed {
-					t.Fatal("resume must not be exposed by the gateway")
-				}
-				return
-			}
-			t.Fatal("instance route not found")
+			assertAllowlist(t, configPath, domesticWant)
 		})
 	}
+	t.Run(globalConfigPath, func(t *testing.T) {
+		assertAllowlist(t, globalConfigPath, baseWant)
+	})
 }
 
-func TestProductionChatOriginsAreScopedToBotListAndTATSession(t *testing.T) {
+func TestProductionChatOriginsAreGloballyAllowed(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
-	tests := []struct {
-		name        string
-		configPath  string
-		wantOrigins map[string]struct{}
-	}{
-		{
-			name:       "Shanghai",
-			configPath: "argocd/services/service-gateway/shprod/config.yaml",
-			wantOrigins: map[string]struct{}{
-				"https://chat.lightvela.com":      {},
-				"https://localhost.lightvela.com": {},
-				"https://chat.lightvela.ai":       {},
-				"https://localhost.lightvela.ai":  {},
-			},
-		},
-		{
-			name:       "Singapore",
-			configPath: "argocd/services/service-gateway/sgprod/config.yaml",
-			wantOrigins: map[string]struct{}{
-				"https://chat.lightvela.com":      {},
-				"https://localhost.lightvela.com": {},
-				"https://chat.lightvela.ai":       {},
-				"https://localhost.lightvela.ai":  {},
-			},
-		},
+	wantGlobalOrigins := map[string]struct{}{
+		"https://chat.lightvela.com": {},
+		"https://chat.lightvela.ai":  {},
 	}
-	wantRules := map[string]struct{}{
-		http.MethodGet + " /v1/instances":                            {},
-		http.MethodPost + " /v1/instances/{instance_id}/tat/session": {},
+	wantScopedRules := map[string]map[string]struct{}{
+		http.MethodGet + " /v1/instances": {
+			"https://localhost.lightvela.com": {},
+			"https://localhost.lightvela.ai":  {},
+		},
+		http.MethodPost + " /v1/instances/{instance_id}/tat/session": {
+			"https://localhost.lightvela.com": {},
+			"https://localhost.lightvela.ai":  {},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := LoadConfigFile(filepath.Join(repoRoot, tt.configPath))
+	for _, env := range []string{"shprod", "sgprod"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
 			if err != nil {
 				t.Fatalf("load config: %v", err)
 			}
+			gotGlobalOrigins := make(map[string]struct{}, len(cfg.AllowedOrigins))
 			for _, origin := range cfg.AllowedOrigins {
-				if _, scoped := tt.wantOrigins[origin]; scoped {
-					t.Fatalf("scoped chat origin %q must not be added to the global CORS allowlist", origin)
+				gotGlobalOrigins[origin] = struct{}{}
+			}
+			for origin := range wantGlobalOrigins {
+				if _, ok := gotGlobalOrigins[origin]; !ok {
+					t.Fatalf("missing global chat origin %q", origin)
 				}
 			}
 			for _, route := range cfg.Routes {
 				if route.Name != "ctl" {
 					continue
 				}
-				if len(route.CORSAllow) != len(wantRules) {
-					t.Fatalf("ctl cors_allow has %d rules, want %d: %+v", len(route.CORSAllow), len(wantRules), route.CORSAllow)
+				if len(route.CORSAllow) != len(wantScopedRules) {
+					t.Fatalf("ctl cors_allow has %d rules, want %d: %+v", len(route.CORSAllow), len(wantScopedRules), route.CORSAllow)
 				}
 				gotRules := make(map[string]struct{}, len(route.CORSAllow))
 				for _, rule := range route.CORSAllow {
 					key := rule.Method + " " + rule.Path
-					if _, wanted := wantRules[key]; !wanted {
+					wantOriginsForRule, wanted := wantScopedRules[key]
+					if !wanted {
 						t.Fatalf("unexpected scoped CORS rule: %+v", rule)
 					}
-					if len(rule.AllowedOrigins) != len(tt.wantOrigins) {
+					if len(rule.AllowedOrigins) != len(wantOriginsForRule) {
 						t.Fatalf("unexpected scoped CORS origins for %s: %+v", key, rule.AllowedOrigins)
 					}
 					for _, origin := range rule.AllowedOrigins {
-						if _, wanted := tt.wantOrigins[origin]; !wanted {
+						if _, wanted := wantOriginsForRule[origin]; !wanted {
 							t.Fatalf("unexpected scoped CORS origin %q for %s", origin, key)
 						}
 					}
 					gotRules[key] = struct{}{}
 				}
-				for key := range wantRules {
+				for key := range wantScopedRules {
 					if _, ok := gotRules[key]; !ok {
 						t.Fatalf("missing scoped CORS rule %s", key)
 					}

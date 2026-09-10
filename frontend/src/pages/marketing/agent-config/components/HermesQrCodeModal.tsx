@@ -25,7 +25,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { message } from '../utils/message';
 import { parseHermesQrStream } from "../utils/hermes-parsers";
 import { useWecomAIBotSDK } from '../hooks/useWecomAIBotSDK';
-import type { LightClawScriptsSDK } from "@tencent/tea-sdk-lightclaw/scripts";
+import type { AgentScriptCommands } from "../hermes-command-builder";
 import type { ICommandExecutor } from '../local-command-executor';
 import type { IInstanceInfo } from '../types';
 
@@ -33,7 +33,7 @@ export type HermesQrUiStatus = 'init' | 'loading' | 'ready' | 'expired' | 'faile
 
 export interface IHermesQrCodeModalProps {
   channel: string;
-  scriptCommands: LightClawScriptsSDK;
+  scriptCommands: AgentScriptCommands;
   executor: ICommandExecutor;
   instance: IInstanceInfo;
   /**

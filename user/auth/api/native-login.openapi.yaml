@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: LightVela native OIDC session adapter
+  version: 2.0.0
+  description: >-
+    Companion to openapi.yaml, like the provider OAuth routes registered in server.go.
+    Authorization uses the existing /oauth2/authorize and unified authorization page.
+    Explicitly register opencraft-native-v1 in the OIDC client registry with the fixed
+    callback. This first-party adapter redeems its OIDC grant for a normal session,
+    not OIDC JWTs. Native code TTL is 120 seconds; sites retain five seconds.
+    Only this PKCE exchange delivers native session credentials; generic web return_to
+    must never accept custom schemes. No client secret is embedded in the app.
+paths:
+  /auth/native/token:
+    post:
+      operationId: exchangeNativeLogin
+      summary: Redeem the registered native client's OIDC authorization code for an API session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, code_verifier, redirect_uri]
+              properties:
+                code: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                code_verifier: { type: string, pattern: '^[A-Za-z0-9._~-]{43,128}$' }
+                redirect_uri: { type: string, enum: ['opencraft://auth/lightvela'] }
+      responses:
+        '200':
+          description: New normal session. Cache-Control no-store; Pragma no-cache. Never sets a browser session cookie.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_token, token_type]
+                properties:
+                  session_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+        '400': { description: 'Invalid request, wrong verifier, expired/used code, or foreign client code' }
+        '503': { description: OIDC is not configured }

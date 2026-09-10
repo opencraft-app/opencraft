@@ -36,6 +36,16 @@ import {
   AutomationSkillPicker,
 } from "./automation-skill-picker";
 import { AutomationUpstreamPicker } from "./automation-upstream-picker";
+import {
+  composeAutomationExecutionPrompt,
+  getAutomationVisiblePromptMaxLength,
+  enrichLightVelaAutomationTemplates,
+  mergeAutomationTemplateCatalog,
+  splitAutomationExecutionPrompt,
+  type AutomationCatalogTemplate,
+  type AutomationTemplateCategory,
+  type AutomationTemplateInput,
+} from "./automation-template-catalog";
 import { ScenarioEnableConfirmModal } from "./scenario-tasks/ScenarioEnableConfirmModal";
 import { ScenarioInstallModal } from "./scenario-tasks/ScenarioInstallModal";
 import { getScenarioCronJobPresentation, getScenarioRunPresentation } from "./scenario-tasks/scenario-job-presentation";
@@ -60,6 +70,7 @@ import {
   editCronJob,
   editCronJobWithContext,
   execCommand,
+  listAutomationBlueprints,
   listCronJobs,
   listRecentCronRuns,
   isLightVelaZeroTokenScriptName,
@@ -83,6 +94,8 @@ import {
   type CronScriptLanguage,
   type CronZeroTokenKind,
   type CronRunRecord,
+  type HermesCronTarget,
+  type HermesAutomationBlueprint,
 } from "@/lib/hermes-cron-client";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
@@ -146,14 +159,14 @@ function getAutomationDisplayLocale(language: string | undefined): AutomationDis
   return parseLocaleCode(language) ?? DEFAULT_LOCALE;
 }
 
-export function toCreateCronSkills(selectedSkill: string): string[] | undefined {
-  return selectedSkill ? [selectedSkill] : undefined;
+export function toCreateCronSkills(selectedSkills: string[]): string[] | undefined {
+  return selectedSkills.length > 0 ? selectedSkills : undefined;
 }
 
-export function toEditCronSkills(initialSkills: string[], selectedSkill: string): string[] | undefined {
-  const initialSelectedSkill = initialSkills[0] ?? "";
-  if (selectedSkill === initialSelectedSkill) return undefined;
-  return selectedSkill ? [selectedSkill] : [];
+export function toEditCronSkills(initialSkills: string[], selectedSkills: string[]): string[] | undefined {
+  if (initialSkills.length === selectedSkills.length
+    && initialSkills.every((slug, index) => slug === selectedSkills[index])) return undefined;
+  return selectedSkills;
 }
 
 export function wouldCreateCronContextCycle(
@@ -230,23 +243,20 @@ export type AutomationSkillSelectionIssue = "unavailable" | "unverified";
 export function getAutomationSkillSelectionIssue({
   mode,
   initialSkills,
-  selectedSkill,
-  initialSkillWasAvailable,
+  selectedSkills,
   verificationState,
 }: {
   mode: "create" | "edit";
   initialSkills: string[];
-  selectedSkill: string;
-  initialSkillWasAvailable: boolean | null;
+  selectedSkills: string[];
   verificationState: InstalledSkillLoadState;
 }): AutomationSkillSelectionIssue | null {
-  if (!selectedSkill) return null;
-  const initialSelectedSkill = initialSkills[0] ?? "";
-  const selectionChanged = selectedSkill !== initialSelectedSkill;
-  const needsVerification = mode === "create" || selectionChanged || initialSkillWasAvailable === true;
-  if (!needsVerification) return null;
+  const skillsToVerify = mode === "create"
+    ? selectedSkills
+    : selectedSkills.filter((slug) => !initialSkills.includes(slug));
+  if (skillsToVerify.length === 0) return null;
   if (verificationState.status !== "ready") return "unverified";
-  return verificationState.slugs.includes(selectedSkill) ? null : "unavailable";
+  return skillsToVerify.every((slug) => verificationState.slugs.includes(slug)) ? null : "unavailable";
 }
 
 /** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
@@ -365,18 +375,56 @@ function persistAutomationTemplatesCollapsed(collapsed: boolean): void {
 type AutomationScenarioTemplatesSectionProps = {
   templates: readonly AutomationTemplate[];
   onEnable: (template: AutomationTemplate) => void;
+  loading?: boolean;
 };
+
+const AUTOMATION_TEMPLATE_CATEGORIES: ReadonlyArray<"all" | AutomationTemplateCategory> = [
+  "all",
+  "daily",
+  "productivity",
+  "monitoring",
+  "wellbeing",
+  "learning",
+];
+
+function getAutomationTemplateCategoryLabel(
+  category: "all" | AutomationTemplateCategory,
+  t: ReturnType<typeof useT>,
+): string {
+  if (category === "daily") return t("每日助理");
+  if (category === "productivity") return t("效率工作");
+  if (category === "monitoring") return t("监控提醒");
+  if (category === "wellbeing") return t("健康生活");
+  if (category === "learning") return t("学习成长");
+  return t("全部");
+}
+
+const AUTOMATION_CATEGORY_TONES = {
+  daily: { icon: Sunrise, iconClass: "bg-[var(--automation-tone-daily-bg)] text-[var(--automation-tone-daily-text)]" },
+  productivity: { icon: BriefcaseBusiness, iconClass: "bg-[var(--automation-tone-productivity-bg)] text-[var(--automation-tone-productivity-text)]" },
+  monitoring: { icon: TrendingUp, iconClass: "bg-[var(--automation-tone-monitoring-bg)] text-[var(--automation-tone-monitoring-text)]" },
+  wellbeing: { icon: Activity, iconClass: "bg-[var(--automation-tone-wellbeing-bg)] text-[var(--automation-tone-wellbeing-text)]" },
+  learning: { icon: Newspaper, iconClass: "bg-[var(--automation-tone-learning-bg)] text-[var(--automation-tone-learning-text)]" },
+} satisfies Record<AutomationTemplateCategory, { icon: typeof Clock; iconClass: string }>;
 
 export function AutomationScenarioTemplatesSection({
   templates,
   onEnable,
+  loading = false,
 }: AutomationScenarioTemplatesSectionProps) {
   const t = useT();
   const [page, setPage] = useState(0);
+  const [category, setCategory] = useState<"all" | AutomationTemplateCategory>("all");
   const [templatesCollapsed, setTemplatesCollapsed] = useState(getInitialAutomationTemplatesCollapsed);
-  const pageCount = Math.max(1, Math.ceil(templates.length / AUTOMATION_TEMPLATE_PAGE_SIZE));
+  const filteredTemplates = category === "all"
+    ? templates
+    : templates.filter((template) => template.category === category);
+  const pageCount = Math.max(1, Math.ceil(filteredTemplates.length / AUTOMATION_TEMPLATE_PAGE_SIZE));
+  const availableCategories = AUTOMATION_TEMPLATE_CATEGORIES.filter((item) => (
+    item === "all" || templates.some((template) => template.category === item)
+  ));
   const safePage = Math.min(page, pageCount - 1);
-  const visibleTemplates = templates.slice(
+  const visibleTemplates = filteredTemplates.slice(
     safePage * AUTOMATION_TEMPLATE_PAGE_SIZE,
     safePage * AUTOMATION_TEMPLATE_PAGE_SIZE + AUTOMATION_TEMPLATE_PAGE_SIZE,
   );
@@ -384,6 +432,13 @@ export function AutomationScenarioTemplatesSection({
   useEffect(() => {
     if (page >= pageCount) setPage(pageCount - 1);
   }, [page, pageCount]);
+
+  useEffect(() => {
+    if (category !== "all" && !templates.some((template) => template.category === category)) {
+      setCategory("all");
+      setPage(0);
+    }
+  }, [category, templates]);
 
   const toggleTemplatesCollapsed = useCallback(() => {
     setTemplatesCollapsed((current) => {
@@ -395,14 +450,15 @@ export function AutomationScenarioTemplatesSection({
 
   return (
     <section
-      className="border-0 bg-transparent p-0 shadow-none"
+      className="rounded-md border border-black/[0.08] bg-white p-4 shadow-none"
       aria-labelledby="automation-scenario-templates-title"
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="inline-flex items-center gap-1.5">
-          <h3 id="automation-scenario-templates-title" className="text-xs font-medium text-black/45">
+          <h3 id="automation-scenario-templates-title" className="text-balance text-xs font-medium text-black/45">
             {t("任务模板")}
           </h3>
+          {loading && <Loader2 className="size-3 text-black/35" aria-label={t("正在加载官方模板")} />}
           <button
             type="button"
             onClick={toggleTemplatesCollapsed}
@@ -447,40 +503,82 @@ export function AutomationScenarioTemplatesSection({
         )}
       </div>
       {!templatesCollapsed && (
-        <div id="automation-scenario-templates-grid" className="mt-3 grid min-h-[208px] grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <>
+          <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1" aria-label={t("模板分类")}>
+            {availableCategories.map((item) => {
+              const selected = item === category;
+              const label = getAutomationTemplateCategoryLabel(item, t);
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setCategory(item);
+                    setPage(0);
+                  }}
+                  className={`shrink-0 rounded-sm border px-2.5 py-1 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 ${selected ? "border-black/15 bg-black/[0.06] font-medium text-black/75" : "border-black/[0.06] bg-white text-black/45 hover:border-black/10 hover:text-black/70"}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div id="automation-scenario-templates-grid" className="mt-2 grid min-h-[248px] content-start grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {visibleTemplates.map((template) => {
             const tone = AUTOMATION_TEMPLATE_TONES[template.id as keyof typeof AUTOMATION_TEMPLATE_TONES];
-            const Icon = tone?.icon ?? CalendarDays;
+            const categoryTone = AUTOMATION_CATEGORY_TONES[template.category];
+            const Icon = tone?.icon ?? categoryTone.icon;
             return (
               <button
                 key={template.id}
                 type="button"
                 onClick={() => onEnable(template)}
                 aria-label={t("启用{{name}}", { name: template.name })}
-                className="group flex min-h-[96px] items-start gap-3 rounded-sm border border-black/[0.04] bg-white p-3 text-left transition hover:border-black/[0.08] hover:bg-white"
+                className="group flex min-h-[120px] items-start gap-3 rounded-sm border border-black/[0.06] bg-white p-3 text-left transition hover:border-black/[0.12] hover:bg-white"
               >
-                <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-sm shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] ${tone?.iconClass ?? "bg-white text-black/55"}`}>
-                  <Icon className="h-[18px] w-[18px]" />
+                <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-sm shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] ${tone?.iconClass ?? categoryTone.iconClass}`}>
+                  <Icon className="size-[18px]" />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-black/82">{template.name}</span>
-                  <span className="mt-1 block line-clamp-2 text-xs leading-5 text-black/45">{template.description}</span>
-                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-black/55 transition group-hover:text-black/80">
-                    {t("启用")}
-                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                <span className="flex min-w-0 flex-1 flex-col self-stretch">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-black/82">{template.name}</span>
+                    {template.source === "hermes" && (
+                      <span className="shrink-0 rounded-sm border border-black/[0.06] px-1.5 py-0.5 text-[10px] font-medium leading-none text-black/35">Hermes</span>
+                    )}
+                  </span>
+                  <span className="mt-1 block line-clamp-2 text-pretty text-xs leading-5 text-black/45">{template.description}</span>
+                  <span className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-2 text-[11px] text-black/42">
+                    <span className="inline-flex items-center gap-1"><Clock className="size-3" />{template.scheduleLabel}</span>
+                    {template.notificationPolicy === "only-when-needed" && (
+                      <span className="inline-flex items-center gap-1"><BellRing className="size-3" />{t("有变化才提醒")}</span>
+                    )}
+                    {template.skills.length > 0 && (
+                      <span className="inline-flex min-w-0 items-center gap-1" title={template.skills.join(", ")}>
+                        <Zap className="size-3 shrink-0" />
+                        <span className="max-w-28 truncate">{template.skills[0]}</span>
+                        {template.skills.length > 1 && <span className="shrink-0">+{template.skills.length - 1}</span>}
+                      </span>
+                    )}
+                    <span className="ml-auto inline-flex items-center gap-1 font-medium text-black/55 transition group-hover:text-black/80">
+                      {t("启用")}
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                    </span>
                   </span>
                 </span>
               </button>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
     </section>
   );
 }
 
 async function sendScenarioStartNotice(
-  botId: string,
+  botId: HermesCronTarget,
   draft: ScenarioTaskDraft,
   t: ReturnType<typeof useT>,
 ): Promise<void> {
@@ -664,10 +762,20 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
   );
 }
 
-export function HermesAgentAutomationsPanel({ botId }: { botId: string | null }) {
+export function HermesAgentAutomationsPanel({ botId: rawBotId }: { botId: HermesCronTarget | null }) {
   const t = useT();
   const { i18n } = useTranslation();
   const displayLocale = getAutomationDisplayLocale(i18n.language);
+  const runtimeBotId = typeof rawBotId === "string" ? rawBotId : rawBotId?.instanceId ?? null;
+  const profileId = typeof rawBotId === "string" ? "main" : rawBotId?.profileId ?? "main";
+  const legacyBotTarget = typeof rawBotId === "string";
+  const botId = useMemo<HermesCronTarget | null>(() => (
+    runtimeBotId
+      ? legacyBotTarget
+        ? runtimeBotId
+        : { instanceId: runtimeBotId, profileId }
+      : null
+  ), [legacyBotTarget, profileId, runtimeBotId]);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>(
     "loading",
@@ -679,6 +787,8 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     slugs: [],
     error: null,
   });
+  const [runtimeBlueprints, setRuntimeBlueprints] = useState<HermesAutomationBlueprint[]>([]);
+  const [loadingBlueprints, setLoadingBlueprints] = useState(false);
   const installedSkillSlugsRef = useRef<string[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
@@ -741,11 +851,39 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     : filteredActiveJobs;
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
   const jobLimitReached = activeJobs.length >= MAX_CRON_JOBS_PER_BOT;
-  const templates = useMemo(() => getUnifiedAutomationTemplates(t, displayLocale), [displayLocale, t]);
+  const lightVelaTemplates = useMemo(() => getUnifiedAutomationTemplates(t, displayLocale), [displayLocale, t]);
+  const templates = useMemo(
+    () => mergeAutomationTemplateCatalog(lightVelaTemplates, runtimeBlueprints, displayLocale),
+    [displayLocale, lightVelaTemplates, runtimeBlueprints],
+  );
   const scenarioTemplatePacks = useMemo(() => getOverviewScenarioTaskPacks(displayLocale), [displayLocale]);
   const resolveScenarioPackForDisplay = useCallback((scenarioId: string) => (
     scenarioTemplatePacks.find((pack) => pack.id === scenarioId) ?? getScenarioTaskPack(scenarioId)
   ), [scenarioTemplatePacks]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!botId) {
+      setRuntimeBlueprints([]);
+      setLoadingBlueprints(false);
+      return undefined;
+    }
+    setLoadingBlueprints(true);
+    setRuntimeBlueprints([]);
+    void listAutomationBlueprints(botId)
+      .then((blueprints) => {
+        if (!cancelled) setRuntimeBlueprints(blueprints);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimeBlueprints([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBlueprints(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId]);
   // const installedScenarioIds = useMemo(() => new Set(
   //   SCENARIO_TASK_PACKS
   //     .filter((pack) => activeJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
@@ -784,7 +922,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       error: null,
     });
     try {
-      const slugs = await listInstalledSkillSlugs(botId);
+      const slugs = await listInstalledSkillSlugs(runtimeBotId ?? "", profileId);
       installedSkillSlugsRef.current = slugs;
       const nextState: InstalledSkillLoadState = { status: "ready", slugs, error: null };
       setInstalledSkillLoadState(nextState);
@@ -798,7 +936,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       setInstalledSkillLoadState(nextState);
       return nextState;
     }
-  }, [botId]);
+  }, [botId, profileId, runtimeBotId]);
 
   const requestCreate = useCallback(() => {
     if (jobLimitReached) {
@@ -813,7 +951,12 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   const requestTemplateCreate = useCallback((template: AutomationTemplate) => {
     trackDatongClick("automation_template_card", {
       pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-      params: { bot_id: botId ?? "", template_id: template.id },
+      params: {
+        bot_id: runtimeBotId ?? "",
+        template_id: template.id,
+        template_source: template.source,
+        template_category: template.category,
+      },
     });
     if (jobLimitReached) {
       setPendingCreateMode("template");
@@ -822,7 +965,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       return;
     }
     setCreatingFromTemplate(template);
-  }, [botId, jobLimitReached]);
+  }, [jobLimitReached, runtimeBotId]);
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -1119,10 +1262,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
     }
     trackDatongEvent(DATONG_EVENTS.AUTOMATION_DELETE, {
       pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-      params: { bot_id: botId, task_id: latestTarget.id },
+      params: { bot_id: runtimeBotId ?? "", task_id: latestTarget.id },
     });
     await handleAction(latestTarget, "remove", latestDependents);
-  }, [botId, confirmDeleteDependents, confirmDeleteJob, handleAction, refreshCreatedJobs, t]);
+  }, [botId, confirmDeleteDependents, confirmDeleteJob, handleAction, refreshCreatedJobs, runtimeBotId, t]);
 
   /**
    * 测试运行：立即真实执行一次（`startCronTestRun`）。
@@ -1212,6 +1355,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       <AutomationScenarioTemplatesSection
         templates={templates}
         onEnable={requestTemplateCreate}
+        loading={loadingBlueprints}
       />
 
       {!isGlobal && scenarioReminderNotice && (
@@ -1387,7 +1531,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
               pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-              params: { bot_id: botId ?? "" },
+              params: { bot_id: runtimeBotId ?? "" },
             });
             setCreating(false);
             setActiveView("created");
@@ -1400,7 +1544,7 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
       {!isGlobal && scenarioInstallPack && (
         <ScenarioInstallModal
           pack={scenarioInstallPack}
-          botId={botId}
+          botId={runtimeBotId ?? ""}
           submitting={scenarioPreviewStatus === "creating" || scenarioPreviewStatus === "enabling"}
           initialValues={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.values : undefined}
           initialDeliver={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.generatedDeliver : undefined}
@@ -1442,7 +1586,12 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
               pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-              params: { bot_id: botId ?? "" },
+              params: {
+                bot_id: runtimeBotId ?? "",
+                template_id: creatingFromTemplate.id,
+                template_source: creatingFromTemplate.source,
+                template_category: creatingFromTemplate.category,
+              },
             });
             setCreatingFromTemplate(null);
             setActiveView("created");
@@ -1528,6 +1677,10 @@ export function shouldShowRecentRunsLimitHint(runCount: number): boolean {
   return runCount >= 10;
 }
 
+function getVisibleAutomationPrompt(prompt: string): string {
+  return splitAutomationExecutionPrompt(prompt).visiblePrompt;
+}
+
 export function RecentCronRunsPanel({
   runs,
   jobs = [],
@@ -1565,7 +1718,7 @@ export function RecentCronRunsPanel({
                 : t("智能任务");
               const summary = run.zero_token_config?.kind === "fixed_notification"
                 ? run.zero_token_config.content || ""
-                : presentation.prompt;
+                : getVisibleAutomationPrompt(presentation.prompt);
               return (
                 <div key={run.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
                   <div className="min-w-0">
@@ -1678,6 +1831,7 @@ function RecentCronRunDetailModal({
   const t = useT();
   const { i18n } = useTranslation();
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
+  const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
   return createPortal(
     <div
@@ -1725,12 +1879,12 @@ function RecentCronRunDetailModal({
             />
           ) : (
             <>
-              <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
+              <DetailRow label={t("任务说明")} value={visiblePrompt || "—"} pre />
               <DetailRow
                 label={t("调用技能")}
                 value={(
                   <AutomationSkillBindingSummary
-                    value={run.skills[0] ?? ""}
+                    value={run.skills}
                     loadState={skillLoadState}
                   />
                 )}
@@ -1793,6 +1947,7 @@ function CronJobCard({
   const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const hasEffectiveWindow = effectiveStatus !== "always";
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
+  const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const fullName = presentation.name || t("未命名任务");
   const zeroTokenConfig = job.zero_token_config;
   const taskSummary = zeroTokenConfig
@@ -1801,7 +1956,7 @@ function CronJobCard({
       : t("{{language}} 脚本；标准输出非空时原样通知", {
           language: zeroTokenConfig.language === "bash" ? "Bash" : "Python",
         })
-    : presentation.prompt;
+    : visiblePrompt;
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
   return (
@@ -2188,6 +2343,7 @@ function CronJobDetailModal({
   const isOnceJob = isOnceCronJob(job);
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
   const presentation = getScenarioCronJobPresentation(job, getAutomationDisplayLocale(i18n.language));
+  const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const name = presentation.name || t("未命名任务");
   const showEffectiveWindow = !isOnceJob;
   const nextRunLabel = isOnceJob ? "—" : nextRunAt ? formatTime(nextRunAt) : "—";
@@ -2246,12 +2402,12 @@ function CronJobDetailModal({
             </>
           ) : (
             <>
-              <DetailRow label={t("任务说明")} value={presentation.prompt || "—"} pre />
+              <DetailRow label={t("任务说明")} value={visiblePrompt || "—"} pre />
               <DetailRow
                 label={t("调用技能")}
                 value={(
                   <AutomationSkillBindingSummary
-                    value={job.skills[0] ?? ""}
+                    value={job.skills}
                     loadState={skillLoadState}
                   />
                 )}
@@ -2927,24 +3083,7 @@ function formatWeekdays(values: readonly number[], t: ReturnType<typeof useT>): 
   return normalizeWeekdays(values).map((v) => labels[v]).join("、");
 }
 
-interface AutomationTemplate {
-  id: string;
-  name: string;
-  description: string;
-  prompt: string;
-  schedule: {
-    kind: FrequencyKind;
-    period?: RecurringPeriod;
-    time?: string;
-    times?: string[];
-    weekday?: number;
-    weekdays?: number[];
-    monthday?: number;
-    monthdays?: number[];
-    intervalNum?: number;
-    intervalUnit?: IntervalUnit;
-  };
-}
+type AutomationTemplate = AutomationCatalogTemplate;
 
 const AUTOMATION_TEMPLATE_TONES = {
   "daily-summary": {
@@ -3023,7 +3162,7 @@ const AUTOMATION_TEMPLATE_TONES = {
   accentClass: string;
 }>;
 
-function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[] {
+function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplateInput[] {
   return [
     {
       id: "daily-summary",
@@ -3216,136 +3355,52 @@ const SCENARIO_TEMPLATE_PROMPT_LABELS: Record<AutomationDisplayLocale, {
 
 const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<AutomationDisplayLocale, string[]>>> = {
   "medication-once": {
-    "zh-CN": [
-      "请帮我轻提醒喝水，也按医嘱提醒我服药。",
-      "例子可删可改，写了新的就以新的为准：按医嘱服用我的常用药，剂量按原医嘱；喝水只做轻提醒。",
-    ],
-    "zh-SG": [
-      "请帮我轻提醒喝水，也按医嘱提醒我服药。",
-      "例子可删可改，写了新的就以新的为准：按医嘱服用我的常用药，剂量按原医嘱；喝水只做轻提醒。",
-    ],
-    "en-US": [
-      "Please help me with gentle water reminders, and remind me about medication exactly as prescribed.",
-      "This example can be deleted or edited; if I write new details, use the new ones: take my regular medication as directed, with the original dosage; keep water reminders light.",
-    ],
-    es: [
-      "Ayudame con recordatorios suaves para beber agua y tomar la medicacion tal como esta indicada.",
-      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: medicacion habitual segun receta y avisos de agua ligeros.",
-    ],
-    "id-ID": [
-      "Tolong bantu ingatkan saya minum air secara ringan, dan ingatkan obat sesuai arahan dokter.",
-      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: minum obat rutin sesuai resep dengan dosis asli; pengingat air dibuat ringan.",
-    ],
+    "zh-CN": ["请提醒我喝水，并按医嘱服用常用药。"],
+    "zh-SG": ["请提醒我喝水，并按医嘱服用常用药。"],
+    "zh-Hant": ["請提醒我喝水，並按醫囑服用常用藥。"],
+    "en-US": ["Remind me to drink water and take my regular medication exactly as prescribed."],
+    es: ["Recuérdame beber agua y tomar mi medicación habitual según la receta."],
+    "id-ID": ["Ingatkan saya minum air dan obat rutin sesuai resep."],
   },
   "rent-reminder": {
-    "zh-CN": [
-      "请帮我记得交房租和物业费，临近账期时提醒我处理。",
-      "例子可删可改，写了新的就以新的为准：房租 2000 元、物业费 800 元，付给房东/物业，通过银行转账。",
-    ],
-    "zh-SG": [
-      "请帮我记得交房租和物业费，临近账期时提醒我处理。",
-      "例子可删可改，写了新的就以新的为准：房租 2000 元、物业费 800 元，付给房东/物业，通过银行转账。",
-    ],
-    "en-US": [
-      "Please help me remember rent and property-management fees when the billing date is close.",
-      "This example can be deleted or edited; if I write new details, use the new ones: rent of 2,000 CNY plus an 800 CNY property-management fee, paid to my landlord or property manager by bank transfer.",
-    ],
-    es: [
-      "Ayudame a recordar el alquiler y la cuota de comunidad cuando se acerque la fecha de pago.",
-      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: alquiler 2000 CNY y comunidad 800 CNY, por transferencia al casero o administracion.",
-    ],
-    "id-ID": [
-      "Tolong bantu ingatkan saya membayar sewa dan biaya pengelolaan properti saat tanggal tagihan mendekat.",
-      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: sewa 2.000 CNY ditambah biaya pengelolaan 800 CNY, dibayar ke pemilik/pengelola lewat transfer bank.",
-    ],
+    "zh-CN": ["请在账期临近时提醒我支付房租 2000 元和物业费 800 元。"],
+    "zh-SG": ["请在账期临近时提醒我支付房租 2000 元和物业费 800 元。"],
+    "zh-Hant": ["請在帳期臨近時提醒我支付房租 2000 元和物業費 800 元。"],
+    "en-US": ["Remind me when rent of CNY 2,000 and a CNY 800 property fee are due."],
+    es: ["Recuérdame pagar 2000 CNY de alquiler y 800 CNY de comunidad cuando se acerque la fecha."],
+    "id-ID": ["Ingatkan saya saat sewa CNY 2.000 dan biaya pengelolaan CNY 800 mendekati jatuh tempo."],
   },
   "country-fx-alert": {
-    "zh-CN": [
-      "请帮我关注美元 USD 到人民币 CNY 的汇率，达到条件时再提醒我。",
-      "例子可删可改，写了新的就以新的为准：较前一日涨跌幅达到 1% 时提醒我。",
-    ],
-    "zh-SG": [
-      "请帮我关注美元 USD 到人民币 CNY 的汇率，达到条件时再提醒我。",
-      "例子可删可改，写了新的就以新的为准：较前一日涨跌幅达到 1% 时提醒我。",
-    ],
-    "en-US": [
-      "Please help me watch the USD to CNY exchange rate and remind me only when the condition is met.",
-      "This example can be deleted or edited; if I write new details, use the new ones: notify me if it moves 1% from the previous day.",
-    ],
-    es: [
-      "Ayudame a vigilar el tipo de cambio de USD a CNY y avisame solo cuando se cumpla la condicion.",
-      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: avisame si cambia un 1% frente al dia anterior.",
-    ],
-    "id-ID": [
-      "Tolong bantu pantau kurs USD ke CNY dan ingatkan saya hanya saat syaratnya terpenuhi.",
-      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: beri tahu jika bergerak 1% dari hari sebelumnya.",
-    ],
+    "zh-CN": ["请关注 USD/CNY，较前一日涨跌达到 1% 时提醒我。"],
+    "zh-SG": ["请关注 USD/CNY，较前一日涨跌达到 1% 时提醒我。"],
+    "zh-Hant": ["請關注 USD/CNY，較前一日漲跌達到 1% 時提醒我。"],
+    "en-US": ["Watch USD/CNY and alert me when it moves 1% from the previous day."],
+    es: ["Vigila USD/CNY y avísame cuando cambie un 1 % frente al día anterior."],
+    "id-ID": ["Pantau USD/CNY dan beri tahu saat berubah 1% dari hari sebelumnya."],
   },
   "calorie-fitness-checkin": {
-    "zh-CN": [
-      "请帮我记录今天的饮食、运动和体重变化，并做轻量复盘。",
-      "例子可删可改，写了新的就以新的为准：目标减脂并保持力量训练，168cm、62kg、目标 58kg。",
-    ],
-    "zh-SG": [
-      "请帮我记录今天的饮食、运动和体重变化，并做轻量复盘。",
-      "例子可删可改，写了新的就以新的为准：目标减脂并保持力量训练，168cm、62kg、目标 58kg。",
-    ],
-    "en-US": [
-      "Please help me log today's meals, workouts, and weight changes, then give me a light recap.",
-      "This example can be deleted or edited; if I write new details, use the new ones: fat loss while keeping strength training, 168 cm, 62 kg, target 58 kg.",
-    ],
-    es: [
-      "Ayudame a registrar comidas, ejercicio y peso de hoy, y dame un resumen ligero.",
-      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: perder grasa manteniendo fuerza, 168 cm, 62 kg, objetivo 58 kg.",
-    ],
-    "id-ID": [
-      "Tolong bantu catat makanan, olahraga, dan perubahan berat badan hari ini, lalu beri ringkasan ringan.",
-      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: menurunkan lemak sambil mempertahankan latihan kekuatan, 168 cm, 62 kg, target 58 kg.",
-    ],
+    "zh-CN": ["请记录今天的饮食、运动和体重；目标减脂并保持力量训练，168cm、62kg、目标 58kg。"],
+    "zh-SG": ["请记录今天的饮食、运动和体重；目标减脂并保持力量训练，168cm、62kg、目标 58kg。"],
+    "zh-Hant": ["請記錄今天的飲食、運動和體重；目標減脂並保持力量訓練，168cm、62kg、目標 58kg。"],
+    "en-US": ["Track today's food, exercise, and weight for a 58 kg fat-loss goal while keeping strength training."],
+    es: ["Registra la comida, el ejercicio y el peso de hoy para llegar a 58 kg manteniendo la fuerza."],
+    "id-ID": ["Catat makanan, olahraga, dan berat hari ini untuk target 58 kg sambil menjaga latihan kekuatan."],
   },
   "global-holiday-reminder": {
-    "zh-CN": [
-      "请帮我关注泰国、印尼等目的地的公共假期、调休日和天气预警。",
-      "例子可删可改，写了新的就以新的为准：旅行、发货或会议前，提醒我避开假期和天气风险。",
-    ],
-    "zh-SG": [
-      "请帮我关注泰国、印尼等目的地的公共假期、调休日和天气预警。",
-      "例子可删可改，写了新的就以新的为准：旅行、发货或会议前，提醒我避开假期和天气风险。",
-    ],
-    "en-US": [
-      "Please help me watch public holidays, substitute days off, and weather alerts for destinations such as Thailand and Indonesia.",
-      "This example can be deleted or edited; if I write new details, use the new ones: before travel, shipping, or meetings, remind me to avoid holiday and weather risks.",
-    ],
-    es: [
-      "Ayudame a seguir festivos, dias ajustados y alertas meteorologicas de destinos como Tailandia e Indonesia.",
-      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: antes de viajes, envios o reuniones, avisame de riesgos de festivos y clima.",
-    ],
-    "id-ID": [
-      "Tolong bantu pantau hari libur publik, cuti pengganti, dan peringatan cuaca untuk tujuan seperti Thailand dan Indonesia.",
-      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: sebelum perjalanan, pengiriman, atau rapat, ingatkan saya menghindari risiko libur dan cuaca.",
-    ],
+    "zh-CN": ["请关注泰国、印尼的公共假期和天气预警，旅行、发货或会议前提醒我。"],
+    "zh-SG": ["请关注泰国、印尼的公共假期和天气预警，旅行、发货或会议前提醒我。"],
+    "zh-Hant": ["請關注泰國、印尼的公共假期和天氣預警，旅行、發貨或會議前提醒我。"],
+    "en-US": ["Watch holidays and weather alerts in Thailand and Indonesia before travel, shipping, or meetings."],
+    es: ["Vigila festivos y alertas del tiempo en Tailandia e Indonesia antes de viajes, envíos o reuniones."],
+    "id-ID": ["Pantau hari libur dan peringatan cuaca di Thailand dan Indonesia sebelum perjalanan, pengiriman, atau rapat."],
   },
   "stock-info-digest": {
-    "zh-CN": [
-      "请帮我整理关注股票的公开市场信息，只做信息速递。",
-      "例子可删可改，写了新的就以新的为准：腾讯控股 00700、NVIDIA NVDA、贵州茅台 600519；重点看价格、公告和财报。",
-    ],
-    "zh-SG": [
-      "请帮我整理关注股票的公开市场信息，只做信息速递。",
-      "例子可删可改，写了新的就以新的为准：腾讯控股 00700、NVIDIA NVDA、贵州茅台 600519；重点看价格、公告和财报。",
-    ],
-    "en-US": [
-      "Please help me summarize public market information for stocks I follow, as an information digest only.",
-      "This example can be deleted or edited; if I write new details, use the new ones: Tencent 00700, NVIDIA NVDA, and Kweichow Moutai 600519; focus on price moves, announcements, and earnings.",
-    ],
-    es: [
-      "Ayudame a resumir informacion publica del mercado sobre las acciones que sigo, solo como boletin informativo.",
-      "Este ejemplo se puede borrar o editar; si escribo detalles nuevos, usa los nuevos: Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519; mira precios, anuncios y resultados.",
-    ],
-    "id-ID": [
-      "Tolong bantu rangkum informasi pasar publik untuk saham yang saya ikuti, hanya sebagai ringkasan informasi.",
-      "Contoh ini boleh dihapus atau diubah; jika saya menulis detail baru, pakai yang baru: Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519; fokus pada harga, pengumuman, dan laporan keuangan.",
-    ],
+    "zh-CN": ["请整理腾讯控股 00700、NVIDIA NVDA 和贵州茅台 600519 的价格、公告及财报动态。"],
+    "zh-SG": ["请整理腾讯控股 00700、NVIDIA NVDA 和贵州茅台 600519 的价格、公告及财报动态。"],
+    "zh-Hant": ["請整理騰訊控股 00700、NVIDIA NVDA 和貴州茅台 600519 的價格、公告及財報動態。"],
+    "en-US": ["Summarize price, announcement, and earnings updates for Tencent 00700, NVIDIA NVDA, and Kweichow Moutai 600519."],
+    es: ["Resume precios, anuncios y resultados de Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519."],
+    "id-ID": ["Rangkum harga, pengumuman, dan laporan keuangan Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519."],
   },
 };
 
@@ -3373,7 +3428,7 @@ function splitScenarioTemplateTimes(value: string): string[] {
 function getScenarioTemplateSchedule(
   pack: ScenarioTaskPack,
   values: Record<string, string>,
-  fallback?: AutomationTemplate,
+  fallback?: AutomationTemplateInput,
 ): AutomationTemplate["schedule"] {
   const parsed = parseInitialSchedule(pack.defaultSchedule);
   if (parsed?.kind === "recurring" && parsed.period === "daily" && pack.dailyTimesFieldKey) {
@@ -3444,7 +3499,7 @@ function getScenarioTemplatePrompt(
   pack: ScenarioTaskPack,
   values: Record<string, string>,
   displayLocale: AutomationDisplayLocale,
-  fallback?: AutomationTemplate,
+  fallback?: AutomationTemplateInput,
 ): string {
   const naturalPrompt = SCENARIO_TEMPLATE_NATURAL_PROMPTS[pack.id]?.[displayLocale];
   if (naturalPrompt?.length) {
@@ -3466,8 +3521,8 @@ function getScenarioTemplatePrompt(
 function scenarioPackToAutomationTemplate(
   pack: ScenarioTaskPack,
   displayLocale: AutomationDisplayLocale,
-  fallback?: AutomationTemplate,
-): AutomationTemplate {
+  fallback?: AutomationTemplateInput,
+): AutomationTemplateInput {
   const values = getScenarioTemplatePromptValues(pack, displayLocale);
   return {
     id: pack.id,
@@ -3475,6 +3530,7 @@ function scenarioPackToAutomationTemplate(
     description: pack.valueProp || fallback?.description || pack.description,
     prompt: getScenarioTemplatePrompt(pack, values, displayLocale, fallback),
     schedule: getScenarioTemplateSchedule(pack, values, fallback),
+    skills: pack.skillIds,
   };
 }
 
@@ -3490,10 +3546,10 @@ export function getUnifiedAutomationTemplates(
     if (fallbackId) usedLegacyIds.add(fallbackId);
     return scenarioPackToAutomationTemplate(pack, displayLocale, fallbackId ? legacyById.get(fallbackId) : undefined);
   });
-  return [
+  return enrichLightVelaAutomationTemplates([
     ...scenarioTemplates,
     ...legacyTemplates.filter((template) => !usedLegacyIds.has(template.id)),
-  ];
+  ], displayLocale);
 }
 
 interface ScheduleChangeCheck {
@@ -3525,7 +3581,7 @@ export function AutomationFormModal({
   onSaved,
   onError,
 }: {
-  botId: string;
+  botId: HermesCronTarget;
   mode: "create" | "edit";
   initialJob?: CronJob;
   template?: AutomationTemplate;
@@ -3544,12 +3600,16 @@ export function AutomationFormModal({
   onError: (message: string) => void;
 }) {
   const t = useT();
+  const runtimeBotId = typeof botId === "string" ? botId : botId.instanceId;
   const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
   const testRunHintId = useId();
   const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
+  const initialPromptParts = splitAutomationExecutionPrompt(initialJob?.prompt ?? template?.prompt ?? "");
+  const executionRules = mode === "create" ? template?.executionRules : initialPromptParts.executionRules;
+  const promptMaxLength = getAutomationVisiblePromptMaxLength(executionRules);
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
-  const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
+  const [prompt, setPrompt] = useState(initialPromptParts.visiblePrompt);
   const initialIsZeroToken = initialJob?.inference_config?.no_agent === true
     || Boolean(initialJob?.zero_token_config);
   const [executionMode, setExecutionMode] = useState<"agent" | "zero_token">(
@@ -3575,20 +3635,24 @@ export function AutomationFormModal({
   const [selectedUpstream, setSelectedUpstream] = useState(initialSelectedUpstream);
   const [upstreamChanged, setUpstreamChanged] = useState(false);
   const [upstreamError, setUpstreamError] = useState<string | null>(null);
-  const initialSelectedSkill = initialJob?.skills[0] ?? "";
-  const [selectedSkill, setSelectedSkill] = useState(initialSelectedSkill);
-  const initialSkillWasAvailableRef = useRef<boolean | null>(
-    initialSelectedSkill && skillLoadState.status === "ready"
-      ? skillLoadState.slugs.includes(initialSelectedSkill)
-      : null,
+  const initialSelectedSkills = initialJob?.skills ?? (
+    skillLoadState.status === "ready"
+      ? (template?.skills ?? []).filter((slug) => skillLoadState.slugs.includes(slug))
+      : []
+  );
+  const [selectedSkills, setSelectedSkills] = useState(initialSelectedSkills);
+  const templateSkillsHydratedRef = useRef(
+    mode !== "create" || !template || skillLoadState.status === "ready",
   );
 
   useEffect(() => {
-    if (!initialSelectedSkill || initialSkillWasAvailableRef.current !== null) return;
-    if (skillLoadState.status === "ready") {
-      initialSkillWasAvailableRef.current = skillLoadState.slugs.includes(initialSelectedSkill);
-    }
-  }, [initialSelectedSkill, skillLoadState]);
+    if (templateSkillsHydratedRef.current || skillLoadState.status !== "ready") return;
+    templateSkillsHydratedRef.current = true;
+    const installedTemplateSkills = (template?.skills ?? [])
+      .filter((slug) => skillLoadState.slugs.includes(slug));
+    if (installedTemplateSkills.length === 0) return;
+    setSelectedSkills((current) => [...new Set([...current, ...installedTemplateSkills])]);
+  }, [skillLoadState, template]);
 
   const initialScheduleSource = useMemo(
     () => (initialJob?.schedule.display || initialJob?.schedule.expr || "").trim(),
@@ -3647,7 +3711,10 @@ export function AutomationFormModal({
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   /** 通知方式多选：空数组 = 仅本地（不通知）；含值 = 该平台都推（home channel） */
-  const initialDeliver = useMemo(() => parseInitialDeliver(initialJob?.deliver || ""), [initialJob]);
+  const initialDeliver = useMemo(
+    () => parseInitialDeliver(initialJob?.deliver || template?.deliver || ""),
+    [initialJob, template?.deliver],
+  );
   const [deliverPlatforms, setDeliverPlatforms] = useState<string[]>(initialDeliver.platforms);
   /** 每个 platform 的可选 chat_id：填了 → 拼 `<platform>:<id>` 直送；留空 → 走 home */
   const [deliverChatIds, setDeliverChatIds] = useState<Record<string, string>>(initialDeliver.chatIds);
@@ -3757,7 +3824,7 @@ export function AutomationFormModal({
     originalSchedule,
   }), [mode, scheduleUneditable, kind, onceDate, initial?.onceDate, schedule, originalSchedule]);
   const taskContentReady = executionMode === "agent"
-    ? mode === "edit" || prompt.trim().length > 0
+    ? prompt.trim().length > 0 || (mode === "edit" && !(initialJob?.prompt ?? "").trim())
     : zeroTokenScriptEditable
       ? zeroTokenContent.trim().length > 0
       : Boolean(initialJob?.script);
@@ -3814,9 +3881,11 @@ export function AutomationFormModal({
       ...baseJob,
       id: initialJob?.id ?? AUTOMATION_FORM_TEST_JOB_ID,
       name: name.trim(),
-      prompt: executionMode === "agent" ? prompt.trim() : "",
+      prompt: executionMode === "agent"
+        ? composeAutomationExecutionPrompt(prompt, executionRules)
+        : "",
       schedule: initialJob?.schedule ?? { kind: "", expr: schedule, display: schedule },
-      skills: executionMode === "agent" && selectedSkill ? [selectedSkill] : [],
+      skills: executionMode === "agent" ? selectedSkills : [],
       deliver,
       // 测试运行忽略正式任务的生效窗口脚本，保证当前表单内容可以立即执行。
       script: executionMode === "zero_token" ? initialJob?.script ?? "" : "",
@@ -3841,7 +3910,7 @@ export function AutomationFormModal({
           }
         : null,
     });
-  }, [canTestRun, deliverChatIds, deliverPlatforms, executionMode, externalMultipleUpstreams, initialContextFrom, initialJob, name, onTestRun, prompt, schedule, scriptLanguage, selectedSkill, selectedUpstream, zeroTokenContent, zeroTokenKind, zeroTokenScriptEditable]);
+  }, [canTestRun, deliverChatIds, deliverPlatforms, executionMode, executionRules, externalMultipleUpstreams, initialContextFrom, initialJob, name, onTestRun, prompt, schedule, scriptLanguage, selectedSkills, selectedUpstream, zeroTokenContent, zeroTokenKind, zeroTokenScriptEditable]);
 
   const handleChatIdChange = useCallback((channel: string, value: string) => {
     const nextValue = value.slice(0, CHAT_ID_MAX_LENGTH);
@@ -3898,7 +3967,7 @@ export function AutomationFormModal({
     if (mode === "create") {
       trackDatongClick("automation_create_btn", {
         pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
-        params: { bot_id: botId },
+        params: { bot_id: runtimeBotId },
       });
     }
     const effectiveWindow = shouldShowEffectiveWindow
@@ -3968,18 +4037,18 @@ export function AutomationFormModal({
       }
 
       const initialSkills = initialJob?.skills ?? [];
-      const skillSelectionChanged = selectedSkill !== (initialSkills[0] ?? "");
+      const skillsToVerify = mode === "create"
+        ? selectedSkills
+        : selectedSkills.filter((slug) => !initialSkills.includes(slug));
       let verificationState = skillLoadState;
       if (executionMode === "agent"
-        && selectedSkill
-        && (mode === "create" || skillSelectionChanged || initialSkillWasAvailableRef.current === true)) {
+        && skillsToVerify.length > 0) {
         verificationState = await onRefreshSkills();
       }
       const skillSelectionIssue = executionMode === "agent" ? getAutomationSkillSelectionIssue({
         mode,
         initialSkills,
-        selectedSkill,
-        initialSkillWasAvailable: initialSkillWasAvailableRef.current,
+        selectedSkills,
         verificationState,
       }) : null;
       if (skillSelectionIssue === "unavailable") {
@@ -4043,11 +4112,11 @@ export function AutomationFormModal({
         }
         const createInput = {
           name: name.trim(),
-          prompt: prompt.trim(),
+          prompt: composeAutomationExecutionPrompt(prompt, executionRules),
           schedule,
           deliver,
           script,
-          skills: toCreateCronSkills(selectedSkill),
+          skills: toCreateCronSkills(selectedSkills),
           pinCurrentModel: true,
         };
         if (selectedUpstream) {
@@ -4118,12 +4187,12 @@ export function AutomationFormModal({
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
         const nextName = name.trim();
-        const nextPrompt = prompt.trim();
+        const nextPrompt = composeAutomationExecutionPrompt(prompt, executionRules);
         if (nextName !== initialJob.name) patch.name = nextName;
         if (nextPrompt !== (initialJob.prompt ?? "")) patch.prompt = nextPrompt;
         if (!scheduleUneditable && scheduleChanged) patch.schedule = schedule;
         if (deliver !== (initialJob.deliver || "")) patch.deliver = deliver;
-        const nextSkills = toEditCronSkills(initialJob.skills, selectedSkill);
+        const nextSkills = toEditCronSkills(initialJob.skills, selectedSkills);
         if (nextSkills !== undefined) patch.skills = nextSkills;
         if (canEditEffectiveWindow) {
           const originalWindow = initialJob.effective_window;
@@ -4166,7 +4235,7 @@ export function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, selectedSkill, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
+  }, [botId, runtimeBotId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, executionRules, selectedSkills, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -4333,13 +4402,13 @@ export function AutomationFormModal({
           <div className="mt-3">
           <div className="flex items-baseline justify-between">
             <label className="block text-sm font-medium text-black/80">{t("任务说明")}</label>
-            <span className="text-[11px] text-black/40">{prompt.length}/{AUTOMATION_PROMPT_MAX_LENGTH}</span>
+            <span className="text-[11px] text-black/40">{prompt.length}/{promptMaxLength}</span>
           </div>
           <textarea
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
-            rows={4}
-            maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
+            onChange={(e) => setPrompt(e.target.value.slice(0, promptMaxLength))}
+            rows={3}
+            maxLength={promptMaxLength}
             placeholder={t("请描述需要智能体理解并执行的任务，例如：整理每日 AI 资讯并总结关键进展")}
             className="mt-1.5 w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
@@ -4347,9 +4416,9 @@ export function AutomationFormModal({
           </div>
 
           <AutomationSkillPicker
-            value={selectedSkill}
+            value={selectedSkills}
             loadState={skillLoadState}
-            onChange={setSelectedSkill}
+            onChange={setSelectedSkills}
             onRetry={() => void onRefreshSkills()}
           />
           </>

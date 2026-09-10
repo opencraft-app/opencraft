@@ -23,6 +23,10 @@ import type {
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassModifyBundles,
+  PassModifyOrder,
+  PassModifyCheckout,
+  PassOrderStatus,
   PassRenewPrice,
   PlanOption,
   PlanTier,
@@ -36,6 +40,8 @@ import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 export interface OAuthStartOptions {
   switchAccount?: boolean;
   wechatMode?: WeChatOAuthMode;
+  /** Validated relying-party location that owns the browser login result. */
+  returnTo?: string;
 }
 
 export interface FederationAuthorizationInput {
@@ -220,6 +226,12 @@ export interface AuthRepository {
 }
 
 export interface PlanRepository {
+  listModifyBundles(passId: string): Promise<PassModifyBundles>;
+  getModifyCheckout(passId: string): Promise<PassModifyCheckout>;
+  createModifyOrder(passId: string, input: { target_bundle_id: string }): Promise<PassModifyOrder>;
+  getModifyOrderUrl(passId: string, input: CreatePassOrderUrlInput): Promise<CreatePassOrderUrlResult>;
+  refreshModifyPaymentAuthorization(passId: string, input: { deal_names: string[] }): Promise<{ auth_code: string }>;
+  getOrderStatus(dealName: string): Promise<PassOrderStatus>;
   getCurrentSubscription(): Promise<CurrentSubscription | null>;
   getPlanPreview(): Promise<{
     currentCandidate: PlanTier;
@@ -414,7 +426,15 @@ export interface WorkerActionStatusResult {
 
 export interface BotRepository {
   getDashboardSnapshot(mode?: DataMode): Promise<DashboardSnapshot>;
-  createBot(input?: { name?: string; soulTemplateId?: string }): Promise<Bot>;
+  createBot(input?: {
+    name?: string;
+    description?: string;
+    soulTemplateId?: string;
+    createMode?: "blank" | "clone";
+    sourceBotId?: string;
+    initialSoul?: string;
+  }): Promise<Bot>;
+  retryBot(botId: string): Promise<Bot | null>;
   destroyBot(botId: string): Promise<void>;
   renameBot(botId: string, name: string): Promise<Bot>;
   updateBotProfile(
@@ -426,6 +446,9 @@ export interface BotRepository {
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
   getTerminalSession(botId: string): Promise<BotTerminalSession>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
+  claimUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
+  confirmUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
+  releaseUniqueChannel(botId: string, channel: "weixin"): Promise<void>;
   createWeixinLoginSession(botId: string): Promise<{ sessionId: string; status: string }>;
   getWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;
   cancelWeixinLoginSession(botId: string, sessionId: string): Promise<WeixinLoginSession>;

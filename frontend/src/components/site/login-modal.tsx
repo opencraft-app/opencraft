@@ -22,6 +22,7 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
+  oauthErrorMessage,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
   wechatOAuthStartTargetForUserAgent,
@@ -242,6 +243,14 @@ interface LoginModalProps {
   mode?: "login" | "switch-account";
   onReturnToCurrentAccount?: () => void;
   initialError?: string | null;
+  /**
+   * First-party browser handoff owned by a caller outside the LightVela origin.
+   * Provider OAuth receives the validated return target and is forced through a
+   * fresh provider transaction so the callback can deliver a session token.
+   * Password/phone login stays hidden because it cannot hand a credential
+   * across origins by itself.
+   */
+  oauthHandoff?: { returnTo: string };
 }
 
 /* ─── Login Modal Component ─── */
@@ -254,6 +263,7 @@ export const LoginModal = ({
   mode = "login",
   onReturnToCurrentAccount,
   initialError = null,
+  oauthHandoff,
 }: LoginModalProps) => {
   const repositories = useRepositories();
   const { session } = useSession();
@@ -265,10 +275,16 @@ export const LoginModal = ({
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
   const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
+  const oauthHandoffReturnTo = oauthHandoff?.returnTo;
+  const hasOAuthHandoff = Boolean(oauthHandoffReturnTo);
+  const forceProviderSwitch = mode === "switch-account" || hasOAuthHandoff;
 
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) setError(oauthErrorMessage(new URLSearchParams(window.location.search).get("oauth_error")));
+  }, [open]);
   const [domesticLoginMethod, setDomesticLoginMethod] = useState<DomesticLoginMethod>("wechat");
   const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
   const [shouldFocusWechatMobileGuide, setShouldFocusWechatMobileGuide] = useState(false);
@@ -283,10 +299,11 @@ export const LoginModal = ({
       return null;
     }
     return repositories.auth.getOAuthStartUrl("wechat", {
-      ...(mode === "switch-account" ? { switchAccount: true } : {}),
+      ...(forceProviderSwitch ? { switchAccount: true } : {}),
+      ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
       wechatMode: "official_account",
     });
-  }, [mode, repositories.auth]);
+  }, [forceProviderSwitch, oauthHandoffReturnTo, repositories.auth]);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
 
@@ -307,7 +324,7 @@ export const LoginModal = ({
 
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
-    if (!open || mode === "switch-account") return;
+    if (!open || mode === "switch-account" || hasOAuthHandoff) return;
     if (session.stage === "authenticated" && session.user) {
       if (!loginReportedRef.current) {
         loginReportedRef.current = true;
@@ -322,7 +339,7 @@ export const LoginModal = ({
       if (closeOnSuccess) onClose();
       onSuccess?.();
     }
-  }, [closeOnSuccess, mode, open, session.stage, session.user, onClose, onSuccess]);
+  }, [closeOnSuccess, hasOAuthHandoff, mode, open, session.stage, session.user, onClose, onSuccess]);
 
   useEffect(() => {
     if (!open) return;
@@ -359,7 +376,8 @@ export const LoginModal = ({
         return;
       }
       const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
-        ...(mode === "switch-account" ? { switchAccount: true } : {}),
+        ...(forceProviderSwitch ? { switchAccount: true } : {}),
+        ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
         wechatMode: target,
       });
       if (!loginUrl) return;
@@ -371,7 +389,12 @@ export const LoginModal = ({
     }
     const loginUrl = repositories.auth.getOAuthStartUrl(
       provider,
-      mode === "switch-account" ? { switchAccount: true } : undefined,
+      forceProviderSwitch || oauthHandoffReturnTo
+        ? {
+            ...(forceProviderSwitch ? { switchAccount: true } : {}),
+            ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
+          }
+        : undefined,
     );
     if (!loginUrl) return;
     setError(null);
@@ -535,7 +558,15 @@ export const LoginModal = ({
                     providers.push("github");
                   }
                   return providers.map((provider) => {
-                    const loginUrl = repositories.auth.getOAuthStartUrl(provider);
+                    const loginUrl = repositories.auth.getOAuthStartUrl(
+                      provider,
+                      forceProviderSwitch || oauthHandoffReturnTo
+                        ? {
+                            ...(forceProviderSwitch ? { switchAccount: true } : {}),
+                            ...(oauthHandoffReturnTo ? { returnTo: oauthHandoffReturnTo } : {}),
+                          }
+                        : undefined,
+                    );
                     if (!loginUrl) return null;
                     const visual = PROVIDER_BUTTON_VISUALS[provider];
                     return (
@@ -612,6 +643,7 @@ export const LoginModal = ({
                   <span className="text-xs text-slate-500">{t("其他登录方式")}</span>
                   <div className="flex flex-wrap items-center justify-center">
                     {DOMESTIC_LOGIN_METHODS
+                      .filter((method) => !hasOAuthHandoff || method !== "phone")
                       .filter((method) => method !== domesticLoginMethod)
                       .map((method, index) => {
                         const visual = DOMESTIC_LOGIN_METHOD_VISUALS[method];

@@ -32,6 +32,16 @@ func TestOpenclawWeixinProtocolCommandUsesStructuredEntryPoint(t *testing.T) {
 	}
 }
 
+func TestOpenclawWeixinProtocolCommandScopesNamedProfileHome(t *testing.T) {
+	cmd := openclawWeixinProtocolCommandForProfile("sales-123", "status", "--session-id", "wxlogin_123")
+	if !strings.Contains(cmd, `HERMES_HOME="$HOME/.hermes/profiles/"`) || !strings.Contains(cmd, "sales-123") {
+		t.Fatalf("expected named profile HERMES_HOME, got %q", cmd)
+	}
+	if !strings.Contains(cmd, `HERMES_PROFILE=`) || !strings.Contains(cmd, "sales-123") {
+		t.Fatalf("expected named HERMES_PROFILE, got %q", cmd)
+	}
+}
+
 func TestNormalizeWeixinProtocolStatus(t *testing.T) {
 	cases := []struct {
 		name   string

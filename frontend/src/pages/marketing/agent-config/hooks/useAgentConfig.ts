@@ -429,8 +429,7 @@ export function useAgentConfig(params: IUseAgentConfigParams): IUseAgentConfigRe
   useEffect(() => {
     const instanceId = instance?.InstanceId;
     if (!instanceId || !isDataReady || operationDisabledTip) return;
-    // scripts SDK 尚未就绪时（占位符阶段命令方法返回空串），先不发起自动请求；
-    // SDK 就绪后 useSyncExternalStore 触发重渲染，scriptsReady 变 true 再重新进入本 effect。
+    // 外部注入的命令集未就绪时不发起自动请求；本地命令生成器始终同步就绪。
     if (!scriptsReady) return;
 
     // cancelled 旗标：StrictMode 下第一次挂载会立即被卸载，

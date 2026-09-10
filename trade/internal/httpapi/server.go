@@ -121,6 +121,10 @@ type ServerConfig struct {
 	// 由 LIGHTVELA_TRADE_REGION env 注入，未注册字面量在 config.Load 期 fail-fast。
 	// 与 SiteKind 同路径透穿到上述 5 个下游注入点。
 	RegionOverride string
+
+	// CreditRegionOverride 仅透传到 Credit 资源回调和退款路径。
+	// 由 LIGHTVELA_CREDIT_REGION 注入；未配置时 config.Load 会继承 RegionOverride。
+	CreditRegionOverride string
 }
 
 // NewRouter 装配 trade 服务的 HTTP Router。
@@ -297,7 +301,7 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 			CreditClient:          cfg.CreditClient,
 			Builder:               builder,
 			SiteKind:              cfg.SiteKind,
-			RegionOverride:        cfg.RegionOverride,
+			RegionOverride:        cfg.CreditRegionOverride,
 		})
 	}
 
@@ -329,7 +333,8 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 			// v1.7.x A6.3：SiteKind 透传给 deleteResourceHandler（装配期解析为 region 三元组）。
 			SiteKind: cfg.SiteKind,
 			// 北京 2 预发布接入 2026-06-12：region 字段 override，与 SiteKind 同路径。
-			RegionOverride: cfg.RegionOverride,
+			RegionOverride:       cfg.RegionOverride,
+			CreditRegionOverride: cfg.CreditRegionOverride,
 			// 点石后台管理查询/删除入口。
 			DianshiAdminStore: cfg.DianshiAdminStore,
 		})

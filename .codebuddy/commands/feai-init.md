@@ -52,6 +52,7 @@ feai workflow project-root --json
 - monorepo 配置（pnpm-workspace.yaml / lerna.json / turbo.json 等）
 - 测试 / 构建 / lint 相关配置（Jest / Vitest / ESLint 等，仅用于确认命令真实存在）
 - README 或已有项目文档（仅用于佐证项目标识）
+- `.codebuddy/project.local.json`（仅读 `tapd.workspaceId`，作为 `project.yaml` 的 `tapd.workspace_id` 来源；其 `aiUsage` / Token 等个人字段不读、不写）
 
 读取结果只作为事实来源；不把配置文件全文复制进产物。
 
@@ -63,13 +64,16 @@ feai workflow project-root --json
 - 包管理器：按 lockfile 与 `package.json` 的 `packageManager` 字段判定（pnpm / npm / yarn）
 - 测试 / 构建 / lint 命令：按 `package.json` 的 `scripts` 与包管理器拼接
 - monorepo 划分：workspaces / pnpm-workspace 的包边界（只写包路径与一句话用途，不写包内结构）
+- TAPD 配置：`tapd.workspace_id` 优先回填 `.codebuddy/project.local.json` 的 `tapd.workspaceId`；无值时保留占位并在总结中提示用户补充。`tapd.business_name` 无法从配置推断，必须询问用户，不得猜测。
 
 结构细节（目录划分、页面、模块内部构成等）一律不探测、不写入——AI 需要时现场查询代码。
 大型仓库优先读取清单文件与关键索引，避免全量灌入上下文。
 
 ### 阶段 4：写入 project.yaml 与 AGENTS.md
 
-更新 `.workflow/project.yaml` 的索引级字段（`name` / `repository` / `default-branch` / `package-manager` / `commands` / `monorepo` / `generated-at`），其余内容不动；`generated-at` 刷新为当前时间。
+更新 `.workflow/project.yaml` 的索引级字段（`name` / `repository` / `default-branch` / `tapd` / `package-manager` / `commands` / `monorepo` / `generated-at`），其余内容不动；`generated-at` 刷新为当前时间。
+
+`tapd` 段是团队共享的项目事实（`workspace_id` 取自 TAPD 链接 `tapd_fe/` 后的 8 位数字段），由 `/feai-prd` 创建需求单时读取；它是入库配置，不写入任何 Token。
 
 `AGENTS.md` 存在项目上下文节时，把同一组索引级事实同步刷新进该节；没有该节则不新建。
 

@@ -1,5 +1,7 @@
 # 站点与环境路由领域
 
+Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url` 可选认证入口转交 CTL 验证短期票据；modify 桥接请求不附带另一浏览器用户的 Bearer/cookie。建单、恢复订单和重签票据仍要求登录，不能扩大到整个 Pass 路由。前端 API 和扫码域名必须属于同一目标测试环境。
+
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
 ## 稳定身份
@@ -62,6 +64,16 @@
 - 国内站与国际站复用同一套模型配置交互，界面名称和操作提示通过前端 i18n 展示；持久化配置始终使用原始 Provider key 和模型 ID，不写入本地化名称。
 - 预置 Provider 的可选模型由当前区域的产品配置目录提供，前端不使用用户 API Key 临时拉取模型列表；自定义 Provider 仍可按用户填写的端点探测或手动输入模型 ID。
 - 主模型、备用模型和仅添加模型的角色来自 Hermes 配置快照。角色切换不得改变已添加 Provider 的展示顺序，也不得把目录候选误标为已添加模型。
+
+## Agent 配置命令所有权
+
+- 国内站与国际站 Agent 设置页使用的 Hermes Provider、模型、通道和 Gateway 命令由 `frontend/src/pages/marketing/agent-config/hermes-command-builder.ts` 本地生成，不在浏览器运行时加载 Tea SDK 命令工厂。
+- 本地命令生成器应保持 acli 命令文本与既有行为兼容；Hermes Profile 路由属于独立能力，只有产品侧具备明确 Profile 标识与完整回归验证后才能统一增加 `--agent`。
+
+## Agent 多 Bot 区域边界
+
+- 实例内多 Bot 一期只在国内站开放。前端入口同时受国内区域判断和运行时功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，但新增 Bot 由服务端开关再次校验。
+- 国内 service-gateway 环境允许 `/v1/instances/{instance_id}/bots` 及其修复、唯一通道绑定子路由，全球 `sgprod` 不允许这些路径。配置策略测试必须分别断言国内放行和全球不暴露，不能用前端隐藏替代公共 API 边界。
 
 ## 公共账号菜单边界
 

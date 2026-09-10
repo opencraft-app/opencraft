@@ -42,6 +42,7 @@ import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
+import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 
 /* ─── animation variants ─── */
 
@@ -806,6 +807,7 @@ const SubscriptionSection = ({
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const canRenew = (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
+  const upgrade = usePassUpgrade({ userId: session.user?.id, passId: operablePass?.pass_id, currentPass: operablePass, enabled: paidBillingActive });
 
   const handleRenewSuccess = useCallback(async () => {
     setRenewModalOpen(false);
@@ -936,7 +938,7 @@ const SubscriptionSection = ({
           {t("订阅套餐")}
         </h3>
         {canRenew && operablePass && (
-          <div className="shrink-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {!renewalAvailable ? (
               <RenewComingSoonButton
                 label={t("立即续费")}
@@ -953,10 +955,16 @@ const SubscriptionSection = ({
                 {t("立即续费")}
               </button>
             )}
+            {upgrade.pass && upgrade.options.length > 0 && (
+              <AppLink to={`/subscribe/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`} className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020] transition-colors hover:bg-black/5">
+                {t("升级套餐")}
+              </AppLink>
+            )}
           </div>
         )}
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
+        {upgrade.error && <p role="alert" className="text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
         {/* Current plan */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1141,10 +1149,6 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type RevealAccountToolsHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
-
 export const AccountPage = () => {
   const t = useT();
   const navigate = useAppNavigate();
@@ -1172,35 +1176,6 @@ export const AccountPage = () => {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showHiddenAccountTools, setShowHiddenAccountTools] = useState(false);
-
-  useEffect(() => {
-    const host = window as RevealAccountToolsHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealAccountTools = (...args: unknown[]) => {
-      if (mounted) {
-        setShowHiddenAccountTools(true);
-      }
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealAccountTools;
-
-    return () => {
-      mounted = false;
-      if (host.show !== revealAccountTools) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1957,7 +1932,7 @@ export const AccountPage = () => {
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
 
-            {isGlobal && showHiddenAccountTools && <SavedCardsSection />}
+            {isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>

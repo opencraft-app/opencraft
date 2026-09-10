@@ -59,10 +59,13 @@
 .ci/runtime/bundles/ai-gateway.bundle
 .ci/runtime/bundles/channelgateway.bundle
 .ci/runtime/bundles/cloudagent-gateway.bundle
+.ci/runtime/bundles/cloudladdergateway.bundle
+.ci/runtime/bundles/credit.bundle
 .ci/runtime/bundles/ctl.bundle
 .ci/runtime/bundles/frontend-ds.bundle
 .ci/runtime/bundles/frontend.bundle
 .ci/runtime/bundles/gateway-dashboard.bundle
+.ci/runtime/bundles/new-api.bundle
 .ci/runtime/bundles/nextgen-dashboard.bundle
 .ci/runtime/bundles/payment.bundle
 .ci/runtime/bundles/sandbox.bundle
@@ -72,8 +75,10 @@
 .ci/runtime/bundles/staticpages.bundle
 .ci/runtime/bundles/subscription.bundle
 .ci/runtime/bundles/trade.bundle
-.ci/runtime/bundles/vibebase.bundle
 .ci/runtime/bundles/user-auth.bundle
+.ci/runtime/bundles/velagw.bundle
+.ci/runtime/bundles/vibebase.bundle
+.ci/runtime/bundles/workers.bundle
 .ci/runtime/gitops/__init__.py
 .ci/runtime/gitops/argocd.py
 .ci/runtime/gitops/argocd_target_cluster.py

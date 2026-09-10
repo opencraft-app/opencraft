@@ -2,6 +2,7 @@ import { planCatalog } from "@/domain/plan-catalog";
 import { defaultHermesAgentName } from "@/i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
+import { isGlobal } from "@/lib/region";
 import type {
   AuthSessionSnapshot,
   BillingSummary,
@@ -21,6 +22,10 @@ import type {
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassModifyBundles,
+  PassModifyOrder,
+  PassModifyCheckout,
+  PassOrderStatus,
   PassRenewPrice,
   ToolBinding,
   User,
@@ -187,6 +192,30 @@ interface CtlListInstancesPayload {
   items: CtlInstancePayload[];
 }
 
+interface CtlInstanceBotPayload {
+  bot_id: string;
+  instance_id: string;
+  profile_id: string;
+  name: string;
+  description?: string;
+  is_default: boolean;
+  status: string;
+  created_from: "blank" | "clone";
+  source_bot_id?: string;
+  created_at: string;
+  updated_at: string;
+  weixin_owner?: {
+    bot_id: string;
+    profile_id: string;
+    bot_name?: string;
+    status: string;
+  };
+}
+
+interface CtlListInstanceBotsPayload {
+  items: CtlInstanceBotPayload[];
+}
+
 interface CtlConfigureChannelPayload {
   status: string;
   channel: string;
@@ -238,6 +267,13 @@ class RepositoryError extends Error {
 }
 
 const createNetworkUnavailableError = () => new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
+
+const isNestedBotsUnavailable = (error: unknown) => {
+  if (error instanceof RepositoryError) {
+    return error.status === 404 || error.status === 405;
+  }
+  return error instanceof TypeError && /body.*(unusable|read)/i.test(error.message);
+};
 
 const authStorage = () => {
   if (typeof globalThis === "undefined") {
@@ -712,6 +748,9 @@ const resolveLegacyDraftBotName = (draft?: BotDraft) => {
 const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): Bot => {
   return {
     id: instance.instance_id,
+    instanceId: instance.instance_id,
+    profileId: "main",
+    isDefault: true,
     sandboxId: instance.sandbox_id,
     name: instance.name?.trim() || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
     type: draft?.type || "ops",
@@ -720,6 +759,43 @@ const projectInstanceToBot = (instance: CtlInstancePayload, draft?: BotDraft): B
     scenario: draft?.scenario?.trim() || "实例工作台",
     createdAt: instance.created_at,
     status: draft?.status || mapInstanceStatusToBotStatus(instance.status),
+  };
+};
+
+const projectInstanceBotToBot = (
+  instance: CtlInstancePayload,
+  instanceBot: CtlInstanceBotPayload,
+  draft?: BotDraft,
+): Bot => {
+  const backendName = instanceBot.name?.trim();
+  const leakedRootProfileName = instanceBot.is_default
+    && instanceBot.profile_id === "main"
+    && instanceBot.bot_id === instanceBot.instance_id
+    && backendName === "default";
+  const displayName = leakedRootProfileName ? undefined : backendName;
+
+  return {
+    id: instanceBot.bot_id,
+    instanceId: instanceBot.instance_id,
+    profileId: instanceBot.profile_id,
+    isDefault: instanceBot.is_default,
+    description: instanceBot.description,
+    createdFrom: instanceBot.created_from,
+    sourceBotId: instanceBot.source_bot_id,
+    weixinOwner: instanceBot.weixin_owner ? {
+      botId: instanceBot.weixin_owner.bot_id,
+      profileId: instanceBot.weixin_owner.profile_id,
+      botName: instanceBot.weixin_owner.bot_name,
+      status: instanceBot.weixin_owner.status,
+    } : undefined,
+    sandboxId: instance.sandbox_id,
+    name: displayName || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
+    type: draft?.type || "ops",
+    template: draft?.template?.trim() || "OpenClaw Runtime",
+    mission: draft?.mission?.trim() || instanceBot.description || "",
+    scenario: draft?.scenario?.trim() || "实例工作台",
+    createdAt: instanceBot.created_at,
+    status: draft?.status || mapInstanceStatusToBotStatus(instanceBot.status),
   };
 };
 
@@ -741,6 +817,13 @@ export const fetchUsage = async (baseUrl: string): Promise<{ usedCredits: number
 
 const createHttpBotRepository = (baseUrl: string): BotRepository => {
   const messageStore = new Map<string, WorkspaceMessage[]>();
+  const botScopeCache = new Map<string, {
+    instanceId: string;
+    profileId: string;
+    isDefault: boolean;
+    legacy?: boolean;
+  }>();
+  const instanceCache = new Map<string, CtlInstancePayload>();
 
   const seedMessagesFor = (botId: string) => {
     if (messageStore.has(botId)) {
@@ -768,15 +851,54 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       method: "GET",
     });
     const drafts = readBotDrafts();
-    return response.items.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]));
+    const instances = Array.isArray(response.items) ? response.items : [];
+    instanceCache.clear();
+    instances.forEach((instance) => instanceCache.set(instance.instance_id, instance));
+    const bots = isGlobal
+      ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
+      : (await Promise.all(instances.map(async (instance) => {
+        try {
+          const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
+            baseUrl,
+            `/v1/instances/${encodeURIComponent(instance.instance_id)}/bots`,
+            { method: "GET" },
+          );
+          if (Array.isArray(nested.items) && nested.items.every((bot) => typeof bot.bot_id === "string")) {
+            return nested.items.map((bot) => projectInstanceBotToBot(instance, bot, drafts[bot.bot_id]));
+          }
+        } catch (error) {
+          if (!isNestedBotsUnavailable(error)) {
+            throw error;
+          }
+          // A staged backend rollout may not expose nested Bots yet; keep the existing root Bot usable.
+        }
+        return [projectInstanceToBot(instance, drafts[instance.instance_id])];
+      }))).flat();
+    botScopeCache.clear();
+    bots.forEach((bot) => {
+      botScopeCache.set(bot.id, {
+        instanceId: bot.instanceId ?? bot.id,
+        profileId: bot.profileId ?? "main",
+        isDefault: bot.isDefault ?? true,
+        legacy: bot.id === (bot.instanceId ?? bot.id),
+      });
+    });
+    return bots;
   };
 
   const getBotByID = async (botId: string): Promise<Bot> => {
-    const instance = await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}`, {
-      method: "GET",
-    });
-    const drafts = readBotDrafts();
-    return projectInstanceToBot(instance, drafts[instance.instance_id]);
+    const bot = (await listBots()).find((item) => item.id === botId);
+    if (!bot) {
+      throw new RepositoryError("Bot 不存在或无权访问。", 404, "instance_bot_not_found");
+    }
+    return bot;
+  };
+
+  const resolveBotScope = async (botId: string) => {
+    const cached = botScopeCache.get(botId);
+    if (cached) return cached;
+    // Direct legacy callers still pass the instance ID before dashboard hydration.
+    return { instanceId: botId, profileId: "main", isDefault: true, legacy: true };
   };
 
   const mapChannelConfigResult = (payload: CtlConfigureChannelPayload): BotChannelConfigResult => ({
@@ -810,6 +932,35 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async createBot(input) {
       const displayName = input?.name?.trim() || defaultHermesAgentName();
+
+      if (!isGlobal) {
+        const instance = instanceCache.values().next().value as CtlInstancePayload | undefined;
+        if (instance) {
+          const created = await requestEnvelope<CtlInstanceBotPayload>(
+            baseUrl,
+            `/v1/instances/${encodeURIComponent(instance.instance_id)}/bots`,
+            {
+              method: "POST",
+              body: {
+                name: displayName,
+                description: input?.description?.trim() || undefined,
+                create_mode: input?.createMode ?? "blank",
+                source_bot_id: input?.sourceBotId || undefined,
+                initial_soul: input?.initialSoul?.trim() || undefined,
+              },
+            },
+          );
+          const bot = projectInstanceBotToBot(instance, created, readBotDrafts()[created.bot_id]);
+          botScopeCache.set(bot.id, {
+            instanceId: created.instance_id,
+            profileId: created.profile_id,
+            isDefault: created.is_default,
+            legacy: false,
+          });
+          return bot;
+        }
+      }
+
       const body: Record<string, unknown> = {
         timeout: DEFAULT_INSTANCE_TIMEOUT_SECONDS,
         name: displayName,
@@ -823,30 +974,105 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         body,
       });
 
-      const drafts = readBotDrafts();
-      return projectInstanceToBot(created, drafts[created.instance_id]);
+      if (!isGlobal) {
+        try {
+          const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
+            baseUrl,
+            `/v1/instances/${encodeURIComponent(created.instance_id)}/bots`,
+            { method: "GET" },
+          );
+          const items = Array.isArray(nested.items) ? nested.items : [];
+          const main = items.find((item) => item.is_default) ?? items[0];
+          if (main?.bot_id) {
+            const bot = projectInstanceBotToBot(created, main, readBotDrafts()[main.bot_id]);
+            botScopeCache.set(bot.id, {
+              instanceId: main.instance_id,
+              profileId: main.profile_id,
+              isDefault: main.is_default,
+              legacy: false,
+            });
+            instanceCache.set(created.instance_id, created);
+            return bot;
+          }
+        } catch (error) {
+          if (!isNestedBotsUnavailable(error)) {
+            throw error;
+          }
+          // The root instance remains the compatibility Bot until the nested API is available.
+        }
+        const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
+        botScopeCache.set(bot.id, {
+          instanceId: created.instance_id,
+          profileId: "main",
+          isDefault: true,
+          legacy: true,
+        });
+        instanceCache.set(created.instance_id, created);
+        return bot;
+      }
+      return projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
     },
 
     async destroyBot(botId) {
-      await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}`, {
-        method: "DELETE",
-      });
+      const scope = await resolveBotScope(botId);
+      if (isGlobal || scope.legacy) {
+        await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
+          method: "DELETE",
+        });
+      } else if (scope.isDefault) {
+        await requestEnvelope<CtlInstancePayload>(
+          baseUrl,
+          `/v1/instances/${encodeURIComponent(scope.instanceId)}?require_single_bot=true`,
+          { method: "DELETE" },
+        );
+      } else {
+        await requestEnvelope<CtlInstanceBotPayload>(
+          baseUrl,
+          `/v1/instances/${encodeURIComponent(scope.instanceId)}/bots/${encodeURIComponent(botId)}`,
+          { method: "DELETE" },
+        );
+      }
 
+      const deletedBotIds = scope.isDefault
+        ? [...botScopeCache.entries()]
+          .filter(([, cachedScope]) => cachedScope.instanceId === scope.instanceId)
+          .map(([cachedBotId]) => cachedBotId)
+        : [botId];
       const drafts = readBotDrafts();
-      if (drafts[botId]) {
-        delete drafts[botId];
+      let draftsChanged = false;
+      deletedBotIds.forEach((deletedBotId) => {
+        if (drafts[deletedBotId]) {
+          delete drafts[deletedBotId];
+          draftsChanged = true;
+        }
+        messageStore.delete(deletedBotId);
+        botScopeCache.delete(deletedBotId);
+      });
+      if (draftsChanged) {
         writeBotDrafts(drafts);
       }
-      messageStore.delete(botId);
+      if (scope.isDefault) instanceCache.delete(scope.instanceId);
     },
 
     async renameBot(botId: string, name: string): Promise<Bot> {
-      const data = await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}`, {
-        method: "PUT",
-        body: { name },
-      });
+      const scope = await resolveBotScope(botId);
       const drafts = readBotDrafts();
-      return projectInstanceToBot(data, drafts[botId]);
+      if (isGlobal) {
+        const data = await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
+          method: "PUT",
+          body: { name },
+        });
+        return projectInstanceToBot(data, drafts[botId]);
+      }
+      const data = await requestEnvelope<CtlInstanceBotPayload>(
+        baseUrl,
+        `/v1/instances/${encodeURIComponent(scope.instanceId)}/bots/${encodeURIComponent(botId)}`,
+        { method: "PUT", body: { name } },
+      );
+      const instance = await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
+        method: "GET",
+      });
+      return projectInstanceBotToBot(instance, data, drafts[botId]);
     },
 
     async updateBotProfile(botId, patch) {
@@ -907,7 +1133,8 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async getTerminalSession(botId) {
-      return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/tat/session`, {
+      const { instanceId } = await resolveBotScope(botId);
+      return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/tat/session`, {
         method: "POST",
       });
     },
@@ -921,12 +1148,14 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         throw new RepositoryError("请先填写 QQ App ID 和 App Secret。", 400, "invalid_channel_config");
       }
 
-      const payload = await requestEnvelope<CtlConfigureChannelPayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/channels/config`, {
+      const { instanceId, profileId, legacy } = await resolveBotScope(botId);
+      const payload = await requestEnvelope<CtlConfigureChannelPayload>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/channels/config`, {
         method: "POST",
         body: {
           channel: "qqbot",
           token: `${appId}:${appSecret}`,
           account: account || undefined,
+          profile_id: legacy ? undefined : profileId,
         },
       });
 
@@ -934,27 +1163,55 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async createWeixinLoginSession(botId) {
-      const payload = await requestEnvelope<{ session_id: string; status: string }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/channels/weixin/login-sessions`, {
+      const { instanceId, profileId } = await resolveBotScope(botId);
+      const payload = await requestEnvelope<{ session_id: string; status: string }>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/channels/weixin/login-sessions`, {
         method: "POST",
-        body: {},
+        body: { bot_id: botId, profile_id: profileId },
       });
       return { sessionId: payload.session_id, status: payload.status };
     },
 
+    async claimUniqueChannel(botId, channel) {
+      if (isGlobal) return;
+      const { instanceId } = await resolveBotScope(botId);
+      await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
+        method: "PUT",
+      });
+    },
+
+    async confirmUniqueChannel(botId, channel) {
+      if (isGlobal) return;
+      const { instanceId } = await resolveBotScope(botId);
+      await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
+        method: "POST",
+      });
+    },
+
+    async releaseUniqueChannel(botId, channel) {
+      if (isGlobal) return;
+      const { instanceId } = await resolveBotScope(botId);
+      await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
+        method: "DELETE",
+      });
+    },
+
     async getWeixinLoginSession(botId, sessionId) {
-      return requestEnvelope<WeixinLoginSession>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/channels/weixin/login-sessions/${encodeURIComponent(sessionId)}`, {
+      const { instanceId } = await resolveBotScope(botId);
+      return requestEnvelope<WeixinLoginSession>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/channels/weixin/login-sessions/${encodeURIComponent(sessionId)}`, {
         method: "GET",
       });
     },
 
     async cancelWeixinLoginSession(botId, sessionId) {
-      return requestEnvelope<WeixinLoginSession>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/channels/weixin/login-sessions/${encodeURIComponent(sessionId)}/cancel`, {
+      const { instanceId } = await resolveBotScope(botId);
+      return requestEnvelope<WeixinLoginSession>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/channels/weixin/login-sessions/${encodeURIComponent(sessionId)}/cancel`, {
         method: "POST",
       });
     },
 
     async *subscribeWeixinLoginSessionEvents(botId, sessionId, signal) {
-      const url = buildUrl(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/channels/weixin/login-sessions/${encodeURIComponent(sessionId)}/events`);
+      const { instanceId } = await resolveBotScope(botId);
+      const url = buildUrl(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/channels/weixin/login-sessions/${encodeURIComponent(sessionId)}/events`);
       const headers: Record<string, string> = { Accept: "text/event-stream" };
       const authToken = readStoredAuthToken();
       if (authToken) {
@@ -1008,6 +1265,35 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       }
     },
 
+    async retryBot(botId) {
+      const scope = await resolveBotScope(botId);
+      if (scope.legacy) {
+        throw new RepositoryError("当前 Bot 不支持修复操作。", 409, "instance_bot_retry_unsupported");
+      }
+      const retried = await requestEnvelope<CtlInstanceBotPayload>(
+        baseUrl,
+        `/v1/instances/${encodeURIComponent(scope.instanceId)}/bots/${encodeURIComponent(botId)}/retry`,
+        { method: "POST" },
+      );
+      if (retried.status === "deleted") {
+        botScopeCache.delete(botId);
+        return null;
+      }
+      const instance = instanceCache.get(scope.instanceId) ?? {
+        instance_id: scope.instanceId,
+        status: "Running",
+        created_at: retried.created_at,
+      };
+      const bot = projectInstanceBotToBot(instance, retried, readBotDrafts()[retried.bot_id]);
+      botScopeCache.set(bot.id, {
+        instanceId: retried.instance_id,
+        profileId: retried.profile_id,
+        isDefault: retried.is_default,
+        legacy: false,
+      });
+      return bot;
+    },
+
     async listSoulTemplates() {
       const payload = await requestEnvelope<{ items: Array<{ id: string; name: string; description: string }> }>(baseUrl, "/v1/soul-templates", {
         method: "GET",
@@ -1024,7 +1310,8 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       // - 5xx + body.details：命令执行失败，但 details.output 含业务结果（如
       //   hermes_version_too_old），上层据此解析友好提示
       // - 5xx 无 details：真正的接口错误，按通用 RepositoryError 抛出
-      const path = `/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
+      const { instanceId } = await resolveBotScope(botId);
+      const path = `/v1/instances/${encodeURIComponent(instanceId)}/debug/exec`;
       const headers = new Headers({ "Content-Type": "application/json" });
       const authToken = readStoredAuthToken();
       if (authToken) {
@@ -1106,7 +1393,8 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async execDebugCommandStream(botId, command, onChunk, options) {
-      const path = `/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
+      const { instanceId } = await resolveBotScope(botId);
+      const path = `/v1/instances/${encodeURIComponent(instanceId)}/debug/exec`;
       const headers = new Headers({
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
@@ -1208,10 +1496,11 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async startRescueExport(botId: string) {
+      const { instanceId } = await resolveBotScope(botId);
       const payload = await requestEnvelope<WorkerActionStartPayload>(baseUrl, "/api/worker-actions", {
         method: "POST",
         body: {
-          bot_id: botId,
+          bot_id: instanceId,
           action: "rescue_export",
           params: {
             archive_mode: "hermes",
@@ -1231,9 +1520,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async getRescueExportStatus(botId: string) {
       try {
+        const { instanceId } = await resolveBotScope(botId);
         const payload = await requestEnvelope<WorkerActionStatusPayload>(
           baseUrl,
-          `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=rescue_export`,
+          `/api/worker-actions?bot_id=${encodeURIComponent(instanceId)}&action=rescue_export`,
           { method: "GET" },
         );
         return normalizeNullableWorkerActionStatus(payload);
@@ -1249,10 +1539,11 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       if (!file.name.toLowerCase().endsWith(".zip")) {
         throw new RepositoryError("请选择 Hermes 导出的 zip 文件。", 400, "hermes_import_zip_required");
       }
+      const { instanceId } = await resolveBotScope(botId);
       const upload = await requestEnvelope<WorkerActionUploadPayload>(baseUrl, "/api/worker-actions", {
         method: "POST",
         body: {
-          bot_id: botId,
+          bot_id: instanceId,
           action: "hermes_import_upload",
           params: {
             file_name: file.name,
@@ -1271,7 +1562,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       const payload = await requestEnvelope<WorkerActionStartPayload>(baseUrl, "/api/worker-actions", {
         method: "POST",
         body: {
-          bot_id: botId,
+          bot_id: instanceId,
           action: "hermes_import",
           params: {
             object_key: upload.object_key,
@@ -1291,9 +1582,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async getHermesImportStatus(botId: string) {
       try {
+        const { instanceId } = await resolveBotScope(botId);
         const payload = await requestEnvelope<WorkerActionStatusPayload>(
           baseUrl,
-          `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=hermes_import`,
+          `/api/worker-actions?bot_id=${encodeURIComponent(instanceId)}&action=hermes_import`,
           { method: "GET" },
         );
         return normalizeNullableWorkerActionStatus(payload);
@@ -1306,6 +1598,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async resetInstanceConfig(botId: string) {
+      const { instanceId } = await resolveBotScope(botId);
       const payload = await requestEnvelope<{
         key_id: string;
         key_prefix: string;
@@ -1316,7 +1609,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           api: string;
           api_key: string;
         };
-      }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/config/reset`, {
+      }>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/config/reset`, {
         method: "POST",
       });
       return {
@@ -1659,7 +1952,7 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       startURL.searchParams.set("relay_mode", "issuer");
       startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
     }
-    const returnTo = currentOAuthReturnTo();
+    const returnTo = options?.returnTo ?? currentOAuthReturnTo();
     if (returnTo) {
       startURL.searchParams.set("return_to", returnTo);
     }
@@ -1687,6 +1980,24 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
 });
 
 const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
+  async listModifyBundles(passId) {
+    return requestEnvelope<PassModifyBundles>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/bundles`, { method: 'GET' });
+  },
+  async getModifyCheckout(passId) {
+    return requestEnvelope<PassModifyCheckout>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/checkout`, { method: 'GET' });
+  },
+  async createModifyOrder(passId, input) {
+    return requestEnvelope<PassModifyOrder>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/order`, { method: 'POST', body: input });
+  },
+  async getModifyOrderUrl(passId, input) {
+    return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/order-url`, { method: 'POST', body: input });
+  },
+  async refreshModifyPaymentAuthorization(passId, input) {
+    return requestEnvelope<{ auth_code: string }>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/modify/payment-authorization`, { method: 'POST', body: input });
+  },
+  async getOrderStatus(dealName) {
+    return requestEnvelope<PassOrderStatus>(baseUrl, `/v1/orders/${encodeURIComponent(dealName)}/status`, { method: 'GET' });
+  },
   async getCurrentSubscription() {
     return fetchCurrentSubscription(baseUrl);
   },

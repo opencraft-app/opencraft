@@ -750,6 +750,8 @@ describe("SubscribePage payment return", () => {
 
     await waitFor(() => {
       expect(openClawState.refreshPasses).toHaveBeenCalled();
+      // The mount refresh can finish before bundle loading; wait for return-marker handling itself.
+      expect(window.location.search).toBe("");
     });
     /* 找不到套餐时不进 paying，避免卡在一个永远等不到结果的弹窗里 */
     expect(screen.queryByText("正在开通套餐")).not.toBeInTheDocument();

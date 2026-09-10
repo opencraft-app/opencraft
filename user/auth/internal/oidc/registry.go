@@ -14,6 +14,10 @@ var (
 	ErrInvalidGrant   = errors.New("invalid oidc grant")
 )
 
+// NativeClientID is a first-party public client, not an authentication provider.
+const NativeClientID = "opencraft-native-v1"
+const NativeRedirectURI = "opencraft://auth/lightvela"
+
 type Client struct {
 	ID           string
 	DisplayName  string
@@ -35,11 +39,17 @@ func NewRegistry(clients []Client) (*Registry, error) {
 		if client.ID == "" || client.DisplayName == "" || len(client.RedirectURIs) == 0 {
 			return nil, fmt.Errorf("%w: incomplete client", ErrInvalidClient)
 		}
+		if client.ID == NativeClientID && (len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != NativeRedirectURI) {
+			return nil, fmt.Errorf("%w: native client requires its exact callback", ErrInvalidClient)
+		}
 		if _, exists := registry.clients[client.ID]; exists {
 			return nil, fmt.Errorf("%w: duplicate client %q", ErrInvalidClient, client.ID)
 		}
 		for i, redirectURI := range client.RedirectURIs {
 			normalized, err := normalizeRedirectURI(redirectURI)
+			if client.ID == NativeClientID && redirectURI == NativeRedirectURI {
+				normalized, err = redirectURI, nil
+			}
 			if err != nil {
 				return nil, fmt.Errorf("%w: invalid redirect URI for %q", ErrInvalidClient, client.ID)
 			}
@@ -63,7 +73,7 @@ func (r *Registry) ValidateRedirectURI(clientID string, redirectURI string) (str
 	if !ok {
 		return "", ErrInvalidClient
 	}
-	if err := validateRedirectURIStructure(redirectURI); err != nil {
+	if err := validateRedirectURIStructure(redirectURI); err != nil && !(client.ID == NativeClientID && redirectURI == NativeRedirectURI) {
 		return "", ErrInvalidClient
 	}
 	for _, allowed := range client.RedirectURIs {
