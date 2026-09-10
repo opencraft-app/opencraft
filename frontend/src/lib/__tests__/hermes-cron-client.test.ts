@@ -1104,6 +1104,17 @@ describe("zero-token managed script", () => {
 });
 
 describe("listCronJobs", () => {
+  it("loads the public main Bot through Hermes' native default profile", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(okExec("No scheduled jobs."));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listCronJobs({ instanceId: "ins-1", profileId: "main" })).resolves.toEqual([]);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command: string };
+    expect(body.command).toContain("hermes -p 'default' cron list --all");
+    expect(body.command).not.toContain("hermes -p 'main'");
+  });
+
   it("hydrates a managed fixed notification from its zero-token wrapper", async () => {
     const script = buildZeroTokenScript({
       kind: "fixed_notification",

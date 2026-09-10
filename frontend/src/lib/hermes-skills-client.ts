@@ -1,4 +1,7 @@
-import { DEFAULT_HERMES_AGENT_ID } from "@/lib/hermes-agent-command";
+import {
+  DEFAULT_HERMES_AGENT_ID,
+  toHermesNativeProfileId,
+} from "@/lib/hermes-agent-command";
 import { execCommand } from "@/lib/hermes-cron-client";
 
 const HERMES_BUNDLED_MANIFEST_MARKER = "__HERMES_BUNDLED_MANIFEST__";
@@ -109,7 +112,7 @@ function parseInstalledSkillsTable(output: string): InstalledHermesSkill[] {
 }
 
 export function buildInstalledSkillsListCommand(profileId: string = DEFAULT_HERMES_AGENT_ID): string {
-  return `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}"; ${buildHermesProfileRootCommand(profileId)}; cd "$HERMES_BASE/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main -p ${shellQuote(profileId)} skills list && { printf '\\n${HERMES_BUNDLED_MANIFEST_MARKER}\\n'; if test -f "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; then cat "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; fi; } && { printf '\\n${HERMES_SKILLS_ROOT_MARKER}\\n'; if test -d "$HERMES_PROFILE_ROOT/skills"; then find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -type f -name SKILL.md -print; fi; }`;
+  return `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}"; ${buildHermesProfileRootCommand(profileId)}; cd "$HERMES_BASE/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main -p ${shellQuote(toHermesNativeProfileId(profileId))} skills list && { printf '\\n${HERMES_BUNDLED_MANIFEST_MARKER}\\n'; if test -f "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; then cat "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; fi; } && { printf '\\n${HERMES_SKILLS_ROOT_MARKER}\\n'; if test -d "$HERMES_PROFILE_ROOT/skills"; then find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -type f -name SKILL.md -print; fi; }`;
 }
 
 export function buildHermesSkillDeleteCommand(slug: string, profileId: string = DEFAULT_HERMES_AGENT_ID): string {

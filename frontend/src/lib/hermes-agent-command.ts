@@ -1,6 +1,11 @@
 export const DEFAULT_HERMES_AGENT_ID = "main";
+const HERMES_DEFAULT_PROFILE_ID = "default";
 
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+export function toHermesNativeProfileId(profileId: string): string {
+  return profileId === DEFAULT_HERMES_AGENT_ID ? HERMES_DEFAULT_PROFILE_ID : profileId;
+}
 
 export function withHermesAgent(
   command: string,
@@ -37,5 +42,5 @@ export function withHermesProfile(
   command: string,
   agentId: string = DEFAULT_HERMES_AGENT_ID,
 ): string {
-  return `hermes -p ${shellQuote(agentId)} ${command}`;
+  return `hermes -p ${shellQuote(toHermesNativeProfileId(agentId))} ${command}`;
 }

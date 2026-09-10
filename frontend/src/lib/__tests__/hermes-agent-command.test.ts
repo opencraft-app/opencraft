@@ -1,12 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { getHermesProfileRootCommand, withHermesAgent, withHermesAgentCompatibility } from "../hermes-agent-command";
+import {
+  getHermesProfileRootCommand,
+  withHermesAgent,
+  withHermesAgentCompatibility,
+  withHermesProfile,
+} from "../hermes-agent-command";
 import { scopeHermesCronCommand } from "../hermes-cron-client";
 import { buildInstalledSkillsListCommand } from "../hermes-skills-client";
 
 describe("Hermes agent command routing", () => {
-  it("uses main for the existing root profile", () => {
+  it("keeps the public main alias for ACLI commands", () => {
     expect(withHermesAgent("acli channel status")).toBe("acli channel status --agent 'main'");
+  });
+
+  it("maps the public main alias to default for native Hermes commands", () => {
+    expect(withHermesProfile("config get model.default")).toBe("hermes -p 'default' config get model.default");
+    expect(scopeHermesCronCommand("hermes cron list --all", "main"))
+      .toContain("hermes -p 'default' cron list --all");
+    expect(buildInstalledSkillsListCommand())
+      .toContain("hermes_cli.main -p 'default' skills list");
   });
 
   it("quotes backend-provided profile identifiers", () => {
