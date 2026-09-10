@@ -6,6 +6,7 @@ import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
+import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
@@ -18,6 +19,7 @@ export const UserAvatarMenu = () => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
+  const navigate = useAppNavigate();
   const user = session.user;
   const [open, setOpen] = useState(false);
   const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
@@ -195,8 +197,9 @@ export const UserAvatarMenu = () => {
             <div className="border-t py-1.5" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
               <button
                 onClick={() => {
-                  void signOut();
                   setOpen(false);
+                  navigate("/", { replace: true });
+                  void signOut();
                 }}
                 className={`w-full ${menuItemClass}`}
                 style={{ fontSize: "14px" }}
