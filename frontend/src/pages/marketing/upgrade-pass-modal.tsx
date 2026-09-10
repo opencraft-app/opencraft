@@ -231,7 +231,7 @@ function UpgradePassModalContent({ pass, targetBundleId, onClose, onSuccess }: P
         </>}
         {record && <>
           {record.dealName && <p className="break-all text-xs text-[#999]">{t('订单号')}：{record.dealName}</p>}
-          <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。') : t('等待支付')}</p>
+          <p role="status" className="font-semibold">{done ? t('目标套餐已生效') : terminal ? t('订单已关闭或失败，请联系支持确认后再操作。') : paid ? t('已支付，套餐升级中') : record.phase === 'creating' ? (busy ? t('正在创建升配订单…') : t('暂时无法确认订单状态，请稍后查询，避免重复付款。')) : t('等待支付')}</p>
           {!done && !terminal && !paid && record.dealName && <>
             {bridge && !bridgeExpired && <div className="flex flex-col items-center gap-3"><QRCodeSVG value={bridge.bridgeUrl} size={192} aria-label={t('微信扫码支付')} /><p className="text-sm text-[#999]">{t('请使用微信扫码支付')}</p></div>}
             {(!bridge || bridgeExpired) && !payUrl && <p className="text-sm text-[#999]">{t('正在处理...')}</p>}
