@@ -432,6 +432,24 @@ describe("BuddyPanel P1 stability", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("已注入：Agent A Soul");
   });
 
+  it("keeps the copied SOUL summary when the new Bot card state is empty", async () => {
+    const buddyState = deferred<{ drawnSouls: SkillHubSoul[]; appliedSlug: null }>();
+    mockedLoadBuddyState.mockReturnValue(buddyState.promise);
+    repositoryMocks.execDebugCommand.mockResolvedValue(successResult([
+      "Exists: yes",
+      `Slug: ${fixtures.agentA.slug}`,
+      "Name: Agent A Soul",
+    ].join("\n")));
+
+    render(<BuddyPanel botId="agent-a" />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    buddyState.resolve({ drawnSouls: [], appliedSlug: null });
+    await waitFor(() => expect(repositoryMocks.execDebugCommand.mock.calls.length).toBeGreaterThanOrEqual(2));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("已注入：Agent A Soul");
+  });
+
   it("turns an edited recommended persona into a downloadable custom persona", async () => {
     const currentMarkdown = [
       "# Soul",

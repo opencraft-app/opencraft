@@ -857,6 +857,9 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const bots = isGlobal
       ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
       : (await Promise.all(instances.map(async (instance) => {
+        if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
+          return [projectInstanceToBot(instance, drafts[instance.instance_id])];
+        }
         try {
           const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
             baseUrl,
@@ -975,6 +978,17 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
 
       if (!isGlobal) {
+        if (mapInstanceStatusToBotStatus(created.status) !== "active") {
+          const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
+          botScopeCache.set(bot.id, {
+            instanceId: created.instance_id,
+            profileId: "main",
+            isDefault: true,
+            legacy: true,
+          });
+          instanceCache.set(created.instance_id, created);
+          return bot;
+        }
         try {
           const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
             baseUrl,
@@ -1019,6 +1033,12 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
           method: "DELETE",
         });
+      } else if (scope.isDefault) {
+        await requestEnvelope<CtlInstancePayload>(
+          baseUrl,
+          `/v1/instances/${encodeURIComponent(scope.instanceId)}?require_single_bot=true`,
+          { method: "DELETE" },
+        );
       } else {
         await requestEnvelope<CtlInstanceBotPayload>(
           baseUrl,
@@ -1027,13 +1047,25 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         );
       }
 
+      const deletedBotIds = scope.isDefault
+        ? [...botScopeCache.entries()]
+          .filter(([, cachedScope]) => cachedScope.instanceId === scope.instanceId)
+          .map(([cachedBotId]) => cachedBotId)
+        : [botId];
       const drafts = readBotDrafts();
-      if (drafts[botId]) {
-        delete drafts[botId];
+      let draftsChanged = false;
+      deletedBotIds.forEach((deletedBotId) => {
+        if (drafts[deletedBotId]) {
+          delete drafts[deletedBotId];
+          draftsChanged = true;
+        }
+        messageStore.delete(deletedBotId);
+        botScopeCache.delete(deletedBotId);
+      });
+      if (draftsChanged) {
         writeBotDrafts(drafts);
       }
-      messageStore.delete(botId);
-      botScopeCache.delete(botId);
+      if (scope.isDefault) instanceCache.delete(scope.instanceId);
     },
 
     async renameBot(botId: string, name: string): Promise<Bot> {
@@ -1934,7 +1966,7 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       startURL.searchParams.set("relay_mode", "issuer");
       startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
     }
-    const returnTo = currentOAuthReturnTo();
+    const returnTo = options?.returnTo ?? currentOAuthReturnTo();
     if (returnTo) {
       startURL.searchParams.set("return_to", returnTo);
     }

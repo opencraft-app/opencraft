@@ -1,0 +1,24 @@
+{
+  "name": "@opencraft/extension-react",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@opencraft/composer-core": "0.1.0",
+    "@opencraft/extension-contract": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0",
+    "@radix-ui/react-popover": "1.1.23",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

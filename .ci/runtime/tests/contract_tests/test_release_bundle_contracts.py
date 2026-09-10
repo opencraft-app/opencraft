@@ -716,10 +716,36 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
 
         oidc_clients = json.loads(values["AUTH_OIDC_CLIENTS_JSON"])
-        self.assertEqual(len(oidc_clients), 1)
-        self.assertEqual(oidc_clients[0]["id"], "site-gateway")
+        self.assertEqual(len(oidc_clients), 3)
+        clients_by_id = {client["id"]: client for client in oidc_clients}
         self.assertEqual(
-            set(oidc_clients[0]["redirect_uris"]),
+            clients_by_id["site-gateway"]["redirect_uris"],
+            [
+                "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+                "https://sites-auth.lightvela.site/auth/lightvela/callback",
+            ],
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-native-v1"],
+            {
+                "id": "opencraft-native-v1",
+                "display_name": "Vela",
+                "redirect_uris": ["opencraft://auth/lightvela"],
+            },
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-web-v1"],
+            {
+                "id": "opencraft-web-v1",
+                "display_name": "OpenCraft Web",
+                "redirect_uris": [
+                    "https://chat.lightvela.com/auth/lightvela/callback",
+                    "https://chat.lightvela.ai/auth/lightvela/callback",
+                ],
+            },
+        )
+        self.assertEqual(
+            set(clients_by_id["site-gateway"]["redirect_uris"]),
             {
                 "https://sites-auth.lightvela.site/auth/lightvela/callback",
                 "https://sites-auth.lightvela.tech/auth/lightvela/callback",
@@ -2322,6 +2348,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
         self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
+        self.assertIn("resolve_source_branch()", template_text)
+        self.assertIn("BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}", template_text)
+        self.assertIn(
+            "FRONTEND_EDGEONE_CI_BRANCH=\"$(resolve_source_branch '${{ ci.branch }}')\"",
+            template_text,
+        )
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"', template_text)
+        self.assertIn("FRONTEND_EDGEONE_CI_SHA='${{ ci.sha }}'", template_text)
+        self.assertIn('FRONTEND_EDGEONE_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', template_text)
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
         self.assertIn("eo:cn-lightvela-prod-next)", command_text)

@@ -64,7 +64,12 @@ const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode, switchAccount = false) => {
+const fakeOAuthStartURL = (
+  provider: OAuthProvider,
+  wechatMode?: WeChatOAuthMode,
+  switchAccount = false,
+  returnTo?: string,
+) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
   if (provider === "wechat" && wechatMode) {
     startURL.searchParams.set("mode", wechatMode);
@@ -72,8 +77,9 @@ const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode
   if (switchAccount) {
     startURL.searchParams.set("switch_account", "true");
   }
-  if (typeof window !== "undefined" && window.location?.href) {
-    startURL.searchParams.set("return_to", window.location.href);
+  const target = returnTo ?? (typeof window !== "undefined" ? window.location?.href : undefined);
+  if (target) {
+    startURL.searchParams.set("return_to", target);
   }
   return startURL.toString();
 };
@@ -939,7 +945,7 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
       },
       getOAuthStartUrl(provider: OAuthProvider, options) {
-        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount);
+        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount, options?.returnTo);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);

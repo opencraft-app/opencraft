@@ -13,7 +13,7 @@ stages:
         name: 静态验收与严格 Kustomize 验收
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           CI_RUNTIME_REF: origin/master
         steps:
@@ -68,7 +68,7 @@ stages:
         name: 等待人工确认 ${{ parameters.DISPLAY_NAME }}
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: ${{ parameters.DISPLAY_NAME }} 发布已确认
             shell: bash
@@ -81,7 +81,7 @@ stages:
         name: 等待检查通过并合并 MR
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           CI_RUNTIME_REF: origin/master
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
@@ -111,7 +111,7 @@ stages:
         name: ${{ parameters.DISPLAY_NAME }} 待同步验收
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           CI_RUNTIME_REF: origin/master
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}

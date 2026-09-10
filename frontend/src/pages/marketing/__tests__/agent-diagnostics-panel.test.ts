@@ -13,25 +13,33 @@ import {
 describe("agent diagnostics commands", () => {
   it("runs the expected Hermes diagnostic commands", () => {
     expect(AGENT_DIAGNOSTIC_COMMANDS.map((item) => item.command)).toEqual([
-      "hermes logs --since 1h",
+      "hermes -p 'default' logs --since 1h",
     ]);
   });
 
   it("builds logs commands for the selected time window without unsupported limit args", () => {
-    expect(buildLogsCommand("6h")).toBe("hermes logs --since 6h");
+    expect(buildLogsCommand("6h")).toBe("hermes -p 'default' logs --since 6h");
     expect(getAgentDiagnosticCommands("24h").map((item) => item.command)).toEqual([
-      "hermes logs --since 24h",
+      "hermes -p 'default' logs --since 24h",
     ]);
   });
 
-  it("builds unbounded logs export commands", () => {
-    expect(buildLogsExportCommand("24h")).toBe("hermes logs --since 24h");
+  it("builds Profile-scoped logs export commands", () => {
+    expect(buildLogsExportCommand("24h")).toBe("hermes -p 'default' logs --since 24h");
   });
 
   it("builds stable logs download filenames", () => {
     expect(buildDiagnosticLogsFileName("3h", new Date("2026-05-31T08:09:10"))).toBe(
-      "hermes-logs-3h-20260531-080910.log",
+      "hermes-logs-main-3h-20260531-080910.log",
     );
+  });
+
+  it("isolates named Profile queries and exports, including shell quoting", () => {
+    expect(buildLogsCommand("1h", "sales")).toBe("hermes -p 'sales' logs --since 1h");
+    expect(buildLogsExportCommand("3h", "support")).toBe("hermes -p 'support' logs --since 3h");
+    expect(buildLogsCommand("1h", "a'b")).toContain("'a'\\''b'");
+    expect(buildDiagnosticLogsFileName("1h", new Date("2026-05-31T08:09:10"), "Sales/Support"))
+      .toBe("hermes-logs-Sales_Support-1h-20260531-080910.log");
   });
 
   it("normalizes empty command output", () => {

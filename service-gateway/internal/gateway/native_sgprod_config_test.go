@@ -6,8 +6,9 @@ import (
 	"testing"
 )
 
-func TestSGProdNativeLoginDeploymentPolicy(t *testing.T) {
-	cfg, err := LoadConfigFile("../../../argocd/services/service-gateway/sgprod/config.yaml")
+func testProdNativeLoginDeploymentPolicy(t *testing.T, environment string) {
+	t.Helper()
+	cfg, err := LoadConfigFile("../../../argocd/services/service-gateway/" + environment + "/config.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,4 +59,12 @@ func TestSGProdNativeLoginDeploymentPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSGProdNativeLoginDeploymentPolicy(t *testing.T) {
+	testProdNativeLoginDeploymentPolicy(t, "sgprod")
+}
+
+func TestSHProdNativeLoginDeploymentPolicy(t *testing.T) {
+	testProdNativeLoginDeploymentPolicy(t, "shprod")
 }

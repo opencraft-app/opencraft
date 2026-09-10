@@ -266,6 +266,7 @@ export const LoginModal = ({
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
   const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
+  const forceProviderSwitch = mode === "switch-account";
 
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
@@ -287,10 +288,10 @@ export const LoginModal = ({
       return null;
     }
     return repositories.auth.getOAuthStartUrl("wechat", {
-      ...(mode === "switch-account" ? { switchAccount: true } : {}),
+      ...(forceProviderSwitch ? { switchAccount: true } : {}),
       wechatMode: "official_account",
     });
-  }, [mode, repositories.auth]);
+  }, [forceProviderSwitch, repositories.auth]);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
 
@@ -363,7 +364,7 @@ export const LoginModal = ({
         return;
       }
       const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
-        ...(mode === "switch-account" ? { switchAccount: true } : {}),
+        ...(forceProviderSwitch ? { switchAccount: true } : {}),
         wechatMode: target,
       });
       if (!loginUrl) return;
@@ -375,7 +376,7 @@ export const LoginModal = ({
     }
     const loginUrl = repositories.auth.getOAuthStartUrl(
       provider,
-      mode === "switch-account" ? { switchAccount: true } : undefined,
+      forceProviderSwitch ? { switchAccount: true } : undefined,
     );
     if (!loginUrl) return;
     setError(null);
@@ -539,7 +540,10 @@ export const LoginModal = ({
                     providers.push("github");
                   }
                   return providers.map((provider) => {
-                    const loginUrl = repositories.auth.getOAuthStartUrl(provider);
+                    const loginUrl = repositories.auth.getOAuthStartUrl(
+                      provider,
+                      forceProviderSwitch ? { switchAccount: true } : undefined,
+                    );
                     if (!loginUrl) return null;
                     const visual = PROVIDER_BUTTON_VISUALS[provider];
                     return (

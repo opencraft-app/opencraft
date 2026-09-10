@@ -53,6 +53,7 @@ func TestNativeOIDCUsesUnifiedAuthorizationAndSessionAdapter(t *testing.T) {
 	now := time.Now().UTC()
 	registry, err := oidc.NewRegistry([]oidc.Client{
 		{ID: oidc.NativeClientID, DisplayName: "Vela", RedirectURIs: []string{oidc.NativeRedirectURI}},
+		{ID: oidc.WebClientID, DisplayName: "OpenCraft Web", RedirectURIs: []string{oidc.WebCNRedirectURI, oidc.WebInternationalRedirectURI}},
 		{ID: "web", DisplayName: "Web", RedirectURIs: []string{"https://web.example/callback"}},
 	})
 	if err != nil {
@@ -178,6 +179,29 @@ func TestNativeOIDCUsesUnifiedAuthorizationAndSessionAdapter(t *testing.T) {
 	}); err != nil {
 		t.Fatal("wrong client attempt burned the web grant")
 	}
+	firstPartyWebCode, err := provider.CreateAuthorizationCode(context.Background(), webSession.User.ID, oidc.AuthorizeRequest{
+		ClientID: oidc.WebClientID, RedirectURI: oidc.WebCNRedirectURI, ResponseType: "code",
+		Scope: "openid profile", State: "opencraft-web-state", Nonce: "opencraft-web-nonce",
+		CodeChallenge: oidc.S256Challenge(strings.Repeat("w", 43)), CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	webInput := map[string]any{
+		"client_id": oidc.WebClientID, "code": firstPartyWebCode.Code,
+		"code_verifier": strings.Repeat("w", 43), "redirect_uri": oidc.WebCNRedirectURI,
+	}
+	webResult := performJSONRequest(t, other, "POST", "/auth/session/exchange", webInput)
+	if webResult.Code != http.StatusOK || webResult.Header().Get("Cache-Control") != "no-store" || len(webResult.Result().Cookies()) != 0 {
+		t.Fatalf("web session exchange: %d", webResult.Code)
+	}
+	var webBody struct {
+		Token string `json:"session_token"`
+	}
+	decodeJSONResponse(t, webResult, &webBody)
+	if _, err := svc.CurrentSession(context.Background(), webBody.Token); err != nil {
+		t.Fatal("invalid web session")
+	}
 	if result := performJSONRequest(t, router, "GET", "/auth/native/start", nil); result.Code != 404 {
 		t.Fatal("legacy Google entry still exposed")
 	}
@@ -195,6 +219,9 @@ func TestNativeSessionExchangeFailsClosedWithoutOIDC(t *testing.T) {
 		t.Fatalf("unregistered client: %d", result.Code)
 	}
 	disabled := NewRouter(nil, ServerConfig{})
+	if result := performJSONRequest(t, disabled, "POST", "/auth/session/exchange", nil); result.Code != 503 {
+		t.Fatal("disabled first-party session exchange did not fail closed")
+	}
 	if result := performJSONRequest(t, disabled, "POST", "/auth/native/token", nil); result.Code != 503 {
 		t.Fatal("disabled OIDC did not fail closed")
 	}

@@ -1,0 +1,201 @@
+import type { FsReadDirectoryEntry } from "@opencraft/appserver-protocol/generated/v2";
+import { ChevronLeft, Folder, FolderOpen, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import {
+  joinWorkspacePath,
+  normalizeWorkspacePath,
+  resolveWorkspacePickerInitialPath,
+  workspaceParentPath,
+} from "./workspace-directory-model";
+
+export interface WorkspaceDirectoryPickerProps {
+  readonly open: boolean;
+  readonly rootPath: string;
+  readonly initialPath?: string | null;
+  readonly title?: string;
+  readonly description?: string;
+  readonly confirmLabel?: string;
+  readonly onReadDirectory: (path: string) => Promise<readonly FsReadDirectoryEntry[]>;
+  readonly onCancel: () => void;
+  readonly onChoose: (path: string) => Promise<void>;
+}
+
+/**
+ * Browser equivalent of Codex Desktop's native local-project dialog. It
+ * browses the AppServer filesystem namespace; it never uploads a browser
+ * directory or treats a DOM FileSystemHandle as a server workspace.
+ */
+export function WorkspaceDirectoryPicker({
+  open,
+  rootPath,
+  initialPath,
+  title = "Add project",
+  description = "Choose a folder from this AppServer workspace.",
+  confirmLabel = "Add project",
+  onReadDirectory,
+  onCancel,
+  onChoose,
+}: WorkspaceDirectoryPickerProps) {
+  const normalizedRoot = useMemo(() => normalizeWorkspacePath(rootPath), [rootPath]);
+  const [currentPath, setCurrentPath] = useState(() =>
+    resolveWorkspacePickerInitialPath(initialPath, rootPath));
+  const [entries, setEntries] = useState<readonly FsReadDirectoryEntry[]>([]);
+  const [phase, setPhase] = useState<"idle" | "loading" | "choosing">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+
+  useEffect(() => {
+    if (!open) return;
+    setCurrentPath(resolveWorkspacePickerInitialPath(initialPath, normalizedRoot));
+    setError(null);
+  }, [initialPath, normalizedRoot, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const generation = ++requestGeneration.current;
+    setPhase("loading");
+    setError(null);
+    void onReadDirectory(currentPath).then(
+      (nextEntries) => {
+        if (generation !== requestGeneration.current) return;
+        setEntries(nextEntries
+          .filter((entry) => entry.isDirectory
+            && !entry.fileName.startsWith(".")
+            && !entry.fileName.includes("/")
+            && !entry.fileName.includes("\\")
+            && entry.fileName !== "..")
+          .sort((left, right) => left.fileName.localeCompare(right.fileName)));
+        setPhase("idle");
+      },
+      (cause) => {
+        if (generation !== requestGeneration.current) return;
+        setEntries([]);
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setPhase("idle");
+      },
+    );
+  }, [currentPath, onReadDirectory, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && phase !== "choosing") onCancel();
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [onCancel, open, phase]);
+
+  if (!open) return null;
+
+  const choose = async () => {
+    setPhase("choosing");
+    setError(null);
+    try {
+      await onChoose(currentPath);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setPhase("idle");
+    }
+  };
+
+  const rootLabel = normalizedRoot.split("/").filter(Boolean).at(-1) ?? normalizedRoot;
+  const canChooseCurrentFolder = currentPath !== normalizedRoot;
+  const relativeSegments = currentPath
+    .slice(normalizedRoot.length)
+    .split("/")
+    .filter(Boolean);
+
+  return createPortal(
+    <div
+      className="workspace-picker-backdrop"
+      role="presentation"
+      onPointerDown={() => { if (phase !== "choosing") onCancel(); }}
+    >
+      <section
+        className="workspace-picker-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="workspace-picker-title"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <header className="workspace-picker-header">
+          <span className="workspace-picker-header__icon"><FolderOpen size={17} /></span>
+          <div>
+            <h2 id="workspace-picker-title">{title}</h2>
+            <p>{description}</p>
+          </div>
+          <button type="button" aria-label="Close" onClick={onCancel} disabled={phase === "choosing"}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <nav className="workspace-picker-breadcrumbs" aria-label="Current folder">
+          <button type="button" onClick={() => setCurrentPath(normalizedRoot)}>{rootLabel}</button>
+          {relativeSegments.map((segment, index) => {
+            const path = joinWorkspacePath(normalizedRoot, relativeSegments.slice(0, index + 1).join("/"));
+            return (
+              <span key={path}>
+                <i>/</i>
+                <button type="button" onClick={() => setCurrentPath(path)}>{segment}</button>
+              </span>
+            );
+          })}
+        </nav>
+
+        <div className="workspace-picker-list" role="listbox" aria-busy={phase === "loading"}>
+          {currentPath !== normalizedRoot ? (
+            <button
+              type="button"
+              className="workspace-picker-row workspace-picker-row--parent"
+              onClick={() => setCurrentPath(workspaceParentPath(currentPath, normalizedRoot))}
+            >
+              <ChevronLeft size={15} />
+              <span>Parent folder</span>
+            </button>
+          ) : null}
+          {phase === "loading" ? <p className="workspace-picker-state">Loading folders…</p> : null}
+          {phase !== "loading" && entries.length === 0 && error === null ? (
+            <p className="workspace-picker-state">This folder has no subfolders.</p>
+          ) : null}
+          {entries.map((entry) => (
+            <button
+              key={entry.fileName}
+              type="button"
+              className="workspace-picker-row"
+              role="option"
+              aria-selected="false"
+              onDoubleClick={() => setCurrentPath(joinWorkspacePath(currentPath, entry.fileName))}
+              onClick={() => setCurrentPath(joinWorkspacePath(currentPath, entry.fileName))}
+            >
+              <Folder size={16} />
+              <span>{entry.fileName}</span>
+            </button>
+          ))}
+        </div>
+
+        {error === null ? null : <p className="workspace-picker-error" role="alert">{error}</p>}
+
+        <footer className="workspace-picker-footer">
+          <code title={currentPath}>{currentPath}</code>
+          <div>
+            <button type="button" className="workspace-picker-secondary" onClick={onCancel} disabled={phase === "choosing"}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="workspace-picker-primary"
+              onClick={() => void choose()}
+              disabled={phase !== "idle" || !canChooseCurrentFolder}
+              title={canChooseCurrentFolder ? undefined : "Choose a folder inside the projects directory"}
+            >
+              {phase === "choosing" ? "Selecting…" : confirmLabel}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}

@@ -168,6 +168,24 @@ func TestHermesNativeProfileIDMapsRootAndPreservesNamedProfiles(t *testing.T) {
 	}
 }
 
+func TestValidateInstanceBotTextEnforcesNameRuneLimit(t *testing.T) {
+	const expectedMaxNameRunes = 60
+	if maxInstanceBotNameRunes != expectedMaxNameRunes {
+		t.Fatalf("Bot name limit = %d, want %d", maxInstanceBotNameRunes, expectedMaxNameRunes)
+	}
+
+	validName := strings.Repeat("名", expectedMaxNameRunes)
+	name, _, err := validateInstanceBotText(validName, "")
+	if err != nil || name != validName {
+		t.Fatalf("expected %d-rune name to be valid, got name %q, err %v", expectedMaxNameRunes, name, err)
+	}
+
+	tooLongName := validName + "字"
+	if _, _, err := validateInstanceBotText(tooLongName, ""); !errors.Is(err, errcode.ErrInstanceBotInvalidParam) {
+		t.Fatalf("expected %d-rune name to be rejected, got %v", expectedMaxNameRunes+1, err)
+	}
+}
+
 func TestChannelBindingScriptUsesLockAndInstanceLocalHermesMetadata(t *testing.T) {
 	checks := []string{
 		`.lightvela`,

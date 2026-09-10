@@ -14,7 +14,7 @@ jobs:
   disabled:
     runs-on:
       self-hosted: true
-      pool-name: env
+      pool-name: cn-pool
     steps:
       - checkout: self
         name: 拉取代码

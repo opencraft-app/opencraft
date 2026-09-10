@@ -1,0 +1,8 @@
+{
+  "name": "@opencraft/blob-resources",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./browser": "./src/browser.ts" },
+  "dependencies": { "@deepseek-ai/cordis": "4.0.1" }
+}

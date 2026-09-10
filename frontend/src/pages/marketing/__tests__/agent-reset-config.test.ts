@@ -16,6 +16,12 @@ import {
 const bot = (id: string, status: ResettableBot["status"] = "running"): ResettableBot => ({ id, status });
 
 describe("getResetBlockReason", () => {
+  it("blocks both main and named Bots when the instance has siblings", () => {
+    expect(getResetBlockReason({ ...bot("main"), isDefault: true }, false, 1)).toBe("multi_bot");
+    expect(getResetBlockReason({ ...bot("sales"), isDefault: false }, false, 1)).toBe("multi_bot");
+    expect(getResetBlockReason({ ...bot("sales"), isDefault: false }, false, 0)).toBe("multi_bot");
+    expect(getResetBlockReason({ ...bot("main"), isDefault: true }, false, 0)).toBeNull();
+  });
   it("allows reset when running and not already resetting", () => {
     expect(getResetBlockReason(bot("a"), false)).toBeNull();
   });

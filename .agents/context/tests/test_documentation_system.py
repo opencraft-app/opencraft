@@ -24,6 +24,7 @@ PRIMARY_SERVICES = {
     "infra-pulumi": "infra_pulumi",
     "new-api": "new-api",
     "nextgen-dashboard": "nextgen-dashboard",
+    "opencraft": "opencraft",
     "payment": "payment",
     "sandbox": "sandbox",
     "service-gateway": "service-gateway",
@@ -85,7 +86,7 @@ class DocumentationSystemContract(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["errors"], [])
-        self.assertEqual(payload["summary"]["service_records"], 24)
+        self.assertEqual(payload["summary"]["service_records"], len(PRIMARY_SERVICES))
         self.assertEqual(payload["summary"]["service_entry_coverage"], 1.0)
         self.assertEqual(payload["summary"]["service_documentation_contract_coverage"], 1.0)
         self.assertEqual(payload["summary"]["context_derived_coverage"], 1.0)

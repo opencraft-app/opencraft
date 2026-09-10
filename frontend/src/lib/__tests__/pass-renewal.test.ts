@@ -22,15 +22,15 @@ describe("pass renewal helpers", () => {
     expect(RENEWAL_PERIOD_OPTIONS.map((option) => option.period)).toEqual([1, 3]);
   });
 
-  it("builds a day-level reminder within seven days", () => {
+  it("builds a day-level reminder within five days", () => {
     const reminder = getPassExpiryReminder(
-      buildPass("2026-07-07T00:00:00.000Z"),
+      buildPass("2026-07-06T00:00:00.000Z"),
       new Date("2026-07-01T00:00:00.000Z").getTime(),
     );
 
     expect(reminder).toMatchObject({
       label: "临近到期",
-      tooltip: "剩余 6 天到期",
+      tooltip: "剩余 5 天到期",
       level: "warning",
     });
   });
@@ -48,9 +48,9 @@ describe("pass renewal helpers", () => {
     });
   });
 
-  it("does not show reminders outside the seven-day window", () => {
+  it("does not show reminders outside the five-day window", () => {
     expect(getPassExpiryReminder(
-      buildPass("2026-07-09T00:00:00.000Z"),
+      buildPass("2026-07-07T00:00:00.000Z"),
       new Date("2026-07-01T00:00:00.000Z").getTime(),
     )).toBeNull();
   });
