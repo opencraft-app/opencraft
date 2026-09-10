@@ -9,6 +9,9 @@
 ## requirement_ids / requirement_refs / requirement_excerpt
 - PRD：`/Users/pablozhong/codex/lightvela/wiki/prd-docs/2026-09-09-lightvela-multi-bot-profile.md`。
 - FE-AI brief：`/Users/pablozhong/codex/lightvela/.workflow/native/changes/lightvela-multi-bot-profile/brief.md`。
+- 用户截图反馈（2026-09-10）：钉钉通道卡片图标需与其他通道统一为浅色品牌背景。
+- 用户截图反馈（2026-09-10）：新版控制台默认 Bot 不得展示 Hermes 内部 ID `default`，无自定义名称时继续显示本地化的“我的 Hermes”。
+- 用户截图反馈（2026-09-10）：默认 Bot 的定时任务加载失败，原生 Hermes CLI 报错 `Profile 'main' does not exist`。
 - 核心要求：Hermes Profile 是 Bot 唯一事实来源，不新增数据库迁移；默认 Bot 使用 `main`；Profile 级命令显式路由；微信同实例唯一占用。
 
 ## interface_refs / data_structure_refs
@@ -30,6 +33,9 @@
 - `/agents` 和分区页切换 Bot 后保留 section，并刷新 Profile 级数据。
 - Profile 级 Hermes 命令显式使用后端 `profile_id`；实例级命令不追加 Profile 参数。
 - 微信同实例只能有一个占用 Bot；其他 Bot 不可覆盖或复用。
+- 钉钉通道图标使用 8% 品牌蓝背景，扫码与凭据连接行为不变。
+- 默认根 Bot 没有 Profile 展示名或存量实例名称时不返回内部 ID `default`，前端对旧后端泄漏的 `default` 兼容回退为本地化默认名称；命名 Profile 的 ID 兜底不变。
+- 产品层继续使用默认 Bot 的公开 `profile_id=main`；原生 Hermes CLI 命令在执行边界转换为 `default`，命名 Profile 保持原 ID，定时任务查询与增删改运行统一走同一转换。
 - 通过 CTL、service-gateway、frontend 聚焦测试及各服务门禁。
 
 ## affected_paths
@@ -41,6 +47,8 @@
 - `frontend/src/repositories/`
 - `frontend/src/contexts/agent-context.tsx`
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
+- `frontend/src/pages/marketing/agent-channel-panel.tsx`
+- `frontend/src/pages/marketing/__tests__/agent-channel-dingtalk.test.ts`
 - `frontend/src/pages/marketing/agent-config/`
 - `docs/engineering/domains/agent-gateway-runtime.md`
 
@@ -58,6 +66,8 @@
 | `frontend/AGENTS.md` | 前端局部规则 | 类型、测试和视觉验证门禁 |
 | `service-gateway/README.md` | 公共 `/v1/instances` 路由 | 同步 allowlist 与代理测试 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 前端相邻约束 | 检查 OpenSpec、测试和国内站边界 |
+| `docs/context/project/services/frontend.md@2.1.0` | 前端服务边界 | 选择聚焦测试与视觉验证 |
+| `docs/context/domains/site-environment-routing.md@2.0.0` | 双站边界 | 确认本次只调整共用展示，不改变区域门禁 |
 
 ## evidence
 - `python3 .agents/context/scripts/validate_context.py --route "frontend /agents multi bot profile switching channel home channel domestic"` 命中 `agent-gateway-runtime`。
@@ -77,6 +87,14 @@
 - 已有实例创建的是实例内 Bot/Profile，不复用首台实例的订阅跳转：存在当前 Bot 时直接打开创建弹窗；仅没有 Bot 且未订阅时进入 `/subscribe`。本地无 Pass 预览已验证 URL 留在 `/agents/channels/?bot=bot_local_preview`。
 - 创建弹窗首屏精简为 Bot 名称、创建方式和复制范围，标题使用“创建 Bot”以避免与 Agent 实例创建混淆，主操作使用“确认创建”；复制提示以用户语义说明继承模型、人设、技能、用户偏好和长期记忆，不继承当前对话、历史会话、运行状态或通道连接，不暴露内部文件与 Channel/Home Channel 术语。初始人设默认收进可展开的“高级设置”，标题不使用分隔线，箭头紧随标题。取消和确认创建改为右下角 36px 高紧凑按钮。当前 Bot 是主 Bot 时合并重复克隆来源，仅显示“复制当前（主 Bot）”与“空白创建”；切换到其他 Bot 时仍显示复制当前、复制主 Bot、空白创建。浏览器验证默认态不渲染人设输入框，展开后通过 `aria-expanded` 和 `aria-controls` 显示对应区域，按钮仍保持右对齐。
 - CR 回归验证通过：国际站的微信唯一绑定协调方法不再请求国内站 nested Bot API，国内站 repository 用例 60 个通过、国际站 59 个通过；CTL 新增默认 Bot 不可删除和微信 owner Bot 不可删除的行为测试并通过。
+- 钉钉图标视觉回归测试先以旧白底和 52px 图标按预期失败，证明用例覆盖目标缺陷。
+- 钉钉图标改为 `rgba(0, 137, 255, 0.08)` 品牌蓝弱背景；聚焦 Vitest 5/5 通过，`pnpm check` 通过且 TypeScript 为 0 new diagnostics。
+- 新增默认 Bot 名称回归测试：CTL 将空名称根 Profile 保留给客户端本地化，前端同时把旧后端返回的根 Bot `default` 视为未命名；命名 Profile 仍使用原生 Profile ID 兜底。
+- 默认名称修复聚焦验证：`CGO_ENABLED=0 go test ./pkg/instance -run '^TestProjectHermesProfiles' -count=1` 与 CTL 公共路由测试通过；前端 repository 测试 61 passed / 1 skipped；`pnpm check` 通过且 TypeScript 为 0 new diagnostics。CTL 全包测试因本机没有 rootless Docker 在既有 MySQL testcontainer 用例阻塞，与本次默认名称逻辑无关。
+- 定时任务根 Profile 问题已在本机当前 Hermes 复现：`hermes -p main cron list --all` 返回 Profile 不存在，`hermes -p default cron list --all` 正常。前端命令层新增 `main -> default` 的原生 Hermes CLI 转换，覆盖 Cron、Memory 与 Skills；ACLI 命令继续使用既有公开 `main` 约定。
+- 定时任务与原生 Hermes Profile 路由聚焦验证：4 个 Vitest 文件 194/194 通过，覆盖默认 Bot 列表加载、Cron 统一作用域、Memory 和 Skills；`pnpm check` 通过且 TypeScript 为 0 new diagnostics。文档校验、显式 change-impact 与 `git diff --check` 通过。
+- 国内站本地预览 `/agents/channels/` 已实测：钉钉卡片显示浅蓝圆角底；24px 方案因原 SVG viewBox 留白导致主体过小，最终保留原 52px SVG 补偿尺寸。预览中的 Hermes 配置读取失败来自未连接真实实例，与本次样式无关。
+- `validate_documentation.py`、显式变更集 `validate_change_impact.py` 和 `git diff --check` 通过；仓库级 `validate_context.py --build-catalog` 仍被分支既有旧 Task Pack 缺少 frontmatter 等基线问题阻塞，本次未扩大范围清理。
 - 完整变更集执行 `validate_change_impact.py` 通过，命中 `agent-gateway-runtime`、`site-environment-routing`、`release-gitops`，高风险边界需 maintainer review；`git diff --check` 通过。
 
 ## risks
@@ -99,6 +117,8 @@
 - 默认 Bot 采用公开选择器 `main`；命名 Profile ID 由后端生成且不可变，同时作为命名 Bot 的公开 `bot_id`。
 - 本期不硬编码 Bot 数量上限；以后由套餐/capability contract 下发。
 - 多 Bot API 归属于 `/v1/instances/{instance_id}/bots`，保持实例作用域显式。
+- 钉钉图标沿用既有通道图标容器和品牌色 8% 弱背景规则，不新增独立组件或样式层。
+- `main` 只作为 LightVela 产品/API 的默认 Bot 标识；原生 Hermes 根 Profile 标识为 `default`，不得要求用户创建命名 Profile `main`。
 
 ## scan_scope
 - `ctl/pkg/instance`, `ctl/pkg/model`, `ctl/main/api`, `service-gateway/internal/gateway`, `frontend/src/{domain,repositories,contexts,pages/marketing}`。

@@ -98,6 +98,22 @@ func TestProjectHermesProfilesKeepsDefaultCompatibilityAndNamedProfileIdentity(t
 	}
 }
 
+func TestProjectHermesProfilesLeavesUnnamedDefaultForLocalizedClientFallback(t *testing.T) {
+	bots := projectHermesProfiles([]hermesProfileRecord{
+		{NativeID: defaultHermesProfileID, IsDefault: true},
+		{NativeID: "profile-sales"},
+	}, "ins-1", "")
+	if len(bots) != 2 {
+		t.Fatalf("expected two bots, got %d", len(bots))
+	}
+	if bots[0].Name != "" {
+		t.Fatalf("default bot leaked internal profile id as display name: %+v", bots[0])
+	}
+	if bots[1].Name != "profile-sales" {
+		t.Fatalf("named bot should keep the native profile id fallback: %+v", bots[1])
+	}
+}
+
 func TestHermesNativeProfileIDMapsRootAndPreservesNamedProfiles(t *testing.T) {
 	if got := hermesNativeProfileID(rootProfileID); got != defaultHermesProfileID {
 		t.Fatalf("root profile mapped to %q", got)

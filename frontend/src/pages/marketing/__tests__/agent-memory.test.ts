@@ -236,8 +236,8 @@ describe("validateHermesMemoryLimit", () => {
 
 describe("buildHermesMemoryLimitCommand", () => {
   it("builds target-specific Hermes config commands", () => {
-    expect(buildHermesMemoryLimitCommand("memory", 4000)).toBe("hermes -p 'main' config set memory.memory_char_limit 4000");
-    expect(buildHermesMemoryLimitCommand("user", 3000)).toBe("hermes -p 'main' config set memory.user_char_limit 3000");
+    expect(buildHermesMemoryLimitCommand("memory", 4000)).toBe("hermes -p 'default' config set memory.memory_char_limit 4000");
+    expect(buildHermesMemoryLimitCommand("user", 3000)).toBe("hermes -p 'default' config set memory.user_char_limit 3000");
     expect(buildHermesMemoryLimitCommand("memory", 2400, 0, "profile-2"))
       .toBe("hermes -p 'profile-2' config set memory.memory_char_limit 2400");
   });

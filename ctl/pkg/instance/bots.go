@@ -415,14 +415,15 @@ func projectHermesProfiles(profiles []hermesProfileRecord, instanceID, defaultNa
 		profileID := profile.NativeID
 		botID := profile.NativeID
 		name := strings.TrimSpace(profile.DisplayName)
-		if profile.IsDefault || profile.NativeID == defaultHermesProfileID {
+		isDefault := profile.IsDefault || profile.NativeID == defaultHermesProfileID
+		if isDefault {
 			profileID = rootProfileID
 			botID = instanceID
 			if name == "" {
 				name = strings.TrimSpace(defaultName)
 			}
 		}
-		if name == "" {
+		if name == "" && !isDefault {
 			name = profile.NativeID
 		}
 		modifiedAt, _ := time.Parse(time.RFC3339Nano, profile.ModifiedAt)
@@ -432,7 +433,7 @@ func projectHermesProfiles(profiles []hermesProfileRecord, instanceID, defaultNa
 			ProfileID:   profileID,
 			Name:        name,
 			Description: profile.Description,
-			IsDefault:   profile.IsDefault || profile.NativeID == defaultHermesProfileID,
+			IsDefault:   isDefault,
 			Status:      instanceBotStatusReady,
 			CreatedFrom: instanceBotCreatedFromBlank,
 			CreatedAt:   modifiedAt,

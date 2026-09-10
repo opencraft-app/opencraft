@@ -16,6 +16,7 @@ import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 import {
   getHermesProfileRootCommand,
+  toHermesNativeProfileId,
   withHermesAgent,
 } from "@/lib/hermes-agent-command";
 import {
@@ -251,7 +252,8 @@ function resolveCronTarget(target: HermesCronTarget): { instanceId: string; prof
 
 export function scopeHermesCronCommand(command: string, profileId?: string): string {
   if (!profileId) return command;
-  let scoped = command.replace(/\bhermes\s+(?=(?:cron|send)\b)/g, `hermes -p ${shellQuote(profileId)} `);
+  const nativeProfileId = toHermesNativeProfileId(profileId);
+  let scoped = command.replace(/\bhermes\s+(?=(?:cron|send)\b)/g, `hermes -p ${shellQuote(nativeProfileId)} `);
   if (/^acli channel\s/.test(scoped.trim())) {
     scoped = withHermesAgent(scoped, profileId);
   }

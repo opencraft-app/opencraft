@@ -48,6 +48,15 @@ describe("DingTalk channel QR binding", () => {
     expect(channelPanelSource).toContain("if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');");
   });
 
+  it("uses the standard tinted icon treatment for dingtalk", () => {
+    expect(channelPanelSource).toContain(
+      "style={{ background: 'rgba(0, 137, 255, 0.08)' }}",
+    );
+    expect(channelPanelSource).not.toContain(
+      "style={{ background: '#ffffff' }}",
+    );
+  });
+
   it("uses the standard dialog radius instead of the Skills panel private token", () => {
     const channelButtonRule = standardPanelStyles.match(
       /\.lh-std-channel-panel__btn-outline,\s*\.lh-std-channel-panel__btn-primary\s*\{([^}]*)\}/,

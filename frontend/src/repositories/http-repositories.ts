@@ -766,29 +766,38 @@ const projectInstanceBotToBot = (
   instance: CtlInstancePayload,
   instanceBot: CtlInstanceBotPayload,
   draft?: BotDraft,
-): Bot => ({
-  id: instanceBot.bot_id,
-  instanceId: instanceBot.instance_id,
-  profileId: instanceBot.profile_id,
-  isDefault: instanceBot.is_default,
-  description: instanceBot.description,
-  createdFrom: instanceBot.created_from,
-  sourceBotId: instanceBot.source_bot_id,
-  weixinOwner: instanceBot.weixin_owner ? {
-    botId: instanceBot.weixin_owner.bot_id,
-    profileId: instanceBot.weixin_owner.profile_id,
-    botName: instanceBot.weixin_owner.bot_name,
-    status: instanceBot.weixin_owner.status,
-  } : undefined,
-  sandboxId: instance.sandbox_id,
-  name: instanceBot.name?.trim() || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
-  type: draft?.type || "ops",
-  template: draft?.template?.trim() || "OpenClaw Runtime",
-  mission: draft?.mission?.trim() || instanceBot.description || "",
-  scenario: draft?.scenario?.trim() || "实例工作台",
-  createdAt: instanceBot.created_at,
-  status: draft?.status || mapInstanceStatusToBotStatus(instanceBot.status),
-});
+): Bot => {
+  const backendName = instanceBot.name?.trim();
+  const leakedRootProfileName = instanceBot.is_default
+    && instanceBot.profile_id === "main"
+    && instanceBot.bot_id === instanceBot.instance_id
+    && backendName === "default";
+  const displayName = leakedRootProfileName ? undefined : backendName;
+
+  return {
+    id: instanceBot.bot_id,
+    instanceId: instanceBot.instance_id,
+    profileId: instanceBot.profile_id,
+    isDefault: instanceBot.is_default,
+    description: instanceBot.description,
+    createdFrom: instanceBot.created_from,
+    sourceBotId: instanceBot.source_bot_id,
+    weixinOwner: instanceBot.weixin_owner ? {
+      botId: instanceBot.weixin_owner.bot_id,
+      profileId: instanceBot.weixin_owner.profile_id,
+      botName: instanceBot.weixin_owner.bot_name,
+      status: instanceBot.weixin_owner.status,
+    } : undefined,
+    sandboxId: instance.sandbox_id,
+    name: displayName || resolveLegacyDraftBotName(draft) || defaultHermesAgentName(),
+    type: draft?.type || "ops",
+    template: draft?.template?.trim() || "OpenClaw Runtime",
+    mission: draft?.mission?.trim() || instanceBot.description || "",
+    scenario: draft?.scenario?.trim() || "实例工作台",
+    createdAt: instanceBot.created_at,
+    status: draft?.status || mapInstanceStatusToBotStatus(instanceBot.status),
+  };
+};
 
 /* ── Usage API ── */
 interface UsagePayload {

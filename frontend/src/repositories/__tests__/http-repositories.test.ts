@@ -653,6 +653,56 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
+  it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const jsonResponse = (data: unknown) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return jsonResponse({
+          total: 1,
+          page: 1,
+          page_size: 20,
+          items: [{
+            instance_id: "ins_multi",
+            status: "Running",
+            created_at: "2026-09-09T00:00:00Z",
+          }],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots")) {
+        return jsonResponse({ items: [{
+          bot_id: "ins_multi",
+          instance_id: "ins_multi",
+          profile_id: "main",
+          name: "default",
+          is_default: true,
+          status: "ready",
+          created_from: "blank",
+          created_at: "2026-09-09T00:00:00Z",
+          updated_at: "2026-09-09T00:00:00Z",
+        }] });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_multi",
+        name: "我的Hermes",
+        profileId: "main",
+        isDefault: true,
+      }),
+    ]);
+  });
+
   it.skipIf(isGlobal)("does not hide nested bot authorization failures behind the legacy fallback", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
