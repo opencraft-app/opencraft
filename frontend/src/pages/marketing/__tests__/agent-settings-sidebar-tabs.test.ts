@@ -28,9 +28,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("keeps additional Bot creation hidden while preserving initial Agent creation", () => {
     const page = readPageSource();
     expect(page).toContain("const showCreateBotEntry = false;");
-    expect(page).toContain("{showCreateBotEntry && canCreateBot && (");
-    expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
+    expect(page).toContain("{showCreateBotEntry && canCreateAdditionalBot && (");
+    expect(page).toContain("if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
+    expect(page).toContain("disabled={!canCreateInitialAgent}");
+    expect(page).not.toContain("const canCreateBot = multiBotEnabled");
   });
 
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
