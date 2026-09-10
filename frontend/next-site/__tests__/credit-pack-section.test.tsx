@@ -8,10 +8,11 @@ import { CreditPackSection } from "../credit-pack-section";
 const inquireCreditPrice = vi.fn();
 const createCreditOrder = vi.fn();
 const createCreditOrderUrl = vi.fn();
+const listCreditProducts = vi.fn();
 
 /* 稳定引用：真实的 RepositoryContext 通过 useContext 返回同一对象，
    mock 也必须保持引用稳定，否则会掩盖/放大组件对引用稳定性的依赖问题。 */
-const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, createCreditOrderUrl } };
+const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, createCreditOrderUrl, listCreditProducts } };
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => repositoriesStub,
@@ -28,10 +29,26 @@ const renderSection = (overrides: Partial<Parameters<typeof CreditPackSection>[0
     />,
   );
 
+/* 全部 5 个商品在线（联调文档 §4 的当前商品清单） */
+const ALL_PRODUCTS_ONLINE = [
+  "credit_1000",
+  "credit_2000",
+  "credit_4000",
+  "credit_8000",
+  "credit_12000",
+].map((product_id) => ({
+  product_id,
+  product_name: `${product_id.replace("credit_", "")}积分`,
+  llm_gateway_plan_id: `plan-${product_id}`,
+  state: "ONLINE" as const,
+}));
+
+/* 询价金额：单位为分（联调文档 §5「最小货币单位」）。
+   credit_8000 → 8000 分 = ¥80.00，用于验证分转元。 */
 const quoteFor = (productId: string) => ({
   product_id: productId,
-  real_total_cost: "12.00",
-  total_cost: "12.00",
+  real_total_cost: "8000",
+  total_cost: "8000",
   currency: "CNY" as const,
 });
 
@@ -46,6 +63,8 @@ beforeEach(() => {
     pay_url: "",
     need_charge: 0,
   });
+  listCreditProducts.mockReset();
+  listCreditProducts.mockResolvedValue(ALL_PRODUCTS_ONLINE);
 });
 
 afterEach(() => {
@@ -59,7 +78,7 @@ describe("CreditPackSection", () => {
     expect(await screen.findByText("1,000 模型积分")).toBeInTheDocument();
     expect(screen.getByText("12,000 模型积分")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByText("¥12.00")).toHaveLength(5);
+      expect(screen.getAllByText("¥80.00")).toHaveLength(5);
     });
   });
 
@@ -130,7 +149,7 @@ describe("CreditPackSection", () => {
     const healthyCard = screen.getByTestId("credit-pack-card-credit_2000");
     expect(healthyCard).toBeEnabled();
     await waitFor(() => {
-      expect(screen.getAllByText("¥12.00")).toHaveLength(4);
+      expect(screen.getAllByText("¥80.00")).toHaveLength(4);
     });
   });
 
@@ -144,7 +163,7 @@ describe("CreditPackSection", () => {
     expect(modal).toBeInTheDocument();
     /* 弹窗展示商品与金额（卡片上也有同样文本，用 getAllByText 断言至少两处） */
     expect(screen.getAllByText("8,000 模型积分").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("¥12.00").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("¥80.00").length).toBeGreaterThanOrEqual(2);
 
     const payButton = screen.getByTestId("credit-pack-confirm-pay");
     expect(payButton).toBeDisabled();
@@ -213,6 +232,44 @@ describe("CreditPackSection", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("下单失败");
+    });
+  });
+
+  it("金额按分转元展示（联调文档 §5 最小货币单位）", async () => {
+    /* quoteFor 返回 8000 分；直接拼字符串会错误显示 ¥8000 */
+    renderSection();
+
+    await waitFor(() => {
+      expect(screen.getAllByText("¥80.00")).toHaveLength(5);
+    });
+    expect(screen.queryByText("¥8000")).not.toBeInTheDocument();
+  });
+
+  it("商品列表以接口为准：OFFLINE 商品不渲染", async () => {
+    listCreditProducts.mockResolvedValue(
+      ALL_PRODUCTS_ONLINE.filter((p) => p.product_id !== "credit_12000"),
+    );
+
+    renderSection();
+
+    await screen.findByTestId("credit-pack-card-credit_1000");
+    expect(screen.queryByTestId("credit-pack-card-credit_12000")).not.toBeInTheDocument();
+  });
+
+  it("询价返回 409（商品下线）时取消选中并刷新商品列表", async () => {
+    const { RepositoryError } = await import("@/repositories/http-repositories");
+    inquireCreditPrice.mockImplementation(async (productId: string) => {
+      if (productId === "credit_4000") throw new RepositoryError("商品已下线", 409);
+      return quoteFor(productId);
+    });
+
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_4000"));
+    expect(screen.getByTestId("credit-pack-primary-action")).toHaveTextContent("请选择积分包");
+
+    await waitFor(() => {
+      expect(listCreditProducts).toHaveBeenCalledTimes(2);
     });
   });
 

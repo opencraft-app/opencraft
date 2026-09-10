@@ -2,10 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { CREDIT_PACK_DENOMINATIONS, type CreditQuote } from '@/domain/credit-pack';
+import { CREDIT_PACK_DENOMINATIONS, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
 import { useRepositories } from '@/contexts/repository-context';
+import { RepositoryError } from '@/repositories/http-repositories';
 import { useT } from '@/i18n/t';
 import { useCreditCheckout } from '@/lib/use-credit-checkout';
+import { centsToYuan, formatYuan } from '@/lib/billing-flow';
 import { isGlobal } from '@/lib/region';
 
 /**
@@ -33,8 +35,6 @@ type PurchaseGate =
   | 'no-active-plan'
   | 'quote-failed';
 
-const CURRENCY_SYMBOL: Record<string, string> = { CNY: '¥', USD: '$' };
-
 /** URL query 参数名（与 subscribe-page 的 section 定位约定一致） */
 const SECTION_QUERY_KEY_PARAM = 'section';
 const CREDIT_SECTION_QUERY_VALUE_PARAM = 'credits';
@@ -42,11 +42,15 @@ const CREDIT_SECTION_QUERY_VALUE_PARAM = 'credits';
 const PAY_RETURN_QUERY_KEY = 'credit_pay';
 const PAY_RETURN_QUERY_VALUE = 'return';
 
-/** 格式化金额：保留后端返回的字符串精度，仅补币种符号。 */
-const formatAmount = (quote: CreditQuote): string => {
-  const symbol = CURRENCY_SYMBOL[quote.currency] ?? '';
-  return `${symbol}${quote.real_total_cost}`;
-};
+/**
+ * 格式化金额。
+ *
+ * ⚠️ 联调文档 §5：金额字段沿用现有计费接口的**最小货币单位（分）**，
+ * 与套餐 BundlePrice 一致（见 billing-flow.ts 的 centsToYuan），
+ * 展示前必须除以 100 转元。
+ */
+const formatAmount = (quote: CreditQuote): string =>
+  formatYuan(centsToYuan(quote.real_total_cost), quote.currency);
 
 export type CreditPackSectionProps = {
   /** 区域锚点 id，供 ?section=credits 定位 */
@@ -75,6 +79,8 @@ export const CreditPackSection = ({
   const [notice, setNotice] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  /* 在线商品（接口真源）：加载中为 null 表示尚未拿到 */
+  const [onlineProducts, setOnlineProducts] = useState<readonly CreditProduct[] | null>(null);
 
   /* 用 ref 持有 repositories：不把它放进 useCallback / useEffect 的依赖里。
      否则一旦上层 context 返回新对象引用（非 memo 化），就会
@@ -82,22 +88,64 @@ export const CreditPackSection = ({
   const repositoriesRef = useRef(repositories);
   repositoriesRef.current = repositories;
 
-  /* 并发询价：单个商品失败只影响该卡片，不影响其他已成功的卡片（产品方案 9）。 */
-  const loadQuote = useCallback(async (productId: string) => {
-    setQuotes((prev) => ({ ...prev, [productId]: { status: 'loading' } }));
+  /* 商品列表：GET /v1/credit/products 是商品在线状态与增减的真源（联调文档 §4）。
+     productsFailed 时退化为常量表全量展示——商品接口不可用不应导致整个区域空白。 */
+  const [productsFailed, setProductsFailed] = useState(false);
+  const loadProducts = useCallback(async () => {
     try {
-      const quote = await repositoriesRef.current.credit.inquireCreditPrice(productId);
-      setQuotes((prev) => ({ ...prev, [productId]: { status: 'ready', quote } }));
+      const products = await repositoriesRef.current.credit.listCreditProducts();
+      setOnlineProducts(products.filter((p) => p.state === 'ONLINE'));
+      setProductsFailed(false);
     } catch {
-      setQuotes((prev) => ({ ...prev, [productId]: { status: 'failed' } }));
+      setOnlineProducts([]);
+      setProductsFailed(true);
     }
   }, []);
 
-  /* 挂载时对全部面额发起一次并发询价。依赖为空：询价只在挂载时执行一次，
-     重试由用户点击「价格暂不可用」触发。 */
+  /* 并发询价：单个商品失败只影响该卡片，不影响其他已成功的卡片（产品方案 9）。
+     409（商品下线）特殊处理：刷新商品列表并取消选中（产品方案 9 状态矩阵）。 */
+  const loadQuote = useCallback(
+    async (productId: string) => {
+      setQuotes((prev) => ({ ...prev, [productId]: { status: 'loading' } }));
+      try {
+        const quote = await repositoriesRef.current.credit.inquireCreditPrice(productId);
+        setQuotes((prev) => ({ ...prev, [productId]: { status: 'ready', quote } }));
+      } catch (error) {
+        if (error instanceof RepositoryError && error.status === 409) {
+          /* 商品已下线：刷新商品列表（联调文档 §9），由展示层移除该卡并取消选中 */
+          setSelectedProductId((current) => (current === productId ? null : current));
+          setNotice(t('该积分包暂不可购买'));
+          void loadProducts();
+        }
+        setQuotes((prev) => ({ ...prev, [productId]: { status: 'failed' } }));
+      }
+    },
+    [loadProducts, t],
+  );
+
+  /* 待展示的卡片 = 接口在线商品 ∩ 积分数量映射表。
+     映射表没有的 product_id 无法展示「N 模型积分」核心信息，跳过并告警；
+     TODO(credit-pack): 后端 products 补 credit_total 后删除映射表。 */
+  const visibleDenominations = useMemo(() => {
+    const source = productsFailed || onlineProducts === null ? CREDIT_PACK_DENOMINATIONS : onlineProducts;
+    const onlineIds = new Set(source.map((p) => p.product_id));
+    const known = CREDIT_PACK_DENOMINATIONS.filter((d) => onlineIds.has(d.product_id));
+    if (!productsFailed && onlineProducts) {
+      const unknown = onlineProducts.filter(
+        (p) => !CREDIT_PACK_DENOMINATIONS.some((d) => d.product_id === p.product_id),
+      );
+      if (unknown.length > 0) {
+        console.warn('[credit-pack] 接口返回了映射表之外的商品，暂不展示：', unknown.map((p) => p.product_id).join(', '));
+      }
+    }
+    return known;
+  }, [onlineProducts, productsFailed]);
+
+  /* 挂载时拉商品列表，并对全部面额发起一次并发询价。重试由用户交互触发。 */
   useEffect(() => {
+    void loadProducts();
     void Promise.all(CREDIT_PACK_DENOMINATIONS.map((denomination) => loadQuote(denomination.product_id)));
-  }, [loadQuote]);
+  }, [loadProducts, loadQuote]);
 
   const selectedQuote = selectedProductId ? quotes[selectedProductId] : undefined;
 
@@ -228,8 +276,9 @@ export const CreditPackSection = ({
         {t('适用于已有有效套餐、需要增加模型调用额度的用户')}
       </p>
 
-      <ul className="mt-6 grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-5">
-        {CREDIT_PACK_DENOMINATIONS.map((denomination) => {
+      {visibleDenominations.length > 0 ? (
+        <ul className="mt-6 grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3 lg:grid-cols-5">
+          {visibleDenominations.map((denomination) => {
           const state = quotes[denomination.product_id];
           const selected = selectedProductId === denomination.product_id;
           const failed = state?.status === 'failed';
@@ -262,7 +311,8 @@ export const CreditPackSection = ({
             </li>
           );
         })}
-      </ul>
+        </ul>
+      ) : null}
 
       <p className="mt-4 text-xs" style={{ color: '#999' }}>
         {t('积分包有效期为 1 个月，自支付成功并到账时起算；到期后未使用积分失效。')}

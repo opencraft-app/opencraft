@@ -510,9 +510,11 @@ export interface BotRepository {
 /**
  * 积分包仓储。
  *
- * 对应 credit 服务（credit/internal/httpapi/server.go:35-53）。
- * 本期只接入询价与用户积分包查询；下单与支付因后端 payURL 恒空而未接入，
- * 详见 .workflow/native/changes/credit-pack-purchase/brief.md。
+ * 对应 credit 服务（credit/internal/httpapi/server.go:35-53），
+ * 接口契约见 docs/frontend-credit-package-integration.md。
+ *
+ * ⚠️ 禁止接入 POST /v1/credit/packages/order-and-pay —— 该接口仅限内部联调
+ * 与自动化测试，控制台不得调用（联调文档 §1）。
  */
 export interface CreditRepository {
   /** `GET /v1/credit/products` —— 在售积分包商品。 */

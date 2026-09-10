@@ -1272,14 +1272,14 @@ const createCreditRepository = (): CreditRepository => ({
     if (!denomination) {
       throw new Error(`未知积分包商品：${productId}`);
     }
-    /* 演示价：国内 1 元 / 100 积分，国际 1 美元 / 500 积分 */
-    const amount = isGlobal
-      ? (denomination.credit_total / 500).toFixed(2)
-      : (denomination.credit_total / 100).toFixed(2);
+    /* 演示价（单位：分，与真实接口一致——联调文档 §5「最小货币单位」）：
+       国内 100 积分 = 1 元 = 100 分；国际 500 积分 = 1 美元 = 100 分 */
+    const cents = isGlobal ? denomination.credit_total / 5 : denomination.credit_total;
+    const centsStr = cents.toFixed(0);
     return {
       product_id: productId,
-      real_total_cost: amount,
-      total_cost: amount,
+      real_total_cost: centsStr,
+      total_cost: centsStr,
       currency: isGlobal ? ("USD" as const) : ("CNY" as const),
     };
   },
