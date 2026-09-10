@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/image-processing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/service.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@jsquash/oxipng": "2.3.0"
+  }
+}

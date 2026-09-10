@@ -3,12 +3,36 @@ import { describe, expect, it } from "vitest";
 import {
   findCompletedCreatingBot,
   getOpenClawCreateLimitMessage,
+  resolveOpenClawCreatePermissions,
   type OpenClawCreateAvailabilityBot,
   type OpenClawCreateStatusBot,
 } from "../agent-create-availability";
 
 const bot = (status: OpenClawCreateAvailabilityBot["status"]): OpenClawCreateAvailabilityBot => ({ status });
 const statusBot = (id: string, status: OpenClawCreateStatusBot["status"]): OpenClawCreateStatusBot => ({ id, status });
+
+describe("resolveOpenClawCreatePermissions", () => {
+  it("allows the initial Agent when multi-Bot is disabled", () => {
+    expect(resolveOpenClawCreatePermissions(false, null)).toEqual({
+      canCreateInitialAgent: true,
+      canCreateAdditionalBot: false,
+    });
+  });
+
+  it("allows an additional Bot only when multi-Bot is enabled", () => {
+    expect(resolveOpenClawCreatePermissions(true, null)).toEqual({
+      canCreateInitialAgent: true,
+      canCreateAdditionalBot: true,
+    });
+  });
+
+  it("blocks both creation paths at the plan limit", () => {
+    expect(resolveOpenClawCreatePermissions(true, "limit reached")).toEqual({
+      canCreateInitialAgent: false,
+      canCreateAdditionalBot: false,
+    });
+  });
+});
 
 describe("getOpenClawCreateLimitMessage", () => {
   it("allows creation below the plan limit", () => {

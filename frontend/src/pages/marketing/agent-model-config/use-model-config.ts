@@ -41,9 +41,11 @@ function getErrorMessage(error: unknown) {
 
 export function useModelConfig({
   botId,
+  profileId,
   execDebugCommand,
 }: {
   botId: string;
+  profileId?: string;
   execDebugCommand: HermesModelConfigExecDebugCommand;
 }) {
   const execDebugCommandRef = useRef(execDebugCommand);
@@ -52,8 +54,9 @@ export function useModelConfig({
     () => createHermesModelConfigClient(
       (targetBotId, command, options) => execDebugCommandRef.current(targetBotId, command, options),
       botId,
+      profileId,
     ),
-    [botId],
+    [botId, profileId],
   );
   const requestRevision = useRef(0);
   const probeRevision = useRef(0);

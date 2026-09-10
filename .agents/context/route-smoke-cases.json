@@ -41,6 +41,7 @@
     {"id": "service-route-user-auth", "query": "修改 user/auth/internal/session.go", "required_pack_ids": ["identity-access", "service-user-auth"]},
     {"id": "service-route-velagw", "query": "修改 velagw/internal/router/provider.go", "required_pack_ids": ["upstream-subtrees", "service-velagw"]},
     {"id": "service-route-velalink", "query": "修改 velalink/packages/vela-chat-web/src/index.ts", "required_pack_ids": ["upstream-subtrees", "service-velalink"]},
+    {"id": "service-route-opencraft", "query": "修改 opencraft/apps/workbench-web/src/app.tsx", "required_pack_ids": ["agent-gateway-runtime", "site-environment-routing", "upstream-subtrees", "service-opencraft"]},
     {"id": "service-route-workers", "query": "修改 workers/internal/workflow/rescue.go", "required_pack_ids": ["service-workers"]}
   ]
 }

@@ -1,0 +1,367 @@
+// Restored and typed from Codex r822:
+// lazy/app-initial/build-theme-css-for-mode.js,
+// build-theme-css-properties.js, and height-class-mapper.js.
+export interface RgbColor {
+  red: number;
+  green: number;
+  blue: number;
+}
+
+export interface CodexThemeDefinition {
+  accent: string;
+  contrast: number;
+  fonts: { code: string | null; ui: string | null };
+  ink: string;
+  opaqueWindows: boolean;
+  semanticColors: {
+    diffAdded: string;
+    diffRemoved: string;
+    skill: string;
+  };
+  surface: string;
+}
+
+export type CodexThemeMode = "light" | "dark";
+export type ThemeCssProperties = Record<`--${string}`, string>;
+
+export const codexThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
+  dark: {
+    accent: "#339cff",
+    contrast: 60,
+    fonts: { code: null, ui: null },
+    ink: "#ffffff",
+    opaqueWindows: false,
+    semanticColors: { diffAdded: "#40c977", diffRemoved: "#fa423e", skill: "#ad7bf9" },
+    surface: "#181818",
+  },
+  light: {
+    accent: "#339cff",
+    contrast: 45,
+    fonts: { code: null, ui: null },
+    ink: "#1a1c1f",
+    opaqueWindows: false,
+    semanticColors: { diffAdded: "#00a240", diffRemoved: "#ba2623", skill: "#924ff7" },
+    surface: "#ffffff",
+  },
+};
+
+const black: RgbColor = { red: 0, green: 0, blue: 0 };
+const white: RgbColor = { red: 255, green: 255, blue: 255 };
+const relativeLuminanceThreshold = 0.179;
+const defaultContrast = { dark: 60, light: 45 } as const;
+
+function hexToRgb(hex: string): RgbColor {
+  const value = hex.slice(1);
+  return {
+    red: Number.parseInt(value.slice(0, 2), 16),
+    green: Number.parseInt(value.slice(2, 4), 16),
+    blue: Number.parseInt(value.slice(4, 6), 16),
+  };
+}
+
+function byteToHex(value: number): string {
+  return value.toString(16).padStart(2, "0");
+}
+
+function rgbToHex(color: RgbColor): string {
+  return `#${byteToHex(color.red)}${byteToHex(color.green)}${byteToHex(color.blue)}`;
+}
+
+function rgbString(color: RgbColor): string {
+  return `rgb(${color.red}, ${color.green}, ${color.blue})`;
+}
+
+function formatOpacity(value: number): string {
+  return Math.min(1, Math.max(0, value)).toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function rgba(color: RgbColor, opacity: number): string {
+  return `rgba(${color.red}, ${color.green}, ${color.blue}, ${formatOpacity(opacity)})`;
+}
+
+function interpolateColor(from: RgbColor, to: RgbColor, ratio: number): RgbColor {
+  const progress = Math.min(1, Math.max(0, ratio));
+  const lerp = (fromValue: number, toValue: number) => Math.round(fromValue + (toValue - fromValue) * progress);
+  return { red: lerp(from.red, to.red), green: lerp(from.green, to.green), blue: lerp(from.blue, to.blue) };
+}
+
+function mix(from: RgbColor, to: RgbColor, ratio: number): string {
+  return rgbToHex(interpolateColor(from, to, ratio));
+}
+
+function srgbToLinear(value: number): number {
+  const channel = value / 255;
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(color: RgbColor): number {
+  return srgbToLinear(color.red) * 0.2126 + srgbToLinear(color.green) * 0.7152 + srgbToLinear(color.blue) * 0.0722;
+}
+
+function textOnAccent(color: RgbColor): RgbColor {
+  if (color.blue > color.red && color.blue > color.green) {
+    const saturation = color.blue - Math.min(color.red, color.green);
+    const hue = ((color.red - color.green) / saturation + 4) * 60;
+    const saturationRatio = saturation / color.blue;
+    if (
+      (saturationRatio >= 0.8 && hue >= 205 && hue <= 212) ||
+      (saturationRatio >= 0.6 && hue >= 218 && hue <= 233 && relativeLuminance(color) <= 0.21)
+    ) return white;
+  }
+  return relativeLuminance(color) > relativeLuminanceThreshold ? black : white;
+}
+
+function tieredContrast(contrast: number, mode: CodexThemeMode): number {
+  const threshold = defaultContrast[mode];
+  const normalizedThreshold = threshold / 100;
+  const interpolated = contrast / 100 + ((contrast - threshold) / 60) * 0.7;
+  return contrast <= threshold ? interpolated : normalizedThreshold + (interpolated - normalizedThreshold) * 2;
+}
+
+interface ThemeVariant {
+  theme: CodexThemeDefinition;
+  variant: CodexThemeMode;
+  accent: RgbColor;
+  contrast: number;
+  editorBackground: RgbColor;
+  ink: RgbColor;
+  surface: RgbColor;
+  surfaceUnder: string;
+}
+
+function buildThemeVariant(theme: CodexThemeDefinition, variant: CodexThemeMode): ThemeVariant {
+  const contrast = tieredContrast(theme.contrast, variant);
+  const surface = hexToRgb(theme.surface);
+  const ink = hexToRgb(theme.ink);
+  const baseContrast = defaultContrast[variant];
+  const underRatio = (variant === "light" ? 0.04 : 0.16) + (theme.contrast - baseContrast) * (variant === "light" ? 0.0012 : 0.0015);
+  return {
+    theme,
+    variant,
+    accent: hexToRgb(theme.accent),
+    contrast,
+    editorBackground: variant === "light" ? interpolateColor(surface, white, 0.12) : interpolateColor(surface, ink, 0.07),
+    ink,
+    surface,
+    surfaceUnder: variant === "light" ? mix(surface, ink, underRatio) : mix(surface, black, underRatio),
+  };
+}
+
+interface SemanticThemeColors {
+  accentBackground: string;
+  accentBackgroundActive: string;
+  accentBackgroundHover: string;
+  border: string;
+  borderFocus: string;
+  borderHeavy: string;
+  borderLight: string;
+  buttonPrimaryBackground: string;
+  buttonPrimaryBackgroundActive: string;
+  buttonPrimaryBackgroundHover: string;
+  buttonPrimaryBackgroundInactive: string;
+  buttonSecondaryBackground: string;
+  buttonSecondaryBackgroundActive: string;
+  buttonSecondaryBackgroundHover: string;
+  buttonSecondaryBackgroundInactive: string;
+  buttonTertiaryBackground: string;
+  buttonTertiaryBackgroundActive: string;
+  buttonTertiaryBackgroundHover: string;
+  controlBackground: string;
+  controlBackgroundOpaque: string;
+  elevatedPrimary: string;
+  elevatedPrimaryOpaque: string;
+  elevatedSecondary: string;
+  elevatedSecondaryOpaque: string;
+  iconAccent: string;
+  iconPrimary: string;
+  iconSecondary: string;
+  iconTertiary: string;
+  simpleScrim: string;
+  textAccent: string;
+  textButtonPrimary: string;
+  textButtonSecondary: string;
+  textButtonTertiary: string;
+  textForeground: string;
+  textForegroundSecondary: string;
+  textForegroundTertiary: string;
+}
+
+function lightSemanticColors(theme: ThemeVariant): SemanticThemeColors {
+  const control = interpolateColor(theme.surface, white, 0.09 + theme.contrast * 0.04);
+  const elevatedSecondary = interpolateColor(theme.surface, white, 0.08 + theme.contrast * 0.08);
+  const elevatedPrimary = interpolateColor(theme.surface, white, 0.16 + theme.contrast * 0.12);
+  const primaryHover = interpolateColor(theme.ink, theme.surface, 0.08 + theme.contrast * 0.025);
+  const primaryActive = interpolateColor(theme.ink, theme.surface, 0.13 + theme.contrast * 0.035);
+  return {
+    accentBackground: mix(theme.surface, theme.accent, 0.11 + theme.contrast * 0.04),
+    accentBackgroundActive: mix(theme.surface, theme.accent, 0.13 + theme.contrast * 0.05),
+    accentBackgroundHover: mix(theme.surface, theme.accent, 0.12 + theme.contrast * 0.045),
+    border: rgba(theme.ink, 0.06 + theme.contrast * 0.04),
+    borderFocus: theme.theme.accent,
+    borderHeavy: rgba(theme.ink, 0.09 + theme.contrast * 0.06),
+    borderLight: rgba(theme.ink, 0.04 + theme.contrast * 0.02),
+    buttonPrimaryBackground: theme.theme.ink,
+    // Primary controls own an opaque polarity-inverted surface. An alpha-only
+    // hover token changes meaning with the surface behind it and turns an
+    // enabled send button almost white on the light Composer.
+    buttonPrimaryBackgroundActive: rgbString(primaryActive),
+    buttonPrimaryBackgroundHover: rgbString(primaryHover),
+    buttonPrimaryBackgroundInactive: rgba(theme.ink, 0.18 + theme.contrast * 0.14),
+    buttonSecondaryBackground: rgba(theme.ink, 0.04 + theme.contrast * 0.02),
+    buttonSecondaryBackgroundActive: rgba(theme.ink, 0.03 + theme.contrast * 0.02),
+    buttonSecondaryBackgroundHover: rgba(theme.ink, 0.04 + theme.contrast * 0.03),
+    buttonSecondaryBackgroundInactive: rgba(theme.ink, 0.01 + theme.contrast * 0.02),
+    buttonTertiaryBackground: rgba(theme.ink, 0),
+    buttonTertiaryBackgroundActive: rgba(theme.ink, 0.16 + theme.contrast * 0.08),
+    buttonTertiaryBackgroundHover: rgba(theme.ink, 0.08 + theme.contrast * 0.04),
+    controlBackground: rgba(control, 0.96),
+    controlBackgroundOpaque: rgbString(control),
+    elevatedPrimary: rgba(elevatedPrimary, 0.96),
+    elevatedPrimaryOpaque: rgbString(elevatedPrimary),
+    elevatedSecondary: rgba(elevatedSecondary, 0.96),
+    elevatedSecondaryOpaque: rgbString(elevatedSecondary),
+    iconAccent: theme.theme.accent,
+    iconPrimary: theme.theme.ink,
+    iconSecondary: rgba(theme.ink, 0.65 + theme.contrast * 0.1),
+    iconTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
+    simpleScrim: rgba(black, 0.08 + theme.contrast * 0.04),
+    textAccent: theme.theme.accent,
+    textButtonPrimary: theme.theme.surface,
+    textButtonSecondary: theme.theme.ink,
+    textButtonTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
+    textForeground: theme.theme.ink,
+    textForegroundSecondary: rgba(theme.ink, 0.65 + theme.contrast * 0.1),
+    textForegroundTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
+  };
+}
+
+function darkSemanticColors(theme: ThemeVariant): SemanticThemeColors {
+  const control = interpolateColor(theme.surface, theme.ink, 0.06 + theme.contrast * 0.05);
+  const accentText = interpolateColor(theme.accent, white, 0.3 + theme.contrast * 0.15);
+  const primaryHover = interpolateColor(theme.ink, theme.surface, 0.08 + theme.contrast * 0.025);
+  const primaryActive = interpolateColor(theme.ink, theme.surface, 0.13 + theme.contrast * 0.035);
+  const elevated = interpolateColor(theme.surface, theme.ink, 0.08 + theme.contrast * 0.08);
+  return {
+    accentBackground: mix(black, theme.accent, 0.2 + theme.contrast * 0.08),
+    accentBackgroundActive: mix(black, theme.accent, 0.22 + theme.contrast * 0.12),
+    accentBackgroundHover: mix(black, theme.accent, 0.21 + theme.contrast * 0.1),
+    border: rgba(theme.ink, 0.06 + theme.contrast * 0.04),
+    borderFocus: rgba(accentText, 0.7 + theme.contrast * 0.1),
+    borderHeavy: rgba(theme.ink, 0.12 + theme.contrast * 0.06),
+    borderLight: rgba(theme.ink, 0.03 + theme.contrast * 0.02),
+    // Primary actions stay polarity-inverted in dark mode: bright control,
+    // dark glyph. Deriving both roles from `primary` made the foreground and
+    // background identical, which erased the Composer send arrow.
+    buttonPrimaryBackground: theme.theme.ink,
+    buttonPrimaryBackgroundActive: rgbString(primaryActive),
+    buttonPrimaryBackgroundHover: rgbString(primaryHover),
+    buttonPrimaryBackgroundInactive: rgba(theme.ink, 0.02 + theme.contrast * 0.02),
+    buttonSecondaryBackground: rgba(theme.ink, 0.04 + theme.contrast * 0.02),
+    buttonSecondaryBackgroundActive: rgba(theme.ink, 0.09 + theme.contrast * 0.05),
+    buttonSecondaryBackgroundHover: rgba(theme.ink, 0.06 + theme.contrast * 0.03),
+    buttonSecondaryBackgroundInactive: rgba(theme.ink, 0.02 + theme.contrast * 0.03),
+    buttonTertiaryBackground: rgba(theme.ink, 0.02 + theme.contrast * 0.015),
+    buttonTertiaryBackgroundActive: rgba(theme.ink, 0.07 + theme.contrast * 0.05),
+    buttonTertiaryBackgroundHover: rgba(theme.ink, 0.05 + theme.contrast * 0.03),
+    controlBackground: rgba(control, 0.96),
+    controlBackgroundOpaque: rgbString(control),
+    elevatedPrimary: rgba(elevated, 0.96),
+    elevatedPrimaryOpaque: rgbString(elevated),
+    elevatedSecondary: rgba(theme.ink, 0.02 + theme.contrast * 0.02),
+    elevatedSecondaryOpaque: mix(theme.surface, theme.ink, 0.04 + theme.contrast * 0.05),
+    iconAccent: rgbString(accentText),
+    iconPrimary: rgba(theme.ink, 0.82 + theme.contrast * 0.14),
+    iconSecondary: rgba(theme.ink, 0.65 + theme.contrast * 0.1),
+    iconTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
+    simpleScrim: rgba(theme.ink, 0.08 + theme.contrast * 0.04),
+    textAccent: rgbString(accentText),
+    textButtonPrimary: theme.theme.surface,
+    textButtonSecondary: mix(theme.ink, theme.surface, 0.7 + theme.contrast * 0.1),
+    textButtonTertiary: rgba(theme.ink, 0.45 + theme.contrast * 0.1),
+    textForeground:
+      theme.theme.ink === codexThemePalette.dark.ink && theme.theme.surface === codexThemePalette.dark.surface
+        ? "var(--gray-150)"
+        : theme.theme.ink,
+    textForegroundSecondary: rgba(theme.ink, 0.65 + theme.contrast * 0.1),
+    textForegroundTertiary: rgba(theme.ink, 0.42 + theme.contrast * 0.13),
+  };
+}
+
+export function buildCodexThemeCssProperties(
+  mode: CodexThemeMode,
+  definition: CodexThemeDefinition = codexThemePalette[mode],
+): ThemeCssProperties {
+  const theme = buildThemeVariant(definition, mode);
+  const semantic = mode === "light" ? lightSemanticColors(theme) : darkSemanticColors(theme);
+  const applicationMenu = interpolateColor(theme.surface, theme.ink, 0.02 + theme.contrast * 0.02);
+  const panelBase = mode === "light" ? white : theme.ink;
+  const panelOpacity = (mode === "light" ? 0.18 : 0.03) + theme.contrast * (mode === "light" ? 0.008 : 0.03);
+
+  return {
+    "--codex-base-accent": definition.accent,
+    "--codex-base-contrast": String(definition.contrast),
+    "--codex-base-ink": definition.ink,
+    "--codex-base-surface": definition.surface,
+    "--color-accent-blue": definition.accent,
+    "--color-accent-purple": definition.semanticColors.skill,
+    "--color-background-accent": semantic.accentBackground,
+    "--color-background-accent-active": semantic.accentBackgroundActive,
+    "--color-background-accent-hover": semantic.accentBackgroundHover,
+    "--color-background-application-menu": rgbToHex(applicationMenu),
+    "--color-background-button-primary": semantic.buttonPrimaryBackground,
+    "--color-background-button-primary-active": semantic.buttonPrimaryBackgroundActive,
+    "--color-background-button-primary-hover": semantic.buttonPrimaryBackgroundHover,
+    "--color-background-button-primary-inactive": semantic.buttonPrimaryBackgroundInactive,
+    "--color-background-button-secondary": semantic.buttonSecondaryBackground,
+    "--color-background-button-secondary-active": semantic.buttonSecondaryBackgroundActive,
+    "--color-background-button-secondary-hover": semantic.buttonSecondaryBackgroundHover,
+    "--color-background-button-secondary-inactive": semantic.buttonSecondaryBackgroundInactive,
+    // Codex menu/list rows use the primary ghost state instead of borrowing a
+    // button component's visual contract. Keep the value theme-derived while
+    // exposing the source-faithful semantic name to every platform shell.
+    "--color-background-primary-ghost-hover": semantic.buttonSecondaryBackgroundHover,
+    "--color-background-button-tertiary": semantic.buttonTertiaryBackground,
+    "--color-background-button-tertiary-active": semantic.buttonTertiaryBackgroundActive,
+    "--color-background-button-tertiary-hover": semantic.buttonTertiaryBackgroundHover,
+    "--color-background-control": semantic.controlBackground,
+    "--color-background-control-opaque": semantic.controlBackgroundOpaque,
+    "--color-background-editor-opaque": rgbString(theme.editorBackground),
+    "--color-background-elevated-primary": semantic.elevatedPrimary,
+    "--color-background-elevated-primary-opaque": semantic.elevatedPrimaryOpaque,
+    "--color-background-elevated-secondary": semantic.elevatedSecondary,
+    "--color-background-elevated-secondary-opaque": semantic.elevatedSecondaryOpaque,
+    "--color-background-panel": mix(theme.surface, panelBase, panelOpacity),
+    "--color-background-surface": definition.surface,
+    "--color-background-surface-under": theme.surfaceUnder,
+    "--color-border": semantic.border,
+    "--color-border-focus": semantic.borderFocus,
+    "--color-border-heavy": semantic.borderHeavy,
+    "--color-border-light": semantic.borderLight,
+    "--color-decoration-added": definition.semanticColors.diffAdded,
+    "--color-decoration-deleted": definition.semanticColors.diffRemoved,
+    "--color-icon-accent": semantic.iconAccent,
+    "--color-icon-primary": semantic.iconPrimary,
+    "--color-icon-secondary": semantic.iconSecondary,
+    "--color-icon-tertiary": semantic.iconTertiary,
+    "--color-simple-scrim": semantic.simpleScrim,
+    "--color-text-accent": semantic.textAccent,
+    "--color-text-on-accent": rgbString(textOnAccent(theme.accent)),
+    "--color-text-button-primary": semantic.textButtonPrimary,
+    "--color-text-button-secondary": semantic.textButtonSecondary,
+    "--color-text-button-tertiary": semantic.textButtonTertiary,
+    "--color-text-foreground": semantic.textForeground,
+    "--color-text-foreground-secondary": semantic.textForegroundSecondary,
+    "--color-text-foreground-tertiary": semantic.textForegroundTertiary,
+    "--color-surface": definition.surface,
+    "--color-surface-secondary": semantic.elevatedSecondaryOpaque,
+    // Codex maps this token to the editor surface. The Electron shell mixes it
+    // with transparency for the native, immersive left-panel material.
+    "--color-surface-tertiary": rgbString(theme.editorBackground),
+    "--color-border-subtle": semantic.borderLight,
+    "--color-border-default": semantic.border,
+    "--color-border-strong": semantic.borderHeavy,
+    "--color-text": semantic.textForeground,
+    "--color-text-secondary": semantic.textForegroundSecondary,
+    "--color-text-tertiary": semantic.textForegroundTertiary,
+  };
+}

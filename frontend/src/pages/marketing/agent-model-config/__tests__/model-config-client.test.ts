@@ -288,6 +288,9 @@ def save_config(value):
     if os.environ.get("CORRUPT_REMOVED_FALLBACK") and save_count == 1:
         value = copy.deepcopy(value)
         value["fallback_providers"] = [json.loads(os.environ["CORRUPT_REMOVED_FALLBACK"])]
+    if os.environ.get("DROP_SAVED_FALLBACKS") and save_count == 1:
+        value = copy.deepcopy(value)
+        value["fallback_providers"] = []
     (ROOT / "config.json").write_text(json.dumps(value))
 def save_env_value(key, value):
     event("save_env_value")
@@ -352,11 +355,21 @@ def remove_provider_env_credential(key):
     return {"ok": True}
 `, { encoding: "utf8" });
   if (!legacyHermes) writeFileSync(join(packageDir, "fallback_config.py"), String.raw`
+import os
 def get_fallback_chain(config):
     values = config.get("fallback_providers") or []
     if isinstance(values, dict): values = [values]
     legacy = config.get("fallback_model")
     if legacy: values = values + ([legacy] if isinstance(legacy, dict) else legacy)
+    if os.environ.get("HERMES_CASE_INSENSITIVE_FALLBACKS"):
+        seen = set()
+        retained = []
+        for value in values:
+            identity = tuple(str(value.get(key) or "").strip().rstrip("/").lower() for key in ("provider", "model", "base_url"))
+            if identity not in seen:
+                seen.add(identity)
+                retained.append(value)
+        return retained
     return values
 `, { encoding: "utf8" });
   writeFileSync(join(packageDir, "models.py"), legacyHermes ? String.raw`
@@ -577,6 +590,17 @@ describe("Hermes model configuration client", () => {
     expect(command).toContain("base64");
     expect(command).not.toContain(apiKey);
     expect(catalogProvider.catalogModels).toEqual([{ id: model.id, name: "DeepSeek V3" }]);
+  });
+
+  it("scopes model configuration data to the selected Hermes profile", () => {
+    const mainCommand = buildHermesModelConfigCommand({ type: "read" }, "main");
+    const profileCommand = buildHermesModelConfigCommand({ type: "read" }, "profile-2");
+
+    expect(mainCommand).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(mainCommand).toContain('export HERMES_HOME="$HERMES_PROFILE_ROOT"');
+    expect(profileCommand).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'profile-2\'');
+    expect(profileCommand).toContain('HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"');
+    expect(profileCommand).toContain('export HERMES_HOME="$HERMES_PROFILE_ROOT"');
   });
 
   it("transports long credentials as one-time ciphertext and consumes the private envelope", () => {
@@ -1801,7 +1825,39 @@ describe("Hermes model configuration client", () => {
     expect(removed.config).not.toHaveProperty("fallback_providers");
   });
 
-  it("deduplicates legacy fallback routes by normalized route identity", () => {
+  it.each(["removeFallback", "remove", "primary"] as const)("preserves the other case-variant fallback during %s", (operation) => {
+    for (const targetId of [model.id, model.id.toUpperCase()]) {
+      const routes = [model.id, model.id.toUpperCase()].map((id) => ({
+        provider: configuredModel.providerKey, model: id, base_url: model.baseUrl,
+        api_key_env: configuredModel.keyEnv, metadata: { model: id },
+      }));
+      const config = {
+        providers: { [configuredModel.providerKey]: { name: model.providerName, base_url: model.baseUrl, model: model.id, key_env: configuredModel.keyEnv } },
+        fallback_providers: [routes[0]], fallback_model: routes[1],
+      };
+      const action: PlaintextTestAction = operation === "primary"
+        ? { type: "assign", purpose: "primary", providerKey: configuredModel.providerKey, modelId: targetId }
+        : { type: operation, providerKey: configuredModel.providerKey, modelId: targetId };
+      const result = runHelper(action, config, { HERMES_CASE_INSENSITIVE_FALLBACKS: "1" }, { [configuredModel.keyEnv]: apiKey });
+      expect(result.config.fallback_providers).toEqual(routes.filter((route) => route.model !== targetId));
+      expect(result.config).not.toHaveProperty("fallback_model");
+      expect(parseHermesModelConfigResponse(result.output).fallbacks.map((item) => item.id)).toEqual(routes.filter((route) => route.model !== targetId).map((route) => route.model));
+      expect(result.credentials).toEqual({ [configuredModel.keyEnv]: apiKey });
+    }
+  });
+
+  it.each(["removeFallback", "remove", "primary"] as const)("rolls back when read-back loses a non-target fallback (%s)", (operation) => {
+    const routes = [model.id, "another-model"].map((id) => ({ provider: configuredModel.providerKey, model: id, base_url: model.baseUrl }));
+    const original = { fallback_providers: routes };
+    const action: PlaintextTestAction = operation === "primary"
+      ? { type: "assign", purpose: "primary", providerKey: configuredModel.providerKey, modelId: model.id }
+      : { type: operation, providerKey: configuredModel.providerKey, modelId: model.id };
+    const result = runHelper(action, original, { DROP_SAVED_FALLBACKS: "1" });
+    expect(result.config).toEqual(original);
+    expect(result.output).toContain('"ok": false');
+  });
+
+  it("preserves case-variant legacy fallback routes and their credentials", () => {
     const retainedRoute = {
       provider: "legacy-provider",
       model: "legacy-model",
@@ -1822,6 +1878,7 @@ describe("Hermes model configuration client", () => {
 
     expect(added.config.fallback_providers).toEqual([
       retainedRoute,
+      duplicateLegacyRoute,
       expect.objectContaining({ provider: "lightvela-deepseek", model: model.id }),
     ]);
     expect(added.output).not.toContain("PRIMARY_LEGACY_KEY_ENV");

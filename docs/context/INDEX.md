@@ -11,9 +11,9 @@ source_of_truth:
   - docs/engineering/README.md
   - docs/engineering/catalog/services.yaml
 status: active
-reviewed_at: 2026-08-26
+reviewed_at: 2026-09-10
 review_due: 2026-11-24
-revision: 3.0.0
+revision: 3.1.0
 precedence: project
 derived: true
 ---
@@ -48,7 +48,7 @@ derived: true
 
 ## 服务 Context
 
-23 个主要服务都具有独立 service route，路径命中时加载对应派生 Pack，再按根入口规则读取最近的服务 `AGENTS.md`。正式服务知识在 `<service>/docs/README.md`，机器目录记录在 `<service>/catalog-info.yaml`。
+中央 Service Catalog 中的所有主要服务都具有独立 service route，路径命中时加载对应派生 Pack，再按根入口规则读取最近的服务 `AGENTS.md`。正式服务知识在 `<service>/docs/README.md`，机器目录记录在 `<service>/catalog-info.yaml`。
 
 | 服务 | Pack | 服务 | Pack |
 |---|---|---|---|
@@ -58,6 +58,7 @@ derived: true
 | `ctl` | [ctl](project/services/ctl.md) | `frontend` | [frontend](project/services/frontend.md) |
 | `gateway-dashboard` | [gateway-dashboard](project/services/gateway-dashboard.md) | `infra_pulumi` | [infra-pulumi](project/services/infra-pulumi.md) |
 | `new-api` | [new-api](project/services/new-api.md) | `nextgen-dashboard` | [nextgen-dashboard](project/services/nextgen-dashboard.md) |
+| `opencraft` | [opencraft](project/services/opencraft.md) | `credit` | [credit](project/services/credit.md) |
 | `payment` | [payment](project/services/payment.md) | `sandbox` | [sandbox](project/services/sandbox.md) |
 | `service-gateway` | [service-gateway](project/services/service-gateway.md) | `shadow` | [shadow](project/services/shadow.md) |
 | `subscription` | [subscription](project/services/subscription.md) | `ticket` | [ticket](project/services/ticket.md) |
@@ -73,7 +74,7 @@ derived: true
 | [playground-environment](runbooks/playground-environment.md) | 创建、诊断、修复、扩容或移除北京 playground |
 | [product-skill-sync](runbooks/product-skill-subtree-sync.md) | 在 mono2 编写 Product Skills 并同步下游 subtree |
 | [tapd-gongfeng-delivery](flows/tapd-gongfeng-delivery.md) | 解析 TAPD ID 并执行分支/MR 交付门禁 |
-| [upstream-subtrees](project/upstream-subtrees.md) | 保留 NewAPI、LLMGateway 和 VelaLink 的上游谱系与 pin |
+| [upstream-subtrees](project/upstream-subtrees.md) | 保留 NewAPI、LLMGateway、VelaLink 的持续上游与 OpenCraft 一次性迁移谱系 |
 | [context-governance](23-rules-matrix.md) | 变更路由、metadata、生命周期、审计或 23 条规则 contract |
 
 ## 治理资料

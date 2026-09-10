@@ -88,9 +88,10 @@ The candidate must include the verified sgprod image digest; do not substitute
 a Tokyo registry image or guess a digest. The configuration-only candidate is
 blocked until this prerequisite is satisfied.
 
-The native client is public (no client secret), with the sole exact callback
-`opencraft://auth/lightvela`. It reuses the existing OIDC authorization page and
-login channels. Only `POST /auth/native/token` is public at Service Gateway;
+The OpenCraft clients are public (no client secret), with exact registered
+native and Web callbacks. They reuse the existing OIDC authorization page and
+login channels. Only `POST /auth/session/exchange` and the temporary native
+compatibility alias are public at Service Gateway;
 the Auth handler still requires a valid one-time code and matching PKCE verifier.
 Do not allow a native path prefix or add the callback to generic web return-to hosts.
 

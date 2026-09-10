@@ -8,6 +8,7 @@ import (
 	"time"
 
 	pllmgateway "ctl/pkg/adapter/llmgateway"
+	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
@@ -30,7 +31,7 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing
 			CreatedAt:      time.Now().UTC(),
 		},
 	}
-	sandboxAdapter := &createTaskSandboxAdapterStub{}
+	sandboxAdapter := singleProfileResetSandbox()
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
 		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
 	}
@@ -74,8 +75,8 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing
 	if aiGatewayAdapter.createCalls != 1 {
 		t.Fatalf("expected one api key creation, got %d", aiGatewayAdapter.createCalls)
 	}
-	if len(sandboxAdapter.processCalls) != 0 {
-		t.Fatalf("expected no sandbox command execution, got %+v", sandboxAdapter.processCalls)
+	if len(sandboxAdapter.processCalls) != 1 {
+		t.Fatalf("expected one Profile inventory command, got %+v", sandboxAdapter.processCalls)
 	}
 }
 
@@ -96,6 +97,7 @@ func TestResetInstanceConfigDoesNotIssueLLMGatewayKeyWhenEntitlementPreparationF
 		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "must-not-be-created", APIKey: "must-not-be-created"},
 	}
 	logic := &logic{
+		sandboxAdapter:    singleProfileResetSandbox(),
 		instanceDao:       instanceDao,
 		llmGatewayAdapter: llmGateway,
 		logger:            zap.NewNop(),
@@ -148,6 +150,7 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
+		sandboxAdapter:               singleProfileResetSandbox(),
 		instanceDao:                  instanceDao,
 		llmGatewayAdapter:            aiGatewayAdapter,
 		logger:                       zap.NewNop(),
@@ -188,6 +191,7 @@ func TestResetInstanceConfigDoesNotCallLLMGatewayRevoke(t *testing.T) {
 		revokeErrByKeyID: map[string]error{"key-old": errors.New("revoke failed")},
 	}
 	logic := &logic{
+		sandboxAdapter:               singleProfileResetSandbox(),
 		instanceDao:                  instanceDao,
 		llmGatewayAdapter:            aiGatewayAdapter,
 		logger:                       zap.NewNop(),
@@ -224,6 +228,7 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
+		sandboxAdapter:    singleProfileResetSandbox(),
 		instanceDao:       instanceDao,
 		llmGatewayAdapter: aiGatewayAdapter,
 		logger:            zap.NewNop(),
@@ -235,5 +240,48 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 	}
 	if aiGatewayAdapter.createCalls != 0 {
 		t.Fatalf("expected no key creation, got %d", aiGatewayAdapter.createCalls)
+	}
+}
+
+func singleProfileResetSandbox() *commandSandboxAdapterStub {
+	return &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
+		{Stdout: `{"items":[{"native_id":"default","is_default":true}]}`},
+		{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+	}}
+}
+
+func TestResetInstanceConfigRejectsUnsafeProfileInventoryBeforeKeyChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name, output string
+		failed       bool
+	}{
+		{"siblings", `{"items":[{"native_id":"default","is_default":true},{"native_id":"sales"}]}`, false},
+		{"missing-root", `{"items":[{"native_id":"sales"}]}`, false},
+		{"empty", `{"items":[]}`, false},
+		{"invalid", "not-json", false},
+		{"unavailable", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			installCreateTaskAiGatewayConfig(t)
+			dao := &createTaskInstanceDaoStub{entity: &modelinstance.Entity{
+				Id: 1, InstanceId: "ins-reset", UserId: "user-reset", SandboxId: "sbx-reset",
+				Status: modelinstance.InstanceStatusRunning, AiGatewayKeyID: "old-key", CreatedAt: time.Now().UTC(),
+			}}
+			sandbox := &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
+				{Stdout: tc.output}, {Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			}}
+			if tc.failed {
+				sandbox.processErr = errors.New("profile inventory unavailable")
+			}
+			gateway := &createTaskLLMGatewayAdapterStub{}
+			l := &logic{instanceDao: dao, sandboxAdapter: sandbox, llmGatewayAdapter: gateway, logger: zap.NewNop(), legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady}
+			_, err := l.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset")
+			if err == nil {
+				t.Fatal("expected reset rejection")
+			}
+			if gateway.createCalls != 0 || len(gateway.revoked) != 0 || len(dao.updates) != 0 {
+				t.Fatal("unsafe inventory must not issue, revoke or persist keys")
+			}
+		})
 	}
 }

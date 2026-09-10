@@ -131,6 +131,7 @@ routes:
       - { method: GET, path: "/v1/credit/products" }
       - { method: POST, path: "/v1/credit/inquiry" }
       - { method: POST, path: "/v1/credit/packages/order" }
+      - { method: POST, path: "/v1/credit/packages/order-url" }
       - { method: POST, path: "/v1/credit/packages/order-and-pay" }
       - { method: GET, path: "/v1/credit/packages" }
       - { method: POST, path: "/v1/credit/packages/{package_id}/refund" }

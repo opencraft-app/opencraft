@@ -1,0 +1,18 @@
+{
+  "name": "@opencraft/chat-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/appserver-replica": "0.1.0",
+    "@opencraft/chat-core": "0.1.0",
+    "@opencraft/composer-core": "0.1.0"
+  }
+}

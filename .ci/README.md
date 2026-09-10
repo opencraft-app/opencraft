@@ -59,6 +59,9 @@
 
 独立验证入口：
 
+- `.ci/opencraft.yml`
+  - 只对 `opencraft/**` 和显式共享的 `frontend/` Agent Console 路径运行 npm 安装、drift check 和完整 gate。
+  - 该入口不构建或推送发布镜像，不更新 GitOps，不触发 frontend 发布。
 - `.ci/cloudladdergateway.yml`
   - 内网 TKEx 专用 release 入口，复用 `.ci/templates/service-release.yml` 构建国内站 `tkexgz` 和国际站 `tkexsg` 镜像。
   - 目标镜像仓库为 `csighub.tencentyun.com/skipzhang/cloudladdergateway`；构建机从 `/etc/lightclaw-ci/csighub_username` 和 `/etc/lightclaw-ci/csighub_password` 读取发布凭据。
@@ -554,6 +557,8 @@ Guard 自举策略：
   - 手动发布 `eo:cn-lightvela-prod-next`；强制从已归档 artifact 发布
 - `.ci/frontend-edgeone-lightvela-intl.yml`
   - 手动发布 `eo:global-lightvela-intl-prod-next`；强制从已归档 artifact 发布
+- `.ci/templates/frontend-edgeone-release.yml`
+  - OpenAPI 手动启动可能不会在 shell 中展开 `ci.branch` / `ci.sha`；此时分别从 `BK_CI_GIT_REPO_BRANCH` / `DEVOPS_GIT_REPO_BRANCH` 和 `BK_CI_GIT_HEAD_COMMITS` 解析真实来源，并继续由 runtime 严格限制只能从 `master` 发布
 - `frontend/release-matrix.json`
   - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`，默认也走 Next static artifact
 - `frontend/scripts/release-matrix.mjs`
@@ -690,7 +695,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 
 ### 4. Git push 走 SSH，MR 创建走 API
 
-当前这套 Stream 运行在自有构建池 `env` 的 Linux 机器上。  
+当前这套 Stream 统一运行在国内自有构建池 `cn-pool` 的 Linux 机器上。
 已验证更适合的方式是：
 
 - 使用构建机已有的 SSH 免密推送能力
@@ -711,7 +716,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 当前 service 级 YAML 全部统一为：
 
 - `jobs.release.runs-on.self-hosted: true`
-- `jobs.release.runs-on.pool-name: env`
+- `jobs.release.runs-on.pool-name: cn-pool`
 - `concurrency.group: mono2-service-release-<service>`
   - `cancel-in-progress: false`
   - `queue-length: 20`
@@ -862,7 +867,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 
 优先检查：
 
-- 蓝盾项目下 `env` pool 是否真的存在
+- 蓝盾项目下 `cn-pool` 是否真的存在
 - pool 里是否有在线 Linux 节点
 - 节点是否属于当前项目，而不是只在机器上装了 agent
 

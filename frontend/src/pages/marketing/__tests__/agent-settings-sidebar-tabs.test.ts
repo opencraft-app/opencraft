@@ -25,12 +25,75 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
-  it("keeps additional Bot creation hidden while preserving initial Agent creation", () => {
+  it("gates additional Bot creation on console reveal while preserving initial Agent creation", () => {
     const page = readPageSource();
-    expect(page).toContain("const showCreateBotEntry = false;");
-    expect(page).toContain("{showCreateBotEntry && canCreateBot && (");
-    expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
+    expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
+    expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
+    expect(page).toContain("{showCreateBotEntry && canCreateAdditionalBot && (");
+    expect(page).toContain("if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
+    expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
+    expect(page).not.toContain("const canCreateBot = multiBotEnabled");
+  });
+
+  it("opens a name-only dialog before creating the first Bot as blank", () => {
+    const page = readPageSource();
+    const initialCreation = page.slice(
+      page.indexOf("const handleCreateNew"),
+      page.indexOf("const handleConfirmCreate"),
+    );
+    const noActiveBotBranch = initialCreation.slice(
+      initialCreation.indexOf("if (!activeBot)"),
+      initialCreation.indexOf('setCreateBotMode("clone-current")'),
+    );
+
+    expect(noActiveBotBranch).toContain('setCreateBotMode("blank")');
+    expect(noActiveBotBranch).toContain("setShowCreateConfirm(true)");
+    expect(noActiveBotBranch).not.toContain("createInitialBot");
+
+    expect(page).toContain("const isFirstBotCreation = !activeBot");
+    expect(page).toContain("const requestedCreateMode = isFirstBotCreation ? \"blank\" : createBotMode");
+    expect(page).toContain("const requestedInitialSoul = isFirstBotCreation ? undefined : createBotSoul.trim() || undefined");
+    expect(page).toContain("{!isFirstBotCreation && (");
+    expect(page).toContain('createMode: requestedCreateMode === "blank" ? "blank" : "clone"');
+    expect(page).toContain('sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id');
+    expect(page).toContain("initialSoul: requestedInitialSoul");
+  });
+
+  it("refreshes the shared Bot list before leaving the creation page", () => {
+    const page = readPageSource();
+    const polling = page.slice(
+      page.indexOf("const pollCreationStatus"),
+      page.indexOf("const createBotAndNavigate"),
+    );
+    const activeBranch = polling.slice(
+      polling.indexOf('if (targetBot.status === "active")'),
+      polling.indexOf('if (targetBot.status === "failed")'),
+    );
+
+    expect(activeBranch.indexOf("await refreshBots()")).toBeGreaterThan(-1);
+    expect(activeBranch.indexOf("await refreshBots()")).toBeLessThan(activeBranch.indexOf("navigate("));
+  });
+
+  it("uses the LightVela Bot loading copy while keeping the ellipsis dynamic", () => {
+    const page = readPageSource();
+    const enUS = readGeneratedDictionary("en-US");
+
+    expect(enUS.k_bd2500df).toBe("Getting your LightVela Bot ready");
+    expect(page).toContain("{dots}");
+    expect(enUS.k_bd2500df).not.toContain("...");
+  });
+
+  it("keeps the English expiry badge on one line", () => {
+    const styles = readStylesSource();
+    const badgeRule = styles.slice(
+      styles.indexOf(".lv-agent-renewal-badge {"),
+      styles.indexOf(".lv-agent-renewal-badge.is-warning"),
+    );
+
+    expect(readGeneratedDictionary("en-US").k_1f5f486e).toBe("Expires soon");
+    expect(readGeneratedDictionary("en-US").k_1c97a7ce).toBe("Expires soon");
+    expect(badgeRule).toContain("white-space: nowrap;");
   });
 
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
@@ -61,7 +124,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(tabs).not.toContain('t("设置")');
   });
 
-  it("uses softer rounding for the create button and segmented tabs", () => {
+  it("uses pill rounding for the create button and segmented tabs", () => {
     const styles = readStylesSource();
     const createButtonStyles = styles.slice(
       styles.indexOf(".lv-agent-create-button {"),
@@ -72,9 +135,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
       styles.indexOf(".lv-agents-sidebar-tab:hover"),
     );
 
-    expect(createButtonStyles).toContain("border-radius: 16px;");
-    expect(sidebarTabsStyles).toContain("border-radius: 16px;");
-    expect(sidebarTabsStyles).toContain("border-radius: 13px;");
+    expect(createButtonStyles).toContain("border-radius: 999px;");
+    expect(sidebarTabsStyles.match(/border-radius: 999px;/g)).toHaveLength(2);
   });
 
   it("translates the explore and chat tabs in every supported locale", () => {
@@ -135,7 +197,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     expect(page).toContain("if (!isActiveBotDefault) return;");
     expect(page).toContain('disabled={!isActiveBotDefault}');
-    expect(page).toContain('t("AgentChat 目前仅支持主 Bot")');
+    expect(page).toContain('t("对话功能目前仅支持主 Bot")');
+    expect(page).not.toContain('title={isActiveBotDefault ? undefined');
+    expect(page).toContain('id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip"');
     expect(page).toContain('activeSection !== "chat" || !isActiveBotDefault');
     expect(page).toContain('activeSection === "chat" && isActiveBotDefault &&');
     expect(page).toContain('activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection');
@@ -178,15 +242,43 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("<PopoverTrigger asChild>");
     expect(page).toContain("<PopoverContent");
     expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
-    expect(page).toContain("bg-white/[0.46]");
-    expect(page).toContain("backdrop-blur-sm");
+    const menu = page.slice(page.indexOf("<PopoverContent"), page.indexOf("</PopoverContent>"));
+    expect(menu).toContain("border-black/10 bg-white p-1.5 shadow-xl");
+    expect(menu).not.toContain("backdrop-");
+    expect(menu).not.toContain("<img");
+    expect(menu).not.toContain("bg-white/");
+    expect(menu).not.toContain("shadow-sm");
+    expect(menu).toContain('isActive ? "text-black/90"');
+    expect(menu).toContain("{isActive && <Check");
     expect(page).not.toContain("visibleBots.length > 1 && isAgentMenuOpen &&");
+    expect(page).toContain("{visibleBots.map((bot) => {");
+    expect(page).not.toContain("botSearch");
+    expect(page).not.toContain('t("搜索 Bot")');
+  });
+
+  it("keeps the current Bot header background unchanged on hover", () => {
+    const page = readPageSource();
+    const trigger = page.slice(page.indexOf("<PopoverTrigger asChild>"), page.indexOf("</PopoverTrigger>"));
+    expect(trigger).toContain('"lv-agent-profile"');
+    expect(trigger).not.toContain("hover:bg-");
+    expect(trigger).toContain("onKeyDown");
+  });
+
+  it("keeps header actions compact without shrinking their hit areas", () => {
+    const styles = readStylesSource();
+    const actions = styles.slice(styles.indexOf(".lv-agent-actions {"), styles.indexOf(".lv-agent-action-item {"));
+    const button = styles.slice(styles.indexOf(".lv-agent-action-button {"), styles.indexOf(".lv-agent-action-button:hover"));
+    expect(actions).toContain("gap: 4px;");
+    expect(button).toContain("width: 24px;");
+    expect(button).toContain("height: 24px;");
+    expect(readPageSource()).toContain('"-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
   });
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
 
-    expect(page).toContain("if (activeBot || isSubscribed)");
+    expect(page).toContain("if (!activeBot)");
+    expect(page).toContain("setShowCreateConfirm(true)");
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');
@@ -201,6 +293,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
     expect(page).toContain("const MAX_BOT_NAME_LENGTH = 60");
+    expect(page.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
+    expect(page).not.toContain('setCreateBotName(t("新 Bot"))');
+    expect(page).toContain('placeholder={t("请输入 Bot 名称")}');
     expect(page).toContain("maxLength={MAX_BOT_NAME_LENGTH}");
     expect(page).toContain("{Array.from(createBotName).length}/{MAX_BOT_NAME_LENGTH}");
     expect(page).toContain('className="block space-y-2 text-sm font-medium text-black/70"');
@@ -274,7 +369,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     expect(page).toContain('const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启")');
     expect(page).toContain("activeBot.isDefault && remainingInstanceBotCount > 0");
-    expect(page).toContain('t("请先删除其他 Bot，再删除整个 Agent")');
+    expect(page).toContain('t("请先删除其他 Bot，再删除主 Bot")');
     expect(page).toContain('activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")');
     expect(page).toContain('className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")}');
     expect(page).toContain('className="h-3.5 w-3.5"');

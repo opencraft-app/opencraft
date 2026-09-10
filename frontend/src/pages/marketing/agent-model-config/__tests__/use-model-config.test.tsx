@@ -143,6 +143,28 @@ describe("useModelConfig", () => {
     expect(execDebugCommandB).not.toHaveBeenCalled();
   });
 
+  it("reloads model configuration when the selected profile changes", async () => {
+    const commands: string[] = [];
+    const execDebugCommand = vi.fn(async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "Succeeded", exitCode: 0, output: output(initialSnapshot) };
+    });
+
+    function Harness({ profileId }: { profileId: string }) {
+      useModelConfig({ botId: "instance-1", profileId, execDebugCommand });
+      return <span>ready</span>;
+    }
+
+    const { rerender } = render(<Harness profileId="main" />);
+    await waitFor(() => expect(execDebugCommand).toHaveBeenCalledTimes(1));
+
+    rerender(<Harness profileId="profile-2" />);
+    await waitFor(() => expect(execDebugCommand).toHaveBeenCalledTimes(2));
+
+    expect(commands[0]).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(commands[1]).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'profile-2\'');
+  });
+
   it("synchronously rejects overlapping mutations before React can render the busy state", async () => {
     let resolveMutation: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
     const pendingMutation = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {

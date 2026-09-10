@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/timeline-react",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/react-runtime": "0.1.0",
+    "@opencraft/timeline-virtualizer": "0.1.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2"
+  }
+}

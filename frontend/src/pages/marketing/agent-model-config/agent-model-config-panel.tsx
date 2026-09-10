@@ -142,16 +142,21 @@ function modelMatchesProductProvider(model: HermesConfiguredModel, provider: Mod
     && model.apiMode.trim().toLowerCase() === provider.apiMode.trim().toLowerCase();
 }
 
+function isUserCustomProviderGroup(group: ConfiguredProviderGroup) {
+  // 仅自定义创建流程拥有该命名空间；可编辑的显示名称不能用于判定来源。
+  return group.models.length > 0 && group.models.every((model) => (
+    model.providerKey.trim().toLowerCase().startsWith(USER_CUSTOM_PROVIDER_PREFIX)
+  ));
+}
+
 function isBuiltInProviderGroup(group: ConfiguredProviderGroup) {
-  return group.providerName.trim().toLowerCase() === "custom"
+  return !isUserCustomProviderGroup(group)
+    && group.providerName.trim().toLowerCase() === "custom"
     && group.models.some((model) => displayConfiguredModelId(model.id) === "Auto");
 }
 
 function canAppendToProviderGroup(group: ConfiguredProviderGroup) {
-  // 仅自定义创建流程拥有该命名空间；可编辑的显示名称不能用于判定来源。
-  return !isBuiltInProviderGroup(group) && group.models.every((model) => (
-    model.providerKey.trim().toLowerCase().startsWith(USER_CUSTOM_PROVIDER_PREFIX)
-  ));
+  return isUserCustomProviderGroup(group);
 }
 
 function groupConfiguredModelsByProvider(
@@ -238,11 +243,13 @@ function ModelConfigLoading() {
 
 export function AgentModelConfigPanel({
   botId,
+  profileId,
   execDebugCommand,
   providers,
   isGlobalRegion = false,
 }: {
   botId: string;
+  profileId?: string;
   execDebugCommand: HermesModelConfigExecDebugCommand;
   providers: ModelProviderOption[];
   isGlobalRegion?: boolean;
@@ -250,7 +257,7 @@ export function AgentModelConfigPanel({
   const t = useT();
   const { i18n } = useTranslation();
   const autoModelDisplayName = t("自动");
-  const controller = useModelConfig({ botId, execDebugCommand });
+  const controller = useModelConfig({ botId, profileId, execDebugCommand });
   const addSectionRef = useRef<HTMLElement>(null);
   const configuredHeadingRef = useRef<HTMLHeadingElement>(null);
   const providerTriggerRef = useRef<HTMLButtonElement>(null);
@@ -620,7 +627,7 @@ export function AgentModelConfigPanel({
               const fallbackModels = group.models.filter((model) => (
                 snapshot.fallbacks.some((candidate) => sameModel(candidate, model))
               ));
-              const legacyCustomProvider = group.providerName.trim().toLowerCase() === "custom";
+              const legacyCustomProvider = !isUserCustomProviderGroup(group) && group.providerName.trim().toLowerCase() === "custom";
               const providerDisplayName = legacyCustomProvider
                 ? (isBuiltInProviderGroup(group) ? t("内置模型") : t("自定义模型"))
                 : group.providerName;

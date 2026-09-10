@@ -360,6 +360,17 @@ describe("AgentModelConfigPanel", () => {
     }
   });
 
+  it.each(["Auto", "default", "ordinary-model"])("identifies a user-created provider named custom by namespace (%s)", async (id) => {
+    const custom = { ...idleModel, providerName: "custom", id };
+    renderPanel(createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, custom] }, [id, "new-model"]));
+    const trigger = await screen.findByRole("button", { name: "custom" });
+    const row = trigger.closest("li")!;
+    expect(screen.queryByRole("button", { name: /内置模型/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Alpha API/ }).compareDocumentPosition(trigger)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    expect(within(row).getByRole("group", { name: "添加模型" })).toBeInTheDocument();
+  });
+
   it("retries failed group discovery without re-entering credentials and clears its toast on cancel", async () => {
     const dismiss = vi.fn();
     toastMocks.error.mockReturnValueOnce(dismiss);

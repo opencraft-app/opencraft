@@ -70,6 +70,37 @@ function readHermesConfig(source: string, home: string): Record<string, unknown>
 }
 
 describe.skipIf(!hermesSource)("Hermes model configuration real-source smoke", () => {
+  it.each(["removeFallback", "remove", "primary"] as const)("preserves case-variant raw fallback entries with real Hermes deduplication (%s)", (operation) => {
+    for (const targetId of ["Model-A", "model-a"]) {
+      const home = mkdtempSync(join(tmpdir(), "lightvela-hermes-raw-fallback-"));
+      try {
+        const providerKey = "lightvela-fallback-smoke";
+        const routes = ["Model-A", "model-a"].map((id) => ({
+          provider: providerKey, model: id, base_url: "https://fallback-smoke.invalid/v1",
+          key_env: "FALLBACK_SMOKE_KEY", metadata: { id },
+        }));
+        writeFileSync(join(home, "config.yaml"), JSON.stringify({
+          providers: { [providerKey]: { name: "Fallback Smoke", base_url: routes[0]!.base_url, model: "Model-A", key_env: "FALLBACK_SMOKE_KEY" } },
+          fallback_providers: [routes[0]], fallback_model: routes[1],
+        }));
+        const env = "FALLBACK_SMOKE_KEY=smoke-fallback-secret\n";
+        writeFileSync(join(home, ".env"), env);
+        const before = runAction(hermesSource!, home, { type: "read" });
+        expect(before.fallbacks.map((item) => item.id)).toEqual(["Model-A"]);
+        expect(before.configuredModels.map((item) => item.id)).toEqual(expect.arrayContaining(["Model-A", "model-a"]));
+        runAction(hermesSource!, home, operation === "primary"
+          ? { type: "assign", purpose: "primary", providerKey, modelId: targetId }
+          : { type: operation, providerKey, modelId: targetId });
+        const saved = readHermesConfig(hermesSource!, home);
+        expect(saved.fallback_providers).toEqual(routes.filter((entry) => entry.model !== targetId));
+        expect(saved).not.toHaveProperty("fallback_model");
+        expect(readFileSync(join(home, ".env"), "utf8")).toBe(env);
+      } finally {
+        rmSync(home, { force: true, recursive: true });
+      }
+    }
+  }, 30_000);
+
   it.each(["chat_completions", "anthropic_messages", "codex_responses"])(
     "does not forward saved credentials across redirects using real Hermes transport (%s)", async (apiMode) => {
       const home = mkdtempSync(join(tmpdir(), "lightvela-hermes-redirect-"));

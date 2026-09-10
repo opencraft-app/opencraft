@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PhoneLoginForm } from "@/components/auth/phone-login-form";
-import { LoginModal } from "@/components/site/login-modal";
-import { ProductPageShell } from "@/components/site/product-chrome";
 import { WeChatMobileBrowserGuide } from "@/components/site/wechat-mobile-browser-guide";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
@@ -56,35 +54,6 @@ const PROVIDER_VISUALS: Record<OAuthProvider, ProviderVisual> = {
   },
 };
 
-const OPENCRAFT_RETURN_TO_ORIGINS = new Set([
-  "https://chat.lightvela.com",
-  "https://chat.lightvela.ai",
-  "https://localhost.lightvela.com",
-  "https://localhost.lightvela.ai",
-]);
-
-/**
- * The public sign-in page may present the shared provider picker on behalf of
- * OpenCraft. It only relays an exact first-party Workbench origin; UserAuth
- * remains the final return_to authority and rejects anything outside its own
- * allowlist as well.
- */
-export function readOpenCraftReturnTo(search: string): string | undefined {
-  const raw = new URLSearchParams(search).get("return_to")?.trim();
-  if (!raw || raw.length > 4096) return undefined;
-  try {
-    const target = new URL(raw);
-    if (
-      !OPENCRAFT_RETURN_TO_ORIGINS.has(target.origin)
-      || target.username
-      || target.password
-    ) return undefined;
-    return target.toString();
-  } catch {
-    return undefined;
-  }
-}
-
 export const SignInPage = () => {
   const location = useAppLocation();
   const navigate = useAppNavigate();
@@ -95,7 +64,6 @@ export const SignInPage = () => {
   const showPhoneLogin = usePhoneLoginVisibility();
   const oauthError = new URLSearchParams(location.search).get("oauth_error");
   const errorMessage = oauthErrorMessage(oauthError);
-  const openCraftReturnTo = readOpenCraftReturnTo(location.search);
 
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
@@ -105,19 +73,6 @@ export const SignInPage = () => {
 
   useEffect(() => installShowGitHubLoginHelper(), []);
   useEffect(() => installShowPhoneLoginHelper(), []);
-
-  if (openCraftReturnTo) {
-    return (
-      <ProductPageShell>
-        <main className="min-h-[calc(100dvh-4rem)]" aria-hidden="true" />
-        <LoginModal
-          open
-          oauthHandoff={{ returnTo: openCraftReturnTo }}
-          onClose={() => window.location.assign(openCraftReturnTo)}
-        />
-      </ProductPageShell>
-    );
-  }
 
   const getOAuthStartUrlForProvider = (provider: OAuthProvider) => {
     if (provider !== "wechat") {

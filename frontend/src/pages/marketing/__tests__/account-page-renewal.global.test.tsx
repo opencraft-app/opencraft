@@ -24,6 +24,11 @@ const createRenewOrder = vi.fn();
 let currentUser: User;
 let activePass: Pass | null = null;
 let paidBillingEnabled = true;
+let language = "en-US";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ i18n: { language } }),
+}));
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -183,6 +188,7 @@ describe("AccountPage global renewal action", () => {
     };
     activePass = buildActivePass();
     paidBillingEnabled = true;
+    language = "en-US";
     listMyPasses.mockResolvedValue([]);
     listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [] });
     getModifyCheckout.mockResolvedValue({ checkout: null });
@@ -192,6 +198,29 @@ describe("AccountPage global renewal action", () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each([
+    ["zh-CN", "/zh-sg/subscribe"],
+    ["zh-SG", "/zh-sg/subscribe"],
+    ["zh-Hant", "/zh-hant/subscribe"],
+    ["en-US", "/subscribe"],
+    ["es", "/es/subscribe"],
+    ["id-ID", "/id-id/subscribe"],
+  ])("preserves %s when creating a subscription", async (locale, href) => {
+    language = locale;
+    activePass = null;
+    renderAccountPage();
+    expect(await screen.findByRole("link", { name: "立即创建" })).toHaveAttribute("href", href);
+  });
+
+  it("preserves simplified Chinese and the pass ID when upgrading", async () => {
+    language = "zh-CN";
+    activePass = { ...buildActivePass(), pass_id: "pass/a&b" };
+    listMyPasses.mockResolvedValue([activePass]);
+    listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target" }, modify_price: { real_total_cost: 100 } }] });
+    renderAccountPage();
+    expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", "/zh-sg/subscribe/?upgrade_pass_id=pass%2Fa%26b");
   });
 
   it("greys out the global renew action and explains that it is coming soon", async () => {

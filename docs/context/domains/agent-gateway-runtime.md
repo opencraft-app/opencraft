@@ -7,14 +7,15 @@ owner: mingyuxiao
 authority: derived
 source_of_truth:
   - docs/engineering/domains/agent-gateway-runtime.md
+  - opencraft/docs/README.md
   - cloudagent/AGENTS.md
   - ai-gateway/AGENTS.md
   - service-gateway/README.md
   - service-gateway/internal/gateway
 status: active
-reviewed_at: 2026-08-25
+reviewed_at: 2026-09-10
 review_due: 2026-11-23
-revision: 2.0.0
+revision: 2.1.0
 precedence: domain
 derived: true
 ---
@@ -31,6 +32,7 @@ derived: true
 
 - `service-gateway` 是公共入口和路由策略层；直连上游不能作为公共路径的等价证据。
 - `cloudagent` 负责 agent 运行时行为；`ai-gateway` 与 `velagw` 负责模型/provider 控制面和数据面行为。
+- `opencraft` 负责 Codex-compatible Chat/Workbench 与 Hermes Desktop-compatible 事件投影；mono2 是唯一真源，旧仓库不是持续上游。
 - 开始工作前先明确上游归属。不得通过修补网关路由补偿上游 contract bug，也不得修补上游却宣称修复了公共入口。
 - 流式和渠道行为必须经实际路由与传输层测试，不能只靠隔离 handler 测试。
 - 身份 header 或上游 URL 变更同时影响 auth、归属与可观测性；编辑前检查相应测试。
@@ -42,6 +44,7 @@ derived: true
 - `cloudagent/`
 - `ai-gateway/`
 - `velagw/`
+- `opencraft/`
 
 ## 验证
 

@@ -1,3 +1,8 @@
+import {
+  DEFAULT_HERMES_AGENT_ID,
+  getHermesProfileRootCommand,
+} from "@/lib/hermes-agent-command";
+
 export const HERMES_MODEL_CONFIG_JSON_START = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_START__";
 export const HERMES_MODEL_CONFIG_JSON_END = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_END__";
 
@@ -280,16 +285,7 @@ def remove_env_credential_only(key):
 def get_fallback_chain(config):
     helper = getattr(fallback_config, "get_fallback_chain", None) if fallback_config else None
     if callable(helper): return helper(config)
-    values = []
-    for key in ("fallback_providers", "fallback_model"):
-        candidate = config.get(key)
-        entries = candidate if isinstance(candidate, list) else [candidate]
-        for entry in entries:
-            if isinstance(entry, dict): values.append(dict(entry))
-            elif isinstance(entry, str) and entry.strip():
-                primary = config.get("model") if isinstance(config.get("model"), dict) else {}
-                values.append({"provider": primary.get("provider"), "model": entry.strip()})
-    return values
+    return [entry for entry in raw_fallback_routes(config) if isinstance(entry, dict)]
 
 def probe_api_models(api_key, base_url, timeout, mode):
     helper = getattr(hermes_models, "probe_api_models", None)
@@ -764,6 +760,14 @@ def read_snapshot(config):
     for candidate in configured_models(config): append_projected(projected, candidate, provider_keys)
     append_projected(projected, primary, provider_keys)
     for candidate in fallbacks: append_projected(projected, candidate, provider_keys)
+    # 有效备用链可能已被运行时去重，仍保留原始配置中的其他模型供精确管理。
+    for route in raw_fallback_routes(config):
+        if not isinstance(route, dict): continue
+        try: candidate = model_from_route(config, route)
+        except (TypeError, ValueError): continue
+        # 只补充遗漏模型，不用备用别名的显式端点覆盖既有的继承端点身份。
+        if candidate and not any(same_configured_deployment(candidate, current, provider_keys) for current in projected):
+            projected.append(dict(candidate))
     return {"primary": primary, "fallbacks": fallbacks, "configuredModels": projected}
 
 def find_configured(config, provider_key, model_id, base_url=None, route_base_url=None):
@@ -819,7 +823,9 @@ def save_and_reload(config):
 
 def save_validate_or_rollback(original_config, config, validator):
     try:
-        return validator(save_and_reload(config))
+        saved = save_and_reload(config)
+        expect_fallback_config_saved(saved, config)
+        return validator(saved)
     except Exception:
         try:
             save_config(original_config)
@@ -1090,19 +1096,23 @@ def fallback_entry(model):
     return entry
 
 def raw_fallback_routes(config):
+    # 写操作必须读取原始条目，不能用 Hermes 已按小写去重的有效链覆盖配置。
     entries = []
-    seen = set()
-    for value in get_fallback_chain(config) or []:
-        if not isinstance(value, dict): continue
-        identity = (
-            str(value.get("provider") or "").strip().lower(),
-            str(value.get("model") or "").strip().lower(),
-            normalized_route_base_url(value.get("base_url")),
-        )
-        if not identity[0] or not identity[1] or identity in seen: continue
-        seen.add(identity)
-        entries.append(copy.deepcopy(value))
+    for key in ("fallback_providers", "fallback_model"):
+        value = config.get(key)
+        if value is None: continue
+        for entry in value if isinstance(value, list) else [value]:
+            if isinstance(entry, str) and entry.strip():
+                primary = config.get("model") if isinstance(config.get("model"), dict) else {}
+                entries.append({"provider": primary.get("provider"), "model": entry.strip()})
+            else:
+                entries.append(copy.deepcopy(entry))
     return entries
+
+def expect_fallback_config_saved(saved, expected):
+    # Hermes 会为缺省备用链补空列表；比较完整条目，兼容空值的序列化差异。
+    if raw_fallback_routes(saved) != raw_fallback_routes(expected):
+        raise ValueError("fallback configuration differs after save")
 
 def write_fallback_routes(config, entries):
     if entries: config["fallback_providers"] = entries
@@ -1114,7 +1124,7 @@ def apply_fallback(config, model):
     matched = False
     provider_keys = configured_provider_keys(config)
     for entry in raw_fallback_routes(config):
-        try: candidate = model_from_route(config, entry)
+        try: candidate = model_from_route(config, entry) if isinstance(entry, dict) else None
         except (TypeError, ValueError): candidate = None
         if same_configured_deployment(candidate, model, provider_keys):
             if not matched: entries.append(entry)
@@ -1127,7 +1137,7 @@ def remove_fallback(config, model, *, all_runtime_aliases=False):
     retained = []
     provider_keys = configured_provider_keys(config)
     for entry in raw_fallback_routes(config):
-        try: candidate = model_from_route(config, entry)
+        try: candidate = model_from_route(config, entry) if isinstance(entry, dict) else None
         except (TypeError, ValueError): candidate = None
         matches = same_runtime_deployment(candidate, model) if all_runtime_aliases else same_configured_deployment(candidate, model, provider_keys)
         if not matches: retained.append(entry)
@@ -1200,6 +1210,7 @@ def execute_unlocked(action):
             save_config(config)
             saved = load_config() or {}
             if not isinstance(saved, dict): raise ValueError("saved config is invalid")
+            expect_fallback_config_saved(saved, config)
             return {"snapshot": expect_role(saved, purpose, model)}
         except Exception:
             try: save_config(original_config)
@@ -1268,6 +1279,7 @@ def execute_unlocked(action):
         previous_credential = current_credential(remove_key) if remove_key else None
         try:
             saved = save_and_reload(config)
+            expect_fallback_config_saved(saved, config)
             if any(same_route(item, model) for item in read_snapshot(saved)["configuredModels"]): raise ValueError("model was not removed")
             if remove_key and not credential_key_referenced(saved, remove_key):
                 remove_provider_env_credential(remove_key)
@@ -1309,12 +1321,17 @@ except Exception:
     fail()
 `;
 
-export function buildHermesModelConfigCommand(action: HermesModelConfigAction): string {
+export function buildHermesModelConfigCommand(
+  action: HermesModelConfigAction,
+  profileId: string = DEFAULT_HERMES_AGENT_ID,
+): string {
   const payload = encodeBase64(JSON.stringify(action));
   return [
     "set -e",
     'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"',
     "export HERMES_ROOT",
+    getHermesProfileRootCommand(profileId),
+    'export HERMES_HOME="$HERMES_PROFILE_ROOT"',
     'HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"',
     'if [ ! -x "$HERMES_PYTHON" ]; then HERMES_PYTHON="python3"; fi',
     `"$HERMES_PYTHON" - "${payload}" <<'PY'`,

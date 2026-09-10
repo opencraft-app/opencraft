@@ -36,4 +36,4 @@ related_packs: ["release-gitops"]
 
 ## 验证
 
-先运行 `python3 .ci/runtime/check_ci_runtime.py`，再运行受影响脚本的安全测试或 dry-run；真实发布状态另行验证。
+先运行 `bash .ci/runtime/check_ci_runtime.sh`，再运行受影响脚本的安全测试或 dry-run；真实发布状态另行验证。

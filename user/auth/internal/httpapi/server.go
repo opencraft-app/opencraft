@@ -84,6 +84,9 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	handler.federation = config.Federation
 	handler.oidc = config.OIDC
+	router.POST("/auth/session/exchange", handler.ExchangeFirstPartySession)
+	// Compatibility alias for already released native clients. New first-party
+	// clients use the neutral session adapter above.
 	router.POST("/auth/native/token", handler.ExchangeNativeLogin)
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
