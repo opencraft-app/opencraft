@@ -60,6 +60,42 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("initialSoul: requestedInitialSoul");
   });
 
+  it("refreshes the shared Bot list before leaving the creation page", () => {
+    const page = readPageSource();
+    const polling = page.slice(
+      page.indexOf("const pollCreationStatus"),
+      page.indexOf("const createBotAndNavigate"),
+    );
+    const activeBranch = polling.slice(
+      polling.indexOf('if (targetBot.status === "active")'),
+      polling.indexOf('if (targetBot.status === "failed")'),
+    );
+
+    expect(activeBranch.indexOf("await refreshBots()")).toBeGreaterThan(-1);
+    expect(activeBranch.indexOf("await refreshBots()")).toBeLessThan(activeBranch.indexOf("navigate("));
+  });
+
+  it("uses the LightVela Bot loading copy while keeping the ellipsis dynamic", () => {
+    const page = readPageSource();
+    const enUS = readGeneratedDictionary("en-US");
+
+    expect(enUS.k_bd2500df).toBe("Getting your LightVela Bot ready");
+    expect(page).toContain("{dots}");
+    expect(enUS.k_bd2500df).not.toContain("...");
+  });
+
+  it("keeps the English expiry badge on one line", () => {
+    const styles = readStylesSource();
+    const badgeRule = styles.slice(
+      styles.indexOf(".lv-agent-renewal-badge {"),
+      styles.indexOf(".lv-agent-renewal-badge.is-warning"),
+    );
+
+    expect(readGeneratedDictionary("en-US").k_1f5f486e).toBe("Expires soon");
+    expect(readGeneratedDictionary("en-US").k_1c97a7ce).toBe("Expires soon");
+    expect(badgeRule).toContain("white-space: nowrap;");
+  });
+
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
     expect(readPageSource()).not.toContain("SHOW_AGENTCHAT_ENTRY");
   });
@@ -257,6 +293,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
     expect(page).toContain("const MAX_BOT_NAME_LENGTH = 60");
+    expect(page.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
+    expect(page).not.toContain('setCreateBotName(t("新 Bot"))');
+    expect(page).toContain('placeholder={t("请输入 Bot 名称")}');
     expect(page).toContain("maxLength={MAX_BOT_NAME_LENGTH}");
     expect(page).toContain("{Array.from(createBotName).length}/{MAX_BOT_NAME_LENGTH}");
     expect(page).toContain('className="block space-y-2 text-sm font-medium text-black/70"');

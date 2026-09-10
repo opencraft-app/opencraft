@@ -3820,37 +3820,37 @@ export const AgentSettingsPage = ({
         if (cancelled) return;
 
         if (targetBot.status === "active") {
+          await refreshBots();
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
           navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBotId), { replace: true });
-          await refreshBots();
           return;
         }
 
         if (targetBot.status === "failed") {
+          await refreshBots();
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
           navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBotId), { replace: true });
-          await refreshBots();
           return;
         }
 
         if (targetBot.status === "deleting") {
+          await refreshBots();
           setIsCreating(false);
           setCreationError(null);
           navigate(AGENTS_HOME_PATH, { replace: true });
-          await refreshBots();
           return;
         }
 
         if (targetBot.status !== "provisioning") {
+          await refreshBots();
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
           navigate(getAgentBotSectionHref(AGENTS_HOME_PATH, targetBotId), { replace: true });
-          await refreshBots();
           return;
         }
       } catch (err) {
@@ -3944,7 +3944,7 @@ export const AgentSettingsPage = ({
     if (!activeBot) {
       if (isSubscribed) {
         setDirectCreateError(null);
-        setCreateBotName(t("新 Bot"));
+        setCreateBotName("");
         setCreateBotSoul("");
         setCreateBotMode("blank");
         setIsCreateAdvancedOpen(false);
@@ -3956,7 +3956,7 @@ export const AgentSettingsPage = ({
     }
 
     setDirectCreateError(null);
-    setCreateBotName(t("新 Bot"));
+    setCreateBotName("");
     setCreateBotSoul("");
     setCreateBotMode("clone-current");
     setIsCreateAdvancedOpen(false);
@@ -4742,6 +4742,7 @@ export const AgentSettingsPage = ({
                 <input
                   value={createBotName}
                   onChange={(event) => setCreateBotName(event.target.value)}
+                  placeholder={t("请输入 Bot 名称")}
                   maxLength={MAX_BOT_NAME_LENGTH}
                   disabled={directCreating}
                   className="h-10 w-full rounded-md border border-black/10 px-3 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
