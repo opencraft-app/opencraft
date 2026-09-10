@@ -15,7 +15,7 @@ stages:
         name: 对比 origin/gitops 与 live Argo
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           WEWORK_DRIFT_AUDIT_WEBHOOK: ${{ settings.WEWORK_DRIFT_AUDIT_WEBHOOK }}
           WEWORK_DRIFT_AUDIT_WEBHOOK_FALLBACK: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a7c3f30c-7dcc-42e7-9f92-440b26216119"

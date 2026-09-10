@@ -38,7 +38,7 @@ stages:
         name: 等待人工确认 ${{ parameters.DISPLAY_NAME }}
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: frontend EdgeOne 发布已确认
             shell: bash
@@ -51,7 +51,7 @@ stages:
         name: 发布 ${{ parameters.DISPLAY_NAME }}
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           EDGEONE_API_TOKEN_REQUIRED: "1"
           EDGEONE_LIGHTVELA_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}

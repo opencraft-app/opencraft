@@ -692,7 +692,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 
 ### 4. Git push 走 SSH，MR 创建走 API
 
-当前这套 Stream 运行在自有构建池 `env` 的 Linux 机器上。  
+当前这套 Stream 统一运行在国内自有构建池 `cn-pool` 的 Linux 机器上。
 已验证更适合的方式是：
 
 - 使用构建机已有的 SSH 免密推送能力
@@ -713,7 +713,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 当前 service 级 YAML 全部统一为：
 
 - `jobs.release.runs-on.self-hosted: true`
-- `jobs.release.runs-on.pool-name: env`
+- `jobs.release.runs-on.pool-name: cn-pool`
 - `concurrency.group: mono2-service-release-<service>`
   - `cancel-in-progress: false`
   - `queue-length: 20`
@@ -864,7 +864,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 
 优先检查：
 
-- 蓝盾项目下 `env` pool 是否真的存在
+- 蓝盾项目下 `cn-pool` 是否真的存在
 - pool 里是否有在线 Linux 节点
 - 节点是否属于当前项目，而不是只在机器上装了 agent
 

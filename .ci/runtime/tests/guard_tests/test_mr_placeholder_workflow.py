@@ -5,6 +5,32 @@ REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (paren
 
 
 class MRPlaceholderWorkflowTests(unittest.TestCase):
+    def test_every_ci_job_uses_the_domestic_runner_pool(self) -> None:
+        parameterized_pool = "${{ parameters.RUNNER_POOL_NAME }}"
+        for workflow_path in sorted((REPO_ROOT / ".ci").glob("**/*.yml")):
+            with self.subTest(workflow=workflow_path.relative_to(REPO_ROOT)):
+                for line_number, line in enumerate(workflow_path.read_text().splitlines(), start=1):
+                    stripped = line.strip()
+                    if not stripped.startswith("pool-name:"):
+                        continue
+                    pool_name = stripped.partition(":")[2].strip()
+                    if pool_name == parameterized_pool:
+                        self.assertEqual(
+                            workflow_path,
+                            REPO_ROOT / ".ci/templates/service-release.yml",
+                            f"parameterized runner pool at {workflow_path}:{line_number}",
+                        )
+                        continue
+                    self.assertEqual(
+                        pool_name,
+                        "cn-pool",
+                        f"non-domestic runner pool at {workflow_path}:{line_number}",
+                    )
+
+        service_release = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+        runner_parameter = service_release.split("  - name: RUNNER_POOL_NAME\n", 1)[1].split("  - name:", 1)[0]
+        self.assertIn("    default: cn-pool", runner_parameter)
+
     def test_runs_on_the_domestic_runner_pool(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
 
