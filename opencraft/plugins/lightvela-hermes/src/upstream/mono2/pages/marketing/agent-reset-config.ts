@@ -14,6 +14,7 @@
 
 export interface ResettableBot {
   id: string;
+  isDefault?: boolean;
   status: "running" | "paused" | "draft" | "provisioning" | "failed" | "deleting";
 }
 
@@ -31,6 +32,7 @@ export const RESET_BLOCK_REASON = {
   NO_ACTIVE_BOT: "no_active_bot",
   ALREADY_RESETTING: "already_resetting",
   NOT_RUNNING: "not_running",
+  MULTI_BOT: "multi_bot",
 } as const;
 
 export type ResetBlockReason = (typeof RESET_BLOCK_REASON)[keyof typeof RESET_BLOCK_REASON];
@@ -41,9 +43,11 @@ export const ACLI_RESET_COMMAND =
 export function getResetBlockReason(
   activeBot: ResettableBot | undefined,
   resetting: boolean,
+  remainingBotCount = 0,
 ): ResetBlockReason | null {
   if (!activeBot) return "no_active_bot";
   if (resetting) return "already_resetting";
+  if (remainingBotCount > 0 || activeBot.isDefault === false) return "multi_bot";
   if (activeBot.status !== "running") return "not_running";
   return null;
 }

@@ -225,9 +225,17 @@ const timeoutFor = (action: HermesModelConfigAction): number => (
   action.type === "probe" || action.type === "connectivityProbe" || action.type === "add" ? 120_000 : 60_000
 );
 
-export function createHermesModelConfigClient(execDebugCommand: HermesModelConfigExecDebugCommand, botId: string) {
+export function createHermesModelConfigClient(
+  execDebugCommand: HermesModelConfigExecDebugCommand,
+  botId: string,
+  profileId?: string,
+) {
   const executeCommand = async (action: HermesModelConfigAction): Promise<DebugCommandResult> => {
-    const result = await execDebugCommand(botId, buildHermesModelConfigCommand(action), { timeoutMs: timeoutFor(action) });
+    const result = await execDebugCommand(
+      botId,
+      buildHermesModelConfigCommand(action, profileId),
+      { timeoutMs: timeoutFor(action) },
+    );
     if (!commandSucceeded(result)) {
       throw new HermesModelConfigResponseError("command_failed", "Model configuration command failed");
     }

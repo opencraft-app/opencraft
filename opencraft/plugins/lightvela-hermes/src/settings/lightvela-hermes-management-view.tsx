@@ -157,7 +157,12 @@ export function createLightVelaHermesManagementView(
             ) : page === "schedules" ? (
               <HermesSchedulesManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "diagnostics" ? (
-              <HermesDiagnosticsManagementView account={account} botId={activeBot.instanceId} botStatus={activeBot.status} />
+              <HermesDiagnosticsManagementView
+                account={account}
+                botId={activeBot.instanceId}
+                botName={activeBot.name}
+                botStatus={activeBot.status}
+              />
             ) : page === "runtime" ? (
               <SettingsSection title={copy.sectionTitle} icon={pageIcon(page)}><HermesCommandPanel account={account} botId={activeBot.instanceId} command="hermes --version" actionLabel="Inspect runtime" /></SettingsSection>
             ) : page === "storage" ? (

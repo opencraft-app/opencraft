@@ -25,9 +25,10 @@ function redact(value: string, secret: string): string {
   return secret ? value.replaceAll(secret, "sk-***") : value;
 }
 
-export function HermesDiagnosticsManagementView({ account, botId, botStatus }: {
+export function HermesDiagnosticsManagementView({ account, botId, botName, botStatus }: {
   readonly account: LightVelaAccountService;
   readonly botId: string;
+  readonly botName: string;
   readonly botStatus: string;
 }) {
   const t = useT();
@@ -120,8 +121,13 @@ export function HermesDiagnosticsManagementView({ account, botId, botStatus }: {
   return (
     <HermesAgentConsoleHost>
       <Suspense fallback={<div className="flex min-h-48 items-center justify-center text-sm text-black/45">{t("加载中...")}</div>}>
+        {/* The account catalog exposes one physical Hermes instance, so its
+            Agent-scoped maintenance surface owns the main profile. */}
         <AgentDiagnosticsPanel
           botId={botId}
+          profileId="main"
+          botName={botName}
+          isMainBot
           execDebugCommand={(targetBotId, command) => account.execDebugCommand(targetBotId, command, { timeoutMs: 120_000 })}
           resetConfigAction={{
             disabled: !runnable || resettingConfig || resettingAgent,

@@ -1,4 +1,9 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
+import {
+  DEFAULT_HERMES_AGENT_ID,
+  getHermesProfileRootCommand,
+} from "../../../lib/hermes-agent-command";
+
 export const HERMES_MODEL_CONFIG_JSON_START = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_START__";
 export const HERMES_MODEL_CONFIG_JSON_END = "__LIGHTVELA_HERMES_MODEL_CONFIG_JSON_END__";
 
@@ -1092,12 +1097,17 @@ except Exception:
     fail()
 `;
 
-export function buildHermesModelConfigCommand(action: HermesModelConfigAction): string {
+export function buildHermesModelConfigCommand(
+  action: HermesModelConfigAction,
+  profileId: string = DEFAULT_HERMES_AGENT_ID,
+): string {
   const payload = encodeBase64(JSON.stringify(action));
   return [
     "set -e",
     'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"',
     "export HERMES_ROOT",
+    getHermesProfileRootCommand(profileId),
+    'export HERMES_HOME="$HERMES_PROFILE_ROOT"',
     'HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"',
     'if [ ! -x "$HERMES_PYTHON" ]; then HERMES_PYTHON="python3"; fi',
     `"$HERMES_PYTHON" - "${payload}" <<'PY'`,
