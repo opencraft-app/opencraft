@@ -12,12 +12,19 @@ const SANDBOX_CAPACITY_CODES = new Set([
 
 const identity: Translate = (message) => message;
 
+const extractRequestId = (message: string): string => {
+  const match = message.match(/request[_-]?id\s*=\s*([a-z0-9-]+)/i);
+  return match?.[1] ?? "";
+};
+
 const _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS = (t: Translate) => [
   t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。"),
   t("当前资源暂时售罄，请稍后再试。"),
   t("创建超时，请稍后重试。"),
   t("网络异常，请检查网络后重试。"),
   t("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。"),
+  t("暂时无法创建 Bot，请稍后重试。"),
+  t("暂时无法创建 Bot，请稍后重试。问题编号：{requestId}"),
   t("创建失败，请稍后重试。"),
 ];
 void _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS;
@@ -38,6 +45,15 @@ export const getAgentCreateErrorMessage = (
 
   if (code === "INSTANCE_BOT_UNSUPPORTED" || code === "INSTANCE_BOT_DISABLED") {
     return translate("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。");
+  }
+
+  if (code === "INSTANCE_BOT_PROFILE_FAILED" || /\bINSTANCE_BOT_PROFILE_FAILED\b/i.test(raw)) {
+    const requestId = extractRequestId(raw);
+    if (requestId) {
+      return translate("暂时无法创建 Bot，请稍后重试。问题编号：{requestId}")
+        .replace("{requestId}", requestId);
+    }
+    return translate("暂时无法创建 Bot，请稍后重试。");
   }
 
   if (/quota|limit|exceed/i.test(raw)) {

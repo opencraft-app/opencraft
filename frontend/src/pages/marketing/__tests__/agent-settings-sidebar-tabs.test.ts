@@ -176,8 +176,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : [])');
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
-    expect(page.match(/t\("新建 Bot"\)/g)).toHaveLength(1);
-    expect(page).not.toContain('className="lv-agent-create-button"');
+    expect(page.match(/t\("新建 Bot"\)/g)).toHaveLength(2);
+    expect(page).toContain('className="lv-agent-create-button"');
+    expect(page).toContain("onClick={handleCreateNew}");
     expect(page).not.toContain('t("立即创建")');
     expect(page).not.toContain('t("创建智能体")');
     expect(page).toContain('t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")');

@@ -557,8 +557,8 @@ func buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, na
 	commands := []string{"set -eu", strings.Join(parts, " ")}
 	if sourceProfileID != "" {
 		commands = append(commands,
-			fmt.Sprintf("hermes -p %s config unset platforms >/dev/null", shellQuote(profileID)),
-			fmt.Sprintf("hermes -p %s config unset gateway.platforms >/dev/null", shellQuote(profileID)),
+			buildHermesProfileConfigUnsetCommand(profileID, "platforms"),
+			buildHermesProfileConfigUnsetCommand(profileID, "gateway.platforms"),
 			fmt.Sprintf(
 				"hermes_home=${HERMES_HOME:-$HOME/.hermes}; %s %s %s",
 				`"$hermes_home/hermes-agent/venv/bin/python"`,
@@ -583,6 +583,16 @@ func buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, na
 	})
 	commands = append(commands, metadataCommand)
 	return strings.Join(commands, "\n")
+}
+
+func buildHermesProfileConfigUnsetCommand(profileID, key string) string {
+	missingMessage := shellQuote("Config key not set: " + key)
+	return fmt.Sprintf(`unset_output=$(hermes -p %s config unset %s 2>&1) || {
+  case "$unset_output" in
+    *%s*) ;;
+    *) printf '%%s\n' "$unset_output" >&2; exit 1 ;;
+  esac
+}`, shellQuote(profileID), shellQuote(key), missingMessage)
 }
 
 func buildHermesProfileMetadataCommand(profileID string, fields map[string]string) (string, error) {

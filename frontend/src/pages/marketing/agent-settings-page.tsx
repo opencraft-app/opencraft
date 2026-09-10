@@ -5109,6 +5109,16 @@ export const AgentSettingsPage = ({
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                       )}
 
+                      {canCreateBot && (
+                        <button
+                          type="button"
+                          onClick={handleCreateNew}
+                          className="lv-agent-create-button"
+                        >
+                          <Plus className="h-4 w-4" aria-hidden="true" />
+                          {t("新建 Bot")}
+                        </button>
+                      )}
                     </div>
 
                     {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
