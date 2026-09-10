@@ -34,7 +34,13 @@ import type {
   WeixinLoginSession,
   WorkspaceMessage,
 } from "@/domain/types";
-import type { CreditPackageItem, CreditProduct, CreditQuote } from "@/domain/credit-pack";
+import type {
+  CreditOrderResult,
+  CreditOrderUrlResult,
+  CreditPackageItem,
+  CreditProduct,
+  CreditQuote,
+} from "@/domain/credit-pack";
 import { createFakeRepositories } from "@/repositories/fake-repositories";
 import {
   createBotIdentity,
@@ -2246,6 +2252,20 @@ const createHttpCreditRepository = (baseUrl: string): CreditRepository => ({
     return requestEnvelope<CreditQuote>(baseUrl, "/v1/credit/inquiry", {
       method: "POST",
       body: { product_id: productId, time_span: 1, time_unit: "m" },
+    });
+  },
+  async createCreditOrder(productId) {
+    /* 商品与周期必须与询价一致；该接口直出 JSON（无 envelope），响应为 camelCase */
+    return request<CreditOrderResult>(baseUrl, "/v1/credit/packages/order", {
+      method: "POST",
+      body: { product_id: productId, time_span: 1, time_unit: "m" },
+    });
+  },
+  async createCreditOrderUrl(input) {
+    /* 直出 JSON（无 envelope）。订单不存在/归属不符/类型不符时后端返回 404 */
+    return request<CreditOrderUrlResult>(baseUrl, "/v1/credit/packages/order-url", {
+      method: "POST",
+      body: input,
     });
   },
   async listCreditPackages() {

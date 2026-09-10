@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreditPackSection } from "../credit-pack-section";
 
 const inquireCreditPrice = vi.fn();
+const createCreditOrder = vi.fn();
+const createCreditOrderUrl = vi.fn();
 
 /* 稳定引用：真实的 RepositoryContext 通过 useContext 返回同一对象，
    mock 也必须保持引用稳定，否则会掩盖/放大组件对引用稳定性的依赖问题。 */
-const repositoriesStub = { credit: { inquireCreditPrice } };
+const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, createCreditOrderUrl } };
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => repositoriesStub,
@@ -36,6 +38,14 @@ const quoteFor = (productId: string) => ({
 beforeEach(() => {
   inquireCreditPrice.mockReset();
   inquireCreditPrice.mockImplementation(async (productId: string) => quoteFor(productId));
+  createCreditOrder.mockReset();
+  createCreditOrder.mockResolvedValue({ dealName: "deal-1", bigOrderId: "big-1" });
+  createCreditOrderUrl.mockReset();
+  createCreditOrderUrl.mockResolvedValue({
+    deal_name: "deal-1",
+    pay_url: "",
+    need_charge: 0,
+  });
 });
 
 afterEach(() => {
@@ -124,15 +134,86 @@ describe("CreditPackSection", () => {
     });
   });
 
-  it("购买时因支付通道未接入而提示，且不发起下单请求", async () => {
+  it("购买流程：选中商品 → 打开弹窗 → 未勾选条款时支付禁用", async () => {
     renderSection();
 
     await userEvent.click(await screen.findByTestId("credit-pack-card-credit_8000"));
     await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("支付通道正在接入中，敬请期待。");
-    /* 只应调用询价，不应有任何下单调用（仓储里也没暴露下单方法） */
-    expect(inquireCreditPrice).toHaveBeenCalled();
+    const modal = await screen.findByTestId("credit-pack-confirm-modal");
+    expect(modal).toBeInTheDocument();
+    /* 弹窗展示商品与金额（卡片上也有同样文本，用 getAllByText 断言至少两处） */
+    expect(screen.getAllByText("8,000 模型积分").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("¥12.00").length).toBeGreaterThanOrEqual(2);
+
+    const payButton = screen.getByTestId("credit-pack-confirm-pay");
+    expect(payButton).toBeDisabled();
+
+    /* 勾选条款后可支付 */
+    await userEvent.click(screen.getByTestId("credit-pack-terms-checkbox"));
+    expect(payButton).toBeEnabled();
+  });
+
+  it("勾选条款后确认支付会创建订单并请求支付链接", async () => {
+    createCreditOrderUrl.mockResolvedValue({ deal_name: "deal-1", pay_url: "", need_charge: 0 });
+
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_8000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+
+    await waitFor(() => {
+      expect(createCreditOrder).toHaveBeenCalledWith("credit_8000");
+    });
+    await waitFor(() => {
+      expect(createCreditOrderUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ deal_name: "deal-1", platform: "pc" }),
+      );
+    });
+  });
+
+  it("need_charge=1 时跳转支付页并展示跳转提示", async () => {
+    createCreditOrderUrl.mockResolvedValue({
+      deal_name: "deal-1",
+      pay_url: "https://pay.example/checkout",
+      need_charge: 1,
+    });
+    const assignMock = vi.fn();
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, assign: assignMock, href: "https://app.example/subscribe" },
+      writable: true,
+    });
+
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+
+    await waitFor(() => {
+      expect(assignMock).toHaveBeenCalledWith("https://pay.example/checkout");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("已跳转支付页面");
+    });
+  });
+
+  it("下单失败时展示失败原因", async () => {
+    createCreditOrder.mockRejectedValue(new Error("余额渠道不可用"));
+
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("下单失败");
+    });
   });
 
   it("按 product_id 逐个询价，覆盖全部 5 个商品", async () => {

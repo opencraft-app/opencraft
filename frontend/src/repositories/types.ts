@@ -35,7 +35,14 @@ import type {
   WeixinLoginSession,
   WorkspaceMessage,
 } from "@/domain/types";
-import type { CreditPackageItem, CreditProduct, CreditQuote } from "@/domain/credit-pack";
+import type {
+  CreditOrderResult,
+  CreditOrderUrlInput,
+  CreditOrderUrlResult,
+  CreditPackageItem,
+  CreditProduct,
+  CreditQuote,
+} from "@/domain/credit-pack";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 
 export interface OAuthStartOptions {
@@ -517,6 +524,20 @@ export interface CreditRepository {
    * 因此调用方并发调用并单独处理每个 Promise 的失败。
    */
   inquireCreditPrice(productId: string): Promise<CreditQuote>;
+  /**
+   * `POST /v1/credit/packages/order` —— 创建待支付订单。
+   *
+   * 商品与周期必须与询价一致。响应为 camelCase（`dealName`），
+   * 下一步 order-url 请求则用 snake_case 的 `deal_name`。
+   */
+  createCreditOrder(productId: string): Promise<CreditOrderResult>;
+  /**
+   * `POST /v1/credit/packages/order-url` —— 获取已创建订单的支付链接。
+   *
+   * `need_charge=1` 时跳转 `pay_url`；`need_charge=0` 时无需支付，直接刷新积分包。
+   * 订单不存在、归属不匹配或类型不匹配时后端返回 404。
+   */
+  createCreditOrderUrl(input: CreditOrderUrlInput): Promise<CreditOrderUrlResult>;
   /** `GET /v1/credit/packages` —— 当前用户的有效积分包。 */
   listCreditPackages(): Promise<CreditPackageItem[]>;
 }

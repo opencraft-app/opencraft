@@ -1292,6 +1292,24 @@ const createCreditRepository = (): CreditRepository => ({
       { credit_type: "paid" as const, credit_total: 4000, credit_available: 4000, expired_time: inDays(27) },
     ];
   },
+  async createCreditOrder(productId) {
+    await wait(NETWORK_DELAY_MS);
+    const denomination = CREDIT_PACK_DENOMINATIONS.find((item) => item.product_id === productId);
+    if (!denomination) {
+      throw new Error(`未知积分包商品：${productId}`);
+    }
+    const serial = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+    return { dealName: `2026091000000${serial}`, bigOrderId: `20260910000000${serial}` };
+  },
+  async createCreditOrderUrl(input) {
+    await wait(NETWORK_DELAY_MS);
+    /* 本地预览不做真实支付：返回可识别的假地址，need_charge=1 以便走完整跳转分支 */
+    return {
+      deal_name: input.deal_name,
+      pay_url: `https://example.invalid/fake-credit-checkout?deal=${encodeURIComponent(input.deal_name)}`,
+      need_charge: 1,
+    };
+  },
 });
 
 const createBotRepository = (): BotRepository => {

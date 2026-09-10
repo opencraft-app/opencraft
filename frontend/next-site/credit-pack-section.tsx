@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CREDIT_PACK_DENOMINATIONS, type CreditQuote } from '@/domain/credit-pack';
 import { useRepositories } from '@/contexts/repository-context';
 import { useT } from '@/i18n/t';
+import { useCreditCheckout } from '@/lib/use-credit-checkout';
 import { isGlobal } from '@/lib/region';
 
 /**
@@ -33,6 +34,13 @@ type PurchaseGate =
   | 'quote-failed';
 
 const CURRENCY_SYMBOL: Record<string, string> = { CNY: '¥', USD: '$' };
+
+/** URL query 参数名（与 subscribe-page 的 section 定位约定一致） */
+const SECTION_QUERY_KEY_PARAM = 'section';
+const CREDIT_SECTION_QUERY_VALUE_PARAM = 'credits';
+/** 支付回跳标记 */
+const PAY_RETURN_QUERY_KEY = 'credit_pay';
+const PAY_RETURN_QUERY_VALUE = 'return';
 
 /** 格式化金额：保留后端返回的字符串精度，仅补币种符号。 */
 const formatAmount = (quote: CreditQuote): string => {
@@ -65,6 +73,8 @@ export const CreditPackSection = ({
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   /* 用 ref 持有 repositories：不把它放进 useCallback / useEffect 的依赖里。
      否则一旦上层 context 返回新对象引用（非 memo 化），就会
@@ -128,12 +138,81 @@ export const CreditPackSection = ({
       return;
     }
     if (gate === 'purchasable') {
-      /* 支付通道未接入：后端 payURL 恒空，不调用下单接口，避免产生无法支付的孤儿订单。 */
-      setNotice(t('支付通道正在接入中，敬请期待。'));
+      /* 打开订单确认弹窗：勾选虚拟商品条款后才可支付（产品方案 7.1） */
+      setTermsAccepted(false);
+      setModalOpen(true);
     }
-  }, [gate, loadQuote, onRequireLogin, onRequirePlan, selectedProductId, t]);
+  }, [gate, loadQuote, onRequireLogin, onRequirePlan, selectedProductId]);
 
   const primaryDisabled = gate === 'unselected';
+
+  /* 支付回跳标记：order-url 的 return_url 会带上它，返回后触发到账确认 */
+  /* 构造回跳地址：当前页 + section 定位 + 支付返回标记 */
+  const buildReturnUrl = useCallback((cancelled: boolean) => {
+    if (typeof window === 'undefined') return undefined;
+    const url = new URL(window.location.href);
+    url.searchParams.set(SECTION_QUERY_KEY_PARAM, CREDIT_SECTION_QUERY_VALUE_PARAM);
+    url.searchParams.set(PAY_RETURN_QUERY_KEY, cancelled ? 'cancel' : PAY_RETURN_QUERY_VALUE);
+    return url.toString();
+  }, []);
+
+  const checkout = useCreditCheckout({
+    returnUrl: buildReturnUrl(false),
+    cancelUrl: buildReturnUrl(true),
+    onDelivered: () => {
+      /* 到账后刷新询价无关，仅清弹窗；账号页额度由用户返回后刷新 */
+      setModalOpen(false);
+    },
+  });
+
+  /* 从支付页返回（credit_pay=return）时自动进入交付确认 */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(PAY_RETURN_QUERY_KEY) === PAY_RETURN_QUERY_VALUE) {
+      /* 消费掉标记，避免刷新时重复触发 */
+      params.delete(PAY_RETURN_QUERY_KEY);
+      const cleaned = params.toString();
+      const url = `${window.location.pathname}${cleaned ? `?${cleaned}` : ''}`;
+    window.history.replaceState(window.history.state, '', url);
+      void checkout.confirmDelivery();
+    }
+    /* checkout.confirmDelivery 是稳定引用（useCallback 空依赖），不会反复触发 */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* 支付中/到账中的状态文案（产品方案 7.4） */
+  const checkoutNotice = useMemo(() => {
+    switch (checkout.state.status) {
+      case 'creating':
+        return t('正在创建订单…');
+      case 'payment_pending':
+        return t('已跳转支付页面，完成支付后返回本页确认到账。');
+      case 'delivery_pending':
+        return t('积分到账处理中，请稍候…');
+      case 'delivered':
+        return t('购买成功，积分已到账。');
+      case 'delivery_exception':
+        return t('支付已完成但积分尚未到账，请稍后刷新；如有疑问请联系客服并提供订单号：{{deal}}', {
+          deal: checkout.state.dealName ?? '',
+        });
+      case 'failed':
+        return t('下单失败：{{reason}}', { reason: checkout.state.error ?? '' });
+      default:
+        return null;
+    }
+  }, [checkout.state, t]);
+
+  /* 确认弹窗内点「确认支付」 */
+  const handleConfirmPay = useCallback(() => {
+    if (!selectedProductId) return;
+    void checkout.start(selectedProductId);
+  }, [checkout, selectedProductId]);
+
+  const selectedDenomination = useMemo(
+    () => CREDIT_PACK_DENOMINATIONS.find((d) => d.product_id === selectedProductId),
+    [selectedProductId],
+  );
 
   return (
     <section
@@ -200,10 +279,30 @@ export const CreditPackSection = ({
         >
           {primaryLabel}
         </button>
+        {checkoutNotice ? (
+          <p
+            role="status"
+            data-testid="credit-pack-checkout-status"
+            className="text-sm"
+            style={{ color: checkout.state.status === 'delivered' ? '#15803d' : '#b45309' }}
+          >
+            {checkoutNotice}
+          </p>
+        ) : null}
         {notice ? (
           <p role="status" className="text-sm" style={{ color: '#b45309' }}>
             {notice}
           </p>
+        ) : null}
+        {checkout.state.status === 'delivery_exception' ? (
+          <button
+            type="button"
+            onClick={() => void checkout.confirmDelivery()}
+            className="text-sm font-semibold underline underline-offset-2"
+            style={{ color: '#4f46e5' }}
+          >
+            {t('重新查询到账状态')}
+          </button>
         ) : null}
       </div>
 
@@ -213,6 +312,93 @@ export const CreditPackSection = ({
         <p className="mt-2 text-xs" style={{ color: '#999' }}>
           {t('单次付费，不会自动续费。')}
         </p>
+      ) : null}
+
+      {/* 订单确认弹窗：勾选虚拟商品条款后才可支付（产品方案 7.1） */}
+      {modalOpen && selectedDenomination && selectedQuote?.status === 'ready' ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="credit-pack-modal-title"
+          data-testid="credit-pack-confirm-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 id="credit-pack-modal-title" className="text-lg font-semibold" style={{ color: '#333' }}>
+              {t('确认购买积分包')}
+            </h3>
+
+            <dl className="mt-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <dt style={{ color: '#666' }}>{t('商品')}</dt>
+                <dd className="font-semibold" style={{ color: '#333' }}>
+                  {t('{{count}} 模型积分', { count: selectedDenomination.credit_total.toLocaleString() })}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt style={{ color: '#666' }}>{t('有效期')}</dt>
+                <dd style={{ color: '#333' }}>{t('到账后 1 个月')}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt style={{ color: '#666' }}>{t('购买数量')}</dt>
+                <dd style={{ color: '#333' }}>{t('1 份')}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt style={{ color: '#666' }}>{t('应付金额')}</dt>
+                <dd className="font-semibold" style={{ color: '#333' }}>
+                  {formatAmount(selectedQuote.quote)}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt style={{ color: '#666' }}>{t('支付方式')}</dt>
+                <dd style={{ color: '#333' }}>{isGlobal ? t('信用卡 / 借记卡') : t('微信支付')}</dd>
+              </div>
+            </dl>
+
+            <label className="mt-4 flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#666' }}>
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(event) => setTermsAccepted(event.target.checked)}
+                data-testid="credit-pack-terms-checkbox"
+                className="mt-0.5"
+              />
+              <span>
+                {t('我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。')}
+                {isGlobal ? null : (
+                  <>
+                    <br />
+                    {t('法律规定、重复扣款或平台交付异常等情况，由客服核验处理。')}
+                  </>
+                )}
+              </span>
+            </label>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setModalOpen(false)}
+                className="rounded-lg border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: '#d1d5db', color: '#666' }}
+              >
+                {t('取消')}
+              </button>
+              <button
+                type="button"
+                disabled={!termsAccepted || checkout.state.status === 'creating'}
+                onClick={handleConfirmPay}
+                data-testid="credit-pack-confirm-pay"
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: '#4f46e5' }}
+              >
+                {checkout.state.status === 'creating' ? t('正在创建订单…') : t('确认支付')}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );

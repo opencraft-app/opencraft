@@ -50,6 +50,44 @@ export interface CreditPackageItem {
   expired_time: string;
 }
 
+/** 创建订单响应（注意后端此接口用 camelCase，与其他接口的 snake_case 不同）。 */
+export interface CreditOrderResult {
+  /** jifei 订单号，获取支付链接的必填参数 */
+  dealName: string;
+  bigOrderId: string;
+}
+
+/** 支付链接请求。 */
+export interface CreditOrderUrlInput {
+  /** 下单接口返回的 dealName，此处字段名为 snake_case */
+  deal_name: string;
+  /** PC 控制台固定传 "pc" */
+  platform?: string;
+  /** 支付完成后的前端回跳地址 */
+  return_url?: string;
+  /** 取消支付后的前端回跳地址 */
+  cancel_url?: string;
+}
+
+/**
+ * 支付链接响应。
+ *
+ * ⚠️ 与套餐（pass）链路的差异：积分包**没有 auth_code**，不走「中转页 + 一次性 ticket」
+ * 的二维码安全模型（见 src/lib/wx-pay.ts）。积分包直接跳转 pay_url 完成支付。
+ */
+export interface CreditOrderUrlResult {
+  deal_name: string;
+  pay_url: string;
+  /** 1 = 需跳转 pay_url 支付；0 = 无需支付，直接刷新积分包列表 */
+  need_charge: number;
+  /* 以下为支付组件可能使用的辅助字段，后端未返回时前端需兼容 */
+  token_id?: string;
+  order_id?: string;
+  midas_app_id?: string;
+  uin?: string;
+  app_id?: string;
+}
+
 /** 卡片展示用的积分包面额定义。 */
 export interface CreditPackDenomination {
   /** 与后端 credit_product.product_id 对应 */
