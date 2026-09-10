@@ -35,20 +35,28 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).not.toContain("const canCreateBot = multiBotEnabled");
   });
 
-  it("creates the first Bot as blank without opening the creation choices", () => {
+  it("opens a name-only dialog before creating the first Bot as blank", () => {
     const page = readPageSource();
     const initialCreation = page.slice(
-      page.indexOf("const createInitialBot"),
+      page.indexOf("const handleCreateNew"),
       page.indexOf("const handleConfirmCreate"),
     );
     const noActiveBotBranch = initialCreation.slice(
       initialCreation.indexOf("if (!activeBot)"),
-      initialCreation.indexOf("setDirectCreateError(null)"),
+      initialCreation.indexOf('setCreateBotMode("clone-current")'),
     );
 
-    expect(initialCreation).toContain('createMode: "blank"');
-    expect(noActiveBotBranch).toContain("void createInitialBot()");
-    expect(noActiveBotBranch).not.toContain("setShowCreateConfirm(true)");
+    expect(noActiveBotBranch).toContain('setCreateBotMode("blank")');
+    expect(noActiveBotBranch).toContain("setShowCreateConfirm(true)");
+    expect(noActiveBotBranch).not.toContain("createInitialBot");
+
+    expect(page).toContain("const isFirstBotCreation = !activeBot");
+    expect(page).toContain("const requestedCreateMode = isFirstBotCreation ? \"blank\" : createBotMode");
+    expect(page).toContain("const requestedInitialSoul = isFirstBotCreation ? undefined : createBotSoul.trim() || undefined");
+    expect(page).toContain("{!isFirstBotCreation && (");
+    expect(page).toContain('createMode: requestedCreateMode === "blank" ? "blank" : "clone"');
+    expect(page).toContain('sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id');
+    expect(page).toContain("initialSoul: requestedInitialSoul");
   });
 
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
