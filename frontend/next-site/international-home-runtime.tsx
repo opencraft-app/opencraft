@@ -8,7 +8,6 @@ import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { useSession } from '@/contexts/session-context';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
-import { isGlobal } from '@/lib/region';
 
 export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/runtime.js',
@@ -16,7 +15,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260910-hero-rotator-brand-icons-v28';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260910-unified-header-hero-v29';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -94,16 +93,15 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
       <InternationalHomeMarkup markup={markup} />
       <div className="international-home-header-actions-layer">
-        {/* 国内站首页保留 2026-09-04 fix-cn-home-cta 约定的转化入口：
-            未登录展示「免费试用」+「登录」，登录态展示「开始使用」+ 头像；
-            国际站继续 loginOnly，不展示产品入口。 */}
+        {/* 双站统一：头部只承载身份操作（语言切换 + 登录/头像），
+            转化入口唯一收口到 Hero 主按钮，避免同页出现两个指向相同目标的入口。 */}
         <PublicHeaderAuthIsland
           appearance="immersive"
           locale={locale}
           showLanguageSwitcher
-          showProductEntry={!isGlobal}
-          loginOnly={isGlobal}
-          promoteFreeTrial={!isGlobal}
+          showProductEntry={false}
+          loginOnly
+          promoteFreeTrial={false}
         />
         <HomeMobileNavigation locale={locale} />
       </div>

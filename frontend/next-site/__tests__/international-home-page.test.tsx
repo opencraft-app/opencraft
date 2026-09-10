@@ -1127,17 +1127,18 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["예약 작업", "워크벤치", "DeepSeek Harness"],
     } as const;
 
-    /* Hero CTA：国际站为固定文案直接进入 /agents；仅国内站 zh-CN 为状态化双态
-       （未登录「免费试用」→ /subscribe，登录态由 InternationalHomeRuntime 切换）。 */
+    /* Hero CTA 双站统一为状态化：静态产物默认输出未登录文案，
+       登录态文案与目标由 data-* 提供，由 InternationalHomeRuntime 在 Session 恢复后切换。
+       未登录文案取自各 locale 页脚已审定表达；订阅路径国内为裸路径、国际带 locale 前缀。 */
     const expectedCtaLabels = {
-      "en-US": "My AI Companion",
-      "zh-CN": "免费试用",
-      "zh-SG": "我的智能体伙伴",
-      "zh-Hant": "我的智能體夥伴",
-      "id-ID": "Pendamping AI saya",
-      es: "Mi compañero de IA",
-      "ja-JP": "私のAIパートナー",
-      "ko-KR": "내 AI 파트너",
+      "en-US": { anon: "Start free", signed: "My AI Companion", subscribe: "/subscribe" },
+      "zh-CN": { anon: "免费试用", signed: "我的智能体伙伴", subscribe: "/subscribe" },
+      "zh-SG": { anon: "立即免费体验", signed: "我的智能体伙伴", subscribe: "/zh-sg/subscribe" },
+      "zh-Hant": { anon: "立即免費體驗", signed: "我的智能體夥伴", subscribe: "/zh-hant/subscribe" },
+      "id-ID": { anon: "Mulai gratis", signed: "Pendamping AI saya", subscribe: "/id-id/subscribe" },
+      es: { anon: "Empieza gratis", signed: "Mi compañero de IA", subscribe: "/es/subscribe" },
+      "ja-JP": { anon: "無料で開始", signed: "私のAIパートナー", subscribe: "/ja-jp/subscribe" },
+      "ko-KR": { anon: "무료 시작", signed: "내 AI 파트너", subscribe: "/ko-kr/subscribe" },
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -1147,17 +1148,14 @@ describe("international v2 homepage artifact", () => {
       }
       const document = new DOMParser().parseFromString(html, "text/html");
       const heroCta = document.querySelector<HTMLAnchorElement>(".hero__cta .btn-dark");
-      expect(heroCta?.textContent).toContain(expectedCtaLabels[locale]);
-      if (locale === "zh-CN") {
-        /* 国内站保持状态化：静态产物输出未登录态，登录态由 data-* 提供。 */
-        expect(heroCta?.getAttribute("href")).toBe("/subscribe");
-        expect(heroCta?.getAttribute("data-home-hero-cta-signed-label")).toBe("我的智能体伙伴");
-        expect(heroCta?.getAttribute("data-home-hero-cta-signed-href")).toBe("/agents");
-      } else {
-        /* 国际站保持固定文案与链接，不引入状态化。 */
-        expect(heroCta?.getAttribute("href")).toBe("/agents");
-        expect(heroCta?.hasAttribute("data-home-hero-cta")).toBe(false);
-      }
+      const expectedCta = expectedCtaLabels[locale];
+      /* 双站统一：静态产物首屏输出未登录文案与订阅路径，登录态由四个 data-* 提供。 */
+      expect(heroCta?.textContent).toContain(expectedCta.anon);
+      expect(heroCta?.getAttribute("href")).toBe(expectedCta.subscribe);
+      expect(heroCta?.getAttribute("data-home-hero-cta-anon-label")).toBe(expectedCta.anon);
+      expect(heroCta?.getAttribute("data-home-hero-cta-anon-href")).toBe(expectedCta.subscribe);
+      expect(heroCta?.getAttribute("data-home-hero-cta-signed-label")).toBe(expectedCta.signed);
+      expect(heroCta?.getAttribute("data-home-hero-cta-signed-href")).toBe("/agents");
       expect(html).toContain("play__new-badge");
       expect(html).not.toContain("Separate runtime");
       expect(html).not.toContain("独立运行时");

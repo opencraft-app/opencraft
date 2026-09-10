@@ -42,7 +42,7 @@ import {
 
 const frontendRoot = process.cwd();
 const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="我的智能体伙伴" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="免费试用" data-home-hero-cta-anon-href="/subscribe" class="btn-dark" href="/subscribe"><span data-home-hero-cta-label>免费试用</span></a></div></main>';
-const globalHeroMarkup = '<main id="lightvela-intl-home" data-locale="ja-JP"><div class="hero__cta"><a class="btn-dark" href="/agents">私のAIパートナー</a></div></main>';
+const globalHeroMarkup = '<main id="lightvela-intl-home" data-locale="ja-JP"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="私のAIパートナー" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="無料で開始" data-home-hero-cta-anon-href="/ja-jp/subscribe" class="btn-dark" href="/ja-jp/subscribe"><span data-home-hero-cta-label>無料で開始</span></a></div></main>';
 
 beforeEach(() => {
   (globalThis as { React?: typeof React }).React = React;
@@ -86,7 +86,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260910-hero-rotator-brand-icons-v28"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260910-unified-header-hero-v29"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -243,9 +243,9 @@ describe("international v2 homepage rendering", () => {
     expect(headerAuthMock).toHaveBeenCalledWith(
       expect.objectContaining({
         locale: "zh-CN",
-        loginOnly: false,
-        promoteFreeTrial: true,
-        showProductEntry: true,
+        loginOnly: true,
+        promoteFreeTrial: false,
+        showProductEntry: false,
       }),
       undefined,
     );
@@ -274,7 +274,7 @@ describe("international v2 homepage rendering", () => {
     expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
   });
 
-  it("leaves the international hero action untouched by the domestic stateful CTA logic", async () => {
+  it("applies the same stateful hero CTA on the international site when anonymous", async () => {
     (globalThis as { React?: typeof React }).React = React;
     regionMock.isGlobal = true;
     sessionMock.authReady = true;
@@ -287,14 +287,30 @@ describe("international v2 homepage rendering", () => {
       />,
     );
 
+    /* 双站统一：国际站未登录同样展示各 locale 的「免费开始」文案并进入本地化订阅页。 */
     await waitFor(() => {
-      expect(document.querySelector(".hero__cta .btn-dark")).toBeInTheDocument();
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("無料で開始");
     });
-    /* 国际站 Hero 无状态化标记，未登录时也应保持固定文案与 /agents 链接。 */
-    const heroCta = document.querySelector(".hero__cta .btn-dark");
-    expect(heroCta).toHaveAttribute("href", "/agents");
-    expect(heroCta?.hasAttribute("data-home-hero-cta")).toBe(false);
-    expect(heroCta?.textContent).toContain("私のAIパートナー");
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/ja-jp/subscribe");
+  });
+
+  it("switches the international hero CTA to the product entry once signed in", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = true;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+
+    render(
+      <InternationalHomeRuntime
+        locale="ja-JP"
+        markup={globalHeroMarkup}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("私のAIパートナー");
+    });
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
   });
 
   it("keeps the global zh-CN runtime on the international login-only treatment", () => {
