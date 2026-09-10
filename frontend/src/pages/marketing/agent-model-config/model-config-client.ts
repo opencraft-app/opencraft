@@ -283,12 +283,12 @@ export function createHermesModelConfigClient(execDebugCommand: HermesModelConfi
         return await execute({ type: "appendProviderModel", anchor, modelId });
       } catch (error) {
         if (error instanceof HermesModelConfigResponseError && error.code === "helper_error") throw error;
-        // A transport failure can occur after the write committed. Confirm before reporting failure.
+        // 传输失败时写入可能已完成；必须回读确认相同模型 ID，保留大小写。
         try {
           const saved = await execute({ type: "read" });
           const route = (model: HermesConfiguredModel) => (model.routeBaseUrl ?? model.baseUrl).trim().replace(/\/+$/, "").toLowerCase();
           if (saved.configuredModels.some((model) => model.providerKey === anchor.providerKey
-            && model.id.toLowerCase() === modelId.toLowerCase() && route(model) === route(anchor)
+            && model.id.trim() === modelId.trim() && route(model) === route(anchor)
             && model.apiMode === anchor.apiMode && model.keyEnv === anchor.keyEnv)) return saved;
         } catch { /* The outcome remains unknown when read-back also fails. */ }
         throw new HermesModelConfigResponseError("command_failed", "save_unknown");

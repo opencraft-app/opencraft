@@ -28,8 +28,11 @@ export type HermesModelIdentityInput = Pick<
 >;
 
 export function getHermesModelIdentity(model: HermesModelIdentityInput) {
-  return JSON.stringify([model.providerKey, model.id, model.routeBaseUrl ?? model.baseUrl]
-    .map((value) => value.trim().replace(/\/+$/, "").toLowerCase()));
+  return JSON.stringify([
+    model.providerKey.trim().replace(/\/+$/, "").toLowerCase(),
+    model.id.trim(),
+    (model.routeBaseUrl ?? model.baseUrl).trim().replace(/\/+$/, "").toLowerCase(),
+  ]);
 }
 
 function getErrorMessage(error: unknown) {

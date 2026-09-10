@@ -58,7 +58,7 @@ export function ConfiguredProviderModelForm({ anchor, savedModels, controller, i
   const loading = controller.operation === "configured-probe";
   const saving = controller.operation === "append";
   const checking = controller.operation === "configured-connectivity-probe";
-  const duplicate = savedModels.some((model) => model.id.trim().toLowerCase() === modelId.trim().toLowerCase());
+  const duplicate = savedModels.some((model) => model.id.trim() === modelId.trim());
   const options = useMemo(() => discovered.map((value) => ({ id: value, name: value })), [discovered]);
   const selectionAvailable = discovered.includes(modelId);
 
@@ -144,7 +144,7 @@ export function ConfiguredProviderModelForm({ anchor, savedModels, controller, i
             <SelectTrigger id={id} className={`${compound.field} w-full flex-1`} onPointerDownCapture={onSelectInteraction} onKeyDownCapture={onSelectInteraction}><SelectValue placeholder={loading ? t("获取中") : options.length ? t("请选择模型") : t("暂无可用模型")} /></SelectTrigger>
             <SelectContent position="popper" className={MODEL_SELECT_CONTENT_CLASS}>
               {options.map((option) => {
-                const saved = savedModels.some((model) => model.id.trim().toLowerCase() === option.id.trim().toLowerCase());
+                const saved = savedModels.some((model) => model.id.trim() === option.id.trim());
                 return (
                   <SelectItem key={option.id} value={option.id} textValue={option.name} disabled={saved} className="data-[disabled]:cursor-not-allowed data-[disabled]:text-[var(--text-tertiary)] [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1">
                     <span className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">

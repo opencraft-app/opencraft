@@ -14,7 +14,7 @@ import {
   type HermesModelConfigAction,
   type HermesModelConfigSnapshot,
 } from "../model-config-client";
-import { useModelConfig } from "../use-model-config";
+import { getHermesModelIdentity, useModelConfig } from "../use-model-config";
 
 const model: HermesConfiguredModel = {
   id: "model-a",
@@ -30,6 +30,11 @@ const initialSnapshot: HermesModelConfigSnapshot = {
   fallbacks: [],
   configuredModels: [model],
 };
+
+it("preserves model ID case while normalizing provider and endpoint identity", () => {
+  expect(getHermesModelIdentity(model)).not.toBe(getHermesModelIdentity({ ...model, id: model.id.toUpperCase() }));
+  expect(getHermesModelIdentity(model)).toBe(getHermesModelIdentity({ ...model, providerKey: model.providerKey.toUpperCase(), baseUrl: `${model.baseUrl}/` }));
+});
 const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
   publicKeyEncoding: { type: "spki", format: "pem" },

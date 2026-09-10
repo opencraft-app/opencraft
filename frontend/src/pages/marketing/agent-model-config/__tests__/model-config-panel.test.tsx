@@ -479,6 +479,24 @@ describe("AgentModelConfigPanel", () => {
     expect(screen.getByText("主模型：model-primary")).toBeInTheDocument();
   });
 
+  it("allows a case-variant model without marking it already added", async () => {
+    const variantId = idleModel.id.toUpperCase();
+    const remote = createRemote({ primary: idleModel, fallbacks: [], configuredModels: [idleModel] }, [idleModel.id, variantId]);
+    renderPanel(remote);
+    const row = (await screen.findByRole("button", { name: /Gamma API/ })).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    const form = within(row).getByRole("group", { name: "添加模型" });
+    await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
+    const option = screen.getByRole("option", { name: variantId });
+    expect(option).not.toHaveAttribute("data-disabled");
+    expect(within(option).queryByText("已添加")).not.toBeInTheDocument();
+    await userEvent.click(option);
+    expect(within(form).getByRole("button", { name: "保存" })).toBeEnabled();
+    await userEvent.click(within(form).getByRole("button", { name: "保存" }));
+    expect(await within(row).findByText(variantId)).toBeInTheDocument();
+    expect(within(row).getAllByRole("button", { name: "已是主模型" })).toHaveLength(1);
+  });
+
   it("retains the custom draft on collapse and cancels without writing", async () => {
     const customPrimary = { ...primaryModel, providerKey: "lightvela-custom-alpha" };
     const remote = createRemote({ primary: customPrimary, fallbacks: [], configuredModels: [customPrimary, idleModel] }, ["new-model"]);

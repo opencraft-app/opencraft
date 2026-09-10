@@ -67,11 +67,46 @@ describe("append models to a saved Provider", () => {
     expect(result.config).toEqual(config);
   });
 
-  it("treats an existing model as an idempotent append without case-variant duplicates or writes", () => {
-    const result = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: model.id.toUpperCase() }, config, {}, { [configuredModel.keyEnv]: apiKey });
+  it("treats an exact existing model as an idempotent append without writes", () => {
+    const result = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: model.id }, config, {}, { [configuredModel.keyEnv]: apiKey });
     expect(parseHermesModelConfigResponse(result.output).primary?.id).toBe(model.id);
     expect(result.config).toEqual(config);
     expect(result.events).not.toContain("save_config");
+  });
+
+  it("keeps case-variant model IDs independent through append, fallback assignment and deletion", () => {
+    const variantId = model.id.toUpperCase();
+    const appended = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: variantId }, config, {}, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesModelConfigResponse(appended.output).configuredModels.map((item) => item.id)).toEqual([model.id, variantId]);
+    const removedIdle = runHelper({ type: "remove", providerKey: configuredModel.providerKey, modelId: variantId }, appended.config, {}, appended.credentials);
+    expect(removedIdle.config.providers).toMatchObject({ [configuredModel.providerKey]: { model: model.id } });
+    const assigned = runHelper({ type: "assign", providerKey: configuredModel.providerKey, modelId: variantId, purpose: "fallback" }, appended.config, {}, appended.credentials);
+    const saved = parseHermesModelConfigResponse(assigned.output);
+    expect(saved.primary?.id).toBe(model.id);
+    expect(saved.fallbacks.map((item) => item.id)).toEqual([variantId]);
+    const removed = runHelper({ type: "remove", providerKey: configuredModel.providerKey, modelId: variantId }, assigned.config, {}, assigned.credentials);
+    expect(parseHermesModelConfigResponse(removed.output).configuredModels.map((item) => item.id)).toEqual([model.id]);
+    expect(removed.config.model).toEqual(config.model);
+    expect(removed.credentials).toEqual(appended.credentials);
+  });
+
+  it.each([true, false])("requires an exact model ID for append read-back confirmation (exact: %s)", async (exact) => {
+    const recovered = { ...snapshot, configuredModels: [{ ...configuredModel, id: exact ? "Model-A" : "model-a" }] };
+    const exec = vi.fn().mockRejectedValueOnce(new Error("transport failed"))
+      .mockResolvedValueOnce({ status: "succeeded", exitCode: 0, output: response({ ok: true, snapshot: recovered }) });
+    const result = createHermesModelConfigClient(exec, "bot-1").append(configuredModel, "Model-A");
+    if (exact) await expect(result).resolves.toEqual(recovered);
+    else await expect(result).rejects.toThrow("save_unknown");
+    expect(exec).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["missing", "non_callable"])("fails closed when credential-safe transport is %s", (transport) => {
+    const result = runHelper({ type: "probeConfiguredModel", anchor: configuredModel, modelId: "new-model" }, config,
+      { MODEL_REQUEST_STATUS: "200", SAFE_TRANSPORT: transport }, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesConnectionProbeResponse(result.output).success).toBe(false);
+    expect(result.modelRequest).toBeNull();
+    expect(result.config).toEqual(config);
+    expect(result.output).not.toContain(apiKey);
   });
 
   it("rolls back a write whose reloaded main role changed", () => {
@@ -133,6 +168,7 @@ describe("append models to a saved Provider", () => {
       { MODEL_REQUEST_STATUS: String(status) }, { [configuredModel.keyEnv]: apiKey });
     const connection = parseHermesConnectionProbeResponse(result.output);
     expect(connection).toMatchObject({ success: status === 200, model: "new-model" });
+    expect(result.events).toContain("open_credentialed_url");
     expect(result.modelRequest).toMatchObject({ method: "POST", payload: { model: "new-model" }, headerNames: expect.arrayContaining(["authorization", "x-test"]) });
     expect(result.config).toEqual(config);
     expect(result.events).not.toContain("save_config");
@@ -149,6 +185,7 @@ describe("append models to a saved Provider", () => {
       { MODEL_REQUEST_STATUS: "200" }, { [configuredModel.keyEnv]: apiKey });
     expect(parseHermesConnectionProbeResponse(result.output).success).toBe(true);
     expect(result.modelRequest).toMatchObject({ url: model.baseUrl + suffix, payload: { model: "new-model" }, headerNames: expect.arrayContaining([header]) });
+    expect(result.events).toContain("open_credentialed_url");
     expect(result.config).toEqual(original);
   });
 
@@ -346,6 +383,7 @@ def probe_api_models(api_key, base_url, timeout=5, api_mode=None):
   writeFileSync(join(packageDir, "urllib_security.py"), String.raw`
 import json, os, urllib.request
 from pathlib import Path
+if os.environ.get("SAFE_TRANSPORT") == "missing": raise ImportError("transport unavailable")
 def open_credentialed_url(request, *, timeout):
     root = Path(os.environ["HERMES_HOME"])
     events = root / "events.json"
@@ -353,6 +391,7 @@ def open_credentialed_url(request, *, timeout):
     values.append("open_credentialed_url")
     events.write_text(json.dumps(values))
     return urllib.request.urlopen(request, timeout=timeout)
+if os.environ.get("SAFE_TRANSPORT") == "non_callable": open_credentialed_url = object()
 `, { encoding: "utf8" });
 
   const acliPath = join(directory, "acli");

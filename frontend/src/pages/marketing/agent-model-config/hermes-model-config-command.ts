@@ -349,6 +349,7 @@ def probe_model_request(credential, model, fallback, started_at, extra_headers=N
     try:
         if not callable(open_credentialed_url):
             raise RuntimeError("Hermes credential-safe HTTP transport is unavailable")
+        # 安全传输会清除跨来源重定向中的凭据；不可回退到 urllib.request.urlopen。
         with open_credentialed_url(request, timeout=60) as response:
             status = int(getattr(response, "status", 200))
             if status < 200 or status >= 300:
@@ -602,7 +603,7 @@ def route_identity(model):
     route_base_url = model.get("routeBaseUrl") if "routeBaseUrl" in model else model.get("baseUrl")
     return (
         str(model.get("providerKey") or "").strip().lower(),
-        str(model.get("id") or "").strip().lower(),
+        str(model.get("id") or "").strip(),
         normalized_route_base_url(route_base_url),
     )
 
@@ -611,6 +612,8 @@ def same_route(left, right):
 
 def same_runtime_deployment(left, right):
     if not left or not right: return False
+    # 配置管理保留模型 ID 大小写，避免运行时的宽松身份归一化合并不同模型。
+    if route_identity(left)[1] != route_identity(right)[1]: return False
     left_base_url = left.get("routeBaseUrl") or left.get("baseUrl")
     right_base_url = right.get("routeBaseUrl") or right.get("baseUrl")
     if HermesBackendIdentity and callable(hermes_same_deployment):
@@ -767,7 +770,7 @@ def find_configured(config, provider_key, model_id, base_url=None, route_base_ur
     matches = [
         model for model in read_snapshot(config)["configuredModels"]
         if model["providerKey"].strip().lower() == provider_key.strip().lower()
-        and model["id"].strip().lower() == model_id.strip().lower()
+        and model["id"].strip() == model_id.strip()
     ]
     if route_base_url is not None:
         target_url = normalized_route_base_url(route_base_url)
@@ -918,7 +921,7 @@ def append_saved_provider_model(config, action):
         raise ProviderOperationError("invalid_model")
     if any(item["providerKey"] == model["providerKey"]
         and route_identity(item)[2] == route_identity(model)[2]
-        and item["id"].strip().lower() == model_id.lower()
+        and item["id"].strip() == model_id
         for item in read_snapshot(config)["configuredModels"]):
         return {"snapshot": read_snapshot(config)}
     if not provider_schema_supported(config): raise ProviderOperationError("provider_unsupported")
@@ -1253,7 +1256,7 @@ def execute_unlocked(action):
         if provider is not None:
             provider = dict(provider)
             remove_key = model["keyEnv"] or text(provider.get("key_env") or provider.get("api_key_env"), "keyEnv", required=False) or custom_endpoint_key_env(model["providerKey"])
-            if provider_model_id(provider).strip().lower() == model["id"].strip().lower():
+            if provider_model_id(provider).strip() == model["id"].strip():
                 provider.pop("model", None)
                 provider.pop("default_model", None)
             remove_provider_model(provider, model["id"])
