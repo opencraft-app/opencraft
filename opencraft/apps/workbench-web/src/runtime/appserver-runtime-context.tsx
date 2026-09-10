@@ -132,6 +132,7 @@ import { createPlatformViewRendererContributionAdapter } from "./platform-view-r
 import { createComposerActionRendererContributionAdapter } from "./composer-action-renderers";
 import { HostProfileContributionRegistry } from "./host-profile-contributions";
 import { PlatformAccountContributionRegistry } from "./platform-account-contributions";
+import { subscribeHostCatalogReadiness } from "./host-catalog-readiness";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import {
   createWorkbenchNavigationTransaction,
@@ -1562,6 +1563,17 @@ export function useMultiHostThreadCatalog(): {
     () => application.hosts.filter((host) => visibleHostIds.has(host.hostId)),
     [application.hosts, visibleHostIds],
   );
+  const queryClient = useQueryClient();
+  const hostIds = useMemo(() => hosts.map((host) => host.hostId), [hosts]);
+  useEffect(() => subscribeHostCatalogReadiness(
+    application.registry,
+    hostIds,
+    (hostId) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["appserver", hostId, "threads"],
+      });
+    },
+  ), [application.registry, hostIds, queryClient]);
   const queries = useQueries({
     queries: hosts.map((host) => ({
       queryKey: ["appserver", host.hostId, "threads", "sidebar", "updated_at", "desc", false] as const,

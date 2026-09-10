@@ -23,8 +23,13 @@ export function WorkbenchRoot({
   readonly application: WebWorkbenchApplication;
 }) {
   useEffect(() => {
-    const dispose = () => void application.dispose();
-    window.addEventListener("pagehide", dispose, { once: true });
+    const dispose = (event: PageTransitionEvent) => {
+      // BFCache freezes and later resumes this exact application graph. Its
+      // transports must stay owned by that graph; disposing here leaves a live
+      // React tree pointing at a permanently closed Host on pageshow.
+      if (!event.persisted) void application.dispose();
+    };
+    window.addEventListener("pagehide", dispose);
     return () => {
       window.removeEventListener("pagehide", dispose);
       void application.dispose();
