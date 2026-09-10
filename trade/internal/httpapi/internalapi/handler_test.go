@@ -1160,6 +1160,42 @@ func TestPayURL_PayURLNotCached_JifeiOptionalFieldsMissing(t *testing.T) {
 	}
 }
 
+func TestPayURL_RejectsMismatchedCreditCheckoutBinding(t *testing.T) {
+	tests := []struct {
+		name                 string
+		externalUserID       string
+		expectedResourceType string
+	}{
+		{name: "different owner", externalUserID: "usr_other", expectedResourceType: "credit_package"},
+		{name: "different resource type", externalUserID: "usr_owner", expectedResourceType: "pass"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			env.orderStore.getOrderByDealNameFn = func(context.Context, string) (*store.TradeOrder, error) {
+				return &store.TradeOrder{
+					DealName:       "deal-credit-1",
+					ExternalUserID: "usr_owner",
+					ResourceType:   "credit_package",
+					PayURL:         "https://buy.cloud.tencent.com/cached",
+				}, nil
+			}
+
+			rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-credit-1/pay-url", map[string]any{
+				"external_user_id":       tc.externalUserID,
+				"expected_resource_type": tc.expectedResourceType,
+			}, true)
+
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), `"code":"OrderNotFound"`) {
+				t.Fatalf("body=%s", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestPayURL_OrderNotFound(t *testing.T) {
 	env := newTestEnv(t)
 	// fakeOrderStore 默认返 ErrTradeOrderNotFound

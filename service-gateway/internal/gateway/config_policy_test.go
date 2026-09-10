@@ -203,6 +203,7 @@ func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, want
 		http.MethodGet + " /v1/credit/products":                      {},
 		http.MethodPost + " /v1/credit/inquiry":                      {},
 		http.MethodPost + " /v1/credit/packages/order":               {},
+		http.MethodPost + " /v1/credit/packages/order-url":           {},
 		http.MethodPost + " /v1/credit/packages/order-and-pay":       {},
 		http.MethodGet + " /v1/credit/packages":                      {},
 		http.MethodPost + " /v1/credit/packages/{package_id}/refund": {},

@@ -1466,21 +1466,23 @@ type PayURLDetail struct {
 
 // GeneratePayURLOptions 拉取支付 URL 时的可选参数（v1.7.31 接口拆分新增）。
 // 全部字段可选；空值时不透传（兼容现有行为）。
+var ErrCheckoutNotFound = fmt.Errorf("checkout: %w", store.ErrTradeOrderNotFound)
 var ErrModifyCheckoutNotFound = fmt.Errorf("modify checkout: %w", store.ErrTradeOrderNotFound)
 var ErrModifyOrderNotPayable = errors.New("modify order is not pending payment; refresh order status")
 
 type GeneratePayURLOptions struct {
 	AuthorizationOnly bool `json:"authorization_only,omitempty"`
 	// Internal checkout binding. Public callers cannot supply these values.
-	ExternalUserID   string   `json:"external_user_id,omitempty"`
-	ResourceID       string   `json:"resource_id,omitempty"`
-	OrderType        string   `json:"order_type,omitempty"`
-	AllowedBundleIDs []string `json:"allowed_bundle_ids,omitempty"`
-	Platform         string   `json:"platform,omitempty"`
-	WxOpenID         string   `json:"wx_open_id,omitempty"`
-	WxAppID          string   `json:"wx_app_id,omitempty"`
-	CancelURL        string   `json:"cancel_url,omitempty"`
-	ReturnURL        string   `json:"return_url,omitempty"`
+	ExternalUserID       string   `json:"external_user_id,omitempty"`
+	ResourceID           string   `json:"resource_id,omitempty"`
+	OrderType            string   `json:"order_type,omitempty"`
+	ExpectedResourceType string   `json:"expected_resource_type,omitempty"`
+	AllowedBundleIDs     []string `json:"allowed_bundle_ids,omitempty"`
+	Platform             string   `json:"platform,omitempty"`
+	WxOpenID             string   `json:"wx_open_id,omitempty"`
+	WxAppID              string   `json:"wx_app_id,omitempty"`
+	CancelURL            string   `json:"cancel_url,omitempty"`
+	ReturnURL            string   `json:"return_url,omitempty"`
 }
 
 func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *GeneratePayURLOptions) (*PayURLDetail, error) {
@@ -1492,6 +1494,9 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 	order, err := s.deps.OrderStore.GetOrderByDealName(ctx, dealName)
 	if err != nil {
 		if errors.Is(err, store.ErrTradeOrderNotFound) {
+			if opts != nil && opts.ExpectedResourceType != "" {
+				return nil, ErrCheckoutNotFound
+			}
 			if opts != nil && opts.OrderType == store.OrderTypeModify {
 				return nil, ErrModifyCheckoutNotFound
 			}
@@ -1499,6 +1504,11 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 				dealName, err)
 		}
 		return nil, fmt.Errorf("placeorder: get trade_order dealName=%s: %w", dealName, err)
+	}
+	if opts != nil && opts.ExpectedResourceType != "" &&
+		(opts.ExternalUserID == "" || opts.ExternalUserID != order.ExternalUserID ||
+			opts.ExpectedResourceType != order.ResourceType) {
+		return nil, ErrCheckoutNotFound
 	}
 	// Modify checkout must bind to the authenticated owner and the path's pass,
 	// even when a caller reaches this shared endpoint through a create/renew route.

@@ -33,6 +33,18 @@
 - 成功条件为同一 modify 订单 `local_status=provisioned`、统一状态 `success`，并且该用户的同一 Pass 已成为目标 Bundle 且 `status=active`。收到付款状态不是升级完成。
 - 本次确认建单成功后，国内支付弹窗展示微信二维码，不展示继续支付、微信内支付链接或手动刷新升级结果。同一弹窗内二维码过期仅重签当前订单票据；获取失败按轮询节奏重试，不新建订单。订单与 Pass 每 3 秒自动核对，超过 10 分钟仍继续等待交付，完成、失败或关闭弹窗后停止轮询。
 
+## Credit 积分包 Web checkout
+
+- 控制台购买积分包使用两段式订单链路：`POST /v1/credit/packages/order` 只创建订单并返回
+  `dealName`，随后调用 `POST /v1/credit/packages/order-url` 获取支付信息；
+  `order-and-pay` 仅供内部联调和自动化测试，不能作为真实用户入口。
+- Credit 从 service-gateway 注入的可信 `X-User-Id` 取得当前用户，调用 Trade 获取支付链接时同时
+  绑定该用户和 `resource_type=credit_package`。订单不存在、订单不属于当前用户或不是积分包订单时
+  统一返回不存在，不能暴露其他用户或其他资源类型的支付链接缓存。
+- `need_charge=1` 时前端跳转 `pay_url`；`need_charge=0` 时直接进入支付完成后的刷新流程。支付完成
+  不等于资源已创建，前端须重新调用 `GET /v1/credit/packages` 观察积分包出现，并兼容计费回调与
+  LLMGateway 订阅创建的短暂延迟。
+
 ## 验证
 
 成对验证订单、支付、订阅和 CTL 各阶段的成功/失败记录；线上金额、活动、API 地址和签名规则必须从登记的外部 authority 现场确认。

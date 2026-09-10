@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,10 +20,13 @@ type Server struct {
 	token string
 }
 
+const wechatPaymentAppID = "wxf95ea3ae45d5304f"
+
 type tradeService interface {
 	Inquiry(context.Context, tradeclient.InquiryRequest) (map[string]any, error)
 	PlaceOrder(context.Context, tradeclient.OrderRequest) (map[string]any, error)
 	PlaceOrderAndPay(context.Context, tradeclient.OrderRequest) (map[string]any, error)
+	GeneratePayURL(context.Context, string, tradeclient.PayURLRequest) (*tradeclient.PayURLResult, error)
 	RefundPackage(context.Context, string, tradeclient.RefundRequest) (map[string]any, error)
 }
 
@@ -32,6 +36,25 @@ type userOrderRequest struct {
 	TimeUnit  string `json:"time_unit"`
 }
 
+type userOrderURLRequest struct {
+	DealName  string `json:"deal_name"`
+	Platform  string `json:"platform,omitempty"`
+	WxOpenID  string `json:"wx_open_id,omitempty"`
+	CancelURL string `json:"cancel_url,omitempty"`
+	ReturnURL string `json:"return_url,omitempty"`
+}
+
+type userOrderURLResponse struct {
+	DealName   string  `json:"deal_name"`
+	PayURL     string  `json:"pay_url"`
+	TokenID    *string `json:"token_id,omitempty"`
+	OrderID    *string `json:"order_id,omitempty"`
+	MidasAppID *string `json:"midas_app_id,omitempty"`
+	NeedCharge int     `json:"need_charge"`
+	Uin        string  `json:"uin,omitempty"`
+	AppID      string  `json:"app_id,omitempty"`
+}
+
 func NewRouter(svc *service.Service, st store.Store, trade tradeService, internalToken string) http.Handler {
 	server := &Server{svc: svc, store: st, trade: trade, token: strings.TrimSpace(internalToken)}
 	mux := http.NewServeMux()
@@ -39,6 +62,7 @@ func NewRouter(svc *service.Service, st store.Store, trade tradeService, interna
 	mux.HandleFunc("/v1/credit/products", server.products)
 	mux.HandleFunc("/v1/credit/inquiry", server.inquiry)
 	mux.HandleFunc("/v1/credit/packages/order", server.order)
+	mux.HandleFunc("/v1/credit/packages/order-url", server.orderURL)
 	mux.HandleFunc("/v1/credit/packages/order-and-pay", server.orderAndPay)
 	mux.HandleFunc("/v1/credit/packages", server.userCredits)
 	mux.HandleFunc("/v1/credit/packages/", server.userPackageAction)
@@ -160,6 +184,64 @@ func (s *Server) orderAndPay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) orderURL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	var body userOrderURLRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	dealName := strings.TrimSpace(body.DealName)
+	if dealName == "" {
+		writeError(w, http.StatusBadRequest, "deal_name is required")
+		return
+	}
+	result, err := s.trade.GeneratePayURL(r.Context(), dealName, tradeclient.PayURLRequest{
+		ExternalUserID: userID,
+		Platform:       body.Platform,
+		WxOpenID:       body.WxOpenID,
+		WxAppID:        paymentWxAppID(body.WxOpenID),
+		CancelURL:      body.CancelURL,
+		ReturnURL:      body.ReturnURL,
+	})
+	if err != nil {
+		var tradeErr *tradeclient.Error
+		if errors.As(err, &tradeErr) && tradeErr.Status == http.StatusNotFound {
+			writeError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if result == nil {
+		writeError(w, http.StatusBadGateway, "trade returned empty payment result")
+		return
+	}
+	writeJSON(w, http.StatusOK, userOrderURLResponse{
+		DealName:   dealName,
+		PayURL:     result.PayURL,
+		TokenID:    result.TokenID,
+		OrderID:    result.OrderID,
+		MidasAppID: result.MidasAppID,
+		NeedCharge: result.NeedCharge,
+		Uin:        result.Uin,
+		AppID:      result.AppID,
+	})
+}
+
+func paymentWxAppID(wxOpenID string) string {
+	if strings.TrimSpace(wxOpenID) == "" {
+		return ""
+	}
+	return wechatPaymentAppID
 }
 
 func (s *Server) userCredits(w http.ResponseWriter, r *http.Request) {

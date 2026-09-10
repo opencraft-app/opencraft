@@ -78,6 +78,10 @@ master 源码
   北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
+- 积分包控制台 checkout 新增用户路由时，先发布支持订单归属和资源类型校验的 Trade 与 Credit，
+  再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
+  `POST /v1/credit/packages/order-url`。首轮只更新 `sandbox-bj-7` 与 `beijing-sandbox`；不得因共享
+  源码或策略测试把该路由自动扩散到上海、新加坡等尚未完成 Credit 接线的环境。
 
 ## CloudLadder Gateway 回调环境
 
