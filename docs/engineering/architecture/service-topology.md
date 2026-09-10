@@ -16,6 +16,7 @@ Service Catalog 是机器可读清单，本页是人读地图。Owner 当前统�
 | `infra_pulumi` | 云资源、环境 inventory、deploy 输出 | 发布、站点环境 | 腾讯云、Argo、服务 overlays |
 | `new-api` | 上游模型聚合服务 | Agent runtime | 上游 NewAPI、AI Gateway |
 | `nextgen-dashboard` | 下一代管理 Dashboard | Agent runtime | Admin Gateway |
+| `opencraft` | 多端 Agent Workbench、Chat Runtime、AppServer/Hermes 适配 | Agent runtime、站点、身份 | Frontend、Service Gateway、Auth、Hermes runtime |
 | `payment` | 支付 contract 与回调 | 订阅权益 | Subscription、Trade、支付 provider |
 | `sandbox` | CVM 池、分配、释放、重置 | Agent runtime | CTL、腾讯云、MySQL/Redis |
 | `service-gateway` | 公共入口、站点/鉴权/代理 | 身份、站点、Agent | 所有公共后端 |

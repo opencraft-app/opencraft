@@ -63,7 +63,7 @@
       "superseded_by": null,
       "owner_ref": "wisp/mono2-maintainers",
       "design_record": "docs/engineering/domains/agent-gateway-runtime.md",
-      "current_code_evidence": ["cloudagent/", "ai-gateway/", "ctl/", "sandbox/", "velagw/", "velalink/", "workers/", "new-api/"],
+      "current_code_evidence": ["cloudagent/", "ai-gateway/", "ctl/", "sandbox/", "velagw/", "velalink/", "workers/", "new-api/", "opencraft/"],
       "derived_contexts": [{"context_id": "agent-gateway-runtime", "path": "docs/context/domains/agent-gateway-runtime.md", "status": "active", "default_routed": true}],
       "risk": "high",
       "unknowns": ["上游 subtree 的原始设计保持在各上游谱系，任务需分别恢复。"]

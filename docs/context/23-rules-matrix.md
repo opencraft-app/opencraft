@@ -9,9 +9,9 @@ source_of_truth:
   - docs/context/23-rules-matrix.md
   - .agents/context/context-routing.yaml
 status: active
-reviewed_at: 2026-08-25
+reviewed_at: 2026-09-10
 review_due: 2026-11-23
-revision: 2.0.0
+revision: 2.1.0
 precedence: project
 derived: true
 ---
@@ -44,8 +44,8 @@ derived: true
 | 9 | PILOT | 交接结构化，不传完整聊天 | Task Pack 和 Checkpoint 记录目标、事实、风险、验证、下一步 | 至少一个真实 Task Pack 有完整 `context_receipt`；仍需跨会话复现样本 | partial |
 | 10 | ADOPT | 多路检索，不用单一向量检索冒充万能 | 路由已实现 exact path、deferred path、symbol、keyword 四通道 | 输出各通道命中证据；语义、图关系、历史通道尚未接入 | partial |
 | 11 | ADOPT | 精确命中不能被语义结果覆盖 | 路径权重 30、显式文件 20、符号 5、关键词 2 | 精确路径 smoke case 必须出现在路由结果中 | implemented |
-| 12 | ADOPT | 上下文必须有来源、版本与权威度 | 每份正式 Context 含 owner、authority、revision、review 日期和事实源；工程文档另由 Service Catalog 与 Documentation Policy 治理 | 58/58 非评测 Context 通过 Schema；23/23 服务记录有 owner、domain 与 source docs | implemented |
-| 13 | ADOPT | 生成 Wiki 只能是派生视图 | Context Catalog 由 Validator 生成并记录源文件 SHA256；Domain/Service Context 回链正式工程文档 | 58/58 Context Catalog 一致，5/5 Domain 与 23/23 Service Context 派生；不把 Catalog 数量冒充全仓文档覆盖 | implemented |
+| 12 | ADOPT | 上下文必须有来源、版本与权威度 | 每份正式 Context 含 owner、authority、revision、review 日期和事实源；工程文档另由 Service Catalog 与 Documentation Policy 治理 | 非评测 Context 通过 Schema；中央 Catalog 的全部服务记录都有 owner、domain 与 source docs | implemented |
+| 13 | ADOPT | 生成 Wiki 只能是派生视图 | Context Catalog 由 Validator 生成并记录源文件 SHA256；Domain/Service Context 回链正式工程文档 | Context Catalog 一致，5/5 Domain 与全部 Service Context 派生；不把 Catalog 数量冒充全仓文档覆盖 | implemented |
 | 14 | RESEARCH | 记忆写入必须经过验证门禁 | `candidates/` 与 `lifecycle.yaml` 定义 candidate → pilot → active → stale/retired | 尚无真实 owner 接受记录、拒绝记录和自动发布门禁 | design-only |
 | 15 | ADOPT | 保留有效失败证据，压缩重复噪声 | `feedback/` 保存失败条件、影响、根因、修复和回归 | 路由漏召回与审计自评分案例可回链到具体变更 | implemented |
 | 16 | PILOT | 提示前缀与工具定义必须稳定 | `.agents/context/tool-contracts.yaml` 版本化四个上下文工具契约 | 静态文件存在；尚缺参数/返回/错误码的运行时契约回归 | partial |

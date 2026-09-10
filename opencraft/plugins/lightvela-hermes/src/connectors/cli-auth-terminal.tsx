@@ -23,6 +23,9 @@ export function CliAuthTerminal({ output, offset, ready, onData, onResize }: {
       const [{ Terminal }, { FitAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
+        // @ts-ignore -- Vite resolves this renderer-only CSS module; the
+        // extension source is also typechecked through both Vite and Expo TS
+        // programs, which intentionally have different CSS module visibility.
         import("@xterm/xterm/css/xterm.css"),
       ]);
       const slot = element.current;

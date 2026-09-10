@@ -59,6 +59,9 @@
 
 独立验证入口：
 
+- `.ci/opencraft.yml`
+  - 只对 `opencraft/**` 和显式共享的 `frontend/` Agent Console 路径运行 npm 安装、drift check 和完整 gate。
+  - 该入口不构建或推送发布镜像，不更新 GitOps，不触发 frontend 发布。
 - `.ci/cloudladdergateway.yml`
   - 内网 TKEx 专用 release 入口，复用 `.ci/templates/service-release.yml` 构建国内站 `tkexgz` 和国际站 `tkexsg` 镜像。
   - 目标镜像仓库为 `csighub.tencentyun.com/skipzhang/cloudladdergateway`；构建机从 `/etc/lightclaw-ci/csighub_username` 和 `/etc/lightclaw-ci/csighub_password` 读取发布凭据。

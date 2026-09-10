@@ -41,7 +41,7 @@
       "triggers": ["gateway", "channel", "stream", "streaming", "代理", "网关", "流式"],
       "weak_triggers": ["agent", "model", "runtime", "provider"],
       "symbols": ["cloudagent", "ai-gateway", "service-gateway", "velagw", "channel"],
-      "path_prefixes": ["cloudagent/", "ai-gateway/", "velagw/", "service-gateway/", "ctl/", "sandbox/", "workers/", "velalink/", "new-api/"],
+      "path_prefixes": ["cloudagent/", "ai-gateway/", "velagw/", "service-gateway/", "ctl/", "sandbox/", "workers/", "velalink/", "new-api/", "opencraft/"],
       "must_read": ["docs/context/domains/agent-gateway-runtime.md"],
       "deferred_paths": ["cloudagent/AGENTS.md", "ai-gateway/AGENTS.md", "service-gateway/README.md"]
     },
@@ -51,7 +51,7 @@
       "triggers": ["locale", "i18n", "国际站", "国内站", "环境", "域名", "语言", "新加坡"],
       "weak_triggers": ["site", "domain", "environment", "global", "intl", "domestic", "china", "international"],
       "symbols": ["lightvela.com", "lightvela.ai", "isGlobal", "sgprod", "shprod", "beijing-sandbox", "sandbox-bj"],
-      "path_prefixes": ["frontend/", "argocd/apps/", "argocd/services/"],
+      "path_prefixes": ["frontend/", "opencraft/", "argocd/apps/", "argocd/services/"],
       "must_read": ["docs/context/domains/site-environment-routing.md"],
       "deferred_paths": ["frontend/src/lib/public-site-routing.ts", "argocd/apps/sgprod/README.md", "argocd/apps/shprod/README.md"]
     },
@@ -104,12 +104,12 @@
     },
     {
       "id": "upstream-subtrees",
-      "scope": "NewAPI、LLMGateway 和 VelaLink 上游 subtree 的归属、同步、固定版本和本地验证。",
-      "triggers": ["velalink", "velagw", "new-api", "subtree", "upstream", "上游"],
+      "scope": "NewAPI、LLMGateway 和 VelaLink 的持续上游，以及 OpenCraft 一次性 subtree 迁移谱系。",
+      "triggers": ["velalink", "velagw", "new-api", "opencraft migration", "subtree", "upstream", "上游", "迁移谱系"],
       "symbols": [".mono2-subtree", "velachat", "git subtree split", "git subtree pull"],
-      "path_prefixes": ["new-api/", "velagw/", "velalink/"],
+      "path_prefixes": ["new-api/", "velagw/", "velalink/", "opencraft/"],
       "must_read": ["docs/context/project/upstream-subtrees.md"],
-      "deferred_paths": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md"]
+      "deferred_paths": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md", "opencraft/MONO2_MIGRATION.md"]
     },
     {
       "id": "context-governance",
@@ -353,6 +353,15 @@
       "path_prefixes": ["velalink/"],
       "must_read": ["docs/context/project/services/velalink.md"],
       "deferred_paths": ["velalink/docs/README.md", "velalink/AGENTS.md"]
+    },
+    {
+      "id": "service-opencraft",
+      "scope": "OpenCraft Chat Runtime、多端 Workbench、AppServer 适配与 LightVela Hermes 扩展服务入口。",
+      "triggers": ["opencraft service", "opencraft workbench", "chat runtime", "hermes extension"],
+      "symbols": ["opencraft/package.json", "@opencraft/workbench-web", "lightvela-hermes"],
+      "path_prefixes": ["opencraft/"],
+      "must_read": ["docs/context/project/services/opencraft.md"],
+      "deferred_paths": ["opencraft/docs/README.md", "opencraft/AGENTS.md", "opencraft/MONO2_MIGRATION.md"]
     },
     {
       "id": "service-workers",

@@ -37,6 +37,8 @@
 
 每条规则可用 `exclude_paths` 移除位于责任根目录之下、但不承载架构语义的表层文件，例如生成的 i18n 资源包、营销文案页、测试与固件、二进制资产。规则命中要求至少有一个变更路径在排除之后仍然存在。规则的 `paths` 应指向真正的架构面，而不是整个顶层服务目录：`site-environment-routing` 因此收窄到前端的配置、应用装配、服务与仓储层，不再覆盖 `frontend/**` 全域。
 
+一级服务迁入必须原子更新本地四入口、中央 Catalog、派生 Service Context、路由 smoke case、变更影响映射和正式责任文档。OpenCraft 的一次性 subtree 迁移按此流程登记为独立服务，并把其 Chat/AppServer/Hermes 投影纳入 `agent-gateway-runtime`；旧仓库谱系只作为有界历史，不形成第二写入真源。服务总数由校验器的一级服务集合派生，文档和测试不维护孤立的手写计数。
+
 服务运行策略也要与发布控制面区分。`argocd/services/service-gateway/*/config.yaml` 承载路由、CORS 和访问策略，但不改变镜像构建、生产晋级、Argo Application 或同步模型，因此不触发 `release-gitops` 的正式设计更新；它仍由 service-gateway 配置测试、代码评审和生产发布门禁约束。其他 `argocd/**` 文件继续属于 `release-gitops` 高风险范围。
 
 这两项修正来自一次真实的假阳性：一个只改 changelog 文案、生成 i18n 与两张图片的前端 MR，被 `frontend/**` 判定必须更新站点环境路由的架构文档。

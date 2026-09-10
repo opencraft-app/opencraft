@@ -4,11 +4,14 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { dirname, extname, join, relative, resolve } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
-const sourceRoot = process.env.MONO2_FRONTEND_ROOT
-  ? resolve(process.env.MONO2_FRONTEND_ROOT, "src")
-  : "/data/mono2/frontend/src";
-const sourceFrontendRoot = resolve(sourceRoot, "..");
+const sourceFrontendRoot = process.env.MONO2_FRONTEND_ROOT
+  ? resolve(process.env.MONO2_FRONTEND_ROOT)
+  : resolve(repositoryRoot, "../frontend");
+const sourceRoot = join(sourceFrontendRoot, "src");
 const sourceRepositoryRoot = resolve(sourceFrontendRoot, "..");
+const sourceDescriptor = process.env.MONO2_FRONTEND_ROOT
+  ? "$MONO2_FRONTEND_ROOT/src"
+  : "frontend/src";
 const targetRoot = join(
   repositoryRoot,
   "plugins/lightvela-hermes/src/upstream/mono2",
@@ -357,12 +360,28 @@ for (const file of publicAssets) {
   }
 }
 
-const sourceRevision = execFileSync("git", ["-C", sourceRepositoryRoot, "rev-parse", "HEAD"], {
-  encoding: "utf8",
-}).trim();
+const sourceRevision = execFileSync(
+  "git",
+  [
+    "-C",
+    sourceRepositoryRoot,
+    "log",
+    "-1",
+    "--format=%H",
+    "--",
+    "frontend/src",
+    "frontend/public/tat-hermes-web-proxy-sw.js",
+    "frontend/public/assets/skills",
+  ],
+  { encoding: "utf8" },
+).trim();
+
+if (!sourceRevision) {
+  throw new Error("unable to resolve the last mono2 frontend source revision");
+}
 
 const manifestContents = `${JSON.stringify({
-    source: sourceRoot,
+    source: sourceDescriptor,
     sourceRevision,
     generatedBy: "scripts/sync-mono2-agent-console.mjs",
     files: manifest,
