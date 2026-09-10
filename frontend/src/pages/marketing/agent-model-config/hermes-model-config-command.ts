@@ -145,12 +145,31 @@ TRANSPORTS = {
     "anthropic_messages": "anthropic_messages", "bedrock_converse": "bedrock_converse",
 }
 ENVELOPE_TTL_SECONDS = 600
+MAX_MODEL_ID_LENGTH = 512
+ASCII_CONTROL_CHARACTER_LIMIT = 32
+MODEL_DISCOVERY_TIMEOUT_SECONDS = 30
+MAX_MODEL_DISCOVERY_RESPONSE_BYTES = 2 * 1024 * 1024
 
 class ConfigurationRollbackError(RuntimeError):
     pass
 
 class ProviderOperationError(RuntimeError):
     pass
+
+def log_provider_discovery_failure(error):
+    # 只保留本 helper 的堆栈行号；异常原文、源码行、路径与局部变量可能含凭据。
+    helper_lines = []
+    frame = error.__traceback__
+    while frame is not None and len(helper_lines) < 20:
+        if frame.tb_frame.f_code.co_filename == "<stdin>":
+            helper_lines.append(frame.tb_lineno)
+        frame = frame.tb_next
+    try:
+        sys.stderr.write("LIGHTVELA_MODEL_DIAGNOSTIC " + json.dumps({
+            "operation": "probe_saved_provider", "code": "discovery_failed", "helperLines": helper_lines,
+        }) + "\n")
+    except Exception:
+        pass
 
 def envelope_directory():
     root = os.environ.get("HERMES_HOME") or os.environ.get("HERMES_ROOT") or os.path.expanduser("~/.hermes")
@@ -895,7 +914,7 @@ def saved_provider_target(config, action):
 def append_saved_provider_model(config, action):
     model = saved_provider_target(config, action)
     model_id = text(action.get("modelId"), "modelId")
-    if len(model_id) > 512 or any(ord(char) < 32 for char in model_id):
+    if len(model_id) > MAX_MODEL_ID_LENGTH or any(ord(char) < ASCII_CONTROL_CHARACTER_LIMIT for char in model_id):
         raise ProviderOperationError("invalid_model")
     if any(item["providerKey"] == model["providerKey"]
         and route_identity(item)[2] == route_identity(model)[2]
@@ -981,7 +1000,7 @@ def saved_provider_connection(config, action):
 def probe_saved_model(config, action):
     model, credential, headers = saved_provider_connection(config, action)
     model = {**model, "id": text(action.get("modelId"), "modelId")}
-    if len(model["id"]) > 512 or any(ord(char) < 32 for char in model["id"]):
+    if len(model["id"]) > MAX_MODEL_ID_LENGTH or any(ord(char) < ASCII_CONTROL_CHARACTER_LIMIT for char in model["id"]):
         raise ProviderOperationError("invalid_model")
     fallback = {"success": False, "provider": model["providerKey"], "model": model["id"],
         "baseUrl": model["baseUrl"], "errorMessage": "Model connectivity check failed"}
@@ -998,12 +1017,12 @@ def probe_saved_provider(config, action):
     if credential:
         request_headers.update({"x-api-key": credential, "anthropic-version": "2023-06-01"} if mode == "anthropic_messages" else {"Authorization": "Bearer " + credential})
     request_headers.update(headers)
-    # Credentials must never follow a redirect to another origin.
+    # 凭据不得随重定向发送到其他来源。
     if open_credentialed_url is None: raise ProviderOperationError("discovery_unsupported")
     try:
         request = urllib.request.Request(endpoint + "/models", headers=request_headers)
-        with open_credentialed_url(request, timeout=30) as response:
-            data = json.loads(response.read(2 * 1024 * 1024).decode("utf-8"))
+        with open_credentialed_url(request, timeout=MODEL_DISCOVERY_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read(MAX_MODEL_DISCOVERY_RESPONSE_BYTES).decode("utf-8"))
         items = data.get("data") if isinstance(data, dict) else None
         if not isinstance(items, list): raise ProviderOperationError("discovery_unsupported")
         models = list(dict.fromkeys(item["id"].strip() for item in items
@@ -1012,11 +1031,17 @@ def probe_saved_provider(config, action):
         return {"snapshot": {**snapshot, "probedModels": models, "probeSucceeded": True}}
     except urllib.error.HTTPError as error:
         raise ProviderOperationError("credential_rejected" if error.code in (401, 403) else "discovery_unsupported" if error.code in (404, 405) else "discovery_failed")
-    except (TimeoutError, urllib.error.URLError):
+    except TimeoutError:
         raise ProviderOperationError("discovery_timeout")
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, TimeoutError):
+            raise ProviderOperationError("discovery_timeout")
+        log_provider_discovery_failure(error)
+        raise ProviderOperationError("discovery_failed")
     except ProviderOperationError:
         raise
-    except Exception:
+    except Exception as error:
+        log_provider_discovery_failure(error)
         raise ProviderOperationError("discovery_failed")
 
 def remove_provider_model(provider, model_id):

@@ -97,6 +97,37 @@ describe("append models to a saved Provider", () => {
     expect(result.config).toEqual(config);
   });
 
+  it.each([
+    ["timeout", "discovery_timeout"],
+    ["url_timeout", "discovery_timeout"],
+    ["url_error", "discovery_failed"],
+    ["unexpected", "discovery_failed"],
+  ])("classifies %s and keeps discovery diagnostics free of credentials", (failure, code) => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "200", DISCOVERY_FAILURE: failure, FAILURE_SECRET: apiKey }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain(code);
+    expect(result.output).not.toContain(apiKey);
+    expect(result.output).not.toContain(model.baseUrl);
+    expect(result.config).toEqual(config);
+    if (code === "discovery_failed") {
+      const diagnostic = result.output.split("\n").find((line) => line.startsWith("LIGHTVELA_MODEL_DIAGNOSTIC "));
+      expect(diagnostic).toBeDefined();
+      const fields = JSON.parse(diagnostic!.slice("LIGHTVELA_MODEL_DIAGNOSTIC ".length));
+      expect(fields).toMatchObject({ operation: "probe_saved_provider", code: "discovery_failed", helperLines: expect.any(Array) });
+      expect(fields.helperLines.length).toBeGreaterThan(0);
+      expect(Object.keys(fields).sort()).toEqual(["code", "helperLines", "operation"]);
+    }
+  });
+
+  it.each(["x".repeat(513), "invalid\u0001model"])("rejects an invalid model ID before append or probe", (modelId) => {
+    for (const type of ["appendProviderModel", "probeConfiguredModel"] as const) {
+      const result = runHelper({ type, anchor: configuredModel, modelId }, config, {}, { [configuredModel.keyEnv]: apiKey });
+      expect(result.output).toContain("invalid_model");
+      expect(result.config).toEqual(config);
+      expect(result.modelRequest).toBeNull();
+    }
+  });
+
   it.each([200, 401, 429])("checks the selected unsaved model with saved credentials (HTTP %s), without adding it", (status) => {
     const result = runHelper({ type: "probeConfiguredModel", anchor: configuredModel, modelId: "new-model" }, config,
       { MODEL_REQUEST_STATUS: String(status) }, { [configuredModel.keyEnv]: apiKey });
@@ -382,6 +413,11 @@ if os.environ.get("MODEL_REQUEST_STATUS"):
             "runtimeCredentialUsed": request.get_header("Authorization") == "Bearer " + os.environ["RUNTIME_TEST_SECRET"] if os.environ.get("RUNTIME_TEST_SECRET") else None,
         }))
         status = int(os.environ["MODEL_REQUEST_STATUS"])
+        failure = os.environ.get("DISCOVERY_FAILURE")
+        if failure == "timeout": raise TimeoutError(os.environ["FAILURE_SECRET"])
+        if failure == "url_timeout": raise urllib.error.URLError(TimeoutError(os.environ["FAILURE_SECRET"]))
+        if failure == "url_error": raise urllib.error.URLError(os.environ["FAILURE_SECRET"])
+        if failure == "unexpected": raise ValueError(os.environ["FAILURE_SECRET"])
         if status >= 400:
             raise urllib.error.HTTPError(request.full_url, status, "probe failure", {}, BytesIO(b'{"error":{"message":"request rejected"}}'))
         return FakeResponse(status)

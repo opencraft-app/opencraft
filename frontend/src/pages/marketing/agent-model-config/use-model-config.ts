@@ -84,6 +84,7 @@ export function useModelConfig({
     setOperationErrorOperation(null);
     void reload();
     return () => {
+      activeOperation.current = null;
       requestRevision.current += 1;
       probeRevision.current += 1;
     };

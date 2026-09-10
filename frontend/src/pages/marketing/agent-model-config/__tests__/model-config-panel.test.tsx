@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AgentModelConfigPanel } from "../agent-model-config-panel";
@@ -359,6 +360,89 @@ describe("AgentModelConfigPanel", () => {
     }
   });
 
+  it("retries failed group discovery without re-entering credentials and clears its toast on cancel", async () => {
+    const dismiss = vi.fn();
+    toastMocks.error.mockReturnValueOnce(dismiss);
+    const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] });
+    remote.failNext("probeConfiguredProvider");
+    renderPanel(remote);
+    const row = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    const form = within(row).getByRole("group", { name: "添加模型" });
+    const retry = await within(form).findByRole("button", { name: "获取可用模型" });
+    await userEvent.click(retry);
+    await waitFor(() => expect(within(form).getByRole("combobox", { name: "模型" })).toBeEnabled());
+    expect(remote.actions.filter((action) => action.type === "probeConfiguredProvider")).toHaveLength(2);
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(within(form).queryByRole("button", { name: "获取可用模型" })).not.toBeInTheDocument();
+    await userEvent.click(within(form).getByRole("button", { name: "取消" }));
+    expect(remote.actions.some((action) => action.type === "appendProviderModel")).toBe(false);
+  });
+
+  it("dismisses a group failure toast when its draft is cancelled", async () => {
+    const dismiss = vi.fn();
+    toastMocks.error.mockReturnValueOnce(dismiss);
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [idleModel] }, []);
+    renderPanel(remote);
+    const row = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalled());
+    await userEvent.click(within(row).getByRole("button", { name: "取消" }));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["probeConfiguredProvider", "probeConfiguredModel", "appendProviderModel"] as const)(
+    "ignores a late %s result after switching Agents with identical Provider identities",
+    async (pendingType) => {
+      const initial = { primary: null, fallbacks: [], configuredModels: [idleModel] };
+      const first = createRemote(initial);
+      const second = createRemote(initial, ["bot-2-model"]);
+      let finish!: (value: { status: string; exitCode: number; output: string }) => void;
+      const pending = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => { finish = resolve; });
+      const exec = vi.fn(async (botId: string, command: string) => {
+        if (botId === "bot-1" && decodeAction(command).type === pendingType) return pending;
+        return (botId === "bot-1" ? first : second).execDebugCommand(botId, command);
+      });
+      const view = render(<AgentModelConfigPanel botId="bot-1" execDebugCommand={exec} providers={providers} />);
+      const row = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
+      await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+      if (pendingType !== "probeConfiguredProvider") {
+        const form = within(row).getByRole("group", { name: "添加模型" });
+        await userEvent.click(within(form).getByRole("combobox", { name: "模型" }));
+        await userEvent.click(screen.getByRole("option", { name: "model-new" }));
+        await userEvent.click(within(form).getByRole("button", { name: pendingType === "appendProviderModel" ? "保存" : "检测模型状态" }));
+      }
+      await waitFor(() => expect(exec.mock.calls.some(([botId, command]) => botId === "bot-1" && decodeAction(command).type === pendingType)).toBe(true));
+      view.rerender(<AgentModelConfigPanel botId="bot-2" execDebugCommand={exec} providers={providers} />);
+      await waitFor(() => expect(second.actions.some((action) => action.type === "read")).toBe(true));
+      const nextRow = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
+      await userEvent.click(within(nextRow).getByRole("button", { name: "添加模型" }));
+      await waitFor(() => expect(within(nextRow).getByRole("combobox", { name: "模型" })).toBeEnabled());
+      toastMocks.success.mockClear();
+      toastMocks.error.mockClear();
+      await act(async () => {
+        finish({ status: "Succeeded", exitCode: 0, output: pendingType === "probeConfiguredModel" ? connectionOutput(initial) : successOutput({ ...initial, configuredModels: [idleModel, { ...idleModel, id: "stale-model" }], probedModels: ["stale-model"] }) });
+        await pending;
+      });
+      expect(toastMocks.success).not.toHaveBeenCalled();
+      expect(toastMocks.error).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await userEvent.click(within(nextRow).getByRole("combobox", { name: "模型" }));
+      expect(screen.getByRole("option", { name: "bot-2-model" })).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: "stale-model" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("still discovers models when StrictMode replays the form lifecycle", async () => {
+    const remote = createRemote({ primary: null, fallbacks: [], configuredModels: [idleModel] });
+    render(<StrictMode><AgentModelConfigPanel botId="bot-1" execDebugCommand={remote.execDebugCommand} providers={providers} /></StrictMode>);
+    const row = (await screen.findByRole("button", { name: "Gamma API" })).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "添加模型" }));
+    await waitFor(() => expect(within(row).getByRole("combobox", { name: "模型" })).toBeEnabled());
+    await userEvent.click(within(row).getByRole("combobox", { name: "模型" }));
+    expect(screen.getByRole("option", { name: "model-new" })).toBeInTheDocument();
+  });
+
   it("appends a custom model inside its Provider without asking for credentials or changing the primary", async () => {
     const remote = createRemote({ primary: primaryModel, fallbacks: [], configuredModels: [primaryModel, idleModel] }, [idleModel.id, "model-new"]);
     renderPanel(remote);
@@ -379,6 +463,7 @@ describe("AgentModelConfigPanel", () => {
     const savedOption = screen.getByRole("option", { name: /model-idle/ });
     expect(savedOption).toHaveAttribute("data-disabled");
     expect(within(savedOption).getByText("已添加")).toHaveClass("rounded-full");
+    expect(within(savedOption).getByText("已添加").parentElement).toHaveClass("flex-wrap");
     expect(screen.queryByRole("option", { name: "输入模型 ID" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("option", { name: "model-new" }));
     await userEvent.click(within(form).getByRole("button", { name: "检测模型状态" }));

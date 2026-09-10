@@ -53,4 +53,15 @@ describe("toast", () => {
     vi.advanceTimersByTime(200);
     expect(document.getElementById("_lh-message-container")).toBeNull();
   });
+
+  it("allows an owner to dismiss only its own message", () => {
+    const dismissOld = toast.error("旧表单失败");
+    const dismissNew = toast.success("其他操作成功");
+    dismissOld();
+    expect(document.getElementById("_lh-message-container")?.textContent).toContain("其他操作成功");
+    dismissNew();
+    expect(document.getElementById("_lh-message-container")).toBeNull();
+    vi.runAllTimers();
+    expect(document.getElementById("_lh-message-container")).toBeNull();
+  });
 });

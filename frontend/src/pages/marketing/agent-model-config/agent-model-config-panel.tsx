@@ -97,9 +97,12 @@ function captureAgentSidebarPosition() {
   }
 }
 
+const MANAGED_PROVIDER_PREFIX = "lightvela-";
+const USER_CUSTOM_PROVIDER_PREFIX = `${MANAGED_PROVIDER_PREFIX}custom-`;
+
 function managedProviderKey(value: string) {
   const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return slug.startsWith("lightvela-") ? slug : `lightvela-${slug || "provider"}`;
+  return slug.startsWith(MANAGED_PROVIDER_PREFIX) ? slug : `${MANAGED_PROVIDER_PREFIX}${slug || "provider"}`;
 }
 
 function stableProviderHash(value: string) {
@@ -112,7 +115,7 @@ function stableProviderHash(value: string) {
 
 function customManagedProviderKey(name: string, baseUrl: string) {
   const endpointHash = stableProviderHash(baseUrl.trim().toLowerCase());
-  return managedProviderKey(`custom-${name}-${endpointHash}`);
+  return managedProviderKey(`${USER_CUSTOM_PROVIDER_PREFIX}${name}-${endpointHash}`);
 }
 
 function sameModel(
@@ -145,9 +148,9 @@ function isBuiltInProviderGroup(group: ConfiguredProviderGroup) {
 }
 
 function canAppendToProviderGroup(group: ConfiguredProviderGroup) {
-  // Only the custom creation flow owns this namespace; provider names are user-editable.
+  // 仅自定义创建流程拥有该命名空间；可编辑的显示名称不能用于判定来源。
   return !isBuiltInProviderGroup(group) && group.models.every((model) => (
-    model.providerKey.trim().toLowerCase().startsWith("lightvela-custom-")
+    model.providerKey.trim().toLowerCase().startsWith(USER_CUSTOM_PROVIDER_PREFIX)
   ));
 }
 
@@ -510,7 +513,7 @@ export function AgentModelConfigPanel({
       apiKey: normalizedApiKey,
       model: selectedModel,
       purpose,
-      // Custom selections now always come from discovery; fixed catalogs remain authoritative.
+      // 自定义模型从发现结果中选择；固定目录供应商仍以产品目录为准。
       discoverModels: category === "custom"
         ? modelOptions.some((modelOption) => modelOption.id === selectedModelId)
         : activeProvider?.discoveryStrategy !== "catalog",
@@ -768,7 +771,7 @@ export function AgentModelConfigPanel({
                       {addingProviderKey === group.key && anchor && canAppend ? (
                         <li className="px-4 py-3">
                         <ConfiguredProviderModelForm
-                          key={`${botId}:${group.key}`}
+                          key={JSON.stringify([botId, group.key, anchor.id, anchor.baseUrl, anchor.apiMode, anchor.keyEnv])}
                           anchor={anchor}
                           savedModels={savedModels}
                           controller={controller}

@@ -60,6 +60,30 @@ function decodeAction(command: string): HermesModelConfigAction {
 }
 
 describe("useModelConfig", () => {
+  it.each(["switch", "unmount"])("discards a pending append after %s", async (change) => {
+    let finish!: (value: { status: string; exitCode: number; output: string }) => void;
+    const pending = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => { finish = resolve; });
+    const execDebugCommand = vi.fn(async (_id: string, command: string) => {
+      if (decodeAction(command).type === "appendProviderModel") return pending;
+      return { status: "Succeeded", exitCode: 0, output: output(initialSnapshot) };
+    });
+    const { result, rerender, unmount } = renderHook(({ botId }) => useModelConfig({ botId, execDebugCommand }), { initialProps: { botId: "bot-1" } });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let response!: Promise<unknown>;
+    act(() => { response = result.current.append(model, "new-model"); });
+    if (change === "unmount") unmount();
+    else {
+      rerender({ botId: "bot-2" });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+    }
+    await act(async () => {
+      finish({ status: "Succeeded", exitCode: 0, output: output({ ...initialSnapshot, configuredModels: [{ ...model, id: "new-model" }] }) });
+      expect(await response).toBeNull();
+    });
+    expect(execDebugCommand.mock.calls.filter(([, command]) => decodeAction(command).type === "appendProviderModel").map(([id]) => id)).toEqual(["bot-1"]);
+    if (change === "switch") expect(result.current.snapshot).toEqual(initialSnapshot);
+  });
+
   it("discards a cancelled saved-model check and allows the next operation", async () => {
     let finish: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
     const pending = new Promise<{ status: string; exitCode: number; output: string }>((resolve) => { finish = resolve; });
