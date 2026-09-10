@@ -360,21 +360,28 @@ for (const file of publicAssets) {
   }
 }
 
-const sourceRevision = execFileSync(
-  "git",
-  [
-    "-C",
-    sourceRepositoryRoot,
-    "log",
-    "-1",
-    "--format=%H",
-    "--",
-    "frontend/src",
-    "frontend/public/tat-hermes-web-proxy-sw.js",
-    "frontend/public/assets/skills",
-  ],
-  { encoding: "utf8" },
-).trim();
+const manifestPath = join(targetRoot, "UPSTREAM.json");
+let sourceRevision;
+if (existsSync(join(sourceRepositoryRoot, ".git"))) {
+  sourceRevision = execFileSync(
+    "git",
+    [
+      "-C",
+      sourceRepositoryRoot,
+      "log",
+      "-1",
+      "--format=%H",
+      "--",
+      "frontend/src",
+      "frontend/public/tat-hermes-web-proxy-sw.js",
+      "frontend/public/assets/skills",
+    ],
+    { encoding: "utf8" },
+  ).trim();
+} else if (checkOnly && existsSync(manifestPath)) {
+  const existingManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  sourceRevision = existingManifest.sourceRevision;
+}
 
 if (!sourceRevision) {
   throw new Error("unable to resolve the last mono2 frontend source revision");
@@ -389,7 +396,6 @@ const manifestContents = `${JSON.stringify({
   }, null, 2)}\n`;
 
 if (checkOnly) {
-  const manifestPath = join(targetRoot, "UPSTREAM.json");
   if (!existsSync(manifestPath) || readFileSync(manifestPath, "utf8") !== manifestContents) {
     throw new Error("vendored mono2 manifest drifted; run npm run sync:mono2-agent-console");
   }
