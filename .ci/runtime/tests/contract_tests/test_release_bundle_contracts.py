@@ -2322,6 +2322,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
         self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
+        self.assertIn("resolve_source_branch()", template_text)
+        self.assertIn("BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}", template_text)
+        self.assertIn(
+            "FRONTEND_EDGEONE_CI_BRANCH=\"$(resolve_source_branch '${{ ci.branch }}')\"",
+            template_text,
+        )
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"', template_text)
+        self.assertIn("FRONTEND_EDGEONE_CI_SHA='${{ ci.sha }}'", template_text)
+        self.assertIn('FRONTEND_EDGEONE_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', template_text)
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
         self.assertIn("eo:cn-lightvela-prod-next)", command_text)

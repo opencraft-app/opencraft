@@ -67,8 +67,24 @@ stages:
           - name: 发布 frontend EdgeOne 正式站
             shell: bash
             run: |
-              export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"
-              export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"
+              resolve_source_branch() {
+                local ci_branch="$1"
+                case "$ci_branch" in
+                  ""|*'${{'*)
+                    printf '%s' "${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"
+                    ;;
+                  *)
+                    printf '%s' "$ci_branch"
+                    ;;
+                esac
+              }
+              FRONTEND_EDGEONE_CI_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              export FRONTEND_EDGEONE_CI_BRANCH
+              FRONTEND_EDGEONE_CI_SHA='${{ ci.sha }}'
+              if [[ -z "$FRONTEND_EDGEONE_CI_SHA" || "$FRONTEND_EDGEONE_CI_SHA" == *'${{'* ]]; then
+                FRONTEND_EDGEONE_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              export FRONTEND_EDGEONE_CI_SHA
               export FRONTEND_EDGEONE_COMBO="${{ parameters.COMBO }}"
               export FRONTEND_EDGEONE_DISPLAY_NAME="${{ parameters.DISPLAY_NAME }}"
               export FRONTEND_EDGEONE_ARTIFACT_REF="${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
