@@ -46,6 +46,7 @@ import {
   browserReadableImageSource,
   ConversationDocumentContext,
 } from "../../conversation/document-context";
+import { useConversationMediaSource } from "../../conversation/conversation-media-source";
 import { activityIcon } from "../activity/activity-icon";
 import {
   AutomaticApprovalReviewIcon,
@@ -133,6 +134,7 @@ function WebMcpToolActivity({ call, parentId }: {
       running={false}
       status="completed"
       summary={summary}
+      unmountBodyWhenCollapsed
     >
       <div className="thread-webmcp-details">
         <ToolJsonPreview
@@ -328,7 +330,7 @@ function ToolCallBlock({ block }: { block: Extract<TimelineBlock, { type: "tool-
       running={presentation.state === "running"}
       status={presentation.state}
       summary={presentation.summary}
-      unmountBodyWhenCollapsed={block.kind === "mcp"}
+      unmountBodyWhenCollapsed
     >
       {presentation.canExpand || hasCustomBody || block.automaticApprovalReviews.length > 0 ? (
         <>
@@ -402,7 +404,17 @@ function GeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock,
   const documentContext = useContext(ConversationDocumentContext);
   const [previewOpen, setPreviewOpen] = useState(false);
   const running = block.status === "pending" || block.status === "running";
-  const source = documentContext.resolveGeneratedImageSource?.(block) ?? block.uri;
+  const sourceCandidate = documentContext.resolveGeneratedImageSource?.(block)
+    ?? block.uri
+    ?? block.savedPath
+    ?? "";
+  const media = useConversationMediaSource(
+    sourceCandidate,
+    `generated-image:${block.id}`,
+    documentContext.resolveImageSource,
+  );
+  const source = sourceCandidate.length === 0 ? null : media.source;
+  const loading = sourceCandidate.length > 0 && media.status === "loading";
 
   useEffect(() => {
     if (!previewOpen) return;
@@ -415,12 +427,14 @@ function GeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock,
 
   if (source === null) {
     // Codex suppresses terminal failure/interruption items with no image. Only
-    // the in-progress item owns a gallery placeholder.
-    if (!running) return null;
+    // the in-progress item or a durable Host-backed image load owns a gallery
+    // placeholder. A completed file-backed image is resolved through the same
+    // media/Blob-cache boundary as user attachments.
+    if (!running && !loading) return null;
     return (
       <div
-        aria-label="Generating image"
-        aria-valuetext="Generating image"
+        aria-label={running ? "Generating image" : "Loading generated image"}
+        aria-valuetext={running ? "Generating image" : "Loading generated image"}
         className="thread-generated-image-gallery thread-generated-image-gallery--pending"
         data-testid="generated-image-gallery"
         role="progressbar"
@@ -454,7 +468,7 @@ function GeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock,
           <a download={block.savedPath?.split(/[\\/]/u).at(-1) ?? "generated-image-1.png"} href={source}>Save</a>
           <button aria-label="Close image preview" onClick={() => setPreviewOpen(false)} type="button"><X size={18} /></button>
         </div>
-        <img alt={alt} draggable={false} src={source} />
+        <img alt={alt} draggable={false} onLoad={() => media.requestMeasurement("image-load")} src={source} />
       </div>
     </div>,
     document.body,
@@ -470,7 +484,7 @@ function GeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock,
             onClick={openPreview}
             type="button"
           >
-            <img alt={alt} draggable="true" src={source} />
+            <img alt={alt} draggable="true" onLoad={() => media.requestMeasurement("image-load")} src={source} />
           </button>
           {documentContext.onEditGeneratedImage === undefined ? null : (
             <button

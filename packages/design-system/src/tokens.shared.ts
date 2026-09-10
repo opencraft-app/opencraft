@@ -336,7 +336,6 @@ export const codexGeometryTokens = {
     inputTopInset: 11,
     actionRowHeight: 38,
     sendButton: 28,
-    workingDot: 4,
   },
   threadPicker: { maximumChipWidth: 210 },
   interaction: {

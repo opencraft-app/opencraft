@@ -2,6 +2,7 @@ import type { AppServerThreadItem, AppServerTurn } from "./types";
 import { toolOutcome } from "./tool-outcome";
 import { resolveToolIdentity } from "./tool-identity";
 import { isHermesToolItem, projectHermesTool } from "./tool-semantics";
+import { hermesFailureMessage, resolveHermesTerminalCompletion } from "./terminal-completion";
 
 export interface HermesProjectionNotification {
   readonly method: string;
@@ -43,6 +44,8 @@ function eventText(payload: Record<string, unknown>): string {
   return text(payload.text ?? payload.reasoning ?? payload.content ?? payload.message);
 }
 
+// `session.info` is a liveness settlement rather than a message completion;
+// it has no assistant-text fallback or Desktop legacy-error heuristic.
 function statusFor(payload: Record<string, unknown>): AppServerTurn["status"] {
   if (payload.status === "interrupted" || payload.status === "cancelled" || payload.status === "canceled") return "interrupted";
   if (payload.status === "error" || payload.status === "failed" || payload.error !== undefined) return "failed";
@@ -287,9 +290,17 @@ export class HermesTurnEventStateMachine {
         break;
       case "message.complete":
         this.completeReasoning(output);
-        this.completeFinalAssistant(eventText(payload), output, occurredAtMs);
-        this.suppressTransientTextCoveredByFinal(output);
-        this.finish(statusFor(payload), payload, output, occurredAtMs);
+        {
+          const authoritative = eventText(payload);
+          const completion = resolveHermesTerminalCompletion(payload, authoritative);
+          if (completion.status === "failed") {
+            this.completeFailedAssistant(authoritative, completion.keepFailedAssistantText, output, occurredAtMs);
+          } else {
+            this.completeFinalAssistant(authoritative, output, occurredAtMs);
+            this.suppressTransientTextCoveredByFinal(output);
+          }
+          this.finish(completion.status, payload, output, occurredAtMs, completion.errorMessage);
+        }
         break;
       case "session.info":
         if (payload.running === true) {
@@ -306,7 +317,7 @@ export class HermesTurnEventStateMachine {
       case "error":
         this.completeReasoning(output);
         this.completeAssistant(output, null);
-        this.finish("failed", payload, output, occurredAtMs);
+        this.finish("failed", payload, output, occurredAtMs, hermesFailureMessage(payload));
         break;
       default:
         break;
@@ -447,6 +458,68 @@ export class HermesTurnEventStateMachine {
   }
 
   /**
+   * Hermes Desktop removes text parts from a non-partial failed completion.
+   * A separate `error` event is different: any preceding stream is partial by
+   * construction and is retained by that event's existing path.
+   */
+  private completeFailedAssistant(
+    authoritative: string,
+    keepText: boolean,
+    output: HermesProjectionNotification[],
+    occurredAtMs: number,
+  ): void {
+    if (keepText) {
+      if (this.assistant !== null) {
+        this.reconcileAssistant(authoritative, output, occurredAtMs);
+        this.completeAssistant(output, null);
+        return;
+      }
+      if (this.interimAssistant !== null) {
+        const interim = this.interimAssistant;
+        this.interimAssistant = null;
+        if (authoritative !== "") interim.text = authoritative;
+        const item = {
+          type: "agentMessage",
+          id: interim.id,
+          text: interim.text,
+          phase: null,
+          completed: true,
+          memoryCitation: null,
+        };
+        this.upsertItem(item);
+        output.push(this.notification("item/completed", { turnId: this.turn.id, item }));
+        return;
+      }
+      this.reconcileAssistant(authoritative, output, occurredAtMs);
+      this.completeAssistant(output, null);
+      return;
+    }
+
+    const discardedIds = new Set<string>();
+    if (this.assistant?.started) discardedIds.add(this.assistant.id);
+    if (this.interimAssistant?.started) discardedIds.add(this.interimAssistant.id);
+    for (const id of discardedIds) {
+      const item = this.turn.items.find((candidate) => candidate.id === id);
+      if (item !== undefined) {
+        // Clear the incremental replica before the terminal Turn snapshot
+        // removes the Item from authoritative membership.
+        output.push(this.notification("item/completed", {
+          turnId: this.turn.id,
+          item: { ...item, text: "", phase: null, completed: true },
+        }));
+      }
+    }
+    if (discardedIds.size > 0) {
+      this.turn.items = this.turn.items.filter((item) => !discardedIds.has(item.id));
+    }
+    if (this.streamedAssistant !== null && discardedIds.has(this.streamedAssistant.id)) {
+      this.streamedAssistant = null;
+    }
+    this.assistant = null;
+    this.interimAssistant = null;
+  }
+
+  /**
    * Hermes can preview one response through either `message.interim` or the
    * reasoning channel before publishing its authoritative completion. Text
    * continuity (same text, or a prefix in either direction) means these are
@@ -565,13 +638,16 @@ export class HermesTurnEventStateMachine {
     const previous = this.tools.get(id);
     const failed = status === "failed" || toolOutcome(payload.result) === false;
     return projectHermesTool({
-      type: "dynamicToolCall",
       ...previous,
-      id: previous?.id ?? id,
+      type: "dynamicToolCall",
+      // The source call ID correlates transport updates; the Item ID owns
+      // durable presentation identity. History uses the same formula, so a
+      // reconnect cannot remount the row under a different identity.
+      id: previous?.id ?? `hermes-tool-${this.threadId}-${id}`,
       callId: id,
       sourceIdentitySynthetic: previous?.sourceIdentitySynthetic ?? !(typeof payload.tool_id === "string" && payload.tool_id),
       namespace: "hermes",
-      tool: typeof payload.name === "string" ? payload.name : previous?.tool ?? "tool",
+      tool: typeof payload.name === "string" ? payload.name : previous?.hermesToolName ?? previous?.tool ?? "tool",
       arguments: Object.hasOwn(payload, "args") ? record(payload.args) : previous?.arguments ?? {},
       toolContext: typeof payload.context === "string" ? payload.context : previous?.toolContext ?? null,
       toolSummary: typeof payload.summary === "string" ? payload.summary : previous?.toolSummary ?? null,
@@ -629,6 +705,7 @@ export class HermesTurnEventStateMachine {
     payload: Record<string, unknown>,
     output: HermesProjectionNotification[],
     occurredAtMs: number,
+    errorMessage: string | null = null,
   ): void {
     if (this.completed) return;
     for (const [id, tool] of this.tools) {
@@ -642,7 +719,9 @@ export class HermesTurnEventStateMachine {
     this.turn.status = status;
     this.turn.completedAt = completedAt;
     this.turn.durationMs = this.turn.startedAt === null ? null : Math.max(0, (completedAt - this.turn.startedAt) * 1_000);
-    this.turn.error = status === "failed" ? { message: String(payload.error ?? "Hermes turn failed") } : null;
+    this.turn.error = status === "failed"
+      ? { message: errorMessage ?? hermesFailureMessage(payload) }
+      : null;
     this.phase = "completed";
     this.completed = true;
     output.push(this.notification("turn/completed", { turn: structuredClone(this.turn) }));

@@ -1,3 +1,3 @@
-import "./src/runtime/crypto-polyfill";
+import "./src/runtime/native-platform-polyfills";
 import "./src/styles/unistyles";
 import "expo-router/entry";

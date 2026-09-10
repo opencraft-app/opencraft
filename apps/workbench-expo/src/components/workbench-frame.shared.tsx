@@ -227,6 +227,7 @@ export function WorkbenchFrameShared({ platformLayout }: WorkbenchFrameSharedPro
               key={activeConversationRestoreKey ?? "empty"}
               initialRestoreSnapshot={activeConversationRestoreKey === null ? null : conversationRestoreSnapshots.current.get(activeConversationRestoreKey)}
               onLoadOlder={snapshot.conversation?.history.hasOlder ? loadOlderConversation : undefined}
+              onOpenSubagent={(threadId) => selectThread(threadId)}
               onRespondInteraction={respondToInteraction}
               onConversationScrollApiChange={(api) => {
                 conversationScrollApiRef.current = api;

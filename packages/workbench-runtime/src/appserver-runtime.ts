@@ -370,6 +370,8 @@ export function createAppServerWorkbenchRuntime(
   let initializeServicesOperation: Promise<void> | null = null;
   let reconnectAttempt = 0;
   let reconnectTimer: unknown = null;
+  let automaticReconnectBlock: TransportStatus | null = null;
+  let loggedReconnectStopCode: string | null = null;
   let logicalClock = 0;
   let ownedRegistry: Awaited<
     ReturnType<typeof createCordisAppServerRegistry>
@@ -466,9 +468,22 @@ export function createAppServerWorkbenchRuntime(
     reconnectTimer = null;
   };
 
-  const scheduleReconnect = () => {
+  const scheduleReconnect = (transportStatus?: TransportStatus) => {
     if (disposed || config.autoReconnect === false || reconnectTimer !== null)
       return;
+    const effectiveStatus = automaticReconnectBlock ?? transportStatus ?? config.transport.status;
+    if (effectiveStatus.failure?.recovery === "manual") {
+      if (loggedReconnectStopCode !== effectiveStatus.failure.code) {
+        loggedReconnectStopCode = effectiveStatus.failure.code;
+        console.log("[appserver-reconnect] automatic-reconnect-stopped", {
+          hostId,
+          code: effectiveStatus.failure.code,
+          reason: effectiveStatus.reason,
+        });
+      }
+      return;
+    }
+    loggedReconnectStopCode = null;
     const delay =
       reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)] ??
       5_000;
@@ -476,7 +491,8 @@ export function createAppServerWorkbenchRuntime(
     console.log("[appserver-reconnect] scheduled", { hostId, attempt: reconnectAttempt, delayMs: delay });
     reconnectTimer = clock.setTimeout(() => {
       reconnectTimer = null;
-      void runtime.reconnect().catch(() => scheduleReconnect());
+      // reconnect() owns classification and any subsequent retry schedule.
+      void runtime.reconnect().catch(() => undefined);
     }, delay);
   };
 
@@ -920,6 +936,10 @@ export function createAppServerWorkbenchRuntime(
       });
       removeClientHandlers = config.installClientHandlers?.(client) ?? null;
       removeTransportListener = client.subscribeStatus((status) => {
+        if (status.state === "open" || status.state === "connecting") {
+          automaticReconnectBlock = null;
+          loggedReconnectStopCode = null;
+        }
         if (
           disposed ||
           status.state === "open" ||
@@ -928,12 +948,13 @@ export function createAppServerWorkbenchRuntime(
         )
           return;
         if (status.state === "closed" || status.state === "failed") {
+          if (status.failure?.recovery === "manual") automaticReconnectBlock = status;
           console.log("[appserver-reconnect] transport-unavailable", { hostId, state: status.state });
-          phase = "reconnecting";
+          phase = status.failure?.recovery === "manual" ? "error" : "reconnecting";
           error = status.reason === undefined ? null : new Error(status.reason);
           for (const binding of bindings.values()) binding.replica.disconnect();
           publish();
-          scheduleReconnect();
+          scheduleReconnect(status);
         }
       });
       await connectPhysicalHost(generation);
@@ -1214,6 +1235,8 @@ export function createAppServerWorkbenchRuntime(
         return Promise.reject(new Error("AppServer Workbench is disposed"));
       if (reconnectOperation !== null) return reconnectOperation;
       clearReconnectTimer();
+      automaticReconnectBlock = null;
+      loggedReconnectStopCode = null;
       const reconnectStartedAt = Date.now();
       const attempt = reconnectAttempt || 1;
       console.log("[appserver-reconnect] started", { hostId, attempt });
@@ -1252,7 +1275,7 @@ export function createAppServerWorkbenchRuntime(
           error = cause instanceof Error ? cause : new Error(String(cause));
           phase = "error";
           publish();
-          scheduleReconnect();
+          scheduleReconnect(config.transport.status);
           throw cause;
         }
       })().finally(() => {

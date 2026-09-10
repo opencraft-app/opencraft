@@ -266,6 +266,8 @@ export interface ToolCallTimelineBlock extends TimelineBlockBase<"tool-call"> {
     readonly icon: "read" | "search" | "wrench";
     readonly active: string | null;
     readonly completed: string | null;
+    /** The source adapter has projected this event into another owned UI. */
+    readonly hidden: boolean;
   } | null;
   /** Optional provider-authored tool display information, never execution authority. */
   readonly toolContext?: string | null;

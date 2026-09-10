@@ -43,9 +43,9 @@ test("tool outcome requires evidence and turn completion does not manufacture su
   event("tool.complete", { tool_id: "bad", name: "terminal", result: { exit_code: 2 } });
   event("tool.start", { tool_id: "missing", name: "terminal" });
   event("message.complete", { text: "Done" });
-  assert.equal(turn.items.find(i => i.id === "bad")!.success, false);
-  assert.equal(turn.items.find(i => i.id === "missing")!.success, null);
-  assert.equal(turn.items.find(i => i.id === "missing")!.resultMissing, true);
+  assert.equal(turn.items.find(i => i.callId === "bad")!.success, false);
+  assert.equal(turn.items.find(i => i.callId === "missing")!.success, null);
+  assert.equal(turn.items.find(i => i.callId === "missing")!.resultMissing, true);
 });
 
 test("anonymous progress and later source ID retain one display owner", () => {
@@ -64,7 +64,7 @@ test("parallel explicit source IDs never merge and equal narration survives hist
   event("tool.start", { tool_id: "a", name: "terminal" });
   event("tool.start", { tool_id: "b", name: "terminal" });
   event("tool.complete", { tool_id: "b", name: "terminal", result: { exit_code: 0 } });
-  assert.equal(turn.items.find(i => i.id === "a")!.status, "inProgress");
+  assert.equal(turn.items.find(i => i.callId === "a")!.status, "inProgress");
   const [history] = mapMessages("thread", [
     { role: "user", content: "Inspect" },
     ...["a", "b"].flatMap(id => [
@@ -194,6 +194,69 @@ test("transport errors do not promote partial text to final answer", () => {
   event("message.delta", { text: "Partial" });
   event("error", { message: "Disconnected" });
   assert.equal(turn.items[0]!.phase, null);
+  assert.equal(turn.error?.message, "Disconnected");
+});
+
+test("non-partial terminal failures own only the typed error surface", () => {
+  const { turn, event } = harness();
+  const message = "HTTP 403: quota exhausted";
+  event("message.delta", { text: message });
+  const notifications = event("message.complete", {
+    text: message,
+    status: "error",
+    error: message,
+    recoverable: true,
+  });
+
+  assert.equal(turn.status, "failed");
+  assert.equal(turn.error?.message, message);
+  assert.equal(turn.items.some(item => item.type === "agentMessage"), false);
+  assert.equal(notifications.at(-1)?.method, "turn/completed");
+});
+
+test("partial terminal failures retain partial output without promoting it to final", () => {
+  const { turn, event } = harness();
+  event("message.delta", { text: "half an answer" });
+  event("message.complete", {
+    text: "half an answer",
+    status: "error",
+    error: "connection reset mid-stream",
+    partial: true,
+  });
+
+  const assistant = turn.items.find(item => item.type === "agentMessage");
+  assert.equal(turn.status, "failed");
+  assert.equal(turn.error?.message, "connection reset mid-stream");
+  assert.equal(assistant?.text, "half an answer");
+  assert.equal(assistant?.phase, null);
+  assert.equal(assistant?.completed, true);
+});
+
+test("non-partial failure removes only its final target and preserves earlier tool narration", () => {
+  const { turn, event } = harness();
+  event("message.delta", { text: "Checking the provider." });
+  event("tool.start", { tool_id: "probe", name: "terminal" });
+  event("tool.complete", { tool_id: "probe", name: "terminal", result: { exit_code: 0 } });
+  event("message.delta", { text: "HTTP 403: quota exhausted" });
+  event("message.complete", {
+    text: "HTTP 403: quota exhausted",
+    status: "error",
+    error: "quota exhausted",
+  });
+
+  assert.deepEqual(
+    turn.items.filter(item => item.type === "agentMessage").map(item => [item.text, item.phase]),
+    [["Checking the provider.", "commentary"]],
+  );
+  assert.equal(turn.error?.message, "quota exhausted");
+});
+
+test("legacy HTTP completion text becomes an error instead of assistant prose", () => {
+  const { turn, event } = harness();
+  event("message.complete", { text: "HTTP 500 upstream" });
+  assert.equal(turn.status, "failed");
+  assert.equal(turn.error?.message, "HTTP 500 upstream");
+  assert.equal(turn.items.some(item => item.type === "agentMessage"), false);
 });
 
 test("late streamed interim reconciles one Item across a tool boundary", () => {

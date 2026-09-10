@@ -893,7 +893,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
             return { grouping: display.grouping,
               operation: display.operation === "read" || display.operation === "search" ? display.operation : "other" as const,
               icon: display.icon === "read" || display.icon === "search" ? display.icon : "wrench" as const,
-              active: string(display.active), completed: string(display.completed) };
+              active: string(display.active), completed: string(display.completed), hidden: display.hidden === true };
           })(),
           toolContext: string(source.toolContext),
           resultMissing: source.resultMissing === true,

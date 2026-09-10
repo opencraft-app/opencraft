@@ -957,6 +957,7 @@ test("Hermes durable projection joins tool declarations and results by tool_call
       icon: "read",
       active: "Reading",
       completed: "Read",
+      hidden: false,
     },
   });
   assert.equal(turns[0]?.items[4]?.text, "I will inspect it.");
@@ -1549,6 +1550,58 @@ test("Hermes cold deep links recover their owning Profile before Resume", async 
     "session.resume",
     "session.list",
   ]);
+});
+
+test("Hermes thread/read retains session.create metadata until Dashboard history indexes the Thread", async () => {
+  let listed = false;
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      const request = (params ?? {}) as Record<string, unknown>;
+      calls.push({ method, params: request });
+      if (method === "session.create") {
+        return {
+          session_id: "new-live",
+          stored_session_id: "new-stored",
+          message_count: 0,
+          messages: [],
+          running: false,
+          info: { cwd: "/workspace/new" },
+        } as T;
+      }
+      if (method === "session.list") {
+        return { sessions: listed ? [{
+          id: "new-stored",
+          title: "Indexed title",
+          preview: "first message",
+          started_at: 1_789_000_000,
+          message_count: 1,
+          source: "desktop",
+          profile: "default",
+        }] : [] } as T;
+      }
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+
+  const started = await adapter.startThread("/workspace/new");
+  const beforeIndex = await adapter.readThreadMetadata(started.id);
+  assert.equal(beforeIndex.id, "new-stored");
+  assert.equal(beforeIndex.name, "New chat");
+  assert.equal(beforeIndex.cwd, "/workspace/new");
+
+  listed = true;
+  const afterIndex = await adapter.readThreadMetadata(started.id);
+  assert.equal(afterIndex.name, "Indexed title");
+  assert.equal(afterIndex.preview, "Indexed title");
+  assert.deepEqual(calls.map(({ method }) => method), [
+    "session.create",
+    "session.list",
+    "session.list",
+  ]);
+  adapter.dispose();
 });
 
 test("Hermes cold deep links find an older session through Profile-scoped catalogs", async () => {

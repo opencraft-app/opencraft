@@ -62,7 +62,6 @@ export const ipadMetrics = {
     actionRowHeight: 54,
     actionButton: 40,
     sendButton: 40,
-    workingDot: 5,
     outerBottomInset: 14,
   },
   details: { width: 360, surfaceRadius: 22, fileRowHeight: 46 },

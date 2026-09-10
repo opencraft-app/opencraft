@@ -6,6 +6,7 @@ import { IndexedDbHermesSessionTokenCache } from "../plugins/lightvela-hermes/sr
 import {
   bootstrapLightVelaOAuthCallback,
   bootstrapLightVelaWebLoginCallback,
+  LightVelaApiError,
   LightVelaAccountService,
   LIGHTVELA_REGION_KEY,
   LIGHTVELA_TOKEN_KEY,
@@ -199,6 +200,35 @@ test("logout while resolving the Bot prevents a late TAT connection", async () =
   await rejected;
   assert.equal(requests, 0);
   assert.notEqual(transport.status.state, "open");
+  await transport.close();
+});
+
+test("a deleted TAT resource requires manual recovery instead of automatic reconnect", async () => {
+  const transport = new LightVelaHermesTransport({
+    account: {
+      getSnapshot: () => ({ phase: "authenticated", activeBotId: "deleted-bot" }),
+      subscribe: () => () => undefined,
+      resolveActiveBot: async () => ({
+        instanceId: "deleted-bot",
+        name: "Deleted",
+        status: "running",
+        createdAt: "",
+      }),
+      request: async () => {
+        throw new LightVelaApiError("resource not found request_id=req-1", 404);
+      },
+    },
+  });
+
+  await assert.rejects(transport.connect(), /resource not found/u);
+  assert.deepEqual(transport.status, {
+    state: "failed",
+    reason: "resource not found request_id=req-1",
+    failure: {
+      code: "remote-resource-not-found",
+      recovery: "manual",
+    },
+  });
   await transport.close();
 });
 
