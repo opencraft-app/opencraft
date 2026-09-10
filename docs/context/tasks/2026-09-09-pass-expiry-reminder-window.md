@@ -3,7 +3,7 @@
 
 ## non_goals
 - 不调整套餐有效期、续费流程、计费状态推断或弹窗交互。
-- 不修改生成的国际化文案。
+- 不修改中文及其他非英文文案。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户请求：七天体验注册后马上提示到期，改成提前 5 天提示。
@@ -20,10 +20,15 @@
 - 剩余 5 天时显示 day-level 到期提醒。
 - 剩余 6 天时不显示到期提醒。
 - 原有 1 天内 urgent 提醒保持不变。
+- 国际站到期标签使用 `Expires soon`，并在 Agent 侧栏保持单行显示。
 
 ## affected_paths
 - `frontend/src/lib/pass-renewal.ts`
 - `frontend/src/lib/__tests__/pass-renewal.test.ts`
+- `frontend/src/pages/marketing/agent-settings-page.tsx`
+- `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.global.test.tsx`
+- `frontend/src/styles.css`
+- `frontend/src/i18n/generated/en-US.json`
 
 ## required_context
 - Pack：`frontend-product-surface`
@@ -39,6 +44,7 @@
 
 ## evidence
 - `cd frontend && pnpm vitest run src/lib/__tests__/pass-renewal.test.ts`：1 个测试文件通过，4 个用例通过。
+- 英文标签改为 `Expires soon`，胶囊设置 `white-space: nowrap`；到期提醒与侧栏聚焦回归 43 个用例通过，`pnpm check` 通过且 TypeScript 无新增诊断。
 
 ## risks
 - 风险：阈值收紧后，剩余 6-7 天的用户不再看到续费入口提醒。
