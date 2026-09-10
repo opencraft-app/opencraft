@@ -1151,7 +1151,7 @@ describe("international v2 homepage artifact", () => {
       if (locale === "zh-CN") {
         /* 国内站保持状态化：静态产物输出未登录态，登录态由 data-* 提供。 */
         expect(heroCta?.getAttribute("href")).toBe("/subscribe");
-        expect(heroCta?.getAttribute("data-home-hero-cta-signed-label")).toBe("我的AI智能伙伴");
+        expect(heroCta?.getAttribute("data-home-hero-cta-signed-label")).toBe("我的智能体伙伴");
         expect(heroCta?.getAttribute("data-home-hero-cta-signed-href")).toBe("/agents");
       } else {
         /* 国际站保持固定文案与链接，不引入状态化。 */

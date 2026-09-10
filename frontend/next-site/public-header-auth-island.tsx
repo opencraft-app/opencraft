@@ -307,7 +307,14 @@ function PublicHeaderAuthControls({
           onClose={() => setShowLogin(false)}
           initialError={loginErrorMessage}
           onSuccess={() => {
-            router.push(AGENTS_HOME_PATH);
+            /* 登录后按用户状态分流，与产品入口按钮保持同一套判断：
+               未订阅 → 订阅页先完成购买；已订阅但无 Agent → 创建引导；已订阅有 Agent → 控制台。
+               避免统一落到空控制台，减少一次用户自行找入口的跳转。 */
+            if (!isSubscribed) {
+              router.push(subscribePath);
+              return;
+            }
+            router.push(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
           }}
         />
       )}
