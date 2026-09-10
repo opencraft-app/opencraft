@@ -1149,10 +1149,6 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type RevealAccountToolsHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
-
 export const AccountPage = () => {
   const t = useT();
   const navigate = useAppNavigate();
@@ -1180,35 +1176,6 @@ export const AccountPage = () => {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showHiddenAccountTools, setShowHiddenAccountTools] = useState(false);
-
-  useEffect(() => {
-    const host = window as RevealAccountToolsHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealAccountTools = (...args: unknown[]) => {
-      if (mounted) {
-        setShowHiddenAccountTools(true);
-      }
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealAccountTools;
-
-    return () => {
-      mounted = false;
-      if (host.show !== revealAccountTools) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1965,7 +1932,7 @@ export const AccountPage = () => {
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
 
-            {isGlobal && showHiddenAccountTools && <SavedCardsSection />}
+            {isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>
