@@ -27,7 +27,10 @@
 - 用量上下文：change 启动后在项目根运行 `feai workflow usage-context write --provider <p> --project-base <项目根绝对路径> --json`；归档时按 usage-context 窗口做需求级用量审计（读取本机工具日志）。
 - provider 按当前宿主直接判定：CodeBuddy Code CLI → `codebuddycode`，VS Code CodeBuddy 插件 → `codebuddy-vscode`，CodeBuddy Web/IDE → `codebuddy`；其他已知宿主用对应 provider。
 - 禁止根据 session 环境变量或 `project.local.json` 静默选择 provider；确实无法判断时才询问一次；用户明确暂不统计时才设 `USAGE_PROVIDER_SKIP=1`。
-- 归档评分上报必须走标准链路：`feai report archive-pipeline --project <项目根> --change-name <name> --score <1-5> --submit [--feedback <text>]`。payload 由脚本生成（自带 `generator` 来源指纹、userId、版本与 git 上下文）；score < 3 时 `--feedback` 必填。
+- 归档成功后**主动询问用户评分（1-5，一次即可）**，据答复执行上报：
+  - 用户给出评分：`feai report archive-pipeline --project <项目根> --change-name <name> --score <1-5> --submit [--feedback <text>]`；score < 3 时 `--feedback` 必填。
+  - 用户明确跳过打分：仍执行 `feai report archive-pipeline --project <项目根> --change-name <name> --submit`（不带 `--score`）。payload 中 `score` 为 null，token / 成本 / 版本 / git / 用量审计等客观数据照常上报，并告知用户"满意度未记录，用量数据已上报"。
+- payload 由脚本生成（自带 `generator` 来源指纹、userId、版本与 git 上下文）。
 - **禁止 AI 手写上报 payload JSON 或手动 curl 上报**——手写 payload 会丢失 userId / version / git / 用量审计字段，污染团队统计数据。
 
 ## 终端输出与上下文预算
