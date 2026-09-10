@@ -1,0 +1,14 @@
+{
+  "name": "@opencraft/timeline-render-react",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@opencraft/chat-core": "0.1.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": { "@types/react": "~19.2.2" }
+}

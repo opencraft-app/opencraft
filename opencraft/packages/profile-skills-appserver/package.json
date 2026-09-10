@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/profile-skills-appserver",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
+  }
+}

@@ -1,0 +1,525 @@
+{
+  "source": "/data/mono2/frontend/src",
+  "sourceRevision": "db0772178f777679a1254283208549aa82315c3e",
+  "generatedBy": "scripts/sync-mono2-agent-console.mjs",
+  "files": [
+    {
+      "file": "components/domain/agent-section-header.tsx",
+      "sourceSha256": "d34498f014b0cbaadd8245ada63db7be805640c7885e8ca18e7479c0f8c2cd16"
+    },
+    {
+      "file": "components/domain/tat-file-manager-panel.tsx",
+      "sourceSha256": "9733f9d2ee4ae9e901068d32967920d19ee570380f5ab2c41f4976380c817742"
+    },
+    {
+      "file": "components/ui/badge.tsx",
+      "sourceSha256": "09df77f94b2cf7edf701938e387976c9548ecdfe1308d05b68427fa723195e8c"
+    },
+    {
+      "file": "components/ui/button.tsx",
+      "sourceSha256": "edfbc5669cead9dda9338da17f15aaaf80ea6dc57825a0af90d0ff727d1b5e9c"
+    },
+    {
+      "file": "components/ui/control-shell.ts",
+      "sourceSha256": "e79741497d38d116ae5f42cb1d1d0abb4de5cde64fec8e664cd606226aec81f6"
+    },
+    {
+      "file": "components/ui/dialog.tsx",
+      "sourceSha256": "7ce495eaba9a2295851a9555a25f754c467524bb77855a85d3fb8f48d57b7517"
+    },
+    {
+      "file": "components/ui/display-title.tsx",
+      "sourceSha256": "93e840116b79dc5cc4563a19fc6a1d8f64f88981916ec41dbaadf721405fdee0"
+    },
+    {
+      "file": "components/ui/input.tsx",
+      "sourceSha256": "53b46a11e8edeeeb728312a7de5e451693b435d6f38375418bf6acfe6f3ad23d"
+    },
+    {
+      "file": "components/ui/label.tsx",
+      "sourceSha256": "3c2e684ebb1f705a09b5e64895d7a4202dbab90b8d42f30e5b0a514dc2c6fcaf"
+    },
+    {
+      "file": "components/ui/popover.tsx",
+      "sourceSha256": "d87df39b11849e1dc1e692a72555f78b266404ce2c33d7dbadf87dbcd16f8e57"
+    },
+    {
+      "file": "components/ui/select.tsx",
+      "sourceSha256": "7a3572dc234eea718c0774012cad23d7fd3c4c71f9d84789054bbf53985b9015"
+    },
+    {
+      "file": "components/ui/tabs.tsx",
+      "sourceSha256": "a4c352376bec08c6be44dff0332ccda20b341dce07a9c752a18acb03145e3c16"
+    },
+    {
+      "file": "components/ui/textarea.tsx",
+      "sourceSha256": "aa4cbe5ee91a2617d812e3f62d4691e164c812248c06decbc7793947168b7263"
+    },
+    {
+      "file": "contexts/repository-context.tsx",
+      "sourceSha256": "cd051e59db1a222bb4a4e71351fcbbdc07f791d2bbde5519ee99607237678661"
+    },
+    {
+      "file": "contexts/runtime-config-context.tsx",
+      "sourceSha256": "f9225272a8a9b735c8eb0957708b9216a3f488ec2beabff928db42989eeafcf0"
+    },
+    {
+      "file": "domain/plan-catalog.ts",
+      "sourceSha256": "799c0965ad55396509098bb09434c503c6d6431ff8bdc329e3e592728064cac0"
+    },
+    {
+      "file": "domain/types.ts",
+      "sourceSha256": "2b62456f7e67bb6376f97d06c2fdf323eba1e1f2cb8cd0178c395280d05d0d41"
+    },
+    {
+      "file": "i18n/default-agent-name.ts",
+      "sourceSha256": "caa6d3a8dfaaff3220b82ad42d3bdf47c555da1d893a5d236d6048ad06d118e3"
+    },
+    {
+      "file": "i18n/generated/en-US.json",
+      "sourceSha256": "5fe4fe0d6c4efa4fc84705f27c8d74d4c02b113084a9b4e9949e10139a771ca3"
+    },
+    {
+      "file": "i18n/generated/es.json",
+      "sourceSha256": "0f4287ad016fd7b6d7a15a5f16bec4870086d6aac3c597ccf41910ca68edc9a3"
+    },
+    {
+      "file": "i18n/generated/id-ID.json",
+      "sourceSha256": "d5fc5250d88e4b6444357405fa2868e765d2c815f9bcc2fb8d8b2de547df60c6"
+    },
+    {
+      "file": "i18n/generated/ja-JP.json",
+      "sourceSha256": "a18489193270a335d394f8cf114ae5788b03879b4469d27de0e9146e626ddc10"
+    },
+    {
+      "file": "i18n/generated/ko-KR.json",
+      "sourceSha256": "e3ec1484b952a3077409fd3b51fd2a38b9ec78b6ade7b295467951698252b6a7"
+    },
+    {
+      "file": "i18n/generated/zh-CN.json",
+      "sourceSha256": "ccc2588a23203775b7822e6019c9a0490c8c345d5f217ea67de1dae6c96ca002"
+    },
+    {
+      "file": "i18n/generated/zh-Hant.json",
+      "sourceSha256": "0ce9b399702f687b5fb69165c2fc7ffe4097ae1511180f9a1f23c22a6a71597b"
+    },
+    {
+      "file": "i18n/generated/zh-to-key.json",
+      "sourceSha256": "7721c33f9f2911c46fa4f7ec4333474604f8331bc9325c37e8cca52ea18e9a90"
+    },
+    {
+      "file": "i18n/index.ts",
+      "sourceSha256": "ab9a6fded71980db8b185952939612e9c76987d1ac3547b4386653825ac0b288"
+    },
+    {
+      "file": "i18n/locales.config.ts",
+      "sourceSha256": "69fe9069c3b3a8f5ea20f1db6de778af56f5e5911313fd449ed65e03b24e231a"
+    },
+    {
+      "file": "i18n/locales.json",
+      "sourceSha256": "a625227226de0c7190760300d8710ffbbac3237997cdbdff616303938db06e06"
+    },
+    {
+      "file": "i18n/t.ts",
+      "sourceSha256": "98057be5bf9d30e76aa1d68f24ff9e8c589bd981b968e0d916756b02321cb394"
+    },
+    {
+      "file": "lib/agent-routes.ts",
+      "sourceSha256": "018dd803b2aaa76e763680f5a8d2e06420125c2d91a81423cd42e06d22766495"
+    },
+    {
+      "file": "lib/auth-api-base.ts",
+      "sourceSha256": "e3d7f91f102435d1306c2ec71428c5e16a6c3938b5a808bab29b88ca3a8334a0"
+    },
+    {
+      "file": "lib/cookie-consent.ts",
+      "sourceSha256": "e8c28f8efb63284e116259fd1a4fab5b324eb229afca7042ded72ff7fa3d7eaa"
+    },
+    {
+      "file": "lib/debug-exec-request.ts",
+      "sourceSha256": "689934b98f440737942a3887c3d3a0e2559721bf007968ef95607fd35194c8ee"
+    },
+    {
+      "file": "lib/expert-package-storage.ts",
+      "sourceSha256": "9284e76257de218cb97df0f700aaed155a4c0f8811f6ac783632869019875267"
+    },
+    {
+      "file": "lib/hermes-agent-command.ts",
+      "sourceSha256": "18108e7064467db603fafab412a1caccea1d9cba2a3bbfca1b7528ecb2aa10e6"
+    },
+    {
+      "file": "lib/hermes-cron-client.ts",
+      "sourceSha256": "d53edade2aa71cf58fffadbe130fed306befa47e9cb7da4b786ae18bee625bd3"
+    },
+    {
+      "file": "lib/hermes-skills-client.ts",
+      "sourceSha256": "e609fdb0a700ed8b3dd9ebfe07d6035107b6687c9607be101dfa42ee7dc938f5"
+    },
+    {
+      "file": "lib/oauth.ts",
+      "sourceSha256": "7fc3cf050d7019d38caa2d202090d32357f31d3a78126f6fb807136c374f8611"
+    },
+    {
+      "file": "lib/public-site-routing.ts",
+      "sourceSha256": "ddec545987e3db70e178e0ba0845452aa2b6843a4fc94c3f81d63a052e350c18"
+    },
+    {
+      "file": "lib/region.ts",
+      "sourceSha256": "f7dc3ece86c2ee834c54e1bc2bdc04e980b4e6e4d96199f4c5933f8c8b667c3f"
+    },
+    {
+      "file": "lib/skillhub-api.ts",
+      "sourceSha256": "b1304ffe425e37c6ab6743fe970f03623ca951a6971d4c634b3403f79c038080"
+    },
+    {
+      "file": "lib/tencent-pty-client.ts",
+      "sourceSha256": "c938835b15e85e7b1752d4283e4309850e1b94848eee1ecca0e9f217381909cd"
+    },
+    {
+      "file": "lib/tencent-tssh-file-client.ts",
+      "sourceSha256": "0c80c20cf63c9602f62c9b3189b4e79913c060f037a53bfce0bc256b6158b7f1"
+    },
+    {
+      "file": "lib/toast.ts",
+      "sourceSha256": "6b26f3fe2f2f07c34a1c573a8825784b2f2a1b31edc1d98506656bc7122100d4"
+    },
+    {
+      "file": "lib/tssh-file-permissions.ts",
+      "sourceSha256": "264ddd29524d52ce207873022eb36c5e45acb9dc7e66c4cd61a4036d448277f7"
+    },
+    {
+      "file": "lib/utils.ts",
+      "sourceSha256": "b7884a39ed523b85d8bd26ee576d54b93948898c3f4ac226e0ab78990f59795a"
+    },
+    {
+      "file": "lib/vibebase-client.ts",
+      "sourceSha256": "e2dde8e814a6dcaa82bc4bf0f4b0f58f0b36478ea0a7288717e5fb71ac1cbcad"
+    },
+    {
+      "file": "lib/zh-hant-overrides.ts",
+      "sourceSha256": "499d230bb1be8fa1c7a13f562fe7be9794e9c7c8b2e3fdc45bcc0f8f4e772ea3"
+    },
+    {
+      "file": "lib/zh-hant.ts",
+      "sourceSha256": "c076ffc714e4b520f8eb4360741a47fc0c685a7e99cc1414d9abe48f49296fa7"
+    },
+    {
+      "file": "observability/datong-tracker.ts",
+      "sourceSha256": "b3c0b62b1a26f42c8939510be89d3d0190361f4903960b21670f86dfac541d90"
+    },
+    {
+      "file": "observability/datong.ts",
+      "sourceSha256": "8b2b3eba171e72b75fa25975b5a1e34b3845b5a5f702e5e61eee41152cc39b25"
+    },
+    {
+      "file": "pages/marketing/agent-automations-panel.tsx",
+      "sourceSha256": "47f65d72a3cc6da522f32325326d2684386aba77bc416ce2b0747364803cb4a5"
+    },
+    {
+      "file": "pages/marketing/agent-channel-panel.tsx",
+      "sourceSha256": "0ea37c8443f6b2e794831b2d19b3dae42ac8062585098a92efe90f50ab85eb08"
+    },
+    {
+      "file": "pages/marketing/agent-config/components/FeishuIcon.tsx",
+      "sourceSha256": "c77eb8b885c2c903d258d68045766238a2e09bb5099d5089f4d7e6d77193efb2"
+    },
+    {
+      "file": "pages/marketing/agent-config/components/HermesQrCodeModal.tsx",
+      "sourceSha256": "21ef67f24140dc4bd82d83616f09c53aa132fa0e9e8318a4a5ec674e5c1fda14"
+    },
+    {
+      "file": "pages/marketing/agent-config/components/WecomIcon.tsx",
+      "sourceSha256": "a973e64ca527c8420201c69497a37e28dd0edeb77b9dcfc29047b02edf24baf7"
+    },
+    {
+      "file": "pages/marketing/agent-config/constants.ts",
+      "sourceSha256": "0a3e8f717a28a2274c9fb008ee03bdef915c9237157d58b096cfc7a9ecb3eebb"
+    },
+    {
+      "file": "pages/marketing/agent-config/hermes-command-builder.ts",
+      "sourceSha256": "18acd6e9a592e03608259127885ae34395d370cf82661a690bac7279f5cb4cbc"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useAgentConfig.ts",
+      "sourceSha256": "5a10cfb1301588eda92a7806f1c151273c8946d87711b669f3e3fb56d51f7ff7"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useAgentInternals.ts",
+      "sourceSha256": "28e3cff4b3e1d328d3cd83e2f3ce0caa023271b1e73f1b2c5e8bec95cd5de532"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useChannelOperations.ts",
+      "sourceSha256": "4c9d95a2a2452dce2e394f2318bd0d5ec2a0cecb6e7d33153bee621854b927c1"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useGatewayCommand.ts",
+      "sourceSha256": "5d178b00b13c3001bb893463a095b4b216b9f7d8da2b258df2c383c09d9565fc"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useModelOperations.ts",
+      "sourceSha256": "1cfc263f053535fff7b1483f9881b2b6bc72003630a9af7a8feb0200339e8946"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useModelProviders.ts",
+      "sourceSha256": "609e0972e7bdd833fc415ed0c73c16ee99def1aafb37844b86bc2437845ae527"
+    },
+    {
+      "file": "pages/marketing/agent-config/hooks/useWecomAIBotSDK.ts",
+      "sourceSha256": "4d07e6b172382fff17b9f1e07e2f6b4678a09f6c67a6d915971cb013d98e9b1d"
+    },
+    {
+      "file": "pages/marketing/agent-config/index.ts",
+      "sourceSha256": "738b5b1ca31a6fa4d3552db485c1af8907e35f0f78bedeaf8456d657ba8a8bad"
+    },
+    {
+      "file": "pages/marketing/agent-config/local-command-executor.ts",
+      "sourceSha256": "94f118d642d3aa29d33aaabf91660a0966d5eb55691d3cf130abb3f4fc72bb0c"
+    },
+    {
+      "file": "pages/marketing/agent-config/product-config.ts",
+      "sourceSha256": "088307c650839ca717e12c138e64757d37a292e2e33c263b40c54c78f2161f14"
+    },
+    {
+      "file": "pages/marketing/agent-config/scripts-runtime.ts",
+      "sourceSha256": "698c6d97b7adea86062f7e33948cb2f9ca839bc66f9cfd8f79dbacb17024332a"
+    },
+    {
+      "file": "pages/marketing/agent-config/standard-panel.css",
+      "sourceSha256": "1350e12b15ed5a8e1469177c4e03e059fcc304259166500f6cb87c713c1920dc"
+    },
+    {
+      "file": "pages/marketing/agent-config/styles-index.css",
+      "sourceSha256": "7706c58e9aed2fa3c87e9662b5a7c8a634ccf35561b0e2fa593f8cdc93eddc98"
+    },
+    {
+      "file": "pages/marketing/agent-config/types.ts",
+      "sourceSha256": "f95a4d4b2a91783481d61975bd79b5b542c515a003dc1ea4f60fc725c0a5deff"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/hermes-parsers.ts",
+      "sourceSha256": "597020cc9462cb18848be5b93e19d1603ed224106260f4c408415e8ce8b16f9b"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/json.ts",
+      "sourceSha256": "0de5a4ec0565974a7620f376d8c0165367ba4c3a285679699600d8e1da6b3296"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/message.ts",
+      "sourceSha256": "0f3dd96ec3bf4f45d573267d5f9cad9921a7f5014d1a2430d46576ff30a5f001"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/model-operation-errors.ts",
+      "sourceSha256": "649dc276e4418994a7a36d6bd88028ef8dfd6c9ee22ec29df0ae60aac7d9359f"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/model-provider-parser.ts",
+      "sourceSha256": "aa76cbf3638a5c8a3a52ad4f11842159181cfaab86fdef0cc5e3fa05989c0be3"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/model-providers.ts",
+      "sourceSha256": "f6f16532b02459792939170f78338f3a2fe5902608ad6b63cefa770429e9bbe1"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/rainbow.ts",
+      "sourceSha256": "41ae24bafadc0074d7db45ac8cf3fe6a2c52591eaf129e34d9bd8dfea748eb4a"
+    },
+    {
+      "file": "pages/marketing/agent-config/utils/sanitize-html.ts",
+      "sourceSha256": "38798d7863ffb0a45491a5625d25029b6593c9e0bfb25ae11a9e46d53fd74e99"
+    },
+    {
+      "file": "pages/marketing/agent-debug-exec-lifecycle.ts",
+      "sourceSha256": "af3e7ce0f7fd8af20ca2054cdcbfd64e13c127bef8b534f3ae6b7af5ee3bd703"
+    },
+    {
+      "file": "pages/marketing/agent-diagnostics-panel.tsx",
+      "sourceSha256": "73187145c5c01e1d01c8265eaf08cc2875fffd8bf009c30c43ca7b0703f7e507"
+    },
+    {
+      "file": "pages/marketing/agent-experts-panel.tsx",
+      "sourceSha256": "267eec66bd124288fe9a832ea4a3ceddc2888a161798291992cbcfeb22daefcb"
+    },
+    {
+      "file": "pages/marketing/agent-memory-save.ts",
+      "sourceSha256": "b85095a4a671a6bb91b10d2fa8cde9e492df8255fff45ea5a013500553b87718"
+    },
+    {
+      "file": "pages/marketing/agent-memory.ts",
+      "sourceSha256": "8d1b949cbf6ab5770972d38b402fe688ee083bd247d47c8c12227cf3b8f7bb10"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/agent-model-config-panel.tsx",
+      "sourceSha256": "fdc5944ef466162177129e0ebabb4f8bee7aa6996ac99a399e0a5af4e0980065"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
+      "sourceSha256": "14596d8cff83c4f8d158034d85e0e900cd6ffcfe7f7e4a569bb14cf6df3b5174"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
+      "sourceSha256": "c5e946a309f3bbff8588e7e91b9d7d421842cecc0172b86f3d41f714f9f01cb6"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/model-config-client.ts",
+      "sourceSha256": "64ad104282bf3feb91e80d274933d33ca06ed5e3413fc1d04f35ddcd19ac9d5f"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/product-provider-adapter.ts",
+      "sourceSha256": "c3f1618674aa2c49ae0b73e034a26ae680c394b064d08d549bfe6a50ddedfb64"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/use-model-config.ts",
+      "sourceSha256": "0a1f4d816ed7f08b8edfe2492a67b330f943601e15470f8b16e3ca9599b0b2ad"
+    },
+    {
+      "file": "pages/marketing/agent-provider-locale.ts",
+      "sourceSha256": "05b8271fccbae1e8d5a114ae133c67b7990695c2efac08a55cff93cd1580bd2b"
+    },
+    {
+      "file": "pages/marketing/agent-reset-config.ts",
+      "sourceSha256": "f287f720f19049876b9eb9ce67f930c5ddfb8b05c0457678f6c0632c36f340ef"
+    },
+    {
+      "file": "pages/marketing/agent-skills-panel.tsx",
+      "sourceSha256": "b41df2934334fcef9d459c641a5a9bc128d55265f481865ff984b7215820c22c"
+    },
+    {
+      "file": "pages/marketing/automation-skill-picker.tsx",
+      "sourceSha256": "51e2d03f86338e709d7a77b361a9bd0cf97db3b149f29fc50cc7b7c6aec0da80"
+    },
+    {
+      "file": "pages/marketing/automation-template-catalog.ts",
+      "sourceSha256": "509262abd1fd8fa2cd8e83c163b8aa426a9853603c096c072be3c2a600f95658"
+    },
+    {
+      "file": "pages/marketing/automation-upstream-picker.tsx",
+      "sourceSha256": "33e8be953c30ab78ef06d6353a074ab32b1290cdc7cfb70488a0cf588c9442fa"
+    },
+    {
+      "file": "pages/marketing/scenario-task-cron.ts",
+      "sourceSha256": "8ee3cd8b51b405bd7d7919edaf4d756c5577b82d7818e3fe10cf9dfbc1ec87a3"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/ScenarioEnableConfirmModal.tsx",
+      "sourceSha256": "7aaac285155e27aa134866fab896d1e7e3adf3d46c2137757b2a0289ead9baa7"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/ScenarioInstallModal.tsx",
+      "sourceSha256": "729f82a3f021d61c7b48f11274a66f586418e77b16262ef07297a0928cbad712"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/ScenarioQuickPromptEditor.tsx",
+      "sourceSha256": "1f6367fec069316b9d5e2a68cfd36a31b5c2bd3af3429c6931b2806d5b671b13"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/ScenarioTaskGrid.tsx",
+      "sourceSha256": "5ae98e9df55ffc1973574e0f7242717f5389bfed1e1b6687d4136c976dc1debc"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/overview-packs.ts",
+      "sourceSha256": "22750d2f00aac9f554128a7ab56b7d7ab3625f80bddf006a7904b8cc1c61e3e3"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/scenario-full-prompt.ts",
+      "sourceSha256": "e5538204900fb2f93e9abbbb123084718c12cc7e2a366280c96fc02d724610fe"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/scenario-job-presentation.ts",
+      "sourceSha256": "d4c6e95d41aff83303eae9438a3f8515d26c070aff14eaceb0ccef1d0c9f3f39"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/scenario-pack-core.ts",
+      "sourceSha256": "79cc0f2de948612f4f56b8c0094745e05425d9260af27334e6018fafc0e8f6a8"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/scenario-packs.ts",
+      "sourceSha256": "c0ac1c7c61b1166a21b8c28c0b42e407f024d18a77c93074d60ef970f4a55888"
+    },
+    {
+      "file": "pages/marketing/scenario-tasks/scenario-task-builder.ts",
+      "sourceSha256": "2e03c17a3f7d9910e39317cda1d032dc261c8f0787945a3ade32364f15c1d3a1"
+    },
+    {
+      "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
+      "sourceSha256": "408eee0767e38b91f6aa193f8c0994af79715aedb31ff8a38718b028b32753e4"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-categories.ts",
+      "sourceSha256": "1dfd6241fcdd299d7bdb272c7fe88edf7250808c1915b2e5b6aa5d57b46804ef"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-overviews.es.ts",
+      "sourceSha256": "9bb436d367311db355c39940e8f3fd23b7b1faff85d8472f91dad01de25ec104"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-overviews.id.ts",
+      "sourceSha256": "f1a634f2650ea70e03aaf73d26bea46dfb01dfc45e71d27cddfd886d8ff63d0c"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-overviews.ja.ts",
+      "sourceSha256": "f697cfed0a2e701de4db92025696d0c972d179cf317831955b3b07ca0b3d7a18"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-overviews.ko.ts",
+      "sourceSha256": "809c65fe5b9c5a0bbd9a70f74aae70ff00a56c2a1722db08bb850488d936abe5"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-overviews.ts",
+      "sourceSha256": "97ee32be640fd9832d0a83de8a2eff9259e978ceb6c355805c7850fd0c6e070d"
+    },
+    {
+      "file": "pages/marketing/skills-demo/curated-skill-overviews.zh.ts",
+      "sourceSha256": "401af93e3210efc3e1d6ddad20fb1f020f48ac3e93d399bb06ab487eabf7c4a9"
+    },
+    {
+      "file": "pages/marketing/skills-demo/domestic-skill-catalog.ts",
+      "sourceSha256": "09cd76616aff50e65ec608f4571cc318aab5e7fa4fe5287df00b6d80de2cd184"
+    },
+    {
+      "file": "pages/marketing/skills-demo/skill-registries.ts",
+      "sourceSha256": "96dccbb12e863180f027ff92fb3d0d8b68c75ff395ba6715181a3ffac3151363"
+    },
+    {
+      "file": "pages/marketing/zh-hant-scope.tsx",
+      "sourceSha256": "a1c6a0cd89de364c6f9fec5c2d59e0e93741f96081a3adea553ffb2e0758b91a"
+    },
+    {
+      "file": "repositories/account-preview-states.ts",
+      "sourceSha256": "7c0a853363682c4b80864d75f3fe0c5cb3ae46f12906671da797d386b7e55b1c"
+    },
+    {
+      "file": "repositories/fake-repositories.ts",
+      "sourceSha256": "19abdb691cbe3dba6e59018d36b824b3da202efd317e027960e97f35395d3a05"
+    },
+    {
+      "file": "repositories/http-repositories.ts",
+      "sourceSha256": "a3d117c524aaa6e8c85d2a141029139a23e75974dc3a579cf9360ecddcebb41c"
+    },
+    {
+      "file": "repositories/types.ts",
+      "sourceSha256": "bc785124c29387558b53ea7c5216b6884172dc4c53e2ad83ad3d619b993b2583"
+    },
+    {
+      "file": "services/use-async-resource.ts",
+      "sourceSha256": "c5e1d0fd695da502b9b0d2d4083333c43f968d6f37b9c1755415a358993830ab"
+    }
+  ],
+  "publicAssets": [
+    "tat-hermes-web-proxy-sw.js",
+    "assets/skills/featured-caveman.jpg",
+    "assets/skills/featured-domestic-ecommerce.jpg",
+    "assets/skills/featured-domestic-find-skill.jpg",
+    "assets/skills/featured-domestic-image-prompt.jpg",
+    "assets/skills/featured-domestic-lh6-anniversary.jpg",
+    "assets/skills/featured-domestic-lh6-icon.svg",
+    "assets/skills/featured-domestic-news.jpg",
+    "assets/skills/featured-domestic-poster.jpg",
+    "assets/skills/featured-domestic-weather.jpg",
+    "assets/skills/featured-find-skills.jpg",
+    "assets/skills/featured-self-improving-agent.jpg",
+    "assets/skills/featured-simple.jpg",
+    "assets/skills/featured-to-issues.jpg",
+    "assets/skills/featured-weather.jpg",
+    "assets/skills/gemini.svg"
+  ]
+}

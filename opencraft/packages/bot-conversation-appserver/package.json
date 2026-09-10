@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/bot-conversation-appserver",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/bot-conversation": "0.1.0",
+    "@opencraft/chat-core": "0.1.0",
+    "@opencraft/composer-core": "0.1.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@opencraft/appserver-lab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/appserver-replica": "0.1.0",
+    "@opencraft/appserver-session": "0.1.0",
+    "@opencraft/chat-core": "0.1.0",
+    "@opencraft/chat-runtime": "0.1.0",
+    "@opencraft/composer-appserver": "0.1.0",
+    "@opencraft/composer-core": "0.1.0",
+    "@opencraft/appserver-transport-replay": "0.1.0",
+    "@opencraft/appserver-transport-websocket": "0.1.0",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/ws": "8.18.1",
+    "@opencraft/appserver-transport-memory": "0.1.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,34 @@
+#!/usr/bin/env node
+import { startOpenCraftDaemon } from "./main.js";
+
+function argument(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index < 0 ? undefined : process.argv[index + 1];
+}
+
+function requiredArgument(name: string): string {
+  const value = argument(name)?.trim();
+  if (!value) throw new Error(`Missing required argument ${name}`);
+  return value;
+}
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`Missing required environment ${name}`);
+  return value;
+}
+
+void startOpenCraftDaemon({
+  endpoint: requiredArgument("--endpoint"),
+  authToken: requiredEnvironment("OPENCRAFT_DAEMON_AUTH_TOKEN"),
+  dshExecutable: requiredArgument("--dsh-executable"),
+  dataDirectory: requiredArgument("--data-directory"),
+}).then((daemon) => {
+  process.stdout.write(`${JSON.stringify({ type: "opencraft-daemon-ready", endpoint: daemon.endpoint, pid: process.pid })}\n`);
+  const shutdown = () => void daemon.close().finally(() => process.exit(0));
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
