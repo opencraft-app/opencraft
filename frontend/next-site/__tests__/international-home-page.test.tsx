@@ -50,7 +50,6 @@ const requiredInternalRoutes = [
 const requiredExternalRoutes = [
   "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b",
   "https://discord.gg/Myh58xEMe2",
-  "https://www.youtube.com/@TencentLightVela",
   "https://x.com/agentlightvela",
 ] as const;
 
@@ -754,12 +753,12 @@ describe("international v2 homepage artifact", () => {
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
-    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(21);
+    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(20);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
         anchor.textContent,
       ),
-    ).toEqual(["X / Twitter", "Discord", "WhatsApp", "YouTube"]);
+    ).toEqual(["X / Twitter", "Discord", "WhatsApp"]);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:last-child a") ?? [], (anchor) => [
         anchor.textContent,
