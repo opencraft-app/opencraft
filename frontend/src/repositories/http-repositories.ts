@@ -978,6 +978,17 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       });
 
       if (!isGlobal) {
+        if (mapInstanceStatusToBotStatus(created.status) !== "active") {
+          const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
+          botScopeCache.set(bot.id, {
+            instanceId: created.instance_id,
+            profileId: "main",
+            isDefault: true,
+            legacy: true,
+          });
+          instanceCache.set(created.instance_id, created);
+          return bot;
+        }
         try {
           const nested = await requestEnvelope<CtlListInstanceBotsPayload>(
             baseUrl,

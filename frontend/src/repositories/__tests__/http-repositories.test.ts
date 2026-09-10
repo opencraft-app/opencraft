@@ -1150,6 +1150,11 @@ describe("http repositories auth token bootstrap", () => {
         status: "provisioning",
       }),
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("creates a tat terminal session for a bot through ctl without exposing sandboxes", async () => {
