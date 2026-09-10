@@ -1,6 +1,6 @@
 # OpenCraft mono2 migration
 
-`opencraft/` was imported once, with full Git history, from
+`opencraft/` was imported with full Git history from
 `git@git.woa.com:wisp/opencraft.git`. After this import, mono2 is the sole
 write source for OpenCraft.
 
@@ -10,16 +10,21 @@ write source for OpenCraft.
 - Source commit: `af7e7d04b271d788c8177aad411675dbe29f7172`
 - mono2 base: `7f636c34d155f31bdfc6df4c7d83a3d36c5d11d3`
 - Import commit: `327368646e4e4dda2505caa108736f2d2a58cdb6`
+- Final migration-tail source commit: `c3daab35df63fb3e083792cbbab4930cd4922f3c`
+- Final migration-tail merge commit: `5865a68a9796d5af2fcd61392bcb12d9a3934da8`
 - Prefix: `opencraft`
-- Command:
+- Commands executed during the bounded migration window:
 
   ```bash
   git subtree add --prefix=opencraft /vela codex/mono2-migration-source --no-squash
+  git subtree pull --prefix=opencraft /vela codex/mono2-migration-source --no-squash
   ```
 
 The source repository remains a read-only historical and rollback reference
-until it is archived. Do not use routine `git subtree pull`, `git subtree
-split`, or dual-write workflows for OpenCraft.
+until it is archived. The tail pull above only captured edits that landed
+during migration validation; it does not establish an ongoing sync contract.
+Do not use routine `git subtree pull`, `git subtree split`, or dual-write
+workflows for OpenCraft.
 
 ## Shared frontend boundary
 

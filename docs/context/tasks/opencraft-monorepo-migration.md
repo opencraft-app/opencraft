@@ -44,7 +44,7 @@ derived: false
 ## history_context
 
 - `current_design_refs`：`docs/context/project/upstream-subtrees.md@2.0.0`、`docs/engineering/catalog/services.yaml@7f636c34d`、`velalink/MONO2_SUBTREE.md@7f636c34d`。
-- `relevant_evolution`：OpenCraft 独立仓库迁移源为 `/vela` 分支 `codex/mono2-migration-source` commit `af7e7d0`；mono2 导入基线为 `origin/master` commit `7f636c34d`。
+- `relevant_evolution`：OpenCraft 独立仓库迁移源为 `/vela` 分支 `codex/mono2-migration-source`，初始快照 `af7e7d0`、迁移窗口最终快照 `c3daab3`；mono2 导入基线为 `origin/master` commit `7f636c34d`。
 - `superseded_refs`：OpenCraft 旧仓库在迁移完成后仅作为只读历史与回退源，不再接受双向同步。
 
 ## acceptance
@@ -86,11 +86,12 @@ derived: false
 
 - `/vela` 迁移源提交前：315 个索引文件凭据扫描零命中、无大于 5 MiB 单文件。
 - `/vela`：边界与全 workspace 类型检查通过；扩展 111/111、Chat 358/358、Workbench 186/186、Web 发布 5/5 通过；Web、Expo Web、Expo iOS 构建通过。
-- `/vela` 迁移源已提交为 `af7e7d04b271d788c8177aad411675dbe29f7172`，分支 `codex/mono2-migration-source` 保持干净且未推送。
-- mono2 基线 `7f636c34d155f31bdfc6df4c7d83a3d36c5d11d3`；Task Pack 提交 `06f04e2d2`；non-squash subtree 导入提交 `327368646e4e4dda2505caa108736f2d2a58cdb6`，提交包含 `git-subtree-split: af7e7d04...`。
+- `/vela` 初始迁移源提交为 `af7e7d04b271d788c8177aad411675dbe29f7172`；验证期间新增的统一 OIDC/PKCE 登录实现提交为 `c3daab35df63fb3e083792cbbab4930cd4922f3c`，源分支保持干净。
+- mono2 基线 `7f636c34d155f31bdfc6df4c7d83a3d36c5d11d3`；Task Pack 提交 `06f04e2d2`；non-squash subtree 导入提交 `327368646e4e4dda2505caa108736f2d2a58cdb6`，提交包含 `git-subtree-split: af7e7d04...`；迁移窗口尾部同步提交为 `5865a68a9796d5af2fcd61392bcb12d9a3934da8`，第二父提交为 `c3daab3...`。
 - `npm ci` 从空依赖目录成功安装 1,326 个包；`npm audit --omit=dev --audit-level=high` 无 high/critical，报告 13 个需要破坏性 Expo 降级/变更才能自动修复的 moderate 间接依赖问题，本轮未执行 `--force`。
 - `npm run check:mono2-agent-console` 验证 125 个共享前端文件；清单来源为 `frontend/src`，不含 worktree 绝对路径。
 - `npm run gate` 通过：边界、全 workspace 类型检查、扩展/AppServer/AppServer Lab/Chat/Workbench/Web release 测试以及 Web、Expo Web、Expo iOS 构建全部完成。
+- 迁移窗口尾部登录增量：账户认证聚焦测试 10/10 通过，Hermes 插件、Workbench Web 与 Expo 类型检查通过。
 - 文档系统 8/8 单测、Service Catalog 25/25 覆盖、42 个路由 smoke case、docs-impact 和 CI runtime 501 个测试通过。
 - 全仓 Context Validator 的既有失败从 `origin/master` 的 387 条变为当前 386 条（重建 catalog 后消除 stale 提示）；剩余为 master 已存在的旧 Task Pack metadata 和 5 个历史文档明文扫描命中，本迁移没有新增失败。
 
@@ -112,7 +113,7 @@ derived: false
 
 ## decisions
 
-- 使用 `git subtree add --prefix=opencraft /vela codex/mono2-migration-source --no-squash`，owner：本迁移任务。
+- 使用 non-squash `git subtree add` 导入完整历史，并仅在迁移验证窗口内执行一次 non-squash `git subtree pull` 捕获并发落下的登录增量；合入后不建立持续同步，owner：本迁移任务。
 - mono2 在导入后成为唯一写入真源；不建立长期 `subtree pull/split` 双向工作流，owner：本迁移任务。
 - 目标目录为 `opencraft/`，不放入 `frontend/`；前者同时包含 Web、Expo、Electron、AppServer、packages 和 plugins，owner：本迁移任务。
 - 迁移本身只建立 build/test CI，不授权生产发布，owner：本迁移任务。
