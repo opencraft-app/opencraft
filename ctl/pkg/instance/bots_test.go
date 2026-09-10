@@ -37,8 +37,10 @@ func TestBuildHermesProfileCreateCommandClonesMainAndSanitizesChannels(t *testin
 	command := buildHermesProfileCreateCommand("profile-2", rootProfileID, "", "Sales", "")
 	checks := []string{
 		"hermes profile create 'profile-2' --clone-from 'default'",
-		"config unset platforms",
-		"config unset gateway.platforms",
+		"config unset 'platforms'",
+		"Config key not set: platforms",
+		"config unset 'gateway.platforms'",
+		"Config key not set: gateway.platforms",
 		"category\") == \"messaging\"",
 		"WEIXIN_",
 		"TELEGRAM_",
@@ -51,6 +53,49 @@ func TestBuildHermesProfileCreateCommandClonesMainAndSanitizesChannels(t *testin
 	}
 	if strings.Contains(command, "profiles/main") {
 		t.Fatalf("root profile must map to Hermes default: %s", command)
+	}
+}
+
+func TestHermesProfileConfigUnsetOnlyIgnoresMissingKey(t *testing.T) {
+	binDir := t.TempDir()
+	hermesPath := binDir + "/hermes"
+	fakeHermes := `#!/bin/sh
+case "$FAKE_HERMES_RESULT" in
+  missing)
+    printf 'Config key not set: %s\n' "$5" >&2
+    exit 1
+    ;;
+  failed)
+    printf 'could not parse config\n' >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(hermesPath, []byte(fakeHermes), 0o700); err != nil {
+		t.Fatalf("write fake hermes: %v", err)
+	}
+
+	command := buildHermesProfileConfigUnsetCommand("profile-2", "gateway.platforms")
+	for _, test := range []struct {
+		name      string
+		result    string
+		wantError bool
+	}{
+		{name: "unset succeeds"},
+		{name: "missing key is already clean", result: "missing"},
+		{name: "other failures remain fatal", result: "failed", wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := exec.Command("/bin/bash", "-c", command)
+			cmd.Env = append(os.Environ(), "PATH="+binDir+":"+os.Getenv("PATH"), "FAKE_HERMES_RESULT="+test.result)
+			err := cmd.Run()
+			if test.wantError && err == nil {
+				t.Fatal("expected config failure to remain fatal")
+			}
+			if !test.wantError && err != nil {
+				t.Fatalf("unexpected unset failure: %v", err)
+			}
+		})
 	}
 }
 
