@@ -35,6 +35,7 @@ import type {
   WeixinLoginSession,
   WorkspaceMessage,
 } from "@/domain/types";
+import type { CreditPackageItem, CreditProduct, CreditQuote } from "@/domain/credit-pack";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 
 export interface OAuthStartOptions {
@@ -499,8 +500,30 @@ export interface BotRepository {
   resetInstanceConfig(botId: string): Promise<BotInstanceConfigResetResult>;
 }
 
+/**
+ * 积分包仓储。
+ *
+ * 对应 credit 服务（credit/internal/httpapi/server.go:35-53）。
+ * 本期只接入询价与用户积分包查询；下单与支付因后端 payURL 恒空而未接入，
+ * 详见 .workflow/native/changes/credit-pack-purchase/brief.md。
+ */
+export interface CreditRepository {
+  /** `GET /v1/credit/products` —— 在售积分包商品。 */
+  listCreditProducts(): Promise<CreditProduct[]>;
+  /**
+   * `POST /v1/credit/inquiry` —— 单个商品询价。
+   *
+   * 按商品逐个询价：产品要求单卡询价失败只禁用该卡、不影响其他卡，
+   * 因此调用方并发调用并单独处理每个 Promise 的失败。
+   */
+  inquireCreditPrice(productId: string): Promise<CreditQuote>;
+  /** `GET /v1/credit/packages` —— 当前用户的有效积分包。 */
+  listCreditPackages(): Promise<CreditPackageItem[]>;
+}
+
 export interface Repositories {
   auth: AuthRepository;
   plans: PlanRepository;
   bots: BotRepository;
+  credit: CreditRepository;
 }

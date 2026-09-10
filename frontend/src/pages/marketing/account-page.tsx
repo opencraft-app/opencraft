@@ -33,6 +33,8 @@ import {
 } from "@/lib/billing-flow";
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { useCreditSources, formatCreditDate } from "@/lib/use-credit-sources";
 import { isCN, isGlobal } from "@/lib/region";
 import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
@@ -876,11 +878,32 @@ const SubscriptionSection = ({
     };
   }, [operablePass, subscription, plan.trialDays]);
 
-  // 积分：统一从 operablePass 取（credit_total / credit_available），没有 pass 时为 0
-  const creditsTotal = operablePass ? operablePass.credit_total : 0;
-  const creditsUsed = operablePass ? Math.max(0, operablePass.credit_total - operablePass.credit_available) : 0;
+  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
+     积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
+     与改造前行为一致。 */
+  const planCreditInput = useMemo(
+    () =>
+      operablePass
+        ? {
+            displayName: operablePass.bundle_name ?? t("套餐积分"),
+            creditTotal: operablePass.credit_total,
+            creditAvailable: operablePass.credit_available,
+          }
+        : null,
+    [operablePass, t],
+  );
+  const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
+    useCreditSources(planCreditInput);
+  const creditPackVisible = useCreditPackVisibility();
+
+  /* flag 关闭时只认套餐积分，避免未上线的积分包数据影响既有展示 */
+  const creditsTotal = creditPackVisible ? creditSummary.total : (operablePass ? operablePass.credit_total : 0);
+  const creditsAvailable = creditPackVisible
+    ? creditSummary.available
+    : (operablePass ? operablePass.credit_available : 0);
+  const creditsUsed = Math.max(0, creditsTotal - creditsAvailable);
   const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
-  const creditsExhausted = Boolean(operablePass && creditsTotal > 0 && operablePass.credit_available <= 0);
+  const creditsExhausted = Boolean(creditsTotal > 0 && creditsAvailable <= 0);
   const showCreditPrompt = creditsExhausted || usedPercent > 95;
   const creditUsageColor = usedPercent > 95
     ? "#991B1B"
@@ -1036,10 +1059,20 @@ const SubscriptionSection = ({
             <div>
               {creditsTotal > 0 && (
                 <>
-                  <div className="mb-2">
+                  <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
+                    {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
+                    {creditPackVisible && (
+                      <AppLink
+                        to="/subscribe?section=credits"
+                        className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                        style={{ color: "var(--lw-accent)" }}
+                      >
+                        {t("购买积分包")}
+                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                      </AppLink>
+                    )}
+                  </div>                  <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
                       {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
                     </p>
@@ -1057,6 +1090,60 @@ const SubscriptionSection = ({
                       }}
                     />
                   </div>
+
+                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
+                      仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
+                  {creditPackVisible && creditSources.length > 0 && (
+                    <div className="mt-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm font-semibold" style={{ color: "#333" }}>
+                          {t("额度明细")}
+                        </span>
+                        <span className="text-xs" style={{ color: "#999" }}>
+                          {t("共 {{count}} 个来源", { count: creditSummary.sourceCount })}
+                        </span>
+                      </div>
+                      <ul className="list-none space-y-2 p-0">
+                        {creditSources.map((source) => (
+                          <li
+                            key={source.source_id}
+                            className="flex items-center justify-between rounded-lg px-3 py-2"
+                            style={{ background: "rgba(0,0,0,0.02)" }}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm" style={{ color: "#333" }}>
+                                {source.display_name}
+                              </p>
+                              {source.next_expire_at && (
+                                <p className="mt-0.5 text-xs" style={{ color: "#999" }}>
+                                  {source.source_type === "plan"
+                                    ? t("下次刷新：{{date}}", { date: formatCreditDate(source.next_expire_at) })
+                                    : t("到期时间：{{date}}", { date: formatCreditDate(source.next_expire_at) })}
+                                </p>
+                              )}
+                            </div>
+                            <p className="shrink-0 pl-3 text-sm font-semibold" style={{ color: "var(--lw-accent)" }}>
+                              {source.credit_available.toLocaleString()}
+                              <span className="font-normal" style={{ color: "#999" }}>
+                                {" / "}
+                                {source.credit_total.toLocaleString()}
+                              </span>
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                      {creditPacksFailed && (
+                        <button
+                          type="button"
+                          onClick={reloadCreditPacks}
+                          className="mt-2 text-xs font-semibold underline underline-offset-2"
+                          style={{ color: "#991B1B" }}
+                        >
+                          {t("积分包额度加载失败，点击重试")}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
               {showCreditPrompt && operablePass && (

@@ -12,12 +12,14 @@ import {
   usePaidBillingEnabled,
   useRealnamePhoneVerificationEnabled,
 } from "@/contexts/runtime-config-context";
+import { CreditPackSection } from "./credit-pack-section";
 import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
+import { useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -2695,6 +2697,16 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
 const PAY_RETURN_QUERY_KEY = "pay_return";
 const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
 
+/** 套餐卡片区锚点：积分包区域的「先开通套餐」需要定位回这里。 */
+const PLANS_SECTION_ID = "subscribe-plans";
+
+/** 积分包区域锚点。 */
+const CREDIT_SECTION_ID = "subscribe-credits";
+
+/** 账号页「购买积分包」跳转本页时携带的定位参数，见产品方案 5。 */
+const SECTION_QUERY_KEY = "section";
+const CREDIT_SECTION_QUERY_VALUE = "credits";
+
 export const SubscribePage = ({
   authControls,
   publicLocale,
@@ -2713,6 +2725,22 @@ export const SubscribePage = ({
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
+  /* 积分包区域可见性：默认关闭，后端支付链路就绪后再开启（见 credit-pack-visibility.ts） */
+  const creditPackVisible = useCreditPackVisibility();
+
+  /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
+     依赖 creditPackVisible：区域未渲染时 getElementById 拿不到节点。 */
+  useEffect(() => {
+    if (!creditPackVisible) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
+    /* 等积分包区域完成首次渲染再滚动 */
+    const timer = window.setTimeout(() => {
+      document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [creditPackVisible]);
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -3658,7 +3686,7 @@ export const SubscribePage = ({
       {header}
 
       <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
-        <section style={{ maxWidth: 1080, margin: "0 auto" }}>
+        <section id={PLANS_SECTION_ID} style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* Page Header — Notion style */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -3902,6 +3930,22 @@ export const SubscribePage = ({
             </>
           )}
         </section>
+
+        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。
+            由 feature flag 控制，默认关闭（后端支付链路未就绪），
+            控制台执行 show_credit_pack() 可开启内部验收。 */}
+        {creditPackVisible && (
+          <CreditPackSection
+            sectionId={CREDIT_SECTION_ID}
+            isLoggedIn={isLoggedIn}
+            hasActivePlan={Boolean(activePass)}
+            onRequireLogin={() => setShowLoginModal(true)}
+            onRequirePlan={() => {
+              /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
+              document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+        )}
       </main>
 
       <LegalFooter />

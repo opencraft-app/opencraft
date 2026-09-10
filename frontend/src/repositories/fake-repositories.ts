@@ -19,11 +19,14 @@ import type {
   User,
   WorkspaceMessage,
 } from "@/domain/types";
+import { CREDIT_PACK_DENOMINATIONS } from "@/domain/credit-pack";
 import { planCatalog } from "@/domain/plan-catalog";
+import { isGlobal } from "@/lib/region";
 import { getAccountPreviewOverrides } from "@/repositories/account-preview-states";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
+  CreditRepository,
   DashboardSnapshot,
   PaymentMethod,
   RealnameFaceIdAttempt,
@@ -1243,8 +1246,53 @@ export const createFakeRepositories = (): Repositories => {
       },
     },
     bots: createBotRepository(),
+    credit: createCreditRepository(),
   };
 };
+
+/*
+ * 积分包假数据仓储。
+ *
+ * 真实实现见 http-repositories.ts 的 createHttpCreditRepository；
+ * 本文件用于本地预览与测试，价格为演示值，不代表真实定价。
+ */
+const createCreditRepository = (): CreditRepository => ({
+  async listCreditProducts() {
+    await wait(NETWORK_DELAY_MS);
+    return CREDIT_PACK_DENOMINATIONS.map((denomination) => ({
+      product_id: denomination.product_id,
+      product_name: `${denomination.credit_total} 积分包`,
+      llm_gateway_plan_id: `plan-${denomination.credit_total}`,
+      state: "ONLINE" as const,
+    }));
+  },
+  async inquireCreditPrice(productId) {
+    await wait(NETWORK_DELAY_MS);
+    const denomination = CREDIT_PACK_DENOMINATIONS.find((item) => item.product_id === productId);
+    if (!denomination) {
+      throw new Error(`未知积分包商品：${productId}`);
+    }
+    /* 演示价：国内 1 元 / 100 积分，国际 1 美元 / 500 积分 */
+    const amount = isGlobal
+      ? (denomination.credit_total / 500).toFixed(2)
+      : (denomination.credit_total / 100).toFixed(2);
+    return {
+      product_id: productId,
+      real_total_cost: amount,
+      total_cost: amount,
+      currency: isGlobal ? ("USD" as const) : ("CNY" as const),
+    };
+  },
+  async listCreditPackages() {
+    await wait(NETWORK_DELAY_MS);
+    const now = Date.now();
+    const inDays = (days: number) => new Date(now + days * 24 * 60 * 60 * 1000).toISOString();
+    return [
+      { credit_type: "paid" as const, credit_total: 1000, credit_available: 620, expired_time: inDays(12) },
+      { credit_type: "paid" as const, credit_total: 4000, credit_available: 4000, expired_time: inDays(27) },
+    ];
+  },
+});
 
 const createBotRepository = (): BotRepository => {
   const fakeConnectedChannels = new Set<string>();
