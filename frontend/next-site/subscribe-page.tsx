@@ -19,7 +19,7 @@ import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } fr
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { installShowCreditPackHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -2725,8 +2725,10 @@ export const SubscribePage = ({
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
-  /* 积分包区域可见性：默认关闭，后端支付链路就绪后再开启（见 credit-pack-visibility.ts） */
+  /* 积分包区域可见性：默认关闭，后端支付链路就绪后再开启（见 credit-pack-visibility.ts）。
+     挂载 show_credit_pack() 控制台助手，供内部验收开启（对照 github-login-visibility 范式）。 */
   const creditPackVisible = useCreditPackVisibility();
+  useEffect(() => installShowCreditPackHelper(), []);
 
   /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
      依赖 creditPackVisible：区域未渲染时 getElementById 拿不到节点。 */

@@ -109,6 +109,11 @@ export const CreditPackSection = ({
       setQuotes((prev) => ({ ...prev, [productId]: { status: 'loading' } }));
       try {
         const quote = await repositoriesRef.current.credit.inquireCreditPrice(productId);
+        /* 契约防御：响应缺少 real_total_cost（如后端改了包装结构）时按询价失败处理，
+           显示「价格暂不可用」而非渲染崩溃 */
+        if (!quote || typeof quote.real_total_cost !== "string") {
+          throw new Error("invalid quote response");
+        }
         setQuotes((prev) => ({ ...prev, [productId]: { status: 'ready', quote } }));
       } catch (error) {
         if (error instanceof RepositoryError && error.status === 409) {

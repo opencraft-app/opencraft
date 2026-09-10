@@ -2248,8 +2248,10 @@ const createHttpCreditRepository = (baseUrl: string): CreditRepository => ({
     return payload ?? [];
   },
   async inquireCreditPrice(productId) {
-    /* timeSpan/timeUnit 固定 1 个月：本期只售 1 个月有效期积分包 */
-    return requestEnvelope<CreditQuote>(baseUrl, "/v1/credit/inquiry", {
+    /* timeSpan/timeUnit 固定 1 个月：本期只售 1 个月有效期积分包。
+       ⚠️ 直出 JSON（无 envelope）——与 products 不同，联调文档 §5；
+       后端 server.go 的 inquiry 用 writeJSON(out) 直出 QuoteResult。 */
+    return request<CreditQuote>(baseUrl, "/v1/credit/inquiry", {
       method: "POST",
       body: { product_id: productId, time_span: 1, time_unit: "m" },
     });

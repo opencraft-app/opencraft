@@ -2647,4 +2647,67 @@ describe("http repositories auth token bootstrap", () => {
       expect.objectContaining({ method: "DELETE", credentials: "include" }),
     );
   });
+
+  /* ── 积分包（credit）接口的响应包装差异回归 ──
+     联调文档（docs/frontend-credit-package-integration.md）与后端
+     credit/internal/httpapi/server.go 的实际行为：
+       - products 带 envelope（{"success":true,"data":[...]}）
+       - inquiry / order / order-url 直出 JSON（writeJSON(out)）
+     曾因误用 requestEnvelope 导致 inquiry 拿到 undefined，
+     页面报 Cannot read properties of undefined (reading 'real_total_cost')。 */
+  describe("credit repository response envelopes", () => {
+    const jsonResponse = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+
+    it("inquiry parses the bare QuoteResult without envelope unwrapping", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          product_id: "credit_1000",
+          price: "1000",
+          total_cost: "1000",
+          real_total_cost: "1000",
+          currency: "CNY",
+          discount: 0,
+          goods_num: 1,
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const quote = await repositories.credit.inquireCreditPrice("credit_1000");
+
+      expect(quote.real_total_cost).toBe("1000");
+      expect(quote.currency).toBe("CNY");
+    });
+
+    it("listCreditProducts unwraps the success/data envelope", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          data: [
+            { product_id: "credit_1000", product_name: "1000积分", llm_gateway_plan_id: "plan-x", state: "ONLINE" },
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const products = await repositories.credit.listCreditProducts();
+
+      expect(products).toHaveLength(1);
+      expect(products[0].product_id).toBe("credit_1000");
+    });
+
+    it("createCreditOrder parses the camelCase bare response", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        jsonResponse({ dealName: "202609100000000001", bigOrderId: "2026091000000000001" }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const order = await repositories.credit.createCreditOrder("credit_1000");
+
+      expect(order.dealName).toBe("202609100000000001");
+    });
+  });
 });

@@ -33,7 +33,7 @@ import {
 } from "@/lib/billing-flow";
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { installShowCreditPackHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { useCreditSources, formatCreditDate } from "@/lib/use-credit-sources";
 import { isCN, isGlobal } from "@/lib/region";
 import { publicSiteHref } from "@/lib/public-site-navigation";
@@ -880,7 +880,7 @@ const SubscriptionSection = ({
 
   /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
      积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
-     与改造前行为一致。 */
+     与改造前行为一致。挂载 show_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
   const planCreditInput = useMemo(
     () =>
       operablePass
@@ -895,6 +895,7 @@ const SubscriptionSection = ({
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
     useCreditSources(planCreditInput);
   const creditPackVisible = useCreditPackVisibility();
+  useEffect(() => installShowCreditPackHelper(), []);
 
   /* flag 关闭时只认套餐积分，避免未上线的积分包数据影响既有展示 */
   const creditsTotal = creditPackVisible ? creditSummary.total : (operablePass ? operablePass.credit_total : 0);
