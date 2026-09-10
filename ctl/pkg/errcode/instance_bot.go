@@ -1,5 +1,7 @@
 package errcode
 
+var ErrInstanceConfigResetMultiBot = Register(New("INSTANCE_CONFIG_RESET_MULTI_BOT", 409, "model reset requires a single default Bot"))
+
 var (
 	ErrInstanceBotNotFound       = Register(New("INSTANCE_BOT_NOT_FOUND", 404, "instance bot not found"))
 	ErrInstanceBotInvalidParam   = Register(New("INSTANCE_BOT_INVALID_PARAM", 400, "invalid instance bot parameters"))

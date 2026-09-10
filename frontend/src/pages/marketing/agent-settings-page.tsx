@@ -3260,11 +3260,15 @@ export const AgentSettingsPage = ({
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [resettingAcli, setResettingAcli] = useState(false);
-  const [acliResetConsole, setAcliResetConsole] = useState<string[]>([]);
+  const [resettingInstanceIds, setResettingInstanceIds] = useState<Set<string>>(new Set());
+  const [resetConsoleByInstanceId, setResetConsoleByInstanceId] = useState<Record<string, string[]>>({});
+  const resettingAcli = Boolean(activeRuntimeInstanceId && resettingInstanceIds.has(activeRuntimeInstanceId));
+  const acliResetConsole = activeRuntimeInstanceId ? resetConsoleByInstanceId[activeRuntimeInstanceId] ?? [] : [];
   const acliResetConsoleRef = useRef<HTMLPreElement | null>(null);
   useEffect(() => {
-    setAcliResetConsole([]);
+    setShowResetConfirm(false);
+    setShowAcliResetConfirm(false);
+    setWorkspaceConfirm(null);
   }, [activeBot?.id]);
 
   useEffect(() => {
@@ -3274,7 +3278,7 @@ export const AgentSettingsPage = ({
   }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
-    if (getResetBlockReason(activeBot, resetting)) return;
+    if (botsLoading || !isActiveBotDefault || maintenanceBusy || getResetBlockReason(activeBot, resetting, remainingInstanceBotCount)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
@@ -3343,7 +3347,10 @@ export const AgentSettingsPage = ({
       toast.success(t("重置成功"));
     } catch (err) {
       const fallbackMessage = t("重置失败，请重试");
-      const message = isResetConfigRouteMissingError(err)
+      const resetErrorCode = err && typeof err === "object" && "code" in err ? err.code : undefined;
+      const message = resetErrorCode === "INSTANCE_CONFIG_RESET_MULTI_BOT"
+        ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
+        : isResetConfigRouteMissingError(err)
         ? t("当前后端服务暂不支持重置配置，请稍后再试。")
         : err instanceof Error ? err.message : fallbackMessage;
       toast.error(message);
@@ -3353,15 +3360,21 @@ export const AgentSettingsPage = ({
   };
 
   const handleResetAcli = async () => {
-    if (getAcliResetBlockReason(activeBot, resettingAcli)) return;
-    const targetBotId = activeBot?.id;
+    if (!isActiveBotDefault || maintenanceBusy || getAcliResetBlockReason(activeBot, resettingAcli)) return;
+    const targetBotId = activeRuntimeInstanceId;
     if (!targetBotId) return;
+    const setAcliResetConsole = (update: string[] | ((prev: string[]) => string[])) => {
+      setResetConsoleByInstanceId((prev) => ({
+        ...prev,
+        [targetBotId]: typeof update === "function" ? update(prev[targetBotId] ?? []) : update,
+      }));
+    };
 
     trackDatongEvent(DATONG_EVENTS.DIAGNOSTICS_ACTION, {
       pgid: DATONG_PAGE_IDS.AGENT_DIAGNOSTICS,
       params: { bot_id: targetBotId, action: "reset_agent" },
     });
-    setResettingAcli(true);
+    setResettingInstanceIds((prev) => new Set(prev).add(targetBotId));
     setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
     setShowAcliResetConfirm(false);
     try {
@@ -3378,7 +3391,11 @@ export const AgentSettingsPage = ({
       setAcliResetConsole((prev) => [...prev, `[error] ${message}`].slice(-80));
       toast.error(t("Agent 重置失败，请重试"));
     } finally {
-      setResettingAcli(false);
+      setResettingInstanceIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetBotId);
+        return next;
+      });
     }
   };
 
@@ -3390,13 +3407,13 @@ export const AgentSettingsPage = ({
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const [exportingBotIds, setExportingBotIds] = useState<Set<string>>(new Set());
-  const [exportStatusByBotId, setExportStatusByBotId] = useState<Record<string, WorkerActionStatusResult | null>>({});
-  const [exportStatusLoadingBotIds, setExportStatusLoadingBotIds] = useState<Set<string>>(new Set());
+  const [exportingInstanceIds, setExportingInstanceIds] = useState<Set<string>>(new Set());
+  const [exportStatusByInstanceId, setExportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
+  const [exportStatusLoadingInstanceIds, setExportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
   const [exportStatusErrors, setExportStatusErrors] = useState<Record<string, string | null>>({});
-  const [importingBotIds, setImportingBotIds] = useState<Set<string>>(new Set());
-  const [importStatusByBotId, setImportStatusByBotId] = useState<Record<string, WorkerActionStatusResult | null>>({});
-  const [importStatusLoadingBotIds, setImportStatusLoadingBotIds] = useState<Set<string>>(new Set());
+  const [importingInstanceIds, setImportingInstanceIds] = useState<Set<string>>(new Set());
+  const [importStatusByInstanceId, setImportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
+  const [importStatusLoadingInstanceIds, setImportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
   const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
   const [workspaceConfirm, setWorkspaceConfirm] = useState<WorkspaceConfirmState | null>(null);
   const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
@@ -3438,91 +3455,91 @@ export const AgentSettingsPage = ({
     }
   };
 
-  const loadRescueExportStatus = useCallback(async (botId: string) => {
-    setExportStatusLoadingBotIds((prev) => new Set(prev).add(botId));
+  const loadRescueExportStatus = useCallback(async (instanceId: string) => {
+    setExportStatusLoadingInstanceIds((prev) => new Set(prev).add(instanceId));
     try {
-      const status = await repositories.bots.getRescueExportStatus(botId);
-      setExportStatusByBotId((prev) => ({ ...prev, [botId]: status }));
-      setExportStatusErrors((prev) => ({ ...prev, [botId]: null }));
+      const status = await repositories.bots.getRescueExportStatus(instanceId);
+      setExportStatusByInstanceId((prev) => ({ ...prev, [instanceId]: status }));
+      setExportStatusErrors((prev) => ({ ...prev, [instanceId]: null }));
       return status;
     } catch (err) {
       const message = err instanceof Error ? err.message : rawT("备份状态查询失败");
-      setExportStatusErrors((prev) => ({ ...prev, [botId]: message }));
+      setExportStatusErrors((prev) => ({ ...prev, [instanceId]: message }));
       throw err;
     } finally {
-      setExportStatusLoadingBotIds((prev) => {
+      setExportStatusLoadingInstanceIds((prev) => {
         const next = new Set(prev);
-        next.delete(botId);
+        next.delete(instanceId);
         return next;
       });
     }
   }, [repositories.bots]);
 
-  const loadHermesImportStatus = useCallback(async (botId: string) => {
-    setImportStatusLoadingBotIds((prev) => new Set(prev).add(botId));
+  const loadHermesImportStatus = useCallback(async (instanceId: string) => {
+    setImportStatusLoadingInstanceIds((prev) => new Set(prev).add(instanceId));
     try {
-      const status = await repositories.bots.getHermesImportStatus(botId);
-      setImportStatusByBotId((prev) => ({ ...prev, [botId]: status }));
-      setImportStatusErrors((prev) => ({ ...prev, [botId]: null }));
+      const status = await repositories.bots.getHermesImportStatus(instanceId);
+      setImportStatusByInstanceId((prev) => ({ ...prev, [instanceId]: status }));
+      setImportStatusErrors((prev) => ({ ...prev, [instanceId]: null }));
       return status;
     } catch (err) {
       const message = err instanceof Error ? err.message : rawT("恢复状态查询失败");
-      setImportStatusErrors((prev) => ({ ...prev, [botId]: message }));
+      setImportStatusErrors((prev) => ({ ...prev, [instanceId]: message }));
       throw err;
     } finally {
-      setImportStatusLoadingBotIds((prev) => {
+      setImportStatusLoadingInstanceIds((prev) => {
         const next = new Set(prev);
-        next.delete(botId);
+        next.delete(instanceId);
         return next;
       });
     }
   }, [repositories.bots]);
 
   const handleRequestExportWorkspace = () => {
-    if (workspaceActionDisabledReason) {
-      toast.error(workspaceActionDisabledReason);
+    if (!isActiveBotDefault || workspaceActionDisabledReason || maintenanceBusy) {
+      toast.error(workspaceActionDisabledReason || t("Agent 维护任务执行中，请稍后再试。"));
       return;
     }
     setWorkspaceConfirm({ kind: "export" });
   };
 
   const handleRequestImportWorkspace = () => {
-    if (workspaceActionDisabledReason) {
-      toast.error(workspaceActionDisabledReason);
+    if (!isActiveBotDefault || workspaceActionDisabledReason || maintenanceBusy) {
+      toast.error(workspaceActionDisabledReason || t("Agent 维护任务执行中，请稍后再试。"));
       return;
     }
     setWorkspaceConfirm({ kind: "import", file: null });
   };
 
   const handleExportWorkspace = async () => {
-    if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
-    const targetBotId = activeBot.id;
+    if (!activeRuntimeInstanceId || !isActiveBotDefault || workspaceActionDisabledReason || maintenanceBusy) return;
+    const targetInstanceId = activeRuntimeInstanceId;
     setWorkspaceConfirm(null);
-    setExportingBotIds((prev) => new Set(prev).add(targetBotId));
-    setExportStatusByBotId((prev) => ({
+    setExportingInstanceIds((prev) => new Set(prev).add(targetInstanceId));
+    setExportStatusByInstanceId((prev) => ({
       ...prev,
-      [targetBotId]: {
+      [targetInstanceId]: {
         phase: "starting",
         logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在发起 Agent 备份任务。"), level: "info" }],
       },
     }));
     try {
-      await repositories.bots.startRescueExport(targetBotId);
+      await repositories.bots.startRescueExport(targetInstanceId);
       toast.success(t("备份任务已发起，完成后会发送到绑定邮箱。"));
-      await loadRescueExportStatus(targetBotId).catch(() => undefined);
+      await loadRescueExportStatus(targetInstanceId).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
       if (message.includes("action_already_running")) {
         toast.success(t("已有备份任务正在执行，已为你加载当前进度。"));
-        await loadRescueExportStatus(targetBotId).catch(() => undefined);
+        await loadRescueExportStatus(targetInstanceId).catch(() => undefined);
         return;
       }
       const friendlyMessage = message.includes("cos_upload_bucket_not_configured")
         ? t("备份存储桶未配置，请稍后再试。")
         : describeWorkspaceActionError("export", message || t("备份任务发起失败")).message;
-      setExportStatusByBotId((prev) => ({
+      setExportStatusByInstanceId((prev) => ({
         ...prev,
-        [targetBotId]: {
+        [targetInstanceId]: {
           phase: "failed",
           error: friendlyMessage,
           logs: [
@@ -3534,9 +3551,9 @@ export const AgentSettingsPage = ({
         friendlyMessage,
       );
     } finally {
-      setExportingBotIds((prev) => {
+      setExportingInstanceIds((prev) => {
         const next = new Set(prev);
-        next.delete(targetBotId);
+        next.delete(targetInstanceId);
         return next;
       });
     }
@@ -3546,40 +3563,40 @@ export const AgentSettingsPage = ({
     const file = event.target.files?.[0] ?? null;
     event.target.value = "";
     if (!file) return;
-    if (workspaceActionDisabledReason) {
-      toast.error(workspaceActionDisabledReason);
+    if (!isActiveBotDefault || workspaceActionDisabledReason || maintenanceBusy) {
+      toast.error(workspaceActionDisabledReason || t("Agent 维护任务执行中，请稍后再试。"));
       return;
     }
     setWorkspaceConfirm({ kind: "import", file });
   };
 
   const handleImportWorkspace = async (file: File) => {
-    if (!activeBot || activeBot.status !== "running" || importingBotIds.has(activeBot.id)) return;
-    const targetBotId = activeBot.id;
+    if (!activeRuntimeInstanceId || !isActiveBotDefault || workspaceActionDisabledReason || maintenanceBusy) return;
+    const targetInstanceId = activeRuntimeInstanceId;
     setWorkspaceConfirm(null);
-    setImportingBotIds((prev) => new Set(prev).add(targetBotId));
-    setImportStatusByBotId((prev) => ({
+    setImportingInstanceIds((prev) => new Set(prev).add(targetInstanceId));
+    setImportStatusByInstanceId((prev) => ({
       ...prev,
-      [targetBotId]: {
+      [targetInstanceId]: {
         phase: "starting",
         logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在上传 Agent 恢复包。"), level: "info" }],
       },
     }));
     try {
-      await repositories.bots.importHermesWorkspace(targetBotId, file);
+      await repositories.bots.importHermesWorkspace(targetInstanceId, file);
       toast.success(t("恢复任务已发起，完成后会发送到绑定邮箱。"));
-      await loadHermesImportStatus(targetBotId).catch(() => undefined);
+      await loadHermesImportStatus(targetInstanceId).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
       if (message.includes("action_already_running")) {
         toast.success(t("已有恢复任务正在执行，已为你加载当前进度。"));
-        await loadHermesImportStatus(targetBotId).catch(() => undefined);
+        await loadHermesImportStatus(targetInstanceId).catch(() => undefined);
         return;
       }
       const friendlyMessage = describeWorkspaceActionError("import", message || t("恢复任务发起失败")).message;
-      setImportStatusByBotId((prev) => ({
+      setImportStatusByInstanceId((prev) => ({
         ...prev,
-        [targetBotId]: {
+        [targetInstanceId]: {
           phase: "failed",
           error: friendlyMessage,
           logs: [{ time: new Date().toISOString(), phase: "failed", message: friendlyMessage, level: "error" }],
@@ -3587,9 +3604,9 @@ export const AgentSettingsPage = ({
       }));
       toast.error(friendlyMessage);
     } finally {
-      setImportingBotIds((prev) => {
+      setImportingInstanceIds((prev) => {
         const next = new Set(prev);
-        next.delete(targetBotId);
+        next.delete(targetInstanceId);
         return next;
       });
     }
@@ -3597,22 +3614,25 @@ export const AgentSettingsPage = ({
 
   // 当前 tab 的 bot 是否正在重启
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
-  const isActiveBotExporting = activeBot ? exportingBotIds.has(activeBot.id) : false;
-  const isActiveBotImporting = activeBot ? importingBotIds.has(activeBot.id) : false;
-  const activeExportStatus = activeBot ? exportStatusByBotId[activeBot.id] ?? null : null;
-  const activeImportStatus = activeBot ? importStatusByBotId[activeBot.id] ?? null : null;
-  const isActiveExportStatusLoading = activeBot ? exportStatusLoadingBotIds.has(activeBot.id) : false;
-  const isActiveImportStatusLoading = activeBot ? importStatusLoadingBotIds.has(activeBot.id) : false;
-  const activeExportStatusError = activeBot ? exportStatusErrors[activeBot.id] ?? null : null;
-  const activeImportStatusError = activeBot ? importStatusErrors[activeBot.id] ?? null : null;
+  const isActiveBotExporting = activeRuntimeInstanceId ? exportingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const isActiveBotImporting = activeRuntimeInstanceId ? importingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const activeExportStatus = activeRuntimeInstanceId ? exportStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
+  const activeImportStatus = activeRuntimeInstanceId ? importStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
+  const isActiveExportStatusLoading = activeRuntimeInstanceId ? exportStatusLoadingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const isActiveImportStatusLoading = activeRuntimeInstanceId ? importStatusLoadingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const activeExportStatusError = activeRuntimeInstanceId ? exportStatusErrors[activeRuntimeInstanceId] ?? null : null;
+  const activeImportStatusError = activeRuntimeInstanceId ? importStatusErrors[activeRuntimeInstanceId] ?? null : null;
   const activeWorkspaceTask = selectCurrentWorkspaceTask(activeExportStatus, activeImportStatus);
   const workspaceActionDisabledReason = buildWorkspaceActionDisabledReason({
     hasActiveBot: Boolean(activeBot),
     botRunning: activeBot?.status === "running",
     hasEmail: Boolean(user?.email),
-    resetting: resettingAcli,
+    resetting: resettingAcli || resetting,
     currentTask: activeWorkspaceTask,
   });
+  const maintenanceBusy = resetting || resettingAcli || isActiveBotExporting || isActiveBotImporting
+    || isActiveExportStatusLoading || isActiveImportStatusLoading
+    || isWorkspaceActionRunning(activeWorkspaceTask?.status);
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
   const sdkInstance = useMemo<TeaSdkInstanceInfo | null>(() => {
@@ -3665,26 +3685,26 @@ export const AgentSettingsPage = ({
   });
 
   useEffect(() => {
-    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id) return;
-    void loadRescueExportStatus(activeBot.id).catch(() => undefined);
-    void loadHermesImportStatus(activeBot.id).catch(() => undefined);
-  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeRuntimeInstanceId) return;
+    void loadRescueExportStatus(activeRuntimeInstanceId).catch(() => undefined);
+    void loadHermesImportStatus(activeRuntimeInstanceId).catch(() => undefined);
+  }, [activeSection, activeRuntimeInstanceId, loadRescueExportStatus, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeRuntimeInstanceId || !isRescueExportRunning(activeExportStatus)) return;
     const timer = window.setInterval(() => {
-      void loadRescueExportStatus(activeBot.id).catch(() => undefined);
+      void loadRescueExportStatus(activeRuntimeInstanceId).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus, shouldExposeWorkspaceRecoveryPanel]);
+  }, [activeSection, activeRuntimeInstanceId, activeExportStatus?.phase, loadRescueExportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeRuntimeInstanceId || !isRescueExportRunning(activeImportStatus)) return;
     const timer = window.setInterval(() => {
-      void loadHermesImportStatus(activeBot.id).catch(() => undefined);
+      void loadHermesImportStatus(activeRuntimeInstanceId).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
+  }, [activeSection, activeRuntimeInstanceId, activeImportStatus?.phase, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -4040,7 +4060,7 @@ export const AgentSettingsPage = ({
     ? describeWorkspaceActionError(workspaceStatusErrorKind, workspaceRawError)
     : null;
   const workspaceLastLogTime = workspaceTaskLogs.length > 0 ? workspaceTaskLogs[workspaceTaskLogs.length - 1]?.time : undefined;
-  const canStartWorkspaceAction = !workspaceActionDisabledReason && !isActiveBotExporting && !isActiveBotImporting;
+  const canStartWorkspaceAction = isActiveBotDefault && !workspaceActionDisabledReason && !maintenanceBusy;
   const needsEmailBinding = workspaceActionDisabledReason === "请先在账号页绑定邮箱。";
   const workspaceDisabledReasonText = workspaceActionDisabledReason ? translateWorkspaceDisabledReason(workspaceActionDisabledReason) : null;
   const workspaceInlineDisabledReasonText = needsEmailBinding ? null : workspaceDisabledReasonText;
@@ -4085,7 +4105,7 @@ export const AgentSettingsPage = ({
     return workspaceDetailsOpen ? t("收起备份或恢复详情") : t("查看备份或恢复详情");
   };
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
-  const workspaceRecoveryPanel = shouldExposeWorkspaceRecoveryPanel && activeBot ? (
+  const workspaceRecoveryPanel = shouldExposeWorkspaceRecoveryPanel && isActiveBotDefault && activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
@@ -4097,8 +4117,8 @@ export const AgentSettingsPage = ({
       </div>
       <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
         <ul className="list-disc space-y-1 pl-4 text-pretty">
-          <li>{t("备份范围是 Hermes Agent 的数据目录，包含 Hermes Agent 的配置、工作空间、记忆、已安装技能等数据。")}</li>
-          <li>{t("从备份恢复会覆盖目标 Agent 的对应数据。备份、恢复成功或失败都会通过绑定邮箱通知。")}</li>
+          <li>{t("备份包含整个 Agent 中所有 Bot 的配置、工作空间、记忆和已安装技能等数据。")}</li>
+          <li>{t("恢复会覆盖目标 Agent 中的对应数据，影响所有 Bot。任务结果将通过绑定邮箱通知。")}</li>
         </ul>
       </div>
       <input
@@ -4143,10 +4163,10 @@ export const AgentSettingsPage = ({
             <button
               type="button"
               onClick={() => {
-                if (!activeBot) return;
+                if (!activeRuntimeInstanceId) return;
                 void Promise.all([
-                  loadRescueExportStatus(activeBot.id).catch(() => undefined),
-                  loadHermesImportStatus(activeBot.id).catch(() => undefined),
+                  loadRescueExportStatus(activeRuntimeInstanceId).catch(() => undefined),
+                  loadHermesImportStatus(activeRuntimeInstanceId).catch(() => undefined),
                 ]);
               }}
               disabled={isWorkspaceTaskLoading}
@@ -4627,7 +4647,7 @@ export const AgentSettingsPage = ({
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重装 Agent（保留数据）")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将执行 Hermes Agent 后台重装流程，")}
+              {t("将重装整个 Agent，影响其中的所有 Bot。")}
               <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
                 {t("期间 Agent 会有数分钟不可用。")}
               </span>
@@ -4901,14 +4921,15 @@ export const AgentSettingsPage = ({
               const isRepairingBot = repairingBotIds.has(activeBot.id);
               const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
               const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
-              const resetBlockReason = getResetBlockReason(activeBot, resetting);
-              const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
-              const resetTooltip =
-                resettingAcli || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
+              const resetBlockReason = getResetBlockReason(activeBot, resetting, remainingInstanceBotCount);
+              const resetDisabled = botsLoading || !isActiveBotDefault || maintenanceBusy || resetBlockReason !== null;
+              const resetTooltip = resetBlockReason === RESET_BLOCK_REASON.MULTI_BOT
+                ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
+                : maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
                   : t("重置模型配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
-              const acliResetDisabled = resettingAcli || acliResetBlockReason !== null;
+              const acliResetDisabled = !isActiveBotDefault || maintenanceBusy || acliResetBlockReason !== null;
               const acliResetTooltip =
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
@@ -5477,6 +5498,9 @@ export const AgentSettingsPage = ({
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
                               botId={activeBot.id}
+                              profileId={activeBot.profileId ?? "main"}
+                              botName={activeBot.name}
+                              isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}
                               resetConfigAction={{
                                 disabled: resetDisabled,

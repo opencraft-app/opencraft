@@ -5,6 +5,7 @@ import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { withHermesProfile } from "@/lib/hermes-agent-command";
 
 type DiagnosticCommandId = "logs";
 type DiagnosticRunStatus = "idle" | "loading" | "success" | "error";
@@ -44,19 +45,19 @@ function getLogsSinceLabel(value: LogsSinceOption, t: ReturnType<typeof useT>): 
 
 const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
 
-export function buildLogsCommand(since: LogsSinceOption): string {
-  return `hermes logs --since ${since}`;
+export function buildLogsCommand(since: LogsSinceOption, profileId = "main"): string {
+  return withHermesProfile(`logs --since ${since}`, profileId);
 }
 
-export function buildLogsExportCommand(since: LogsSinceOption): string {
-  return `hermes logs --since ${since}`;
+export function buildLogsExportCommand(since: LogsSinceOption, profileId = "main"): string {
+  return buildLogsCommand(since, profileId);
 }
 
-export function getAgentDiagnosticCommands(logsSince: LogsSinceOption): AgentDiagnosticCommand[] {
+export function getAgentDiagnosticCommands(logsSince: LogsSinceOption, profileId = "main"): AgentDiagnosticCommand[] {
   return [
     {
       id: "logs",
-      command: buildLogsCommand(logsSince),
+      command: buildLogsCommand(logsSince, profileId),
     },
   ];
 }
@@ -70,7 +71,7 @@ export interface DiagnosticsMaintenanceAction {
   onExecute: () => void;
 }
 
-export function buildDiagnosticLogsFileName(since: LogsSinceOption, date = new Date()): string {
+export function buildDiagnosticLogsFileName(since: LogsSinceOption, date = new Date(), botName = "main"): string {
   const pad = (value: number) => value.toString().padStart(2, "0");
   const stamp = [
     date.getFullYear(),
@@ -81,15 +82,16 @@ export function buildDiagnosticLogsFileName(since: LogsSinceOption, date = new D
     pad(date.getMinutes()),
     pad(date.getSeconds()),
   ].join("");
-  return `hermes-logs-${since}-${stamp}.log`;
+  const safeName = botName.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 60) || "bot";
+  return `hermes-logs-${safeName}-${since}-${stamp}.log`;
 }
 
-function downloadDiagnosticLogs(output: string, since: LogsSinceOption) {
+function downloadDiagnosticLogs(output: string, since: LogsSinceOption, botName: string) {
   const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = buildDiagnosticLogsFileName(since);
+  link.download = buildDiagnosticLogsFileName(since, new Date(), botName);
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -129,6 +131,9 @@ const DEFAULT_CARD_STATE: DiagnosticCardState = {
 
 export function AgentDiagnosticsPanel({
   botId,
+  profileId,
+  botName,
+  isMainBot,
   execDebugCommand,
   resetConfigAction,
   resetAgentAction,
@@ -137,6 +142,9 @@ export function AgentDiagnosticsPanel({
   workspaceRecoveryPanel,
 }: {
   botId: string;
+  profileId: string;
+  botName: string;
+  isMainBot: boolean;
   execDebugCommand: ExecDebugCommand;
   resetConfigAction: DiagnosticsMaintenanceAction;
   resetAgentAction: DiagnosticsMaintenanceAction;
@@ -147,7 +155,7 @@ export function AgentDiagnosticsPanel({
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
   const [exportingLogs, setExportingLogs] = useState(false);
-  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince), [logsSince]);
+  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, profileId), [logsSince, profileId]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
@@ -198,18 +206,18 @@ export function AgentDiagnosticsPanel({
   const exportLogs = useCallback(async () => {
     setExportingLogs(true);
     try {
-      const result = await execDebugCommand(botId, buildLogsExportCommand(logsSince));
+      const result = await execDebugCommand(botId, buildLogsExportCommand(logsSince, profileId));
       if (!isDiagnosticCommandSucceeded(result)) {
         toast.error(t("获取最近日志失败"));
         return;
       }
-      downloadDiagnosticLogs(normalizeDiagnosticOutput(result.output, result.status), logsSince);
+      downloadDiagnosticLogs(normalizeDiagnosticOutput(result.output, result.status), logsSince, botName);
     } catch {
       toast.error(t("获取最近日志失败"));
     } finally {
       setExportingLogs(false);
     }
-  }, [botId, execDebugCommand, logsSince, t]);
+  }, [botId, botName, profileId, execDebugCommand, logsSince, t]);
 
   const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
     setLogsSince(next);
@@ -219,7 +227,7 @@ export function AgentDiagnosticsPanel({
     <div className="space-y-4">
       <AgentSectionHeader
         title={t("诊断中心")}
-        description={t("查看 Hermes Agent 日志，并集中执行相关维护操作")}
+        description={t("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")}
       />
 
       <div className="grid gap-4">
@@ -231,15 +239,15 @@ export function AgentDiagnosticsPanel({
             action={resetConfigAction}
             loadingLabel={t("恢复中...")}
           />
-          <MaintenanceActionCard
+          {isMainBot && <MaintenanceActionCard
             icon={<RotateCcw className="h-3 w-3" />}
             title={t("重装 Agent（保留数据）")}
-            description={t("执行 Hermes Agent 后台重装流程，数据将会保留，适合修复疑难问题")}
+            description={t("重装整个 Agent 并保留数据，期间所有 Bot 将暂时不可用")}
             action={resetAgentAction}
             loadingLabel={t("重置中...")}
             consoleLines={resetAgentConsole}
             consoleRef={resetAgentConsoleRef}
-          />
+          />}
         </div>
         {workspaceRecoveryPanel}
         {commands.map((item) => (
@@ -367,7 +375,7 @@ function DiagnosticCard({
             </div>
             {item.id === "logs" && (
               <p className="mt-2 text-xs leading-5 text-black/35">
-                {t("提示：仅展示最近 50 条日志，查看完整日志请直接导出")}
+                    {t("可导出当前时间范围内返回的日志")}
               </p>
             )}
           </div>
