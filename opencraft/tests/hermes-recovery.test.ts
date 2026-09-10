@@ -49,7 +49,8 @@ test("only a successfully settled inflight snapshot grants final-answer authorit
   ]) {
     const turn = appendLiveSessionProjection([userTurn()], { ...snapshot, running: state.running,
       inflight: { user: "hello", assistant: "Reply", streaming: state.streaming, error: state.error } })!;
-    assert.equal(turn.items.at(-1)!.phase, state.expected);
+    const assistant = turn.items.findLast(item => item.type === "agentMessage");
+    assert.equal(assistant?.phase ?? null, state.expected);
   }
   const blocked = appendLiveSessionProjection([userTurn()], { ...snapshot, running: false,
     pending_clarify: { request_id: "clarify", question: "Continue?" },
@@ -66,12 +67,34 @@ test("inflight respects completed history, correction offsets, failure and struc
   assert.equal(turns.length, 2, "equal prompt after completed history is a new turn");
   assert.deepEqual(live.items.map(item => item.type === "userMessage" ? (item.content as {text: string}[])[0].text : item.text), ["hello", "abc", "redirect", "def"]);
   const structural = userTurn();
-  structural.items.push({ id: "tool", type: "dynamicToolCall", tool: "terminal", status: "inProgress" });
+  structural.items.push({ id: "hermes-tool-stored-tool", callId: "tool", namespace: "hermes", type: "dynamicToolCall", tool: "terminal", status: "inProgress" });
   appendLiveSessionProjection([structural], snapshot);
   assert.equal(structural.items.filter(item => item.type === "agentMessage").length, 0);
   appendLiveSessionProjection([structural], { ...snapshot, running: false, inflight: { ...snapshot.inflight, error: "Provider failed", streaming: false } });
   assert.equal(structural.status, "failed");
   assert.equal(structural.error?.message, "Provider failed");
+});
+
+test("retained failures distinguish error-only recovery from real partial output", () => {
+  const errorOnly = appendLiveSessionProjection([userTurn()], {
+    ...snapshot,
+    running: false,
+    inflight: { user: "hello", assistant: "", streaming: false, error: "Provider failed" },
+  })!;
+  assert.equal(errorOnly.status, "failed");
+  assert.equal(errorOnly.items.some(item => item.type === "agentMessage"), false);
+  assert.equal(errorOnly.error?.message, "Provider failed");
+
+  const partial = appendLiveSessionProjection([userTurn()], {
+    ...snapshot,
+    running: false,
+    inflight: { user: "hello", assistant: "half an answer", streaming: false, error: "Disconnected" },
+  })!;
+  const assistant = partial.items.find(item => item.type === "agentMessage");
+  assert.equal(partial.status, "failed");
+  assert.equal(assistant?.text, "half an answer");
+  assert.equal(assistant?.phase, null);
+  assert.equal(partial.error?.message, "Disconnected");
 });
 
 test("warm reconnect keeps the exact segment owner paired with its watermark", async () => {

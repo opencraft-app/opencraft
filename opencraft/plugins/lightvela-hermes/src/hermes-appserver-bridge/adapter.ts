@@ -710,6 +710,14 @@ export class HermesAppServerAdapter {
   private readonly payloadByStored = new Map<string, HermesSessionPayload>();
   private readonly storedByLive = new Map<string, string>();
   private readonly profileByStored = new Map<string, string>();
+  /**
+   * `session.create` is the existence authority for a new live session. Hermes
+   * Dashboard history is eventually consistent and may omit that session from
+   * `session.list` until the first message has been indexed. Keep the exact
+   * metadata returned to AppServer so an immediate Draft promotion can read
+   * the Thread without mistaking an unindexed history row for deletion.
+   */
+  private readonly provisionalSummaryByStored = new Map<string, HermesSessionSummary>();
   /** Cold deep links share one Host-side identity discovery transaction. */
   private readonly profileDiscoveryByStored = new Map<string, Promise<string>>();
   /**
@@ -786,6 +794,7 @@ export class HermesAppServerAdapter {
     this.notificationListeners.clear();
     this.serverRequestListeners.clear();
     this.pendingClarifyByRequest.clear();
+    this.provisionalSummaryByStored.clear();
   }
 
   subscribeNotification(listener: (method: string, params: unknown) => void): () => void {
@@ -889,8 +898,18 @@ export class HermesAppServerAdapter {
     const list = await this.gateway.call<{ sessions: HermesSessionSummary[] }>("session.list", { profile, limit: 1000 });
     throwIfSignalAborted(signal);
     const summary = list.sessions.find(session => session.id === threadId);
-    if (!summary) throw new Error(`Hermes session not found: ${threadId}`);
-    return makeThread(summary, this.payloadByStored.get(threadId)?.info?.cwd ?? this.defaultCwd);
+    if (summary !== undefined) {
+      this.provisionalSummaryByStored.delete(threadId);
+      return makeThread(summary, this.payloadByStored.get(threadId)?.info?.cwd ?? this.defaultCwd);
+    }
+    const provisional = this.provisionalSummaryByStored.get(threadId);
+    if (provisional === undefined) throw new Error(`Hermes session not found: ${threadId}`);
+    return makeThread(
+      provisional,
+      this.payloadByStored.get(threadId)?.info?.cwd ?? this.defaultCwd,
+      [],
+      this.payloadByStored.get(threadId)?.running === true,
+    );
   }
 
   async loadThread(threadId: string, includeTurns: boolean, requestedProfile?: string | null, signal?: AbortSignal): Promise<AppServerThread> {
@@ -1230,7 +1249,7 @@ export class HermesAppServerAdapter {
     this.storedByLive.set(payload.session_id, stored);
     this.payloadByStored.set(stored, payload);
     this.profileByStored.set(stored, profile ?? "default");
-    return makeThread({
+    const summary: HermesSessionSummary = {
       id: stored,
       title: options.title?.trim() || "New chat",
       preview: "",
@@ -1238,7 +1257,9 @@ export class HermesAppServerAdapter {
       message_count: 0,
       source: "desktop",
       profile: profile ?? "default",
-    }, payload.info?.cwd ?? cwd ?? this.defaultCwd);
+    };
+    this.provisionalSummaryByStored.set(stored, summary);
+    return makeThread(summary, payload.info?.cwd ?? cwd ?? this.defaultCwd);
   }
 
   /**

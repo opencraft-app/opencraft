@@ -951,6 +951,7 @@ export function isToolActivityPresentationSuppressed(
   block: ToolCallTimelineBlock,
   registry: ToolActivityPresenterRegistry = defaultToolActivityPresenters,
 ): boolean {
+  if (block.activityPresentation?.hidden === true) return true;
   const state = isToolCallFailed(block) ? "failed" : stateFor(block.status);
   const claim = registry.claim(block, state);
   return claim.claimed && claim.presentation === null;
@@ -1089,8 +1090,12 @@ export function presentToolActivity(
         icon: block.activityPresentation.icon,
         summary: (state === "running" ? block.activityPresentation.active
           : state === "completed" ? block.activityPresentation.completed : null) ?? formatDynamicToolActivityLabel(block, state),
-        detail: block.resultMissing ? "Execution result unavailable" : (state === "running" ? target : block.toolSummary || target)?.slice(0, 180) ?? null,
-        canExpand: hasValue(block.input) || hasValue(block.output) || Boolean(block.inlineDiff) || block.errorMessage !== null,
+        detail: block.resultMissing ? "Execution result unavailable"
+          : block.errorMessage ?? (state === "running" ? target : block.toolSummary || target)?.slice(0, 180) ?? null,
+        // Provider-authored labels and grouping do not grant a content
+        // surface. Generic dynamic calls stay compact; only a registered
+        // presenter may turn protocol payload into an expandable product UI.
+        canExpand: false,
         durationMs: block.durationMs,
         ...genericFields(block.id),
       };

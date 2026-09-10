@@ -22,3 +22,4 @@ export * from "./tool-activity";
 export * from "./turn-diff";
 export * from "./unified-diff";
 export * from "./user-message";
+export * from "./user-message-collapse";

@@ -1,4 +1,9 @@
-import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
+import type {
+  DuplexTransport,
+  TransportFailureDisposition,
+  TransportStatus,
+} from "@opencraft/appserver-client/transport";
+import { findHostConnectionInterventionError } from "@opencraft/workbench-runtime";
 
 import type { BotTerminalSession } from "../domain/types";
 import { HermesProcessService } from "../hermes-appserver-bridge/process-service";
@@ -23,7 +28,10 @@ import { createTatWebSocketConstructor } from "../lib/tat-websocket";
 import type { Rfc6455Sha1 } from "../lib/rfc6455-client";
 import { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
 import { TencentTatSessionMultiplexer } from "../lib/tencent-tat-session-multiplexer";
-import type { LightVelaBotInstance } from "../account/lightvela-account-service";
+import {
+  LightVelaApiError,
+  type LightVelaBotInstance,
+} from "../account/lightvela-account-service";
 import { LIGHTVELA_HERMES_HOST_ID } from "../host/lightvela-hermes-host-identity";
 
 const HERMES_DASHBOARD_PORT = 9119;
@@ -57,6 +65,25 @@ function abortError(): Error {
   const error = new Error("LightVela Hermes connection was aborted");
   error.name = "AbortError";
   return error;
+}
+
+/** Provider-owned classification; the generic Workbench never parses API text. */
+function classifyConnectFailure(error: unknown): TransportFailureDisposition | undefined {
+  const intervention = findHostConnectionInterventionError(error);
+  if (intervention !== null) {
+    return {
+      code: `intervention:${intervention.code}`,
+      recovery: "manual",
+    };
+  }
+  if (
+    error instanceof LightVelaApiError
+    && error.status === 404
+    && /\bresource not found\b/iu.test(error.message)
+  ) {
+    return { code: "remote-resource-not-found", recovery: "manual" };
+  }
+  return undefined;
 }
 
 function waitForOpen(socket: WebSocket, signal?: AbortSignal): Promise<void> {
@@ -131,12 +158,18 @@ export class LightVelaHermesTransport implements DuplexTransport {
     this.setStatus({ state: "connecting" });
     this.connectPromise = this.open(generation, signal)
       .catch(async (error) => {
+        const failure = classifyConnectFailure(error);
         this.logConnection("connect:failed", generation, {
           reason: error instanceof Error ? error.message : String(error),
+          failure,
         });
         if (generation === this.generation) {
           await this.releasePhysicalConnection();
-          this.setStatus({ state: "failed", reason: error instanceof Error ? error.message : String(error) });
+          this.setStatus({
+            state: "failed",
+            reason: error instanceof Error ? error.message : String(error),
+            ...(failure === undefined ? {} : { failure }),
+          });
         }
         throw error;
       })

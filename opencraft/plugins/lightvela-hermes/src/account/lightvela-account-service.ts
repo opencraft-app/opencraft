@@ -934,7 +934,11 @@ export class LightVelaAccountService {
       });
     }
     if (snapshot.phase !== "authenticated" || bot === undefined) {
-      throw new Error("No running LightVela Hermes Bot is available");
+      throw new HostConnectionInterventionError({
+        code: "configuration-required",
+        providerId: "lightvela.hermes",
+        message: "No running LightVela Hermes Bot is available",
+      });
     }
     return bot;
   }

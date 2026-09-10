@@ -6,9 +6,21 @@ export type TransportState =
   | "closed"
   | "failed";
 
+/**
+ * The transport owns failure classification because only it understands the
+ * remote resource and physical link. Runtime owners consume this disposition
+ * when deciding whether an automatic reconnect is meaningful.
+ */
+export interface TransportFailureDisposition {
+  readonly code: string;
+  readonly recovery: "automatic" | "manual";
+}
+
 export interface TransportStatus {
   state: TransportState;
   reason?: string;
+  /** Omitted by legacy transports, which remain automatically recoverable. */
+  failure?: TransportFailureDisposition;
 }
 
 export interface DuplexTransport {

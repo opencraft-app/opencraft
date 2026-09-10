@@ -147,6 +147,20 @@ const expoConversationSource = readFileSync(
   ),
   "utf8",
 );
+const expoComposerSource = readFileSync(
+  new URL(
+    "../apps/workbench-expo/src/components/workbench-composer.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const webToolRendererSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/conversation-renderers/tool/tool-renderers.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const nativeResponseSource = readFileSync(
   new URL(
     "../apps/workbench-expo/src/components/native-response-positioned-turns.tsx",
@@ -161,6 +175,18 @@ const nativeVirtualizedTurnsSource = readFileSync(
   ),
   "utf8",
 );
+
+test("tool Activity uses one flat surface contract and lazily owns detail bodies", () => {
+  assert.match(expoConversationSource, /function NativeActivityDisclosure/u);
+  assert.doesNotMatch(expoConversationSource, /styles\.toolCard|toolCard:/u);
+  assert.doesNotMatch(expoConversationSource, />Browse all</u);
+  const genericWebTool = webToolRendererSource.slice(
+    webToolRendererSource.indexOf("function ToolCallBlock"),
+    webToolRendererSource.indexOf("function ImageViewToolBlock"),
+  );
+  assert.match(genericWebTool, /unmountBodyWhenCollapsed/u);
+  assert.doesNotMatch(genericWebTool, /unmountBodyWhenCollapsed=\{block\.kind === "mcp"\}/u);
+});
 const stableEventSource = readFileSync(
   new URL("../packages/react-runtime/src/use-stable-event.ts", import.meta.url),
   "utf8",
@@ -1352,6 +1378,12 @@ test("scroll-to-bottom action stays mounted in the Composer zero-height overlay"
     working.match(/thread-scroll-to-bottom-button__dot/g)?.length,
     3,
   );
+});
+
+test("Native Composer does not duplicate the live response as a Working row", () => {
+  assert.match(expoComposerSource, /isResponseInProgress:\s*isStreaming/u);
+  assert.match(expoComposerSource, /primaryAction === "stop"/u);
+  assert.doesNotMatch(expoComposerSource, /workingStatus|workingDots|>Working</u);
 });
 
 test("iPad desktop-class user agents still select the iOS viewport host", () => {

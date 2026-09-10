@@ -129,17 +129,6 @@ export function WorkbenchComposer({
 
   return (
     <View style={[styles.region, { paddingBottom: Math.max(bottomInset, metrics.composer.outerBottomInset) }]}> 
-      {isStreaming ? (
-        <View style={styles.workingStatus}>
-          <View style={styles.workingDots}>
-            <View style={styles.workingDot} />
-            <View style={styles.workingDot} />
-            <View style={styles.workingDot} />
-          </View>
-          <Text style={styles.workingText}>Working</Text>
-        </View>
-      ) : null}
-
       <View style={styles.shadowShell}>
         <BlurView intensity={82} tint="systemMaterialLight" style={styles.composer}>
           <TextInput
@@ -183,7 +172,6 @@ export function WorkbenchComposer({
           </View>
         </BlurView>
       </View>
-      <Text style={styles.disclaimer}>OpenCraft can make mistakes. Review generated code and commands.</Text>
 
       <Modal
         animationType="fade"
@@ -235,24 +223,6 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[6],
     backgroundColor: "transparent",
   },
-  workingStatus: {
-    width: "100%",
-    maxWidth: theme.metrics.composer.maximumWidth,
-    minHeight: theme.metrics.toolbar.touchTarget,
-    alignSelf: "center",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-  },
-  workingDots: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
-  workingDot: {
-    width: theme.metrics.composer.workingDot,
-    height: theme.metrics.composer.workingDot,
-    borderRadius: theme.radii.full,
-    backgroundColor: theme.color.icon.tertiary,
-  },
-  workingText: { color: theme.color.text.tertiary, ...theme.platformTypography.label },
   shadowShell: {
     width: "100%",
     maxWidth: theme.metrics.composer.maximumWidth,
@@ -305,12 +275,6 @@ const styles = StyleSheet.create((theme) => ({
   actionSpacer: { flex: 1 },
   sendButton: {
     borderRadius: theme.radii.full,
-  },
-  disclaimer: {
-    marginTop: theme.spacing[2],
-    color: theme.color.text.tertiary,
-    textAlign: "center",
-    ...theme.platformTypography.caption,
   },
   modalRoot: { flex: 1, alignItems: "center", justifyContent: "center", padding: theme.spacing[6] },
   modalScrim: { position: "absolute", inset: 0, backgroundColor: theme.material.scrim },

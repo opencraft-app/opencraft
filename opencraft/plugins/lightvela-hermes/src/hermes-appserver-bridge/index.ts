@@ -1,6 +1,6 @@
 import { Service, type Context } from "@deepseek-ai/cordis";
 
-import { HermesAppServerAdapter } from "./adapter";
+import { HermesAppServerAdapter, isHermesSessionNotFound } from "./adapter";
 import { HermesProjectionRecovery } from "./projection-recovery";
 import { HermesBotAppServerHandler } from "./bot-protocol-handler";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
@@ -161,6 +161,26 @@ export class BrowserHermesAppServerBridge {
         }),
       };
     } catch (error) {
+      // JSON-RPC deliberately returns a stable public error envelope, but the
+      // bridge still owns the original exception and is the only layer that
+      // can retain its actionable stack. This is especially important on
+      // React Native, where Hermes otherwise reduces call failures to
+      // "undefined is not a function" at the transport boundary.
+      const details = {
+        method: request.method,
+        error: error instanceof Error
+          ? { name: error.name, message: error.message, stack: error.stack }
+          : String(error),
+      };
+      // Missing Thread identities are a public AppServer domain outcome. The
+      // caller still receives the JSON-RPC error below, but React Native must
+      // not turn a recoverable metadata probe into a development red screen.
+      // Unexpected bridge faults retain console.error and their original stack.
+      if (isHermesSessionNotFound(error)) {
+        console.debug("[hermes-appserver-bridge] request unavailable", details);
+      } else {
+        console.error("[hermes-appserver-bridge] request failed", details);
+      }
       const code = isObject(error) && typeof error.rpcCode === "number" ? error.rpcCode : -32000;
       const data = error instanceof HermesRpcError
         ? { hermesCode: error.code, details: error.details }

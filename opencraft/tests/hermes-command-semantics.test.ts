@@ -4,7 +4,7 @@ import { classifyCommand } from "../plugins/lightvela-hermes/src/hermes-appserve
 import { projectHermesTool } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/tool-semantics";
 import { mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 import { HermesTurnEventStateMachine } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/turn-event-state-machine";
-import { createConversationKey, createDefaultTimelineProjectorRegistry, projectTimeline, presentToolActivity, createAssistantTurnPresentationPlan } from "@opencraft/chat-core";
+import { createConversationKey, createDefaultTimelineProjectorRegistry, projectTimeline, presentToolActivity, createAssistantTurnPresentationPlan, isToolActivityPresentationSuppressed } from "@opencraft/chat-core";
 import type { AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 
 test("conservative command semantics never hide shell side effects", () => {
@@ -68,4 +68,106 @@ test("result-missing evidence reaches the standard command projection", () => {
   assert.ok(block?.type === "command-execution");
   assert.equal(block.resultMissing, true);
   assert.equal(block.exitCode, null);
+});
+
+test("Hermes source tools become canonical AppServer Items before rendering", () => {
+  const file = projectHermesTool({
+    type: "dynamicToolCall", id: "file", namespace: "hermes", tool: "write_file",
+    arguments: { path: "/workspace/src/app.ts" },
+    structuredResult: { diff: "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-old\n+new" },
+    status: "completed", success: true,
+  });
+  const delegate = projectHermesTool({
+    type: "dynamicToolCall", id: "delegate", namespace: "hermes", tool: "delegate_task",
+    arguments: { tasks: [{ goal: "Inspect transport" }, { goal: "Inspect renderer" }] },
+    structuredResult: { results: [{ session_id: "child-a", status: "completed" }, { session_id: "child-b", status: "completed" }] },
+    status: "completed", success: true,
+  });
+  const image = projectHermesTool({
+    type: "dynamicToolCall", id: "image", namespace: "hermes", tool: "image_generate",
+    arguments: { prompt: "A lighthouse" }, structuredResult: { image_url: "https://example.test/lighthouse.png" },
+    status: "completed", success: true,
+  });
+  const todo = projectHermesTool({
+    type: "dynamicToolCall", id: "todo", namespace: "hermes", tool: "todo",
+    arguments: { todos: [{ id: "one", content: "Inspect", status: "completed" }] },
+    status: "completed", success: true,
+  });
+  const command = projectHermesTool({
+    type: "dynamicToolCall", id: "code", namespace: "hermes", tool: "execute_code",
+    arguments: { code: "print('ok')" }, structuredResult: { stdout: "ok", exit_code: 0 },
+    status: "completed", success: true,
+  });
+
+  assert.deepEqual([file.type, delegate.type, image.type, todo.type, command.type], [
+    "fileChange", "collabAgentToolCall", "imageGeneration", "todoList", "commandExecution",
+  ]);
+  const turn: AppServerTurn = {
+    id: "canonical", items: [file, delegate, image, todo, command], itemsView: "full",
+    status: "completed", error: null, startedAt: 1, completedAt: 2, durationMs: 1000,
+  };
+  assert.deepEqual(frame(turn).blocks.map(({ type }) => type), ["patch", "subagent", "image", "todo", "command-execution"]);
+});
+
+test("file edits keep one canonical identity across live updates and durable history", () => {
+  const diff = "--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-old\n+new";
+  const liveTurn: AppServerTurn = {
+    id: "live-file", items: [], itemsView: "full", status: "inProgress", error: null,
+    startedAt: 1, completedAt: null, durationMs: null,
+  };
+  const machine = new HermesTurnEventStateMachine("thread", liveTurn);
+  machine.project({ type: "tool.start", payload: { tool_id: "write", name: "write_file", args: { path: "/workspace/src/app.ts" } } });
+  const liveId = liveTurn.items[0]?.id;
+  machine.project({ type: "tool.complete", payload: { tool_id: "write", name: "write_file", result: { diff } } });
+  assert.equal(liveTurn.items[0]?.id, liveId);
+
+  const [historyTurn] = mapMessages("thread", [
+    { role: "user", content: "Edit it" },
+    { role: "assistant", content: "", tool_calls: [{ id: "write", function: { name: "write_file", arguments: '{"path":"/workspace/src/app.ts"}' } }] },
+    { role: "tool", tool_call_id: "write", content: JSON.stringify({ diff }) },
+  ]);
+  const live = frame(liveTurn).blocks.find((block) => block.type === "patch");
+  const history = frame(historyTurn).blocks.find((block) => block.type === "patch");
+  assert.ok(live?.type === "patch" && history?.type === "patch");
+  assert.deepEqual(live.changes, history.changes);
+  assert.equal(live.sourceItemIds[0], history.sourceItemIds[0]);
+});
+
+test("adapter-owned activity visibility prevents duplicate Hermes surfaces", () => {
+  const runningClarify = projectHermesTool({
+    type: "dynamicToolCall", id: "clarify", namespace: "hermes", tool: "clarify",
+    arguments: { question: "Which target?" }, status: "inProgress",
+  });
+  const reaction = projectHermesTool({
+    type: "dynamicToolCall", id: "reaction", namespace: "hermes", tool: "react_to_message",
+    arguments: { emoji: "👍" }, status: "completed", success: true,
+  });
+  const failedReaction = projectHermesTool({
+    type: "dynamicToolCall", id: "failed-reaction", namespace: "hermes", tool: "react_to_message",
+    arguments: { emoji: "👍" }, status: "failed", success: false,
+  });
+  const turn: AppServerTurn = {
+    id: "visibility", items: [runningClarify, reaction, failedReaction], itemsView: "full",
+    status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null,
+  };
+  const blocks = frame(turn).blocks.filter((block) => block.type === "tool-call");
+  assert.equal(blocks.length, 3);
+  assert.equal(isToolActivityPresentationSuppressed(blocks[0]!), true);
+  assert.equal(isToolActivityPresentationSuppressed(blocks[1]!), true);
+  assert.equal(isToolActivityPresentationSuppressed(blocks[2]!), false);
+});
+
+test("provider summaries never grant generic Hermes payloads an expandable body", () => {
+  const item = projectHermesTool({
+    type: "dynamicToolCall", id: "memory", namespace: "hermes", tool: "memory",
+    arguments: { operation: "recall", query: "architecture" }, structuredResult: { memories: ["private payload"] },
+    status: "completed", success: true,
+  });
+  const turn: AppServerTurn = {
+    id: "generic", items: [item], itemsView: "full", status: "completed", error: null,
+    startedAt: 1, completedAt: 2, durationMs: 1000,
+  };
+  const block = frame(turn).blocks.find((candidate) => candidate.type === "tool-call");
+  assert.ok(block?.type === "tool-call");
+  assert.equal(presentToolActivity(block).canExpand, false);
 });

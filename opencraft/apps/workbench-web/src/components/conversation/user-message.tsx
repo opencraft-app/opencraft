@@ -16,7 +16,6 @@ import {
   type ReactNode,
   useContext,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -24,6 +23,7 @@ import {
 import { useConversationMediaSource } from "./conversation-media-source";
 import { ConversationDocumentContext } from "./document-context";
 import { deriveUserMessageWebLayout } from "./user-message-layout";
+import { useWebUserMessageCollapse } from "./use-web-user-message-collapse";
 
 const USER_MESSAGE_COLLAPSED_LINE_COUNT = 20;
 const USER_MESSAGE_INTERACTIVE_SELECTOR = "a[href], area[href], button, input, select, textarea, summary, audio[controls], video[controls], iframe, [contenteditable]:not([contenteditable='false']), [tabindex]:not([tabindex='-1'])";
@@ -41,50 +41,17 @@ function setInteractiveVisibility(element: HTMLElement, visible: boolean, previo
 
 function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTimelineBlock }) {
   const documentContext = useContext(ConversationDocumentContext);
-  const clipRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [collapseState, setCollapseState] = useState<"unknown" | "uncollapsible" | "collapsed" | "expanded">("unknown");
-  const [collapsedMaxHeight, setCollapsedMaxHeight] = useState<number | null>(null);
+  const {
+    clipRef,
+    collapseState,
+    collapsedMaxHeight,
+    contentRef,
+    toggleExpansion,
+  } = useWebUserMessageCollapse({
+    collapsedLineCount: USER_MESSAGE_COLLAPSED_LINE_COUNT,
+    contentIdentity: block.message,
+  });
   const collapsed = collapseState === "collapsed";
-
-  useLayoutEffect(() => {
-    setCollapseState("unknown");
-  }, [block.message]);
-
-  useLayoutEffect(() => {
-    const clip = clipRef.current;
-    const content = contentRef.current;
-    if (clip === null || content === null) return;
-    const measure = () => {
-      const computed = window.getComputedStyle(clip);
-      const lineHeight = Number.parseFloat(computed.lineHeight);
-      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
-      const clipRect = clip.getBoundingClientRect();
-      const scale = clip.offsetHeight === 0 ? 1 : clipRect.height / clip.offsetHeight;
-      let maximum = Math.ceil(lineHeight * (USER_MESSAGE_COLLAPSED_LINE_COUNT - 1));
-      for (const codeBlock of clip.querySelectorAll<HTMLElement>("[data-markdown-copy='code-block']")) {
-        const rect = codeBlock.getBoundingClientRect();
-        const top = (rect.top - clipRect.top) / scale;
-        const bottom = (rect.bottom - clipRect.top) / scale;
-        if (top < maximum && bottom > maximum) maximum = Math.ceil(bottom);
-      }
-      setCollapsedMaxHeight((current) => current === maximum ? current : maximum);
-      const fullHeight = content.getBoundingClientRect().height / scale;
-      setCollapseState((current) => {
-        if (current === "expanded") return current;
-        return fullHeight > maximum + 0.5 ? "collapsed" : "uncollapsible";
-      });
-    };
-    measure();
-    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    resize?.observe(content);
-    const mutation = new MutationObserver(measure);
-    mutation.observe(content, { childList: true, subtree: true });
-    return () => {
-      resize?.disconnect();
-      mutation.disconnect();
-    };
-  }, [block.message]);
 
   useEffect(() => {
     if (!collapsed) return;
@@ -147,11 +114,11 @@ function CollapsibleUserMessageText({ block }: { readonly block: UserMessageTime
         </div>
       </div>
       {collapsed ? <span aria-hidden="true" className="thread-user-message__ellipsis">…</span> : null}
-      {collapseState === "uncollapsible" || collapseState === "unknown" ? null : (
+      {collapseState === "uncollapsible" ? null : (
         <button
           aria-expanded={collapseState === "expanded"}
           className="thread-user-message__expansion"
-          onClick={() => setCollapseState((current) => current === "expanded" ? "collapsed" : "expanded")}
+          onClick={toggleExpansion}
           type="button"
         >
           <span>{collapseState === "expanded" ? "Show less" : "Show more"}</span>

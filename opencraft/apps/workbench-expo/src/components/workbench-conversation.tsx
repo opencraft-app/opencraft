@@ -134,6 +134,7 @@ import {
   NativeResponsePositionedTurns,
   type WorkbenchConversationRestoreSnapshot,
 } from "./native-response-positioned-turns";
+import { useNativeUserMessageCollapse } from "./use-native-user-message-collapse";
 import { Button, IconButton } from "./ui/button";
 import { InteractiveSurface } from "./ui/interactive-surface";
 
@@ -169,6 +170,13 @@ export type NativeToolCallIconRenderer = (
 
 const NativeToolCallIconRendererContext = createContext<NativeToolCallIconRenderer | null>(null);
 const NativeThreadNavigationContext = createContext<((threadId: string, displayName: string) => void) | null>(null);
+
+interface NativeDocumentHostValue {
+  readonly openResource: ((path: string) => void) | null;
+  readonly reviewTurnDiff: ((block: Extract<TimelineBlock, { type: "turn-diff" }>, path?: string) => void) | null;
+}
+
+const NativeDocumentHostContext = createContext<NativeDocumentHostValue>({ openResource: null, reviewTurnDiff: null });
 
 interface NativeImageViewHostValue {
   readonly open: ((path: string) => void) | null;
@@ -293,6 +301,58 @@ function useToolActivityPresentation(
   return useMemo(() => presentToolActivity(block, registry), [block, registry, version]);
 }
 
+function NativeActivityDisclosure({
+  accessory,
+  children,
+  detail,
+  icon,
+  open,
+  onOpenChange,
+  presentation,
+  summary,
+  trailing,
+}: {
+  readonly accessory?: ReactNode;
+  readonly children?: ReactNode;
+  readonly detail?: string | null;
+  readonly icon: ReactNode;
+  readonly open: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly presentation: Pick<ToolActivityPresentation, "state">;
+  readonly summary: string;
+  readonly trailing?: ReactNode;
+}) {
+  const { theme } = useUnistyles();
+  const expandable = children !== null && children !== undefined && onOpenChange !== undefined;
+  const header = <>
+    <View style={styles.activityDisclosureTitleRow}>
+      <View style={styles.activityDisclosureIcon}>{icon}</View>
+      <NativeCadencedText
+        active={presentation.state === "running"}
+        numberOfLines={2}
+        style={styles.activityDisclosureSummary}
+      >{summary}</NativeCadencedText>
+      {detail ? <Text numberOfLines={2} style={styles.activityDisclosureDetail}>{detail}</Text> : null}
+    </View>
+    {trailing}
+    {accessory}
+    {expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
+  </>;
+  return (
+    <View style={styles.activityDisclosure}>
+      {expandable ? (
+        <InteractiveSurface
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          onPress={() => onOpenChange(!open)}
+          style={styles.activityDisclosureHeader}
+        >{header}</InteractiveSurface>
+      ) : <View style={styles.activityDisclosureHeader}>{header}</View>}
+      {expandable && open ? <View style={styles.activityDisclosureBody}>{children}</View> : null}
+    </View>
+  );
+}
+
 function elicitationDraftText(value: McpElicitationDraftValue | undefined): string {
   return typeof value === "string" ? value : "";
 }
@@ -300,14 +360,18 @@ function elicitationDraftText(value: McpElicitationDraftValue | undefined): stri
 function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
   const [open, setOpen] = useState(false);
   const { theme } = useUnistyles();
+  const expandable = block.detail !== null && block.detail.trim() !== "";
+  const header = <>
+    <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
+    <Text numberOfLines={open ? undefined : 1} style={styles.reasoningTitle}>{block.summary || "Reasoning"}</Text>
+    {expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} /> : null}
+  </>;
   return (
     <View style={styles.reasoning}>
-      <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>
-        <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
-        <Text numberOfLines={open ? undefined : 1} style={styles.reasoningTitle}>{block.summary || "Reasoning"}</Text>
-        <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} />
-      </InteractiveSurface>
-      {open && block.detail ? <Text style={styles.reasoningDetail}>{block.detail}</Text> : null}
+      {expandable
+        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>{header}</InteractiveSurface>
+        : <View style={styles.reasoningButton}>{header}</View>}
+      {expandable && open ? <Text style={styles.reasoningDetail}>{block.detail}</Text> : null}
     </View>
   );
 }
@@ -338,16 +402,19 @@ function NativeAutomaticApprovalReviewList({ reviews }: { readonly reviews: read
 
 function NativeAutomaticApprovalReviewBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "automatic-approval-review" }> }) {
   const { theme } = useUnistyles();
+  const [open, setOpen] = useState(block.review.status === "inProgress");
+  const state: ToolActivityPresentation["state"] = block.review.status === "inProgress" ? "running"
+    : isAutomaticApprovalReviewWarning(block.review) ? "failed" : "completed";
   return (
-    <View style={styles.toolCard}>
-      <View style={styles.toolHeader}>
-        <View style={styles.toolTitleRow}>
-          <Wrench color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-          <Text numberOfLines={2} style={styles.toolTitle}>{summarizeAutomaticApprovalReviewAction(block.review.action)}</Text>
-        </View>
-      </View>
+    <NativeActivityDisclosure
+      icon={<Wrench color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />}
+      onOpenChange={setOpen}
+      open={open}
+      presentation={{ state }}
+      summary={summarizeAutomaticApprovalReviewAction(block.review.action)}
+    >
       <NativeAutomaticApprovalReviewRow review={block.review} />
-    </View>
+    </NativeActivityDisclosure>
   );
 }
 
@@ -370,44 +437,72 @@ function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: "comman
   const detailLevel = useContext(NativeConversationDetailContext);
   const skill = skillReadPresentation(block, detailLevel);
   const semanticAction = block.actions.length === 1 && block.actions[0]?.type !== "unknown";
-  const summary = skill ? `${skill.summary} ${skill.detail}` : semanticAction
-    ? `${presentation.summary}${presentation.detail ? ` ${presentation.detail}` : ""}`
+  const [open, setOpen] = useState(false);
+  const summary = skill ? skill.summary : semanticAction
+    ? presentation.summary
     : formatCommandActivitySummary(block, presentation.state, {
         expanded: false,
         elapsedLabel: formatCodexToolDuration(block.durationMs ?? 0),
       });
   if (skill?.visible === false) return null;
+  const hasBody = (!semanticAction && presentation.canExpand) || block.automaticApprovalReviews.length > 0;
   return (
-    <View style={styles.toolCard}>
-      <View style={styles.toolHeader}>
-        <View style={styles.toolTitleRow}>{nativeActivityIcon(presentation.icon, theme.color.icon.secondary, theme.metrics.control.icon)}<Text style={styles.toolTitle}>{summary}</Text></View>
-        {block.automaticApprovalReviews.length > 0 ? <View accessibilityLabel="Automatic approval review" accessible style={styles.toolAccessory}><ShieldCheck color={theme.color.icon.tertiary} size={16} strokeWidth={1.8} /></View> : null}
-      </View>
-      {!semanticAction ? <Text selectable style={styles.code}>{block.command}</Text> : null}
-      {!semanticAction && block.output ? <Text selectable style={styles.output}>{block.output}</Text> : null}
-      <NativeAutomaticApprovalReviewList reviews={block.automaticApprovalReviews} />
-    </View>
+    <NativeActivityDisclosure
+      accessory={block.automaticApprovalReviews.length > 0 ? <View accessibilityLabel="Automatic approval review" accessible style={styles.toolAccessory}><ShieldCheck color={theme.color.icon.tertiary} size={16} strokeWidth={1.8} /></View> : undefined}
+      detail={skill?.detail ?? (semanticAction ? presentation.detail : null)}
+      icon={nativeActivityIcon(presentation.icon, theme.color.icon.secondary, theme.metrics.control.icon)}
+      onOpenChange={hasBody ? setOpen : undefined}
+      open={open}
+      presentation={presentation}
+      summary={summary}
+    >
+      {hasBody ? <>
+        {!semanticAction && block.command ? <Text selectable style={styles.code}>{block.command}</Text> : null}
+        {!semanticAction && block.output ? <Text selectable style={styles.output}>{block.output}</Text> : null}
+        <NativeAutomaticApprovalReviewList reviews={block.automaticApprovalReviews} />
+      </> : null}
+    </NativeActivityDisclosure>
+  );
+}
+
+function NativeFileChangeActivity({
+  block,
+  change,
+}: {
+  readonly block: Extract<TimelineBlock, { type: "patch" }>;
+  readonly change: Extract<TimelineBlock, { type: "patch" }>["changes"][number];
+}) {
+  const { theme } = useUnistyles();
+  const [open, setOpen] = useState(false);
+  const presentation = useToolActivityPresentation(block);
+  const hasDiff = change.unifiedDiff !== null && change.unifiedDiff.trim() !== "";
+  const verb = presentation.state === "running" ? "Editing"
+    : presentation.state === "failed" ? "Couldn’t edit"
+    : presentation.state === "interrupted" ? "Stopped editing"
+    : change.kind === "add" ? "Created" : change.kind === "delete" ? "Deleted" : "Edited";
+  const trailing = (change.additions ?? 0) > 0 || (change.deletions ?? 0) > 0
+    ? <View style={styles.diffCounts}><Text style={styles.additions}>+{change.additions ?? 0}</Text><Text style={styles.deletions}>−{change.deletions ?? 0}</Text></View>
+    : undefined;
+  return (
+    <NativeActivityDisclosure
+      detail={change.movePath === null ? change.path : `${change.path} → ${change.movePath}`}
+      icon={<FileCode2 color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />}
+      onOpenChange={hasDiff ? setOpen : undefined}
+      open={open}
+      presentation={presentation}
+      summary={verb}
+      trailing={trailing}
+    >
+      {hasDiff ? <Text selectable style={styles.code}>{change.unifiedDiff}</Text> : null}
+    </NativeActivityDisclosure>
   );
 }
 
 function PatchBlock({ block }: { block: Extract<TimelineBlock, { type: "patch" }> }) {
-  const { theme } = useUnistyles();
-  const presentation = useToolActivityPresentation(block);
-  const additions = block.changes.reduce((sum, change) => sum + (change.additions ?? 0), 0);
-  const deletions = block.changes.reduce((sum, change) => sum + (change.deletions ?? 0), 0);
+  if (block.changes.length === 0) return null;
   return (
-    <View style={styles.toolCard}>
-      <View style={styles.toolHeader}>
-        <View style={styles.toolTitleRow}><FileCode2 color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} /><Text style={styles.toolTitle}>{presentation.summary}</Text></View>
-        <View style={styles.diffCounts}><Text style={styles.additions}>+{additions}</Text><Text style={styles.deletions}>−{deletions}</Text></View>
-      </View>
-      {block.changes.slice(0, 4).map((change) => (
-        <View key={change.path} style={styles.fileRow}>
-          <Text numberOfLines={1} style={styles.filePath}>{change.path}</Text>
-          <View style={styles.diffCounts}><Text style={styles.additions}>+{change.additions ?? 0}</Text><Text style={styles.deletions}>−{change.deletions ?? 0}</Text></View>
-        </View>
-      ))}
-      <InteractiveSurface style={styles.viewChanges}><Check color={theme.color.icon.secondary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} /><Text style={styles.viewChangesText}>View changes</Text></InteractiveSurface>
+    <View style={styles.patchActivities}>
+      {block.changes.map((change, index) => <NativeFileChangeActivity block={block} change={change} key={`${change.path}:${change.movePath ?? ""}:${index}`} />)}
       <NativeAutomaticApprovalReviewList reviews={block.automaticApprovalReviews} />
     </View>
   );
@@ -415,6 +510,7 @@ function PatchBlock({ block }: { block: Extract<TimelineBlock, { type: "patch" }
 
 function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-diff" }> }) {
   const { theme } = useUnistyles();
+  const documentHost = useContext(NativeDocumentHostContext);
   const [expanded, setExpanded] = useState(false);
   if (block.files.length === 0) return null;
   if (block.status === "pending" || block.status === "running") {
@@ -423,14 +519,20 @@ function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-
   const visible = expanded ? block.files : block.files.slice(0, 3);
   const single = block.files.length === 1 ? block.files[0] : null;
   const basename = single?.path.replaceAll("\\", "/").split("/").at(-1);
+  const canOpenFile = documentHost.reviewTurnDiff !== null || documentHost.openResource !== null;
   return (
     <View style={styles.turnDiffCard}>
       <View style={styles.turnDiffHeader}>
         <View style={styles.turnDiffIcon}><FileCode2 color={theme.color.icon.secondary} size={24} strokeWidth={1.8} /></View>
         <View style={styles.turnDiffCopy}><Text numberOfLines={1} style={styles.turnDiffTitle}>{single === null ? `Edited ${block.files.length} files` : `Edited ${basename}`}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{block.additions}</Text><Text style={styles.deletions}>−{block.deletions}</Text></View></View>
-        <Button size="sm" style={styles.turnDiffReview} textStyle={styles.turnDiffReviewText} variant="secondary">Review</Button>
+        {documentHost.reviewTurnDiff === null ? null : <Button onPress={() => documentHost.reviewTurnDiff?.(block, single?.path)} size="sm" style={styles.turnDiffReview} textStyle={styles.turnDiffReviewText} variant="secondary">Review</Button>}
       </View>
-      {block.files.length > 1 ? <View style={styles.turnDiffFiles}>{visible.map((file) => <InteractiveSurface key={file.path} style={styles.fileRow}><Text numberOfLines={1} style={styles.filePath}>{file.path}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{file.additions}</Text><Text style={styles.deletions}>−{file.deletions}</Text></View></InteractiveSurface>)}{block.files.length > 3 ? <InteractiveSurface onPress={() => setExpanded((value) => !value)} style={styles.viewChanges}><Text style={styles.viewChangesText}>{expanded ? "Collapse files" : `Show ${block.files.length - 3} more files`}</Text></InteractiveSurface> : null}</View> : null}
+      {block.files.length > 1 ? <View style={styles.turnDiffFiles}>{visible.map((file) => {
+        const content = <><Text numberOfLines={1} style={styles.filePath}>{file.path}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{file.additions}</Text><Text style={styles.deletions}>−{file.deletions}</Text></View></>;
+        return canOpenFile
+          ? <InteractiveSurface key={file.path} onPress={() => { if (documentHost.reviewTurnDiff !== null) documentHost.reviewTurnDiff(block, file.path); else documentHost.openResource?.(file.path); }} style={styles.fileRow}>{content}</InteractiveSurface>
+          : <View key={file.path} style={styles.fileRow}>{content}</View>;
+      })}{block.files.length > 3 ? <InteractiveSurface onPress={() => setExpanded((value) => !value)} style={styles.viewChanges}><Text style={styles.viewChangesText}>{expanded ? "Collapse files" : `Show ${block.files.length - 3} more files`}</Text></InteractiveSurface> : null}</View> : null}
     </View>
   );
 }
@@ -442,22 +544,22 @@ function AutomationUpdateBlock({ block }: { readonly block: AutomationUpdateTime
   const openAutomation = useContext(NativeAutomationNavigationContext);
   const presentation = presentAutomationUpdate(block);
   const canOpen = presentation.canOpen && openAutomation !== null;
-  return (
+  const content = <>
+    <View style={styles.turnDiffIcon}><CalendarClock color={theme.color.icon.secondary} size={24} strokeWidth={1.8} /></View>
+    <View style={styles.turnDiffCopy}>
+      <Text numberOfLines={1} style={styles.turnDiffTitle}>{presentation.title}</Text>
+      <Text numberOfLines={1} style={styles.automationUpdateSubtitle}>{presentation.subtitle}</Text>
+    </View>
+    {canOpen ? <View style={styles.turnDiffReview}><Text style={styles.turnDiffReviewText}>Open</Text></View> : null}
+  </>;
+  return canOpen ? (
     <InteractiveSurface
       accessibilityLabel={[presentation.actionLabel, presentation.scheduleLabel, presentation.title].filter(Boolean).join(" · ")}
       accessibilityRole="button"
-      disabled={!canOpen}
       onPress={() => openAutomation?.(block)}
       style={styles.automationUpdateCard}
-    >
-      <View style={styles.turnDiffIcon}><CalendarClock color={theme.color.icon.secondary} size={24} strokeWidth={1.8} /></View>
-      <View style={styles.turnDiffCopy}>
-        <Text numberOfLines={1} style={styles.turnDiffTitle}>{presentation.title}</Text>
-        <Text numberOfLines={1} style={styles.automationUpdateSubtitle}>{presentation.subtitle}</Text>
-      </View>
-      {canOpen ? <View style={styles.turnDiffReview}><Text style={styles.turnDiffReviewText}>Open</Text></View> : null}
-    </InteractiveSurface>
-  );
+    >{content}</InteractiveSurface>
+  ) : <View style={styles.automationUpdateCard}>{content}</View>;
 }
 
 function ToolPart({ part }: { readonly part: ToolCallContentPart }) {
@@ -500,23 +602,22 @@ function NativeWebMcpToolActivity({ call }: { readonly call: WebMcpToolSurfaceCa
   };
   const output = parseNativeWebMcpJson(call.outputJson, call.outputTruncated);
   return (
-    <View style={styles.toolCard}>
-      <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.toolHeader}>
-        <View style={styles.toolTitleRow}>
-          <Globe2 color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-          <Text numberOfLines={2} style={styles.toolTitle}>{summary}</Text>
-        </View>
-        <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} />
-      </InteractiveSurface>
-      {open ? <View style={styles.webMcpBody}>
+    <NativeActivityDisclosure
+      icon={<Globe2 color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />}
+      onOpenChange={setOpen}
+      open={open}
+      presentation={{ state: "completed" }}
+      summary={summary}
+    >
+      <View style={styles.webMcpBody}>
         <Text style={styles.codeLabel}>{call.inputTruncated ? "Tool (input truncated)" : "Tool"}</Text>
         <JsonPreview value={tool} />
         {output === null ? null : <>
           <Text style={styles.codeLabel}>{call.outputTruncated ? "Result (truncated)" : "Result"}</Text>
           <JsonPreview value={output} />
         </>}
-      </View> : null}
-    </View>
+      </View>
+    </NativeActivityDisclosure>
   );
 }
 
@@ -525,25 +626,25 @@ function NativeCreatedThreadToolCard({ result }: {
 }) {
   const { theme } = useUnistyles();
   const openThread = useContext(NativeThreadNavigationContext);
-  return (
+  const content = <>
+    <View style={styles.createdThreadIcon}>
+      <MessageSquare color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
+    </View>
+    <View style={styles.createdThreadCopy}>
+      <Text numberOfLines={1} style={styles.createdThreadTitle}>{result.title}</Text>
+    </View>
+    {openThread === null ? null : <View style={styles.createdThreadAction}>
+      <Text style={styles.createdThreadActionText}>Open chat</Text>
+      <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} />
+    </View>}
+  </>;
+  return openThread === null ? <View style={styles.createdThreadCard}>{content}</View> : (
     <InteractiveSurface
       accessibilityLabel="Open chat"
       accessibilityRole="button"
-      disabled={openThread === null}
       onPress={() => openThread?.(result.threadId, result.title)}
       style={styles.createdThreadCard}
-    >
-      <View style={styles.createdThreadIcon}>
-        <MessageSquare color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-      </View>
-      <View style={styles.createdThreadCopy}>
-        <Text numberOfLines={1} style={styles.createdThreadTitle}>{result.title}</Text>
-      </View>
-      <View style={styles.createdThreadAction}>
-        <Text style={styles.createdThreadActionText}>Open chat</Text>
-        <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} />
-      </View>
-    </InteractiveSurface>
+    >{content}</InteractiveSurface>
   );
 }
 
@@ -590,20 +691,20 @@ function NativeCodexAppThreadToolRow({ block, presentation }: {
       </View>
     );
   }
-  return (
+  const content = <>
+    <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
+    <NativeCadencedText active={presentation.state === "running"} numberOfLines={1} style={styles.codexAppToolTitle}>{presentation.summary}</NativeCadencedText>
+  </>;
+  return canOpen ? (
     <InteractiveSurface
-      accessibilityLabel={canOpen ? `Open ${target.displayName.toLocaleLowerCase()}` : undefined}
-      accessibilityRole={canOpen ? "button" : undefined}
-      disabled={!canOpen}
+      accessibilityLabel={`Open ${target.displayName.toLocaleLowerCase()}`}
+      accessibilityRole="button"
       onPress={() => {
         if (target !== null) openThread?.(target.threadId, target.displayName);
       }}
       style={styles.codexAppToolRow}
-    >
-      <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-      <NativeCadencedText active={presentation.state === "running"} numberOfLines={1} style={styles.codexAppToolTitle}>{presentation.summary}</NativeCadencedText>
-    </InteractiveSurface>
-  );
+    >{content}</InteractiveSurface>
+  ) : <View style={styles.codexAppToolRow}>{content}</View>;
 }
 
 function defaultNativeImageSource(path: string): string | null {
@@ -619,21 +720,14 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
   const paths = block.imagePaths ?? [];
   const [open, setOpen] = useState(false);
   return (
-    <View style={styles.imageViewActivity}>
-      <InteractiveSurface
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        disabled={paths.length === 0}
-        onPress={() => setOpen((value) => !value)}
-        style={styles.toolHeader}
-      >
-        <View style={styles.toolTitleRow}>
-          <ImageIcon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-          <Text numberOfLines={1} style={styles.imageViewSummary}>{presentation.summary}</Text>
-        </View>
-        {paths.length > 0 ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-      </InteractiveSurface>
-      {open ? (
+    <NativeActivityDisclosure
+      icon={<ImageIcon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />}
+      onOpenChange={paths.length > 0 ? setOpen : undefined}
+      open={open}
+      presentation={presentation}
+      summary={presentation.summary}
+    >
+      {paths.length > 0 ? (
         <ScrollView
           contentContainerStyle={styles.imageViewStrip}
           horizontal
@@ -641,7 +735,12 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
         >
           {paths.map((path, index) => {
             const source = host.resolveSource?.(path) ?? defaultNativeImageSource(path);
-            return (
+            const preview = source === null
+              ? <ImageIcon color={theme.color.icon.tertiary} size={24} strokeWidth={1.6} />
+              : <Image accessibilityLabel="Inspected image" resizeMode="cover" source={{ uri: source }} style={styles.imageViewImage} />;
+            return host.open === null ? (
+              <View key={`${path}:${index}`} style={styles.imageViewPreview}>{preview}</View>
+            ) : (
               <InteractiveSurface
                 accessibilityLabel={`Open inspected image ${index + 1}`}
                 accessibilityRole="button"
@@ -649,15 +748,13 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
                 onPress={() => host.open?.(path)}
                 style={styles.imageViewPreview}
               >
-                {source === null
-                  ? <ImageIcon color={theme.color.icon.tertiary} size={24} strokeWidth={1.6} />
-                  : <Image accessibilityLabel="Inspected image" resizeMode="cover" source={{ uri: source }} style={styles.imageViewImage} />}
+                {preview}
               </InteractiveSurface>
             );
           })}
         </ScrollView>
       ) : null}
-    </View>
+    </NativeActivityDisclosure>
   );
 }
 
@@ -670,14 +767,7 @@ function NativeGeneratedImageBlock({ block }: { readonly block: Extract<Timeline
     if (!running) return null;
     return <View accessibilityLabel="Generating image" accessibilityRole="progressbar" style={styles.generatedImagePlaceholder} />;
   }
-  return (
-    <InteractiveSurface
-      accessibilityLabel="Generated image 1"
-      accessibilityRole="imagebutton"
-      disabled={host.open === null}
-      onPress={() => host.open?.(block)}
-      style={styles.generatedImagePreview}
-    >
+  const image = (
       <Image
         accessibilityLabel="Generated image 1"
         onLoad={({ nativeEvent }) => {
@@ -689,6 +779,15 @@ function NativeGeneratedImageBlock({ block }: { readonly block: Extract<Timeline
         source={{ uri: source }}
         style={[styles.generatedImage, { aspectRatio: aspectRatio ?? 1 }]}
       />
+  );
+  return host.open === null ? <View style={styles.generatedImagePreview}>{image}</View> : (
+    <InteractiveSurface
+      accessibilityLabel="Generated image 1"
+      accessibilityRole="imagebutton"
+      onPress={() => host.open?.(block)}
+      style={styles.generatedImagePreview}
+    >
+      {image}
     </InteractiveSurface>
   );
 }
@@ -719,26 +818,24 @@ function ToolCallBlock({ block }: { readonly block: Extract<TimelineBlock, { typ
   }
   return (
     <>
-      <View style={styles.toolCard}>
-      <InteractiveSurface disabled={!canExpand} onPress={() => setOpen(!open)} style={styles.toolHeader}>
-        <View style={styles.toolTitleRow}>
-          {icon}
-          <NativeCadencedText active={presentation.state === "running"} numberOfLines={2} style={styles.toolTitle}>{presentation.summary}{presentation.detail ? ` ${presentation.detail}` : ""}</NativeCadencedText>
-        </View>
-        {block.automaticApprovalReviews.length > 0 || canExpand ? <View style={styles.toolHeaderAccessories}>
-          {block.automaticApprovalReviews.length > 0 ? <View accessibilityLabel="Automatic approval review" accessible style={styles.toolAccessory}><ShieldCheck color={theme.color.icon.tertiary} size={16} strokeWidth={1.8} /></View> : null}
-          {canExpand ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-        </View> : null}
-      </InteractiveSurface>
-      {open ? <View style={styles.toolParts}>
+      <NativeActivityDisclosure
+        accessory={block.automaticApprovalReviews.length > 0 ? <View accessibilityLabel="Automatic approval review" accessible style={styles.toolAccessory}><ShieldCheck color={theme.color.icon.tertiary} size={16} strokeWidth={1.8} /></View> : undefined}
+        detail={presentation.detail}
+        icon={icon}
+        onOpenChange={canExpand ? setOpen : undefined}
+        open={open}
+        presentation={presentation}
+        summary={presentation.summary}
+      >
+        {canExpand ? <View style={styles.toolParts}>
         {hasCustomContent
           ? customContent
           : displayParts.length === 0
             ? <Text style={styles.output}>Tool returned no content</Text>
             : displayParts.map((part, index) => <ToolPart key={`${part.kind}:${index}`} part={part} />)}
         <NativeAutomaticApprovalReviewList reviews={block.automaticApprovalReviews} />
-      </View> : null}
-      </View>
+        </View> : null}
+      </NativeActivityDisclosure>
       {block.webMcpCalls?.map((call, index) => (
         <NativeWebMcpToolActivity call={call} key={`${call.kind}:${call.name}:${index}`} />
       ))}
@@ -750,16 +847,19 @@ function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRende
   const { theme } = useUnistyles();
   const presentation = useMemo(() => deriveSubagentActivityGroupPresentation(unit.blocks), [unit.blocks]);
   const [open, setOpen] = useState(unit.blocks.some((block) => block.status === "running" || block.status === "pending"));
+  const header = <>
+    <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
+    <View style={styles.subagentChips}>{presentation.agents.slice(0, 3).map((agent) => <View key={agent.threadId} style={styles.subagentChip}><Text style={styles.subagentAvatar}>{agent.displayName.slice(0, 1).toUpperCase()}</Text><Text numberOfLines={1} style={styles.subagentName}>{agent.displayName}</Text></View>)}</View>
+    {presentation.agents.length > 3 ? <Text style={styles.subagentStatus}>{presentation.agents.length - 3} more</Text> : null}
+    <Text style={styles.subagentStatus}>{presentation.groupStatusLabel}</Text>
+    {presentation.expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
+  </>;
   return (
     <View style={styles.subagentActivity}>
-      <InteractiveSurface disabled={!presentation.expandable} onPress={() => setOpen((value) => !value)} style={styles.subagentHeader}>
-        <Bot color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} />
-        <View style={styles.subagentChips}>{presentation.agents.slice(0, 3).map((agent) => <View key={agent.threadId} style={styles.subagentChip}><Text style={styles.subagentAvatar}>{agent.displayName.slice(0, 1).toUpperCase()}</Text><Text numberOfLines={1} style={styles.subagentName}>{agent.displayName}</Text></View>)}</View>
-        {presentation.agents.length > 3 ? <Text style={styles.subagentStatus}>{presentation.agents.length - 3} more</Text> : null}
-        <Text style={styles.subagentStatus}>{presentation.groupStatusLabel}</Text>
-        {presentation.expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-      </InteractiveSurface>
-      {open ? <View style={styles.subagentRows}>{presentation.agents.map((agent) => <View key={agent.threadId} style={styles.subagentRow}><Text style={styles.subagentName}>{agent.displayName}</Text><Text style={styles.subagentStatus}>{agent.statusLabel}</Text>{agent.statusMessage ? <Text style={styles.semanticBody}>{agent.statusMessage}</Text> : null}</View>)}</View> : null}
+      {presentation.expandable
+        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.subagentHeader}>{header}</InteractiveSurface>
+        : <View style={styles.subagentHeader}>{header}</View>}
+      {open && presentation.expandable ? <View style={styles.subagentRows}>{presentation.agents.map((agent) => <View key={agent.threadId} style={styles.subagentRow}><Text style={styles.subagentName}>{agent.displayName}</Text><Text style={styles.subagentStatus}>{agent.statusLabel}</Text>{agent.statusMessage ? <Text style={styles.semanticBody}>{agent.statusMessage}</Text> : null}</View>)}</View> : null}
     </View>
   );
 }
@@ -779,13 +879,16 @@ function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupC
   );
   const [open, setOpen] = useState(false);
   const hasExpandableContent = visibleBlocks.length > 0;
+  const headerContent = <>
+    {header.icon === null ? null : nativeActivityIcon(header.icon, theme.color.icon.secondary, theme.metrics.control.icon)}
+    <Text numberOfLines={1} style={styles.reasoningTitle}>{agentActivityHeaderAccessibleLabel(header.summary)}</Text>
+    {hasExpandableContent ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
+  </>;
   return (
     <View style={styles.agentActivity}>
-      <InteractiveSurface disabled={!hasExpandableContent} onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>
-        {header.icon === null ? null : nativeActivityIcon(header.icon, theme.color.icon.secondary, theme.metrics.control.icon)}
-        <Text numberOfLines={1} style={styles.reasoningTitle}>{agentActivityHeaderAccessibleLabel(header.summary)}</Text>
-        {hasExpandableContent ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
-      </InteractiveSurface>
+      {hasExpandableContent
+        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>{headerContent}</InteractiveSurface>
+        : <View style={styles.reasoningButton}>{headerContent}</View>}
       {open && hasExpandableContent ? (
         <View style={styles.agentActivityRows}>
           {visibleBlocks.map((block) => <Block block={block} key={block.id} />)}
@@ -821,6 +924,11 @@ function NativeWorkStatusDivider({ item }: { readonly item: WorkStatusItem }) {
     animation.start();
     return () => animation.stop();
   }, [height, progress, reduced]);
+  // Native Composer already owns the live-running affordance through its Stop
+  // action. Rendering an additional standalone `Working` row gives the same
+  // state two owners and creates a transient transcript height. The durable
+  // `Worked for` divider remains transcript-owned once the work interval ends.
+  if (item.status === "working") return null;
   return <Animated.View style={{ overflow: "hidden", opacity: progress, height: height === undefined ? undefined : progress.interpolate({ inputRange: [0, 1], outputRange: [0, height] }) }}>
     <View onLayout={(event) => setHeight(event.nativeEvent.layout.height)} style={styles.workStatusDivider}>
       <NativeWorkStatusLabel item={item} />
@@ -1128,7 +1236,6 @@ function NativeSetupContextPickerBlock({ block }: { block: Extract<TimelineBlock
       const checked = selected.includes(source.id);
       return <InteractiveSurface disabled={submitting || connecting === source.id || !source.connected && (!source.available || catalog.connect === null)} key={source.id} onPress={() => void choose(source)} style={[styles.setupContextRow, checked && styles.questionOptionSelected]}><View style={styles.setupContextLogo}><Text style={styles.semanticStatus}>{source.label.slice(0, 1)}</Text></View><View style={styles.questionOptionCopy}><Text style={styles.interactionButtonText}>{source.label}</Text><Text numberOfLines={1} style={styles.semanticStatus}>{source.description}</Text></View><Text style={styles.semanticStatus}>{connecting === source.id ? "Connecting…" : checked || source.connected ? "Connected" : "Connect"}</Text>{checked ? <Check size={14} /> : null}</InteractiveSurface>;
     })}</ScrollView>
-    <Button disabled={catalog.loading} size="sm" style={styles.setupBrowseAll} variant="ghost"><Text style={styles.interactionButtonText}>Browse all</Text><Search size={12} /></Button>
     <View style={styles.optionPickerFooter}><Button disabled={submitting} onPress={() => reply("skip")} size="sm" variant="ghost">Skip</Button><Button disabled={submitting || catalog.loading} onPress={() => reply("continue")} size="sm">Continue  ↵</Button></View>
   </View>;
 }
@@ -1414,24 +1521,32 @@ function NativeUserMessageAttachments({ block }: { readonly block: UserMessageTi
 
 function NativeUserMessageBlock({ block }: { readonly block: UserMessageTimelineBlock }) {
   const { theme } = useUnistyles();
-  const [contentHeight, setContentHeight] = useState(0);
-  const [expanded, setExpanded] = useState(false);
   const collapsedHeight = theme.platformTypography.chat.lineHeight * (NATIVE_USER_MESSAGE_COLLAPSED_LINES - 1);
-  const collapsible = contentHeight > collapsedHeight + 0.5;
-  useEffect(() => setExpanded(false), [block.message]);
+  const {
+    collapseState,
+    measuringNaturalHeight,
+    onContentLayout,
+    onViewportLayout,
+    toggleExpansion,
+  } = useNativeUserMessageCollapse({
+    collapsedHeight: theme.platformTypography.chat.lineHeight * NATIVE_USER_MESSAGE_COLLAPSED_LINES,
+    contentIdentity: block.message,
+  });
+  const collapsed = collapseState === "collapsed";
+  const expanded = collapseState === "expanded";
   return (
     <View style={styles.userMessageGroup}>
       <NativeUserMessageAttachments block={block} />
       {block.message.trim().length === 0 ? null : (
-        <View style={styles.userBubble}>
-          <View style={!expanded && collapsible ? [styles.userMessageClip, { maxHeight: collapsedHeight }] : styles.userMessageClip}>
-            <View onLayout={(event) => setContentHeight(event.nativeEvent.layout.height)}>
+        <View onLayout={onViewportLayout} style={styles.userBubble}>
+          <View style={collapsed && !measuringNaturalHeight ? [styles.userMessageClip, { maxHeight: collapsedHeight }] : styles.userMessageClip}>
+            <View onLayout={onContentLayout}>
               <NativeChatDocument documentId={`${block.id}:user-message`} source={block.message} />
             </View>
           </View>
-          {!expanded && collapsible ? <Text accessibilityElementsHidden style={styles.userMessageEllipsis}>…</Text> : null}
-          {!collapsible ? null : (
-            <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded }} hitSlop={8} onPress={() => setExpanded((current) => !current)} style={styles.userMessageExpansion}>
+          {collapsed ? <Text accessibilityElementsHidden style={styles.userMessageEllipsis}>…</Text> : null}
+          {collapseState === "uncollapsible" ? null : (
+            <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded }} hitSlop={8} onPress={toggleExpansion} style={styles.userMessageExpansion}>
               <Text style={styles.userMessageExpansionText}>{expanded ? "Show less" : "Show more"}</Text>
               <ChevronRight color={theme.color.icon.tertiary} size={11} style={expanded ? styles.userMessageExpansionOpen : styles.userMessageExpansionClosed} />
             </InteractiveSurface>
@@ -1757,6 +1872,8 @@ interface WorkbenchConversationProps {
   readonly onRespondInteraction?: NativeInteractionResponder;
   readonly onOpenSubagent?: (threadId: string, displayName: string) => void;
   readonly onOpenAutomation?: (block: AutomationUpdateTimelineBlock) => void;
+  readonly onOpenResource?: (path: string) => void;
+  readonly onReviewTurnDiff?: (block: Extract<TimelineBlock, { type: "turn-diff" }>, path?: string) => void;
   readonly onOpenInspectedImage?: (path: string) => void;
   readonly resolveInspectedImageSource?: (path: string) => string | null;
   readonly onOpenGeneratedImage?: (block: Extract<TimelineBlock, { type: "image" }>) => void;
@@ -1781,6 +1898,8 @@ export function WorkbenchConversation({
   onRespondInteraction,
   onOpenSubagent,
   onOpenAutomation,
+  onOpenResource,
+  onReviewTurnDiff,
   onOpenInspectedImage,
   resolveInspectedImageSource,
   onOpenGeneratedImage,
@@ -1805,16 +1924,17 @@ export function WorkbenchConversation({
           <NativeToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
             <NativeToolCallContentRendererContext.Provider value={renderToolCallContent ?? null}>
               <NativeThreadNavigationContext.Provider value={onOpenSubagent ?? null}>
-                <NativeAutomationNavigationContext.Provider value={onOpenAutomation ?? null}>
-                  <NativeGeneratedImageHostContext.Provider value={{
-                    open: onOpenGeneratedImage ?? null,
-                    resolveSource: resolveGeneratedImageSource ?? null,
-                  }}>
-                    <NativeImageViewHostContext.Provider value={{
-                      open: onOpenInspectedImage ?? null,
-                      resolveSource: resolveInspectedImageSource ?? null,
+                <NativeDocumentHostContext.Provider value={{ openResource: onOpenResource ?? null, reviewTurnDiff: onReviewTurnDiff ?? null }}>
+                  <NativeAutomationNavigationContext.Provider value={onOpenAutomation ?? null}>
+                    <NativeGeneratedImageHostContext.Provider value={{
+                      open: onOpenGeneratedImage ?? null,
+                      resolveSource: resolveGeneratedImageSource ?? null,
                     }}>
-                      <NativeInteractionContext.Provider value={onRespondInteraction ?? null}>
+                      <NativeImageViewHostContext.Provider value={{
+                        open: onOpenInspectedImage ?? null,
+                        resolveSource: resolveInspectedImageSource ?? null,
+                      }}>
+                        <NativeInteractionContext.Provider value={onRespondInteraction ?? null}>
                         <NativeResponsePositionedTurns
                           entries={entries}
                           historyKey={historyKey}
@@ -1855,10 +1975,11 @@ export function WorkbenchConversation({
                           scrollContentStyle={styles.scrollContent}
                           contentStyle={styles.content}
                         />
-                      </NativeInteractionContext.Provider>
-                    </NativeImageViewHostContext.Provider>
-                  </NativeGeneratedImageHostContext.Provider>
-                </NativeAutomationNavigationContext.Provider>
+                        </NativeInteractionContext.Provider>
+                      </NativeImageViewHostContext.Provider>
+                    </NativeGeneratedImageHostContext.Provider>
+                  </NativeAutomationNavigationContext.Provider>
+                </NativeDocumentHostContext.Provider>
               </NativeThreadNavigationContext.Provider>
             </NativeToolCallContentRendererContext.Provider>
           </NativeToolCallIconRendererContext.Provider>
@@ -1914,12 +2035,15 @@ const styles = StyleSheet.create((theme) => ({
   cadencedTextHighlight: { color: theme.color.text.primary, opacity: 0.72 },
   reasoningDetail: { marginLeft: theme.spacing[4], color: theme.color.text.tertiary, ...theme.platformTypography.body },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
-  toolCard: { overflow: "hidden", borderWidth: 1, borderColor: theme.color.border.default, borderRadius: theme.radii.xl, backgroundColor: theme.material.grouped },
-  toolHeader: { minHeight: theme.metrics.conversation.toolHeaderHeight, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing[3], paddingHorizontal: theme.spacing[3] },
-  toolTitleRow: { minWidth: 0, flex: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
-  toolHeaderAccessories: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
+  activityDisclosure: { minWidth: 0, maxWidth: "100%" },
+  activityDisclosureHeader: { minHeight: theme.metrics.toolbar.touchTarget, maxWidth: "100%", flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: theme.spacing[2], paddingHorizontal: 0 },
+  activityDisclosureTitleRow: { minWidth: 0, flexShrink: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  activityDisclosureIcon: { width: theme.metrics.control.icon, height: theme.metrics.control.icon, alignItems: "center", justifyContent: "center" },
+  activityDisclosureSummary: { flexShrink: 1, color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
+  activityDisclosureDetail: { minWidth: 0, flexShrink: 1, color: theme.color.text.tertiary, ...theme.platformTypography.body },
+  activityDisclosureBody: { minWidth: 0, gap: theme.spacing[2], paddingLeft: theme.spacing[5], paddingBottom: theme.spacing[1] },
+  patchActivities: { minWidth: 0, gap: theme.spacing[1] },
   toolAccessory: { width: 16, height: 20, alignItems: "center", justifyContent: "center" },
-  toolTitle: { flexShrink: 1, color: theme.color.text.secondary, ...theme.platformTypography.label },
   createdThreadCard: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: theme.spacing[3], paddingHorizontal: theme.spacing[3], paddingVertical: theme.spacing[2], borderRadius: theme.radii.xl, backgroundColor: theme.material.grouped },
   createdThreadIcon: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: theme.radii.lg, backgroundColor: theme.color.surface.subtle },
   createdThreadCopy: { minWidth: 0, flex: 1, gap: 1 },
@@ -1941,8 +2065,6 @@ const styles = StyleSheet.create((theme) => ({
   codeLabel: { paddingHorizontal: theme.spacing[3], color: theme.color.text.tertiary, ...theme.platformTypography.sidebarMeta },
   toolPartError: { paddingHorizontal: theme.spacing[3], paddingBottom: theme.spacing[3], color: theme.color.accent.negative, ...theme.platformTypography.code },
   toolPartImage: { width: "100%", height: 240, backgroundColor: theme.color.surface.code },
-  imageViewActivity: { minWidth: 0 },
-  imageViewSummary: { flexShrink: 1, color: theme.color.text.tertiary, ...theme.platformTypography.chat },
   imageViewStrip: { gap: theme.spacing[2], paddingBottom: theme.spacing[1] },
   imageViewPreview: { width: 144, height: 104, overflow: "hidden", alignItems: "center", justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, borderColor: theme.color.border.subtle, borderRadius: theme.radii.lg, backgroundColor: theme.color.surface.raised },
   imageViewImage: { width: "100%", height: "100%" },
@@ -2058,7 +2180,6 @@ const styles = StyleSheet.create((theme) => ({
   setupContextList: { maxHeight: 216, paddingHorizontal: theme.spacing[2] },
   setupContextRow: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: theme.spacing[2], paddingHorizontal: theme.spacing[2], paddingVertical: theme.spacing[1], borderRadius: theme.radii.lg },
   setupContextLogo: { width: 30, height: 30, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.color.border.soft, borderRadius: theme.radii.md, backgroundColor: theme.material.raised },
-  setupBrowseAll: { minHeight: 32, flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: theme.spacing[2], marginLeft: theme.spacing[3], paddingHorizontal: theme.spacing[3], borderWidth: 1, borderColor: theme.color.border.default, borderRadius: theme.radii.md },
   elicitationForm: { gap: theme.spacing[3] },
   elicitationField: { gap: theme.spacing[2] },
   elicitationLabel: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: theme.spacing[2] },

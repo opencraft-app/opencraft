@@ -56,7 +56,10 @@ export function appendLiveSessionProjection(turns: AppServerTurn[], payload: Her
         cursor = boundary;
       });
     }
-    if (body || inflight.streaming || error) addAssistant(body.slice(cursor), `hermes-inflight-assistant-${sid}`, false);
+    // A retained failure with no assistant body is an error-only bubble in
+    // Hermes Desktop. The error itself must not manufacture a blank/text Item;
+    // Turn.error owns that surface. A non-empty body is genuine partial output.
+    if (body || inflight.streaming) addAssistant(body.slice(cursor), `hermes-inflight-assistant-${sid}`, false);
   }
   if (!split || structured || error || !body) corrections.forEach((entry, index) => addUser(entry.text, `hermes-inflight-correction-${index}-${sid}`));
   turn.status = error ? "failed" : payload.running || payload.pending_clarify ? "inProgress" : "completed";
