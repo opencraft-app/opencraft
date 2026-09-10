@@ -48,6 +48,9 @@ type stubLogic struct {
 	createResp                             *transport.InstanceResponse
 	createErr                              error
 	createReq                              *transport.CreateInstanceRequest
+	destroyResp                            *transport.InstanceResponse
+	destroyErr                             error
+	destroyInstanceID                      string
 	createPrerequisitesResp                *transport.CreatePrerequisitesResponse
 	createPrerequisitesErr                 error
 	updateResp                             *transport.InstanceResponse
@@ -284,6 +287,10 @@ func (s *stubLogic) ListInstances(ctx pctx.Context, page, pageSize int) (*transp
 }
 
 func (s *stubLogic) DestroyInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error) {
+	s.destroyInstanceID = instanceID
+	if s.destroyResp != nil || s.destroyErr != nil {
+		return s.destroyResp, s.destroyErr
+	}
 	return nil, errors.New("unexpected call")
 }
 
@@ -808,6 +815,47 @@ func TestDeleteInstanceBotForwardsDistinctIDs(t *testing.T) {
 	stub := handler.logic.(*stubLogic)
 	if stub.deleteInstanceBotInstanceID != "ins-1" || stub.deleteInstanceBotID != "bot-2" {
 		t.Fatalf("unexpected ids: instance=%q bot=%q", stub.deleteInstanceBotInstanceID, stub.deleteInstanceBotID)
+	}
+}
+
+func TestDeleteInstanceRequiresSingleBotRejectsRemainingBots(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1?require_single_bot=true", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{
+		{BotID: "ins-1", InstanceID: "ins-1", ProfileID: "main", IsDefault: true},
+		{BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2"},
+	}}}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), errcode.ErrInstanceBotsRemain.Code) {
+		t.Fatalf("expected remaining Bots error, got %s", rec.Body.String())
+	}
+	if stub.destroyInstanceID != "" {
+		t.Fatalf("instance destroy must not run while another Bot remains, got %q", stub.destroyInstanceID)
+	}
+}
+
+func TestDeleteInstanceRequiresSingleBotDestroysLastBot(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1?require_single_bot=true", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{
+		listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{{
+			BotID: "ins-1", InstanceID: "ins-1", ProfileID: "main", IsDefault: true,
+		}}},
+		destroyResp: &transport.InstanceResponse{InstanceID: "ins-1", Status: "Deleting"},
+	}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if stub.listInstanceBotsInstanceID != "ins-1" || stub.destroyInstanceID != "ins-1" {
+		t.Fatalf("unexpected calls: list=%q destroy=%q", stub.listInstanceBotsInstanceID, stub.destroyInstanceID)
 	}
 }
 

@@ -22,7 +22,7 @@ const (
 	instanceBotCreatedFromBlank    = "blank"
 	instanceBotCreatedFromClone    = "clone"
 	uniqueChannelWeixin            = "weixin"
-	maxInstanceBotNameRunes        = 64
+	maxInstanceBotNameRunes        = 60
 	maxInstanceBotDescriptionRunes = 256
 	maxInstanceBotSoulRunes        = 12000
 )
@@ -313,8 +313,8 @@ func (l *logic) UpdateInstanceBot(ctx pctx.Context, instanceID, botID string, re
 	}
 	fields := make(map[string]string, 2)
 	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" || utf8.RuneCountInString(name) > maxInstanceBotNameRunes {
+		name, err := validateInstanceBotName(*req.Name)
+		if err != nil {
 			return nil, errcode.ErrInstanceBotInvalidParam
 		}
 		fields["display_name"] = name
@@ -530,15 +530,23 @@ func (l *logic) runChannelBindingAction(ctx pctx.Context, instanceID, action, bo
 }
 
 func validateInstanceBotText(rawName, rawDescription string) (string, string, error) {
-	name := strings.TrimSpace(rawName)
-	description := strings.TrimSpace(rawDescription)
-	if name == "" || utf8.RuneCountInString(name) > maxInstanceBotNameRunes {
-		return "", "", errcode.ErrInstanceBotInvalidParam
+	name, err := validateInstanceBotName(rawName)
+	if err != nil {
+		return "", "", err
 	}
+	description := strings.TrimSpace(rawDescription)
 	if utf8.RuneCountInString(description) > maxInstanceBotDescriptionRunes {
 		return "", "", errcode.ErrInstanceBotInvalidParam
 	}
 	return name, description, nil
+}
+
+func validateInstanceBotName(rawName string) (string, error) {
+	name := strings.TrimSpace(rawName)
+	if name == "" || utf8.RuneCountInString(name) > maxInstanceBotNameRunes {
+		return "", errcode.ErrInstanceBotInvalidParam
+	}
+	return name, nil
 }
 
 func defaultInstanceBotSoul(name, description string) string {
