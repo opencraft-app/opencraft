@@ -5,21 +5,30 @@ import { IDBFactory } from "fake-indexeddb";
 import { IndexedDbHermesSessionTokenCache } from "../plugins/lightvela-hermes/src/lib/hermes-session-token-cache";
 import {
   bootstrapLightVelaOAuthCallback,
+  bootstrapLightVelaWebLoginCallback,
   LightVelaAccountService,
+  LIGHTVELA_REGION_KEY,
   LIGHTVELA_TOKEN_KEY,
 } from "../plugins/lightvela-hermes/src/account/lightvela-account-service";
+import { WEB_LOGIN_PENDING_KEY } from "../plugins/lightvela-hermes/src/account/lightvela-web-login";
 import { findHostConnectionInterventionError } from "@opencraft/workbench-runtime";
 
 function fixture(fetchImpl: typeof fetch) {
   const values = new Map<string, string>();
+  const transactions = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => { values.set(key, value); },
     removeItem: (key: string) => { values.delete(key); } };
+  const transactionStorage = { getItem: (key: string) => transactions.get(key) ?? null,
+    setItem: (key: string, value: string) => { transactions.set(key, value); },
+    removeItem: (key: string) => { transactions.delete(key); } };
   const redirects: string[] = [];
   const location = { origin: "https://chat.lightvela.com", pathname: "/", search: "", hash: "",
     assign: (url: string) => { redirects.push(url); } };
-  const service = new LightVelaAccountService({ storage, location, fetchImpl });
-  return { service, storage, location, redirects };
+  const replacements: string[] = [];
+  const history = { state: {}, replaceState: (_state: unknown, _unused: string, url?: string | URL | null) => { replacements.push(String(url)); } };
+  const service = new LightVelaAccountService({ storage, transactionStorage, location, history, fetchImpl });
+  return { service, storage, transactionStorage, location, redirects, replacements };
 }
 
 test("OAuth callback is consumed independently of extension and View startup", () => {
@@ -47,21 +56,79 @@ test("OAuth callback is consumed independently of extension and View startup", (
   assert.deepEqual(replacements, ["/local/thread-1?hostId=velahermes0#panel=account"]);
 });
 
-test("region delegates provider selection to the shared LightVela sign-in page", () => {
+test("region delegates authentication to the shared OIDC authorization page", async () => {
   const f = fixture(async () => { throw new Error("unexpected fetch"); });
   f.service.selectRegion("cn");
-  f.service.signIn();
+  await f.service.signIn();
   const url = new URL(f.redirects[0]!);
-  assert.equal(url.origin, "https://lightvela.com");
-  assert.equal(url.pathname, "/auth/sign-in");
-  assert.equal(url.searchParams.get("return_to"), "https://chat.lightvela.com/");
-  assert.equal(url.searchParams.has("provider"), false);
+  assert.equal(url.origin, "https://api.lightvela.com");
+  assert.equal(url.pathname, "/oauth2/authorize");
+  assert.equal(url.searchParams.get("client_id"), "opencraft-web-v1");
+  assert.equal(url.searchParams.get("redirect_uri"), "https://chat.lightvela.com/auth/lightvela/callback");
+  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+  assert.equal(url.searchParams.get("state")?.length, 43);
+  assert.equal(JSON.parse(f.transactionStorage.getItem(WEB_LOGIN_PENDING_KEY)!).returnPath, "/");
   assert.equal(new LightVelaAccountService({ storage: f.storage }).getSnapshot().region, "cn");
-  f.service.selectRegion("intl");
-  f.service.signIn();
-  assert.equal(new URL(f.redirects[1]!).origin, "https://lightvela.ai");
-  f.storage.setItem(LIGHTVELA_TOKEN_KEY, "test-token");
-  assert.throws(() => f.service.selectRegion("cn"), /sign out/);
+  await f.service.signIn();
+  assert.equal(f.redirects.length, 1, "concurrent/repeated sign-in must reuse one transaction");
+  const intl = fixture(async () => { throw new Error("unexpected fetch"); });
+  await intl.service.signIn();
+  assert.equal(new URL(intl.redirects[0]!).origin, "https://api.lightvela.ai");
+  intl.storage.setItem(LIGHTVELA_TOKEN_KEY, "test-token");
+  assert.throws(() => intl.service.selectRegion("cn"), /sign out/);
+});
+
+test("web OIDC callback atomically exchanges the grant and restores the initiating route", async () => {
+  const values = new Map<string, string>();
+  const verifier = "v".repeat(43);
+  const state = "s".repeat(43);
+  const transactionStorage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+  transactionStorage.setItem(WEB_LOGIN_PENDING_KEY, JSON.stringify({
+    state, verifier, createdAt: Date.now(), region: "cn",
+    returnPath: "/local/thread-1?hostId=velahermes0#panel=account",
+  }));
+  const credentials = new Map<string, string>([["vela.lightvela.signed-out.v1", "true"]]);
+  let exchanged: Record<string, unknown> | null = null;
+  const replacements: string[] = [];
+  const accepted = await bootstrapLightVelaWebLoginCallback({
+    storage: {
+      getItem: key => credentials.get(key) ?? null,
+      setItem: (key, value) => { credentials.set(key, value); },
+      removeItem: key => { credentials.delete(key); },
+    },
+    transactionStorage,
+    location: {
+      origin: "https://chat.lightvela.com",
+      pathname: "/auth/lightvela/callback",
+      search: `?code=${"c".repeat(43)}&state=${state}`,
+      hash: "",
+      assign: () => undefined,
+    },
+    history: {
+      state: {},
+      replaceState: (_state, _unused, url) => { replacements.push(String(url)); },
+    },
+    fetchImpl: async (_input, init) => {
+      exchanged = JSON.parse(String(init?.body));
+      return Response.json({ session_token: "web-session" });
+    },
+  });
+  assert.equal(accepted, true);
+  assert.deepEqual(exchanged, {
+    client_id: "opencraft-web-v1",
+    code: "c".repeat(43),
+    code_verifier: verifier,
+    redirect_uri: "https://chat.lightvela.com/auth/lightvela/callback",
+  });
+  assert.equal(credentials.get(LIGHTVELA_TOKEN_KEY), "web-session");
+  assert.equal(credentials.get(LIGHTVELA_REGION_KEY), "cn");
+  assert.equal(credentials.has("vela.lightvela.signed-out.v1"), false);
+  assert.equal(transactionStorage.getItem(WEB_LOGIN_PENDING_KEY), null);
+  assert.deepEqual(replacements, ["/local/thread-1?hostId=velahermes0#panel=account"]);
 });
 
 test("anonymous Bot resolution is an authentication intervention, not a transport failure", async () => {
