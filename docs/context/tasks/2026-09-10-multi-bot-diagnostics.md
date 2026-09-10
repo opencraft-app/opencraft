@@ -28,6 +28,9 @@ Separate current-Profile diagnostics from instance-wide maintenance.
 - The English creation state says `Getting your LightVela Bot ready` and continues to use the existing animated ellipsis.
 - Both first-Bot and additional-Bot dialogs start with an empty name field and show the localized `请输入 Bot 名称` placeholder.
 - A cloned Bot with empty card state still shows the persona injected in its copied `SOUL.md`; file state wins after asynchronous card-state loading.
+- The clone hint separates inherited and non-inherited data into two scannable rows and explicitly states that scheduled tasks are not inherited.
+- The additional-Bot creation dialog no longer exposes advanced settings or an initial-persona override.
+- The multi-Bot deletion dialog omits the unrelated purchased-plan explanation while retaining data-loss warning and name confirmation.
 - Import explicitly targets root home. Focused frontend and Go tests plus type/i18n checks.
 
 ## affected_paths
