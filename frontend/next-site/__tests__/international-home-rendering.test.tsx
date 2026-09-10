@@ -41,7 +41,7 @@ import {
 } from "@next-site/international-home-runtime";
 
 const frontendRoot = process.cwd();
-const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="开始使用" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="免费试用" data-home-hero-cta-anon-href="/subscribe" class="btn-dark" href="/subscribe"><span data-home-hero-cta-label>免费试用</span></a></div></main>';
+const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="我的AI智能伙伴" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="免费试用" data-home-hero-cta-anon-href="/subscribe" class="btn-dark" href="/subscribe"><span data-home-hero-cta-label>免费试用</span></a></div></main>';
 const globalHeroMarkup = '<main id="lightvela-intl-home" data-locale="ja-JP"><div class="hero__cta"><a class="btn-dark" href="/agents">私のAIパートナー</a></div></main>';
 
 beforeEach(() => {
@@ -86,7 +86,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260910-hero-rotator-brand-icons-v26"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260910-hero-rotator-brand-icons-v27"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -269,7 +269,7 @@ describe("international v2 homepage rendering", () => {
     );
 
     await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("开始使用");
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("我的AI智能伙伴");
     });
     expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
   });
