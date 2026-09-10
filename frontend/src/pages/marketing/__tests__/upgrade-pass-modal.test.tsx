@@ -44,7 +44,7 @@ describe('upgrade checkout modal', () => {
     expect(plans.createModifyOrder).toHaveBeenCalledTimes(2);
     expect(plans.getModifyCheckout).not.toHaveBeenCalled();
   });
-  it('does not submit twice for two rapid clicks on the same confirmation', async () => {
+  it('shows a normal creation state and does not submit twice for rapid clicks', async () => {
     let resolveOrder!: (value: unknown) => void;
     plans.createModifyOrder.mockReturnValue(new Promise(resolve => { resolveOrder = resolve; }));
     mount();
@@ -53,6 +53,8 @@ describe('upgrade checkout modal', () => {
     fireEvent.click(button);
     fireEvent.click(button);
     await waitFor(() => expect(plans.createModifyOrder).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('正在创建升配订单…')).toBeTruthy();
+    expect(screen.queryByText('暂时无法确认订单状态，请稍后查询，避免重复付款。')).toBeNull();
     await act(async () => resolveOrder({ deal_name: 'd', big_order_id: 'b', auth_code: 'test-only' }));
     expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
   });
