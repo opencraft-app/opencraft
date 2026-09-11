@@ -43,17 +43,6 @@ LightVela 国内站和国际站首页在登录态恢复完成后，顶部导航�
 
 ## 文案
 
-> **2026-09-10 说明**：本节头部产品入口在国内站首页继续生效，
-> 沿用 `docs/context/tasks/2026-09-04-fix-cn-home-cta.md` 的约定：
-> 国内站未登录展示「免费试用」+「登录」，登录态展示「开始使用」+ 头像；
-> 国际站继续 `loginOnly`，不展示产品入口。
->
-> **Hero CTA 状态化维持国内站独有**：`zh-CN` 产物带 `data-home-hero-cta` 标记
-> （原名 `data-domestic-home-hero-cta`，本次改为通用命名并改造为数据驱动），
-> 提供 `data-home-hero-cta-anon-label/href` 与 `data-home-hero-cta-signed-label/href` 四个属性，
-> 由 `InternationalHomeRuntime` 读 dataset 切换，运行时不再硬编码任何文案，行为与改造前一致。
-> 国际站 7 个 locale 的 Hero 保持固定文案与 `/agents` 链接不变，不引入状态化标记。
-
 | Locale | 文案 |
 |---|---|
 | `zh-CN` | 开始使用 |
