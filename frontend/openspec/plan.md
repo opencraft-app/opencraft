@@ -1,3 +1,19 @@
+# 2026-09-11 升配期间实例列表可见性修复
+
+**Status:** 实现与本地验证完成，等待用户验收；尚未 commit、push 或创建 MR。
+
+**Size:** S。仅调整 HTTP Repository 的预期瞬态错误降级逻辑并补回归测试。
+
+**Goal:** 国内站实例升配期间，嵌套 Bot 查询返回 `PASS_MODIFYING` 时仍展示实例列表中的根 Bot；其他 403 鉴权错误继续抛出。
+
+- [x] **Task 1｜Developer / Reviewer：先补失败回归测试，再将 `PASS_MODIFYING` 纳入嵌套 Bot 查询的兼容降级范围，运行定向 Vitest、类型检查与 diff 检查。**
+
+**Acceptance:** `GET /v1/instances` 返回运行中实例、`GET /v1/instances/{id}/bots` 返回 403 `PASS_MODIFYING` 时，Dashboard snapshot 保留该实例；普通 403 仍失败。
+
+**Verification:** 回归用例先按预期失败于 `RepositoryError: pass is modifying（PASS_MODIFYING）`；修复后 Repository 测试 64 passed / 1 skipped，`tsc --noEmit` 与 `git diff --check` 通过。完整 `pnpm check` 因本机只有 Node.js 20、当前 pnpm 11 要求 Node.js 22.13+ 未执行完成；本次无 i18n 文案变更。
+
+---
+
 # 国际站首页顶部入口与多语言展示修复 Implementation Plan
 
 **Status:** 国际站 Footer、顶部入口、日语/韩语动态标题句尾及中文 Footer 全量本地化均已验证，等待用户验收；未 commit、push 或创建 MR。
