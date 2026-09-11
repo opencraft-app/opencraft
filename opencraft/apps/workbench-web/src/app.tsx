@@ -47,7 +47,6 @@ import {
 } from "react";
 
 import { withBrowserAmbientContext } from "./browser/browser-ambient-context";
-import { useSettingsPresentation } from "./components/use-settings-presentation";
 import {
   useBrowserWorkbench,
 } from "./browser/browser-runtime-context";
@@ -71,7 +70,9 @@ import { InternalDeveloperModeGate } from "./components/internal-developer-mode-
 import {
   ManagementSettingsContent,
   ModalHost,
+  showAnnouncementLab,
   type ModalRequest,
+  useAnnouncementModalRequests,
 } from "./components/modal";
 import { PendingConversationPage } from "./components/pending-conversation-page";
 import { Sidebar } from "./components/sidebar";
@@ -378,7 +379,6 @@ export function App() {
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
     workbenchNavigationSnapshot.applicationRoute.kind === "settings";
-  const settingsPresentation = useSettingsPresentation(sidebarWidth);
   const extensionViewOpen =
     workbenchNavigationSnapshot.applicationRoute.kind === "extension-view";
   const conversationRouteOpen =
@@ -402,7 +402,7 @@ export function App() {
   // conversation keeps its physical shell and geometry, but is inert while
   // the dialog owns interaction and focus.
   const conversationSurfaceVisible = conversationRouteOpen || managementSettingsOpen;
-  const shellSidebarOpen = routeSettingsOpen ? settingsPresentation.showIndex : sidebarOpen;
+  const shellSidebarOpen = sidebarOpen;
   const openSettingsFromConversation = useCallback(() => {
     const focusedElement = document.activeElement;
     if (
@@ -963,13 +963,11 @@ export function App() {
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
   const closeSettings = useCallback(() => {
-    settingsPresentation.openContent();
     workbenchNavigation.closeSettings();
-  }, [settingsPresentation, workbenchNavigation]);
+  }, [workbenchNavigation]);
   const selectSettingsSection = useCallback((section: string) => {
     workbenchNavigation.openSettings(section);
-    settingsPresentation.openContent();
-  }, [settingsPresentation, workbenchNavigation]);
+  }, [workbenchNavigation]);
   const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
@@ -979,7 +977,7 @@ export function App() {
         profiles={hostCatalog.profiles}
         activeHostId={snapshot.hostId}
         onBack={closeSettings}
-        presentation={managementSettingsOpen ? "dialog" : "route"}
+        presentation={managementSettingsOpen ? "dialog" : "sidebar"}
       />
     </Suspense>
   ) : null;
@@ -1009,16 +1007,19 @@ export function App() {
         themePreference={appearanceTheme.preference}
         onThemeChange={setAppearanceThemeId}
         onThemePreferenceChange={setThemePreference}
+        onOpenAnnouncementLab={() => {
+          void showAnnouncementLab(hostCatalog.announcements);
+        }}
       />
     </Suspense>
   ) : null;
   const settingsRoute = routeSettingsOpen ? (
-    <section className="settings-page" aria-label="Settings" inert={settingsPresentation.indexOnly || undefined} aria-hidden={settingsPresentation.indexOnly || undefined}>
-      {settingsPresentation.compact ? <nav className="settings-page__compact-navigation" aria-label="Settings navigation"><button className="settings-navigation-link" type="button" onClick={settingsPresentation.openIndex}><span aria-hidden="true">‹</span>Settings</button></nav> : null}
+    <section className="settings-page" aria-label="Settings">
       {settingsContent}
     </section>
   ) : null;
   const modalRequests: ModalRequest[] = [];
+  const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
   if (managementSettingsOpen) {
     modalRequests.push({
       id: "management-settings",
@@ -1045,16 +1046,16 @@ export function App() {
       onDismiss: () => setAccountOpen(false),
     });
   }
+  // Imperative announcements are appended last so a preview requested from a
+  // Settings window becomes the top nested window instead of appearing under it.
+  modalRequests.push(...announcementModalRequests);
   const presentedRightPanelOpen =
     panelState.right.open && !rightPanelResponsiveBlocked;
   const presentedRightPanelFullWidth =
     panelState.rightPanelFullWidth && !rightPanelResponsiveBlocked;
-  // Device-wide Settings is an application-level route with its own shell.
-  // Target management remains a dialog over the conversation shell, so only
-  // the former replaces Workbench navigation controls.
-  const headerNavigationActions = routeSettingsOpen
-    ? []
-    : chromePolicy.leadingNavigationActions;
+  // Applications replace context/content, never the Shell control plane.
+  // Target management remains an independent modal semantic surface.
+  const headerNavigationActions = chromePolicy.leadingNavigationActions;
   const header = (
     <AppShellHeader
       title={
@@ -1092,15 +1093,27 @@ export function App() {
     <>
       <InternalDeveloperModeGate />
       <AppShell
+          navigation={{
+            settingsActive: routeSettingsOpen,
+            actions: [
+              { id: "shell.chat", title: "Chat", icon: "chat", active: conversationRouteOpen,
+                onInvoke: () => { if (settingsOpen) closeSettings(); else if (extensionViewOpen) workbenchNavigation.closeExtensionView(); } },
+              ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
+            ],
+            account: extensionProjection.account === null || extensionProjection.account.snapshot.phase === "anonymous" ? null : {
+              snapshot: extensionProjection.account.snapshot,
+              onOpen: () => setAccountOpen(true),
+              onRefresh: extensionProjection.account.provider.refresh,
+              onSignOut: extensionProjection.account.provider.signOut,
+            },
+            onOpenSettings: openSettingsFromConversation,
+          }}
           layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
           mainContentLayout={conversationSurfaceVisible ? "thread-edge-scroll" : "default"}
           sidebarOpen={shellSidebarOpen}
-          sidebarTransientEnabled={!routeSettingsOpen}
-          sidebarResizable={!routeSettingsOpen}
-          sidebarCollapsible={!routeSettingsOpen}
-          sidebarWidth={routeSettingsOpen ? settingsPresentation.sidebarWidth : sidebarWidth}
+          sidebarWidth={sidebarWidth}
           windowChrome={windowChrome}
-          onSidebarCollapse={routeSettingsOpen ? () => undefined : collapseSidebar}
+          onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
           rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
@@ -1128,7 +1141,7 @@ export function App() {
             />
           )}
           leftPanel={
-            routeSettingsOpen ? settingsNavigation : <Sidebar
+            routeSettingsOpen ? settingsNavigation : conversationSurfaceVisible ? <Sidebar
               threads={multiHostCatalog.threads}
               renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
               onNewTaskForTarget={(hostId) => hostCatalog.openDraft({
@@ -1147,8 +1160,7 @@ export function App() {
                 )?.settingsPageId;
                 workbenchNavigation.openSettings(settingsPageId ?? "connections");
               }}
-              primaryActions={extensionProjection.primaryActions}
-              footerActions={extensionProjection.footerActions}
+              showFooter={false}
               catalogs={extensionProjection.catalogs}
               bots={extensionProjection.bots}
               sidebarLayout={hostCatalog.sidebarLayout}
@@ -1187,13 +1199,7 @@ export function App() {
               // The route adapter consumes both the DOM event and the old
               // route's focus before issuing a semantic navigation command.
               onOpenSettings={openSettingsFromConversation}
-              account={extensionProjection.account === null || extensionProjection.account.snapshot.phase === "anonymous" ? null : {
-                snapshot: extensionProjection.account.snapshot,
-                onOpen: () => setAccountOpen(true),
-                onRefresh: extensionProjection.account.provider.refresh,
-                onSignOut: extensionProjection.account.provider.signOut,
-              }}
-            />
+            /> : null
           }
           rightPanel={
             <RightPanel

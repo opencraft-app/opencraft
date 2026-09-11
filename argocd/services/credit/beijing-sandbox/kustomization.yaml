@@ -12,6 +12,8 @@ configMapGenerator:
 resources:
   - credit-lifecycle-worker.yaml
   - credit-usage-worker.yaml
+patches:
+  - path: patch-credit-redis.yaml
 replacements:
   - source:
       kind: ConfigMap

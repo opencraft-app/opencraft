@@ -53,6 +53,7 @@ import {
   type AgentCatalogEntry,
 } from "@opencraft/appserver-protocol";
 import {
+  type AnnouncementCenter,
   type ExtensionContributionStore,
   ExtensionManager,
   ExtensionSettingsStore,
@@ -148,6 +149,7 @@ export interface AppServerHostCatalog {
   /** Provider-owned navigation metadata projected for Host-scoped chrome. */
   readonly connectionProviders: readonly HostConnectionProviderDescriptor[];
   readonly extensionContributions: ExtensionContributionStore;
+  readonly announcements: AnnouncementCenter;
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
@@ -210,6 +212,7 @@ interface AppServerApplicationContextValue extends AppServerHostCatalog {
   readonly conversationBindings: ConversationBindingStore;
   readonly extensionSettings: ExtensionSettingsStore;
   readonly extensionContributions: ExtensionContributionStore;
+  readonly announcements: AnnouncementCenter;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
 }
@@ -1308,6 +1311,7 @@ export function AppServerRuntimeProvider({
     extensionSettings,
     extensionManager,
     extensionContributions: extensions.contributions,
+    announcements: extensions.announcements,
     platformViewRenderers,
     platformAccounts,
     composerActionRenderers,

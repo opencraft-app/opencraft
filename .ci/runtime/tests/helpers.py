@@ -7,10 +7,16 @@ from pathlib import Path
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
+GIT_TEST_IDENTITY = [
+    "-c",
+    "user.name=CI Test",
+    "-c",
+    "user.email=ci-test@example.com",
+]
 
 
 def git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+    subprocess.run(["git", *GIT_TEST_IDENTITY, *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
 def git_output(repo: Path, *args: str) -> str:

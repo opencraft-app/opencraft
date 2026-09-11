@@ -1,3 +1,5 @@
+@use "./announcement-dialog";
+
 .modal-surface__scrim,
 .modal-surface {
   --modal-layer-base: var(--layer-application-modal, 230);

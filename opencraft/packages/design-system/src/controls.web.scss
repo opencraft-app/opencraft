@@ -17,6 +17,44 @@
   &:disabled { opacity: 0.45; cursor: default; }
 }
 
+// Navigation rows share the sidebar's quiet typography and state treatment.
+// Menus keep their own denser geometry; consumers opt in only for sidebar rows.
+@mixin navigation-control {
+  @include quiet-control;
+  display: flex;
+  width: 100%;
+  min-height: var(--height-navigation-row);
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+  color: var(--color-text-secondary);
+  font-size: var(--codex-sidebar-font-size);
+  line-height: var(--codex-sidebar-line-height);
+  font-weight: 400;
+  text-align: left;
+  &.is-selected, &[aria-current="page"] {
+    background: var(--color-background-button-tertiary-hover);
+    color: var(--color-text);
+  }
+}
+
+// Footer entrances are sidebar items, not raised buttons. Keep the resting
+// row quiet; open/pinned states use the same soft fill as navigation rows.
+@mixin sidebar-entrance {
+  @include navigation-control;
+  height: var(--height-navigation-row);
+  min-height: var(--height-navigation-row);
+  width: auto;
+  border-radius: var(--radius-lg);
+  gap: 8px;
+  transition: background-color var(--transition-duration-basic);
+  &[aria-pressed="true"], &:active:not(:disabled) {
+    background: var(--color-background-button-tertiary-hover);
+    color: var(--color-text);
+  }
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
+
 .workbench-connection-status {
   display: inline-block;
   flex: 0 0 var(--size-connection-status);

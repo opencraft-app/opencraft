@@ -683,6 +683,73 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it.skipIf(isGlobal)("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: Array<{ url: string; method: string }> = [];
+    const jsonResponse = (data: unknown, status = 200) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (url.endsWith("/v1/instances") && method === "GET") {
+        return jsonResponse({
+          total: 2,
+          page: 1,
+          page_size: 20,
+          items: [
+            { instance_id: "ins_deleted", status: "Deleted", created_at: "2026-09-11T00:00:00Z" },
+            { instance_id: "ins_running", status: "Running", created_at: "2026-09-11T00:01:00Z" },
+          ],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots") && method === "GET") {
+        return jsonResponse({ items: [{
+          bot_id: "ins_running",
+          instance_id: "ins_running",
+          profile_id: "main",
+          name: "主 Bot",
+          is_default: true,
+          status: "ready",
+          created_from: "blank",
+          created_at: "2026-09-11T00:01:00Z",
+          updated_at: "2026-09-11T00:01:00Z",
+        }] });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots") && method === "POST") {
+        return jsonResponse({
+          bot_id: "profile_new",
+          instance_id: "ins_running",
+          profile_id: "profile_new",
+          name: "新 Bot",
+          is_default: false,
+          status: "ready",
+          created_from: "blank",
+          created_at: "2026-09-11T00:02:00Z",
+          updated_at: "2026-09-11T00:02:00Z",
+        }, 201);
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await repositories.bots.getDashboardSnapshot("live");
+    const created = await repositories.bots.createBot({ name: "新 Bot", createMode: "blank" });
+
+    expect(created).toEqual(expect.objectContaining({
+      id: "profile_new",
+      instanceId: "ins_running",
+    }));
+    expect(calls).toContainEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_running/bots",
+      method: "POST",
+    });
+    expect(calls.some(({ url }) => url.includes("ins_deleted/bots"))).toBe(false);
+  });
+
   it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: string[] = [];

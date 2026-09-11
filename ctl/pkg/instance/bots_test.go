@@ -20,10 +20,7 @@ import (
 func TestBuildHermesProfileCreateCommandCreatesBlankProfileWithMetadata(t *testing.T) {
 	command := buildHermesProfileCreateCommand("profile-2", "", "# New Bot", "New Bot", "Support")
 	checks := []string{
-		"hermes profile create 'profile-2'",
-		".lightvela",
-		"base-skills",
-		"Aligned",
+		"hermes profile create 'profile-2' --no-skills",
 		"profiles/profile-2/SOUL.md",
 		base64.StdEncoding.EncodeToString([]byte("# New Bot")),
 		`"display_name":"New Bot"`,
@@ -57,87 +54,8 @@ func TestBuildHermesProfileCreateCommandClonesMainAndSanitizesChannels(t *testin
 	if strings.Contains(command, "profiles/main") {
 		t.Fatalf("root profile must map to Hermes default: %s", command)
 	}
-	if strings.Contains(command, "base-skills") {
+	if strings.Contains(command, "--no-skills") {
 		t.Fatalf("clone creation must preserve the source profile skills: %s", command)
-	}
-}
-
-func TestAlignBlankProfileSkillsUsesRecordedBaseline(t *testing.T) {
-	home := t.TempDir()
-	target := home + "/profiles/profile-2"
-	writeSkillFixture(t, home+"/skills/software-development/base-skill", "root base")
-	writeSkillFixture(t, home+"/skills/software-development/later-installed", "root user")
-	writeSkillFixture(t, target+"/skills/software-development/base-skill", "seeded base")
-	writeSkillFixture(t, target+"/skills/software-development/root-missing-base", "seeded root-missing base")
-	writeSkillFixture(t, target+"/skills/software-development/full-catalog", "seeded extra")
-	if err := os.MkdirAll(home+"/.lightvela", 0o755); err != nil {
-		t.Fatalf("create baseline directory: %v", err)
-	}
-	if err := os.WriteFile(home+"/.lightvela/base-skills", []byte("software-development/base-skill\nsoftware-development/root-missing-base\n"), 0o600); err != nil {
-		t.Fatalf("write baseline manifest: %v", err)
-	}
-	if err := os.WriteFile(target+"/skills/.bundled_manifest", []byte("base-skill:one\nfull-catalog:two\n"), 0o600); err != nil {
-		t.Fatalf("write target bundled manifest: %v", err)
-	}
-
-	output, err := exec.Command("python3", "-c", alignBlankProfileSkillsScript, home, target).CombinedOutput()
-	if err != nil {
-		t.Fatalf("align blank profile skills: %v\n%s", err, output)
-	}
-	assertFileContents(t, target+"/skills/software-development/base-skill/SKILL.md", "seeded base")
-	assertFileContents(t, target+"/skills/software-development/root-missing-base/SKILL.md", "seeded root-missing base")
-	assertPathMissing(t, target+"/skills/software-development/full-catalog")
-	assertPathMissing(t, target+"/skills/software-development/later-installed")
-	assertFileContents(t, target+"/skills/.bundled_manifest", "base-skill:one\nfull-catalog:two\n")
-}
-
-func TestAlignBlankProfileSkillsInfersLegacyBuiltinsWithoutUserSkills(t *testing.T) {
-	home := t.TempDir()
-	target := home + "/profiles/profile-2"
-	writeSkillFixture(t, home+"/skills/research/base-skill", "root base")
-	writeSkillFixture(t, home+"/skills/website-builder", "root product skill")
-	writeSkillFixture(t, home+"/skills/research/later-installed", "root user")
-	if err := os.WriteFile(home+"/skills/.bundled_manifest", []byte("base-skill:one\nmissing-bundled:two\n"), 0o600); err != nil {
-		t.Fatalf("write root bundled manifest: %v", err)
-	}
-	writeSkillFixture(t, target+"/skills/research/base-skill", "seeded base")
-	writeSkillFixture(t, target+"/skills/research/missing-bundled", "seeded extra")
-
-	output, err := exec.Command("python3", "-c", alignBlankProfileSkillsScript, home, target).CombinedOutput()
-	if err != nil {
-		t.Fatalf("align legacy blank profile skills: %v\n%s", err, output)
-	}
-	assertFileContents(t, target+"/skills/research/base-skill/SKILL.md", "seeded base")
-	assertFileContents(t, target+"/skills/website-builder/SKILL.md", "root product skill")
-	assertPathMissing(t, target+"/skills/research/missing-bundled")
-	assertPathMissing(t, target+"/skills/research/later-installed")
-}
-
-func writeSkillFixture(t *testing.T, directory, contents string) {
-	t.Helper()
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		t.Fatalf("create skill directory: %v", err)
-	}
-	if err := os.WriteFile(directory+"/SKILL.md", []byte(contents), 0o600); err != nil {
-		t.Fatalf("write skill fixture: %v", err)
-	}
-}
-
-func assertFileContents(t *testing.T, path, expected string) {
-	t.Helper()
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	if string(contents) != expected {
-		t.Fatalf("%s = %q, want %q", path, contents, expected)
-	}
-}
-
-func assertPathMissing(t *testing.T, path string) {
-	t.Helper()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("expected %s to be absent, stat error = %v", path, err)
 	}
 }
 

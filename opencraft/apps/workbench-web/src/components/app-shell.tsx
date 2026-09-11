@@ -2,7 +2,6 @@
 // terminal/use-app-shell-layout-motion-04358.ts and
 // terminal/app-shell-right-panel-06052.ts.
 import {
-  AnimatePresence,
   motion,
   useMotionValue,
   useTransform,
@@ -42,21 +41,32 @@ import {
   normalizeRightPanelWidth,
 } from "@opencraft/workbench-panels";
 import { FloatingLeftPanel } from "./floating-left-panel";
+import { Sidecar, SidecarPane } from "./sidecar";
 import { AppShellRightPanel } from "./app-shell-right-panel";
-import { SidebarResizeHandle } from "./sidebar-resize-handle";
+import {
+  SidebarResizeHandle,
+  SIDEBAR_MAXIMUM_WIDTH,
+} from "./sidebar-resize-handle";
+import { SidecarPrimaryResizeHandle } from "./sidecar-primary-resize-handle";
+import type { SidecarPrimaryResizeCommit } from "./sidecar-primary-resize";
+import { useSidecarPrimaryMotion } from "./use-sidecar-primary-motion";
 import {
   usePanelAnimation,
   usePanelFullWidthAnimation,
   usePanelVisibilityAnimation,
 } from "./use-panel-animation";
 import { useSidebarDockIntent } from "./use-sidebar-dock-intent";
+import { shellNavigationMetrics } from "@opencraft/workbench-runtime";
+import { ShellNavigationDock, ShellNavigationFooter, useShellNavigation, type ShellNavigationConfig } from "./shell-navigation";
 
 interface AppShellProps {
+  navigation?: ShellNavigationConfig;
   layoutScope: string;
   mainContentLayout: AppShellMainContentLayout;
   header: ReactNode;
   floatingSidebarHeader(onDock: () => void): ReactNode;
-  leftPanel: ReactNode;
+  /** Optional application context. Chat supplies a conversation list; other apps may omit it. */
+  leftPanel?: ReactNode;
   rightPanel: ReactNode;
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;
@@ -75,6 +85,7 @@ interface AppShellProps {
 
 interface AppShellStyle extends CSSProperties {
   "--app-shell-left-open-width": string;
+  "--shell-navigation-bottom-reserve": string;
 }
 
 interface ApplicationShellRootProps {
@@ -84,6 +95,7 @@ interface ApplicationShellRootProps {
   readonly sidebarMounted: boolean;
   readonly sidebarOpen: boolean;
   readonly sidebarPresentation: string;
+  readonly sidecarPrimaryDetent?: "expanded" | "compact" | "hidden";
   readonly style?: CSSProperties;
   readonly windowChrome: WindowChromeSnapshot;
 }
@@ -96,6 +108,7 @@ export function ApplicationShellRoot({
   sidebarMounted,
   sidebarOpen,
   sidebarPresentation,
+  sidecarPrimaryDetent,
   style,
   windowChrome,
 }: ApplicationShellRootProps) {
@@ -109,6 +122,7 @@ export function ApplicationShellRoot({
       data-sidebar-open={sidebarOpen}
       data-sidebar-mounted={sidebarMounted}
       data-sidebar-presentation={sidebarPresentation}
+      data-sidecar-primary-detent={sidecarPrimaryDetent}
       style={
         {
           "--spacing-token-safe-header-left": `${windowChrome.safeArea.left}px`,
@@ -120,11 +134,6 @@ export function ApplicationShellRoot({
       {children}
     </div>
   );
-}
-
-interface SidebarMotionStyle extends MotionStyle {
-  "--app-shell-left-open-width": MotionValue<string>;
-  "--app-shell-left-width": MotionValue<string>;
 }
 
 interface HeaderMotionStyle extends MotionStyle {
@@ -185,6 +194,7 @@ export function useAppShellLayoutMotion(): AppShellLayoutMotion {
 }
 
 export function AppShell({
+  navigation,
   layoutScope,
   mainContentLayout,
   header,
@@ -196,7 +206,7 @@ export function AppShell({
   sidebarCollapsible = true,
   sidebarTransientEnabled = true,
   sidebarResizable = true,
-  sidebarOpen,
+  sidebarOpen: sidecarOpen,
   sidebarWidth,
   windowChrome,
   onSidebarCollapse,
@@ -208,7 +218,61 @@ export function AppShell({
   const shellRootRef = useRef<HTMLDivElement | null>(null);
   const shellWidth = useMotionValue(window.innerWidth);
   const shellHeight = useMotionValue(window.innerHeight);
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+  const contextAvailable = leftPanel != null;
+  const sidebarOpen = sidecarOpen && contextAvailable;
+  const navigationController = useShellNavigation({
+    viewportWidth, contextWidth: sidebarWidth, contextAvailable, sidecarOpen,
+    enabled: navigation !== undefined, allowDock: navigation?.allowDock,
+  });
+  const navigationOpen = navigationController.projection.dockOpen;
+  const visibleNavigationDetent = navigationController.projection.railDetent === "hidden"
+    ? navigationController.projection.lastVisibleRailDetent
+    : navigationController.projection.railDetent;
+  const navigationAnimation = useMotionValue(navigationOpen ? 1 : 0);
+  const [navigationResizing, setNavigationResizing] = useState(false);
+  const getNavigationMaximumWidth = useCallback(
+    () => Math.max(
+      shellNavigationMetrics.expandedMinimumWidth,
+      Math.min(
+        SIDEBAR_MAXIMUM_WIDTH,
+        shellWidth.get()
+          - (sidebarOpen ? sidebarWidth : 0)
+          - shellNavigationMetrics.contentMinimumWidth,
+      ),
+    ),
+    [shellWidth, sidebarOpen, sidebarWidth],
+  );
+  const primaryMotion = useSidecarPrimaryMotion({
+    committedExpandedWidth: navigationController.width,
+    committedFrameWidth: navigationController.projection.railWidth,
+    compactWidth: shellNavigationMetrics.compactWidth,
+    expandedMinimumWidth: shellNavigationMetrics.expandedMinimumWidth,
+    footerMinimumWidth: shellNavigationMetrics.footerMinimumWidth,
+    getMaximumWidth: getNavigationMaximumWidth,
+  });
+  const finishNavigationResize = useCallback((result: SidecarPrimaryResizeCommit) => {
+    primaryMotion.settleResize(result, settled => {
+      if (settled.detent === "hidden" && !contextAvailable) {
+        // An application without a Context Pane closes the one remaining
+        // Sidecar only after its physical Primary frame reaches zero.
+        onSidebarCollapse();
+        return;
+      }
+      if (settled.detent === "expanded" && settled.expandedWidth !== null) {
+        navigationController.commitWidth(settled.expandedWidth);
+      }
+      navigationController.commitRailDetent(settled.detent);
+    });
+  }, [contextAvailable, navigationController, onSidebarCollapse, primaryMotion]);
+  const { animatedSize: animatedNavigationWidth, isMounted: navigationMounted } = usePanelAnimation({
+    animation: navigationAnimation, isVisible: navigationOpen, size: primaryMotion.frameWidth,
+  });
+  usePanelVisibilityAnimation(navigationOpen, navigationAnimation);
+  const lastDockController = useRef(navigationController);
+  if (navigationOpen) lastDockController.current = navigationController;
   const liveSidebarWidth = useMotionValue(sidebarWidth);
+  const contextViewportWidth = useMotionValue(sidebarWidth);
   const headerRightWidth = useMotionValue(0);
   const headerLeftFitWidth = useMotionValue(
     getHeaderStartMinimumWidth(windowChrome),
@@ -270,12 +334,16 @@ export function AppShell({
       unsubscribeComplete();
     };
   }, [rightPanelAnimation, rightPanelOpen]);
-  const animatedSidebarWidthPx = useTransform(
-    animatedSidebarWidth,
-    (width) => `${width}px`,
+  const totalLeftWidth = useTransform(
+    [animatedNavigationWidth, animatedSidebarWidth],
+    ([navigation, conversation]) => Number(navigation) + Number(conversation),
+  );
+  const sidecarOpacity = useTransform(
+    [navigationAnimation, sidebarProgress],
+    ([navigation, conversation]) => Math.max(0, Math.min(1, Math.max(Number(navigation), Number(conversation)))),
   );
   const mainContentWidth = useTransform(
-    [shellWidth, animatedSidebarWidth],
+    [shellWidth, totalLeftWidth],
     ([width, leftWidth]) => Math.max(0, Number(width) - Number(leftWidth)),
   );
   const initialMainContentWidth = mainContentWidth.get();
@@ -323,7 +391,7 @@ export function AppShell({
       ? zeroWidth
       : regularMainContentTargetWidth;
   const fullWidthTabBarLeftInset = useTransform(
-    [animatedSidebarWidth, headerLeftFitWidth],
+    [totalLeftWidth, headerLeftFitWidth],
     ([leftWidth, startMinimumWidth]) =>
       Math.max(0, Number(startMinimumWidth) - Number(leftWidth)),
   );
@@ -357,7 +425,7 @@ export function AppShell({
     (width) => `${width}px`,
   );
   const headerLeftSlotWidth = useTransform(
-    animatedSidebarWidth,
+    totalLeftWidth,
     (width) => `${Math.max(0, Number(width))}px`,
   );
   const headerLeftFitWidthPx = useTransform(
@@ -366,10 +434,7 @@ export function AppShell({
   );
   const shellStyle: AppShellStyle = {
     "--app-shell-left-open-width": `${sidebarWidth}px`,
-  };
-  const sidebarMotionStyle: SidebarMotionStyle = {
-    "--app-shell-left-open-width": liveSidebarWidthPx,
-    "--app-shell-left-width": animatedSidebarWidthPx,
+    "--shell-navigation-bottom-reserve": `${shellNavigationMetrics.footerHeight + 2 * shellNavigationMetrics.footerInset}px`,
   };
   const headerMotionStyle: HeaderMotionStyle = {
     // These must remain two independent geometry signals. The animated panel
@@ -389,16 +454,21 @@ export function AppShell({
   );
   const finishSidebarResize = useCallback(
     (width: number | null) => {
-      if (width !== null) liveSidebarWidth.set(width);
+      if (width !== null) {
+        liveSidebarWidth.set(width);
+        contextViewportWidth.set(width);
+      }
       onSidebarResizeEnd(liveSidebarWidth.get(), width !== null);
     },
-    [liveSidebarWidth, onSidebarResizeEnd],
+    [contextViewportWidth, liveSidebarWidth, onSidebarResizeEnd],
   );
 
   useLayoutEffect(() => {
-    if (!layoutResizing && !floatingResizing)
+    if (!layoutResizing && !floatingResizing) {
       liveSidebarWidth.set(sidebarWidth);
-  }, [floatingResizing, layoutResizing, liveSidebarWidth, sidebarWidth]);
+      contextViewportWidth.set(sidebarWidth);
+    }
+  }, [contextViewportWidth, floatingResizing, layoutResizing, liveSidebarWidth, sidebarWidth]);
 
   useLayoutEffect(() => {
     const shell = shellRootRef.current;
@@ -407,6 +477,7 @@ export function AppShell({
       const bounds = shell.getBoundingClientRect();
       shellWidth.set(bounds.width);
       shellHeight.set(bounds.height);
+      setViewportWidth(bounds.width);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -419,28 +490,25 @@ export function AppShell({
       setThreadEdgeScrollEligible(false);
       return;
     }
-    const viewport = mainContentViewportRef.current;
-    if (viewport === null) return;
     const update = () => {
-      const width = viewport.getBoundingClientRect().width;
       setThreadEdgeScrollEligible(
         resolveThreadEdgeScroll({
-          mainContentWidthPx: width,
-          leftChromeWidthPx: animatedSidebarWidth.get(),
+          shellWidthPx: shellWidth.get(),
+          rightChromeWidthPx: regularRightPanelAnimatedWidth.get(),
           rightPanelFullWidth,
           rootFontSizePx: readRootFontSizePx(),
         }),
       );
     };
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [animatedSidebarWidth, mainContentLayout, rightPanelFullWidth]);
+    const stopShell = shellWidth.on("change", update);
+    const stopRight = regularRightPanelAnimatedWidth.on("change", update);
+    return () => { stopShell(); stopRight(); };
+  }, [shellWidth, regularRightPanelAnimatedWidth, mainContentLayout, rightPanelFullWidth]);
 
   const floatingIntent = useSidebarDockIntent({
-    docked: sidebarOpen,
-    enabled: sidebarTransientEnabled,
+    docked: sidecarOpen,
+    enabled: sidebarTransientEnabled && !navigationOpen && !navigationResizing,
     getPanelWidth: getLiveSidebarWidth,
     lockOpen: floatingResizing,
   });
@@ -468,11 +536,13 @@ export function AppShell({
   return (
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot
+        className={navigation ? "has-shell-navigation" : undefined}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}
         sidebarMounted={desktopDockMounted}
         sidebarPresentation={sidebarPresentation}
+        sidecarPrimaryDetent={navigationController.projection.railDetent}
         style={shellStyle}
       >
         {sidebarTransientEnabled && mountFloatingPresenceOwner ? (
@@ -485,26 +555,60 @@ export function AppShell({
             onResize={resizeSidebar}
             onResizeEnd={finishSidebarResize}
             onResizingChange={setFloatingResizing}
+            footer={navigation ? <ShellNavigationFooter config={navigation} controller={navigationController}
+              visible={showFloatingSidebar} entranceId="floating-shell-entrance"
+              onTogglePrimaryNavigation={dockFloatingSidebar} onPin={dockFloatingSidebar} /> : null}
           >
-            {leftPanel}
+            {contextAvailable ? leftPanel : navigation ? <ShellNavigationDock config={navigation} controller={navigationController} transient /> : null}
           </FloatingLeftPanel>
         ) : null}
         <div className="app-shell-row">
-          <AnimatePresence initial={false}>
-            {showDockedSidebar ? (
-              <motion.aside
-                key="app-shell-left-panel"
-                className="app-shell-left-panel"
-                aria-hidden={!sidebarOpen}
-                style={sidebarMotionStyle}
-              >
-                <motion.div
-                  className="app-shell-left-panel__viewport"
-                  style={{ opacity: sidebarProgress }}
-                >
-                  {leftPanel}
-                </motion.div>
-                {sidebarResizable ? <SidebarResizeHandle
+          <Sidecar animatedWidth={totalLeftWidth} footer={navigation ? <motion.div
+            className="app-shell-sidecar__footer"
+            style={{ opacity: sidecarOpacity, width: primaryMotion.footerWidth, maxWidth: "100%" }}
+            hidden={!navigationOpen && !showDockedSidebar}
+            inert={!navigationController.projection.footerVisible || undefined}
+            aria-hidden={!navigationController.projection.footerVisible || undefined}>
+            <ShellNavigationFooter config={navigation} controller={navigationController}
+              visible={navigationController.projection.footerVisible} onTogglePrimaryNavigation={onSidebarCollapse} />
+          </motion.div> : null}>
+          {navigation && (navigationOpen || navigationMounted) ? <SidecarPane
+            animatedSize={animatedNavigationWidth}
+            className="shell-navigation__dock"
+            label="Pinned navigation"
+            open={navigationOpen}
+            contentOpacity={navigationAnimation}
+            viewportSize={primaryMotion.viewportWidth}
+            viewportClassName="shell-navigation__viewport"
+            resizeHandle={navigationOpen ? <SidecarPrimaryResizeHandle label="Resize applications"
+              compactWidth={shellNavigationMetrics.compactWidth}
+              defaultWidth={shellNavigationMetrics.columnWidth}
+              detent={visibleNavigationDetent}
+              expandedWidth={navigationController.width}
+              getMaximumWidth={getNavigationMaximumWidth}
+              onCancel={primaryMotion.cancelResize}
+              onCommit={finishNavigationResize}
+              onPreview={primaryMotion.previewResize}
+              onResizingChange={resizing => {
+                if (resizing) primaryMotion.beginResize();
+                setNavigationResizing(resizing);
+              }} /> : null}>
+            <ShellNavigationDock
+              config={navigation}
+              controller={navigationOpen ? navigationController : lastDockController.current}
+              expandedWidth={primaryMotion.viewportWidth}
+              frameWidth={primaryMotion.frameWidth}
+            />
+          </SidecarPane> : null}
+          {showDockedSidebar ? (
+            <SidecarPane
+              animatedSize={animatedSidebarWidth}
+              className="app-shell-left-panel"
+              open={sidebarOpen}
+              contentOpacity={sidebarProgress}
+              viewportSize={contextViewportWidth}
+              viewportClassName="app-shell-left-panel__viewport"
+              resizeHandle={sidebarResizable ? <SidebarResizeHandle
                   collapsible={sidebarCollapsible}
                   getCurrentWidth={getLiveSidebarWidth}
                   width={sidebarWidth}
@@ -514,9 +618,11 @@ export function AppShell({
                   onResizeEnd={finishSidebarResize}
                   onResizingChange={setLayoutResizing}
                 /> : null}
-              </motion.aside>
-            ) : null}
-          </AnimatePresence>
+            >
+              {leftPanel}
+            </SidecarPane>
+          ) : null}
+          </Sidecar>
 
           <main
             className="main-content-surface"

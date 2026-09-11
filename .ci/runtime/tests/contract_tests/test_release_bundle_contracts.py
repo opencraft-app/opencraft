@@ -1147,6 +1147,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             [
                 "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
                 "CREDIT_DB_PASSWORD",
+                "CREDIT_REDIS_PASSWORD",
                 "LLMGATEWAY_INTERNAL_SERVICE_TOKEN",
             ],
         )

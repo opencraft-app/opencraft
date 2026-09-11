@@ -2,7 +2,10 @@
 @use "@opencraft/design-system/controls.web" as controls;
 @use "@opencraft/design-system/menu.web" as menu;
 @use "@opencraft/design-system/selection.web";
+@use "../components/sidecar";
 @use "../components/modal/modal";
+@use "../components/ui/button";
+@use "../components/shell-navigation/shell-navigation";
 
 .agent-brand-icon {
   display: inline-block;
@@ -69,6 +72,19 @@
 }
 .settings-search-select__badge { color: var(--color-text-secondary); font-size: 10px; }
 .settings-search-select__check { flex: 0 0 14px; }
+
+.settings-laboratory-code {
+  width: 100%;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font: 12px/1.55 var(--font-family-mono, ui-monospace, monospace);
+  text-align: left;
+}
 
 // AppShell geometry is restored from physical/app-initial-JeCCd060.css and
 // terminal/use-app-shell-layout-motion-04358.ts (r822).
@@ -335,14 +351,9 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
 }
 
 .app-shell-left-panel {
-  position: relative;
   display: flex;
-  width: var(--app-shell-left-width);
-  min-width: var(--app-shell-left-width);
   padding-top: var(--height-toolbar);
-  overflow: visible;
-  // The panel owns one stable material plane. Children remain fully opaque,
-  // and resize/collapse motion changes geometry only—not visual alpha.
+  // Sidecar owns the material; each Pane owns its Frame/Clip/Viewport geometry.
   background: var(--codex-sidebar-material-background);
   backdrop-filter: var(--codex-sidebar-material-filter);
   -webkit-backdrop-filter: var(--codex-sidebar-material-filter);
@@ -374,13 +385,6 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
-}
-
-.app-shell-left-panel__viewport {
-  width: var(--app-shell-left-open-width);
-  min-width: var(--app-shell-left-open-width);
-  max-width: 100%;
-  overflow: hidden;
 }
 
 .app-shell-left-panel__resize {
@@ -429,6 +433,8 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
 
 .app-shell-root[data-sidebar-mounted="false"]
   > .app-shell-row
+  > .app-shell-sidecar
+  > .app-shell-sidecar__panes
   > .app-shell-left-panel
   > .app-shell-left-panel__resize:not([data-resizing="true"]) {
   visibility: hidden;
@@ -736,8 +742,19 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   min-width: max-content;
 }
 
-.app-shell-home-button {
+.chrome-button.app-shell-home-button {
+  width: auto;
+  min-width: 44px;
+  padding-inline: 5px;
   color: var(--color-icon-primary);
+}
+
+.app-shell-wordmark {
+  font-family: var(--font-family-brand, var(--font-family-ui));
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.04em;
 }
 
 .chrome-button {
@@ -1016,6 +1033,9 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 }
 
 .sidebar-panel {
+  --sidebar-leading-slot-size: 28px;
+  --sidebar-row-inline-padding: 7px;
+  --sidebar-leading-gap: 8px;
   display: flex;
   width: 100%;
   height: 100%;
@@ -1140,21 +1160,16 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 }
 
 .sidebar-action {
-  display: flex;
-  width: 100%;
+  @include controls.navigation-control;
   height: 34px;
   align-items: center;
-  gap: 9px;
-  padding: 0 8px;
+  gap: var(--sidebar-leading-gap);
+  padding: 0 var(--sidebar-row-inline-padding);
   border-radius: 7px;
   color: var(--color-text-secondary);
   text-align: left;
 
-  svg {
-    flex: 0 0 auto;
-  }
-
-  span {
+  > span:not(.sidebar-action__icon) {
     min-width: 0;
     flex: 1;
     overflow: hidden;
@@ -1187,6 +1202,19 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   &.is-selected {
     background: var(--color-background-button-tertiary-hover);
     color: var(--color-text);
+  }
+}
+
+.sidebar-action__icon {
+  display: grid;
+  width: var(--sidebar-leading-slot-size);
+  height: var(--sidebar-leading-slot-size);
+  flex: 0 0 var(--sidebar-leading-slot-size);
+  place-items: center;
+
+  > svg {
+    display: block;
+    flex: 0 0 auto;
   }
 }
 
@@ -1434,40 +1462,10 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   padding-top: 7px;
 }
 
-.sidebar-account {
-  position: relative;
-  min-width: 0;
-}
-
-.sidebar-account__trigger {
-  @include controls.quiet-control;
-  display: grid;
-  width: 100%;
-  min-height: 40px;
-  grid-template-columns: 28px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 7px;
-  border-radius: 9px;
-  color: var(--color-text);
-  text-align: left;
-
-  &:hover,
-  &[aria-expanded="true"] {
-    background: var(--color-background-button-tertiary-hover);
-  }
-
-  > svg {
-    color: var(--color-icon-tertiary);
-    transition: transform var(--transition-duration-basic) var(--ease-standard);
-    &.is-open { transform: rotate(180deg); }
-  }
-}
-
 .sidebar-account__avatar {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: var(--sidebar-leading-slot-size);
+  height: var(--sidebar-leading-slot-size);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: 50%;
@@ -1480,56 +1478,6 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   img { width: 100%; height: 100%; object-fit: cover; }
 }
 
-.sidebar-account__name {
-  overflow: hidden;
-  font-size: var(--codex-sidebar-font-size);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-account-menu {
-  @include menu.surface;
-  position: absolute;
-  z-index: var(--layer-popover, 80);
-  right: 0;
-  bottom: calc(100% + 6px);
-  left: 0;
-  padding: 5px;
-
-  > button {
-    @include menu.item;
-    width: 100%;
-    gap: 10px;
-    color: var(--color-text-secondary);
-    text-align: left;
-
-    > span:not(.sidebar-account__avatar, .sidebar-account-menu__copy) { flex: 1; }
-    > small { margin-left: auto; color: var(--color-text-tertiary); font-size: 11px; }
-    > svg { flex: 0 0 16px; color: var(--color-icon-secondary); }
-  }
-
-  .sidebar-account-menu__identity {
-    min-height: 48px;
-    align-items: center;
-  }
-}
-
-.sidebar-account-menu__copy {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-
-  strong,
-  small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  strong { color: var(--color-text); font-size: 13px; font-weight: 500; }
-  small { color: var(--color-text-tertiary); font-size: 11px; }
-}
-
-.sidebar-account-menu__separator {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--color-border-subtle);
-}
 
 .modal-surface.account-center-dialog {
   width: min(920px, calc(100vw - 48px));
@@ -2371,6 +2319,12 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   gap: 2px;
   overflow-y: auto;
   padding-bottom: 8px;
+}
+
+.settings-page__navigation--sidebar {
+  box-sizing: border-box;
+  overflow: hidden auto;
+  button { @include controls.navigation-control; }
 }
 
 .settings-page__navigation--management {

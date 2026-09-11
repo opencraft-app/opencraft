@@ -1,0 +1,198 @@
+@use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/menu.web" as menu;
+
+.shell-navigation__dock {
+  position: relative;
+  overflow: visible;
+  padding-top: var(--height-toolbar);
+  background: var(--codex-sidebar-material-background);
+  border-right: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+
+  // Pane separation belongs to Sidecar content, never to the global Header or
+  // fixed Footer coordinate systems.
+  &::before {
+    position: absolute;
+    top: var(--height-toolbar);
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--color-border-subtle);
+    content: "";
+    pointer-events: none;
+  }
+}
+.shell-navigation__dock-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-navigation-groups);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden auto;
+  padding: 12px;
+  > section:last-child:not(:first-child) { margin-top: auto; }
+  .shell-navigation__heading {
+    color: var(--color-text-tertiary);
+    strong { font-size: var(--codex-sidebar-meta-font-size); font-weight: 500; }
+  }
+  .shell-navigation__items > button { @include controls.navigation-control; }
+
+  &[data-shell-navigation-motion="geometry"] {
+    gap: var(--shell-navigation-content-gap);
+
+    > section,
+    .shell-navigation__items {
+      width: var(--shell-navigation-row-width);
+      min-width: 0;
+    }
+
+    .shell-navigation__heading {
+      height: var(--shell-navigation-heading-height);
+      padding: 0 8px;
+      box-sizing: border-box;
+      overflow: hidden;
+      opacity: var(--shell-navigation-heading-opacity);
+      transform: translateY(var(--shell-navigation-heading-y));
+      will-change: height, opacity, transform;
+    }
+
+    .shell-navigation__items > button {
+      width: 100%;
+      padding-inline: var(--shell-navigation-row-padding);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .shell-navigation__item-label,
+    .shell-navigation__identity,
+    .shell-navigation__items button > span:not(.sidebar-account__avatar),
+    .shell-navigation__items small,
+    .shell-navigation__items p {
+      opacity: var(--shell-navigation-label-opacity);
+      transform: translateX(var(--shell-navigation-label-x));
+      will-change: opacity, transform;
+    }
+
+    .shell-navigation__items button > svg,
+    .shell-navigation__items button > .sidebar-account__avatar {
+      transform: scale(var(--shell-navigation-icon-scale));
+      transform-origin: center;
+      will-change: transform;
+    }
+  }
+}
+.shell-navigation__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 12px;
+  color: var(--color-text);
+  h2, strong { font-size: 14px; font-weight: 600; margin: 0; }
+}
+.shell-navigation__items {
+  display: grid;
+  gap: var(--menu-item-gap);
+  color: var(--color-text);
+  button {
+    @include menu.item;
+    @include controls.quiet-control;
+    min-height: var(--height-navigation-row);
+    cursor: pointer;
+    &[aria-current="page"] { background: var(--color-background-primary-ghost-hover); }
+    > span:not(.sidebar-account__avatar) { flex: 1; min-width: 0; }
+  }
+  small, p { color: var(--color-text-secondary); font-size: 12px; }
+  p { padding: 8px; }
+}
+.shell-navigation__identity { display: flex; flex-direction: column; gap: 4px; }
+.shell-navigation__footer {
+  position: absolute;
+  z-index: var(--layer-shell-navigation);
+  display: grid;
+  grid-template-columns: var(--height-navigation-row) minmax(0, 1fr);
+  gap: 0;
+  color: var(--color-text);
+  box-sizing: border-box;
+  -webkit-app-region: no-drag;
+
+}
+.shell-navigation__entrance {
+  @include controls.sidebar-entrance;
+  position: relative;
+  justify-content: flex-start;
+  min-width: 0;
+  &:first-child { justify-content: center; padding: 0; }
+  &:last-child { gap: 6px; padding-inline: 6px; }
+  .sidebar-account__avatar { width: 20px; height: 20px; flex: 0 0 20px; font-size: 10px; border: 0; }
+}
+.shell-navigation__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--codex-sidebar-font-size); }
+.shell-navigation__icons {
+  display: flex;
+  align-items: center;
+  > span {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-icon-secondary);
+    &:not(:first-child) { margin-left: -10px; }
+  }
+}
+.shell-navigation__peek {
+  @include menu.surface;
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(280px, calc(100vw - 24px));
+  max-height: calc(100dvh - 88px);
+  box-sizing: border-box;
+  background: var(--color-background-elevated-secondary-opaque);
+}
+.shell-navigation__placement { border-top: 1px solid var(--color-border-default); margin-top: 4px; padding-top: 4px; }
+.shell-navigation__drawer {
+  // Compact presentation of the application rail, not a floating menu card.
+  position: absolute;
+  left: -12px;
+  bottom: calc(100% + 12px);
+  width: calc(100% + 24px);
+  height: max(0px, calc(100dvh - var(--height-toolbar) - var(--shell-navigation-bottom-reserve)));
+  box-sizing: border-box;
+  background: var(--color-background-panel);
+  border-right: 1px solid var(--color-border-subtle);
+}
+.app-shell-sidecar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 100%;
+  // One material plane spans both rails and their footer. Painting each child
+  // separately creates a white footer patch and exposes the window's gray base.
+  background: var(--codex-sidebar-material-background);
+  backdrop-filter: var(--codex-sidebar-material-filter);
+  -webkit-backdrop-filter: var(--codex-sidebar-material-filter);
+  .shell-navigation__dock, .app-shell-left-panel {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+.app-shell-sidecar__panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.app-shell-sidecar__footer {
+  // A real layout track, not an overlay on arbitrary application content.
+  position: relative;
+  flex: 0 0 var(--shell-navigation-bottom-reserve);
+  background: transparent;
+  &[hidden] { display: none; }
+}

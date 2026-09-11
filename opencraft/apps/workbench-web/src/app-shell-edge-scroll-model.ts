@@ -30,15 +30,15 @@ export function resolveAppShellMainContentChrome({
 }
 
 export interface ThreadEdgeScrollInput {
-  readonly mainContentWidthPx: number;
-  readonly leftChromeWidthPx: number;
+  readonly shellWidthPx: number;
+  readonly rightChromeWidthPx: number;
   readonly rightPanelFullWidth: boolean;
   readonly rootFontSizePx: number;
 }
 
 export function resolveThreadEdgeScroll({
-  mainContentWidthPx,
-  leftChromeWidthPx,
+  shellWidthPx,
+  rightChromeWidthPx,
   rightPanelFullWidth,
   rootFontSizePx,
 }: ThreadEdgeScrollInput): boolean {
@@ -49,10 +49,11 @@ export function resolveThreadEdgeScroll({
       : FALLBACK_ROOT_FONT_SIZE_PX;
   // The left navigation is application chrome, not a competing content
   // surface. Opening or resizing it must not switch the conversation between
-  // inset and immersive presentation. A real right panel remains part of
-  // mainContentWidthPx and can therefore still remove edge-scroll eligibility.
+  // inset and immersive presentation. Compute from independent Shell/right
+  // geometry, never a rounded DOM viewport plus a live left animation value:
+  // those measurements can straddle frames and oscillate around the threshold.
   const conversationEnvelopeWidth =
-    Math.max(0, mainContentWidthPx) + Math.max(0, leftChromeWidthPx);
+    Math.max(0, shellWidthPx - Math.max(0, rightChromeWidthPx));
   return (
     conversationEnvelopeWidth >=
     THREAD_EDGE_SCROLL_MINIMUM_WIDTH_REM * safeRootFontSize

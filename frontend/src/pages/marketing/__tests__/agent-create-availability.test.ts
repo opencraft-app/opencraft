@@ -40,15 +40,40 @@ describe("getOpenClawCreateLimitMessage", () => {
   });
 
   it("explains when a provisioning bot already occupies the quota", () => {
-    expect(getOpenClawCreateLimitMessage([bot("provisioning")], 1)).toBe("已有智能体正在创建中，请稍后刷新页面查看结果。");
+    expect(getOpenClawCreateLimitMessage([bot("provisioning")], 1)).toBe("已有 Bot 正在创建中，请稍后刷新页面查看结果。");
   });
 
   it("explains when a deleting bot still occupies the quota", () => {
-    expect(getOpenClawCreateLimitMessage([bot("deleting")], 1)).toBe("已有智能体正在删除中，请稍后刷新页面后再创建。");
+    expect(getOpenClawCreateLimitMessage([bot("deleting")], 1)).toBe("已有 Bot 正在删除中，请稍后刷新页面后再创建。");
   });
 
   it("explains the regular plan limit", () => {
-    expect(getOpenClawCreateLimitMessage([bot("running")], 1)).toBe("当前套餐最多可创建 1 个智能体，请升级套餐或删除现有智能体后重试。");
+    expect(getOpenClawCreateLimitMessage([bot("running")], 1)).toBe("当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。");
+  });
+
+  it("guides Launch users to the Cruise plan at the 5 Bot limit", () => {
+    const bots = Array.from({ length: 5 }, () => bot("running"));
+    expect(getOpenClawCreateLimitMessage(bots, 5)).toBe(
+      "当前套餐最多可创建 5 个 Bot（含主 Bot）。可升级至巡游套餐，或删除已有 Bot 后再创建。",
+    );
+    expect(getOpenClawCreateLimitMessage(bots.slice(1), 5)).toBeNull();
+  });
+
+  it("counts the main Bot toward the 10 Bot plan limit", () => {
+    const bots = Array.from({ length: 10 }, () => bot("running"));
+    expect(getOpenClawCreateLimitMessage(bots, 10)).toBe(
+      "当前套餐最多可创建 10 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+    );
+    expect(getOpenClawCreateLimitMessage(bots.slice(1), 10)).toBeNull();
+  });
+
+  it("translates fixed messages before replacing the quota placeholder", () => {
+    const translate = (message: string) => `translated:${message}`;
+    const bots = Array.from({ length: 10 }, () => bot("running"));
+
+    expect(getOpenClawCreateLimitMessage(bots, 10, translate)).toBe(
+      "translated:当前套餐最多可创建 10 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+    );
   });
 });
 

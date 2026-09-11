@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"git.woa.com/wisp/mono/credit/internal/authcode"
 	"git.woa.com/wisp/mono/credit/internal/service"
 	"git.woa.com/wisp/mono/credit/internal/store"
 	"git.woa.com/wisp/mono/credit/internal/tradeclient"
@@ -98,6 +100,9 @@ type httpFakeLLMGateway struct {
 }
 
 type httpFakeTrade struct {
+	orderRequest       tradeclient.OrderRequest
+	orderResult        *tradeclient.OrderResult
+	orderError         error
 	orderAndPayRequest tradeclient.OrderRequest
 	payURLDealName     string
 	payURLRequest      tradeclient.PayURLRequest
@@ -108,8 +113,12 @@ func (f *httpFakeTrade) Inquiry(context.Context, tradeclient.InquiryRequest) (ma
 	return map[string]any{}, nil
 }
 
-func (f *httpFakeTrade) PlaceOrder(context.Context, tradeclient.OrderRequest) (map[string]any, error) {
-	return map[string]any{}, nil
+func (f *httpFakeTrade) PlaceOrder(_ context.Context, req tradeclient.OrderRequest) (*tradeclient.OrderResult, error) {
+	f.orderRequest = req
+	if f.orderResult != nil || f.orderError != nil {
+		return f.orderResult, f.orderError
+	}
+	return &tradeclient.OrderResult{BigOrderID: "big-1", DealName: "deal-1"}, nil
 }
 
 func (f *httpFakeTrade) PlaceOrderAndPay(_ context.Context, req tradeclient.OrderRequest) (map[string]any, error) {
@@ -133,6 +142,34 @@ func (f *httpFakeTrade) GeneratePayURL(_ context.Context, dealName string, req t
 
 func (f *httpFakeTrade) RefundPackage(context.Context, string, tradeclient.RefundRequest) (map[string]any, error) {
 	return map[string]any{}, nil
+}
+
+type httpFakeAuthCodeStore struct {
+	issueCode     string
+	issueError    error
+	issuedTicket  *authcode.Ticket
+	consumeTicket *authcode.Ticket
+	consumeError  error
+	consumeCalls  int
+	consumeCode   string
+	consumeOnce   bool
+}
+
+func (f *httpFakeAuthCodeStore) Issue(_ context.Context, ticket *authcode.Ticket) (string, error) {
+	if ticket != nil {
+		copy := *ticket
+		f.issuedTicket = &copy
+	}
+	return f.issueCode, f.issueError
+}
+
+func (f *httpFakeAuthCodeStore) Consume(_ context.Context, code string) (*authcode.Ticket, error) {
+	f.consumeCalls++
+	f.consumeCode = code
+	if f.consumeOnce && f.consumeCalls > 1 {
+		return nil, authcode.ErrTicketNotFound
+	}
+	return f.consumeTicket, f.consumeError
 }
 
 func (httpFakeLLMGateway) ApplySubscription(context.Context, service.ApplySubscriptionRequest) (service.Subscription, error) {
@@ -162,7 +199,7 @@ func TestInternalUsedAmountReturnsDecimalRatio(t *testing.T) {
 		Name: "credit-package:cpkg-test001", TokenTotal: 10000, TokenBalance: 7644,
 	}}}}, service.Options{
 		Now: func() time.Time { return now },
-	}), st, nil, "internal-token")
+	}), st, nil, nil, "internal-token")
 	body, _ := json.Marshal(map[string]any{
 		"uin": "700000164995", "app_id": int64(1300000001), "resource_ids": []string{"cpkg-test001"},
 	})
@@ -186,7 +223,7 @@ func TestInternalQueryResourcesReturnsBillingView(t *testing.T) {
 	}
 	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{
 		Now: func() time.Time { return time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC) },
-	}), st, nil, "internal-token")
+	}), st, nil, nil, "internal-token")
 	body, _ := json.Marshal(map[string]any{
 		"uin": "700000164995", "app_id": int64(1300000001), "resource_ids": []string{"cpkg-test001"},
 	})
@@ -207,7 +244,7 @@ func TestInternalResourceCenterListRoutes(t *testing.T) {
 		PackageID: "cpkg-test001", ProductID: "credit_100", Uin: "700000164995", AppID: 1300000001,
 		ExpiredTime: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Status: store.PackageStatusActive,
 	}
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, "internal-token")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, nil, "internal-token")
 
 	for _, tc := range []struct {
 		path string
@@ -230,7 +267,7 @@ func TestInternalResourceCenterListRoutes(t *testing.T) {
 func TestInternalResetExpireRouteIsRemoved(t *testing.T) {
 	st := newHTTPFakeStore()
 	st.packages["cpkg-test001"] = &store.CreditPackage{PackageID: "cpkg-test001"}
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, "internal-token")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, nil, "internal-token")
 	req := httptest.NewRequest(http.MethodPost, "/internal/credit/packages/cpkg-test001/reset-expire", bytes.NewBufferString(`{}`))
 	req.Header.Set("Authorization", "Bearer internal-token")
 	rec := httptest.NewRecorder()
@@ -244,7 +281,7 @@ func TestInternalResetExpireRouteIsRemoved(t *testing.T) {
 
 func TestUserOrderAndPayRequiresTrustedUserHeader(t *testing.T) {
 	st := newHTTPFakeStore()
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, nil, "")
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-and-pay", strings.NewReader(`{"product_id":"credit_100"}`))
 	rec := httptest.NewRecorder()
 
@@ -252,6 +289,72 @@ func TestUserOrderAndPayRequiresTrustedUserHeader(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUserOrderIssuesAuthCode(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.products["credit_1000"] = &store.CreditProduct{ProductID: "credit_1000", State: store.ProductStateOnline}
+	trade := &httpFakeTrade{orderResult: &tradeclient.OrderResult{BigOrderID: "big-credit-1", DealName: "deal-credit-1"}}
+	authCodes := &httpFakeAuthCodeStore{issueCode: "auth-code-1"}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order", strings.NewReader(`{
+		"product_id":"credit_1000",
+		"time_span":1,
+		"time_unit":"m"
+	}`))
+	req.Header.Set("X-User-Id", "usr-trusted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.orderRequest.ExternalUserID != "usr-trusted" {
+		t.Fatalf("order user = %q", trade.orderRequest.ExternalUserID)
+	}
+	if authCodes.issuedTicket == nil || authCodes.issuedTicket.UserID != "usr-trusted" || authCodes.issuedTicket.DealName != "deal-credit-1" {
+		t.Fatalf("issued ticket = %+v", authCodes.issuedTicket)
+	}
+	if !strings.Contains(rec.Body.String(), `"bigOrderId":"big-credit-1"`) ||
+		!strings.Contains(rec.Body.String(), `"dealName":"deal-credit-1"`) ||
+		!strings.Contains(rec.Body.String(), `"auth_code":"auth-code-1"`) {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestUserOrderKeepsCreatedOrderWhenAuthCodeIssueFails(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.products["credit_1000"] = &store.CreditProduct{ProductID: "credit_1000", State: store.ProductStateOnline}
+	trade := &httpFakeTrade{orderResult: &tradeclient.OrderResult{BigOrderID: "big-credit-1", DealName: "deal-credit-1"}}
+	authCodes := &httpFakeAuthCodeStore{issueError: errors.New("redis unavailable")}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order", strings.NewReader(`{"product_id":"credit_1000"}`))
+	req.Header.Set("X-User-Id", "usr-trusted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"auth_code":""`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUserOrderRejectsEmptyTradeDeal(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.products["credit_1000"] = &store.CreditProduct{ProductID: "credit_1000", State: store.ProductStateOnline}
+	trade := &httpFakeTrade{orderResult: &tradeclient.OrderResult{BigOrderID: "big-credit-1"}}
+	authCodes := &httpFakeAuthCodeStore{issueCode: "must-not-be-issued"}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order", strings.NewReader(`{"product_id":"credit_1000"}`))
+	req.Header.Set("X-User-Id", "usr-trusted")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway || authCodes.issuedTicket != nil {
+		t.Fatalf("status=%d ticket=%+v body=%s", rec.Code, authCodes.issuedTicket, rec.Body.String())
 	}
 }
 
@@ -263,6 +366,7 @@ func TestUserOrderAndPayUsesTrustedHeaderIdentity(t *testing.T) {
 		service.New(st, httpFakeLLMGateway{}, service.Options{}),
 		st,
 		trade,
+		nil,
 		"",
 	)
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-and-pay", strings.NewReader(`{
@@ -287,9 +391,11 @@ func TestUserOrderAndPayUsesTrustedHeaderIdentity(t *testing.T) {
 func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
 	st := newHTTPFakeStore()
 	trade := &httpFakeTrade{}
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, "")
+	authCodes := &httpFakeAuthCodeStore{consumeError: errors.New("must not consume")}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
 		"deal_name":"deal-credit-1",
+		"auth_code":"unused-code",
 		"external_user_id":"usr_spoofed",
 		"platform":"pc",
 		"wx_open_id":"openid-1",
@@ -307,12 +413,137 @@ func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
 	if trade.payURLDealName != "deal-credit-1" || trade.payURLRequest.ExternalUserID != "usr_trusted" {
 		t.Fatalf("deal_name=%q request=%+v", trade.payURLDealName, trade.payURLRequest)
 	}
+	if authCodes.consumeCalls != 0 {
+		t.Fatalf("authenticated request consumed ticket %d times", authCodes.consumeCalls)
+	}
 	if trade.payURLRequest.WxAppID != wechatPaymentAppID {
 		t.Fatalf("wx_app_id=%q", trade.payURLRequest.WxAppID)
 	}
 	if !strings.Contains(rec.Body.String(), `"pay_url":"https://buy.cloud.tencent.com/credit"`) ||
 		!strings.Contains(rec.Body.String(), `"need_charge":1`) {
 		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestUserOrderURLUsesAuthCodeWithoutTrustedHeader(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{}
+	authCodes := &httpFakeAuthCodeStore{
+		consumeTicket: &authcode.Ticket{UserID: "usr-ticket-owner", DealName: "deal-credit-1"},
+	}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"deal-credit-1",
+		"auth_code":"auth-code-1",
+		"platform":"pc"
+	}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if authCodes.consumeCalls != 1 || authCodes.consumeCode != "auth-code-1" {
+		t.Fatalf("consume calls=%d code=%q", authCodes.consumeCalls, authCodes.consumeCode)
+	}
+	if trade.payURLRequest.ExternalUserID != "usr-ticket-owner" {
+		t.Fatalf("pay URL user = %q", trade.payURLRequest.ExternalUserID)
+	}
+}
+
+func TestUserOrderURLRejectsMissingCredentials(t *testing.T) {
+	st := newHTTPFakeStore()
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, &httpFakeAuthCodeStore{}, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{"deal_name":"deal-credit-1"}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUserOrderURLRejectsInvalidOrReplayedAuthCode(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{}
+	authCodes := &httpFakeAuthCodeStore{
+		consumeTicket: &authcode.Ticket{UserID: "usr-ticket-owner", DealName: "deal-credit-1"},
+		consumeOnce:   true,
+	}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	body := `{"deal_name":"deal-credit-1","auth_code":"one-shot-code"}`
+
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(body)))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(body)))
+	if second.Code != http.StatusUnauthorized {
+		t.Fatalf("replay status=%d body=%s", second.Code, second.Body.String())
+	}
+}
+
+func TestUserOrderURLRejectsAuthCodeDealMismatch(t *testing.T) {
+	st := newHTTPFakeStore()
+	authCodes := &httpFakeAuthCodeStore{
+		consumeTicket: &authcode.Ticket{UserID: "usr-ticket-owner", DealName: "deal-credit-other"},
+	}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"deal-credit-1",
+		"auth_code":"auth-code-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUserOrderURLHandlesAuthCodeStoreFailure(t *testing.T) {
+	st := newHTTPFakeStore()
+	authCodes := &httpFakeAuthCodeStore{consumeError: errors.New("redis unavailable")}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"deal-credit-1",
+		"auth_code":"auth-code-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "redis unavailable") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUserOrderURLPreservesTradeNotFoundForAuthCodeOwner(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{payURLError: &tradeclient.Error{
+		Status:  http.StatusNotFound,
+		Code:    "OrderNotFound",
+		Message: "order not found",
+	}}
+	authCodes := &httpFakeAuthCodeStore{
+		consumeTicket: &authcode.Ticket{UserID: "usr-ticket-owner", DealName: "missing"},
+	}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"missing",
+		"auth_code":"auth-code-1"
+	}`))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "order not found") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -323,7 +554,7 @@ func TestUserOrderURLPreservesTradeNotFound(t *testing.T) {
 		Code:    "OrderNotFound",
 		Message: "order not found",
 	}}
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, nil, "")
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{"deal_name":"missing"}`))
 	req.Header.Set("X-User-Id", "usr_trusted")
 	rec := httptest.NewRecorder()
@@ -337,7 +568,7 @@ func TestUserOrderURLPreservesTradeNotFound(t *testing.T) {
 
 func TestUserCreditsRequiresTrustedUserHeader(t *testing.T) {
 	st := newHTTPFakeStore()
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, nil, "")
 	req := httptest.NewRequest(http.MethodGet, "/v1/credit/packages?user_id=usr_spoofed", nil)
 	rec := httptest.NewRecorder()
 
@@ -351,7 +582,7 @@ func TestUserCreditsRequiresTrustedUserHeader(t *testing.T) {
 func TestUserCreditsUsesTrustedHeaderIdentity(t *testing.T) {
 	st := newHTTPFakeStore()
 	var gotUserID string
-	router := NewRouter(service.New(st, httpFakeLLMGateway{listUserIDTo: &gotUserID}, service.Options{}), st, nil, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{listUserIDTo: &gotUserID}, service.Options{}), st, nil, nil, "")
 	req := httptest.NewRequest(http.MethodGet, "/v1/credit/packages?user_id=usr_spoofed", nil)
 	req.Header.Set("X-User-Id", "usr_trusted")
 	rec := httptest.NewRecorder()
@@ -372,7 +603,7 @@ func TestUserRefundRejectsPackageOwnedByAnotherUser(t *testing.T) {
 		PackageID: "cpkg-test001",
 		UserID:    "usr_owner",
 	}
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, nil, "")
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/cpkg-test001/refund", nil)
 	req.Header.Set("X-User-Id", "usr_other")
 	rec := httptest.NewRecorder()
@@ -390,7 +621,7 @@ func TestInternalIsolateArchivesImmediatelyWithBillingReason(t *testing.T) {
 		PackageID: "cpkg-test001", UserID: "usr_1", LLMSubscriptionName: "credit-package:cpkg-test001",
 		Status: store.PackageStatusActive,
 	}
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, nil, "")
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/internal/credit/packages/cpkg-test001/isolate",
@@ -410,7 +641,7 @@ func TestInternalIsolateArchivesImmediatelyWithBillingReason(t *testing.T) {
 
 func TestInternalDestroyActionIsRemoved(t *testing.T) {
 	st := newHTTPFakeStore()
-	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, "")
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, nil, nil, "")
 	req := httptest.NewRequest(http.MethodPost, "/internal/credit/packages/cpkg-test001/destroy", nil)
 	rec := httptest.NewRecorder()
 

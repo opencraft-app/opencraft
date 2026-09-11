@@ -236,6 +236,14 @@ func testCreditRouteIsAuthenticatedAndAllowlisted(t *testing.T, configPath, want
 				t.Fatalf("credit allowlist missing %s", path)
 			}
 		}
+		wantOptionalAuth := http.MethodPost + " /v1/credit/packages/order-url"
+		if len(route.OptionalAuthAllow) != 1 {
+			t.Fatalf("credit optional auth allowlist=%+v, want only %s", route.OptionalAuthAllow, wantOptionalAuth)
+		}
+		gotOptionalAuth := route.OptionalAuthAllow[0].Method + " " + route.OptionalAuthAllow[0].Path
+		if gotOptionalAuth != wantOptionalAuth {
+			t.Fatalf("credit optional auth route=%s, want %s", gotOptionalAuth, wantOptionalAuth)
+		}
 		return
 	}
 	t.Fatal("credit route not found")

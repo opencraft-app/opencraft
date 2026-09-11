@@ -86,6 +86,7 @@
   // z-index numbers of their own. In particular, a dialog opened from inside
   // an application modal must paint above that modal, while its popovers,
   // tooltips and transient notices remain ordered deterministically.
+  --layer-shell-navigation: 90;
   --layer-application-modal: 230;
   --layer-nested-modal: 240;
   --layer-confirmation-modal: 245;

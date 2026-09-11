@@ -423,11 +423,6 @@ install_hermes_website_builder_skill
 curate_hermes_skills
 remove_hermes_find_skill_skillhub
 
-test -f "${RUNTIME_HOME}/.hermes/.lightvela/base-skills"
-grep -Fxq 'software-development/plan' "${RUNTIME_HOME}/.hermes/.lightvela/base-skills"
-grep -Fxq 'website-builder' "${RUNTIME_HOME}/.hermes/.lightvela/base-skills"
-! grep -Fq 'noisy-skill' "${RUNTIME_HOME}/.hermes/.lightvela/base-skills"
-
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"

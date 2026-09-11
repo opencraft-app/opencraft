@@ -96,6 +96,35 @@ test("publisher refuses content mutation behind an existing asset hash", async (
   );
 });
 
+test("publisher rejects unhashed assets owned by the Vite manifest", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "opencraft-unhashed-entry-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const source = join(temporaryRoot, "dist");
+  const target = join(temporaryRoot, "published");
+  await createFixture(source, "build-one", "entry.js", "unhashed");
+  await assert.rejects(
+    publishWorkbenchWeb({ source, target }),
+    /Vite asset is not content-addressed/u,
+  );
+});
+
+test("publisher atomically replaces unhashed public files below assets", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "opencraft-public-assets-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const source = join(temporaryRoot, "dist");
+  const target = join(temporaryRoot, "published");
+
+  await createFixture(source, "build-one", "index-AAAA1111.js", "first");
+  await mkdir(join(source, "assets/skills"), { recursive: true });
+  await writeFile(join(source, "assets/skills/gemini.svg"), "first public asset");
+  await publishWorkbenchWeb({ source, target });
+
+  await writeFile(join(source, "assets/skills/gemini.svg"), "second public asset");
+  const release = await publishWorkbenchWeb({ source, target });
+  assert.equal(release.reusedAssets, 1);
+  assert.equal(await readFile(join(target, "assets/skills/gemini.svg"), "utf8"), "second public asset");
+});
+
 test("static host applies release cache invariants and SPA fallback", async (context) => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "opencraft-static-"));
   context.after(() => rm(temporaryRoot, { recursive: true, force: true }));

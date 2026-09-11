@@ -9,6 +9,7 @@ import {
   Cloud,
   Cpu,
   Database,
+  FlaskConical,
   MessageCircle,
   Palette,
   Plus,
@@ -42,7 +43,7 @@ import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import type { AppearanceThemeDescriptor } from "../appearance-theme";
 import { useInternalDeveloperMode } from "../internal-developer-mode";
 
-export type SettingsSection = "appearance" | "connections" | "plugins" | string;
+export type SettingsSection = "appearance" | "connections" | "laboratory" | "plugins" | string;
 
 export interface SettingsContentProps {
   readonly section: SettingsSection;
@@ -54,6 +55,7 @@ export interface SettingsContentProps {
   readonly themePreference: ThemePreference;
   readonly onThemeChange: (themeId: string) => void;
   readonly onThemePreferenceChange: (preference: ThemePreference) => void;
+  readonly onOpenAnnouncementLab: () => void;
   readonly onAdd: (input: {
     readonly displayName: string;
     readonly url: string;
@@ -75,7 +77,7 @@ export interface SettingsNavigationProps {
   readonly profiles: readonly HostConnectionProfile[];
   readonly activeHostId: string;
   readonly onBack: () => void;
-  readonly presentation?: "route" | "dialog";
+  readonly presentation?: "route" | "dialog" | "sidebar";
 }
 
 function providerUrl(profile: HostConnectionProfile): string {
@@ -210,12 +212,12 @@ export function SettingsNavigation({
   }
 
   return (
-    <div className="settings-page__navigation" data-selection="chrome">
+    <div className={`settings-page__navigation settings-page__navigation--${presentation}`} data-selection="chrome">
       <nav aria-label="Settings sections">
-        <button type="button" className="settings-page__back" onClick={onBack}>
+        {presentation === "route" ? <button type="button" className="settings-page__back" onClick={onBack}>
           <ArrowLeft size={15} />
           <span>Back to app</span>
-        </button>
+        </button> : null}
         <div className="settings-page__navigation-heading">Settings</div>
         <div className="settings-page__navigation-list">
           <button
@@ -241,6 +243,14 @@ export function SettingsNavigation({
           >
             <Blocks size={16} />
             <span>Plugins</span>
+          </button>
+          <button
+            type="button"
+            aria-current={section === "laboratory" ? "page" : undefined}
+            onClick={() => onSectionChange("laboratory")}
+          >
+            <FlaskConical size={16} />
+            <span>Laboratory</span>
           </button>
           {extensionPages.filter((page) => page.management === undefined).map((page, index, pages) => (
             <div key={page.id}>
@@ -324,6 +334,7 @@ export function SettingsContent({
   themePreference,
   onThemeChange,
   onThemePreferenceChange,
+  onOpenAnnouncementLab,
   onAdd,
   onRemove,
   onProvisionHost,
@@ -470,6 +481,35 @@ export function SettingsContent({
                             </button>
                           ))}
                         </div>
+                      </SettingsRow>
+                    </SettingsGroup>
+                  </SettingsSection>
+                </>
+              ) : section === "laboratory" ? (
+                <>
+                  <SettingsPageHeader title="Laboratory" description="Preview experimental Workbench platform capabilities." />
+
+                  <SettingsSection
+                    title="Announcement window"
+                    description="A renderer-neutral announcement descriptor projected through the platform ModalHost."
+                  >
+                    <SettingsGroup>
+                      <SettingsRow
+                        label="Announcement dialog"
+                        description="Preview the same API available to trusted JavaScript extensions."
+                        controlWidth="compact"
+                      >
+                        <SettingsButton type="button" variant="primary" onClick={onOpenAnnouncementLab}>
+                          Preview announcement
+                        </SettingsButton>
+                      </SettingsRow>
+                      <SettingsRow
+                        label="JavaScript API"
+                        description="Actions resolve as data; scripts never receive DOM, Portal, focus, or z-index ownership."
+                        layout="stacked"
+                        controlWidth="wide"
+                      >
+                        <pre className="settings-laboratory-code"><code>{`const result = await api.window.showAnnouncement({\n  id: \"acme.tools.release\",\n  title: \"What’s new\",\n  body: \"A short, useful update.\",\n  primaryAction: { id: \"continue\", label: \"Continue\" }\n});`}</code></pre>
                       </SettingsRow>
                     </SettingsGroup>
                   </SettingsSection>

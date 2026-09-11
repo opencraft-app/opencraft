@@ -36,6 +36,46 @@ export type ExtensionJson =
   | readonly ExtensionJson[]
   | { readonly [key: string]: ExtensionJson };
 
+export interface AnnouncementActionContribution {
+  /** Stable, script-owned value returned when the user chooses this action. */
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface AnnouncementMediaContribution {
+  readonly kind: "image-url";
+  readonly url: string;
+  readonly alt: string;
+}
+
+/**
+ * Serializable announcement content. Extensions describe meaning; the Host
+ * owns the actual modal window, focus, stacking, dismissal and theme mapping.
+ */
+export interface AnnouncementContribution {
+  /** Must be namespaced by the calling extension. */
+  readonly id: string;
+  readonly title: string;
+  readonly body?: string;
+  readonly media?: AnnouncementMediaContribution;
+  readonly primaryAction?: AnnouncementActionContribution;
+  readonly secondaryAction?: AnnouncementActionContribution;
+  readonly actionLayout?: "inline" | "stacked";
+  readonly dismissOnOutsidePress?: boolean;
+}
+
+export type AnnouncementDismissReason =
+  | "close-button"
+  | "escape-key"
+  | "outside-press"
+  | "system"
+  | "owner-disposed"
+  | "replaced";
+
+export type AnnouncementResult =
+  | { readonly kind: "action"; readonly actionId: string }
+  | { readonly kind: "dismissed"; readonly reason: AnnouncementDismissReason };
+
 export interface CommandContribution {
   readonly id: string;
   readonly title: string;
@@ -303,6 +343,15 @@ export interface ExtensionBotsApiV1 {
   register(contribution: BotContribution): ExtensionDisposable;
 }
 
+export interface ExtensionWindowApiV1 {
+  /**
+   * Presents one Host-owned announcement and resolves after an action or
+   * dismissal. This is intentionally data-only so downloaded JavaScript never
+   * receives a Portal, z-index, DOM node or React ownership seam.
+   */
+  showAnnouncement(contribution: AnnouncementContribution): Promise<AnnouncementResult>;
+}
+
 /** Stable, UI-framework-free API exposed to trusted V1 extensions. */
 export interface OpenCraftExtensionApiV1 {
   readonly identity: ExtensionActivationIdentity;
@@ -315,6 +364,7 @@ export interface OpenCraftExtensionApiV1 {
   readonly workbench: ExtensionWorkbenchApiV1;
   readonly themes: ExtensionThemesApiV1;
   readonly bots: ExtensionBotsApiV1;
+  readonly window: ExtensionWindowApiV1;
 }
 
 export class ExtensionManifestError extends TypeError {
