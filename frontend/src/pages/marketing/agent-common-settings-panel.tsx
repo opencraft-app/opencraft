@@ -33,7 +33,11 @@ import {
   type SaveHermesCommonSettingOptions,
 } from "@/pages/marketing/agent-common-settings-save";
 
-type LoadSettings = (bots: BotRepository, botId: string) => Promise<HermesCommonSettingsSnapshot>;
+type LoadSettings = (
+  bots: BotRepository,
+  botId: string,
+  profileId?: string,
+) => Promise<HermesCommonSettingsSnapshot>;
 type SaveSetting = (options: SaveHermesCommonSettingOptions) => Promise<HermesCommonSettingSaveResult>;
 type ResetSettings = (options: ResetHermesCommonSettingsGroupOptions) => Promise<HermesCommonSettingsResetResult>;
 type FieldFeedback = { kind: "error"; message: string } | null;
@@ -45,6 +49,7 @@ type PendingSwitchChange = {
 
 interface AgentCommonSettingsPanelProps {
   botId: string;
+  profileId?: string;
   botStatus: string;
   bots: BotRepository;
   getGatewayRestartCommand: () => Promise<string>;
@@ -93,6 +98,7 @@ const isNumericKey = (key: HermesCommonSettingKey): boolean =>
 
 export function AgentCommonSettingsPanel({
   botId,
+  profileId = "main",
   botStatus,
   bots,
   getGatewayRestartCommand,
@@ -176,7 +182,7 @@ export function AgentCommonSettingsPanel({
       return;
     }
     try {
-      const next = await loadSettings(bots, botId);
+      const next = await loadSettings(bots, botId, profileId);
       if (requestIdRef.current !== requestId) return;
       setSnapshot(next);
       setDrafts(numericDrafts(next));
@@ -186,7 +192,7 @@ export function AgentCommonSettingsPanel({
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [botId, botStatus, bots, loadSettings]);
+  }, [botId, botStatus, bots, loadSettings, profileId]);
 
   useEffect(() => {
     void refresh();
@@ -209,7 +215,7 @@ export function AgentCommonSettingsPanel({
     const requestId = requestIdRef.current;
     let saved = false;
     try {
-      const result = await saveSetting({ bots, botId, key, value, getGatewayRestartCommand });
+      const result = await saveSetting({ bots, botId, profileId, key, value, getGatewayRestartCommand });
       if (requestIdRef.current !== requestId) return false;
       if (result.status === "success") {
         setSnapshot(result.snapshot);
@@ -331,6 +337,7 @@ export function AgentCommonSettingsPanel({
       const result = await resetSettings({
         bots,
         botId,
+        profileId,
         group,
         snapshot,
         getGatewayRestartCommand,

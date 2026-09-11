@@ -292,6 +292,7 @@ describe("AutomationFormModal", () => {
     await user.click(screen.getByRole("button", { name: "执行时间" }));
 
     const picker = screen.getByRole("dialog", { name: "执行时间" });
+    expect(picker).toHaveClass("z-[210]");
     expect(within(picker).getByRole("combobox", { name: "小时" })).toBeInTheDocument();
     expect(within(picker).getByRole("combobox", { name: "分钟" })).toBeInTheDocument();
     expect(within(picker).getByRole("button", { name: "取消" })).toBeInTheDocument();

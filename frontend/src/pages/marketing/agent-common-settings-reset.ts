@@ -22,6 +22,7 @@ export type HermesCommonSettingsResetResult =
 export interface ResetHermesCommonSettingsGroupOptions {
   bots: BotRepository;
   botId: string;
+  profileId?: string;
   group: HermesCommonSettingGroup;
   snapshot: HermesCommonSettingsSnapshot;
   getGatewayRestartCommand: () => Promise<string>;
@@ -38,7 +39,7 @@ function commandError(stage: "set" | "unset" | "restart", output: string, status
 export async function resetHermesCommonSettingsGroup(
   options: ResetHermesCommonSettingsGroupOptions,
 ): Promise<HermesCommonSettingsResetResult> {
-  const { bots, botId, group, snapshot, getGatewayRestartCommand } = options;
+  const { bots, botId, profileId = "main", group, snapshot, getGatewayRestartCommand } = options;
   const targetKeys = getHermesCommonSettingKeysForGroup(group)
     .filter((key) => !isHermesCommonSettingAtResetTarget(key, snapshot));
 
@@ -54,8 +55,8 @@ export async function resetHermesCommonSettingsGroup(
       const resetValue = getHermesCommonSettingResetValue(key);
       const stage = resetValue === undefined ? "unset" : "set";
       const command = resetValue === undefined
-        ? buildHermesCommonSettingUnsetCommand(key)
-        : buildHermesCommonSettingCommand(key, resetValue);
+        ? buildHermesCommonSettingUnsetCommand(key, profileId)
+        : buildHermesCommonSettingCommand(key, resetValue, profileId);
       const result = await bots.execDebugCommand(
         botId,
         command,
@@ -88,7 +89,7 @@ export async function resetHermesCommonSettingsGroup(
       }
     }
 
-    const verifiedSnapshot = await fetchHermesCommonSettingsSnapshot(bots, botId);
+    const verifiedSnapshot = await fetchHermesCommonSettingsSnapshot(bots, botId, profileId);
     const firstConfigError = configErrors[0];
     if (firstConfigError) {
       return { status: "partial", error: firstConfigError, snapshot: verifiedSnapshot };
