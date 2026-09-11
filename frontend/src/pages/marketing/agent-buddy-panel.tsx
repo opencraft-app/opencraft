@@ -155,9 +155,11 @@ function UnappliedSoulIcon({ className = "h-3 w-3" }: { className?: string }) {
 
 export function BuddyPanel({
   botId,
+  profileId,
 }: {
   /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 soul.md */
   botId?: string | null;
+  profileId?: string;
 } = {}) {
   const t = useT();
   const { i18n } = useTranslation();
@@ -322,11 +324,13 @@ export function BuddyPanel({
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
   const [appliedSlug, setAppliedSlug] = useState<string | null>(null);
+  const [appliedPersonaFileName, setAppliedPersonaFileName] = useState<string | null>(null);
   const [customPersonaName, setCustomPersonaName] = useState<string | null>(null);
   const [customPersonaFileAction, setCustomPersonaFileAction] = useState<
     "idle" | "editing" | "downloading"
   >("idle");
   const [customPersonaEditorMarkdown, setCustomPersonaEditorMarkdown] = useState<string | null>(null);
+  const [customPersonaEditorWasDrawn, setCustomPersonaEditorWasDrawn] = useState(false);
   const invalidateCustomPersonaFileRead = useCallback(() => {
     customPersonaFileReqIdRef.current += 1;
     setCustomPersonaFileAction("idle");
@@ -372,6 +376,7 @@ export function BuddyPanel({
       setDrawnSouls(drawnSouls);
       setAppliedSlug(appliedSlug);
       setLoadStatus("loaded");
+      setEquippedRefreshTick((tick) => tick + 1);
     },
     [botId],
   );
@@ -386,9 +391,11 @@ export function BuddyPanel({
     setLoadStatus("loading");
     setDrawnSouls([]);
     setAppliedSlug(null);
+    setAppliedPersonaFileName(null);
     setCustomPersonaName(null);
     setCustomPersonaFileAction("idle");
     setCustomPersonaEditorMarkdown(null);
+    setCustomPersonaEditorWasDrawn(false);
     setHasExistingSoul(false);
     setEquippedStatus("loading");
     setSelectedSlug(null);
@@ -518,6 +525,7 @@ export function BuddyPanel({
   useEffect(() => {
     if (appliedSlug && !drawnSouls.some((s) => s.slug === appliedSlug)) {
       setAppliedSlug(null);
+      setAppliedPersonaFileName(null);
     }
   }, [drawnSouls, appliedSlug]);
 
@@ -602,7 +610,7 @@ export function BuddyPanel({
           .replace("T", "_")
           .replace("Z", "");
 
-        const bash = buildHermesSoulWriteCommand(mdBase64, ts);
+        const bash = buildHermesSoulWriteCommand(mdBase64, ts, profileId);
         await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
         await ensureMinSpin();
         if (!isCurrentRequest()) return false;
@@ -611,6 +619,7 @@ export function BuddyPanel({
           params: { bot_id: requestBotId, persona_id: canonical, persona_source: "draw" },
         });
         setAppliedSlug(canonical);
+        setAppliedPersonaFileName(null);
         setCustomPersonaName(null);
         setHasExistingSoul(true);
         // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
@@ -647,6 +656,7 @@ export function BuddyPanel({
       downloadAnchor.click();
       if (!requestBotId) {
         setAppliedSlug(canonical);
+        setAppliedPersonaFileName(null);
       } else {
         // 下载只是一份本地兜底文件，真实 Agent 人设并未改变。
         setEquippedRefreshTick((tick) => tick + 1);
@@ -717,7 +727,7 @@ export function BuddyPanel({
       .replace("Z", "");
     // 防御性：ts 只含 [0-9_-]，避免未来上游污染导致 shell 注入
     if (!/^[0-9_-]+$/.test(ts)) return false;
-    const bash = buildHermesSoulClearCommand(ts);
+    const bash = buildHermesSoulClearCommand(ts, profileId);
     try {
       await executeHermesPersonaCommand(repositories.bots, requestBotId, bash);
       return isCurrentRequest();
@@ -746,13 +756,14 @@ export function BuddyPanel({
     if (!activeBotId) {
       if (equippedReqIdRef.current !== reqId) return;
       setAppliedSlug(null);
+      setAppliedPersonaFileName(null);
       setCustomPersonaName(null);
       setHasExistingSoul(false);
       setEquippedStatus("ready");
       return;
     }
     // 只读取顶层 Soul 元数据区的存在性、Slug、Source 和 Name，避免把整份 markdown 扛到前端。
-    const bash = buildHermesSoulReadCommand();
+    const bash = buildHermesSoulReadCommand(profileId);
     try {
       const result = await executeHermesPersonaCommand(
         repositories.bots,
@@ -765,10 +776,12 @@ export function BuddyPanel({
       setHasExistingSoul(identity.exists);
       if (identity.source === CUSTOM_PERSONA_SOURCE || identity.slug === CUSTOM_PERSONA_SLUG) {
         setAppliedSlug(null);
+        setAppliedPersonaFileName(null);
         setCustomPersonaName(identity.name ?? t("自定义人设"));
       } else {
         setCustomPersonaName(null);
         setAppliedSlug(identity.slug ? toCanonicalSlug(identity.slug) : null);
+        setAppliedPersonaFileName(identity.name);
       }
       setEquippedStatus("ready");
     } catch (err) {
@@ -781,12 +794,13 @@ export function BuddyPanel({
 
   const writeCustomPersona = useCallback(async (
     { markdown, displayName }: CustomPersonaSavePayload,
-    source: "upload" | "edit",
+    source: "upload" | "edit-custom" | "edit-drawn",
   ): Promise<boolean> => {
     if (!botId) throw new Error("Agent is required");
     invalidateCustomPersonaFileRead();
     const requestId = ++operationReqIdRef.current;
     const requestBotId = botId;
+    const editedDrawnSlug = source === "edit-drawn" ? appliedSlug : null;
     const isCurrentRequest = () => (
       operationReqIdRef.current === requestId
       && activeBotIdRef.current === requestBotId
@@ -800,6 +814,7 @@ export function BuddyPanel({
     const command = buildHermesSoulWriteCommand(
       encodeUtf8Base64(markdown),
       timestamp,
+      profileId,
     );
     const startedAt = Date.now();
 
@@ -810,17 +825,18 @@ export function BuddyPanel({
         pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
         params: {
           bot_id: requestBotId,
-          persona_id: CUSTOM_PERSONA_SLUG,
-          persona_source: source,
+          persona_id: editedDrawnSlug ?? CUSTOM_PERSONA_SLUG,
+          persona_source: source === "upload" ? "upload" : "edit",
           duration_ms: Date.now() - startedAt,
         },
       });
       setAppliedSlug(null);
+      setAppliedPersonaFileName(null);
       setCustomPersonaName(displayName);
       setHasExistingSoul(true);
       setEquippedRefreshTick((tick) => tick + 1);
       setConfirmState({
-        kind: source === "edit" ? "customSaveSuccess" : "applySuccess",
+        kind: source === "upload" ? "applySuccess" : "customSaveSuccess",
       });
       return true;
     } catch (err) {
@@ -831,14 +847,14 @@ export function BuddyPanel({
         pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
         params: {
           bot_id: requestBotId,
-          persona_id: CUSTOM_PERSONA_SLUG,
+          persona_id: editedDrawnSlug ?? CUSTOM_PERSONA_SLUG,
           error_code: "inject_failed",
           duration_ms: Date.now() - startedAt,
         },
       });
       throw err;
     }
-  }, [botId, invalidateCustomPersonaFileRead, repositories]);
+  }, [appliedSlug, botId, invalidateCustomPersonaFileRead, repositories]);
 
   const handleCustomPersonaInject = useCallback(
     async (payload: CustomPersonaSavePayload) => {
@@ -848,8 +864,11 @@ export function BuddyPanel({
   );
 
   const handleCustomPersonaSave = useCallback(
-    (payload: CustomPersonaSavePayload) => writeCustomPersona(payload, "edit"),
-    [writeCustomPersona],
+    (payload: CustomPersonaSavePayload) => writeCustomPersona(
+      payload,
+      customPersonaEditorWasDrawn ? "edit-drawn" : "edit-custom",
+    ),
+    [customPersonaEditorWasDrawn, writeCustomPersona],
   );
 
   const readCurrentCustomPersona = useCallback(async (
@@ -868,7 +887,7 @@ export function BuddyPanel({
       const result = await executeHermesPersonaCommand(
         repositories.bots,
         requestBotId,
-        buildHermesSoulContentReadCommand(),
+        buildHermesSoulContentReadCommand(profileId),
       );
       if (!isCurrentRequest()) return null;
       const content = parseHermesSoulContent(result.output ?? "");
@@ -907,12 +926,13 @@ export function BuddyPanel({
     }
   }, [botId, repositories, showToast, t]);
 
-  const handleEditCustomPersona = useCallback(async () => {
+  const handleEditCurrentPersona = useCallback(async () => {
     const content = await readCurrentCustomPersona("editing");
     if (content?.status === "ready") {
+      setCustomPersonaEditorWasDrawn(customPersonaName === null && appliedSlug !== null);
       setCustomPersonaEditorMarkdown(content.markdown);
     }
-  }, [readCurrentCustomPersona]);
+  }, [appliedSlug, customPersonaName, readCurrentCustomPersona]);
 
   const handleDownloadCustomPersona = useCallback(async () => {
     const content = await readCurrentCustomPersona("downloading");
@@ -948,7 +968,7 @@ export function BuddyPanel({
     }
   }, [readCurrentCustomPersona, showToast, t]);
 
-  // mount / 切 botId / apply / clear 后读取真实 SOUL.md，让卡片的已注入状态与文件事实一致。
+  // mount / 切 botId / 卡片状态加载 / apply / clear 后读取真实 SOUL.md，让文件事实最终生效。
   useEffect(() => {
     void refreshEquippedSoul();
   }, [refreshEquippedSoul, equippedRefreshTick]);
@@ -980,6 +1000,7 @@ export function BuddyPanel({
       if (isAppliedTarget) {
         const cleared = await clearSandboxSoul();
         if (!cleared) return;
+        setAppliedPersonaFileName(null);
         setCustomPersonaName(null);
         setHasExistingSoul(false);
         // SOUL.md 已删除 → 触发重新读取，让 Equipped 指示器回到「无」。
@@ -993,6 +1014,14 @@ export function BuddyPanel({
 
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
   const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
+  const appliedPersonaName = appliedSlug
+    ? appliedPersonaFileName ?? localizedDrawnSouls.find(
+      (soul) => toCanonicalSlug(soul.slug) === toCanonicalSlug(appliedSlug),
+    )?.displayName ?? null
+    : null;
+  const editPersonaLabel = customPersonaName
+    ? t("编辑自定义人设")
+    : t("编辑人设文件");
 
   return (
     <>
@@ -1000,43 +1029,50 @@ export function BuddyPanel({
         <h2 className="mb-1 text-balance text-lg font-semibold leading-6 text-black/95">
           {t("人设")}
         </h2>
-        <div className="flex items-center justify-between gap-4">
-          <p className="min-w-0 text-pretty text-sm font-medium leading-6 text-black/50">
-            {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
-          </p>
-          <a
-            href="https://skillhub.cn/soul"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="lv-buddy-panel__source ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-            style={{ color: "rgba(0,0,0,0.55)" }}
-          >
-            {t("灵感来自 SkillHub")}
-            <ExternalLink className="size-3" />
-          </a>
-        </div>
+        <p className="text-pretty text-sm font-medium leading-6 text-black/50">
+          {t("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式")}
+        </p>
       </header>
 
       <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
-      <div className="lv-buddy-panel__toolbar flex items-center justify-center px-6 pt-5 pb-3">
-        <h3
-          className="text-balance text-base font-semibold"
-          style={{
-            letterSpacing: "-0.2px",
-            backgroundImage:
-              "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
-            backgroundClip: "text",
-            WebkitBackgroundClip: "text",
-            color: "transparent",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          {t("人设卡片")}
-        </h3>
+      <div className="lv-buddy-panel__toolbar px-6 pt-5 pb-3">
+        <div className="lv-buddy-panel__toolbar-inner relative mx-auto flex w-full items-center justify-center">
+          <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
+            <h3
+              className="text-balance text-lg font-semibold"
+              style={{
+                letterSpacing: "-0.2px",
+                backgroundImage:
+                  "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
+                backgroundClip: "text",
+                WebkitBackgroundClip: "text",
+                color: "transparent",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              {t("人设卡片")}
+            </h3>
+            {drawnSouls.length > 0 && (
+              <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
+            )}
+          </div>
+          {!isGlobal && (
+            <a
+              href="https://skillhub.cn/soul"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="lv-buddy-panel__source absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+              style={{ color: "rgba(0,0,0,0.55)" }}
+            >
+              {t("灵感来自 SkillHub")}
+              <ExternalLink className="size-3" />
+            </a>
+          )}
+        </div>
       </div>
 
-      {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
+      {/* 内容区：人设抽卡槽 */}
       <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
         {loadStatus === "unauthorized" ? (
           <UnauthorizedState />
@@ -1079,26 +1115,31 @@ export function BuddyPanel({
             canReroll={canReroll}
             selectedSlug={selectedSlug ? (isGlobal ? toEnglishSlug(selectedSlug) : selectedSlug) : null}
             appliedSlug={appliedSlug ? (isGlobal ? toEnglishSlug(appliedSlug) : appliedSlug) : null}
+            appliedPersonaName={appliedPersonaName}
             onPreview={(slug) => setPreviewSoulSlug(slug)}
           />
         )}
       </div>
 
-      {customPersonaName && (
+      {(customPersonaName || appliedPersonaName) && (
         <div
           className="mx-auto mt-3 flex max-w-[816px] items-center justify-center gap-2 px-6 text-sm text-[var(--text-secondary)]"
         >
           <div role="status" className="inline-flex items-center gap-2">
             <Check className="size-4" aria-hidden="true" />
-            <span>{t("已注入：自定义人设 · {{name}}", { name: customPersonaName })}</span>
+            <span>
+              {customPersonaName
+                ? t("已注入：自定义人设 · {{name}}", { name: customPersonaName })
+                : t("已注入：{{name}}", { name: appliedPersonaName })}
+            </span>
           </div>
           <div className="inline-flex items-center gap-0">
             <div className="group relative inline-flex">
               <button
                 type="button"
-                aria-label={t("编辑自定义人设")}
+                aria-label={editPersonaLabel}
                 disabled={customPersonaFileAction !== "idle"}
-                onClick={() => void handleEditCustomPersona()}
+                onClick={() => void handleEditCurrentPersona()}
                 className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {customPersonaFileAction === "editing" ? (
@@ -1108,34 +1149,36 @@ export function BuddyPanel({
                 )}
               </button>
               <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                {t("编辑自定义人设")}
+                {editPersonaLabel}
                 <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
               </div>
             </div>
-            <div className="group relative inline-flex">
-              <button
-                type="button"
-                aria-label={t("下载自定义人设")}
-                disabled={customPersonaFileAction !== "idle"}
-                onClick={() => void handleDownloadCustomPersona()}
-                className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {customPersonaFileAction === "downloading" ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Download className="size-3.5" aria-hidden="true" />
-                )}
-              </button>
-              <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                {t("下载自定义人设")}
-                <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+            {customPersonaName && (
+              <div className="group relative inline-flex">
+                <button
+                  type="button"
+                  aria-label={t("下载自定义人设")}
+                  disabled={customPersonaFileAction !== "idle"}
+                  onClick={() => void handleDownloadCustomPersona()}
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {customPersonaFileAction === "downloading" ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Download className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
+                  {t("下载自定义人设")}
+                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
+      {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent */}
       <div className="lv-buddy-panel__actions relative mx-auto flex max-w-[816px] items-center justify-center gap-3 px-0 py-5">
         <div className="lv-buddy-panel__action-buttons flex flex-wrap items-center justify-center gap-3">
           <div className="group relative inline-flex">
@@ -1241,11 +1284,6 @@ export function BuddyPanel({
             </div>
           )}
         </div>
-        {drawnSouls.length > 0 && (
-          <div className="lv-buddy-panel__progress absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
-            <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
-          </div>
-        )}
       </div>
 
       <DrawSoulModal
@@ -1434,6 +1472,7 @@ function SoulSlotGrid({
   canReroll,
   selectedSlug,
   appliedSlug,
+  appliedPersonaName,
   onPreview,
 }: {
   drawnSouls: SkillHubSoul[];
@@ -1447,6 +1486,7 @@ function SoulSlotGrid({
   canReroll: boolean;
   selectedSlug: string | null;
   appliedSlug: string | null;
+  appliedPersonaName: string | null;
   onPreview: (slug: string) => void;
 }) {
   if (loading) return <CenterLoader />;
@@ -1458,12 +1498,15 @@ function SoulSlotGrid({
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
+          const applied = appliedSlug === soul.slug;
           return (
             <FilledSlot
               key={soul.slug}
-              soul={soul}
+              soul={applied && appliedPersonaName
+                ? { ...soul, displayName: appliedPersonaName }
+                : soul}
               selected={selectedSlug === soul.slug}
-              applied={appliedSlug === soul.slug}
+              applied={applied}
               onClick={() => onClickFilled(soul.slug)}
               onReroll={() => onReroll(soul.slug)}
               onDelete={() => onDelete(soul.slug)}

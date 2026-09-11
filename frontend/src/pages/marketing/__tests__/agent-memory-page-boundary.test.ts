@@ -37,6 +37,26 @@ describe("Agent memory page async boundary", () => {
     expect(page).not.toContain('t("暂无用户画像。")');
   });
 
+  it("preserves line breaks and wraps long memory content", () => {
+    const page = readPageSource();
+    const memoryEntries = page.slice(
+      page.indexOf("const MemoryEntries ="),
+      page.indexOf("const MemoryPanel ="),
+    );
+
+    expect(memoryEntries).toContain("whitespace-pre-wrap");
+    expect(memoryEntries).toContain("break-words");
+    expect(memoryEntries).not.toContain("truncate");
+    expect(memoryEntries).not.toContain("toSingleLineMemoryEntry");
+  });
+
+  it("describes MEMORY.md as persistent memory", () => {
+    const page = readPageSource();
+
+    expect(page).toContain('查看当前 Hermes Agent 的持久记忆和用户画像文件');
+    expect(page).not.toContain('查看当前 Hermes Agent 的记忆和用户画像文件');
+  });
+
   it("uses the automations icon-only refresh button style", () => {
     const page = readPageSource();
     const memoryPanel = page.slice(

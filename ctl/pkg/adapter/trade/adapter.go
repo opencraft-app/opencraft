@@ -156,11 +156,16 @@ type PayURLResult struct {
 // 透传给 trade pay-url 端点，trade 再透传给 jifei getMidasEarmarking。
 // 全部字段可选；空值时不透传（兼容现有行为）。
 type GeneratePayURLOptions struct {
-	Platform  string `json:"platform,omitempty"`   // "pc" / "mobile"，默认 "pc"
-	WxOpenID  string `json:"wx_open_id,omitempty"` // 微信场景必填
-	WxAppID   string `json:"wx_app_id,omitempty"`  // 微信场景必填，ctl 侧注入固定值
-	CancelURL string `json:"cancel_url,omitempty"` // 取消支付后的前端回跳地址
-	ReturnURL string `json:"return_url,omitempty"` // 完成支付后的前端回跳地址
+	AuthorizationOnly bool     `json:"authorization_only,omitempty"`
+	ExternalUserID    string   `json:"external_user_id,omitempty"`
+	ResourceID        string   `json:"resource_id,omitempty"`
+	OrderType         string   `json:"order_type,omitempty"`
+	AllowedBundleIDs  []string `json:"allowed_bundle_ids,omitempty"`
+	Platform          string   `json:"platform,omitempty"`   // "pc" / "mobile"，默认 "pc"
+	WxOpenID          string   `json:"wx_open_id,omitempty"` // 微信场景必填
+	WxAppID           string   `json:"wx_app_id,omitempty"`  // 微信场景必填，ctl 侧注入固定值
+	CancelURL         string   `json:"cancel_url,omitempty"` // 取消支付后的前端回跳地址
+	ReturnURL         string   `json:"return_url,omitempty"` // 完成支付后的前端回跳地址
 }
 
 // CompleteFlowRequest 与 trade /internal/trade/flows/{flow_id}/complete 入参对齐。
@@ -419,6 +424,21 @@ type Adapter interface {
 	// 使用场景：联调测试 / 自动化 e2e；现网控制台禁止暴露给真实用户（与
 	// PlaceOrderAndPay 同语义）。
 	PlaceRenewOrderAndPay(ctx context.Context, req *PlaceRenewOrderRequest) (*PlaceOrderResult, error)
+
+	// InquiryModify 调 trade POST /internal/trade/inquiry/modify 询同 SP 升配差价。
+	// 需求：TAPD 1010132091137784162 §5.1
+	//
+	// 差价、税费和币种全部由 jifei 计算，trade 只负责按站点 BundleDefinition 构造
+	// oldConfig/newConfig。结果形态与续费询价一致（Prices[0]）。
+	InquiryModify(ctx context.Context, req *ModifyOrderRequest) (*InquiryModifyResult, error)
+
+	// PlaceModifyOrder 调 trade POST /internal/trade/orders/modify 创建升配订单。
+	// 两步式生产链路：本接口只建单，调用方再走 GeneratePayURL 拉支付页。
+	PlaceModifyOrder(ctx context.Context, req *ModifyOrderRequest) (*PlaceOrderResult, error)
+
+	// PlaceModifyOrderAndPay 调 trade POST /internal/trade/orders/modify/place-and-pay
+	// 一体化建单 + 代扣，仅用于联调 / e2e（与 PlaceOrderAndPay 同语义，现网不暴露）。
+	PlaceModifyOrderAndPay(ctx context.Context, req *ModifyOrderRequest) (*PlaceOrderResult, error)
 
 	// GeneratePayURL 调 trade POST /internal/trade/orders/{dealName}/pay-url
 	// 生成 / 反查支付页 URL。
@@ -805,7 +825,7 @@ func (a *adapter) GeneratePayURL(ctx context.Context, dealName string, opts *Gen
 	// opts 非 nil 时作为 body 透传；否则传 nil 兼容现有行为（trade 端点接受空 body）。
 	var body interface{}
 	if opts != nil && (opts.Platform != "" || opts.WxOpenID != "" || opts.WxAppID != "" ||
-		opts.CancelURL != "" || opts.ReturnURL != "") {
+		opts.CancelURL != "" || opts.ReturnURL != "" || opts.OrderType != "") {
 		body = opts
 	}
 

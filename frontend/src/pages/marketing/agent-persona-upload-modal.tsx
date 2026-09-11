@@ -40,7 +40,7 @@ function errorMessage(t: Translate, code: PersonaMarkdownErrorCode): string {
 }
 function warningMessage(t: Translate, warning: PersonaStructureWarning): string {
   return {
-    missing_name: t("建议补充 Name 字段"),
+    missing_name: t("建议补充顶部 Name 字段，页面将用它展示人设名称"),
     missing_identity: t("建议补充角色定位（Identity）"),
     missing_tone: t("建议补充沟通风格（Communication Style）"),
     missing_principles: t("建议补充工作原则（Working Principles）"),

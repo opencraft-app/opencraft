@@ -101,15 +101,19 @@ type QuoteBatchRequest struct {
 //
 // 字段命名采用业务层语义（discount 对应 policyDetail.total）。
 type QuoteResult struct {
-	BundleID       string  `json:"bundle_id"`
-	BundleName     string  `json:"bundle_name"`
-	Price          string  `json:"price"`           // 单价（带小数字符串）
-	TotalCost      string  `json:"total_cost"`      // 折扣前总价
-	TaxPrice       string  `json:"tax_price"`       // 实付金额对应税额
-	RealTotalCost  string  `json:"real_total_cost"` // 实付总价（折扣后）
-	Currency       string  `json:"currency"`        // 通常 "CNY"
-	Discount       float64 `json:"discount"`        // policyDetail.total 拍平
-	TimeSpan       int     `json:"time_span"`
+	BundleID      string  `json:"bundle_id"`
+	BundleName    string  `json:"bundle_name"`
+	Price         string  `json:"price"`           // 单价（带小数字符串）
+	TotalCost     string  `json:"total_cost"`      // 折扣前总价
+	TaxPrice      string  `json:"tax_price"`       // 实付金额对应税额
+	RealTotalCost string  `json:"real_total_cost"` // 实付总价（折扣后）
+	Currency      string  `json:"currency"`        // 通常 "CNY"
+	Discount      float64 `json:"discount"`        // policyDetail.total 拍平
+	// TimeSpan 新购 / 续费是整数周期；变配是"当前时刻到 curDeadline 的剩余时长占比"，
+	// 计费实测回小数（0.133333 个月 ≈ 4 天）。故用 float64 保真：截成 int 会把变配
+	// 时长抹成 0，让确认页无法解释差价怎么算出来的。整数值序列化仍是 `1` 而非 `1.0`，
+	// 新购 / 续费既有出参零变化。
+	TimeSpan       float64 `json:"time_span"`
 	TimeUnit       string  `json:"time_unit"`
 	GoodsNum       int     `json:"goods_num"`
 	ProductCode    string  `json:"product_code"`
@@ -616,7 +620,7 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 		TaxPrice:       taxPrice,
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
-		TimeSpan:       d.TimeSpan,
+		TimeSpan:       float64(d.TimeSpan),
 		TimeUnit:       d.TimeUnit,
 		GoodsNum:       d.GoodsNum,
 		ProductCode:    d.ProductCode,
@@ -636,7 +640,7 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 		result.Pid = def.Pid
 	}
 	if result.TimeSpan == 0 {
-		result.TimeSpan = req.TimeSpan
+		result.TimeSpan = float64(req.TimeSpan)
 	}
 	if result.TimeUnit == "" {
 		result.TimeUnit = req.TimeUnit
@@ -929,7 +933,7 @@ func (s *Service) quoteResultFromPriceData(
 		TaxPrice:       taxPrice,
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
-		TimeSpan:       d.TimeSpan,
+		TimeSpan:       float64(d.TimeSpan),
 		TimeUnit:       d.TimeUnit,
 		GoodsNum:       d.GoodsNum,
 		ProductCode:    d.ProductCode,
@@ -951,7 +955,7 @@ func (s *Service) quoteResultFromPriceData(
 		result.Pid = def.Pid
 	}
 	if result.TimeSpan == 0 {
-		result.TimeSpan = req.TimeSpan
+		result.TimeSpan = float64(req.TimeSpan)
 	}
 	if result.TimeUnit == "" {
 		result.TimeUnit = req.TimeUnit
@@ -1081,7 +1085,7 @@ func (s *Service) quoteDianshi(
 		TaxPrice:       "0",
 		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
-		TimeSpan:       d.TimeSpan,
+		TimeSpan:       float64(d.TimeSpan),
 		TimeUnit:       d.TimeUnit,
 		GoodsNum:       req.GoodsNum,
 		ProductCode:    d.ProductCode,
@@ -1102,7 +1106,7 @@ func (s *Service) quoteDianshi(
 		result.Pid = def.Pid
 	}
 	if result.TimeSpan == 0 {
-		result.TimeSpan = req.TimeSpan
+		result.TimeSpan = float64(req.TimeSpan)
 	}
 	if result.TimeUnit == "" {
 		result.TimeUnit = req.TimeUnit

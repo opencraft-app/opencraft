@@ -75,6 +75,7 @@ func main() {
 	internalInvocations := internal.Group("")
 	internalInvocations.Use(internalAPIKeyAuth(cfg.InternalAPIKey))
 	registerInternalTATInvocationRoutes(internalInvocations, h)
+	registerInternalModifyRoutes(internalInvocations, h)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

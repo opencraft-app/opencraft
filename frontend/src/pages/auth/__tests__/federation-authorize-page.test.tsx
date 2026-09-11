@@ -93,6 +93,21 @@ describe("FederationAuthorizePage", () => {
 
   afterEach(cleanup);
 
+  it("原生客户端复用 OIDC 授权并隐藏自定义协议的伪站点名", async () => {
+    const redirect = "opencraft://auth/lightvela";
+    window.history.replaceState({}, "", `/auth/federation/authorize?client_id=opencraft-native-v1&redirect_uri=${encodeURIComponent(redirect)}&state=native-state&response_type=code&scope=openid+profile&code_challenge=native-challenge&code_challenge_method=S256&nonce=native-nonce`);
+    sessionState = { authReady: true, session: { stage: "authenticated", user: { id: "native-user", name: "A".repeat(100) } } };
+    const input = { clientId: "opencraft-native-v1", redirectUri: redirect, state: "native-state", responseType: "code", scope: "openid profile", codeChallenge: "native-challenge", codeChallengeMethod: "S256", nonce: "native-nonce" };
+    getOIDCAuthorizationContext.mockResolvedValue({ ...input, clientDisplayName: "Vela", currentSession: { user: sessionState.session.user } });
+    authorizeOIDC.mockResolvedValue({ redirectUrl: redirect + "?state=native-state&code=test" });
+    render(<FederationAuthorizePage navigate={navigate} />);
+    const dialog = await screen.findByRole("dialog", { name: "确认授权登录" });
+    expect(within(dialog).queryByText("auth")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^继续$/ }));
+    await waitFor(() => expect(authorizeOIDC).toHaveBeenCalledWith(input));
+    expect(navigate).toHaveBeenCalledWith(redirect + "?state=native-state&code=test");
+  });
+
   it("已登出时打开现有登录弹窗", async () => {
     render(<FederationAuthorizePage navigate={navigate} />);
 

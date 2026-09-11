@@ -78,8 +78,29 @@ class GatePlan:
 def changed_files_for_revision(repo_root: Path, source_sha: str) -> list[str]:
     if not source_sha:
         return []
+
+    commit_result = subprocess.run(
+        ["git", "cat-file", "-p", f"{source_sha}^{{commit}}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if commit_result.returncode != 0:
+        raise RuntimeError(f"failed to inspect changed files for {source_sha}: {commit_result.stderr.strip()}")
+
+    parents: list[str] = []
+    for line in commit_result.stdout.splitlines():
+        if not line:
+            break
+        if line.startswith("parent "):
+            parents.append(line.removeprefix("parent ").strip())
+    if parents:
+        command = ["git", "diff", "--name-only", parents[0], source_sha, "--"]
+    else:
+        command = ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", source_sha]
+
     result = subprocess.run(
-        ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", source_sha],
+        command,
         cwd=repo_root,
         capture_output=True,
         text=True,

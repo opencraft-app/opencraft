@@ -63,6 +63,25 @@ describe("fake repositories FaceID flow", () => {
     expect(new Date(passes[0]?.expired_time ?? "").getTime() - Date.now()).toBeGreaterThan(5 * 24 * 60 * 60 * 1000);
   });
 
+  it("creates a non-default profile on the shared preview instance", async () => {
+    const repositories = createFakeRepositories();
+    const bot = await repositories.bots.createBot({
+      name: "运营 Bot",
+      description: "社群运营",
+      createMode: "clone",
+      sourceBotId: "bot_local_preview",
+    });
+
+    expect(bot).toMatchObject({
+      instanceId: "bot_local_preview",
+      isDefault: false,
+      description: "社群运营",
+      createdFrom: "clone",
+      sourceBotId: "bot_local_preview",
+    });
+    expect(bot.profileId).toMatch(/^profile_[a-z0-9]+$/);
+  });
+
   it("keeps Slack connected after the local preview config command succeeds", async () => {
     const repositories = createFakeRepositories();
 

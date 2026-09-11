@@ -119,6 +119,57 @@ func TestListActiveSubscriptionsUsesInternalContract(t *testing.T) {
 	}
 }
 
+func TestCancelSelectedSubscriptionsUsesInternalContract(t *testing.T) {
+	var authHeader string
+	var gotPath string
+	var request CancelSelectedSubscriptionsRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(apiResponse{
+			Code:    0,
+			Message: "ok",
+			Data:    mustRawJSON(t, map[string]string{"status": "ok"}),
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewLLMGatewayAdapter(&config.LLMGatewayConfig{
+		BaseURL:              server.URL,
+		InternalServiceToken: "internal-token",
+		Timeout:              5,
+	}, nil)
+
+	err := adapter.CancelSelectedSubscriptions(context.Background(), &CancelSelectedSubscriptionsRequest{
+		UserID:                           " usr_test ",
+		SubscriptionNamePrefixes:         []string{"package:", "free-credit:"},
+		IncludeLegacyPackageSubscription: true,
+	})
+	if err != nil {
+		t.Fatalf("cancel selected subscriptions: %v", err)
+	}
+	if authHeader != "Bearer internal-token" {
+		t.Fatalf("expected internal auth header, got %q", authHeader)
+	}
+	if gotPath != "/api/internal/subscriptions/cancel-selected" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if request.UserID != "usr_test" {
+		t.Fatalf("user_id = %q", request.UserID)
+	}
+	if len(request.SubscriptionNamePrefixes) != 2 || request.SubscriptionNamePrefixes[0] != "package:" || request.SubscriptionNamePrefixes[1] != "free-credit:" {
+		t.Fatalf("unexpected prefixes: %+v", request.SubscriptionNamePrefixes)
+	}
+	if !request.IncludeLegacyPackageSubscription {
+		t.Fatalf("include legacy package subscription must be true")
+	}
+}
+
 func mustRawJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()
 	data, err := json.Marshal(value)

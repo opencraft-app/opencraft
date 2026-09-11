@@ -10,7 +10,7 @@
  *   ③ i18next 资源层     `src/i18n/index.ts`
  *   ④ Node 脚本层        `scripts/sync-fumadocs-content.mjs` 等
  *   ⑤ SEO 校验层         `src/lib/seo-data.ts`
- *   ⑥ 自动任务展示层     `agent-automations-panel.tsx`（2026-08 新增）
+ *   ⑥ 定时任务展示层     `agent-automations-panel.tsx`（2026-08 新增）
  *
  * 新增一个语种需要在 8 个文件中手工修改 45 处，其中多数漏改
  * **不会编译报错**，只会静默回退成英文/简体，或字体缺字。历史上

@@ -1,7 +1,7 @@
 {
   "version": 5,
   "owner": "wisp/mono2-maintainers",
-  "reviewed_at": "2026-08-26",
+  "reviewed_at": "2026-09-10",
   "review_due": "2026-11-24",
   "canonical_documentation": {
     "entry": "docs/engineering/README.md",
@@ -28,6 +28,7 @@
     "infra-pulumi": ["infra_pulumi/catalog-info.yaml", "infra_pulumi/docs/README.md", "docs/context/project/services/infra-pulumi.md"],
     "new-api": ["new-api/catalog-info.yaml", "new-api/docs/README.md", "docs/context/project/services/new-api.md"],
     "nextgen-dashboard": ["nextgen-dashboard/catalog-info.yaml", "nextgen-dashboard/docs/README.md", "docs/context/project/services/nextgen-dashboard.md"],
+    "opencraft": ["opencraft/catalog-info.yaml", "opencraft/docs/README.md", "docs/context/project/services/opencraft.md"],
     "payment": ["payment/catalog-info.yaml", "payment/docs/README.md", "docs/context/project/services/payment.md"],
     "sandbox": ["sandbox/catalog-info.yaml", "sandbox/docs/README.md", "docs/context/project/services/sandbox.md"],
     "service-gateway": ["service-gateway/catalog-info.yaml", "service-gateway/docs/README.md", "docs/context/project/services/service-gateway.md"],
@@ -51,7 +52,7 @@
     "playground-environment": [".ci/runtime/create_playground_from_gitops.sh", ".ci/runtime/commands/check_playground_environment_contract.py"],
     "product-skill-sync": [".agents/skills/product-skills"],
     "tapd-gongfeng-delivery": [".agents/skills/gongfeng/SKILL.md", "docs/context/flows/change-delivery.md"],
-    "upstream-subtrees": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md"],
+    "upstream-subtrees": ["new-api/MONO2_SUBTREE.md", "velagw/MONO2_SUBTREE.md", "velalink/MONO2_SUBTREE.md", "opencraft/MONO2_MIGRATION.md"],
     "context-governance": [".agents/context", "docs/context/23-rules-matrix.md", "docs/context/project/adjacency/README.md", "docs/context/project/overview.md"]
   },
   "external": [".agents/context/external-sources.yaml"]

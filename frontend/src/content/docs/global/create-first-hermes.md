@@ -54,7 +54,7 @@ LightVela 计划将于 2026 年 8 月 18 日（新加坡时间）起转入公测
 
 2. **连接通道** — 接入 Telegram、WhatsApp、Discord、Slack、WeChat 或其他支持的聊天通道，之后即可在聊天软件中直接与 Agent 对话
 
-3. **（可选）安装技能与设置自动任务** — 为 Agent 扩展能力，见[自动任务配置](./configuration/automation.md)
+3. **（可选）安装技能与设置定时任务** — 为 Agent 扩展能力，见[定时任务配置](./configuration/automation.md)
 
 完成后，你的第一个 Hermes Agent 就会在云端 7×24 小时在线待命。
 

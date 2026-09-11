@@ -622,6 +622,69 @@ type RenewPassResponse struct {
 	TaskID string `json:"task_id"`
 }
 
+// === 同 SP 变配（升配）内部接口 DTO ===
+// 需求：TAPD 1010132091137784162 §5.2
+//
+// trade → ctl 两个内部端点共用请求体的公共部分：
+//
+//	POST /internal/ctl/passes/{pass_id}/check-modify   → CheckPassModifyRequest
+//	POST /internal/ctl/passes/{pass_id}/modify         → PassModifyRequest
+//
+// 只带计费与幂等必需的字段。Plan、AgentQuota、实例现状、effective SKU 都是 CTL 内部
+// 领域状态，由 CTL 自己读，不让 trade 理解也不让 trade 传。
+
+// CheckPassModifyRequest 是下单前同步检查的入参（jifei checkModify 协议总时限 3 秒，
+// 因此这条路径只读 CTL DB，不调 sandbox、不询价、不执行任何云操作）。
+//
+// SubProductCode / ProductCode 由 CTL 回显到日志用于排障，不参与校验：SP/PID/SV/地域
+// 的一致性由 trade 对着自己的 BundleDefinition 判断，CTL 的 bundle 表没有这些列。
+type CheckPassModifyRequest struct {
+	SourceBundleID string `json:"source_bundle_id"`
+	TargetBundleID string `json:"target_bundle_id"`
+
+	// Uin / AppID 是资源 owner 的腾讯云身份；非零时必须与 pass 行一致，
+	// 否则说明 resourceId 被错投到别人的资源上。
+	Uin   int64 `json:"uin,omitempty"`
+	AppID int64 `json:"app_id,omitempty"`
+
+	ProductCode    string `json:"product_code,omitempty"`
+	SubProductCode string `json:"sub_product_code,omitempty"`
+
+	// CurDeadline 是计费的询价基线（goodsDetail.curDeadline）。非空时必须与
+	// pass.expired_time 一致（容忍到秒），漂移说明用户在支付窗口里又续费了。
+	CurDeadline *time.Time `json:"cur_deadline,omitempty"`
+}
+
+// PassModifyRequest 是支付成功后发货受理的入参：公共校验字段 + 幂等三件套。
+type PassModifyRequest struct {
+	CheckPassModifyRequest
+
+	// TradeFlowID = trade_flow.id PK，同时写入 pass.modify_flow_id。
+	// 必须 > 0：它是区分"同一笔单重投"和"另一笔单插队"的唯一依据。
+	TradeFlowID int64 `json:"trade_flow_id"`
+
+	// DealName = jifei 子订单号，用作 VelaGW ApplySubscription 的幂等键（modify:{dealName}）。
+	DealName string `json:"deal_name,omitempty"`
+
+	// TranID 仅日志留痕，止于 trade/CTL，不下沉到 sandbox。
+	TranID string `json:"tran_id,omitempty"`
+}
+
+// CheckPassModifyResponse 是 check-modify 的成功响应。
+// 语义只有"允许变配"，不向计费暴露 pass、Plan、AgentQuota 或实例列表；
+// trade 侧把它翻译成计费协议要求的 data.status = 0。
+type CheckPassModifyResponse struct {
+	PassID  string `json:"pass_id"`
+	Allowed bool   `json:"allowed"`
+}
+
+// PassModifyResponse 回显 pass_id 和变配父 task 的 task_id，供 trade 记录和排障。
+// 不新增 CTL 侧的 flow 查询接口：jifei 的 flowId 就是 trade_flow.id，queryFlow 直接读 trade DB。
+type PassModifyResponse struct {
+	PassID string `json:"pass_id"`
+	TaskID string `json:"task_id"`
+}
+
 // DeletePassUserResponse 是用户面 POST /v1/passes/{pass_id}/delete 响应。
 //
 // **语义**：仅表示同步调用成功 — pass.status 已 CAS isolated → deleting +

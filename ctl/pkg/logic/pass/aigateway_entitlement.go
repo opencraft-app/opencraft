@@ -9,6 +9,7 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/logic/gatewayroute"
 
 	"go.uber.org/zap"
@@ -73,7 +74,8 @@ func EnsureAiGatewayEntitlement(
 	}, nil
 }
 
-// CancelAiGatewayEntitlement 可靠取消用户的所有有效订阅。
+// CancelAiGatewayEntitlement 可靠清理用户的 Pass 关联权益。
+// LLMGateway 只删除套餐与免费积分订阅，保留独立购买的积分包；旧 AI-Gateway 仍取消全部订阅。
 // 调用失败必须由上层重试，不能推进 isolated/deleted 等本地终态。
 func CancelAiGatewayEntitlement(logger *zap.Logger, userID string) error {
 	userID = strings.TrimSpace(userID)
@@ -112,7 +114,14 @@ func CancelAiGatewayEntitlement(logger *zap.Logger, userID string) error {
 	var err error
 	switch target {
 	case gatewayroute.GatewayLLMGateway:
-		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(ctx, userID)
+		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSelectedSubscriptions(ctx, &llmgateway.CancelSelectedSubscriptionsRequest{
+			UserID: userID,
+			SubscriptionNamePrefixes: []string{
+				packageSubscriptionNamePrefix,
+				freeCreditSubscriptionNamePrefix,
+			},
+			IncludeLegacyPackageSubscription: true,
+		})
 	case gatewayroute.GatewayAIGateway:
 		err = adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().CancelSubscription(ctx, userID)
 	default:

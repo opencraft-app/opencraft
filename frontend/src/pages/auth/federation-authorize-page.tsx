@@ -225,7 +225,9 @@ export function FederationAuthorizePage({
   const showConfirmation = Boolean(context && authReady && authenticatedUser && !switchingAccount);
   const avatarSrc = avatarImageUrl(authenticatedUser?.avatarUrl ?? null);
   const accountDetail = authenticatedUser?.email ?? authenticatedUser?.phone ?? null;
-  const destinationHost = authorizationContext ? new URL(authorizationContext.redirectUri).hostname : "";
+  const destination = authorizationContext ? new URL(authorizationContext.redirectUri) : null;
+  // Custom-scheme hosts identify a callback route, not a website destination.
+  const destinationHost = destination?.protocol === "https:" ? destination.hostname : "";
 
   return (
     <ProductPageShell>
@@ -254,11 +256,11 @@ export function FederationAuthorizePage({
         onClose={() => void cancelAuthorization()}
         ariaLabel={t("确认授权登录")}
       >
-        <div className="flex flex-col items-center px-9 pb-8 pt-10 text-center">
-          <h1 className="text-[28px] font-medium leading-none text-black/90">
+        <div className="flex min-w-0 flex-col items-center px-5 pb-6 pt-8 text-center sm:px-9 sm:pb-8 sm:pt-10">
+          <h1 className="max-w-full break-words text-2xl font-medium leading-tight text-black/90 sm:text-[28px]">
             {t("继续访问")} {authorizationContext?.clientDisplayName}
           </h1>
-          <p className="mt-4 text-sm text-black/50">{destinationHost}</p>
+          {destinationHost ? <p className="mt-4 max-w-full break-all text-sm text-black/50">{destinationHost}</p> : null}
 
           {authenticatedUser ? (
             <div className="mt-7 flex w-full items-center gap-3 rounded-xl border border-black/[0.06] bg-black/[0.018] px-4 py-3 text-left">

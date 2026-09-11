@@ -105,6 +105,14 @@ func TestMarkOrderProvisioned_NilStore(t *testing.T) {
 	}
 }
 
+func TestRecordAcceptedByID_NilStore(t *testing.T) {
+	var s *MySQLStore
+	err := s.RecordAcceptedByID(context.Background(), 1, "pass-1", []byte(`{"returnCode":0}`))
+	if err == nil || err.Error() != "trade_flow: store is nil" {
+		t.Fatalf("expected nil store error, got %v", err)
+	}
+}
+
 func TestErrTradeOrderDuplicate_Sentinel(t *testing.T) {
 	wrapped := wrapErr(ErrTradeOrderDuplicate)
 	if !errors.Is(wrapped, ErrTradeOrderDuplicate) {

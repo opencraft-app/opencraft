@@ -1554,7 +1554,8 @@ func reusableUniqueSubscription(subs []newapi.UserSubscription, name string, ups
 }
 
 func isAdditiveSubscription(sub newapi.UserSubscription) bool {
-	return strings.HasPrefix(strings.TrimSpace(sub.Name), "free-credit:")
+	name := strings.TrimSpace(sub.Name)
+	return strings.HasPrefix(name, "free-credit:") || strings.HasPrefix(name, "credit-package:")
 }
 
 func mergeSubscriptionByID(subs []newapi.UserSubscription, created newapi.UserSubscription) []newapi.UserSubscription {
@@ -1688,6 +1689,145 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 	)
 	s.enqueueTenantObservationEvent(ctx, externalUserID, binding.SetID)
 	return nil
+}
+
+func (s *Service) CancelSelectedSubscriptions(ctx context.Context, req CancelSelectedSubscriptionsRequest) (err error) {
+	req = normalizeCancelSelectedSubscriptionsRequest(req)
+	ctx, span := s.startTelemetrySpan(ctx, observability.ScopeTenantEntitlement, "llmgateway.subscription.cancel_selected",
+		attribute.String("llmgateway.user.id", req.UserID),
+	)
+	defer func() {
+		observability.FinishSpan(span, err, "subscription_cancel_selected_failed", s.telemetrySanitizer)
+	}()
+	if req.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if !hasCancelSelectedSelector(req) {
+		return fmt.Errorf("at least one subscription selector is required")
+	}
+	binding, ok, err := s.store.GetUserBinding(ctx, req.UserID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	set, ok, err := s.store.GetSet(ctx, binding.SetID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("set %q not found", binding.SetID)
+	}
+	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
+		return fmt.Errorf("set %q is not bootstrapped", set.ID)
+	}
+
+	matchedIDs := make([]int, 0)
+	if binding.UpstreamUserID > 0 {
+		client := s.newAPIClient(set.BaseURL)
+		auth := adminAuthForSet(set)
+		if err := s.withUserSubscriptionWriteLease(ctx, set, req.UserID, func(userLeaseCtx context.Context) error {
+			return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
+				subs, listErr := s.listActiveSubscriptions(setLeaseCtx, client, auth, binding.UpstreamUserID)
+				if listErr != nil {
+					return listErr
+				}
+				for _, sub := range subs {
+					if !cancelSelectedMatchesName(strings.TrimSpace(sub.Name), req) {
+						continue
+					}
+					if invalidateErr := client.AdminInvalidateUserSubscription(setLeaseCtx, auth, sub.ID); invalidateErr != nil {
+						return invalidateErr
+					}
+					matchedIDs = append(matchedIDs, sub.ID)
+				}
+				return nil
+			})
+		}); err != nil {
+			return err
+		}
+	}
+
+	projections, err := s.store.ListSubscriptionProjections(ctx, req.UserID)
+	if err != nil {
+		return err
+	}
+	for _, projection := range projections {
+		if cancelSelectedMatchesName(strings.TrimSpace(projection.SubscriptionName), req) {
+			matchedIDs = append(matchedIDs, projection.UpstreamSubscriptionID)
+		}
+	}
+	matchedIDs = uniquePositiveInts(matchedIDs)
+	if len(matchedIDs) == 0 {
+		return nil
+	}
+	if err := s.store.DeleteSubscriptionProjectionsByUpstreamIDs(ctx, req.UserID, matchedIDs); err != nil {
+		return err
+	}
+	s.emitCommittedTransition(ctx, observability.ScopeTenantEntitlement, "llmgateway.entitlement.changed",
+		"subscription", req.UserID, "active", "cancelled_selected",
+		attribute.String("llmgateway.user.id", req.UserID),
+		attribute.String("llmgateway.set.id", binding.SetID),
+	)
+	s.enqueueTenantObservationEvent(ctx, req.UserID, binding.SetID)
+	return nil
+}
+
+func normalizeCancelSelectedSubscriptionsRequest(req CancelSelectedSubscriptionsRequest) CancelSelectedSubscriptionsRequest {
+	req.UserID = strings.TrimSpace(req.UserID)
+	req.SubscriptionNames = trimNonEmptyStrings(req.SubscriptionNames)
+	req.SubscriptionNamePrefixes = trimNonEmptyStrings(req.SubscriptionNamePrefixes)
+	return req
+}
+
+func trimNonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func hasCancelSelectedSelector(req CancelSelectedSubscriptionsRequest) bool {
+	return len(req.SubscriptionNames) > 0 || len(req.SubscriptionNamePrefixes) > 0 || req.IncludeLegacyPackageSubscription
+}
+
+func cancelSelectedMatchesName(name string, req CancelSelectedSubscriptionsRequest) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return req.IncludeLegacyPackageSubscription
+	}
+	for _, candidate := range req.SubscriptionNames {
+		if name == candidate {
+			return true
+		}
+	}
+	for _, prefix := range req.SubscriptionNamePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func uniquePositiveInts(values []int) []int {
+	seen := make(map[int]struct{}, len(values))
+	out := make([]int, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func (s *Service) GetActiveSubscription(ctx context.Context, externalUserID string) (Subscription, error) {

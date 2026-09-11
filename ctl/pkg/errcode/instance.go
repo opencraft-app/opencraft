@@ -11,7 +11,7 @@ var (
 	ErrInstanceCreationFailed        = Register(New("INSTANCE_CREATION_FAILED", 500, "instance creation failed"))
 	ErrInstanceOperationConflict     = Register(New("INSTANCE_OPERATION_CONFLICT", 409, "instance operation conflict"))
 	ErrInstanceStatusInvalid         = Register(New("INSTANCE_STATUS_INVALID", 409, "instance status does not allow this operation"))
-	ErrInstanceAutomationUnavailable = Register(New("INSTANCE_AUTOMATION_UNAVAILABLE", 409, "automation unavailable for this instance"))
+	ErrInstanceAutomationUnavailable = Register(New("INSTANCE_AUTOMATION_UNAVAILABLE", 409, "scheduled tasks are unavailable for this instance"))
 	ErrInstanceShadowBindingRequired = Register(New("INSTANCE_SHADOW_BINDING_REQUIRED", 403, "shadow account binding required"))
 	ErrChannelInvalidParam           = Register(New("CHANNEL_INVALID_PARAM", 400, "invalid channel configuration parameters"))
 	ErrChannelConfigFailed           = Register(New("CHANNEL_CONFIG_FAILED", 500, "channel configuration failed"))

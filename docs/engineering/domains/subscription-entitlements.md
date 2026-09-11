@@ -9,6 +9,7 @@
 | `subscription` | 套餐、当前订阅、续费和权益应用 |
 | `payment` | 支付链接/回调 contract 与支付侧幂等 |
 | `trade` | 订单、计费 provider 和成功后的开通编排 |
+| `credit` | 付费积分商品、积分包生命周期、精确积分用量与每日推量 |
 | `cloudladdergateway` | 到 IDC/计费上游的强认证代理与审计 |
 | `ctl` | 在商业 contract 成功后执行实例/能力开通 |
 
@@ -16,12 +17,76 @@
 
 - 支付成功、订单成功和权益生效是不同阶段，必须分别建模和验证。
 - 回调、权益应用和开通都必须幂等；失败补偿不能重复创建外部资源。
+- Credit 积分包是无续费能力的一次性资源包。Trade 只承载订单和外部计费协议，Credit 持有商品、
+  live/history 积分包和用量真源；自然到期由 Credit 删除对应 LLMGateway 订阅并原子归档，计费隔离
+  回调采用相同的同步销毁语义。
+- 积分包用量使用定点小数存储，并通过带 CAS 租约的每日 outbox 调用 `sendResource`；普通零用量
+  也要上报，到期或已归档资源不再推量。
+- Trade migration 版本号必须唯一；积分包定义表使用独立版本，不能与既有 Pass/变配 migration
+  共用版本号。北京测试首次初始化时必须先完成 Trade/Credit schema migration，再分别用对应库账号
+  幂等执行 `scripts/seed_trade_beijing_sandbox_credit_definitions.sql` 和
+  `scripts/seed_credit_beijing_sandbox_products.sql`；商品引用同一 LLMGateway 控制面已有的 plan。
+- 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
+- Trade 出向计费地域也按产品类型隔离：`LIGHTVELA_TRADE_REGION` 控制 Pass/default 链路，
+  `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
+  继承前者。单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
+- 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
+  `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有
+  CTL 完成实例、Pass、配额与网关权益收敛并回调 Trade 后，才能分别进入
+  `provisioned` 与 `completed`。系统盘扩容不可逆，失败只能幂等前滚，不能自动降配。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
 
 ## 机器契约与验证
 
-API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复。
+API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明，积分包 contract 由 `credit/AGENTS.md`、Credit/Trade 实现与测试共同证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复；积分包还需覆盖重复购买、退款隔离、精确订阅删除、自然到期归档、零用量推量和多 Pod 抢占。同 SP 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态。
+
+## 计费代理认证边界
+
+Trade 到 CloudLadder Gateway 的计费出向请求使用调用方 HMAC，签名覆盖 caller、route、
+HTTP method、上游 path、query、时间戳和 body SHA256。签名只保护 Trade 到代理这一跳，
+不等同于 jifei 请求体内的 `interface.auth`，也不能替代腾讯云 API 自身签名。
+
+CloudLadder 认证按 `disabled`、`optional`、`required` 三态迁移。`optional` 允许完全无签名
+请求继续通过，但只要出现任一认证头，就必须完整验签；因此它用于确认合法流量已标记为
+`caller=lightvela-trade`，不能宣称已经阻断匿名访问。只有客户端、环境密钥和路由授权全部
+收敛后才能切 `required`，敏感计费出向路由不得保留在匿名白名单。
+
+jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们在 `required` 阶段必须
+作为明确的回调路由豁免，不能因出向认证收口而中断；回调真实性由各自原生回调协议负责。
+在 `billing_auth` 算法和真实样本尚未完成一致性验证前，不得猜测实现并直接拒绝生产回调。
+匿名豁免只解决兼容性，不代表回调来源已经可信。
+
+新加坡生产可独立于 testing 和国内环境切换 `required`。其生产计费路由
+`jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。
+韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
+兼容，不能因此放开 `jifei-prod`。韩国完成签名版本发布后必须删除此临时例外。
+
+广州生产严格模式覆盖上海正式与北京测试的生产计费出向；两者必须先完成 Trade 签名发布和
+密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由
+testing 入口承载，不应成为广州生产匿名例外。
 
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
+
+## 同 SP 升配回调参数边界（2026-09-07）
+
+Trade 的预付费 `checkModify` 与 `modifyResource` 入站均要求可解析且大于零的 int64 UIN，并要求有效的 `goodsDetail.curDeadline`（计费北京时间格式）。缺失或非法参数必须在调用 CTL 前拒绝；`modifyResource` 的参数级拒绝发生在占用 Flow 前，使用可重试的业务错误，不触发自动退款。不得用 UIN=0 或 deadline=nil 绕过 CTL 归属/期限校验。该收口的8个负向用例已先复现再修复；测试环境部署验收状态以当日 release-gates 为准。
+
+CTL在Pass完成升配后继续支持原订单重投：依靠由Pass/Flow确定的持久化父任务，核对任务名称、owner、原订单及源目标套餐后返回原任务ID。此检查覆盖Trade受理响应未成功落库、但CTL先完成的窗口，也覆盖CAS竞争期间完成的窗口；缺乏匹配凭证不能仅凭目标套餐相同认作原单成功。原父任务负责继续重试Trade终态通知，不重复应用权益。
+
+完成证明不能依赖Pass后续仍为active或仍使用原目标套餐。`FinalizeModify`在同一数据库事务内锁定原ModifyPass任务，验证归属、原Flow、源目标套餐与订阅步骤进度，原子完成Pass套餐/状态、quota替换及`task_params.entitlements_finalized=true`；任一写入失败须整体回滚。该标志采用既有JSON字段，无新增schema migration。它只证明原升配事务完成，不代表后续续费、隔离或另一轮变配的当前状态。
+
+原单重投在身份和原任务参数精确匹配时，可凭该持久标志复用原受理任务，不因Pass进入renewing、isolated或后续套餐而拒绝并误退款，也不得反向改写当前Pass或再次发放权益。worker恢复必须重新读数据库凭证后补发原Trade完成通知，不能仅依赖启动时任务快照。`UpdateModifyPassPayload`须加行锁合并保存，保留数据库已置真的finalized标志及未知字段，避免旧任务快照将完成证明覆盖清除。
+
+兼容边界：未带新标志的旧任务，仅保留原active+原目标套餐的有限恢复路径，不自动推断历史跨状态任务已经完成，也不自动查询历史HTTP回执补造凭证。已有任务参数/业务日志不等于完整历史HTTP响应信封；历史头、状态码和回执查询能力未实现时必须明确缺失，由原始记录及受控人工核对提供证据。
+
+升配受理CAS同时匹配 `status=active` 和调用方已校验的源 `bundle_id`；若校验之后原任务已完成，旧请求不得重新抢占目标套餐。CAS未命中后以持久任务凭证区分同单完成重投与其他订单冲突。
+
+## 有实例升配的部署与恢复检查
+
+- CTL 与 Sandbox 的特权改配接口需要同一非空 `SANDBOX_API_KEY`。检查运行中消费者是否加载一致的密钥，只报告存在性和一致性，不输出密钥。更新固定名 Secret 后须验证消费者重启与真实接口鉴权；普通实例创建成功不能替代特权改配接口验证。
+- 分片 worker 的实际副本、ordinal 与 `shard-total` 必须覆盖完整分片集合。测试环境缩容时同步检查分片参数，避免支付后的操作落入无人消费的分片。
+- 升配停机与普通暂停是不同的 provider 操作：普通暂停保留省费策略；变配使用专用停机准备与云状态回读，支持旧任务在计算规格变更步骤恢复。外部云限制须查官方接口，测试现场错误不能被归因为计费回调失败。
+- 云规格改变、磁盘扩容和开机后仍须完成 Sandbox Pool 归属回写、实例可用性校验、CTL 权益收敛及 Trade 终态。元数据长度应遵守持久化 schema，完整操作关联存放在 operation 账本，不挤入短来源分类字段。
+- 对已支付在途单保留原 Flow/task/operation，以幂等恢复验证修复。未经终态回读，不因HTTP200、云实例RUNNING或单个步骤完成宣布升配闭环。

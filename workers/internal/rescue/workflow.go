@@ -1,6 +1,7 @@
 package rescue
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
+
+const multipartExportChangeID = "rescue-export-multipart-v1"
 
 func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) (ExportResult, error) {
 	req = NormalizeExportRequest(req)
@@ -54,6 +57,8 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 	}
 
 	rescueMayBeEntered := false
+	var multipartPrepared *PreparedTATArchive
+	multipartCompleted := false
 	var workflowErr error
 	updateWorkflowPhase(ctx, req, status, PhaseEnterRescue)
 	if workflowErr = workflow.ExecuteActivity(short, "EnterRescueMode", req, cfg, instance.Region).Get(short, nil); workflowErr == nil {
@@ -90,40 +95,69 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 		})
 		if req.CommandTransport == "tat" {
 			var prepared PreparedTATArchive
-			workflowErr = workflow.ExecuteActivity(archiveCtx, "PrepareArchiveTATCommand", req, cfg, instance.Region).Get(archiveCtx, &prepared)
-			if workflowErr == nil {
-				updateWorkflowPhase(ctx, req, status, PhaseStartTAT)
-				startCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-					StartToCloseTimeout: 5 * time.Minute,
-					RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
-				})
-				var submitted TATCommandResult
-				workflowErr = workflow.ExecuteActivity(startCtx, "StartTATCommand", req, cfg, instance.Region, prepared.Command).Get(startCtx, &submitted)
-				status.TATCommand = submitted
+			var submitted TATCommandResult
+			version := workflow.GetVersion(ctx, multipartExportChangeID, workflow.DefaultVersion, 1)
+			if version == workflow.DefaultVersion || req.COSUploadBucket == "" {
+				workflowErr = workflow.ExecuteActivity(archiveCtx, "PrepareArchiveTATCommand", req, cfg, instance.Region).Get(archiveCtx, &prepared)
 				if workflowErr == nil {
-					updateWorkflowPhase(ctx, req, status, PhaseWaitTAT)
-					waitTATCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-						StartToCloseTimeout: time.Duration(req.CommandTimeoutSeconds+300) * time.Second,
-						HeartbeatTimeout:    30 * time.Second,
-						RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
-					})
-					workflowErr = workflow.ExecuteActivity(waitTATCtx, "WaitTATCommand", req, cfg, instance.Region, submitted).Get(waitTATCtx, &submitted)
-					status.TATCommand = submitted
-				}
-				if workflowErr == nil {
-					updateWorkflowPhase(ctx, req, status, PhaseFinalizeArchive)
-					finalizeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					updateWorkflowPhase(ctx, req, status, PhaseStartTAT)
+					startCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 						StartToCloseTimeout: 5 * time.Minute,
 						RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
 					})
-					workflowErr = workflow.ExecuteActivity(finalizeCtx, "FinalizeArchiveOverTAT", req, prepared, submitted).Get(finalizeCtx, &result.Archive)
+					workflowErr = workflow.ExecuteActivity(startCtx, "StartTATCommand", req, cfg, instance.Region, prepared.Command).Get(startCtx, &submitted)
 				}
+			} else {
+				prepareMultipartCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					StartToCloseTimeout: 10 * time.Minute,
+					RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+				})
+				workflowErr = workflow.ExecuteActivity(prepareMultipartCtx, "PrepareMultipartArchive", req, cfg, instance.Region).Get(prepareMultipartCtx, &prepared)
+				if workflowErr == nil {
+					multipartPrepared = &prepared
+					updateWorkflowPhase(ctx, req, status, PhaseStartTAT)
+					startCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+						StartToCloseTimeout: 10 * time.Minute,
+						RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+					})
+					workflowErr = workflow.ExecuteActivity(startCtx, "StartMultipartTATCommand", req, cfg, instance.Region, prepared).Get(startCtx, &submitted)
+				}
+			}
+			status.TATCommand = submitted
+			if workflowErr == nil {
+				updateWorkflowPhase(ctx, req, status, PhaseWaitTAT)
+				waitTATCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					StartToCloseTimeout: time.Duration(req.CommandTimeoutSeconds+300) * time.Second,
+					HeartbeatTimeout:    30 * time.Second,
+					RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
+				})
+				workflowErr = workflow.ExecuteActivity(waitTATCtx, "WaitTATCommand", req, cfg, instance.Region, submitted).Get(waitTATCtx, &submitted)
+				status.TATCommand = submitted
+			}
+			if workflowErr == nil {
+				updateWorkflowPhase(ctx, req, status, PhaseFinalizeArchive)
+				finalizeCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					StartToCloseTimeout: 5 * time.Minute,
+					RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+				})
+				workflowErr = workflow.ExecuteActivity(finalizeCtx, "FinalizeArchiveOverTAT", req, prepared, submitted).Get(finalizeCtx, &result.Archive)
+				multipartCompleted = workflowErr == nil && multipartPrepared != nil
 			}
 		} else {
 			workflowErr = workflow.ExecuteActivity(archiveCtx, "PrepareArchiveOverSSH", req, instance).Get(archiveCtx, &result.Archive)
 		}
 		if workflowErr == nil {
 			updateArchiveVisibility(ctx, req, status, result.Archive)
+		}
+	}
+	if multipartPrepared != nil && !multipartCompleted {
+		abortCtx := cleanupActivityContext(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 5 * time.Minute,
+			RetryPolicy:         retry,
+		})
+		abortErr := workflow.ExecuteActivity(abortCtx, "AbortMultipartArchive", cfg, *multipartPrepared).Get(abortCtx, nil)
+		if abortErr != nil {
+			workflowErr = errors.Join(workflowErr, abortErr)
 		}
 	}
 	if workflowErr == nil {

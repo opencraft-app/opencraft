@@ -131,6 +131,14 @@ func (f *fakeCTLClient) DestroyPass(_ context.Context, _ string, _ *ctlclient.De
 	return nil, errors.New("DestroyPass not used in renewresource tests")
 }
 
+func (f *fakeCTLClient) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (f *fakeCTLClient) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
+
 // ===== 测试 helper =============================================================
 
 func newBuilder() *jifei.FrameworkBuilder {

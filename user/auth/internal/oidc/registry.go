@@ -14,6 +14,25 @@ var (
 	ErrInvalidGrant   = errors.New("invalid oidc grant")
 )
 
+// OpenCraft clients are first-party public clients, not authentication
+// providers. They share the OIDC authorization authority and may exchange a
+// grant for a normal LightVela API session through the first-party session
+// adapter.
+const NativeClientID = "opencraft-native-v1"
+const NativeRedirectURI = "opencraft://auth/lightvela"
+const WebClientID = "opencraft-web-v1"
+const WebCNRedirectURI = "https://chat.lightvela.com/auth/lightvela/callback"
+const WebInternationalRedirectURI = "https://chat.lightvela.ai/auth/lightvela/callback"
+
+func IsFirstPartySessionClient(clientID string) bool {
+	switch strings.TrimSpace(clientID) {
+	case NativeClientID, WebClientID:
+		return true
+	default:
+		return false
+	}
+}
+
 type Client struct {
 	ID           string
 	DisplayName  string
@@ -35,11 +54,20 @@ func NewRegistry(clients []Client) (*Registry, error) {
 		if client.ID == "" || client.DisplayName == "" || len(client.RedirectURIs) == 0 {
 			return nil, fmt.Errorf("%w: incomplete client", ErrInvalidClient)
 		}
+		if client.ID == NativeClientID && (len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != NativeRedirectURI) {
+			return nil, fmt.Errorf("%w: native client requires its exact callback", ErrInvalidClient)
+		}
+		if client.ID == WebClientID && !equalStringSets(client.RedirectURIs, []string{WebCNRedirectURI, WebInternationalRedirectURI}) {
+			return nil, fmt.Errorf("%w: web client requires its exact callbacks", ErrInvalidClient)
+		}
 		if _, exists := registry.clients[client.ID]; exists {
 			return nil, fmt.Errorf("%w: duplicate client %q", ErrInvalidClient, client.ID)
 		}
 		for i, redirectURI := range client.RedirectURIs {
 			normalized, err := normalizeRedirectURI(redirectURI)
+			if client.ID == NativeClientID && redirectURI == NativeRedirectURI {
+				normalized, err = redirectURI, nil
+			}
 			if err != nil {
 				return nil, fmt.Errorf("%w: invalid redirect URI for %q", ErrInvalidClient, client.ID)
 			}
@@ -48,6 +76,23 @@ func NewRegistry(clients []Client) (*Registry, error) {
 		registry.clients[client.ID] = client
 	}
 	return registry, nil
+}
+
+func equalStringSets(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	seen := make(map[string]int, len(left))
+	for _, value := range left {
+		seen[value]++
+	}
+	for _, value := range right {
+		seen[value]--
+		if seen[value] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Registry) Client(clientID string) (Client, bool) {
@@ -63,7 +108,7 @@ func (r *Registry) ValidateRedirectURI(clientID string, redirectURI string) (str
 	if !ok {
 		return "", ErrInvalidClient
 	}
-	if err := validateRedirectURIStructure(redirectURI); err != nil {
+	if err := validateRedirectURIStructure(redirectURI); err != nil && !(client.ID == NativeClientID && redirectURI == NativeRedirectURI) {
 		return "", ErrInvalidClient
 	}
 	for _, allowed := range client.RedirectURIs {

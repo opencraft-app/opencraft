@@ -423,7 +423,7 @@ describe("domestic SkillHub command and response handling", () => {
 
 describe("Hermes native installed skills", () => {
   it("uses the Hermes CLI list command and maps native-only skills", () => {
-    expect(buildHermesSkillsListCommand()).toContain("hermes_cli.main skills list");
+    expect(buildHermesSkillsListCommand()).toContain("hermes_cli.main -p 'default' skills list");
 
     expect(parseHermesInstalledSkills([
       "│ Name │ Category │ Source │ Trust │ Status │",

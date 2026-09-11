@@ -1,3 +1,54 @@
+# 国际站首页顶部入口与多语言展示修复 Implementation Plan
+
+**Status:** 国际站 Footer、顶部入口、日语/韩语动态标题句尾及中文 Footer 全量本地化均已验证，等待用户验收；未 commit、push 或创建 MR。
+
+**Size:** M。国际站首页移除顶部重复“开始使用”入口；简中、繁中 Footer 改用国际六列布局并保留版权两行文案；日语、韩语动态标题句尾与轮播词同步入场；同步生成片段、资源版本与聚焦测试。国内站保持原行为。
+
+**Goal:** 国际站首页顶部只保留语言切换与登录/头像；简中、繁中 Footer 的六个区块在桌面同一行，版权保持指定的两行格式；日语 `になります` 与韩语 `입니다` 不早于动态词显示。
+
+**Decision:** 首页运行层仅在国际区域关闭 `showProductEntry`，国内区域保持原值；国际首页导入器生成 Footer 时移除源中文模板遗留的 `foot--domestic` 类，使 `zh-SG`、`zh-Hant` 使用与其他国际语言一致的六列布局；保留版权节点原有 `<br>`，并更新静态资源版本。
+
+- [x] **Task 1｜Developer：用失败测试锁定 zh-SG、zh-Hant Footer 不带 `foot--domestic`、六个区块同列且版权含 `<br>`，再修正导入器并同步静态片段。**
+- [x] **Task 2｜Developer：用失败测试锁定国际站首页不显示顶部重复“开始使用”入口，同时确认国内页头与 Hero 行为保持原样，再完成国际站浏览器验收。**
+- [x] **Task 3｜Developer：用失败测试锁定日语、韩语句尾与动态词共享入场延迟，修正生成源、静态产物与资源版本并完成浏览器验收。**
+- [x] **Task 4｜Developer：恢复国际站简中、繁中 Footer CTA、栏目标题与链接的完整本地化文案并补充回归测试；按产品要求保留英文版权两行。**
+
+**Acceptance:** `index-fragment.zh-SG.html` 与 `index-fragment.zh-Hant.html` 的 Footer 使用国际六列布局，“相关产品 / 相關產品”与其余栏目同一行；版权严格显示为 `© 2026 LightVela. All rights reserved.` 换行 `Built by Tencent Lighthouse.`；中文 Footer CTA、栏目标题与链接使用对应简体/繁体文案；国际站顶部不显示重复“开始使用”入口；日语 `になります`、韩语 `입니다` 与动态词同步入场；国内站行为保持不变。
+
+**Verification:** 5 个相关测试文件共 77 项通过；`pnpm check` 通过（TypeScript 191 个当前诊断、276 个基线、0 个新增）；1280px 浏览器实测国际站六个 Footer 区块 top 坐标一致、版权含 1 个 `<br>`、页面无横向溢出；497px 移动端实测 Footer 单列且无页面级溢出；日语动态词与句尾同为 `2490ms` 入场、韩语同为 `2520ms`，移动端和减少动态效果场景均取消入场动画并保持可见；国际站 7 个 locale 的 Footer 与 CTA 文案完成静态和浏览器复核，简中、繁中栏目与链接已恢复对应中文且保留指定英文版权；国际站顶部不再请求重复“开始使用”入口，国内页头、Hero 与 Footer 行为保持修改前基线；独立代码评审发现的移动端/减少动态效果初始隐藏优先级问题已补充回归测试并修复。
+
+---
+
+# 9 月 7 日 Hermes Agent 升级公告 Implementation Plan
+
+**Status:** 首版已本地合并；方案 A 增量调整已实现并验证，等待用户确认第二次提交；尚未 push。
+
+**Size:** M。业务逻辑集中在一个组件；两份现有测试和七种语言生成字典需要同步更新，预计影响文件超过 5 个。
+
+**Goal:** 国内站和国际站首页在 2026-09-07 晚展示 Hermes Agent 升级公告，并于北京时间/新加坡时间 2026-09-08 02:00 自动撤下。
+
+**Design:** `openspec/spec.md` 顶部“9 月 7 日 Hermes Agent 升级公告 Spec”。
+
+**Files:**
+- Modify: `src/components/site/maintenance-announcement-banner.tsx`
+- Modify: `src/components/site/__tests__/maintenance-announcement-banner.cn.test.tsx`
+- Modify: `src/components/site/__tests__/maintenance-announcement-banner.locale.test.tsx`
+- Modify: `next-site/international-home-runtime.tsx`
+- Modify: `next-site/__tests__/international-home-rendering.test.tsx`
+- Modify: `public/lightvela-intl-home/style.css`
+- Modify: `next-site/__tests__/international-home-page.test.tsx`
+- Modify: `src/i18n/generated/{en-US,es,id-ID,ja-JP,ko-KR,zh-CN,zh-Hant,zh-to-key}.json`
+
+- [x] **Task 1｜Developer：测试先行更新 `0907-hermes-agent-upgrade` 公告，国内站使用北京时间、国际站使用新加坡时间，窗口为 2026-09-07 22:00 至次日 02:00；保留国际站计费公告及既有轮播/关闭行为，同步全部公开语言；在实际 V2 首页入口挂载公告并补偿固定导航，完成定向 Vitest、i18n、类型、双区域构建、浏览器 smoke 与 `git diff --check`。**
+- [x] **Task 2｜Developer：测试先行移除国际站已下线的公测计费公告、轮播状态与前后切换控件；公告正文使用自动外边距实现可用宽度充足时居中、空间不足时从开头横向滚动，并完成组件回归、类型检查和国际站浏览器验证。**
+
+**Acceptance:** 国内站首页显示北京时间公告；国际站各 locale 首页显示新加坡时间公告；国际站已下线公测计费公告与轮播控件不再渲染；公告在可用宽度充足时居中、过长时从开头横向滚动；旧关闭记录不会隐藏新公告；2026-09-08 02:00 到点自动隐藏；其他页面不显示；桌面和移动端无新增遮挡或页面级横向溢出。
+
+**Verification:** 定向 Vitest 5 files / 58 tests 通过；`pnpm i18n:check`、`pnpm i18n:zh-hant:check` 和 `pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0；`pnpm build:cn` 生成 96 个静态页面，`pnpm build:global` 生成 606 个静态页面；国内/国际站桌面 1280×720 与移动端 390×844 共 4 个浏览器用例通过，公告文案、36px 导航偏移和页面无横向溢出均有截图与 DOM 尺寸证据；独立只读代码审查无 Critical / Important / Minor 问题；`git diff --check` 通过。
+
+**Task 2 Verification:** 回归测试经历 RED（2 tests failed）后转为 GREEN（5 files / 58 tests passed）；`pnpm check` exit 0，TypeScript diagnostics 0 new，i18n 结构错误 0；国际站 1280px 浏览器实测正文中心偏差 0px、页面宽度 1280px、旧公测文案和轮播按钮均为 0，856px 窄窗口从正文开头横向滚动且页面宽度未溢出。
+---
+
 # MR !3566 CR Follow-up Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认 commit；尚未 push 或更新 MR。

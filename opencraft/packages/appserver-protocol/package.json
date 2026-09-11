@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/appserver-protocol",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./generated": "./src/generated/index.ts",
+    "./generated/v2": "./src/generated/v2/index.ts",
+    "./generated/source": "./src/generated/SOURCE.json",
+    "./resume-history": "./src/resume-history.ts",
+    "./transport": "./src/transport.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

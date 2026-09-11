@@ -16,6 +16,13 @@ import type { Bot, Pass } from "@/domain/types";
 
 export interface OpenClawBot {
   id: string;
+  instanceId?: string;
+  profileId?: string;
+  isDefault?: boolean;
+  description?: string;
+  createdFrom?: "blank" | "clone";
+  sourceBotId?: string;
+  weixinOwner?: Bot["weixinOwner"];
   name: string;
   personality: string;
   personalityEmoji: string;
@@ -59,7 +66,11 @@ interface OpenClawContextValue {
   /** 重新拉取 /v1/passes 并更新 activePass / isSubscribed */
   refreshPasses: () => Promise<void>;
   updateUser: (updates: Partial<OpenClawUser>) => void;
-  addBot: (bot: Omit<OpenClawBot, "id" | "createdAt" | "connectedChannels" | "installedSkills">) => Promise<OpenClawBot>;
+  addBot: (bot: Omit<OpenClawBot, "id" | "instanceId" | "profileId" | "isDefault" | "createdAt" | "connectedChannels" | "installedSkills"> & {
+    createMode?: "blank" | "clone";
+    sourceBotId?: string;
+    initialSoul?: string;
+  }) => Promise<OpenClawBot>;
   updateBot: (botId: string, updates: Partial<OpenClawBot>) => void;
   deleteBot: (botId: string) => Promise<void>;
   refreshBots: () => Promise<void>;
@@ -70,6 +81,13 @@ interface OpenClawContextValue {
 /** Map a backend Bot to the frontend OpenClawBot shape */
 const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => ({
   id: bot.id,
+  instanceId: bot.instanceId ?? bot.id,
+  profileId: bot.profileId ?? "main",
+  isDefault: bot.isDefault ?? true,
+  description: bot.description,
+  createdFrom: bot.createdFrom,
+  sourceBotId: bot.sourceBotId,
+  weixinOwner: bot.weixinOwner,
   name: bot.name,
   personality: bot.template || "默认设定",
   personalityEmoji: "✨",
@@ -131,7 +149,7 @@ const defaultPlan: OpenClawUser["plan"] = {
   aiCredits: 1000,
   usedCredits: 0,
   totalRequests: 0,
-  maxBots: 1,
+  maxBots: 0,
 };
 
 const defaultUser: OpenClawUser = {
@@ -142,6 +160,9 @@ const defaultUser: OpenClawUser = {
 
 const buildLocalPreviewBot = (): OpenClawBot => ({
   id: LOCAL_PREVIEW_BOT_ID,
+  instanceId: LOCAL_PREVIEW_BOT_ID,
+  profileId: "main",
+  isDefault: true,
   name: "我的Hermes",
   personality: "通用对话模板",
   personalityEmoji: "✨",
@@ -315,21 +336,37 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   }, []);
 
   const addBot = useCallback(
-    async (bot: Omit<OpenClawBot, "id" | "createdAt" | "connectedChannels" | "installedSkills">): Promise<OpenClawBot> => {
-      /* Call real backend to create an instance */
+    async (bot: Omit<OpenClawBot, "id" | "instanceId" | "profileId" | "isDefault" | "createdAt" | "connectedChannels" | "installedSkills"> & {
+      createMode?: "blank" | "clone";
+      sourceBotId?: string;
+      initialSoul?: string;
+    }): Promise<OpenClawBot> => {
       const created = await repositories.bots.createBot({
         name: bot.name,
+        description: bot.description,
         soulTemplateId: bot.soulTemplateId || undefined,
+        createMode: bot.createMode,
+        sourceBotId: bot.sourceBotId,
+        initialSoul: bot.initialSoul,
       });
+      const isInitialInstanceCreation = created.id === (created.instanceId ?? created.id);
 
-      /* Persist personality/intro as draft metadata via updateBotProfile */
-      await repositories.bots.updateBotProfile(created.id, {
-        template: bot.personality,
-        mission: bot.intro || undefined,
-      });
+      // A newly created instance is still provisioning. Profile reads must wait until it is Running.
+      if (!isInitialInstanceCreation) {
+        await repositories.bots.updateBotProfile(created.id, {
+          template: bot.personality,
+          mission: bot.intro || undefined,
+        });
+      }
 
       const openClawBot: OpenClawBot = {
         id: created.id,
+        instanceId: created.instanceId ?? created.id,
+        profileId: created.profileId ?? "main",
+        isDefault: created.isDefault ?? true,
+        description: created.description,
+        createdFrom: created.createdFrom,
+        sourceBotId: created.sourceBotId,
         name: bot.name,
         personality: bot.personality,
         personalityEmoji: bot.personalityEmoji,

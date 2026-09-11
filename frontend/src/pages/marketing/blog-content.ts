@@ -61,7 +61,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela, from a starter template or a blank workbench to a published site.",
     publishedAt: "2026-09-03T12:11:11+08:00",
-    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.png",
+    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover-light.png",
     content: [
       {
         type: "image",
@@ -385,7 +385,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "I used LightVela Workbench’s Campaign Hub template to turn a basketball shoe launch idea into a premium storefront with a clear product story, guided comparisons, and a focused path to purchase.",
     publishedAt: "2026-09-03T11:31:46+08:00",
-    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.png",
     content: [
       {
         type: "image",
@@ -648,7 +648,7 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "Anthropic’s Claude Tag points to a new way of working in Slack, so I recreated the idea with LightVela and built a digital employee for my team...",
     publishedAt: "2026-09-01T20:35:43+08:00",
-    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover.png",
+    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover-light.png",
     content: [
       {
         type: "image",
@@ -806,7 +806,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "paragraph",
         content: [
-          "Once the one-off report works, turn it into a scheduled task. You can configure it from LightVela’s Automations page, or tell the Agent the execution time, data range, destination channel, and failure behavior directly in chat. After that, return to Automations to review each execution record.",
+          "Once the one-off report works, turn it into a scheduled task. You can configure it from LightVela’s Scheduled Tasks page, or tell the Agent the execution time, data range, destination channel, and failure behavior directly in chat. After that, return to Scheduled Tasks to review each execution record.",
         ],
       },
       {
@@ -826,7 +826,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "image",
         src: "/assets/blog/lightvela-slack-digital-employee/automations-english.png",
-        alt: "LightVela Automations page showing recent daily report runs",
+        alt: "LightVela Scheduled Tasks page showing recent daily report runs",
       },
       {
         type: "heading",
@@ -879,7 +879,7 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld...",
     publishedAt: "2026-09-01T18:28:41+08:00",
-    coverImage: "/assets/blog/discord-hermes/cover.png",
+    coverImage: "/assets/blog/discord-hermes/cover-light.png",
     content: [
       {
         type: "image",
@@ -943,7 +943,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "paragraph",
         content: [
-          "Although OpenClaw is well known for its mature ecosystem and high customization, I ultimately chose Hermes Agent because I was drawn to its persistent and evolving memory feature, scheduled automations, and Bot Mode designed around agents operating inside group chats. From my point of view, I wanted to create a bot that could emulate a real human, and I was comfortable with it growing and evolving over time.",
+          "Although OpenClaw is well known for its mature ecosystem and high customization, I ultimately chose Hermes Agent because I was drawn to its persistent and evolving memory feature, Scheduled Tasks, and Bot Mode designed around agents operating inside group chats. From my point of view, I wanted to create a bot that could emulate a real human, and I was comfortable with it growing and evolving over time.",
         ],
       },
       {
@@ -966,7 +966,7 @@ Keep all product content editable and do not use fake business data.`,
         content: [
           "I then checked out a product everyone was talking about recently in the Discord community: ",
           link("LightVela", "/"),
-          ". Having delved into its product documents, I found it was essentially a Hermes VPS that bypassed the complicated cloud-tooling and terminal-chatting steps. The site has a workspace where I can connect the bot to Discord, connect it with an LLM, and set automation rules.",
+          ". Having delved into its product documents, I found it was essentially a Hermes VPS that bypassed the complicated cloud-tooling and terminal-chatting steps. The site has a workspace where I can connect the bot to Discord, connect it with an LLM, and set up Scheduled Tasks.",
         ],
       },
       {
@@ -1026,7 +1026,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "paragraph",
         content: [
-          "A feature I found useful was the ability to set automation tasks for my agent without delving into code. Since my server revolves around Palworld and we host a server-side tournament every Friday for all users, I used the automation feature to quickly enter the prompt and the time of operation.",
+          "A feature I found useful was the ability to set Scheduled Tasks for my agent without delving into code. Since my server revolves around Palworld and we host a server-side tournament every Friday for all users, I used Scheduled Tasks to quickly enter the prompt and the time of operation.",
         ],
       },
       {
@@ -1051,12 +1051,12 @@ Keep the message short and energetic. Use only the information above. If any eve
       {
         type: "image",
         src: "/assets/blog/discord-hermes/automation-settings.png",
-        alt: "LightVela automations screen showing a weekly Palworld event reminder",
+        alt: "LightVela Scheduled Tasks screen showing a weekly Palworld event reminder",
       },
       {
         type: "paragraph",
         content: [
-          "The automation then appears in my chat without consulting the bot to do so. Apart from that, I can @ the bot to engage with it directly. To manage token usage, I can limit the agent to specific chats. The bot is like an LLM that does the homework I set and lives in my chat as a personal assistant that can talk with me.",
+          "The scheduled task then appears in my chat without consulting the bot to do so. Apart from that, I can @ the bot to engage with it directly. To manage token usage, I can limit the agent to specific chats. The bot is like an LLM that does the homework I set and lives in my chat as a personal assistant that can talk with me.",
         ],
       },
       {

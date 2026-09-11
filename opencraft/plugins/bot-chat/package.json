@@ -1,0 +1,30 @@
+{
+  "name": "@opencraft/plugin-bot-chat",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx",
+    "./runtime-entry": "./src/runtime-entry.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/bot-conversation": "0.1.0",
+    "@opencraft/chat-core": "0.1.0",
+    "@opencraft/chat-render-web": "0.1.0",
+    "@opencraft/codex-composer": "0.1.0",
+    "@opencraft/composer-core": "0.1.0",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/timeline-host-web": "0.1.0",
+    "@opencraft/timeline-virtualizer": "0.1.0",
+    "lucide-react": "^1.35.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "^5.9.3"
+  }
+}

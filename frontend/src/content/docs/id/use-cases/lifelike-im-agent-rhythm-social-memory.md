@@ -122,13 +122,13 @@ Jika kanal tujuan di masa depan secara eksplisit mendukung grup, tentukan setida
 
 Norma grup termasuk pada aturan kanal dan operasional, dan seharusnya tidak hanya bersandar pada prompt kepribadian.
 
-### 6. Pakai otomasi untuk mengendalikan ritme proaktif
+### 6. Pakai tugas terjadwal untuk mengendalikan ritme proaktif
 
 Pesan proaktif membutuhkan frekuensi, jendela waktu, kanal tujuan, dan cara menjeda yang eksplisit.
 
-Gunakan [Otomasi](../configuration/automation.md) untuk pengingat pribadi, ringkasan internal, atau pemeriksaan berkala.
+Gunakan [Tugas Terjadwal](../configuration/automation.md) untuk pengingat pribadi, ringkasan internal, atau pemeriksaan berkala.
 
-Atur jam tenang untuk setiap otomasi lalu pastikan kanal tujuannya mendukung metode pengiriman proaktif yang relevan.
+Atur jam tenang untuk setiap tugas terjadwal lalu pastikan kanal tujuannya mendukung metode pengiriman proaktif yang relevan.
 
 Jangan menciptakan rasa pendampingan melalui pesan berfrekuensi tinggi, dan jangan membuat pengingat sulit dihentikan.
 

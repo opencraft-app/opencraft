@@ -156,4 +156,13 @@ describe("AgentSettingsPage 实验室导航", () => {
     expect(deepSeekLink).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("DeepSeek Harness panel")).toBeInTheDocument();
   });
+
+  it("直接展示 Agent 顶部的重启和删除图标操作", async () => {
+    renderLabPage();
+
+    await screen.findByText("Hermes Lab");
+    expect(screen.getByRole("button", { name: "重启" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+  });
 });

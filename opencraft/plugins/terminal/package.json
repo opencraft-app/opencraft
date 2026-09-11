@@ -1,0 +1,25 @@
+{
+  "name": "@opencraft/plugin-terminal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@opencraft/workbench-panels": "0.1.0",
+    "@opencraft/workbench-panels-react": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "^5.9.3"
+  }
+}

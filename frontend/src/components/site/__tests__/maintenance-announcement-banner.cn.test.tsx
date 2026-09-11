@@ -25,7 +25,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 beforeEach(async () => {
-  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 7, 22, 12, 0, 0));
+  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 8, 7, 12, 0, 0));
   window.localStorage.clear();
   navigationMock.usePathname.mockReturnValue("/");
   await i18n.changeLanguage("zh-CN");
@@ -39,18 +39,43 @@ afterEach(() => {
 });
 
 describe("MaintenanceAnnouncementBanner China maintenance window", () => {
-  it("renders the Aug 22 maintenance window in Beijing time", async () => {
+  it("renders the Sep 7 maintenance window in Beijing time", async () => {
     render(<MaintenanceAnnouncementBanner />);
 
     expect(
       await screen.findByText(
-        "LightVela 将于北京时间 2026 年 8 月 22 日 22:00-次日 06:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+        "LightVela 将于北京时间 2026 年 9 月 7 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
       ),
     ).toBeInTheDocument();
   });
 
-  it("removes the maintenance announcement at 06:00 Beijing time", async () => {
-    const expiresAt = Date.UTC(2026, 7, 22, 22, 0, 0);
+  it("ignores the dismissal state from the previous Hermes announcement", async () => {
+    window.localStorage.setItem(
+      "lw-announcement-dismissed:0822-hermes-agent-upgrade",
+      "1",
+    );
+
+    render(<MaintenanceAnnouncementBanner />);
+
+    expect(
+      await screen.findByText(
+        "LightVela 将于北京时间 2026 年 9 月 7 日 22:00-次日 02:00 升级 Hermes Agent 版本，期间对话和任务可能短暂中断，带来不便敬请谅解。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the page while the announcement is visible", async () => {
+    const { unmount } = render(<MaintenanceAnnouncementBanner />);
+
+    await screen.findByRole("status");
+    expect(document.body).toHaveClass("lw-has-announcement");
+
+    unmount();
+    expect(document.body).not.toHaveClass("lw-has-announcement");
+  });
+
+  it("removes the maintenance announcement at 02:00 Beijing time", async () => {
+    const expiresAt = Date.UTC(2026, 8, 7, 18, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(expiresAt - 1_000);
 
@@ -62,5 +87,6 @@ describe("MaintenanceAnnouncementBanner China maintenance window", () => {
     act(() => vi.advanceTimersByTime(1_000));
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(document.body).not.toHaveClass("lw-has-announcement");
   });
 });

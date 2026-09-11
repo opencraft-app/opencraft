@@ -184,6 +184,13 @@ type Client interface {
 	//
 	// 调用方应通过 ctx 设置 1.5s 超时（与 IsolatePass / RenewPass 同三层预算）。
 	DestroyPass(ctx context.Context, passID string, req *DestroyPassRequest) (*DestroyPassResponse, error)
+
+	// CheckPassModify 调 POST /internal/ctl/passes/{pass_id}/check-modify
+	// ModifyPass 调 POST /internal/ctl/passes/{pass_id}/modify
+	//
+	// 同 SP 变配链路（TAPD 1010132091137784162 §5.2 / §7.1），实现与错误语义见 modify.go。
+	CheckPassModify(ctx context.Context, passID string, req *CheckPassModifyRequest) (*CheckPassModifyResponse, error)
+	ModifyPass(ctx context.Context, passID string, req *ModifyPassRequest) (*ModifyPassResponse, error)
 }
 
 // BundleDetail 镜像 ctl/pkg/transport.InternalBundleDetail。

@@ -47,6 +47,17 @@ const (
 	// .tmp/trade-pass-renew-design.md §10 R-F。
 	StateResuming InstanceState = "RESUMING"
 
+	// StateModifying 承载 trade pass 同 SP 升配链路（启航 → 巡游 / 启航 AI → 巡游 AI）。
+	// 状态机增量：ALLOCATED → MODIFYING → ALLOCATED。
+	//
+	// 系统盘扩容不可逆，因此本状态**没有回滚边**：失败时实例停留在 MODIFYING，由
+	// modify operation 账本记录已完成步骤，worker 前滚重试直到收敛。stale 清理规则
+	// 也刻意不覆盖 MODIFYING —— 把已付费实例扫成 FAILED 会让用户资源被回收。
+	//
+	// 容量语义上 MODIFYING 与 ALLOCATED 同类（实例已被用户占用），因此既不计入 CLEAN
+	// 库存，也不计入 refill 的 inflight 在途容量。
+	StateModifying InstanceState = "MODIFYING"
+
 	PoolStatusActive PoolStatus = "active"
 	PoolStatusPaused PoolStatus = "paused"
 
@@ -319,6 +330,53 @@ type VPCShardProvisionProgress struct {
 	CompletedAt          *time.Time                      `json:"completed_at,omitempty"`
 }
 
+// ModifyOperationStatus 是单实例升配操作的账本状态。
+type ModifyOperationStatus string
+
+const (
+	ModifyOperationStatusRunning   ModifyOperationStatus = "running"
+	ModifyOperationStatusCompleted ModifyOperationStatus = "completed"
+	ModifyOperationStatusFailed    ModifyOperationStatus = "failed"
+)
+
+// 升配步骤。步骤成功后持久化到 modify_operations.current_step，进程重启或请求超时后
+// 从该步骤续跑；已完成的不可逆步骤（尤其是磁盘扩容）不会重复执行。
+const (
+	ModifyStepStopInstance   = "stop_instance"
+	ModifyStepResizeCompute  = "resize_compute"
+	ModifyStepResizeDisk     = "resize_disk"
+	ModifyStepStartInstance  = "start_instance"
+	ModifyStepVerifyDelivery = "verify_delivery"
+	ModifyStepRebindPool     = "rebind_pool"
+	ModifyStepDone           = "done"
+)
+
+// ModifyOperation 是 Sandbox 侧云操作账本：只承载停机、计算规格升级、磁盘扩容、开机
+// 和目标 Pool 重绑等云侧步骤的持久化、幂等与续跑，不保存 Trade flow，也不是第二套业务流程。
+//
+// TargetInstanceType / TargetSystemDiskSize 在创建 operation 时从目标 SKU 解析并冻结，
+// 后续步骤只读这份快照，避免运营中途改 SKU 导致同一次升配前后目标规格漂移。
+type ModifyOperation struct {
+	ID             string `json:"operation_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+	SandboxID      string `json:"sandbox_id"`
+	InstanceID     string `json:"instance_id"`
+	SourcePoolID   string `json:"source_pool_id"`
+	TargetPoolID   string `json:"target_pool_id"`
+	TargetSKUID    string `json:"target_sku_id"`
+	// TargetTemplateClassID 与 TargetPoolID 一起决定重绑后的路由归属；4C8G 使用独立
+	// template class，缺失会让后续分配把用户漂到源规格池。
+	TargetTemplateClassID string                `json:"target_template_class_id"`
+	TargetInstanceType    string                `json:"target_instance_type"`
+	TargetSystemDiskSize  int                   `json:"target_system_disk_size"`
+	Status                ModifyOperationStatus `json:"status"`
+	CurrentStep           string                `json:"current_step"`
+	LastError             string                `json:"last_error,omitempty"`
+	StartedAt             time.Time             `json:"started_at"`
+	UpdatedAt             time.Time             `json:"updated_at"`
+	CompletedAt           *time.Time            `json:"completed_at,omitempty"`
+}
+
 // Instance tracks a single VM and its lifecycle.
 type Instance struct {
 	ID        string        `json:"id"`
@@ -367,4 +425,16 @@ var (
 	ErrVPCShardSubnetNotFound            = errors.New("vpc shard subnet not found")
 	ErrVPCShardBlueprintSnapshotNotFound = errors.New("vpc shard blueprint snapshot not found")
 	ErrVPCShardProvisionProgressNotFound = errors.New("vpc shard provision progress not found")
+	ErrModifyOperationNotFound           = errors.New("modify operation not found")
+	// ErrModifyOperationConflict 表示同一 idempotency_key 被用于不同的升配目标；
+	// 这是调用方 bug 而不是重试，必须拒绝而不是覆盖原 operation。
+	ErrModifyOperationConflict = errors.New("modify operation idempotency key reused with different target")
+	// ErrModifyTargetNotUpgrade 表示目标规格低于当前规格。系统盘只能扩容，
+	// 计算规格降配也不在支持范围内。这类请求重试永远不会成功。
+	ErrModifyTargetNotUpgrade = errors.New("modify target is not an upgrade of the current spec")
+	// ErrModifyTargetAlreadyApplied 表示实例已经就在目标规格和目标池上。
+	// 与 ErrModifyTargetNotUpgrade 分开是因为调用方的处置完全相反：这个是
+	// "已经收敛，无事可做"，按成功处理；那个是配置错，必须失败。
+	// 会走到这个分支的典型场景是上一份账本已经收尾但调用方的子 task 已超时重派。
+	ErrModifyTargetAlreadyApplied = errors.New("modify target spec is already applied to the instance")
 )

@@ -67,7 +67,7 @@ const (
 var allowedTransitions = map[core.InstanceState][]core.InstanceState{
 	core.StateCreating:  {core.StateClean, core.StateFailed},
 	core.StateClean:     {core.StateAllocated, core.StateDeleting, core.StateFailed},
-	core.StateAllocated: {core.StateDry, core.StatePausing},
+	core.StateAllocated: {core.StateDry, core.StatePausing, core.StateModifying},
 	// Resetting/reinstall is a worker-only transition. Keep legacy REINSTALLING for old rows.
 	core.StateDry:          {core.StateResetting, core.StateReinstalling},
 	core.StateResetting:    {core.StateClean, core.StateFailed},
@@ -81,6 +81,9 @@ var allowedTransitions = map[core.InstanceState][]core.InstanceState{
 	// 开机语义恢复数据，paused → resuming → allocated；resuming 失败回滚到 paused 让 ctl 子 task 重投。
 	core.StatePaused:   {core.StateDeleting, core.StateFailed, core.StateResuming},
 	core.StateResuming: {core.StateAllocated, core.StatePaused, core.StateFailed},
+	// Modify path (同 SP 升配)：allocated → modifying → allocated。系统盘扩容不可逆，
+	// 所以没有回到源规格的回滚边；失败留在 MODIFYING 等重试，只有 FAILED 是人工兜底出口。
+	core.StateModifying: {core.StateAllocated, core.StateFailed},
 }
 
 // NewService wires a Service with the provided store.

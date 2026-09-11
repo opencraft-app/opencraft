@@ -20,6 +20,31 @@
 - 权益应用失败：保留可重试状态，不重复创建外部订单。
 - CTL 开通失败：订单/支付事实不可丢失，补偿与重试单独记录。
 
+## Pass 升配 Web checkout
+
+- 账号页和定价页仅对后端返回的合法 Bundle 关系展示升级入口与选择联动；展示资格不能代替 CTL 下单前的 owner、Pass 状态和目标校验。
+- 可升级目标使用原有主按钮高亮，不套用新购席位已满的灰色样式。账号页与定价页不提供独立进度按钮，也不自动弹出未支付订单；用户主动点击升级只展示最新差价，明确确认支付后才新建订单。关闭后再次进入不恢复历史订单或二维码。
+- Web 升配入口由 `frontend/src/lib/pass-upgrade-rollout.ts` 集中控制：国内正式站默认隐藏，任意登录用户可在浏览器 Console 执行 `show()` 临时显示，`hide()` 隐藏，刷新后重置；国际正式站关闭，明确列出的本地与北京前端测试域名允许登录用户验证。账号页、定价页、订单恢复与升级弹窗共用该判断；这是 UI 发布开关，不替代后端授权。正式验收通过后再独立调整默认开放范围。
+- `GET /v1/passes/{pass_id}/modify/bundles` 返回实时差价；`POST .../modify/order` 只创建订单并返回 `deal_name`、`big_order_id` 和可选支付票据。
+- `POST .../modify/order-url` 接收原 `deal_names` 获取支付链接，不再创建订单。微信桥使用绑定用户、Pass、订单的短期票据；`POST .../modify/payment-authorization` 仅供已登录本人重签原订单票据。
+- `GET .../modify/checkout` 保留为兼容的只读接口，当前 Web 资格检查与建单流程不依赖它。历史未付款订单不阻塞新的明确确认；同次提交结果未知时仍保留本地保护，不能把请求超时当作未建单并自动重下。
+- 对齐新购两步式流程：客户端防连点，每次明确确认支付请求新建订单，不承诺跨设备并发建单 exactly-once。升级交付仍使用现有 Pass slot/CAS 与 flow 幂等，不新增数据库锁或迁移；不同订单的回调不得重复应用同一次升级权益。
+- 支付接口只允许 `pending_pay` 的 modify 单，并验证用户、资源、订单类型和合法目标；不复用新购/续费的 deal-only 支付链接缓存。国际站使用 hosted payment，国内站使用微信桥接。
+- 成功条件为同一 modify 订单 `local_status=provisioned`、统一状态 `success`，并且该用户的同一 Pass 已成为目标 Bundle 且 `status=active`。收到付款状态不是升级完成。
+- 本次确认建单成功后，国内支付弹窗展示微信二维码，不展示继续支付、微信内支付链接或手动刷新升级结果。同一弹窗内二维码过期仅重签当前订单票据；获取失败按轮询节奏重试，不新建订单。订单与 Pass 每 3 秒自动核对，超过 10 分钟仍继续等待交付，完成、失败或关闭弹窗后停止轮询。
+
+## Credit 积分包 Web checkout
+
+- 控制台购买积分包使用两段式订单链路：`POST /v1/credit/packages/order` 只创建订单并返回
+  `dealName`，随后调用 `POST /v1/credit/packages/order-url` 获取支付信息；
+  `order-and-pay` 仅供内部联调和自动化测试，不能作为真实用户入口。
+- Credit 从 service-gateway 注入的可信 `X-User-Id` 取得当前用户，调用 Trade 获取支付链接时同时
+  绑定该用户和 `resource_type=credit_package`。订单不存在、订单不属于当前用户或不是积分包订单时
+  统一返回不存在，不能暴露其他用户或其他资源类型的支付链接缓存。
+- `need_charge=1` 时前端跳转 `pay_url`；`need_charge=0` 时直接进入支付完成后的刷新流程。支付完成
+  不等于资源已创建，前端须重新调用 `GET /v1/credit/packages` 观察积分包出现，并兼容计费回调与
+  LLMGateway 订阅创建的短暂延迟。
+
 ## 验证
 
 成对验证订单、支付、订阅和 CTL 各阶段的成功/失败记录；线上金额、活动、API 地址和签名规则必须从登记的外部 authority 现场确认。

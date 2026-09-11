@@ -1,5 +1,6 @@
 import type { BotRepository } from "@/repositories/types";
 import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/agent-reset-config";
+import { getHermesProfileRootCommand, withHermesProfile } from "@/lib/hermes-agent-command";
 
 export const HERMES_COMMON_SETTINGS_TIMEOUT_MS = 120_000;
 export const HERMES_COMMON_SETTINGS_JSON_START = "__LIGHTVELA_HERMES_COMMON_SETTINGS_JSON_START__";
@@ -178,13 +179,14 @@ print(json.dumps({
 }, ensure_ascii=False))
 print("${HERMES_COMMON_SETTINGS_JSON_END}")`;
 
-export function buildHermesCommonSettingsReadCommand(): string {
+export function buildHermesCommonSettingsReadCommand(profileId = "main"): string {
   return [
-    'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"',
+    'HERMES_BASE="${HERMES_HOME:-$HOME/.hermes}"',
+    getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     "export HERMES_ROOT",
-    'HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"',
+    'HERMES_PYTHON="$HERMES_BASE/hermes-agent/venv/bin/python"',
     'if [ ! -x "$HERMES_PYTHON" ]; then HERMES_PYTHON="python3"; fi',
-    '"$HERMES_PYTHON" - <<\'PY\'',
+    'HERMES_HOME="$HERMES_ROOT" "$HERMES_PYTHON" - <<\'PY\'',
     PYTHON_COMMON_SETTINGS_READER,
     "PY",
   ].join("\n");
@@ -293,16 +295,23 @@ export function parseHermesCommonSettingsSnapshot(output: string): HermesCommonS
 export function buildHermesCommonSettingCommand(
   key: HermesCommonSettingKey,
   value: HermesCommonSettingValue,
+  profileId = "main",
 ): string {
   const validation = validateHermesCommonSetting(key, value);
   if (!validation.ok) {
     throw new Error("invalid Hermes common setting");
   }
-  return `hermes config set ${HERMES_CONFIG_KEY_BY_SETTING[key]} ${String(validation.value)}`;
+  return withHermesProfile(
+    `config set ${HERMES_CONFIG_KEY_BY_SETTING[key]} ${String(validation.value)}`,
+    profileId,
+  );
 }
 
-export function buildHermesCommonSettingUnsetCommand(key: HermesCommonSettingKey): string {
-  return `hermes config unset ${HERMES_CONFIG_KEY_BY_SETTING[key]}`;
+export function buildHermesCommonSettingUnsetCommand(
+  key: HermesCommonSettingKey,
+  profileId = "main",
+): string {
+  return withHermesProfile(`config unset ${HERMES_CONFIG_KEY_BY_SETTING[key]}`, profileId);
 }
 
 export function getHermesCommonSettingResetValue(
@@ -327,10 +336,11 @@ export function isHermesCommonSettingAtResetTarget(
 export async function fetchHermesCommonSettingsSnapshot(
   bots: BotRepository,
   botId: string,
+  profileId = "main",
 ): Promise<HermesCommonSettingsSnapshot> {
   const result = await bots.execDebugCommand(
     botId,
-    buildHermesCommonSettingsReadCommand(),
+    buildHermesCommonSettingsReadCommand(profileId),
     { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
   );
   if (!isExecCommandSucceeded(result)) {

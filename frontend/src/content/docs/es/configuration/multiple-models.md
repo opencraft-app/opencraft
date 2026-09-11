@@ -15,7 +15,7 @@ El cambio de modelo le permite elegir qué modelo configurado utilizará su Herm
 - Verificar el cambio en Chat
 - Solucionar problemas con un modelo que no aparece o no puede responder
 
-> **Bueno para saber:** Un Agent utiliza un modelo activo a la vez. Cambiar el modelo activo no elimina la memoria del Agent, los archivos de Almacenamiento en la nube, las Skills o las automatizaciones.
+> **Bueno para saber:** Un Agent utiliza un modelo activo a la vez. Cambiar el modelo activo no elimina la memoria del Agent, los archivos de Almacenamiento en la nube, las Skills o las tareas programadas.
 
 ## Antes de comenzar
 
@@ -53,7 +53,7 @@ Confirme que el Agent responda normalmente y que el modelo mostrado en la consol
 | Un proveedor no está disponible o tiene límites de tasa | Cambie a otro modelo configurado, luego pruébelo en Chat. |
 | Está comparando la calidad de la salida | Ejecute la misma pequeña instrucción después de cada cambio y compare el resultado. |
 
-El cambio de modelo cambia el motor utilizado para futuras respuestas. No mueve su historial de conversación, no reescribe archivos en [Almacenamiento en la nube](./files.md) ni cambia sus [Skills](./skill.md) y [Automatizaciones](./automation.md).
+El cambio de modelo cambia el motor utilizado para futuras respuestas. No mueve su historial de conversación, no reescribe archivos en [Almacenamiento en la nube](./files.md) ni cambia sus [Skills](./skill.md) y [Tareas programadas](./automation.md).
 
 Si desea explorar un entorno de Agent independiente con una arquitectura basada en plugins junto a Hermes Agent, consulte [DeepSeek Harness](./deepseek-harness.md).
 

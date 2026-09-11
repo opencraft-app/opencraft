@@ -45,9 +45,9 @@ LightVela 更聚焦。如果你想要的是一个 Agent，而不是一个 AI 工
 - 随时间跟踪信息。
 - 通过 Telegram、WhatsApp、Discord、Slack 或 WeChat 回答问题。
 - 使用技能扩展它能完成的事情。
-- 按计划运行[自动任务](https://lightvela.ai/zh-sg/docs/configuration/automation)。
+- 按计划运行[定时任务](https://lightvela.ai/zh-sg/docs/configuration/automation)。
 
-自动任务在这里尤其重要。重点不只是今天让 Hermes 生成一份报告，而是让 Agent 明天继续处理同一类工作。
+定时任务在这里尤其重要。重点不只是今天让 Hermes 生成一份报告，而是让 Agent 明天继续处理同一类工作。
 
 这和 Genspark “一个提示词，直接得到完整结果”的模式，是两种不同的实用价值。
 
@@ -94,7 +94,7 @@ Genspark 像是打开一个工作室。
 - **你想托管专属 Agent：** 希望拥有自己的个人 Hermes Agent。
 - **你看重长期在线：** 希望 Agent 7×24 小时可用。
 - **你更喜欢消息沟通：** 希望通过日常通道联系 Agent。
-- **你希望直接控制：** 想管理模型、人设、技能和自动任务。
+- **你希望直接控制：** 想管理模型、人设、技能和定时任务。
 - **你想建立长期关系：** 希望围绕同一个稳定 Agent 建立使用习惯。
 
 如果符合以下情况，可以选择 Genspark：

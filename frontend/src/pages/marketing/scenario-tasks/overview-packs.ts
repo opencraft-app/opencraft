@@ -38,7 +38,7 @@ const medicationAutomationFields: ScenarioTaskField[] = [
       { value: "按疗程重复", label: "按疗程重复" },
       { value: "长期重复", label: "长期重复" },
     ],
-    helpText: "按疗程会在结束日期后自动停止；长期重复会持续运行，之后可在自动任务里暂停或删除。",
+    helpText: "按疗程会在结束日期后自动停止；长期重复会持续运行，之后可在定时任务里暂停或删除。",
   },
   {
     key: "triggerAt",
@@ -443,7 +443,7 @@ export const OVERVIEW_SCENARIO_TASK_PACK_BY_ID = {
     requiredInfoLabel: "提醒方式、喝水/用药时间、药品剂量、说明书/用药指南（可选）",
     usageGuide: [
       "喝水、站立或拉伸是轻提醒；用药提醒会按你填写的医嘱、说明书或链接执行，二者不会互相改规则。",
-      "选择仅这一次、按疗程重复或长期重复；按疗程会在结束日期后自动停止，长期任务可在自动任务里管理。",
+      "选择仅这一次、按疗程重复或长期重复；按疗程会在结束日期后自动停止，长期任务可在定时任务里管理。",
       "任务执行时才会尝试打开你提供的公开链接；登录、付费墙或验证码页面可能无法读取，无法读取时会明确告诉你。",
       "任务不会自动判断你是否已经服药，也不会根据回复自行加量或补服；用药请始终以医生医嘱为准。",
     ],
@@ -966,7 +966,7 @@ const OVERVIEW_SPANISH_COPY: Record<(typeof OVERVIEW_SCENARIO_TASK_IDS)[number],
     requiredInfoLabel: "Tipo de recordatorio, horario de hidratación/medicación, dosis y guía de uso opcional",
     usageGuide: [
       "La hidratación, ponerse de pie o estirar son avisos suaves; la medicación sigue las indicaciones, el prospecto o los enlaces que facilites, sin mezclar las reglas.",
-      "Elige una sola vez, durante el tratamiento o de forma continua; el tratamiento se detiene al llegar la fecha final y las tareas continuas se gestionan desde Automatizaciones.",
+      "Elige una sola vez, durante el tratamiento o de forma continua; el tratamiento se detiene al llegar la fecha final y las tareas continuas se gestionan desde Tareas programadas.",
       "La tarea intentará abrir los enlaces públicos que facilites solo al ejecutarse; si requieren inicio de sesión, pago o verificación, indicará que no puede leerlos.",
       "La tarea no determina si ya tomaste la medicación ni cambia dosis según tus respuestas; sigue siempre las indicaciones médicas.",
     ],

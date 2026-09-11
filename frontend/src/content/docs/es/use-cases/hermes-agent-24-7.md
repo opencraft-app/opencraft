@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Un Hermes Agent permanece disponible las 24 horas porque se ejecuta en una instancia en la nube en lugar de en su máquina local. Una vez que se configura un modelo y al menos un canal, utiliza la misma memoria y comportamiento sin importar desde qué punto de entrada se le envíe un mensaje.** Tres cosas deben estar en lugar para una disponibilidad real a largo plazo: un modelo configurado con cuota de cuenta utilizable (los créditos de prueba agotados causan silenciosamente no-respuestas), al menos un canal que aparezca conectado y automatizaciones para cubrir el trabajo programado mientras usted está ausente. No juzgue la disponibilidad solo desde el estado del consola — envíe un mensaje real a través de un canal real. Cuando algo se rompe, vea y exporte los registros recientes en Diagnostics (seleccionable en rangos de 1, 3, 6, 12 o 24 horas) para localizar la causa.
+**Un Hermes Agent permanece disponible las 24 horas porque se ejecuta en una instancia en la nube en lugar de en su máquina local. Una vez que se configura un modelo y al menos un canal, utiliza la misma memoria y comportamiento sin importar desde qué punto de entrada se le envíe un mensaje.** Tres cosas deben estar en lugar para una disponibilidad real a largo plazo: un modelo configurado con cuota de cuenta utilizable (los créditos de prueba agotados causan silenciosamente no-respuestas), al menos un canal que aparezca conectado y tareas programadas para cubrir el trabajo programado mientras usted está ausente. No juzgue la disponibilidad solo desde el estado del consola — envíe un mensaje real a través de un canal real. Cuando algo se rompe, vea y exporte los registros recientes en Diagnostics (seleccionable en rangos de 1, 3, 6, 12 o 24 horas) para localizar la causa.
 
 ![Un Hermes Agent en línea en la consola LightVela](../images/use-case-hermes-online.webp)
 
@@ -53,16 +53,16 @@ Esto permite que un mensaje enviado desde un dispositivo diferente o un canal so
 
 ### 4. Agregar una tarea programada cuando la disponibilidad debe llevar a la acción
 
-Un Hermes en línea puede esperar sus mensajes, pero una pequeña automatización le permite comenzar una rutina conocida en el momento adecuado. Comience con una tarea que tenga una condición de éxito clara:
+Un Hermes en línea puede esperar sus mensajes, pero una pequeña tarea programada le permite comenzar una rutina conocida en el momento adecuado. Comience con una tarea que tenga una condición de éxito clara:
 
 ```text
 Every weekday at 8:30 AM, prepare a short briefing with today’s
 calendar priorities, open follow-ups, and the first action to take.
 ```
 
-Cree el horario en [Automations](../configuration/automation.md), seleccione un canal de notificación si es apropiado y verifique los primeros ejecuciones. Si el resultado es demasiado amplio, haga la instrucción más específica en lugar de agregar otra automatización inmediatamente.
+Cree el horario en [Tareas programadas](../configuration/automation.md), seleccione un canal de notificación si es apropiado y verifique los primeros ejecuciones. Si el resultado es demasiado amplio, haga la instrucción más específica en lugar de agregar otra tarea programada inmediatamente.
 
-![Ejecuciones recientes de automatización desde un Hermes Agent](../images/use-case-hermes-online-automation.png)
+![Ejecuciones recientes de tarea programada desde un Hermes Agent](../images/use-case-hermes-online-automation.png)
 
 ## Preguntas frecuentes
 
@@ -80,11 +80,11 @@ Sí. Los canales soportados pueden apuntar al mismo Hermes Agent. Comparten el m
 
 ### ¿Es seguro automatizar un Agent de 24/7?
 
-Utilice solo instrucciones bien delimitadas y Skills confiables. Comience con rutinas de solo lectura o de bajo riesgo, revise la salida y evite dar a una automatización autoridad para realizar acciones que no desearía repetir automáticamente.
+Utilice solo instrucciones bien delimitadas y Skills confiables. Comience con rutinas de solo lectura o de bajo riesgo, revise la salida y evite dar a una tarea programada autoridad para realizar acciones que no desearía repetir automáticamente.
 
 ## Próximos pasos
 
-- [Automations](../configuration/automation.md) — programe el trabajo que debe realizarse sin una solicitud manual.
+- [Tareas programadas](../configuration/automation.md) — programe el trabajo que debe realizarse sin una solicitud manual.
 
 - [Memory Management](../configuration/memory.md) — mantenga preferencias útiles disponibles entre conversaciones.
 

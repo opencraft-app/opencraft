@@ -51,6 +51,12 @@ components:
       required: true
       schema:
         type: string
+    operationID:
+      name: operationID
+      in: path
+      required: true
+      schema:
+        type: string
     teamID:
       name: teamID
       in: path
@@ -1313,6 +1319,65 @@ components:
           type: string
           description: Error
 
+    InternalModifyRequest:
+      type: object
+      required:
+        - idempotency_key
+        - target_pool_id
+      properties:
+        idempotency_key:
+          type: string
+          description: CTL child task ID used to make irreversible resize steps idempotent
+        target_pool_id:
+          type: string
+        target_sku_id:
+          type: string
+
+    InternalModifyOperation:
+      type: object
+      required:
+        - operation_id
+        - sandbox_id
+        - instance_id
+        - source_pool_id
+        - target_pool_id
+        - target_instance_type
+        - target_system_disk_size
+        - status
+      properties:
+        operation_id:
+          type: string
+        sandbox_id:
+          type: string
+        instance_id:
+          type: string
+        source_pool_id:
+          type: string
+        target_pool_id:
+          type: string
+        target_instance_type:
+          type: string
+        target_system_disk_size:
+          type: integer
+        status:
+          type: string
+          enum: [running, completed, failed]
+        current_step:
+          type: string
+          description: Last completed worker step
+        last_error:
+          type: string
+
+    InternalModifyError:
+      type: object
+      required:
+        - error
+      properties:
+        code:
+          type: string
+        error:
+          type: string
+
     IdentifierMaskingDetails:
       required:
         - prefix
@@ -1339,8 +1404,61 @@ tags:
   - name: auth
   - name: access-tokens
   - name: api-keys
+  - name: internal-modify
 
 paths:
+  /internal/sandboxes/{sandboxID}/modify:
+    post:
+      description: Accept an idempotent asynchronous in-place sandbox upgrade
+      tags: [internal-modify]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/sandboxID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InternalModifyRequest"
+      responses:
+        "202":
+          description: Upgrade operation accepted or replayed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalModifyOperation"
+        "400":
+          description: Invalid request
+        "404":
+          description: Sandbox, instance, or target pool not found
+        "409":
+          description: Conflicting operation, state, or already-applied target
+        "422":
+          description: Target is not an upgrade
+        "500":
+          description: Internal error
+
+  /internal/sandbox-modify-operations/{operationID}:
+    get:
+      description: Read the durable state of an asynchronous sandbox upgrade
+      tags: [internal-modify]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/operationID"
+      responses:
+        "200":
+          description: Current operation state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalModifyOperation"
+        "404":
+          description: Operation not found
+        "500":
+          description: Internal error
+
   /health:
     get:
       description: Health check

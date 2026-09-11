@@ -1,6 +1,6 @@
 ## Summary
 
-**A Hermes Agent's "brain" can be replaced, but what gets replaced is only the model layer, not the whole Agent. The model layer decides how to think this time — parsing the request, planning steps, choosing which tool to call, and phrasing the answer. The Agent layer keeps that thinking going over time: identity (`SOUL.md`), user profile (`USER.md`), cross-session facts (`MEMORY.md` and `memories/`), captured methods (`skills/`), messaging channels, automations, and the working directory all live outside the model. That is why switching models does not delete them. On LightVela, one Agent uses exactly one active model at a time, and switching models does not clear memory, cloud storage files, skills, or automation settings — it only changes the engine behind future replies. If an Agent feels like a stranger after a switch, the cause is almost always different instruction-following, context-compression, and phrasing behaviour in the new model, not lost memory.**
+**A Hermes Agent's "brain" can be replaced, but what gets replaced is only the model layer, not the whole Agent. The model layer decides how to think this time — parsing the request, planning steps, choosing which tool to call, and phrasing the answer. The Agent layer keeps that thinking going over time: identity (`SOUL.md`), user profile (`USER.md`), cross-session facts (`MEMORY.md` and `memories/`), captured methods (`skills/`), messaging channels, scheduled tasks, and the working directory all live outside the model. That is why switching models does not delete them. On LightVela, one Agent uses exactly one active model at a time, and switching models does not clear memory, cloud storage files, skills, or scheduled task settings — it only changes the engine behind future replies. If an Agent feels like a stranger after a switch, the cause is almost always different instruction-following, context-compression, and phrasing behaviour in the new model, not lost memory.**
 
 ---
 
@@ -77,10 +77,10 @@ Memory is not append-only forever. It is maintained through atomic `add` / `repl
 
 `skills/` stores standard procedures for "when situation X happens, do this." Each `SKILL.md` typically carries YAML frontmatter declaring its trigger conditions. This is procedural memory, a separate pathway from declarative Memory — see "Memory Is Not a Skill: How Hermes Agent Separates Factual and Procedural Memory."
 
-### 3.5 Connectivity and scheduling: channels, automations, working directory
+### 3.5 Connectivity and scheduling: channels, scheduled tasks, working directory
 
 - **Channels** determine which entry points the Agent receives messages from and where results are delivered.
-- **Automations** determine what work it completes when you are not asking anything.
+- **Scheduled Tasks** determine what work it completes when you are not asking anything.
 - **The working directory** determines where task inputs and outputs live, and where the boundary sits.
 
 All three are Agent-layer configuration, independent of which model is currently active.
@@ -107,7 +107,7 @@ The sections above describe mechanism. This one describes real product behaviour
 
 **One Agent uses exactly one active model at a time.** Switching means selecting which configured model is currently active — it does not create a new Agent. You do not need multiple Agents just to use multiple models.
 
-**Switching does not clear memory, cloud storage files, skills, or automation settings.** A model switch changes only the engine used for subsequent replies. It does not move chat history, rewrite files in cloud storage, or alter skill and automation configuration.
+**Switching does not clear memory, cloud storage files, skills, or scheduled task settings.** A model switch changes only the engine used for subsequent replies. It does not move chat history, rewrite files in cloud storage, or alter skill and scheduled task configuration.
 
 **Preparing for and confirming a switch**, following the documented flow:
 
@@ -116,7 +116,7 @@ The sections above describe mechanism. This one describes real product behaviour
 3. After switching, send that test message in chat and confirm both that the Agent replies and that the console shows the model you selected.
 4. If the very first reply after switching is slightly slow, wait briefly and retry once before changing anything else.
 
-**One correction to a common misconception**: an automation's configuration consists of name, schedule (fixed weekdays, fixed interval, or one-time — choose one), task instructions, active time window, and notification channels. **There is no "pin this automation to a specific model" field.** So the advice that you must go through your automations and re-sync their model after switching does not apply. What is worth reviewing after a switch is the quality of task output, not a model field that does not exist.
+**One correction to a common misconception**: a scheduled task's configuration consists of name, schedule (fixed weekdays, fixed interval, or one-time — choose one), task instructions, active time window, and notification channels. **There is no "pin this scheduled task to a specific model" field.** So the advice that you must go through your scheduled tasks and re-sync their model after switching does not apply. What is worth reviewing after a switch is the quality of task output, not a model field that does not exist.
 
 ---
 
@@ -160,7 +160,7 @@ If the Agent cannot work after switching, troubleshoot in this order: confirm th
 Hermes decouples model from Agent at the mechanism level, but it still targets people comfortable managing Markdown files and a local environment directly. LightVela's direction is to make that decoupling the default product experience:
 
 - **The model is a switchable setting**, not a one-time decision locked in at setup.
-- **Memory, skills, cloud storage, and automations are user assets** that stay stable across model switches, so upgrading never means starting over.
+- **Memory, skills, cloud storage, and scheduled tasks are user assets** that stay stable across model switches, so upgrading never means starting over.
 - **Switches are verifiable**: the console shows the active model, and a single test message in chat confirms the switch worked.
 - **Failures are traceable**: Diagnostics keeps recent logs, which is how you tell whether a problem lies with the model, the configuration, or the task itself.
 
@@ -173,7 +173,7 @@ The result is that model progress reaches you directly, while what you have alre
 - An Agent has at least three layers: a replaceable **model layer**, a long-running **runtime**, and continuously accumulated **long-term assets**.
 - The model layer handles interpretation, planning, tool calls, and expression for the current turn. It does not store preferences, run schedules, or manage channels.
 - `SOUL.md`, `USER.md`, `MEMORY.md`, `memories/`, `skills/`, and the working directory all live outside the model, so switching models does not take them along.
-- On LightVela, one Agent has one active model at a time; switching does not clear memory, cloud storage, skills, or automations.
-- Automations have no "pinned model" setting, so the claim that you must re-sync automation models after switching is inaccurate.
+- On LightVela, one Agent has one active model at a time; switching does not clear memory, cloud storage, skills, or scheduled tasks.
+- Scheduled Tasks have no "pinned model" setting, so the claim that you must re-sync scheduled task models after switching is inaccurate.
 - Feeling different after a switch usually comes from instruction-following, context-compression, and phrasing differences — not lost memory. Verify with one known fact.
 

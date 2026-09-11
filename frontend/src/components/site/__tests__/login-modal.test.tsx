@@ -31,21 +31,22 @@ const repositories = {
   auth: {
     getOAuthStartUrl: vi.fn((
       provider: OAuthProvider,
-      options?: { switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
+      options?: { returnTo?: string; switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
     ) => {
       const query = new URLSearchParams();
       if (provider === "wechat" && options?.wechatMode) query.set("mode", options.wechatMode);
       if (options?.switchAccount) query.set("switch_account", "true");
+      if (options?.returnTo) query.set("return_to", options.returnTo);
       const querySuffix = query.size > 0 ? `?${query.toString()}` : "";
       switch (provider) {
         case "qq":
-          return "https://lightclaw.tech/auth/oauth/qq/start";
+          return `https://lightclaw.tech/auth/oauth/qq/start${querySuffix}`;
         case "wechat":
           return `https://lightclaw.tech/auth/oauth/wechat/start${querySuffix}`;
         case "google":
-          return "https://lightclaw.tech/auth/oauth/google/start";
+          return `https://lightclaw.tech/auth/oauth/google/start${querySuffix}`;
         case "github":
-          return "https://lightclaw.tech/auth/oauth/github/start";
+          return `https://lightclaw.tech/auth/oauth/github/start${querySuffix}`;
         default:
           return null;
       }

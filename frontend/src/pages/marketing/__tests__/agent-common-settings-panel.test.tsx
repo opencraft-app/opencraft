@@ -84,6 +84,24 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByRole("heading", { name: "高级设置" })).toBeTruthy();
   });
 
+  it("uses concise localized loading copy", () => {
+    const renderLoading = (locale: I18nLocale) => renderToStaticMarkup(
+      <LocaleOverrideProvider locale={locale}>
+        <AgentCommonSettingsPanel
+          botId="bot-a"
+          botStatus="running"
+          bots={bots}
+          getGatewayRestartCommand={async () => "restart"}
+          loadSettings={async () => baseSnapshot()}
+          saveSetting={vi.fn()}
+        />
+      </LocaleOverrideProvider>,
+    );
+
+    expect(renderLoading("zh-CN")).toContain("正在加载设置…");
+    expect(renderLoading("en-US")).toContain("Loading settings...");
+  });
+
   it("refreshes settings from an icon-only header action", async () => {
     const user = userEvent.setup();
     let resolveRefresh!: (snapshot: HermesCommonSettingsSnapshot) => void;
@@ -97,6 +115,7 @@ describe("AgentCommonSettingsPanel", () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
+        profileId="profile-2"
         botStatus="running"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
@@ -106,6 +125,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const refreshButton = await screen.findByRole("button", { name: "刷新" });
+    expect(loadSettings).toHaveBeenNthCalledWith(1, bots, "bot-a", "profile-2");
     expect(refreshButton).toHaveAttribute("title", "刷新");
     expect(refreshButton).toHaveClass("h-8", "w-8", "shrink-0", "text-black/35", "hover:text-black/80");
     expect(within(refreshButton).queryByText("刷新")).toBeNull();
@@ -129,6 +149,7 @@ describe("AgentCommonSettingsPanel", () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
+        profileId="profile-2"
         botStatus="running"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
@@ -156,6 +177,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     await waitFor(() => expect(saveSetting).toHaveBeenCalledWith(expect.objectContaining({
       botId: "bot-a",
+      profileId: "profile-2",
       key: "persistentMemory",
       value: false,
     })));
@@ -1161,7 +1183,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(loadSettings).not.toHaveBeenCalled();
-    expect(screen.queryByText("正在读取当前配置…")).toBeNull();
+    expect(screen.queryByText("正在加载设置…")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     expect(screen.getByText("Agent 未运行，启动后才能查看和修改设置。")).toBeTruthy();
@@ -1192,7 +1214,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(screen.queryByRole("combobox", { name: "审批模式" })).toBeNull();
-    expect(screen.queryByText("正在读取当前配置…")).toBeNull();
+    expect(screen.queryByText("正在加载设置…")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
@@ -1214,7 +1236,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     expect(loadSettings).not.toHaveBeenCalled();
     expect(html).toContain("Agent 未运行，启动后才能查看和修改设置。");
-    expect(html).not.toContain("正在读取当前配置…");
+    expect(html).not.toContain("正在加载设置…");
   });
 
   it("keeps running-state load errors visible", async () => {
@@ -1265,7 +1287,7 @@ describe("AgentCommonSettingsPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(loadSettings).toHaveBeenCalledWith(bots, "bot-b"));
+    await waitFor(() => expect(loadSettings).toHaveBeenCalledWith(bots, "bot-b", "main"));
     expect(await screen.findByRole("switch", { name: "用户画像" })).toBeEnabled();
     expect(screen.queryByText("保存中…")).toBeNull();
   });

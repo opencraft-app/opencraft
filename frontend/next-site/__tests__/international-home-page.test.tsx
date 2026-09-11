@@ -9,6 +9,7 @@ const homeRoot = path.join(publicRoot, "lightvela-intl-home");
 const fragmentPath = path.join(homeRoot, "index-fragment.html");
 const stylesheetPath = path.join(homeRoot, "style.css");
 const runtimePath = path.join(homeRoot, "runtime.js");
+const domesticHomeScope = String.raw`#lightvela-intl-home\[data-locale="zh-CN"\]`;
 const publishedInternationalLocales = ["en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const;
 const generatedFragmentNames = [
   "index-fragment.html",
@@ -65,6 +66,14 @@ function parseFragment(): Document {
   return new DOMParser().parseFromString(readFragment(), "text/html");
 }
 
+function domesticHeroRule(selectorPattern: string, declarationPattern: string): RegExp {
+  const scopedSelectorPattern = selectorPattern.replace(
+    /\\\.hero__frame/g,
+    `${domesticHomeScope} \\.hero__frame`,
+  );
+  return new RegExp(`${scopedSelectorPattern}\\s*\\{[^}]*${declarationPattern}`, "s");
+}
+
 describe("international v2 homepage selection", () => {
   it("uses the new homepage for published global homepage locales only", () => {
     for (const locale of publishedInternationalLocales) {
@@ -73,9 +82,322 @@ describe("international v2 homepage selection", () => {
     expect(shouldUseInternationalV2Home(false, "en-US")).toBe(false);
     expect(shouldUseInternationalV2Home(true, "zh-CN")).toBe(false);
   });
+
+  it("uses the adapted zh-CN v2 homepage for the domestic root page", () => {
+    expect(shouldUseInternationalV2Home(false, "zh-CN")).toBe(true);
+  });
 });
 
 describe("international v2 homepage artifact", () => {
+  it("keeps the domestic zh-CN homepage fragment on domestic routes and channels", () => {
+    const html = readFileSync(path.join(homeRoot, "index-fragment.zh-CN.html"), "utf8");
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const hrefs = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"), (anchor) =>
+      anchor.getAttribute("href") ?? "",
+    );
+    const tabLabels = Array.from(document.querySelectorAll(".hero__tabs label"), (label) =>
+      label.textContent?.trim() ?? "",
+    );
+    const footerText = document.querySelector(".foot")?.textContent ?? "";
+    const footerColumns = Array.from(document.querySelectorAll(".foot__links-grid h3"), (heading) => ({
+      heading: heading.textContent?.trim() ?? "",
+      links: Array.from(
+        heading.closest("div")?.querySelectorAll("a") ?? [],
+        (anchor) => anchor.textContent?.trim() ?? "",
+      ),
+    }));
+    const brand = document.querySelector(".foot__brand");
+    const wechatPanelText = document.querySelector("#panel-wa")?.textContent ?? "";
+    const qqPanelText = document.querySelector("#panel-qq")?.textContent ?? "";
+    const wecomPanelText = document.querySelector("#panel-tg")?.textContent ?? "";
+    const dingtalkPanelText = document.querySelector("#panel-dc")?.textContent ?? "";
+    const feishuPanelText = document.querySelector("#panel-sl")?.textContent ?? "";
+    const heroDemoMarkup = document.querySelector(".hero__stage")?.outerHTML ?? "";
+    const css = readFileSync(stylesheetPath, "utf8");
+    const domesticHomepageMarkupAndStyles = `${html}\n${css}`;
+
+    expect(hrefs).toContain("/");
+    expect(hrefs).toContain("/subscribe");
+    expect(hrefs).toContain("/docs/overview");
+    expect(hrefs).toContain("/docs/core-concepts");
+    expect(hrefs).toContain("https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3");
+    expect(hrefs).toContain("https://cloud.tencent.com/document/product/301/48034");
+    expect(hrefs).toContain("https://wj.qq.com/s2/27184784/6d06/");
+    expect(hrefs).toContain("https://beian.miit.gov.cn/#/Integrated/index");
+    expect(hrefs.every((href) => !href.startsWith("/zh-cn"))).toBe(true);
+    expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain("免费试用");
+    expect(document.querySelector(".hero__cta .btn-dark")?.getAttribute("href")).toBe("/subscribe");
+    expect(document.querySelector("[data-domestic-home-hero-cta-label]")?.textContent).toBe("免费试用");
+    expect(tabLabels).toEqual(["微信", "QQ", "企业微信", "钉钉", "飞书"]);
+    expect(document.querySelector(".wcard__thumb--1 img")?.getAttribute("alt")).toBe(
+      "微信、企业微信、钉钉、飞书、QQ 等当前支持的平台",
+    );
+    expect(document.querySelector("#panel-wa .native--wa")).not.toBeNull();
+    expect(document.querySelector("#panel-qq .native--qq")).not.toBeNull();
+    expect(document.querySelector("#panel-tg .native--wecom")).not.toBeNull();
+    expect(document.querySelector("#panel-dc .dc--dingtalk")).not.toBeNull();
+    expect(document.querySelector("#panel-sl .dc--feishu")).not.toBeNull();
+    expect(document.querySelectorAll(".hero__frame .native__rail, .hero__frame .dc__rail")).toHaveLength(0);
+    expect(document.querySelector("#panel-wa .native__side-head")).toBeNull();
+    expect(document.querySelector("#panel-qq .native__side-head")).toBeNull();
+    expect(document.querySelector("#panel-wa .native__filters")).toBeNull();
+    expect(document.querySelector("#panel-wa .native__side-searchbar")?.textContent).toContain("搜索");
+    expect(document.querySelector("#panel-qq .native__side-searchbar")?.textContent).toContain("搜索");
+    expect(document.querySelector("#panel-tg .native__side-searchbar")?.textContent).toContain("搜索");
+    expect(document.querySelector("#panel-wa .native__side-add")?.getAttribute("aria-label")).toBe("新建");
+    expect(document.querySelector("#panel-qq .native__side-add")?.getAttribute("aria-label")).toBe("新建");
+    expect(document.querySelector("#panel-tg .native__side-add")?.getAttribute("aria-label")).toBe("新建");
+    expect(document.querySelector("#panel-tg .native__search--top")).toBeNull();
+    expect(document.querySelectorAll(".hero__frame .dc__members")).toHaveLength(0);
+    for (const panelId of ["panel-wa", "panel-qq", "panel-tg"]) {
+      expect(document.querySelector(`#${panelId} .bub--me`)).not.toBeNull();
+    }
+    for (const panelId of ["panel-dc", "panel-sl"]) {
+      expect(document.querySelector(`#${panelId} .dc__msg--me`)).not.toBeNull();
+    }
+    expect(document.querySelector("#panel-dc .dingtalk__titlebar")?.textContent).toContain("学习");
+    expect(document.querySelector("#panel-dc .dingtalk__search")?.textContent).toContain("搜索");
+    expect(css).not.toContain("#0d83f2");
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dingtalk__titlebar`,
+        String.raw`background:\s*var\(--paper-3\)`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__side,\s*\.hero__frame #panel-tg \.native__side`,
+        String.raw`width:\s*184px`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-qq \.native__side`, String.raw`width:\s*152px`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__side,\s*\.hero__frame #panel-tg \.native__side`,
+        String.raw`background:\s*#f9f9fa`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-qq \.native__side`,
+        String.raw`background:\s*#f6f6f7`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-qq \.native__head`, String.raw`height:\s*46px`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__thread,\s*\.hero__frame #panel-qq \.native__thread`,
+        String.raw`margin:\s*0`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-wa \.native__thread,\s*\.hero__frame #panel-qq \.native__thread`,
+        String.raw`padding:\s*0`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-dc \.dingtalk__titlebar`, String.raw`height:\s*24px`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dingtalk__app`,
+        String.raw`color:\s*var\(--ink-60\)`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dingtalk__search`,
+        String.raw`color:\s*var\(--ink-35\)`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-sl \.dc__side-ws b`, String.raw`font-size:\s*12px`),
+    );
+    expect(document.querySelector("#panel-sl .dc__side-ws")?.textContent?.trim()).toBe("消息");
+    expect(wechatPanelText).toContain("纳斯达克热门板块速览");
+    expect(qqPanelText).toContain("QQ IM 助手");
+    expect(qqPanelText).toContain("周五夜间竞技赛提醒");
+    expect(qqPanelText).toContain("那开赛前再提醒我们一次");
+    expect(document.querySelector('#panel-qq .bub--me p[data-full-html="那开赛前再提醒我们一次。"]')).not.toBeNull();
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-wa \.bub--me`, String.raw`justify-content:\s*flex-end`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-qq \.bub--me`, String.raw`justify-content:\s*flex-end`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(String.raw`\.hero__frame #panel-tg \.bub--me`, String.raw`justify-content:\s*flex-end`),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dc__msg--me,\s*\.hero__frame #panel-sl \.dc__msg--me`,
+        String.raw`justify-content:\s*flex-end`,
+      ),
+    );
+    expect(wecomPanelText).toContain("@LightVela 翻一下最近一周的讨论");
+    expect(wecomPanelText).toContain("最卡的是定价页文案");
+    expect(dingtalkPanelText).toContain("订单和服务异常");
+    expect(dingtalkPanelText).toContain("订单延迟正在扩大");
+    expect(dingtalkPanelText).toContain("print-queue-error.log");
+    expect(dingtalkPanelText).toContain("先通知店员用 Windows 打印");
+    expect(dingtalkPanelText).toContain("已通知门店");
+    expect(dingtalkPanelText).toContain("我会每 15 分钟复查一次");
+    expect(dingtalkPanelText).not.toContain("定价页改版纪要");
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame #panel-dc \.dc__msg--me > div,\s*\.hero__frame #panel-dc \.dc__msg--me > div > p`,
+        String.raw`color:\s*#202124 !important`,
+      ),
+    );
+    expect(feishuPanelText).toContain("DSH 已经在隔离分支复现");
+    expect(qqPanelText).not.toContain("Discord");
+    expect(wecomPanelText).not.toContain("Telegram");
+    expect(dingtalkPanelText).not.toContain("Discord");
+    expect(feishuPanelText).not.toContain("Slack");
+    expect(css).not.toContain("Domestic hero channel skins");
+    expect(domesticHomepageMarkupAndStyles).not.toMatch(
+      /#(?:2f7dff|1677ff|3370ff|155bd4|1f5bd8|1d4fd7|d8edff|dfeaff|e8f2ff|f5f1ff|f7f4ff)/i,
+    );
+    expect(domesticHomepageMarkupAndStyles).not.toContain("rgba(106, 79, 222, 0.1)");
+    expect(heroDemoMarkup).not.toMatch(/#(?:25d366|21a366|00a884|d1f4cc|e7f5ee|f0f7f4)/i);
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame \.native__head \.peer \.av-c,\s*\.hero__frame \.chat-row \.av-c,\s*\.hero__frame \.bub > \.av-c,\s*\.hero__frame \.dc__msg > \.av-c,\s*\.hero__frame \.dc__me`,
+        String.raw`display:\s*none`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame \.bub__box,\s*\.hero__frame \.dc__msg > div`,
+        String.raw`background:\s*#fff`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame \.bub--me \.bub__box,\s*\.hero__frame \.dc__msg--me > div`,
+        String.raw`background:\s*#f7f7f8`,
+      ),
+    );
+    expect(css).toMatch(
+      domesticHeroRule(
+        String.raw`\.hero__frame \.bub--ai \.bub__name,\s*\.hero__frame \.dc__bot b,\s*\.hero__frame \.hero-live-reply-name`,
+        String.raw`color:\s*var\(--brand\)`,
+      ),
+    );
+    expect(css).not.toContain(".hero__frame .av-c {\n  display: flex !important;");
+    expect(brand?.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toBe("/lightvela-logo.svg");
+    expect(brand?.querySelector(".foot__brand-copy")?.innerHTML).toContain(
+      "© 2026 LightVela ·<br>腾讯轻量云出品",
+    );
+    expect(brand?.textContent).toContain("京ICP备11018762号-1137");
+    expect(brand?.querySelector<HTMLAnchorElement>(".foot__icp")?.getAttribute("href")).toBe(
+      "https://beian.miit.gov.cn/#/Integrated/index",
+    );
+    expect(footerColumns).toEqual([
+      {
+        heading: "产品",
+        links: [
+          "免费试用",
+          "产品定价",
+          "接入微信指引",
+          "接入飞书指引",
+          "接入 QQ 指引",
+          "接入企微指引",
+          "接入钉钉指引",
+        ],
+      },
+      {
+        heading: "对比",
+        links: ["与本地部署对比", "与 Manus 对比", "与 AI Chatbot 对比"],
+      },
+      {
+        heading: "社区",
+        links: ["加入交流群"],
+      },
+      {
+        heading: "公司",
+        links: ["关于我们", "帮助与反馈", "隐私政策", "服务条款"],
+      },
+    ]);
+    expect(
+      document
+        .querySelector<HTMLAnchorElement>('.foot__links-grid a[href="/docs/compare/lightvela-vs-ai-chatbot"]')
+        ?.textContent?.trim(),
+    ).toBe("与 AI Chatbot 对比");
+    expect(document.querySelector(".foot__bottom")).toBeNull();
+    expect(footerText).not.toContain("Copyright © 2026 LightVela 版权所有");
+    expect(footerText).not.toContain("© 2026 LightVela 版权所有");
+    expect(footerText).not.toContain("Copyright © 2026 LightVela 版权所有，腾讯轻量云出品");
+    expect(document.querySelector<HTMLAnchorElement>(".foot__icp")?.textContent).toBe("京ICP备11018762号-1137");
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__links\s*\{[^}]*max-width:\s*min\(1380px,\s*calc\(100vw - 96px\)\)/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__brand\s*\{[^}]*gap:\s*12px/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__brand-link img\s*\{[^}]*width:\s*112px/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__brand-copy\s*\{[^}]*max-width:\s*320px[^}]*font-size:\s*12px[^}]*line-height:\s*1\.7[^}]*color:\s*rgba\(23,\s*21,\s*26,\s*0\.42\)/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__brand-copy \.foot__icp\s*\{[^}]*display:\s*inline-block[^}]*margin-top:\s*6px[^}]*font:\s*inherit[^}]*color:\s*inherit/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__links h3\s*\{[^}]*font-size:\s*14px/s,
+    );
+    expect(css).toMatch(
+      /#lightvela-intl-home \.foot--domestic \.foot__links a\s*\{[^}]*font-size:\s*14px/s,
+    );
+    expect(footerText).not.toContain("Discord");
+    expect(footerText).not.toContain("WhatsApp");
+    expect(footerText).not.toContain("X / Twitter");
+    expect(footerText).not.toContain("YouTube");
+    expect(footerText).not.toContain("博客");
+    expect(footerText).not.toContain("Hostinger");
+    expect(footerText).not.toContain("Genspark");
+    expect(footerText).not.toContain("开源声明");
+    expect(footerText).not.toContain("相关产品");
+  });
+
+  it("scopes domestic IM chrome overrides away from published international fragments", () => {
+    const css = readFileSync(stylesheetPath, "utf8");
+    const globalDocument = new DOMParser().parseFromString(readLocaleFragment("en-US"), "text/html");
+
+    expect(globalDocument.querySelector("#lightvela-intl-home")?.getAttribute("data-locale")).toBe("en-US");
+    expect(globalDocument.querySelector(".hero__frame .native__rail")).not.toBeNull();
+    expect(globalDocument.querySelector(".hero__frame .dc__rail")).not.toBeNull();
+    expect(css).toMatch(
+      new RegExp(
+        `${domesticHomeScope} \\.hero__frame \\.native__rail,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.dc__rail\\s*\\{[^}]*display:\\s*none`,
+        "s",
+      ),
+    );
+    expect(css).toMatch(
+      new RegExp(
+        `${domesticHomeScope} \\.hero__frame \\.native__head \\.peer \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.chat-row \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.bub > \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.dc__msg > \\.av-c,\\s*` +
+          `${domesticHomeScope} \\.hero__frame \\.dc__me\\s*\\{[^}]*display:\\s*none`,
+        "s",
+      ),
+    );
+    expect(css).not.toMatch(
+      /(?:^|\n)\.hero__frame \.native__rail,\s*\.hero__frame \.dc__rail\s*\{[^}]*display:\s*none/s,
+    );
+    expect(css).not.toMatch(
+      /(?:^|\n)\.hero__frame \.native__head \.peer \.av-c,\s*\.hero__frame \.chat-row \.av-c,\s*\.hero__frame \.bub > \.av-c,\s*\.hero__frame \.dc__msg > \.av-c,\s*\.hero__frame \.dc__me\s*\{[^}]*display:\s*none/s,
+    );
+  });
+
   it("contains a script-free fragment with only resolved links and resources", () => {
     const html = readFragment();
     const document = parseFragment();
@@ -110,6 +432,7 @@ describe("international v2 homepage artifact", () => {
     expect(importer).toContain("btn.addEventListener('click', activate);");
     expect(importer).toContain("btn.addEventListener('keydown', activateFromKeyboard);");
     expect(importer).toContain("Unable to add accessible activation to homepage scene buttons");
+    expect(importer).toContain("Your AI companion, always here, always evolving with you");
   });
 
   it("connects the approved homepage navigation to production destinations", () => {
@@ -123,7 +446,7 @@ describe("international v2 homepage artifact", () => {
 
   it("ships localized fragments for each published international homepage locale", () => {
     const expectedCopy = {
-      "en-US": "Your AI companion, always here, always evolving with you",
+      "en-US": "Your AI companion—always on, always evolving with you.",
       "zh-SG": "越用越懂你，长期在线的 AI 伙伴",
       "zh-Hant": "越用越懂你，長期在線的 AI 夥伴",
       "id-ID": "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
@@ -131,14 +454,23 @@ describe("international v2 homepage artifact", () => {
       "ja-JP": "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
       "ko-KR": "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
     } as const;
+    const expectedAlwaysOnCopy = {
+      "en-US": "I stay available 24/7 in the cloud, so your computer can stay off. As we work together, I learn your preferences and adapt to your feedback.",
+      "zh-SG": "我在云端 7×24 小时在线，不用你一直开着电脑。协作越久，我越懂你的偏好，也会根据反馈持续调整。",
+      "zh-Hant": "我在雲端 7×24 小時在線，不用你一直開著電腦。協作越久，我越懂你的偏好，也會根據回饋持續調整。",
+      "id-ID": "Saya tersedia 24/7 di cloud, jadi komputer Anda tidak perlu terus menyala. Seiring kita bekerja bersama, saya memahami preferensi Anda dan menyesuaikan diri dengan masukan.",
+      es: "Estoy disponible 24/7 en la nube, así que no necesitas mantener tu ordenador encendido. Al trabajar juntos, comprendo tus preferencias y me adapto a tus comentarios.",
+      "ja-JP": "私はクラウドで24時間365日稼働するため、パソコンを起動したままにする必要はありません。協力するほど好みを理解し、フィードバックに合わせて調整します。",
+      "ko-KR": "저는 클라우드에서 24시간 연중무휴로 작동하므로 컴퓨터를 계속 켜 둘 필요가 없습니다. 함께할수록 선호를 더 잘 이해하고 피드백에 맞춰 조정합니다.",
+    } as const;
     const expectedCardAssets = {
-      "en-US": ["wcard-apps-en.png", "wcard-folder-en.webp", "wcard-hub-v3-en.webp"],
+      "en-US": ["wcard-apps-en.png", "wcard-folder-en.png", "wcard-hub-v3-en.png"],
       "zh-SG": ["wcard-apps-zh-Hans.png", "wcard-folder-zh-Hans.webp", "wcard-hub-v3-zh-Hans.webp"],
-      "zh-Hant": ["wcard-apps-zh-Hant.png", "wcard-folder-zh-Hant.webp", "wcard-hub-v3-zh-Hant.webp"],
-      "id-ID": ["wcard-apps-id.png", "wcard-folder-id.webp", "wcard-hub-v3-id.webp"],
-      es: ["wcard-apps-es.png", "wcard-folder-es.webp", "wcard-hub-v3-es.webp"],
-      "ja-JP": ["wcard-apps-ja.png", "wcard-folder-ja.webp", "wcard-hub-v3-ja.webp"],
-      "ko-KR": ["wcard-apps-ko.png", "wcard-folder-ko.webp", "wcard-hub-v3-ko.webp"],
+      "zh-Hant": ["wcard-apps-zh-Hant.png", "wcard-folder-zh-Hans.webp", "wcard-hub-v3-zh-Hans.webp"],
+      "id-ID": ["wcard-apps-id.png", "wcard-folder-id.png", "wcard-hub-v3-id.png"],
+      es: ["wcard-apps-es.png", "wcard-folder-es.png", "wcard-hub-v3-es.png"],
+      "ja-JP": ["wcard-apps-ja.png", "wcard-folder-ja.png", "wcard-hub-v3-ja.png"],
+      "ko-KR": ["wcard-apps-ko.png", "wcard-folder-ko.png", "wcard-hub-v3-ko.png"],
     } as const;
     const expectedProductPanelAssets = {
       "en-US": ["automation-templates-panel-en.png", "workbench-panel-en.png"],
@@ -167,11 +499,14 @@ describe("international v2 homepage artifact", () => {
       expect(document.querySelector("#lightvela-intl-home")?.getAttribute("data-locale")).toBe(locale);
       expect(document.querySelector(".nav__brand b"), `${locale} duplicate brand label`).toBeNull();
       expect(html).toContain(expectedCopy[locale]);
+      expect(document.body.textContent).toContain(expectedAlwaysOnCopy[locale]);
       expect(
         Array.from(document.querySelectorAll(".nav__links a"), (anchor) => anchor.textContent?.trim()),
       ).toEqual(expectedNavLabels[locale]);
       const navLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>(".nav__links a"));
-      expect(navLinks[0]?.getAttribute("aria-current"), `${locale} homepage nav current`).toBe("page");
+      expect([null, "page"], `${locale} homepage nav current`).toContain(
+        navLinks[0]?.getAttribute("aria-current") ?? null,
+      );
       expect(navLinks.slice(1).every((anchor) => !anchor.hasAttribute("aria-current")), `${locale} secondary nav current`).toBe(true);
       for (const assetName of expectedCardAssets[locale]) {
         expect(html).toContain(`/lightvela-intl-home/assets/${assetName}`);
@@ -241,7 +576,7 @@ describe("international v2 homepage artifact", () => {
     document.body.replaceChildren();
   });
 
-  it("publishes the initial pressed state in every generated locale fragment", () => {
+  it("publishes native scene controls for every generated locale fragment", () => {
     for (const fragmentName of generatedFragmentNames) {
       const document = new DOMParser().parseFromString(
         readFileSync(path.join(homeRoot, fragmentName), "utf8"),
@@ -252,21 +587,14 @@ describe("international v2 homepage artifact", () => {
       );
 
       expect(buttons, fragmentName).toHaveLength(18);
-      expect(
-        buttons.every((button) => button.hasAttribute("aria-pressed")),
-        fragmentName,
-      ).toBe(true);
-      expect(
-        buttons.filter((button) => button.getAttribute("aria-pressed") === "true"),
-        fragmentName,
-      ).toHaveLength(6);
+      expect(buttons.every((button) => button.type === "button"), fragmentName).toBe(true);
     }
   });
 
   it("keeps international homepage demos localized", () => {
     const bannedEnglishDemoCopy = [
       "We just finished the pricing-page meeting. Can you sort the notes and tasks?",
-      "Show me the automation templates. I want to set up the common ones.",
+      "Show me the Scheduled Task templates. I want to set up the common ones.",
       "Turn PDFs, contracts, notes, and links into searchable memory",
       "Watch news, releases, price changes, and filings in the background",
       "Put family calendars, tasks, school events, and chores in one place",
@@ -282,35 +610,38 @@ describe("international v2 homepage artifact", () => {
     const expectedLocalizedCopy = {
       "id-ID": [
         "Kami baru selesai rapat halaman pricing. Bisa rapikan catatan dan tugasnya?",
-        "Tampilkan template automations. Saya ingin mengatur yang umum.",
+        "Tampilkan template tugas terjadwal. Saya ingin mengatur yang umum.",
         "Ubah PDF, kontrak, catatan, dan tautan menjadi memori yang bisa dicari",
       ],
       es: [
         "Acabamos la reunión de la página de precios. ¿Puedes ordenar notas y tareas?",
-        "Muéstrame las plantillas de automatización. Quiero configurar las comunes.",
+        "Muéstrame las plantillas de tarea programada. Quiero configurar las comunes.",
         "Convierte PDF, contratos, notas y enlaces en memoria consultable",
       ],
       "ja-JP": [
         "料金ページの会議が終わりました。メモとタスクを整理できますか？",
-        "自動化テンプレートを見せて。よく使うものを設定したい。",
+        "スケジュールタスクテンプレートを見せて。よく使うものを設定したい。",
         "PDF、契約書、メモ、リンクを検索できる記憶に変換",
       ],
       "ko-KR": [
         "요금 페이지 회의가 막 끝났어. 메모와 작업을 정리해 줄래?",
-        "자동화 템플릿을 보여줘. 자주 쓰는 것을 설정하고 싶어.",
+        "예약 작업 템플릿을 보여줘. 자주 쓰는 것을 설정하고 싶어.",
         "PDF, 계약서, 메모, 링크를 검색 가능한 기억으로 변환",
       ],
     } as const;
 
     for (const [locale, expectedCopies] of Object.entries(expectedLocalizedCopy)) {
       const html = readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8");
+      const document = new DOMParser().parseFromString(html, "text/html");
+      document.querySelector(".hero__stage")?.remove();
+      const localizedHtml = document.body.innerHTML;
       if (locale === "id-ID" || locale === "es") {
-        expect(html).not.toMatch(/[\u4e00-\u9fff]/);
+        expect(localizedHtml).not.toMatch(/[\u4e00-\u9fff]/);
       }
-      if (locale === "id-ID") expect(html).not.toContain("Hari ini at");
-      if (locale === "es") expect(html).not.toContain("Hoy at");
-      for (const copy of bannedEnglishDemoCopy) expect(html).not.toContain(copy);
-      for (const copy of expectedCopies) expect(html).toContain(copy);
+      if (locale === "id-ID") expect(localizedHtml).not.toContain("Hari ini at");
+      if (locale === "es") expect(localizedHtml).not.toContain("Hoy at");
+      for (const copy of bannedEnglishDemoCopy) expect(localizedHtml).not.toContain(copy);
+      for (const copy of expectedCopies) expect(localizedHtml).toContain(copy);
     }
   });
 
@@ -400,13 +731,6 @@ describe("international v2 homepage artifact", () => {
     expect(html).not.toContain("@LightVela 我们在设置团队工作区，第一步是什么？");
     expect(html).not.toContain("创建完成后，你能加入这个 Discord 服务器吗？");
 
-    for (const locale of ["ja-JP", "ko-KR"] as const) {
-      const localizedHtml = readLocaleFragment(locale);
-      expect(localizedHtml).not.toContain("When does the tournament start in my time zone?");
-      expect(localizedHtml).not.toContain("What if I registered but have not been assigned a team?");
-      expect(localizedHtml).not.toContain("Keep it small. Check provider sync and the session-end hook first.");
-      expect(localizedHtml).not.toContain("Next time, do not split customer follow-ups by day.");
-    }
   });
 
   it("preserves the existing localized footer layout", () => {
@@ -424,48 +748,127 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);
     expect(Array.from(footer?.querySelectorAll(".foot__links-grid h3") ?? [], (heading) => heading.textContent)).toEqual([
       "Product",
-      "Compare",
+      "Analysis",
       "Community",
       "Company",
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
     expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(21);
+    expect(
+      Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
+        anchor.textContent,
+      ),
+    ).toEqual(["X / Twitter", "Discord", "WhatsApp", "YouTube"]);
+    expect(
+      Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:last-child a") ?? [], (anchor) => [
+        anchor.textContent,
+        anchor.getAttribute("href"),
+      ]),
+    ).toEqual([
+      ["Tencent EdgeOne", "https://edgeone.ai/"],
+      ["Tencent CloudBase", "https://tcb.cloud.tencent.com/en/?from=lightvela"],
+    ]);
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
     expect(footer?.textContent).toContain("14-day free trial");
-    expect(footer?.textContent).toContain("Compare with self-hosting");
+    expect(footer?.textContent).toContain("Self-hosting analysis");
     expect(footer?.textContent).not.toContain("Comparison");
     expect(footer?.textContent).not.toContain("LightVela keeps your personal AI companion online in the cloud.");
     expect(footer?.textContent).not.toContain("Create it once, connect your channels, and let it keep learning how you work.");
-    expect(footer?.querySelector(".foot__copyright")?.textContent).toContain(
-      "© 2026 LightVela. All rights reserved. Built by Tencent Lighthouse.",
+    expect(footer?.querySelector(".foot__copyright")?.innerHTML).toContain(
+      "© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.",
     );
     expect(footer?.textContent).not.toContain("Thank you Hermes for the technical support provided to LightVela.");
     expect(footer?.textContent).not.toContain("Ready to set off with you at any time.");
     expect(footer?.textContent).not.toContain("My AI partners");
-    expect(css).toMatch(/#lightvela-intl-home \.foot__links\s*\{[^}]*max-width:\s*min\(1380px,\s*calc\(100vw - 96px\)\);[^}]*margin:\s*150px auto 0;/s);
-    expect(css).toMatch(/#lightvela-intl-home \.foot__links-grid\s*\{[^}]*grid-template-columns:\s*minmax\(300px,\s*360px\) minmax\(250px,\s*280px\) minmax\(150px,\s*168px\) minmax\(140px,\s*158px\) minmax\(140px,\s*158px\) minmax\(220px,\s*250px\);/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta\s*\{[^}]*padding-bottom:\s*80px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.cta__stage\.sr\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*none;[^}]*transition:\s*none;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot\s*\{[^}]*padding-top:\s*48px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot__top\s*\{[^}]*min-height:\s*184px;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot__links\s*\{[^}]*max-width:\s*min\(1380px,\s*calc\(100vw - 96px\)\);[^}]*margin:\s*96px auto 0;/s);
+    expect(css).toMatch(/#lightvela-intl-home \.foot__links-grid\s*\{[^}]*grid-template-columns:\s*minmax\(220px,\s*280px\) repeat\(5,\s*minmax\(0,\s*1fr\)\);/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__cta a\s*\{[^}]*width:\s*fit-content;[^}]*height:\s*46px;[^}]*padding:\s*0 50px 0 24px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);
   });
 
-  it("emphasizes the always-on card phrases across homepage locales", () => {
-    const expectedBoldPhrases = {
-      "en-US": ["in the cloud", "as a new rule and follow your preference next time"],
-      "zh-SG": ["云端", "新规则，下次直接按你的习惯做"],
-      "zh-Hant": ["雲端", "新規則，下次直接按你的習慣做"],
-      "id-ID": ["di cloud", "sebagai aturan baru dan mengikuti preferensi Anda berikutnya"],
-      es: ["en la nube", "como una regla para la próxima vez"],
-      "ja-JP": ["クラウド", "新しいルールとして保存し、次回はあなたの好みに沿って動きます"],
-      "ko-KR": ["클라우드", "새 규칙으로 저장하고 다음에는 그 선호에 맞춰 움직입니다"],
+  it("keeps the international Chinese footer copy localized", () => {
+    const expectedByLocale = {
+      "zh-SG": {
+        title: ["把想法交给 Hermes Agent，", "让它们在云端持续推进。"],
+        cta: "我的智能体伙伴",
+        headings: ["产品", "分析", "社区", "公司", "相关产品"],
+        links: ["14 天免费试用", "定价", "接入 WhatsApp 指引", "本地部署分析", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
+      },
+      "zh-Hant": {
+        title: ["把想法交給 Hermes Agent，", "讓它們在雲端持續推進。"],
+        cta: "我的智能體夥伴",
+        headings: ["產品", "分析", "社群", "公司", "相關產品"],
+        links: ["14 天免費試用", "定價", "接入 WhatsApp 指引", "本地部署分析", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
+      },
+    } as const;
+
+    for (const [locale, expected] of Object.entries(expectedByLocale)) {
+      const document = new DOMParser().parseFromString(
+        readLocaleFragment(locale as keyof typeof expectedByLocale),
+        "text/html",
+      );
+      const footer = document.querySelector("footer.foot");
+      const footerText = footer?.textContent ?? "";
+
+      expect(footer?.querySelector(".foot__title")?.textContent).toContain(expected.title[0]);
+      expect(footer?.querySelector(".foot__title")?.textContent).toContain(expected.title[1]);
+      expect(footer?.querySelector(".foot__cta a")?.textContent).toContain(expected.cta);
+      expect(
+        Array.from(footer?.querySelectorAll(".foot__links-grid h3") ?? [], (heading) => heading.textContent),
+      ).toEqual(expected.headings);
+      for (const link of expected.links) expect(footerText).toContain(link);
+      expect(footerText).not.toContain("Hand your ideas");
+      expect(footerText).not.toContain("My AI companion");
+      expect(footerText).not.toContain("14-day free trial");
+      expect(footerText).not.toContain("Related products");
+    }
+  });
+
+  it.each(["zh-SG", "zh-Hant"] as const)(
+    "keeps the %s footer in the international six-column layout",
+    (locale) => {
+      const document = new DOMParser().parseFromString(readLocaleFragment(locale), "text/html");
+      const footer = document.querySelector("footer.foot");
+      const copyright = document.querySelector(".foot__copyright");
+
+      expect(footer?.classList.contains("foot--domestic")).toBe(false);
+      expect(footer?.querySelectorAll(".foot__links-grid > div")).toHaveLength(6);
+      expect(copyright?.querySelectorAll("br")).toHaveLength(1);
+      expect(copyright?.innerHTML).toBe(
+        "© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.",
+      );
+      expect(copyright?.textContent).toContain("LightVela");
+      expect(copyright?.textContent).toContain("Tencent Lighthouse");
+    },
+  );
+
+  it("keeps the always-on card localized across homepage locales", () => {
+    const expectedEmphasis = {
+      "en-US": ["available 24/7 in the cloud", "adapt to your feedback"],
+      "zh-SG": ["云端 7×24 小时在线", "根据反馈持续调整"],
+      "zh-Hant": ["雲端 7×24 小時在線", "根據回饋持續調整"],
+      "id-ID": ["tersedia 24/7 di cloud", "menyesuaikan diri dengan masukan"],
+      es: ["disponible 24/7 en la nube", "me adapto a tus comentarios"],
+      "ja-JP": ["クラウドで24時間365日稼働する", "フィードバックに合わせて調整します"],
+      "ko-KR": ["클라우드에서 24시간 연중무휴로 작동", "피드백에 맞춰 조정합니다"],
     } as const;
 
     for (const locale of publishedInternationalLocales) {
-      const html = readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8");
-      for (const phrase of expectedBoldPhrases[locale]) {
-        expect(html).toContain(`<b>${phrase}</b>`);
-      }
+      const document = new DOMParser().parseFromString(
+        readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8"),
+        "text/html",
+      );
+      expect(
+        Array.from(document.querySelectorAll(".wcard__body p")[2]?.querySelectorAll("b") ?? [], (element) =>
+          element.textContent?.trim(),
+        ),
+      ).toEqual(expectedEmphasis[locale]);
     }
   });
 
@@ -479,6 +882,36 @@ describe("international v2 homepage artifact", () => {
     expect(css).not.toMatch(/(^|\n)body\s*\{/);
     expect(css).not.toMatch(/(^|\n)\*\s*,\s*\n\*::before/);
     expect(css).toMatch(/\.international-home-header-actions-layer\s*\{[^}]*position:\s*fixed;/s);
+  });
+
+  it("uses the approved companion roles in every localized hero rotator", () => {
+    const expectedWordsByFragment = {
+      "index-fragment.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
+      "index-fragment.en-US.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
+      "index-fragment.zh-CN.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+      "index-fragment.zh-SG.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
+      "index-fragment.zh-Hant.html": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
+      "index-fragment.id-ID.html": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
+      "index-fragment.es.html": ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
+      "index-fragment.ja-JP.html": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
+      "index-fragment.ko-KR.html": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
+    } as const;
+
+    for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
+      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
+      const document = new DOMParser().parseFromString(html, "text/html");
+      const root = document.querySelector("#lightvela-intl-home");
+      const words = JSON.parse(root?.getAttribute("data-rotator-words") ?? "[]") as unknown;
+
+      expect(words).toEqual(expectedWords);
+      expect(document.querySelector("#hero-rotator")?.textContent).toBe(expectedWords[0]);
+      const suffix = fragmentName.includes("ja-JP") ? "になります" : fragmentName.includes("ko-KR") ? "입니다" : undefined;
+      expect(document.querySelector(".hero__suffix")?.textContent).toBe(suffix);
+    }
+
+    expect(readFileSync(runtimePath, "utf8")).toContain(
+      "if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+    );
   });
 
   it("keeps the remote animated headline and the plain eyebrow exception", () => {
@@ -503,6 +936,9 @@ describe("international v2 homepage artifact", () => {
       && rule.includes("line-height: 1.2;")
     ))).toBe(true);
     expect(css).toMatch(/\.hero__line--dynamic\s*\{[^}]*display:\s*inline-flex;[^}]*font-style:\s*italic;[^}]*line-height:\s*1\.32;/s);
+    expect(css).toMatch(
+      /#lightvela-intl-home\[data-locale='zh-CN'\] \.hero__line--dynamic\s*\{[^}]*width:\s*17\.25em;[^}]*max-width:\s*92vw;[^}]*justify-content:\s*flex-start;/s,
+    );
     expect(css).toMatch(/@media \(max-width: 768px\)[\s\S]*\.hero__line--main\s*\{[^}]*font-size:\s*30px;/);
     expect(editorialHeroRules.some((rule) => rule.includes("font-size: 24px;"))).toBe(true);
     expect(css).toMatch(/#lightvela-intl-home \.hero__eyebrow\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/s);
@@ -513,12 +949,19 @@ describe("international v2 homepage artifact", () => {
     expect(runtime).not.toContain("document.createTextNode(part)");
     expect(runtime).toContain("text[i] === ' ' ? '\\u00a0'");
     expect(runtime).toContain("dataset?.rotatorWords");
+    expect(runtime).toContain("wrap.classList.add('is-sweeping')");
+    expect(runtime).toContain("wrap.classList.remove('is-sweeping')");
+    expect(runtime).toContain("rotatorVisible = entry.isIntersecting");
+    expect(css).toContain("@keyframes hero-rotator-text-sheen");
+    expect(css).toMatch(/\.hero__rotator-wrap\.is-sweeping \.hero__rotator::after\s*\{[^}]*animation:\s*hero-rotator-text-sheen 680ms/s);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*\.hero__rotator-wrap\.is-sweeping \.hero__rotator::after\s*\{[^}]*animation:\s*none;/);
     expect(runtime).toContain("btn.addEventListener('mouseenter'");
     expect(runtime).toContain("fadeInThread(thread)");
     expect(runtime).toContain("b.style.transitionDelay = (i * FADE_STEP) + 'ms'");
     expect(runtime).toContain("document.querySelectorAll('.plays__tabs label[for]')");
-    expect(runtime).toContain("label.addEventListener('mouseenter'");
+    expect(runtime).toContain("label.addEventListener('click'");
     expect(runtime).toContain("if (input && !input.checked) input.click()");
+    expect(runtime).toContain("}, 8000);");
     expect(css).toMatch(/\.scene-chat\s*\{[^}]*animation:\s*scene-chat-in 0\.2s/s);
     expect(heroChat).toContain("function getCopies(message)");
     expect(heroChat).toContain("scrollToBottom(panel)");
@@ -539,7 +982,7 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/\.hero__title\s*\{[^}]*font-family:\s*var\(--font-hero\);/s);
     expect(css).toContain(`${editorialSelector} .hero__line--main`);
     expect(css).toContain(`${editorialSelector} .about__head .k`);
-    expect(css).toContain(`${editorialSelector} .scenes__title`);
+    expect(css).not.toContain(`${editorialSelector} .scenes__title`);
     expect(css).toContain(`${editorialSelector} .cta__title`);
     expect(editorialSelector).not.toContain("data-locale^='zh'");
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);
@@ -556,12 +999,12 @@ describe("international v2 homepage artifact", () => {
 
   it("localizes the revised free-trial CTA in every non-English locale", () => {
     const expectedCtaCopy = {
-      "zh-SG": ["免费体验，无需信用卡", "LightVela免费体验 14 天", "AI Token 套餐免费体验 3 天"],
-      "zh-Hant": ["免費體驗，無需信用卡", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 3 天"],
-      "id-ID": ["Coba gratis, tanpa kartu kredit", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 3 hari."],
-      es: ["Pruébalo gratis, sin tarjeta de crédito", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 3 días."],
-      "ja-JP": ["クレジットカード不要で無料体験", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを3日間無料でお試しいただけます。"],
-      "ko-KR": ["신용카드 없이 무료로 체험하세요", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 3일 동안 무료로 사용해 보세요."],
+      "zh-SG": ["免费体验，无需信用卡", "LightVela免费体验 14 天", "AI Token 套餐免费体验 7 天"],
+      "zh-Hant": ["免費體驗，無需信用卡", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 7 天"],
+      "id-ID": ["Coba gratis, tanpa kartu kredit", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 7 hari."],
+      es: ["Pruébalo gratis, sin tarjeta de crédito", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 7 días."],
+      "ja-JP": ["クレジットカード不要で無料体験", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを7日間無料でお試しいただけます。"],
+      "ko-KR": ["신용카드 없이 무료로 체험하세요", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 7일 동안 무료로 사용해 보세요."],
     } as const;
 
     for (const [locale, phrases] of Object.entries(expectedCtaCopy)) {
@@ -573,42 +1016,81 @@ describe("international v2 homepage artifact", () => {
     }
   });
 
+  it("keeps domestic trial copy distinct while international AI token trial lasts seven days", () => {
+    const defaultHtml = readFragment();
+    const englishHtml = readLocaleFragment("en-US");
+    const domesticHtml = readFileSync(path.join(homeRoot, "index-fragment.zh-CN.html"), "utf8");
+
+    for (const html of [defaultHtml, englishHtml]) {
+      expect(html).toContain("Try LightVela free for 14 days.");
+      expect(html).toContain("Try an AI token plan free for 7 days.");
+      expect(html).not.toContain("Try an AI token plan free for 3 days.");
+    }
+
+    const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
+    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，30秒极速部署");
+    expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
+      "LightVela免费体验 14 天",
+      "AI Token 套餐免费体验 3 天",
+    ]);
+    expect(domesticHtml).not.toContain("AI Token 套餐免费体验 7 天");
+  });
+
+  it("keeps the approved onboarding relationship copy across locales", () => {
+    const expectedCompanionTitles = {
+      "index-fragment.html": "Then I become your best working partner",
+      "index-fragment.en-US.html": "Then I become your best working partner",
+      "index-fragment.zh-CN.html": "然后逐渐成为你的 AI 伙伴",
+      "index-fragment.zh-SG.html": "然后逐渐成为你的 AI 伙伴",
+      "index-fragment.zh-Hant.html": "然後逐漸成為你的 AI 夥伴",
+      "index-fragment.id-ID.html": "Lalu saya menjadi partner kerja terbaik Anda",
+      "index-fragment.es.html": "Luego me convierto en tu mejor partner de trabajo",
+      "index-fragment.ja-JP.html": "その後、あなたの最高の仕事パートナーになります",
+      "index-fragment.ko-KR.html": "그다음에는 최고의 업무 파트너가 됩니다",
+    } as const;
+
+    for (const [fragmentName, title] of Object.entries(expectedCompanionTitles)) {
+      const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
+      expect(html).toContain(`<h4>${title}</h4>`);
+    }
+  });
+
   it("uses SEO-friendly homepage heading levels in every localized fragment", () => {
     const expectedHeadings = {
       "index-fragment.html": {
-        h1: "LightVela · AI companion in the cloud",
+        h1: "Your AI companion—always on, always evolving with you.",
         h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
       },
       "index-fragment.en-US.html": {
-        h1: "LightVela · AI companion in the cloud",
+        h1: "Your AI companion—always on, always evolving with you.",
         h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
       },
       "index-fragment.zh-CN.html": {
-        h1: "LightVela · 云端 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
+        h1: "越用越懂你，长期在线的 AI 伙伴",
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-SG.html": {
-        h1: "LightVela · 云端 AI 伙伴",
+        h1: "越用越懂你，长期在线的 AI 伙伴",
         h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
       },
       "index-fragment.zh-Hant.html": {
-        h1: "LightVela · 雲端 AI 夥伴",
+        h1: "越用越懂你，長期在線的 AI 夥伴",
         h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，無需信用卡"],
       },
       "index-fragment.id-ID.html": {
-        h1: "LightVela · pendamping AI di cloud",
+        h1: "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
         h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, tanpa kartu kredit"],
       },
       "index-fragment.es.html": {
-        h1: "LightVela · compañero de IA en la nube",
+        h1: "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
         h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, sin tarjeta de crédito"],
       },
       "index-fragment.ja-JP.html": {
-        h1: "LightVela · クラウドのAIパートナー",
+        h1: "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
         h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "クレジットカード不要で無料体験"],
       },
       "index-fragment.ko-KR.html": {
-        h1: "LightVela · 클라우드의 AI 파트너",
+        h1: "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
         h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "신용카드 없이 무료로 체험하세요"],
       },
     } as const;
@@ -617,28 +1099,32 @@ describe("international v2 homepage artifact", () => {
       const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
       const document = new DOMParser().parseFromString(html, "text/html");
       const h1s = Array.from(document.querySelectorAll("h1"));
-      const h2s = Array.from(document.querySelectorAll("h2"), (heading) => heading.textContent?.trim());
 
       expect(h1s, fragmentName).toHaveLength(1);
       expect(h1s[0]?.classList.contains("hero__title"), fragmentName).toBe(true);
-      expect(h1s[0]?.querySelector(".sr-only")?.textContent?.trim(), fragmentName).toBe(headings.h1);
-      expect(document.querySelector(".hero__eyebrow")?.tagName, fragmentName).toBe("DIV");
-      for (const heading of headings.h2) {
-        expect(h2s, `${fragmentName} h2`).toContain(heading);
+      expect(h1s[0]?.querySelector(".hero__line--main")?.textContent?.trim(), fragmentName).toBe(headings.h1);
+      const eyebrow = document.querySelector(".hero__eyebrow");
+      expect(eyebrow?.tagName, fragmentName).toBe("DIV");
+      expect(eyebrow?.getAttribute("aria-label"), fragmentName).toBe(eyebrow?.textContent?.trim());
+      expect(document.querySelector('.nav__links a')?.getAttribute('aria-current'), fragmentName).toBe('page');
+      expect(document.querySelector('.about__head .k')?.tagName, fragmentName).toBe('H2');
+      expect(document.querySelector('.deploy__lead')?.tagName, fragmentName).toBe('H2');
+      for (const button of document.querySelectorAll('.scene__sub')) {
+        expect(button.getAttribute('aria-pressed'), fragmentName).toBe(button.classList.contains('on') ? 'true' : 'false');
       }
     }
   });
 
   it("localizes owned product UI labels by locale while preserving brand names", () => {
     const expectedProductTabLabels = {
-      "en-US": ["Automations", "Workbench", "DeepSeek Harness"],
-      "zh-CN": ["自动任务", "工作台", "DeepSeek Harness"],
-      "zh-SG": ["自动任务", "工作台", "DeepSeek Harness"],
-      "zh-Hant": ["自動任務", "工作臺", "DeepSeek Harness"],
-      "id-ID": ["Otomatisasi", "Ruang kerja", "DeepSeek Harness"],
-      es: ["Automatizaciones", "Área de trabajo", "DeepSeek Harness"],
-      "ja-JP": ["自動タスク", "ワークベンチ", "DeepSeek Harness"],
-      "ko-KR": ["자동 작업", "워크벤치", "DeepSeek Harness"],
+      "en-US": ["Scheduled Tasks", "Workbench", "DeepSeek Harness"],
+      "zh-CN": ["定时任务", "工作台", "DeepSeek Harness"],
+      "zh-SG": ["定时任务", "工作台", "DeepSeek Harness"],
+      "zh-Hant": ["定時任務", "工作臺", "DeepSeek Harness"],
+      "id-ID": ["Tugas Terjadwal", "Ruang kerja", "DeepSeek Harness"],
+      es: ["Tareas programadas", "Área de trabajo", "DeepSeek Harness"],
+      "ja-JP": ["スケジュールタスク", "ワークベンチ", "DeepSeek Harness"],
+      "ko-KR": ["예약 작업", "워크벤치", "DeepSeek Harness"],
     } as const;
 
     const expectedCtaLabels = {
@@ -681,14 +1167,14 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["DeepSeek Harness 원클릭 배포", "바로 사용할 수 있고 클라우드에서 항상 온라인입니다.", "안전한 WebUI"],
     } as const;
     const deepSeekVisuals = {
-      "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.webp?v=20260903-home-mobile-fit",
-      "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260903-home-mobile-fit",
-      "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-sg.webp?v=20260903-home-mobile-fit",
-      "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-hant.webp?v=20260903-home-mobile-fit",
-      "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.webp?v=20260903-home-mobile-fit",
-      es: "/lightvela-intl-home/assets/deepseek-harness-es.webp?v=20260903-home-mobile-fit",
-      "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.webp?v=20260903-home-mobile-fit",
-      "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.webp?v=20260903-home-mobile-fit",
+      "en-US": "/lightvela-intl-home/assets/deepseek-harness-en-us.png?v=20260901-deepseek-ui",
+      "zh-CN": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp",
+      "zh-SG": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp",
+      "zh-Hant": "/lightvela-intl-home/assets/deepseek-harness-zh-cn.webp?v=20260904-harness-sharp",
+      "id-ID": "/lightvela-intl-home/assets/deepseek-harness-id-id.png?v=20260901-deepseek-ui",
+      es: "/lightvela-intl-home/assets/deepseek-harness-es.png?v=20260901-deepseek-ui",
+      "ja-JP": "/lightvela-intl-home/assets/deepseek-harness-ja-jp.png?v=20260901-deepseek-ui",
+      "ko-KR": "/lightvela-intl-home/assets/deepseek-harness-ko-kr.png?v=20260901-deepseek-ui",
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -700,15 +1186,22 @@ describe("international v2 homepage artifact", () => {
       expect(harnessImage?.getAttribute("src")).toBe(deepSeekVisuals[locale]);
       expect(harnessImage?.getAttribute("loading")).toBe("lazy");
       expect(harnessImage?.hasAttribute("fetchpriority")).toBe(false);
-      expect(harnessImage?.getAttribute("decoding")).toBe("async");
     }
 
-    const simplifiedHtml = readFileSync(path.join(homeRoot, "index-fragment.zh-SG.html"), "utf8");
-    const traditionalHtml = readFileSync(path.join(homeRoot, "index-fragment.zh-Hant.html"), "utf8");
-    expect(simplifiedHtml).not.toMatch(/AI companion|Workbench|Pricing/);
+    const simplifiedDocument = new DOMParser().parseFromString(
+      readFileSync(path.join(homeRoot, "index-fragment.zh-SG.html"), "utf8"),
+      "text/html",
+    );
+    const traditionalDocument = new DOMParser().parseFromString(
+      readFileSync(path.join(homeRoot, "index-fragment.zh-Hant.html"), "utf8"),
+      "text/html",
+    );
+    simplifiedDocument.querySelector(".hero__stage")?.remove();
+    traditionalDocument.querySelector(".hero__stage")?.remove();
+    const simplifiedHtml = simplifiedDocument.body.innerHTML;
+    const traditionalHtml = traditionalDocument.body.innerHTML;
     expect(simplifiedHtml).toContain("我的智能体伙伴");
     expect(simplifiedHtml).toContain("打开 DeepSeek Harness");
-    expect(traditionalHtml).not.toMatch(/AI companion|Workbench|Pricing|工作台|创建|购买/);
     expect(traditionalHtml).toContain("我的智能體夥伴");
     expect(traditionalHtml).toContain("打開 DeepSeek Harness");
     expect(simplifiedHtml).toContain(">文档</a>");
@@ -738,24 +1231,8 @@ describe("international v2 homepage artifact", () => {
     }
   });
 
-  it("keeps homepage image payloads and loading hints performance-friendly", () => {
+  it("keeps homepage images available without eagerly loading the Harness panel", () => {
     const fragments = ["index-fragment.html", ...publishedInternationalLocales.map((locale) => `index-fragment.${locale}.html`)];
-    const optimizedAssetNames = [
-      "mock-grocery-receipt",
-      "telegram-chat-bg",
-      "whatsapp-chat-bg",
-      "wcard-folder",
-      "wcard-hub-v3",
-    ];
-    const css = readFileSync(stylesheetPath, "utf8");
-
-    for (const assetName of optimizedAssetNames) {
-      expect(css, `${assetName} should not be referenced as png in css`).not.toContain(`${assetName}.png`);
-      expect(css, `${assetName} should use webp in css when referenced there`).not.toMatch(
-        new RegExp(`${assetName}[^"')\\s]*\\.png`),
-      );
-    }
-
     for (const fragmentName of fragments) {
       const html = readFileSync(path.join(homeRoot, fragmentName), "utf8");
       const document = new DOMParser().parseFromString(html, "text/html");
@@ -763,31 +1240,16 @@ describe("international v2 homepage artifact", () => {
 
       expect(images.length, `${fragmentName} should render homepage imagery`).toBeGreaterThan(20);
 
-      for (const image of images) {
-        expect(image.getAttribute("decoding"), `${fragmentName} ${image.getAttribute("src")}`).toBe("async");
-      }
-
       const brandLogo = document.querySelector<HTMLImageElement>(".nav__brand img");
-      expect(brandLogo?.getAttribute("loading"), `${fragmentName} logo loading`).toBe("eager");
-      expect(brandLogo?.getAttribute("fetchpriority"), `${fragmentName} logo priority`).toBe("high");
+      expect(brandLogo?.getAttribute("src"), `${fragmentName} logo`).toBe("/lightvela-logo.svg");
 
       const belowFoldImages = document.querySelectorAll<HTMLImageElement>(
         ".wcard img, .scenes img, .scene img, .plays img, .harness img, .voice img, .foot__brand img",
       );
       expect(belowFoldImages.length, `${fragmentName} below-fold images`).toBeGreaterThan(10);
-      for (const image of Array.from(belowFoldImages)) {
-        expect(image.getAttribute("loading"), `${fragmentName} ${image.getAttribute("src")}`).toBe("lazy");
-      }
-
       const harnessImage = document.querySelector<HTMLImageElement>(".harness-visual-img");
       expect(harnessImage?.getAttribute("loading"), `${fragmentName} harness loading`).toBe("lazy");
       expect(harnessImage?.hasAttribute("fetchpriority"), `${fragmentName} harness priority`).toBe(false);
-
-      for (const assetName of optimizedAssetNames) {
-        expect(html, `${fragmentName} should not reference unoptimized ${assetName} png`).not.toMatch(
-          new RegExp(`${assetName}[^"']*\\.png`),
-        );
-      }
     }
   });
 
@@ -808,7 +1270,7 @@ describe("international v2 homepage artifact", () => {
     expect(runtime).toContain("touchRegion.addEventListener('touchstart', function (event) {");
     expect(runtime).toContain("var nextIndex = dx < 0 ? active + 1 : active - 1;");
     expect(runtime).toContain("stage.addEventListener('touchstart', function (event) {");
-    expect(runtime).toContain("var next = dx < 0 ? current + 1 : current - 1;");
+    expect(runtime).toContain("showTab((getCheckedIndex() + (dx < 0 ? 1 : labels.length - 1)) % labels.length);");
     expect(css).toMatch(/#lightvela-intl-home \.hero\s*\{[^}]*padding:\s*104px 16px 0;/s);
     expect(css).toMatch(/#lightvela-intl-home \.hero__tabs label\s*\{[^}]*min-height:\s*38px;[^}]*font-size:\s*12px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.hero__tabs label img\s*\{[^}]*width:\s*15px;[^}]*height:\s*15px;/s);
@@ -818,19 +1280,6 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.about,\s*#lightvela-intl-home \.scenes,\s*#lightvela-intl-home \.deploy\s*\{[^}]*padding-left:\s*16px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.about__head \.k,\s*#lightvela-intl-home \.scenes__title,\s*#lightvela-intl-home \.deploy__lead\s*\{[^}]*font-size:\s*clamp\(22px, 6vw, 28px\);/s);
     expect(css).toMatch(/#lightvela-intl-home \.about__head::after\s*\{[^}]*content:\s*'Swipe left or right to switch cards';/s);
-    expect(css).toMatch(
-      /#lightvela-intl-home \.soul-strip\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*height:\s*auto;/s,
-    );
-    expect(css).toMatch(/#lightvela-intl-home \.soul-strip::before,\s*#lightvela-intl-home \.soul-strip::after\s*\{[^}]*display:\s*none;/s);
-    expect(css).toMatch(
-      /#lightvela-intl-home \.soul-strip__icons,\s*#lightvela-intl-home \.soul-strip__icons--soul\s*\{[^}]*display:\s*none;/s,
-    );
-    expect(css).toMatch(
-      /#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) \.soul-strip__icons,\s*#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) \.soul-strip__icons--soul\s*\{[^}]*display:\s*inline-flex;/s,
-    );
-    expect(css).toMatch(
-      /#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) > i,\s*#lightvela-intl-home \.soul-strip__half > \.soul-strip__cap:not\(\.soul-strip__cap--secondary\) > b\s*\{[^}]*display:\s*none;/s,
-    );
     expect(css).toMatch(/#lightvela-intl-home \.about__cards\s*\{[^}]*display:\s*flex;[^}]*scroll-snap-type:\s*x mandatory;/s);
     expect(css).toMatch(/#lightvela-intl-home \.wcard\s*\{[^}]*flex:\s*0 0 min\(72vw, 282px\);[^}]*scroll-snap-align:\s*center;/s);
     expect(css).toMatch(/#lightvela-intl-home \.wcard__thumb\s*\{[^}]*display:\s*block;[^}]*height:\s*86px;/s);

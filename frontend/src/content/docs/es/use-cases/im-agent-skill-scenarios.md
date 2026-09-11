@@ -94,13 +94,13 @@ Para un compañero de IA, comienza con:
 
 Verifica si el Agent llamó a la Skill esperada, usó el material de referencia correcto y se detuvo para explicar limitaciones cuando estaba incierto.
 
-### 5. Usa automatizaciones para trabajos repetitivos
+### 5. Usa tareas programadas para trabajos repetitivos
 
 Los mensajes de bienvenida, preguntas frecuentes, resúmenes y recordatorios pueden usar diferentes disparadores.
 
-Usa [Automatizaciones](../configuration/automation.md) para trabajos que deben ejecutarse en un tiempo fijo, como enviar un resumen diario de la comunidad o recordar a un equipo de soporte sobre casos sin resolver.
+Usa [Tareas programadas](../configuration/automation.md) para trabajos que deben ejecutarse en un tiempo fijo, como enviar un resumen diario de la comunidad o recordar a un equipo de soporte sobre casos sin resolver.
 
-Confirma el método de notificación y canal objetivo para cada automatización en lugar de asumir que cada canal puede recibir el mismo tipo de mensaje proactivo.
+Confirma el método de notificación y canal objetivo para cada tarea programada en lugar de asumir que cada canal puede recibir el mismo tipo de mensaje proactivo.
 
 ## Recomendaciones por escenario
 

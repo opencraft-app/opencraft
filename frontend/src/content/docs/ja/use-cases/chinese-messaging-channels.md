@@ -96,4 +96,4 @@ Hi Hermes. Please reply with the channel you received this from.
 
 - [メモリ管理](../configuration/memory.md)- 接続されたチャンネルで共有されているコンテキストを管理します。
 
-- [自動化](../configuration/automation.md)- 適切な場合、接続チャンネルにスケジュールされたアップデートを配信します。
+- [スケジュールタスク](../configuration/automation.md)- 適切な場合、接続チャンネルにスケジュールされたアップデートを配信します。

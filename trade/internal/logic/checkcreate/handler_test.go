@@ -77,6 +77,14 @@ func (f *fakeCTLClient) RenewPass(_ context.Context, _ string, _ *ctlclient.Rene
 func (f *fakeCTLClient) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyPassRequest) (*ctlclient.DestroyPassResponse, error) {
 	return nil, errors.New("DestroyPass not used in checkCreate tests")
 }
+
+func (f *fakeCTLClient) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (f *fakeCTLClient) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
 func (f *fakeCTLClient) ListPassesByAppID(_ context.Context, _ int64, _ []string, _, _ int) ([]*ctlclient.PassDetail, int64, error) {
 	return nil, 0, errors.New("ListPassesByAppID not used in checkCreate")
 }

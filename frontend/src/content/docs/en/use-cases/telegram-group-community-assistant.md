@@ -57,10 +57,10 @@ Keep group prompts explicit so participants know when the Agent is being asked t
 |---|---|---|
 | FAQ | `@bot_username answer only from the prepared FAQ` | The answer uses the prepared material or clearly requests a human handoff |
 | Discussion summary | `@bot_username summarize decisions, action items, owners, and open questions` | The reply separates confirmed decisions from unresolved items |
-| Reminder draft | `@bot_username draft a reminder with time, audience, purpose, and cancellation method` | Review the draft before using any automation to send it |
+| Reminder draft | `@bot_username draft a reminder with time, audience, purpose, and cancellation method` | Review the draft before using any scheduled task to send it |
 
 For retrieval, summaries, or scheduled content, choose a trusted Skill and review its permissions in [Configure Skills](../configuration/skill.md).
-Validate an automation separately in a supported target channel before relying on it for scheduled messages.
+Validate a scheduled task separately in a supported target channel before relying on it for scheduled messages.
 
 ## Safety and operating boundaries
 

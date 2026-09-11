@@ -1,0 +1,18 @@
+{
+  "name": "hemesclient",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/main.ts serve",
+    "sessions": "bun run src/main.ts sessions",
+    "build": "bun build --compile --minify --sourcemap src/main.ts --outfile dist/hemesclient",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "bun": "1.4.0",
+    "typescript": "^5.9.3"
+  }
+}

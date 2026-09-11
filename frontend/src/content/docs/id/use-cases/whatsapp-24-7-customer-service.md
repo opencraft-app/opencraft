@@ -10,7 +10,7 @@ Pesan proaktif WhatsApp tetap dipengaruhi jendela percakapan, templat pesan, dan
 
 ## Ringkasan
 
-**WhatsApp dapat berperan sebagai pintu masuk satu lawan satu antara pelanggan dan Hermes Agent, berguna untuk menjawab pertanyaan yang berulang, menangkap kebutuhan pelanggan, dan menyusun draf respons. Namun "24/7" di sini berarti ia dapat merespons kapan pun layanannya berjalan, modelnya tersedia, dan kanalnya terhubung — ini bukan jaminan layanan tanpa henti maupun SLA dukungan manusia.** Batasan kedua sama pentingnya: pengiriman pesan proaktif di WhatsApp tetap tunduk pada jendela percakapan, templat pesan, dan konfigurasi kanal, sehingga pengingat otomatis harus dirancang terpisah dari percakapan yang dimulai pelanggan alih-alih mengasumsikan Anda dapat mengirim sesuka hati. Bangun dalam empat lapisan, secara berurutan: persona menetapkan suara dan kondisi eskalasi, pengetahuan menangkap FAQ, Skill menambahkan prosedur yang dapat dipakai ulang, dan otomasi menangani ringkasan terjadwal.
+**WhatsApp dapat berperan sebagai pintu masuk satu lawan satu antara pelanggan dan Hermes Agent, berguna untuk menjawab pertanyaan yang berulang, menangkap kebutuhan pelanggan, dan menyusun draf respons. Namun "24/7" di sini berarti ia dapat merespons kapan pun layanannya berjalan, modelnya tersedia, dan kanalnya terhubung — ini bukan jaminan layanan tanpa henti maupun SLA dukungan manusia.** Batasan kedua sama pentingnya: pengiriman pesan proaktif di WhatsApp tetap tunduk pada jendela percakapan, templat pesan, dan konfigurasi kanal, sehingga pengingat otomatis harus dirancang terpisah dari percakapan yang dimulai pelanggan alih-alih mengasumsikan Anda dapat mengirim sesuka hati. Bangun dalam empat lapisan, secara berurutan: persona menetapkan suara dan kondisi eskalasi, pengetahuan menangkap FAQ, Skill menambahkan prosedur yang dapat dipakai ulang, dan tugas terjadwal menangani ringkasan terjadwal.
 
 ## Untuk siapa ini
 
@@ -39,7 +39,7 @@ Ia sangat berguna bagi tim yang membutuhkan bahasa dukungan yang konsisten, FAQ 
 | Pengetahuan | FAQ produk, kebijakan, jam layanan, dan jalur eskalasi | File referensi di [Cloud Storage](../configuration/files.md) |
 | Skill | Penelusuran, penataan, penyusunan draf, dan tindakan konkret lainnya | [Skill](../configuration/skill.md) |
 | Memori | Preferensi pelanggan yang sudah dikonfirmasi dan konteks kolaborasi yang tahan lama | [Pengelolaan Memori](../configuration/memory.md) |
-| Otomasi | Pemeriksaan terjadwal, pengingat internal, dan pemberitahuan proaktif | [Otomasi](../configuration/automation.md) |
+| Tugas Terjadwal | Pemeriksaan terjadwal, pengingat internal, dan pemberitahuan proaktif | [Tugas Terjadwal](../configuration/automation.md) |
 
 Jangan memasukkan basis pengetahuan produk yang besar ke dalam kepribadian, dan jangan memperlakukan konten pelanggan yang belum dikonfirmasi sebagai memori jangka panjang.
 
@@ -108,11 +108,11 @@ Kata sandi, kode verifikasi, detail pembayaran, informasi identitas lengkap, dan
 
 Minta Hermes dalam percakapan untuk mengingat atau melupakan sebuah preferensi, dan tinjau halaman [Pengelolaan Memori](../configuration/memory.md) di konsol secara berkala.
 
-### 6. Konfigurasikan otomasi dan pesan proaktif
+### 6. Konfigurasikan tugas terjadwal dan pesan proaktif
 
-Kandidat otomasi yang baik mencakup pengingat tugas internal, pemeriksaan kasus yang belum selesai, dan ringkasan layanan harian.
+Kandidat tugas terjadwal yang baik mencakup pengingat tugas internal, pemeriksaan kasus yang belum selesai, dan ringkasan layanan harian.
 
-Konfigurasikan jadwal, jendela waktu aktif, dan metode notifikasinya di [Otomasi](../configuration/automation.md).
+Konfigurasikan jadwal, jendela waktu aktif, dan metode notifikasinya di [Tugas Terjadwal](../configuration/automation.md).
 
 Pesan proaktif WhatsApp dapat dibatasi oleh jendela percakapan atau templat pesan yang sudah disetujui, jadi jangan mengasumsikan teks biasa selalu dapat terkirim ketika pelanggan belum memulai percakapan.
 
@@ -172,4 +172,4 @@ Secara default, biarkan Skill membuat draf atau pengingat internal, lalu minta m
 
 - [Menentukan Peran, Kepribadian, dan Suara IM Agent](./im-agent-persona-soul-md.md) — Tentukan kepribadian dukungan dan batas perilakunya.
 
-- [Otomasi](../configuration/automation.md) — Konfigurasikan pengingat internal dan ringkasan terjadwal.
+- [Tugas Terjadwal](../configuration/automation.md) — Konfigurasikan pengingat internal dan ringkasan terjadwal.

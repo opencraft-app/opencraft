@@ -115,29 +115,29 @@ func (l *logic) ensureAutomationGatewayAuthMaterial(ctx pctx.Context, entity *mo
 	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
-		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "create ai-gateway key for automation: %v", err)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "create ai-gateway key for scheduled tasks: %v", err)
 	}
 	gatewayAuthToken, err := generateGatewayAuthToken()
 	if err != nil {
 		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "generate automation gateway token: %v", err)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "generate scheduled-task gateway token: %v", err)
 	}
 	gwConf, err := l.gatewayRuntimeConfig(backend)
 	if err != nil {
 		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "resolve automation gateway config: %v", err)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "resolve scheduled-task gateway config: %v", err)
 	}
 	if err := l.configureOnboard(ctx, entity.SandboxId, apiKeyResp.APIKey, gatewayAuthToken, gwConf); err != nil {
 		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "configure automation gateway auth material: %v", err)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "configure scheduled-task gateway auth material: %v", err)
 	}
 	if err := l.persistAiGatewayKeyIDWithStatuses(ctx, entity, apiKeyResp.KeyID, []string{modelinstance.InstanceStatusRunning}); err != nil {
 		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "persist automation ai-gateway key id: %v", err)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "persist scheduled-task ai-gateway key id: %v", err)
 	}
 	if err := l.persistGatewayAuthTokenWithStatuses(ctx, entity, gatewayAuthToken, []string{modelinstance.InstanceStatusRunning}); err != nil {
 		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
-		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "persist automation gateway auth token: %v", err)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "persist scheduled-task gateway auth token: %v", err)
 	}
 
 	if previousKeyID != "" && previousKeyID != apiKeyResp.KeyID {

@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Model credits are the unit LightVela uses to meter how much your Hermes Agent spends on model calls, counting both input and output. Credits come with your plan on a monthly basis, are not sold separately, and reset each billing cycle: Launch includes 100 credits per month, and Cruise offers a larger allowance. Credits are consumed whenever the agent talks with you, runs an automated task, or executes a skill — all of which ultimately call the model — and longer conversations with more context burn through them faster. If you run out mid-cycle, model-dependent features are limited until the next allocation, or you can switch to your own model API key in the model settings and keep going.**
+**Model credits are the unit LightVela uses to meter how much your Hermes Agent spends on model calls, counting both input and output. Credits come with your plan on a monthly basis, are not sold separately, and reset each billing cycle: Launch includes 100 credits per month, and Cruise offers a larger allowance. Credits are consumed whenever the agent talks with you, runs a scheduled task, or executes a skill — all of which ultimately call the model — and longer conversations with more context burn through them faster. If you run out mid-cycle, model-dependent features are limited until the next allocation, or you can switch to your own model API key in the model settings and keep going.**
 
 ---
 
@@ -22,7 +22,7 @@ Model credits are the units LightVela uses to measure model usage by a Hermes Ag
 
 ## What are model credits?
 
-Model credits are the **measurement unit** for language-model calls made by a Hermes Agent. Every time your Agent responds in a conversation, runs an [automation](./configuration/automation.md), or uses a skill, it sends requests to the underlying model. The tokens used by those requests are converted into credits.
+Model credits are the **measurement unit** for language-model calls made by a Hermes Agent. Every time your Agent responds in a conversation, runs a [scheduled task](./configuration/automation.md), or uses a skill, it sends requests to the underlying model. The tokens used by those requests are converted into credits.
 
 The approximate conversion is **1 credit ≈ 10,000 tokens**. A token is a basic unit of text processed by a model. Both input—the content you send to your Agent—and output—the response it generates—count toward usage.
 
@@ -49,7 +49,7 @@ Credits are consumed in the following situations because each one requires Herme
 
 - **Talking to your Agent** — Messaging through Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel
 
-- **Running automations** — Letting your Agent execute [scheduled tasks](./configuration/automation.md)
+- **Running scheduled tasks** — Letting your Agent execute [scheduled tasks](./configuration/automation.md)
 
 - **Using skills** — Allowing a skill to call a model for reasoning during execution
 

@@ -77,7 +77,7 @@
 你可以要求 Hermes 进行比较、制作大纲、列出开放问题，或为某次具体会议生成回顾。
 眼前的结果越明确，就越容易验证 Hermes 是否使用了正确的上下文。
 
-如果你的复查有固定节奏，可以使用一个[自动任务](../configuration/automation.md)提醒你重新查看文件夹，或准备定期回顾。
+如果你的复查有固定节奏，可以使用一个[定时任务](../configuration/automation.md)提醒你重新查看文件夹，或准备定期回顾。
 建议先从简单的提醒或总结开始，不要直接授予一个范围很大的开放式任务。
 
 ![使用整理后的项目知识进行 Hermes Agent 对话](../images/use-case-memory-knowledge-automation.png)

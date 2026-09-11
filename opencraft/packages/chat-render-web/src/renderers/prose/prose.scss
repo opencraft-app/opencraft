@@ -1,0 +1,229 @@
+.opencraft-chat-document {
+  --markdown-font-size: var(--codex-chat-font-size, 14px);
+  --markdown-line-height: calc(var(--markdown-font-size) + 8px);
+  color: var(--color-text, var(--text-primary));
+  font-family: var(--font-family-content, var(--font-sans, sans-serif));
+  font-size: var(--markdown-font-size);
+  font-weight: 400;
+  line-height: var(--markdown-line-height);
+  overflow-wrap: anywhere;
+  text-rendering: optimizeLegibility;
+
+  > :first-child { margin-top: 0; }
+  > :last-child { margin-bottom: 0; }
+
+  p { margin: 0 0 0.6875rem; }
+  strong { font-weight: 600; }
+
+  > p[data-markdown-han-text]:has(+ p[data-markdown-han-text]) {
+    margin-bottom: var(--spacing, 4px);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: var(--color-text, var(--text-primary));
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 20px 0 10px;
+  }
+
+  h1 { font-size: 24px; }
+  h2 { font-size: 20px; }
+  h3,
+  h4 { font-size: 17px; line-height: 22px; }
+  h5,
+  h6 { font-size: 15px; line-height: 20px; }
+
+  ul,
+  ol {
+    margin: 0;
+    padding-inline-start: 1.3125rem;
+    list-style-position: outside;
+  }
+  ul { list-style-type: disc; }
+  ul ul { list-style-type: circle; }
+  ul ul ul { list-style-type: square; }
+  ol { list-style-type: decimal; }
+  > p:has(+ ul),
+  > p:has(+ ol),
+  > :is(ul, ol):not(:last-child) { margin-bottom: 0.625rem; }
+  li {
+    display: list-item;
+    padding-inline-start: 0.125rem;
+  }
+  li::marker { color: var(--color-text, var(--text-primary)); }
+  li + li { margin-top: 0.5rem; }
+  li > :first-child { margin-top: 0; }
+  li > :last-child { margin-bottom: 0; }
+  li > p { margin: 0; }
+  li > p + p { margin-top: 0.6875rem; }
+  li > :is(ul, ol) {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+  }
+  :is(ul, ol).contains-task-list {
+    padding-inline-start: 0;
+    list-style: none;
+  }
+  li[data-task-item] {
+    list-style: none;
+    padding-inline-start: 0;
+  }
+  li[data-task-item]:has(> p) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  li[data-task-item]:has(> p) > .chat-task-checkbox { margin-top: 0.25rem; }
+  li[data-task-item]:has(> p) > :not(.chat-task-checkbox) { grid-column: 2; }
+
+  blockquote {
+    position: relative;
+    margin: 0 0 8px;
+    padding-block: 8px;
+    padding-inline-start: 24px;
+    border: 0;
+    color: var(--color-text, var(--text-primary));
+    font-style: normal;
+    line-height: 24px;
+    background: transparent;
+  }
+  blockquote::after {
+    position: absolute;
+    inset-block: 8px;
+    inset-inline-start: 0;
+    width: 4px;
+    border-radius: 2px;
+    background: var(--color-border-strong, var(--border-strong));
+    content: "";
+  }
+  blockquote > p { margin: 0; font-weight: 400; }
+  blockquote > :first-child { margin-top: 0; }
+  blockquote > :last-child { margin-bottom: 0; }
+
+  hr {
+    clear: both;
+    height: 0;
+    margin: 28px 0;
+    border: 0;
+    border-top: 1px solid var(--color-border-strong, var(--border-strong));
+  }
+  hr + * { margin-top: 0; }
+
+  a {
+    color: inherit;
+    text-decoration-color: color-mix(in srgb, currentColor 42%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  a:hover { text-decoration-color: currentColor; }
+
+  .chat-media-paragraph {
+    margin-bottom: 12px;
+    text-align: left;
+  }
+  .chat-media-paragraph--grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .chat-media-paragraph--grid > br { display: none; }
+}
+
+.chat-task-checkbox {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-inline-end: 6px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-strong, var(--border-strong));
+  border-radius: 4px;
+  color: var(--surface-main);
+  vertical-align: -0.125rem;
+}
+
+.chat-task-checkbox[data-checked="true"] {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+}
+
+.chat-task-checkbox svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+// Codex UserFormattedText keeps the shared Markdown renderer but applies the
+// Composer document rhythm instead of Agent prose spacing.
+.opencraft-chat-document[data-chat-document-dialect="user-message"] {
+  white-space: pre-wrap;
+
+  p { margin: 0; }
+  p + p { margin-top: 20px; }
+  ul,
+  ol { padding-inline-start: 24px; }
+  li + li,
+  li > p + p,
+  li > ul,
+  li > ol { margin-top: 0; }
+}
+
+.chat-inline-code {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  display: inline;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-background-primary-ghost-hover, var(--alpha-06)) 60%, currentColor 6%);
+  font-family: var(--font-family-mono, var(--font-mono, monospace));
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.chat-color-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-inline-start: 4px;
+  border: 1px solid var(--color-border-default, var(--border-default));
+  border-radius: 3px;
+  vertical-align: -0.08em;
+}
+
+.opencraft-chat-document[data-markdown-animated] :is(.chat-stream-fade-in, hr, li, tr, blockquote) {
+  opacity: 0;
+  animation: opencraft-chat-fade-in var(--duration, var(--transition-duration-basic, 150ms)) cubic-bezier(0.37, 0.55, 0.86, 0.88) forwards;
+  animation-delay: var(--fade-delay, 0ms);
+}
+
+.opencraft-chat-document[data-markdown-animated] li::marker {
+  opacity: 0;
+  animation: opencraft-chat-fade-in var(--duration, var(--transition-duration-basic, 150ms)) cubic-bezier(0.37, 0.55, 0.86, 0.88) forwards;
+  animation-delay: var(--fade-delay, 0ms);
+}
+
+@keyframes opencraft-chat-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opencraft-chat-document[data-markdown-animated] :is(.chat-stream-fade-in, hr, li, tr, blockquote),
+  .opencraft-chat-document[data-markdown-animated] li::marker {
+    opacity: 1;
+    animation-duration: 0s;
+    animation-delay: 0s !important;
+  }
+}

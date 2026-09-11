@@ -1,0 +1,24 @@
+{
+  "name": "@opencraft/chat-render-native",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@opencraft/chat-document": "0.1.0",
+    "@opencraft/chat-render-react": "0.1.0",
+    "@opencraft/design-system": "0.1.0",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-unistyles": "3.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2"
+  }
+}

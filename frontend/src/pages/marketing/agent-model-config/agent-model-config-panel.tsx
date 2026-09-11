@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Check,
   CheckCircle2,
   ChevronDown,
   CircleHelp,
@@ -15,6 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 
 import type {
   HermesConnectionProbeResult,
@@ -261,18 +262,21 @@ function ModelConfigLoading() {
 
 export function AgentModelConfigPanel({
   botId,
+  profileId,
   execDebugCommand,
   providers,
   isGlobalRegion = false,
 }: {
   botId: string;
+  profileId?: string;
   execDebugCommand: HermesModelConfigExecDebugCommand;
   providers: ModelProviderOption[];
   isGlobalRegion?: boolean;
 }) {
   const t = useT();
+  const { i18n } = useTranslation();
   const autoModelDisplayName = t("自动");
-  const controller = useModelConfig({ botId, execDebugCommand });
+  const controller = useModelConfig({ botId, profileId, execDebugCommand });
   const addSectionRef = useRef<HTMLElement>(null);
   const configuredHeadingRef = useRef<HTMLHeadingElement>(null);
   const providerTriggerRef = useRef<HTMLButtonElement>(null);
@@ -413,8 +417,8 @@ export function AgentModelConfigPanel({
     : null;
   const pageHeader = (
     <AgentSectionHeader
-      title={t("模型")}
-      description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型。")}
+      title={resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
+      description={t("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型")}
     />
   );
 
@@ -750,10 +754,9 @@ export function AgentModelConfigPanel({
                                     size="sm"
                                     variant="outline"
                                     className="rounded-md text-xs font-normal"
-                                    disabled={busy || model.requiresSetup === true || primary}
-                                    onClick={() => void controller.assign(model, "primary")}
-                                  >
-                                    <Check className="size-3.5" aria-hidden="true" />
+                                  disabled={busy || model.requiresSetup === true || primary}
+                                  onClick={() => void controller.assign(model, "primary")}
+                                >
                                     {t("设为主模型")}
                                   </Button>
                                 </ModelActionTooltip>

@@ -8,6 +8,22 @@ export interface OpenClawCreateStatusBot extends OpenClawCreateAvailabilityBot {
   id: string;
 }
 
+export interface OpenClawCreatePermissions {
+  canCreateInitialAgent: boolean;
+  canCreateAdditionalBot: boolean;
+}
+
+export const resolveOpenClawCreatePermissions = (
+  multiBotEnabled: boolean,
+  createLimitMessage: string | null,
+): OpenClawCreatePermissions => {
+  const canCreateInitialAgent = createLimitMessage === null;
+  return {
+    canCreateInitialAgent,
+    canCreateAdditionalBot: multiBotEnabled && canCreateInitialAgent,
+  };
+};
+
 export const findCompletedCreatingBot = <T extends OpenClawCreateStatusBot>(
   bots: readonly T[],
   requestedBotId: string,
@@ -24,6 +40,7 @@ export const getOpenClawCreateLimitMessage = (
   bots: readonly OpenClawCreateAvailabilityBot[],
   maxBots: number,
 ): string | null => {
+  if (maxBots <= 0) return null;
   if (bots.length < maxBots) return null;
 
   if (bots.some((bot) => bot.status === "provisioning")) {

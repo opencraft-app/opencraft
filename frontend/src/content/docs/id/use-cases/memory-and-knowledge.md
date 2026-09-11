@@ -71,7 +71,7 @@ Memori bekerja paling baik ketika ia tetap terkini. Hapus atau koreksi konteks y
 
 Gunakan halaman [Chat](../configuration/agent-chat.md) atau kanal terhubung untuk mengubah dokumen dan memori menjadi langkah berikutnya yang konkret. Minta sebuah perbandingan, kerangka, kumpulan pertanyaan terbuka, atau rekap untuk rapat tertentu. Makin spesifik hasil langsungnya, makin mudah memastikan Hermes memegang konteks yang tepat.
 
-Jika peninjauan Anda mengikuti ritme berulang, sebuah [Otomasi](../configuration/automation.md) dapat mengingatkan Anda untuk mengunjungi kembali sebuah folder atau menyiapkan rekap berkala. Mulai dari pengingat atau ringkasan sederhana alih-alih memberikan tugas yang luas dan terbuka.
+Jika peninjauan Anda mengikuti ritme berulang, sebuah [Tugas Terjadwal](../configuration/automation.md) dapat mengingatkan Anda untuk mengunjungi kembali sebuah folder atau menyiapkan rekap berkala. Mulai dari pengingat atau ringkasan sederhana alih-alih memberikan tugas yang luas dan terbuka.
 
 ![Percakapan Hermes Agent memakai pengetahuan proyek yang tertata](../images/use-case-memory-knowledge-automation.png)
 

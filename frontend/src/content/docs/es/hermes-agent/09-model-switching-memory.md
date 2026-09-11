@@ -1,6 +1,6 @@
 ## Resumen
 
-**Cambiar de modelo no hace que un Hermes Agent olvide a usted, porque el modelo, la personalidad y la memoria son tres capas almacenadas separadamente: el modelo se encarga del razonamiento y la generación, `SOUL.md` define los límites de rol y expresión, y `USER.md` junto con `MEMORY.md` (con `memories/`) guardan el perfil de usuario y los hechos entre sesiones. En LightVela, cambiar de modelo solo cambia el motor detrás de las respuestas subsiguientes — no borra la memoria, los archivos de almacenamiento en la nube, las Skills ni la configuración de automatización, y no mueve el historial de chat. Puede sentirse "diferente" de verdad después, pero eso proviene de la capacidad de seguir instrucciones, la compresión de contexto, la verbosidad y las tendencias de llamada de herramientas del nuevo modelo, no de una pérdida de datos. Hay exactamente una forma de distinguirlos: pregunte sobre un hecho que está seguro de que debería saber. Si responde, está viendo una diferencia de estilo; si no puede, entonces investigue la capa de memoria.**
+**Cambiar de modelo no hace que un Hermes Agent olvide a usted, porque el modelo, la personalidad y la memoria son tres capas almacenadas separadamente: el modelo se encarga del razonamiento y la generación, `SOUL.md` define los límites de rol y expresión, y `USER.md` junto con `MEMORY.md` (con `memories/`) guardan el perfil de usuario y los hechos entre sesiones. En LightVela, cambiar de modelo solo cambia el motor detrás de las respuestas subsiguientes — no borra la memoria, los archivos de almacenamiento en la nube, las Skills ni la configuración de tarea programada, y no mueve el historial de chat. Puede sentirse "diferente" de verdad después, pero eso proviene de la capacidad de seguir instrucciones, la compresión de contexto, la verbosidad y las tendencias de llamada de herramientas del nuevo modelo, no de una pérdida de datos. Hay exactamente una forma de distinguirlos: pregunte sobre un hecho que está seguro de que debería saber. Si responde, está viendo una diferencia de estilo; si no puede, entonces investigue la capa de memoria.**
 
 ---
 
@@ -30,7 +30,7 @@ Primero, sea preciso sobre lo que realmente cambia el acto de "cambiar de modelo
 
 El punto clave: **las cuatro capas restantes viven fuera del modelo**. Cuando se reemplaza el modelo, esos archivos y directorios permanecen exactamente donde estaban, y el nuevo modelo los lee y los aplica.
 
-Es por esto que la documentación puede afirmar claramente que cambiar de modelo no borra la memoria de un Agent, los archivos de almacenamiento en la nube, las Skills ni la configuración de automatización — eso no es una característica protectora que alguien agregó, es una consecuencia natural del almacenamiento en capas. Para la división completa de tareas, vea "¿Puede el cerebro de un Hermes Agent ser reemplazado? Capa de Modelo vs Capa de Agent".
+Es por esto que la documentación puede afirmar claramente que cambiar de modelo no borra la memoria de un Agent, los archivos de almacenamiento en la nube, las Skills ni la configuración de tarea programada — eso no es una característica protectora que alguien agregó, es una consecuencia natural del almacenamiento en capas. Para la división completa de tareas, vea "¿Puede el cerebro de un Hermes Agent ser reemplazado? Capa de Modelo vs Capa de Agent".
 
 ---
 
@@ -101,10 +101,10 @@ Este orden cubre la gran mayoría de los casos.
 3. **Ejecute la prueba de hecho conocido** — verifique la capa de memoria usando la sección 3.
 4. **Verifique que la personalidad siga coincidir con las expectativas** — observe si el tono y los límites permanecen dentro de `SOUL.md`. Si la deriva es obvia, haga que las restricciones clave sean más específicas.
 5. **Verifique puntualmente que una Skill aún se active** — intente una en su situación correspondiente y confirme que la Skill se carga.
-6. **Revise la calidad de la salida de automatización** — note que está revisando **calidad de salida**, no sincronizando un campo de modelo. Las automatizaciones no tienen configuración de "modelo fijo".
+6. **Revise la calidad de la salida de tarea programada** — note que está revisando **calidad de salida**, no sincronizando un campo de modelo. Las tareas programadas no tienen configuración de "modelo fijo".
 7. **Confirme que los archivos de almacenamiento en la nube están intactos** — cambiar no los reescribe; esto es solo verificación.
 
-El paso 6 merece énfasis, porque una afirmación ampliamente circulada dice que debe desincronizar el modelo de cada automatización después de cambiar. En realidad, una automatización consiste en nombre, horario (días fijos de la semana, intervalo fijo o una sola vez), instrucciones de tarea, ventana de tiempo activa y canales de notificación — **sin campo de modelo**. Así que la acción correcta es esperar una ejecución real y verificar si la calidad de la salida sigue cumpliendo las expectativas.
+El paso 6 merece énfasis, porque una afirmación ampliamente circulada dice que debe desincronizar el modelo de cada tarea programada después de cambiar. En realidad, una tarea programada consiste en nombre, horario (días fijos de la semana, intervalo fijo o una sola vez), instrucciones de tarea, ventana de tiempo activa y canales de notificación — **sin campo de modelo**. Así que la acción correcta es esperar una ejecución real y verificar si la calidad de la salida sigue cumpliendo las expectativas.
 
 ---
 
@@ -149,7 +149,7 @@ La frase "el mismo mensaje de prueba" en la cuarta fila importa: si compara mode
 Hermes logra la separación de capas en el nivel de mecanismo, pero la gestión del acceso al modelo y el entorno sigue siendo responsabilidad del operador. La dirección de LightVela es hacer que el cambio sea una operación rutinaria, de bajo riesgo y verificable:
 
 - **Un Agent tiene un modelo activo a la vez** — cambiar significa seleccionar, sin necesidad de un Agent separado por modelo.
-- **Los activos se mantienen estables entre cambios** — la memoria, los archivos de almacenamiento en la nube, las Skills y la configuración de automatización no se ven afectadas, y el historial de chat no se mueve.
+- **Los activos se mantienen estables entre cambios** — la memoria, los archivos de almacenamiento en la nube, las Skills y la configuración de tarea programada no se ven afectadas, y el historial de chat no se mueve.
 - **Los cambios son verificables** — la consola muestra el modelo activo, y un mensaje de prueba confirma el éxito.
 - **Los fallos son localizables** — Diagnostics mantiene registros recientes para separar problemas de modelo, configuración y tarea.
 - **Se fomentan cambios de un solo factor** — cambiar una cosa a la vez y probar inmediatamente es la recomendación documentada.
@@ -159,8 +159,8 @@ Hermes logra la separación de capas en el nivel de mecanismo, pero la gestión 
 ## Puntos clave
 
 - Modelo, personalidad, perfil de usuario, memoria y Skills son cinco capas independientes; el cambio reemplaza solo la primera.
-- Comportamiento documentado: cambiar no borra memoria, almacenamiento en la nube, Skills ni automatizaciones, y no mueve el historial de chat.
+- Comportamiento documentado: cambiar no borra memoria, almacenamiento en la nube, Skills ni tareas programadas, y no mueve el historial de chat.
 - "Se siente diferente" proviene de cinco diferencias de capa de expresión: seguimiento de instrucciones, compresión de contexto, verbosidad, tendencia de llamada de herramientas, estilo lingüístico.
 - **Determinar una pérdida real de memoria toma un paso**: pregunte sobre un hecho conocido definitivo.
-- Las automatizaciones no tienen campo de modelo fijo; después de cambiar, revise la calidad de la salida en lugar de buscar ese campo.
+- Las tareas programadas no tienen campo de modelo fijo; después de cambiar, revise la calidad de la salida en lugar de buscar ese campo.
 - Durante la solución de problemas, manténgase a una regla: cambie un factor a la vez y pruebe inmediatamente.

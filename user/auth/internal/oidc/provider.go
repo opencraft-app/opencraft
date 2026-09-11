@@ -267,7 +267,13 @@ func (p *Provider) CreateAuthorizationCode(ctx context.Context, userID string, r
 		return nil, fmt.Errorf("generate oidc code: %w", err)
 	}
 	now := p.now().UTC()
-	expiresAt := now.Add(p.codeTTL)
+	ttl := p.codeTTL
+	if IsFirstPartySessionClient(context.ClientID) {
+		// Public-client round trips must not inherit the sites gateway's
+		// server-to-server five-second budget.
+		ttl = 2 * time.Minute
+	}
+	expiresAt := now.Add(ttl)
 	if err := p.codeStore.CreateAuthorizationCode(ctx, CreateAuthorizationCodeInput{
 		Code:          code,
 		ClientID:      context.ClientID,
@@ -299,6 +305,9 @@ func (p *Provider) ConsumeAuthorizationCode(ctx context.Context, req TokenReques
 	}
 	if !codeVerifierPattern.MatchString(req.CodeVerifier) {
 		return nil, ErrInvalidRequest
+	}
+	if _, err := p.registry.ValidateRedirectURI(req.ClientID, req.RedirectURI); err != nil {
+		return nil, ErrInvalidGrant
 	}
 	return p.codeStore.ConsumeAuthorizationCode(ctx, ConsumeAuthorizationCodeInput{
 		Code:        req.Code,

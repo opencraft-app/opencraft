@@ -25,6 +25,16 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 		return nil, errcode.Wrap(errcode.ErrInternalServer, "default_base_url or default_model_id not configured")
 	}
 
+	// Reset rotates instance credentials, so never proceed with sibling Profiles
+	// or when the runtime cannot establish the complete Profile inventory.
+	profiles, err := l.listHermesProfiles(ctx, instanceID, entity.DisplayName)
+	if err != nil {
+		return nil, err
+	}
+	if len(profiles) != 1 || !profiles[0].IsDefault {
+		return nil, errcode.ErrInstanceConfigResetMultiBot
+	}
+
 	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return nil, err

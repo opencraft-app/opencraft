@@ -18,6 +18,7 @@ export type HermesCommonSettingSaveResult =
 export interface SaveHermesCommonSettingOptions {
   bots: BotRepository;
   botId: string;
+  profileId?: string;
   key: HermesCommonSettingKey;
   value: HermesCommonSettingValue;
   getGatewayRestartCommand: () => Promise<string>;
@@ -34,13 +35,13 @@ function commandError(stage: "config" | "restart", output: string, status: strin
 export async function saveHermesCommonSetting(
   options: SaveHermesCommonSettingOptions,
 ): Promise<HermesCommonSettingSaveResult> {
-  const { bots, botId, key, value, getGatewayRestartCommand } = options;
+  const { bots, botId, profileId = "main", key, value, getGatewayRestartCommand } = options;
   let configSaved = false;
 
   try {
     const configResult = await bots.execDebugCommand(
       botId,
-      buildHermesCommonSettingCommand(key, value),
+      buildHermesCommonSettingCommand(key, value, profileId),
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     if (!isExecCommandSucceeded(configResult)) {
@@ -60,7 +61,7 @@ export async function saveHermesCommonSetting(
       }
     }
 
-    const snapshot = await fetchHermesCommonSettingsSnapshot(bots, botId);
+    const snapshot = await fetchHermesCommonSettingsSnapshot(bots, botId, profileId);
     if (!Object.is(snapshot.values[key], value)) {
       throw new Error("Hermes common settings reread value did not match the saved value");
     }

@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,7 +10,9 @@ import {
   buildCronjobToolCommand,
   buildCreateCommand,
   buildEditCommand,
+  buildListAutomationBlueprintsCommand,
   buildTestRunMarker,
+  buildZeroTokenScript,
   createCronJob,
   createCronJobWithContextAndScriptRollback,
   createCronJobWithScriptRollback,
@@ -22,9 +28,12 @@ import {
   parseCronContextCapabilityOutput,
   parseEffectiveWindowScript,
   parseLightVelaCronScript,
+  parseZeroTokenScript,
   parseCronListOutput,
+  parseAutomationBlueprintCatalog,
   pickFallbackChannelFromStatusOutput,
   removeCronJobWithDependentRollback,
+  removeManagedCronScriptIfUnreferenced,
   runCronJob,
   runCronJobAsTest,
   startCronTestRun,
@@ -39,6 +48,100 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   writeStoredAuthToken(null);
+});
+
+describe("Hermes automation blueprint catalog", () => {
+  it("builds one read-only runtime command for catalog entries and default Cron specs", () => {
+    const command = buildListAutomationBlueprintsCommand();
+
+    expect(command).toContain("from cron.blueprint_catalog import CATALOG, blueprint_catalog_entry, fill_blueprint");
+    expect(command).toContain('row["spec"] = fill_blueprint(blueprint, {})');
+    expect(command).toContain("except Exception:");
+    expect(command).toContain("continue");
+    expect(command).toContain("json.dumps(rows, ensure_ascii=False)");
+    expect(command).toContain("./venv/bin/python -B -c");
+    expect(command).not.toContain("write_text");
+    expect(command).not.toContain("create_job");
+  });
+
+  it("parses valid runtime blueprints and skips malformed rows", () => {
+    const result = parseAutomationBlueprintCatalog(JSON.stringify([
+      {
+        key: "morning-brief",
+        title: "Morning briefing",
+        description: "Calendar, weather, and urgent items.",
+        category: "daily",
+        tags: ["daily", "briefing"],
+        fields: [{
+          name: "time",
+          type: "time",
+          label: "What time?",
+          default: "08:00",
+          options: [],
+          optional: false,
+          strict: true,
+          help: "24h local time",
+        }],
+        scheduleHuman: "daily at 08:00",
+        spec: {
+          name: "Morning briefing",
+          prompt: "Produce a concise briefing.",
+          schedule: "0 8 * * *",
+          deliver: "origin",
+          skills: ["google-workspace"],
+        },
+      },
+      { key: "broken", title: "Broken" },
+    ]));
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      key: "morning-brief",
+      tags: ["daily", "briefing"],
+      spec: {
+        name: "Morning briefing",
+        schedule: "0 8 * * *",
+        deliver: "origin",
+        skills: ["google-workspace"],
+      },
+    });
+  });
+
+  it("normalizes optional runtime values without trusting invalid arrays", () => {
+    const [result] = parseAutomationBlueprintCatalog(JSON.stringify([{
+      key: "custom-reminder",
+      title: "Custom reminder",
+      description: "A reminder.",
+      category: "general",
+      tags: "reminder",
+      fields: [],
+      scheduleHuman: "daily at 14:00",
+      spec: {
+        name: "Custom reminder",
+        prompt: "Remember this.",
+        schedule: "0 14 * * *",
+      },
+    }]));
+
+    expect(result?.tags).toEqual([]);
+    expect(result?.spec.deliver).toBe("local");
+    expect(result?.spec.skills).toEqual([]);
+  });
+
+  it("parses the marked JSON payload even when the runtime prints a warning first", () => {
+    const [result] = parseAutomationBlueprintCatalog(`runtime warning\nLIGHTVELA_AUTOMATION_BLUEPRINT_CATALOG=${JSON.stringify([{
+      key: "morning-brief",
+      title: "Morning briefing",
+      description: "A briefing.",
+      category: "daily",
+      tags: [],
+      fields: [],
+      scheduleHuman: "daily at 08:00",
+      spec: { name: "Morning briefing", prompt: "Brief me.", schedule: "0 8 * * *" },
+    }])}`);
+
+    expect(result?.key).toBe("morning-brief");
+  });
 });
 
 describe("parseCronListOutput", () => {
@@ -497,6 +600,64 @@ describe("parseCronRunFilesOutput", () => {
     });
   });
 
+  it("carries the 0 Token subtype into recent runs", () => {
+    const zeroTokenConfig = {
+      kind: "fixed_notification" as const,
+      language: "python" as const,
+      content: "该喝水了",
+      managed: true,
+      editable: true,
+    };
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "water-1",
+      run_at: "2026-06-06T01:00:00+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/water-1/run.md",
+      mtime_ms: 1780707600000,
+    }]), [{
+      id: "water-1",
+      name: "喝水提醒",
+      prompt: "",
+      schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
+      skills: [],
+      enabled: true,
+      state: "scheduled",
+      deliver: "local",
+      next_run_at: null,
+      last_run_at: "2026-06-06T01:00:00+00:00",
+      last_status: "ok",
+      created_at: null,
+      script: "lightvela-zero-token-water.py",
+      effective_window: null,
+      lightvela_schedule: null,
+      context_from: null,
+      inference_config: { provider: null, model: null, no_agent: true },
+      zero_token_config: zeroTokenConfig,
+    }]);
+
+    expect(runs[0]?.zero_token_config).toEqual(zeroTokenConfig);
+  });
+
+  it("restores an archived 0 Token subtype without storing its content", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "archived-water",
+      run_at: "2026-06-06T01:00:00+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/archived-water/run.md",
+      mtime_ms: 1780707600000,
+      job_no_agent: true,
+      job_script: "lightvela-zero-token-water.py",
+      job_zero_token_kind: "fixed_notification",
+      job_zero_token_language: "python",
+    }]), []);
+
+    expect(runs[0]?.zero_token_config).toEqual({
+      kind: "fixed_notification",
+      language: "python",
+      content: null,
+      managed: false,
+      editable: false,
+    });
+  });
+
   it("uses output status when a completed one-shot job no longer has last_status", () => {
     const runs = parseCronRunFilesOutput(JSON.stringify([{
       job_id: "once-2",
@@ -644,6 +805,53 @@ describe("buildCreateCommand", () => {
       skills: ["finance-news"],
     })).toBe("hermes cron create '0 9 * * *' 'summarize news' --name 'morning news' --skill 'finance-news'");
   });
+
+  it("creates a script-only job without prompt, Skill, or model flags", () => {
+    expect(buildCreateCommand({
+      schedule: "every 30m",
+      name: "disk watchdog",
+      script: "lightvela-zero-token-job-1.py",
+      noAgent: true,
+      skills: ["must-not-leak"],
+      pinCurrentModel: true,
+      deliver: "wecom",
+    })).toBe(
+      "hermes cron create 'every 30m' --no-agent --script 'lightvela-zero-token-job-1.py' --name 'disk watchdog' --deliver 'wecom'",
+    );
+  });
+
+  it("does not inspect or pin a model after creating a no-agent job", async () => {
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const command = String((JSON.parse(String(init?.body ?? "{}")) as { command?: string }).command ?? "");
+      commands.push(command);
+      return okExec(command.startsWith("hermes cron create") ? "Created job" : "");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJob("bot-1", {
+      schedule: "every 30m",
+      name: "disk watchdog",
+      script: "lightvela-zero-token-job-1.py",
+      noAgent: true,
+      pinCurrentModel: true,
+    })).resolves.toBeUndefined();
+
+    expect(commands[0]).toBe(
+      "hermes cron create 'every 30m' --no-agent --script 'lightvela-zero-token-job-1.py' --name 'disk watchdog'",
+    );
+    expect(commands).not.toContain("cat ~/.hermes/cron/jobs.json 2>/dev/null || echo ''");
+    expect(commands.some((command) => command.startsWith("hermes cron edit") && command.includes("--model")))
+      .toBe(false);
+  });
+
+  it("rejects a no-agent job without a script", () => {
+    expect(() => buildCreateCommand({
+      schedule: "every 30m",
+      name: "broken watchdog",
+      noAgent: true,
+    })).toThrow("no-agent cron job requires a script");
+  });
 });
 
 describe("buildEditCommand", () => {
@@ -775,7 +983,202 @@ describe("effective window script", () => {
   });
 });
 
+describe("zero-token managed script", () => {
+  it("round-trips fixed notification text and shared schedule gates as data", () => {
+    const notification = "该喝水啦 '$(touch /tmp/nope)'\n休息一下 💧";
+    const script = buildZeroTokenScript({
+      kind: "fixed_notification",
+      language: "python",
+      content: notification,
+      start_at: "2026-09-07T09:00",
+      end_at: "2026-09-30T18:00",
+      weekdays: [1, 5, 1],
+      daily_times: ["15:30", "09:00"],
+    });
+
+    expect(script).toContain("lightvela-zero-token-v1");
+    expect(script).not.toContain(notification);
+    expect(script).not.toContain("touch /tmp/nope");
+    expect(parseZeroTokenScript(script)).toEqual({
+      zeroTokenConfig: {
+        kind: "fixed_notification",
+        language: "python",
+        content: notification,
+        managed: true,
+        editable: true,
+      },
+      effectiveWindow: {
+        start_at: "2026-09-07T09:00",
+        end_at: "2026-09-30T18:00",
+        weekdays: [1, 5],
+      },
+      lightvelaSchedule: { kind: "daily_times", times: ["09:00", "15:30"] },
+    });
+  });
+
+  it("uses an argv subprocess without shell interpolation for user scripts", () => {
+    const script = buildZeroTokenScript({
+      kind: "script",
+      language: "bash",
+      content: "echo hello",
+      start_at: null,
+      end_at: null,
+    });
+
+    expect(script).toContain("command = ['bash']");
+    expect(script).toContain("subprocess.run(command, input=meta['content'], text=True, check=False)");
+    expect(script).not.toContain("shell=True");
+  });
+
+  it("executes only when the current weekday passes the wrapper gate", () => {
+    const taskTempDir = mkdtempSync(join(tmpdir(), "lightvela-zero-token-gate-"));
+    const currentWeekday = new Date().getDay();
+    const otherWeekday = (currentWeekday + 1) % 7;
+    const run = (weekdays: number[]) => {
+      const scriptPath = join(taskTempDir, `gate-${weekdays.join("-")}.py`);
+      writeFileSync(scriptPath, buildZeroTokenScript({
+        kind: "fixed_notification",
+        language: "python",
+        content: "gate passed",
+        start_at: "2000-01-01T00:00",
+        end_at: "2100-01-01T00:00",
+        weekdays,
+      }), "utf8");
+      return execFileSync("python3", [scriptPath], { encoding: "utf8" });
+    };
+
+    try {
+      expect(run([0, 1, 2, 3, 4, 5, 6])).toBe("gate passed");
+      expect(run([otherWeekday])).toBe("");
+    } finally {
+      rmSync(taskTempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores unowned or malformed scripts", () => {
+    expect(parseZeroTokenScript("print('hello')")).toBeNull();
+    expect(parseZeroTokenScript("# lightvela-zero-token-v1\nMETA_B64 = \"invalid!\""))
+      .toBeNull();
+  });
+
+  it("does not delete an external script that only resembles a managed filename", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const externalJob = {
+      id: "external-job",
+      script: "lightvela-zero-token-user-owned.py",
+      zero_token_config: {
+        kind: "script",
+        language: "python",
+        content: null,
+        managed: false,
+        editable: false,
+      },
+    } as CronJob;
+
+    await removeManagedCronScriptIfUnreferenced("bot-1", externalJob, [externalJob]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes an unreferenced zero-token script only when ownership is proven", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+    const managedJob = {
+      id: "managed-job",
+      script: "lightvela-zero-token-owned.py",
+      zero_token_config: {
+        kind: "fixed_notification",
+        language: "python",
+        content: "喝水",
+        managed: true,
+        editable: true,
+      },
+    } as CronJob;
+
+    await removeManagedCronScriptIfUnreferenced("bot-1", managedJob, [managedJob]);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command: string };
+    expect(body.command).toBe("rm -f ~/.hermes/scripts/lightvela-zero-token-owned.py");
+  });
+});
+
 describe("listCronJobs", () => {
+  it("loads the public main Bot through Hermes' native default profile", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(okExec("No scheduled jobs."));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listCronJobs({ instanceId: "ins-1", profileId: "main" })).resolves.toEqual([]);
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command: string };
+    expect(body.command).toContain("hermes -p 'default' cron list --all");
+    expect(body.command).not.toContain("hermes -p 'main'");
+  });
+
+  it("hydrates a managed fixed notification from its zero-token wrapper", async () => {
+    const script = buildZeroTokenScript({
+      kind: "fixed_notification",
+      language: "python",
+      content: "记得喝水 💧",
+      start_at: null,
+      end_at: null,
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      喝水提醒
+    Schedule:  every 2h
+    Script:    lightvela-zero-token-water.py
+    Deliver:   wecom
+`))
+      .mockResolvedValueOnce(okExec(JSON.stringify([{
+        id: "6e8b6fc74896",
+        no_agent: true,
+        script: "lightvela-zero-token-water.py",
+      }])))
+      .mockResolvedValueOnce(okExec(script))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.inference_config?.no_agent).toBe(true);
+    expect(jobs[0]?.zero_token_config).toMatchObject({
+      kind: "fixed_notification",
+      content: "记得喝水 💧",
+      managed: true,
+      editable: true,
+    });
+  });
+
+  it("classifies an external no-agent script as read-only", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  a1b2c3d4e5f6 [active]
+    Name:      External watchdog
+    Schedule:  every 5m
+    Script:    watchdog.sh
+`))
+      .mockResolvedValueOnce(okExec(JSON.stringify([{
+        id: "a1b2c3d4e5f6",
+        no_agent: true,
+        script: "watchdog.sh",
+      }])))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.zero_token_config).toEqual({
+      kind: "script",
+      language: "bash",
+      content: null,
+      managed: false,
+      editable: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("hydrates context_from from jobs.json and defaults missing values to null", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okExec(`
@@ -1135,6 +1538,67 @@ describe("runCronJobAsTest", () => {
   function extractMarkerFromCreateCommand(command: string): string {
     return /--name '([^']+)'/.exec(command)?.[1] ?? "";
   }
+
+  it("tests a managed zero-token task without sending an Agent acknowledgement and cleans its wrapper", async () => {
+    let marker = "";
+    const commands: string[] = [];
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      commands.push(cmd);
+      if (cmd.includes("hermes cron create")) {
+        marker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) return okExec("");
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        return okExec(JSON.stringify([{
+          id: "temp-zero",
+          name: marker,
+          last_run_at: "2026-09-07T00:00:00+08:00",
+          last_status: "ok",
+          last_delivery_error: null,
+        }]));
+      }
+      if (cmd.startsWith("mkdir -p ~/.hermes/scripts")) return okExec("");
+      if (cmd === "hermes cron remove 'temp-zero'") return okExec("Removed.");
+      if (cmd.startsWith("rm -f ~/.hermes/scripts/lightvela-zero-token-test-")) return okExec("");
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const job: CronJob = {
+      ...baseJob,
+      id: "zero-1",
+      name: "固定喝水提醒",
+      prompt: "",
+      script: "lightvela-zero-token-water.py",
+      skills: [],
+      context_from: null,
+      inference_config: { provider: null, model: null, no_agent: true },
+      zero_token_config: {
+        kind: "fixed_notification",
+        language: "python",
+        content: "该喝水啦 💧",
+        managed: true,
+        editable: true,
+      },
+    };
+
+    const result = await runCronJobAsTest("bot-1", job);
+
+    expect(result).toEqual({ output: "ok", deliveryError: null });
+    expect(commands.some((command) => command.startsWith("hermes send "))).toBe(false);
+    const createCommand = commands.find((command) => command.includes("hermes cron create")) ?? "";
+    expect(createCommand).toContain("--no-agent");
+    expect(createCommand).not.toContain("该喝水啦");
+    expect(createCommand).not.toContain("lightvela-zero-token-water.py");
+    expect(commands).toContain("hermes cron remove 'temp-zero'");
+    expect(commands.some((command) => command.startsWith(
+      "rm -f ~/.hermes/scripts/lightvela-zero-token-test-",
+    ))).toBe(true);
+    expect(commands).not.toContain("rm -f ~/.hermes/scripts/lightvela-zero-token-water.py");
+  });
 
   /**
    * `runCronJobAsTest` 现在不再调用 `hermes cron run` 强制触发，而是完全依赖
@@ -1615,7 +2079,7 @@ describe("runCronJobAsTest", () => {
   });
 
   it("falls back to a connected home channel when deliver is `origin` but the origin context is null", async () => {
-    // 复现线上真实故障：在网页「自动任务」面板/无会话上下文下创建的任务，
+    // 复现线上真实故障：在网页「定时任务」面板/无会话上下文下创建的任务，
     // deliver 存成 `origin` 但 origin 落库为 null。若原样保留 `origin`，临时
     // 任务投递会静默丢弃（任务照记 ok，用户啥也收不到）。修复后应兜底到该
     // bot 已连接的 home channel（此处 wecom）。
@@ -1884,7 +2348,7 @@ describe("sendHermesChatNotice", () => {
     await expect(client.sendHermesChatNotice(
       "bot-1",
       "wecom,qqbot:chat-1",
-      "LightVela 已添加新的自动任务。",
+      "LightVela 已添加新的定时任务。",
     )).resolves.toEqual({ sent: 1, failed: 1 });
 
     const commands = fetchMock.mock.calls.map((call) => {
@@ -1894,6 +2358,6 @@ describe("sendHermesChatNotice", () => {
     expect(commands).toHaveLength(2);
     expect(commands.some((command) => command.includes("--to 'wecom'"))).toBe(true);
     expect(commands.some((command) => command.includes("--to 'qqbot:chat-1'"))).toBe(true);
-    expect(commands.every((command) => command.includes("LightVela 已添加新的自动任务。"))).toBe(true);
+    expect(commands.every((command) => command.includes("LightVela 已添加新的定时任务。"))).toBe(true);
   });
 });

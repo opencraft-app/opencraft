@@ -99,6 +99,42 @@ var ErrInstanceNoSystemDisk = errors.New("provider: instance has no system disk;
 // cbs.DescribeSnapshots returns an empty result for the queried snapshot id.
 var ErrSnapshotNotFound = errors.New("provider: snapshot not found")
 
+// InstanceSpec is the billable shape of an existing cloud instance, as read
+// back from the vendor rather than from our own pool metadata.
+type InstanceSpec struct {
+	InstanceType     string
+	SystemDiskSize   int // GiB
+	State            string
+	StopChargingMode string
+}
+
+// InstanceSpecResizer is the optional capability behind the same-SP upgrade
+// (变配) flow: growing an already-delivered instance in place instead of
+// reprovisioning it.
+//
+// The caller drives the ordering (stop → resize compute → resize disk → start)
+// and owns the operation ledger; the provider only exposes single steps and
+// makes each one safe to re-issue.
+type InstanceSpecResizer interface {
+	// StopInstanceForResize retains compute allocation/billing during the
+	// temporary shutdown. Ordinary pause/isolation still uses StopInstance.
+	StopInstanceForResize(ctx context.Context, cloudID string) error
+	// DescribeInstanceSpec reports the currently effective spec so the caller
+	// can skip steps a previous attempt already applied.
+	DescribeInstanceSpec(ctx context.Context, cloudID string) (InstanceSpec, error)
+	// ResizeInstanceType changes CPU/memory, ensuring resize-safe shutdown.
+	// Re-issuing with the already-effective type is a no-op.
+	ResizeInstanceType(ctx context.Context, cloudID string, instanceType string) error
+	// ResizeSystemDisk grows the system disk to sizeGB. Cloud disks cannot
+	// shrink, so callers must only ever pass a larger size; passing the
+	// current size is a no-op.
+	ResizeSystemDisk(ctx context.Context, cloudID string, sizeGB int) error
+}
+
+func (m *MockCloudProvider) StopInstanceForResize(ctx context.Context, cloudID string) error {
+	return m.StopInstance(ctx, cloudID)
+}
+
 type CapacityBundleProvisionRequest struct {
 	TemplateClassID        string
 	Region                 string
@@ -348,13 +384,66 @@ type TerminalCommandStreamer interface {
 // returns a generated id and is observable via DescribeInstanceSnapshot. To keep
 // the mock behavior deterministic and free from sleeps, the snapshot enters
 // SnapshotStatusReady immediately on creation.
+// It also keeps a per-instance spec so the same-SP upgrade flow can be driven
+// end to end without a cloud account; unseen instances start from the default
+// spec below.
 type MockCloudProvider struct {
 	snapMu    sync.Mutex
 	snapshots map[string]SnapshotStatus
+
+	specMu sync.Mutex
+	specs  map[string]InstanceSpec
 }
 
 func NewMockCloudProvider() *MockCloudProvider {
-	return &MockCloudProvider{snapshots: make(map[string]SnapshotStatus)}
+	return &MockCloudProvider{
+		snapshots: make(map[string]SnapshotStatus),
+		specs:     make(map[string]InstanceSpec),
+	}
+}
+
+// mockDefaultSpec is what the mock reports for an instance it has never seen a
+// resize for; it mirrors the smallest bundle spec (2C4G 50G).
+var mockDefaultSpec = InstanceSpec{InstanceType: "S5.MEDIUM4", SystemDiskSize: 50, State: "STOPPED"}
+
+func (m *MockCloudProvider) DescribeInstanceSpec(_ context.Context, cloudID string) (InstanceSpec, error) {
+	if strings.TrimSpace(cloudID) == "" {
+		return InstanceSpec{}, errors.New("DescribeInstanceSpec: cloudID is required")
+	}
+	m.specMu.Lock()
+	defer m.specMu.Unlock()
+	if spec, ok := m.specs[cloudID]; ok {
+		return spec, nil
+	}
+	return mockDefaultSpec, nil
+}
+
+func (m *MockCloudProvider) ResizeInstanceType(ctx context.Context, cloudID, instanceType string) error {
+	spec, err := m.DescribeInstanceSpec(ctx, cloudID)
+	if err != nil {
+		return err
+	}
+	spec.InstanceType = instanceType
+	m.specMu.Lock()
+	m.specs[cloudID] = spec
+	m.specMu.Unlock()
+	return nil
+}
+
+func (m *MockCloudProvider) ResizeSystemDisk(ctx context.Context, cloudID string, sizeGB int) error {
+	spec, err := m.DescribeInstanceSpec(ctx, cloudID)
+	if err != nil {
+		return err
+	}
+	if spec.SystemDiskSize > sizeGB {
+		return fmt.Errorf("ResizeSystemDisk %s: cloud disks cannot shrink (%dG -> %dG)",
+			cloudID, spec.SystemDiskSize, sizeGB)
+	}
+	spec.SystemDiskSize = sizeGB
+	m.specMu.Lock()
+	m.specs[cloudID] = spec
+	m.specMu.Unlock()
+	return nil
 }
 
 func (m *MockCloudProvider) CreateInstance(_ context.Context, pool core.Pool) (string, string, error) {

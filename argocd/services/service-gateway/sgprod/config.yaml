@@ -4,6 +4,8 @@ allowed_origins:
   - https://api.lightvela.ai
   - https://lightvela.com
   - https://www.lightvela.com
+  - https://chat.lightvela.com
+  - https://chat.lightvela.ai
 trusted_proxy_cidrs:
   - 100.64.0.0/10
 worker_actions:
@@ -72,16 +74,12 @@ routes:
       - method: GET
         path: "/v1/instances"
         allowed_origins:
-          - https://chat.lightvela.com
           - https://localhost.lightvela.com
-          - https://chat.lightvela.ai
           - https://localhost.lightvela.ai
       - method: POST
         path: "/v1/instances/{instance_id}/tat/session"
         allowed_origins:
-          - https://chat.lightvela.com
           - https://localhost.lightvela.com
-          - https://chat.lightvela.ai
           - https://localhost.lightvela.ai
     require_realname: true
     response_header_timeout: 60s
@@ -105,6 +103,12 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     require_realname: true
+  - name: ctl-orders
+    prefix: /v1/orders
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
   - name: subscriptions
     prefix: /subscriptions
     methods: [GET, POST, OPTIONS]
@@ -182,6 +186,10 @@ routes:
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: authenticated
     public_allow:
+      - method: POST
+        path: /auth/session/exchange
+      - method: POST
+        path: /auth/native/token
       - method: GET
         path: /auth/federation/context
       - method: POST

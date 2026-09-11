@@ -21,8 +21,10 @@
 - `git diff --check`：通过。
 - 文档校验：通过，0 errors、0 warnings、0 broken first-party links。
 - 仅暂存本次补丁的 change-impact 校验：通过，正式设计文档映射已满足。
+- MR !3907 合入 `origin/master@5be92a713` 后仅 `docs/engineering/domains/site-environment-routing.md` 发生冲突；解决方案保留 master 全部新边界并加入 Skills 来源小节。
+- 合并后定向 Vitest 再次通过（104/104），`pnpm check` 再次通过（0 个新增 TypeScript 诊断），目标分支相对差异仍为原 9 个文件。
 
 ## 未覆盖边界
 
 - 未连接真实生产 Agent/ACLI 响应做浏览器回归；当前证据覆盖数据解析、来源合并和组件删除入口。
-- 源码变更尚未 commit、push、创建 MR、发布或证明生产生效。
+- 功能提交已推送并创建 MR !3907；冲突解决 commit 尚待确认后推送。MR 尚未合并、发布或证明生产生效。

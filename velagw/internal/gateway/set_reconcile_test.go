@@ -597,6 +597,8 @@ func newAutoManagedSetTestServer(t *testing.T, optionKeys *[]string, channelCrea
 			writeTestJSON(t, w, map[string]any{"success": true})
 		case "GET /api/user/token":
 			writeTestJSON(t, w, map[string]any{"success": true, "data": "set-admin-token"})
+		case "POST /api/user/auth/logout":
+			writeTestJSON(t, w, map[string]any{"success": true})
 		case "GET /api/channel/search":
 			items := []map[string]any{}
 			if *channelCreated {

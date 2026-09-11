@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Model switching lets you choose which of your configured models the Hermes Agent currently uses. When a task calls for different speed, capability, cost profile, or provider availability, you switch models instead of creating a new agent. This works because persona, memory, skills, and automated tasks are all stored outside the model, so changing models only swaps the reasoning engine — nothing is taken away or wiped, and the agent still remembers you. Each agent has exactly one active model at a time.**
+**Model switching lets you choose which of your configured models the Hermes Agent currently uses. When a task calls for different speed, capability, cost profile, or provider availability, you switch models instead of creating a new agent. This works because persona, memory, skills, and scheduled tasks are all stored outside the model, so changing models only swaps the reasoning engine — nothing is taken away or wiped, and the agent still remembers you. Each agent has exactly one active model at a time.**
 
 ---
 
@@ -15,7 +15,7 @@ Model Switching lets you choose which configured model your Hermes Agent uses fo
 - Verifying the change in Chat
 - Troubleshooting a model that does not appear or cannot respond
 
-> **Good to know:** An Agent uses one active model at a time. Switching the active model does not erase the Agent's memory, Cloud Storage files, skills, or automations.
+> **Good to know:** An Agent uses one active model at a time. Switching the active model does not erase the Agent's memory, Cloud Storage files, skills, or scheduled tasks.
 
 ## Before you start
 
@@ -53,7 +53,7 @@ Confirm that the Agent responds normally and that the model shown in the Agent c
 | A provider is unavailable or rate-limited | Switch to another configured model, then test it in Chat. |
 | You are comparing output quality | Run the same small prompt after each switch and compare the result. |
 
-Model Switching changes the engine used for future responses. It does not move your conversation history, rewrite files in [Cloud Storage](./files.md), or change your [Skills](./skill.md) and [Automations](./automation.md).
+Model Switching changes the engine used for future responses. It does not move your conversation history, rewrite files in [Cloud Storage](./files.md), or change your [Skills](./skill.md) and [Scheduled Tasks](./automation.md).
 
 If you want to explore a separate plugin-first agent environment alongside Hermes Agent, see [DeepSeek Harness](./deepseek-harness.md).
 

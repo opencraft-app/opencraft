@@ -1714,6 +1714,13 @@ type CancelSubscriptionRequest struct {
 	UserID string `json:"user_id"`
 }
 
+type CancelSelectedSubscriptionsRequest struct {
+	UserID                           string   `json:"user_id"`
+	SubscriptionNames                []string `json:"subscription_names,omitempty"`
+	SubscriptionNamePrefixes         []string `json:"subscription_name_prefixes,omitempty"`
+	IncludeLegacyPackageSubscription bool     `json:"include_legacy_package_subscription,omitempty"`
+}
+
 type Subscription struct {
 	ID           string `json:"id"`
 	Name         string `json:"name,omitempty"`

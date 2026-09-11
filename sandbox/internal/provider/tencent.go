@@ -476,9 +476,13 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID st
 // CPU/memory billing is released while system disk and data remain intact.
 // Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
 func (p *TencentCloudProvider) StopInstance(ctx context.Context, cloudID string) error {
+	return p.stopInstanceWithMode(ctx, cloudID, "STOP_CHARGING")
+}
+
+func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID, stoppedMode string) error {
 	req := cvm.NewStopInstancesRequest()
 	req.InstanceIds = []*string{common.StringPtr(cloudID)}
-	req.StoppedMode = common.StringPtr("STOP_CHARGING")
+	req.StoppedMode = common.StringPtr(stoppedMode)
 	req.SetContext(ctx)
 	deadline := time.Now().Add(120 * time.Second)
 	for {

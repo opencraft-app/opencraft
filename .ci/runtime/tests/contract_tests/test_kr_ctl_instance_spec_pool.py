@@ -32,7 +32,14 @@ class KoreaCtlInstanceSpecPoolContractTests(unittest.TestCase):
                     "sku_id": "sku-hermes-2c4g",
                     "default_template_id": "pool-kr-2c4g-01",
                     "candidate_template_ids": ["pool-kr-2c4g-01"],
-                }
+                },
+                {
+                    "spec_id": "spec-4c8g80g",
+                    "template_class_id": "openclaw-4c8g80g",
+                    "sku_id": "sku-hermes-4c8g",
+                    "default_template_id": "pool-kr-4c8g-01",
+                    "candidate_template_ids": ["pool-kr-4c8g-01"],
+                },
             ],
         )
 

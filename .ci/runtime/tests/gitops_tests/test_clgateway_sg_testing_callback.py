@@ -19,6 +19,59 @@ def is_dev_override(name: str) -> bool:
 
 
 class CloudLadderSGCallbackTests(unittest.TestCase):
+    def workload_env(self, filename: str) -> dict[str, str | None]:
+        manifest = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/cloudladdergateway/tkexsg"
+                / filename
+            ).read_text()
+        )
+        return {
+            item["name"]: item.get("value")
+            for item in manifest["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+
+    def test_only_sg_prod_enables_required_cloudladder_auth(self) -> None:
+        prod = self.workload_env("statefulsetplus.yaml")
+        testing = self.workload_env("statefulsetplus-testing.yaml")
+
+        self.assertEqual(prod["CLOUDLADDERGATEWAY_AUTH_MODE"], "required")
+        self.assertEqual(
+            prod["CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND"],
+            "jifei-test",
+        )
+        self.assertNotIn("CLOUDLADDERGATEWAY_AUTH_MODE", testing)
+        self.assertNotIn(
+            "CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", testing
+        )
+
+    def test_sg_devtunnel_selector_matches_existing_tkex_object(self) -> None:
+        documents = yaml.safe_load_all(
+            (
+                REPO_ROOT
+                / "argocd/services/cloudladdergateway/tkexsg/devtunnel-testing.yaml"
+            ).read_text()
+        )
+        manifest = next(documents)
+        expected_labels = {
+            "clusterId": "cls-hq6qk3i6",
+            "env": "production",
+            "k8s-app": "devtunnel-testing",
+            "qcloud-app": "devtunnel-testing",
+            "region": "ap-singapore",
+            "workload-kind": "statefulsetplus",
+        }
+        self.assertEqual(manifest["metadata"]["labels"], expected_labels)
+        self.assertEqual(
+            manifest["spec"]["selector"]["matchLabels"], expected_labels
+        )
+        self.assertEqual(
+            manifest["spec"]["template"]["metadata"]["labels"], expected_labels
+        )
+
     def backend_base_urls(self, filename: str) -> dict[str, str]:
         manifest = yaml.safe_load(
             (

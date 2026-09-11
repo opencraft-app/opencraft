@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#f9f9f9" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23202020'/%3E%3Cpath d='M9 10h14v3H12v6h11v3H9z' fill='white'/%3E%3C/svg%3E" />
+    <title>OpenCraft</title>
+    <style>
+      html,
+      body {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      #opencraft-bootstrap {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #f9f9f9;
+      }
+      #opencraft-bootstrap i {
+        width: 18px;
+        height: 18px;
+        box-sizing: border-box;
+        border: 1.5px solid rgba(32, 32, 32, .14);
+        border-top-color: rgba(32, 32, 32, .62);
+        border-radius: 50%;
+        animation: opencraft-bootstrap-spin .72s linear infinite;
+      }
+      .electron-dark #opencraft-bootstrap { background: #000; }
+      .electron-dark #opencraft-bootstrap i {
+        border-color: rgba(255, 255, 255, .16);
+        border-top-color: rgba(255, 255, 255, .68);
+      }
+      @keyframes opencraft-bootstrap-spin { to { transform: rotate(1turn); } }
+    </style>
+    <script>
+      (() => {
+        const isResizeObserverDeliveryWarning = (message) =>
+          message === "ResizeObserver loop completed with undelivered notifications."
+          || message === "ResizeObserver loop limit exceeded";
+        const reportEarlyFailure = (report) => {
+          if (isResizeObserverDeliveryWarning(report.message)) return;
+          fetch("/__opencraft_runtime_error", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ...report, url: location.href }),
+            keepalive: true,
+          }).catch(() => undefined);
+        };
+        const currentBuildId = () =>
+          document.querySelector('meta[name="opencraft-build-id"]')?.getAttribute("content")
+          || "development";
+        const describeFailure = (error) => error instanceof Error
+          ? { name: error.name, message: error.message, stack: error.stack }
+          : { message: String(error ?? "A JavaScript module failed to load") };
+        const showReleaseFailure = (error) => {
+          const failure = describeFailure(error);
+          let surface = document.getElementById("opencraft-release-failure");
+          if (surface == null) {
+            surface = document.createElement("main");
+            surface.id = "opencraft-release-failure";
+            surface.setAttribute("role", "alert");
+            surface.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;padding:24px;background:#f9f9f9;color:#202020;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+            surface.innerHTML = `<section style="width:min(520px,100%);padding:24px;border:1px solid #dedede;border-radius:16px;background:#fff;box-shadow:0 18px 60px rgba(0,0,0,.12)">
+              <small style="color:#777">OpenCraft release recovery</small>
+              <h1 style="margin:8px 0;font-size:22px">界面资源未能加载</h1>
+              <p style="margin:0 0 16px;color:#666">当前版本可能正在更新，或网络中断。页面没有进入静默白屏。</p>
+              <pre data-release-error style="max-height:160px;overflow:auto;white-space:pre-wrap;padding:12px;border-radius:10px;background:#f3f3f3;font:12px/1.45 ui-monospace,monospace"></pre>
+              <button type="button" style="margin-top:16px;padding:8px 14px;border:0;border-radius:9px;background:#202020;color:#fff;cursor:pointer">重新加载</button>
+            </section>`;
+            surface.querySelector("button")?.addEventListener("click", () => location.reload());
+            document.body.append(surface);
+          }
+          const details = surface.querySelector("[data-release-error]");
+          if (details != null) details.textContent = `${failure.name ? `${failure.name}: ` : ""}${failure.message}`;
+        };
+        const recoverRelease = async (error, source = "chunk-load") => {
+          const failure = describeFailure(error);
+          const activeBuildId = currentBuildId();
+          let latestBuildId = null;
+          try {
+            const response = await fetch(`/version.json?recovery=${Date.now()}`, {
+              cache: "no-store",
+              headers: { accept: "application/json" },
+            });
+            if (response.ok) {
+              const latestRelease = await response.json();
+              if (typeof latestRelease?.buildId === "string") latestBuildId = latestRelease.buildId;
+            }
+          } catch {}
+
+          const recoveryKey = latestBuildId == null
+            ? null
+            : `vela.release-recovery:${activeBuildId}->${latestBuildId}`;
+          if (
+            latestBuildId != null
+            && latestBuildId !== activeBuildId
+            && recoveryKey != null
+            && sessionStorage.getItem(recoveryKey) !== "attempted"
+          ) {
+            sessionStorage.setItem(recoveryKey, "attempted");
+            location.reload();
+            return;
+          }
+
+          reportEarlyFailure({
+            source,
+            ...failure,
+            activeBuildId,
+            latestBuildId,
+          });
+          showReleaseFailure(error);
+        };
+        addEventListener("vite:preloadError", (event) => {
+          event.preventDefault();
+          void recoverRelease(event.payload, "vite-preload-error");
+        });
+        globalThis.__opencraftRecoverRelease = recoverRelease;
+        addEventListener("error", (event) => {
+          reportEarlyFailure({
+            source: "bootstrap-error",
+            message: event.message || "Module bootstrap failed",
+            resourceUrl: event.filename || undefined,
+          });
+        });
+        addEventListener("unhandledrejection", (event) => {
+          reportEarlyFailure({
+            source: "bootstrap-rejection",
+            message: event.reason instanceof Error ? event.reason.message : String(event.reason),
+          });
+        });
+        setTimeout(() => {
+          const root = document.getElementById("root");
+          if (root?.childElementCount === 0) {
+            document.getElementById("opencraft-bootstrap")
+              ?.setAttribute("aria-label", "界面加载超时，错误已记录");
+            reportEarlyFailure({
+              source: "bootstrap-timeout",
+              message: "React root remained empty after 15000ms",
+              resources: performance.getEntriesByType("resource").map((entry) => ({
+                name: entry.name,
+                duration: entry.duration,
+                transferSize: entry.transferSize,
+              })),
+            });
+          }
+        }, 15000);
+
+        const storageKey = "vela.appearance-theme";
+        let preference = "light";
+        try {
+          const stored = localStorage.getItem(storageKey);
+          if (stored === "light" || stored === "dark" || stored === "system") preference = stored;
+        } catch {}
+        const theme = preference === "system"
+          ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : preference;
+        const root = document.documentElement;
+        root.dataset.theme = theme;
+        root.dataset.themePreference = preference;
+        root.classList.add(theme, `electron-${theme}`);
+        root.style.colorScheme = theme;
+        document.querySelector('meta[name="theme-color"]')
+          ?.setAttribute("content", theme === "dark" ? "#000000" : "#f9f9f9");
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="opencraft-bootstrap" role="status" aria-label="正在加载"><i aria-hidden="true"></i></div>
+    <div id="root"></div>
+    <script type="module">
+      import("/src/main.tsx?opencraft-entry=1").catch((error) => {
+        globalThis.__opencraftRecoverRelease?.(error, "module-import");
+        fetch("/__opencraft_runtime_error", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            source: "module-import",
+            name: error?.name,
+            message: error?.message ?? String(error),
+            stack: error?.stack,
+            url: location.href,
+          }),
+          keepalive: true,
+        }).catch(() => undefined);
+      });
+    </script>
+  </body>
+</html>

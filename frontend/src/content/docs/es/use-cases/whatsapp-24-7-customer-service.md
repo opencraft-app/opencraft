@@ -1,8 +1,8 @@
-# Cómo configurar servicio de atención al cliente de IA 24/7 en WhatsApp: Personalidad, conocimiento, Skills y automatizaciones
+# Cómo configurar servicio de atención al cliente de IA 24/7 en WhatsApp: Personalidad, conocimiento, Skills y tareas programadas
 
 ## Resumen
 
-**WhatsApp puede servir como un punto de entrada uno a uno entre los clientes y un Hermes Agent, útil para responder preguntas recurrentes, captar las necesidades del cliente y redactar respuestas. Pero "24/7" aquí significa que puede responder cuando el servicio esté en funcionamiento, el modelo esté disponible y el canal esté conectado — no es una garantía de servicio ininterrumpido ni un SLA de soporte humano.** Una segunda restricción es tan importante: el envío proactivo de mensajes en WhatsApp sigue sujeto a ventanas de conversación, mensajes de plantilla y configuración del canal, por lo que los recordatorios automatizados deben diseñarse por separado de las conversaciones iniciadas por el cliente, en lugar de asumir que puede enviar a su antojo. Construya en cuatro capas, en orden: la personalidad establece la voz y las condiciones de escalación, el conocimiento captura las preguntas frecuentes, las Skills agregan procedimientos reutilizables y las automatizaciones manejan los resúmenes programados.
+**WhatsApp puede servir como un punto de entrada uno a uno entre los clientes y un Hermes Agent, útil para responder preguntas recurrentes, captar las necesidades del cliente y redactar respuestas. Pero "24/7" aquí significa que puede responder cuando el servicio esté en funcionamiento, el modelo esté disponible y el canal esté conectado — no es una garantía de servicio ininterrumpido ni un SLA de soporte humano.** Una segunda restricción es tan importante: el envío proactivo de mensajes en WhatsApp sigue sujeto a ventanas de conversación, mensajes de plantilla y configuración del canal, por lo que los recordatorios automatizados deben diseñarse por separado de las conversaciones iniciadas por el cliente, en lugar de asumir que puede enviar a su antojo. Construya en cuatro capas, en orden: la personalidad establece la voz y las condiciones de escalación, el conocimiento captura las preguntas frecuentes, las Skills agregan procedimientos reutilizables y las tareas programadas manejan los resúmenes programados.
 
 ![Configurando servicio de atención al cliente de IA 24/7 en WhatsApp](../images/use-case-09-whatsapp-24-7-customer-service.png)
 
@@ -33,7 +33,7 @@ Es especialmente útil para equipos que necesitan un lenguaje de soporte consist
 | Conocimiento | FAQs de producto, políticas, horarios de servicio y rutas de escalación | Archivos de referencia en [Cloud Storage](../configuration/files.md) |
 | Skills | Búsqueda, organización, redacción y otras acciones concretas | [Skills](../configuration/skill.md) |
 | Memoria | Preferencias confirmadas del cliente y contexto de colaboración duradero | [Memory Management](../configuration/memory.md) |
-| Automatizaciones | Verificaciones programadas, recordatorios internos y avisos proactivos | [Automations](../configuration/automation.md) |
+| Tareas programadas | Verificaciones programadas, recordatorios internos y avisos proactivos | [Tareas programadas](../configuration/automation.md) |
 
 No coloque una gran base de conocimientos de producto en la personalidad, y no trate el contenido del cliente no confirmado como memoria a largo plazo.
 
@@ -102,11 +102,11 @@ Las contraseñas, códigos de verificación, detalles de pago, información de i
 
 Pida a Hermes que recuerde u olvide una preferencia durante la conversación y revise periódicamente la página [Memory Management](../configuration/memory.md) en la consola.
 
-### 6. Configurar automatizaciones y mensajes proactivos
+### 6. Configurar tareas programadas y mensajes proactivos
 
-Buenas candidatas para automatización incluyen recordatorios de tareas internas, verificaciones de casos sin resolver y resúmenes de servicio diarios.
+Buenas candidatas para tarea programada incluyen recordatorios de tareas internas, verificaciones de casos sin resolver y resúmenes de servicio diarios.
 
-Configure el horario, la ventana de tiempo activa y el método de notificación en [Automations](../configuration/automation.md).
+Configure el horario, la ventana de tiempo activa y el método de notificación en [Tareas programadas](../configuration/automation.md).
 
 Los mensajes proactivos de WhatsApp pueden estar limitados por ventanas de conversación o plantillas de mensajes aprobadas, por lo que no asuma que un texto normal siempre se puede entregar cuando el cliente no ha iniciado una conversación.
 
@@ -166,4 +166,4 @@ Por defecto, deje que la Skill cree un borrador o recordatorio interno, luego qu
 
 - [Cómo definir el rol, personalidad y voz de un Agent de IM con SOUL.md](./im-agent-persona-soul-md.md) - Defina la personalidad de soporte y los límites de comportamiento.
 
-- [Automatizaciones](../configuration/automation.md) - Configure recordatorios internos y resúmenes programados.
+- [Tareas programadas](../configuration/automation.md) - Configure recordatorios internos y resúmenes programados.

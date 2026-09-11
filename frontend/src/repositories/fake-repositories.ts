@@ -64,7 +64,12 @@ const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode, switchAccount = false) => {
+const fakeOAuthStartURL = (
+  provider: OAuthProvider,
+  wechatMode?: WeChatOAuthMode,
+  switchAccount = false,
+  returnTo?: string,
+) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
   if (provider === "wechat" && wechatMode) {
     startURL.searchParams.set("mode", wechatMode);
@@ -72,8 +77,9 @@ const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode
   if (switchAccount) {
     startURL.searchParams.set("switch_account", "true");
   }
-  if (typeof window !== "undefined" && window.location?.href) {
-    startURL.searchParams.set("return_to", window.location.href);
+  const target = returnTo ?? (typeof window !== "undefined" ? window.location?.href : undefined);
+  if (target) {
+    startURL.searchParams.set("return_to", target);
   }
   return startURL.toString();
 };
@@ -278,6 +284,10 @@ const ensureLocalPreviewBot = (): Bot | null => {
 
   const bot: Bot = {
     id: LOCAL_PREVIEW_BOT_ID,
+    instanceId: LOCAL_PREVIEW_BOT_ID,
+    profileId: "main",
+    isDefault: true,
+    createdFrom: "blank",
     name: "我的Hermes",
     type: "support",
     template: "通用对话模板",
@@ -935,7 +945,7 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
       },
       getOAuthStartUrl(provider: OAuthProvider, options) {
-        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount);
+        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount, options?.returnTo);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);
@@ -950,6 +960,15 @@ export const createFakeRepositories = (): Repositories => {
       },
     },
     plans: {
+      async listModifyBundles(passId) {
+        const pass = readStoredPasses().find(item => item.pass_id === passId);
+        return { source_bundle_id: pass?.bundle_id ?? '', modify_bundle_set: [] };
+      },
+      async createModifyOrder() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async getModifyCheckout() { return { checkout: null }; },
+      async getModifyOrderUrl() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async refreshModifyPaymentAuthorization() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async getOrderStatus() { throw new Error('Order status requires a connected billing service'); },
       async getCurrentSubscription() {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();
@@ -1425,8 +1444,15 @@ const createBotRepository = (): BotRepository => {
 
     async createBot(input) {
       await wait(NETWORK_DELAY_MS);
+      const suffix = Math.random().toString(36).slice(2, 8);
       const bot: Bot = {
-        id: `bot_${Math.random().toString(36).slice(2, 8)}`,
+        id: `bot_${suffix}`,
+        instanceId: LOCAL_PREVIEW_BOT_ID,
+        profileId: `profile_${suffix}`,
+        isDefault: false,
+        description: input?.description,
+        createdFrom: input?.createMode ?? "blank",
+        sourceBotId: input?.sourceBotId,
         name: input?.name ?? "Hermes 新助手",
         type: "support",
         template: "通用对话模板",
@@ -1445,6 +1471,15 @@ const createBotRepository = (): BotRepository => {
       await wait(NETWORK_DELAY_MS);
       botStore.delete(botId);
       messageStore.delete(botId);
+    },
+
+    async retryBot(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) return null;
+      const updated = { ...bot, status: "active" as const };
+      botStore.set(botId, updated);
+      return updated;
     },
 
     async renameBot(botId, name) {
@@ -1642,6 +1677,12 @@ const createBotRepository = (): BotRepository => {
       }
       return { sessionId: `wxlogin_fake_${Date.now()}`, status: "starting" };
     },
+
+    async claimUniqueChannel() {},
+
+    async confirmUniqueChannel() {},
+
+    async releaseUniqueChannel() {},
 
     async getWeixinLoginSession(_botId, sessionId) {
       await wait(NETWORK_DELAY_MS);

@@ -22,9 +22,9 @@ export type AgentSectionId = AgentSettingsSectionId | AgentWorkbenchSectionId;
 
 export const AGENTS_HOME_PATH = "/agents";
 export const AGENT_CREATING_QUERY_KEY = "creating";
+export const AGENT_BOT_QUERY_KEY = "bot";
 
-// Agent 功能页当前没有允许跨 section 透传的查询参数。新增参数时必须显式加入白名单。
-const AGENT_SECTION_PERSISTENT_QUERY_KEYS: readonly string[] = [];
+const AGENT_SECTION_PERSISTENT_QUERY_KEYS: readonly string[] = [AGENT_BOT_QUERY_KEY];
 
 /** 订阅套餐页路由（避免魔法字符串，统一引用） */
 export const SUBSCRIBE_PATH = "/subscribe";
@@ -118,6 +118,12 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
   }
   const search = next.toString();
   return `${pathname}${search ? `?${search}` : ""}`;
+};
+
+export const getAgentBotSectionHref = (pathname: string, botId: string): string => {
+  const params = new URLSearchParams();
+  params.set(AGENT_BOT_QUERY_KEY, botId);
+  return getAgentSectionHref(pathname, params);
 };
 
 /** 我的工作台页路由（避免魔法字符串，统一引用） */

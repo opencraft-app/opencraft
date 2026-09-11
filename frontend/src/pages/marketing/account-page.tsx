@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 import {
   Camera,
   Check,
@@ -7,7 +8,6 @@ import {
   CreditCard,
   Loader2,
   Pencil,
-  Shield,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -34,6 +34,8 @@ import {
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
+import { publicSiteHref } from "@/lib/public-site-navigation";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
@@ -42,6 +44,7 @@ import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
+import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 
 /* ─── animation variants ─── */
 
@@ -757,6 +760,8 @@ const SubscriptionSection = ({
   pass: Pass | null;
 }) => {
   const t = useT();
+  const { i18n } = useTranslation();
+  const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
   const { refreshPasses, user } = useOpenClaw();
   const { session } = useSession();
   const { plans } = useRepositories();
@@ -806,6 +811,7 @@ const SubscriptionSection = ({
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
   const canRenew = (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
   const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
+  const upgrade = usePassUpgrade({ userId: session.user?.id, passId: operablePass?.pass_id, currentPass: operablePass, enabled: paidBillingActive });
 
   const handleRenewSuccess = useCallback(async () => {
     setRenewModalOpen(false);
@@ -908,7 +914,7 @@ const SubscriptionSection = ({
             </p>
           </div>
           <AppLink
-            to="/subscribe"
+            to={subscribeHref}
             className="inline-flex items-center justify-center gap-2 bg-black/90 px-6 py-3 rounded-full font-semibold text-sm cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-all"
             style={{ color: "#fff" }}
           >
@@ -936,7 +942,7 @@ const SubscriptionSection = ({
           {t("订阅套餐")}
         </h3>
         {canRenew && operablePass && (
-          <div className="shrink-0">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {!renewalAvailable ? (
               <RenewComingSoonButton
                 label={t("立即续费")}
@@ -953,10 +959,16 @@ const SubscriptionSection = ({
                 {t("立即续费")}
               </button>
             )}
+            {upgrade.pass && upgrade.options.length > 0 && (
+              <AppLink to={`${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`} className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020] transition-colors hover:bg-black/5">
+                {t("升级套餐")}
+              </AppLink>
+            )}
           </div>
         )}
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
+        {upgrade.error && <p role="alert" className="text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
         {/* Current plan */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1141,10 +1153,6 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type RevealAccountToolsHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
-
 export const AccountPage = () => {
   const t = useT();
   const navigate = useAppNavigate();
@@ -1172,35 +1180,6 @@ export const AccountPage = () => {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showHiddenAccountTools, setShowHiddenAccountTools] = useState(false);
-
-  useEffect(() => {
-    const host = window as RevealAccountToolsHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealAccountTools = (...args: unknown[]) => {
-      if (mounted) {
-        setShowHiddenAccountTools(true);
-      }
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealAccountTools;
-
-    return () => {
-      mounted = false;
-      if (host.show !== revealAccountTools) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1957,7 +1936,7 @@ export const AccountPage = () => {
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
 
-            {isGlobal && showHiddenAccountTools && <SavedCardsSection />}
+            {isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>

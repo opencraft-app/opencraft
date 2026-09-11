@@ -47,6 +47,9 @@
 | `docs/context/domains/site-environment-routing.md@revision-2.0.0` | 路由 must_read | 将变更限定在国内站，不推断发布状态 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@revision-1.0.0` | 前端测试邻接 | 检查实现与相邻测试，不扩大 locale 范围 |
 | `.agents/skills/product-skills/lv-sitepage-skills/SKILL.md@88ad7fced` | Skills 页面产品规则 | 确认 builtin 显示与不可删除语义 |
+| `docs/context/domains/site-environment-routing.md@revision-2.0.0` | 合并最新 master 后的路由 must_read | 复核正式设计文档冲突的权威边界 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@revision-2.0.0` | MR 冲突处理路由 must_read | 约束原 MR 更新、授权和远端状态证明 |
+| `frontend/AGENTS.md@5be92a713` | 合并后前端服务规则 | 选择合并后聚焦测试与完整门禁 |
 
 ## evidence
 - `python3 .agents/context/scripts/validate_context.py --route "frontend/src/pages/marketing/skills-demo/skill-registries.ts builtin SkillHub installed source merge"` 命中三个 Pack。
@@ -54,6 +57,7 @@
 - `images/build.sh` bundled keep list 与截图技能名称相符。
 - `validate_change_impact.py` 确认前端变更命中 `site-environment-routing`，已同步正式设计文档中的 Skills 已安装来源边界。
 - 先新增 parser、merge 与组件断言，旧实现分别暴露来源未保留、Hermes builtin 未覆盖及 UI 仍可删除；实现后定向用例全部通过。
+- MR !3907 的源提交 `c42acf642` 与最新 `origin/master@5be92a713` 仅在 `docs/engineering/domains/site-environment-routing.md` 发生内容冲突；解决时完整保留 master 的 Agent 配置、多 Bot、账号菜单、定时任务和记忆边界，并插入本需求的 Skills 来源边界。
 
 ## risks
 - registry 与 Hermes 同时返回同一 Skill 时可能错误覆盖真实 marketplace 来源；仅对明确 `builtin` 采用覆盖，并用普通 SkillHub 回归测试防护。
@@ -66,6 +70,9 @@
 - `git diff --check -- <本次文件>`：通过。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：通过，0 errors、0 warnings、0 broken first-party links。
 - 在临时 detached worktree 中仅应用并暂存本次补丁后运行 `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`：通过，命中 `site-environment-routing`，无需额外 owner review。
+- 合并 `origin/master@5be92a713` 后重新运行定向 Vitest：2 个文件、104 个测试通过。
+- 合并后重新运行 `pnpm check`：通过；TypeScript 174 current / 276 baseline / 0 new / 102 resolved，保留最新 master 的 49 个既有 i18n 告警。
+- 合并结果相对 `origin/master` 仍为原 9 个文件，且 `git diff --cached origin/master --check` 通过。
 
 ## decisions
 - Hermes bundled/source `builtin` 对预置属性具有权威性；owner：本次用户确认。
@@ -80,4 +87,4 @@
 - 使用既有 graphify 查询定位 `parseSkillhubList`、`mergeInstalledWithHermes`、`getInstalledSources`，随后以源码和测试核验。
 
 ## handoff
-- brief 已获用户确认；实现与验证完成，未提交、未推送、未发布，也未在生产环境执行交互回归。
+- brief 已获用户确认；实现已提交并推送到 MR !3907。冲突已在隔离 worktree 解决并完成合并后验证，等待确认后提交并推送冲突解决 commit；未合并、未发布，也未在生产环境执行交互回归。

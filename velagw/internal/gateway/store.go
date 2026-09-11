@@ -155,6 +155,7 @@ type Store interface {
 	SaveSubscriptionProjection(context.Context, SubscriptionProjection) error
 	ListSubscriptionProjections(context.Context, string) ([]SubscriptionProjection, error)
 	DeleteSubscriptionProjections(context.Context, string) error
+	DeleteSubscriptionProjectionsByUpstreamIDs(context.Context, string, []int) error
 	TryBeginSubscriptionIdempotency(context.Context, SubscriptionIdempotency) (SubscriptionIdempotency, bool, error)
 	FinishSubscriptionIdempotency(context.Context, string, int, string, time.Time) error
 	EnqueueAdminCommand(context.Context, AdminCommand) (AdminCommand, bool, error)
@@ -2438,6 +2439,33 @@ func (s *MemoryStore) DeleteSubscriptionProjections(_ context.Context, externalU
 	defer s.mu.Unlock()
 	for key, projection := range s.subscriptionProjections {
 		if projection.ExternalUserID == externalUserID {
+			delete(s.subscriptionProjections, key)
+		}
+	}
+	return nil
+}
+
+func (s *MemoryStore) DeleteSubscriptionProjectionsByUpstreamIDs(_ context.Context, externalUserID string, upstreamSubscriptionIDs []int) error {
+	externalUserID = strings.TrimSpace(externalUserID)
+	if externalUserID == "" || len(upstreamSubscriptionIDs) == 0 {
+		return nil
+	}
+	idSet := make(map[int]struct{}, len(upstreamSubscriptionIDs))
+	for _, id := range upstreamSubscriptionIDs {
+		if id > 0 {
+			idSet[id] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, projection := range s.subscriptionProjections {
+		if projection.ExternalUserID != externalUserID {
+			continue
+		}
+		if _, ok := idSet[projection.UpstreamSubscriptionID]; ok {
 			delete(s.subscriptionProjections, key)
 		}
 	}

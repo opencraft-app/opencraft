@@ -8,6 +8,127 @@ import (
 	"testing"
 )
 
+func TestValidateRejectsUnknownAuthMode(t *testing.T) {
+	cfg := Config{Auth: AuthConfig{Mode: "sometimes", TimestampSkew: "5m"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want invalid auth.mode error")
+	}
+}
+
+func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+auth:
+  mode: optional
+  allow_unauthenticated:
+    - callback
+routes:
+  - id: callback
+    upstream:
+      base_url: http://callback.internal
+  - id: jifei-test
+    upstream:
+      base_url: http://jifei-test.internal
+  - id: devtunnel
+    upstream:
+      base_url: http://devtunnel.internal
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Auth.EffectiveMode(); got != AuthModeRequired {
+		t.Fatalf("auth mode = %q, want required", got)
+	}
+	want := []string{"callback", "jifei-test", "devtunnel"}
+	if !slices.Equal(cfg.Auth.AllowUnauthenticated, want) {
+		t.Fatalf("allow_unauthenticated = %#v, want %#v", cfg.Auth.AllowUnauthenticated, want)
+	}
+}
+
+func TestLoadKeepsYAMLAuthWhenEnvironmentOverridesAreEmpty(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", "")
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+auth:
+  mode: optional
+  allow_unauthenticated: [callback]
+routes:
+  - id: callback
+    upstream:
+      base_url: http://callback.internal
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Auth.EffectiveMode(); got != AuthModeOptional {
+		t.Fatalf("auth mode = %q, want optional", got)
+	}
+	if !slices.Equal(cfg.Auth.AllowUnauthenticated, []string{"callback"}) {
+		t.Fatalf("allow_unauthenticated = %#v", cfg.Auth.AllowUnauthenticated)
+	}
+}
+
+func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	allowUnauthenticated := make(map[string]struct{}, len(cfg.Auth.AllowUnauthenticated))
+	for _, routeID := range cfg.Auth.AllowUnauthenticated {
+		allowUnauthenticated[routeID] = struct{}{}
+	}
+	registeredCallers := make(map[string]struct{}, len(cfg.Auth.Callers))
+	for _, caller := range cfg.Auth.Callers {
+		registeredCallers[caller.ID] = struct{}{}
+	}
+
+	for _, route := range cfg.Routes {
+		isExternalCallback := route.ID == "jifei-callback" ||
+			strings.HasPrefix(route.ID, "jifei-callback-") ||
+			strings.HasPrefix(route.ID, "jifei-credit-callback-") ||
+			strings.HasPrefix(route.ID, "tencentcloud-account-callback-") ||
+			route.ID == "devtunnel"
+		if isExternalCallback {
+			if _, ok := allowUnauthenticated[route.ID]; !ok {
+				t.Errorf("external callback route %q would be blocked by required auth", route.ID)
+			}
+		}
+		if _, anonymous := allowUnauthenticated[route.ID]; !anonymous {
+			for _, caller := range route.Callers {
+				if _, ok := registeredCallers[caller]; !ok {
+					t.Errorf("route %q references unregistered caller %q", route.ID, caller)
+				}
+			}
+		}
+	}
+
+	sensitiveOutbound := []string{
+		"jifei-test", "jifei-prod",
+		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
+		"dianshi-price", "dianshi-order",
+		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
+		"billing-query-via-polaris",
+		"billing-trade-cn-test", "billing-trade-cn-pre", "billing-trade-cn-prod",
+		"billing-trade-intl-test", "billing-trade-intl-pre", "billing-trade-intl-prod",
+	}
+	for _, routeID := range sensitiveOutbound {
+		if _, ok := allowUnauthenticated[routeID]; ok {
+			t.Errorf("sensitive outbound route %q remains anonymously accessible", routeID)
+		}
+	}
+}
+
 func TestLoadEnablesOTLPAuditFromStandardEnv(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs")
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -478,6 +599,48 @@ func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
 	}
 	for routeID := range wantBaseURL {
 		t.Fatalf("example config missing regional callback route %q", routeID)
+	}
+}
+
+func TestExampleConfigIncludesCreditRegionalJifeiCallbacks(t *testing.T) {
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	wantRoutes := map[string]bool{
+		"jifei-credit-callback-bj":  false,
+		"jifei-credit-callback-sh":  false,
+		"jifei-credit-callback-gz":  false,
+		"jifei-credit-callback-cd":  false,
+		"jifei-credit-callback-nj":  false,
+		"jifei-credit-callback-hk":  false,
+		"jifei-credit-callback-jp":  false,
+		"jifei-credit-callback-kr":  false,
+		"jifei-credit-callback-jkt": false,
+		"jifei-credit-callback-sg":  false,
+		"jifei-credit-callback-th":  false,
+	}
+
+	for _, route := range cfg.Routes {
+		if _, ok := wantRoutes[route.ID]; !ok {
+			continue
+		}
+		if route.Condition != `request.method == "POST"` {
+			t.Fatalf("route %q condition = %q", route.ID, route.Condition)
+		}
+		if got := route.Upstream.BaseURL; got != "https://lightclaw.tech" {
+			t.Fatalf("route %q base_url = %q, want Beijing pre-production", route.ID, got)
+		}
+		if len(route.Upstream.AllowedMethods) != 1 || route.Upstream.AllowedMethods[0] != "POST" {
+			t.Fatalf("route %q allowed_methods = %#v", route.ID, route.Upstream.AllowedMethods)
+		}
+		wantRoutes[route.ID] = true
+	}
+	for routeID, found := range wantRoutes {
+		if !found {
+			t.Fatalf("example config missing Credit callback route %q", routeID)
+		}
 	}
 }
 

@@ -33,7 +33,11 @@ import {
   type SaveHermesCommonSettingOptions,
 } from "@/pages/marketing/agent-common-settings-save";
 
-type LoadSettings = (bots: BotRepository, botId: string) => Promise<HermesCommonSettingsSnapshot>;
+type LoadSettings = (
+  bots: BotRepository,
+  botId: string,
+  profileId?: string,
+) => Promise<HermesCommonSettingsSnapshot>;
 type SaveSetting = (options: SaveHermesCommonSettingOptions) => Promise<HermesCommonSettingSaveResult>;
 type ResetSettings = (options: ResetHermesCommonSettingsGroupOptions) => Promise<HermesCommonSettingsResetResult>;
 type FieldFeedback = { kind: "error"; message: string } | null;
@@ -45,6 +49,7 @@ type PendingSwitchChange = {
 
 interface AgentCommonSettingsPanelProps {
   botId: string;
+  profileId?: string;
   botStatus: string;
   bots: BotRepository;
   getGatewayRestartCommand: () => Promise<string>;
@@ -93,6 +98,7 @@ const isNumericKey = (key: HermesCommonSettingKey): boolean =>
 
 export function AgentCommonSettingsPanel({
   botId,
+  profileId = "main",
   botStatus,
   bots,
   getGatewayRestartCommand,
@@ -176,7 +182,7 @@ export function AgentCommonSettingsPanel({
       return;
     }
     try {
-      const next = await loadSettings(bots, botId);
+      const next = await loadSettings(bots, botId, profileId);
       if (requestIdRef.current !== requestId) return;
       setSnapshot(next);
       setDrafts(numericDrafts(next));
@@ -186,7 +192,7 @@ export function AgentCommonSettingsPanel({
     } finally {
       if (requestIdRef.current === requestId) setLoading(false);
     }
-  }, [botId, botStatus, bots, loadSettings]);
+  }, [botId, botStatus, bots, loadSettings, profileId]);
 
   useEffect(() => {
     void refresh();
@@ -209,7 +215,7 @@ export function AgentCommonSettingsPanel({
     const requestId = requestIdRef.current;
     let saved = false;
     try {
-      const result = await saveSetting({ bots, botId, key, value, getGatewayRestartCommand });
+      const result = await saveSetting({ bots, botId, profileId, key, value, getGatewayRestartCommand });
       if (requestIdRef.current !== requestId) return false;
       if (result.status === "success") {
         setSnapshot(result.snapshot);
@@ -331,6 +337,7 @@ export function AgentCommonSettingsPanel({
       const result = await resetSettings({
         bots,
         botId,
+        profileId,
         group,
         snapshot,
         getGatewayRestartCommand,
@@ -386,7 +393,7 @@ export function AgentCommonSettingsPanel({
         )}
       />
       {agentStopped && <p className="mt-5 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">{t("Agent 未运行，启动后才能查看和修改设置。")}</p>}
-      {!agentStopped && loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在读取当前配置…")}</div>}
+      {!agentStopped && loading && <div className="flex items-center justify-center py-16 text-sm text-black/45"><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("正在加载设置…")}</div>}
       {!agentStopped && !loading && loadError && (
         <div className="mt-6 border-y border-black/[0.08] py-10 text-center">
           <p role="alert" className="text-sm text-red-600">{t("读取配置失败：{{detail}}", { detail: loadError })}</p>

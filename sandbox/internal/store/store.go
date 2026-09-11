@@ -25,6 +25,10 @@ type Store interface {
 	// UpdateInstanceCloudAndState updates cloud/address and state when expected state matches.
 	UpdateInstanceCloudAndState(ctx context.Context, id string, expected core.InstanceState, target core.InstanceState, address, cloudID string) (core.Instance, error)
 	DeleteInstance(ctx context.Context, id string) error
+	// RebindAllocatedInstance atomically moves a checked-out instance to a target pool.
+	// It only rewrites ownership metadata on the instance and sandbox rows; the CVM,
+	// its data, IP, VPC, subnet and security groups are untouched.
+	RebindAllocatedInstance(ctx context.Context, in RebindInstanceInput) (core.Instance, error)
 
 	// Sandbox mapping
 	CreateSandbox(ctx context.Context, sb core.Sandbox) (core.Sandbox, error)
@@ -80,4 +84,39 @@ type Store interface {
 
 	// SKU rollout.
 	BeginSKUPoolRollout(ctx context.Context, skuID string, poolID string, desiredImage string, startedAt time.Time) (core.SKU, core.Pool, error)
+
+	// Modify operations ledger (同 SP 升配的 Sandbox 侧云操作账本).
+	//
+	// CreateModifyOperation returns created=false when the idempotency key already
+	// exists, so a retrying caller resumes the original operation instead of
+	// re-running irreversible cloud steps. Reusing a key for a different target is
+	// rejected with core.ErrModifyOperationConflict.
+	CreateModifyOperation(ctx context.Context, op core.ModifyOperation) (operation core.ModifyOperation, created bool, err error)
+	GetModifyOperation(ctx context.Context, id string) (core.ModifyOperation, error)
+	// GetRunningModifyOperationByInstance 返回该实例当前在跑的账本，found=false 表示没有。
+	// 用于把换了幂等键的重派收敛回同一份账本，而不是并行开出第二份。
+	GetRunningModifyOperationByInstance(ctx context.Context, instanceID string) (operation core.ModifyOperation, found bool, err error)
+	UpdateModifyOperationProgress(ctx context.Context, in ModifyOperationProgress) (core.ModifyOperation, error)
+	ListModifyOperationsByStatus(ctx context.Context, status core.ModifyOperationStatus, limit int) ([]core.ModifyOperation, error)
+}
+
+// RebindInstanceInput describes an atomic pool ownership move for one instance.
+type RebindInstanceInput struct {
+	InstanceID string
+	// ExpectedState guards the rebind so a concurrent release or pause cannot interleave.
+	ExpectedState   core.InstanceState
+	TargetPoolID    string
+	TemplateClassID string
+	// ResolutionSource records why the sandbox now points at TargetPoolID, replacing
+	// the stale allocation-time provenance.
+	ResolutionSource string
+}
+
+// ModifyOperationProgress is a step checkpoint written after each cloud step succeeds.
+type ModifyOperationProgress struct {
+	ID          string
+	Status      core.ModifyOperationStatus
+	CurrentStep string
+	LastError   string
+	CompletedAt *time.Time
 }

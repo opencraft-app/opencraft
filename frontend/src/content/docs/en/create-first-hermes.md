@@ -54,7 +54,7 @@ Once the instance is ready, open the console and complete the basic setup:
 
 2. **Connect a channel** — Add Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel, then talk to your Agent from the messaging app
 
-3. **Optionally add skills and automations** — Extend what your Agent can do; see [Configure Automations](./configuration/automation.md)
+3. **Optionally add skills and scheduled tasks** — Extend what your Agent can do; see [Configure Scheduled Tasks](./configuration/automation.md)
 
 Your first Hermes Agent is now ready to stay online in the cloud 24/7.
 

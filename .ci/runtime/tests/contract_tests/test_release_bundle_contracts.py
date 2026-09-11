@@ -164,7 +164,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 28, "sgprod": 28},
+                    {"shprod": 30, "sgprod": 30},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -716,10 +716,36 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
 
         oidc_clients = json.loads(values["AUTH_OIDC_CLIENTS_JSON"])
-        self.assertEqual(len(oidc_clients), 1)
-        self.assertEqual(oidc_clients[0]["id"], "site-gateway")
+        self.assertEqual(len(oidc_clients), 3)
+        clients_by_id = {client["id"]: client for client in oidc_clients}
         self.assertEqual(
-            set(oidc_clients[0]["redirect_uris"]),
+            clients_by_id["site-gateway"]["redirect_uris"],
+            [
+                "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+                "https://sites-auth.lightvela.site/auth/lightvela/callback",
+            ],
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-native-v1"],
+            {
+                "id": "opencraft-native-v1",
+                "display_name": "Vela",
+                "redirect_uris": ["opencraft://auth/lightvela"],
+            },
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-web-v1"],
+            {
+                "id": "opencraft-web-v1",
+                "display_name": "OpenCraft Web",
+                "redirect_uris": [
+                    "https://chat.lightvela.com/auth/lightvela/callback",
+                    "https://chat.lightvela.ai/auth/lightvela/callback",
+                ],
+            },
+        )
+        self.assertEqual(
+            set(clients_by_id["site-gateway"]["redirect_uris"]),
             {
                 "https://sites-auth.lightvela.site/auth/lightvela/callback",
                 "https://sites-auth.lightvela.tech/auth/lightvela/callback",
@@ -1062,6 +1088,74 @@ class ReleaseBundleContractTests(unittest.TestCase):
         for malformed in ("sandbox-jp", "sandbox-jp-", "sandbox-jp-one", "sandbox-jp-1-extra"):
             with self.subTest(env=malformed):
                 self.assertFalse(is_playground_env(malformed))
+
+    def test_credit_build_metadata_is_limited_to_beijing(self) -> None:
+        manifest = load_manifest()
+
+        require_build_metadata(load_bundle(manifest, "credit", "beijing-sandbox"))
+        require_build_metadata(load_bundle(manifest, "credit", PLAYGROUND_ENV))
+        for env in (KOREA_PLAYGROUND_ENV, JAPAN_PLAYGROUND_ENV):
+            with self.subTest(env=env):
+                with self.assertRaisesRegex(ValueError, "does not define docker build inputs"):
+                    require_build_metadata(load_bundle(manifest, "credit", env))
+
+    def test_credit_pipeline_builds_from_master_and_beijing_playground(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/credit.yml").read_text()) or {}
+
+        self.assertEqual(
+            self.push_config(workflow).get("branches"),
+            ["master", "playground/sandbox-bj-*"],
+        )
+        parameters = ((workflow.get("extends") or {}).get("parameters") or {})
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-sandbox")
+        watched_paths = self.push_config(workflow).get("paths") or []
+        self.assertIn(
+            "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
+            watched_paths,
+        )
+
+    def test_credit_beijing_release_materials_are_complete(self) -> None:
+        expected_paths = [
+            "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
+            "argocd/secrets/beijing-sandbox/credit-runtime-secrets.sops.yaml",
+            "argocd/services/credit/beijing-sandbox/kustomization.yaml",
+            "argocd/services/credit/beijing-sandbox/credit-platform.env",
+            "argocd/services/credit/beijing-sandbox/credit-lifecycle-worker.yaml",
+            "argocd/services/credit/beijing-sandbox/credit-usage-worker.yaml",
+            "scripts/ssm_manifest.credit.beijing-sandbox.yaml",
+        ]
+        for relative_path in expected_paths:
+            with self.subTest(path=relative_path):
+                self.assertTrue((REPO_ROOT / relative_path).is_file(), relative_path)
+
+        catalog = yaml.safe_load(
+            (REPO_ROOT / "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml").read_text()
+        )
+        self.assertEqual(catalog["env"], "beijing-sandbox")
+        self.assertEqual(catalog["destinationName"], "beijing-sandbox")
+        self.assertEqual(catalog["namespace"], "credit")
+        self.assertEqual(catalog["sourcePath"], "argocd/services/credit/beijing-sandbox")
+
+        ssm_manifest = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.credit.beijing-sandbox.yaml").read_text()
+        )
+        self.assertEqual(ssm_manifest["defaults"]["region"], "ap-beijing")
+        self.assertEqual(
+            ssm_manifest["items"][0]["required_keys"],
+            [
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+                "CREDIT_DB_PASSWORD",
+                "LLMGATEWAY_INTERNAL_SERVICE_TOKEN",
+            ],
+        )
+
+        trade_patch = (
+            REPO_ROOT / "argocd/services/trade/beijing-sandbox/patch-credit.yaml"
+        ).read_text()
+        self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
+        self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
@@ -1932,6 +2026,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
             "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
             "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT",
+            "VELAGW_NEWAPI_IMAGE",
+            "VELAGW_NEWAPI_RELEASE_ID",
+            "VELAGW_NEWAPI_RELEASE_VERSION",
         }
         expected_region_values = {
             "shprod": {
@@ -1957,6 +2054,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     {key: platform[key] for key in expected},
                     expected,
                 )
+                kustomization = yaml.safe_load(
+                    (REPO_ROOT / "argocd/services/velagw" / env / "kustomization.yaml").read_text()
+                )
+                replacement_sources = {
+                    (replacement.get("source") or {}).get("fieldPath"): replacement
+                    for replacement in kustomization.get("replacements", [])
+                }
+                for field_path in (
+                    "data.VELAGW_NEWAPI_IMAGE",
+                    "data.VELAGW_NEWAPI_RELEASE_ID",
+                    "data.VELAGW_NEWAPI_RELEASE_VERSION",
+                ):
+                    self.assertIn(field_path, replacement_sources)
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}
@@ -2192,7 +2302,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
         self.assertEqual(
             approval_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
         )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
@@ -2229,10 +2339,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
         self.assertIn("check-in", stages[0])
+        release_reviews = (((stages[0].get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        self.assertEqual(
+            release_reviews.get("reviewers"),
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+        )
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
         self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
+        self.assertIn("resolve_source_branch()", template_text)
+        self.assertIn("BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}", template_text)
+        self.assertIn(
+            "FRONTEND_EDGEONE_CI_BRANCH=\"$(resolve_source_branch '${{ ci.branch }}')\"",
+            template_text,
+        )
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"', template_text)
+        self.assertIn("FRONTEND_EDGEONE_CI_SHA='${{ ci.sha }}'", template_text)
+        self.assertIn('FRONTEND_EDGEONE_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', template_text)
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
         self.assertIn("eo:cn-lightvela-prod-next)", command_text)
@@ -3068,7 +3193,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"', template_text)
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)
-        self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
+        release_image_dir = (
+            'RELEASE_IMAGE_DIR="${TMPDIR:-/tmp}/lightclaw-ci/release-images/'
+            '${BK_CI_BUILD_ID:?BK_CI_BUILD_ID is required}/'
+            '${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"'
+        )
+        self.assertEqual(template_text.count(release_image_dir), 2)
+        self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
         self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)

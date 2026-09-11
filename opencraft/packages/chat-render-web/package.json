@@ -1,0 +1,28 @@
+{
+  "name": "@opencraft/chat-render-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@shikijs/core": "4.4.3",
+    "@shikijs/engine-javascript": "4.4.3",
+    "@shikijs/langs": "4.4.3",
+    "@shikijs/themes": "4.4.3",
+    "@opencraft/chat-document": "0.1.0",
+    "@opencraft/chat-render-react": "0.1.0",
+    "katex": "0.18.4",
+    "mermaid": "11.17.2",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "sass": "^1.83.4"
+  }
+}

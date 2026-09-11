@@ -731,3 +731,11 @@ func TestInlineDestroyTask_RevokesLegacyAIGatewayKey(t *testing.T) {
 	assert.Equal(t, []string{keyID}, legacyGateway.revokedKeyIDs)
 	assert.Equal(t, "sbx-ai-gateway", deletedSandboxID)
 }
+
+func (s *stubSandboxAdapterInline) Modify(context.Context, string, *psandbox.ModifyRequest) (*psandbox.ModifyOperation, error) {
+	return nil, nil
+}
+
+func (s *stubSandboxAdapterInline) GetModifyOperation(context.Context, string) (*psandbox.ModifyOperation, error) {
+	return nil, nil
+}

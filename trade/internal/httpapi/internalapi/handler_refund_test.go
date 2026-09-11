@@ -7,9 +7,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
+	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
+
+type refundCreditDefinitionStore struct{}
+
+func (refundCreditDefinitionStore) GetCreditDefinitionByProductID(context.Context, string) (*store.CreditDefinition, error) {
+	return &store.CreditDefinition{
+		ProductID:      "credit_1000",
+		ProductCode:    "p_lighthouse",
+		SubProductCode: "sp_lighthouse_lv_credit_pkg",
+	}, nil
+}
+
+func (refundCreditDefinitionStore) ListCreditDefinitions(context.Context, string, string) ([]*store.CreditDefinition, error) {
+	return nil, nil
+}
 
 // ============================================================================
 // refund resource tests (trade-pass-refund-design.md v0.5 §8 commit 2)
@@ -41,6 +59,54 @@ func refundResourceBody() map[string]any {
 		"uin":      "100012345678",
 		"appId":    1300012345,
 		"bundleId": "bundle-test-1",
+	}
+}
+
+func TestRefundResource_PassAndCreditUseIndependentRegions(t *testing.T) {
+	ctl := &fakeCTL{}
+	bundle := &fakeBundleStore{}
+	jifei := &fakeJifei{}
+	inq := inquiry.New(inquiry.Deps{CTLClient: ctl, BundleStore: bundle, JifeiClient: jifei})
+	po := placeorder.New(placeorder.Deps{
+		CTLClient: ctl, BundleStore: bundle, JifeiClient: jifei,
+		OrderWriter: &fakeOrderWriter{}, OrderStore: &fakeOrderStore{},
+	})
+
+	var seen []*jifeiclient.OnlineRefundRequest
+	jifei.onlineRefundFn = func(_ context.Context, req *jifeiclient.OnlineRefundRequest) (*jifeiclient.OnlineRefundResponse, error) {
+		seen = append(seen, req)
+		return &jifeiclient.OnlineRefundResponse{
+			DealNames: []string{"deal-refund"}, BigDealIDs: []string{"big-deal-refund"},
+		}, nil
+	}
+
+	router := gin.New()
+	Install(router, Deps{
+		InternalServiceToken: "test-token",
+		Inquiry:              inq, PlaceOrder: po,
+		BundleStore: bundle, CreditDefinitionStore: refundCreditDefinitionStore{}, JifeiClient: jifei,
+		RegionOverride: "ap-guangzhou", CreditRegionOverride: "ap-beijing",
+	})
+	env := &testEnv{router: router, token: "test-token"}
+
+	passRec := env.doJSON(http.MethodPost, "/internal/trade/resources/pass-1/refund", refundResourceBody(), true)
+	if passRec.Code != http.StatusOK {
+		t.Fatalf("pass refund status = %d, body=%s", passRec.Code, passRec.Body.String())
+	}
+	creditRec := env.doJSON(http.MethodPost, "/internal/trade/credit/resources/creditmon-1/refund", map[string]any{
+		"ownerUin": "100012345678", "uin": "100012345678", "appId": 1300012345, "productId": "credit_1000",
+	}, true)
+	if creditRec.Code != http.StatusOK {
+		t.Fatalf("credit refund status = %d, body=%s", creditRec.Code, creditRec.Body.String())
+	}
+	if len(seen) != 2 {
+		t.Fatalf("OnlineRefund calls = %d, want 2", len(seen))
+	}
+	if got := seen[0].GoodsInfo["sp_test"].RegionID; got != 1 {
+		t.Fatalf("pass refund regionId = %d, want 1", got)
+	}
+	if got := seen[1].GoodsInfo["sp_lighthouse_lv_credit_pkg"].RegionID; got != 8 {
+		t.Fatalf("credit refund regionId = %d, want 8", got)
 	}
 }
 

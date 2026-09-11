@@ -149,11 +149,22 @@ HTTP Request → REST Handler → MQ.Produce(message)  → 立即返回 TaskId
 | `POST` | `/v1/instances/{instance_id}/pause` | 暂停实例 |
 | `POST` | `/v1/instances/{instance_id}/resume` | 恢复实例 |
 | `POST` | `/v1/instances/{instance_id}/timeout` | 更新超时时间 |
+| `GET` | `/v1/passes/{pass_id}/modify/bundles` | 查询当前 Pass 的同 SP 可升配套餐与实时差价 |
+| `POST` | `/v1/passes/{pass_id}/modify/order` | 创建升配订单，返回计费订单号 |
+| `POST` | `/v1/passes/{pass_id}/modify/order-url` | 创建升配订单并返回支付页 URL |
+| `POST` | `/v1/passes/{pass_id}/modify/order-and-pay` | 创建并用测试代金券支付；仅供联调/e2e，控制台不得暴露 |
 
 请求头约定：
 
 - `X-User-Id`: 用户标识
 - `X-Request-Id`: 可选请求 ID
+
+升配的三个 `POST` 入口只接受 `{"target_bundle_id":"..."}`；源套餐、到期时间、
+UIN 与 AppID 均由服务端反查。支付后计费先调用 `checkModify`，再调用
+`modifyResource`；后者只表示 CTL 已受理异步任务。订单先保持
+`paid_pending_provision`，只有 CTL 完成实例、Pass、配额和 VelaGW 权益收敛，并调用
+Trade 的 `POST /internal/trade/flows/{flow_id}/complete` 后，才进入
+`trade_order=provisioned`、`trade_flow=completed`。
 
 ### 新增业务模块步骤
 

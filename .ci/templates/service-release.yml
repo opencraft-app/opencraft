@@ -36,7 +36,7 @@ parameters:
     default: auto
   - name: RUNNER_POOL_NAME
     type: string
-    default: env
+    default: cn-pool
   - name: PRINT_RUNNER_DIAGNOSTICS
     type: boolean
     default: false
@@ -174,7 +174,7 @@ stages:
               RELEASE_CI_NAME="构建 ${{ parameters.DISPLAY_NAME }}"
               RELEASE_DISPLAY_NAME="${{ parameters.DISPLAY_NAME }}"
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE RELEASE_CI_NAME RELEASE_DISPLAY_NAME
-              RELEASE_IMAGE_DIR=".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"
+              RELEASE_IMAGE_DIR="${TMPDIR:-/tmp}/lightclaw-ci/release-images/${BK_CI_BUILD_ID:?BK_CI_BUILD_ID is required}/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"
               rm -rf "$RELEASE_IMAGE_DIR"
               mkdir -p "$RELEASE_IMAGE_DIR"
               export RELEASE_IMAGE_DIR
@@ -247,7 +247,7 @@ stages:
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
               RELEASE_CI_NAME="构建 ${{ parameters.DISPLAY_NAME }}"
               RELEASE_DISPLAY_NAME="${{ parameters.DISPLAY_NAME }}"
-              RELEASE_IMAGE_DIR=".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"
+              RELEASE_IMAGE_DIR="${TMPDIR:-/tmp}/lightclaw-ci/release-images/${BK_CI_BUILD_ID:?BK_CI_BUILD_ID is required}/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"
               trap 'rm -rf "$RELEASE_IMAGE_DIR"' EXIT
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE RELEASE_CI_NAME RELEASE_DISPLAY_NAME RELEASE_IMAGE_DIR
               resolve_playground_envs() {
@@ -339,7 +339,7 @@ stages:
         name: 确认进入生产候选流程
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 生产候选流程已确认
             shell: bash
@@ -352,7 +352,7 @@ stages:
         name: 判断并发起 ${{ parameters.DISPLAY_NAME }} shprod DB migration 流水线
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
@@ -451,7 +451,7 @@ stages:
         name: 判断并发起 ${{ parameters.DISPLAY_NAME }} sgprod DB migration 流水线
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
@@ -567,7 +567,7 @@ stages:
         name: 二次确认生产镜像升级
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 生产镜像升级已二次确认
             shell: bash
@@ -580,7 +580,7 @@ stages:
         name: 创建 ${{ parameters.DISPLAY_NAME }} shprod/sgprod GitOps promote 候选
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
@@ -637,7 +637,11 @@ stages:
               ci_init_repo_root
               ci_export_gongfeng_defaults
 
-              SOURCE_SHA="$(git rev-parse HEAD)"
+              SOURCE_SHA='${{ ci.sha }}'
+              if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" == *'${{'* ]]; then
+                SOURCE_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              test -n "$SOURCE_SHA"
               CI_RUNTIME_REF="${CI_RUNTIME_REF:-${{ ci.branch }}}"
               CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$SOURCE_SHA}"
               export CI_RUNTIME_REF CI_RUNTIME_COMMIT

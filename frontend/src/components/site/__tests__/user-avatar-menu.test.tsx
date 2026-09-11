@@ -1,7 +1,10 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
@@ -49,6 +52,14 @@ const stubLocation = (hostname: string) => {
   });
 };
 
+const createNavigationValue = (navigate = vi.fn()): AppNavigationValue => ({
+  Link: ({ to, ...props }) => <a href={to} {...props} />,
+  navigate,
+  pathname: "/agents",
+  search: "",
+  setSearchParams: vi.fn(),
+});
+
 afterEach(() => {
   cleanup();
   useSession.mockReset();
@@ -59,6 +70,11 @@ afterEach(() => {
 });
 
 describe("UserAvatarMenu", () => {
+  const readGeneratedDictionary = (locale: string): Record<string, string> =>
+    JSON.parse(
+      readFileSync(join(process.cwd(), `src/i18n/generated/${locale}.json`), "utf8"),
+    ) as Record<string, string>;
+
   it("shows active pass bundle name in hover menu when subscription snapshot is missing", () => {
     useSession.mockReturnValue({
       session: {
@@ -116,6 +132,33 @@ describe("UserAvatarMenu", () => {
 
     expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
+  });
+
+  it("returns to the public home after signing out from the console menu", () => {
+    const signOut = vi.fn();
+    const navigate = vi.fn();
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut,
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(
+      <AppNavigationProvider value={createNavigationValue(navigate)}>
+        <UserAvatarMenu />
+      </AppNavigationProvider>,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(navigate).toHaveBeenCalledWith("/", { replace: true });
+    expect(signOut).toHaveBeenCalledTimes(1);
   });
 
   it("links the shared account menu to the agents workbench on local hosts", () => {
@@ -235,7 +278,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
   });
 
-  it("我的工作台入口默认显示（不再需要 show() 解锁）", () => {
+  it("keeps the companion and account entries first while removing My Workbench", () => {
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -251,6 +294,26 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
-    expect(screen.getByRole("link", { name: "我的工作台" })).toHaveAttribute("href", "/agents/websites/");
+    const companionLink = screen.getByRole("link", { name: "我的智能体伙伴" });
+    const accountLink = screen.getByRole("link", { name: "账号管理" });
+    const workbenchLink = screen.getByRole("link", { name: "工作台" });
+
+    expect(companionLink).toHaveAttribute("href", "/agents");
+    expect(accountLink).toHaveAttribute("href", "/account");
+    expect(companionLink.compareDocumentPosition(accountLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(accountLink.compareDocumentPosition(workbenchLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "我的工作台" })).not.toBeInTheDocument();
+  });
+
+  it("uses natural English labels for the companion and account entries", () => {
+    const keys = readGeneratedDictionary("zh-to-key");
+    const english = readGeneratedDictionary("en-US");
+    const companionKey = keys["我的智能体伙伴"];
+    const accountKey = keys["账号管理"];
+
+    expect(companionKey).toBeDefined();
+    expect(accountKey).toBeDefined();
+    expect(english[companionKey!]).toBe("My AI Companion");
+    expect(english[accountKey!]).toBe("Account Settings");
   });
 });

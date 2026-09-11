@@ -301,6 +301,75 @@ type DestroyInstanceForPassTaskPayload struct {
 	SnapshotsDone bool `json:"snapshots_done,omitempty"`
 }
 
+// === 同 SP 变配（升配）父子 task payload ===
+// 需求：TAPD 1010132091137784162 §6 执行顺序 / §8 幂等
+//
+// ModifyPassTaskPayload 是变配父 task 的 payload。入口 logic.AcceptPassModify 已 CAS
+// active → modifying 并写入 pass.modify_flow_id / modify_target_bundle_id。
+//
+// 父 task 每轮 execute：
+//  1. 列出 user 下所有非终态 instance，对未派发的 enqueue ModifyInstance 子 task
+//     （零实例是正常场景，直接跳到步骤 2）
+//  2. 全部子 task 终态成功后：切 VelaGW 订阅到目标 Plan（SubscriptionDone 进度位）
+//  3. 同一 CTL 事务提交 pass.bundle_id + AgentQuota，并清空变配中间字段回 active
+//  4. best-effort 反向 callback trade 推进 trade_flow
+//
+// 系统盘扩容不可逆，因此失败策略是「前滚收敛」：任一子 task 失败父 task 保持 modifying 重试，
+// 不回滚已升配的实例，也不自动触发退款。
+type ModifyPassTaskPayload struct {
+	PassID      string `json:"pass_id"`
+	UserID      string `json:"user_id,omitempty"`
+	OperationID string `json:"operation_id,omitempty"`
+
+	// SourceBundleID / TargetBundleID 是变配的源、目标套餐；TargetBundleID 同时也持久化在
+	// pass.modify_target_bundle_id 列上，payload 这份用于父 task 免读 pass 行解析目标规格。
+	SourceBundleID string `json:"source_bundle_id"`
+	TargetBundleID string `json:"target_bundle_id"`
+
+	// TradeFlowID = trade 侧 trade_flow.id PK，同时是 pass.modify_flow_id 的值。
+	// FinalizeModify 的 CAS 条件之一，用于区分「同一笔订单重投」和「另一笔订单来抢」。
+	TradeFlowID int64 `json:"trade_flow_id,omitempty"`
+
+	// DealName = jifei 子订单号，用作 VelaGW ApplySubscription 的幂等键（modify:{dealName}）。
+	DealName string `json:"deal_name,omitempty"`
+
+	// SubscriptionDone 标记步骤 2（VelaGW 切 Plan）已完成。
+	// VelaGW 成功但 CTL 事务提交失败时，重投跳过订阅调用直接重试提交。
+	SubscriptionDone bool `json:"subscription_done,omitempty"`
+
+	// Written only in the transaction committing Pass + AgentQuota. Unlike
+	// current Pass state, this receipt remains valid after later lifecycle work.
+	EntitlementsFinalized bool `json:"entitlements_finalized,omitempty"`
+}
+
+// ModifyInstanceTaskPayload 是变配子 task 的 payload，一个子 task 对应一台 instance。
+//
+// 子 task 三阶段：
+//  1. OperationID == ""：调 sandbox POST /internal/sandboxes/{id}/modify 创建 operation，
+//     把返回的 operation_id 写回 payload 持久化
+//  2. 轮询 GET /internal/sandbox-modify-operations/{id} 直到 completed / failed
+//  3. completed → CAS instance 回 Running（sandbox 侧已把实例重绑到目标 Pool）
+//
+// 幂等键用子 task 自身 task ID：同一子 task 重投时 sandbox 命中原 operation，已完成的云操作
+// （尤其是不可逆的磁盘扩容）不会重复执行。
+type ModifyInstanceTaskPayload struct {
+	InstanceID string `json:"instance_id"`
+	PassID     string `json:"pass_id"`
+	UserID     string `json:"user_id,omitempty"`
+
+	// SandboxID 由父 task 从 instance.sandbox_id 透传；sandbox 侧据此自行解析源 Pool/SKU/spec。
+	SandboxID string `json:"sandbox_id,omitempty"`
+
+	// TargetSKUID / TargetPoolID 是目标规格在 sandbox 侧的落点，由父 task 从目标 bundle 的
+	// instance_spec_id 解析（spec → sku_id + template_class_id → 命中的活跃目标 Pool）。
+	TargetSKUID  string `json:"target_sku_id"`
+	TargetPoolID string `json:"target_pool_id"`
+
+	// SandboxOperationID 是阶段 1 返回的 sandbox operation_id。
+	// 重投幂等关键：非空时跳过阶段 1 直接轮询原 operation。
+	SandboxOperationID string `json:"sandbox_operation_id,omitempty"`
+}
+
 const (
 	TaskNameCreateInstance            = "CreateInstance"
 	TaskNameDestroyInstance           = "DestroyInstance"
@@ -337,4 +406,12 @@ const (
 	//   - 4 阶段流程：CreateSnapshot → 轮询 → snapshot 表入表 → sandbox.DeleteSandbox + CAS Deleted
 	//   - interval=60s × max=60 = 1h 重试窗口（与 IsolateInstance 同范式）
 	TaskNameDestroyInstanceWithSnapshot = "DestroyInstanceWithSnapshot"
+
+	// 同 SP 变配父子 task（TAPD 1010132091137784162 §6）
+	//
+	// 父 task ModifyPass：max=1<<30「永不放弃」，因为磁盘扩容不可逆，只能前滚收敛。
+	// 子 task ModifyInstance：interval=60s × max=60 = 1h；单台机器停机→改配→扩盘→开机
+	// 在腾讯云侧可能花到十几分钟，1h 窗口留足重试余量。
+	TaskNameModifyPass     = "ModifyPass"
+	TaskNameModifyInstance = "ModifyInstance"
 )

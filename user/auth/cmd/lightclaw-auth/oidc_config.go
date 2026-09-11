@@ -146,10 +146,39 @@ func validateSiteGatewayOIDCClients(clients []oidc.Client) error {
 		"https://sites-auth.lightvela.site/auth/lightvela/callback",
 		"https://sites-auth.lightvela.tech/auth/lightvela/callback",
 	}
-	if len(clients) != 1 {
-		return fmt.Errorf("expected exactly one oidc client, got %d", len(clients))
+	expectedWebRedirects := []string{
+		oidc.WebCNRedirectURI,
+		oidc.WebInternationalRedirectURI,
 	}
-	client := clients[0]
+	var sites []oidc.Client
+	for _, client := range clients {
+		switch client.ID {
+		case oidc.NativeClientID:
+			if len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != oidc.NativeRedirectURI {
+				return fmt.Errorf("invalid native client redirect")
+			}
+			continue
+		case oidc.WebClientID:
+			if len(client.RedirectURIs) != len(expectedWebRedirects) {
+				return fmt.Errorf("invalid web client redirects")
+			}
+			got := append([]string(nil), client.RedirectURIs...)
+			want := append([]string(nil), expectedWebRedirects...)
+			slices.Sort(got)
+			slices.Sort(want)
+			for index := range want {
+				if got[index] != want[index] {
+					return fmt.Errorf("invalid web client redirect %q", got[index])
+				}
+			}
+			continue
+		}
+		sites = append(sites, client)
+	}
+	if len(sites) != 1 {
+		return fmt.Errorf("expected exactly one site-gateway client")
+	}
+	client := sites[0]
 	if strings.TrimSpace(client.ID) != "site-gateway" {
 		return fmt.Errorf("expected oidc client id site-gateway, got %q", client.ID)
 	}
