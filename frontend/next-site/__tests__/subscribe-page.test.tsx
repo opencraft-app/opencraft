@@ -188,6 +188,48 @@ describe("SubscribePage", () => {
     expect(timeoutBlock).not.toContain("clearInterval");
   });
 
+  /**
+   * 源码契约：未登录点套餐 → 记住 pendingPlan 并拉起登录弹窗，
+   * 同窗口登录成功后由 onSuccess 自动续跑，不要求用户回来再点一次。
+   * 对应四态表第 1 行「免登录浏览；选套餐弹登录/注册→支付→/agents」。
+   * 用源码断言：LoginModal 未被 mock，组件级驱动需要打通真实验证码链路，
+   * 成本与脆性都高于契约断言，且此处要守的正是「接线是否存在」。
+   */
+  it("resumes the pending plan after signing in from the subscribe page", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(
+      join(process.cwd(), "next-site/subscribe-page.tsx"),
+      "utf8",
+    );
+
+    /* 未登录分支必须先记住套餐再弹登录，否则登录后无从续跑。 */
+    const anonymousBranch = source.match(
+      /if \(!isLoggedIn\) \{[\s\S]{0,600}?setShowLoginModal\(true\);/,
+    )?.[0] ?? "";
+    expect(anonymousBranch).toContain("setPendingPlan(plan)");
+
+    /* 登录弹窗必须接上 onSuccess，否则续跑回调永远不会被调用。 */
+    const loginModalUsage = source.match(/<LoginModal[\s\S]{0,400}?\/>/)?.[0] ?? "";
+    expect(loginModalUsage).toContain("onSuccess={handleLoginSuccess}");
+    expect(loginModalUsage).toContain("onClose={handleCloseLoginModal}");
+
+    /* 续跑回调：取出待办套餐后立刻清空，重复触发时天然幂等。 */
+    const resumeCallback = source.match(
+      /const handleLoginSuccess = useCallback\(\(\) => \{[\s\S]*?\n  \}, \[/,
+    )?.[0] ?? "";
+    expect(resumeCallback).toContain("const plan = pendingPlan");
+    expect(resumeCallback).toContain("setPendingPlan(null)");
+    expect(resumeCallback).toContain('setModalStep("confirm")');
+    /* 已有权益/实例的账号不得被续跑带进下单。 */
+    expect(resumeCallback).toContain("isSubscribed || activePass || bots.length > 0");
+    /* 关闭登录弹窗要丢弃待办套餐，避免下次登录被旧选择带跑。 */
+    const closeCallback = source.match(
+      /const handleCloseLoginModal = useCallback\(\(\) => \{[\s\S]*?\n  \}, \[/,
+    )?.[0] ?? "";
+    expect(closeCallback).toContain("setPendingPlan(null)");
+  });
+
   beforeEach(() => {
     cleanup();
     vi.resetModules();
