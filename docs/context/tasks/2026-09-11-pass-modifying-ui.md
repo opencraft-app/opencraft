@@ -1,5 +1,17 @@
 # 升级套餐等待状态
 
+## MR3941 CR 优化（2026-09-11 提出，2026-09-12 验证）
+
+- requirement_refs：用户提供 `CR-MR3941.md`，先要求设计方案，再确认“优化一轮”；2026-09-12 进一步确认仅提交本轮 18 个文件到本地，不推送或更新 MR。
+- current_design_refs：`frontend/openspec/specs/pass-upgrade.md`，活动任务为 `frontend/openspec/plan.md` 顶部 CR1–CR3；历史方案保留在下文。
+- decisions：采用“防护回归 + 异常恢复 + 刷新协调”；单补测试会保留持续 loading，环境渠道治理和全站 Dialog 本地化留给独立任务。不恢复 show 或域名白名单，不触碰后端渠道配置。
+- interface_refs：保持 `Pass` / `PassOrderStatus` 与 Repository API 不变；Provider 暴露暂停、刷新中、返回确认状态和同单 `retryPassUpgrade`，现有 `refreshPasses(): Promise<void>` 调用方式兼容。
+- acceptance：连续 60 秒套餐缺失 / 查询失败 / 请求卡住后停止自动查询，保留订单并提供刷新与支持入口；正常 modifying 无 60 秒交付限制。暂停、注销、换账号淘汰旧请求；刷新去重时手动调用等待一次补查。过期 modifying 保留界面等待状态，不授予有效权益。
+- context_receipt：本轮重新读取根 / frontend AGENTS、subscription-entitlements、frontend-runtime-openspec-i18n 邻接、frontend OpenSpec config 与本任务 plan / spec；核对 Provider、相邻组件测试、i18n 生成脚本及服务条款支持邮箱。既有 linked worktree 干净，继续原 clean 分支，不动主工作树和 5176 预览。
+- evidence：基础3文件17条通过；新增 M4/M5 用例在移除对应校验后分别失败，恢复校验后通过。异常暂停 / 刷新合并 / 身份切换5条先红后绿；卡住请求和注销清理2条先红后绿；视图恢复2条和页面接入1条先红后绿。复核补齐卸载取消的 RED/GREEN 及 StrictMode 回归，最终4文件40条通过；pnpm check 174 current / 276 baseline / 0 new。
+- risks / validation：UI 超时不得判定扣款失败；只用服务端交付结果解除 Bot 等待。国内13文件183条、国际12文件164条通过；双区域构建生成97 / 607页、公开路由检查8 / 42条通过；文档 / 真实变更集影响 / diff 门禁通过。原有 jsdom window.open 提示、49条翻译告警和172条印尼语缺项未扩大；不执行真实支付，不修改历史全量测试失败及质量基线。
+- handoff（提交前记录）：18个文件的优化已完成，用户已确认本地提交；单 Agent 复核、组件级交互验证，未声称真实支付或登录态浏览器验收。不推送、合并、归档或发布，5176 原预览工作树未改动；最终提交状态以本地 Git 记录为准。
+
 当前规格已同步至 [升级套餐交互](../../../frontend/openspec/specs/pass-upgrade.md)，验证与变更汇总见 [OpenSpec 变更记录](../../../frontend/openspec/changes/2026-09-11-pass-upgrade-interaction.md)。本 Task Pack 保留逐轮演进证据，初始 decisions / handoff 不代表后续调整后的最终展示规则。
 
 ## goal

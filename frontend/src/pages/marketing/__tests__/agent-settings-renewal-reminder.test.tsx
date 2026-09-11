@@ -18,6 +18,8 @@ const listBundles = vi.fn();
 
 let activePass: Pass | null = null;
 let passUpgradeFailed = false;
+let passUpgradePaused = false;
+let returningUpgrade = false;
 let bots: OpenClawBot[] = [];
 let currentSessionUser: User;
 
@@ -84,6 +86,10 @@ vi.mock("@/contexts/agent-context", () => ({
     addBot: vi.fn(),
     activePass,
     passUpgradeFailed,
+    passUpgradePaused,
+    returningUpgrade,
+    passesLoading: returningUpgrade,
+    retryPassUpgrade: refreshPasses,
   }),
 }));
 
@@ -172,6 +178,8 @@ describe("AgentSettingsPage renewal reminder", () => {
     bots = [buildBot()];
     activePass = buildPass();
     passUpgradeFailed = false;
+    passUpgradePaused = false;
+    returningUpgrade = false;
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
       price: 4900,
@@ -190,6 +198,17 @@ describe("AgentSettingsPage renewal reminder", () => {
     getModifyCheckout.mockResolvedValue({ checkout: { deal_name: "upgrade", big_order_id: "upgrade-big", target_bundle_id: "bundle_cruise", local_status: "paid_pending_provision" } });
     listBundles.mockResolvedValue([{ bundle_id: "bundle_cruise", bundle_name: "巡航套餐" }]);
     refreshPasses.mockResolvedValue(undefined);
+  });
+
+  it("shows recovery instead of an endless spinner when a return has no Pass", async () => {
+    activePass = null;
+    passUpgradePaused = true;
+    returningUpgrade = true;
+    renderAgentSettingsPage();
+    expect(screen.getByRole("status")).toHaveTextContent("暂时无法确认升级进度");
+    expect(screen.getByRole("button", { name: "刷新状态" })).toBeInTheDocument();
+    expect(screen.queryByText("Skills panel")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "创建 Agent" })).not.toBeInTheDocument();
   });
 
   it("shows the target plan without credits and hides Bot controls while the Pass is modifying", async () => {

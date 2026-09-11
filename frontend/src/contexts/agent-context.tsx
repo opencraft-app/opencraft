@@ -63,6 +63,10 @@ interface OpenClawContextValue {
   /** 升级中的权益；直到服务端恢复 active 且 Bot 快照刷新后才清除。 */
   modifyingPass: Pass | null;
   passUpgradeFailed: boolean;
+  passUpgradePaused: boolean;
+  passUpgradeRefreshing: boolean;
+  returningUpgrade: boolean;
+  retryPassUpgrade: () => Promise<void>;
   passesLoading: boolean;
   /** 用户最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐 */
   latestPass: Pass | null;
@@ -216,11 +220,16 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const [activePass, setActivePass] = useState<Pass | null>(null);
   const [modifyingPass, setModifyingPass] = useState<Pass | null>(null);
   const [passUpgradeFailed, setPassUpgradeFailed] = useState(false);
+  const [passUpgradePaused, setPassUpgradePaused] = useState(false);
+  const [passUpgradeRefreshing, setPassUpgradeRefreshing] = useState(false);
+  const upgradePausedRef = useRef(false);
+  const upgradeIssueTimer = useRef<number | undefined>(undefined);
+  const upgradeRetry = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const [returningUpgrade, setReturningUpgrade] = useState(false);
   const modifyingPassRef = useRef<Pass | null>(null);
   const paidUpgradeRef = useRef<PaidUpgradeCheckout | null>(null);
   const passRefreshGeneration = useRef(0);
-  const passRefreshInFlight = useRef(false);
+  const passRefreshInFlight = useRef(new Map<string, { promise: Promise<void>; queued?: Promise<void> }>());
   const botRefreshGeneration = useRef(0);
   const passUserIdRef = useRef(session.user?.id);
   passUserIdRef.current = session.user?.id;
@@ -231,8 +240,45 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const [botsLoading, setBotsLoading] = useState(false);
   const fetchedRef = useRef(false);
 
+  const clearUpgradeIssue = useCallback(() => {
+    window.clearTimeout(upgradeIssueTimer.current);
+    upgradeIssueTimer.current = undefined;
+    upgradePausedRef.current = false;
+    setPassUpgradePaused(false);
+  }, []);
+
+  const trackUpgradeIssue = useCallback((userId: string | undefined, generation: number) => {
+    if (upgradeIssueTimer.current !== undefined || upgradePausedRef.current) return;
+    upgradeIssueTimer.current = window.setTimeout(() => {
+      upgradeIssueTimer.current = undefined;
+      if (passUserIdRef.current !== userId || passRefreshGeneration.current !== generation) return;
+      // Retire a stuck read so a manual retry can start independently. Its late
+      // response and queued refreshes must not change the recovered state.
+      passRefreshGeneration.current += 1;
+      passRefreshInFlight.current.delete(JSON.stringify([userId, generation]));
+      upgradeRetry.current = null;
+      setPassUpgradeRefreshing(false);
+      upgradePausedRef.current = true;
+      setPassUpgradePaused(true);
+    }, 60_000);
+  }, []);
+
+  useEffect(() => () => {
+    window.clearTimeout(upgradeIssueTimer.current);
+    upgradeIssueTimer.current = undefined;
+    passRefreshGeneration.current += 1;
+    botRefreshGeneration.current += 1;
+    passRefreshInFlight.current.clear();
+    upgradeRetry.current = null;
+    // StrictMode replays effects on mount; the replay must fetch a fresh scope.
+    fetchedRef.current = false;
+  }, []);
+
   const beginPassUpgrade = useCallback((pass: Pass, checkout: PaidUpgradeCheckout) => {
     if (pass.user_id !== passUserIdRef.current) return;
+    clearUpgradeIssue();
+    upgradeRetry.current = null;
+    setPassUpgradeRefreshing(false);
     const waiting = { ...pass, status: "modifying" };
     passRefreshGeneration.current += 1;
     paidUpgradeRef.current = checkout;
@@ -242,7 +288,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setActivePass(waiting);
     setLatestPass(waiting);
     setIsSubscribed(true);
-  }, []);
+  }, [clearUpgradeIssue]);
 
   /* ── 从后端订阅状态同步 isSubscribed ── */
   useEffect(() => {
@@ -254,17 +300,17 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   }, [session.currentSubscription]);
 
   /* ── 拉取 /v1/passes 更新 activePass；如果存在未过期权益，同时设置 isSubscribed ── */
-  const refreshPasses = useCallback(async () => {
-    if (passRefreshInFlight.current) return;
-    passRefreshInFlight.current = true;
-    const userId = passUserIdRef.current;
-    const generation = passRefreshGeneration.current;
+  const fetchPasses = useCallback(async (userId: string | undefined, generation: number) => {
+    if (passUserIdRef.current !== userId || passRefreshGeneration.current !== generation) return;
     let waitingForReturn = false;
     try {
       const returned = isGlobal && userId && !paidUpgradeRef.current && window.location.pathname.replace(/\/$/, "") === "/agents"
         ? readUpgradeReturn(window.localStorage, userId, window.location.search) : null;
       waitingForReturn = Boolean(returned);
       setReturningUpgrade(waitingForReturn);
+      // Reset only after a usable response. Missing data and transport failures
+      // share one bounded recovery window; healthy modifying has no time limit.
+      if (returned || modifyingPassRef.current) trackUpgradeIssue(userId, generation);
       const passes = await repositories.plans.listMyPasses();
       if (passUserIdRef.current !== userId || generation !== passRefreshGeneration.current) return;
       if (returned) {
@@ -290,14 +336,18 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         if (order.deal_name !== paidCheckout.dealName || order.order_type !== "modify") return;
         const failed = order.status === "failed" || order.status === "cancelled";
         setPassUpgradeFailed(failed);
-        if (failed) return;
+        if (failed) { clearUpgradeIssue(); return; }
       }
       if (previous && !modifying) {
         // A missing response or a future expiry does not prove upgrade completion.
         const completed = passes.find((pass) => pass.pass_id === previous.pass_id);
         if (completed?.status !== "active") return;
         if (paidCheckout) {
-          if (!order || !isUpgradeDelivered(order, completed, previous.pass_id, paidCheckout.targetBundleId)) return;
+          if (!order) return;
+          if (!isUpgradeDelivered(order, completed, previous.pass_id, paidCheckout.targetBundleId)) {
+            clearUpgradeIssue();
+            return;
+          }
         }
         const botGeneration = ++botRefreshGeneration.current;
         const snapshot = await repositories.bots.getDashboardSnapshot("live");
@@ -316,9 +366,11 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         }
         paidUpgradeRef.current = null;
       }
+      clearUpgradeIssue();
       modifyingPassRef.current = modifying;
       setModifyingPass(modifying);
       const now = Date.now();
+      // Keep expired modifying visible for recovery; this is not usable entitlement.
       const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? modifying;
       setActivePass(active);
       setIsSubscribed(Boolean(active));
@@ -331,16 +383,55 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     } catch {
       /* 接口失败不阻断其他流程，保持现有状态 */
     } finally {
-      passRefreshInFlight.current = false;
-      if (passUserIdRef.current === userId) setPassesLoading(waitingForReturn);
+      if (passUserIdRef.current === userId && generation === passRefreshGeneration.current) setPassesLoading(waitingForReturn);
     }
-  }, [repositories.plans, repositories.bots]);
+  }, [repositories.plans, repositories.bots, clearUpgradeIssue, trackUpgradeIssue]);
+
+  const requestPassRefresh = useCallback(function request(reason: "manual" | "poll"): Promise<void> {
+    if (reason === "poll" && upgradePausedRef.current) return Promise.resolve();
+    const userId = passUserIdRef.current;
+    const generation = passRefreshGeneration.current;
+    const key = JSON.stringify([userId, generation]);
+    const inFlight = passRefreshInFlight.current.get(key);
+    if (inFlight) {
+      if (reason === "poll") return inFlight.promise;
+      // Manual callers await one trailing read; rapid clicks share that promise.
+      inFlight.queued ??= inFlight.promise.then(() => {
+        if (passUserIdRef.current !== userId || passRefreshGeneration.current !== generation) return;
+        return request("manual");
+      });
+      return inFlight.queued;
+    }
+    const job = { promise: Promise.resolve().then(() => fetchPasses(userId, generation)) };
+    passRefreshInFlight.current.set(key, job);
+    job.promise = job.promise.finally(() => {
+      if (passRefreshInFlight.current.get(key) === job) passRefreshInFlight.current.delete(key);
+    });
+    return job.promise;
+  }, [fetchPasses]);
+
+  const refreshPasses = useCallback(() => requestPassRefresh("manual"), [requestPassRefresh]);
+  const retryPassUpgrade = useCallback((): Promise<void> => {
+    const userId = passUserIdRef.current;
+    const generation = passRefreshGeneration.current;
+    const key = JSON.stringify([userId, generation]);
+    if (upgradeRetry.current?.key === key) return upgradeRetry.current.promise;
+    clearUpgradeIssue();
+    setPassUpgradeRefreshing(true);
+    const retry = { key, promise: refreshPasses().finally(() => {
+      if (upgradeRetry.current !== retry) return;
+      upgradeRetry.current = null;
+      if (passUserIdRef.current === userId && passRefreshGeneration.current === generation) setPassUpgradeRefreshing(false);
+    }) };
+    upgradeRetry.current = retry;
+    return retry.promise;
+  }, [clearUpgradeIssue, refreshPasses]);
 
   useEffect(() => {
-    if (!modifyingPass && !returningUpgrade) return;
-    const timer = window.setInterval(() => { void refreshPasses(); }, 3000);
+    if ((!modifyingPass && !returningUpgrade) || passUpgradePaused) return;
+    const timer = window.setInterval(() => { void requestPassRefresh("poll"); }, 3000);
     return () => window.clearInterval(timer);
-  }, [modifyingPass?.pass_id, returningUpgrade, refreshPasses]);
+  }, [modifyingPass?.pass_id, returningUpgrade, passUpgradePaused, requestPassRefresh]);
 
   /* ── Derive user from session instead of manual sync ── */
   const user = useMemo<OpenClawUser>(() => {
@@ -420,6 +511,30 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   }, [repositories.bots]);
 
   /* ── Fetch bots & passes once on login ── */
+  const fetchedUserIdRef = useRef(session.user?.id);
+  useEffect(() => {
+    if (fetchedUserIdRef.current === session.user?.id) return;
+    fetchedUserIdRef.current = session.user?.id;
+    passRefreshGeneration.current += 1;
+    passRefreshInFlight.current.clear();
+    botRefreshGeneration.current += 1;
+    modifyingPassRef.current = null;
+    paidUpgradeRef.current = null;
+    upgradeRetry.current = null;
+    clearUpgradeIssue();
+    setPassUpgradeRefreshing(false);
+    setPassUpgradeFailed(false);
+    setReturningUpgrade(false);
+    setModifyingPass(null);
+    setActivePass(null);
+    setLatestPass(null);
+    setHasResolvedPasses(false);
+    setIsSubscribed(false);
+    setBots([]);
+    setPassesLoading(Boolean(session.user));
+    fetchedRef.current = false;
+  }, [session.user?.id, clearUpgradeIssue]);
+
   useEffect(() => {
     if (LOCAL_PREVIEW_AUTH_ENABLED && session.authReady) {
       if (!fetchedRef.current) {
@@ -434,6 +549,11 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         void refreshPasses();
       }
     } else if (!isAuthenticated && session.authReady) {
+      clearUpgradeIssue();
+      passRefreshGeneration.current += 1;
+      botRefreshGeneration.current += 1;
+      upgradeRetry.current = null;
+      setPassUpgradeRefreshing(false);
       setIsSubscribed(false);
       setActivePass(null);
       setModifyingPass(null);
@@ -447,7 +567,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setBots([]);
       fetchedRef.current = false;
     }
-  }, [isAuthenticated, session.authReady, session.user, refreshBots, refreshPasses]);
+  }, [isAuthenticated, session.authReady, session.user, refreshBots, refreshPasses, clearUpgradeIssue]);
 
   /* login() is a no-op now — isLoggedIn is derived from isAuthenticated */
   const login = useCallback(() => {
@@ -455,6 +575,12 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   }, []);
 
   const logout = useCallback(() => {
+    clearUpgradeIssue();
+    passRefreshGeneration.current += 1;
+    passRefreshInFlight.current.clear();
+    botRefreshGeneration.current += 1;
+    upgradeRetry.current = null;
+    setPassUpgradeRefreshing(false);
     setIsSubscribed(false);
     setActivePass(null);
     setModifyingPass(null);
@@ -467,7 +593,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setBots([]);
     fetchedRef.current = false;
     void sessionSignOut();
-  }, [sessionSignOut]);
+  }, [sessionSignOut, clearUpgradeIssue]);
 
   const subscribe = useCallback(() => {
     setIsSubscribed(true);
@@ -545,6 +671,10 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       activePass,
       modifyingPass,
       passUpgradeFailed,
+      passUpgradePaused,
+      passUpgradeRefreshing,
+      returningUpgrade,
+      retryPassUpgrade,
       passesLoading,
       latestPass,
       login,
@@ -558,7 +688,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passesLoading, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

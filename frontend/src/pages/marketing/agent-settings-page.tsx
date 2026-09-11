@@ -2622,9 +2622,9 @@ export const AgentSettingsPage = ({
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
-  const isModifying = Boolean(upgradingPass);
+  const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
   useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
@@ -4975,7 +4975,7 @@ export const AgentSettingsPage = ({
             <CreatingLoadingView errorMessage={creationError} />
           )}
 
-          {upgradingPass && <AgentUpgradingView pass={upgradingPass} failed={passUpgradeFailed} />}
+          {isModifying && <AgentUpgradingView pass={upgradingPass} failed={passUpgradeFailed} paused={passUpgradePaused} refreshing={passUpgradeRefreshing} onRetry={retryPassUpgrade} />}
 
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (

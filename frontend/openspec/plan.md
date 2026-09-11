@@ -1,3 +1,25 @@
+# MR3941 升级异常恢复增量计划
+
+**Status（提交前记录）:** 实现与本地验证完成，用户已于 2026-09-12 确认仅将本轮 18 个文件提交到本地；不推送或更新 MR，不合并、归档或发布。最终提交状态以本地 Git 记录为准。
+**Size / Mode:** M / single-agent，按任务串行 TDD，保留既有 master 测试失败的独立处理范围。
+**Goal:** 补齐订单/账号防护回归，避免异常查询无限等待，保证手动刷新不被轮询丢弃。
+**Architecture:** Provider 管理升级异常计时与请求合并；等待组件只展示恢复操作，套餐元信息查询在暂停时停止。现有订单交付判定、两步支付、默认升级入口保持不变。
+**Tech Stack:** React Context、TypeScript、Vitest、Testing Library，复用现有 Button；支持入口沿用服务条款中的 lightvela@tencent.com 邮箱。
+**Acceptance:** 连续 60 秒套餐缺失或查询失败后暂停自动查询，保留订单和等待状态；手动刷新可恢复同一订单，不重复下单、不把超时判定为支付失败；正常 modifying 不受 60 秒限制。
+**Non-goals:** 不加域名白名单，不修改服务端支付权限或渠道，不统一全站 Dialog 国际化，不重构全局 activePass 语义。
+
+- [x] **CR1｜Developer / Reviewer：在 `src/lib/__tests__/upgrade-checkout.test.ts` 与 `src/contexts/__tests__/agent-context-modification.test.tsx` 增加同 key 不同订单、切账号迟到回调、过期 modifying 测试；删除两处校验时，对应测试各自 RED，恢复后 GREEN。**
+- [x] **CR2｜Developer / Reviewer：先写 Provider 60 秒异常暂停、恢复、正常升级不超时、手动刷新合并及隔离测试，再实现 `agent-context.tsx` 请求协调；在 `agent-upgrading-view.tsx` 与 `agent-settings-page.tsx` 接入暂停/刷新状态，用组件测试覆盖无 Pass 恢复与按钮 loading。补齐卡住请求、注销、卸载取消和 StrictMode 回归。**
+- [x] **CR3｜Developer / Reviewer：同步 `specs/pass-upgrade.md`、Task Pack 与 i18n；运行双区域升级/新购相邻回归、`pnpm check`、双区域构建、文档/变更影响与 diff 检查，记录未验证边界，等待用户验收。**
+
+**Test contract:** `readUpgradeReturn(correctKeyWithWrongDeal) === null`；当前用户 B 的 `beginPassUpgrade(passOfA)` 无状态变化；假时钟 60 秒异常后查询次数停止增长；手动刷新在途时点击多次只排队一次且 Promise 等待补刷完成；正常 modifying 超过 60 秒继续轮询。
+**Verification commands:** `pnpm exec vitest run src/contexts/__tests__/agent-context-modification.test.tsx src/lib/__tests__/upgrade-checkout.test.ts src/pages/marketing/__tests__/agent-upgrading-view.test.tsx --maxWorkers=1`，随后按区域加入订阅、升级弹窗、账户和 Agent 相邻测试；`pnpm check` 与构建串行执行，避免 Fumadocs 共享目录竞争。
+
+**Verification:** 最终聚焦4文件40条通过；国内13文件183条、国际12文件164条通过（国际不运行国内专用 subscribe-page.test.tsx）。`pnpm check` 174 current / 276 baseline / 0 new；新增5条文案各语言补齐，保留原有172条印尼语缺项。串行 `pnpm build:cn` / `pnpm build:global` 分别生成97 / 607页，公开路由检查8 / 42条通过。文档 errors / warnings / broken links 均为空，真实未提交文件列表的变更影响检查和 `git diff --check` 通过。单 Agent 复核；验证阶段不创建审查任务或 MR 评论。
+**Boundary:** UI 由真实 Provider / 组件测试验证，未执行真实扣款或登录态浏览器验收。保留之前用户已确认独立处理的 master 全量测试失败，本轮不重跑全量挂起测试、不改质量基线；定向测试不能表述为全仓测试通过。5176 仍指向原预览工作树，未切到本轮 clean 分支。构建自动生成的 next-env 类型路径已恢复为原值。
+
+---
+
 # 2026-09-11 升配期间实例列表可见性修复
 
 **Status:** 实现与本地验证完成，等待用户验收；尚未 commit、push 或创建 MR。

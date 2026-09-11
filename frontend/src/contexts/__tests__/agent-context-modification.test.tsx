@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pass } from "@/domain/types";
 import type { DashboardSnapshot } from "@/repositories/types";
@@ -29,8 +30,10 @@ const snapshot = (name: string): DashboardSnapshot => ({
   runtime: null, alerts: [], deployments: [], releases: [],
   billing: { tier: "free", monthCost: 0, budgetLimit: 0, estimatedMonthEnd: 0, tokenSpend: 0, runMinutes: 0 },
 });
+let currentState: ReturnType<typeof useOpenClaw>;
 function Probe() {
   const state = useOpenClaw();
+  currentState = state;
   return <>
     <button onClick={() => state.beginPassUpgrade({ ...modifyingPass, status: "active" }, { dealName: "paid-order", targetBundleId: "cruise" })}>支付成功</button>
     <p role="status">{state.passUpgradeFailed ? "升级失败" : state.modifyingPass ? "升级中" : "已就绪"}</p>
@@ -38,13 +41,18 @@ function Probe() {
     <p>{state.bots[0]?.name}</p>
   </>;
 }
-const mount = async () => { await act(async () => { render(<OpenClawProvider><Probe /></OpenClawProvider>); }); };
+const mount = async () => {
+  let view!: ReturnType<typeof render>;
+  await act(async () => { view = render(<OpenClawProvider><Probe /></OpenClawProvider>); });
+  return view;
+};
 
 describe("Pass modification refresh", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-11T00:00:00Z"));
     vi.resetAllMocks();
+    session.user = { id: "u1", name: "User" };
     const storage = new Map<string, string>();
     vi.stubGlobal("localStorage", { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) });
     window.history.replaceState({}, "", "/agents/");
@@ -53,6 +61,160 @@ describe("Pass modification refresh", () => {
     getDashboardSnapshot.mockResolvedValue(snapshot("升级前 Agent"));
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); window.history.replaceState({}, "", "/"); });
+
+  it("ignores user A's late payment callback after the session changes to user B", async () => {
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
+    const view = await mount();
+    const lateCallback = currentState.beginPassUpgrade;
+    session.user = { id: "u2", name: "User B" };
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, pass_id: "p2", user_id: "u2", status: "active", bundle_name: "B 套餐" }]);
+    await act(async () => { view.rerender(<OpenClawProvider><Probe /></OpenClawProvider>); await currentState.refreshPasses(); });
+    const before = { active: currentState.activePass, subscribed: currentState.isSubscribed, bots: currentState.bots };
+    await act(async () => { lateCallback(modifyingPass, { dealName: "paid-order", targetBundleId: "cruise" }); });
+    expect(currentState.modifyingPass).toBeNull();
+    expect(currentState.activePass).toEqual(before.active);
+    expect(currentState.isSubscribed).toBe(before.subscribed);
+    expect(currentState.bots).toEqual(before.bots);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(getOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it("retains an expired modifying pass for the waiting UI", async () => {
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, expired_time: "2026-09-10T00:00:00Z" }]);
+    await mount();
+    expect(currentState.modifyingPass?.pass_id).toBe("p1");
+    expect(currentState.activePass?.status).toBe("modifying");
+    expect(currentState.isSubscribed).toBe(true);
+  });
+
+  it("pauses a missing return pass after 60 seconds and retries the same order to delivery", async () => {
+    const key = "lightvela-upgrade-return-v1:u1:paid-order";
+    localStorage.setItem(key, JSON.stringify({ passId: "p1", targetBundleId: "cruise", dealName: "paid-order", createdAt: Date.now() }));
+    window.history.replaceState({}, "", "/agents/?upgrade_return=paid-order");
+    listMyPasses.mockResolvedValue([]);
+    await mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(currentState.passUpgradePaused).toBe(true);
+    expect(currentState.passesLoading).toBe(true);
+    expect(currentState.passUpgradeFailed).toBe(false);
+    expect(localStorage.getItem(key)).not.toBeNull();
+    const reads = listMyPasses.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(90000); });
+    expect(listMyPasses).toHaveBeenCalledTimes(reads);
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active", bundle_id: "cruise" }]);
+    getOrderStatus.mockResolvedValue({ deal_name: "paid-order", order_type: "modify", status: "success", local_status: "provisioned", source: "local" });
+    await act(async () => { await currentState.retryPassUpgrade(); });
+    expect(currentState.passUpgradePaused).toBe(false);
+    expect(currentState.modifyingPass).toBeNull();
+    expect(currentState.passesLoading).toBe(false);
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
+  it("pauses continuous query failures without marking payment failed, then recovers", async () => {
+    await mount();
+    listMyPasses.mockRejectedValue(new Error("offline"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(63000); });
+    expect(currentState.passUpgradePaused).toBe(true);
+    expect(currentState.modifyingPass?.pass_id).toBe("p1");
+    expect(currentState.passUpgradeFailed).toBe(false);
+    const reads = listMyPasses.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(listMyPasses).toHaveBeenCalledTimes(reads);
+    listMyPasses.mockResolvedValue([modifyingPass]);
+    await act(async () => { await currentState.retryPassUpgrade(); });
+    expect(currentState.passUpgradePaused).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(listMyPasses.mock.calls.length).toBeGreaterThan(reads + 1);
+  });
+
+  it("does not pause a healthy modifying pass after 60 seconds", async () => {
+    await mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(90000); });
+    expect(currentState.passUpgradePaused).toBe(false);
+    expect(currentState.modifyingPass?.pass_id).toBe("p1");
+    expect(listMyPasses.mock.calls.length).toBeGreaterThan(20);
+  });
+
+  it("leaves retry available after a stuck request and ignores its eventual stale response", async () => {
+    await mount();
+    let resolveStuck!: (passes: Pass[]) => void;
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveStuck = resolve; }));
+    let stuck!: Promise<void>;
+    await act(async () => { stuck = currentState.retryPassUpgrade(); });
+    expect(currentState.passUpgradeRefreshing).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(currentState.passUpgradePaused).toBe(true);
+    expect(currentState.passUpgradeRefreshing).toBe(false);
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active", bundle_name: "恢复后的套餐" }]);
+    await act(async () => { await currentState.retryPassUpgrade(); });
+    expect(currentState.activePass?.bundle_name).toBe("恢复后的套餐");
+    await act(async () => { resolveStuck([modifyingPass]); await stuck; });
+    expect(currentState.modifyingPass).toBeNull();
+    expect(currentState.activePass?.bundle_name).toBe("恢复后的套餐");
+  });
+
+  it("clears the upgrade deadline on logout even before the session response arrives", async () => {
+    await mount();
+    listMyPasses.mockRejectedValue(new Error("offline"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); currentState.logout(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(63000); });
+    expect(currentState.passUpgradePaused).toBe(false);
+    expect(currentState.modifyingPass).toBeNull();
+  });
+
+  it("coalesces manual refreshes into one trailing read and awaits its result", async () => {
+    await mount();
+    let resolvePoll!: (passes: Pass[]) => void;
+    let resolveManual!: (passes: Pass[]) => void;
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolvePoll = resolve; }))
+      .mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveManual = resolve; }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    let completed = 0;
+    let requests!: Promise<void>[];
+    await act(async () => { requests = [currentState.refreshPasses(), currentState.refreshPasses()]; requests.forEach(p => { void p.then(() => { completed += 1; }); }); });
+    expect(completed).toBe(0);
+    await act(async () => { resolvePoll([modifyingPass]); });
+    expect(completed).toBe(0);
+    expect(listMyPasses).toHaveBeenCalledTimes(3);
+    await act(async () => { resolveManual([{ ...modifyingPass, status: "active", bundle_name: "新套餐" }]); await Promise.all(requests); });
+    expect(completed).toBe(2);
+    expect(currentState.activePass?.bundle_name).toBe("新套餐");
+  });
+
+  it("does not let an old account's request block or overwrite the next account", async () => {
+    let resolveOld!: (passes: Pass[]) => void;
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveOld = resolve; }));
+    const view = await mount();
+    session.user = { id: "u2", name: "User B" };
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, user_id: "u2", pass_id: "p2", status: "active", bundle_name: "B 套餐" }]);
+    await act(async () => { view.rerender(<OpenClawProvider><Probe /></OpenClawProvider>); });
+    expect(currentState.activePass?.user_id).toBe("u2");
+    await act(async () => { resolveOld([modifyingPass]); });
+    expect(currentState.activePass?.user_id).toBe("u2");
+    expect(currentState.modifyingPass).toBeNull();
+  });
+
+  it("does not start a queued query after the Provider unmounts", async () => {
+    const view = await mount();
+    let resolvePoll!: (passes: Pass[]) => void;
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolvePoll = resolve; }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    let queued!: Promise<void>;
+    await act(async () => { queued = currentState.refreshPasses(); });
+    view.unmount();
+    const reads = listMyPasses.mock.calls.length;
+    await act(async () => { resolvePoll([modifyingPass]); await queued; });
+    await act(async () => { await vi.advanceTimersByTimeAsync(63000); });
+    expect(listMyPasses).toHaveBeenCalledTimes(reads);
+  });
+
+  it("still loads the current pass under StrictMode effect replay", async () => {
+    await act(async () => { render(<StrictMode><OpenClawProvider><Probe /></OpenClawProvider></StrictMode>); });
+    expect(currentState.modifyingPass?.pass_id).toBe("p1");
+    expect(currentState.passesLoading).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(currentState.modifyingPass?.pass_id).toBe("p1");
+  });
 
   it("restores upgrade loading in a fresh card-payment return page before old active can show Bots", async () => {
     localStorage.setItem("lightvela-upgrade-return-v1:u1:paid-order", JSON.stringify({ passId: "p1", targetBundleId: "cruise", dealName: "paid-order", createdAt: Date.now() }));

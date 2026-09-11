@@ -5,6 +5,10 @@ import type { Pass, PassOrderStatus, PassModifyOption } from '@/domain/types';
 const pass: Pass = { pass_id: 'p', user_id: 'u', bundle_id: 'target', bundle_name: 'target', status: 'active', created_time: '', expired_time: '2099-01-01', credit_total: 200, credit_available: 200 };
 const status: PassOrderStatus = { deal_name: 'd', order_type: 'modify', status: 'success', local_status: 'provisioned', source: 'local' };
 describe('upgrade delivery and recovery', () => {
+  it('rejects a mismatched deal inside the correct user/order storage key', () => {
+    const storage = { getItem: () => JSON.stringify({ passId: 'p', targetBundleId: 'target', dealName: 'other', createdAt: 1000 }) };
+    expect(readUpgradeReturn(storage, 'u', '?upgrade_return=d', 1001)).toBeNull();
+  });
   it('scopes card return recovery to the same user and order for at most 24 hours', () => {
     const values = new Map<string, string>();
     const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) };

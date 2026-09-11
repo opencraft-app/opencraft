@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bundle, Pass, PassModifyCheckout } from "@/domain/types";
 import { AgentUpgradingView } from "../agent-upgrading-view";
@@ -74,5 +74,35 @@ describe("Agent upgrade target summary", () => {
     await act(async () => { resolveOld(checkout()); });
     expect(screen.getByText("远航 Voyage AI")).toBeInTheDocument();
     expect(screen.queryByText("巡游 Cruise AI")).not.toBeInTheDocument();
+  });
+
+  it("offers accessible recovery without inventing a Pass or claiming payment failed", async () => {
+    const retry = vi.fn();
+    await act(async () => { render(<AgentUpgradingView pass={null} paused onRetry={retry} />); });
+    expect(screen.getByRole("status")).toHaveTextContent("暂时无法确认升级进度");
+    expect(screen.queryByText("套餐升级失败")).not.toBeInTheDocument();
+    expect(screen.queryByText("到期时间")).not.toBeInTheDocument();
+    expect(screen.queryByText("模型积分")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: "联系支持" })).toHaveAttribute("href", "mailto:lightvela@tencent.com");
+    expect(getModifyCheckout).not.toHaveBeenCalled();
+    expect(listBundles).not.toHaveBeenCalled();
+  });
+
+  it("stops metadata retries while paused and keeps the refresh button busy until completion", async () => {
+    getModifyCheckout.mockResolvedValue({ checkout: null });
+    const retry = vi.fn();
+    const view = await mount();
+    await act(async () => { view.rerender(<AgentUpgradingView pass={pass} paused onRetry={retry} />); });
+    const reads = getModifyCheckout.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(getModifyCheckout).toHaveBeenCalledTimes(reads);
+    await act(async () => { view.rerender(<AgentUpgradingView pass={pass} refreshing onRetry={retry} />); });
+    const button = screen.getByRole("button", { name: "刷新中..." });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(button);
+    expect(retry).not.toHaveBeenCalled();
   });
 });
