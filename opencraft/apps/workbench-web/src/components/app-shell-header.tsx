@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Code2,
-  House,
 } from "lucide-react";
 import { motion, useTransform } from "motion/react";
 import {
@@ -68,11 +67,11 @@ export function AppShellNavigationControls({
         className="chrome-button no-drag app-shell-home-button"
         type="button"
         aria-label="Home"
-        title="Home"
+        title="Vela · Home"
         data-app-shell-home-trigger="true"
         onClick={onHome}
       >
-        <House size={16} />
+        <span className="app-shell-wordmark">Vela</span>
       </button>
     ),
     "sidebar-toggle": (
@@ -145,9 +144,12 @@ export function AppShellNavigationControls({
           {actions.map((action) => (
             <span
               className="app-shell-header__window-action no-drag"
+              data-app-shell-window-action={action}
               key={action}
             >
-              <span className="chrome-button" />
+              <span className={action === "home" ? "chrome-button app-shell-home-button" : "chrome-button"}>
+                {action === "home" ? <span className="app-shell-wordmark">Vela</span> : null}
+              </span>
             </span>
           ))}
         </div>
@@ -160,6 +162,7 @@ export function AppShellNavigationControls({
           {actions.map((action) => (
             <span
               className="app-shell-header__window-action no-drag"
+              data-app-shell-window-action={action}
               key={action}
             >
               {controls[action]}

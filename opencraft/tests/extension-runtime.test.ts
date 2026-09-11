@@ -256,6 +256,27 @@ test("trusted JavaScript can request a Host-owned announcement and await a data 
     } as never),
     /invalid media kind/u,
   );
+  const inlineResult = api.window.showAnnouncement({
+    id: "vela.announcer.inline-image",
+    title: "Inline image",
+    media: {
+      kind: "image-url",
+      url: "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E",
+      alt: "Inline release artwork",
+    },
+  });
+  const inlineAnnouncement = supervisor.announcements.getSnapshot().announcements[0];
+  assert.equal(inlineAnnouncement?.contribution.media?.url.startsWith("data:image/svg+xml"), true);
+  assert.equal(supervisor.announcements.dismiss(inlineAnnouncement!.key, "programmatic"), true);
+  assert.deepEqual(await inlineResult, { kind: "dismissed", reason: "programmatic" });
+  assert.throws(
+    () => api.window.showAnnouncement({
+      id: "vela.announcer.non-image-data",
+      title: "Unsafe inline content",
+      media: { kind: "image-url", url: "data:text/html,<script>alert(1)</script>", alt: "Invalid" },
+    }),
+    /media URL must be HTTP\(S\), blob, image data, or root-relative/u,
+  );
   assert.throws(
     () => api.window.showAnnouncement({
       id: "vela.announcer.invalid-dismiss",

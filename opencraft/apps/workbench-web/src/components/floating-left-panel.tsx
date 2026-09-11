@@ -14,6 +14,7 @@ import { SidebarResizeHandle } from "./sidebar-resize-handle";
 interface FloatingLeftPanelProps {
   readonly children: ReactNode;
   readonly header: ReactNode;
+  readonly footer?: ReactNode;
   readonly visible: boolean;
   readonly width: number;
   readonly widthPx: MotionValue<string>;
@@ -26,6 +27,7 @@ interface FloatingLeftPanelProps {
 export function FloatingLeftPanel({
   children,
   header,
+  footer,
   visible,
   width,
   widthPx,
@@ -63,6 +65,7 @@ export function FloatingLeftPanel({
               {header}
             </motion.div>
             <div className="app-shell-floating-left-panel__body">{children}</div>
+            {footer ? <div className="app-shell-sidecar__footer">{footer}</div> : null}
           </aside>
           <SidebarResizeHandle
             collapsible={false}

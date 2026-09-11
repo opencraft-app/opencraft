@@ -77,7 +77,7 @@ export interface SettingsNavigationProps {
   readonly profiles: readonly HostConnectionProfile[];
   readonly activeHostId: string;
   readonly onBack: () => void;
-  readonly presentation?: "route" | "dialog";
+  readonly presentation?: "route" | "dialog" | "sidebar";
 }
 
 function providerUrl(profile: HostConnectionProfile): string {
@@ -212,12 +212,12 @@ export function SettingsNavigation({
   }
 
   return (
-    <div className="settings-page__navigation" data-selection="chrome">
+    <div className={`settings-page__navigation settings-page__navigation--${presentation}`} data-selection="chrome">
       <nav aria-label="Settings sections">
-        <button type="button" className="settings-page__back" onClick={onBack}>
+        {presentation === "route" ? <button type="button" className="settings-page__back" onClick={onBack}>
           <ArrowLeft size={15} />
           <span>Back to app</span>
-        </button>
+        </button> : null}
         <div className="settings-page__navigation-heading">Settings</div>
         <div className="settings-page__navigation-list">
           <button

@@ -26,6 +26,13 @@ function requireText(value: unknown, label: string): asserts value is string {
   if (value.trim().length === 0) throw new RangeError(`${label} must not be empty`);
 }
 
+function isSupportedMediaUrl(url: string): boolean {
+  return url.startsWith("/")
+    || /^https?:\/\//iu.test(url)
+    || url.startsWith("blob:")
+    || /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9.+_-]+(?:=[^;,]*)?)*,/iu.test(url);
+}
+
 function validateAnnouncement(
   owner: ExtensionActivationIdentity,
   contribution: AnnouncementContribution,
@@ -73,8 +80,10 @@ function validateAnnouncement(
     requireText(contribution.media.url, `Announcement ${contribution.id} media URL`);
     requireText(contribution.media.alt, `Announcement ${contribution.id} media alt text`);
     const url = contribution.media.url;
-    if (!(url.startsWith("/") || /^https?:\/\//iu.test(url) || url.startsWith("blob:"))) {
-      throw new RangeError(`Announcement ${contribution.id} media URL must be HTTP(S), blob, or root-relative`);
+    if (!isSupportedMediaUrl(url)) {
+      throw new RangeError(
+        `Announcement ${contribution.id} media URL must be HTTP(S), blob, image data, or root-relative`,
+      );
     }
   }
 }

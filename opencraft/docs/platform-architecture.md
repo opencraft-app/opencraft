@@ -189,6 +189,134 @@ desktop result. Trying to embed the DOM composer in native would create a
 WebView boundary and break native input behavior. The reusable unit is the
 typed feature contract, not the rendered element tree.
 
+## Fixed navigation entrances
+
+The Shell's Sidecar owns the application/account split entrance as its footer,
+not as a window-wide bottom bar. Pinning changes content placement, never the
+entrance's parent or local anchor while its owner remains visible. Closing all
+Sidecar columns hides the footer too; a transient sidebar supplies its own footer.
+The footer owns a non-shrinking layout row below the flexing pane viewport; it is
+not a zero-height absolute overlay. Scrollable navigation is constrained above
+that row even with docked DevTools or long lists. Floating sidebars use the same
+content/footer ownership split. The entrance is locally anchored within this row.
+Sidecar paints one continuous material plane behind both panes and the footer.
+Those children do not paint additional backgrounds or stack backdrop filters:
+this avoids both a white entrance strip and exposed gray window material under
+the neighboring context pane. Floating footer rows inherit their owner's surface.
+The compact left square opens application navigation;
+the right entrance fills the remaining first-rail width and opens account content.
+The group uses coordinates anchored to the Sidecar's left/bottom origin. Compact,
+hidden and pane-divider transitions never change either entrance's parent, left
+column origin, vertical position or square application frame; only the account
+entrance's trailing space may flex. Each content surface has an independent
+pin preference, while at most one transient surface is open. Application
+navigation is a vertical list of existing contributions; overlapping icons are
+only an entrance preview, not a second navigation model.
+
+The application entrance directly toggles its dock on wide screens. It never
+opens an intermediate application menu or asks the user to keep it in the sidebar.
+On compact screens the same action toggles a Sidecar-shaped drawer, preserving the
+wide-screen preference. Account retains its independent menu and optional pin.
+`aria-expanded`/pressed feedback for applications reflects current presentation,
+not a suspended wide-screen pin. Radix still owns drawer dismissal and focus.
+
+There is exactly one Sidecar. It composes a primary application `SidecarPane`, an
+optional contextual `SidecarPane`, and one Footer; the panes are not independent
+sidebars. Each Pane separates three geometries: Frame contributes live width to
+layout, Clip contains all feature ink to that Frame, and Viewport retains stable
+content width throughout a gesture. Application and contextual content therefore
+never reflow through progressively narrower intermediate widths or paint into a
+neighbor. Feature code provides only pane content. It does not own clipping,
+opacity, mounting, dividers, Footer placement or numeric stacking levels. The
+visual three-column layout is `Sidecar(primary + optional context) + main`; two-
+column and immersive layouts are projections of those same slots.
+
+The primary pane has three semantic detents: `expanded`, `compact` and `hidden`.
+Expanded width remains a separately persisted preference; compact is
+a 72px icon projection, not an overwritten width preference, and hidden only
+changes pane visibility; it never clears application/account Pin preferences.
+Pointer down creates a Web-owned resize transaction that snapshots the committed
+detent and Viewport. Pointer move updates only Frame/Clip preview geometry,
+content opacity and an adjacent candidate detent. Pointer up atomically commits
+that candidate; cancel restores the snapshot. Dock availability, persistence and
+the renderer-free reducer cannot observe intermediate pointer positions. Keyboard
+actions traverse the same adjacent state machine.
+
+`SidecarPane` also defines the content-sizing contract: its direct feature child
+stretches to the complete Viewport width. Settings, conversations and
+extension navigation provide content only; they may not retain an intrinsic
+route-era width inside a wider platform pane. This is why Settings replaces the
+context slot without leaving an unowned blank strip.
+
+The global Header is not a Sidecar pane child and never consumes the primary
+detent. Vela, the shared Sidecar trigger and history controls remain a complete
+window-chrome group at every detent. The separator between primary and context
+panes begins below that Header and terminates above the Footer; it has no authority
+over either fixed region.
+
+`workbench-runtime/shell-navigation` owns the renderer-free reducer and responsive
+projection. The initial preference pins applications, not account. Width pressure
+temporarily suspends docking with hysteresis without overwriting the preference.
+Web owns persistence, measurement, Radix nonmodal surfaces and spring animation.
+Primary expanded width is persisted separately from contextual pane width.
+Dedicated resize transaction owners handle the primary three-detent pane and the
+contextual two-state pane; the Shell limits primary width against available content
+space. Shared projection uses that width for docking pressure, without rewriting
+the saved preference when the viewport narrows. Resizing preserves the footer's
+left/bottom anchor and square entrance; the account item's trailing edge follows
+the live Footer width. Pin transitions interpolate the Sidecar's primary and
+contextual pane widths using existing motion values, without remounting items.
+Its entrance survives pinned/unpinned transitions within the Sidecar. The primary
+and current contextual panes contribute to one aggregate left width consumed by
+header, timeline and right-panel geometry. Neither pane
+owns Host or conversation runtime lifetime.
+
+Thread-edge header eligibility consumes Shell width minus the live right-panel
+width from the layout owner. It must not add a rounded DOM viewport measurement
+to the left sidebar's animation value: these can represent different frames and
+toggle the divider at the 96rem threshold. Left navigation motion is not an input
+to this decision. A real right panel and route presentation remain inputs.
+The Home action is rendered as a Vela wordmark; its off-layout measurement clone
+must use the same text/geometry, including when a brand font loads. The dedicated
+brand font binding is separate from the UI font; final custom font selection is
+pending the supplied brand asset, so the current fallback is not a custom-font claim.
+
+Sidecar is a physical layout boundary, not an application hierarchy. Its optional
+`leftPanel` slot contains application context: Chat supplies a conversation list,
+Settings supplies its index, and current extension pages omit the slot. With no
+context, application navigation becomes the single primary sidebar; no empty
+context column is reserved. The Sidecar toggle hides all its columns and footer
+without changing pin preferences. Returning to Chat restores its contextual layout.
+These are renderer-owned slots, not a new extension registration API or an
+assumption that every application has a conversation hierarchy.
+Device Settings follows this exact contract in both connected and zero-Host
+workbenches: its category navigation replaces `leftPanel`, its selected page
+replaces main content, and the global navigation/entrances stay mounted. There
+is no Settings-only docking ban, hidden global toolbar, width observer or
+index/content layout controller. The common Shell owns resizing, collapse and
+transient presentation for every contextual sidebar. With navigation expanded
+this yields three columns; with it collapsed Settings remains usable in two.
+The category view's `sidebar` presentation supplies content, not a Back-to-app
+shell. Target/Agent management remains a dialog; it is not device Settings.
+Controls reuse the shared quiet-control and menu treatments. Pin preference is
+shown by the entrance's pressed state, not repeated pin badges in every heading.
+Application rows and the existing sidebar reuse `controls.navigation-control`;
+the footer uses its compact `sidebar-entrance` variant with an xs avatar and square
+application entry. These are visually sidebar items: transparent at rest, without
+borders or shadows. Hover, transient open and persistent `aria-pressed` states
+reuse the navigation row's subtle fill; opening a menu does not change the pin
+preference. Semantic buttons and keyboard focus outlines remain for accessibility.
+The footer layout row, not a raised item surface, prevents overlap with content.
+The dock uses secondary typography and subtle separators without introducing
+another card around the footer. Content opacity remains independent
+of the sidebar material; a low-emphasis appearance must not make text unreadable.
+
+Expo can consume the same state/projection with native layout measurements and
+present transient content in its platform container. This change wires the Web
+vertical slice; the native visual adapter is not yet integrated and the contract
+is not frozen until that second adapter is exercised. It must not import DOM,
+Radix, localStorage or CSS geometry into shared state.
+
 ## Expo Web's place
 
 Expo Web is a first-class output of `apps/workbench-expo`, not a compatibility

@@ -380,7 +380,7 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     workbenchApp,
-    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
+    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : conversationSurfaceVisible \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
   );
   assert.match(workbenchApp, /const managementSettingsOpen = settingsOpen[\s\S]*?selectedSettingsContribution\?\.management !== undefined/u);
   assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen \|\| managementSettingsOpen/u);
@@ -415,7 +415,7 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     workbenchApp,
-    /const headerNavigationActions = routeSettingsOpen\s*\? \[\]\s*:\s*chromePolicy\.leadingNavigationActions/u,
+    /const headerNavigationActions = chromePolicy\.leadingNavigationActions/u,
   );
   assert.match(
     workbenchStyles,
@@ -1079,12 +1079,14 @@ test("right-panel maximize is one semantic-to-motion geometry transaction", () =
   );
   assert.match(
     appShellSource,
-    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[animatedSidebarWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
+    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[totalLeftWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
   );
   assert.match(
     appShellSource,
-    /const headerLeftSlotWidth = useTransform\(\s*animatedSidebarWidth[\s\S]*?const headerLeftFitWidthPx = useTransform\(\s*headerLeftFitWidth/u,
+    /const headerLeftSlotWidth = useTransform\(\s*totalLeftWidth[\s\S]*?const headerLeftFitWidthPx = useTransform\(\s*headerLeftFitWidth/u,
   );
+  assert.match(appShellSource, /const totalLeftWidth = useTransform\(\s*\[animatedNavigationWidth, animatedSidebarWidth\]/u);
+  assert.match(appShellSource, /const mainContentWidth = useTransform\(\s*\[shellWidth, totalLeftWidth\]/u);
   assert.match(
     appShellHeaderSource,
     /hostRole !== "persistent"[\s\S]*?measure\.getBoundingClientRect\(\)\.width[\s\S]*?headerLeftFitWidth\.set\(width\)/u,
@@ -1348,8 +1350,8 @@ test("thread edge-scroll is one measured AppShell state", () => {
   const threshold = THREAD_EDGE_SCROLL_MINIMUM_WIDTH_REM * 16;
   assert.equal(
     resolveThreadEdgeScroll({
-      mainContentWidthPx: threshold - 0.01,
-      leftChromeWidthPx: 0,
+      shellWidthPx: threshold - 0.01,
+      rightChromeWidthPx: 0,
       rightPanelFullWidth: false,
       rootFontSizePx: 16,
     }),
@@ -1357,8 +1359,8 @@ test("thread edge-scroll is one measured AppShell state", () => {
   );
   assert.equal(
     resolveThreadEdgeScroll({
-      mainContentWidthPx: threshold,
-      leftChromeWidthPx: 0,
+      shellWidthPx: threshold,
+      rightChromeWidthPx: 0,
       rightPanelFullWidth: false,
       rootFontSizePx: 16,
     }),
@@ -1366,18 +1368,18 @@ test("thread edge-scroll is one measured AppShell state", () => {
   );
   assert.equal(
     resolveThreadEdgeScroll({
-      mainContentWidthPx: threshold - 275,
-      leftChromeWidthPx: 275,
+      shellWidthPx: threshold + 275,
+      rightChromeWidthPx: 275,
       rightPanelFullWidth: false,
       rootFontSizePx: 16,
     }),
     true,
-    "left application chrome must not disable immersive thread layout",
+    "only the real right panel is subtracted from the Shell envelope",
   );
   assert.equal(
     resolveThreadEdgeScroll({
-      mainContentWidthPx: threshold + 300,
-      leftChromeWidthPx: 0,
+      shellWidthPx: threshold + 300,
+      rightChromeWidthPx: 0,
       rightPanelFullWidth: true,
       rootFontSizePx: 16,
     }),
