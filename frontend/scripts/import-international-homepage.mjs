@@ -4184,13 +4184,21 @@ let inlineScripts = [];
 const domesticFragment = await readFile(path.join(targetRoot, "index-fragment.zh-CN.html"), "utf8");
 const domesticDocument = new JSDOM(domesticFragment).window.document;
 const domesticChannels = Array.from(domesticDocument.querySelectorAll(".hero__tabs label"), (label) => label.textContent.trim());
+/* 国内 5 个平台改用品牌 PNG，图标 DOM 由国内产物自己维护。
+   与频道名一同纳入防呆：一旦被改回 symbol 线性图标，
+   hero__tabs label img 的灰度滤镜会把品牌色压成灰块，这里提前拦住。 */
+const domesticBrandIcons = Array.from(
+  domesticDocument.querySelectorAll('.hero__tabs label img.icon--brand'),
+  (img) => (img.getAttribute("src") ?? "").replace("/lightvela-intl-home/assets/", ""),
+);
 if (
   domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书"
+  || domesticBrandIcons.join(",") !== "wechat.png,qq.png,wecom.png,dingtalk.png,feishu.png"
   || domesticFragment.includes('href="/zh-cn')
   || domesticFragment.includes("Copyright © 2026 LightVela 版权所有")
   || domesticFragment.includes("© 2026 LightVela 版权所有")
 ) {
-  throw new Error("Domestic homepage must retain its approved channels, unprefixed routes, and concise copyright before international import");
+  throw new Error("Domestic homepage must retain its approved channels, brand icons, unprefixed routes, and concise copyright before international import");
 }
 
 const preservedHarnessAssets = await Promise.all(
@@ -4568,7 +4576,19 @@ const homepageReadingCss = `
   }
 }
 `;
-const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}`;
+/* 品牌位图图标：国内站 Hero 演示区的 5 个平台（微信 / QQ / 企业微信 / 钉钉 / 飞书）
+   用 PNG 真图而非 symbol，需要绕开 .icon 的 stroke/fill 以保留品牌原色。
+   图标 DOM 属国内产物（本 importer 只校验频道名、不生成国内 tab），
+   但 style.css 是本脚本的产物，规则必须在此声明，否则重跑会冲掉手改。 */
+const domesticBrandIconCss = `img.icon--brand {
+  width: 1.25em;
+  height: 1.25em;
+  object-fit: contain;
+  stroke: none;
+  fill: none;
+}
+`;
+const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}\n${domesticBrandIconCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
   "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
