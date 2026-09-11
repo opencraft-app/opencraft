@@ -94,10 +94,12 @@ const PYTHON_HELPER = String.raw`import base64
 import copy
 import fcntl
 import inspect
+import io
 import json
 import os
 import re
 import secrets
+import ssl
 import sys
 import time
 import urllib.error
@@ -322,7 +324,7 @@ def model_request_url(model):
         return base_url + "/responses"
     raise ValueError("Model request probe is unavailable for this API mode")
 
-def probe_model_request(credential, model, fallback, started_at, extra_headers=None):
+def probe_model_request(credential, model, fallback, started_at, extra_headers=None, ssl_context=None):
     mode = model["apiMode"]
     headers = {"Content-Type": "application/json", "User-Agent": "lightvela-model-config"}
     if mode == "anthropic_messages":
@@ -347,7 +349,9 @@ def probe_model_request(credential, model, fallback, started_at, extra_headers=N
         if not callable(open_credentialed_url):
             raise RuntimeError("Hermes credential-safe HTTP transport is unavailable")
         # 安全传输会清除跨来源重定向中的凭据；不可回退到 urllib.request.urlopen。
-        with open_credentialed_url(request, timeout=60) as response:
+        options = {"timeout": 60}
+        if ssl_context is not None: options["ssl_context"] = ssl_context
+        with open_credentialed_url(request, **options) as response:
             status = int(getattr(response, "status", 200))
             if status < 200 or status >= 300:
                 raise RuntimeError("Model endpoint returned HTTP " + str(status))
@@ -1005,38 +1009,79 @@ def saved_provider_connection(config, action):
     endpoint = model["baseUrl"].rstrip("/")
     if model.get("routeBaseUrl") and normalized_route_base_url(model["routeBaseUrl"]) != normalized_route_base_url(endpoint):
         raise ProviderOperationError("provider_ambiguous")
-    return model, credential, headers
+    return model, credential, headers, provider
+
+def saved_provider_ssl_context(provider):
+    verify = provider.get("ssl_verify")
+    if verify is False or (isinstance(verify, str) and verify.strip().lower() in ("false", "0", "no", "off")):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+    ca = provider.get("ssl_ca_cert")
+    if isinstance(ca, str) and ca.strip():
+        # 使用选中 Provider 的证书；无效证书配置不能降级为默认信任策略。
+        return ssl.create_default_context(cafile=os.path.expanduser(ca.strip()))
+    return None
 
 def probe_saved_model(config, action):
-    model, credential, headers = saved_provider_connection(config, action)
+    model, credential, headers, provider = saved_provider_connection(config, action)
     model = {**model, "id": text(action.get("modelId"), "modelId")}
     if len(model["id"]) > MAX_MODEL_ID_LENGTH or any(ord(char) < ASCII_CONTROL_CHARACTER_LIMIT for char in model["id"]):
         raise ProviderOperationError("invalid_model")
     fallback = {"success": False, "provider": model["providerKey"], "model": model["id"],
         "baseUrl": model["baseUrl"], "errorMessage": "Model connectivity check failed"}
     try:
-        return {"connection": probe_model_request(credential, model, fallback, time.time(), headers)}
+        return {"connection": probe_model_request(credential, model, fallback, time.time(), headers, saved_provider_ssl_context(provider))}
     except Exception:
         return {"connection": fallback}
 
 def probe_saved_provider(config, action):
-    model, credential, headers = saved_provider_connection(config, action)
-    mode = model["apiMode"]
-    endpoint = model["baseUrl"].rstrip("/")
-    request_headers = {"Accept": "application/json"}
-    if credential:
-        request_headers.update({"x-api-key": credential, "anthropic-version": "2023-06-01"} if mode == "anthropic_messages" else {"Authorization": "Bearer " + credential})
-    request_headers.update(headers)
-    # 凭据不得随重定向发送到其他来源。
-    if open_credentialed_url is None: raise ProviderOperationError("discovery_unsupported")
+    model, credential, headers, provider = saved_provider_connection(config, action)
+    helper = getattr(hermes_models, "probe_api_models", None)
+    transport_name = "_urlopen_model_catalog_request"
+    original_transport = getattr(hermes_models, transport_name, None)
+    if not callable(helper) or not callable(original_transport) or not callable(open_credentialed_url):
+        raise ProviderOperationError("discovery_unsupported")
     try:
-        request = urllib.request.Request(endpoint + "/models", headers=request_headers)
-        with open_credentialed_url(request, timeout=MODEL_DISCOVERY_TIMEOUT_SECONDS) as response:
-            data = json.loads(response.read(MAX_MODEL_DISCOVERY_RESPONSE_BYTES).decode("utf-8"))
-        items = data.get("data") if isinstance(data, dict) else None
-        if not isinstance(items, list): raise ProviderOperationError("discovery_unsupported")
-        models = list(dict.fromkeys(item["id"].strip() for item in items
-            if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()))
+        parameters = inspect.signature(helper).parameters
+        options = {"timeout": MODEL_DISCOVERY_TIMEOUT_SECONDS}
+        if "api_mode" in parameters: options["api_mode"] = model["apiMode"]
+        elif model["apiMode"] == "anthropic_messages": raise ProviderOperationError("discovery_unsupported")
+        if "request_headers" in parameters: options["request_headers"] = headers
+        elif headers: raise ProviderOperationError("discovery_unsupported")
+        context = saved_provider_ssl_context(provider)
+        deadline = time.monotonic() + MODEL_DISCOVERY_TIMEOUT_SECONDS
+        failures = []
+        def bounded_transport(request, *, timeout, ssl_context=None):
+            try:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0: raise TimeoutError()
+                kwargs = {"timeout": min(timeout, remaining)}
+                if context is not None: kwargs["ssl_context"] = context
+                with open_credentialed_url(request, **kwargs) as response:
+                    body = response.read(MAX_MODEL_DISCOVERY_RESPONSE_BYTES + 1)
+                if len(body) > MAX_MODEL_DISCOVERY_RESPONSE_BYTES:
+                    raise ProviderOperationError("discovery_failed")
+                data = json.loads(body.decode("utf-8"))
+                if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+                    raise ProviderOperationError("discovery_unsupported")
+                return io.BytesIO(body)
+            except Exception as error:
+                failures.append(error)
+                raise
+        # 每条命令运行在独立 Python 进程中。保留 Hermes 地址回退，同时记录其吞掉的异常并限制读取量。
+        setattr(hermes_models, transport_name, bounded_transport)
+        try:
+            result = helper(credential, model["baseUrl"], **options)
+        finally:
+            setattr(hermes_models, transport_name, original_transport)
+        if not isinstance(result, dict) or result.get("models") is None:
+            # 根地址 404 后 /v1 的鉴权、超时错误比“不支持目录”更具体。
+            meaningful = [error for error in failures if not isinstance(error, urllib.error.HTTPError) or error.code not in (404, 405)]
+            if failures: raise (meaningful or failures)[-1]
+            raise ProviderOperationError("discovery_failed")
+        models = list(dict.fromkeys(item.strip() for item in result["models"] if isinstance(item, str) and item.strip()))
         snapshot = read_snapshot(config)
         return {"snapshot": {**snapshot, "probedModels": models, "probeSucceeded": True}}
     except urllib.error.HTTPError as error:

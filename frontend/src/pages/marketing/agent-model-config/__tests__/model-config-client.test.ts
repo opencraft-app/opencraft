@@ -123,12 +123,36 @@ describe("append models to a saved Provider", () => {
     expect(result.modelRequest).toMatchObject({ method: "GET", url: model.baseUrl + "/models", headerNames: expect.arrayContaining(["authorization", "x-test"]) });
     expect(result.output).not.toContain(apiKey);
     expect(result.events).not.toContain("save_config");
+    expect(result.events).toContain("probe");
   });
 
   it.each([401, 403, 404])("reports a saved-provider discovery HTTP %s without modifying configuration", (status) => {
     const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
       { MODEL_REQUEST_STATUS: String(status) }, { [configuredModel.keyEnv]: apiKey });
     expect(result.output).toContain(status === 404 ? "discovery_unsupported" : "credential_rejected");
+    expect(result.config).toEqual(config);
+  });
+
+  it.each(["oversized", "malformed"])("rejects a %s catalog and keeps configuration unchanged", (catalog) => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "200", CATALOG_RESPONSE: catalog }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain("discovery_failed");
+    expect(result.config).toEqual(config);
+    expect(result.output).not.toContain(apiKey);
+  });
+
+  it("retains fallback authentication failures instead of reporting the root 404", () => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "404", ALTERNATE_MODEL_STATUS: "401" }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain("credential_rejected");
+    expect(result.config).toEqual(config);
+  });
+
+  it("fails closed on legacy Hermes without safe standard catalog transport", () => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      {}, { [configuredModel.keyEnv]: apiKey }, true);
+    expect(result.output).toContain("discovery_unsupported");
+    expect(result.modelRequest).toBeNull();
     expect(result.config).toEqual(config);
   });
 
@@ -383,21 +407,33 @@ def fetch_api_models(api_key, base_url, timeout=5):
     events.write_text(json.dumps(values))
     return ["legacy-alpha", "legacy-alpha", "legacy-beta"]
 ` : String.raw`
-import json, os
+import json, os, urllib.request
 from pathlib import Path
-def probe_api_models(api_key, base_url, timeout=5, api_mode=None):
+def _urlopen_model_catalog_request(request, *, timeout, ssl_context=None):
+    return urllib.request.urlopen(request, timeout=timeout)
+def probe_api_models(api_key, base_url, timeout=5, api_mode=None, request_headers=None):
     root = Path(os.environ["HERMES_HOME"])
     events = root / "events.json"
     values = json.loads(events.read_text()) if events.exists() else []
     values.append("probe")
     events.write_text(json.dumps(values))
+    if os.environ.get("MODEL_REQUEST_STATUS"):
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"} if api_mode == "anthropic_messages" else {"Authorization": "Bearer " + (api_key or "")}
+        headers.update(request_headers or {})
+        base = base_url.rstrip("/")
+        for candidate in (base, base[:-3] if base.endswith("/v1") else base + "/v1"):
+            try:
+                with _urlopen_model_catalog_request(urllib.request.Request(candidate + "/models", headers=headers), timeout=timeout) as response:
+                    return {"models": [item.get("id", "") for item in json.loads(response.read()).get("data", [])]}
+            except Exception: pass
+        return {"models": None}
     return {"models": None if os.environ.get("PROBE_MODELS_NONE") else ["alpha", "alpha", "beta"]}
 `, { encoding: "utf8" });
   writeFileSync(join(packageDir, "urllib_security.py"), String.raw`
 import json, os, urllib.request
 from pathlib import Path
 if os.environ.get("SAFE_TRANSPORT") == "missing": raise ImportError("transport unavailable")
-def open_credentialed_url(request, *, timeout):
+def open_credentialed_url(request, *, timeout, ssl_context=None):
     root = Path(os.environ["HERMES_HOME"])
     events = root / "events.json"
     values = json.loads(events.read_text()) if events.exists() else []
@@ -451,6 +487,8 @@ if os.environ.get("MODEL_REQUEST_STATUS"):
         def __enter__(self): return self
         def __exit__(self, *args): return False
         def read(self, limit=None):
+            if os.environ.get("CATALOG_RESPONSE") == "oversized": return b"x" * (limit or 3 * 1024 * 1024)
+            if os.environ.get("CATALOG_RESPONSE") == "malformed": return b"not-json"
             return json.dumps({"data": json.loads(os.environ["DISCOVERED_MODELS"])}).encode() if os.environ.get("DISCOVERED_MODELS") else b'{"id":"probe-response"}'
 
     def fake_urlopen(request, timeout=None):
@@ -465,6 +503,8 @@ if os.environ.get("MODEL_REQUEST_STATUS"):
             "runtimeCredentialUsed": request.get_header("Authorization") == "Bearer " + os.environ["RUNTIME_TEST_SECRET"] if os.environ.get("RUNTIME_TEST_SECRET") else None,
         }))
         status = int(os.environ["MODEL_REQUEST_STATUS"])
+        if os.environ.get("ALTERNATE_MODEL_STATUS") and not request.full_url.endswith("/v1/models"):
+            status = int(os.environ["ALTERNATE_MODEL_STATUS"])
         failure = os.environ.get("DISCOVERY_FAILURE")
         if failure == "timeout": raise TimeoutError(os.environ["FAILURE_SECRET"])
         if failure == "url_timeout": raise urllib.error.URLError(TimeoutError(os.environ["FAILURE_SECRET"]))

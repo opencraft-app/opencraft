@@ -357,7 +357,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "6584df05512f4de828b9fc0bb2578d16342eb2451f5d0db741786177133632d0"
+      "sourceSha256": "55c244fd14aa937f52aec3e742f7818f5def0cddf1548f03c6c6183ac091381b"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
