@@ -1,3 +1,24 @@
+# MR3941 OpenCraft 共享副本同步计划
+
+**Status（提交前记录）:** 本地同步与验证完成；用户于 2026-09-12 确认将本轮 15 个文件提交到当前隔离分支，仅本地提交，不推送、更新 MR、合并或发布。最终提交状态以本地 Git 记录为准。
+**Size / Mode:** M / single-agent；沿用既有同步与检查脚本，生成文件不手工编辑。
+**Goal:** OpenCraft 的共享副本与当前 frontend 真源一致，补齐 Dialog、i18n 和同步清单。
+**Architecture / Tech Stack:** 使用 `opencraft/scripts/sync-mono2-agent-console.mjs` 的 Node.js 标准生成流程，保留相对 import、portal 和其他平台适配。`frontend` 业务源码、CI / gate / 同步器、依赖及锁文件保持不变。
+**Scope:** 预计更新 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/` 下 `components/ui/dialog.tsx`、`i18n/generated/{en-US,es,id-ID,ja-JP,ko-KR,zh-CN,zh-Hant,zh-to-key}.json`、`repositories/http-repositories.ts` 和 `UPSTREAM.json`；同步本计划、`specs/pass-upgrade.md`、`docs/context/tasks/2026-09-11-pass-modifying-ui.md` 的验证边界。
+**Baseline:** HEAD 为 `151930306`；原 MR 基线和最新已获取 master 均已有 8 份字典及 HTTP Repository 漂移。本 MR 新增 Dialog 漂移并进一步更新字典。允许通过标准同步一并修复这些已确认的副本差异，不改来源代码。
+**Documentation impact:** 生成副本命中 Agent runtime 正式文档映射；在 `docs/engineering/domains/agent-gateway-runtime.md` 补充实际消费边界（共享 Dialog 可选 prop / 平台适配、字典和 Repository 同步、PASS_MODIFYING 数据降级不放宽权限），不修改映射或检查器。
+
+- [x] **V1｜重跑 `cd opencraft && npm run check:mono2-agent-console`，确认以 Dialog drift 退出 1；运行 `npm run sync:mono2-agent-console`，审核生成差异；再次运行检查应校验全部 127 个共享文件。同步规格和 Task Pack。**
+- [x] **V2｜在 OpenCraft 独立 workspace 中按 package-lock 安装缺失依赖，运行 `npm run gate`；补 frontend 聚焦回归、文档与实际变更集检查。原样记录失败及验证边界，不修改检查器或扩大业务范围；完成后等待用户验收。**
+
+**Acceptance:** 漂移检查先失败后通过；清单不含机器绝对路径且 sourceRevision 指向当前 frontend 提交；生成 Dialog 保留 portal 适配，并含 closeLabel、overlayClassName、键盘焦点样式；所有生成语言文件与来源一致。实际验证结果记入本段，不能用本地检查代替远端 CI 或上线结论。
+
+**Verification:** 标准同步更新 11 个生成文件，`check:mono2-agent-console` 从 Dialog drift / exit 1 转为全部 127 文件通过；sourceRevision 为 `1519303060c00d19c7edef45bb9b2a44e78bfa18`。OpenCraft `npm run gate` 最终 exit 0：平台边界、workspace 类型检查、6 组共 852 项测试、Web 构建、Expo Web 导出与 iOS JS bundle 均通过。frontend Repository / 升级弹窗 2 文件 95 passed / 1 skipped，`pnpm check` exit 0（174 current / 276 baseline / 0 new）；文档校验、实际 15 文件变更影响与 `git diff --check` 通过，正式文档仍需 `wisp/mono2-maintainers` review。
+**Environment:** 初次 `npm ci` 遇到共享 npm cache 权限错误，使用临时独立 cache 按既有锁文件安装成功；首次 gate 的终端测试因新装 `node-pty` 的 macOS `spawn-helper` 缺少执行权限失败。仅修复该本地依赖文件的执行权限后，失败用例及完整 gate 均通过；不修改依赖版本、锁文件、业务代码或检查规则。
+**Boundary:** 本轮只补齐生成副本与 4 份规格 / 交接文档；未做真实支付、登录态浏览器验收、iOS 原生编译或远端 CI 查询。前端历史全量测试失败保留独立处理，不能将上述结果表述为全仓测试通过；5176 原预览保持不变。
+
+---
+
 # MR3941 升级异常恢复增量计划
 
 **Status（提交前记录）:** 实现与本地验证完成，用户已于 2026-09-12 确认仅将本轮 18 个文件提交到本地；不推送或更新 MR，不合并、归档或发布。最终提交状态以本地 Git 记录为准。

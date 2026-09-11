@@ -1,5 +1,17 @@
 # 升级套餐等待状态
 
+## MR3941 OpenCraft 副本补齐（2026-09-12）
+
+- requirement_refs：用户确认修复截图中已核实的 vendored 同步遗漏；只生成副本并验证，不提交、推送、评论或修改 CI 检查规则。
+- current_design_refs：`opencraft/MONO2_MIGRATION.md`；执行计划为 `frontend/openspec/plan.md` 顶部 V1–V2。
+- context_receipt：根 / frontend / OpenCraft AGENTS；frontend 服务、site-environment-routing must_read；frontend-runtime-openspec-i18n 邻接；OpenCraft 同步脚本、迁移约定、package scripts。前轮调查结果保存在忽略的 runtime investigation 中。
+- scope：Dialog、8 份生成字典 / 映射、HTTP Repository 副本及 UPSTREAM 清单。字典与 Repository 漂移在原 MR 基线已存在，本 MR 新增 Dialog 漂移并进一步更新源字典；不修改 frontend 真源或同步算法。
+- acceptance：使用标准同步脚本，漂移检查从 exit 1 转为通过；保留平台适配；运行 OpenCraft gate，记录未通过项而不修改检查器。
+- documentation_impact：生成副本触发 Agent runtime 文档映射；正式文档 `docs/engineering/domains/agent-gateway-runtime.md` 补充共享 Dialog / i18n / Repository 消费及升配数据降级的权限边界。检查规则保持不变。
+- evidence：同步检查先因 Dialog drift 退出 1，标准生成后全部 127 文件通过。OpenCraft gate 最终 exit 0，类型 / 平台边界、852 项测试及 Web / Expo Web / iOS JS bundle 均通过；frontend 聚焦 95 passed / 1 skipped，pnpm check 174 current / 276 baseline / 0 new。文档 / 实际 15 文件影响 / diff 检查通过，正式文档仍需 maintainer review。
+- environment：npm 共享 cache 权限问题通过临时独立 cache 解决，版本与锁文件不变。首次 gate 的终端用例因新装 node-pty spawn-helper 缺少执行权限失败；仅修复本地 node_modules 权限后，定向用例及完整 gate 复跑通过，未调整源码或测试断言。
+- handoff（提交前记录）：11 个机械生成文件及 4 份文档已本地更新，用户已确认仅提交到本地；不推送、更新 MR、评论、合并或发布，最终提交状态以本地 Git 记录为准。单 Agent 复核；未执行真实支付、登录态浏览器验收、iOS 原生编译或远端 CI 查询，5176 原预览工作树未改动。
+
 ## MR3941 CR 优化（2026-09-11 提出，2026-09-12 验证）
 
 - requirement_refs：用户提供 `CR-MR3941.md`，先要求设计方案，再确认“优化一轮”；2026-09-12 进一步确认仅提交本轮 18 个文件到本地，不推送或更新 MR。

@@ -122,4 +122,11 @@
 | 账户与 Agent 页面接入 | `src/pages/marketing/account-page.tsx`、`agent-settings-page.tsx` | `src/pages/marketing/__tests__/account-page-renewal.global.test.tsx`、`agent-settings-renewal-reminder.test.tsx` |
 | 升配期间实例数据兼容 | `src/repositories/http-repositories.ts` | `src/repositories/__tests__/http-repositories.test.ts` |
 
-验证结果及未覆盖边界见[本次变更记录](../changes/2026-09-11-pass-upgrade-interaction.md)。本规格不修改后端定价、支付协议、真实扣款与交付规则，也不声明生产发布完成。
+## 10. OpenCraft 共享副本边界
+
+- `DialogContent` 的 `closeLabel`、`overlayClassName` 与关闭按钮键盘焦点样式属于共享基础组件；OpenCraft 的机械副本必须同步这些变化，同时保留相对 import 和 `lightvela-agent-console-portal` 适配。
+- i18n 字典 / 映射和 HTTP Repository 也在共享依赖清单中，使用 `opencraft/scripts/sync-mono2-agent-console.mjs` 一并生成副本与 `UPSTREAM.json`。不得手改生成文件或通过修改检查规则掩盖漂移。
+- 2026-09-12 补齐了 Dialog、8 份字典 / 映射、Repository 副本及清单。字典和 Repository 的部分差异来自原 MR 基线；Repository 同步的是既有 `PASS_MODIFYING` 降级逻辑，不新增后端权限或支付行为。
+- 前端验证通过不代表共享副本一致。交接前独立执行 `cd opencraft && npm run check:mono2-agent-console`；跨包共享实现按 OpenCraft 约定执行 `npm run gate`。本地结果不代表远端 CI 或生产发布完成。
+
+验证结果及未覆盖边界见[本次变更记录](../changes/2026-09-11-pass-upgrade-interaction.md)与[当前增量计划](../plan.md)。本规格不修改后端定价、支付协议、真实扣款与交付规则，也不声明生产发布完成。
