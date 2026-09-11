@@ -153,7 +153,7 @@
     },
     {
       "file": "lib/hermes-skills-client.ts",
-      "sourceSha256": "e609fdb0a700ed8b3dd9ebfe07d6035107b6687c9607be101dfa42ee7dc938f5"
+      "sourceSha256": "cc53a891c9704d6d82cddae90c1c3510aafc35bad56c9ef6bee979bf39540c46"
     },
     {
       "file": "lib/oauth.ts",
@@ -477,7 +477,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/skill-registries.ts",
-      "sourceSha256": "96dccbb12e863180f027ff92fb3d0d8b68c75ff395ba6715181a3ffac3151363"
+      "sourceSha256": "cc15a312def2e7f4669de6a89941b4455d197929bb2456723382c7e3e8b006b2"
     },
     {
       "file": "pages/marketing/zh-hant-scope.tsx",

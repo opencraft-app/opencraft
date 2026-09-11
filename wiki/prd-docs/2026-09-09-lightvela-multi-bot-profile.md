@@ -214,11 +214,11 @@ P2：团队共享、Bot 模板市场、跨 Bot 编排和运营化能力。
 
 追加 Bot 的创建方式定义如下：
 
-- 空白创建：创建命名 Hermes Profile，使用 LightVela 默认配置，并将 Skills 收敛到 LightVela 基础技能集。该集合与首个 Bot 的初始化基线一致，不继承主 Bot 或当前 Bot 后续安装的 Skills；产品契约不固定具体数量。
+- 空白创建：创建命名 Hermes Profile，使用 LightVela 默认配置，但不预装任何用户 Skills；创建完成后页面显示的已安装 Skills 数量为 0，用户可再按需安装。
 - 从当前 Bot 克隆：复制可克隆配置，生成独立 Profile 后允许用户继续修改；这是追加创建弹窗的默认推荐选项。
 - 从主 Bot 克隆：适合用户基于原有主 Bot 配置创建新角色。
 
-空白创建先调用 Hermes 创建 Profile，再按 LightVela 基础技能清单收敛技能目录。新镜像使用构建时记录的基础技能清单；存量实例缺少该清单时，从根 Profile 现有的系统预置技能兼容推导，不把用户后来安装的 Skills 纳入基础集。基础清单无法解析或恢复时，创建失败并执行现有回滚，不能暴露半完成 Bot。
+空白创建调用 Hermes no-skills Profile 能力，不复制主 Bot 或当前 Bot 的 Skills，也不播种 LightVela 基础技能或 Hermes bundled skills。Profile 保留 bundled-skills opt-out 状态，后续 Hermes 更新不得自动回填；对此类 Profile，Hermes 为保证运行保留的 `hermes-agent` 内部 Skill 不属于用户可管理 Skills，不在 LightVela 已安装列表中展示或计数。既有 Profile 的列表语义保持不变，用户主动安装 Skills 不受影响。
 
 新建 Bot 不做静默复制。`default`/`main` 只作为存量主 Bot 或用户显式选择的克隆来源，不是所有新 Bot 的隐式来源。克隆方式的提示区按“继承”和“不继承”两部分展示；空白创建则说明使用 LightVela 默认配置。
 
@@ -457,7 +457,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 ## 验收标准
 
 1. 存量用户进入新版控制台后，默认主 Bot 显示正常，`profile_id` 为 `main`，原有 Provider、模型、通道、Skills、Memory、SOUL 和自动任务读取与写入均访问根 Profile。
-2. 用户可以在一个实例内追加空白 Bot，系统生成命名 Hermes Profile，后端保存稳定 `profile_id`；其已安装 Skills 与首个 Bot 的 LightVela 基础技能集一致，不包含主 Bot 后续安装的 Skills，也不依赖写死的技能数量。
+2. 用户可以在一个实例内追加空白 Bot，系统生成命名 Hermes Profile，后端保存稳定 `profile_id`；创建完成后页面显示的已安装 Skills 数量为 0，后续可按需安装，Hermes 更新不会自动回填 bundled Skills，运行必需的内部 Skill 不展示、不计数。
 3. 用户可以从默认主 Bot 或任一普通 Bot 克隆新 Bot；可克隆配置形成独立副本，不继承会话历史、定时任务、通道连接和运行状态。
 4. 追加创建弹窗默认推荐“复制当前”，但不得静默复制 `default`/`main`；用户必须能看到创建方式，以及结构化的“继承 / 不继承”范围，并能切换为“复制主 Bot”或“空白创建”。
 5. Bot 切换后，Provider、模型、通道、Skills、自动任务、Memory、User Profile 和 SOUL 页面显示目标 Bot 的数据，不串读、不串写。
