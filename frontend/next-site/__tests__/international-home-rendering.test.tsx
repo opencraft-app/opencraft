@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
+const openClawMock = vi.hoisted(() => ({ isSubscribed: false, subscriptionReady: true }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
 vi.mock("@/components/site/maintenance-announcement-banner", async () => {
   const ReactRuntime = await import("react");
@@ -24,6 +25,9 @@ vi.mock("@/components/site/maintenance-announcement-banner", async () => {
 });
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionMock,
+}));
+vi.mock("@/contexts/agent-context", () => ({
+  useOpenClaw: () => openClawMock,
 }));
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "en-US",
@@ -50,6 +54,8 @@ beforeEach(() => {
   regionMock.isGlobal = false;
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
+  openClawMock.isSubscribed = false;
+  openClawMock.subscriptionReady = true;
 });
 
 afterEach(() => {
@@ -86,7 +92,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260910-unified-header-hero-v30"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260911-hero-cta-subscription-v31"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -260,6 +266,7 @@ describe("international v2 homepage rendering", () => {
     regionMock.isGlobal = false;
     sessionMock.authReady = true;
     sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
 
     render(
       <InternationalHomeRuntime
@@ -272,6 +279,51 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("我的智能体伙伴");
     });
     expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  /* 四态判定第 2 行：已登录但未订阅（含订阅过期）仍应停留在转化入口，
+     而不是被放进产品页再撞订阅墙。 */
+  it("keeps the domestic hero on the conversion entry for signed-in users without a subscription", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = false;
+
+    render(
+      <InternationalHomeRuntime
+        locale="zh-CN"
+        markup={domesticHeroMarkup}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("免费试用");
+    });
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
+  });
+
+  /* 订阅态尚未查回来时不得改写产物默认值，否则已订阅用户会先闪一帧「免费试用」。 */
+  it("leaves the hero CTA untouched until the subscription state is resolved", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
+    openClawMock.subscriptionReady = false;
+
+    render(
+      <InternationalHomeRuntime
+        locale="zh-CN"
+        markup={domesticHeroMarkup}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-hero-cta]")).toBeTruthy();
+    });
+    expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("免费试用");
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
   });
 
   it("applies the same stateful hero CTA on the international site when anonymous", async () => {
@@ -299,6 +351,7 @@ describe("international v2 homepage rendering", () => {
     regionMock.isGlobal = true;
     sessionMock.authReady = true;
     sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
 
     render(
       <InternationalHomeRuntime
@@ -311,6 +364,27 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("私のAIパートナー");
     });
     expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  /* 国际站与国内站共用同一套四态判定，未订阅同样停留在本地化订阅页。 */
+  it("keeps the international hero on the localized subscribe entry without a subscription", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = true;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = false;
+
+    render(
+      <InternationalHomeRuntime
+        locale="ja-JP"
+        markup={globalHeroMarkup}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("無料で開始");
+    });
+    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/ja-jp/subscribe");
   });
 
   it("keeps the global zh-CN runtime on the international login-only treatment", () => {

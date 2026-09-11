@@ -6,6 +6,7 @@ import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
+import { useOpenClaw } from '@/contexts/agent-context';
 import { useSession } from '@/contexts/session-context';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 
@@ -15,7 +16,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260910-unified-header-hero-v30';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260911-hero-cta-subscription-v31';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -27,6 +28,7 @@ const InternationalHomeMarkup = memo(function InternationalHomeMarkup({ markup }
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
   const { authReady, isAuthenticated } = useSession();
+  const { isSubscribed, subscriptionReady } = useOpenClaw();
 
   useEffect(() => {
     let cancelled = false;
@@ -59,12 +61,17 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     };
   }, [locale, markup]);
 
-  /* Hero CTA 状态化：仅国内站 zh-CN 产物带 data-home-hero-cta 标记，
-     未登录进入 /subscribe、登录态进入 /agents。国际站产物不带该标记，
-     保持固定文案与链接不变（沿用 2026-09-04 fix-cn-home-cta 的约定）。
+  /* Hero CTA 状态化：双站产物均带 data-home-hero-cta 标记。
+     按「是否已订阅」而非「是否登录」分流，对应四态判定：
+       1 未登录                  → 免费试用 → /subscribe
+       2 已登录·未订阅（含过期）  → 免费试用 → /subscribe
+       3 已登录·已订阅·未建 Agent → 我的智能体伙伴 → /agents
+       4 已登录·已订阅·已有 Agent → 我的智能体伙伴 → /agents
+     3 与 4 的文案和目标一致，故无需读取 bots，/agents 落地页自行处理空态。
      文案与目标全部由产物的 data-* 提供，运行时不硬编码任何文案。 */
   useEffect(() => {
-    if (!authReady) return;
+    /* 订阅态未就绪时不改写，避免已订阅用户先闪一帧转化文案 */
+    if (!authReady || !subscriptionReady) return;
 
     const heroAction = document.querySelector<HTMLAnchorElement>('[data-home-hero-cta]');
     const heroActionLabel = heroAction?.querySelector<HTMLElement>('[data-home-hero-cta-label]');
@@ -72,13 +79,14 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
 
     const { homeHeroCtaSignedLabel, homeHeroCtaSignedHref, homeHeroCtaAnonLabel, homeHeroCtaAnonHref } =
       heroAction.dataset;
-    const label = isAuthenticated ? homeHeroCtaSignedLabel : homeHeroCtaAnonLabel;
-    const href = isAuthenticated ? homeHeroCtaSignedHref : homeHeroCtaAnonHref;
+    const entitled = isAuthenticated && isSubscribed;
+    const label = entitled ? homeHeroCtaSignedLabel : homeHeroCtaAnonLabel;
+    const href = entitled ? homeHeroCtaSignedHref : homeHeroCtaAnonHref;
     if (!label || !href) return;
 
     heroAction.href = href;
     heroActionLabel.textContent = label;
-  }, [authReady, isAuthenticated]);
+  }, [authReady, isAuthenticated, isSubscribed, subscriptionReady]);
 
   return (
     <>
