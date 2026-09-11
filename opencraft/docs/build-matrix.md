@@ -10,6 +10,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `electron-renderer` | Vite, relative assets, Electron loopback origin | Relocatable renderer tree | Linux/macOS/Windows |
 | `electron-host` | Sandboxed Electron main/preload + static loopback origin + independent OpenCraft Daemon | Main/preload, daemon executable and pinned DSH runtime | Linux/macOS/Windows |
 | `electron-macos-arm64-zip` | Electron host + renderer | Apple Silicon `.app` ZIP | Linux/macOS |
+| `electron-macos-arm64-preview` | Electron host + renderer | Isolated Apple Silicon ad-hoc `.app` ZIP | macOS |
 | `electron-macos-arm64-dmg` | Electron host + renderer | Apple Silicon DMG | macOS |
 | `electron-macos-x64-zip` | Electron host + renderer | Intel `.app` ZIP | Linux/macOS |
 | `electron-macos-x64-dmg` | Electron host + renderer | Intel DMG | macOS |
@@ -34,6 +35,7 @@ npm run matrix:build -- web-browser electron-renderer electron-host
 npm run matrix:build -- electron-linux-x64-appimage
 npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
+npm run package:electron:mac:arm64:preview
 ```
 
 Desktop packaging jobs are downstream targets. Linux AppImage, RPM, and DEB
@@ -43,6 +45,15 @@ artifact; DEB covers Debian/Ubuntu. Application ZIPs can be
 cross-built, while DMG creation, signing, notarization, and the final smoke test
 run on macOS. Every package consumes only the verified `electron-renderer`
 artifact and separately compiled Electron host.
+
+The explicit macOS preview command is a local QA contract, not a distribution
+artifact. It writes below `release/preview`, uses product name `OpenCraft
+Preview`, Bundle ID `ai.lightvela.vela.preview`, and the independent
+`@vela/workbench-electron-preview` profile. It disables certificate discovery,
+prunes foreign-platform `node-pty` prebuilds from both packaged runtime trees,
+and applies one consistent ad-hoc hardened-runtime signature and entitlements
+to the Electron helpers and outer app before ZIP creation. Release ZIP/DMG
+commands retain their Developer ID and notarization responsibilities.
 
 The Electron host never loads the application with `file://`, but its loopback
 server is only a static asset owner. Renderer App Host frames cross a transferred

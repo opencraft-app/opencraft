@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
-import { desktopProduct } from "../apps/workbench-electron/src/product-identity.ts";
+import {
+  desktopPreviewProduct,
+  desktopProduct,
+  resolveDesktopProduct,
+} from "../apps/workbench-electron/src/product-identity.ts";
 import { resolveWorkbenchProductId } from "../apps/workbench-web/src/workbench-product.ts";
 import { botConversationResourceUri, parseBotConversationViewResource } from "../packages/bot-conversation/src/view-resource.ts";
 import { createConversationKey } from "@opencraft/chat-core";
@@ -42,6 +46,11 @@ test("three hosts agree on branding but retain installed application identity", 
   assert.ok(main.indexOf('app.setPath("userData"') < main.indexOf("app.requestSingleInstanceLock()"));
   assert.ok(main.indexOf("mkdirSync(userDataDirectory") < main.indexOf('app.setPath("userData"'));
   assert.match(main, /getSwitchValue\("user-data-dir"\)/u);
+  assert.deepEqual(resolveDesktopProduct("OpenCraft"), desktopProduct);
+  assert.deepEqual(resolveDesktopProduct("OpenCraft Preview"), desktopPreviewProduct);
+  assert.equal(desktopPreviewProduct.applicationId, "ai.lightvela.vela.preview");
+  assert.equal(desktopPreviewProduct.profileDirectoryName, "@vela/workbench-electron-preview");
+  assert.match(main, /resolveDesktopProduct\(executableName\)/u);
 });
 
 test("web product identity is normalized once for product-owned policies", () => {

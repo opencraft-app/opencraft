@@ -1,4 +1,5 @@
 import { Globe2 } from "lucide-react";
+import { useState } from "react";
 
 import {
   SettingsActions,
@@ -7,6 +8,7 @@ import {
 } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService, LightVelaAccountSnapshot } from "../account/lightvela-account-service";
+import { selectLightVelaLoginRegion } from "./lightvela-region-selection";
 
 export function LightVelaLoginOptions({ account, snapshot, disabled = false }: {
   account: LightVelaAccountService;
@@ -14,6 +16,7 @@ export function LightVelaLoginOptions({ account, snapshot, disabled = false }: {
   disabled?: boolean;
 }) {
   const isChina = snapshot.region === "cn";
+  const [regionError, setRegionError] = useState<string | null>(null);
   return (
     <div className="lightvela-login-options">
       <div className="lightvela-login-options__intro">
@@ -36,8 +39,9 @@ export function LightVelaLoginOptions({ account, snapshot, disabled = false }: {
             { value: "cn", label: "国内版" },
             { value: "intl", label: "国际版" },
           ]}
-          onValueChange={(value) => account.selectRegion(value === "cn" ? "cn" : "intl")}
+          onValueChange={(value) => setRegionError(selectLightVelaLoginRegion(account, value === "cn" ? "cn" : "intl"))}
         />
+        {regionError === null ? null : <small role="alert">{regionError}</small>}
         <SettingsActions>
           <SettingsButton variant="primary" type="button" disabled={disabled} onClick={() => account.signIn()}>
             继续登录
