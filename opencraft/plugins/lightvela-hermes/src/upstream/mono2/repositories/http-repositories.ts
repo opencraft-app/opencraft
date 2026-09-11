@@ -938,7 +938,9 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       const displayName = input?.name?.trim() || defaultHermesAgentName();
 
       if (!isGlobal) {
-        const instance = instanceCache.values().next().value as CtlInstancePayload | undefined;
+        const instance = Array.from(instanceCache.values()).find(
+          (candidate) => mapInstanceStatusToBotStatus(candidate.status) === "active",
+        );
         if (instance) {
           const created = await requestEnvelope<CtlInstanceBotPayload>(
             baseUrl,

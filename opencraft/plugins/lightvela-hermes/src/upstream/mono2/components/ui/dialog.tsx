@@ -32,7 +32,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "lightvela-agent-console-portal lv-dialog-surface fixed inset-x-4 bottom-4 p-5 md:inset-auto md:left-1/2 md:top-1/2 md:w-[34rem] md:-translate-x-1/2 md:-translate-y-1/2",
+        "lightvela-agent-console-portal fixed inset-x-4 bottom-4 z-50 rounded-[1.75rem] p-5 md:inset-auto md:left-1/2 md:top-1/2 md:w-[34rem] md:-translate-x-1/2 md:-translate-y-1/2",
         floatingPanelClass,
         className,
       )}

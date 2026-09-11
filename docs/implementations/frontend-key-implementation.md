@@ -524,7 +524,7 @@ HTTP 层统一处理：
 - 基于 Bot ID 的确定性头像 hash
 
 **创建中 Loading：**
-- `CreatingLoadingView`：动画 Hermes 角色 + "正在给 Hermes Agent 喂咖啡，唤醒大脑中..."（约 6 秒持续时间）
+- `CreatingLoadingView`：动画 Hermes 角色 + "正在给 LightVela Bot 喂咖啡，唤醒大脑中..."（约 6 秒持续时间）
 
 **六大弹窗/对话框：**
 

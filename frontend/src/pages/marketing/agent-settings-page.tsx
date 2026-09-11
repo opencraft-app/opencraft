@@ -2395,7 +2395,7 @@ const CreatingLoadingView = ({ errorMessage }: { errorMessage?: string | null })
           errorMessage
         ) : (
           <>
-            {t("正在给 Hermes Agent 喂咖啡，唤醒大脑中")}
+            {t("正在给 LightVela Bot 喂咖啡，唤醒大脑中")}
             <span className="inline-block" style={{ width: "1.5em", textAlign: "left" }}>
               {dots}
             </span>

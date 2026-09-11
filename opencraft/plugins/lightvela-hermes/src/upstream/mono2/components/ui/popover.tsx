@@ -5,6 +5,7 @@ import { floatingPanelClass } from "./control-shell";
 import { cn } from "../../lib/utils";
 
 const Popover = PopoverPrimitive.Root;
+const PopoverAnchor = PopoverPrimitive.Anchor;
 const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const PopoverContent = React.forwardRef<
@@ -16,11 +17,11 @@ const PopoverContent = React.forwardRef<
       ref={ref}
       align={align}
       sideOffset={sideOffset}
-      className={cn("lightvela-agent-console-portal lv-floating-control rounded-lg outline-none", floatingPanelClass, className)}
+      className={cn("lightvela-agent-console-portal z-50 rounded-lg outline-none", floatingPanelClass, className)}
       {...props}
     />
   </PopoverPrimitive.Portal>
 ));
 PopoverContent.displayName = PopoverPrimitive.Content.displayName;
 
-export { Popover, PopoverContent, PopoverTrigger };
+export { Popover, PopoverAnchor, PopoverContent, PopoverTrigger };

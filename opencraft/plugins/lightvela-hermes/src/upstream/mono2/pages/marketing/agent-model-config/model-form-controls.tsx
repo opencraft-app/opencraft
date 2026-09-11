@@ -2,8 +2,8 @@
 import { Loader2 } from "lucide-react";
 import { cn } from "../../../lib/utils";
 
-export const MODEL_CONTROL_CLASS = "lv-model-control h-12";
-export const MODEL_SELECT_CONTENT_CLASS = "lv-model-select-content max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]";
+export const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
+export const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
 
 export function modelCompoundClasses(isGlobalRegion: boolean) {
   return {
