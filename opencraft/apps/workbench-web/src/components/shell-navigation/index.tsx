@@ -88,7 +88,9 @@ interface ShellNavigationMotionStyle extends MotionStyle {
   "--shell-navigation-icon-scale": MotionValue<number>;
   "--shell-navigation-label-opacity": MotionValue<number>;
   "--shell-navigation-label-x": MotionValue<string>;
+  "--shell-navigation-row-gap": MotionValue<string>;
   "--shell-navigation-row-padding": MotionValue<string>;
+  "--shell-navigation-row-inset": MotionValue<string>;
   "--shell-navigation-row-width": MotionValue<string>;
 }
 
@@ -115,11 +117,16 @@ function ShellNavigationMotionFrame({ children, expandedWidth, frameWidth }: {
     "--shell-navigation-icon-scale": useTransform(progress, value => 1 + (1 - value) * 0.04),
     "--shell-navigation-label-opacity": labelOpacity,
     "--shell-navigation-label-x": useTransform(labelOpacity, value => `${(1 - value) * -6}px`),
-    "--shell-navigation-row-padding": useTransform(progress, value => `${4 + value * 4}px`),
+    "--shell-navigation-row-gap": useTransform(progress, value => `${value * 9}px`),
+    "--shell-navigation-row-padding": useTransform(progress, value => `${10 - value * 2}px`),
+    "--shell-navigation-row-inset": useTransform(progress, value => {
+      const compactInset = (shellNavigationMetrics.compactWidth - shellNavigationMetrics.compactActionSize) / 2;
+      return `${compactInset + value * (12 - compactInset)}px`;
+    }),
     "--shell-navigation-row-width": useTransform(
       [progress, expandedWidth],
       ([currentProgress, currentExpandedWidth]) => {
-        const compactRowWidth = shellNavigationMetrics.compactWidth - 24;
+        const compactRowWidth = shellNavigationMetrics.compactActionSize;
         const expandedRowWidth = Math.max(compactRowWidth, Number(currentExpandedWidth) - 24);
         return `${compactRowWidth + Number(currentProgress) * (expandedRowWidth - compactRowWidth)}px`;
       },
@@ -174,6 +181,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
       <Dialog.Trigger asChild>
         <button id={`${entranceId}-${surface}`} type="button"
           className="shell-navigation__entrance" aria-label={labels[surface]}
+          data-surface={surface}
           aria-pressed={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : state.pinned[surface]}
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
           data-pinned={surface === "applications" && projection.primaryNavigation ? visible : state.pinned[surface]}

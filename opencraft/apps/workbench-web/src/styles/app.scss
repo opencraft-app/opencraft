@@ -1466,6 +1466,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   display: grid;
   width: var(--sidebar-leading-slot-size);
   height: var(--sidebar-leading-slot-size);
+  flex: 0 0 var(--sidebar-leading-slot-size);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: 50%;

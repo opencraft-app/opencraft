@@ -40,6 +40,7 @@ derived: false
 最新反馈：Primary 拖动时偶发整栏消失，松手后恢复，且没有复用既有侧栏的释放动画。要求参考 Codex 做一次有边界但彻底的交互层重构，不扩散到路由、内容树或整体 Sidecar 拓扑。
 最新反馈：宽度动画已认可，但中间帧的条目文字与选中块仍有硬裁切感；要求利用现有 Motion 框架提升内容层动画质量。
 合并 master 后线上反馈：Announcement Lab 的 Vite 小型 SVG 被内联为 `data:image/svg+xml`，但平台 URL 校验拒绝全部 data URL。用户确认平台应允许内联图片；修复必须区分图片 data URL 与任意 data 内容。
+最新反馈：Primary 向右拖动时内部选中面落后于外框；账户浮层头像失去边界；打开账户入口时文字横移；compact 选中面为 28×34 而非正方形。修复必须从 Frame/Viewport、浮层尺寸与 Footer 锚点所有权入手。
 
 ## interface_refs / data_structure_refs
 - `opencraft/packages/workbench-runtime/src/shell-navigation.ts`：跨端纯状态、动作与响应式投影。
@@ -60,7 +61,7 @@ derived: false
 - 聚焦测试、浏览器几何测试、跨 workspace 门禁。
 - 应用/会话宽度独立；拖拽、键盘、双击复位和刷新持久化通过，应用入口正方形，个人入口铺满最左栏剩余宽度，并保留对称内边距。
 - 浅/深色下默认透明无描边投影，悬停/展开/Pin 有浅底色；矮窗口与长列表的滚动视口不得覆盖独立 Footer 行，最后一项可达。
-- 页面只有一个 Sidecar；其 Primary/Context 两个可选 Pane 共用 Frame–Clip–Viewport 原语。Primary pointermove 中间帧只连续改变 Frame/Clip，Viewport 保持目标宽度且不得被 resize 改写透明度；快速反向不得重挂载或出现整栏消失、半截字形。
+- 页面只有一个 Sidecar；其 Primary/Context 两个可选 Pane 共用 Frame–Clip–Viewport 原语。Primary 收缩时 Viewport 保持 committed expanded width 供 Clip 裁切，向外扩张超过 committed width 时 Viewport 必须与 Frame 同帧跟随；resize 不得改写透明度，快速反向不得重挂载或出现整栏消失、半截字形、尾部空带。
 - 应用栏调宽提供 `expanded → compact → hidden` 两段磁吸；compact 为纯 Icon 的持久语义档位，展开宽度单独保留。反向拖动遵循相同顺序，Settings 等业务导航必须铺满平台 Viewport，不得以固有宽度留下空带。
 - 拖动预览不得写入 committed detent、Pin、持久化或 dock availability；pointerup 才原子提交相邻档位，cancel 恢复起点。
 - 磁吸阈值只决定 pointerup 的目标档位，不量化按住阶段的物理宽度；释放后 Frame 以共享 spring 收敛到目标，hidden 在物理宽度到零后才提交语义隐藏。
@@ -119,8 +120,12 @@ derived: false
 - Primary 交互层改为单一 motion owner：pointer transaction 只写 Frame MotionValue，Viewport 透明度只读 panel visibility，Footer 只读最后提交的 expanded width。compact/expanded 在 settle 开始时提交语义，hidden 在 Frame 弹簧到零后提交；新手势会停止并接管未完成的 settle。
 - Primary 内容层使用 Motion 派生 CSS 变量而非语义档位 CSS 突变：Frame 在 compact 与当前 expanded Viewport 之间的归一化几何进度连续驱动 row width/padding、label opacity/x、heading height/opacity/y 与 icon scale；稳定 Viewport 复用 committed expanded width，因此选中背景和文字在 Clip 边界到来前已经完成收束。
 - Application Primary Pane 的默认两档收窄约 30%：compact `52px`、expanded `182px`、expanded minimum `168px`。Context Pane 保持原宽；Footer 拆为独立最小 `260px` 几何，不能因 Primary 收窄而截断账户，也不能消费 held-pointer preview。旧版裸数宽度偏好升级为 v3 key，避免历史 `260px` 默认值覆盖新默认。
+- Primary Motion owner 现同时拥有 live expansion 的 Viewport 写入：右拉超过 committed expanded width 时 Frame、Viewport 与 row surface 同帧扩张；左拉仍保持稳定 Viewport 并由 Clip 收束。cancel/settle 负责恢复或提交 Viewport，Footer 始终只读 committed width。
+- compact action size 成为 runtime metric `34px`，独立于 `52px` rail width；Motion 同源派生 9px 居中 inset、34×34 row、收拢 gap 与 icon padding，保证图标和选择面共中心。
+- 账户头像槽由 shell-navigation surface 自己声明 `28px` 变量和不可收缩 flex basis，不再借用 `.sidebar-panel` 的局部变量。Footer 入口以 `data-surface` 选择，不使用会被 Radix Portal 子节点改变的 `:first-child/:last-child`，因此打开账户浮层不改变 padding、gap 或文字 x 坐标。
 
 ## evidence
+- 本轮修复的 source commit 尚待生成；`origin/master@c914eb43a` 与工作基线一致，无需冲突融合。完整 gate 与真实 Chromium 已在提交前通过，部署回执将在发布后补录。
 - 最新 `origin/master@fc624a0dc` 已与 Sidecar 实现融合为 `eec248ae6`，并以非强制 fast-forward 同步到 `master` 与 `codex/hermes-create-guide`。master 的 Context leading-slot 对齐保留，已删除的旧账户触发器没有被冲突合并复活。
 - 融合后的 master 已发布到 EdgeOne Pages 生产项目 `vela-cn`：部署 `dpr7x6zi8prk`，buildId `20260911091444-7cd09926ce24`。正式域名返回同一 buildId，包含 Announcement runtime chunk 的 10 项关键产物 SHA-256 与本地 release 完全一致；无存储的新 Chromium 会话确认根节点具有 `has-shell-navigation`，Primary Pane 为 182px，Vela/Chat 均可见且没有 page error。
 - 本轮单 Sidecar/双 Pane、三态 Primary 交互、窄 Application/Footer 几何与 Announcement data-image 契约已形成实现提交 `791f25855`（`feat(opencraft): model responsive sidecar navigation`）；提交不包含部署凭据。
@@ -158,6 +163,7 @@ derived: false
 - 仓库 Context 全量测试存在其他历史任务元数据/语言等问题，不扩大本轮整改范围。
 
 ## validation
+- 最新交互几何修复后完整 `npm run gate` 通过；18 项 Sidecar 聚焦单测及真实 Chromium Shell Navigation 门禁通过 119 个固定锚点帧。新增浏览器断言覆盖向右 held-pointer 时 Frame=Viewport 且 row 填满、账户浮层头像 computed size/flex-basis 为 28px、浮层打开前后账户文字 x 坐标完全一致、compact row 为 34×34 且图标中心偏差为 0。
 - 融合 master 后 42 项 Sidecar/leading-slot/Announcement 聚焦测试和三个相关 workspace 类型检查通过；完整 `npm run gate` 通过，真实 Chromium Shell Navigation 门禁通过 122 个固定锚点帧。LightVela ultra-minified release 与产品边界检查通过，生产域名版本、10 项关键产物和应用栏实际 DOM/几何均已复核。
 - Announcement data-image 契约修复后 Extension 全套 116 项测试、相关 workspace 类型检查、LightVela ultra-minified release 与产品边界检查通过；完整 `npm run gate` 再次通过，覆盖全部 workspace 类型检查/测试、Web 构建、Expo Web 导出及 Expo iOS bundle。回归测试同时确认合法 SVG data URL 可进入 Announcement snapshot 并正常结算，`data:text/html` 仍被拒绝；生产域名真实 Chromium 点击验收无 page error。
 - 合并 `origin/master@b4842ce2c` 后完整重跑 `npm run gate` 通过，覆盖 master 新增的 announcement/release 测试、全部 workspace 类型检查/测试、Web 构建、Expo Web 导出及 Expo iOS bundle；真实 Chromium Shell Navigation 门禁通过 109 个固定锚点帧。LightVela release 构建与产品边界检查通过，静态发布测试 8 项通过；生产域名 9 项关键产物逐字节哈希一致。

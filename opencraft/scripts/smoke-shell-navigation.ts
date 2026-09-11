@@ -155,7 +155,17 @@ try {
   await page.screenshot({ path: "/tmp/opencraft-settings-shared-shell.png" });
   await page.locator(".shell-navigation__dock").getByRole("button", { name: "Chat", exact: true }).click();
   assert.equal(await page.getByLabel("Draft", { exact: true }).inputValue(), "Keep my draft");
+  const accountLabelX = await account.locator(".shell-navigation__name").evaluate((node: HTMLElement) =>
+    node.getBoundingClientRect().x);
   await account.click();
+  assert.equal(await account.locator(".shell-navigation__name").evaluate((node: HTMLElement) =>
+    node.getBoundingClientRect().x), accountLabelX,
+  "opening the account surface cannot change the Footer trigger's internal geometry");
+  assert.deepEqual(await page.locator(".shell-navigation__peek .sidebar-account__avatar").evaluate((node: HTMLElement) => {
+    const style = getComputedStyle(node);
+    return { width: style.width, height: style.height, flexBasis: style.flexBasis };
+  }), { width: "28px", height: "28px", flexBasis: "28px" },
+  "the account surface owns a bounded avatar slot independent of entrance animation");
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.activeElement?.id === "shell-entrance-account");
   await account.click();
@@ -274,6 +284,15 @@ try {
   await page.mouse.move(handle!.x + handle!.width / 2, 250);
   await page.mouse.down();
   await page.mouse.move(handle!.x + handle!.width / 2 + 80, 250, { steps: 8 });
+  const liveExpansion = await page.locator(".shell-navigation__dock").evaluate((frame: HTMLElement) => ({
+    frame: frame.getBoundingClientRect().width,
+    viewport: frame.querySelector<HTMLElement>("[data-sidecar-pane-viewport]")!.getBoundingClientRect().width,
+    item: frame.querySelector<HTMLElement>(".shell-navigation__items > button")!.getBoundingClientRect().width,
+  }));
+  assert.ok(Math.abs(liveExpansion.frame - liveExpansion.viewport) < 0.1,
+    `rightward pointer frames and painted viewport move together: ${JSON.stringify(liveExpansion)}`);
+  assert.ok(Math.abs(liveExpansion.item - (liveExpansion.frame - 24)) < 0.1,
+    "the selected row fills the live expanded viewport without a trailing blank shelf");
   await assertFooterFill(page);
   await page.mouse.up();
   assert.equal(await resizeApps.getAttribute("aria-valuenow"), "262");
@@ -356,6 +375,15 @@ try {
     const label = node.querySelector<HTMLElement>(".shell-navigation__item-label");
     return label != null && Number.parseFloat(getComputedStyle(label).opacity) === 0;
   }), true, "compact rail projects icon-only actions");
+  assert.deepEqual(await page.getByRole("button", { name: "Chat", exact: true }).evaluate((node: HTMLElement) => {
+    const row = node.getBoundingClientRect();
+    const icon = node.querySelector("svg")!.getBoundingClientRect();
+    return {
+      row: [row.width, row.height],
+      centerOffset: (icon.left + icon.width / 2) - (row.left + row.width / 2),
+    };
+  }), { row: [34, 34], centerOffset: 0 },
+  "compact navigation presents a centered square selection surface");
   await page.waitForTimeout(50);
   const compactOpacity = await page.locator(".shell-navigation__viewport").evaluate((node: HTMLElement) => ({
     opacity: Number.parseFloat(getComputedStyle(node).opacity),

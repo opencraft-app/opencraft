@@ -93,6 +93,7 @@ export function reduceShellNavigation(state: ShellNavigationState, action: Shell
 export interface ShellNavigationMetrics {
   readonly columnWidth: number;
   readonly compactWidth: number;
+  readonly compactActionSize: number;
   readonly expandedMinimumWidth: number;
   readonly footerMinimumWidth: number;
   readonly contentMinimumWidth: number;
@@ -103,6 +104,7 @@ export interface ShellNavigationMetrics {
 export const shellNavigationMetrics: ShellNavigationMetrics = {
   columnWidth: 182,
   compactWidth: 52,
+  compactActionSize: 34,
   expandedMinimumWidth: 168,
   footerMinimumWidth: 260,
   contentMinimumWidth: 420,

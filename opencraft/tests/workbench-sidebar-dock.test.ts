@@ -108,7 +108,11 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
   );
   assert.match(navigationSource, /data-shell-navigation-motion="geometry"/u);
   assert.match(navigationSource, /useTransform\(\s*\[progress, expandedWidth\]/u);
+  assert.match(navigationSource, /data-surface=\{surface\}/u);
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
+  assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
+  assert.doesNotMatch(navigationStyles, /&:last-child/u,
+    "portal children cannot change Footer trigger geometry through structural selectors");
   assert.doesNotMatch(navigationStyles, /data-shell-navigation-pane-mode[\s\S]*?display:\s*none/u);
 });
 

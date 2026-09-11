@@ -37,8 +37,10 @@ type InteractionPhase = "idle" | "dragging" | "settling";
  * Sole motion owner for the Primary Sidecar.
  *
  * Pointer frames remain continuous, semantic detents change at transaction
- * boundaries, and the Footer follows only committed expanded width. Content
- * opacity is deliberately absent from this model.
+ * boundaries, and the Footer follows only committed expanded width. The
+ * viewport expands with a rightward pointer so painted rows never trail the
+ * frame, but remains stable while contracting so content is clipped instead
+ * of reflowing. Content opacity is deliberately absent from this model.
  */
 export function useSidecarPrimaryMotion(input: {
   readonly committedExpandedWidth: number;
@@ -70,7 +72,8 @@ export function useSidecarPrimaryMotion(input: {
   const previewResize = useCallback((preview: SidecarPrimaryResizePreview) => {
     if (phaseRef.current !== "dragging") return;
     frameWidth.set(preview.frameWidth);
-  }, [frameWidth]);
+    viewportWidth.set(Math.max(input.committedExpandedWidth, preview.frameWidth));
+  }, [frameWidth, input.committedExpandedWidth, viewportWidth]);
 
   const settle = useCallback((
     targetFrameWidth: number,
@@ -122,8 +125,8 @@ export function useSidecarPrimaryMotion(input: {
   }, [footerWidth, frameWidth, input.footerMinimumWidth, shouldReduceMotion, stopPlaybacks, viewportWidth]);
 
   const cancelResize = useCallback(() => {
-    settle(input.committedFrameWidth, null, () => {});
-  }, [input.committedFrameWidth, settle]);
+    settle(input.committedFrameWidth, input.committedExpandedWidth, () => {});
+  }, [input.committedExpandedWidth, input.committedFrameWidth, settle]);
 
   const settleResize = useCallback((
     result: SidecarPrimaryResizeCommit,
