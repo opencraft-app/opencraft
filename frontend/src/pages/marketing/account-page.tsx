@@ -880,7 +880,7 @@ const SubscriptionSection = ({
 
   /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
      积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
-     与改造前行为一致。挂载 toggle_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
+     与改造前行为一致。挂载 show_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
   const planCreditInput = useMemo(
     () =>
       operablePass

@@ -2726,7 +2726,7 @@ export const SubscribePage = ({
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   /* 积分包区域可见性：默认显示（见 credit-pack-visibility.ts）。
-     挂载 toggle_credit_pack() 控制台助手，供临时隐藏/恢复验收。 */
+     挂载 show_credit_pack() 控制台助手，供内部验收开启。 */
   const creditPackVisible = useCreditPackVisibility();
   useEffect(() => installCreditPackVisibilityHelper(), []);
 
@@ -3934,7 +3934,7 @@ export const SubscribePage = ({
         </section>
 
         {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。
-            默认显示；控制台执行 toggle_credit_pack() 可临时隐藏/恢复。 */}
+            默认关闭；控制台执行 show_credit_pack() 可开启内部验收。 */}
         {creditPackVisible && (
           <CreditPackSection
             sectionId={CREDIT_SECTION_ID}
