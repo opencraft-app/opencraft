@@ -316,6 +316,8 @@ export interface Bundle {
   description: BundleDescriptionEntry[];
   bundle_state: BundleState;
   agent_quota: number;
+  /** 每个 Agent 可拥有的 Bot 数量上限，包含主 Bot */
+  bot_quota_per_agent?: number;
   /** 积分数量（套餐包含多少 AI 积分） */
   credit: number;
   /**
@@ -363,6 +365,8 @@ export interface Pass {
   agent_quota_total?: number;
   /** 剩余 Agent 席位（已扣减运行中 Instance 占用） */
   agent_quota_available?: number;
+  /** 当前套餐下每个 Agent 可拥有的 Bot 数量上限，包含主 Bot */
+  bot_quota_per_agent?: number;
   credit_total: number;
   credit_available: number;
 }

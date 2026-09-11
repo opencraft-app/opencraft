@@ -355,6 +355,7 @@ const FAKE_BUNDLES: Bundle[] = [
     ],
     bundle_state: "ONLINE",
     agent_quota: 1,
+    bot_quota_per_agent: 1,
     credit: 0,
     // 免费试用套餐，price = null 表示不走付费架构
     price: null,
@@ -376,6 +377,7 @@ const FAKE_BUNDLES: Bundle[] = [
     ],
     bundle_state: "ONLINE",
     agent_quota: 1,
+    bot_quota_per_agent: 5,
     credit: 100,
     price: buildFakePrice(49.0),
     time_span: 1,
@@ -415,6 +417,7 @@ const buildExpiringAccountPreviewPass = (): Pass => {
     updated_time: new Date(now).toISOString(),
     agent_quota_total: 1,
     agent_quota_available: 0,
+    bot_quota_per_agent: 5,
     credit_total: 100,
     credit_available: 88,
   };
@@ -1036,6 +1039,7 @@ export const createFakeRepositories = (): Repositories => {
           updated_time: nowString,
           agent_quota_total: bundle.agent_quota,
           agent_quota_available: bundle.agent_quota,
+          bot_quota_per_agent: bundle.bot_quota_per_agent,
           credit_total: bundle.credit,
           credit_available: bundle.credit,
         };

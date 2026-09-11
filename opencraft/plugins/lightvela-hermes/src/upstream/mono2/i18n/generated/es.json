@@ -1943,6 +1943,7 @@
   "k_b2aca746": "Modelo de respaldo",
   "k_b2d2d4e6": "Selecciona un proveedor de modelos",
   "k_b2e33922": "Vuelve al terminar; el resultado se actualizará automáticamente",
+  "k_b2e73189": "Este plan ha alcanzado el límite de Bots. Elimina un Bot existente o mejora el plan y vuelve a intentarlo.",
   "k_b2ffc63a": "Introduce el model.name del modelo personalizado",
   "k_b32cfeaa": "Última actualización: {{time}}",
   "k_b351074f": "No se pudo confirmar que las credenciales actuales tengan acceso a este modelo. Revisa la configuración e inténtalo de nuevo.",
