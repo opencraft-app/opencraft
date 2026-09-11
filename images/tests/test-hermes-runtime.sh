@@ -300,6 +300,32 @@ else
   echo "hermes --version output: ${HERMES_VERSION_OUTPUT}"
 fi
 
+info "checking Hermes no-skills Profile contract"
+HERMES_NO_SKILLS_OUTPUT="$(remote_exec_runtime '
+  set -euo pipefail
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
+  profile_id="lvnoskillssmoke$$"
+  profile_root="$HOME/.hermes/profiles/$profile_id"
+  cleanup() {
+    hermes profile delete "$profile_id" -y >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT
+  hermes profile create "$profile_id" --no-skills --no-alias >/dev/null
+  test -f "$profile_root/.no-bundled-skills"
+  test -f "$profile_root/skills/autonomous-ai-agents/hermes-agent/SKILL.md"
+  skill_count="$(find "$profile_root/skills" -type f -name SKILL.md | wc -l | tr -d " ")"
+  test "$skill_count" = 1
+  echo "hermes-no-skills-profile-ok"
+' 2>&1 || true)"
+if echo "${HERMES_NO_SKILLS_OUTPUT}" | grep -q 'hermes-no-skills-profile-ok'; then
+  pass "Hermes no-skills Profile contract is available"
+else
+  fail "Hermes no-skills Profile contract is unavailable"
+  echo "${HERMES_NO_SKILLS_OUTPUT}"
+fi
+
 info "checking hermes command topology"
 HERMES_TOPOLOGY_OUTPUT="$(remote_exec_runtime '
   set -e
