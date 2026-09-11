@@ -2034,17 +2034,19 @@ function CronJobCard({
           )}
         </div>
         <div className="flex shrink-0 items-center">
-          <CronActionButton label={t("测试运行")} onClick={onTestRun} disabled={busy || testState === "running"}>
-            {testState === "running" ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : testState === "ok" ? (
-              <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
-            ) : testState === "fail" ? (
-              <X className="h-3 w-3 text-[#B91C1C]" />
-            ) : (
-              <Zap className="h-3 w-3" />
-            )}
-          </CronActionButton>
+          {!terminal && (
+            <CronActionButton label={t("测试运行")} onClick={onTestRun} disabled={busy || testState === "running"}>
+              {testState === "running" ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : testState === "ok" ? (
+                <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
+              ) : testState === "fail" ? (
+                <X className="h-3 w-3 text-[#B91C1C]" />
+              ) : (
+                <Zap className="h-3 w-3" />
+              )}
+            </CronActionButton>
+          )}
           <CronActionButton label={t("查看")} onClick={onView}>
             <Eye className="h-3 w-3" />
           </CronActionButton>

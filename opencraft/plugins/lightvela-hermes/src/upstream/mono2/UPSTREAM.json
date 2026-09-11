@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "bf1f140ba27b660b21a797e1cb47bf992f91e096",
+  "sourceRevision": "07c16ab2048e624ca1e12514dde92899af983ce2",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -213,7 +213,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "7453f5b8407caea7e51ba1159e2ebb48476be0152a28b377c5a1f26c63beae55"
+      "sourceSha256": "1175d159410605cb2bf6573d70fbfc3a371fdf61ffbeeb4d6a264d3d782694e1"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
