@@ -7,6 +7,7 @@ import { execCommand } from "./hermes-cron-client";
 
 const HERMES_BUNDLED_MANIFEST_MARKER = "__HERMES_BUNDLED_MANIFEST__";
 const HERMES_SKILLS_ROOT_MARKER = "__HERMES_SKILLS_ROOT__";
+const HERMES_NO_BUNDLED_SKILLS_MARKER = "__HERMES_NO_BUNDLED_SKILLS__";
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
 function buildHermesProfileRootCommand(profileId: string): string {
@@ -113,7 +114,11 @@ function parseInstalledSkillsTable(output: string): InstalledHermesSkill[] {
 }
 
 export function buildInstalledSkillsListCommand(profileId: string = DEFAULT_HERMES_AGENT_ID): string {
-  return `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}"; ${buildHermesProfileRootCommand(profileId)}; cd "$HERMES_BASE/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main -p ${shellQuote(toHermesNativeProfileId(profileId))} skills list && { printf '\\n${HERMES_BUNDLED_MANIFEST_MARKER}\\n'; if test -f "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; then cat "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; fi; } && { printf '\\n${HERMES_SKILLS_ROOT_MARKER}\\n'; if test -d "$HERMES_PROFILE_ROOT/skills"; then find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -type f -name SKILL.md -print; fi; }`;
+  return `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}"; ${buildHermesProfileRootCommand(profileId)}; cd "$HERMES_BASE/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main -p ${shellQuote(toHermesNativeProfileId(profileId))} skills list && { printf '\\n${HERMES_BUNDLED_MANIFEST_MARKER}\\n'; if test -f "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; then cat "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; fi; } && { printf '\\n${HERMES_SKILLS_ROOT_MARKER}\\n'; if test -d "$HERMES_PROFILE_ROOT/skills"; then find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -type f -name SKILL.md -print; fi; } && { if test -f "$HERMES_PROFILE_ROOT/.no-bundled-skills"; then printf '\\n${HERMES_NO_BUNDLED_SKILLS_MARKER}\\n'; fi; }`;
+}
+
+export function hasHermesBundledSkillsOptOut(output: string): boolean {
+  return output.includes(HERMES_NO_BUNDLED_SKILLS_MARKER);
 }
 
 export function buildHermesSkillDeleteCommand(slug: string, profileId: string = DEFAULT_HERMES_AGENT_ID): string {

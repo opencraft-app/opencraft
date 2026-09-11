@@ -347,6 +347,32 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     ]);
   });
 
+  it("shows a bundled registry match as system built-in without a delete action", async () => {
+    const dataLayer = makeDataLayer(mode);
+    dataLayer.listInstalled = vi.fn(async () => ({
+      failedSources: [],
+      skills: [{
+        registry: "skillhub" as const,
+        rawId: "architecture-diagram",
+        slug: "architecture-diagram",
+        name: "architecture-diagram",
+        category: "creative",
+        version: "1.0.0",
+        registries: ["skillhub" as const, "hermes" as const],
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
+      }],
+    }));
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode={mode} initialTab="installed" />);
+
+    const row = (await screen.findByText("architecture-diagram", { selector: "span" })).closest("li") as HTMLElement;
+    expect(within(row).getByText("系统预置")).toBeInTheDocument();
+    expect(within(row).queryByText("SkillHub")).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /删除技能/ })).not.toBeInTheDocument();
+  });
+
   it("does not render skill icons or icon links in Installed rows", async () => {
     renderPanel(mode, "installed");
     await screen.findByText("finance-news");

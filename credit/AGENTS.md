@@ -6,7 +6,7 @@
 
 - `credit` 持有积分商品、live 积分包、历史积分包和每日用量真源。
 - 用户通过 `credit` 发起询价、下单、获取支付链接、退款和查询，不提供续费能力。
-- 控制台购买固定使用“下单 -> 获取支付链接”两段式链路；`order-and-pay` 仅供内部联调和自动化测试，不能作为真实用户购买入口。
+- 控制台购买固定使用“下单 -> 获取支付链接”两段式链路；下单成功时签发绑定用户和订单的短期一次性 `auth_code`，供无主站 session 的支付中转页获取链接；`order-and-pay` 仅供内部联调和自动化测试，不能作为真实用户购买入口。
 - `trade` 持有订单、jifei 回调和 qbilling 协议适配；`credit` 不拼计费协议。
 - 积分额度由 `llm_gateway_plan_id` 对应的 LLMGateway plan 决定，底层 plan 使用长期有效期。
 - `credit_package.expired_time` 来自真实资源包周期，资源包到期生命周期由 Credit 自主管理；计费不会在自然到期时回调隔离。
@@ -78,9 +78,14 @@
 - `GET /v1/credit/packages`
 - `POST /v1/credit/packages/{package_id}/refund`
 
-`order-url` 只接受当前鉴权用户通过 `order` 创建的 `credit_package` 订单。Credit 从可信的
-`X-User-Id` 注入订单持有人，并要求 Trade 同时校验 `external_user_id` 和
-`resource_type=credit_package`；归属或资源类型不匹配统一按订单不存在处理。
+`order` 返回 Trade 的 `bigOrderId/dealName` 和 `auth_code`。ticket 由 Credit 自己的 Redis store
+保存，绑定 `user_id + deal_name`，默认 10 分钟过期；消费使用 Lua `GET + DEL` 保证多 Pod 下
+严格一次性。签发失败不回滚已经创建的 Trade 订单，返回空 `auth_code`，登录态链路仍可继续。
+
+`order-url` 支持登录态和 ticket 两种鉴权。可信 `X-User-Id` 存在时优先使用且不消费 ticket；
+没有用户头时必须原子消费 `auth_code`，并校验绑定的 `deal_name`。ticket 无效、过期或重放返回
+401，订单不匹配返回 403。解析出用户后，Credit 要求 Trade 同时校验 `external_user_id` 和
+`resource_type=credit_package`；订单不存在、归属不符或资源类型不匹配统一按 404 处理。
 
 查询结果只返回 `credit_type/credit_total/credit_available/expired_time`。`credit_type` 按 LLMGateway subscription name 判断：`credit-package:` 为 `paid`，`free-credit:` 为 `free`。isolated 或已到期积分包不返回。
 
@@ -188,6 +193,11 @@ SSM `mono-beijing-sandbox-credit-runtime-secrets`，通过
 已经创建在同一 LLMGateway 控制面的五个 plan。
 
 各环境的 `credit-platform.env` 必须提供 `CREDIT_REGION` 和 `CREDIT_OBJECT_ID_PASSWORD_SUFFIX`，并由公共 Kustomize component 注入运行时 `credit-config`；Credit API 启动时会校验这两个资源 ID 生成参数。
+
+Credit API 还需要 `CREDIT_REDIS_ADDR`、`CREDIT_REDIS_PASSWORD`、`CREDIT_REDIS_DB` 和
+`CREDIT_AUTH_CODE_TTL` 初始化一次性支付 ticket store；默认 DB 为 0、TTL 为 10 分钟。Redis
+只属于 API 支付链路，usage/lifecycle worker 不校验也不连接 Redis。Service Gateway 只对
+`POST /v1/credit/packages/order-url` 配置 `optional_auth_allow`，其他 Credit 路由仍要求 session。
 
 ```bash
 cd credit && env GOCACHE=/tmp/codex-go-cache go test ./...

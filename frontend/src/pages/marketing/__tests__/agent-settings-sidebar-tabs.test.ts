@@ -29,8 +29,10 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
     expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
-    expect(page).toContain("{showCreateBotEntry && canCreateAdditionalBot && (");
-    expect(page).toContain("if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;");
+    expect(page).toContain("{showCreateBotEntry && multiBotEnabled && (");
+    expect(page).toContain("content={createLimitMessage}");
+    expect(page).toContain("disabled={!canCreateAdditionalBot}");
+    expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
     expect(page).not.toContain("const canCreateBot = multiBotEnabled");
@@ -130,12 +132,19 @@ describe("agent settings sidebar chat/settings tabs", () => {
       styles.indexOf(".lv-agent-create-button {"),
       styles.indexOf(".lv-agent-create-button:hover"),
     );
+    const disabledCreateButtonStyles = styles.slice(
+      styles.indexOf(".lv-agent-create-button:disabled,"),
+      styles.indexOf(".lv-agents-nav {"),
+    );
     const sidebarTabsStyles = styles.slice(
       styles.indexOf(".lv-agents-sidebar-tabs {"),
       styles.indexOf(".lv-agents-sidebar-tab:hover"),
     );
 
     expect(createButtonStyles).toContain("border-radius: 999px;");
+    expect(disabledCreateButtonStyles).toContain("cursor: not-allowed;");
+    expect(disabledCreateButtonStyles).toContain("color: rgb(0 0 0 / 30%);");
+    expect(disabledCreateButtonStyles).toContain("background: #f7f8fb;");
     expect(sidebarTabsStyles.match(/border-radius: 999px;/g)).toHaveLength(2);
   });
 

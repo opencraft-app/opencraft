@@ -22,4 +22,12 @@ describe("OpenClawProvider local preview backend boundary", () => {
     expect(source).toMatch(/if \(!isInitialInstanceCreation\) \{[\s\S]*repositories\.bots\.updateBotProfile/);
     expect(source).not.toContain("const isInitialBotCreation = bots.length === 0;");
   });
+
+  it("wires Pass resolution state into the Bot quota exposed by the provider", () => {
+    const source = readSource("src/contexts/agent-context.tsx");
+
+    expect(source).toContain("const [hasResolvedPasses, setHasResolvedPasses] = useState(false);");
+    expect(source).toContain("setHasResolvedPasses(true);");
+    expect(source).toContain("maxBots: resolveBotQuotaForPassState(activePass, hasResolvedPasses)");
+  });
 });

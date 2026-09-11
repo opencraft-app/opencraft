@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit
+  namespace: credit
+spec:
+  template:
+    spec:
+      containers:
+        - name: credit
+          env:
+            - name: CREDIT_REDIS_ADDR
+              value: redis.lightvela-playground-sandbox-bj-7.svc.cluster.local:6379
+            - name: CREDIT_REDIS_DB
+              value: "0"
+            - name: CREDIT_AUTH_CODE_TTL
+              value: 10m
+            - name: CREDIT_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: playground-runtime-secrets
+                  key: REDIS_PASSWORD

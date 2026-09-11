@@ -71,6 +71,12 @@ master 源码
   Service Gateway 用户路由，最后才开放真实购买流量。
 - `sandbox-bj-7` 是首个验证环境；北京验证通过后由 `master` 为 `beijing-sandbox` 构建并
   auto-pin Credit。北京使用独立 `credit` 库/用户和 SSM Secret，不沿用 playground 敏感输入。
+- Credit API 的支付票据依赖 Redis：`sandbox-bj-7` 复用命名空间 Redis 和已有 playground Secret，
+  `beijing-sandbox` 从 Credit 自己的 SSM/SOPS runtime Secret 注入密码。发布 API 前必须验证 Redis
+  地址、凭据和连通性；每日用量与生命周期 worker 不依赖该连接。只有 API 与精确的 Service Gateway
+  `optional_auth_allow` 同时收敛后，才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与
+  ticket TTL 属于环境级 API 配置，必须留在各环境的 Deployment patch；不能提升到 Credit shared
+  base/common，否则未接入 Redis 的其他地域也会被共享 replacement 阻断发布。
 - `beijing-sandbox` 的 Pass/default 计费地域保持 `LIGHTVELA_TRADE_REGION=ap-guangzhou`；
   Credit 通过环境 patch 单独设置 `LIGHTVELA_CREDIT_REGION=ap-beijing`。其他环境未声明 Credit
   专用地域时继承 Trade 地域，避免仅引入新配置键就改变存量行为。
