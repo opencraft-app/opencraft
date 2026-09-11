@@ -2,6 +2,34 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ExtensionContributionStore } from "@opencraft/extension-runtime";
+import {
+  buildCodexThemeCssProperties,
+  velaThemePalette,
+} from "@opencraft/design-system/theme-engine";
+
+test("Vela defines a web-native shell material without changing the Codex fallback", () => {
+  const vela = buildCodexThemeCssProperties("light", velaThemePalette.light);
+  const extensionCompatible = buildCodexThemeCssProperties("light", {
+    accent: "#3478f6",
+    contrast: 46,
+    fonts: { code: null, ui: null },
+    ink: "#202124",
+    opaqueWindows: false,
+    semanticColors: {
+      diffAdded: "#18864b",
+      diffRemoved: "#c13a35",
+      skill: "#8457c5",
+    },
+    surface: "#fbfaf7",
+  });
+
+  assert.equal(vela["--codex-sidebar-material-background"], "#ffffff");
+  assert.equal(vela["--codex-sidebar-material-filter"], "none");
+  assert.equal(vela["--codex-window-highlight"], "none");
+  assert.equal(vela["--codex-main-surface-elevation"], "-0.5px 0 0 rgb(0 0 0 / 5%)");
+  assert.match(extensionCompatible["--codex-sidebar-material-background"], /color-mix/u);
+  assert.equal(extensionCompatible["--codex-sidebar-material-filter"], "blur(28px) saturate(145%)");
+});
 
 test("extension theme selection is root-owned and unload falls back atomically", async () => {
   const stored = new Map<string, string>();
@@ -61,8 +89,14 @@ test("extension theme selection is root-owned and unload falls back atomically",
 
   try {
     const appearance = await import("../apps/workbench-web/src/appearance-theme.ts");
+    assert.equal(appearance.defaultAppearanceThemeId("lightvela-web"), appearance.velaThemeId);
+    assert.equal(appearance.defaultAppearanceThemeId("opencraft"), appearance.coreThemeId);
     appearance.initializeAppearanceTheme();
     assert.equal(dataset.themeId, appearance.coreThemeId);
+    assert.deepEqual(
+      appearance.getAppearanceThemeSnapshot().availableThemes.slice(0, 2).map(({ label }) => label),
+      ["Codex", "Vela"],
+    );
     assert.equal(properties.get("--codex-base-surface"), "#ffffff");
     assert.deepEqual(desktopAppearances.at(-1), {
       themeSource: "light",
@@ -75,6 +109,13 @@ test("extension theme selection is root-owned and unload falls back atomically",
       resolvedTheme: "dark",
     });
     appearance.setThemePreference("light");
+
+    appearance.setAppearanceThemeId(appearance.velaThemeId);
+    assert.equal(dataset.themeId, appearance.velaThemeId);
+    assert.equal(properties.get("--codex-sidebar-material-background"), "#ffffff");
+    assert.equal(properties.get("--codex-sidebar-material-filter"), "none");
+    appearance.setAppearanceThemeId(appearance.coreThemeId);
+    assert.equal(properties.get("--codex-sidebar-material-filter"), "blur(28px) saturate(145%)");
 
     const contributions = new ExtensionContributionStore();
     const disconnect = appearance.connectAppearanceThemeContributions(contributions);

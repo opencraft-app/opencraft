@@ -13,6 +13,19 @@ export interface CodexThemeDefinition {
   fonts: { code: string | null; ui: string | null };
   ink: string;
   opaqueWindows: boolean;
+  /**
+   * Application-chrome material is part of a theme, not a Sidecar concern.
+   * Optional values preserve extension-theme compatibility while allowing a
+   * first-party theme to choose between native translucent chrome and a quiet
+   * web canvas without component-level selectors.
+   */
+  shellMaterial?: {
+    mainSurfaceElevation: string;
+    sidebarBackground: string;
+    sidebarFilter: string;
+    windowHighlight: string;
+    windowMaterial: string;
+  };
   semanticColors: {
     diffAdded: string;
     diffRemoved: string;
@@ -23,6 +36,14 @@ export interface CodexThemeDefinition {
 
 export type CodexThemeMode = "light" | "dark";
 export type ThemeCssProperties = Record<`--${string}`, string>;
+
+const clientShellMaterial = Object.freeze({
+  mainSurfaceElevation: "var(--elevation-prominent)",
+  sidebarBackground: "color-mix(in srgb, var(--color-surface-tertiary) 70%, transparent)",
+  sidebarFilter: "blur(28px) saturate(145%)",
+  windowHighlight: "radial-gradient(circle at 12% -8%, color-mix(in srgb, var(--color-surface-tertiary) 72%, transparent), transparent 34%)",
+  windowMaterial: "color-mix(in srgb, var(--color-background-surface-under) 92%, var(--color-text) 8%)",
+});
 
 export const codexThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
   dark: {
@@ -41,6 +62,41 @@ export const codexThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
     ink: "#1a1c1f",
     opaqueWindows: false,
     semanticColors: { diffAdded: "#00a240", diffRemoved: "#ba2623", skill: "#924ff7" },
+    surface: "#ffffff",
+  },
+};
+
+export const velaThemePalette: Record<CodexThemeMode, CodexThemeDefinition> = {
+  dark: {
+    accent: "#7698ff",
+    contrast: 54,
+    fonts: { code: null, ui: null },
+    ink: "#f2f2f2",
+    opaqueWindows: true,
+    shellMaterial: {
+      mainSurfaceElevation: "-0.5px 0 0 rgb(255 255 255 / 7%)",
+      sidebarBackground: "#171717",
+      sidebarFilter: "none",
+      windowHighlight: "none",
+      windowMaterial: "#171717",
+    },
+    semanticColors: { diffAdded: "#40c977", diffRemoved: "#fa625e", skill: "#b693ef" },
+    surface: "#171717",
+  },
+  light: {
+    accent: "#285dff",
+    contrast: 42,
+    fonts: { code: null, ui: null },
+    ink: "#171717",
+    opaqueWindows: true,
+    shellMaterial: {
+      mainSurfaceElevation: "-0.5px 0 0 rgb(0 0 0 / 5%)",
+      sidebarBackground: "#ffffff",
+      sidebarFilter: "none",
+      windowHighlight: "none",
+      windowMaterial: "#ffffff",
+    },
+    semanticColors: { diffAdded: "#07c160", diffRemoved: "#cf3d4c", skill: "#7b61ff" },
     surface: "#ffffff",
   },
 };
@@ -296,12 +352,20 @@ export function buildCodexThemeCssProperties(
   const applicationMenu = interpolateColor(theme.surface, theme.ink, 0.02 + theme.contrast * 0.02);
   const panelBase = mode === "light" ? white : theme.ink;
   const panelOpacity = (mode === "light" ? 0.18 : 0.03) + theme.contrast * (mode === "light" ? 0.008 : 0.03);
+  // Color-only themes belong to the Client family by default. A theme opts
+  // out only when its product surface has a genuinely different host model.
+  const shell = definition.shellMaterial ?? clientShellMaterial;
 
   return {
     "--codex-base-accent": definition.accent,
     "--codex-base-contrast": String(definition.contrast),
     "--codex-base-ink": definition.ink,
     "--codex-base-surface": definition.surface,
+    "--codex-main-surface-elevation": shell.mainSurfaceElevation,
+    "--codex-sidebar-material-background": shell.sidebarBackground,
+    "--codex-sidebar-material-filter": shell.sidebarFilter,
+    "--codex-window-highlight": shell.windowHighlight,
+    "--codex-window-material": shell.windowMaterial,
     "--color-accent-blue": definition.accent,
     "--color-accent-purple": definition.semanticColors.skill,
     "--color-background-accent": semantic.accentBackground,

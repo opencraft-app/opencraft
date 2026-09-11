@@ -135,6 +135,7 @@ import { HostProfileContributionRegistry } from "./host-profile-contributions";
 import { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 import { subscribeHostCatalogReadiness } from "./host-catalog-readiness";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
+import { workbenchProductId } from "../workbench-product";
 import {
   createWorkbenchNavigationTransaction,
   type WorkbenchHistoryMode,
@@ -382,9 +383,6 @@ export function selectedProjectStorageKey(hostId: string): string {
  * Keep the original keys for the generic OpenCraft product; named products get an
  * explicit namespace and intentionally do not migrate legacy state.
  */
-const workbenchBuildEnvironment = import.meta.env as ImportMetaEnv | undefined;
-const WORKBENCH_PRODUCT_ID = workbenchBuildEnvironment?.VITE_OPENCRAFT_PRODUCT_ID?.trim() || "opencraft";
-
 export function productStorageKey(productId: string, key: string): string {
   return productId === "opencraft" ? key : `${productId}:${key}`;
 }
@@ -394,11 +392,11 @@ export function productDatabaseName(productId: string, base: string): string {
 }
 
 function currentProductStorageKey(key: string): string {
-  return productStorageKey(WORKBENCH_PRODUCT_ID, key);
+  return productStorageKey(workbenchProductId, key);
 }
 
 function currentProductDatabaseName(base: string): string {
-  return productDatabaseName(WORKBENCH_PRODUCT_ID, base);
+  return productDatabaseName(workbenchProductId, base);
 }
 
 /**

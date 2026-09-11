@@ -98,6 +98,20 @@
     var(--elevation-stroke),
     0 3px 7.5px rgb(0 0 0 / 3%),
     0 0 16px rgb(0 0 0 / 2%);
+  // Theme-owned shell defaults preserve the native Client-family material.
+  // First-party web themes may replace the complete material contract without
+  // reaching into AppShell or Sidecar component selectors.
+  --codex-window-material: color-mix(
+    in srgb,
+    var(--color-background-surface-under) 92%,
+    var(--color-text) 8%
+  );
+  --codex-window-highlight: radial-gradient(
+    circle at 12% -8%,
+    color-mix(in srgb, var(--color-surface-tertiary) 72%, transparent),
+    transparent 34%
+  );
+  --codex-main-surface-elevation: var(--elevation-prominent);
   // AppShell owns the material; Sidebar content never owns opacity. On the
   // web this emulates the native macOS sidebar material, while Electron lets
   // the BrowserWindow vibrancy surface show through directly.

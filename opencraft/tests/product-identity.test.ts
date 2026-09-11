@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 import { desktopProduct } from "../apps/workbench-electron/src/product-identity.ts";
+import { resolveWorkbenchProductId } from "../apps/workbench-web/src/workbench-product.ts";
 import { botConversationResourceUri, parseBotConversationViewResource } from "../packages/bot-conversation/src/view-resource.ts";
 import { createConversationKey } from "@opencraft/chat-core";
 import { OPENCRAFT_AGENT_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
@@ -41,6 +42,14 @@ test("three hosts agree on branding but retain installed application identity", 
   assert.ok(main.indexOf('app.setPath("userData"') < main.indexOf("app.requestSingleInstanceLock()"));
   assert.ok(main.indexOf("mkdirSync(userDataDirectory") < main.indexOf('app.setPath("userData"'));
   assert.match(main, /getSwitchValue\("user-data-dir"\)/u);
+});
+
+test("web product identity is normalized once for product-owned policies", () => {
+  assert.equal(resolveWorkbenchProductId(undefined), "opencraft");
+  assert.equal(
+    resolveWorkbenchProductId({ VITE_OPENCRAFT_PRODUCT_ID: " lightvela-web " }),
+    "lightvela-web",
+  );
 });
 
 test("rebranding does not change conversation identity or external capability negotiation", () => {

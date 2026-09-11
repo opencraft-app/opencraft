@@ -8,6 +8,7 @@ import {
 import {
   buildCodexThemeCssProperties,
   codexThemePalette,
+  velaThemePalette,
   type CodexThemeDefinition,
 } from "@opencraft/design-system/theme-engine";
 import type {
@@ -16,9 +17,18 @@ import type {
 } from "@opencraft/extension-runtime";
 import { useSyncExternalStore } from "react";
 
+import { workbenchProductId } from "./workbench-product";
+
 const preferenceStorageKey = "vela.appearance-theme";
 const themeIdStorageKey = "vela.appearance-theme-id";
 export const coreThemeId = "vela.core.codex";
+export const velaThemeId = "vela.core.web";
+
+export function defaultAppearanceThemeId(productId: string): string {
+  return productId === "lightvela-web" ? velaThemeId : coreThemeId;
+}
+
+const defaultThemeId = defaultAppearanceThemeId(workbenchProductId);
 
 interface SystemThemeQuery {
   readonly matches: boolean;
@@ -71,6 +81,21 @@ const coreTheme: AppearanceThemeRecord = Object.freeze({
   palettes: codexThemePalette,
 });
 
+const velaTheme: AppearanceThemeRecord = Object.freeze({
+  descriptor: Object.freeze({
+    id: velaThemeId,
+    label: "Vela",
+    description: "LightVela's quiet, web-native canvas.",
+    source: "core",
+  }),
+  palettes: velaThemePalette,
+});
+
+const coreThemes = new Map<string, AppearanceThemeRecord>([
+  [coreThemeId, coreTheme],
+  [velaThemeId, velaTheme],
+]);
+
 let extensionThemes = new Map<string, AppearanceThemeRecord>();
 let contributionRevision = -1;
 let disconnectContributionStore: (() => void) | null = null;
@@ -99,16 +124,24 @@ function readStoredPreference(): ThemePreference {
 function readStoredThemeId(): string {
   const stored = readStorage(themeIdStorageKey)?.trim();
   return stored === undefined || stored === null || stored.length === 0
-    ? coreThemeId
+    ? defaultThemeId
     : stored;
 }
 
 function themeRecords(): readonly AppearanceThemeRecord[] {
-  return [coreTheme, ...extensionThemes.values()];
+  const defaultTheme = coreThemes.get(defaultThemeId) ?? coreTheme;
+  return [
+    defaultTheme,
+    ...[...coreThemes.values()].filter((theme) => theme !== defaultTheme),
+    ...extensionThemes.values(),
+  ];
 }
 
 function resolveThemeRecord(themeId: string): AppearanceThemeRecord {
-  return themeId === coreThemeId ? coreTheme : (extensionThemes.get(themeId) ?? coreTheme);
+  return coreThemes.get(themeId)
+    ?? extensionThemes.get(themeId)
+    ?? coreThemes.get(defaultThemeId)
+    ?? coreTheme;
 }
 
 function createSnapshot(
