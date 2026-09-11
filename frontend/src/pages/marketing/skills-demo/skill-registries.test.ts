@@ -12,6 +12,7 @@ import {
   buildSkillhubInstallCommand,
   buildSkillhubListCommand,
   buildSkillhubUninstallCommand,
+  createSkillsDataLayer,
   createDomesticDataLayer,
   createLiveDataLayer,
   buildSkillsshBatchInstallCommand,
@@ -675,6 +676,58 @@ describe("Hermes native installed skills", () => {
       }),
     );
     expect(commands.filter((command) => command === buildHermesSkillsListCommand())).toHaveLength(2);
+  });
+
+  it("passes the selected profile through the international live data layer", async () => {
+    const profileId = "profile-global";
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const output = command === buildHermesSkillsListCommand(profileId)
+        ? "│ Name │ Category │ Source │ Trust │ Status │\n│ hermes-agent │ autonomous-ai-agents │ builtin │ yes │ enabled │\n__HERMES_NO_BUNDLED_SKILLS__"
+        : JSON.stringify({ success: true, data: { skills: [] } });
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+
+    await expect(
+      createSkillsDataLayer("bot-1", execDebugCommand, "global", "zh", undefined, profileId).listInstalled(),
+    ).resolves.toEqual({ failedSources: [], skills: [] });
+    expect(commands).toContain(buildHermesSkillsListCommand(profileId));
+    expect(commands).not.toContain(buildHermesSkillsListCommand());
+  });
+
+  it("omits the Hermes runtime manual from user-installed skill lists", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      const output = command === buildHermesSkillsListCommand()
+        ? "│ Name │ Category │ Source │ Trust │ Status │\n│ hermes-agent │ autonomous-ai-agents │ builtin │ yes │ enabled │\n__HERMES_NO_BUNDLED_SKILLS__"
+        : command === buildClawhubListCommand()
+          ? JSON.stringify({ success: true, data: { skills: [{ slug: "hermes-agent", displayName: "Hermes Agent" }] } })
+          : command === buildSkillhubListCommand()
+            ? JSON.stringify({ success: true, data: { skills: [{ slug: "hermes-agent", name: "Hermes Agent" }] } })
+            : JSON.stringify({ success: true, data: { skills: [] } });
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual({
+      failedSources: [],
+      skills: [],
+    });
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual({
+      failedSources: [],
+      skills: [],
+    });
+  });
+
+  it("keeps the Hermes runtime manual visible for profiles without the no-skills marker", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      const output = command === buildHermesSkillsListCommand()
+        ? "│ Name │ Category │ Source │ Trust │ Status │\n│ hermes-agent │ autonomous-ai-agents │ builtin │ yes │ enabled │"
+        : JSON.stringify({ success: true, data: { skills: [] } });
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+
+    const result = await createDomesticDataLayer("bot-1", execDebugCommand).listInstalled();
+    expect(result.skills.map((skill) => skill.slug)).toEqual(["hermes-agent"]);
   });
 
   it("marks an ambiguous Hermes row as unavailable when its registry list fails", async () => {
