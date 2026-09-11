@@ -276,6 +276,11 @@ const isNestedBotsUnavailable = (error: unknown) => {
   return error instanceof TypeError && /body.*(unusable|read)/i.test(error.message);
 };
 
+const isNestedBotsTemporarilyUnavailable = (error: unknown) => {
+  return isNestedBotsUnavailable(error)
+    || (error instanceof RepositoryError && error.status === 403 && error.code === "PASS_MODIFYING");
+};
+
 const authStorage = () => {
   if (typeof globalThis === "undefined") {
     return null;
@@ -871,10 +876,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
             return nested.items.map((bot) => projectInstanceBotToBot(instance, bot, drafts[bot.bot_id]));
           }
         } catch (error) {
-          if (!isNestedBotsUnavailable(error)) {
+          if (!isNestedBotsTemporarilyUnavailable(error)) {
             throw error;
           }
-          // A staged backend rollout may not expose nested Bots yet; keep the existing root Bot usable.
+          // Backend rollout and pass upgrades can make profiles briefly unavailable; keep the root Bot visible.
         }
         return [projectInstanceToBot(instance, drafts[instance.instance_id])];
       }))).flat();
