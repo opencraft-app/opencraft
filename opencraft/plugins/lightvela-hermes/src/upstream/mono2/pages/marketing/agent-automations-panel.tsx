@@ -2048,9 +2048,11 @@ function CronJobCard({
           <CronActionButton label={t("查看")} onClick={onView}>
             <Eye className="h-3 w-3" />
           </CronActionButton>
-          <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
-            <Pencil className="h-3 w-3" />
-          </CronActionButton>
+          {!terminal && (
+            <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
+              <Pencil className="h-3 w-3" />
+            </CronActionButton>
+          )}
           {!terminal && (paused ? (
             <CronActionButton label={t("恢复")} onClick={onResume} disabled={busy}>
               <Play className="h-3 w-3" />
