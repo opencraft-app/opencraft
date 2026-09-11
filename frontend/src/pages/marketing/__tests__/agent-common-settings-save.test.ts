@@ -50,6 +50,7 @@ describe("saveHermesCommonSetting", () => {
     const result = await saveHermesCommonSetting({
       bots: { execDebugCommand } as Pick<BotRepository, "execDebugCommand"> as BotRepository,
       botId: "bot-a",
+      profileId: "profile-2",
       key: "approvalMode",
       value: "smart",
       getGatewayRestartCommand,
@@ -59,10 +60,13 @@ describe("saveHermesCommonSetting", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config set approvals.mode smart",
+      "hermes -p 'profile-2' config set approvals.mode smart",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    expect(execDebugCommand.mock.calls[1]?.[1]).toContain(
+      'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'profile-2\'',
+    );
     expect(getGatewayRestartCommand).not.toHaveBeenCalled();
   });
 
@@ -95,7 +99,7 @@ describe("saveHermesCommonSetting", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config set approvals.destructive_slash_confirm true",
+      "hermes -p 'default' config set approvals.destructive_slash_confirm true",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenCalledTimes(2);
@@ -121,7 +125,7 @@ describe("saveHermesCommonSetting", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config set compression.threshold 0.65",
+      "hermes -p 'default' config set compression.threshold 0.65",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenNthCalledWith(

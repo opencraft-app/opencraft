@@ -5560,6 +5560,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "settings" && (
                             <AgentCommonSettingsPanel
                               botId={activeBot.id}
+                              profileId={activeBot.profileId}
                               botStatus={activeBot.status}
                               bots={repositories.bots}
                               getGatewayRestartCommand={async () => {

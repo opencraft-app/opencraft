@@ -115,6 +115,7 @@ describe("AgentCommonSettingsPanel", () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
+        profileId="profile-2"
         botStatus="running"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
@@ -124,6 +125,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const refreshButton = await screen.findByRole("button", { name: "刷新" });
+    expect(loadSettings).toHaveBeenNthCalledWith(1, bots, "bot-a", "profile-2");
     expect(refreshButton).toHaveAttribute("title", "刷新");
     expect(refreshButton).toHaveClass("h-8", "w-8", "shrink-0", "text-black/35", "hover:text-black/80");
     expect(within(refreshButton).queryByText("刷新")).toBeNull();
@@ -147,6 +149,7 @@ describe("AgentCommonSettingsPanel", () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
+        profileId="profile-2"
         botStatus="running"
         bots={bots}
         getGatewayRestartCommand={async () => "restart"}
@@ -174,6 +177,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     await waitFor(() => expect(saveSetting).toHaveBeenCalledWith(expect.objectContaining({
       botId: "bot-a",
+      profileId: "profile-2",
       key: "persistentMemory",
       value: false,
     })));
@@ -1283,7 +1287,7 @@ describe("AgentCommonSettingsPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(loadSettings).toHaveBeenCalledWith(bots, "bot-b"));
+    await waitFor(() => expect(loadSettings).toHaveBeenCalledWith(bots, "bot-b", "main"));
     expect(await screen.findByRole("switch", { name: "用户画像" })).toBeEnabled();
     expect(screen.queryByText("保存中…")).toBeNull();
   });

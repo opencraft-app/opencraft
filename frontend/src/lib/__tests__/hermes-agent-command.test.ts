@@ -25,6 +25,8 @@ describe("Hermes agent command routing", () => {
   it("quotes backend-provided profile identifiers", () => {
     expect(withHermesAgent("acli provider list", "team's-bot"))
       .toBe("acli provider list --agent 'team'\\''s-bot'");
+    expect(withHermesProfile("config get approvals.mode", "team's-bot"))
+      .toBe("hermes -p 'team'\\''s-bot' config get approvals.mode");
   });
 
   it("keeps an explicit capability fallback for partially rolled out commands", () => {

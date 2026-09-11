@@ -362,7 +362,7 @@ for (const file of publicAssets) {
 
 const manifestPath = join(targetRoot, "UPSTREAM.json");
 let sourceRevision;
-if (existsSync(join(sourceRepositoryRoot, ".git"))) {
+try {
   sourceRevision = execFileSync(
     "git",
     [
@@ -376,11 +376,14 @@ if (existsSync(join(sourceRepositoryRoot, ".git"))) {
       "frontend/public/tat-hermes-web-proxy-sw.js",
       "frontend/public/assets/skills",
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   ).trim();
-} else if (checkOnly && existsSync(manifestPath)) {
-  const existingManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  sourceRevision = existingManifest.sourceRevision;
+} catch (error) {
+  if (!checkOnly || !existsSync(manifestPath)) throw error;
+  const recordedManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  sourceRevision = typeof recordedManifest.sourceRevision === "string"
+    ? recordedManifest.sourceRevision.trim()
+    : "";
 }
 
 if (!sourceRevision) {

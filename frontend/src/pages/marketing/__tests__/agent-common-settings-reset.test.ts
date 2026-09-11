@@ -61,6 +61,7 @@ describe("resetHermesCommonSettingsGroup", () => {
     const result = await resetHermesCommonSettingsGroup({
       bots: botsWith(execDebugCommand),
       botId: "bot-a",
+      profileId: "profile-2",
       group: "security",
       snapshot: snapshot([], [], {
         approvalMode: "smart",
@@ -76,13 +77,13 @@ describe("resetHermesCommonSettingsGroup", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config set approvals.mode off",
+      "hermes -p 'profile-2' config set approvals.mode off",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       2,
       "bot-a",
-      "hermes config set approvals.destructive_slash_confirm false",
+      "hermes -p 'profile-2' config set approvals.destructive_slash_confirm false",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenCalledTimes(3);
@@ -106,7 +107,7 @@ describe("resetHermesCommonSettingsGroup", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config set approvals.destructive_slash_confirm false",
+      "hermes -p 'default' config set approvals.destructive_slash_confirm false",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenCalledTimes(2);
@@ -157,13 +158,13 @@ describe("resetHermesCommonSettingsGroup", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config unset memory.memory_enabled",
+      "hermes -p 'default' config unset memory.memory_enabled",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       2,
       "bot-a",
-      "hermes config unset memory.user_profile_enabled",
+      "hermes -p 'default' config unset memory.user_profile_enabled",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenNthCalledWith(
@@ -174,7 +175,7 @@ describe("resetHermesCommonSettingsGroup", () => {
     );
     const unsetCommands = execDebugCommand.mock.calls
       .map(([, command]) => String(command))
-      .filter((command) => command.startsWith("hermes config unset"));
+      .filter((command) => command.includes(" config unset "));
     expect(unsetCommands.some((command) => command.includes("compression."))).toBe(false);
     expect(execDebugCommand).toHaveBeenCalledTimes(4);
   });
@@ -198,11 +199,11 @@ describe("resetHermesCommonSettingsGroup", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config unset memory.memory_enabled",
+      "hermes -p 'default' config unset memory.memory_enabled",
       { timeoutMs: HERMES_COMMON_SETTINGS_TIMEOUT_MS },
     );
     expect(execDebugCommand.mock.calls.some(([, command]) => (
-      String(command) === "hermes config unset memory.user_profile_enabled"
+      String(command) === "hermes -p 'default' config unset memory.user_profile_enabled"
     ))).toBe(false);
     expect(getGatewayRestartCommand).toHaveBeenCalledTimes(1);
     expect(execDebugCommand).toHaveBeenCalledTimes(3);
@@ -233,14 +234,14 @@ describe("resetHermesCommonSettingsGroup", () => {
 
     expect(result).toMatchObject({ status: "success" });
     expect(execDebugCommand.mock.calls.slice(0, 4).map(([, command]) => command)).toEqual([
-      "hermes config unset compression.enabled",
-      "hermes config unset compression.threshold",
-      "hermes config unset compression.target_ratio",
-      "hermes config unset compression.protect_last_n",
+      "hermes -p 'default' config unset compression.enabled",
+      "hermes -p 'default' config unset compression.threshold",
+      "hermes -p 'default' config unset compression.target_ratio",
+      "hermes -p 'default' config unset compression.protect_last_n",
     ]);
     const unsetCommands = execDebugCommand.mock.calls
       .map(([, command]) => String(command))
-      .filter((command) => command.startsWith("hermes config unset"));
+      .filter((command) => command.includes(" config unset "));
     expect(unsetCommands.some((command) => command.includes("memory."))).toBe(false);
     expect(execDebugCommand).toHaveBeenCalledTimes(6);
   });
