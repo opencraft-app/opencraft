@@ -35,6 +35,7 @@ const EMPTY_ACCOUNT_SNAPSHOT: PlatformAccountSnapshot = Object.freeze({
   planLabel: null,
   usageRemainingPercent: null,
   error: null,
+  applicationIntervention: null,
 });
 const subscribeEmptyAccount = (): (() => void) => () => undefined;
 const readEmptyAccount = (): PlatformAccountSnapshot => EMPTY_ACCOUNT_SNAPSHOT;

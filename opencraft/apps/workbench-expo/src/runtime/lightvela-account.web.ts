@@ -8,7 +8,9 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       const value = account.getSnapshot();
       return {
         revision: value.revision,
+        region: value.region,
         phase: value.phase,
+        botCount: value.bots.length,
         activeBotId: value.activeBotId,
         botName: value.bots.find(bot => bot.instanceId === value.activeBotId)?.name ?? null,
         error: value.error,

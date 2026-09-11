@@ -9,6 +9,25 @@ import WebSocket, { WebSocketServer } from "ws";
 import { publishWorkbenchWeb } from "../scripts/publish-workbench-web.mjs";
 import { createWorkbenchWebServer } from "../scripts/serve-workbench-web.mjs";
 
+test("browser release builds use Rolldown minification without a second obfuscation pass", async () => {
+  const packageSource = await readFile(new URL("../package.json", import.meta.url), "utf8");
+  const packageManifest = JSON.parse(packageSource);
+  const viteSource = await readFile(
+    new URL("../apps/workbench-web/vite.config.ts", import.meta.url),
+    "utf8",
+  );
+
+  for (const scriptName of ["build:web:release", "build:lightvela-web:release", "build:electron:release"]) {
+    const script = packageManifest.scripts[scriptName];
+    assert.match(script, /OPENCRAFT_RELEASE_MINIFY=ultra/u);
+    assert.doesNotMatch(script, /obfuscate-web-release|obfuscate-electron-host\.mjs browser/u);
+  }
+  assert.match(viteSource, /minify:\s*"oxc"/u);
+  assert.match(viteSource, /maxIterations:\s*10/u);
+  assert.match(viteSource, /toplevel:\s*true/u);
+  assert.doesNotMatch(viteSource, /OPENCRAFT_RELEASE_OBFUSCATION|releaseObfuscation/u);
+});
+
 async function createFixture(root, buildId, assetName, assetSource) {
   await mkdir(join(root, "assets"), { recursive: true });
   await mkdir(join(root, ".vite"), { recursive: true });

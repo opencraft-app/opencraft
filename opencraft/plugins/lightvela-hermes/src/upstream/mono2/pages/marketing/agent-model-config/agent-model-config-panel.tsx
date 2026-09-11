@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
+import { OptionGroup } from "../../../components/ui/option-group";
 import {
   Select,
   SelectContent,
@@ -84,12 +85,12 @@ const CUSTOM_CREDENTIAL_SCOPE = "custom-draft";
 const CUSTOM_MODEL_SUGGESTION_LIST_ID = "custom-model-suggestions";
 
 const MODEL_FIELD_CLASS = "grid gap-y-2";
-const MODEL_CONTROL_CLASS = "h-12 rounded-md border-black/10 bg-white shadow-none outline-none transition-colors focus:border-[#2F6BFF] focus:outline-none focus:ring-0 focus-visible:border-[#2F6BFF] focus-visible:outline-none focus-visible:ring-0";
+const MODEL_CONTROL_CLASS = "lv-model-control h-12";
 const MODEL_COMPOUND_CONTROL_BASE_CLASS = "min-w-0 overflow-hidden rounded-md border border-black/10 bg-white shadow-none transition-colors focus-within:border-[#2F6BFF]";
 const MODEL_COMPOUND_FIELD_BASE_CLASS = "min-w-0 rounded-none border-0 bg-transparent shadow-none outline-none focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0";
 const MODEL_COMPOUND_ACTION_BASE_CLASS = "shrink-0 whitespace-nowrap rounded-none border-0 bg-white px-3 shadow-none hover:translate-y-0 hover:border-black/10 hover:bg-black/[0.025] focus-visible:ring-inset";
-const MODEL_SELECT_CONTENT_CLASS = "max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md";
-const MODEL_RADIO_CLASS = "shrink-0 appearance-none rounded-full border border-black/20 bg-white checked:border-[#2F6BFF] checked:bg-[#2F6BFF] checked:shadow-[inset_0_0_0_3px_white] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F6BFF]/30 focus-visible:ring-offset-2";
+const MODEL_SELECT_CONTENT_CLASS = "lv-model-select-content max-h-80 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]";
+const MODEL_RADIO_CLASS = "lv-radio shrink-0";
 const MODEL_SELECT_CONTENT_STYLE = {
   width: "var(--radix-select-trigger-width)",
   minWidth: "var(--radix-select-trigger-width)",
@@ -1079,53 +1080,35 @@ export function AgentModelConfigPanel({
             </div>
           </div>
 
-          <fieldset>
-            <legend className="text-sm font-medium text-black/70">{t("选择用途")}</legend>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              {([
-                { value: "primary", label: "设为主模型" },
-                { value: "fallback", label: "设为备用模型" },
-                { value: "idle", label: "仅添加" },
-              ] satisfies Array<{ value: ConfigurePurpose; label: string }>).map((item) => {
-                const disabled = busy || (selectedModelIsPrimary && item.value !== "primary");
-                const active = purpose === item.value;
-                return (
-                  <label
-                    key={item.value}
-                    className={cn(
-                      "flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
-                      active ? "border-black/70 bg-black/[0.035] text-black/85" : "border-black/[0.08] text-black/60",
-                      disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:border-black/20",
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name="model-purpose"
-                      className={cn(MODEL_RADIO_CLASS, "size-3.5")}
-                      value={item.value}
-                      checked={active}
-                      disabled={disabled}
-                      aria-describedby={selectedModelIsPrimary
-                        ? item.value === "fallback"
-                          ? "fallback-purpose-help"
-                          : item.value === "idle"
-                            ? "primary-idle-purpose-help"
-                            : undefined
-                        : undefined}
-                      onChange={() => setPurpose(item.value)}
-                    />
-                    {item.value === "primary"
-                      ? t("设为主模型")
-                      : item.value === "fallback"
-                        ? t("设为备用模型")
-                        : t("仅添加")}
-                  </label>
-                );
-              })}
-            </div>
-            {selectedModelIsPrimary ? (
+          <OptionGroup<ConfigurePurpose>
+            label={t("选择用途")}
+            name="model-purpose"
+            value={purpose}
+            onValueChange={setPurpose}
+            optionsClassName="sm:grid-cols-3"
+            options={([
+              { value: "primary", label: t("设为主模型"), disabled: busy },
+              {
+                value: "fallback",
+                label: t("设为备用模型"),
+                disabled: busy || selectedModelIsPrimary,
+                describedBy: selectedModelIsPrimary ? "fallback-purpose-help" : undefined,
+              },
+              {
+                value: "idle",
+                label: t("仅添加"),
+                disabled: busy || selectedModelIsPrimary,
+                describedBy: selectedModelIsPrimary ? "primary-idle-purpose-help" : undefined,
+              },
+            ] satisfies Array<{
+              value: ConfigurePurpose;
+              label: string;
+              disabled: boolean;
+              describedBy?: string;
+            }>)}
+            help={selectedModelIsPrimary ? (
               <>
-                <p id="fallback-purpose-help" className="text-xs text-black/45">
+                <p id="fallback-purpose-help" className="lv-option-group__help">
                   {t("主模型不能同时设为备用模型。")}
                 </p>
                 <p id="primary-idle-purpose-help" className="sr-only">
@@ -1133,7 +1116,7 @@ export function AgentModelConfigPanel({
                 </p>
               </>
             ) : null}
-          </fieldset>
+          />
 
           {controller.operationError && ["connectivity-probe", "add"].includes(controller.operationErrorOperation ?? "") ? (
             <div aria-live="polite">

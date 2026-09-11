@@ -5691,7 +5691,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
         align="start"
         role="dialog"
         aria-label={t("执行时间")}
-        className="w-[342px] max-w-[calc(100vw-32px)] p-3"
+        className="z-[210] w-[342px] max-w-[calc(100vw-32px)] p-3"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           selectedDayRef.current?.focus();

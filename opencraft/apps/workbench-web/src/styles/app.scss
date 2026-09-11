@@ -1531,7 +1531,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   background: var(--color-border-subtle);
 }
 
-.account-center-dialog {
+.modal-surface.account-center-dialog {
   width: min(920px, calc(100vw - 48px));
   height: min(820px, calc(100vh - 64px));
 }
@@ -1684,7 +1684,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 .account-center__credits a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 720px) {
-  .account-center-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  .modal-surface.account-center-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
   .account-center { padding: 28px 16px 36px; }
   .account-center__header { padding-right: 36px; }
   .account-center__profile-card { grid-template-columns: 54px minmax(0, 1fr); padding: 18px; }
@@ -2108,17 +2108,6 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   background: var(--color-border-subtle);
 }
 
-.workspace-picker-backdrop {
-  position: fixed;
-  z-index: 240;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(15 18 22 / 18%);
-  backdrop-filter: blur(3px);
-}
-
 .workbench-route-stage,
 .workbench-conversation-route,
 .settings-page {
@@ -2209,6 +2198,23 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
     font: inherit;
     font-size: 13px;
     cursor: pointer;
+  }
+}
+
+.lightvela-bot-creation-guide {
+  h1 {
+    margin-top: 16px;
+  }
+
+  .hostless-empty-view__actions {
+    justify-content: center;
+  }
+
+  .lightvela-bot-creation-guide__primary {
+    height: 44px;
+    border-radius: 999px;
+    padding-inline: 24px;
+    font-size: 15px;
   }
 }
 
@@ -3503,7 +3509,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   }
 }
 
-.workspace-picker-dialog {
+.modal-surface.workspace-picker-dialog {
   display: flex;
   width: min(560px, calc(100vw - 32px));
   max-height: min(620px, calc(100vh - 48px));
@@ -6180,22 +6186,15 @@ html[data-codex-window-type="electron"] .thread-scroll {
 .thread-generated-image-edit:hover {
   background: rgba(0, 0, 0, 0.6);
 }
-.thread-generated-image-lightbox {
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 40px;
-  background: rgba(10, 12, 16, 0.72);
-  backdrop-filter: blur(12px);
-}
-.thread-generated-image-lightbox__dialog {
-  position: relative;
+.modal-surface.thread-generated-image-lightbox__dialog {
   display: grid;
   max-width: min(92vw, 1280px);
   max-height: 90vh;
   place-items: center;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .thread-generated-image-lightbox__dialog > img {
   display: block;
@@ -6207,10 +6206,16 @@ html[data-codex-window-type="electron"] .thread-scroll {
 .thread-generated-image-lightbox__toolbar {
   position: absolute;
   z-index: 1;
-  inset-inline-end: 8px;
+  inset-inline-end: 50px;
   top: 8px;
   display: flex;
   gap: 6px;
+}
+.thread-generated-image-lightbox__dialog > .modal-surface__close {
+  top: 8px;
+  right: 8px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.48);
 }
 .thread-generated-image-lightbox__toolbar button,
 .thread-generated-image-lightbox__toolbar a {
@@ -8003,7 +8008,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
-.thread-tool-raw-dialog {
+.modal-surface.thread-tool-raw-dialog {
   width: min(640px, calc(100vw - 32px));
   max-height: min(680px, calc(100vh - 32px));
   overflow: hidden;
@@ -8014,17 +8019,6 @@ html[data-codex-window-type="electron"] .thread-scroll {
     0 20px 55px color-mix(in srgb, #000 20%, transparent),
     0 2px 8px color-mix(in srgb, #000 8%, transparent);
   color: var(--color-text);
-
-  &__backdrop {
-    position: fixed;
-    z-index: 1000;
-    inset: 0;
-    display: grid;
-    padding: 16px;
-    place-items: center;
-    background: color-mix(in srgb, #000 24%, transparent);
-    backdrop-filter: blur(2px);
-  }
 
   > header {
     display: flex;
@@ -8041,34 +8035,6 @@ html[data-codex-window-type="electron"] .thread-scroll {
       font-size: 13px;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-    > div {
-      display: flex;
-      align-items: center;
-      gap: 2px;
-    }
-  }
-
-  &__close {
-    position: static;
-    display: grid;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: 7px;
-    place-items: center;
-    background: transparent;
-    color: var(--color-icon-secondary);
-    opacity: 1;
-
-    &:hover {
-      background: var(--color-background-button-tertiary-hover);
-      color: var(--color-icon-primary);
-    }
-    &:focus-visible {
-      outline: 2px solid var(--color-focus-ring);
-      outline-offset: 0;
     }
   }
 

@@ -39,4 +39,4 @@ related_packs: ["agent-gateway-runtime", "identity-access", "site-environment-ro
 
 ## 验证
 
-运行 `bash opencraft/checks/guard.sh`；聚焦变更可以先跑相邻测试，但跨包或共享前端变更必须运行完整 `npm run gate`。
+在 `opencraft/` 运行 `npm run gate`；聚焦变更可以先跑相邻测试，但跨包或共享前端变更必须运行完整门禁。OpenCraft 不再注册 mono2 MR 占位检查或专用 CI 流水线。
