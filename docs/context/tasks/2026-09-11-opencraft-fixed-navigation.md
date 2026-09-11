@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-11
 review_due: 2026-10-11
-revision: 1.7.0
+revision: 1.8.0
 precedence: task
 derived: false
 ---
@@ -121,6 +121,7 @@ derived: false
 - Application Primary Pane 的默认两档收窄约 30%：compact `52px`、expanded `182px`、expanded minimum `168px`。Context Pane 保持原宽；Footer 拆为独立最小 `260px` 几何，不能因 Primary 收窄而截断账户，也不能消费 held-pointer preview。旧版裸数宽度偏好升级为 v3 key，避免历史 `260px` 默认值覆盖新默认。
 
 ## evidence
+- 本轮单 Sidecar/双 Pane、三态 Primary 交互、窄 Application/Footer 几何与 Announcement data-image 契约已形成实现提交 `791f25855`（`feat(opencraft): model responsive sidecar navigation`）；提交不包含部署凭据。
 - Announcement Lab 线上异常已按平台契约修复并发布到 EdgeOne Pages 生产项目 `vela-cn`：部署 `dpi1y155gofn`，buildId `20260911080246-2bbab71fea53`。2.9KB SVG 保持 Vite 自然内联；运行时接受受限 `data:image/*`，拒绝非图片 data URL。正式域名返回同一 buildId，包含修复逻辑的 runtime chunk 及 HTML/JSON/入口/6 个 CSS 共 10 项 SHA-256 与本地 release 产物一致；真实 Chromium 已在正式域名打开 Laboratory、点击 Preview announcement，确认 dialog 与 data-image 正常呈现且无 page error。
 - 当前工作分支已安全暂存本地改动后 fast-forward 合并 `origin/master` 至 `b4842ce2c`，随后完整恢复本地 Sidecar 工作；`app.scss` 冲突按结构同时保留 master 新增的共享 button 样式入口与本任务 shell-navigation 样式入口，Context catalog 由源任务包重新生成，不以冲突标记或单边覆盖收尾。
 - 合并 master 后的 52/182px Application 默认宽度与独立 Footer 几何已发布到 EdgeOne Pages 生产项目 `vela-cn`：部署 `dp6wdka39vqg`，buildId `20260911075137-926661c84882`。正式域名 `chat.lightvela.com` 已返回同一 buildId；`index.html`、`version.json`、入口 `assets/a-03scuAA5.js` 与 manifest 汇总的 6 个 CSS 资源共 9 项 SHA-256 均与本地 LightVela Web release 产物一致。
@@ -179,10 +180,10 @@ derived: false
 追加调宽任务路由无匹配 Pack；有界检查 resize handle、共享 projection 及测试邻居。按 deobfuscate-javascript 技能只读检查本地 Codex bundle 的 rhn 账户按钮：透明 sidebar-item、xs 头像与行高；source map 缺失，未修改或重新还原参考代码。
 
 ## handoff
-当前工作分支已合并 `origin/master@b4842ce2c`；Primary 交互层、同源 Motion 内容编舞、窄 Application/Footer 几何及 Announcement data-image 契约均已发布到 EO 生产项目 `vela-cn`，正式域名版本和包含修复 runtime chunk 的 10 项产物哈希已核验。本地改动尚未提交或推送。定制字体仍待资源确认，部署凭据未写入仓库。
+当前工作分支已合并 `origin/master@b4842ce2c`，本轮实现提交为 `791f25855`。Primary 交互层、同源 Motion 内容编舞、窄 Application/Footer 几何及 Announcement data-image 契约均已发布到 EO 生产项目 `vela-cn`，正式域名版本和包含修复 runtime chunk 的 10 项产物哈希已核验。定制字体仍待资源确认，部署凭据未写入仓库。
 
 ## checkpoint
-- stage：已合并 `origin/master@b4842ce2c`，发布窄 Application/Footer 几何，并修复合入后暴露的 Announcement 内联图片契约错误；本地改动尚未提交或推送。定制字体尚未接入。
+- stage：已合并 `origin/master@b4842ce2c`，实现提交为 `791f25855`；窄 Application/Footer 几何与 Announcement 内联图片契约修复均已发布。定制字体尚未接入。
 - verified：Announcement 修复后完整 `npm run gate`、Extension 116 项测试、LightVela release 构建及产品边界检查通过。EO 部署 `dpi1y155gofn`，buildId `20260911080246-2bbab71fea53`；正式域名含 runtime chunk 的 10 项关键产物已逐字节核验。
 - unverified：Expo 原生视觉未接入；Context 全仓仍有其他历史 Task Pack 元数据和 5 条既有凭据扫描问题，输出未涉及本任务文件。
 - discard：全窗底栏、按钮必须在侧栏关闭后仍可见、所有应用必有会话栏。

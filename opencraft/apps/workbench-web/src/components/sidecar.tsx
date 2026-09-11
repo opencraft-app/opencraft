@@ -28,7 +28,6 @@ export function Sidecar({
     </motion.aside>
   );
 }
-
 /**
  * A Sidecar pane has two intentionally different geometries: Frame contributes
  * live width to layout; Viewport remains stable inside a dedicated Clip.
@@ -83,4 +82,3 @@ export function SidecarPane({
     </motion.section>
   );
 }
-
