@@ -27,7 +27,9 @@ import { InternalDeveloperModeGate } from "./internal-developer-mode-gate";
 import {
   ManagementSettingsContent,
   ModalHost,
+  showAnnouncementLab,
   type ModalRequest,
+  useAnnouncementModalRequests,
 } from "./modal";
 import {
   AppShellHeader,
@@ -329,6 +331,9 @@ export function HostlessWorkbench({
         onRemove={supervisor.removeHost}
         onThemeChange={setAppearanceThemeId}
         onThemePreferenceChange={setThemePreference}
+        onOpenAnnouncementLab={() => {
+          void showAnnouncementLab(supervisor.extensions.announcements);
+        }}
         platformViewRenderers={supervisor.platformViewRenderers}
         profiles={profileSnapshot.profiles}
         themeId={appearance.themeId}
@@ -338,6 +343,7 @@ export function HostlessWorkbench({
     </Suspense>
   ) : null;
   const modalRequests: ModalRequest[] = [];
+  const announcementModalRequests = useAnnouncementModalRequests(supervisor.extensions.announcements);
   if (managementSettingsOpen) {
     modalRequests.push({
       id: "management-settings",
@@ -367,6 +373,7 @@ export function HostlessWorkbench({
       onDismiss: () => setAccountOpen(false),
     });
   }
+  modalRequests.push(...announcementModalRequests);
 
   return (
     <QueryClientProvider client={supervisor.queryClient}>

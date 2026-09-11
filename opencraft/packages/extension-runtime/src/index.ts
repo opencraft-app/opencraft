@@ -1,3 +1,4 @@
+export * from "./announcement-center";
 export * from "./contribution-store";
 export * from "./installation-repository";
 export * from "./manager";

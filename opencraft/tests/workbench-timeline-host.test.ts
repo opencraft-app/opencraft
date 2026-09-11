@@ -61,6 +61,20 @@ const modalHostSource = readFileSync(
   ),
   "utf8",
 );
+const announcementDialogSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/modal/announcement-dialog.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const announcementProjectionSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/modal/announcement-modal-projection.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const nativeModalSurfaceSource = readFileSync(
   new URL(
     "../apps/workbench-expo/src/components/ui/modal-surface.tsx",
@@ -388,6 +402,13 @@ test("application Settings owns route slots while target management owns a modal
   assert.doesNotMatch(managementSettingsContentSource, /ModalSurface|Dialog\./u);
   assert.match(modalHostSource, /resolveModalStack\(requests\)/u);
   assert.match(modalHostSource, /<ModalSurface/u);
+  assert.match(settingsPageSource, /section === "laboratory"/u);
+  assert.match(settingsPageSource, /onOpenAnnouncementLab/u);
+  assert.match(announcementProjectionSource, /useSyncExternalStore/u);
+  assert.match(announcementProjectionSource, /<AnnouncementDialogContent/u);
+  assert.doesNotMatch(announcementDialogSource, /from "@radix-ui|<ModalSurface|createPortal|zIndex/u);
+  assert.match(announcementDialogSource, /import \{ Button \} from "\.\.\/ui\/button"/u);
+  assert.match(workbenchApp, /modalRequests\.push\(\.\.\.announcementModalRequests\)/u);
   assert.match(
     workbenchStyles,
     /\.workbench-conversation-route\[hidden\]\s*\{\s*display:\s*none;/u,

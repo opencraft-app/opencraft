@@ -2,6 +2,7 @@ import { Context, type Fiber } from "@deepseek-ai/cordis";
 import {
   parseExtensionManifestV1,
   type BotContribution,
+  type AnnouncementContribution,
   type CommandContribution,
   type CommandHandler,
   type ExtensionActivationIdentity,
@@ -18,6 +19,8 @@ import {
   type ViewContribution,
   type WorkbenchSurfaceContribution,
 } from "@opencraft/extension-contract";
+
+import { AnnouncementCenter } from "./announcement-center";
 
 import {
   ExtensionContributionStore,
@@ -176,6 +179,7 @@ class ActivationTransaction {
   constructor(
     private readonly token: ActivationToken,
     private readonly contributions: ExtensionContributionStore,
+    private readonly announcements: AnnouncementCenter,
     private readonly adapters: Readonly<Record<string, InternalContributionAdapter>>,
   ) {
     this.api = Object.freeze({
@@ -210,6 +214,12 @@ class ActivationTransaction {
       }),
       bots: Object.freeze({
         register: (contribution: BotContribution) => this.stagePublic("bot", contribution),
+      }),
+      window: Object.freeze({
+        showAnnouncement: (contribution: AnnouncementContribution) => {
+          this.assertActive();
+          return this.announcements.show(this.token.identity, contribution);
+        },
       }),
       subscriptions: Object.freeze({
         add: (disposable: ExtensionDisposable) => this.stageSubscription(disposable),
@@ -308,6 +318,9 @@ class ActivationTransaction {
         failures.push(error);
       }
     }
+    // Imperative windows must be retired before draining command handlers: a
+    // handler may be awaiting the user's announcement result.
+    this.announcements.dismissOwner(this.token.identity);
     if (this.invocations > 0) {
       this.invocationDrain ??= new Promise<void>((resolve) => {
         this.resolveInvocationDrain = resolve;
@@ -411,10 +424,15 @@ class ActivationTransaction {
   private assertActivating(): void {
     if (this.token.phase !== "activating") throw new ExtensionActivationStaleError(this.token.identity);
   }
+
+  private assertActive(): void {
+    if (this.token.phase !== "active") throw new ExtensionActivationStaleError(this.token.identity);
+  }
 }
 
 export class ExtensionSupervisor {
   readonly contributions = new ExtensionContributionStore();
+  readonly announcements = new AnnouncementCenter();
   readonly context: Context;
 
   private readonly platform: ExtensionPlatform;
@@ -467,7 +485,7 @@ export class ExtensionSupervisor {
         generation,
       });
       const token: ActivationToken = { phase: "activating", identity };
-      const transaction = new ActivationTransaction(token, this.contributions, this.adapters);
+      const transaction = new ActivationTransaction(token, this.contributions, this.announcements, this.adapters);
       this.setDescriptor(manifest, identity, "activating");
 
       const activationPlugin = {
@@ -556,6 +574,7 @@ export class ExtensionSupervisor {
       }
     }
     this.closed = true;
+    this.announcements.close();
     this.contributions.close();
     this.listeners.clear();
     if (failures.length > 0) throw new AggregateError(failures, "Failed to dispose Extension supervisor");

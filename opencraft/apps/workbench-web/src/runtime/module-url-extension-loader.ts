@@ -63,6 +63,7 @@ export class BrowserModuleUrlExtensionLoader implements ExtensionModuleLoader {
           workbench: api.workbench,
           themes: api.themes,
           bots: api.bots,
+          window: api.window,
         });
         return external.activate(publicApi) as ReturnType<TrustedExtensionDefinition["activate"]>;
       },

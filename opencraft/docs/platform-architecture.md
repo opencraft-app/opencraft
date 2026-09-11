@@ -172,6 +172,13 @@ only decorator; it can wrap any physical transport and produces Replay input.
   interaction. Expo adapts it through React Native `Modal` today and may map a
   fullscreen presentation to a navigation Stack later. Features must not own a
   scrim, focus loop, Escape listener, Portal or numeric modal `z-index`.
+- Announcement windows are a content specialization of that modal contract,
+  not another window manager. Trusted JavaScript calls
+  `api.window.showAnnouncement()` with a serializable descriptor and awaits a
+  data result; `AnnouncementCenter` owns request/extension lifetime, while the
+  renderer supplies the themed content recipe through the existing modal Host.
+  Campaign eligibility, impression persistence and automatic scheduling stay
+  in a separate orchestration layer, matching Codex's announcement model.
 - Timeline windowing, restore anchors and latest-Turn follow policy: shared
   algorithms. DOM `ResizeObserver`/scrollTop and RN `onLayout`/contentOffset are
   thin platform adapters; neither platform may introduce another virtualizer

@@ -218,6 +218,77 @@ test("one activation atomically publishes declarations and presentation surfaces
   await supervisor.dispose();
 });
 
+test("trusted JavaScript can request a Host-owned announcement and await a data result", async () => {
+  let api!: TrustedExtensionApiV1;
+  const supervisor = new ExtensionSupervisor({
+    platform: "web",
+    createActivationId: () => "activation-announcement",
+  });
+  await supervisor.activate(definition("vela.announcer", (activationApi) => {
+    api = activationApi;
+  }));
+
+  const result = api.window.showAnnouncement({
+    id: "vela.announcer.release",
+    title: "What’s new",
+    body: "A renderer-neutral announcement.",
+    primaryAction: { id: "continue", label: "Continue" },
+  });
+  const presented = supervisor.announcements.getSnapshot().announcements[0];
+  assert.equal(presented?.contribution.title, "What’s new");
+  assert.equal(supervisor.announcements.choose(presented!.key, "continue"), true);
+  assert.deepEqual(await result, { kind: "action", actionId: "continue" });
+  assert.equal(supervisor.announcements.getSnapshot().announcements.length, 0);
+
+  assert.throws(
+    () => api.window.showAnnouncement({ id: "other.release", title: "Invalid" }),
+    /must be namespaced by extension vela\.announcer/u,
+  );
+  assert.throws(
+    () => api.window.showAnnouncement(null as never),
+    /contribution must be an object/u,
+  );
+  assert.throws(
+    () => api.window.showAnnouncement({
+      id: "vela.announcer.invalid-media",
+      title: "Invalid",
+      media: { kind: "html", url: "/unsafe" },
+    } as never),
+    /invalid media kind/u,
+  );
+  assert.throws(
+    () => api.window.showAnnouncement({
+      id: "vela.announcer.invalid-dismiss",
+      title: "Invalid",
+      dismissOnOutsidePress: "yes",
+    } as never),
+    /dismissOnOutsidePress must be a boolean/u,
+  );
+  await supervisor.dispose();
+});
+
+test("extension retirement dismisses pending announcement work before draining callers", async () => {
+  const supervisor = new ExtensionSupervisor({ platform: "web" });
+  await supervisor.activate(definition("vela.retiring", (activationApi) => {
+    activationApi.commands.register(
+      { id: "vela.retiring.show", title: "Show announcement" },
+      () => activationApi.window.showAnnouncement({
+        id: "vela.retiring.notice",
+        title: "Pending notice",
+      }),
+    );
+  }));
+  const result = supervisor.contributions.executeCommand("vela.retiring.show");
+  for (let index = 0; index < 10 && supervisor.announcements.getSnapshot().announcements.length === 0; index += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  const retirement = supervisor.deactivate("vela.retiring");
+  assert.deepEqual(await result, { kind: "dismissed", reason: "owner-disposed" });
+  await retirement;
+  assert.equal(supervisor.announcements.getSnapshot().announcements.length, 0);
+  await supervisor.dispose();
+});
+
 test("invalid theme palette aborts the complete activation batch", async () => {
   const supervisor = new ExtensionSupervisor({ platform: "web" });
   await assert.rejects(

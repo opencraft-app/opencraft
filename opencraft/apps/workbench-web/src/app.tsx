@@ -71,7 +71,9 @@ import { InternalDeveloperModeGate } from "./components/internal-developer-mode-
 import {
   ManagementSettingsContent,
   ModalHost,
+  showAnnouncementLab,
   type ModalRequest,
+  useAnnouncementModalRequests,
 } from "./components/modal";
 import { PendingConversationPage } from "./components/pending-conversation-page";
 import { Sidebar } from "./components/sidebar";
@@ -1009,6 +1011,9 @@ export function App() {
         themePreference={appearanceTheme.preference}
         onThemeChange={setAppearanceThemeId}
         onThemePreferenceChange={setThemePreference}
+        onOpenAnnouncementLab={() => {
+          void showAnnouncementLab(hostCatalog.announcements);
+        }}
       />
     </Suspense>
   ) : null;
@@ -1019,6 +1024,7 @@ export function App() {
     </section>
   ) : null;
   const modalRequests: ModalRequest[] = [];
+  const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
   if (managementSettingsOpen) {
     modalRequests.push({
       id: "management-settings",
@@ -1045,6 +1051,9 @@ export function App() {
       onDismiss: () => setAccountOpen(false),
     });
   }
+  // Imperative announcements are appended last so a preview requested from a
+  // Settings window becomes the top nested window instead of appearing under it.
+  modalRequests.push(...announcementModalRequests);
   const presentedRightPanelOpen =
     panelState.right.open && !rightPanelResponsiveBlocked;
   const presentedRightPanelFullWidth =

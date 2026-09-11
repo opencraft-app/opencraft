@@ -3,6 +3,7 @@
 @use "@opencraft/design-system/menu.web" as menu;
 @use "@opencraft/design-system/selection.web";
 @use "../components/modal/modal";
+@use "../components/ui/button";
 
 .agent-brand-icon {
   display: inline-block;
@@ -69,6 +70,19 @@
 }
 .settings-search-select__badge { color: var(--color-text-secondary); font-size: 10px; }
 .settings-search-select__check { flex: 0 0 14px; }
+
+.settings-laboratory-code {
+  width: 100%;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font: 12px/1.55 var(--font-family-mono, ui-monospace, monospace);
+  text-align: left;
+}
 
 // AppShell geometry is restored from physical/app-initial-JeCCd060.css and
 // terminal/use-app-shell-layout-motion-04358.ts (r822).
