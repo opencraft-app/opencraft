@@ -17,7 +17,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/scene-wheel.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260908-hero-suffix-v21';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20260911-rotator-copy-and-brand-icons-v22';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
