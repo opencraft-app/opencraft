@@ -70,6 +70,12 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国内站与国际站 Agent 设置页使用的 Hermes Provider、模型、通道和 Gateway 命令由 `frontend/src/pages/marketing/agent-config/hermes-command-builder.ts` 本地生成，不在浏览器运行时加载 Tea SDK 命令工厂。
 - 本地命令生成器应保持 acli 命令文本与既有行为兼容；Hermes Profile 路由属于独立能力，只有产品侧具备明确 Profile 标识与完整回归验证后才能统一增加 `--agent`。
 
+## Skills 已安装来源边界
+
+- 国内站 SkillHub 的搜索结果仍以 SkillHub 作为市场来源；已安装列表则必须保留 `acli skills list` 返回的实例 `source`，不能因同名技能存在于 SkillHub 而覆盖运行时来源。
+- Hermes 或 SkillHub 已安装实例明确报告 `source: builtin` 时，前端统一展示为“系统预置”并禁止删除。只有非预置的市场安装记录才允许按原 registry 身份卸载。
+- 同一技能同时出现在市场记录与 Hermes 已安装清单时，Hermes 的 `builtin` 判定对预置属性具有权威性；技能名称不得用作硬编码预置白名单。
+
 ## Agent 多 Bot 区域边界
 
 - 实例内多 Bot 一期只在国内站开放。前端入口同时受国内区域判断和运行时功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，但新增 Bot 由服务端开关再次校验。
