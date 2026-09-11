@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,6 +29,7 @@ const openClawState = {
   bots: [] as { id: string; status: string }[],
   user: null as unknown,
   refreshPasses: vi.fn(),
+  beginPassUpgrade: vi.fn(),
   activePass: null as unknown,
   latestPass: null as unknown,
 };
@@ -40,6 +41,7 @@ vi.mock("@/contexts/agent-context", () => ({
 const sessionState = {
   authReady: true,
   isAuthenticated: false,
+  user: null as { id: string } | null,
 };
 
 vi.mock("@/contexts/session-context", () => ({
@@ -48,7 +50,7 @@ vi.mock("@/contexts/session-context", () => ({
     isAuthenticated: sessionState.isAuthenticated,
     session: {
       stage: sessionState.isAuthenticated ? "authenticated" : "anonymous",
-      user: null,
+      user: sessionState.user,
     },
   }),
 }));
@@ -58,6 +60,9 @@ const listBundlesMock = vi.fn();
 const createPassOrderMock = vi.fn();
 const getPassOrderUrlMock = vi.fn();
 const createDianshiPassOrderAndPayMock = vi.fn();
+const listMyPassesMock = vi.fn();
+const listModifyBundlesMock = vi.fn();
+vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId, onPaid }: { targetBundleId: string; onPaid: (checkout: { dealName: string; targetBundleId: string }) => void }) => <div role="dialog"><button onClick={() => onPaid({ dealName: "paid-upgrade", targetBundleId })}>模拟支付完成</button></div> }));
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
@@ -69,6 +74,8 @@ vi.mock("@/contexts/repository-context", () => ({
     },
     plans: {
       listBundles: listBundlesMock,
+      listMyPasses: listMyPassesMock,
+      listModifyBundles: listModifyBundlesMock,
       createPassOrder: createPassOrderMock,
       getPassOrderUrl: getPassOrderUrlMock,
       createDianshiPassOrderAndPay: createDianshiPassOrderAndPayMock,
@@ -133,6 +140,38 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
 
+describe("international upgrade return", () => {
+  beforeEach(() => resetState());
+  afterEach(cleanup);
+  it("keeps a recoverable order marker when the original window enters Agents after payment", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    const quote = { source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] };
+    listModifyBundlesMock.mockResolvedValue(quote);
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    let resolveQuote!: (value: typeof quote) => void;
+    listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
+    await userEvent.click(button);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => resolveQuote(quote));
+    await userEvent.click(await screen.findByRole("button", { name: "模拟支付完成" }));
+    expect(openClawState.beginPassUpgrade).toHaveBeenCalledWith(pass, { dealName: "paid-upgrade", targetBundleId: "target" });
+    expect(navigateMock).toHaveBeenCalledWith("/agents?upgrade_return=paid-upgrade");
+  });
+});
+
 /**
  * 组件按嵌套结构读 bundle.price（见 BundlePrice 类型），金额用例必须用嵌套 mock
  * 才能走到真实计费分支。
@@ -159,10 +198,14 @@ const resetState = () => {
   openClawState.addBot = vi.fn();
   openClawState.bots = [];
   openClawState.refreshPasses = vi.fn().mockResolvedValue(undefined);
+  openClawState.beginPassUpgrade = vi.fn();
   openClawState.activePass = null;
   openClawState.latestPass = null;
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
+  sessionState.user = null;
+  listMyPassesMock.mockReset();
+  listModifyBundlesMock.mockReset();
   listBundlesMock.mockReset();
   createPassOrderMock.mockReset();
   getPassOrderUrlMock.mockReset();

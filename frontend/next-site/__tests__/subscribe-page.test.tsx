@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,6 +22,7 @@ const openClawState = {
   bots: [] as { id: string; status: string }[],
   user: null as unknown,
   refreshPasses: vi.fn(),
+  beginPassUpgrade: vi.fn(),
   activePass: null as unknown,
   latestPass: null as unknown,
 };
@@ -54,7 +55,7 @@ const createDianshiPassOrderAndPayMock = vi.fn();
 const listMyPassesMock = vi.fn();
 const listModifyBundlesMock = vi.fn();
 const getModifyCheckoutMock = vi.fn();
-vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId }: { targetBundleId: string }) => <div role="dialog">Upgrade {targetBundleId}</div> }));
+vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId, initialOption, onPaid }: { targetBundleId: string; initialOption?: { modify_price: { real_total_cost: number } }; onPaid: (checkout: { dealName: string; targetBundleId: string }) => void }) => <div role="dialog">Upgrade {targetBundleId}<span>Quote {initialOption?.modify_price.real_total_cost}</span><button onClick={() => onPaid({ dealName: "paid-upgrade", targetBundleId })}>模拟支付完成</button></div> }));
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
@@ -141,6 +142,7 @@ const resetState = () => {
   openClawState.addBot = vi.fn();
   openClawState.bots = [];
   openClawState.refreshPasses = vi.fn().mockResolvedValue(undefined);
+  openClawState.beginPassUpgrade = vi.fn();
   openClawState.activePass = null;
   openClawState.latestPass = null;
   sessionState.authReady = true;
@@ -304,6 +306,113 @@ describe("SubscribePage", () => {
     expect(await screen.findByRole("button", { name: "当前订阅" })).toBeDisabled();
   });
 
+  function setupUpgradeQuote() {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+      { ...buildBundle("unrelated-target", "巡游 Cruise"), credit: 10000 },
+    ]);
+    const quote = { source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "巡游", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "CNY", real_total_cost: 167 } }] };
+    listModifyBundlesMock.mockResolvedValue(quote);
+    return quote;
+  }
+
+  it("loads a fresh upgrade quote on the button before opening the populated modal", async () => {
+    const quote = setupUpgradeQuote();
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    let resolveQuote!: (value: typeof quote) => void;
+    listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
+    const reads = listModifyBundlesMock.mock.calls.length;
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button).toHaveTextContent("正在查询升级差价...");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(listModifyBundlesMock).toHaveBeenCalledTimes(reads + 1);
+    await act(async () => resolveQuote({ ...quote, modify_bundle_set: [{ ...quote.modify_bundle_set[0]!, modify_price: { currency: "CNY", real_total_cost: 234 } }] }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Quote 234");
+    expect(button).toBeEnabled();
+    expect(createPassOrderMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps quote failures by the upgrade button and allows another attempt", async () => {
+    setupUpgradeQuote();
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    listModifyBundlesMock.mockRejectedValueOnce(new Error("offline"));
+    await userEvent.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+    expect(button.parentElement).toContainElement(screen.getByRole("alert"));
+    expect(button).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(button);
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Quote 167");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each(["source", "target", "price"])("does not open the upgrade modal for an invalid fresh %s", async (invalid) => {
+    const quote = setupUpgradeQuote();
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    listModifyBundlesMock.mockResolvedValueOnce(invalid === "source" ? { ...quote, source_bundle_id: "changed" } : invalid === "target" ? { ...quote, modify_bundle_set: [] } : { ...quote, modify_bundle_set: [{ ...quote.modify_bundle_set[0]!, modify_price: { currency: "CNY", real_total_cost: NaN } }] });
+    await userEvent.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("当前套餐已变化或该升级目标暂不可用，请刷新后重试。");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(button).toBeEnabled();
+  });
+
+  it.each(["logout", "variant", "duration"])("ignores a late upgrade quote after %s", async (change) => {
+    const quote = setupUpgradeQuote();
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const { rerender } = render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    let resolveQuote!: (value: typeof quote) => void;
+    listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
+    await userEvent.click(button);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    if (change === "logout") { sessionState.isAuthenticated = false; rerender(<SubscribePage />); }
+    else if (change === "variant") await userEvent.click(getCreditTab("10000"));
+    else await userEvent.click(screen.getByRole("tab", { name: "季付" }));
+    await act(async () => resolveQuote(quote));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "正在查询升级差价..." })).not.toBeInTheDocument();
+  });
+
+  it("keeps the newer quote loading when a cancelled request finishes", async () => {
+    const quote = setupUpgradeQuote();
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    let resolveOld!: (value: typeof quote) => void;
+    let resolveNew!: (value: typeof quote) => void;
+    listModifyBundlesMock
+      .mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }))
+      .mockReturnValueOnce(new Promise(resolve => { resolveNew = resolve; }));
+    await userEvent.click(button);
+    await userEvent.click(getCreditTab("10000"));
+    await userEvent.click(getCreditTab("200"));
+    await userEvent.click(button);
+    await act(async () => resolveOld(quote));
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => resolveNew({ ...quote, modify_bundle_set: [{ ...quote.modify_bundle_set[0]!, modify_price: { currency: "CNY", real_total_cost: 345 } }] }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Quote 345");
+    expect(button).toBeEnabled();
+  });
+
   it("selects source and legal target by bundle ID, enabling only the upgrade checkout", async () => {
     openClawState.isLoggedIn = true;
     openClawState.isSubscribed = true;
@@ -318,11 +427,11 @@ describe("SubscribePage", () => {
       { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
       { ...buildBundle("unrelated-target", "巡游 Cruise"), credit: 10000 },
     ]);
-    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", credit: 200 }, modify_price: { real_total_cost: 100 } }] });
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", credit: 200 }, modify_price: { currency: "CNY", real_total_cost: 100 } }] });
     window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
     const { SubscribePage } = await import("@next-site/subscribe-page");
     const { rerender } = render(<SubscribePage />);
-    const upgrade = await screen.findByRole("button", { name: "升级套餐" });
+    const upgrade = await screen.findByRole("button", { name: "升级至此套餐" });
     expect(upgrade).toBeEnabled();
     expect(upgrade).toHaveStyle({ background: "rgba(0,0,0,0.90)", color: "#FFFFFF" });
     expect(screen.queryByRole("button", { name: "查看升级进度" })).not.toBeInTheDocument();
@@ -334,7 +443,7 @@ describe("SubscribePage", () => {
     expect(getCreditTab("200")).toHaveAttribute("aria-selected", "true");
     await userEvent.click(getCreditTab("10000"));
     expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: "升级套餐" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
     await userEvent.click(getCreditTab("200"));
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
     // The inverse direction is also a click interaction, not just an initial default.
@@ -350,7 +459,33 @@ describe("SubscribePage", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     sessionState.isAuthenticated = true;
     rerender(<SubscribePage />);
-    await screen.findByRole("button", { name: "升级套餐" });
+    await screen.findByRole("button", { name: "升级至此套餐" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("starts upgrade loading before navigating to agents as soon as payment is confirmed", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", credit: 200 }, modify_price: { currency: "CNY", real_total_cost: 100 } }] });
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await userEvent.click(await screen.findByRole("button", { name: "升级至此套餐" }));
+    expect(navigateMock).not.toHaveBeenCalled();
+    // Navigation must not wait for another Pass read, which can still be stale or unavailable.
+    openClawState.refreshPasses.mockImplementation(() => new Promise(() => {}));
+    await userEvent.click(screen.getByRole("button", { name: "模拟支付完成" }));
+    expect(openClawState.beginPassUpgrade).toHaveBeenCalledWith(pass, { dealName: "paid-upgrade", targetBundleId: "target" });
+    expect(navigateMock).toHaveBeenCalledWith("/agents");
+    expect(openClawState.beginPassUpgrade.mock.invocationCallOrder[0]).toBeLessThan(navigateMock.mock.invocationCallOrder[0]);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -367,7 +502,7 @@ describe("SubscribePage", () => {
       { ...buildBundle("same-card-target", "启航 Launch"), credit: 4500 },
       { ...buildBundle("unrelated", "巡游 Cruise"), credit: 10000 },
     ]);
-    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "same-card-target", bundle: { bundle_id: "same-card-target", credit: 4500 }, modify_price: { real_total_cost: 100 } }] });
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "same-card-target", bundle: { bundle_id: "same-card-target", credit: 4500 }, modify_price: { currency: "CNY", real_total_cost: 100 } }] });
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
     await waitFor(() => expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true"));
@@ -375,9 +510,9 @@ describe("SubscribePage", () => {
     expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
     await userEvent.click(getCreditTab("100"));
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: "升级套餐" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
     await userEvent.click(getCreditTab("4500"));
-    await userEvent.click(screen.getByRole("button", { name: "升级套餐" }));
+    await userEvent.click(screen.getByRole("button", { name: "升级至此套餐" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent("Upgrade same-card-target");
   });
 
@@ -400,7 +535,7 @@ describe("SubscribePage", () => {
     render(<SubscribePage />);
     await waitFor(() => expect(listModifyBundlesMock).toHaveBeenCalledWith("p1"));
     expect(getCreditTab("4500")).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("button", { name: "升级套餐" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
     await userEvent.click(getCreditTab("100"));
     expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
     await userEvent.click(getCreditTab("200"));

@@ -14,7 +14,7 @@ import {
 } from "@/contexts/runtime-config-context";
 import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
-import type { Bundle, BundlePrice, BundleDescriptionEntry } from "@/domain/types";
+import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
@@ -34,6 +34,7 @@ import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { QRCodeSVG } from "qrcode.react";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { UpgradePassModal } from "@/pages/marketing/upgrade-pass-modal";
+import { UPGRADE_RETURN_QUERY, validUpgradeQuote } from "@/lib/upgrade-checkout";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -1402,6 +1403,8 @@ const PlanCard = ({
   reserveCreditTabSpace,
   subscriptionLocked,
   upgradeTargetIds,
+  upgradeQuotingPlanId,
+  upgradeQuoteError,
   selectedBundleId,
   onVariantChange,
 }: {
@@ -1416,6 +1419,8 @@ const PlanCard = ({
   /* 用户已有生效订阅时锁定新购；仅后端确认的升级目标可启用。 */
   subscriptionLocked?: boolean;
   upgradeTargetIds?: ReadonlySet<string>;
+  upgradeQuotingPlanId?: string | null;
+  upgradeQuoteError?: { targetBundleId: string; message: string } | null;
   selectedBundleId?: string;
   onVariantChange?: (bundleId: string) => void;
 }) => {
@@ -1429,8 +1434,11 @@ const PlanCard = ({
   const safeIdx = controlledIdx >= 0 ? controlledIdx : activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
   const selectedVariant = variants[safeIdx]!;
   const isUpgradeTarget = upgradeTargetIds?.has(selectedVariant.id) === true;
-  const plan = isUpgradeTarget ? { ...selectedVariant, ctaLabel: t("升级套餐") } : selectedVariant;
+  const plan = isUpgradeTarget ? { ...selectedVariant, ctaLabel: t("升级至此套餐") } : selectedVariant;
   const subscribing = subscribingPlanId === plan.id;
+  const upgradeQuoting = upgradeQuotingPlanId === plan.id;
+  const quoteError = upgradeQuoteError?.targetBundleId === plan.id ? upgradeQuoteError.message : null;
+  const quoteErrorId = React.useId();
   /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
   const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
@@ -1446,7 +1454,7 @@ const PlanCard = ({
   /* 售罄 / 未上线 / 暂无报价 / 询价加载中：按钮禁用。
      询价加载中虽然价格数字仍在展示（旧价），但为避免用户以旧价口径提交订单，CTA 必须 disabled。 */
   /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
-  const disabled = isUpgradeTarget ? subscribing : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
+  const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
   return (
     <motion.div
@@ -1928,6 +1936,8 @@ const PlanCard = ({
             <button
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
+              aria-busy={upgradeQuoting || undefined}
+              aria-describedby={quoteError ? quoteErrorId : undefined}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1957,7 +1967,7 @@ const PlanCard = ({
                 }
               }}
             >
-              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
+              {upgradeQuoting ? <><Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin motion-reduce:animate-none" />{t("正在查询升级差价...")}</> : subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           ) : (
             <button
@@ -1997,6 +2007,7 @@ const PlanCard = ({
               {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           )}
+          {quoteError && <p id={quoteErrorId} role="alert" className="mt-2 text-pretty text-sm text-[var(--danger)]">{quoteError}</p>}
         </div>
       </div>
     </motion.div>
@@ -2690,7 +2701,7 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, activePass, latestPass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
   void BUNDLE_TYPE_FALLBACK_KEY;
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
@@ -2723,9 +2734,49 @@ export const SubscribePage = ({
   const upgradePassId = typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("upgrade_pass_id") ?? undefined;
   const upgrade = usePassUpgrade({ userId: session.user?.id, passId: upgradePassId, enabled: paidBillingActive && isAuthenticated, currentPass: activePass });
   const upgradeTargetIds = useMemo(() => new Set(upgrade.options.map((option) => option.target_bundle_id)), [upgrade.options]);
-  const [upgradeSelection, setUpgradeSelection] = useState<{ passId: string; targetBundleId: string } | null>(null);
-  const [upgradeSucceededFor, setUpgradeSucceededFor] = useState<string | null>(null);
-  useEffect(() => { setUpgradeSelection(null); }, [upgrade.revisionKey]);
+  const [upgradeSelection, setUpgradeSelection] = useState<{ passId: string; targetBundleId: string; initialOption: PassModifyOption } | null>(null);
+  const [upgradeQuotingPlanId, setUpgradeQuotingPlanId] = useState<string | null>(null);
+  const [upgradeQuoteError, setUpgradeQuoteError] = useState<{ targetBundleId: string; message: string } | null>(null);
+  const upgradeQuoteRequest = useRef<symbol | null>(null);
+  const upgradeQuoteContext = JSON.stringify([upgrade.revisionKey, aiDurationKey]);
+  const upgradeQuoteContextRef = useRef(upgradeQuoteContext);
+  upgradeQuoteContextRef.current = upgradeQuoteContext;
+  const cancelUpgradeQuote = useCallback(() => {
+    upgradeQuoteRequest.current = null;
+    setUpgradeQuotingPlanId(null);
+    setUpgradeQuoteError(null);
+    setUpgradeSelection(null);
+  }, []);
+  useEffect(() => {
+    cancelUpgradeQuote();
+    return () => { upgradeQuoteRequest.current = null; };
+  }, [upgradeQuoteContext, cancelUpgradeQuote]);
+
+  const requestUpgradeQuote = useCallback(async (targetBundleId: string) => {
+    const pass = upgrade.pass;
+    if (upgradeQuoteRequest.current || !pass || !upgradeTargetIds.has(targetBundleId)) return;
+    const request = Symbol();
+    upgradeQuoteRequest.current = request;
+    const isCurrent = () => upgradeQuoteRequest.current === request && upgradeQuoteContextRef.current === upgradeQuoteContext;
+    setUpgradeQuotingPlanId(targetBundleId);
+    setUpgradeQuoteError(null);
+    try {
+      const result = await repositories.plans.listModifyBundles(pass.pass_id);
+      if (!isCurrent()) return;
+      const option = result.modify_bundle_set.find(item => item.target_bundle_id === targetBundleId);
+      if (result.source_bundle_id !== pass.bundle_id || !option || option.bundle.bundle_id !== targetBundleId || !validUpgradeQuote(option)) {
+        throw new Error(t("当前套餐已变化或该升级目标暂不可用，请刷新后重试。"));
+      }
+      setUpgradeSelection({ passId: pass.pass_id, targetBundleId, initialOption: option });
+    } catch (err) {
+      if (isCurrent()) setUpgradeQuoteError({ targetBundleId, message: resolveBillingErrorMessage(err, t("升级询价失败，请稍后重试。")) });
+    } finally {
+      if (upgradeQuoteRequest.current === request) {
+        upgradeQuoteRequest.current = null;
+        setUpgradeQuotingPlanId(null);
+      }
+    }
+  }, [repositories.plans, upgrade.pass, upgradeTargetIds, upgradeQuoteContext, t]);
   const selectedUpgradePass = upgradeSelection && (
     upgrade.pass?.pass_id === upgradeSelection.passId && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass :
     upgrade.resume?.pass.pass_id === upgradeSelection.passId && upgrade.resume.record.targetBundleId === upgradeSelection.targetBundleId ? upgrade.resume.pass : null
@@ -2944,6 +2995,7 @@ export const SubscribePage = ({
     : undefined;
   const handleUpgradeVariantChange = (changedGroup: PlanTierGroup, bundleId: string) => {
     if (!upgradeLinkEnabled || !upgrade.pass) return;
+    cancelUpgradeQuote();
     const sourceBundleId = upgrade.pass.bundle_id;
     setLinkedVariants((previous) => {
       const selected = previous.key === upgradeLinkKey ? { ...previous.selected } : {};
@@ -3464,7 +3516,7 @@ export const SubscribePage = ({
     const plan = planList.find((p) => p.id === planId);
     if (!plan) return;
     if (upgrade.pass && upgradeTargetIds.has(planId)) {
-      setUpgradeSelection({ passId: upgrade.pass.pass_id, targetBundleId: planId });
+      void requestUpgradeQuote(planId);
       return;
     }
 
@@ -3530,7 +3582,7 @@ export const SubscribePage = ({
     /* 付费套餐：进入确认订单弹窗 */
     setSelectedPlan(plan);
     setModalStep("confirm");
-  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, isSubscribed, activePass, refreshPasses, realnamePhoneVerificationEnabled, navigate, upgrade.pass, upgradeTargetIds]);
+  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, isSubscribed, activePass, refreshPasses, realnamePhoneVerificationEnabled, navigate, upgrade.pass, upgradeTargetIds, requestUpgradeQuote]);
 
   /* 邀请码激活成功后：自动继续用户之前点击的套餐流程 */
   const handleInviteSuccess = useCallback(() => {
@@ -3800,7 +3852,6 @@ export const SubscribePage = ({
           ) : (
             <>
               {upgrade.error && <p role="alert" className="mb-4 text-center text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
-              {upgradeSucceededFor && upgradeSucceededFor === session.user?.id && <p role="status" className="mb-4 text-center text-sm">{t("套餐升级成功")}</p>}
               <motion.div
                 variants={staggerContainer}
                 initial="hidden"
@@ -3825,6 +3876,8 @@ export const SubscribePage = ({
                     /* 已有权益时锁定新购，仅按后端返回的目标 ID 开放升级。 */
                     subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
                     upgradeTargetIds={upgradeTargetIds}
+                    upgradeQuotingPlanId={upgradeQuotingPlanId}
+                    upgradeQuoteError={upgradeQuoteError}
                     selectedBundleId={selectedLinkedVariant(tier)}
                     onVariantChange={upgradeLinkEnabled ? (bundleId) => handleUpgradeVariantChange(tier, bundleId) : undefined}
                   />
@@ -3857,7 +3910,17 @@ export const SubscribePage = ({
       {/* Payment Modals */}
       <AnimatePresence>
         {upgradeSelection && selectedUpgradePass && (
-          <UpgradePassModal pass={selectedUpgradePass} targetBundleId={upgradeSelection.targetBundleId} onClose={() => setUpgradeSelection(null)} onSuccess={async () => { setUpgradeSucceededFor(session.user?.id ?? null); setUpgradeSelection(null); await refreshPasses(); upgrade.retry(); }} />
+          <UpgradePassModal
+            pass={selectedUpgradePass}
+            targetBundleId={upgradeSelection.targetBundleId}
+            initialOption={upgradeSelection.initialOption}
+            onClose={() => setUpgradeSelection(null)}
+            onPaid={checkout => {
+              beginPassUpgrade(selectedUpgradePass, checkout);
+              setUpgradeSelection(null);
+              navigate(isGlobal ? `/agents?${UPGRADE_RETURN_QUERY}=${encodeURIComponent(checkout.dealName)}` : "/agents");
+            }}
+          />
         )}
         {modalStep === "confirm" && selectedPlan && (
           isDianshiZeroAmountPlan(selectedPlan, paidBillingActive) ? (

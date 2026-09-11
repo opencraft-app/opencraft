@@ -11,6 +11,8 @@ import {
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { Bot, Pass } from "@/domain/types";
+import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
+import { isGlobal } from "@/lib/region";
 
 /* ─── Types ─── */
 
@@ -58,6 +60,10 @@ interface OpenClawContextValue {
   botsLoading: boolean;
   /** 当前用户的权益最新快照（来自 GET /v1/passes） */
   activePass: Pass | null;
+  /** 升级中的权益；直到服务端恢复 active 且 Bot 快照刷新后才清除。 */
+  modifyingPass: Pass | null;
+  passUpgradeFailed: boolean;
+  passesLoading: boolean;
   /** 用户最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐 */
   latestPass: Pass | null;
   login: () => void;
@@ -65,6 +71,8 @@ interface OpenClawContextValue {
   subscribe: () => void;
   /** 重新拉取 /v1/passes 并更新 activePass / isSubscribed */
   refreshPasses: () => Promise<void>;
+  /** Payment is confirmed; show upgrading immediately while server delivery catches up. */
+  beginPassUpgrade: (pass: Pass, checkout: PaidUpgradeCheckout) => void;
   updateUser: (updates: Partial<OpenClawUser>) => void;
   addBot: (bot: Omit<OpenClawBot, "id" | "instanceId" | "profileId" | "isDefault" | "createdAt" | "connectedChannels" | "installedSkills"> & {
     createMode?: "blank" | "clone";
@@ -206,11 +214,35 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [activePass, setActivePass] = useState<Pass | null>(null);
+  const [modifyingPass, setModifyingPass] = useState<Pass | null>(null);
+  const [passUpgradeFailed, setPassUpgradeFailed] = useState(false);
+  const [returningUpgrade, setReturningUpgrade] = useState(false);
+  const modifyingPassRef = useRef<Pass | null>(null);
+  const paidUpgradeRef = useRef<PaidUpgradeCheckout | null>(null);
+  const passRefreshGeneration = useRef(0);
+  const passRefreshInFlight = useRef(false);
+  const botRefreshGeneration = useRef(0);
+  const passUserIdRef = useRef(session.user?.id);
+  passUserIdRef.current = session.user?.id;
+  const [passesLoading, setPassesLoading] = useState(true);
   const [latestPass, setLatestPass] = useState<Pass | null>(null);
   const [hasResolvedPasses, setHasResolvedPasses] = useState(false);
   const [bots, setBots] = useState<OpenClawBot[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
   const fetchedRef = useRef(false);
+
+  const beginPassUpgrade = useCallback((pass: Pass, checkout: PaidUpgradeCheckout) => {
+    if (pass.user_id !== passUserIdRef.current) return;
+    const waiting = { ...pass, status: "modifying" };
+    passRefreshGeneration.current += 1;
+    paidUpgradeRef.current = checkout;
+    setPassUpgradeFailed(false);
+    modifyingPassRef.current = waiting;
+    setModifyingPass(waiting);
+    setActivePass(waiting);
+    setLatestPass(waiting);
+    setIsSubscribed(true);
+  }, []);
 
   /* ── 从后端订阅状态同步 isSubscribed ── */
   useEffect(() => {
@@ -223,10 +255,71 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   /* ── 拉取 /v1/passes 更新 activePass；如果存在未过期权益，同时设置 isSubscribed ── */
   const refreshPasses = useCallback(async () => {
+    if (passRefreshInFlight.current) return;
+    passRefreshInFlight.current = true;
+    const userId = passUserIdRef.current;
+    const generation = passRefreshGeneration.current;
+    let waitingForReturn = false;
     try {
+      const returned = isGlobal && userId && !paidUpgradeRef.current && window.location.pathname.replace(/\/$/, "") === "/agents"
+        ? readUpgradeReturn(window.localStorage, userId, window.location.search) : null;
+      waitingForReturn = Boolean(returned);
+      setReturningUpgrade(waitingForReturn);
       const passes = await repositories.plans.listMyPasses();
+      if (passUserIdRef.current !== userId || generation !== passRefreshGeneration.current) return;
+      if (returned) {
+        const source = passes.find((pass) => pass.pass_id === returned.passId && pass.user_id === userId && !pass.deleted_time);
+        if (!source) return;
+        // A return URL is only a checkout hint. Keep Bots hidden while verifying the order.
+        const waiting = { ...source, status: "modifying" };
+        paidUpgradeRef.current = returned;
+        modifyingPassRef.current = waiting;
+        setModifyingPass(waiting);
+        setActivePass(waiting);
+        setLatestPass(waiting);
+        setIsSubscribed(true);
+        waitingForReturn = false;
+        setReturningUpgrade(false);
+      }
+      const modifying = passes.find((pass) => pass.status === "modifying" && !pass.deleted_time) ?? null;
+      const previous = modifyingPassRef.current;
+      const paidCheckout = paidUpgradeRef.current;
+      const order = paidCheckout ? await repositories.plans.getOrderStatus(paidCheckout.dealName) : null;
+      if (passUserIdRef.current !== userId || generation !== passRefreshGeneration.current) return;
+      if (paidCheckout && order) {
+        if (order.deal_name !== paidCheckout.dealName || order.order_type !== "modify") return;
+        const failed = order.status === "failed" || order.status === "cancelled";
+        setPassUpgradeFailed(failed);
+        if (failed) return;
+      }
+      if (previous && !modifying) {
+        // A missing response or a future expiry does not prove upgrade completion.
+        const completed = passes.find((pass) => pass.pass_id === previous.pass_id);
+        if (completed?.status !== "active") return;
+        if (paidCheckout) {
+          if (!order || !isUpgradeDelivered(order, completed, previous.pass_id, paidCheckout.targetBundleId)) return;
+        }
+        const botGeneration = ++botRefreshGeneration.current;
+        const snapshot = await repositories.bots.getDashboardSnapshot("live");
+        if (passUserIdRef.current !== userId || generation !== passRefreshGeneration.current || botGeneration !== botRefreshGeneration.current) return;
+        setBots(snapshot.bots.map((bot) => mapBotToOpenClawBot(bot)));
+        setBotsLoading(false);
+        if (paidCheckout && userId) {
+          try {
+            window.localStorage.removeItem(upgradeReturnKey(userId, paidCheckout.dealName));
+            const url = new URL(window.location.href);
+            if (url.searchParams.get(UPGRADE_RETURN_QUERY) === paidCheckout.dealName) {
+              url.searchParams.delete(UPGRADE_RETURN_QUERY);
+              window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+            }
+          } catch { /* Cleanup must not prevent displaying a delivered upgrade. */ }
+        }
+        paidUpgradeRef.current = null;
+      }
+      modifyingPassRef.current = modifying;
+      setModifyingPass(modifying);
       const now = Date.now();
-      const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? null;
+      const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? modifying;
       setActivePass(active);
       setIsSubscribed(Boolean(active));
       setHasResolvedPasses(true);
@@ -237,8 +330,17 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setLatestPass(latest);
     } catch {
       /* 接口失败不阻断其他流程，保持现有状态 */
+    } finally {
+      passRefreshInFlight.current = false;
+      if (passUserIdRef.current === userId) setPassesLoading(waitingForReturn);
     }
-  }, [repositories.plans]);
+  }, [repositories.plans, repositories.bots]);
+
+  useEffect(() => {
+    if (!modifyingPass && !returningUpgrade) return;
+    const timer = window.setInterval(() => { void refreshPasses(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [modifyingPass?.pass_id, returningUpgrade, refreshPasses]);
 
   /* ── Derive user from session instead of manual sync ── */
   const user = useMemo<OpenClawUser>(() => {
@@ -272,9 +374,11 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   /* ── Load bots from backend, then fetch openclaw config to restore channel status ── */
   const refreshBots = useCallback(async () => {
+    const generation = ++botRefreshGeneration.current;
     setBotsLoading(true);
     try {
       const snapshot = await repositories.bots.getDashboardSnapshot("live");
+      if (generation !== botRefreshGeneration.current) return;
       const mappedBots = snapshot.bots.map((bot) => mapBotToOpenClawBot(bot));
       setBots(mappedBots);
 
@@ -307,11 +411,11 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       //   }
       // }
     } catch {
-      if (LOCAL_PREVIEW_AUTH_ENABLED) {
+      if (generation === botRefreshGeneration.current && LOCAL_PREVIEW_AUTH_ENABLED) {
         setBots((prev) => (prev.length > 0 ? prev : [buildLocalPreviewBot()]));
       }
     } finally {
-      setBotsLoading(false);
+      if (generation === botRefreshGeneration.current) setBotsLoading(false);
     }
   }, [repositories.bots]);
 
@@ -332,6 +436,12 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     } else if (!isAuthenticated && session.authReady) {
       setIsSubscribed(false);
       setActivePass(null);
+      setModifyingPass(null);
+      setPassUpgradeFailed(false);
+      setReturningUpgrade(false);
+      modifyingPassRef.current = null;
+      paidUpgradeRef.current = null;
+      setPassesLoading(false);
       setLatestPass(null);
       setHasResolvedPasses(false);
       setBots([]);
@@ -347,6 +457,11 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const logout = useCallback(() => {
     setIsSubscribed(false);
     setActivePass(null);
+    setModifyingPass(null);
+    setPassUpgradeFailed(false);
+    setReturningUpgrade(false);
+    modifyingPassRef.current = null;
+    paidUpgradeRef.current = null;
     setLatestPass(null);
     setHasResolvedPasses(false);
     setBots([]);
@@ -428,18 +543,22 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       bots,
       botsLoading,
       activePass,
+      modifyingPass,
+      passUpgradeFailed,
+      passesLoading,
       latestPass,
       login,
       logout,
       subscribe,
       refreshPasses,
+      beginPassUpgrade,
       updateUser,
       addBot,
       updateBot,
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, latestPass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passesLoading, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

@@ -15,15 +15,26 @@ beforeEach(() => { vi.resetAllMocks(); const entries = new Map<string, string>()
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("upgrade eligibility", () => {
-  it("hides production upgrade and does not recover orders before console opt-in", () => {
-    vi.stubGlobal("location", { hostname: "lightvela.com" });
+  it.each(["lightvela.com", "www.lightvela.com", "lightvela.ai", "www.lightvela.ai"])("loads eligible targets on %s without console opt-in or order recovery", async (hostname) => {
+    vi.stubGlobal("location", { hostname });
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "other-sp", phase: "ordered", dealName: "old-order" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
-    expect(result.current.pass).toBeNull();
+    await waitFor(() => expect(result.current.options).toEqual([target]));
+    expect(result.current.pass?.pass_id).toBe("p1");
     expect(result.current.resume).toBeNull();
-    expect(result.current.options).toEqual([]);
-    expect(listMyPasses).not.toHaveBeenCalled();
+    expect(listModifyBundles).toHaveBeenCalledWith("p1");
     expect(getModifyCheckout).not.toHaveBeenCalled();
+  });
+  it.each([
+    { userId: undefined, enabled: true },
+    { userId: "u1", enabled: false },
+  ])("does not query eligibility without a signed-in user or enabled billing: %j", (input) => {
+    const { result } = renderHook(() => usePassUpgrade(input));
+    expect(result.current.pass).toBeNull();
+    expect(result.current.options).toEqual([]);
+    expect(result.current.loading).toBe(false);
+    expect(listMyPasses).not.toHaveBeenCalled();
+    expect(listModifyBundles).not.toHaveBeenCalled();
   });
   it("automatically loads backend targets without assuming an SP relationship", async () => {
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", enabled: true }));
