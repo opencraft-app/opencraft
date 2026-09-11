@@ -31,6 +31,19 @@ const sidebarBotsSource = readFileSync(
   "utf8",
 );
 
+const sidebarSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/sidebar.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
+const workbenchStyles = readFileSync(
+  new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
+  "utf8",
+);
+
 test("one Sidecar owns two platform panes with independent frame, clip, and viewport geometry", () => {
   const appShellSource = readFileSync(
     new URL(
@@ -97,6 +110,23 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
   assert.match(navigationSource, /useTransform\(\s*\[progress, expandedWidth\]/u);
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.doesNotMatch(navigationStyles, /data-shell-navigation-pane-mode[\s\S]*?display:\s*none/u);
+});
+
+test("context sidebar actions share one stable leading slot after account moves to the Sidecar footer", () => {
+  assert.equal(
+    sidebarSource.match(/<SidebarActionIcon>/gu)?.length,
+    4,
+    "every primary and footer sidebar action reserves the shared leading slot",
+  );
+  assert.match(
+    workbenchStyles,
+    /\.sidebar-panel\s*\{[\s\S]*?--sidebar-leading-slot-size:\s*28px;/u,
+  );
+  assert.match(
+    workbenchStyles,
+    /\.sidebar-action__icon\s*\{[\s\S]*?width:\s*var\(--sidebar-leading-slot-size\);[\s\S]*?place-items:\s*center;/u,
+  );
+  assert.doesNotMatch(sidebarSource, /sidebar-account__trigger/u);
 });
 
 test("sidebar entity creation presents through the application overlay layer", () => {

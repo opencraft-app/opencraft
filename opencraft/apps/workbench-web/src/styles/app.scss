@@ -1033,6 +1033,9 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 }
 
 .sidebar-panel {
+  --sidebar-leading-slot-size: 28px;
+  --sidebar-row-inline-padding: 7px;
+  --sidebar-leading-gap: 8px;
   display: flex;
   width: 100%;
   height: 100%;
@@ -1159,12 +1162,14 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 .sidebar-action {
   @include controls.navigation-control;
   height: 34px;
+  align-items: center;
+  gap: var(--sidebar-leading-gap);
+  padding: 0 var(--sidebar-row-inline-padding);
+  border-radius: 7px;
+  color: var(--color-text-secondary);
+  text-align: left;
 
-  svg {
-    flex: 0 0 auto;
-  }
-
-  span {
+  > span:not(.sidebar-action__icon) {
     min-width: 0;
     flex: 1;
     overflow: hidden;
@@ -1197,6 +1202,19 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   &.is-selected {
     background: var(--color-background-button-tertiary-hover);
     color: var(--color-text);
+  }
+}
+
+.sidebar-action__icon {
+  display: grid;
+  width: var(--sidebar-leading-slot-size);
+  height: var(--sidebar-leading-slot-size);
+  flex: 0 0 var(--sidebar-leading-slot-size);
+  place-items: center;
+
+  > svg {
+    display: block;
+    flex: 0 0 auto;
   }
 }
 
@@ -1444,11 +1462,10 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   padding-top: 7px;
 }
 
-
 .sidebar-account__avatar {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: var(--sidebar-leading-slot-size);
+  height: var(--sidebar-leading-slot-size);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: 50%;
