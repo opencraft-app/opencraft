@@ -1,0 +1,174 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { asHostId, createConversationKey } from "@opencraft/chat-core";
+import { composerDocumentToPlainText } from "@opencraft/composer-core";
+import {
+  asConversationScopeId,
+  createConversationBindingStore,
+  createConversationScopeLeaseRegistry,
+  createConversationScopeRegistry,
+  createConversationViewRegistry,
+} from "@opencraft/workbench-runtime";
+
+test("a Draft Conversation Scope keeps its identity after receiving a canonical Thread", () => {
+  const store = createConversationBindingStore();
+  const scopeId = asConversationScopeId("client-new-thread:1");
+  const key = createConversationKey("ssh:alpha", "thread-9");
+
+  store.register(scopeId, asHostId("ssh:alpha"));
+  const binding = store.bind(scopeId, key);
+
+  assert.equal(binding.scopeId, scopeId);
+  assert.deepEqual(binding.conversationKey, key);
+  assert.equal(store.findScope(key), scopeId);
+});
+
+test("inactive Conversation Views are bounded and dispose their owned Composer", () => {
+  const disposed: string[] = [];
+  const leases = createConversationScopeLeaseRegistry({});
+  const views = createConversationViewRegistry({
+    scopeLeases: leases,
+    composerServices: { now: () => 1, createId: () => "id" },
+    maxInactiveViews: 1,
+    onDisposeView: (viewId) => disposed.push(viewId),
+  });
+  const first = asConversationScopeId("scope-first");
+  const second = asConversationScopeId("scope-second");
+  const firstTarget = {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-first"),
+  } as const;
+  const secondTarget = {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-second"),
+  } as const;
+  leases.ensure(first, asHostId("local"), firstTarget);
+  leases.ensure(second, asHostId("local"), secondTarget);
+  const firstComposer = views.ensure("view-first", first, asHostId("local"), firstTarget).composer;
+  views.ensure("view-second", second, asHostId("local"), secondTarget);
+
+  assert.deepEqual(disposed, ["view-first"]);
+  assert.equal(views.get("view-first"), null);
+  assert.throws(() => firstComposer.createSubmitIntent(), /disposed/u);
+  views.dispose();
+  leases.dispose();
+});
+
+test("two Views of one Conversation Scope keep independent Composer documents", () => {
+  const leases = createConversationScopeLeaseRegistry({});
+  const views = createConversationViewRegistry({
+    scopeLeases: leases,
+    composerServices: { now: () => 1, createId: () => crypto.randomUUID() },
+  });
+  const scopeId = asConversationScopeId("conversation:shared");
+  const target = {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-shared"),
+  } as const;
+  leases.ensure(scopeId, asHostId("local"), target);
+  const first = views.ensure("view-a", scopeId, asHostId("local"), target).composer;
+  const second = views.ensure("view-b", scopeId, asHostId("local"), target).composer;
+  first.dispatch({
+    type: "set-document",
+    document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "only A" }] }] },
+  });
+  assert.equal(composerDocumentToPlainText(first.getSnapshot().draft.document), "only A");
+  assert.equal(composerDocumentToPlainText(second.getSnapshot().draft.document), "");
+  assert.equal(leases.get(scopeId)?.retainCount, 2);
+  views.dispose();
+  leases.dispose();
+});
+
+test("automatic Scope eviction reports cleanup failure without aborting its caller", () => {
+  const errors: AggregateError[] = [];
+  const leases = createConversationScopeLeaseRegistry({
+    maxInactiveScopes: 0,
+    onDisposeScope: () => { throw new Error("resource cleanup failed"); },
+    onDisposeError: (error) => errors.push(error),
+  });
+  assert.doesNotThrow(() => leases.ensure(
+    asConversationScopeId("scope-evicted"),
+    asHostId("local"),
+    {
+      type: "existing-thread",
+      key: createConversationKey("local", "thread-evicted"),
+    },
+  ));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]?.message ?? "", /scope-evicted/u);
+  leases.dispose();
+});
+
+test("Conversation Scope Host ownership and canonical Thread ownership are immutable", () => {
+  const store = createConversationBindingStore();
+  const first = asConversationScopeId("view-1");
+  const second = asConversationScopeId("view-2");
+  const key = createConversationKey("local", "thread-1");
+  store.register(first, asHostId("local"));
+  store.bind(first, key);
+
+  assert.throws(
+    () => store.register(first, asHostId("remote")),
+    /already belongs to Host local/u,
+  );
+  assert.throws(
+    () => store.bind(second, key),
+    /already bound to Conversation Scope/u,
+  );
+});
+
+test("promotion aliases survive application restart without becoming authoritative history", () => {
+  let persisted: readonly { scopeId: string; hostId: string; threadId: string | null }[] = [];
+  const persistence = {
+    load: () => persisted,
+    save: (bindings: typeof persisted) => { persisted = structuredClone(bindings); },
+  };
+  const scopeId = asConversationScopeId("client-new-thread:persisted");
+  const key = createConversationKey("ssh:alpha", "thread-persisted");
+  const first = createConversationBindingStore({ persistence });
+  first.register(scopeId, key.hostId);
+  first.bind(scopeId, key);
+  first.dispose();
+
+  const restarted = createConversationBindingStore({ persistence });
+  assert.equal(restarted.findScope(key), scopeId);
+  assert.deepEqual(restarted.resolve(scopeId)?.conversationKey, key);
+  restarted.dispose();
+});
+
+test("independent retainers with the same reason do not release each other", () => {
+  const leases = createConversationScopeLeaseRegistry({});
+  const scopeId = asConversationScopeId("conversation:retainers");
+  leases.ensure(scopeId, asHostId("local"), {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-retainers"),
+  });
+  const releaseFirst = leases.retain(scopeId, "route");
+  const releaseSecond = leases.retain(scopeId, "route");
+  assert.equal(leases.get(scopeId)?.retainCount, 2);
+  releaseFirst();
+  assert.equal(leases.get(scopeId)?.retainCount, 1);
+  assert.equal(leases.close(scopeId), false);
+  releaseSecond();
+  assert.equal(leases.close(scopeId), true);
+  leases.dispose();
+});
+
+test("leaving a Draft route hides it without discarding its retained document identity", () => {
+  const scopes = createConversationScopeRegistry({
+    initialDraft: {
+      draftId: "draft-retained",
+      execution: {
+        hostId: "local",
+        workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+      },
+    },
+  });
+  scopes.deactivateDraft();
+  assert.equal(scopes.getActiveDraft(), null);
+  assert.notEqual(scopes.getDraft("draft-retained"), null);
+  scopes.activateDraft("draft-retained");
+  assert.equal(scopes.getActiveDraft()?.id, "draft-retained");
+  scopes.dispose();
+});

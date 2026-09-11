@@ -1,0 +1,2447 @@
+/**
+ * Standard Panel — 基础样式
+ *
+ * 包含布局、间距、基础视觉和功能性样式。
+ * 业务侧可通过更高优先级的 CSS 或 CSS Variables 覆盖定制。
+ *
+ * 引入方式：
+ *   import '@tencent/tea-sdk-lightclaw/styles/standard-panel.css';
+ *
+ * CSS Variables（可覆盖）：
+ *   --lh-std-font-family
+ *   --lh-std-border-color
+ *   --lh-std-bg
+ *   --lh-std-bg-card
+ *   --lh-std-text
+ *   --lh-std-text-secondary
+ *   --lh-std-primary
+ *   --lh-std-primary-hover
+ *   --lh-std-danger
+ *   --lh-std-success
+ *   --lh-std-radius
+ *   --lh-std-radius-lg
+ */
+
+/* ═══════════════════════════════════════════
+   CSS Variables (Design Tokens)
+   ═══════════════════════════════════════════ */
+:root {
+  --lh-std-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  --lh-std-border-color: #e5e7eb;
+  --lh-std-bg: #ffffff;
+  --lh-std-bg-card: #f9fafb;
+  --lh-std-bg-hover: #f3f4f6;
+  --lh-std-text: #1f2937;
+  --lh-std-text-secondary: #6b7280;
+  --lh-std-text-placeholder: #9ca3af;
+  --lh-std-primary: #2563eb;
+  --lh-std-primary-hover: #1d4ed8;
+  --lh-std-primary-light: #eff6ff;
+  --lh-std-danger: #dc2626;
+  --lh-std-danger-hover: #b91c1c;
+  --lh-std-success: #16a34a;
+  --lh-std-radius: 6px;
+  --lh-std-radius-lg: 10px;
+  --lh-std-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --lh-std-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1),
+    0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* ═══════════════════════════════════════════
+   共用：Loading & Disabled
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel--loading,
+.lh-std-channel-panel--loading,
+.lh-std-skill-panel--loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.lh-std-model-panel__loader,
+.lh-std-channel-panel__loader,
+.lh-std-skill-panel__loader {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--lh-std-text-secondary);
+  font-size: 14px;
+}
+
+/* ═══════════════════════════════════════════
+   共用：按钮基础样式
+   ═══════════════════════════════════════════ */
+.lh-std-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  border-radius: var(--lh-std-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  font-family: var(--lh-std-font-family);
+}
+
+.lh-std-button--primary {
+  background: #1f2937;
+  color: #fff;
+  border-color: #1f2937;
+}
+
+.lh-std-button--primary:hover:not(:disabled) {
+  background: #111827;
+  border-color: #111827;
+}
+
+.lh-std-button--outline {
+  background: var(--lh-std-bg);
+  color: var(--lh-std-text);
+  border-color: var(--lh-std-border-color);
+}
+
+.lh-std-button--outline:hover:not(:disabled) {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-button--danger {
+  background: var(--lh-std-danger);
+  color: #fff;
+  border-color: var(--lh-std-danger);
+}
+
+.lh-std-button--danger:hover:not(:disabled) {
+  background: var(--lh-std-danger-hover);
+  border-color: var(--lh-std-danger-hover);
+}
+
+.lh-std-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════
+   共用：提示条
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel__hint-bar,
+.lh-std-channel-panel__hint-bar,
+.lh-std-skill-panel__hint-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--lh-std-primary-light);
+  border-radius: var(--lh-std-radius);
+  font-size: 13px;
+  color: var(--lh-std-text-secondary);
+  margin-bottom: 20px;
+  line-height: 1;
+}
+
+.lh-std-model-panel__hint-icon,
+.lh-std-channel-panel__hint-icon,
+.lh-std-skill-panel__hint-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.lh-std-channel-panel__hint-bar,
+.lh-std-skill-panel__hint-bar {
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  color: rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  margin-bottom: 16px;
+}
+
+.lh-std-channel-panel__title {
+  margin: 0 0 4px;
+  color: rgba(0, 0, 0, 0.95);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.lh-std-channel-panel__hint-bar {
+  margin-bottom: 12px;
+}
+
+.lh-std-channel-panel__hint-icon,
+.lh-std-skill-panel__hint-icon {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════
+   共用：消息提示
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel__message,
+.lh-std-channel-panel__message,
+.lh-std-skill-panel__message {
+  padding: 8px 12px;
+  border-radius: var(--lh-std-radius);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.lh-std-model-panel__message--error,
+.lh-std-channel-panel__message--error,
+.lh-std-skill-panel__message--error {
+  color: var(--lh-std-danger);
+  background: #fef2f2;
+}
+
+.lh-std-model-panel__message--success,
+.lh-std-channel-panel__message--success,
+.lh-std-skill-panel__message--success {
+  color: var(--lh-std-success);
+  background: #f0fdf4;
+}
+
+/* ═══════════════════════════════════════════
+   共用：Modal Overlay
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel__modal-overlay,
+.lh-std-channel-panel__modal-overlay,
+.lh-std-skill-panel__modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.lh-std-model-panel__modal,
+.lh-std-channel-panel__modal,
+.lh-std-skill-panel__modal {
+  background: var(--lh-std-bg);
+  border-radius: var(--lh-std-radius-lg);
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--lh-std-shadow-lg);
+}
+
+.lh-std-model-panel__modal-title,
+.lh-std-channel-panel__modal-title,
+.lh-std-skill-panel__modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--lh-std-text);
+  margin: 0 0 8px;
+}
+
+.lh-std-model-panel__modal-desc,
+.lh-std-channel-panel__modal-desc,
+.lh-std-skill-panel__modal-desc {
+  font-size: 13px;
+  color: var(--lh-std-text-secondary);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.lh-std-model-panel__modal-actions,
+.lh-std-channel-panel__modal-actions,
+.lh-std-skill-panel__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.lh-std-model-panel__probe-modal {
+  position: relative;
+  width: min(440px, calc(100vw - 32px));
+  max-width: 440px;
+  text-align: left;
+}
+
+.lh-std-model-panel__probe-modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 36px;
+  padding-right: 32px;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.lh-std-model-panel__probe-modal-dismiss {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--lh-std-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.lh-std-model-panel__probe-modal-dismiss:hover {
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg-hover);
+  border-color: var(--lh-std-border-color);
+}
+
+.lh-std-model-panel__probe-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  line-height: 0;
+}
+
+.lh-std-model-panel__probe-modal-icon--success {
+  color: #15803d;
+}
+
+.lh-std-model-panel__probe-modal-icon--error {
+  color: #dc2626;
+}
+
+.lh-std-model-panel__probe-modal-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.lh-std-model-panel__probe-modal > .lh-std-model-panel__modal-desc {
+  margin: 0 0 16px;
+  line-height: 1.55;
+}
+
+.lh-std-model-panel__probe-modal-reason {
+  display: block;
+  margin-top: 4px;
+  color: var(--lh-std-danger);
+}
+
+.lh-std-model-panel__probe-modal-details {
+  padding: 12px 14px;
+  color: var(--lh-std-text-secondary);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--lh-std-bg-card);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 8px;
+}
+
+.lh-std-model-panel__probe-modal-details > div {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+}
+
+.lh-std-model-panel__probe-modal-details > div + div {
+  margin-top: 6px;
+}
+
+.lh-std-model-panel__probe-modal-details span {
+  color: var(--lh-std-text-secondary);
+}
+
+.lh-std-model-panel__probe-modal-details strong {
+  max-width: none;
+  color: var(--lh-std-text);
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.lh-std-model-panel__probe-modal-actions {
+  justify-content: flex-end;
+}
+
+.lh-std-model-panel__probe-modal-ok {
+  min-width: 88px;
+  height: 36px;
+  padding: 0 20px;
+  color: #fff;
+  background: #111827;
+  border: 1px solid #111827;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.22);
+}
+
+.lh-std-model-panel__probe-modal-ok:hover {
+  background: #000;
+  border-color: #000;
+}
+
+/* ChannelPanel — QQ 连接方式选择菜单（卡片式按钮列表） */
+.lh-std-channel-panel__method-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.lh-std-channel-panel__method-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-channel-panel__method-card:hover {
+  background: var(--lh-std-bg-hover);
+  border-color: var(--lh-std-primary);
+}
+
+.lh-std-channel-panel__method-card--active {
+  background: var(--lh-std-bg-hover);
+  border-color: var(--lh-std-primary);
+  box-shadow: 0 0 0 2px rgba(51, 112, 255, 0.15);
+}
+
+.lh-std-channel-panel__method-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lh-std-text);
+}
+
+.lh-std-channel-panel__method-desc {
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+}
+
+/* ═══════════════════════════════════════════
+   ModelPanel — 状态条
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel {
+  font-family: var(--lh-std-font-family);
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--lh-std-bg-card);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-radius);
+  margin-bottom: 20px;
+}
+
+.lh-std-model-panel__status-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lh-std-model-panel__status-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.lh-std-model-panel__status-empty {
+  font-size: 13px;
+  color: var(--lh-std-text-secondary);
+}
+
+.lh-std-model-panel__status-configured {
+  font-size: 13px;
+  color: var(--lh-std-success);
+  font-weight: 500;
+}
+
+.lh-std-model-panel__delete-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--lh-std-text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: var(--lh-std-radius);
+  transition: all 0.15s ease;
+}
+
+.lh-std-model-panel__delete-btn:hover:not(:disabled) {
+  color: var(--lh-std-danger);
+  background: #fef2f2;
+}
+
+.lh-std-model-panel__delete-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════
+   ModelPanel — Registry (已配置模型列表)
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel__registry {
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  background: var(--lh-std-bg);
+}
+
+.lh-std-model-panel__registry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lh-std-model-panel__registry-title {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__registry-header-action {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lh-std-model-panel__registry-count {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--lh-std-text-secondary);
+}
+
+.lh-std-model-panel__registry-empty {
+  font-size: 13px;
+  color: var(--lh-std-text-secondary);
+  margin: 0;
+}
+
+.lh-std-model-panel__registry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lh-std-model-panel__registry-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--lh-std-border-color);
+}
+
+.lh-std-model-panel__registry-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.lh-std-model-panel__registry-item:first-child {
+  padding-top: 0;
+}
+
+.lh-std-model-panel__registry-item--active {
+  /* 无额外样式，通过 badge 区分 */
+}
+
+/* Info 区域 */
+.lh-std-model-panel__registry-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lh-std-model-panel__registry-label {
+  font-size: 14px;
+  color: var(--lh-std-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lh-std-model-panel__registry-label--active {
+  font-weight: 500;
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__registry-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--lh-std-success);
+  background: rgba(22, 163, 74, 0.1);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.lh-std-model-panel__registry-model-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: "SF Mono", Monaco, monospace;
+  color: var(--lh-std-text-secondary);
+  background: var(--lh-std-bg-card);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 编辑/删除按钮 */
+.lh-std-model-panel__registry-edit,
+.lh-std-model-panel__registry-delete {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.lh-std-model-panel__registry-edit:hover:not(:disabled) {
+  background: var(--lh-std-bg-hover);
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__registry-delete:hover:not(:disabled) {
+  background: var(--lh-std-bg-hover);
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__registry-edit:disabled,
+.lh-std-model-panel__registry-delete:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Registry item header（可点击折叠） */
+.lh-std-model-panel__registry-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  cursor: pointer;
+  padding: 4px 0;
+  border-radius: var(--lh-std-radius);
+  transition: background 0.1s ease;
+}
+
+.lh-std-model-panel__registry-item-header:hover {
+  background: var(--lh-std-bg-hover);
+  margin: 0 -8px;
+  padding: 4px 8px;
+  width: calc(100% + 16px);
+}
+
+.lh-std-model-panel__registry-expand-icon {
+  font-size: 20px;
+  color: var(--lh-std-text-secondary);
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+  line-height: 1;
+}
+
+.lh-std-model-panel__registry-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Registry models radio 列表 */
+.lh-std-model-panel__registry-models {
+  margin-top: 10px;
+  padding: 12px 16px;
+  background: var(--lh-std-bg-card);
+  border-radius: var(--lh-std-radius);
+  border: 1px solid var(--lh-std-border-color);
+}
+
+.lh-std-model-panel__registry-model-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__registry-model-item:hover {
+  color: var(--lh-std-primary);
+}
+
+.lh-std-model-panel__registry-model-radio {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.lh-std-model-panel__registry-model-name {
+  font-size: 13px;
+}
+
+/* 切换为默认按钮 */
+.lh-std-model-panel__registry-switch-area {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lh-std-model-panel__registry-switch-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lh-std-primary);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-primary);
+  border-radius: var(--lh-std-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-model-panel__registry-switch-btn:hover:not(:disabled) {
+  background: var(--lh-std-primary);
+  color: #fff;
+}
+
+.lh-std-model-panel__registry-switch-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════
+   ModelPanel — Tabs (Segment Control)
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel__tabs {
+  display: flex;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 24px;
+  background: var(--lh-std-bg);
+}
+
+.lh-std-model-panel__tab {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lh-std-text-secondary);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--lh-std-border-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lh-std-model-panel__tab:last-child {
+  border-right: none;
+}
+
+.lh-std-model-panel__tab:hover {
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-model-panel__tab--active {
+  color: var(--lh-std-text);
+  font-weight: 600;
+  background: var(--lh-std-bg-card);
+}
+
+.lh-std-model-panel__tab-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ea580c;
+  background: #fff7ed;
+  border-radius: 4px;
+}
+
+/* ═══════════════════════════════════════════
+   ModelPanel — 表单
+   ═══════════════════════════════════════════ */
+.lh-std-model-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-radius-lg);
+  background: var(--lh-std-bg);
+}
+
+.lh-std-model-panel__form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.lh-std-model-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lh-std-model-panel__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel__field-desc {
+  font-size: 12px;
+  color: #ea580c;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.lh-std-model-panel__field-link {
+  font-size: 12px;
+  color: #ea580c;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.lh-std-model-panel__field-link:hover {
+  text-decoration: underline;
+}
+
+.lh-std-model-panel__save-area {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* Keep injected consumer buttons separated even when their own styles reset flex gap. */
+.lh-std-model-panel__save-area > * + * {
+  margin-left: 8px;
+}
+
+.lh-std-model-panel__error {
+  color: var(--lh-std-danger);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* ModelPanel — 自定义模型切换（表单/JSON） */
+.lh-std-model-panel__custom-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.lh-std-model-panel__custom-mode-btn {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lh-std-text-secondary);
+  background: var(--lh-std-bg);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-model-panel__custom-mode-btn:first-child {
+  border-right: 1px solid var(--lh-std-border-color);
+}
+
+.lh-std-model-panel__custom-mode-btn:hover {
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-model-panel__custom-mode-btn--active {
+  color: var(--lh-std-text);
+  font-weight: 600;
+  background: var(--lh-std-bg-card);
+}
+
+.lh-std-model-panel__custom-mode-divider {
+  display: none;
+}
+
+.lh-std-model-panel__custom-api-tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lh-std-model-panel__custom-api-tab {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+  background: var(--lh-std-bg-card);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-model-panel__custom-api-tab--active {
+  background: var(--lh-std-primary-light);
+  color: var(--lh-std-primary);
+  border-color: var(--lh-std-primary);
+}
+
+.lh-std-model-panel__json-input {
+  width: 100%;
+  min-height: 200px;
+  padding: 12px;
+  font-size: 13px;
+  font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-radius);
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+
+.lh-std-model-panel__json-input:focus {
+  outline: none;
+  border-color: var(--lh-std-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.lh-std-model-panel__json-input--error {
+  border-color: var(--lh-std-danger);
+}
+
+.lh-std-model-panel__json-input--error:focus {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.lh-std-model-panel__hint {
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.lh-std-model-panel__key-field {
+  position: relative;
+}
+
+.lh-std-model-panel__eye-btn {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 16px;
+  color: var(--lh-std-text-secondary);
+  line-height: 1;
+}
+
+.lh-std-model-panel__eye-btn:hover {
+  color: var(--lh-std-text);
+}
+
+/* 描述文案（provider description） */
+.lh-std-model-panel__description {
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+.lh-std-model-panel__description a {
+  color: var(--lh-std-primary);
+  text-decoration: underline;
+  font-weight: 500;
+}
+
+/* 获取 API Key 链接 */
+.lh-std-model-panel__api-key-link {
+  font-size: 12px;
+  color: var(--lh-std-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.lh-std-model-panel__api-key-link::after {
+  content: "↗";
+  font-size: 11px;
+}
+
+.lh-std-model-panel__api-key-link:hover {
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════
+   ModelPanel — DefaultSelect / DefaultInput
+   ═══════════════════════════════════════════ */
+
+/* Custom Select Wrapper */
+.lh-std-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.lh-std-select {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 999px;
+  background: var(--lh-std-bg);
+  color: var(--lh-std-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  text-align: left;
+}
+
+.lh-std-select:hover {
+  border-color: #9ca3af;
+}
+
+.lh-std-select-wrapper--open .lh-std-select {
+  border-color: var(--lh-std-text);
+  box-shadow: 0 0 0 2px rgba(31, 41, 55, 0.08);
+}
+
+.lh-std-select--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lh-std-select__text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-select__text--placeholder {
+  color: var(--lh-std-text-placeholder);
+}
+
+.lh-std-select__arrow {
+  flex-shrink: 0;
+  color: #6b7280;
+  transition: transform 0.2s ease;
+}
+
+.lh-std-select__arrow--open {
+  transform: rotate(180deg);
+}
+
+/* Dropdown */
+.lh-std-select__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  animation: lh-select-fade-in 0.15s ease;
+}
+
+@keyframes lh-select-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lh-std-select__option {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--lh-std-text);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.lh-std-select__option:hover {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-select__option--active {
+  background: var(--lh-std-bg-hover);
+  font-weight: 500;
+  color: var(--lh-std-text);
+}
+
+.lh-std-model-panel input.lh-std-input,
+input.lh-std-input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 999px;
+  background: var(--lh-std-bg);
+  color: var(--lh-std-text);
+  box-sizing: border-box;
+}
+
+input.lh-std-input:focus {
+  outline: none;
+  border-color: var(--lh-std-text);
+}
+
+input.lh-std-input::placeholder {
+  color: var(--lh-std-text-placeholder);
+}
+
+/* ═══════════════════════════════════════════
+   ChannelPanel
+   ═══════════════════════════════════════════ */
+.lh-std-channel-panel {
+  font-family: var(--lh-std-font-family);
+  color: var(--lh-std-text);
+}
+
+.lh-std-channel-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.lh-std-channel-panel__card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+
+.lh-std-channel-panel__card:hover {
+  box-shadow: var(--lh-std-shadow);
+  border-color: #d1d5db;
+}
+
+.lh-std-channel-panel__card--bound {
+  border-color: var(--lh-std-success);
+  background: #f8fdf9;
+}
+
+/* 卡片内部：icon + 文字 水平排列 */
+.lh-std-channel-panel__card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+/* 图标容器 */
+.lh-std-channel-panel__card-icon {
+  flex-shrink: 0;
+}
+
+.lh-std-channel-panel__icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lh-std-channel-panel__icon-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+/* 文字内容 */
+.lh-std-channel-panel__card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.lh-std-channel-panel__card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.lh-std-channel-panel__card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lh-std-text);
+  margin: 0;
+}
+
+.lh-std-channel-panel__card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lh-std-success);
+  background: rgba(22, 163, 74, 0.1);
+  border-radius: 10px;
+}
+
+.lh-std-channel-panel__card-desc {
+  font-size: 13px;
+  color: var(--lh-std-text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* 操作按钮区域 */
+.lh-std-channel-panel__card-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}
+
+/* 卡片操作统一收拢在右下角；空间不足时从右侧自然换行。 */
+.lh-std-channel-panel__card-action-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* 配置教程按钮 — 左下，与 + 连接 按钮同尺寸，浅灰底深字以区分 */
+.lh-std-channel-panel__guide-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.lh-std-channel-panel__guide-btn:hover {
+  color: #111827;
+  background: #e5e7eb;
+  border-color: #d1d5db;
+  text-decoration: none;
+}
+
+.lh-std-channel-panel__card-unbind {
+  min-height: 36px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lh-std-text-secondary);
+  background: transparent;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-channel-panel__card-unbind:hover:not(:disabled) {
+  color: var(--lh-std-danger);
+  border-color: var(--lh-std-danger);
+  background: #fef2f2;
+}
+
+.lh-std-channel-panel__card-unbind:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lh-std-channel-panel__connect-btn {
+  min-height: 36px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: #1f2937;
+  border: 1px solid #1f2937;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-channel-panel__connect-btn:hover:not(:disabled) {
+  background: #111827;
+  border-color: #111827;
+}
+
+.lh-std-channel-panel__connect-btn--reconnect {
+  background: var(--lh-std-bg);
+  color: var(--lh-std-text);
+  border-color: var(--lh-std-border-color);
+}
+
+.lh-std-channel-panel__connect-btn--reconnect:hover:not(:disabled) {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-channel-panel__connect-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 国际站长文案：保持已连接卡片的三个操作在卡片边界内。 */
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  .lh-std-channel-panel__card-action {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  .lh-std-channel-panel__guide-btn {
+  flex: 0 0 auto;
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 10px;
+  text-align: center;
+}
+
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  .lh-std-channel-panel__card-action-right {
+  flex: 0 1 100%;
+  min-width: 0;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.lh-std-channel-panel--i18n
+  .lh-std-channel-panel__card--bound
+  :is(.lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn) {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+/* ChannelPanel — QQ Modal 表单 */
+.lh-std-channel-panel__modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lh-std-channel-panel__modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lh-std-channel-panel__modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lh-std-channel-panel__modal-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lh-std-text);
+}
+
+.lh-std-channel-panel__modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: 999px;
+  background: var(--lh-std-bg);
+  color: var(--lh-std-text);
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.lh-std-channel-panel__modal-input:focus {
+  outline: none;
+  border-color: var(--lh-std-text);
+}
+
+.lh-std-channel-panel__modal-input::placeholder {
+  color: var(--lh-std-text-placeholder);
+}
+
+.lh-std-channel-panel__secret-wrap {
+  position: relative;
+}
+
+.lh-std-channel-panel__secret-eye {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  color: var(--lh-std-text-secondary);
+}
+
+/* 共用按钮 */
+.lh-std-channel-panel__btn-outline,
+.lh-std-skill-panel__btn-outline {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-channel-panel__btn-outline:hover,
+.lh-std-skill-panel__btn-outline:hover {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-channel-panel__btn-primary,
+.lh-std-skill-panel__btn-primary {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  background: #1f2937;
+  border: 1px solid #1f2937;
+  border-radius: var(--lh-std-skill-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-channel-panel__btn-outline,
+.lh-std-channel-panel__btn-primary {
+  border-radius: var(--lh-std-radius-lg);
+}
+
+.lh-std-channel-panel__btn-primary:hover:not(:disabled),
+.lh-std-skill-panel__btn-primary:hover:not(:disabled) {
+  background: #111827;
+}
+
+.lh-std-channel-panel__btn-primary:disabled,
+.lh-std-skill-panel__btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lh-std-channel-panel__btn-danger {
+  background: var(--lh-std-danger);
+  border-color: var(--lh-std-danger);
+}
+
+.lh-std-channel-panel__btn-danger:hover:not(:disabled) {
+  background: var(--lh-std-danger-hover);
+  border-color: var(--lh-std-danger-hover);
+}
+
+/* ═══════════════════════════════════════════
+   SkillPanel
+   ═══════════════════════════════════════════ */
+.lh-std-skill-panel {
+  --lh-std-skill-radius: 8px;
+  --lh-std-skill-radius-sm: 6px;
+  font-family: var(--lh-std-font-family);
+  color: var(--lh-std-text);
+}
+
+/* SkillPanel — 搜索 */
+.lh-std-skill-panel__search {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.lh-std-skill-panel__search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.lh-std-skill-panel__search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  pointer-events: none;
+  color: rgba(0, 0, 0, 0.35);
+  transform: translateY(-50%);
+  transition: color 160ms ease;
+}
+
+.lh-std-skill-panel__search-input-wrap:focus-within .lh-std-skill-panel__search-icon {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.lh-std-skill-panel__search-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding: 0 40px 0 38px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: #fff;
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 14px;
+  line-height: 22px;
+  outline: none;
+  transition: border-color 160ms ease;
+}
+
+.lh-std-skill-panel__search-input:focus {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.lh-std-skill-panel__search-input::placeholder {
+  color: rgba(0, 0, 0, 0.32);
+}
+
+.lh-std-skill-panel__search-clear {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--lh-std-text-secondary);
+  padding: 4px;
+}
+
+.lh-std-skill-panel__skillhub-link {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--lh-std-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__skillhub-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1023px) {
+  .lh-std-skill-panel__search {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .lh-std-skill-panel__search-input-wrap {
+    width: 100%;
+  }
+}
+
+/* SkillPanel — Section */
+.lh-std-skill-panel__section {
+  margin-bottom: 24px;
+}
+
+.lh-std-skill-panel__section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lh-std-text);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lh-std-skill-panel__section-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--lh-std-text-secondary);
+}
+
+/* SkillPanel — 列表 */
+.lh-std-skill-panel__list-container {
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+  overflow: hidden;
+}
+
+.lh-std-skill-panel__list-container--installed {
+  background: #fff;
+  overflow: visible;
+}
+
+.lh-std-skill-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lh-std-skill-panel__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--lh-std-border-color);
+  transition: background 0.1s ease;
+}
+
+.lh-std-skill-panel__item:last-child {
+  border-bottom: none;
+}
+
+.lh-std-skill-panel__item:hover {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-skill-panel__item-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lh-std-skill-panel__item-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  color: var(--lh-std-primary);
+}
+
+.lh-std-skill-panel__item-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lh-std-text);
+}
+
+.lh-std-skill-panel__item-slug {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--lh-std-text-secondary);
+  background: var(--lh-std-bg-card);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius-sm);
+  font-family: "SF Mono", Monaco, monospace;
+}
+
+.lh-std-skill-panel__item-desc {
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__item-action {
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.lh-std-skill-panel__installed-badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lh-std-success);
+}
+
+.lh-std-skill-panel__install-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lh-std-primary);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-primary);
+  border-radius: var(--lh-std-skill-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-skill-panel__install-btn:hover:not(:disabled) {
+  background: var(--lh-std-primary);
+  color: #fff;
+}
+
+.lh-std-skill-panel__install-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* SkillPanel — 空状态 & 展开 */
+.lh-std-skill-panel__empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--lh-std-text-secondary);
+  font-size: 13px;
+}
+
+.lh-std-skill-panel__expand {
+  padding: 8px 16px;
+  border-top: 1px solid var(--lh-std-border-color);
+  text-align: center;
+}
+
+.lh-std-skill-panel__expand-btn {
+  font-size: 12px;
+  color: var(--lh-std-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.lh-std-skill-panel__expand-btn:hover {
+  text-decoration: underline;
+}
+
+/* SkillPanel — 已安装技能筛选 */
+.lh-std-skill-panel__installed-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.lh-std-skill-panel__installed-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.lh-std-skill-panel__installed-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  color: rgba(0, 0, 0, 0.45);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.lh-std-skill-panel__installed-search-toggle:hover {
+  color: rgba(0, 0, 0, 0.65);
+  background: var(--lh-std-bg-hover);
+  border-color: var(--lh-std-text-secondary);
+}
+
+.lh-std-skill-panel__installed-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lh-std-skill-panel__installed-select {
+  min-width: 168px;
+  max-width: 260px;
+  height: 34px;
+  padding: 0 32px 0 10px;
+  font-size: 13px;
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+}
+
+.lh-std-skill-panel__installed-select:focus {
+  outline: none;
+  border-color: var(--lh-std-text);
+}
+
+.lh-std-skill-panel__installed-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.lh-std-skill-panel__installed-search-wrap--compact {
+  flex: 0 1 220px;
+  width: 220px;
+  min-width: 180px;
+  max-width: min(220px, 52vw);
+}
+
+.lh-std-skill-panel__installed-search-icon {
+  position: absolute;
+  left: 11px;
+  display: inline-flex;
+  color: var(--lh-std-text-secondary);
+  pointer-events: none;
+}
+
+.lh-std-skill-panel__installed-search-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 34px 0 34px;
+  font-size: 13px;
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+  box-sizing: border-box;
+}
+
+.lh-std-skill-panel__installed-search-input:focus {
+  outline: none;
+  border-color: var(--lh-std-text);
+}
+
+.lh-std-skill-panel__installed-search-input::placeholder {
+  color: var(--lh-std-text-placeholder);
+}
+
+.lh-std-skill-panel__installed-search-clear {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--lh-std-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* SkillPanel — 已安装技能结构化列表 */
+.lh-std-skill-panel__installed-table {
+  position: relative;
+  width: 100%;
+}
+
+.lh-std-skill-panel__installed-header,
+.lh-std-skill-panel__installed-row {
+  display: grid;
+  grid-template-columns: minmax(118px, 1.4fr) minmax(94px, 1fr) minmax(104px, 1fr) minmax(70px, 0.7fr);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.lh-std-skill-panel__installed-header {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lh-std-text-secondary);
+  background: var(--lh-std-bg-card);
+  border-bottom: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius) var(--lh-std-skill-radius) 0 0;
+}
+
+.lh-std-skill-panel__installed-header > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-head-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.lh-std-skill-panel__installed-head-filter-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  gap: 5px;
+  padding: 0;
+  color: var(--lh-std-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.lh-std-skill-panel__installed-head-filter-btn:hover,
+.lh-std-skill-panel__installed-head-filter-btn--open {
+  color: var(--lh-std-text);
+  background: transparent;
+}
+
+.lh-std-skill-panel__installed-head-filter-btn--active {
+  color: var(--lh-std-primary);
+  background: transparent;
+}
+
+.lh-std-skill-panel__installed-head-filter-label,
+.lh-std-skill-panel__installed-head-filter-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-head-filter-label {
+  flex-shrink: 0;
+}
+
+.lh-std-skill-panel__installed-head-filter-value {
+  min-width: 0;
+  font-weight: 500;
+}
+
+.lh-std-skill-panel__installed-filter-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  min-width: 210px;
+  max-width: min(320px, 72vw);
+  max-height: 320px;
+  padding: 6px;
+  overflow: auto;
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+  box-shadow: var(--lh-std-shadow-lg);
+}
+
+.lh-std-skill-panel__installed-filter-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 16px;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 7px 8px;
+  color: var(--lh-std-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--lh-std-skill-radius-sm);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lh-std-skill-panel__installed-filter-option:hover,
+.lh-std-skill-panel__installed-filter-option--selected {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-skill-panel__installed-filter-option--selected {
+  color: var(--lh-std-primary);
+}
+
+.lh-std-skill-panel__installed-filter-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-filter-option-count {
+  color: var(--lh-std-text-secondary);
+  font-size: 12px;
+}
+
+.lh-std-skill-panel__installed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lh-std-skill-panel__installed-row {
+  min-height: 52px;
+  padding: 12px;
+  border-bottom: 1px solid var(--lh-std-border-color);
+  transition: background 0.1s ease;
+}
+
+.lh-std-skill-panel__installed-row:last-child {
+  border-bottom: none;
+}
+
+.lh-std-skill-panel__installed-row:hover {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-skill-panel__installed-cell {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--lh-std-text);
+}
+
+.lh-std-skill-panel__installed-cell--name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lh-std-skill-panel__installed-name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--lh-std-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-slug {
+  overflow: hidden;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 11px;
+  color: var(--lh-std-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-cell--category,
+.lh-std-skill-panel__installed-cell--source {
+  overflow: hidden;
+  color: var(--lh-std-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__installed-status--enabled {
+  color: var(--lh-std-success, rgb(20, 120, 60));
+  background: rgba(30, 170, 90, 0.1);
+}
+
+.lh-std-skill-panel__installed-status--disabled {
+  color: var(--lh-std-text-secondary);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.lh-std-skill-panel__installed-status--failed {
+  color: rgb(170, 40, 40);
+  background: rgba(220, 60, 60, 0.1);
+}
+
+.lh-std-skill-panel__installed-status--unknown {
+  color: rgb(120, 80, 20);
+  background: rgba(255, 161, 0, 0.12);
+}
+
+.lh-std-skill-panel__pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+}
+
+.lh-std-skill-panel__pagination--installed {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px 0 0;
+}
+
+.lh-std-skill-panel__pagination-btn {
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--lh-std-text);
+  background: var(--lh-std-bg);
+  border: 1px solid var(--lh-std-border-color);
+  border-radius: var(--lh-std-skill-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lh-std-skill-panel__pagination-btn:hover:not(:disabled) {
+  background: var(--lh-std-bg-hover);
+}
+
+.lh-std-skill-panel__pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lh-std-skill-panel__pagination-info {
+  min-width: 58px;
+  text-align: center;
+}
+
+/* SkillPanel — Item 布局改造（支持 checkbox + 两栏内容） */
+.lh-std-skill-panel__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--lh-std-border-color);
+  transition: background 0.1s ease;
+}
+
+.lh-std-skill-panel__item-checkbox {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 4px;
+  cursor: pointer;
+  accent-color: var(--lh-std-primary);
+}
+
+.lh-std-skill-panel__item-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.lh-std-skill-panel__item-checkbox-placeholder {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+}
+
+.lh-std-skill-panel__item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.lh-std-skill-panel__item-icon--active {
+  color: var(--lh-std-primary);
+}
+
+/* SkillPanel — Section header（标题 + 批量工具栏） */
+.lh-std-skill-panel__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.lh-std-skill-panel__section-header .lh-std-skill-panel__section-title {
+  margin-bottom: 0;
+}
+
+/* SkillPanel — 批量安装工具栏 */
+.lh-std-skill-panel__bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lh-std-skill-panel__bulk-count {
+  font-size: 12px;
+  color: var(--lh-std-text-secondary);
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--lh-std-primary);
+  border: none;
+  border-radius: var(--lh-std-skill-radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+
+.lh-std-skill-panel__bulk-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.lh-std-skill-panel__bulk-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* SkillPanel — 批量安装进度条 */
+.lh-std-skill-panel__bulk-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(var(--lh-std-primary-rgb, 59, 130, 246), 0.2);
+  border-radius: var(--lh-std-skill-radius);
+  background: rgba(var(--lh-std-primary-rgb, 59, 130, 246), 0.05);
+  font-size: 12px;
+  color: var(--lh-std-primary);
+}
+
+.lh-std-skill-panel__bulk-progress-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__bulk-cancel {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lh-std-text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--lh-std-skill-radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.lh-std-skill-panel__bulk-cancel:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.lh-std-skill-panel__bulk-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* SkillPanel — 行状态 badge（批量安装期间） */
+.lh-std-skill-panel__row-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__row-badge--pending {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--lh-std-text-secondary);
+}
+
+.lh-std-skill-panel__row-badge--installing {
+  background: rgba(var(--lh-std-primary-rgb, 59, 130, 246), 0.1);
+  color: var(--lh-std-primary);
+}
+
+.lh-std-skill-panel__row-badge--retrying {
+  background: rgba(255, 161, 0, 0.1);
+  color: rgb(180, 100, 0);
+}
+
+.lh-std-skill-panel__row-badge--done {
+  background: rgba(30, 170, 90, 0.1);
+  color: var(--lh-std-success, rgb(20, 120, 60));
+}
+
+.lh-std-skill-panel__row-badge--failed {
+  background: rgba(220, 60, 60, 0.1);
+  color: rgb(170, 40, 40);
+}
+
+.lh-std-skill-panel__row-badge--skipped {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--lh-std-text-secondary);
+}
+
+/* SkillPanel — 行动作组（badge + 重试按钮） */
+.lh-std-skill-panel__item-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lh-std-skill-panel__retry-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lh-std-primary);
+  background: none;
+  border: 1px solid var(--lh-std-primary);
+  border-radius: var(--lh-std-skill-radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.lh-std-skill-panel__retry-btn:hover {
+  background: var(--lh-std-primary);
+  color: #fff;
+}
+
+/* SkillPanel — 操作结果反馈 */
+.lh-std-skill-panel__action-status {
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: var(--lh-std-skill-radius);
+}
+
+.lh-std-skill-panel__action-status--pre {
+  white-space: pre-line;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.lh-std-skill-panel__action-status--success {
+  color: var(--lh-std-success, rgb(20, 120, 60));
+  background: rgba(30, 170, 90, 0.06);
+}
+
+.lh-std-skill-panel__action-status--error {
+  color: rgb(170, 40, 40);
+  background: rgba(220, 60, 60, 0.06);
+}
+
+/* SkillPanel — spinning 动画 */
+.lh-std-skill-panel__spin {
+  animation: lh-std-spin 1s linear infinite;
+}
+
+@keyframes lh-std-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════
+   Visually hidden (screen readers only)
+   ═══════════════════════════════════════════ */
+.lh-std-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ═══════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════ */
+@keyframes lh-std-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lh-std-spin {
+  animation: lh-std-spin 1s linear infinite;
+}

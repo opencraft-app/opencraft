@@ -281,7 +281,7 @@ describe("domestic SkillHub command and response handling", () => {
     expect(buildSkillhubListCommand()).toBe("acli skills list");
   });
 
-  it("treats every domestic SkillHub API result as SkillHub", () => {
+  it("keeps domestic search results in SkillHub while preserving installed builtin sources", () => {
     const search = parseSkillhubSearch(JSON.stringify({
       code: 0,
       data: {
@@ -361,6 +361,9 @@ describe("domestic SkillHub command and response handling", () => {
         name: "humanizer",
         category: "creative",
         version: "2.5.1",
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
       }),
       expect.objectContaining({
         rawId: "skill_e95600124c0d7729fa4d",
@@ -368,6 +371,9 @@ describe("domestic SkillHub command and response handling", () => {
         name: "humanizer",
         category: "creative",
         version: "4.1.0",
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
       }),
     ]));
     expect(
@@ -506,6 +512,32 @@ describe("Hermes native installed skills", () => {
         rawId: "team/repo/finance-news",
         registries: ["skills-sh", "hermes"],
         uninstallable: true,
+      }),
+    ]);
+  });
+
+  it("keeps Hermes builtin authority when a matching SkillHub record exists", () => {
+    const registrySkill: InstalledSkill = {
+      registry: "skillhub",
+      rawId: "architecture-diagram",
+      slug: "architecture-diagram",
+      name: "architecture-diagram",
+      registries: ["skillhub"],
+      sourceLabel: "SkillHub",
+    };
+    const [hermesSkill] = parseHermesInstalledSkills([
+      "│ Name │ Category │ Source │ Trust │ Status │",
+      "│ architecture-diagram │ creative │ builtin │ builtin │ enabled │",
+    ].join("\n"));
+
+    expect(mergeInstalledWithHermes([registrySkill], hermesSkill ? [hermesSkill] : [])).toEqual([
+      expect.objectContaining({
+        registry: "skillhub",
+        rawId: "architecture-diagram",
+        registries: ["skillhub", "hermes"],
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
       }),
     ]);
   });

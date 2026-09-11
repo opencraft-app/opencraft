@@ -26,6 +26,7 @@ PRIMARY_SERVICES = {
     "infra-pulumi": "infra_pulumi",
     "new-api": "new-api",
     "nextgen-dashboard": "nextgen-dashboard",
+    "opencraft": "opencraft",
     "payment": "payment",
     "sandbox": "sandbox",
     "service-gateway": "service-gateway",

@@ -33,7 +33,7 @@ stages:
         name: 输出将执行的 migration/readiness Job
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           SERVICE: ${{ variables.SERVICE }}
           TARGET_ENV: ${{ variables.TARGET_ENV }}
@@ -91,7 +91,7 @@ stages:
         name: 记录无实际 DB 变更
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 无实际 DB 变更，跳过人工审核和 apply
             shell: bash
@@ -106,7 +106,7 @@ stages:
         name: 阻断并提示人工处理
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 阻断生产 DB migration
             shell: bash
@@ -135,7 +135,7 @@ stages:
         name: 记录人工确认
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 人工确认已通过
             shell: bash
@@ -149,7 +149,7 @@ stages:
         name: 创建并等待 migration/readiness Job
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           SERVICE: ${{ variables.SERVICE }}
           TARGET_ENV: ${{ variables.TARGET_ENV }}

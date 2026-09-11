@@ -1,0 +1,98 @@
+.chat-markdown-image-button {
+  display: block;
+  max-width: 100%;
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.chat-markdown-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 12.5rem);
+  max-height: 12.5rem;
+  border: 1px solid var(--color-border-default, var(--border-default));
+  border-radius: 6px;
+  object-fit: contain;
+  box-shadow: var(--shadow-100);
+}
+
+.chat-media-paragraph--single .chat-markdown-image {
+  max-width: 100%;
+  max-height: 10rem;
+}
+
+.chat-media-paragraph--grid .chat-markdown-image-button,
+.chat-media-paragraph--grid .chat-markdown-image {
+  margin: 0;
+}
+
+.chat-markdown-media-unavailable {
+  display: inline-flex;
+  min-width: 96px;
+  min-height: 72px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  background: var(--alpha-04);
+}
+
+.chat-markdown-media-placeholder {
+  display: inline-flex;
+  width: min(100%, 12.5rem);
+  min-height: 96px;
+  margin: 12px 0;
+  border-radius: 6px;
+  background: var(--alpha-04);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-markdown-media-placeholder[data-state="loading"] {
+    background-image: linear-gradient(90deg, transparent, var(--alpha-06), transparent);
+    background-size: 200% 100%;
+    animation: opencraft-markdown-media-loading 1.2s ease-in-out infinite;
+  }
+}
+
+.chat-markdown-image-preview {
+  width: min-content;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.chat-markdown-image-preview::backdrop { background: rgb(0 0 0 / 54%); backdrop-filter: blur(4px); }
+.chat-markdown-image-preview > img { display: block; max-width: calc(100vw - 48px); max-height: calc(100vh - 48px); border-radius: 10px; object-fit: contain; box-shadow: var(--shadow-300); }
+.chat-markdown-image-preview__close,
+.chat-markdown-image-preview__previous,
+.chat-markdown-image-preview__next { position: absolute; z-index: 1; display: inline-flex; width: 32px; height: 32px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 9999px; color: #fff; background: rgb(0 0 0 / 54%); cursor: pointer; }
+.chat-markdown-image-preview__close { inset-block-start: 8px; inset-inline-end: 8px; }
+.chat-markdown-image-preview__previous,
+.chat-markdown-image-preview__next { inset-block-start: 50%; transform: translateY(-50%); }
+.chat-markdown-image-preview__previous { inset-inline-start: 8px; }
+.chat-markdown-image-preview__next { inset-inline-end: 8px; }
+.chat-markdown-image-preview :is(button) svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .opencraft-chat-document[data-markdown-animated] .chat-markdown-image { animation: opencraft-markdown-image-enter 180ms ease-out both; }
+}
+
+@keyframes opencraft-markdown-image-enter {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes opencraft-markdown-media-loading {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}

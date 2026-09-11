@@ -367,12 +367,15 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         sourceBotId: bot.sourceBotId,
         initialSoul: bot.initialSoul,
       });
+      const isInitialInstanceCreation = created.id === (created.instanceId ?? created.id);
 
-      /* Persist personality/intro as draft metadata via updateBotProfile */
-      await repositories.bots.updateBotProfile(created.id, {
-        template: bot.personality,
-        mission: bot.intro || undefined,
-      });
+      // A newly created instance is still provisioning. Profile reads must wait until it is Running.
+      if (!isInitialInstanceCreation) {
+        await repositories.bots.updateBotProfile(created.id, {
+          template: bot.personality,
+          mission: bot.intro || undefined,
+        });
+      }
 
       const openClawBot: OpenClawBot = {
         id: created.id,

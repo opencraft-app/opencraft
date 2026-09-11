@@ -27,7 +27,7 @@ class NewAPIBuildWorkflowTests(unittest.TestCase):
         jobs = workflow["stages"][0]["jobs"]
         self.assertEqual(set(jobs), {"build-cn", "build-sg"})
         self.assertEqual(jobs["build-cn"]["runs-on"]["pool-name"], "cn-pool")
-        self.assertEqual(jobs["build-sg"]["runs-on"]["pool-name"], "env")
+        self.assertEqual(jobs["build-sg"]["runs-on"]["pool-name"], "cn-pool")
         self.assertEqual(
             set(jobs["build-cn"]["env"]),
             {"TCR_BEIJING_LLMGATEWAY_PASSWORD", "TCR_SHPROD_PASSWORD"},

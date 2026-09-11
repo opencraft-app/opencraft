@@ -1,0 +1,108 @@
+{
+  "scope": "Unmodified r3562 function bodies with injected runtime boundaries and shared deterministic presentation, not the complete Codex application",
+  "referenceRoot": "/data/mia/.runtime/lifecycle-authority-dead-contract-r3562",
+  "referenceAgainstVela": {
+    "eventCount": 18,
+    "sampledFramePairs": 864,
+    "settledMaximumScalarDifferencePx": 0,
+    "settledMaximumAnchorDifferencePx": 0,
+    "maximumFrameScalarDifferencePx": 29,
+    "maximumFrameAnchorDifferencePx": 29,
+    "transientDifferences": [
+      {
+        "index": 11,
+        "event": {
+          "type": "complete"
+        },
+        "scalar": 29,
+        "anchor": 29
+      }
+    ]
+  },
+  "referenceSelfControls": [
+    {
+      "eventCount": 18,
+      "sampledFramePairs": 864,
+      "settledMaximumScalarDifferencePx": 0,
+      "settledMaximumAnchorDifferencePx": 0,
+      "maximumFrameScalarDifferencePx": 0,
+      "maximumFrameAnchorDifferencePx": 0,
+      "transientDifferences": []
+    },
+    {
+      "eventCount": 18,
+      "sampledFramePairs": 864,
+      "settledMaximumScalarDifferencePx": 0,
+      "settledMaximumAnchorDifferencePx": 0,
+      "maximumFrameScalarDifferencePx": 29,
+      "maximumFrameAnchorDifferencePx": 29,
+      "transientDifferences": [
+        {
+          "index": 11,
+          "event": {
+            "type": "complete"
+          },
+          "scalar": 29,
+          "anchor": 29
+        }
+      ]
+    }
+  ],
+  "conclusion": "Settled states match. Cross-page native observer delivery also produces transient differences in original-versus-original controls; this is not a frame-for-frame zero-difference claim.",
+  "fingerprints": {
+    "features/shared/use-latest-callback.ts#int": "a729f454747094b7153210db2bcb14dadd7c81f4769d6c4b7f3de56988eb8c79",
+    "features/shared/use-latest-callback.ts#useLatestCallback__gh_o6fc": "317c1cd94af238548756e888e4d94f6236920aa04a71fbe30333eae317d15479",
+    "modules/auto-import-v12/react-exports-o-khw.js#cancelStableCallback": "c1ab5c4ed62ffa2dd0e1fc4b4b2ee36eec95975c0f2e3979e04ef43713074a47",
+    "shared/use-resize-observer.ts#useResizeObserver__zM_2d7fc": "cec96f4b34ad34cf403061fd4ac6fc28d03f0d45808921ad5fd432916965bb3a",
+    "modules/ui-islands-v17-composer-layout/handle-tab-drop-move.js#registerResizeObserverCallback": "322f1d03adc22e65de7c1b0252a29f77900f7882d78dcc0cbb816b1b8062a37a",
+    "modules/ui-islands-v17-composer-layout/handle-tab-drop-move.js#removeResizeObserverCallback": "4e3bf204dbc2ddb86363079ad4f67c350ac19e0c890555afa883bf8882967eba",
+    "shared/create-reactive-store-00144.ts#extractElementSize": "6fe7024f66f01a794a1ce5709c79cddbead8d4a5aa76d3674da2fc5a6b8901dc",
+    "editor/create-diff-scroll-adjuster-00148.ts#ph": "c2944ab0605e4f82fe0f0ea283c2b2b2808e759cd58fe018b49e2a0d1e0fd997",
+    "lazy/app-initial/async-to-generator.js#getScrollOffset": "ae53dddd5470354e9a3913ce790dc229fff2315318eeb235d4523857af797f43",
+    "lazy/app-initial/async-to-generator.js#setInvertedScrollPosition": "98611853af4b51029d5d9a29e8df8080b57b0ea46d5cc303594837b43a58ebce",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#t": "a3bbe95a1f535738f850f879d7ec73945397a5062daa3811b96aff44c4ddec25",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#n": "44ead0c429df90a1b38da4cb9839d61f041f3f2512eda2927fdc5b1f5a875c66",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#r": "29d0527667fc248f17e336a9d0151906542657ffce3ca7bf73a4bfb15800e34a",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#i": "e1143001145872081156181ed0f28ab5a3717d325a8bc7913cb197948bb46290",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#a": "800875ba22c4e8f30aad30ccf8219e4ebafbe9c63a9e9d4ec0d3458a9df346d3",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#o": "814d0c573de00e218971918fa5d1bc3f6e3bc199281cffb76a627b7c1c95a7ca",
+    "lazy/app-initial/thread-virtualizer-D5BSbZuA.js#s": "ff002ed2a5fa1fdde01d0da3d8766fec90ef582e6d0fd8df6a8c01390dd50efe",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Ie": "ac6a95cd0acce38432919b0c5aa3c2a32da48fdeb7d2a331748d8b9b6de1e016",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Le": "49c25ead1942e470b2c676a266d729474f438343f03f3a8cab86941aed0fac7f",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Re": "8c2831dd13bb32bb81a40164ea072d542d52c00e16772b88f465d374d1479ddc",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#ze": "363b4c184c56074d7f814f8dc40ff6fc167b46392fd63335932c1b13b1b8e422",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Be": "84698855a7614ca47b7039d6c09ddef1079c03cdc6491b174210f08b12503b46",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Ve": "d677f129b65918226c7ff8b028a9778cbecf8ac67187fbbc36b50f8fd591ac01",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#He": "e082c4406aa09494217b9e4f173888f0d21c7581cd15a114364f1a34b569824b",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Ue": "7209685796c8337b0990ae08d4a9bfe74e311142049a128b6f77840769bd7316",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#We": "d402487c875e75455479b4dae94a808421ab10d929b8f6bc3e9bd7eaf6687150",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Ge": "430732b937f44455fac4fb4587adfb63b8acd2eb355ca70c5018178916e45e0c",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Ke": "cbdbf7381ded5542c7a2ff51f6efeccccfa66df14ddfcbb118fea928911a92ec",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#qe": "c7a2714b1791d4aa20490f8430da5efde1aa86483122bd1fcc866bdf21e67f8a",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Je": "732a47aa4fd4280037a98896d29664e1a40267fd3ebcfa297c3176a5de25df0e",
+    "lazy/app-initial/open-sources-side-panel-tab-CfgjOF5O.js#Ye": "845da6f34c49c9df306d193cd87efd42b60aa98e23edd952ad6a9cdf985a5e33",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#v": "15a2b0a0e51d9d5dd9a9c9167a218b55d383edc3b2bbc93238a0d3623c7e3813",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#de": "726a31e1a28583e02edf7510a3fc8be2de0a65c68e0bb69a69fb93195afdc3bd",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#fe": "b8b39e25a45ed061c3b86a063c6218fd8760cd3be47646539108ee019be60803",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#pe": "021d041a39cc797da98e4a704ab5e5236e26795e28ed48731b42bd34f3aef6b7",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#me": "b00b84c50cb7072073af344a2d7ed8b547eae8679a03dbf1acb17968e29b8fb9",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#he": "c68ffc2bc2431512991f7e0523a9c559c1d5ad61ee7a8260438021286d06b69b",
+    "lazy/app-initial/thread-scroll-layout-xQ2_L08y.js#ge": "4b0304995f9012b0a382ee080e5221f35324e479d621d3749914cd1623996d6e",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#oO": "40f9c1151cfab8bcce925d31693278c0304880b42b4c560a6cfa8a44169aa71c",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#sO": "316adc165a5c93f5f914301cf8a45ceb169b4430c376fe1f3f375061d196b458",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#cO": "b25bf0d32065052669ba0af805fdbf8776794f7d97203765874697555a6357ef",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#lO": "28336f2741fbb193246595c84ed680b339e14b85b01d5968fa1e7efd6788d018",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#uO": "54fd30676ef23182976ce4028ce10f9b259fd6e352a62e1bc6924c5b934d46aa",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#dO": "2c73f605ba6d990b341b614667ae293fd2b5011017d310f024944b997d33916a",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#mO": "aa0c0f7939cf8d1fe550a7a73219f0a0128f5d4307e66ed75255b710b144456c",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#fO": "eb3beac60b615aea108df49e368acdd7a4f3f7860b16748ec4feecd59be00fdb",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#pO": "5913d5fea801f4790bcb326556b13578f3ca69b01f4c2aeebcbdc33ef541c47a",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#DD": "6e03bec428a329d9b887cf00fd408b7de407da3659dc71fd6cd1e9bd2ca9507b",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#OD": "69529d46780d98ebe040f81d91c2c832b3dfe30f6de5a131e5e8350379b60922",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#jD": "16c095076e701fc4c1fa8f6a4e657690a9d0ff28fbeb46e225429d149f969568",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#kD": "c4e7dae9f8b718e316aa4a7a53df5ab29f539b1b44bbef104870730de7d203a5",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#AD": "c203f1dbd1dafcb75d49eda2fc8d1a43d0fec4a73340ba2306324353fedd057a",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#hO": "920256ddc566c4dd44b43a804fecf936f1e7b967a1fd8db68f80b84bd49a79f5",
+    "lazy/app-initial/local-conversation-thread-CShhuS2f.js#SD": "c5f4d35e9df0ed7cd2cb40fdcc0542d990cd8df6fa906778ddf3aa23da5a8c8c"
+  }
+}

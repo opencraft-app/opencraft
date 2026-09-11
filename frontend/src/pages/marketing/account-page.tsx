@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 import {
   Camera,
   Check,
@@ -7,7 +8,6 @@ import {
   CreditCard,
   Loader2,
   Pencil,
-  Shield,
   ShieldAlert,
   ShieldCheck,
   Trash2,
@@ -34,6 +34,8 @@ import {
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
+import { publicSiteHref } from "@/lib/public-site-navigation";
+import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
@@ -758,6 +760,8 @@ const SubscriptionSection = ({
   pass: Pass | null;
 }) => {
   const t = useT();
+  const { i18n } = useTranslation();
+  const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
   const { refreshPasses, user } = useOpenClaw();
   const { session } = useSession();
   const { plans } = useRepositories();
@@ -910,7 +914,7 @@ const SubscriptionSection = ({
             </p>
           </div>
           <AppLink
-            to="/subscribe"
+            to={subscribeHref}
             className="inline-flex items-center justify-center gap-2 bg-black/90 px-6 py-3 rounded-full font-semibold text-sm cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-all"
             style={{ color: "#fff" }}
           >
@@ -956,7 +960,7 @@ const SubscriptionSection = ({
               </button>
             )}
             {upgrade.pass && upgrade.options.length > 0 && (
-              <AppLink to={`/subscribe/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`} className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020] transition-colors hover:bg-black/5">
+              <AppLink to={`${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`} className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-2.5 text-sm font-semibold text-[#202020] transition-colors hover:bg-black/5">
                 {t("升级套餐")}
               </AppLink>
             )}
@@ -1149,10 +1153,6 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type RevealAccountToolsHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
-
 export const AccountPage = () => {
   const t = useT();
   const navigate = useAppNavigate();
@@ -1180,35 +1180,6 @@ export const AccountPage = () => {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showHiddenAccountTools, setShowHiddenAccountTools] = useState(false);
-
-  useEffect(() => {
-    const host = window as RevealAccountToolsHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealAccountTools = (...args: unknown[]) => {
-      if (mounted) {
-        setShowHiddenAccountTools(true);
-      }
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealAccountTools;
-
-    return () => {
-      mounted = false;
-      if (host.show !== revealAccountTools) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
 
   // Unauthenticated view state
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -1965,7 +1936,7 @@ export const AccountPage = () => {
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
 
-            {isGlobal && showHiddenAccountTools && <SavedCardsSection />}
+            {isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>

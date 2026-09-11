@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "owner": "wisp/mono2-maintainers",
-  "reviewed_at": "2026-09-01",
+  "reviewed_at": "2026-09-10",
   "review_due": "2026-11-30",
   "layers": {
     "formal_engineering_knowledge": {

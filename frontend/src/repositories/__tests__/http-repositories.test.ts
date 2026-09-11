@@ -683,6 +683,44 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_provisioning",
+              status: "Creating",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected Hermes profile request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_provisioning", status: "provisioning" }),
+    ]);
+    expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
+  });
+
   it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const jsonResponse = (data: unknown) => new Response(
@@ -1111,6 +1149,11 @@ describe("http repositories auth token bootstrap", () => {
         name: "创建中 Bot",
         status: "provisioning",
       }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
@@ -1919,6 +1962,16 @@ describe("http repositories auth token bootstrap", () => {
     expect(`${parsed.origin}${parsed.pathname}`).toBe("https://lightclaw.tech/auth/oauth/wechat/start");
     expect(parsed.searchParams.get("mode")).toBe("official_account");
     expect(parsed.searchParams.get("return_to")).toBe("https://lightclaw.pages.dev/auth/sign-in");
+  });
+
+  it("uses an explicitly delegated OAuth return target", () => {
+    stubHostname("lightvela.com");
+    const returnTo = "https://chat.lightvela.com/local/thread-1?hostId=velahermes0";
+
+    const repositories = createHttpRepositories("https://api.lightvela.com");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("qq", { returnTo })!);
+
+    expect(parsed.searchParams.get("return_to")).toBe(returnTo);
   });
 
   it("uses the live auth backend on the primary site domain even without an explicit env var", () => {

@@ -103,6 +103,12 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     require_realname: true
+  - name: ctl-orders
+    prefix: /v1/orders
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
   - name: subscriptions
     prefix: /subscriptions
     methods: [GET, POST, OPTIONS]
@@ -180,6 +186,8 @@ routes:
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: authenticated
     public_allow:
+      - method: POST
+        path: /auth/session/exchange
       - method: POST
         path: /auth/native/token
       - method: GET
