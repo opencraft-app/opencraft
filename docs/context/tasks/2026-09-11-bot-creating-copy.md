@@ -46,7 +46,7 @@
 ## evidence
 - `pnpm i18n:extract` 生成新键 `k_831919bc`，中文、繁中、英文、西语、日语、韩语和印尼语均已补齐 LightVela Bot 文案。
 - `pnpm check` 通过：i18n 结构校验通过，TypeScript `174 current / 276 baseline / 0 new / 102 resolved`；保留仓库既有 49 条翻译 warning。
-- `sync:mono2-agent-console` 与 `check:mono2-agent-console` 通过，125 个 OpenCraft 生成闭包文件一致。
+- 合入最新 `master` 后，`sync:mono2-agent-console` 与 `check:mono2-agent-console` 通过，127 个 OpenCraft 生成闭包文件一致。
 - 源码差异仅替换 `t(...)` 的品牌正文；`dotCount`、450ms 定时器、`dots` 计算和独立占位 span 均未改动。
 - 文档完整性、暂存变更集 change-impact 与 `git diff --check` 均通过。
 

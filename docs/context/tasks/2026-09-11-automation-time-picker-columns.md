@@ -76,7 +76,7 @@
 - 聚焦 Vitest：`automation-skill-picker.test.tsx`、`agent-automations-panel.test.ts`、国际站专用 `agent-automations-panel.global.test.ts`、西语词条回归与印尼语上游任务回归共 341 条通过，覆盖五段独立编辑、只改一段不影响其他段、失焦确认、非法输入恢复、周期态每日/每周/每月同高与六时间项布局、18 个每日时间点边界、按间隔态紧凑等高、长排期 hover 浮层换行，以及 `Agent task` / `AI-powered` 英文消歧和多语言 Task 术语。
 - 多语言词条审计：英语、西语、印尼语、日语、韩语、繁中与定时任务相关的词条均无残留 `Job` / `Jobs`；西语测试夹具与生成词条完全一致，韩语不再使用“职位、职业”等就业含义。
 - `frontend/pnpm check`：通过；TypeScript `174 current / 276 baseline / 0 new / 102 resolved`，i18n 结构检查通过（保留仓库既有 49 条 warning）。
-- OpenCraft：`sync:mono2-agent-console` 与 `check:mono2-agent-console` 通过，125 个生成闭包文件一致；`@opencraft/plugin-lightvela-hermes` typecheck 通过。
+- OpenCraft：合入最新 `master` 后，`sync:mono2-agent-console` 与 `check:mono2-agent-console` 通过，127 个生成闭包文件一致；`@opencraft/plugin-lightvela-hermes` typecheck 通过。
 - OpenCraft 全量 `gate`：边界检查通过，但全量 workspace typecheck 被当前 OpenCraft 环境/基线问题阻断，包括 Expo 依赖缺失、`@opencraft/design-system/modal` 解析失败及 `workbench-web` 既有类型错误；未进入后续全量测试与构建。
 - 浏览器交互：1440x900 桌面与 390x844 窄屏通过；紧凑版桌面弹层为 `420x325`，较首版占用面积缩小约 40%；窄屏弹层 `clientHeight=442`、`scrollHeight=570`、可滚动至底部操作区。
 - 状态交互：12:24 改为 13:25 后取消仍为 12:24；再次修改并确认后为 13:25；小时 13 上按 ArrowDown 后选中 14。
