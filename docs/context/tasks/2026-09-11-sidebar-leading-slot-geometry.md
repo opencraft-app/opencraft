@@ -40,3 +40,11 @@ differ, and interaction state can make the account control appear to reflow.
 - Focused Workbench sidebar tests.
 - Workbench Web TypeScript/build checks if the focused source change passes.
 - Context change-impact validation for the final staged diff.
+
+## Production receipt
+
+- Source commit: `20f7dae9b` on `master`.
+- Release build: `20260911084149-a287ea5350f7`.
+- EdgeOne Makers project: `vela-cn`, production deployment `dp3q8942ydtq`.
+- Public verification: `https://chat.lightvela.com/version.json` and the root `opencraft-build-id` meta returned the release build.
+- Host verification: `/vela/apps/workbench-web/dist-lightvela-web` was atomically advanced from `20260911073331-a4365858b0f6`; `vela-workbench-web.service` is active and its local version endpoint returns the release build.
