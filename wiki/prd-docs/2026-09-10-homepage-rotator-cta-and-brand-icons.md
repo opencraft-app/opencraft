@@ -55,9 +55,6 @@
 - 本次不包含：
   - 移动端头部结构。沿用现有紧凑登录入口，不新增语言切换器，遵循 `2026-09-04-fix-cn-home-cta`「不扩大移动端需求」的约定。
   - 首页场景轮盘（`sc-1`~`sc-6`）标签内容与图标，保持现状，作为后续独立需求。
-  - 支付成功后的跳转逻辑。经核查已跳 `/agents?creating=<botId>`，四条支付路径均收口于 `finalizeBot`，符合预期，未改动。
-  - `/agents` 对未订阅用户的准入控制。当前仅拦未登录、不拦未订阅，为既有设计（空控制台为有意呈现），本次未新增拦截。
-  - OAuth 整页跳转登录后的套餐续跑。`pendingPlan` 为内存态，随页面卸载丢失，回跳后仍需用户手动点击，见「待确认问题」。
   - 订阅、支付链路的其余逻辑与 `/agents` 页面内部实现。
   - 非首页（文档页、支持页）的头部结构，本次仅调整首页传参。
   - 设计仓中未被 mono2 引用的零散资源（`automation-locales.json`、`automation-templates-panel-id-alt.png`、`voice-online-offline-event.png`）。
@@ -308,6 +305,5 @@ OAuth 为整页跳转，`pendingPlan` 随页面卸载丢失，回跳后仍需用
 3. 首页场景轮盘（`sc-1`~`sc-6`）标签仍为旧的六项，与新轮播词不一致，是否需要独立需求同步调整。
 4. 平台品牌图标与 Hero 轮播文案需 `jacoyang` 确认视觉与表达。
 5. OAuth 整页跳转登录后无法续跑原套餐（`pendingPlan` 为内存态）。若需补齐，需将套餐标识落到 URL 或 `sessionStorage` 并在挂载时恢复，涉及回跳参数约定，建议作为独立需求评估。
-6. 订阅页支付轮询在 `PAY_POLL_TIMEOUT_MS`（180s）后仅切换文案、不停止轮询，为既有设计；长时间停留页面会持续请求 `/v1/passes`，是否需要补上限待确认。
-7. `finalizeBot` 中 `addBot` 失败时（如 `pass isolated` / `pass expired`）已完成支付但不执行跳转，用户停留在订阅页，无自动补偿。需与后端确认权益隔离态的处理策略。
-5. 订阅页为 `noindex, nofollow`，Hero 成为唯一转化入口后，首页主 CTA 不再向可索引页面传递权重，如有 SEO 诉求需另行评估。
+6. `finalizeBot` 中 `addBot` 失败时（如 `pass isolated` / `pass expired`）已完成支付但不执行跳转。前端已按错误码分支给出明确提示与「前往续费 / 管理套餐」引导入口，用户不会无所适从；缺少的是后台自动重试，需与后端确认权益隔离态的预期处理策略。
+7. 订阅页为 `noindex, nofollow`，Hero 成为唯一转化入口后，首页主 CTA 不再向可索引页面传递权重，如有 SEO 诉求需另行评估。
