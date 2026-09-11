@@ -125,3 +125,12 @@ Provide a reusable, Host-owned announcement window that trusted JavaScript exten
 ## handoff
 
 - Implementation and validation complete on `codex/announcement-lab-modal`. The user authorized commit, remote push, and publication to the current `chat.lightvela.com` Workbench host on 2026-09-11; production receipt is recorded after the atomic publish.
+
+## production_receipt
+
+- Release build: `20260911070154-b181f6c73287`.
+- EdgeOne Makers project: `vela-cn`, production deployment `dp0dirik0lov`.
+- Public verification: `https://chat.lightvela.com/version.json` and the root `opencraft-build-id` meta both returned the release build.
+- Lazy-chunk verification: all three announcement-related JavaScript assets returned byte-identical SHA-256 hashes from the public origin.
+- Host verification: `vela-workbench-web.service` now uses the server-owned `OPENCRAFT_WEB_*` environment contract; its health endpoint resolves `/vela/apps/workbench-web/dist-lightvela-web` and reports the same release build.
+- Rollback boundary: EdgeOne keeps prior deployments and the atomic host publisher retained prior hashed assets/build material.
