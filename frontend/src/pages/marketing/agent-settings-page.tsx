@@ -2568,8 +2568,8 @@ export const AgentSettingsPage = ({
     [bots, multiBotEnabled],
   );
   const createLimitMessage = useMemo(
-    () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots),
-    [bots, user.plan.maxBots],
+    () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots, (message) => t(message)),
+    [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
   const showCreateBotEntry = showHiddenAgentTools;

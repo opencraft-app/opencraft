@@ -153,6 +153,7 @@ const defaultPlan: OpenClawUser["plan"] = {
 };
 
 export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bundle_id"> | null): number => {
+  // 后端新增或调整付费套餐时，请同步更新此处 bundle_id 映射与对应测试。
   switch (pass?.bundle_id) {
     case "bundle_launch_01":
     case "bundle_launch_ai_01":
@@ -163,6 +164,14 @@ export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bundle_id"> | null): n
     default:
       return 1;
   }
+};
+
+export const resolveBotQuotaForPassState = (
+  pass: Pick<Pass, "bundle_id"> | null,
+  hasResolvedPasses: boolean,
+): number => {
+  if (pass) return resolveBotQuotaPerAgent(pass);
+  return hasResolvedPasses ? 1 : 0;
 };
 
 const defaultUser: OpenClawUser = {
@@ -198,6 +207,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [activePass, setActivePass] = useState<Pass | null>(null);
   const [latestPass, setLatestPass] = useState<Pass | null>(null);
+  const [hasResolvedPasses, setHasResolvedPasses] = useState(false);
   const [bots, setBots] = useState<OpenClawBot[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
   const fetchedRef = useRef(false);
@@ -219,6 +229,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? null;
       setActivePass(active);
       setIsSubscribed(Boolean(active));
+      setHasResolvedPasses(true);
       // 保存最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐
       const latest = passes
         .filter((p) => !p.deleted_time)
@@ -244,7 +255,6 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       name: activePass.bundle_name || defaultPlan.name,
       aiCredits: activePass.credit_total,
       usedCredits: Math.max(0, activePass.credit_total - activePass.credit_available),
-      maxBots: resolveBotQuotaPerAgent(activePass),
     } : null;
 
     return {
@@ -255,9 +265,10 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       plan: {
         ...defaultPlan,
         ...(planFromPass ?? {}),
+        maxBots: resolveBotQuotaForPassState(activePass, hasResolvedPasses),
       },
     };
-  }, [activePass, effectiveIsAuthenticated, session.user]);
+  }, [activePass, effectiveIsAuthenticated, hasResolvedPasses, session.user]);
 
   /* ── Load bots from backend, then fetch openclaw config to restore channel status ── */
   const refreshBots = useCallback(async () => {
@@ -322,6 +333,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setIsSubscribed(false);
       setActivePass(null);
       setLatestPass(null);
+      setHasResolvedPasses(false);
       setBots([]);
       fetchedRef.current = false;
     }
@@ -336,6 +348,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setIsSubscribed(false);
     setActivePass(null);
     setLatestPass(null);
+    setHasResolvedPasses(false);
     setBots([]);
     fetchedRef.current = false;
     void sessionSignOut();

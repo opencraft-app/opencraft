@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveBotQuotaPerAgent } from "../agent-context";
+import { resolveBotQuotaForPassState, resolveBotQuotaPerAgent } from "../agent-context";
 
 describe("resolveBotQuotaPerAgent", () => {
   it.each([
@@ -18,4 +18,18 @@ describe("resolveBotQuotaPerAgent", () => {
       expect(resolveBotQuotaPerAgent(pass)).toBe(1);
     },
   );
+});
+
+describe("resolveBotQuotaForPassState", () => {
+  it("does not block creation before the first Pass response resolves", () => {
+    expect(resolveBotQuotaForPassState(null, false)).toBe(0);
+  });
+
+  it("uses the free fallback only after Passes resolve without an active Pass", () => {
+    expect(resolveBotQuotaForPassState(null, true)).toBe(1);
+  });
+
+  it("uses a resolved paid Pass even while the resolution flag is false", () => {
+    expect(resolveBotQuotaForPassState({ bundle_id: "bundle_cruise_01" }, false)).toBe(10);
+  });
 });
