@@ -1798,22 +1798,40 @@ describe("terminal cron card visibility", () => {
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
   });
 
-  it("hides the edit action on ended job cards but keeps it on active ones", async () => {
+  // 已结束任务的卡片只保留只读动作：测试运行会真的执行一次并往 IM 发消息，编辑/暂停/恢复
+  // 都是改调度，对已经终态的任务都没有意义。这里把三个门控和两个保留项一次钉死，避免后续
+  // 只改其中一个导致「能试跑却不能编辑」这种半截状态。
+  it("gates test run, edit and pause/resume on ended job cards while keeping view and delete", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "active", name: "生效任务", state: "scheduled" }),
       makeCronJob({ id: "ended", name: "结束任务", state: "completed" }),
     ]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByText("生效任务")).toBeTruthy();
-    expect(screen.getByRole("button", { name: localizedText("编辑", "Edit") })).toBeTruthy();
+    const activeCard = await getCronJobCard("生效任务");
+    for (const label of [
+      localizedText("测试运行", "Test run"),
+      localizedText("查看", "View"),
+      localizedText("编辑", "Edit"),
+      localizedText("暂停", "Pause"),
+      localizedText("删除", "Delete"),
+    ]) {
+      expect(within(activeCard).getByRole("button", { name: label })).toBeTruthy();
+    }
 
     fireEvent.click(screen.getByRole("button", { name: localizedText("已结束任务", "Ended Tasks") }));
 
-    expect(await screen.findByText("结束任务")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
-    expect(screen.getByRole("button", { name: localizedText("查看", "View") })).toBeTruthy();
-    expect(screen.getByRole("button", { name: localizedText("删除", "Delete") })).toBeTruthy();
+    const endedCard = await getCronJobCard("结束任务");
+    for (const label of [
+      localizedText("测试运行", "Test run"),
+      localizedText("编辑", "Edit"),
+      localizedText("暂停", "Pause"),
+      localizedText("恢复", "Resume"),
+    ]) {
+      expect(within(endedCard).queryByRole("button", { name: label })).toBeNull();
+    }
+    expect(within(endedCard).getByRole("button", { name: localizedText("查看", "View") })).toBeTruthy();
+    expect(within(endedCard).getByRole("button", { name: localizedText("删除", "Delete") })).toBeTruthy();
   });
 
   it("returns to active jobs after creating from the ended-jobs tab", async () => {
