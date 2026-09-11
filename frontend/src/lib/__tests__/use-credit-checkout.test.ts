@@ -3,6 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useCreditCheckout } from "../use-credit-checkout";
 
+/* 站点切换：getter 型 mock，运行时可改 regionState.isGlobal 模拟国内/国际站。
+   vi.hoisted 提升到 import 之前，避免 mock 工厂执行时 TDZ 报错。 */
+const regionState = vi.hoisted(() => ({ isGlobal: false }));
+vi.mock("@/lib/region", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/region")>();
+  return {
+    ...actual,
+    get isGlobal() {
+      return regionState.isGlobal;
+    },
+    get isCN() {
+      return !regionState.isGlobal;
+    },
+  };
+});
+
 const createCreditOrder = vi.fn();
 const createCreditOrderUrl = vi.fn();
 const listCreditPackages = vi.fn();
@@ -25,6 +41,8 @@ const pack = (total: number, expired: string) => ({
 let assignMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  /* 默认国内站（REGION=cn），国际站用例内显式切换 */
+  regionState.isGlobal = false;
   createCreditOrder.mockReset();
   createCreditOrderUrl.mockReset();
   listCreditPackages.mockReset();
@@ -44,14 +62,8 @@ beforeEach(() => {
   });
 });
 
-describe("useCreditCheckout", () => {
-  it("初始状态为 idle", () => {
-    const { result } = renderHook(() => useCreditCheckout());
-
-    expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
-  });
-
-  it("下单成功后跳转支付页并进入 payment_pending", async () => {
+describe("useCreditCheckout 国内站（中转页 + wxSign 模式）", () => {
+  it("创建订单后不调 order-url，生成中转页支付计划并进入 payment_pending", async () => {
     const { result } = renderHook(() => useCreditCheckout());
 
     await result.current.start("credit_1000");
@@ -60,15 +72,111 @@ describe("useCreditCheckout", () => {
       expect(result.current.state.status).toBe("payment_pending");
     });
     expect(result.current.state.dealName).toBe("deal-1");
-    expect(assignMock).toHaveBeenCalledWith("https://pay.example/checkout");
+    /* PC 端不调 order-url：jifei pay_url 绑定 wx_open_id，
+       由手机端中转页拉取（对齐 pass 链路） */
+    expect(createCreditOrderUrl).not.toHaveBeenCalled();
+    /* 中转页支付计划已生成，供 UI 渲染二维码 */
+    expect(result.current.bridgePlan).not.toBeNull();
+    expect(result.current.bridgePlan?.bridgeUrl).toContain("/auth/wechat-pay");
   });
 
-  it("下单请求带上固定周期的商品 ID", async () => {
+  it("中转页 URL 携带积分包类型标记与订单号", async () => {
     const { result } = renderHook(() => useCreditCheckout());
 
     await result.current.start("credit_4000");
 
-    expect(createCreditOrder).toHaveBeenCalledWith("credit_4000");
+    await waitFor(() => {
+      expect(result.current.bridgePlan).not.toBeNull();
+    });
+    const url = new URL(result.current.bridgePlan!.bridgeUrl);
+    expect(url.searchParams.get("k")).toBe("cp");
+    expect(url.searchParams.get("d")).toBe("deal-1");
+  });
+
+  it("order 响应带 auth_code 时写入中转页 URL（后端补齐后的完整形态）", async () => {
+    createCreditOrder.mockResolvedValue({
+      dealName: "deal-1",
+      bigOrderId: "big-1",
+      auth_code: "ticket-abc",
+    });
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.bridgePlan).not.toBeNull();
+    });
+    const url = new URL(result.current.bridgePlan!.bridgeUrl);
+    expect(url.searchParams.get("ac")).toBe("ticket-abc");
+  });
+
+  it("国内站不发生页面跳转（等待扫码而非直跳）", async () => {
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("payment_pending");
+    });
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it("reset 同时清空中转页支付计划", async () => {
+    const { result } = renderHook(() => useCreditCheckout());
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.bridgePlan).not.toBeNull();
+    });
+
+    result.current.reset();
+
+    await waitFor(() => {
+      expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
+      expect(result.current.bridgePlan).toBeNull();
+    });
+  });
+});
+
+describe("useCreditCheckout 国际站（信用卡托管页直跳）", () => {
+  beforeEach(() => {
+    regionState.isGlobal = true;
+  });
+
+  it("下单成功后经占位窗打开支付页并进入 payment_pending", async () => {
+    /* 占位窗模式（对齐 pass 的 startIntlCardPay）：window.open 同步开 about:blank，
+       拿到 pay_url 后赋给占位窗 location，而非 location.assign */
+    const payWindowStub = { location: { href: "" } };
+    const openMock = vi.fn(() => payWindowStub);
+    Object.defineProperty(window, "open", { value: openMock, writable: true });
+
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("payment_pending");
+    });
+    expect(result.current.state.dealName).toBe("deal-1");
+    expect(openMock).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(payWindowStub.location.href).toBe("https://pay.example/checkout");
+    expect(result.current.payUrl).toBe("https://pay.example/checkout");
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
+  it("占位窗被弹窗拦截时兜底当前页跳转", async () => {
+    /* window.open 返回 null（浏览器弹窗限制场景） */
+    const openMock = vi.fn(() => null);
+    Object.defineProperty(window, "open", { value: openMock, writable: true });
+
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("payment_pending");
+    });
+    expect(assignMock).toHaveBeenCalledWith("https://pay.example/checkout");
   });
 
   it("order-url 请求携带 deal_name / platform / 回跳地址", async () => {
@@ -98,19 +206,6 @@ describe("useCreditCheckout", () => {
     expect(assignMock).not.toHaveBeenCalled();
   });
 
-  it("创建订单失败时进入 failed 且不请求支付链接", async () => {
-    createCreditOrder.mockRejectedValue(new Error("下单被拒绝"));
-    const { result } = renderHook(() => useCreditCheckout());
-
-    await result.current.start("credit_1000");
-
-    await waitFor(() => {
-      expect(result.current.state.status).toBe("failed");
-    });
-    expect(result.current.state.error).toBe("下单被拒绝");
-    expect(createCreditOrderUrl).not.toHaveBeenCalled();
-  });
-
   it("支付链接失败时保留订单号，且不自动重新下单", async () => {
     createCreditOrderUrl.mockRejectedValue(new Error("订单不存在"));
     const { result } = renderHook(() => useCreditCheckout());
@@ -136,6 +231,35 @@ describe("useCreditCheckout", () => {
       expect(result.current.state.status).toBe("failed");
     });
     expect(assignMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
+  it("初始状态为 idle", () => {
+    const { result } = renderHook(() => useCreditCheckout());
+
+    expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
+  });
+
+  it("下单请求带上固定周期的商品 ID", async () => {
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_4000");
+
+    expect(createCreditOrder).toHaveBeenCalledWith("credit_4000");
+  });
+
+  it("创建订单失败时进入 failed 且不请求支付链接", async () => {
+    createCreditOrder.mockRejectedValue(new Error("下单被拒绝"));
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("failed");
+    });
+    expect(result.current.state.error).toBe("下单被拒绝");
+    expect(createCreditOrderUrl).not.toHaveBeenCalled();
   });
 
   it("出现新积分包时判定为 delivered 并触发回调", async () => {
@@ -188,21 +312,6 @@ describe("useCreditCheckout", () => {
 
     await waitFor(() => {
       expect(result.current.state.status).toBe("delivered");
-    });
-  });
-
-  it("reset 恢复到 idle，允许重新发起新订单", async () => {
-    const { result } = renderHook(() => useCreditCheckout());
-    await result.current.start("credit_1000");
-
-    await waitFor(() => {
-      expect(result.current.state.status).toBe("payment_pending");
-    });
-
-    result.current.reset();
-
-    await waitFor(() => {
-      expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
     });
   });
 });

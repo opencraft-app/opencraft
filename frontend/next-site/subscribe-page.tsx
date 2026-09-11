@@ -19,7 +19,7 @@ import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } fr
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { installShowCreditPackHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -2725,10 +2725,10 @@ export const SubscribePage = ({
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
-  /* 积分包区域可见性：默认关闭，后端支付链路就绪后再开启（见 credit-pack-visibility.ts）。
-     挂载 show_credit_pack() 控制台助手，供内部验收开启（对照 github-login-visibility 范式）。 */
+  /* 积分包区域可见性：默认显示（见 credit-pack-visibility.ts）。
+     挂载 toggle_credit_pack() 控制台助手，供临时隐藏/恢复验收。 */
   const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installShowCreditPackHelper(), []);
+  useEffect(() => installCreditPackVisibilityHelper(), []);
 
   /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
      依赖 creditPackVisible：区域未渲染时 getElementById 拿不到节点。 */
@@ -3934,8 +3934,7 @@ export const SubscribePage = ({
         </section>
 
         {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。
-            由 feature flag 控制，默认关闭（后端支付链路未就绪），
-            控制台执行 show_credit_pack() 可开启内部验收。 */}
+            默认显示；控制台执行 toggle_credit_pack() 可临时隐藏/恢复。 */}
         {creditPackVisible && (
           <CreditPackSection
             sectionId={CREDIT_SECTION_ID}

@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from "react";
 
 import { creditPackageSourceId, type CreditPackageItem } from "@/domain/credit-pack";
 import { useRepositories } from "@/contexts/repository-context";
+import { buildPayPlan, BRIDGE_KIND_CREDIT_PACK, type PayPlan } from "@/lib/wx-pay";
+import { isGlobal } from "@/lib/region";
 
 /**
  * 积分包购买链路编排。
@@ -59,9 +61,22 @@ const snapshotKeys = (items: readonly CreditPackageItem[]): Set<string> =>
 export type UseCreditCheckoutResult = {
   state: CheckoutState;
   /**
-   * 发起购买：创建订单 → 获取支付链接 → 跳转支付页。
+   * 国内站：中转页支付计划（二维码 URL + 过期时间）。
+   * status=payment_pending 且 bridgePlan 非空时，UI 渲染二维码等待扫码。
+   */
+  bridgePlan: PayPlan | null;
+  /**
+   * 国际站：信用卡托管页 URL。
+   * 保留在状态中供「重新打开支付页」入口使用（对齐 pass 链路的 paymentContext.redirectUrl）。
+   */
+  payUrl: string | null;
+  /**
+   * 发起购买。
    *
-   * need_charge=0 时跳过跳转，直接进入到账确认。
+   * 国内站：创建订单后生成中转页二维码（PC 端不调 order-url——jifei pay_url
+   * 绑定 wx_open_id，PC 端拿不到正确的 URL；由中转页在手机端带 openid 调，
+   * 对齐 pass 链路的 wxSign 编排，见 wx-pay.ts）。
+   * 国际站：创建订单 → order-url 拿 pay_url 直跳（need_charge=0 时跳过跳转）。
    */
   start: (productId: string) => Promise<void>;
   /** 从支付页返回后调用：开始轮询确认积分是否到账。 */
@@ -90,11 +105,17 @@ export const useCreditCheckout = (options?: {
   optionsRef.current = options;
 
   const [state, setState] = useState<CheckoutState>(INITIAL_STATE);
+  /** 国内站中转页支付计划（二维码） */
+  const [bridgePlan, setBridgePlan] = useState<PayPlan | null>(null);
+  /** 国际站托管页 URL（供「重新打开支付页」） */
+  const [payUrl, setPayUrl] = useState<string | null>(null);
   /** 购买前的积分包快照，用于到账对比 */
   const baselineRef = useRef<Set<string>>(new Set());
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
+    setBridgePlan(null);
+    setPayUrl(null);
   }, []);
 
   const start = useCallback(async (productId: string) => {
@@ -105,6 +126,7 @@ export const useCreditCheckout = (options?: {
     }
 
     setState({ status: "creating", dealName: null, error: null });
+    setBridgePlan(null);
 
     /* 先记录购买前快照：到账判定依赖它。失败不阻塞下单，
        但会让到账判定退化为「出现任何包即视为到账」。 */
@@ -115,9 +137,11 @@ export const useCreditCheckout = (options?: {
     }
 
     let dealName: string;
+    let authCode: string | undefined;
     try {
       const order = await credit.createCreditOrder(productId);
       dealName = order.dealName;
+      authCode = order.auth_code;
       if (!dealName) throw new Error("订单号为空");
     } catch (error) {
       setState({
@@ -128,6 +152,29 @@ export const useCreditCheckout = (options?: {
       return;
     }
 
+    /* 国内站：中转页 + wxSign 模式（对齐 pass 链路）。
+       PC 端不调 order-url——jifei pay_url 生成时绑定 wx_open_id，
+       PC 端调只能拿到 H5 商品页兜底 URL。中转页在手机端带 openid 调。
+       authCode 为 undefined 时 buildPayPlan 仍生成中转页 URL（灰度兼容，
+       见 CreditOrderResult.auth_code 注释——后端补齐 auth_code 后即通）。 */
+    if (!isGlobal) {
+      const plan = buildPayPlan({
+        dealName,
+        authCode,
+        kind: BRIDGE_KIND_CREDIT_PACK,
+      });
+      setBridgePlan(plan);
+      setState({ status: "payment_pending", dealName, error: null });
+      return;
+    }
+
+    /* 国际站：信用卡托管页（对齐 pass 链路 startIntlCardPay 的编排）。
+       1. 同步打开占位窗口：window.open 必须在用户手势同步调用栈内，跨 await
+          （网络往返）后会被浏览器弹窗拦截。先开 about:blank，拿到 pay_url 后再跳转。
+       2. need_charge=0：零元订单已支付成功，关窗直接进入到账确认。
+       3. 占位窗跳转托管页；被弹窗拦截时兜底当前页 assign。
+       4. payUrl 保留在状态中，供「重新打开支付页」入口。 */
+    const payWindow = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
     try {
       const session = await credit.createCreditOrderUrl({
         deal_name: dealName,
@@ -136,23 +183,27 @@ export const useCreditCheckout = (options?: {
         cancel_url: optionsRef.current?.cancelUrl,
       });
 
-      /* need_charge=0：无需支付，直接进入到账确认 */
+      /* need_charge=0：无需支付，关闭占位窗，直接进入到账确认 */
       if (session.need_charge === 0) {
+        payWindow?.close();
         setState({ status: "delivery_pending", dealName, error: null });
         return;
       }
 
       if (!session.pay_url) {
-        setState({ status: "failed", dealName, error: "支付链接为空" });
-        return;
+        throw new Error("支付链接为空");
       }
 
-      /* 跳转支付页。用 assign 保留历史，便于用户返回。 */
-      setState({ status: "payment_pending", dealName, error: null });
-      if (typeof window !== "undefined") {
+      if (payWindow) {
+        payWindow.location.href = session.pay_url;
+      } else {
+        /* 占位窗口被拦截（浏览器弹窗限制）：兜底当前页跳转 */
         window.location.assign(session.pay_url);
       }
+      setPayUrl(session.pay_url);
+      setState({ status: "payment_pending", dealName, error: null });
     } catch (error) {
+      payWindow?.close();
       /* 订单已创建但支付链接失败：保留 dealName 供重试与客服排查，
          不自动重新下单（产品方案：不自动创建第二笔订单）。 */
       setState({
@@ -167,7 +218,10 @@ export const useCreditCheckout = (options?: {
     const credit = repositoriesRef.current?.credit;
     if (!credit) return;
 
-    setState((prev) => ({ ...prev, status: "delivery_pending", error: null }));
+    /* 启动时**不修改 status**：保持当前 payment_pending，让国内站二维码持续可见、
+       国际站「已在新窗口打开」状态保持；轮询命中再切 delivered，超时切 delivery_exception。
+       之前的「立即设 delivery_pending」会让国内站用户来不及看二维码。 */
+    setState((prev) => ({ ...prev, error: null }));
 
     const intervalMs = optionsRef.current?.pollIntervalMs ?? DELIVERY_POLL_INTERVAL_MS;
     const timeoutMs = optionsRef.current?.pollTimeoutMs ?? DELIVERY_POLL_TIMEOUT_MS;
@@ -199,5 +253,5 @@ export const useCreditCheckout = (options?: {
     setState((prev) => ({ ...prev, status: "delivery_exception", error: null }));
   }, []);
 
-  return { state, start, confirmDelivery, reset };
+  return { state, bridgePlan, payUrl, start, confirmDelivery, reset };
 };

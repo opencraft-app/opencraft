@@ -55,6 +55,16 @@ export interface CreditOrderResult {
   /** jifei 订单号，获取支付链接的必填参数 */
   dealName: string;
   bigOrderId: string;
+  /**
+   * 一次性鉴权 ticket（CodeBuddy 同款 AuthCode，对齐 pass 链路）。
+   *
+   * 国内站走「中转页 + wxSign」模式：中转页在微信浏览器内无主站登录态，
+   * 靠 auth_code 反查 user_id 调 order-url（见 wx-pay.ts 安全模型）。
+   *
+   * ⚠️ 后端尚未实现该字段（credit order 当前只返回 dealName/bigOrderId），
+   * 为 undefined 时 buildPayPlan 仍生成中转页 URL，等后端补齐即通。
+   */
+  auth_code?: string;
 }
 
 /** 支付链接请求。 */

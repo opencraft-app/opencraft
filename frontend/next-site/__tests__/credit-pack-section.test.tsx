@@ -5,6 +5,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CreditPackSection } from "../credit-pack-section";
 
+/* 站点切换：getter 型 mock（默认国内站，国际站用例显式切换）。
+   vi.hoisted 把 state 声明提升到 import 之前，避免 vi.mock 工厂（import 期执行）
+   触发 'Cannot access before initialization' 的 TDZ 错误。 */
+const regionState = vi.hoisted(() => ({ isGlobal: false }));
+vi.mock("@/lib/region", async (importOriginal) => {
+  /* 保留 region 的其他导出（readLocaleFromPath 等），只覆写站点判定两个 getter */
+  const actual = await importOriginal<typeof import("@/lib/region")>();
+  return {
+    ...actual,
+    get isGlobal() {
+      return regionState.isGlobal;
+    },
+    get isCN() {
+      return !regionState.isGlobal;
+    },
+  };
+});
+
 const inquireCreditPrice = vi.fn();
 const createCreditOrder = vi.fn();
 const createCreditOrderUrl = vi.fn();
@@ -53,6 +71,7 @@ const quoteFor = (productId: string) => ({
 });
 
 beforeEach(() => {
+  regionState.isGlobal = false;
   inquireCreditPrice.mockReset();
   inquireCreditPrice.mockImplementation(async (productId: string) => quoteFor(productId));
   createCreditOrder.mockReset();
@@ -173,9 +192,7 @@ describe("CreditPackSection", () => {
     expect(payButton).toBeEnabled();
   });
 
-  it("勾选条款后确认支付会创建订单并请求支付链接", async () => {
-    createCreditOrderUrl.mockResolvedValue({ deal_name: "deal-1", pay_url: "", need_charge: 0 });
-
+  it("勾选条款后确认支付会创建订单（国内站不请求支付链接）", async () => {
     renderSection();
 
     await userEvent.click(await screen.findByTestId("credit-pack-card-credit_8000"));
@@ -186,24 +203,40 @@ describe("CreditPackSection", () => {
     await waitFor(() => {
       expect(createCreditOrder).toHaveBeenCalledWith("credit_8000");
     });
+    /* 国内站走中转页二维码，PC 端不调 order-url（wx-pay 编排约束） */
     await waitFor(() => {
-      expect(createCreditOrderUrl).toHaveBeenCalledWith(
-        expect.objectContaining({ deal_name: "deal-1", platform: "pc" }),
-      );
+      expect(screen.getByTestId("credit-pack-wx-qr")).toBeInTheDocument();
     });
+    expect(createCreditOrderUrl).not.toHaveBeenCalled();
   });
 
-  it("need_charge=1 时跳转支付页并展示跳转提示", async () => {
+  it("国内站确认支付后展示微信扫码二维码，不请求支付链接", async () => {
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+
+    /* 国内站：中转页 + wxSign 模式，PC 端不调 order-url */
+    await waitFor(() => {
+      expect(screen.getByTestId("credit-pack-wx-qr")).toBeInTheDocument();
+    });
+    expect(createCreditOrderUrl).not.toHaveBeenCalled();
+    expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("请使用微信扫码完成支付");
+  });
+
+  it("need_charge=1 时经占位窗口打开支付页（国际站，对齐 pass 的 startIntlCardPay）", async () => {
+    regionState.isGlobal = true;
     createCreditOrderUrl.mockResolvedValue({
       deal_name: "deal-1",
       pay_url: "https://pay.example/checkout",
       need_charge: 1,
     });
-    const assignMock = vi.fn();
-    Object.defineProperty(window, "location", {
-      value: { ...window.location, assign: assignMock, href: "https://app.example/subscribe" },
-      writable: true,
-    });
+    /* mock window.open：返回占位窗对象，断言 pay_url 赋给占位窗而非 location.assign */
+    const payWindowStub = { location: { href: "" } };
+    const openMock = vi.fn(() => payWindowStub);
+    Object.defineProperty(window, "open", { value: openMock, writable: true });
 
     renderSection();
 
@@ -213,10 +246,13 @@ describe("CreditPackSection", () => {
     await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
 
     await waitFor(() => {
-      expect(assignMock).toHaveBeenCalledWith("https://pay.example/checkout");
+      expect(openMock).toHaveBeenCalledWith("about:blank", "_blank");
     });
     await waitFor(() => {
-      expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("已跳转支付页面");
+      expect(payWindowStub.location.href).toBe("https://pay.example/checkout");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("已在新窗口打开支付页面");
     });
   });
 

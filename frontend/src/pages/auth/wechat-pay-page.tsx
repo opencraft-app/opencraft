@@ -50,7 +50,7 @@ import type { WXSignOption } from "@tencent/tcb-jssdk/lib/saasSdk/wxSign";
 
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { redirectBrowserTo } from "@/lib/browser-redirect";
-import { BRIDGE_QUERY_KEYS } from "@/lib/wx-pay";
+import { BRIDGE_QUERY_KEYS, BRIDGE_KIND_CREDIT_PACK } from "@/lib/wx-pay";
 import type { CreatePassOrderUrlResult } from "@/domain/types";
 
 /* ─── 公开类型 ─── */
@@ -84,6 +84,8 @@ interface BridgeOrder {
   sandbox: boolean;
   /** 套餐/产品名，仅 UI 展示，缺省时由组件兜底 */
   bundleName: string;
+  /** 订单类型："cp" = 积分包（改调 credit 的 order-url，直出 JSON）；空 = pass 套餐 */
+  kind: string;
 }
 
 /** 主标题兜底文案（query 未带 bundleName 时使用） */
@@ -533,6 +535,8 @@ function parseBridgeOrder(search: string): BridgeOrder | null {
     expiresAt,
     sandbox: params.get(BRIDGE_QUERY_KEYS.sandbox) === "1",
     bundleName: params.get(BRIDGE_QUERY_KEYS.bundleName) ?? "",
+    /* "cp" = 积分包订单：阶段二改调 /v1/credit/packages/order-url */
+    kind: params.get(BRIDGE_QUERY_KEYS.kind) ?? "",
   };
 }
 
@@ -584,10 +588,15 @@ const buildWeChatPayOpenIdStartUrl = (returnTo: string) => {
  *
  * - 新购：POST /v1/passes/order-url
  * - 续费：POST /v1/passes/{passId}/renew/order-url
+ * - 积分包（kind="cp"）：POST /v1/credit/packages/order-url
  *
  * 鉴权策略：
  *   - 中转页通常无主站 token；body 携带 auth_code，让后端绕过 Bearer 鉴权用 auth_code 反查 user_id
  *   - body 同时带 wx_open_id（已经由后端中转 OAuth 换好），让后端拼装 jifei 入参
+ *
+ * ⚠️ 积分包与 pass 的两个契约差异（docs/frontend-credit-package-integration.md）：
+ *   1. 请求字段是 snake_case 的单个 deal_name（pass 是 deal_names 数组）
+ *   2. 响应为直出 JSON（pass 走 success/data envelope）
  */
 async function fetchOrderUrl(
   order: BridgeOrder,
@@ -596,6 +605,16 @@ async function fetchOrderUrl(
   if (order.operation === 'modify' && (!order.passId || !order.authCode)) {
     throw new Error('升级支付信息不完整，请返回原页面重新获取二维码。');
   }
+  /* 积分包：credit 的 order-url，直出 JSON */
+  if (order.kind === BRIDGE_KIND_CREDIT_PACK) {
+    return requestWechatPayJSON<CreatePassOrderUrlResult>("/v1/credit/packages/order-url", {
+      deal_name: order.dealName,
+      platform: "mobile",
+      wx_open_id: openId,
+      auth_code: order.authCode || undefined,
+    });
+  }
+
   const baseInput = {
     deal_names: [order.dealName],
     platform: "mobile" as const,

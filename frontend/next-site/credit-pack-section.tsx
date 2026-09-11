@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 
 import { CREDIT_PACK_DENOMINATIONS, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
 import { useRepositories } from '@/contexts/repository-context';
@@ -200,23 +201,44 @@ export const CreditPackSection = ({
   const primaryDisabled = gate === 'unselected';
 
   /* 支付回跳标记：order-url 的 return_url 会带上它，返回后触发到账确认 */
-  /* 构造回跳地址：当前页 + section 定位 + 支付返回标记 */
+  /* 构造回跳地址（对齐 pass 链路 startIntlCardPay 的做法）：
+     去掉当前 URL 的 query/hash 再拼标记——防止把 OAuth code、一次性 ticket
+     等敏感 query 带进计费回跳地址；同时带 section 定位与支付返回标记。 */
   const buildReturnUrl = useCallback((cancelled: boolean) => {
     if (typeof window === 'undefined') return undefined;
-    const url = new URL(window.location.href);
-    url.searchParams.set(SECTION_QUERY_KEY_PARAM, CREDIT_SECTION_QUERY_VALUE_PARAM);
-    url.searchParams.set(PAY_RETURN_QUERY_KEY, cancelled ? 'cancel' : PAY_RETURN_QUERY_VALUE);
-    return url.toString();
+    const base = (window.location.href.split('#')[0] ?? '').split('?')[0] ?? '';
+    if (!base) return undefined;
+    return `${base}?${SECTION_QUERY_KEY_PARAM}=${CREDIT_SECTION_QUERY_VALUE_PARAM}&${PAY_RETURN_QUERY_KEY}=${cancelled ? 'cancel' : PAY_RETURN_QUERY_VALUE}`;
   }, []);
 
   const checkout = useCreditCheckout({
     returnUrl: buildReturnUrl(false),
     cancelUrl: buildReturnUrl(true),
-    onDelivered: () => {
-      /* 到账后刷新询价无关，仅清弹窗；账号页额度由用户返回后刷新 */
-      setModalOpen(false);
-    },
+    /* 到账后不自动关弹窗：弹窗内展示「购买成功」态，用户点「完成」关闭
+       （对齐 pass 的 PaymentPendingModal 成功态） */
   });
+
+  /* 到账轮询统一启动：payment_pending（扫码 / 新窗口支付）或 delivery_pending
+     （need_charge=0 零元单）即开始，超时进 delivery_exception 后可手动重查，
+     也可 reset 重新发起新订单（对齐 pass 链路「PC 端轮询接棒」）。
+     用 ref 防重入：同一订单只自动启动一次轮询。 */
+  const pollStartedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    const { status, dealName } = checkout.state;
+    if (!dealName) return;
+    if (status !== 'payment_pending' && status !== 'delivery_pending') return;
+    if (pollStartedForRef.current === dealName) return;
+    pollStartedForRef.current = dealName;
+    void checkout.confirmDelivery();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkout.state.status, checkout.state.dealName]);
+
+  /* 国际站「重新打开支付页」（对齐 pass 的 paymentContext.redirectUrl 用法） */
+  const handleReopenPayPage = useCallback(() => {
+    if (checkout.payUrl && typeof window !== 'undefined') {
+      window.open(checkout.payUrl, '_blank', 'noopener,noreferrer');
+    }
+  }, [checkout.payUrl]);
 
   /* 从支付页返回（credit_pay=return）时自动进入交付确认 */
   useEffect(() => {
@@ -240,7 +262,10 @@ export const CreditPackSection = ({
       case 'creating':
         return t('正在创建订单…');
       case 'payment_pending':
-        return t('已跳转支付页面，完成支付后返回本页确认到账。');
+        /* 国内站：展示二维码等待扫码；国际站：已在新窗口打开托管页 */
+        return checkout.bridgePlan
+          ? t('请使用微信扫码完成支付。')
+          : t('已在新窗口打开支付页面，完成支付后本页将自动确认到账。');
       case 'delivery_pending':
         return t('积分到账处理中，请稍候…');
       case 'delivered':
@@ -334,6 +359,8 @@ export const CreditPackSection = ({
         >
           {primaryLabel}
         </button>
+        {/* 支付进度状态行：弹窗关闭后仍可见（二维码与操作按钮都在弹窗内，
+            对齐 pass 的 ConfirmOrderModal → PaymentPendingModal 流转） */}
         {checkoutNotice ? (
           <p
             role="status"
@@ -349,16 +376,6 @@ export const CreditPackSection = ({
             {notice}
           </p>
         ) : null}
-        {checkout.state.status === 'delivery_exception' ? (
-          <button
-            type="button"
-            onClick={() => void checkout.confirmDelivery()}
-            className="text-sm font-semibold underline underline-offset-2"
-            style={{ color: '#4f46e5' }}
-          >
-            {t('重新查询到账状态')}
-          </button>
-        ) : null}
       </div>
 
       {/* 国际站税费口径未定：credit inquiry 不返回 tax_price（套餐链路有），
@@ -369,7 +386,10 @@ export const CreditPackSection = ({
         </p>
       ) : null}
 
-      {/* 订单确认弹窗：勾选虚拟商品条款后才可支付（产品方案 7.1） */}
+      {/* 购买弹窗（对齐 pass 链路 ConfirmOrderModal → PaymentPendingModal 的两阶段流转）：
+          确认阶段（idle/creating）：商品明细 + 条款勾选 + 确认支付；
+          支付阶段（payment_pending 起）：国内站展示微信二维码，国际站展示
+          「已在新窗口打开支付页」+ 重新打开入口，到账/异常状态就地呈现。 */}
       {modalOpen && selectedDenomination && selectedQuote?.status === 'ready' ? (
         <div
           role="dialog"
@@ -382,76 +402,155 @@ export const CreditPackSection = ({
           }}
         >
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 id="credit-pack-modal-title" className="text-lg font-semibold" style={{ color: '#333' }}>
-              {t('确认购买积分包')}
-            </h3>
+            {checkout.state.status === 'idle' || checkout.state.status === 'creating' ? (
+              <>
+                <h3 id="credit-pack-modal-title" className="text-lg font-semibold" style={{ color: '#333' }}>
+                  {t('确认购买积分包')}
+                </h3>
 
-            <dl className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <dt style={{ color: '#666' }}>{t('商品')}</dt>
-                <dd className="font-semibold" style={{ color: '#333' }}>
-                  {t('{{count}} 模型积分', { count: selectedDenomination.credit_total.toLocaleString() })}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt style={{ color: '#666' }}>{t('有效期')}</dt>
-                <dd style={{ color: '#333' }}>{t('到账后 1 个月')}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt style={{ color: '#666' }}>{t('购买数量')}</dt>
-                <dd style={{ color: '#333' }}>{t('1 份')}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt style={{ color: '#666' }}>{t('应付金额')}</dt>
-                <dd className="font-semibold" style={{ color: '#333' }}>
-                  {formatAmount(selectedQuote.quote)}
-                </dd>
-              </div>
-              <div className="flex justify-between">
-                <dt style={{ color: '#666' }}>{t('支付方式')}</dt>
-                <dd style={{ color: '#333' }}>{isGlobal ? t('信用卡 / 借记卡') : t('微信支付')}</dd>
-              </div>
-            </dl>
+                <dl className="mt-4 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <dt style={{ color: '#666' }}>{t('商品')}</dt>
+                    <dd className="font-semibold" style={{ color: '#333' }}>
+                      {t('{{count}} 模型积分', { count: selectedDenomination.credit_total.toLocaleString() })}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt style={{ color: '#666' }}>{t('有效期')}</dt>
+                    <dd style={{ color: '#333' }}>{t('到账后 1 个月')}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt style={{ color: '#666' }}>{t('购买数量')}</dt>
+                    <dd style={{ color: '#333' }}>{t('1 份')}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt style={{ color: '#666' }}>{t('应付金额')}</dt>
+                    <dd className="font-semibold" style={{ color: '#333' }}>
+                      {formatAmount(selectedQuote.quote)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt style={{ color: '#666' }}>{t('支付方式')}</dt>
+                    <dd style={{ color: '#333' }}>{isGlobal ? t('信用卡 / 借记卡') : t('微信支付')}</dd>
+                  </div>
+                </dl>
 
-            <label className="mt-4 flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#666' }}>
-              <input
-                type="checkbox"
-                checked={termsAccepted}
-                onChange={(event) => setTermsAccepted(event.target.checked)}
-                data-testid="credit-pack-terms-checkbox"
-                className="mt-0.5"
-              />
-              <span>
-                {t('我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。')}
-                {isGlobal ? null : (
-                  <>
-                    <br />
-                    {t('法律规定、重复扣款或平台交付异常等情况，由客服核验处理。')}
-                  </>
-                )}
-              </span>
-            </label>
+                <label className="mt-4 flex items-start gap-2 text-xs leading-relaxed" style={{ color: '#666' }}>
+                  <input
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={(event) => setTermsAccepted(event.target.checked)}
+                    data-testid="credit-pack-terms-checkbox"
+                    className="mt-0.5"
+                  />
+                  <span>
+                    {t('我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。')}
+                    {isGlobal ? null : (
+                      <>
+                        <br />
+                        {t('法律规定、重复扣款或平台交付异常等情况，由客服核验处理。')}
+                      </>
+                    )}
+                  </span>
+                </label>
 
-            <div className="mt-5 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="rounded-lg border px-4 py-2 text-sm font-semibold"
-                style={{ borderColor: '#d1d5db', color: '#666' }}
-              >
-                {t('取消')}
-              </button>
-              <button
-                type="button"
-                disabled={!termsAccepted || checkout.state.status === 'creating'}
-                onClick={handleConfirmPay}
-                data-testid="credit-pack-confirm-pay"
-                className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ background: '#4f46e5' }}
-              >
-                {checkout.state.status === 'creating' ? t('正在创建订单…') : t('确认支付')}
-              </button>
-            </div>
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="rounded-lg border px-4 py-2 text-sm font-semibold"
+                    style={{ borderColor: '#d1d5db', color: '#666' }}
+                  >
+                    {t('取消')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!termsAccepted || checkout.state.status === 'creating'}
+                    onClick={handleConfirmPay}
+                    data-testid="credit-pack-confirm-pay"
+                    className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ background: '#4f46e5' }}
+                  >
+                    {checkout.state.status === 'creating' ? t('正在创建订单…') : t('确认支付')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* ── 支付阶段：对齐 PaymentPendingModal 的形态 ── */
+              <div className="flex flex-col items-center">
+                <h3 id="credit-pack-modal-title" className="text-lg font-semibold" style={{ color: '#333' }}>
+                  {checkout.state.status === 'delivered'
+                    ? t('购买成功')
+                    : checkout.state.status === 'failed' || checkout.state.status === 'delivery_exception'
+                      ? t('支付遇到问题')
+                      : t('完成支付')}
+                </h3>
+
+                {/* 国内站：微信扫码二维码（对齐 PaymentPendingModal 的 QRCodeSVG 用法） */}
+                {checkout.bridgePlan && checkout.state.status === 'payment_pending' ? (
+                  <div data-testid="credit-pack-wx-qr" className="mt-4">
+                    <QRCodeSVG value={checkout.bridgePlan.bridgeUrl} size={180} level="M" includeMargin={false} />
+                  </div>
+                ) : null}
+
+                <p
+                  className="mt-3 text-center text-sm leading-relaxed"
+                  style={{ color: checkout.state.status === 'delivered' ? '#15803d' : '#666' }}
+                >
+                  {checkoutNotice}
+                  {checkout.state.dealName && checkout.state.status !== 'delivered' ? (
+                    <span className="mt-1 block text-xs" style={{ color: '#999' }}>
+                      {t('订单号：{{deal}}', { deal: checkout.state.dealName })}
+                    </span>
+                  ) : null}
+                </p>
+
+                <div className="mt-5 flex flex-wrap justify-center gap-3">
+                  {/* 国际站：支付窗口被关闭时重新打开托管页 */}
+                  {checkout.payUrl && checkout.state.status === 'payment_pending' ? (
+                    <button
+                      type="button"
+                      onClick={handleReopenPayPage}
+                      data-testid="credit-pack-reopen-pay"
+                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                      style={{ background: '#4f46e5' }}
+                    >
+                      {t('重新打开支付页面')}
+                    </button>
+                  ) : null}
+                  {/* 交付超时：手动重查 */}
+                  {checkout.state.status === 'delivery_exception' ? (
+                    <button
+                      type="button"
+                      onClick={() => void checkout.confirmDelivery()}
+                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                      style={{ background: '#4f46e5' }}
+                    >
+                      {t('重新查询到账状态')}
+                    </button>
+                  ) : null}
+                  {/* 失败：重新下单（reset 回确认阶段） */}
+                  {checkout.state.status === 'failed' ? (
+                    <button
+                      type="button"
+                      onClick={checkout.reset}
+                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                      style={{ background: '#4f46e5' }}
+                    >
+                      {t('重新下单')}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(false)}
+                    className="rounded-lg border px-4 py-2 text-sm font-semibold"
+                    style={{ borderColor: '#d1d5db', color: '#666' }}
+                  >
+                    {checkout.state.status === 'delivered' ? t('完成') : t('暂不处理')}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
