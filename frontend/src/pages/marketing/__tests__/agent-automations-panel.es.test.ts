@@ -5,8 +5,8 @@ import zhToKey from "@/i18n/generated/zh-to-key.json";
 
 import spanishJobCopy from "./fixtures/agent-automations-job-copy.es.json";
 
-describe("Agent automations Spanish Job terminology", () => {
-  it.each(Object.entries(spanishJobCopy))("uses Job terminology for %s", (source, expectedSpanish) => {
+describe("Agent automations Spanish task terminology", () => {
+  it.each(Object.entries(spanishJobCopy))("uses task terminology for %s", (source, expectedSpanish) => {
     const key = (zhToKey as Record<string, string>)[source];
 
     expect(key).toBeTruthy();
