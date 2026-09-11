@@ -60,6 +60,8 @@
 - `npm run sync:mono2-agent-console`：同步 125 个文件。
 - `npm run check:mono2-agent-console`：验证 125 个文件通过。
 - 修复后 OpenCraft Guard 的隔离目录完成 vendored 校验、platform boundaries 和全 workspace typecheck；本机 macOS 后续 119 个 Host 测试中 118 个通过，1 个 Linux 进程用例因 `posix_spawnp failed` 未通过，交由 Linux CI 复验。
+- MR !3889 再次同步 `origin/master@1c6c89617` 时，仅 `sync-mono2-agent-console.mjs` 与生成清单 `UPSTREAM.json` 产生内容冲突；保留 master 的 `try/catch` 无 Git 回退实现并重新运行同步命令后，两个冲突均已消除。
+- 冲突解决后，Bot 创建与 Profile 高级设置的 7 个前端测试文件共 127 个用例通过；CTL 空白技能基线测试、Go vet、镜像脚本测试、`pnpm check` 和 vendored 125 文件检查通过。
 
 ## risks
 

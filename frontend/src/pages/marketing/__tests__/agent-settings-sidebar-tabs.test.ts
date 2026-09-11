@@ -53,11 +53,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     expect(page).toContain("const isFirstBotCreation = !activeBot");
     expect(page).toContain("const requestedCreateMode = isFirstBotCreation ? \"blank\" : createBotMode");
-    expect(page).toContain("const requestedInitialSoul = isFirstBotCreation ? undefined : createBotSoul.trim() || undefined");
+    expect(page).not.toContain("createBotSoul");
+    expect(page).not.toContain("initialSoul:");
     expect(page).toContain("{!isFirstBotCreation && (");
     expect(page).toContain('createMode: requestedCreateMode === "blank" ? "blank" : "clone"');
     expect(page).toContain('sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id');
-    expect(page).toContain("initialSoul: requestedInitialSoul");
   });
 
   it("refreshes the shared Bot list before leaving the creation page", () => {
@@ -282,9 +282,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');
-    expect(page).toContain("isCreateAdvancedOpen");
-    expect(page).toContain('aria-controls="create-bot-advanced-settings"');
-    expect(page).toContain('className="flex w-full items-center gap-1.5 text-sm font-medium');
+    expect(page).not.toContain("isCreateAdvancedOpen");
+    expect(page).not.toContain('aria-controls="create-bot-advanced-settings"');
+    expect(page).not.toContain('t("初始人设（可选）")');
     expect(page).toContain('className="mt-5 flex justify-end gap-2"');
     expect(page).toContain("const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id)");
     expect(page).toContain('isActiveBotDefault ? "grid-cols-2" : "grid-cols-3"');
@@ -306,7 +306,10 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("onClick={handleCreateNew}");
     expect(page).not.toContain('t("立即创建")');
     expect(page).not.toContain('t("创建智能体")');
-    expect(page).toContain('t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")');
+    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>');
+    expect(page).toContain('t("模型、人设、技能、用户偏好和长期记忆")');
+    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>');
+    expect(page).toContain('t("当前对话、历史会话、定时任务、运行状态或通道连接")');
     expect(page).toContain('t("使用 LightVela 默认配置创建一个独立 Bot。")');
     expect(page).not.toContain('t("使用 Hermes 默认配置创建独立 Bot。")');
     expect(page).not.toContain("Memory、User Profile");
@@ -384,8 +387,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(actionButtonStyles).toContain("z-index: 30;");
   });
 
-  it("keeps the agent delete confirmation explicit about plan safety", () => {
+  it("keeps the Bot delete confirmation explicit about data loss", () => {
     const page = readPageSource();
+    const multiBotDeleteDialog = page.slice(page.indexOf("{showDeleteConfirm && activeBot"));
 
     expect(page).toContain('t("风险提示：")');
     expect(page).toContain('className="block font-semibold"');
@@ -393,7 +397,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('t("删除后，整个 Agent 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")');
     expect(page).toContain('t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")');
     expect(page).toContain("rounded-xl border border-red-100 bg-red-50/70");
-    expect(page).toContain('t("已购买的套餐不受影响，不会因删除智能体而失效。")');
+    expect(multiBotDeleteDialog).not.toContain('t("已购买的套餐不受影响，不会因删除智能体而失效。")');
     expect(page).toContain('t("确认删除 Agent")');
     expect(page).toContain('t("确认删除 Bot")');
   });

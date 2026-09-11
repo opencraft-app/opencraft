@@ -78,6 +78,7 @@
 - 通道是否允许多个 Bot 同时连接由 capability 决定。国内站微信在一期按实例级唯一资源处理；占用信息写入实例 `$HERMES_HOME/.lightvela/channel-bindings/weixin.json` 并通过文件锁原子更新，非占用 Bot 不得覆盖或复用该通道凭据。
 - 命名 Bot 创建前必须同时通过服务端功能开关和目标实例的 Hermes Profile 能力预检。克隆完成后要移除消息通道配置、消息通道环境变量和 Home channel；配置键本就不存在应视为已完成清理，除此之外的清理失败仍须终止并回滚创建，无法证明清理完成时不得把 Bot 标记为可用。
 - Profile 创建、更新和删除为同步操作；失败直接返回稳定错误码且不得留下伪 Bot 记录。创建失败时应尽力删除未完成的命名 Profile，后续列表只展示 Hermes 当前真实存在的 Profile。
+- “空白创建”保留产品文案，但其技能基线来自首个 Bot 随实例镜像固化的 LightVela 基础技能清单；不得直接采用 Hermes 完整 bundled skills，也不得复制主 Bot 后续安装的 Skills。旧实例没有固化清单时，仅从根 Profile 当前仍存在的 Hermes bundled skills 与 LightVela 自带 website-builder 推导兼容基线。
 - Bot 显示名称去除首尾空白后必须包含 1 到 60 个 Unicode 码点；前端创建入口提供同等输入约束，CTL 在创建和重命名时执行最终校验。
 - 每个 Agent 的 Bot 上限由当前有效 Pass 对应 Bundle 的 `bot_quota_per_agent` 决定并包含默认 Bot；`agent_quota` 仍只表示 Agent 实例席位。启航 Launch/Launch AI 为 5，巡游 Cruise/Cruise AI 为 10。前端可提前提示，但 CTL 必须在目标 Agent 内用共享文件锁串行“Profile 计数 + 创建”；套餐降级造成存量超额时不得自动删除 Profile，只禁止继续创建。
 - 公开 API 使用 `/v1/instances/{instance_id}/bots` 表达实例作用域；新增 method/path 必须同步 `service-gateway` allowlist，并分别验证 CTL 直连与公共入口路由。
