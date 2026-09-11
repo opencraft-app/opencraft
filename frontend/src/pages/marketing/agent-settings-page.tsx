@@ -2558,9 +2558,7 @@ export const AgentSettingsPage = ({
   const [directCreating, setDirectCreating] = useState(false);
   const [directCreateError, setDirectCreateError] = useState<string | null>(null);
   const [createBotName, setCreateBotName] = useState("");
-  const [createBotSoul, setCreateBotSoul] = useState("");
   const [createBotMode, setCreateBotMode] = useState<"clone-current" | "clone-main" | "blank">("blank");
-  const [isCreateAdvancedOpen, setIsCreateAdvancedOpen] = useState(false);
   const visibleBots = useMemo(
     () => bots.filter((bot) => (
       bot.status !== "provisioning"
@@ -3891,12 +3889,10 @@ export const AgentSettingsPage = ({
     name,
     createMode,
     sourceBotId,
-    initialSoul,
   }: {
     name: string;
     createMode: "blank" | "clone";
     sourceBotId?: string;
-    initialSoul?: string;
   }) => {
     setDirectCreating(true);
     setDirectCreateError(null);
@@ -3912,7 +3908,6 @@ export const AgentSettingsPage = ({
         status: "running",
         createMode,
         sourceBotId,
-        initialSoul,
       });
       trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
         pgid: DATONG_PAGE_IDS.AGENT_CREATING,
@@ -3945,9 +3940,7 @@ export const AgentSettingsPage = ({
       if (isSubscribed) {
         setDirectCreateError(null);
         setCreateBotName("");
-        setCreateBotSoul("");
         setCreateBotMode("blank");
-        setIsCreateAdvancedOpen(false);
         setShowCreateConfirm(true);
         return;
       }
@@ -3957,9 +3950,7 @@ export const AgentSettingsPage = ({
 
     setDirectCreateError(null);
     setCreateBotName("");
-    setCreateBotSoul("");
     setCreateBotMode("clone-current");
-    setIsCreateAdvancedOpen(false);
     setShowCreateConfirm(true);
   };
 
@@ -3978,7 +3969,6 @@ export const AgentSettingsPage = ({
       return;
     }
     const requestedCreateMode = isFirstBotCreation ? "blank" : createBotMode;
-    const requestedInitialSoul = isFirstBotCreation ? undefined : createBotSoul.trim() || undefined;
     const sourceBot = requestedCreateMode === "clone-current" ? activeBot : defaultBot;
     if (requestedCreateMode !== "blank" && !sourceBot) {
       setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
@@ -3988,7 +3978,6 @@ export const AgentSettingsPage = ({
       name: normalizedName,
       createMode: requestedCreateMode === "blank" ? "blank" : "clone",
       sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id,
-      initialSoul: requestedInitialSoul,
     });
   };
 
@@ -4472,7 +4461,6 @@ export const AgentSettingsPage = ({
               </span>
             </p>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              <span className="block">{t("已购买的套餐不受影响，不会因删除智能体而失效。")}</span>
               <span className="block">
                 {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
                 <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
@@ -4786,45 +4774,22 @@ export const AgentSettingsPage = ({
                       })}
                     </div>
                   </fieldset>
-                  <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
-                    {createBotMode === "blank"
-                      ? t("使用 LightVela 默认配置创建一个独立 Bot。")
-                      : t("新 Bot 会继承模型、人设、技能、用户偏好和长期记忆；不会继承当前对话、历史会话、运行状态或通道连接。")}
-                  </p>
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setIsCreateAdvancedOpen((open) => !open)}
-                      disabled={directCreating}
-                      className="flex w-full items-center gap-1.5 text-sm font-medium text-black/60 transition-colors hover:text-black/85 disabled:opacity-50"
-                      aria-expanded={isCreateAdvancedOpen}
-                      aria-controls="create-bot-advanced-settings"
-                    >
-                      <span>{t("高级设置")}</span>
-                      <ChevronDown
-                        className={cn("size-4 transition-transform", isCreateAdvancedOpen && "rotate-180")}
-                        aria-hidden="true"
-                      />
-                    </button>
-                    {isCreateAdvancedOpen && (
-                      <div id="create-bot-advanced-settings" className="mt-3 rounded-md bg-black/[0.025] p-3">
-                        <label className="block space-y-1.5 text-sm font-medium text-black/70">
-                          <span>{t("初始人设（可选）")}</span>
-                          <textarea
-                            value={createBotSoul}
-                            onChange={(event) => setCreateBotSoul(event.target.value)}
-                            maxLength={12000}
-                            rows={4}
-                            disabled={directCreating}
-                            className="w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
-                            placeholder={createBotMode === "blank"
-                              ? t("留空时会生成基础人设")
-                              : t("留空时保留来源 Bot 的人设")}
-                          />
-                        </label>
+                  {createBotMode === "blank" ? (
+                    <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                      {t("使用 LightVela 默认配置创建一个独立 Bot。")}
+                    </p>
+                  ) : (
+                    <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                      <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>
+                        <dd>{t("模型、人设、技能、用户偏好和长期记忆")}</dd>
                       </div>
-                    )}
-                  </div>
+                      <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
+                        <dd>{t("当前对话、历史会话、定时任务、运行状态或通道连接")}</dd>
+                      </div>
+                    </dl>
+                  )}
                 </>
               )}
             </div>
