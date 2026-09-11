@@ -13,6 +13,10 @@ import (
 type Config struct {
 	Addr                         string
 	MySQLDSN                     string
+	RedisAddr                    string
+	RedisPassword                string
+	RedisDB                      int
+	AuthCodeTTL                  time.Duration
 	InternalServiceToken         string
 	TradeBaseURL                 string
 	LLMGatewayBaseURL            string
@@ -32,6 +36,9 @@ func Load() (Config, error) {
 	cfg := Config{
 		Addr:                         envOrDefault("CREDIT_ADDR", ":8080"),
 		MySQLDSN:                     strings.TrimSpace(os.Getenv("CREDIT_MYSQL_DSN")),
+		RedisAddr:                    strings.TrimSpace(os.Getenv("CREDIT_REDIS_ADDR")),
+		RedisPassword:                strings.TrimSpace(os.Getenv("CREDIT_REDIS_PASSWORD")),
+		AuthCodeTTL:                  10 * time.Minute,
 		InternalServiceToken:         strings.TrimSpace(os.Getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN")),
 		TradeBaseURL:                 strings.TrimSpace(os.Getenv("TRADE_INTERNAL_BASE_URL")),
 		LLMGatewayBaseURL:            strings.TrimSpace(os.Getenv("LLMGATEWAY_INTERNAL_BASE_URL")),
@@ -45,6 +52,20 @@ func Load() (Config, error) {
 		LifecycleWorkerPollInterval:  10 * time.Second,
 		LifecycleWorkerLeaseDuration: 30 * time.Second,
 		LifecycleWorkerBatchSize:     50,
+	}
+	if raw := strings.TrimSpace(os.Getenv("CREDIT_REDIS_DB")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			return Config{}, fmt.Errorf("CREDIT_REDIS_DB must be a non-negative integer")
+		}
+		cfg.RedisDB = value
+	}
+	if raw := strings.TrimSpace(os.Getenv("CREDIT_AUTH_CODE_TTL")); raw != "" {
+		value, err := time.ParseDuration(raw)
+		if err != nil || value <= 0 {
+			return Config{}, fmt.Errorf("CREDIT_AUTH_CODE_TTL must be a positive duration")
+		}
+		cfg.AuthCodeTTL = value
 	}
 	if raw := strings.TrimSpace(os.Getenv("CREDIT_TOKEN_RATIO")); raw != "" {
 		value, err := strconv.ParseInt(raw, 10, 64)
@@ -115,6 +136,13 @@ func (c Config) ValidatePackageID() error {
 	}
 	if strings.TrimSpace(c.ObjectIDPasswordSuffix) == "" {
 		return fmt.Errorf("CREDIT_OBJECT_ID_PASSWORD_SUFFIX is required")
+	}
+	return nil
+}
+
+func (c Config) ValidateAuthCode() error {
+	if strings.TrimSpace(c.RedisAddr) == "" {
+		return fmt.Errorf("CREDIT_REDIS_ADDR is required")
 	}
 	return nil
 }

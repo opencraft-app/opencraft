@@ -121,3 +121,82 @@ func TestLoadLifecycleWorkerSettings(t *testing.T) {
 		t.Fatalf("unexpected lifecycle worker config: %+v", cfg)
 	}
 }
+
+func TestLoadAuthCodeRedisSettings(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("CREDIT_REDIS_ADDR", "redis.local:6379")
+	t.Setenv("CREDIT_REDIS_PASSWORD", "redis-password")
+	t.Setenv("CREDIT_REDIS_DB", "6")
+	t.Setenv("CREDIT_AUTH_CODE_TTL", "12m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.RedisAddr != "redis.local:6379" || cfg.RedisPassword != "redis-password" || cfg.RedisDB != 6 {
+		t.Fatalf("unexpected Redis config: %+v", cfg)
+	}
+	if cfg.AuthCodeTTL != 12*time.Minute {
+		t.Fatalf("AuthCodeTTL = %v", cfg.AuthCodeTTL)
+	}
+}
+
+func TestLoadAuthCodeRedisDefaults(t *testing.T) {
+	setRequiredConfig(t)
+	t.Setenv("CREDIT_REDIS_DB", "")
+	t.Setenv("CREDIT_AUTH_CODE_TTL", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if cfg.RedisDB != 0 || cfg.AuthCodeTTL != 10*time.Minute {
+		t.Fatalf("unexpected auth code defaults: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidAuthCodeRedisSettings(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		key   string
+		value string
+		want  string
+	}{
+		{name: "non-integer db", key: "CREDIT_REDIS_DB", value: "db-zero", want: "CREDIT_REDIS_DB"},
+		{name: "negative db", key: "CREDIT_REDIS_DB", value: "-1", want: "CREDIT_REDIS_DB"},
+		{name: "invalid ttl", key: "CREDIT_AUTH_CODE_TTL", value: "ten-minutes", want: "CREDIT_AUTH_CODE_TTL"},
+		{name: "zero ttl", key: "CREDIT_AUTH_CODE_TTL", value: "0s", want: "CREDIT_AUTH_CODE_TTL"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredConfig(t)
+			t.Setenv(tt.key, tt.value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Load() error = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateAuthCodeConfig(t *testing.T) {
+	if err := (Config{}).ValidateAuthCode(); err == nil || !strings.Contains(err.Error(), "CREDIT_REDIS_ADDR") {
+		t.Fatalf("ValidateAuthCode() error = %v", err)
+	}
+	if err := (Config{RedisAddr: "redis.local:6379"}).ValidateAuthCode(); err != nil {
+		t.Fatalf("ValidateAuthCode(): %v", err)
+	}
+}
+
+func setRequiredConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "credit-internal")
+	t.Setenv("TRADE_INTERNAL_BASE_URL", "http://trade.local")
+	t.Setenv("LLMGATEWAY_INTERNAL_BASE_URL", "https://llmgw-control.local")
+	t.Setenv("LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "llmgw-internal")
+	t.Setenv("CREDIT_DB_PASSWORD", "db-password")
+	t.Setenv("CREDIT_DB", "credit")
+	t.Setenv("CREDIT_REDIS_ADDR", "")
+	t.Setenv("CREDIT_REDIS_PASSWORD", "")
+	t.Setenv("CREDIT_REDIS_DB", "")
+	t.Setenv("CREDIT_AUTH_CODE_TTL", "")
+}

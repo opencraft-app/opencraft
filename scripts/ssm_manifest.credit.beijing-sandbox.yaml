@@ -2,7 +2,7 @@
 # SSM and exported to the encrypted Kubernetes Secret with export_ssm_to_sops.py.
 defaults:
   region: ap-beijing
-  version_id: SSM_Current
+  version_id: latest
   age_recipients:
     - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
 
@@ -17,6 +17,7 @@ items:
     required_keys:
       - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
       - CREDIT_DB_PASSWORD
+      - CREDIT_REDIS_PASSWORD
       - LLMGATEWAY_INTERNAL_SERVICE_TOKEN
     labels:
       app.kubernetes.io/name: credit
