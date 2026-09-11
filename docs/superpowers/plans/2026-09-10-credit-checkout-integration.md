@@ -74,3 +74,16 @@
 - [x] Run focused Trade tests, followed by `cd trade && go test ./...` when disk permits.
 - [x] Run focused Service Gateway policy tests and the full package test in an environment that permits `httptest` listeners.
 - [x] Review `git diff --check`, `git status`, and the final diff.
+
+## 2026-09-11 Follow-up: Sessionless Payment Bridge
+
+The original checkout endpoint assumed that the payment bridge retained the
+LightVela session. Credit now follows the Pass ticket model: package order
+responses include a Redis-backed, ten-minute, one-time `auth_code` bound to
+the authenticated user and `dealName`. Service Gateway permits anonymous
+access only to `POST /v1/credit/packages/order-url`; Credit atomically consumes
+the ticket when no trusted `X-User-Id` is present and then applies the existing
+Trade owner and `credit_package` checks. Authenticated requests retain priority
+and do not consume a supplied ticket. The detailed design and execution plan
+are in `2026-09-11-credit-auth-code-design.md` and
+`2026-09-11-credit-auth-code.md`.

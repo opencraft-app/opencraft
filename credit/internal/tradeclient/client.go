@@ -34,6 +34,11 @@ type OrderRequest struct {
 	TimeUnit       string `json:"time_unit"`
 }
 
+type OrderResult struct {
+	BigOrderID string `json:"bigOrderId"`
+	DealName   string `json:"dealName"`
+}
+
 type PayURLRequest struct {
 	ExternalUserID string `json:"external_user_id"`
 	Platform       string `json:"platform,omitempty"`
@@ -97,8 +102,12 @@ func (c *Client) Inquiry(ctx context.Context, req InquiryRequest) (map[string]an
 	return c.post(ctx, "/internal/trade/credit/inquiry", req)
 }
 
-func (c *Client) PlaceOrder(ctx context.Context, req OrderRequest) (map[string]any, error) {
-	return c.post(ctx, "/internal/trade/credit/orders", req)
+func (c *Client) PlaceOrder(ctx context.Context, req OrderRequest) (*OrderResult, error) {
+	var result OrderResult
+	if err := c.postInto(ctx, "/internal/trade/credit/orders", req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (c *Client) PlaceOrderAndPay(ctx context.Context, req OrderRequest) (map[string]any, error) {
@@ -217,16 +226,24 @@ func (c *Client) ReportUsage(ctx context.Context, req usage.ReportRequest) (json
 }
 
 func (c *Client) post(ctx context.Context, path string, payload any) (map[string]any, error) {
+	var out map[string]any
+	if err := c.postInto(ctx, path, payload, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) postInto(ctx context.Context, path string, payload, out any) error {
 	if c.baseURL == "" {
-		return nil, fmt.Errorf("trade base url is required")
+		return fmt.Errorf("trade base url is required")
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
@@ -235,21 +252,20 @@ func (c *Client) post(ctx context.Context, path string, payload any) (map[string
 	}
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("trade returned status %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("trade returned status %d: %s", resp.StatusCode, string(respBody))
 	}
-	var out map[string]any
-	if err := json.Unmarshal(respBody, &out); err != nil {
-		return nil, err
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return err
 	}
-	return out, nil
+	return nil
 }
 
 func escapePath(value string) string {

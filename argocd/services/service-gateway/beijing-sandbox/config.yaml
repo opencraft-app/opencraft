@@ -126,6 +126,8 @@ routes:
     access: authenticated
     require_realname: true
     auth_strategy: session
+    optional_auth_allow:
+      - { method: POST, path: "/v1/credit/packages/order-url" }
     path_policy: allowlist
     path_allow:
       - { method: GET, path: "/v1/credit/products" }

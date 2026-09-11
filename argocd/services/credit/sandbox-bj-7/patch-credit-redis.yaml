@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit
+  namespace: credit
+spec:
+  template:
+    spec:
+      containers:
+        - name: credit
+          env:
+            - name: CREDIT_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: playground-runtime-secrets
+                  key: REDIS_PASSWORD

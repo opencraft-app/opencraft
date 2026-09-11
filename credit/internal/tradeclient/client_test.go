@@ -37,6 +37,40 @@ func TestReportUsage(t *testing.T) {
 	}
 }
 
+func TestPlaceOrderDecodesTypedResult(t *testing.T) {
+	client := NewClient("http://trade.local", "token")
+	client.client.Transport = roundTripper(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.Path != "/internal/trade/credit/orders" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body OrderRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.ExternalUserID != "usr-owner" || body.ProductID != "credit_1000" {
+			t.Fatalf("request = %+v", body)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"bigOrderId":"big-1","dealName":"deal-1"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	result, err := client.PlaceOrder(context.Background(), OrderRequest{
+		ExternalUserID: "usr-owner",
+		ProductID:      "credit_1000",
+		TimeSpan:       1,
+		TimeUnit:       "m",
+	})
+	if err != nil {
+		t.Fatalf("PlaceOrder(): %v", err)
+	}
+	if result.BigOrderID != "big-1" || result.DealName != "deal-1" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestGeneratePayURLBindsCreditOrderToAuthenticatedUser(t *testing.T) {
 	client := NewClient("http://trade.local", "token")
 	client.client.Transport = roundTripper(func(r *http.Request) (*http.Response, error) {

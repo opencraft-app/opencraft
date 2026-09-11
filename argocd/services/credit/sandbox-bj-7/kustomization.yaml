@@ -17,6 +17,7 @@ patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml
   - path: patch-playground-db.yaml
+  - path: patch-credit-redis.yaml
 replacements:
   - source:
       kind: ConfigMap

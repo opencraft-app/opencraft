@@ -27,6 +27,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: credit-platform-values
+      fieldPath: data.CREDIT_REDIS_ADDR
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.CREDIT_REDIS_ADDR
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
       fieldPath: data.CREDIT_NODE_POOL
     targets:
       - select:

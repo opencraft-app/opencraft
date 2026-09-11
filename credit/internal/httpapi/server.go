@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"git.woa.com/wisp/mono/credit/internal/authcode"
 	"git.woa.com/wisp/mono/credit/internal/service"
 	"git.woa.com/wisp/mono/credit/internal/store"
 	"git.woa.com/wisp/mono/credit/internal/tradeclient"
@@ -17,6 +20,7 @@ type Server struct {
 	svc   *service.Service
 	store store.Store
 	trade tradeService
+	auth  authcode.Store
 	token string
 }
 
@@ -24,7 +28,7 @@ const wechatPaymentAppID = "wxf95ea3ae45d5304f"
 
 type tradeService interface {
 	Inquiry(context.Context, tradeclient.InquiryRequest) (map[string]any, error)
-	PlaceOrder(context.Context, tradeclient.OrderRequest) (map[string]any, error)
+	PlaceOrder(context.Context, tradeclient.OrderRequest) (*tradeclient.OrderResult, error)
 	PlaceOrderAndPay(context.Context, tradeclient.OrderRequest) (map[string]any, error)
 	GeneratePayURL(context.Context, string, tradeclient.PayURLRequest) (*tradeclient.PayURLResult, error)
 	RefundPackage(context.Context, string, tradeclient.RefundRequest) (map[string]any, error)
@@ -36,8 +40,15 @@ type userOrderRequest struct {
 	TimeUnit  string `json:"time_unit"`
 }
 
+type userOrderResponse struct {
+	BigOrderID string `json:"bigOrderId"`
+	DealName   string `json:"dealName"`
+	AuthCode   string `json:"auth_code"`
+}
+
 type userOrderURLRequest struct {
 	DealName  string `json:"deal_name"`
+	AuthCode  string `json:"auth_code,omitempty"`
 	Platform  string `json:"platform,omitempty"`
 	WxOpenID  string `json:"wx_open_id,omitempty"`
 	CancelURL string `json:"cancel_url,omitempty"`
@@ -55,8 +66,8 @@ type userOrderURLResponse struct {
 	AppID      string  `json:"app_id,omitempty"`
 }
 
-func NewRouter(svc *service.Service, st store.Store, trade tradeService, internalToken string) http.Handler {
-	server := &Server{svc: svc, store: st, trade: trade, token: strings.TrimSpace(internalToken)}
+func NewRouter(svc *service.Service, st store.Store, trade tradeService, auth authcode.Store, internalToken string) http.Handler {
+	server := &Server{svc: svc, store: st, trade: trade, auth: auth, token: strings.TrimSpace(internalToken)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", server.health)
 	mux.HandleFunc("/v1/credit/products", server.products)
@@ -152,7 +163,24 @@ func (s *Server) order(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, out)
+	if out == nil || strings.TrimSpace(out.DealName) == "" {
+		writeError(w, http.StatusBadGateway, "trade returned empty deal_name")
+		return
+	}
+	response := userOrderResponse{BigOrderID: out.BigOrderID, DealName: out.DealName}
+	if s.auth != nil {
+		issueCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		response.AuthCode, err = s.auth.Issue(issueCtx, &authcode.Ticket{
+			UserID:   userID,
+			DealName: out.DealName,
+		})
+		cancel()
+		if err != nil {
+			log.Printf("credit order: issue auth_code failed: %v", err)
+			response.AuthCode = ""
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) orderAndPay(w http.ResponseWriter, r *http.Request) {
@@ -191,10 +219,6 @@ func (s *Server) orderURL(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	userID, ok := requireUserID(w, r)
-	if !ok {
-		return
-	}
 	var body userOrderURLRequest
 	if !decodeJSON(w, r, &body) {
 		return
@@ -202,6 +226,10 @@ func (s *Server) orderURL(w http.ResponseWriter, r *http.Request) {
 	dealName := strings.TrimSpace(body.DealName)
 	if dealName == "" {
 		writeError(w, http.StatusBadRequest, "deal_name is required")
+		return
+	}
+	userID, ok := s.resolveOrderURLUserID(w, r, body.AuthCode, dealName)
+	if !ok {
 		return
 	}
 	result, err := s.trade.GeneratePayURL(r.Context(), dealName, tradeclient.PayURLRequest{
@@ -235,6 +263,36 @@ func (s *Server) orderURL(w http.ResponseWriter, r *http.Request) {
 		Uin:        result.Uin,
 		AppID:      result.AppID,
 	})
+}
+
+func (s *Server) resolveOrderURLUserID(w http.ResponseWriter, r *http.Request, code, dealName string) (string, bool) {
+	if userID := strings.TrimSpace(r.Header.Get("X-User-Id")); userID != "" {
+		return userID, true
+	}
+	code = strings.TrimSpace(code)
+	if code == "" || s.auth == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return "", false
+	}
+	ticket, err := s.auth.Consume(r.Context(), code)
+	if err != nil {
+		if errors.Is(err, authcode.ErrTicketNotFound) {
+			writeError(w, http.StatusUnauthorized, "auth_code invalid or expired")
+			return "", false
+		}
+		log.Printf("credit order URL: consume auth_code failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return "", false
+	}
+	if ticket == nil || strings.TrimSpace(ticket.UserID) == "" {
+		writeError(w, http.StatusUnauthorized, "auth_code invalid or expired")
+		return "", false
+	}
+	if ticket.DealName != dealName {
+		writeError(w, http.StatusForbidden, "auth_code deal_name mismatch")
+		return "", false
+	}
+	return ticket.UserID, true
 }
 
 func paymentWxAppID(wxOpenID string) string {
