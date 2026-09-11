@@ -998,18 +998,22 @@ describe("international v2 homepage artifact", () => {
 
   it("localizes the revised free-trial CTA in every non-English locale", () => {
     const expectedCtaCopy = {
-      "zh-SG": ["免费体验，无需信用卡", "LightVela免费体验 14 天", "AI Token 套餐免费体验 7 天"],
-      "zh-Hant": ["免費體驗，無需信用卡", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 7 天"],
-      "id-ID": ["Coba gratis, tanpa kartu kredit", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 7 hari."],
-      es: ["Pruébalo gratis, sin tarjeta de crédito", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 7 días."],
-      "ja-JP": ["クレジットカード不要で無料体験", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを7日間無料でお試しいただけます。"],
-      "ko-KR": ["신용카드 없이 무료로 체험하세요", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 7일 동안 무료로 사용해 보세요."],
+      "zh-SG": ["免费体验，10秒极速开通", "LightVela免费体验 14 天", "AI Token 套餐免费体验 7 天"],
+      "zh-Hant": ["免費體驗，10秒極速開通", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 7 天"],
+      "id-ID": ["Coba gratis, aktif dalam 10 detik", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 7 hari."],
+      es: ["Pruébalo gratis, activa en 10 segundos", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 7 días."],
+      "ja-JP": ["無料体験、10秒でスピード開通", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを7日間無料でお試しいただけます。"],
+      "ko-KR": ["무료 체험, 10초 만에 개통", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 7일 동안 무료로 사용해 보세요."],
     } as const;
 
     for (const [locale, phrases] of Object.entries(expectedCtaCopy)) {
       const html = readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8");
       for (const phrase of phrases) expect(html).toContain(phrase);
+      expect(html).not.toContain("Try it free, activate in 10 seconds");
+      // 旧文案不得回流：importer 的 trialTitleCopyByLocale 与各语种词典都已改，
+      // 任何一处漏改都会让这句英文或「无需信用卡」重新出现在产物里。
       expect(html).not.toContain("Try it free, no credit card required");
+      expect(html).not.toContain("信用卡");
       expect(html).not.toContain("Try LightVela free for 14 days.");
       expect(html).not.toContain("Try an AI token plan free for 3 days.");
     }
@@ -1027,7 +1031,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
-    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，30秒极速部署");
+    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，10秒极速开通");
     expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
       "LightVela免费体验 14 天",
       "AI Token 套餐免费体验 3 天",
@@ -1058,39 +1062,39 @@ describe("international v2 homepage artifact", () => {
     const expectedHeadings = {
       "index-fragment.html": {
         h1: "Your AI companion—always on, always evolving with you.",
-        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
+        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, activate in 10 seconds"],
       },
       "index-fragment.en-US.html": {
         h1: "Your AI companion—always on, always evolving with you.",
-        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
+        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, activate in 10 seconds"],
       },
       "index-fragment.zh-CN.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，30秒极速部署"],
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-SG.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-Hant.html": {
         h1: "越用越懂你，長期在線的 AI 夥伴",
-        h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，無需信用卡"],
+        h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，10秒極速開通"],
       },
       "index-fragment.id-ID.html": {
         h1: "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
-        h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, tanpa kartu kredit"],
+        h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, aktif dalam 10 detik"],
       },
       "index-fragment.es.html": {
         h1: "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
-        h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, sin tarjeta de crédito"],
+        h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, activa en 10 segundos"],
       },
       "index-fragment.ja-JP.html": {
         h1: "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
-        h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "クレジットカード不要で無料体験"],
+        h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "無料体験、10秒でスピード開通"],
       },
       "index-fragment.ko-KR.html": {
         h1: "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
-        h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "신용카드 없이 무료로 체험하세요"],
+        h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "무료 체험, 10초 만에 개통"],
       },
     } as const;
 
