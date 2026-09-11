@@ -12,7 +12,9 @@ const getRescueExportStatus = vi.fn();
 const getHermesImportStatus = vi.fn();
 const startRescueExport = vi.fn();
 const resetInstanceConfig = vi.fn();
+const addBot = vi.fn();
 const botRepository = { execDebugCommand, getRescueExportStatus, getHermesImportStatus, startRescueExport, resetInstanceConfig };
+const testRegion = vi.hoisted(() => ({ isCN: true, isGlobal: false }));
 
 let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
@@ -20,8 +22,16 @@ let maxBots = 1;
 let multiBotEnabled = true;
 
 vi.mock("@/i18n/t", () => ({
-  t: (text: string) => text,
-  useT: () => (text: string) => text,
+  t: (text: string) => (
+    testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
+      ? "A Bot is being deleted. Refresh the page in a moment before creating another."
+      : text
+  ),
+  useT: () => (text: string) => (
+    testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
+      ? "A Bot is being deleted. Refresh the page in a moment before creating another."
+      : text
+  ),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -31,8 +41,8 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "zh-CN",
-  isCN: true,
-  isGlobal: false,
+  get isCN() { return testRegion.isCN; },
+  get isGlobal() { return testRegion.isGlobal; },
   readLocaleFromPath: () => null,
 }));
 
@@ -74,7 +84,7 @@ vi.mock("@/contexts/agent-context", () => ({
     refreshBots: vi.fn(),
     refreshPasses: vi.fn(),
     isSubscribed: true,
-    addBot: vi.fn(),
+    addBot,
     activePass: null,
   }),
 }));
@@ -144,6 +154,8 @@ describe("multi-Bot diagnostics", () => {
     vi.clearAllMocks();
     maxBots = 1;
     multiBotEnabled = true;
+    testRegion.isCN = true;
+    testRegion.isGlobal = false;
     currentSessionUser = {
       id: "usr-test", name: "Agent User", email: "user@example.com",
       inviteRequired: false, realnameVerified: true, realnameLevel: "idcard_2fa",
@@ -153,6 +165,7 @@ describe("multi-Bot diagnostics", () => {
     getRescueExportStatus.mockResolvedValue(null);
     getHermesImportStatus.mockResolvedValue(null);
     execDebugCommand.mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "root log" });
+    addBot.mockResolvedValue({ ...buildBot(), id: "created", profileId: "created", isDefault: false });
   });
   afterEach(cleanup);
 
@@ -219,9 +232,53 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 
-  it.each(["capacity", "feature flag"])("does not bypass the %s gate with show()", (gate) => {
-    maxBots = gate === "capacity" ? 1 : 5;
-    multiBotEnabled = gate !== "feature flag";
+  it("keeps the create button visible but disabled with a quota tooltip at capacity", () => {
+    maxBots = 1;
+    render(page("ins-1"));
+    revealHiddenTools();
+    const createButton = screen.getByRole("button", { name: "新建 Bot" });
+    expect(createButton).toBeDisabled();
+    expect(createButton).toHaveTextContent("新建 Bot");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+    );
+  });
+
+  it("rechecks the current quota when the create dialog is confirmed", async () => {
+    bots = [buildBot()];
+    maxBots = 2;
+    const view = render(page("ins-1"));
+    revealHiddenTools();
+    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
+    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
+
+    bots = [buildBot(), { ...buildBot(), id: "sales", profileId: "sales", isDefault: false, name: "Sales" }];
+    view.rerender(page("ins-1"));
+    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+
+    expect(addBot).not.toHaveBeenCalled();
+    expect(screen.getAllByText(
+      "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+    ).length).toBeGreaterThan(0);
+  });
+
+  it("localizes the deleting-Bot limit message on the global empty state", () => {
+    testRegion.isCN = false;
+    testRegion.isGlobal = true;
+    multiBotEnabled = false;
+    bots = [{ ...buildBot(), status: "deleting" }];
+
+    render(page("ins-1"));
+
+    expect(screen.getByText(
+      "A Bot is being deleted. Refresh the page in a moment before creating another.",
+    )).toBeInTheDocument();
+    expect(screen.queryByText("已有 Bot 正在删除中，请稍后刷新页面后再创建。")).not.toBeInTheDocument();
+  });
+
+  it("does not bypass the feature flag with show()", () => {
+    maxBots = 5;
+    multiBotEnabled = false;
     render(page("ins-1"));
     revealHiddenTools();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
