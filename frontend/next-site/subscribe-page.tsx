@@ -3471,11 +3471,8 @@ export const SubscribePage = ({
     /* 功能点2b：进页不再强制登录，未登录用户可浏览静态价；
        点「订阅」按钮时再引导登录，登录后回到本页继续操作。 */
     if (!isLoggedIn) {
-      /* 未登录：记住本次选中的套餐后拉起登录弹窗。
-         同窗口登录（验证码）成功后由 handleLoginSuccess 自动续跑，
-         用户不需要回来再点一次；OAuth 整页跳转会丢失这个内存态，
-         回跳后仍是已登录态定价页，由用户再次点击进入下方链路。 */
-      setPendingPlan(plan);
+      /* 未登录：弹出登录弹窗引导登录（OAuth 整页跳转）。
+         登录回跳后进入已登录态定价页，用户再次点「订阅」即走下方实名判断链路。 */
       setShowLoginModal(true);
       return;
     }
@@ -3558,40 +3555,6 @@ export const SubscribePage = ({
 
   const handleCloseInviteModal = useCallback(() => {
     setShowInviteCode(false);
-    setPendingPlan(null);
-  }, []);
-
-  /* 登录成功后：自动继续用户登录前点击的套餐流程。
-     对应「未登录 → 选套餐 → 弹登录 → 支付 → /agents」这条连贯路径，
-     避免登录完把用户丢在定价页、要求他再点一次才继续。
-     这里只处理同窗口登录成功的情形（验证码登录）；
-     OAuth 是整页跳转，pendingPlan 会随页面卸载丢失，回跳后由用户手动点击。 */
-  const handleLoginSuccess = useCallback(() => {
-    setShowLoginModal(false);
-    const plan = pendingPlan;
-    setPendingPlan(null);
-    if (!plan) return;
-
-    /* 登录后权益快照才有意义：已有订阅/实例的账号不再走下单，
-       交回 handleSubscribe 的同一套业务兜底去收敛。 */
-    if (isSubscribed || activePass || bots.length > 0) {
-      void refreshPasses();
-      return;
-    }
-
-    /* 登录期间套餐可能已售罄或下架，续跑前重新校验一次，避免以旧口径下单。 */
-    if (plan.soldOut || plan.comingSoon || plan.priceUnavailable || plan.pricingLoading) return;
-
-    if (plan.skipPayment) {
-      void executeCreateBot(plan);
-    } else {
-      setSelectedPlan(plan);
-      setModalStep("confirm");
-    }
-  }, [pendingPlan, isSubscribed, activePass, bots.length, refreshPasses, executeCreateBot]);
-
-  const handleCloseLoginModal = useCallback(() => {
-    setShowLoginModal(false);
     setPendingPlan(null);
   }, []);
 
@@ -3949,13 +3912,11 @@ export const SubscribePage = ({
         onSuccess={handleInviteSuccess}
       />
 
-      {/* Login Modal — 未登录点「订阅」时引导登录；同窗口登录成功后
-          由 handleLoginSuccess 自动续跑登录前选中的套餐，
+      {/* Login Modal — 未登录点「订阅」时引导登录；登录成功仅关闭弹窗，
           OAuth 整页跳转回跳后即为已登录态定价页。 */}
       <LoginModal
         open={showLoginModal}
-        onClose={handleCloseLoginModal}
-        onSuccess={handleLoginSuccess}
+        onClose={() => setShowLoginModal(false)}
       />
 
       {/* Responsive: collapse to single column on mobile */}

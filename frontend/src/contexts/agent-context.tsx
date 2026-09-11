@@ -53,12 +53,6 @@ export interface OpenClawUser {
 interface OpenClawContextValue {
   isLoggedIn: boolean;
   isSubscribed: boolean;
-  /** isSubscribed 是否已完成首次判定。
-   *  isSubscribed 初值为 false，且依赖异步的 GET /v1/passes，
-   *  未就绪时无法区分「确实未订阅」与「还没查回来」。
-   *  依赖订阅态做文案/跳转分支的调用方必须先等这个标志为 true，
-   *  否则已订阅用户会先渲染未订阅态再跳变。 */
-  subscriptionReady: boolean;
   user: OpenClawUser;
   bots: OpenClawBot[];
   botsLoading: boolean;
@@ -155,7 +149,29 @@ const defaultPlan: OpenClawUser["plan"] = {
   aiCredits: 1000,
   usedCredits: 0,
   totalRequests: 0,
-  maxBots: 0,
+  maxBots: 1,
+};
+
+export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bundle_id"> | null): number => {
+  // 后端新增或调整付费套餐时，请同步更新此处 bundle_id 映射与对应测试。
+  switch (pass?.bundle_id) {
+    case "bundle_launch_01":
+    case "bundle_launch_ai_01":
+      return 5;
+    case "bundle_cruise_01":
+    case "bundle_cruise_ai_01":
+      return 10;
+    default:
+      return 1;
+  }
+};
+
+export const resolveBotQuotaForPassState = (
+  pass: Pick<Pass, "bundle_id"> | null,
+  hasResolvedPasses: boolean,
+): number => {
+  if (pass) return resolveBotQuotaPerAgent(pass);
+  return hasResolvedPasses ? 1 : 0;
 };
 
 const defaultUser: OpenClawUser = {
@@ -189,9 +205,9 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const effectiveIsAuthenticated = isAuthenticated || LOCAL_PREVIEW_AUTH_ENABLED;
 
   const [isSubscribed, setIsSubscribed] = useState(false);
-  const [subscriptionReady, setSubscriptionReady] = useState(false);
   const [activePass, setActivePass] = useState<Pass | null>(null);
   const [latestPass, setLatestPass] = useState<Pass | null>(null);
+  const [hasResolvedPasses, setHasResolvedPasses] = useState(false);
   const [bots, setBots] = useState<OpenClawBot[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
   const fetchedRef = useRef(false);
@@ -200,10 +216,8 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (session.currentSubscription?.status === "active") {
       setIsSubscribed(true);
-      setSubscriptionReady(true);
     } else if (session.currentSubscription) {
       setIsSubscribed(false);
-      setSubscriptionReady(true);
     }
   }, [session.currentSubscription]);
 
@@ -215,6 +229,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? null;
       setActivePass(active);
       setIsSubscribed(Boolean(active));
+      setHasResolvedPasses(true);
       // 保存最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐
       const latest = passes
         .filter((p) => !p.deleted_time)
@@ -222,10 +237,6 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       setLatestPass(latest);
     } catch {
       /* 接口失败不阻断其他流程，保持现有状态 */
-    } finally {
-      /* 无论成功或失败都置为已就绪：失败时沿用当前 isSubscribed（默认未订阅），
-         依赖方据此降级到转化入口，而不是一直卡在加载态。 */
-      setSubscriptionReady(true);
     }
   }, [repositories.plans]);
 
@@ -254,9 +265,10 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       plan: {
         ...defaultPlan,
         ...(planFromPass ?? {}),
+        maxBots: resolveBotQuotaForPassState(activePass, hasResolvedPasses),
       },
     };
-  }, [activePass, effectiveIsAuthenticated, session.user]);
+  }, [activePass, effectiveIsAuthenticated, hasResolvedPasses, session.user]);
 
   /* ── Load bots from backend, then fetch openclaw config to restore channel status ── */
   const refreshBots = useCallback(async () => {
@@ -319,10 +331,9 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       }
     } else if (!isAuthenticated && session.authReady) {
       setIsSubscribed(false);
-      /* 未登录是一个确定结论，订阅态无需等待接口即可判定为就绪 */
-      setSubscriptionReady(true);
       setActivePass(null);
       setLatestPass(null);
+      setHasResolvedPasses(false);
       setBots([]);
       fetchedRef.current = false;
     }
@@ -335,10 +346,9 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   const logout = useCallback(() => {
     setIsSubscribed(false);
-    /* 登出后订阅态是确定的「未订阅」，保持就绪避免依赖方回退到加载态 */
-    setSubscriptionReady(true);
     setActivePass(null);
     setLatestPass(null);
+    setHasResolvedPasses(false);
     setBots([]);
     fetchedRef.current = false;
     void sessionSignOut();
@@ -346,7 +356,6 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   const subscribe = useCallback(() => {
     setIsSubscribed(true);
-    setSubscriptionReady(true);
   }, []);
 
   const updateUser = useCallback((_updates: Partial<OpenClawUser>) => {
@@ -415,7 +424,6 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     () => ({
       isLoggedIn: effectiveIsAuthenticated,
       isSubscribed,
-      subscriptionReady,
       user,
       bots,
       botsLoading,
@@ -431,7 +439,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, subscriptionReady, user, bots, botsLoading, activePass, latestPass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, latestPass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

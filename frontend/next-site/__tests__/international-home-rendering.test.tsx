@@ -9,7 +9,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
-const openClawMock = vi.hoisted(() => ({ isSubscribed: false, subscriptionReady: true }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
 vi.mock("@/components/site/maintenance-announcement-banner", async () => {
   const ReactRuntime = await import("react");
@@ -25,9 +24,6 @@ vi.mock("@/components/site/maintenance-announcement-banner", async () => {
 });
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionMock,
-}));
-vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => openClawMock,
 }));
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "en-US",
@@ -45,8 +41,7 @@ import {
 } from "@next-site/international-home-runtime";
 
 const frontendRoot = process.cwd();
-const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="我的智能体伙伴" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="免费试用" data-home-hero-cta-anon-href="/subscribe" class="btn-dark" href="/subscribe"><span data-home-hero-cta-label>免费试用</span></a></div></main>';
-const globalHeroMarkup = '<main id="lightvela-intl-home" data-locale="ja-JP"><div class="hero__cta"><a data-home-hero-cta data-home-hero-cta-signed-label="私のAIパートナー" data-home-hero-cta-signed-href="/agents" data-home-hero-cta-anon-label="無料で開始" data-home-hero-cta-anon-href="/ja-jp/subscribe" class="btn-dark" href="/ja-jp/subscribe"><span data-home-hero-cta-label>無料で開始</span></a></div></main>';
+const domesticHeroMarkup = '<main id="lightvela-intl-home" data-locale="zh-CN"><div class="hero__cta"><a data-domestic-home-hero-cta class="btn-dark" href="/subscribe"><span data-domestic-home-hero-cta-label>免费试用</span></a></div></main>';
 
 beforeEach(() => {
   (globalThis as { React?: typeof React }).React = React;
@@ -54,8 +49,6 @@ beforeEach(() => {
   regionMock.isGlobal = false;
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
-  openClawMock.isSubscribed = false;
-  openClawMock.subscriptionReady = true;
 });
 
 afterEach(() => {
@@ -92,7 +85,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260911-hero-cta-subscription-v31"');
+    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260911-rotator-copy-and-brand-icons-v22"');
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -251,14 +244,14 @@ describe("international v2 homepage rendering", () => {
         locale: "zh-CN",
         loginOnly: true,
         promoteFreeTrial: false,
-        showProductEntry: false,
+        showProductEntry: true,
       }),
       undefined,
     );
     await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("免费试用");
+      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("免费试用");
     });
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
+    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
   });
 
   it("switches the domestic hero action to the signed-in product entry", async () => {
@@ -266,7 +259,6 @@ describe("international v2 homepage rendering", () => {
     regionMock.isGlobal = false;
     sessionMock.authReady = true;
     sessionMock.isAuthenticated = true;
-    openClawMock.isSubscribed = true;
 
     render(
       <InternationalHomeRuntime
@@ -276,115 +268,9 @@ describe("international v2 homepage rendering", () => {
     );
 
     await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("我的智能体伙伴");
+      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("开始使用");
     });
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
-  });
-
-  /* 四态判定第 2 行：已登录但未订阅（含订阅过期）仍应停留在转化入口，
-     而不是被放进产品页再撞订阅墙。 */
-  it("keeps the domestic hero on the conversion entry for signed-in users without a subscription", async () => {
-    (globalThis as { React?: typeof React }).React = React;
-    regionMock.isGlobal = false;
-    sessionMock.authReady = true;
-    sessionMock.isAuthenticated = true;
-    openClawMock.isSubscribed = false;
-
-    render(
-      <InternationalHomeRuntime
-        locale="zh-CN"
-        markup={domesticHeroMarkup}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("免费试用");
-    });
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
-  });
-
-  /* 订阅态尚未查回来时不得改写产物默认值，否则已订阅用户会先闪一帧「免费试用」。 */
-  it("leaves the hero CTA untouched until the subscription state is resolved", async () => {
-    (globalThis as { React?: typeof React }).React = React;
-    regionMock.isGlobal = false;
-    sessionMock.authReady = true;
-    sessionMock.isAuthenticated = true;
-    openClawMock.isSubscribed = true;
-    openClawMock.subscriptionReady = false;
-
-    render(
-      <InternationalHomeRuntime
-        locale="zh-CN"
-        markup={domesticHeroMarkup}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta]")).toBeTruthy();
-    });
-    expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("免费试用");
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
-  });
-
-  it("applies the same stateful hero CTA on the international site when anonymous", async () => {
-    (globalThis as { React?: typeof React }).React = React;
-    regionMock.isGlobal = true;
-    sessionMock.authReady = true;
-    sessionMock.isAuthenticated = false;
-
-    render(
-      <InternationalHomeRuntime
-        locale="ja-JP"
-        markup={globalHeroMarkup}
-      />,
-    );
-
-    /* 双站统一：国际站未登录同样展示各 locale 的「免费开始」文案并进入本地化订阅页。 */
-    await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("無料で開始");
-    });
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/ja-jp/subscribe");
-  });
-
-  it("switches the international hero CTA to the product entry once signed in", async () => {
-    (globalThis as { React?: typeof React }).React = React;
-    regionMock.isGlobal = true;
-    sessionMock.authReady = true;
-    sessionMock.isAuthenticated = true;
-    openClawMock.isSubscribed = true;
-
-    render(
-      <InternationalHomeRuntime
-        locale="ja-JP"
-        markup={globalHeroMarkup}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("私のAIパートナー");
-    });
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/agents");
-  });
-
-  /* 国际站与国内站共用同一套四态判定，未订阅同样停留在本地化订阅页。 */
-  it("keeps the international hero on the localized subscribe entry without a subscription", async () => {
-    (globalThis as { React?: typeof React }).React = React;
-    regionMock.isGlobal = true;
-    sessionMock.authReady = true;
-    sessionMock.isAuthenticated = true;
-    openClawMock.isSubscribed = false;
-
-    render(
-      <InternationalHomeRuntime
-        locale="ja-JP"
-        markup={globalHeroMarkup}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(document.querySelector("[data-home-hero-cta-label]")).toHaveTextContent("無料で開始");
-    });
-    expect(document.querySelector("[data-home-hero-cta]")).toHaveAttribute("href", "/ja-jp/subscribe");
+    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/agents");
   });
 
   it("keeps the global zh-CN runtime on the international login-only treatment", () => {

@@ -126,7 +126,7 @@ describe("international v2 homepage artifact", () => {
     expect(hrefs.every((href) => !href.startsWith("/zh-cn"))).toBe(true);
     expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain("免费试用");
     expect(document.querySelector(".hero__cta .btn-dark")?.getAttribute("href")).toBe("/subscribe");
-    expect(document.querySelector("[data-home-hero-cta-label]")?.textContent).toBe("免费试用");
+    expect(document.querySelector("[data-domestic-home-hero-cta-label]")?.textContent).toBe("免费试用");
     expect(tabLabels).toEqual(["微信", "QQ", "企业微信", "钉钉", "飞书"]);
     expect(document.querySelector(".wcard__thumb--1 img")?.getAttribute("alt")).toBe(
       "微信、企业微信、钉钉、飞书、QQ 等当前支持的平台",
@@ -1027,7 +1027,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
-    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，10秒极速开通");
+    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，30秒极速部署");
     expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
       "LightVela免费体验 14 天",
       "AI Token 套餐免费体验 3 天",
@@ -1066,7 +1066,7 @@ describe("international v2 homepage artifact", () => {
       },
       "index-fragment.zh-CN.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，30秒极速部署"],
       },
       "index-fragment.zh-SG.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
@@ -1126,18 +1126,17 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["예약 작업", "워크벤치", "DeepSeek Harness"],
     } as const;
 
-    /* Hero CTA 双站统一为状态化：静态产物默认输出未登录文案，
-       登录态文案与目标由 data-* 提供，由 InternationalHomeRuntime 在 Session 恢复后切换。
-       未登录文案取自各 locale 页脚已审定表达；订阅路径国内为裸路径、国际带 locale 前缀。 */
+    /* Hero CTA 沿用现网结构：国内站输出「免费试用 → /subscribe」并由 runtime 在登录后切换，
+       国际站为固定的产品入口文案与链接，不做状态化。 */
     const expectedCtaLabels = {
-      "en-US": { anon: "Start free", signed: "My AI Companion", subscribe: "/subscribe" },
-      "zh-CN": { anon: "免费试用", signed: "我的智能体伙伴", subscribe: "/subscribe" },
-      "zh-SG": { anon: "立即免费体验", signed: "我的智能体伙伴", subscribe: "/zh-sg/subscribe" },
-      "zh-Hant": { anon: "立即免費體驗", signed: "我的智能體夥伴", subscribe: "/zh-hant/subscribe" },
-      "id-ID": { anon: "Mulai gratis", signed: "Pendamping AI saya", subscribe: "/id-id/subscribe" },
-      es: { anon: "Empieza gratis", signed: "Mi compañero de IA", subscribe: "/es/subscribe" },
-      "ja-JP": { anon: "無料で開始", signed: "私のAIパートナー", subscribe: "/ja-jp/subscribe" },
-      "ko-KR": { anon: "무료 시작", signed: "내 AI 파트너", subscribe: "/ko-kr/subscribe" },
+      "en-US": { label: "My AI Companion", href: "/agents" },
+      "zh-CN": { label: "免费试用", href: "/subscribe" },
+      "zh-SG": { label: "我的智能体伙伴", href: "/agents" },
+      "zh-Hant": { label: "我的智能體夥伴", href: "/agents" },
+      "id-ID": { label: "Pendamping AI saya", href: "/agents" },
+      es: { label: "Mi compañero de IA", href: "/agents" },
+      "ja-JP": { label: "私のAIパートナー", href: "/agents" },
+      "ko-KR": { label: "내 AI 파트너", href: "/agents" },
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -1148,13 +1147,8 @@ describe("international v2 homepage artifact", () => {
       const document = new DOMParser().parseFromString(html, "text/html");
       const heroCta = document.querySelector<HTMLAnchorElement>(".hero__cta .btn-dark");
       const expectedCta = expectedCtaLabels[locale];
-      /* 双站统一：静态产物首屏输出未登录文案与订阅路径，登录态由四个 data-* 提供。 */
-      expect(heroCta?.textContent).toContain(expectedCta.anon);
-      expect(heroCta?.getAttribute("href")).toBe(expectedCta.subscribe);
-      expect(heroCta?.getAttribute("data-home-hero-cta-anon-label")).toBe(expectedCta.anon);
-      expect(heroCta?.getAttribute("data-home-hero-cta-anon-href")).toBe(expectedCta.subscribe);
-      expect(heroCta?.getAttribute("data-home-hero-cta-signed-label")).toBe(expectedCta.signed);
-      expect(heroCta?.getAttribute("data-home-hero-cta-signed-href")).toBe("/agents");
+      expect(heroCta?.textContent).toContain(expectedCta.label);
+      expect(heroCta?.getAttribute("href")).toBe(expectedCta.href);
       expect(html).toContain("play__new-badge");
       expect(html).not.toContain("Separate runtime");
       expect(html).not.toContain("独立运行时");

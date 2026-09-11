@@ -10,23 +10,16 @@ const runtimeMock = vi.hoisted(() => ({
   authReady: true,
   isAuthenticated: false,
 }));
-const agentMock = vi.hoisted(() => ({ bots: [] as unknown[], isSubscribed: false }));
-const loginModalMock = vi.hoisted(() => ({ onSuccess: undefined as (() => void) | undefined }));
 const trackDatongClickMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ i18n: { language: runtimeMock.language } }),
 }));
-vi.mock("@/components/site/login-modal", () => ({
-  LoginModal: (props: { onSuccess?: () => void }) => {
-    loginModalMock.onSuccess = props.onSuccess;
-    return null;
-  },
-}));
+vi.mock("@/components/site/login-modal", () => ({ LoginModal: () => null }));
 vi.mock("@/components/site/user-avatar-menu", () => ({ UserAvatarMenu: () => null }));
 vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => agentMock,
+  useOpenClaw: () => ({ bots: [], isSubscribed: false }),
 }));
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
@@ -51,9 +44,6 @@ beforeEach(() => {
   runtimeMock.language = "es";
   runtimeMock.authReady = true;
   runtimeMock.isAuthenticated = false;
-  agentMock.bots = [];
-  agentMock.isSubscribed = false;
-  loginModalMock.onSuccess = undefined;
 });
 
 afterEach(() => {
@@ -167,31 +157,5 @@ describe("PublicHeaderAuthIsland", () => {
       expect(button).toHaveClass("bg-black/90", "text-white");
     }
     expect(screen.queryByRole("button", { name: "Sign In" })).not.toBeInTheDocument();
-  });
-
-  describe("登录成功后的落地页分流", () => {
-    /* LoginModal 走 next/dynamic 异步加载，同步渲染取不到其 props，
-       因此对 onSuccess 的分流规则改为校验源码实现，避免依赖异步加载时序。 */
-    const source = readFileSync(
-      path.join(process.cwd(), "next-site/public-header-auth-island.tsx"),
-      "utf8",
-    );
-    const onSuccessBody = source.slice(
-      source.indexOf("onSuccess={() => {"),
-      source.indexOf("onSuccess={() => {") + 520,
-    );
-
-    it("未订阅时进入订阅页而非控制台", () => {
-      expect(onSuccessBody).toContain("if (!isSubscribed)");
-      expect(onSuccessBody).toContain("router.push(subscribePath)");
-    });
-
-    it("已订阅时按是否已有 Agent 分流到控制台或创建引导", () => {
-      expect(onSuccessBody).toContain("bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true)");
-    });
-
-    it("不再无条件跳转控制台", () => {
-      expect(onSuccessBody).not.toMatch(/onSuccess=\{\(\) => \{\s*router\.push\(AGENTS_HOME_PATH\);\s*\}\}/);
-    });
   });
 });
