@@ -35,7 +35,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useLayoutEffect, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -343,29 +343,134 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const SETTINGS_ICON_TOOLTIP_ARROW_CLASS =
-  "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
+type WorkspaceActionTooltipSide = "top" | "bottom";
 
-function WorkspaceActionTooltip({ children, content }: { children: ReactNode; content?: ReactNode }) {
+const WORKSPACE_ACTION_TOOLTIP_GAP = 8;
+const WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN = 16;
+
+function WorkspaceActionTooltip({
+  children,
+  content,
+  side = "top",
+}: {
+  children: ReactNode;
+  content?: ReactNode;
+  side?: WorkspaceActionTooltipSide;
+}) {
   const tooltipId = useId();
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current === null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const showTooltip = useCallback(() => {
+    clearCloseTimer();
+    setOpen(true);
+  }, [clearCloseTimer]);
+
+  const scheduleClose = useCallback(() => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      closeTimerRef.current = null;
+    }, 120);
+  }, [clearCloseTimer]);
+
+  const updatePosition = useCallback(() => {
+    const triggerRect = triggerRef.current?.getBoundingClientRect();
+    const tooltipRect = tooltipRef.current?.getBoundingClientRect();
+    if (!triggerRect || !tooltipRect) return;
+
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const halfWidth = tooltipRect.width / 2;
+    const centeredLeft = triggerRect.left + triggerRect.width / 2;
+    const minLeft = WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN + halfWidth;
+    const maxLeft = Math.max(minLeft, viewportWidth - WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN - halfWidth);
+
+    setPosition({
+      left: Math.min(Math.max(centeredLeft, minLeft), maxLeft),
+      top: side === "bottom"
+        ? triggerRect.bottom + WORKSPACE_ACTION_TOOLTIP_GAP
+        : triggerRect.top - WORKSPACE_ACTION_TOOLTIP_GAP,
+    });
+  }, [side]);
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [content, open, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
+  useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
+
+  useEffect(() => {
+    if (content) return;
+    clearCloseTimer();
+    setOpen(false);
+  }, [clearCloseTimer, content]);
+
   if (!content) return <>{children}</>;
 
   return (
     <span
-      className="group relative inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+      ref={triggerRef}
+      className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
       tabIndex={0}
-      aria-describedby={tooltipId}
+      aria-describedby={open ? tooltipId : undefined}
+      onMouseEnter={showTooltip}
+      onMouseLeave={scheduleClose}
+      onFocus={showTooltip}
+      onBlur={scheduleClose}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        clearCloseTimer();
+        setOpen(false);
+      }}
     >
       {children}
-      <span className="absolute bottom-full left-0 h-2 w-full" aria-hidden="true" />
-      <span
-        id={tooltipId}
-        role="tooltip"
-        className="invisible pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 w-72 -translate-x-1/2 rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
-      >
-        {content}
-        <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
-      </span>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              ref={tooltipRef}
+              id={tooltipId}
+              role="tooltip"
+              className={cn(
+                "pointer-events-auto fixed z-50 w-72 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+                side === "top" && "-translate-y-full",
+              )}
+              style={{ left: position.left, top: position.top }}
+              onMouseEnter={showTooltip}
+              onMouseLeave={scheduleClose}
+            >
+              {content}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute left-1/2 size-2 -translate-x-1/2 rotate-45 border-[var(--border-subtle)] bg-white",
+                  side === "bottom"
+                    ? "bottom-full translate-y-1/2 border-l border-t"
+                    : "top-full -translate-y-1/2 border-b border-r",
+                )}
+              />
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }
@@ -4780,9 +4885,16 @@ export const AgentSettingsPage = ({
                     </div>
                   </fieldset>
                   {createBotMode === "blank" ? (
-                    <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
-                      {t("使用 LightVela 默认配置创建一个独立 Bot。")}
-                    </p>
+                    <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                      <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>
+                        <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
+                        <dd>{t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")}</dd>
+                      </div>
+                    </dl>
                   ) : (
                     <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
                       <div className="flex items-start gap-2">
@@ -5158,7 +5270,7 @@ export const AgentSettingsPage = ({
                       )}
 
                       {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage}>
+                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
                           <button
                             type="button"
                             onClick={handleCreateNew}

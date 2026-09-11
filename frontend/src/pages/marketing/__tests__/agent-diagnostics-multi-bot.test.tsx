@@ -224,6 +224,9 @@ describe("multi-Bot diagnostics", () => {
     revealHiddenTools();
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
+    expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
+    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
@@ -232,16 +235,48 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 
-  it("keeps the create button visible but disabled with a quota tooltip at capacity", () => {
+  it("shows the disabled create quota tooltip below the button without sidebar clipping", async () => {
     maxBots = 1;
     render(page("ins-1"));
     revealHiddenTools();
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
     expect(createButton).toHaveTextContent("新建 Bot");
-    expect(screen.getByRole("tooltip")).toHaveTextContent(
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    const tooltipTrigger = createButton.parentElement;
+    expect(tooltipTrigger).not.toBeNull();
+    Object.defineProperty(tooltipTrigger, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        left: 84,
+        right: 304,
+        top: 275,
+        bottom: 311,
+        width: 220,
+        height: 36,
+        x: 84,
+        y: 275,
+        toJSON: () => ({}),
+      }),
+    });
+    fireEvent.mouseEnter(tooltipTrigger!);
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent(
       "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
     );
+    expect(tooltip.parentElement).toBe(document.body);
+    expect(tooltip).toHaveClass("fixed");
+    expect(tooltip).toHaveStyle({ left: "194px", top: "319px" });
+    expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip.id);
+    expect(tooltip.querySelector("[aria-hidden='true']")).toHaveClass("bottom-full");
+
+    fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    fireEvent.focus(tooltipTrigger!);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
   });
 
   it("rechecks the current quota when the create dialog is confirmed", async () => {
