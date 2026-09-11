@@ -721,6 +721,46 @@ describe("http repositories auth token bootstrap", () => {
     expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
   });
 
+  it.skipIf(isGlobal)("keeps the root bot visible while its pass is modifying", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_modifying",
+              name: "升配中的 Bot",
+              status: "Running",
+              created_at: "2026-09-11T00:00:00Z",
+            }],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ code: "PASS_MODIFYING", message: "pass is modifying" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_modifying",
+        name: "升配中的 Bot",
+        status: "active",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const jsonResponse = (data: unknown) => new Response(
