@@ -68,7 +68,11 @@ import { ConversationPendingInteractionPanel } from "./components/conversation-r
 import { RightPanel } from "./components/right-panel";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { InternalDeveloperModeGate } from "./components/internal-developer-mode-gate";
-import { ManagementSettingsDialog, ModalSurface } from "./components/modal";
+import {
+  ManagementSettingsContent,
+  ModalHost,
+  type ModalRequest,
+} from "./components/modal";
 import { PendingConversationPage } from "./components/pending-conversation-page";
 import { Sidebar } from "./components/sidebar";
 import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
@@ -432,19 +436,23 @@ export function App() {
   useEffect(() => {
     if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
   }, [extensionProjection.account?.snapshot.phase]);
-  const connectionIntervention = findHostConnectionInterventionError(
+  const applicationIntervention = extensionProjection.account?.snapshot.applicationIntervention ?? null;
+  const hostConnectionIntervention = findHostConnectionInterventionError(
     conversationViewActivation.error,
   );
   const activeHostProviderId = hostCatalog.profiles.find(
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
+  const connectionIntervention = applicationIntervention
+    ?? (hostConnectionIntervention?.providerId === activeHostProviderId
+      ? hostConnectionIntervention
+      : null);
   const connectionInterventionNode = connectionIntervention === null
-    || connectionIntervention.providerId !== activeHostProviderId
     ? null
     : extensionProjection.connectionInterventions.find(
-        (surface) => surface.providerId === connectionIntervention.providerId
-          && surface.intervention === connectionIntervention.code,
-      )?.node ?? null;
+      (surface) => surface.providerId === connectionIntervention.providerId
+        && surface.intervention === connectionIntervention.code,
+    )?.node ?? null;
   useEffect(() => {
     if (extensionViewOpen && extensionProjection.activeView === null) {
       workbenchNavigation.closeExtensionView();
@@ -1010,15 +1018,33 @@ export function App() {
       {settingsContent}
     </section>
   ) : null;
-  const managementSettingsDialog = managementSettingsOpen ? (
-    <ManagementSettingsDialog
-      navigation={settingsNavigation}
-      onClose={closeSettings}
-      title={`${hostCatalog.profiles.find((profile) => profile.hostId === snapshot.hostId)?.displayName ?? "Hermes"} settings`}
-    >
-      {settingsContent}
-    </ManagementSettingsDialog>
-  ) : null;
+  const modalRequests: ModalRequest[] = [];
+  if (managementSettingsOpen) {
+    modalRequests.push({
+      id: "management-settings",
+      label: `${hostCatalog.profiles.find((profile) => profile.hostId === snapshot.hostId)?.displayName ?? "Hermes"} settings`,
+      size: "workspace",
+      className: "management-settings-dialog",
+      dismissOnOutsidePress: false,
+      content: (
+        <ManagementSettingsContent navigation={settingsNavigation}>
+          {settingsContent}
+        </ManagementSettingsContent>
+      ),
+      onDismiss: closeSettings,
+    });
+  }
+  if (accountOpen && extensionProjection.account !== null) {
+    modalRequests.push({
+      id: "account",
+      label: "Account Settings",
+      size: "wide",
+      className: "account-center-dialog",
+      dismissOnOutsidePress: false,
+      content: extensionProjection.account.content,
+      onDismiss: () => setAccountOpen(false),
+    });
+  }
   const presentedRightPanelOpen =
     panelState.right.open && !rightPanelResponsiveBlocked;
   const presentedRightPanelFullWidth =
@@ -1203,7 +1229,11 @@ export function App() {
             hidden={!conversationSurfaceVisible}
             inert={!conversationRouteOpen || undefined}
           >
-        {draft !== null && draft.submission === null ? (
+        {connectionInterventionNode !== null ? (
+          <div className="hostless-workbench__empty-stage">
+            {connectionInterventionNode}
+          </div>
+        ) : draft !== null && draft.submission === null ? (
           <NewThreadDraftPage
             key={draft.id}
             draft={draft}
@@ -1241,11 +1271,6 @@ export function App() {
         ) : (
           <div className="local-conversation-page">
             {activeThreadLease === null ? (
-              connectionInterventionNode !== null ? (
-                <div className="hostless-workbench__empty-stage">
-                  {connectionInterventionNode}
-                </div>
-              ) : (
                 <ConversationHydration
                   detail={`Connecting to ${activeHost.label}…`}
                   errorMessage={conversationViewActivation.error?.message}
@@ -1259,7 +1284,6 @@ export function App() {
                     : null}
                   state={conversationViewActivation.phase === "error" ? "error" : "loading"}
                 />
-              )
             ) : (
               <>
                 <Conversation
@@ -1389,12 +1413,7 @@ export function App() {
           ) : null}
         </div>
         </AppShell>
-        {managementSettingsDialog}
-        {accountOpen && extensionProjection.account !== null ? (
-          <ModalSurface className="account-center-dialog" label="Account Settings" onDismiss={() => setAccountOpen(false)}>
-            {extensionProjection.account.content}
-          </ModalSurface>
-        ) : null}
+        <ModalHost requests={modalRequests} />
         <WorkspaceDirectoryPicker
           open={
             !settingsOpen &&

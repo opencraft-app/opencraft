@@ -2,6 +2,7 @@ export * from "./account/lightvela-account-service";
 export * from "./extension";
 export * from "./host/lightvela-hermes-host-provider";
 export * from "./lib/hermes-session-token-cache";
+export * from "./onboarding";
 export * from "./hermes-appserver-bridge/composer-queue/service";
 export * from "./settings/lightvela-hermes-settings-view";
 export * from "./settings/lightvela-hermes-empty-view";

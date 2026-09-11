@@ -37,7 +37,7 @@ npm run matrix:build -- electron-linux-x64-deb
 ```
 
 Desktop packaging jobs are downstream targets. Linux AppImage, RPM, and DEB
-consume the same release-obfuscated renderer and host. RPM is the native
+consume the same release-minified renderer and protected host. RPM is the native
 TencentOS/RHEL/Fedora installation contract; AppImage is the portable smoke
 artifact; DEB covers Debian/Ubuntu. Application ZIPs can be
 cross-built, while DMG creation, signing, notarization, and the final smoke test

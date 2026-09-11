@@ -40,13 +40,13 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { createPortal } from "react-dom";
 
 import {
   browserReadableImageSource,
   ConversationDocumentContext,
 } from "../../conversation/document-context";
 import { useConversationMediaSource } from "../../conversation/conversation-media-source";
+import { ModalSurface } from "../../modal";
 import { activityIcon } from "../activity/activity-icon";
 import {
   AutomaticApprovalReviewIcon,
@@ -247,28 +247,15 @@ function RawToolCallDialog({ block, onClose }: {
 }) {
   const title = `Raw ${block.server ?? block.namespace ?? "tool"}.${block.name} tool call output`;
   const rawValue = rawToolCallValue(block);
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-  return createPortal(
-    <div className="thread-tool-raw-dialog__backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section aria-label={title} aria-modal="true" className="thread-tool-raw-dialog" role="dialog">
+  return (
+    <ModalSurface className="thread-tool-raw-dialog" label={title} layer="nested" onDismiss={onClose} size="wide">
         <header>
           <strong>{title}</strong>
-          <div>
-            <button aria-label="Close" className="thread-tool-raw-dialog__close" onClick={onClose} type="button"><X size={14} /></button>
-          </div>
         </header>
         <div className="thread-tool-raw-dialog__body">
           <ToolJsonPreview documentId={`tool-raw:${block.id}`} showActions value={rawValue} />
         </div>
-      </section>
-    </div>,
-    document.body,
+    </ModalSurface>
   );
 }
 
@@ -416,15 +403,6 @@ function GeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock,
   const source = sourceCandidate.length === 0 ? null : media.source;
   const loading = sourceCandidate.length > 0 && media.status === "loading";
 
-  useEffect(() => {
-    if (!previewOpen) return;
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewOpen]);
-
   if (source === null) {
     // Codex suppresses terminal failure/interruption items with no image. Only
     // the in-progress item or a durable Host-backed image load owns a gallery
@@ -452,26 +430,22 @@ function GeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock,
     setPreviewOpen(true);
   };
   const alt = "Generated image 1";
-  const lightbox = previewOpen ? createPortal(
-    <div
-      className="thread-generated-image-lightbox"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target) setPreviewOpen(false);
-      }}
-      role="presentation"
+  const lightbox = previewOpen ? (
+    <ModalSurface
+      className="thread-generated-image-lightbox__dialog"
+      label={alt}
+      layer="nested"
+      onDismiss={() => setPreviewOpen(false)}
+      size="workspace"
     >
-      <div aria-label={alt} aria-modal="true" className="thread-generated-image-lightbox__dialog" role="dialog">
         <div className="thread-generated-image-lightbox__toolbar">
           {documentContext.onEditGeneratedImage === undefined ? null : (
             <button onClick={() => documentContext.onEditGeneratedImage?.(block)} type="button">Edit</button>
           )}
           <a download={block.savedPath?.split(/[\\/]/u).at(-1) ?? "generated-image-1.png"} href={source}>Save</a>
-          <button aria-label="Close image preview" onClick={() => setPreviewOpen(false)} type="button"><X size={18} /></button>
         </div>
         <img alt={alt} draggable={false} onLoad={() => media.requestMeasurement("image-load")} src={source} />
-      </div>
-    </div>,
-    document.body,
+    </ModalSurface>
   ) : null;
   return (
     <>

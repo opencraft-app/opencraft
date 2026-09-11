@@ -44,6 +44,16 @@
   --lv-control-muted-foreground: var(--text-secondary);
   --lv-control-disabled-background: var(--color-background-button-secondary-inactive);
   --lv-control-focus: var(--color-border-focus);
+  --lv-option-background: transparent;
+  --lv-option-background-highlighted: var(--color-background-button-tertiary-hover);
+  --lv-option-background-selected: var(--color-background-button-secondary);
+  --lv-option-border: var(--color-border);
+  --lv-option-border-hover: var(--border-strong);
+  --lv-option-border-selected: var(--color-border-focus);
+  --lv-option-foreground: var(--text-primary);
+  --lv-option-foreground-muted: var(--text-secondary);
+  --lv-option-indicator: var(--color-accent-blue);
+  --lv-option-disabled-opacity: 0.45;
 
   /*
    * Legacy Standard Panel vocabulary. mono2 still renders Channels and a few
@@ -516,6 +526,171 @@
  * context. Give those controls a host-owned plane above nested dialogs. */
 .lightvela-agent-console-portal.lv-floating-control {
   z-index: var(--layer-floating-control, 250);
+}
+
+/* Select and Option are stateful control primitives. Feature pages provide
+ * values and policy only; every visual state resolves through this token
+ * boundary so portals and inline choices stay compatible with any host theme. */
+.lightvela-agent-console .lv-select-trigger {
+  border-color: var(--lv-control-border);
+  border-radius: var(--radius-md);
+  background: var(--lv-control-background);
+  color: var(--lv-control-foreground);
+  box-shadow: none;
+}
+
+.lightvela-agent-console .lv-select-trigger:hover:not([data-disabled]) {
+  border-color: var(--lv-option-border-hover);
+}
+
+.lightvela-agent-console .lv-select-trigger:focus-visible,
+.lightvela-agent-console .lv-select-trigger[data-state="open"] {
+  border-color: var(--lv-control-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lv-control-focus) 18%, transparent);
+}
+
+.lightvela-agent-console .lv-select-trigger[data-disabled] {
+  background: var(--lv-control-disabled-background);
+  color: var(--lv-control-muted-foreground);
+  opacity: var(--lv-option-disabled-opacity);
+}
+
+.lightvela-agent-console-portal.lv-select-content {
+  border: 1px solid var(--lv-option-border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  color: var(--lv-option-foreground);
+  box-shadow: var(--shadow-soft);
+}
+
+.lightvela-agent-console-portal .lv-select-viewport {
+  padding: var(--menu-surface-padding, 5px);
+}
+
+.lightvela-agent-console-portal .lv-select-separator {
+  background: var(--border-subtle);
+}
+
+.lightvela-agent-console-portal .lv-select-item {
+  border-radius: var(--menu-item-radius, var(--radius-md));
+  background: var(--lv-option-background);
+  color: var(--lv-option-foreground);
+}
+
+.lightvela-agent-console-portal .lv-select-item[data-highlighted] {
+  background: var(--lv-option-background-highlighted);
+}
+
+.lightvela-agent-console-portal .lv-select-item[data-state="checked"] {
+  background: var(--lv-option-background-selected);
+}
+
+.lightvela-agent-console-portal .lv-select-item[data-disabled] {
+  color: var(--lv-option-foreground-muted);
+  opacity: var(--lv-option-disabled-opacity);
+}
+
+.lightvela-agent-console-portal .lv-select-item__indicator {
+  color: var(--lv-option-indicator);
+}
+
+.lightvela-agent-console .lv-model-control {
+  border-color: var(--lv-control-border);
+  border-radius: var(--radius-md);
+  background: var(--lv-control-background);
+  color: var(--lv-control-foreground);
+  box-shadow: none;
+}
+
+.lightvela-agent-console .lv-model-control:focus-visible {
+  border-color: var(--lv-control-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lv-control-focus) 18%, transparent);
+}
+
+.lightvela-agent-console-portal.lv-model-select-content {
+  border-radius: var(--radius-md);
+}
+
+.lightvela-agent-console .lv-option-group__legend {
+  color: var(--lv-option-foreground-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.lightvela-agent-console .lv-option-group__options {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.lightvela-agent-console .lv-option {
+  --lv-radio-inner: var(--lv-control-background);
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--lv-option-border);
+  border-radius: var(--radius-md);
+  background: var(--lv-option-background);
+  color: var(--lv-option-foreground-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-duration-basic, 150ms),
+    background-color var(--transition-duration-basic, 150ms),
+    color var(--transition-duration-basic, 150ms);
+}
+
+.lightvela-agent-console .lv-option:hover:not([data-disabled="true"]) {
+  border-color: var(--lv-option-border-hover);
+  background: var(--lv-option-background-highlighted);
+}
+
+.lightvela-agent-console .lv-option[data-state="checked"] {
+  --lv-radio-inner: var(--lv-option-background-selected);
+  border-color: var(--lv-option-border-selected);
+  background: var(--lv-option-background-selected);
+  color: var(--lv-option-foreground);
+}
+
+.lightvela-agent-console .lv-option:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--lv-control-focus) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.lightvela-agent-console .lv-option[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: var(--lv-option-disabled-opacity);
+}
+
+.lightvela-agent-console .lv-radio {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid var(--lv-option-border-hover);
+  border-radius: 999px;
+  background: var(--lv-radio-inner, var(--lv-control-background));
+  outline: none;
+}
+
+.lightvela-agent-console .lv-radio:checked {
+  border-color: var(--lv-option-indicator);
+  background: var(--lv-option-indicator);
+  box-shadow: inset 0 0 0 3px var(--lv-radio-inner, var(--lv-control-background));
+}
+
+.lightvela-agent-console .lv-radio:focus-visible {
+  box-shadow:
+    inset 0 0 0 3px var(--lv-radio-inner, var(--lv-control-background)),
+    0 0 0 2px color-mix(in srgb, var(--lv-control-focus) 28%, transparent);
+}
+
+.lightvela-agent-console .lv-option-group__help {
+  margin-top: 6px;
+  color: var(--lv-option-foreground-muted);
+  font-size: 0.75rem;
 }
 
 .lightvela-agent-console .lv-card,

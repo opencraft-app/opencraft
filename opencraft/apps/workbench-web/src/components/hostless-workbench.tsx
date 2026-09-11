@@ -24,7 +24,11 @@ import { parseApplicationRouteUrl, type ApplicationRoute } from "../runtime/work
 import { getWindowChromePolicy, useWindowChrome } from "../window-chrome";
 import { AppShell } from "./app-shell";
 import { InternalDeveloperModeGate } from "./internal-developer-mode-gate";
-import { ManagementSettingsDialog, ModalSurface } from "./modal";
+import {
+  ManagementSettingsContent,
+  ModalHost,
+  type ModalRequest,
+} from "./modal";
 import {
   AppShellHeader,
   AppShellNavigationControls,
@@ -333,6 +337,36 @@ export function HostlessWorkbench({
       />
     </Suspense>
   ) : null;
+  const modalRequests: ModalRequest[] = [];
+  if (managementSettingsOpen) {
+    modalRequests.push({
+      id: "management-settings",
+      label: "Hermes settings",
+      size: "workspace",
+      className: "management-settings-dialog",
+      dismissOnOutsidePress: false,
+      content: (
+        <ManagementSettingsContent navigation={settingsNavigation}>
+          {settingsContent}
+        </ManagementSettingsContent>
+      ),
+      onDismiss: () => {
+        settingsPresentation.openContent();
+        closeApplicationRoute();
+      },
+    });
+  }
+  if (accountOpen && extensionProjection.account !== null) {
+    modalRequests.push({
+      id: "account",
+      label: "Account Settings",
+      size: "wide",
+      className: "account-center-dialog",
+      dismissOnOutsidePress: false,
+      content: extensionProjection.account.content,
+      onDismiss: () => setAccountOpen(false),
+    });
+  }
 
   return (
     <QueryClientProvider client={supervisor.queryClient}>
@@ -396,20 +430,7 @@ export function HostlessWorkbench({
             )}
         </div>
       </AppShell>
-      {managementSettingsOpen ? (
-        <ManagementSettingsDialog
-          navigation={settingsNavigation}
-          onClose={() => { settingsPresentation.openContent(); closeApplicationRoute(); }}
-          title="Hermes settings"
-        >
-          {settingsContent}
-        </ManagementSettingsDialog>
-      ) : null}
-      {accountOpen && extensionProjection.account !== null ? (
-        <ModalSurface className="account-center-dialog" label="Account Settings" onDismiss={() => setAccountOpen(false)}>
-          {extensionProjection.account.content}
-        </ModalSurface>
-      ) : null}
+      <ModalHost requests={modalRequests} />
     </QueryClientProvider>
   );
 }

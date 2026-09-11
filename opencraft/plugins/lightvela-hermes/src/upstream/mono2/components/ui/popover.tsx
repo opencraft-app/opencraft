@@ -16,7 +16,7 @@ const PopoverContent = React.forwardRef<
       ref={ref}
       align={align}
       sideOffset={sideOffset}
-      className={cn("lightvela-agent-console-portal z-50 rounded-lg outline-none", floatingPanelClass, className)}
+      className={cn("lightvela-agent-console-portal lv-floating-control rounded-lg outline-none", floatingPanelClass, className)}
       {...props}
     />
   </PopoverPrimitive.Portal>

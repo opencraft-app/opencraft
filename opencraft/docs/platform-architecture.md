@@ -145,6 +145,12 @@ only decorator; it can wrap any physical transport and produces Replay input.
   deterministic tests, routing identifiers, and design tokens: 100% shared.
 - React subscriptions and feature view-model hooks: share when they remain
   renderer-neutral.
+- Product onboarding shares a renderer-neutral account-state projection. In
+  particular, an authenticated LightVela account with zero executable Bots is
+  `bot-required`, not an authentication or Host transport error. Web renders
+  that state through an extension-owned DOM surface and Expo through a native
+  screen; both resolve the same region-aware `/dashboard/create` target and
+  refresh the account catalog after the application regains focus.
 - Conversation and composer behavior: shared models/controllers; separate DOM
   and native views.
 - Workbench resource identity and durable routes: shared. AppShell geometry,
@@ -153,6 +159,19 @@ only decorator; it can wrap any physical transport and produces Replay input.
 - Extension manifest, activation identity, install permissions, commands and
   declarative contributions: shared. Arbitrary React DOM/React Native component
   bodies are not a public cross-platform plugin ABI.
+- Embedded feature controls share semantic state contracts rather than raw
+  renderer markup. Web `Select`/`Option` primitives emit stable state and role
+  attributes, while the Host theme adapter owns their colors, focus, selected
+  and disabled presentation. Body-portaled controls must choose a named Host
+  presentation plane such as `floating-control`; feature code must not invent a
+  numeric `z-index` relative to an application modal.
+- Modal windows follow the same ownership rule. Feature code supplies content
+  plus a renderer-neutral descriptor; the platform owns the controller, the
+  single modal Host, the window surface and all modality behavior. Web adapts
+  that contract through Radix Dialog for Portal, focus, Escape and outside
+  interaction. Expo adapts it through React Native `Modal` today and may map a
+  fullscreen presentation to a navigation Stack later. Features must not own a
+  scrim, focus loop, Escape listener, Portal or numeric modal `z-index`.
 - Timeline windowing, restore anchors and latest-Turn follow policy: shared
   algorithms. DOM `ResizeObserver`/scrollTop and RN `onLayout`/contentOffset are
   thin platform adapters; neither platform may introduce another virtualizer
