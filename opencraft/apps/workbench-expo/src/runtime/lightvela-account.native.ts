@@ -5,7 +5,7 @@ import { createNativeLoginStorage } from "./native-login-storage";
 import * as Crypto from "expo-crypto";
 import { createNativeLogin, isNativeLoginCallback, NATIVE_LOGIN_PENDING_KEY } from "./native-login";
 
-import type { LightVelaBotInstance } from "@opencraft/plugin-lightvela-hermes";
+import type { LightVelaBotInstance } from "@opencraft/plugin-lightvela-hermes/account-contract";
 import type { MobileLightVelaAccount, MobileLightVelaPhase, MobileLightVelaSnapshot } from "./lightvela-account-types";
 
 const API_BASE = "https://api.lightvela.ai";
@@ -50,11 +50,27 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
   let bots: readonly LightVelaBotInstance[] = [];
   let revision = 0;
   let operation: Promise<void> | null = null;
-  let snapshot: MobileLightVelaSnapshot = Object.freeze({ revision, phase: "loading", activeBotId: null, botName: null, error: null });
+  let snapshot: MobileLightVelaSnapshot = Object.freeze({
+    revision,
+    region: "intl",
+    phase: "loading",
+    botCount: 0,
+    activeBotId: null,
+    botName: null,
+    error: null,
+  });
   const publish = (phase: MobileLightVelaPhase, activeBotId: string | null, error: string | null) => {
     if (disposed) return;
     const botName = bots.find(bot => bot.instanceId === activeBotId)?.name ?? null;
-    snapshot = Object.freeze({ revision: ++revision, phase, activeBotId, botName, error });
+    snapshot = Object.freeze({
+      revision: ++revision,
+      region: "intl",
+      phase,
+      botCount: bots.length,
+      activeBotId,
+      botName,
+      error,
+    });
     for (const listener of listeners) listener();
   };
   const request = async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -77,7 +93,6 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
     bots = result.items.filter(bot => bot.status.toLowerCase() === "running").map(bot => Object.freeze({
       createdAt: bot.created_at, instanceId: bot.instance_id, name: bot.name?.trim() || "Untitled Bot", status: "running" as const,
     }));
-    if (bots.length === 0) throw new Error("No running LightVela Bot is available");
     const storedBotId = await SecureStore.getItemAsync(ACTIVE_BOT_KEY);
     const activeBotId = [snapshot.activeBotId, storedBotId].find(id => id !== null && bots.some(bot => bot.instanceId === id)) ?? bots[0]?.instanceId ?? null;
     if (activeBotId === null) await SecureStore.deleteItemAsync(ACTIVE_BOT_KEY);

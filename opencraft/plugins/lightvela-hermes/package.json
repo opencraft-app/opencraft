@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./account-contract": "./src/account/lightvela-account-contract.ts",
+    "./onboarding": "./src/onboarding/lightvela-bot-onboarding.ts",
     "./runtime-entry": "./src/runtime-entry.ts",
     "./transport": "./src/transport/lightvela-hermes-transport.ts"
   },

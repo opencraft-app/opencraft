@@ -602,6 +602,8 @@ function mapSkillhubInstalledItem(item: SkillhubListItem, parent?: SkillhubListI
     parent?.display_name,
     parent?.displayName,
   ]);
+  const nativeSource = (cleanSkillhubString(item.source) ?? cleanSkillhubString(parent?.source))?.toLowerCase();
+  const isBuiltin = nativeSource === "builtin";
   return {
     registry: "skillhub" as const,
     rawId,
@@ -613,7 +615,9 @@ function mapSkillhubInstalledItem(item: SkillhubListItem, parent?: SkillhubListI
     version: cleanSkillhubString(item.version) ?? cleanSkillhubString(parent?.version),
     nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
     registries: ["skillhub" as Registry],
-    sourceLabel: REGISTRY_LABEL.skillhub,
+    ...(isBuiltin ? { nativeSource: "builtin" } : {}),
+    sourceLabel: isBuiltin ? (HERMES_SOURCE_LABELS.builtin ?? "系统预置") : REGISTRY_LABEL.skillhub,
+    uninstallable: !isBuiltin,
   } satisfies InstalledSkill;
 }
 
@@ -771,7 +775,13 @@ export function mergeInstalledWithHermes(
       if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");
       matches[0].category = matches[0].category ?? hermesSkill.category;
       matches[0].status = matches[0].status ?? hermesSkill.status;
-      matches[0].sourceLabel = matches[0].registries.map((registry) => REGISTRY_LABEL[registry]).join(" / ");
+      if (hermesSkill.nativeSource === "builtin") {
+        matches[0].nativeSource = hermesSkill.nativeSource;
+        matches[0].sourceLabel = hermesSkill.sourceLabel;
+        matches[0].uninstallable = false;
+      } else {
+        matches[0].sourceLabel = matches[0].registries.map((registry) => REGISTRY_LABEL[registry]).join(" / ");
+      }
       continue;
     }
     if (matches.length > 1) {
@@ -800,9 +810,13 @@ export function mergeInstalledWithHermes(
           status: primary.status ?? matches.find((skill) => skill.status)?.status ?? hermesSkill.status,
           nativeAliases,
           registries,
-          sourceLabel: registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
+          nativeSource: hermesSkill.nativeSource === "builtin" ? hermesSkill.nativeSource : primary.nativeSource,
+          sourceLabel: hermesSkill.nativeSource === "builtin"
+            ? hermesSkill.sourceLabel
+            : registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
           sourceUrls: Object.assign({}, ...matches.map((skill) => skill.sourceUrls)),
           uninstallTargets,
+          uninstallable: hermesSkill.nativeSource === "builtin" ? false : primary.uninstallable,
         };
         const insertionIndex = matchingIndexes[0];
         [...matchingIndexes].reverse().forEach((index) => merged.splice(index, 1));

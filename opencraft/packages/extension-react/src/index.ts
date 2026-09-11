@@ -48,6 +48,15 @@ export interface PlatformAccountSnapshot {
   readonly planLabel: string | null;
   readonly usageRemainingPercent: number | null;
   readonly error: string | null;
+  /**
+   * Optional application-entry gate owned by the account provider. The shell
+   * resolves it through a matching Workbench intervention surface before it
+   * exposes a Conversation Draft; it does not create or connect a Host.
+   */
+  readonly applicationIntervention?: {
+    readonly providerId: string;
+    readonly code: "authentication-required" | "configuration-required";
+  } | null;
 }
 
 /**

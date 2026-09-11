@@ -577,6 +577,14 @@ a {
   outline: none;
 }
 
+.lv-agent-create-button:disabled,
+.lv-agent-create-button:disabled:hover {
+  cursor: not-allowed;
+  border-color: #e9ecf1;
+  color: rgb(0 0 0 / 30%);
+  background: #f7f8fb;
+}
+
 .lv-agents-nav {
   display: flex;
   width: var(--lv-agents-nav-width);

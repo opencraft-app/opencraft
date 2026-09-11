@@ -213,7 +213,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "47f65d72a3cc6da522f32325326d2684386aba77bc416ce2b0747364803cb4a5"
+      "sourceSha256": "05eefc35aa48bb2dac7edd941a7c43075dfaf97e652adafed88a8febfa01200c"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -477,7 +477,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/skill-registries.ts",
-      "sourceSha256": "cc15a312def2e7f4669de6a89941b4455d197929bb2456723382c7e3e8b006b2"
+      "sourceSha256": "ed8ec297a21a28c5c0795e950efbb61acc64e756e3147f8e00d81e5cdc4404af"
     },
     {
       "file": "pages/marketing/zh-hant-scope.tsx",

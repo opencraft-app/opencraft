@@ -19,7 +19,7 @@ const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
 const includeBuiltinAgentsPlugin = isElectronRenderer;
-const releaseObfuscation = process.env.OPENCRAFT_RELEASE_OBFUSCATION === "ultra";
+const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "ultra";
 
 // Vite's native import.meta.env projection is honored by both the dev module
 // server and production bundler. Keep product identity out of ad-hoc globals:
@@ -256,7 +256,7 @@ export default defineConfig({
     // Vite 8 uses Rolldown + Oxc. Release builds select Rolldown's full
     // compression mode explicitly; `dce-only` is intentionally insufficient.
     minify: "oxc",
-    rolldownOptions: releaseObfuscation ? {
+    rolldownOptions: releaseMinification ? {
       output: {
         // Hardened releases expose only opaque content identities. Human
         // chunk/module names remain available in source builds and private
@@ -270,7 +270,7 @@ export default defineConfig({
             dropDebugger: true,
             // Host connection staging is observable behavior in production.
             // The LightVela transport emits structured, secret-free timing
-            // events that must survive both Oxc and the post-build obfuscator.
+            // events that must survive Oxc's release compression pass.
             dropConsole: false,
             unused: true,
             joinVars: true,
@@ -290,7 +290,7 @@ export default defineConfig({
     } : undefined,
     // Hidden maps remain available to an error collector, while the release
     // publisher deliberately excludes them from the public static tree.
-    sourcemap: releaseObfuscation ? false : "hidden",
+    sourcemap: releaseMinification ? false : "hidden",
     manifest: true,
     assetsDir: "assets",
     outDir: isElectronRenderer

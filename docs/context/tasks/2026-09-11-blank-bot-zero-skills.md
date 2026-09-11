@@ -101,11 +101,11 @@ Make an additional Bot created with `空白创建` start with zero user-installe
 - `bash -n images/build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh`: passed.
 - `bash images/tests/test-hermes-build-script.sh`: passed.
 - `images/tests/test-hermes-runtime.sh` now creates and cleans up a temporary Profile to verify the image's `--no-skills` flag, opt-out marker, and runtime-only Skill invariant; execution requires a built image host.
-- The focused frontend suite passed in both `VITE_REGION=cn` and `VITE_REGION=global`: 3 files and 120 tests per region.
+- The focused frontend suite passed in both `VITE_REGION=cn` and `VITE_REGION=global`: 3 files and 123 tests per region.
 - `pnpm check`: passed with zero new TypeScript diagnostics; existing translation warnings remain non-blocking repository baseline warnings.
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`: passed with no errors or warnings.
-- `python3 .agents/context/scripts/validate_context.py --repo . --format json`: no errors for this Task Pack; the command still exits 1 for 534 repository baseline errors.
-- `npm --prefix opencraft run sync:mono2-agent-console` and `npm --prefix opencraft run check:mono2-agent-console`: synchronized and verified 125 generated Agent Console files; only the generated upstream source revision changed during CR remediation.
+- `python3 .agents/context/scripts/validate_context.py --repo . --format json`: no errors for this Task Pack; the command still exits 1 for 579 repository baseline errors.
+- `npm --prefix opencraft run sync:mono2-agent-console` regenerated the two Skills-related vendored files changed by this MR. The full `check:mono2-agent-console` remains blocked by 15 unrelated vendored files already drifted on `origin/master@3c57a0dee`; those baseline rewrites are excluded from this MR.
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --changed-files-file /tmp/mr3899-full-files.txt`: passed for the complete MR diff; `agent-gateway-runtime` owner review remains required.
 - A temporary installed-Hermes fixture confirmed `hermes profile create --no-skills` writes `.no-bundled-skills`, skips bundled seeding, and retains only the runtime-essential `autonomous-ai-agents/hermes-agent` Skill.
 

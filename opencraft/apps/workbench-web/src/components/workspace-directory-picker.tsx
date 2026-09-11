@@ -1,7 +1,7 @@
 import type { FsReadDirectoryEntry } from "@opencraft/appserver-protocol/generated/v2";
-import { ChevronLeft, Folder, FolderOpen, X } from "lucide-react";
+import { ChevronLeft, Folder, FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { ModalSurface } from "./modal";
 
 import {
   joinWorkspacePath,
@@ -78,15 +78,6 @@ export function WorkspaceDirectoryPicker({
     );
   }, [currentPath, onReadDirectory, open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const dismiss = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && phase !== "choosing") onCancel();
-    };
-    window.addEventListener("keydown", dismiss);
-    return () => window.removeEventListener("keydown", dismiss);
-  }, [onCancel, open, phase]);
-
   if (!open) return null;
 
   const choose = async () => {
@@ -107,28 +98,22 @@ export function WorkspaceDirectoryPicker({
     .split("/")
     .filter(Boolean);
 
-  return createPortal(
-    <div
-      className="workspace-picker-backdrop"
-      role="presentation"
-      onPointerDown={() => { if (phase !== "choosing") onCancel(); }}
+  return (
+    <ModalSurface
+      className="workspace-picker-dialog"
+      dismissOnOutsidePress={phase !== "choosing"}
+      label={title}
+      onDismiss={() => {
+        if (phase !== "choosing") onCancel();
+      }}
+      size="wide"
     >
-      <section
-        className="workspace-picker-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="workspace-picker-title"
-        onPointerDown={(event) => event.stopPropagation()}
-      >
         <header className="workspace-picker-header">
           <span className="workspace-picker-header__icon"><FolderOpen size={17} /></span>
           <div>
             <h2 id="workspace-picker-title">{title}</h2>
             <p>{description}</p>
           </div>
-          <button type="button" aria-label="Close" onClick={onCancel} disabled={phase === "choosing"}>
-            <X size={16} />
-          </button>
         </header>
 
         <nav className="workspace-picker-breadcrumbs" aria-label="Current folder">
@@ -194,8 +179,6 @@ export function WorkspaceDirectoryPicker({
             </button>
           </div>
         </footer>
-      </section>
-    </div>,
-    document.body,
+    </ModalSurface>
   );
 }
