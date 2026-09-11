@@ -20,6 +20,8 @@ let activePass: Pass | null = null;
 let passUpgradeFailed = false;
 let passUpgradePaused = false;
 let returningUpgrade = false;
+let passesLoading = false;
+let passesError = false;
 let bots: OpenClawBot[] = [];
 let currentSessionUser: User;
 
@@ -88,7 +90,8 @@ vi.mock("@/contexts/agent-context", () => ({
     passUpgradeFailed,
     passUpgradePaused,
     returningUpgrade,
-    passesLoading: returningUpgrade,
+    passesLoading: passesLoading || returningUpgrade,
+    passesError,
     retryPassUpgrade: refreshPasses,
   }),
 }));
@@ -180,6 +183,8 @@ describe("AgentSettingsPage renewal reminder", () => {
     passUpgradeFailed = false;
     passUpgradePaused = false;
     returningUpgrade = false;
+    passesLoading = false;
+    passesError = false;
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
       price: 4900,
@@ -198,6 +203,20 @@ describe("AgentSettingsPage renewal reminder", () => {
     getModifyCheckout.mockResolvedValue({ checkout: { deal_name: "upgrade", big_order_id: "upgrade-big", target_bundle_id: "bundle_cruise", local_status: "paid_pending_provision" } });
     listBundles.mockResolvedValue([{ bundle_id: "bundle_cruise", bundle_name: "巡航套餐" }]);
     refreshPasses.mockResolvedValue(undefined);
+  });
+
+  it("offers a generic retry when the initial Pass query stalls, without claiming an upgrade", async () => {
+    activePass = null;
+    passesLoading = true;
+    passesError = true;
+    renderAgentSettingsPage();
+    expect(screen.getByRole("alert")).toHaveTextContent("套餐列表加载失败");
+    expect(screen.queryByText("Hermes Renewal")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在为 Hermes Agent 升级套餐")).not.toBeInTheDocument();
+    expect(screen.queryByText("套餐升级失败")).not.toBeInTheDocument();
+    refreshPasses.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+    expect(refreshPasses).toHaveBeenCalledTimes(1);
   });
 
   it("shows recovery instead of an endless spinner when a return has no Pass", async () => {

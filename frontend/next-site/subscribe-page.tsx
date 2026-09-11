@@ -21,13 +21,14 @@ import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
+  BillingDisplayError,
   resolveBillingErrorMessage,
   getBillingErrorCode,
   isPassConflictError,
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { ACCOUNT_PATH, getAgentCreatingPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -2765,11 +2766,11 @@ export const SubscribePage = ({
       if (!isCurrent()) return;
       const option = result.modify_bundle_set.find(item => item.target_bundle_id === targetBundleId);
       if (result.source_bundle_id !== pass.bundle_id || !option || option.bundle.bundle_id !== targetBundleId || !validUpgradeQuote(option)) {
-        throw new Error(t("当前套餐已变化或该升级目标暂不可用，请刷新后重试。"));
+        throw new BillingDisplayError(t("当前套餐已变化或该升级目标暂不可用，请刷新后重试。"));
       }
       setUpgradeSelection({ passId: pass.pass_id, targetBundleId, initialOption: option });
     } catch (err) {
-      if (isCurrent()) setUpgradeQuoteError({ targetBundleId, message: resolveBillingErrorMessage(err, t("升级询价失败，请稍后重试。")) });
+      if (isCurrent()) setUpgradeQuoteError({ targetBundleId, message: resolveBillingErrorMessage(err, t("升级询价失败，请稍后重试。"), t) });
     } finally {
       if (upgradeQuoteRequest.current === request) {
         upgradeQuoteRequest.current = null;
@@ -2777,10 +2778,8 @@ export const SubscribePage = ({
       }
     }
   }, [repositories.plans, upgrade.pass, upgradeTargetIds, upgradeQuoteContext, t]);
-  const selectedUpgradePass = upgradeSelection && (
-    upgrade.pass?.pass_id === upgradeSelection.passId && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass :
-    upgrade.resume?.pass.pass_id === upgradeSelection.passId && upgrade.resume.record.targetBundleId === upgradeSelection.targetBundleId ? upgrade.resume.pass : null
-  );
+  const selectedUpgradePass = upgradeSelection && upgrade.pass?.pass_id === upgradeSelection.passId
+    && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass : null;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
      国际站已全量放开，付费开关只由后端 features 熔断；
@@ -3918,7 +3917,7 @@ export const SubscribePage = ({
             onPaid={checkout => {
               beginPassUpgrade(selectedUpgradePass, checkout);
               setUpgradeSelection(null);
-              navigate(isGlobal ? `/agents?${UPGRADE_RETURN_QUERY}=${encodeURIComponent(checkout.dealName)}` : "/agents");
+              navigate(isGlobal ? `${AGENTS_HOME_PATH}?${UPGRADE_RETURN_QUERY}=${encodeURIComponent(checkout.dealName)}` : AGENTS_HOME_PATH);
             }}
           />
         )}

@@ -6,6 +6,10 @@ export interface PaidUpgradeCheckout {
 }
 
 export const UPGRADE_RETURN_QUERY = 'upgrade_return';
+export const UPGRADE_POLL_INTERVAL_MS = 3_000;
+export const UPGRADE_PAYMENT_RETRY_DELAY_MS = 3_000;
+// Recovery for unavailable/stalled queries; never a deadline for healthy modifying.
+export const UPGRADE_RECOVERY_TIMEOUT_MS = 60_000;
 const RETURN_TTL_MS = 24 * 60 * 60 * 1000;
 export const upgradeReturnKey = (userId: string, dealName: string) => `lightvela-upgrade-return-v1:${encodeURIComponent(userId)}:${encodeURIComponent(dealName)}`;
 interface UpgradeReturn extends PaidUpgradeCheckout { passId: string }

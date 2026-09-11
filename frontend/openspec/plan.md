@@ -1,3 +1,39 @@
+# MR3941 全量复核后的收敛修复（2026-09-12）
+
+**Status（提交前记录）:** 本地实现与验证完成，用户于2026-09-12确认将当前37个文件提交到本地，提交信息为“完善升级异常恢复与提示 / fix(frontend): refine upgrade checkout recovery”。本次包含上一轮尚未提交的本地化、测试、共享副本及本轮优化，不推送、更新MR、合并或发布；最终提交状态以Git记录为准。
+**Goal:** 修复支付迟到响应和查询恢复边界，删除无生产调用的兼容残留。
+**Architecture:** 延续现有组件、请求身份与恢复交互；只为当前支付订单校验有效性，套餐首次查询提供有界恢复，失败终态停止自动读取。无需重写 Provider 或引入依赖。
+**Constraints:** 保留既有未提交增量；正常 modifying 没有60秒交付期限；支付前价格复核、未知 creating 防重、国际返回记录、七语错误处理不变；CI/类型基线/后端均不修改。
+
+- [x] **S1 / 支付与首屏询价：** 修改 `src/pages/marketing/upgrade-pass-modal.tsx` 及两个同名测试。先写“订单取消后旧 URL/授权返回不写回、不导航”的 deferred Promise 测试，确认 RED；使支付请求在取消/终态/交接时失效，await 后检查订单身份。将 `initialOption` 必填并删除首次缺报价的内部兼容，测试传入真实入口报价；保留付款前复核、价变再次确认和取消/拒绝后重新询价。
+- [x] **S2 / 套餐查询恢复与终态：** 修改 `src/contexts/agent-context.tsx`、`agent-settings-page.tsx` 及相邻测试。先以 pending Promise 和假时钟推进60000ms证明首次套餐读取无恢复，再覆盖刷新成功、旧响应无效；普通查询异常展示通用提示及刷新按钮，不谎称升级。对 `status=failed/cancelled` 且 `local_status=payment_failed/provision_failed/cancelled` 停止自动轮询，保留显式刷新和支持入口；未知本地状态继续确认。保留90秒正常 modifying 回归。
+- [x] **S3 / 清理与验收：** 删除 `use-pass-upgrade.ts` 中始终为空的 `UpgradeResume/resume` 和 `subscribe-page.tsx` 不可达分支；现有资格/支付行为回归保持通过。同步本规格、Task Pack、正式runtime设计和必要i18n机械副本；运行双站聚焦 Vitest、`pnpm check`、双站build、共享副本检查、文档/实际变更影响与diff检查；交付后等待验收。
+
+**Validation:** `cd frontend && pnpm exec vitest run src/contexts/__tests__/agent-context-modification.test.tsx src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx src/pages/marketing/__tests__/agent-upgrading-view.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx src/lib/__tests__/use-pass-upgrade.test.tsx`；随后加入双站subscribe/新购续费相邻测试。测试红绿和未验证边界记录于本节；前端无lint脚本仍需如实报告。
+
+---
+
+**Verification:** 新增异常回归先RED后GREEN。独立复核补出的首次重试拒绝、迟到手动状态和错误微任务顺序均已直接复现并修复；分项与最终全分支只读审查Approved。最终国内12文件294通过/1区域跳过，国际11文件270通过/6区域跳过；支付两文件59条、Provider/页面/视图三文件42条包含于聚焦回归。删除重复catch后重新执行双站回归。双站build exit0，静态页97/607、公开路由8/42检查通过。生成路径恢复后重跑pnpm check exit0，174 current / 276 baseline / 0 new / 102 resolved；49条既有翻译告警及172条印尼语缺项保留。共享副本127文件检查、文档和实际37文件影响检查、diff检查通过，正式设计仍需maintainer review。
+**Boundary:** 无lint脚本，未安装新依赖或修改检查器/类型基线；不代表全量前端测试、真实扣款、多标签浏览器、远端CI或生产发布通过。原5176预览保持。全分支复核确认一个基线既存限制：支付请求一直pending时，轮询确认取消后busy/inFlight仍等旧请求结束；本轮未扩展支付在途锁处理，已记录并告知用户。
+
+# MR3941 评审建议增量优化（2026-09-12）
+
+**Status:** 本地实现与验证完成，等待用户验收；未提交、推送、更新 MR 或发布。
+**Goal:** 升级异常提示遵循页面语言，轮询测试使用确定性时钟，复用升级路径和时间常量。
+**Architecture:** 为 billing-error 增加可选翻译能力，升级调用方显式接入；未知后端消息使用本地化 fallback，前端受信校验消息单独标记。保留旧调用语义；不改变窗口句柄、Web Locks、支付状态判定、60 秒异常恢复与 24 小时存储期限。
+**Non-goals:** 不增加支付域名白名单、不重构 Provider、不修历史全量测试或 CI 检查器、不接真实支付。
+
+- [x] **R1 / TDD:** 新增真实 `useT` / 英文字典组件测试，验证询价、下单、支付链接、订单查询的已知码本地化，以及未知消息兜底和前端校验提示保留；先运行确认 RED。为通用 resolver 补可选 translator、受信 UI Error 标记和兼容性测试，接入升级弹窗及订阅页升级询价，补齐字典，再验证 GREEN。
+- [x] **R2 / 回归:** 将弹窗 3 处 4500ms 真实等待改为假时钟，显式推进 3000ms；增加支付窗口关闭、查询断网恢复用例，保留同单与跨标签页记录保护断言。复用 AGENTS_HOME_PATH，给升级轮询与异常等待值命名，数值保持不变。
+- [x] **R3 / 同步与验证:** 标准脚本同步 OpenCraft 生成副本，更新升级规格和对应正式设计；运行聚焦双站测试、pnpm check、双站构建、OpenCraft 检查、文档与实际变更集检查。记录真实结果与未验证项，等待用户验收。
+
+**Validation:** `pnpm exec vitest run src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx src/lib/__tests__/billing-error.test.ts --maxWorkers=1`；回归再加 Provider、upgrade-checkout、use-pass-upgrade、双站 subscribe 与新购/续费相邻用例。历史全量测试失败及挂起不在本轮范围。
+
+**Verification:** RED 两文件11项失败（39通过），修复后两文件50项通过；最终国内12文件275通过/1区域跳过，国际11文件251通过/6区域跳过。真实字典组件覆盖7种语言，27条新增文案在7份字典均非空。`pnpm check` exit 0，174 current / 276 baseline / 0 new；原有49条翻译告警及172条印尼语缺项不变。双站构建分别生成97/607页，公开路由检查8/42条通过。OpenCraft 标准生成仅更新8份字典/映射及UPSTREAM哈希；漂移检查先失败后通过127文件，完整gate exit 0，852项测试及Web/Expo Web/iOS JS bundle通过。文档、实际32文件影响检查及diff检查通过；正式设计仍需maintainer review。
+**Boundary:** 项目没有lint脚本，`pnpm run lint`返回Missing script，未修改检查器或类型基线。组件/模拟接口验证不代表真实扣款、真实双浏览器标签页竞争或原生iOS编译；未执行远端CI、全量前端挂起测试、预览切换或发布。构建生成的next-env类型路径已恢复为原值。流程技能用于先复现后修复、按实际变化补齐字典副本与验证记录，不新增审批或支付步骤。
+
+---
+
 # MR3941 OpenCraft 共享副本同步计划
 
 **Status（提交前记录）:** 本地同步与验证完成；用户于 2026-09-12 确认将本轮 15 个文件提交到当前隔离分支，仅本地提交，不推送、更新 MR、合并或发布。最终提交状态以本地 Git 记录为准。

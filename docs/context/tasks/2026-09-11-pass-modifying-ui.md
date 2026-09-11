@@ -1,5 +1,42 @@
 # 升级套餐等待状态
 
+## 全量复核收敛（2026-09-12）
+
+- local_submission（提交前记录）：用户查看37文件范围、提交信息和验证结果后明确回复“确认”，授权“完善升级异常恢复与提示 / fix(frontend): refine upgrade checkout recovery”的本地提交，包含上轮32文件增量及本轮优化；不推送、更新MR、合并或发布。下方等待验收状态为实现阶段记录，最终提交状态以Git为准；本次仅更新提交状态文档，不修改业务实现。
+- goal / approval：用户确认修复全量review的五项：迟到支付响应、普通首次Pass读取卡住、失败终态轮询、首次弹窗询价兼容、空resume分支。
+- decisions：沿用现有恢复与请求身份机制；正常modifying无60秒交付期限，确认本地失败终态停止自动读取并保留显式刷新。首次普通查询超时显示通用套餐查询提示，不能标记为升级或支付失败。
+- current_design / history：`frontend/openspec/specs/pass-upgrade.md`；当前HEAD b55ee6a0c，上轮32文件未提交增量保留，历史状态记录不替代本节。
+- context_receipt：根/frontend AGENTS、subscription-entitlements、site-environment-routing、frontend-runtime-openspec-i18n邻接、现有plan顶部与升级spec；读取既有runtime摘要发现停留在旧push，按当前Git与用户请求校正。FEAI global规则文件缺失；graph索引不存在，按已定位源码有界检索，不创建索引。
+- scope：支付弹窗与测试由S1实现者负责；Provider、页面恢复、资格死分支、规格与集成由主agent负责，互不覆盖文件。UI与无障碍技能要求复用按钮、可访问错误提示和确定的刷新操作。
+- validation：新增失败回归先RED再GREEN；前端双站聚焦测试、类型/i18n与双站build、生成副本、文档/实际差异检查。无真实支付或发布，CI与类型基线不修改。
+- evidence：初次新增5条回归按预期RED，Provider/页面/视图修复后40条通过。独立审查补出“首次查询重试拒绝后提前展示Bot”和“迟到手动状态响应/微任务错误重新影响旧支付”，均以组件回归先RED再修复；Provider三文件最终42条、支付两文件59条通过。S1/S2/S3分项复核均通过，支付准备中两处重复捕获按等价性核验删除。
+- checkpoint：本地实现和验证完成，等待用户验收；37个未提交文件包含上轮32个文件的已有增量，未暂存、提交、推送或更新MR。最终国内294通过/1区域跳过，国际270通过/6区域跳过；双站build exit0，97/607静态页、8/42公开路由检查通过。恢复next-env生成路径后pnpm check仍为174 current / 276 baseline / 0 new；副本127文件、文档/实际37文件影响和diff检查通过。没有lint脚本，保留既有翻译告警和全量测试边界，未执行真实支付、浏览器多标签或远端CI验收。
+- review：S1/S2/S3分项及最终全分支只读审查Approved，无本轮新增阻塞；最终审查覆盖移除两处重复catch后的代码与字典共享差异。另核实基线b3184f39a已有恢复限制：支付URL/授权请求始终pending时，轮询虽确认取消，busy/inFlight仍等旧请求结束；当前五项未包含支付在途锁重构，该限制保留并向用户披露，不能宣称所有旧有支付异常均已解决。
+
+## MR3941 评审建议增量（2026-09-12）
+
+- goal / requirement_refs：用户在核实 CR 建议后确认“把建议的改了”；执行 `frontend/openspec/plan.md` 顶部 R1–R3。
+- non_goals：不修改支付窗口打开方式、60 秒恢复阈值、后端支付渠道、CI / 类型基线；不提交、推送、发布，不动原5176预览。
+- history_context：当前 HEAD b55ee6a0c，工作区干净；当前规则为 `frontend/openspec/specs/pass-upgrade.md`，最近提交已补齐 vendored 副本。本文下方旧记录只作历史证据。
+- interface_refs：`billing-error.ts` 兼容已有 resolver 调用；升级显式注入当前 useT。未知后端错误不可当成已翻译消息直出；前端本地校验提示须保留。订单创建、支付回跳、恢复与交付 contract 不变。
+- acceptance / validation：真实语言测试覆盖已知/未知异常与本地校验；轮询测试无真实3秒等待；相关双站回归、类型/i18n、构建、生成副本和文档检查。真实支付与真实双标签浏览器竞争另行验收，不把单测称为该验证。
+- affected_paths：frontend billing-error、升级弹窗 / 测试、SubscribePage 升级询价、升级常量与 Provider、i18n；对应 OpenCraft 标准生成副本及规格文档。
+- required_context / context_receipt：已读根/frontend AGENTS、site-environment-routing Pack、frontend-runtime-openspec-i18n 邻接、Task/Checkpoint 模板、当前升级计划、i18n runtime / 生成脚本及组件测试。FE-AI global.md 与 runtime active slice 在本分支缺失，按根 AGENTS、既有 OpenSpec 和 gate-verification 执行，不补造流程配置。
+- decisions：选择 opt-in 本地化，避免改变新购/续费既有错误语义；常量整理保持值与 URL 不变；不采纳已证伪的两项 P0 建议。
+- context_receipt（共享副本）：同时读取OpenCraft AGENTS、MONO2_MIGRATION和同步脚本，正式runtime设计与升级OpenSpec；二次路由仍命中site-environment-routing。标准同步不修改生成算法。
+- evidence：新增核心回归先11失败/39通过，修复后50通过；最终国内275通过/1区域跳过，国际251通过/6区域跳过。27条新增提示覆盖7份语言字典；pnpm check 174 current / 276 baseline / 0 new，原有49告警/172印尼语缺项保持。双站构建97/607页通过。OpenCraft 127文件漂移检查通过，完整gate 852测试及多端Web/JS bundle通过。
+- validation：文档和实际32文件变更影响检查通过，正式runtime设计需maintainer review；缺少lint脚本如实记录，不修改检查器。之前的`--base-ref HEAD`空集合检查未当作未提交变化的证据。具体命令在既有verification-ledger及计划中保留。
+- handoff：32个文件的本地增量完成、未暂存或提交、未推送或更新MR。新购/续费旧调用语义和支付/恢复规则保持；原5176预览不变。未执行真实支付、登录态浏览器或真实双标签页验收，历史全量失败继续独立处理。
+
+### Checkpoint：评审建议增量
+
+- stage：本地验证完成，等待用户验收与下一步提交授权。
+- verified：R1–R3已有本轮测试、类型/i18n、双站构建、生成副本及完整OpenCraft gate证据；CI/checker/依赖/锁文件无改动。
+- unverified：真实支付、真实浏览器多标签页竞争、远端CI和生产发布。
+- discard：两项已证伪P0建议、旧原始网络错误直出断言、空变更集的影响检查结果。
+- restore：clean工作区、HEAD b55ee6a0c、当前plan顶部和本节；保留所有未提交增量。
+- next_action：向用户交付本轮结果，不自动提交或推送。
+
 ## MR3941 OpenCraft 副本补齐（2026-09-12）
 
 - requirement_refs：用户确认修复截图中已核实的 vendored 同步遗漏；只生成副本并验证，不提交、推送、评论或修改 CI 检查规则。

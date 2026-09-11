@@ -62,6 +62,85 @@ describe("Pass modification refresh", () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); window.history.replaceState({}, "", "/"); });
 
+  it("recovers a stuck initial Pass read without labeling it as an upgrade", async () => {
+    let resolveOld!: (passes: Pass[]) => void;
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveOld = resolve; }));
+    await mount();
+    expect(currentState.passesLoading).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(currentState).toHaveProperty("passesError", true);
+    expect(currentState.passUpgradePaused).toBe(false);
+    expect(currentState.modifyingPass).toBeNull();
+    expect(currentState.passUpgradeFailed).toBe(false);
+
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active", bundle_name: "当前套餐" }]);
+    await act(async () => { await currentState.refreshPasses(); });
+    expect(currentState).toHaveProperty("passesError", false);
+    expect(currentState.passesLoading).toBe(false);
+    expect(currentState.activePass?.bundle_name).toBe("当前套餐");
+    await act(async () => { resolveOld([modifyingPass]); });
+    expect(currentState.modifyingPass).toBeNull();
+    expect(currentState.activePass?.bundle_name).toBe("当前套餐");
+  });
+
+  it("keeps initial Pass recovery available when retry fails", async () => {
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(() => {}));
+    await mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    listMyPasses.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => { await currentState.refreshPasses(); });
+    expect(currentState.bots).toHaveLength(1);
+    expect(currentState.passesLoading).toBe(true);
+    expect(currentState.passesError).toBe(true);
+    expect(currentState.modifyingPass).toBeNull();
+    expect(currentState.passUpgradeFailed).toBe(false);
+
+    let resolveRetry!: (passes: Pass[]) => void;
+    listMyPasses.mockImplementationOnce(() => new Promise<Pass[]>(resolve => { resolveRetry = resolve; }));
+    let retry!: Promise<void>;
+    await act(async () => { retry = currentState.refreshPasses(); });
+    expect(currentState.passesError).toBe(false);
+    expect(currentState.passesLoading).toBe(true);
+    await act(async () => { resolveRetry([{ ...modifyingPass, status: "active" }]); await retry; });
+    expect(currentState.passesLoading).toBe(false);
+    expect(currentState.passesError).toBe(false);
+  });
+
+  it("keeps already confirmed Pass and Bots available after a background read fails", async () => {
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
+    await mount();
+    const confirmed = currentState.activePass;
+    listMyPasses.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => { await currentState.refreshPasses(); });
+    expect(currentState.activePass).toEqual(confirmed);
+    expect(currentState.passesLoading).toBe(false);
+    expect(currentState.bots).toHaveLength(1);
+  });
+
+  it.each([
+    ["cancelled", "cancelled"],
+    ["failed", "payment_failed"],
+    ["failed", "provision_failed"],
+  ])("stops polling confirmed terminal %s/%s while allowing an explicit refresh", async (status, local_status) => {
+    listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
+    await mount();
+    await act(async () => { currentState.beginPassUpgrade(modifyingPass, { dealName: "paid-order", targetBundleId: "cruise" }); });
+    getOrderStatus.mockResolvedValue({ deal_name: "paid-order", order_type: "modify", status, local_status, source: "local" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(currentState.passUpgradeFailed).toBe(true);
+    const reads = listMyPasses.mock.calls.length;
+    const orderReads = getOrderStatus.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(90000); });
+    expect(listMyPasses).toHaveBeenCalledTimes(reads);
+    expect(getOrderStatus).toHaveBeenCalledTimes(orderReads);
+    await act(async () => { await currentState.retryPassUpgrade(); });
+    expect(getOrderStatus).toHaveBeenCalledTimes(orderReads + 1);
+    expect(getOrderStatus).toHaveBeenLastCalledWith("paid-order");
+    expect(currentState.passUpgradeFailed).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(getOrderStatus).toHaveBeenCalledTimes(orderReads + 1);
+  });
+
   it("ignores user A's late payment callback after the session changes to user B", async () => {
     listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
     const view = await mount();
@@ -297,12 +376,12 @@ describe("Pass modification refresh", () => {
     expect(listMyPasses).toHaveBeenCalledTimes(reads);
   });
 
-  it.each(["failed", "cancelled"])("shows %s delivery even while the original pass is still active", async (status) => {
+  it.each(["failed", "cancelled"])("continues confirming remote %s while the local order is nonterminal", async (status) => {
     listMyPasses.mockResolvedValue([{ ...modifyingPass, status: "active" }]);
     await mount();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "支付成功" })); });
     const botReads = getDashboardSnapshot.mock.calls.length;
-    getOrderStatus.mockResolvedValue({ deal_name: "paid-order", order_type: "modify", status, source: "local" });
+    getOrderStatus.mockResolvedValue({ deal_name: "paid-order", order_type: "modify", status, local_status: "paid_pending_provision", source: "jifei" });
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(screen.getByRole("status")).toHaveTextContent("升级失败");
     expect(getDashboardSnapshot).toHaveBeenCalledTimes(botReads);

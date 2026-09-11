@@ -27,7 +27,7 @@ beforeEach(() => {
   plans.getModifyCheckout.mockResolvedValue({ checkout: null });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-function mount(onPaid = vi.fn()) { render(<UpgradePassModal pass={pass} targetBundleId="target" onClose={vi.fn()} onPaid={onPaid} />); return onPaid; }
+function mount(onPaid = vi.fn()) { render(<UpgradePassModal pass={pass} targetBundleId="target" initialOption={option} onClose={vi.fn()} onPaid={onPaid} />); return onPaid; }
 describe('upgrade checkout modal', () => {
   it.each([false, true])('renders the button quote on production without console opt-in or another initial request (global=%s)', async (global) => {
     region.global = global;
@@ -140,7 +140,7 @@ describe('upgrade checkout modal', () => {
   it('supports keyboard dismissal and does not close on an outside click', async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
-    render(<UpgradePassModal pass={pass} targetBundleId="target" onClose={onClose} onPaid={vi.fn()} />);
+    render(<UpgradePassModal pass={pass} targetBundleId="target" initialOption={option} onClose={onClose} onPaid={vi.fn()} />);
     await screen.findByText('$1.67');
     await user.keyboard('{Tab}');
     expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
@@ -214,21 +214,200 @@ describe('upgrade checkout modal', () => {
     expect(plans.createModifyOrder).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '支付 $1.67' })).toBeTruthy();
   });
-  it('fails closed when the live quote cannot be loaded', async () => {
-    plans.listModifyBundles.mockRejectedValue(new Error('quote unavailable'));
-    mount();
+  it('fails closed when an explicit re-quote cannot be loaded', async () => {
+    plans.createModifyOrder.mockRejectedValue(Object.assign(new Error('not active'), { status: 400, code: 'PASS_NOT_ACTIVE' }));
+    mount(); await screen.findByText('$1.67');
+    fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' }));
+    await screen.findByRole('button', { name: '重新询价' });
+    plans.listModifyBundles.mockRejectedValueOnce(new Error('quote unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: '重新询价' }));
     await screen.findByRole('alert');
     expect(screen.queryByRole('button', { name: /^支付/ })).toBeNull();
     expect(screen.getByRole('button', { name: '重新询价' })).toBeTruthy();
-    expect(plans.createModifyOrder).not.toHaveBeenCalled();
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
   });
-  it('retries payment URL for the same order, never places a second order', async () => {
-    plans.getModifyOrderUrl.mockRejectedValueOnce(new Error('url unavailable'));
-    mount();
+  it.each([false, true])('ignores a late payment result after cancellation (global=%s)', async global => {
+    region.global = global;
+    plans.createModifyOrder
+      .mockResolvedValueOnce({ deal_name: 'd', big_order_id: 'b' })
+      .mockResolvedValueOnce({ deal_name: 'd2', big_order_id: 'b2' });
+    let resolvePayment!: (value: unknown) => void;
+    const paymentRequest = global ? plans.getModifyOrderUrl : plans.refreshModifyPaymentAuthorization;
+    paymentRequest
+      .mockReturnValueOnce(new Promise(resolve => { resolvePayment = resolve; }))
+      .mockReturnValueOnce(new Promise(() => undefined));
+    plans.getOrderStatus.mockImplementation(async (dealName: string) => dealName === 'd'
+      ? { deal_name: 'd', order_type: 'modify', status: 'cancelled', local_status: 'cancelled', source: 'local' }
+      : { deal_name: 'd2', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' });
+    await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    await waitFor(() => expect(plans.listModifyBundles).toHaveBeenCalledTimes(2));
+    await act(async () => resolvePayment(global
+      ? { deal_name: 'd', pay_url: 'https://pay.example/stale', need_charge: 1 }
+      : { auth_code: 'stale-ticket' }));
+    expect(screen.getByRole('heading', { name: '确认订单' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /支付页|支付/ })).toBeNull();
+    expect(screen.queryByLabelText('微信扫码支付')).toBeNull();
+    expect(assignLocation).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    await waitFor(() => expect(plans.createModifyOrder).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('heading', { name: '确认订单' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /支付页|支付/ })).toBeNull();
+    expect(screen.queryByLabelText('微信扫码支付')).toBeNull();
+  });
+  it('ignores a late payment error after cancellation', async () => {
+    let rejectPayment!: (error: unknown) => void;
+    plans.getModifyOrderUrl.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectPayment = reject; }));
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'cancelled', local_status: 'cancelled', source: 'local' });
+    await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    await waitFor(() => expect(plans.listModifyBundles).toHaveBeenCalledTimes(2));
+    await act(async () => rejectPayment(new Error('stale URL failure')));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: '支付 $1.67' })).toBeTruthy();
+  });
+  it('ignores a late payment URL after a failed terminal status', async () => {
+    let resolvePayment!: (value: unknown) => void;
+    plans.getModifyOrderUrl.mockReturnValueOnce(new Promise(resolve => { resolvePayment = resolve; }));
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'failed', local_status: 'failed', source: 'local' });
+    await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    await waitFor(() => expect(screen.getByText('订单已关闭或失败，请联系支持确认后再操作。')).toBeTruthy());
+    await act(async () => resolvePayment({ deal_name: 'd', pay_url: 'https://pay.example/stale', need_charge: 1 }));
+    expect(assignLocation).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: /支付页|支付/ })).toBeNull();
+  });
+  it('ignores a late payment URL after paid handoff', async () => {
+    let resolvePayment!: (value: unknown) => void;
+    plans.getModifyOrderUrl.mockReturnValueOnce(new Promise(resolve => { resolvePayment = resolve; }));
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' });
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    await waitFor(() => expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' }));
+    await act(async () => resolvePayment({ deal_name: 'd', pay_url: 'https://pay.example/stale', need_charge: 1 }));
+    expect(assignLocation).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: /支付页|支付/ })).toBeNull();
+  });
+  it.each([
+    ['cancelled', 'cancelled'],
+    ['failed', 'failed'],
+    ['paid', 'paid_pending_provision'],
+  ] as const)('ignores a late manual status result after polling reaches %s', async (status, localStatus) => {
+    vi.useFakeTimers(); region.global = false;
+    let resolveManualStatus!: (value: unknown) => void;
+    plans.getOrderStatus
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockReturnValueOnce(new Promise(resolve => { resolveManualStatus = resolve; }))
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status, local_status: localStatus, source: 'local' });
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(screen.getByLabelText('微信扫码支付')).toBeTruthy();
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新' })); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(4);
+    if (status === 'paid') expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' });
+    await act(async () => resolveManualStatus({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' }));
+    expect(plans.refreshModifyPaymentAuthorization).not.toHaveBeenCalled();
+    expect(onPaid).toHaveBeenCalledTimes(status === 'paid' ? 1 : 0);
+  });
+  it('ignores a late manual status error after polling cancels the order', async () => {
+    vi.useFakeTimers(); region.global = false;
+    let rejectManualStatus!: (error: unknown) => void;
+    plans.getOrderStatus
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { rejectManualStatus = reject; }))
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'cancelled', local_status: 'cancelled', source: 'local' });
+    await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(screen.getByLabelText('微信扫码支付')).toBeTruthy();
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新' })); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(4);
+    expect(plans.listModifyBundles).toHaveBeenCalledTimes(2);
+    await act(async () => rejectManualStatus(new Error('stale status failure')));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: '支付 $1.67' })).toBeTruthy();
+  });
+  it('ignores an initial payment error when polling confirms paid in the same microtask turn', async () => {
+    let rejectPayment!: (error: unknown) => void;
+    let resolvePoll!: (value: unknown) => void;
+    plans.getModifyOrderUrl.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectPayment = reject; }));
+    plans.getOrderStatus.mockReturnValueOnce(new Promise(resolve => { resolvePoll = resolve; }));
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(plans.getModifyOrderUrl).toHaveBeenCalledTimes(1);
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      rejectPayment(new Error('stale payment failure'));
+      resolvePoll({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' });
+    });
+    expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(assignLocation).not.toHaveBeenCalled();
+  });
+  it('ignores a manual payment error when polling confirms paid in the same microtask turn', async () => {
+    vi.useFakeTimers(); region.global = false;
+    let rejectPayment!: (error: unknown) => void;
+    let resolvePoll!: (value: unknown) => void;
+    plans.getOrderStatus
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'pending', local_status: 'pending', source: 'local' })
+      .mockReturnValueOnce(new Promise(resolve => { resolvePoll = resolve; }));
+    plans.refreshModifyPaymentAuthorization.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectPayment = reject; }));
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(2);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新' })); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(3);
+    expect(plans.refreshModifyPaymentAuthorization).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(plans.getOrderStatus).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      rejectPayment(new Error('stale payment failure'));
+      resolvePoll({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' });
+    });
+    expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(assignLocation).not.toHaveBeenCalled();
+  });
+  it('reports an onPaid failure and retries handoff for the same paid order', async () => {
+    region.global = false;
+    let resolveRetry!: (value: unknown) => void;
+    plans.getOrderStatus
+      .mockResolvedValueOnce({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' })
+      .mockReturnValueOnce(new Promise(resolve => { resolveRetry = resolve; }));
+    const onPaid = vi.fn()
+      .mockRejectedValueOnce(new Error('handoff failed'))
+      .mockResolvedValueOnce(undefined);
+    mount(onPaid);
     await screen.findByText('$1.67');
     fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' }));
-    await screen.findByRole('alert');
-    await waitFor(() => expect(plans.getModifyOrderUrl).toHaveBeenCalledTimes(2), { timeout: 4500 });
+    await waitFor(() => expect(onPaid).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('alert')).toHaveTextContent('暂时无法确认升级结果，请稍后刷新。');
+    await act(async () => resolveRetry({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' }));
+    await waitFor(() => expect(onPaid).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it('retries payment URL for the same order, never places a second order', async () => {
+    vi.useFakeTimers();
+    plans.getModifyOrderUrl.mockRejectedValueOnce(new Error('url unavailable'));
+    await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(plans.getModifyOrderUrl).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(plans.getModifyOrderUrl).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('button', { name: '继续支付' })).toBeNull();
     expect(screen.queryByRole('button', { name: '刷新升级结果' })).toBeNull();
     expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
@@ -247,13 +426,61 @@ describe('upgrade checkout modal', () => {
     expect(screen.queryByLabelText('微信扫码支付')).toBeNull();
   });
   it('hands off card payment immediately to the Agent upgrade flow', async () => {
-    const onPaid = mount();
-    await screen.findByText('$1.67');
-    fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' }));
-    await screen.findByRole('link', { name: '前往支付' });
+    vi.useFakeTimers();
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(screen.getByRole('link', { name: '前往支付' })).toBeTruthy();
+    expect(onPaid).not.toHaveBeenCalled();
     plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' });
-    await waitFor(() => expect(onPaid).toHaveBeenCalledWith({ dealName: 'd', targetBundleId: 'target' }), { timeout: 4500 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' });
     expect(plans.listMyPasses).not.toHaveBeenCalled();
+  });
+  it('continues polling the same order after the user closes the payment window', async () => {
+    vi.useFakeTimers();
+    const payWindow = { closed: false, opener: window, location: { href: 'about:blank' }, close: vi.fn() };
+    vi.mocked(window.open).mockReturnValue(payWindow as unknown as Window);
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    payWindow.closed = true;
+    expect(screen.getByRole('link', { name: '重新打开支付页' })).toHaveAttribute('href', 'https://pay.example/test');
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' });
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
+    expect(payWindow.close).not.toHaveBeenCalled();
+  });
+  it('falls back to current-page payment when the user closes the placeholder before the URL is ready', async () => {
+    vi.useFakeTimers();
+    const payWindow = { closed: false, opener: window, location: { href: 'about:blank' }, close: vi.fn() };
+    vi.mocked(window.open).mockReturnValue(payWindow as unknown as Window);
+    let resolvePayment!: (value: unknown) => void;
+    plans.getModifyOrderUrl.mockReturnValueOnce(new Promise(resolve => { resolvePayment = resolve; }));
+    await act(async () => { mount(); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    payWindow.closed = true;
+    await act(async () => resolvePayment({ deal_name: 'd', pay_url: 'https://pay.example/test', need_charge: 1 }));
+    expect(payWindow.location.href).toBe('about:blank');
+    expect(assignLocation).toHaveBeenCalledExactlyOnceWith('https://pay.example/test');
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
+  });
+  it('recovers from a status-query network failure without recreating the order', async () => {
+    vi.useFakeTimers();
+    const onPaid = vi.fn();
+    await act(async () => { mount(onPaid); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    plans.getOrderStatus.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByRole('alert')).toHaveTextContent('暂时无法确认升级结果，请稍后刷新。');
+    expect(onPaid).not.toHaveBeenCalled();
+    plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', status: 'paid', local_status: 'paid_pending_provision', source: 'local' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(onPaid).toHaveBeenCalledExactlyOnceWith({ dealName: 'd', targetBundleId: 'target' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(plans.createModifyOrder).toHaveBeenCalledTimes(1);
+    expect(plans.getOrderStatus.mock.calls.every(([dealName]) => dealName === 'd')).toBe(true);
   });
   it('hands off zero-charge checkout and closes the unused payment tab', async () => {
     const payWindow = { closed: false, opener: window, location: { href: 'about:blank' }, close: vi.fn() };
@@ -282,16 +509,19 @@ describe('upgrade checkout modal', () => {
   });
 
   it('does not clear another tab submission when this order completes', async () => {
+    vi.useFakeTimers();
     region.global = false;
-    const success = mount();
-    await screen.findByText('$1.67');
-    fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' }));
-    await screen.findByLabelText('微信扫码支付');
+    const success = vi.fn();
+    await act(async () => { mount(success); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '支付 $1.67' })); });
+    expect(screen.getByLabelText('微信扫码支付')).toBeTruthy();
     const newer = JSON.stringify({ targetBundleId: 'target', phase: 'creating' });
     window.localStorage.setItem('lightvela-upgrade-v1:u:p', newer);
     plans.getOrderStatus.mockResolvedValue({ deal_name: 'd', order_type: 'modify', local_status: 'provisioned', status: 'success', source: 'local' });
     plans.listMyPasses.mockResolvedValue([{ ...pass, bundle_id: 'target' }]);
-    await waitFor(() => expect(success).toHaveBeenCalledTimes(1), { timeout: 4500 });
+    expect(success).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(success).toHaveBeenCalledTimes(1);
     expect(window.localStorage.getItem('lightvela-upgrade-v1:u:p')).toBe(newer);
   });
   it('requires confirmation again if the fresh quote changes', async () => {

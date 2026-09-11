@@ -20,7 +20,9 @@
 3. 成功后将完整 `PassModifyOption` 作为 `initialOption` 传入 `UpgradePassModal`，首屏直接展示完整报价，不重复初次询价。
 4. 失败在对应按钮旁显示错误并恢复重试。切换套餐档位、计费时长、身份、来源状态或离开页面后忽略迟到响应；旧请求不得清除新请求的 loading 或覆盖新报价。
 
-兼容边界：弹窗未收到有效 `initialOption` 时仍保留内部询价 / 重试兜底。标准订阅入口必须先取得报价再打开弹窗。
+错误提示约定：升级按钮询价与升级弹窗向 `resolveBillingErrorMessage` 显式注入当前页面 `useT`。已知计费错误码按当前语言翻译；未知服务端 / 网络错误使用已翻译的阶段兜底，不直接展示原始 message。只有前端通过 `BillingDisplayError` 标记的、已本地化的订单不匹配 / 目标变化 / 跨页提交提示允许保留原文，禁止用该类型包装后端消息。未接入翻译参数的新购、续费调用保持原有错误行为。
+
+调用约定：`initialOption` 为必填，订阅入口先取得完整有效报价再打开弹窗。弹窗仅在明确重试、取消后复询及提交前复核时再次询价；不保留无生产调用的首次询价兼容分支。资格 hook 不提供历史订单 `resume` 字段，订阅页仅使用当前合法来源与目标。
 
 ## 3. 第一步：确认订单
 
@@ -54,6 +56,9 @@
 - 支付页不重复展示目标套餐详情或金额；不增加独立成功步骤，也不在支付弹窗内等待实例升级交付。
 - 每 3 秒查询订单，校验订单 ID 与 `order_type === modify`；手动刷新得到 `paid` / `success` 也直接进入 Agents 等待，无需依赖下一次查询。
 - 同时确认远端和本地均 `cancelled` 时，弹窗可重置并重新询价；失败或尚未一致的终态显示关闭 / 失败提示，不自动再次扣款。
+- 取消、失败终态、支付交接、卸载或新支付准备使旧支付请求失效。异步状态、URL / 授权及错误响应必须检查请求仍有效，失效响应不得重新打开旧单支付、覆盖新支付信息或再次导航。
+- 用户关闭支付窗口不取消订单，原页面继续按原订单查询并提供重新打开链接；预开空白窗口在链接返回前已关闭时，继续采用当前页跳转兜底。保留窗口句柄并断开 opener，不将预开调用改为会丢失句柄的 `noopener` 形式。
+- 升级导航复用 `AGENTS_HOME_PATH`，保留 `/agents` 与支付 return URL `/agents/` 的既有形式。轮询、支付凭证重试间隔与异常恢复阈值分别由 `UPGRADE_POLL_INTERVAL_MS`、`UPGRADE_PAYMENT_RETRY_DELAY_MS`、`UPGRADE_RECOVERY_TIMEOUT_MS` 命名，值仍为3秒、3秒、60秒。
 
 ## 6. 国际支付回跳与刷新恢复
 
@@ -88,10 +93,12 @@
 只有服务端 `modifying`、没有支付上下文的刷新恢复路径，以同一 Pass 明确回到 `active` 并成功刷新 Bot 为结束条件；不能宣称该路径也验证了特定订单与目标 ID。
 
 - 订单失败 / 取消时展示“套餐升级失败”及联系支持说明，保持 Bot 隐藏；不以旧 `active` Pass 掩盖失败。
+- 当订单同时为 `failed` / `cancelled` 且本地状态为 `payment_failed`、`provision_failed` 或 `cancelled`，停止自动查询，保留“刷新状态”和“联系支持”；手动操作只重查原订单。本地状态未知或仍非终态时继续确认，不能仅凭远端失败推断本地订单已经结束。
 - 缺少 Pass、查询失败或旧 `active` 响应不证明升级完成，保持最近等待状态。正常可读的 `modifying` 或已确认订单待交付每 3 秒查询，不设 60 秒升级完成期限。
 - 套餐缺失、状态不可确认、查询失败或请求未完成持续 60 秒后，暂停自动查询并显示“暂时无法确认升级进度”，提示刷新状态或联系支持、避免重复付款。60 秒是前端异常恢复阈值，不是支付失败判据、交付 SLA 或 24 小时返回记录有效期。
 - 恢复操作为“刷新状态”（在途显示“刷新中...”且禁用重复点击）和“联系支持”（沿用服务条款的 `lightvela@tencent.com` 邮箱）。仅查询原订单，不创建订单、不清除返回上下文；查询恢复后继续等待，完整交付后才展示 Bot。没有 Pass 时也可使用恢复操作。
 - 暂停时使在途请求代次失效，卡住的旧请求不能阻止新一轮手动查询或覆盖结果；刷新失败后重新进入有界等待。退出登录 / 切换用户会取消异常计时并清除该用户的界面恢复状态。
+- 普通首次套餐查询卡住 60 秒也提供“套餐列表加载失败”及“刷新状态”，不标记为升级或支付失败。成功确认套餐前保持 Bot 隐藏；重试失败继续保留恢复入口，迟到旧响应不覆盖新结果。已成功确认套餐后的后台读取失败继续保留最近结果。
 - 同用户 / 代次的轮询复用在途查询；并发手动刷新合并为一次后续查询，其 Promise 等到后续查询完成才返回。不同账号 / 新升级代次互不阻塞，旧请求与排队请求不得改变新状态。
 - 新旧 Bot 请求使用共同代次，旧请求不能覆盖交付后的新快照；退出登录 / 切换用户后清除该用户等待态。
 - Repository 在嵌套 Bot 查询遇到 `PASS_MODIFYING` 时保留实例根 Bot 数据，其他鉴权错误继续抛出；数据层保留实例不代表升级等待页可提前展示 Bot。
@@ -116,6 +123,7 @@
 | 资格与默认展示 | `src/lib/use-pass-upgrade.ts` | `src/lib/__tests__/use-pass-upgrade.test.tsx` |
 | 目标卡片与按钮询价 | `next-site/subscribe-page.tsx` | `next-site/__tests__/subscribe-page.test.tsx`、`subscribe-page.global.test.tsx` |
 | 确认与双站支付 | `src/pages/marketing/upgrade-pass-modal.tsx` | `src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx` |
+| 升级错误本地化 | `src/lib/billing-error.ts`、`src/pages/marketing/upgrade-pass-modal.tsx` | `src/lib/__tests__/billing-error.test.ts`、`src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx`；订阅页国际测试覆盖按钮询价 |
 | 回跳记录与交付条件 | `src/lib/upgrade-checkout.ts` | `src/lib/__tests__/upgrade-checkout.test.ts` |
 | 等待、恢复与 Bot 刷新 | `src/contexts/agent-context.tsx` | `src/contexts/__tests__/agent-context-modification.test.tsx` |
 | 目标套餐等待视图 | `src/pages/marketing/agent-upgrading-view.tsx` | `src/pages/marketing/__tests__/agent-upgrading-view.test.tsx` |
@@ -128,5 +136,6 @@
 - i18n 字典 / 映射和 HTTP Repository 也在共享依赖清单中，使用 `opencraft/scripts/sync-mono2-agent-console.mjs` 一并生成副本与 `UPSTREAM.json`。不得手改生成文件或通过修改检查规则掩盖漂移。
 - 2026-09-12 补齐了 Dialog、8 份字典 / 映射、Repository 副本及清单。字典和 Repository 的部分差异来自原 MR 基线；Repository 同步的是既有 `PASS_MODIFYING` 降级逻辑，不新增后端权限或支付行为。
 - 前端验证通过不代表共享副本一致。交接前独立执行 `cd opencraft && npm run check:mono2-agent-console`；跨包共享实现按 OpenCraft 约定执行 `npm run gate`。本地结果不代表远端 CI 或生产发布完成。
+- 升级错误本地化新增的字典条目也随标准脚本同步；不能由字典在 OpenCraft 中存在推断 OpenCraft 已接入升级结算页面。升级轮询回归使用假时钟显式推进，不以延长真实等待超时作为稳定性修复。
 
 验证结果及未覆盖边界见[本次变更记录](../changes/2026-09-11-pass-upgrade-interaction.md)与[当前增量计划](../plan.md)。本规格不修改后端定价、支付协议、真实扣款与交付规则，也不声明生产发布完成。

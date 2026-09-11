@@ -7,12 +7,13 @@ import { useRepositories } from '@/contexts/repository-context';
 import { useSession } from '@/contexts/session-context';
 import type { Pass, PassModifyOption, PassOrderStatus } from '@/domain/types';
 import { useT } from '@/i18n/t';
-import { getBillingErrorCode, resolveBillingErrorMessage } from '@/lib/billing-error';
+import { BillingDisplayError, getBillingErrorCode, resolveBillingErrorMessage } from '@/lib/billing-error';
 import { isGlobal } from '@/lib/region';
+import { AGENTS_HOME_PATH } from '@/lib/agent-routes';
 import { buildPayPlan, type PayPlan } from '@/lib/wx-pay';
-import { type PaidUpgradeCheckout, readUpgradeCheckout, saveUpgradeCheckout, saveUpgradeReturn, UPGRADE_RETURN_QUERY, upgradeCheckoutKey, validUpgradeQuote, type UpgradeCheckoutRecord } from '@/lib/upgrade-checkout';
+import { type PaidUpgradeCheckout, readUpgradeCheckout, saveUpgradeCheckout, saveUpgradeReturn, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_PAYMENT_RETRY_DELAY_MS, upgradeCheckoutKey, validUpgradeQuote, type UpgradeCheckoutRecord } from '@/lib/upgrade-checkout';
 
-interface Props { pass: Pass; targetBundleId: string; initialOption?: PassModifyOption; onClose: () => void; onPaid: (checkout: PaidUpgradeCheckout) => void | Promise<void> }
+interface Props { pass: Pass; targetBundleId: string; initialOption: PassModifyOption; onClose: () => void; onPaid: (checkout: PaidUpgradeCheckout) => void | Promise<void> }
 // Match the new-purchase checkout's fixed 16 / 12 / 8 px corner radii.
 const actionClass = 'h-12 flex-1 rounded-[8px] shadow-none transition-colors duration-150 hover:translate-y-0 motion-reduce:transition-none';
 const quoteFingerprint = (option: PassModifyOption) => JSON.stringify([option.target_bundle_id, option.modify_price.currency, option.modify_price.real_total_cost, option.modify_price.tax_price ?? 0]);
@@ -38,7 +39,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
   const suppliedOption = initialOption?.target_bundle_id === targetBundleId && initialOption.bundle.bundle_id === targetBundleId && validUpgradeQuote(initialOption) ? initialOption : null;
   const [option, setOption] = useState<PassModifyOption | null>(suppliedOption);
   const [quoteAttempt, setQuoteAttempt] = useState(0);
-  const [pricing, setPricing] = useState(!suppliedOption);
+  const [pricing, setPricing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +54,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
   const inFlight = useRef(false);
   const statusInFlight = useRef(false);
   const paymentRetryAt = useRef(0);
+  const paymentPreparationId = useRef(0);
   const finished = useRef(false);
   const alive = useRef(true);
   const paymentWindow = useRef<Window | null>(null);
@@ -60,14 +62,14 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
   callbacks.current = { onPaid };
   useEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; paymentWindow.current?.close(); };
+    return () => { alive.current = false; paymentPreparationId.current += 1; paymentWindow.current?.close(); };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     if (record) { setPricing(false); return; }
     // The subscribe CTA already fetched this quote; only explicit retries fetch again here.
-    if (quoteAttempt === 0 && suppliedOption) { setPricing(false); return; }
+    if (quoteAttempt === 0) { setPricing(false); return; }
     setPricing(true); setOption(null); setError(null);
     void plans.listModifyBundles(pass.pass_id).then(result => {
       if (cancelled) return;
@@ -76,7 +78,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
         setError(t('当前套餐已变化或该升级目标暂不可用，请刷新后重试。')); return;
       }
       setOption(selected);
-    }).catch(err => { if (!cancelled) setError(resolveBillingErrorMessage(err, t('升级询价失败，请稍后重试。'))); })
+    }).catch(err => { if (!cancelled) setError(resolveBillingErrorMessage(err, t('升级询价失败，请稍后重试。'), t)); })
       .finally(() => { if (!cancelled) setPricing(false); });
     return () => { cancelled = true; };
   }, [effectiveTarget, pass.bundle_id, pass.pass_id, plans, quoteAttempt, record, suppliedOption, t]);
@@ -84,17 +86,21 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
   const finishPayment = useCallback(async (dealName: string, target: string) => {
     if (finished.current) return;
     finished.current = true;
+    paymentPreparationId.current += 1;
     setHandedOff(true);
+    setStatusError(null);
     try {
       await callbacks.current.onPaid({ dealName, targetBundleId: target });
       const current = readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
       if (current?.dealName === dealName) window.localStorage.removeItem(upgradeCheckoutKey(userId, pass.pass_id));
     } catch (err) {
       finished.current = false;
-      if (alive.current) setHandedOff(false);
-      throw err;
+      if (alive.current) {
+        setHandedOff(false);
+        setStatusError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。'), t));
+      }
     }
-  }, [pass.pass_id, userId]);
+  }, [pass.pass_id, t, userId]);
 
   const checkStatus = useCallback(async () => {
     if (!record?.dealName || statusInFlight.current || finished.current) return;
@@ -102,7 +108,8 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
     try {
       const status = await plans.getOrderStatus(record.dealName);
       if (!alive.current) return;
-      if (status.deal_name !== record.dealName || status.order_type !== 'modify') throw new Error(t('订单信息不匹配，请联系支持。'));
+      if (status.deal_name !== record.dealName || status.order_type !== 'modify') throw new BillingDisplayError(t('订单信息不匹配，请联系支持。'));
+      if (status.status === 'cancelled' || status.status === 'failed') paymentPreparationId.current += 1;
       setOrderStatus(status); setStatusError(null);
       if (status.status === 'cancelled' && status.local_status === 'cancelled') {
         const current = readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
@@ -115,7 +122,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
         await finishPayment(record.dealName, record.targetBundleId);
       }
     } catch (err) {
-      if (alive.current) setStatusError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。')));
+      if (alive.current) setStatusError(resolveBillingErrorMessage(err, t('暂时无法确认升级结果，请稍后刷新。'), t));
     } finally { statusInFlight.current = false; }
   }, [finishPayment, pass.pass_id, plans, record, t, userId]);
 
@@ -125,7 +132,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
     const timer = window.setInterval(() => {
       setNow(Date.now());
       void checkStatus();
-    }, 3000);
+    }, UPGRADE_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [checkStatus, handedOff, record?.dealName, orderStatus?.status]);
 
@@ -134,17 +141,18 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
     setRecord(next);
   }
 
-  async function preparePayment(dealName: string, authCode?: string) {
-    paymentRetryAt.current = Date.now() + 3000;
+  async function preparePayment(dealName: string, authCode: string | undefined, preparationId: number) {
+    const isCurrent = () => alive.current && paymentPreparationId.current === preparationId;
+    paymentRetryAt.current = Date.now() + UPGRADE_PAYMENT_RETRY_DELAY_MS;
     if (isGlobal) {
       const cancelUrl = `${window.location.origin}${window.location.pathname}`;
-      const returnUrl = `${window.location.origin}/agents/?${UPGRADE_RETURN_QUERY}=${encodeURIComponent(dealName)}`;
+      const returnUrl = `${window.location.origin}${AGENTS_HOME_PATH}/?${UPGRADE_RETURN_QUERY}=${encodeURIComponent(dealName)}`;
       saveUpgradeReturn(window.localStorage, userId, { passId: pass.pass_id, dealName, targetBundleId: effectiveTarget });
       const result = await plans.getModifyOrderUrl(pass.pass_id, { deal_names: [dealName], platform: 'pc', return_url: returnUrl, cancel_url: cancelUrl });
-      if (!alive.current) return;
-      if (result.deal_name !== dealName) throw new Error(t('订单信息不匹配，请联系支持。'));
+      if (!isCurrent()) return;
+      if (result.deal_name !== dealName) throw new BillingDisplayError(t('订单信息不匹配，请联系支持。'));
       if (result.need_charge === 0) { setZeroPaid(true); await finishPayment(dealName, effectiveTarget); return; }
-      if (!result.pay_url || !/^https:\/\//i.test(result.pay_url)) throw new Error(t('获取支付链接失败，请重试。'));
+      if (!result.pay_url || !/^https:\/\//i.test(result.pay_url)) throw new BillingDisplayError(t('获取支付链接失败，请重试。'));
       setPayUrl(result.pay_url);
       if (paymentWindow.current && !paymentWindow.current.closed) {
         paymentWindow.current.location.href = result.pay_url;
@@ -156,6 +164,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
       }
     } else {
       const ticket = authCode || (await plans.refreshModifyPaymentAuthorization(pass.pass_id, { deal_names: [dealName] })).auth_code;
+      if (!isCurrent()) return;
       setBridge(buildPayPlan({ dealName, authCode: ticket, passId: pass.pass_id, operation: 'modify', bundleName: option?.bundle.bundle_name ?? pass.bundle_name }));
       setNow(Date.now());
     }
@@ -174,11 +183,11 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
       // Follow purchase checkout's in-flight guard; Web Locks add cross-tab protection where available.
       if (navigator.locks) {
         await navigator.locks.request(upgradeCheckoutKey(userId, pass.pass_id), { ifAvailable: true }, async lock => {
-          if (!lock) throw new Error(t('另一个页面正在提交升级，请在该页面继续操作。'));
+          if (!lock) throw new BillingDisplayError(t('另一个页面正在提交升级，请在该页面继续操作。'));
           await submitLocked();
         });
       } else await submitLocked();
-    } catch (err) { if (alive.current) setError(resolveBillingErrorMessage(err, t('升级订单处理失败，请稍后重试。'))); }
+    } catch (err) { if (alive.current) setError(resolveBillingErrorMessage(err, t('升级订单处理失败，请稍后重试。'), t)); }
     finally {
       paymentWindow.current?.close(); paymentWindow.current = null;
       inFlight.current = false;
@@ -189,6 +198,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
   async function submitLocked() {
     if (!option) return;
     let creating = false;
+    let preparationId: number | null = null;
     try {
       const existing = readUpgradeCheckout(window.localStorage, userId, pass.pass_id);
       if (existing?.phase === 'creating') { setRecord(existing); return; }
@@ -197,7 +207,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
       if (!alive.current) return;
       const fresh = latest.modify_bundle_set.find(item => item.target_bundle_id === targetBundleId);
       if (latest.source_bundle_id !== pass.bundle_id || !fresh || !validUpgradeQuote(fresh)) {
-        setOption(null); throw new Error(t('当前套餐已变化或该升级目标暂不可用，请刷新后重试。'));
+        setOption(null); throw new BillingDisplayError(t('当前套餐已变化或该升级目标暂不可用，请刷新后重试。'));
       }
       if (quoteFingerprint(fresh) !== quoteFingerprint(option)) {
         setOption(fresh); setError(t('差价已更新，请确认最新金额后再次提交。')); return;
@@ -206,39 +216,44 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
       if (concurrentlyCreated?.phase === 'creating') { setRecord(concurrentlyCreated); return; }
       persist({ targetBundleId, phase: 'creating' }); creating = true;
       const order = await plans.createModifyOrder(pass.pass_id, { target_bundle_id: targetBundleId });
-      if (!order.deal_name) throw new Error(t('暂时无法确认订单状态，请稍后查询，避免重复付款。'));
+      if (!order.deal_name) throw new BillingDisplayError(t('暂时无法确认订单状态，请稍后查询，避免重复付款。'));
       persist({ targetBundleId, phase: 'ordered', dealName: order.deal_name });
       creating = false;
       if (!alive.current) return;
-      await preparePayment(order.deal_name, order.auth_code);
+      preparationId = ++paymentPreparationId.current;
+      await preparePayment(order.deal_name, order.auth_code, preparationId);
     } catch (err) {
+      if (preparationId !== null && (!alive.current || paymentPreparationId.current !== preparationId)) return;
       const code = getBillingErrorCode(err);
       const definiteRejection = code && ['UNAUTHORIZED', 'PASS_NOT_FOUND', 'PASS_INVALID_PARAM', 'PASS_NOT_ACTIVE', 'PASS_NOT_MODIFIABLE', 'PASS_MODIFYING', 'PASS_ISOLATED', 'PASS_EXPIRED', 'PASS_RENEWING', 'PASS_DELETING', 'PASS_TERMINATING', 'PASS_MODIFY_TARGET_NOT_ALLOWED', 'PASS_MODIFY_INSTANCE_NOT_READY', 'REALNAME_REQUIRED', 'ORDER_NOT_PAYABLE', 'MODIFY_CHECKOUT_CONFLICT'].includes(code);
       if (creating && definiteRejection) {
         window.localStorage.removeItem(upgradeCheckoutKey(userId, pass.pass_id));
         setRecord(null); setOption(null); creating = false;
       }
-      if (alive.current) setError(creating ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。') : resolveBillingErrorMessage(err, t('升级订单处理失败，请稍后重试。')));
+      if (alive.current) setError(creating ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。') : resolveBillingErrorMessage(err, t('升级订单处理失败，请稍后重试。'), t));
     }
   }
 
   async function continuePayment() {
     if (!record?.dealName || inFlight.current || handedOff) return;
+    const preparationId = ++paymentPreparationId.current;
+    const isCurrent = () => alive.current && paymentPreparationId.current === preparationId;
     inFlight.current = true; setBusy(true); setError(null);
     try {
       const status = await plans.getOrderStatus(record.dealName);
-      if (!alive.current) return;
-      if (status.deal_name !== record.dealName || status.order_type !== 'modify') throw new Error(t('订单信息不匹配，请联系支持。'));
+      if (!isCurrent()) return;
+      if (status.deal_name !== record.dealName || status.order_type !== 'modify') throw new BillingDisplayError(t('订单信息不匹配，请联系支持。'));
       setOrderStatus(status);
       if (status.status === 'paid' || status.status === 'success') {
         await finishPayment(record.dealName, record.targetBundleId);
         return;
       }
       if (status.status !== 'pending') { await checkStatus(); return; }
-      await preparePayment(record.dealName);
+      await preparePayment(record.dealName, undefined, preparationId);
     } catch (err) {
+      if (!isCurrent()) return;
       if (getBillingErrorCode(err) === 'ORDER_NOT_PAYABLE') await checkStatus();
-      else if (alive.current) setError(resolveBillingErrorMessage(err, t('获取支付链接失败，请重试。')));
+      else if (alive.current) setError(resolveBillingErrorMessage(err, t('获取支付链接失败，请重试。'), t));
     }
     finally { inFlight.current = false; if (alive.current) setBusy(false); }
   }
@@ -253,7 +268,7 @@ function UpgradePassModalContent({ pass, targetBundleId, initialOption, onClose,
     if (!record?.dealName || busy || handedOff || paid || terminal || orderStatus?.status !== 'pending') return;
     if (isGlobal ? Boolean(payUrl) : Boolean(bridge && !bridgeExpired)) return;
     if (Date.now() < paymentRetryAt.current) return;
-    paymentRetryAt.current = Date.now() + 3000;
+    paymentRetryAt.current = Date.now() + UPGRADE_PAYMENT_RETRY_DELAY_MS;
     void resumePayment.current();
   }, [record?.dealName, busy, handedOff, paid, terminal, orderStatus?.status, payUrl, bridge, bridgeExpired, now]);
   const formatAmount = (cents: number) => `${option?.modify_price.currency === 'CNY' ? '¥' : '$'}${(cents / 100).toFixed(2)}`;

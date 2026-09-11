@@ -6,6 +6,7 @@ import type { Pass } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { formatPassDate } from "@/lib/pass-renewal";
+import { UPGRADE_POLL_INTERVAL_MS } from "@/lib/upgrade-checkout";
 
 /** Reuses the creation screen's coffee artwork while keeping the Pass visible. */
 export function AgentUpgradingView({ pass, failed = false, paused = false, refreshing = false, onRetry }: {
@@ -43,7 +44,7 @@ export function AgentUpgradingView({ pass, failed = false, paused = false, refre
           return;
         }
       } catch { /* Keep the target unknown and retry without blocking upgrade progress. */ }
-      if (!cancelled) retry = window.setTimeout(() => { void loadTarget(); }, 3000);
+      if (!cancelled) retry = window.setTimeout(() => { void loadTarget(); }, UPGRADE_POLL_INTERVAL_MS);
     };
     void loadTarget();
     return () => { cancelled = true; window.clearTimeout(retry); };

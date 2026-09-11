@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocaleOverrideProvider } from "@/i18n/t";
 
 /* 国际站（isGlobal）专属用例。
    与 subscribe-page.test.tsx（国内站，不 mock region）分文件维护 ——
@@ -88,13 +89,17 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
-vi.mock("@/i18n/t", () => ({
-  useLocaleOverride: () => null,
-  useT: () => (zh: string, opts?: Record<string, unknown>) =>
-    zh.replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) =>
-      opts?.[key] == null ? placeholder : String(opts[key]),
-    ),
-}));
+const translationState = { real: false };
+vi.mock("@/i18n/t", async importOriginal => {
+  const actual = await importOriginal<typeof import("@/i18n/t")>();
+  const translate = (zh: string, opts?: Record<string, unknown>) => zh.replace(
+    /\{\{(\w+)\}\}/g, (placeholder, key: string) => opts?.[key] == null ? placeholder : String(opts[key]),
+  );
+  return { ...actual, useT: () => {
+    const t = actual.useT();
+    return translationState.real ? t : translate;
+  } };
+});
 
 const navigateMock = vi.fn();
 
@@ -143,6 +148,34 @@ const buildBillingError = (code: string, message: string) => Object.assign(new E
 describe("international upgrade return", () => {
   beforeEach(() => resetState());
   afterEach(cleanup);
+  it.each([
+    [buildBillingError("FORBIDDEN", "服务端拒绝详情"), "This action was denied. Please refresh the page or contact support."],
+    [new Error("网络中断"), "Could not retrieve the upgrade quote. Please try again later."],
+  ])("localizes the upgrade button quote error and allows retry: %s", async (error, expected) => {
+    translationState.real = true;
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "Launch", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] });
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale="en-US"><SubscribePage /></LocaleOverrideProvider>);
+    const button = await screen.findByRole("button", { name: "Upgrade to this plan" });
+    listModifyBundlesMock.mockRejectedValueOnce(error);
+    await userEvent.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent(String(expected));
+    expect(button).toBeEnabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.click(button);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
   it("keeps a recoverable order marker when the original window enters Agents after payment", async () => {
     openClawState.isLoggedIn = true;
     openClawState.isSubscribed = true;
@@ -192,6 +225,7 @@ const buildNestedBundle = () => ({
 });
 
 const resetState = () => {
+  translationState.real = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
   openClawState.subscribe = vi.fn();

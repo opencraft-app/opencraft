@@ -21,7 +21,6 @@ describe("upgrade eligibility", () => {
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
     await waitFor(() => expect(result.current.options).toEqual([target]));
     expect(result.current.pass?.pass_id).toBe("p1");
-    expect(result.current.resume).toBeNull();
     expect(listModifyBundles).toHaveBeenCalledWith("p1");
     expect(getModifyCheckout).not.toHaveBeenCalled();
   });
@@ -112,7 +111,7 @@ describe("upgrade eligibility", () => {
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "target", dealName: "deal", phase: "ordered" });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true, currentPass: modifying }));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.resume).toBeNull();
+    expect(result.current.pass).toBeNull();
     expect(result.current.options).toEqual([]);
     expect(listModifyBundles).not.toHaveBeenCalled();
   });
@@ -121,7 +120,7 @@ describe("upgrade eligibility", () => {
     getModifyCheckout.mockResolvedValue({ checkout: { deal_name: "server-deal", target_bundle_id: "server-target", big_order_id: "big", local_status: "pending" } });
     const { result } = renderHook(() => usePassUpgrade({ userId: "u1", passId: "p1", enabled: true }));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.resume).toBeNull();
+    expect(result.current.pass).toBeNull();
     expect(getModifyCheckout).not.toHaveBeenCalled();
     saveUpgradeCheckout(window.localStorage, "u1", "p1", { targetBundleId: "stale-target", phase: "creating" });
     act(() => result.current.retry());

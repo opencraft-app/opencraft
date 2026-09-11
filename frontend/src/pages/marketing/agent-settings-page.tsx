@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -2622,7 +2623,7 @@ export const AgentSettingsPage = ({
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
   const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
   useEffect(() => { void refreshPasses(); }, [refreshPasses]);
@@ -4966,8 +4967,15 @@ export const AgentSettingsPage = ({
       <main className="lw-app-top-pad flex-grow bg-white pb-6">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
-          {!isModifying && (isInitialBotsLoading || passesLoading) && (
+          {!isModifying && !(passesLoading && passesError) && (isInitialBotsLoading || passesLoading) && (
             <AgentSettingsDataLoading />
+          )}
+
+          {!isModifying && passesLoading && passesError && (
+            <div role="alert" className="flex flex-col items-center gap-4 py-20 text-center">
+              <p className="text-pretty text-sm text-[var(--text-secondary)]">{t("套餐列表加载失败")}</p>
+              <Button type="button" variant="outline" onClick={() => void refreshPasses()}>{t("刷新状态")}</Button>
+            </div>
           )}
 
           {/* ── 创建 Loading 动画 ── */}

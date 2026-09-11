@@ -352,7 +352,8 @@ describe("SubscribePage", () => {
     const button = await screen.findByRole("button", { name: "升级至此套餐" });
     listModifyBundlesMock.mockRejectedValueOnce(new Error("offline"));
     await userEvent.click(button);
-    expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+    expect(await screen.findByRole("alert")).toHaveTextContent("升级询价失败，请稍后重试。");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("offline");
     expect(button.parentElement).toContainElement(screen.getByRole("alert"));
     expect(button).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
