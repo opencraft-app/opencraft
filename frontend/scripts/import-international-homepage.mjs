@@ -61,14 +61,14 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
-  "zh-CN": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-  "zh-SG": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-  "zh-Hant": ["工作夥伴", "開發夥伴", "計畫執行官", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
-  "id-ID": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
-  es: ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
-  "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
-  "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
+  "en-US": ["work partner", "developer buddy", "plan executor", "market watcher", "life concierge", "financial assistant", "creative companion", "content manager"],
+  "zh-CN": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+  "zh-SG": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+  "zh-Hant": ["工作夥伴", "開發夥伴", "計畫執行官", "盤面觀察員", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
+  "id-ID": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengamat pasar", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
+  es: ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "observador del mercado", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
+  "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
+  "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
 };
 const tokenTrialCopyByLocale = {
   "en-US": "Try an AI token plan free for 7 days.",
@@ -4591,7 +4591,7 @@ const domesticBrandIconCss = `img.icon--brand {
 const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}\n${domesticBrandIconCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
-  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
+  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
 ).replace(
   `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     function rotate() {
