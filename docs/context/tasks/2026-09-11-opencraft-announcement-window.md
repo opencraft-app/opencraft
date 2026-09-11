@@ -61,6 +61,7 @@ Provide a reusable, Host-owned announcement window that trusted JavaScript exten
 - `opencraft/apps/workbench-web/src/components/modal/`
 - `opencraft/apps/workbench-web/src/components/settings-page.tsx`
 - `opencraft/apps/workbench-web/src/components/ui/`
+- `opencraft/scripts/publish-workbench-web.mjs`
 - `opencraft/tests/`
 
 ## required_context
@@ -92,6 +93,7 @@ Provide a reusable, Host-owned announcement window that trusted JavaScript exten
 - A nested announcement can appear under Settings if request ordering is inverted; announcement projection is appended after existing modal requests.
 - An extension may be removed while awaiting a result; owner dismissal happens before command invocation drain.
 - Remote media may violate product policy; only root-relative, HTTP(S), and blob URLs are accepted, and extensions remain trusted-only.
+- LightVela includes unhashed `public/assets/**` files; the publisher distinguishes those revalidated files from manifest-owned immutable assets before switching the entry.
 
 ## validation
 

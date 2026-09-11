@@ -229,8 +229,9 @@ Vite manifest, content-hashed assets and `version.json`. `publish:web` then:
 4. snapshots the manifest and version under `releases/<buildId>/`;
 5. atomically replaces `index.html`, then `version.json`.
 
-`index.html` and `version.json` use `no-store`; hashed assets use one-year
-`immutable`; non-hashed public files revalidate. If a lazy import fails, the
+`index.html` and `version.json` use `no-store`; manifest-owned hashed assets use
+one-year `immutable`; non-hashed public files revalidate even when Vite copies
+them below `assets/`. If a lazy import fails, the
 bootstrap compares its embedded build id with `version.json`, reloads once only
 when a newer release exists, and otherwise renders an explicit recovery view.
 This is a renderer delivery rule, not AppServer or Replica state.

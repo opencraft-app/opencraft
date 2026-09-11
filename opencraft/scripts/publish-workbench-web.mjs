@@ -122,6 +122,24 @@ function assertHashedAsset(relativePath) {
   }
 }
 
+function isContentHashedAsset(relativePath) {
+  return /^assets\/.+-[a-zA-Z0-9_-]{6,}\.[^/]+$/u.test(relativePath);
+}
+
+function manifestAssetFiles(manifest) {
+  const files = new Set();
+  for (const entry of Object.values(manifest)) {
+    if (typeof entry?.file === "string") files.add(entry.file);
+    for (const field of [entry?.css, entry?.assets]) {
+      if (!Array.isArray(field)) continue;
+      for (const file of field) {
+        if (typeof file === "string") files.add(file);
+      }
+    }
+  }
+  return files;
+}
+
 export async function publishWorkbenchWeb({ source, target }) {
   const sourceRoot = resolve(source);
   const targetRoot = resolve(target);
@@ -143,7 +161,10 @@ export async function publishWorkbenchWeb({ source, target }) {
   ]);
   const release = parseReleaseVersion(versionContents, join(sourceRoot, "version.json"));
   assertBuildIdInIndex(indexContents, release.buildId);
-  JSON.parse(manifestContents);
+  const manifest = JSON.parse(manifestContents);
+  for (const asset of manifestAssetFiles(manifest)) {
+    if (asset.startsWith("assets/")) assertHashedAsset(asset);
+  }
 
   await mkdir(targetRoot, { recursive: true });
   const lockPath = join(targetRoot, ".opencraft-publish.lock");
@@ -189,15 +210,15 @@ export async function publishWorkbenchWeb({ source, target }) {
 
       const sourcePath = join(sourceRoot, ...relativePath.split("/"));
       const destinationPath = join(targetRoot, ...relativePath.split("/"));
-      if (relativePath.startsWith("assets/")) {
-        assertHashedAsset(relativePath);
+      if (isContentHashedAsset(relativePath)) {
         if (await copyImmutableAsset(sourcePath, destinationPath)) addedAssets += 1;
         else reusedAssets += 1;
         continue;
       }
 
-      // Files copied verbatim from Vite public/ are intentionally not given an
-      // immutable cache policy. Replace each one atomically before the entry.
+      // Files copied verbatim from Vite public/ may intentionally live below
+      // assets/ without a content hash. They are not manifest-owned, receive a
+      // revalidation cache policy, and are replaced atomically before the entry.
       await writeAtomic(destinationPath, await readFile(sourcePath));
       publicFiles += 1;
     }
