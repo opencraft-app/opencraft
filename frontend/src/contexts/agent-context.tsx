@@ -149,7 +149,12 @@ const defaultPlan: OpenClawUser["plan"] = {
   aiCredits: 1000,
   usedCredits: 0,
   totalRequests: 0,
-  maxBots: 0,
+  maxBots: 1,
+};
+
+export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bot_quota_per_agent"> | null): number => {
+  const quota = pass?.bot_quota_per_agent;
+  return typeof quota === "number" && Number.isInteger(quota) && quota >= 1 ? quota : 1;
 };
 
 const defaultUser: OpenClawUser = {
@@ -231,6 +236,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       name: activePass.bundle_name || defaultPlan.name,
       aiCredits: activePass.credit_total,
       usedCredits: Math.max(0, activePass.credit_total - activePass.credit_available),
+      maxBots: resolveBotQuotaPerAgent(activePass),
     } : null;
 
     return {

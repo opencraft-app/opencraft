@@ -158,6 +158,7 @@ type PassDetail struct {
 	// 与 CreditTotal/CreditAvailable 同范式, 均由 fillCredit 实时拉取 (DB 不持久化到 pass 表)。
 	AgentQuotaTotal     int64
 	AgentQuotaAvailable int64
+	BotQuotaPerAgent    int64
 
 	// RenewFlag 续费标记（billing-integration B11A 新增；§11 Q10 拍板 2026-05-11）
 	// 取值：MANUAL_RENEW / AUTO_RENEW；空字符串视为 MANUAL_RENEW
@@ -1173,6 +1174,7 @@ func (l *logic) fillCredit(d *PassDetail) {
 	}
 	d.BundleName = bundle.BundleName
 	d.CreditTotal = bundle.Credit
+	d.BotQuotaPerAgent = bundle.BotQuotaPerAgent
 
 	// v1.7.24 B19: agent_quota_total / agent_quota_available 都从 user_resource_quota
 	// 同一行读取 (resource_name=OPENCLAW_INSTANCE, resource_key="" — 与 Instance 模块共享

@@ -1,3 +1,20 @@
+---
+id: task-lightvela-multi-bot-profile-2026-09-09
+type: task
+scope: 国内站单个 LightVela Agent 内多 Bot 与 Hermes Profile 产品化，以及套餐 Bot 数量权益。
+triggers: ["multi bot", "Hermes Profile", "Bot quota"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - wiki/prd-docs/2026-09-09-lightvela-multi-bot-profile.md
+status: active
+reviewed_at: 2026-09-11
+review_due: 2026-12-10
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 ## goal
 在国内站实现一台 LightVela 实例内多个产品 Bot，并让每个 Bot 稳定路由到独立 Hermes Profile，同时保持存量根 Profile `main` 无迁移兼容。
 
@@ -12,10 +29,12 @@
 - 用户截图反馈（2026-09-10）：钉钉通道卡片图标需与其他通道统一为浅色品牌背景。
 - 用户截图反馈（2026-09-10）：新版控制台默认 Bot 不得展示 Hermes 内部 ID `default`，无自定义名称时继续显示本地化的“我的 Hermes”。
 - 用户截图反馈（2026-09-10）：默认 Bot 的定时任务加载失败，原生 Hermes CLI 报错 `Profile 'main' does not exist`。
-- 核心要求：Hermes Profile 是 Bot 唯一事实来源，不新增数据库迁移；默认 Bot 使用 `main`；Profile 级命令显式路由；微信同实例唯一占用。
+- 用户确认（2026-09-10）：启航 Launch/Launch AI 每个 Agent 最多 5 个 Bot，巡游 Cruise/Cruise AI 最多 10 个，主 Bot 计入数量。
+- 核心要求：Hermes Profile 仍是 Bot 唯一事实来源，不新增 Bot 映射表；套餐表增加独立 Bot 数量权益；默认 Bot 使用 `main`；Profile 级命令显式路由；微信同实例唯一占用。
 
 ## interface_refs / data_structure_refs
 - `ctl/pkg/transport/instance.go`：现有实例 API contract。
+- `ctl/pkg/model/bundle/entity.go`、`ctl/pkg/transport/pass.go`：每 Agent Bot 套餐权益及用户 Pass contract。
 - `ctl/main/api/server.go`：`/v1/instances` 路由入口。
 - `ctl/pkg/model/instance/entity.go`：实例归属真源；多 Bot 不新增模型表。
 - `frontend/src/domain/types.ts`、`frontend/src/repositories/types.ts`：前端 Bot repository contract。
@@ -30,6 +49,7 @@
 ## acceptance
 - 存量实例读取 Bot 列表时直接投影 Hermes `default` 为不可删除的 `profile_id=main` 默认 Bot。
 - 普通 Bot 可创建、克隆、改名和删除；失败直接返回且不产生数据库孤儿记录。
+- 启航 Launch/Launch AI 每 Agent 最多 5 个 Bot，巡游 Cruise/Cruise AI 最多 10 个；主 Bot 计入数量，CTL 在并发创建时做权威拦截。
 - `/agents` 和分区页切换 Bot 后保留 section，并刷新 Profile 级数据。
 - Profile 级 Hermes 命令显式使用后端 `profile_id`；实例级命令不追加 Profile 参数。
 - 微信同实例只能有一个占用 Bot；其他 Bot 不可覆盖或复用。
@@ -41,6 +61,10 @@
 ## affected_paths
 - `ctl/pkg/transport/instance.go`
 - `ctl/pkg/instance/`
+- `ctl/pkg/model/bundle/`
+- `ctl/pkg/logic/bundle/`
+- `ctl/pkg/logic/pass/`
+- `ctl/migrations/000031_add_bundle_bot_quota_per_agent.*.sql`
 - `ctl/main/api/`
 - `service-gateway/`
 - `frontend/src/domain/`
@@ -51,9 +75,11 @@
 - `frontend/src/pages/marketing/__tests__/agent-channel-dingtalk.test.ts`
 - `frontend/src/pages/marketing/agent-config/`
 - `docs/engineering/domains/agent-gateway-runtime.md`
+- `wiki/prd-docs/2026-09-09-lightvela-multi-bot-profile.md`
 
 ## required_context
 - `agent-gateway-runtime`
+- `subscription-entitlements`
 - `control-plane-ops`
 - `frontend`
 
@@ -61,6 +87,7 @@
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
 | `docs/context/domains/agent-gateway-runtime.md@2.0.0` | Profile、渠道和路由边界 | 区分 CTL 元数据与运行时真源 |
+| `docs/context/domains/subscription-entitlements.md@2.0.0` | 套餐与 Pass 权益边界 | 保持后端为配额真源，不用前端单独定义权益 |
 | `docs/context/project/services/ctl.md@2.1.0` | CTL 服务责任 | 复用实例归属与 API 约束 |
 | `ctl/AGENTS.md` | CTL 局部规则 | 覆盖直连与公共路由测试 |
 | `frontend/AGENTS.md` | 前端局部规则 | 类型、测试和视觉验证门禁 |
@@ -115,7 +142,8 @@
 ## decisions
 - CTL 只拥有实例归属校验和稳定 HTTP contract；Hermes Profile 目录及 `profile.yaml` 是 Bot 元数据与运行时状态真源。
 - 默认 Bot 采用公开选择器 `main`；命名 Profile ID 由后端生成且不可变，同时作为命名 Bot 的公开 `bot_id`。
-- 本期不硬编码 Bot 数量上限；以后由套餐/capability contract 下发。
+- Bot 上限作为独立 `bot_quota_per_agent` 套餐权益：Launch/Launch AI=5，Cruise/Cruise AI=10；主 Bot 计入数量，`agent_quota` 继续只表示 Agent 实例席位。
+- 前端从用户 Pass 获得上限并提前提示；CTL 在 Agent 运行时文件锁内串行“Profile 计数 + 创建”，作为并发场景的最终执行边界。
 - 多 Bot API 归属于 `/v1/instances/{instance_id}/bots`，保持实例作用域显式。
 - 钉钉图标沿用既有通道图标容器和品牌色 8% 弱背景规则，不新增独立组件或样式层。
 - `main` 只作为 LightVela 产品/API 的默认 Bot 标识；原生 Hermes 根 Profile 标识为 `default`，不得要求用户创建命名 Profile `main`。

@@ -8,6 +8,7 @@ import (
 	psandbox "ctl/pkg/adapter/sandbox"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
+	modelbundle "ctl/pkg/model/bundle"
 	modelinstance "ctl/pkg/model/instance"
 	modelpass "ctl/pkg/model/pass"
 	"ctl/pkg/transport"
@@ -84,8 +85,62 @@ type passListerStub struct {
 	err    error
 }
 
+type instanceBotBundleDaoStub struct {
+	modelbundle.Dao
+	bundles map[string]*modelbundle.Entity
+}
+
+func (s *instanceBotBundleDaoStub) GetByBundleID(bundleID string) (*modelbundle.Entity, error) {
+	bundle, ok := s.bundles[bundleID]
+	if !ok {
+		return nil, errors.New("bundle not found")
+	}
+	return bundle, nil
+}
+
 func (s *passListerStub) ListByUserID(string) ([]*modelpass.Entity, error) {
 	return s.passes, s.err
+}
+
+func TestInstanceBotQuotaUsesHighestActivePassEntitlement(t *testing.T) {
+	logic := &logic{
+		passLister: &passListerStub{passes: []*modelpass.Entity{
+			{PassID: "launch", BundleID: "bundle_launch_01", Status: modelpass.StatusActive},
+			{PassID: "cruise", BundleID: "bundle_cruise_ai_01", Status: modelpass.StatusActive},
+			{PassID: "expired", BundleID: "bundle_ignored", Status: modelpass.StatusIsolated},
+		}},
+		bundleDao: &instanceBotBundleDaoStub{bundles: map[string]*modelbundle.Entity{
+			"bundle_launch_01":    {BundleID: "bundle_launch_01", BotQuotaPerAgent: 5},
+			"bundle_cruise_ai_01": {BundleID: "bundle_cruise_ai_01", BotQuotaPerAgent: 10},
+		}},
+	}
+
+	quota, err := logic.instanceBotQuota(pctx.NewContext(nil).WithUserID("user-1"))
+	if err != nil {
+		t.Fatalf("instanceBotQuota() error = %v", err)
+	}
+	if quota != 10 {
+		t.Fatalf("instanceBotQuota() = %d, want 10", quota)
+	}
+}
+
+func TestInstanceBotQuotaFallsBackToOneForUnconfiguredBundle(t *testing.T) {
+	logic := &logic{
+		passLister: &passListerStub{passes: []*modelpass.Entity{{
+			PassID: "legacy", BundleID: "bundle_legacy", Status: modelpass.StatusActive,
+		}}},
+		bundleDao: &instanceBotBundleDaoStub{bundles: map[string]*modelbundle.Entity{
+			"bundle_legacy": {BundleID: "bundle_legacy"},
+		}},
+	}
+
+	quota, err := logic.instanceBotQuota(pctx.NewContext(nil).WithUserID("user-1"))
+	if err != nil {
+		t.Fatalf("instanceBotQuota() error = %v", err)
+	}
+	if quota != 1 {
+		t.Fatalf("instanceBotQuota() = %d, want 1", quota)
+	}
 }
 
 func TestRequireActivePassRejectsNonActiveLifecycleStates(t *testing.T) {

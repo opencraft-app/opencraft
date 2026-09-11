@@ -37,13 +37,14 @@ type BundleDetail struct {
 	// Tagline 一句话卖点，空串表示未配置。
 	Tagline string
 	// Promotion 促销角标 JSON 字符串（*DisplayPromotion，可空），空串表示无促销。
-	Promotion       string
-	BundleState     string
-	AgentQuota      int64
-	Credit          int64  // 用户可见积分额度
-	TimeSpan        int    // 套餐周期数值
-	TimeUnit        string // 套餐周期单位 "m"=月 / "d"=天
-	AiGatewayPlanID string // ai-gateway Plan UUID（credit=0 时允许空）
+	Promotion        string
+	BundleState      string
+	AgentQuota       int64
+	BotQuotaPerAgent int64  // 每个 Agent 的 Bot 上限，包含根 Profile
+	Credit           int64  // 用户可见积分额度
+	TimeSpan         int    // 套餐周期数值
+	TimeUnit         string // 套餐周期单位 "m"=月 / "d"=天
+	AiGatewayPlanID  string // ai-gateway Plan UUID（credit=0 时允许空）
 	// AiGatewayPlans 是旧周期变体模型遗留字段。新运行时不读取、不写入。
 	AiGatewayPlans string
 	// InstanceSpecID 实例规格 ID。空字符串表示兼容期 fallback 到全局默认 spec-2c4g50g。
@@ -65,15 +66,16 @@ type ModifyBundleFields struct {
 	Description *string `json:"description,omitempty"`
 	// Features / Tagline / Promotion 展示化字段，nil = 不修改。
 	// Features / Promotion 为 raw JSON string。
-	Features        *string `json:"features,omitempty"`
-	Tagline         *string `json:"tagline,omitempty"`
-	Promotion       *string `json:"promotion,omitempty"`
-	BundleState     *string `json:"bundle_state,omitempty"`
-	AgentQuota      *int64  `json:"agent_quota,omitempty"`
-	Credit          *int64  `json:"credit,omitempty"`
-	TimeSpan        *int    `json:"time_span,omitempty"`
-	TimeUnit        *string `json:"time_unit,omitempty"`
-	AiGatewayPlanID *string `json:"ai_gateway_plan_id,omitempty"`
+	Features         *string `json:"features,omitempty"`
+	Tagline          *string `json:"tagline,omitempty"`
+	Promotion        *string `json:"promotion,omitempty"`
+	BundleState      *string `json:"bundle_state,omitempty"`
+	AgentQuota       *int64  `json:"agent_quota,omitempty"`
+	BotQuotaPerAgent *int64  `json:"bot_quota_per_agent,omitempty"`
+	Credit           *int64  `json:"credit,omitempty"`
+	TimeSpan         *int    `json:"time_span,omitempty"`
+	TimeUnit         *string `json:"time_unit,omitempty"`
+	AiGatewayPlanID  *string `json:"ai_gateway_plan_id,omitempty"`
 	// InstanceSpecID 实例规格 ID（设计稿 Q4=a / Q-NAMING-1=a）。
 	// nil 表示该字段不修改；非 nil 时 logic 校验值在 instancespec.KnownSpecs 字典中。
 	InstanceSpecID        *string `json:"instance_spec_id,omitempty"`
@@ -95,7 +97,7 @@ type Logic interface {
 	//   - 非空 → 必须在 instancespec.KnownSpecs 字典中，否则报 ErrBundleInstanceSpecNotFound
 	ImportBundle(bundleID string, bundleName string, bundleType string, description string,
 		features string, tagline string, promotion string,
-		agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
+		agentQuota int64, botQuotaPerAgent int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
 		instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error)
 
 	// GetBundles 查询所有套餐（含 ONLINE 和 OFFLINE）
@@ -143,6 +145,13 @@ func validateBundleType(bundleType string) error {
 			bundlemodel.BundleTypeFree, bundlemodel.BundleTypeGeneral, bundlemodel.BundleTypeAI,
 			bundleType)
 	}
+}
+
+func validateBotQuotaPerAgent(quota int64) error {
+	if quota < 1 {
+		return errcode.Wrap(errcode.ErrBundleConfigInvalid, "bot_quota_per_agent must be >= 1")
+	}
+	return nil
 }
 
 // validateCreditPlanPeriod 校验套餐积分与 Plan 周期额度。
@@ -254,7 +263,7 @@ func mapLegacyTimeUnitToPlanPeriodUnit(timeUnit string) string {
 
 func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType string, description string,
 	features string, tagline string, promotion string,
-	agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
+	agentQuota int64, botQuotaPerAgent int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
 	instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error) {
 
 	if bundleID == "" {
@@ -262,6 +271,9 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 	}
 	if agentQuota < 0 {
 		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "agent_quota must be >= 0")
+	}
+	if err := validateBotQuotaPerAgent(botQuotaPerAgent); err != nil {
+		return nil, err
 	}
 	if salesAvailCount < 0 || salesTotalCount < 0 {
 		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "sales count must be >= 0")
@@ -306,6 +318,7 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 		Promotion:             promotion,
 		BundleState:           bundlemodel.StateOffline, // 导入默认 OFFLINE
 		AgentQuota:            agentQuota,
+		BotQuotaPerAgent:      botQuotaPerAgent,
 		Credit:                credit,
 		TimeSpan:              timeSpan,
 		TimeUnit:              timeUnit,
@@ -390,6 +403,12 @@ func (l *logic) ModifyBundles(bundleIDs []string, req *ModifyBundleFields) (int6
 			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "agent_quota must be >= 0")
 		}
 		updates[bundlemodel.ColumnAgentQuota] = *req.AgentQuota
+	}
+	if req.BotQuotaPerAgent != nil {
+		if err := validateBotQuotaPerAgent(*req.BotQuotaPerAgent); err != nil {
+			return 0, err
+		}
+		updates[bundlemodel.ColumnBotQuotaPerAgent] = *req.BotQuotaPerAgent
 	}
 	if req.Credit != nil {
 		if *req.Credit < 0 {
@@ -517,6 +536,7 @@ func entityToDetail(e *bundlemodel.Entity) *BundleDetail {
 		Promotion:             e.Promotion,
 		BundleState:           e.BundleState,
 		AgentQuota:            e.AgentQuota,
+		BotQuotaPerAgent:      e.BotQuotaPerAgent,
 		Credit:                e.Credit,
 		TimeSpan:              e.TimeSpan,
 		TimeUnit:              e.TimeUnit,

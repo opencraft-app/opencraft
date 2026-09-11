@@ -6,7 +6,7 @@
 - 需求状态：分阶段实现，当前发布批次隐藏新建 Bot 入口
 - 创建人：LightVela 产品团队
 - 创建日期：2026-09-09
-- 最后更新时间：2026-09-10
+- 最后更新时间：2026-09-11
 - 需求类型：复杂需求
 - 优先级：P0
 - 发布范围：国内站 lightvela.com only，本期不上线国际站 lightvela.ai
@@ -14,9 +14,10 @@
 ### 当前发布决策
 
 - 已有 Agent 的“新建 Bot”按钮默认隐藏，可在浏览器 Console 执行 `show()` 后临时显示，刷新页面后恢复隐藏。该开关不绕过多 Bot 功能开关和创建数量限制。保留已创建 Bot 的切换、配置和删除，无实例用户的首次 Agent 创建流程保持可用；面向普通用户开放另行确认。
+- Bot 数量按当前套餐限制且包含主 Bot：启航 Launch、启航 Launch AI 每个 Agent 最多 5 个；巡游 Cruise、巡游 Cruise AI 每个 Agent 最多 10 个。达到上限后前端禁用创建，后端继续做权威拦截。
 - 普通 Bot 删除仅删除该 Profile。主 Bot 删除代表销毁整个 Agent 实例，必须先删除同实例内所有其他 Bot；前后端都校验此条件。
 - 本期不实现更换主 Bot，也不实现“更换主 Bot 并删除原主 Bot”。
-- 不迁移数据库、不新增 Bot 映射表；列表和元信息从 Hermes 官方 `GET /api/profiles` 读取，刷新后以运行时真实 Profile 为准。
+- 不为 Bot/Profile 映射新增数据库表；列表和元信息从 Hermes 官方 `GET /api/profiles` 读取，刷新后以运行时真实 Profile 为准。套餐表仅新增独立的每 Agent Bot 数量权益字段。
 - AgentChat 暂时仅主 Bot 可用，普通 Bot 的对话入口禁用，不能回退到主 Bot 会话。
 
 ## 需求来源与调研结论
@@ -129,6 +130,7 @@
 - 后端 API 返回稳定 `profile_id`，从 Hermes Profile 投影，不新增数据库表。
 - 存量 Bot 映射根 Profile，公开选择器为 `main`。
 - 新建 Bot 创建命名 Hermes Profile，产品 Bot 由运行时 Profile 投影。
+- 套餐提供独立的“每 Agent Bot 数量”权益：启航 Launch/Launch AI 为 5，巡游 Cruise/Cruise AI 为 10；主 Bot 占用一个名额。
 - 从主 Bot 或任一已有 Bot 克隆新 Bot。
 - 删除 Bot 时处理 Hermes Profile 生命周期，并提供失败补偿。
 - Bot 列表、当前 Bot 切换、Bot 基本信息编辑和默认 Bot 标识。
@@ -150,7 +152,7 @@
 - 将外部渠道的一个 Bot Token 同时绑定到多个 LightVela Bot。
 - 默认共享或复用其他 Bot 的通道凭据。
 - 让微信等实例级唯一通道同时连接多个 Bot。
-- 独立计费套餐、按 Bot 收费或 Bot 数量售卖策略调整。
+- 独立计费套餐或按 Bot 单独收费；本期只为现有四个套餐配置固定数量权益。
 - 国际站发布与同步。
 - Hermes 底层 Profile 语义变更。
 - 更换主 Bot，以及更换后删除原主 Bot。
@@ -225,6 +227,17 @@ P2：团队共享、Bot 模板市场、跨 Bot 编排和运营化能力。
 当前 Bot 就是主 Bot 时，合并重复来源选项为“复制当前（主 Bot）”和“空白创建”。弹窗主按钮为“确认创建”，与“取消”并排放在右下角。
 
 创建成功后进入新 Bot 的设置总览页，并提示用户配置模型、Skills 或通道。
+
+#### 套餐数量限制
+
+- 数量口径是“单个 Agent 内当前可枚举的 Hermes Profile 总数”，包含根 Profile 对应的主 Bot。
+- 启航 Launch、启航 Launch AI：每个 Agent 最多 5 个 Bot；已有主 Bot 时最多再创建 4 个普通 Bot。
+- 巡游 Cruise、巡游 Cruise AI：每个 Agent 最多 10 个 Bot；已有主 Bot 时最多再创建 9 个普通 Bot。
+- `agent_quota` 继续表示用户可拥有的 Agent 实例席位，不得复用为 Bot 数量上限；Bot 上限使用独立套餐权益字段。
+- 前端从当前有效 Pass 获取上限并提前禁用创建、显示当前套餐上限；前端判断不是安全边界，CTL 创建接口必须重新读取当前权益并校验。
+- 同一 Agent 的“读取 Profile 数量 + 创建 Profile”必须串行执行，避免并发请求同时越过上限。
+- 套餐从启航升配到巡游后上限变为 10。若未来套餐降级导致已有 Bot 数大于新上限，不删除、不隐藏已有 Bot，只阻止继续创建，直到数量低于当前上限。
+- Console `show()` 只改变入口可见性，不改变套餐权益，也不能绕过后端配额错误。
 
 ### 4. 克隆边界
 
@@ -399,7 +412,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 
 ## 产物交接
 
-- 产品：确认一期范围、站点策略、Bot 数量上限、默认主 Bot 命名、克隆边界和删除语义。
+- 产品：确认一期范围、站点策略、现有四个套餐的 5/10 Bot 数量上限、默认主 Bot 命名、克隆边界和删除语义。
 - 设计：输出 Bot 切换器、Bot 管理页、创建弹窗、删除确认、异常状态和配置页上下文方案。
 - 前端：改造当前 Bot 上下文、Profile 级命令调用点、页面刷新与异常态。
 - 后端：扩展 Bot 数据模型、实例内 Bot API、权限校验、Profile 生命周期补偿和灰度开关。
@@ -413,12 +426,15 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 
 采用“单实例多 Profile”的方案：一个 LightVela 实例内可以创建多个产品 Bot，每个产品 Bot 对应一个 Hermes Profile。存量单 Bot 映射根 Profile `main`，新建 Bot 使用命名 `profile_id`。
 
+数量权益采用独立的 `bot_quota_per_agent` 套餐字段：启航 Launch/Launch AI 配置为 5，巡游 Cruise/Cruise AI 配置为 10。用户当前有效 Pass 将该权益下发给前端，CTL 在 Profile 创建临界区内按同一值做最终拦截。
+
 ### 选择理由
 
 - 与 Hermes “Bot is Profile”的底层能力一致。
 - 用户不需要为了多个角色重复购买实例。
 - Profile 天然适合承载人设、Memory、Skills、模型和通道等隔离状态。
 - 存量用户可通过 `main` 保持原路径，不需要迁移数据。
+- 数量限制与 Agent 实例席位解耦，后续套餐调整无需改变 Hermes Profile 数据模型。
 - 为后续模板、团队共享和跨 Bot 能力留下稳定产品数据模型。
 
 ### 备选方案与取舍
@@ -449,7 +465,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 - 团队协作和 Bot 共享。
 - Bot 模板市场。
 - 跨 Bot 工作流编排。
-- Bot 数量计费策略。
+- 按 Bot 单独计费或新增 Bot 数量包；本期只落现有套餐固定上限。
 - 国际站发布与同步。
 
 ## 验收标准
@@ -472,6 +488,10 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 16. 当前发布的已有 Agent 页面默认不展示“新建 Bot”入口；执行 `show()` 后在功能开关开启且未达数量限制时显示，刷新后重新隐藏。存量 Bot 切换与删除、无实例用户首次创建 Agent 不受此入口隐藏影响。
 17. Bot 名称最多 60 个 Unicode 码点；用途说明不出现在表单，高级人设默认收起；主 Bot 创建来源选项不重复。
 18. 普通 Bot 的 AgentChat 入口禁用；Bot 列表刷新后仍以 Hermes 官方接口返回的 Profile 为准，无需数据库迁移。
+19. 启航 Launch、启航 Launch AI 每个 Agent 最多拥有 5 个 Bot，巡游 Cruise、巡游 Cruise AI 每个 Agent 最多拥有 10 个 Bot；主 Bot 计入数量。
+20. 达到套餐上限后，前端创建入口不可用并展示对应上限；即使绕过前端或使用 Console `show()`，CTL 创建接口也返回明确的配额错误且不产生新 Profile。
+21. 同一 Agent 收到并发创建请求时，“计数 + 创建”串行执行，最终 Profile 总数不得超过当前套餐上限。
+22. 套餐升配后按新上限允许继续创建；已有数量超过当前上限时保留全部 Bot 的查看、切换、配置和删除能力，只禁止继续创建。
 
 ## 发布与观测
 
@@ -494,7 +514,6 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 ## 待确认问题
 
 - 国内站灰度是否要求只开放给内部账号或白名单用户。
-- 一期是否需要设置每个实例的 Bot 数量上限。
 - 通道认证与 home channel 是否允许克隆，需要按 QQ、企微、Telegram、Slack、Discord 等渠道逐项确认；微信本期已按实例级唯一通道处理。
 - 命名 `profile_id` 的生成规则是否由后端统一生成，是否允许用户重命名。
 - 删除 Bot 时是否保留 Profile 备份，以及备份保留时长。

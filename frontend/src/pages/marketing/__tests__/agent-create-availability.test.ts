@@ -50,6 +50,14 @@ describe("getOpenClawCreateLimitMessage", () => {
   it("explains the regular plan limit", () => {
     expect(getOpenClawCreateLimitMessage([bot("running")], 1)).toBe("当前套餐最多可创建 1 个智能体，请升级套餐或删除现有智能体后重试。");
   });
+
+  it.each([5, 10])("counts the main Bot toward the %d Bot plan limit", (maxBots) => {
+    const bots = Array.from({ length: maxBots }, () => bot("running"));
+    expect(getOpenClawCreateLimitMessage(bots, maxBots)).toBe(
+      `当前套餐最多可创建 ${maxBots} 个智能体，请升级套餐或删除现有智能体后重试。`,
+    );
+    expect(getOpenClawCreateLimitMessage(bots.slice(1), maxBots)).toBeNull();
+  });
 });
 
 describe("findCompletedCreatingBot", () => {

@@ -20,7 +20,7 @@ type fillCreditBundleLogicStub struct {
 	bundle *bundlelogic.BundleDetail
 }
 
-func (s *fillCreditBundleLogicStub) ImportBundle(string, string, string, string, string, string, string, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
+func (s *fillCreditBundleLogicStub) ImportBundle(string, string, string, string, string, string, string, int64, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
 	return nil, nil
 }
 
@@ -102,9 +102,10 @@ func TestFillCreditHidesPackageCreditWithoutActivePackageEntitlement(t *testing.
 	}
 
 	l := &logic{bundleLogic: &fillCreditBundleLogicStub{bundle: &bundlelogic.BundleDetail{
-		BundleID:   "bundle_launch_01",
-		BundleName: "启航套餐",
-		Credit:     100,
+		BundleID:         "bundle_launch_01",
+		BundleName:       "启航套餐",
+		BotQuotaPerAgent: 5,
+		Credit:           100,
 	}}}
 
 	for _, status := range []string{passmodel.StatusActive, passmodel.StatusIsolated} {
@@ -123,6 +124,9 @@ func TestFillCreditHidesPackageCreditWithoutActivePackageEntitlement(t *testing.
 			}
 			if detail.CreditAvailable != 0 {
 				t.Fatalf("CreditAvailable = %d, want 0", detail.CreditAvailable)
+			}
+			if detail.BotQuotaPerAgent != 5 {
+				t.Fatalf("BotQuotaPerAgent = %d, want 5", detail.BotQuotaPerAgent)
 			}
 		})
 	}

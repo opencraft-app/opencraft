@@ -93,3 +93,27 @@ func TestValidateCreditPlanRejectsPartiallyDeliveredPlan(t *testing.T) {
 		t.Fatalf("partial plan error=%v, want ErrBundleAiGatewayUnavailable", err)
 	}
 }
+
+func TestValidateBotQuotaPerAgent(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		quota   int64
+		wantErr bool
+	}{
+		{name: "zero", quota: 0, wantErr: true},
+		{name: "negative", quota: -1, wantErr: true},
+		{name: "single bot compatibility", quota: 1},
+		{name: "launch", quota: 5},
+		{name: "cruise", quota: 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateBotQuotaPerAgent(tc.quota)
+			if tc.wantErr && !errors.Is(err, errcode.ErrBundleConfigInvalid) {
+				t.Fatalf("quota %d error = %v, want ErrBundleConfigInvalid", tc.quota, err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("quota %d error = %v, want nil", tc.quota, err)
+			}
+		})
+	}
+}

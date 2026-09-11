@@ -104,6 +104,7 @@ type PassResponse struct {
 	//   - AgentQuotaAvailable = user_resource_quota.available
 	AgentQuotaTotal     int64 `json:"agent_quota_total"`
 	AgentQuotaAvailable int64 `json:"agent_quota_available"`
+	BotQuotaPerAgent    int64 `json:"bot_quota_per_agent"`
 
 	// RenewFlag 续费标记（billing-integration B11A 新增；§11 Q10 拍板 2026-05-11）
 	//   - "MANUAL_RENEW"（手动续费，默认）
@@ -148,6 +149,7 @@ type UserPassResponse struct {
 	// AgentQuota 配额（v1.7.23 B18）
 	AgentQuotaTotal     int64 `json:"agent_quota_total"`
 	AgentQuotaAvailable int64 `json:"agent_quota_available"`
+	BotQuotaPerAgent    int64 `json:"bot_quota_per_agent"`
 
 	// Credit 积分
 	CreditTotal         int64 `json:"credit_total"`

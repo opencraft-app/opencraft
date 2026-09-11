@@ -20,6 +20,15 @@ describe("getAgentCreateErrorMessage", () => {
     );
   });
 
+  it("将 Bot 数量上限错误转换为 Bot 专属提示", () => {
+    const error = Object.assign(new Error("instance bot quota exceeded"), {
+      code: "INSTANCE_BOT_QUOTA_EXCEEDED",
+    });
+    expect(getAgentCreateErrorMessage(error)).toBe(
+      "当前套餐的 Bot 数量已达上限，请删除现有 Bot 或升级套餐后重试。",
+    );
+  });
+
   it("未知错误不隐藏原始可读信息", () => {
     expect(getAgentCreateErrorMessage(new Error("request rejected"))).toBe("request rejected");
   });
@@ -61,6 +70,7 @@ describe("getAgentCreateErrorMessage", () => {
 
     [
       "当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。",
+      "当前套餐的 Bot 数量已达上限，请删除现有 Bot 或升级套餐后重试。",
       "当前资源暂时售罄，请稍后再试。",
       "创建超时，请稍后重试。",
       "网络异常，请检查网络后重试。",
