@@ -1798,6 +1798,24 @@ describe("terminal cron card visibility", () => {
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
   });
 
+  it("hides the edit action on ended job cards but keeps it on active ones", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([
+      makeCronJob({ id: "active", name: "生效任务", state: "scheduled" }),
+      makeCronJob({ id: "ended", name: "结束任务", state: "completed" }),
+    ]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    expect(await screen.findByText("生效任务")).toBeTruthy();
+    expect(screen.getByRole("button", { name: localizedText("编辑", "Edit") })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("已结束任务", "Ended Tasks") }));
+
+    expect(await screen.findByText("结束任务")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
+    expect(screen.getByRole("button", { name: localizedText("查看", "View") })).toBeTruthy();
+    expect(screen.getByRole("button", { name: localizedText("删除", "Delete") })).toBeTruthy();
+  });
+
   it("returns to active jobs after creating from the ended-jobs tab", async () => {
     const ended = makeCronJob({ id: "ended", name: "旧任务", state: "completed" });
     const created = makeCronJob({ id: "created", name: "新任务", state: "scheduled" });
