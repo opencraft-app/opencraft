@@ -29,9 +29,8 @@ Bundle 是一个**可运营的权益容器**，代表一个套餐包的完整定
 - `description` 为 JSON 字符串，存储套餐的结构化描述信息，格式为 KV 数组：`[{"Key": "体验Agent", "Value": "至多1个"}]`
 - Bundle 有上线（ONLINE）和下线（OFFLINE）两种状态
 - Bundle 是静态配置，不绑定到具体用户
-- 当前包含三个权益维度：
+- 当前包含两个权益维度：
   - `agent_quota`（用户可创建的 Agent 配额数）
-  - `bot_quota_per_agent`（每个 Agent 可拥有的 Bot 数，包含主 Bot）
   - `credit`（用户可见的积分额度，通过 credit↔token 固定比例换算映射到 ai-gateway 的 Token 配额）
 - 套餐周期字段（决定 Pass 有效期）：
   - `time_span`：周期数值（如 `1`、`3`、`12`）
@@ -62,7 +61,7 @@ Bundle 是一个**可运营的权益容器**，代表一个套餐包的完整定
 | 权益扩展 | `ALTER TABLE ADD COLUMN` | 同理 |
 | YAGNI | ✅ 不过度设计 | 为不确定的未来提前付出成本 |
 
-> 当前权益仍是 Bundle 单行内的标量配置，不值得拆成两张表。如果未来真的需要 1:N 的配置模型，拆表迁移成本很低（一条 migration + 一个新 model），远低于现在就维护双表的持续成本。
+> 当前只有一个权益维度 `agent_quota`，不值得拆成两张表。如果未来真的需要 1:N 的配置模型，拆表迁移成本很低（一条 migration + 一个新 model），远低于现在就维护双表的持续成本。
 
 ### 2.3 概念关系
 
@@ -73,7 +72,6 @@ Bundle (套餐)
   ├── description:                   结构化描述 (JSON)
   ├── bundle_state:                  上线 / 下线
   ├── agent_quota:                   用户可创建的 Agent 数量
-  ├── bot_quota_per_agent:           每个 Agent 的 Bot 数量上限（包含主 Bot）
   ├── credit:                        用户可见的积分额度（对应 credit × ratio 个 Token）
   ├── time_span:                     周期数值（如 1, 3, 12）
   ├── time_unit:                     周期单位（"m"=月 / "d"=天）
@@ -130,7 +128,6 @@ ai-gateway Subscription (用户订阅)
 | `description` | TEXT | NOT NULL | 套餐结构化描述，JSON 格式 `[{"Key":"...","Value":"..."}]` |
 | `bundle_state` | VARCHAR(32) | NOT NULL, DEFAULT 'OFFLINE' | 套餐状态：`ONLINE` / `OFFLINE` |
 | `agent_quota` | BIGINT | NOT NULL, DEFAULT 0 | 该套餐授予的 Agent 创建配额数 |
-| `bot_quota_per_agent` | BIGINT | NOT NULL, DEFAULT 1 | 每个 Agent 可拥有的 Bot 数，包含主 Bot；启航/启航 AI 为 5，巡游/巡游 AI 为 10 |
 | `credit` | BIGINT | NOT NULL, DEFAULT 0 | 用户可见的积分额度（对应 `credit × ratio` 个 Token） |
 | `time_span` | INT | NOT NULL, DEFAULT 1 | 套餐周期数值（如 1、3、12） |
 | `time_unit` | VARCHAR(2) | NOT NULL, DEFAULT 'm' | 套餐周期单位：`'m'`=月，`'d'`=天 |
@@ -762,10 +759,8 @@ user_resource_quota 表
 ### 5.2 Bundle 引入后的演进方向
 
 当前阶段（本次需求）：
-- Bundle 作为**套餐定义**存在，包含 Agent 配额、每 Agent Bot 配额和 Credit 积分三个权益维度
+- Bundle 作为**套餐定义**存在，包含 Agent 配额 + Credit 积分两个权益维度
 - `agent_quota` 管理 Agent 创建配额（CTL 侧）
-- `bot_quota_per_agent` 管理单个 Agent 内的 Bot/Profile 数量上限，包含主 Bot；Pass 实时下发，CTL 在 Profile 创建时权威校验
-- 兼容旧版套餐导入请求：省略 `bot_quota_per_agent` 时，当前 Launch/Launch AI 默认写入 5、Cruise/Cruise AI 默认写入 10，其它套餐保守写入 1，避免重新导入覆盖 migration 已配置的权益
 - `credit` 管理用户可见的积分额度，通过 `credit_token_ratio` 映射到 ai-gateway Token
 - `ai_gateway_plan_id` 关联 ai-gateway Plan；可选字段，为空时跳过 Token 订阅开通
 - 引入 Pass 作为用户权益实例，创建 Pass 时联动开通 ai-gateway Subscription
@@ -858,7 +853,6 @@ Bundle API 采用**两层架构**：
     "bundle_name": "体验版",
     "description": [{"Key": "体验Agent", "Value": "至多1个"}, {"Key": "积分", "Value": "10 credit/月"}],
     "agent_quota": 1,
-    "bot_quota_per_agent": 1,
     "credit": 10,
     "time_span": 1,
     "time_unit": "m",
@@ -875,7 +869,6 @@ Bundle API 采用**两层架构**：
     "description": [{"Key": "体验Agent", "Value": "至多1个"}, {"Key": "积分", "Value": "10 credit/月"}],
     "bundle_state": "OFFLINE",
     "agent_quota": 1,
-    "bot_quota_per_agent": 1,
     "credit": 10,
     "time_span": 1,
     "time_unit": "m",

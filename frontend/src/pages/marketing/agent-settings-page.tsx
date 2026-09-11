@@ -3927,7 +3927,7 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    if (activeBot && (!showCreateBotEntry || !canCreateAdditionalBot)) return;
+    if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -3936,6 +3936,7 @@ export const AgentSettingsPage = ({
       setDirectCreateError(createLimitMessage);
       return;
     }
+    if (activeBot && !canCreateAdditionalBot) return;
     if (!activeBot) {
       if (isSubscribed) {
         setDirectCreateError(null);
@@ -3955,6 +3956,10 @@ export const AgentSettingsPage = ({
   };
 
   const handleConfirmCreate = async () => {
+    if (createLimitMessage) {
+      setDirectCreateError(createLimitMessage);
+      return;
+    }
     trackDatongClick("agent_create_confirm_btn", {
       pgid: DATONG_PAGE_IDS.AGENT_CREATING,
       params: {},
@@ -5152,15 +5157,18 @@ export const AgentSettingsPage = ({
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                       )}
 
-                      {showCreateBotEntry && canCreateAdditionalBot && (
-                        <button
-                          type="button"
-                          onClick={handleCreateNew}
-                          className="lv-agent-create-button"
-                        >
-                          <Plus className="h-4 w-4" aria-hidden="true" />
-                          {t("新建 Bot")}
-                        </button>
+                      {showCreateBotEntry && multiBotEnabled && (
+                        <WorkspaceActionTooltip content={createLimitMessage}>
+                          <button
+                            type="button"
+                            onClick={handleCreateNew}
+                            disabled={!canCreateAdditionalBot}
+                            className="lv-agent-create-button"
+                          >
+                            <Plus className="h-4 w-4" aria-hidden="true" />
+                            {t("新建 Bot")}
+                          </button>
+                        </WorkspaceActionTooltip>
                       )}
                     </div>
 

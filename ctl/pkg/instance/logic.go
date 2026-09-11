@@ -19,7 +19,6 @@ import (
 	"ctl/pkg/errcode"
 	"ctl/pkg/logic/objectid"
 	"ctl/pkg/metric"
-	modelbundle "ctl/pkg/model/bundle"
 	"ctl/pkg/model/channelloginsession"
 	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -122,7 +121,6 @@ type Logic interface {
 type logic struct {
 	instanceDao                   modelinstance.Dao
 	passLister                    userPassLister
-	bundleDao                     modelbundle.Dao
 	taskDao                       taskmodel.Dao
 	channelLoginSessionDao        channelloginsession.Dao
 	quotaDao                      quota.Dao
@@ -158,7 +156,6 @@ func NewLogic() Logic {
 	return &logic{
 		instanceDao:                   modelfactory.DefaultDaoFactory.InstanceDao(nil),
 		passLister:                    modelfactory.DefaultDaoFactory.PassDao(nil),
-		bundleDao:                     modelfactory.DefaultDaoFactory.BundleDao(nil),
 		channelLoginSessionDao:        modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
 		taskDao:                       modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:                      modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),

@@ -3,9 +3,7 @@ package instance
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -27,7 +25,6 @@ const (
 	maxInstanceBotNameRunes        = 60
 	maxInstanceBotDescriptionRunes = 256
 	maxInstanceBotSoulRunes        = 12000
-	hermesProfileQuotaExceededMark = "LIGHTVELA_INSTANCE_BOT_QUOTA_EXCEEDED"
 )
 
 type hermesProfileRecord struct {
@@ -61,32 +58,6 @@ path = Path(sys.argv[1])
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(base64.b64decode(sys.argv[2]).decode("utf-8"), encoding="utf-8")
 os.chmod(path, 0o600)
-`
-
-const runHermesProfileCreateWithQuotaScript = `import base64
-import fcntl
-import os
-from pathlib import Path
-import subprocess
-import sys
-
-from hermes_cli.profiles import list_profiles
-
-limit = int(sys.argv[1])
-command = base64.b64decode(sys.argv[2]).decode("utf-8")
-quota_marker = sys.argv[3]
-home = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
-lock_root = home / ".lightvela"
-lock_root.mkdir(parents=True, exist_ok=True)
-lock_path = lock_root / "profile-create.lock"
-
-with lock_path.open("a", encoding="utf-8") as lock:
-    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-    profiles = list_profiles()
-    if len(profiles) >= limit:
-        print(quota_marker)
-        raise SystemExit(42)
-    subprocess.run(["/bin/bash", "-lc", command], check=True)
 `
 
 const checkHermesProfileCapabilityCommand = "hermes profile create --help >/dev/null && hermes profile delete --help >/dev/null"
@@ -389,10 +360,6 @@ func (l *logic) CreateInstanceBot(ctx pctx.Context, instanceID string, req *tran
 	if _, err := l.ExecDebugCommand(ctx, instanceID, checkHermesProfileCapabilityCommand, "agentuser"); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotUnsupported, "profile capability check failed: %v", err)
 	}
-	botQuota, err := l.instanceBotQuota(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	initialSoul := strings.TrimSpace(req.InitialSoul)
 	if utf8.RuneCountInString(initialSoul) > maxInstanceBotSoulRunes {
@@ -415,11 +382,8 @@ func (l *logic) CreateInstanceBot(ctx pctx.Context, instanceID string, req *tran
 	}
 
 	profileID := l.objectIdLogic.GenerateProfileId()
-	command := buildHermesProfileCreateWithQuotaCommand(botQuota, profileID, sourceProfileID, initialSoul, name, description)
+	command := buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, name, description)
 	if _, err := l.ExecDebugCommand(ctx, instanceID, command, "agentuser"); err != nil {
-		if isHermesProfileQuotaExceededError(err) {
-			return nil, errcode.ErrInstanceBotQuotaExceeded
-		}
 		_, _ = l.ExecDebugCommand(ctx, instanceID, buildHermesProfileDeleteCommand(profileID), "agentuser")
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "create Hermes profile %s: %v", profileID, err)
 	}
@@ -733,30 +697,6 @@ func buildHermesProfileConfigUnsetCommand(profileID, key string) string {
     *) printf '%%s\n' "$unset_output" >&2; exit 1 ;;
   esac
 }`, shellQuote(profileID), shellQuote(key), missingMessage)
-}
-
-func buildHermesProfileCreateWithQuotaCommand(quota int64, profileID, sourceProfileID, initialSoul, name, description string) string {
-	command := buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, name, description)
-	if quota < 1 {
-		return command
-	}
-	return buildHermesPythonCommand(
-		runHermesProfileCreateWithQuotaScript,
-		strconv.FormatInt(quota, 10),
-		base64.StdEncoding.EncodeToString([]byte(command)),
-		hermesProfileQuotaExceededMark,
-	)
-}
-
-func isHermesProfileQuotaExceededError(err error) bool {
-	var execErr *debugExecError
-	if !errors.As(err, &execErr) || execErr.detail == nil {
-		return false
-	}
-	return strings.Contains(execErr.detail.Output, hermesProfileQuotaExceededMark) ||
-		strings.Contains(execErr.detail.Stdout, hermesProfileQuotaExceededMark) ||
-		strings.Contains(execErr.detail.Stderr, hermesProfileQuotaExceededMark) ||
-		strings.Contains(execErr.detail.Detail, hermesProfileQuotaExceededMark)
 }
 
 func buildHermesProfileMetadataCommand(profileID string, fields map[string]string) (string, error) {

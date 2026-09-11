@@ -14,7 +14,6 @@ const (
 	ColumnPromotion             = "promotion"
 	ColumnBundleState           = "bundle_state"
 	ColumnAgentQuota            = "agent_quota"
-	ColumnBotQuotaPerAgent      = "bot_quota_per_agent"
 	ColumnCredit                = "credit"
 	ColumnTimeSpan              = "time_span"
 	ColumnTimeUnit              = "time_unit"
@@ -63,9 +62,9 @@ type Entity struct {
 	BundleID string `gorm:"column:bundle_id;uniqueIndex:uk_bundle_id"`
 	// BundleType 套餐分类，枚举值见 BundleTypeFree / BundleTypeGeneral / BundleTypeAI。
 	// user-facing / admin / internal RPC 三处出参均会暴露该字段；前端按值切换展示样式。
-	BundleType  string `gorm:"column:bundle_type"`
-	BundleName  string `gorm:"column:bundle_name"`
-	Description string `gorm:"column:description;type:text"` // JSON: [{"Key":"...","Value":"..."}]
+	BundleType      string `gorm:"column:bundle_type"`
+	BundleName      string `gorm:"column:bundle_name"`
+	Description     string `gorm:"column:description;type:text"` // JSON: [{"Key":"...","Value":"..."}]
 	// Features 功能特性列表（JSON 字符串），user-facing 出参下发替代订阅页前端硬编码能力位。
 	// 格式：[{"key","label","value","included","highlight"}]；空配置为 ""，前端回退旧逻辑。
 	Features string `gorm:"column:features;type:json"`
@@ -73,14 +72,13 @@ type Entity struct {
 	Tagline string `gorm:"column:tagline"`
 	// Promotion 促销角标（JSON 字符串，可空）：{"label","kind","discount","first_period_only"}。
 	// 无促销为 ""，user-facing 出参不下发 promotion 字段。
-	Promotion        string `gorm:"column:promotion;type:json"`
-	BundleState      string `gorm:"column:bundle_state;index:idx_bundle_state"`
-	AgentQuota       int64  `gorm:"column:agent_quota"`
-	BotQuotaPerAgent int64  `gorm:"column:bot_quota_per_agent"` // 每个 Agent 的 Bot 上限，包含根 Profile
-	Credit           int64  `gorm:"column:credit"`              // 用户可见积分额度（对应 credit × credit_token_ratio 个 Token）
-	TimeSpan         int    `gorm:"column:time_span"`           // 套餐周期数值
-	TimeUnit         string `gorm:"column:time_unit"`           // 套餐周期单位 "m"=月 / "d"=天
-	AiGatewayPlanID  string `gorm:"column:ai_gateway_plan_id"`  // ai-gateway Plan UUID（credit=0 时允许空）
+	Promotion   string `gorm:"column:promotion;type:json"`
+	BundleState string `gorm:"column:bundle_state;index:idx_bundle_state"`
+	AgentQuota      int64  `gorm:"column:agent_quota"`
+	Credit          int64  `gorm:"column:credit"`             // 用户可见积分额度（对应 credit × credit_token_ratio 个 Token）
+	TimeSpan        int    `gorm:"column:time_span"`          // 套餐周期数值
+	TimeUnit        string `gorm:"column:time_unit"`          // 套餐周期单位 "m"=月 / "d"=天
+	AiGatewayPlanID string `gorm:"column:ai_gateway_plan_id"` // ai-gateway Plan UUID（credit=0 时允许空）
 	// AiGatewayPlans 是旧周期变体模型遗留字段。新运行时不读取、不写入，也不要求清理旧数据。
 	AiGatewayPlans string `gorm:"column:ai_gateway_plans;type:json"`
 	// InstanceSpecID 实例规格 ID（DB 内部字段，唯一消费方 ctl/instance.RunCreateInstanceTask

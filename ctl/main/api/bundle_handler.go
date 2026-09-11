@@ -59,17 +59,6 @@ const freeTrialBundleIDPrefix = "bundle_free_trial"
 
 const bundleQuoteTimeout = 15 * time.Second
 
-func defaultBotQuotaPerAgent(bundleID string) int64 {
-	switch bundleID {
-	case "bundle_launch_01", "bundle_launch_ai_01":
-		return 5
-	case "bundle_cruise_01", "bundle_cruise_ai_01":
-		return 10
-	default:
-		return 1
-	}
-}
-
 // isFreeTrialBundleID 判断 bundle_id 是否属于免费试用类。免费试用 bundle 不参与 trade 询价。
 func isFreeTrialBundleID(bundleID string) bool {
 	return strings.HasPrefix(bundleID, freeTrialBundleIDPrefix)
@@ -166,10 +155,6 @@ func (h *bundleHandler) importBundle(w http.ResponseWriter, r *http.Request) {
 		}
 		promotionJSON = string(b)
 	}
-	botQuotaPerAgent := defaultBotQuotaPerAgent(req.BundleID)
-	if req.BotQuotaPerAgent != nil {
-		botQuotaPerAgent = *req.BotQuotaPerAgent
-	}
 
 	detail, err := h.logic.ImportBundle(
 		req.BundleID,
@@ -180,7 +165,6 @@ func (h *bundleHandler) importBundle(w http.ResponseWriter, r *http.Request) {
 		req.Tagline,
 		promotionJSON,
 		req.AgentQuota,
-		botQuotaPerAgent,
 		req.Credit,
 		req.TimeSpan,
 		req.TimeUnit,
@@ -230,7 +214,6 @@ func (h *bundleHandler) modifyBundles(w http.ResponseWriter, r *http.Request) {
 		Promotion:             req.Promotion,
 		BundleState:           req.BundleState,
 		AgentQuota:            req.AgentQuota,
-		BotQuotaPerAgent:      req.BotQuotaPerAgent,
 		Credit:                req.Credit,
 		TimeSpan:              req.TimeSpan,
 		TimeUnit:              req.TimeUnit,
@@ -528,7 +511,6 @@ func detailToAdminResponse(d *bundlelogic.BundleDetail) *transport.BundleRespons
 		Promotion:             parsePromotion(d.Promotion),
 		BundleState:           d.BundleState,
 		AgentQuota:            d.AgentQuota,
-		BotQuotaPerAgent:      d.BotQuotaPerAgent,
 		Credit:                d.Credit,
 		TimeSpan:              d.TimeSpan,
 		TimeUnit:              d.TimeUnit,
@@ -563,7 +545,6 @@ func detailToUserResponse(d *bundlelogic.BundleDetail, quote *tradeadapter.Bundl
 		Description:      parseJSONDescription(d.Description),
 		BundleState:      d.BundleState,
 		AgentQuota:       d.AgentQuota,
-		BotQuotaPerAgent: d.BotQuotaPerAgent,
 		Credit:           d.Credit,
 		BundleSalesState: d.BundleSalesState,
 		Features:         parseFeatures(d.Features),

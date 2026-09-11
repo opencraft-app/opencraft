@@ -949,7 +949,6 @@ func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 		FreeCreditAvailable: d.FreeCreditAvailable,
 		AgentQuotaTotal:     d.AgentQuotaTotal,
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
-		BotQuotaPerAgent:    d.BotQuotaPerAgent,
 		RenewFlag:           d.RenewFlag,
 	}
 }
@@ -973,7 +972,6 @@ func detailToUserPassResponse(d *passlogic.PassDetail) *transport.UserPassRespon
 		Status:              d.Status,
 		AgentQuotaTotal:     d.AgentQuotaTotal,
 		AgentQuotaAvailable: d.AgentQuotaAvailable,
-		BotQuotaPerAgent:    d.BotQuotaPerAgent,
 		CreditTotal:         d.CreditTotal,
 		CreditAvailable:     d.CreditAvailable,
 		FreeCreditTotal:     d.FreeCreditTotal,

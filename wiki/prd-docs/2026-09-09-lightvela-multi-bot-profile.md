@@ -14,10 +14,10 @@
 ### 当前发布决策
 
 - 已有 Agent 的“新建 Bot”按钮默认隐藏，可在浏览器 Console 执行 `show()` 后临时显示，刷新页面后恢复隐藏。该开关不绕过多 Bot 功能开关和创建数量限制。保留已创建 Bot 的切换、配置和删除，无实例用户的首次 Agent 创建流程保持可用；面向普通用户开放另行确认。
-- Bot 数量按当前套餐限制且包含主 Bot：启航 Launch、启航 Launch AI 每个 Agent 最多 5 个；巡游 Cruise、巡游 Cruise AI 每个 Agent 最多 10 个。达到上限后前端禁用创建，后端继续做权威拦截。
+- Bot 数量按当前套餐限制且包含主 Bot：启航 Launch、启航 Launch AI 每个 Agent 最多 5 个；巡游 Cruise、巡游 Cruise AI 每个 Agent 最多 10 个。达到上限后“新建 Bot”按钮保持可见和原文案，但置灰、不可点击，hover 时提示原因。
 - 普通 Bot 删除仅删除该 Profile。主 Bot 删除代表销毁整个 Agent 实例，必须先删除同实例内所有其他 Bot；前后端都校验此条件。
 - 本期不实现更换主 Bot，也不实现“更换主 Bot 并删除原主 Bot”。
-- 不为 Bot/Profile 映射新增数据库表；列表和元信息从 Hermes 官方 `GET /api/profiles` 读取，刷新后以运行时真实 Profile 为准。套餐表仅新增独立的每 Agent Bot 数量权益字段。
+- 不迁移数据库、不新增 Bot 映射表或套餐配额字段；列表和元信息从 Hermes 官方 `GET /api/profiles` 读取，刷新后以运行时真实 Profile 为准。
 - AgentChat 暂时仅主 Bot 可用，普通 Bot 的对话入口禁用，不能回退到主 Bot 会话。
 
 ## 需求来源与调研结论
@@ -130,7 +130,7 @@
 - 后端 API 返回稳定 `profile_id`，从 Hermes Profile 投影，不新增数据库表。
 - 存量 Bot 映射根 Profile，公开选择器为 `main`。
 - 新建 Bot 创建命名 Hermes Profile，产品 Bot 由运行时 Profile 投影。
-- 套餐提供独立的“每 Agent Bot 数量”权益：启航 Launch/Launch AI 为 5，巡游 Cruise/Cruise AI 为 10；主 Bot 占用一个名额。
+- 前端按当前有效 Pass 的 `bundle_id` 应用 Bot 数量软限制：启航 Launch/Launch AI 为 5，巡游 Cruise/Cruise AI 为 10；主 Bot 占用一个名额。
 - 从主 Bot 或任一已有 Bot 克隆新 Bot。
 - 删除 Bot 时处理 Hermes Profile 生命周期，并提供失败补偿。
 - Bot 列表、当前 Bot 切换、Bot 基本信息编辑和默认 Bot 标识。
@@ -152,7 +152,7 @@
 - 将外部渠道的一个 Bot Token 同时绑定到多个 LightVela Bot。
 - 默认共享或复用其他 Bot 的通道凭据。
 - 让微信等实例级唯一通道同时连接多个 Bot。
-- 独立计费套餐或按 Bot 单独收费；本期只为现有四个套餐配置固定数量权益。
+- 后端套餐配额、独立计费套餐、按 Bot 收费或 Bot 数量售卖策略调整。
 - 国际站发布与同步。
 - Hermes 底层 Profile 语义变更。
 - 更换主 Bot，以及更换后删除原主 Bot。
@@ -233,11 +233,14 @@ Bot 名称输入框默认留空，使用“请输入 Bot 名称”占位提示�
 - 数量口径是“单个 Agent 内当前可枚举的 Hermes Profile 总数”，包含根 Profile 对应的主 Bot。
 - 启航 Launch、启航 Launch AI：每个 Agent 最多 5 个 Bot；已有主 Bot 时最多再创建 4 个普通 Bot。
 - 巡游 Cruise、巡游 Cruise AI：每个 Agent 最多 10 个 Bot；已有主 Bot 时最多再创建 9 个普通 Bot。
-- `agent_quota` 继续表示用户可拥有的 Agent 实例席位，不得复用为 Bot 数量上限；Bot 上限使用独立套餐权益字段。
-- 前端从当前有效 Pass 获取上限并提前禁用创建、显示当前套餐上限；前端判断不是安全边界，CTL 创建接口必须重新读取当前权益并校验。
-- 同一 Agent 的“读取 Profile 数量 + 创建 Profile”必须串行执行，避免并发请求同时越过上限。
+- `agent_quota` 继续表示用户可拥有的 Agent 实例席位，不得复用为 Bot 数量上限；本期不新增后端 Bot 配额字段。
+- 前端使用当前有效 Pass 已有的 `bundle_id` 固定映射上限；免费套餐、未知套餐或无有效 Pass 时按最多 1 个 Bot 处理。
+- 达到上限后，“新建 Bot”按钮保持可见并继续显示原文案，按钮置灰且不可点击；hover 时提示当前套餐上限、主 Bot 计数口径及删除或升级建议。
+- `provisioning` 和 `deleting` 状态暂时计入数量；创建或删除完成并刷新 Bot 列表后，前端重新计算按钮状态。
+- 创建确认动作再次使用当前前端 Bot 列表校验，避免弹窗打开后数量变化仍继续提交。
+- 当前限制只用于前端操作体验，不是安全或计费边界；直接调用创建接口、旧客户端或并发请求可能绕过，本期接受该限制。
 - 套餐从启航升配到巡游后上限变为 10。若未来套餐降级导致已有 Bot 数大于新上限，不删除、不隐藏已有 Bot，只阻止继续创建，直到数量低于当前上限。
-- Console `show()` 只改变入口可见性，不改变套餐权益，也不能绕过后端配额错误。
+- Console `show()` 只改变入口可见性，达到上限时按钮仍保持置灰；它不提供后端强制配额能力。
 
 ### 4. 克隆边界
 
@@ -428,7 +431,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 
 采用“单实例多 Profile”的方案：一个 LightVela 实例内可以创建多个产品 Bot，每个产品 Bot 对应一个 Hermes Profile。存量单 Bot 映射根 Profile `main`，新建 Bot 使用命名 `profile_id`。
 
-数量权益采用独立的 `bot_quota_per_agent` 套餐字段：启航 Launch/Launch AI 配置为 5，巡游 Cruise/Cruise AI 配置为 10。用户当前有效 Pass 将该权益下发给前端，CTL 在 Profile 创建临界区内按同一值做最终拦截。
+数量限制采用前端固定映射：读取当前有效 Pass 已有的 `bundle_id`，将启航 Launch/Launch AI 映射为 5，将巡游 Cruise/Cruise AI 映射为 10。该方案不新增数据库字段或后端拦截，直接调用接口仍可绕过。
 
 ### 选择理由
 
@@ -436,7 +439,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 - 用户不需要为了多个角色重复购买实例。
 - Profile 天然适合承载人设、Memory、Skills、模型和通道等隔离状态。
 - 存量用户可通过 `main` 保持原路径，不需要迁移数据。
-- 数量限制与 Agent 实例席位解耦，后续套餐调整无需改变 Hermes Profile 数据模型。
+- 数量限制保持为小范围前端逻辑，不改变 Agent 实例席位或 Hermes Profile 数据模型。
 - 为后续模板、团队共享和跨 Bot 能力留下稳定产品数据模型。
 
 ### 备选方案与取舍
@@ -467,7 +470,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 - 团队协作和 Bot 共享。
 - Bot 模板市场。
 - 跨 Bot 工作流编排。
-- 按 Bot 单独计费或新增 Bot 数量包；本期只落现有套餐固定上限。
+- 后端配额、按 Bot 单独计费或新增 Bot 数量包；本期只落现有套餐的前端固定上限。
 - 国际站发布与同步。
 
 ## 验收标准
@@ -487,13 +490,13 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 13. 所有 Profile 级命令均使用后端返回的 `profile_id`，前端不得由实例 `botId` 推导 Hermes Profile。
 14. 日志和埋点不记录密钥、Token、Memory、User Profile 或 SOUL 原文。
 15. 国内站灰度期间，创建、克隆、切换、删除、配置读取、配置写入、通道连接、home channel 解析、Skills 安装、自动任务创建和回滚路径均通过端到端验证。
-16. 当前发布的已有 Agent 页面默认不展示“新建 Bot”入口；执行 `show()` 后在功能开关开启且未达数量限制时显示，刷新后重新隐藏。存量 Bot 切换与删除、无实例用户首次创建 Agent 不受此入口隐藏影响。
+16. 当前发布的已有 Agent 页面默认不展示“新建 Bot”入口；执行 `show()` 后在功能开关开启时显示，刷新后重新隐藏。达到数量上限时按钮保持“新建 Bot”文案和可见性，但置灰、不可点击，并在 hover 时提示原因。存量 Bot 切换与删除、无实例用户首次创建 Agent 不受此入口隐藏影响。
 17. Bot 名称默认留空并显示“请输入 Bot 名称”，最多 60 个 Unicode 码点；首次创建只显示名称，追加创建不显示用途说明、高级设置或初始人设，主 Bot 创建来源选项不重复。
 18. 普通 Bot 的 AgentChat 入口禁用；Bot 列表刷新后仍以 Hermes 官方接口返回的 Profile 为准，无需数据库迁移。
 19. 启航 Launch、启航 Launch AI 每个 Agent 最多拥有 5 个 Bot，巡游 Cruise、巡游 Cruise AI 每个 Agent 最多拥有 10 个 Bot；主 Bot 计入数量。
-20. 达到套餐上限后，前端创建入口不可用并展示对应上限；即使绕过前端或使用 Console `show()`，CTL 创建接口也返回明确的配额错误且不产生新 Profile。
-21. 同一 Agent 收到并发创建请求时，“计数 + 创建”串行执行，最终 Profile 总数不得超过当前套餐上限。
-22. 套餐升配后按新上限允许继续创建；已有数量超过当前上限时保留全部 Bot 的查看、切换、配置和删除能力，只禁止继续创建。
+20. 达到套餐上限后，前端“新建 Bot”按钮置灰、不可点击，hover 提示当前上限；创建确认动作也再次做前端数量校验。
+21. 该数量限制不修改后台，直接调用创建接口、旧客户端或并发请求可能绕过；本期不承诺后端强一致。
+22. 套餐升配并刷新当前 Pass 后按新上限允许继续创建；已有数量超过当前上限时保留全部 Bot 的查看、切换、配置和删除能力，只在前端禁止继续创建。
 
 ## 发布与观测
 

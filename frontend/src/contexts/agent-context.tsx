@@ -152,9 +152,17 @@ const defaultPlan: OpenClawUser["plan"] = {
   maxBots: 1,
 };
 
-export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bot_quota_per_agent"> | null): number => {
-  const quota = pass?.bot_quota_per_agent;
-  return typeof quota === "number" && Number.isInteger(quota) && quota >= 1 ? quota : 1;
+export const resolveBotQuotaPerAgent = (pass: Pick<Pass, "bundle_id"> | null): number => {
+  switch (pass?.bundle_id) {
+    case "bundle_launch_01":
+    case "bundle_launch_ai_01":
+      return 5;
+    case "bundle_cruise_01":
+    case "bundle_cruise_ai_01":
+      return 10;
+    default:
+      return 1;
+  }
 };
 
 const defaultUser: OpenClawUser = {

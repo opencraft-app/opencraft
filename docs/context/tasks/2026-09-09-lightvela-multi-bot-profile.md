@@ -1,7 +1,7 @@
 ---
 id: task-lightvela-multi-bot-profile-2026-09-09
 type: task
-scope: 国内站单个 LightVela Agent 内多 Bot 与 Hermes Profile 产品化，以及套餐 Bot 数量权益。
+scope: 国内站单个 LightVela Agent 内多 Bot 与 Hermes Profile 产品化，以及按套餐区分的前端 Bot 数量软限制。
 triggers: ["multi bot", "Hermes Profile", "Bot quota"]
 owner: wisp/mono2-maintainers
 authority: primary
@@ -10,7 +10,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-11
 review_due: 2026-12-10
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -30,11 +30,12 @@ derived: false
 - 用户截图反馈（2026-09-10）：新版控制台默认 Bot 不得展示 Hermes 内部 ID `default`，无自定义名称时继续显示本地化的“我的 Hermes”。
 - 用户截图反馈（2026-09-10）：默认 Bot 的定时任务加载失败，原生 Hermes CLI 报错 `Profile 'main' does not exist`。
 - 用户确认（2026-09-10）：启航 Launch/Launch AI 每个 Agent 最多 5 个 Bot，巡游 Cruise/Cruise AI 最多 10 个，主 Bot 计入数量。
-- 核心要求：Hermes Profile 仍是 Bot 唯一事实来源，不新增 Bot 映射表；套餐表增加独立 Bot 数量权益；默认 Bot 使用 `main`；Profile 级命令显式路由；微信同实例唯一占用。
+- 用户确认（2026-09-11）：数量限制只做前端软限制，禁止修改后台；达到上限时“新建 Bot”按钮保持原文案和可见性，置灰、不可点击，hover 时提示原因。
+- 用户确认（2026-09-11）：Launch 达到 5 个 Bot 上限时提示“当前套餐最多可创建 5 个 Bot（含主 Bot）。可升级至巡游套餐，或删除已有 Bot 后再创建。”
+- 核心要求：Hermes Profile 仍是 Bot 唯一事实来源，不新增 Bot 映射表；前端按现有 Pass 的 `bundle_id` 限制 Bot 数量；默认 Bot 使用 `main`；Profile 级命令显式路由；微信同实例唯一占用。
 
 ## interface_refs / data_structure_refs
 - `ctl/pkg/transport/instance.go`：现有实例 API contract。
-- `ctl/pkg/model/bundle/entity.go`、`ctl/pkg/transport/pass.go`：每 Agent Bot 套餐权益及用户 Pass contract。
 - `ctl/main/api/server.go`：`/v1/instances` 路由入口。
 - `ctl/pkg/model/instance/entity.go`：实例归属真源；多 Bot 不新增模型表。
 - `frontend/src/domain/types.ts`、`frontend/src/repositories/types.ts`：前端 Bot repository contract。
@@ -49,7 +50,7 @@ derived: false
 ## acceptance
 - 存量实例读取 Bot 列表时直接投影 Hermes `default` 为不可删除的 `profile_id=main` 默认 Bot。
 - 普通 Bot 可创建、克隆、改名和删除；失败直接返回且不产生数据库孤儿记录。
-- 启航 Launch/Launch AI 每 Agent 最多 5 个 Bot，巡游 Cruise/Cruise AI 最多 10 个；主 Bot 计入数量，CTL 在并发创建时做权威拦截。
+- 启航 Launch/Launch AI 每 Agent 最多 5 个 Bot，巡游 Cruise/Cruise AI 最多 10 个；主 Bot 计入数量，当前阶段仅由前端限制创建入口。
 - `/agents` 和分区页切换 Bot 后保留 section，并刷新 Profile 级数据。
 - Profile 级 Hermes 命令显式使用后端 `profile_id`；实例级命令不追加 Profile 参数。
 - 微信同实例只能有一个占用 Bot；其他 Bot 不可覆盖或复用。
@@ -61,10 +62,6 @@ derived: false
 ## affected_paths
 - `ctl/pkg/transport/instance.go`
 - `ctl/pkg/instance/`
-- `ctl/pkg/model/bundle/`
-- `ctl/pkg/logic/bundle/`
-- `ctl/pkg/logic/pass/`
-- `ctl/migrations/000031_add_bundle_bot_quota_per_agent.*.sql`
 - `ctl/main/api/`
 - `service-gateway/`
 - `frontend/src/domain/`
@@ -87,7 +84,7 @@ derived: false
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
 | `docs/context/domains/agent-gateway-runtime.md@2.0.0` | Profile、渠道和路由边界 | 区分 CTL 元数据与运行时真源 |
-| `docs/context/domains/subscription-entitlements.md@2.0.0` | 套餐与 Pass 权益边界 | 保持后端为配额真源，不用前端单独定义权益 |
+| `docs/context/domains/subscription-entitlements.md@2.0.0` | 套餐与 Pass 权益边界 | 明确本期是基于现有 `bundle_id` 的前端软限制，不新增后端权益 contract |
 | `docs/context/project/services/ctl.md@2.1.0` | CTL 服务责任 | 复用实例归属与 API 约束 |
 | `ctl/AGENTS.md` | CTL 局部规则 | 覆盖直连与公共路由测试 |
 | `frontend/AGENTS.md` | 前端局部规则 | 类型、测试和视觉验证门禁 |
@@ -95,6 +92,8 @@ derived: false
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 前端相邻约束 | 检查 OpenSpec、测试和国内站边界 |
 | `docs/context/project/services/frontend.md@2.1.0` | 前端服务边界 | 选择聚焦测试与视觉验证 |
 | `docs/context/domains/site-environment-routing.md@2.0.0` | 双站边界 | 确认本次只调整共用展示，不改变区域门禁 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@2.0.0` | MR 交付与授权边界 | 复用现有 MR !3894，并在推送后核验远端分支与 MR 状态 |
+| `docs/context/flows/change-delivery.md@2.1.0` | 变更交付流程 | 同步 Task Pack、正式 PRD 与验证证据 |
 
 ## evidence
 - `python3 .agents/context/scripts/validate_context.py --route "frontend /agents multi bot profile switching channel home channel domestic"` 命中 `agent-gateway-runtime`。
@@ -123,6 +122,8 @@ derived: false
 - 国内站本地预览 `/agents/channels/` 已实测：钉钉卡片显示浅蓝圆角底；24px 方案因原 SVG viewBox 留白导致主体过小，最终保留原 52px SVG 补偿尺寸。预览中的 Hermes 配置读取失败来自未连接真实实例，与本次样式无关。
 - `validate_documentation.py`、显式变更集 `validate_change_impact.py` 和 `git diff --check` 通过；仓库级 `validate_context.py --build-catalog` 仍被分支既有旧 Task Pack 缺少 frontmatter 等基线问题阻塞，本次未扩大范围清理。
 - 完整变更集执行 `validate_change_impact.py` 通过，命中 `agent-gateway-runtime`、`site-environment-routing`、`release-gitops`，高风险边界需 maintainer review；`git diff --check` 通过。
+- 前端软限制收敛后精确运行 4 个 Vitest 文件，59/59 通过；`pnpm check` 通过，TypeScript diagnostics 为 174 current / 276 baseline / 0 new / 102 resolved。
+- 以 MR 当前基线 `c8463caad5bb6b5e4b61748928450536a1eb7618` 检查最终差异，`ctl/` 无变更；Launch 上限提示已使用用户确认的“升级至巡游套餐”文案。
 
 ## risks
 - Profile 创建失败可能留下不完整目录；CTL 会尽力执行 Profile 删除补偿，最终列表只读 Hermes 真实状态。
@@ -142,8 +143,8 @@ derived: false
 ## decisions
 - CTL 只拥有实例归属校验和稳定 HTTP contract；Hermes Profile 目录及 `profile.yaml` 是 Bot 元数据与运行时状态真源。
 - 默认 Bot 采用公开选择器 `main`；命名 Profile ID 由后端生成且不可变，同时作为命名 Bot 的公开 `bot_id`。
-- Bot 上限作为独立 `bot_quota_per_agent` 套餐权益：Launch/Launch AI=5，Cruise/Cruise AI=10；主 Bot 计入数量，`agent_quota` 继续只表示 Agent 实例席位。
-- 前端从用户 Pass 获得上限并提前提示；CTL 在 Agent 运行时文件锁内串行“Profile 计数 + 创建”，作为并发场景的最终执行边界。
+- 前端按用户当前有效 Pass 的 `bundle_id` 固定映射 Bot 上限：Launch/Launch AI=5，Cruise/Cruise AI=10；主 Bot 计入数量，免费、未知或无 Pass 时按 1 处理。
+- 达到上限时“新建 Bot”按钮保持可见且文案不变，但置灰、不可点击，并在 hover 时说明上限；本期不新增数据库字段或 CTL 校验，直接调用接口仍可绕过。
 - 多 Bot API 归属于 `/v1/instances/{instance_id}/bots`，保持实例作用域显式。
 - 钉钉图标沿用既有通道图标容器和品牌色 8% 弱背景规则，不新增独立组件或样式层。
 - `main` 只作为 LightVela 产品/API 的默认 Bot 标识；原生 Hermes 根 Profile 标识为 `default`，不得要求用户创建命名 Profile `main`。
@@ -156,5 +157,5 @@ derived: false
 
 ## handoff
 - FE-AI verify 已通过；archive 仍等待用户另行明确授权。
-- 当前步骤：已移除 Bot/Channel Binding 数据库 migration 与 DAO；前端、CTL、service-gateway、文档门禁与 5174 浏览器回归完成。
-- 用户已授权 commit、push 和创建 MR；MR !3801 已创建并同步最新 `master`，尚未合并、发布或执行生产操作。
+- 当前步骤：数量限制已收敛为前端软限制，最终 MR 差异不包含后台配额实现。
+- 当前交付目标为既有 MR !3894；本次用户已授权 commit 和 push，但未授权合并、发布或生产操作。

@@ -55,44 +55,6 @@ func (l *logic) requireActivePass(ctx pctx.Context) error {
 	return nil
 }
 
-func (l *logic) instanceBotQuota(ctx pctx.Context) (int64, error) {
-	// Focused unit-test logic instances may omit infrastructure dependencies.
-	// NewLogic always injects both production DAOs.
-	if l.passLister == nil || l.bundleDao == nil {
-		return 0, nil
-	}
-	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
-		return 0, errcode.ErrInstanceMissingUserID
-	}
-
-	passes, err := l.passLister.ListByUserID(ctx.GetUserID())
-	if err != nil {
-		return 0, errcode.Wrap(errcode.ErrInternalServer, "resolve instance bot quota: list passes: %v", err)
-	}
-
-	var quota int64
-	for _, pass := range passes {
-		if pass == nil || pass.Status != modelpass.StatusActive {
-			continue
-		}
-		bundle, getErr := l.bundleDao.GetByBundleID(pass.BundleID)
-		if getErr != nil {
-			return 0, errcode.Wrap(errcode.ErrInternalServer, "resolve instance bot quota: get bundle %s: %v", pass.BundleID, getErr)
-		}
-		candidate := bundle.BotQuotaPerAgent
-		if candidate < 1 {
-			candidate = 1
-		}
-		if candidate > quota {
-			quota = candidate
-		}
-	}
-	if quota == 0 {
-		return 0, errcode.ErrInstanceNoActivePass
-	}
-	return quota, nil
-}
-
 func activePassGuardError(operation string, err error) error {
 	if err == nil {
 		return nil

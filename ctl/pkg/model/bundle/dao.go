@@ -75,7 +75,6 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnTagline,
 			ColumnPromotion,
 			ColumnAgentQuota,
-			ColumnBotQuotaPerAgent,
 			ColumnCredit,
 			ColumnTimeSpan,
 			ColumnTimeUnit,

@@ -20,7 +20,7 @@ type stubBundleLogic struct {
 	describeErr    error
 }
 
-func (s *stubBundleLogic) ImportBundle(string, string, string, string, string, string, string, int64, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
+func (s *stubBundleLogic) ImportBundle(string, string, string, string, string, string, string, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
 	panic("stubBundleLogic.ImportBundle: not implemented")
 }
 func (s *stubBundleLogic) GetBundles() ([]*bundlelogic.BundleDetail, error) {
@@ -34,26 +34,6 @@ func (s *stubBundleLogic) DescribeBundles() ([]*bundlelogic.BundleDetail, error)
 }
 func (s *stubBundleLogic) GetBundleByID(string) (*bundlelogic.BundleDetail, error) {
 	panic("stubBundleLogic.GetBundleByID: not implemented")
-}
-
-func TestDefaultBotQuotaPerAgent(t *testing.T) {
-	for _, tc := range []struct {
-		bundleID string
-		want     int64
-	}{
-		{bundleID: "bundle_launch_01", want: 5},
-		{bundleID: "bundle_launch_ai_01", want: 5},
-		{bundleID: "bundle_cruise_01", want: 10},
-		{bundleID: "bundle_cruise_ai_01", want: 10},
-		{bundleID: "bundle_free_trial_01", want: 1},
-		{bundleID: "bundle_unknown", want: 1},
-	} {
-		t.Run(tc.bundleID, func(t *testing.T) {
-			if got := defaultBotQuotaPerAgent(tc.bundleID); got != tc.want {
-				t.Fatalf("defaultBotQuotaPerAgent(%q) = %d, want %d", tc.bundleID, got, tc.want)
-			}
-		})
-	}
 }
 
 // stubTradeAdapter 仅实现 InquiryBatch；其它方法被调到时直接 panic（防止误用）。
@@ -186,7 +166,6 @@ func sampleBundleDetails() []*bundlelogic.BundleDetail {
 			Description:      `[{"Key":"agent_quota","Value":"3"}]`,
 			BundleState:      "ONLINE",
 			AgentQuota:       3,
-			BotQuotaPerAgent: 5,
 			Credit:           1000,
 			BundleSalesState: "AVAILABLE",
 		},
@@ -196,20 +175,9 @@ func sampleBundleDetails() []*bundlelogic.BundleDetail {
 			Description:      `[{"Key":"agent_quota","Value":"10"}]`,
 			BundleState:      "ONLINE",
 			AgentQuota:       10,
-			BotQuotaPerAgent: 10,
 			Credit:           5000,
 			BundleSalesState: "AVAILABLE",
 		},
-	}
-}
-
-func TestDetailToUserResponseIncludesBotQuotaPerAgent(t *testing.T) {
-	response := detailToUserResponse(&bundlelogic.BundleDetail{
-		BundleID:         "bundle_cruise_ai_01",
-		BotQuotaPerAgent: 10,
-	}, nil)
-	if response.BotQuotaPerAgent != 10 {
-		t.Fatalf("BotQuotaPerAgent = %d, want 10", response.BotQuotaPerAgent)
 	}
 }
 

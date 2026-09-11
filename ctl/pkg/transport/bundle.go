@@ -47,13 +47,12 @@ type ImportBundleRequest struct {
 	// Tagline 一句话卖点（可空）。
 	Tagline string `json:"tagline,omitempty"`
 	// Promotion 促销角标（可空），nil 表示无促销。
-	Promotion        *DisplayPromotion `json:"promotion,omitempty"`
-	AgentQuota       int64             `json:"agent_quota"`
-	BotQuotaPerAgent *int64            `json:"bot_quota_per_agent,omitempty"`
-	Credit           int64             `json:"credit"`
-	TimeSpan         int               `json:"time_span"`
-	TimeUnit         string            `json:"time_unit"`
-	AiGatewayPlanID  string            `json:"ai_gateway_plan_id"`
+	Promotion  *DisplayPromotion `json:"promotion,omitempty"`
+	AgentQuota int64             `json:"agent_quota"`
+	Credit          int64            `json:"credit"`
+	TimeSpan        int              `json:"time_span"`
+	TimeUnit        string           `json:"time_unit"`
+	AiGatewayPlanID string           `json:"ai_gateway_plan_id"`
 	// InstanceSpecID 实例规格 ID（设计稿 Q4=a / Q-NAMING-1=a）。
 	// 空字符串 = 兼容期 fallback 到 spec-2c4g50g；非空需在 instancespec.KnownSpecs 字典中。
 	InstanceSpecID        string `json:"instance_spec_id,omitempty"`
@@ -80,14 +79,13 @@ type ModifyBundlesRequest struct {
 	// Tagline 一句话卖点，nil = 不修改。
 	Tagline *string `json:"tagline,omitempty"`
 	// Promotion 促销角标 raw JSON string（对象），nil = 不修改；传 "null" / "{}" 可清空。
-	Promotion        *string `json:"promotion,omitempty"`
-	BundleState      *string `json:"bundle_state,omitempty"`
-	AgentQuota       *int64  `json:"agent_quota,omitempty"`
-	BotQuotaPerAgent *int64  `json:"bot_quota_per_agent,omitempty"`
-	Credit           *int64  `json:"credit,omitempty"`
-	TimeSpan         *int    `json:"time_span,omitempty"`
-	TimeUnit         *string `json:"time_unit,omitempty"`
-	AiGatewayPlanID  *string `json:"ai_gateway_plan_id,omitempty"`
+	Promotion   *string `json:"promotion,omitempty"`
+	BundleState *string `json:"bundle_state,omitempty"`
+	AgentQuota      *int64  `json:"agent_quota,omitempty"`
+	Credit          *int64  `json:"credit,omitempty"`
+	TimeSpan        *int    `json:"time_span,omitempty"`
+	TimeUnit        *string `json:"time_unit,omitempty"`
+	AiGatewayPlanID *string `json:"ai_gateway_plan_id,omitempty"`
 	// InstanceSpecID 实例规格 ID（设计稿 Q4=a / Q-NAMING-1=a）。
 	// nil = 不修改；非 nil 时 logic 层校验值在 instancespec.KnownSpecs 字典中。
 	InstanceSpecID        *string `json:"instance_spec_id,omitempty"`
@@ -101,18 +99,17 @@ type BundleResponse struct {
 	BundleID   string `json:"bundle_id"`
 	BundleName string `json:"bundle_name"`
 	// BundleType 套餐类型：free / general / ai。
-	BundleType       string            `json:"bundle_type"`
-	Description      interface{}       `json:"description"`
-	Features         []DisplayFeature  `json:"features"`
-	Tagline          string            `json:"tagline"`
-	Promotion        *DisplayPromotion `json:"promotion,omitempty"`
-	BundleState      string            `json:"bundle_state"`
-	AgentQuota       int64             `json:"agent_quota"`
-	BotQuotaPerAgent int64             `json:"bot_quota_per_agent"`
-	Credit           int64             `json:"credit"`
-	TimeSpan         int               `json:"time_span"`
-	TimeUnit         string            `json:"time_unit"`
-	AiGatewayPlanID  string            `json:"ai_gateway_plan_id,omitempty"`
+	BundleType      string            `json:"bundle_type"`
+	Description     interface{}       `json:"description"`
+	Features        []DisplayFeature  `json:"features"`
+	Tagline         string            `json:"tagline"`
+	Promotion       *DisplayPromotion `json:"promotion,omitempty"`
+	BundleState     string            `json:"bundle_state"`
+	AgentQuota      int64             `json:"agent_quota"`
+	Credit          int64             `json:"credit"`
+	TimeSpan        int               `json:"time_span"`
+	TimeUnit        string      `json:"time_unit"`
+	AiGatewayPlanID string      `json:"ai_gateway_plan_id,omitempty"`
 	// === bundle-instance-spec 设计稿 Q5=b / Q-FRONT-1=b：admin-gateway 出参暴露完整规格 ===
 	InstanceSpecID        string    `json:"instance_spec_id,omitempty"`
 	InstanceSpecDisplay   string    `json:"instance_spec_display,omitempty"`
@@ -146,7 +143,6 @@ type UserBundleResponse struct {
 	Description      interface{} `json:"description"`
 	BundleState      string      `json:"bundle_state"`
 	AgentQuota       int64       `json:"agent_quota"`
-	BotQuotaPerAgent int64       `json:"bot_quota_per_agent"`
 	Credit           int64       `json:"credit"`
 	BundleSalesState string      `json:"bundle_sales_state"`
 

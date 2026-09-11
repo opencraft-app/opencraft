@@ -13,12 +13,12 @@ func TestUpsertDoesNotClearLegacyPlanVariants(t *testing.T) {
 	const legacy = `[{"plan_id":"legacy-14d"}]`
 
 	if err := dao.Upsert(&bundle.Entity{
-		BundleID: "bundle-1", BundleName: "old", BotQuotaPerAgent: 5, AiGatewayPlans: legacy,
+		BundleID: "bundle-1", BundleName: "old", AiGatewayPlans: legacy,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := dao.Upsert(&bundle.Entity{
-		BundleID: "bundle-1", BundleName: "new", BotQuotaPerAgent: 10,
+		BundleID: "bundle-1", BundleName: "new",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +28,5 @@ func TestUpsertDoesNotClearLegacyPlanVariants(t *testing.T) {
 	}
 	if got.AiGatewayPlans != legacy {
 		t.Fatalf("legacy variants were cleared: got=%q want=%q", got.AiGatewayPlans, legacy)
-	}
-	if got.BotQuotaPerAgent != 10 {
-		t.Fatalf("BotQuotaPerAgent = %d, want 10", got.BotQuotaPerAgent)
 	}
 }

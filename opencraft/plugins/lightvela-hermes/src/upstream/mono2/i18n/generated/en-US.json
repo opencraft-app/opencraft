@@ -1944,7 +1944,6 @@
   "k_b2aca746": "Fallback model",
   "k_b2d2d4e6": "Please select a model service provider",
   "k_b2e33922": "Return here when finished. The result will update automatically",
-  "k_b2e73189": "This plan has reached its Bot limit. Delete an existing Bot or upgrade your plan and try again.",
   "k_b2ffc63a": "Please enter a custom model model.name",
   "k_b32cfeaa": "Last updated: {{time}}",
   "k_b351074f": "Could not confirm that the current credential can access this model. Check the configuration and try again.",

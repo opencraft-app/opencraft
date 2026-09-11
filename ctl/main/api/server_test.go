@@ -762,29 +762,6 @@ func TestCreateInstanceBotForwardsCloneSource(t *testing.T) {
 	}
 }
 
-func TestCreateInstanceBotReturnsQuotaError(t *testing.T) {
-	t.Setenv("MULTI_BOT_ENABLED", "true")
-	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/bots", strings.NewReader(`{"name":"Ops Bot","create_mode":"blank"}`))
-	req.Header.Set(headerUserID, "user-1")
-	rec := httptest.NewRecorder()
-
-	handler := &instanceHandler{logic: &stubLogic{createInstanceBotErr: errcode.ErrInstanceBotQuotaExceeded}}
-	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
-	}
-	var payload struct {
-		Code string `json:"code"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if payload.Code != "INSTANCE_BOT_QUOTA_EXCEEDED" {
-		t.Fatalf("unexpected error payload: %s", rec.Body.String())
-	}
-}
-
 func TestCreateInstanceBotHonorsBackendFeatureFlag(t *testing.T) {
 	t.Setenv("MULTI_BOT_ENABLED", "false")
 	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/bots", strings.NewReader(`{"name":"Ops Bot","create_mode":"blank"}`))

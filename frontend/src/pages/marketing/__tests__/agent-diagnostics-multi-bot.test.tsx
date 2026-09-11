@@ -219,9 +219,21 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 
-  it.each(["capacity", "feature flag"])("does not bypass the %s gate with show()", (gate) => {
-    maxBots = gate === "capacity" ? 1 : 5;
-    multiBotEnabled = gate !== "feature flag";
+  it("keeps the create button visible but disabled with a quota tooltip at capacity", () => {
+    maxBots = 1;
+    render(page("ins-1"));
+    revealHiddenTools();
+    const createButton = screen.getByRole("button", { name: "新建 Bot" });
+    expect(createButton).toBeDisabled();
+    expect(createButton).toHaveTextContent("新建 Bot");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+    );
+  });
+
+  it("does not bypass the feature flag with show()", () => {
+    maxBots = 5;
+    multiBotEnabled = false;
     render(page("ins-1"));
     revealHiddenTools();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();

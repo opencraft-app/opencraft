@@ -4,10 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,7 +13,6 @@ import (
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	modelinstance "ctl/pkg/model/instance"
-	"ctl/pkg/transport"
 
 	"go.uber.org/zap"
 )
@@ -184,96 +181,6 @@ esac
 				t.Fatalf("unexpected unset failure: %v", err)
 			}
 		})
-	}
-}
-
-func TestBuildHermesProfileCreateWithQuotaCommandLocksCountAndCreate(t *testing.T) {
-	command := buildHermesProfileCreateWithQuotaCommand(5, "profile-2", "", "# New Bot", "New Bot", "")
-	for _, check := range []string{
-		"profile-create.lock",
-		"list_profiles",
-		hermesProfileQuotaExceededMark,
-		"'5'",
-	} {
-		if !strings.Contains(command, check) {
-			t.Fatalf("quota create command missing %q: %s", check, command)
-		}
-	}
-}
-
-func TestHermesProfileCreateQuotaScriptSerializesConcurrentCreates(t *testing.T) {
-	moduleRoot := t.TempDir()
-	moduleDir := filepath.Join(moduleRoot, "hermes_cli")
-	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(moduleDir, "__init__.py"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	profilesModule := `import os
-from pathlib import Path
-
-def list_profiles():
-    home = Path(os.environ["HERMES_HOME"])
-    named = home / "profiles"
-    profiles = ["default"]
-    if named.is_dir():
-        profiles.extend(entry.name for entry in named.iterdir() if entry.is_dir())
-    return profiles
-`
-	if err := os.WriteFile(filepath.Join(moduleDir, "profiles.py"), []byte(profilesModule), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	home := t.TempDir()
-	type result struct {
-		err    error
-		output string
-	}
-	results := make(chan result, 2)
-	for _, profileID := range []string{"bot-a", "bot-b"} {
-		profileID := profileID
-		go func() {
-			profileDir := filepath.Join(home, "profiles", profileID)
-			payload := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("mkdir -p %s", shellQuote(profileDir))))
-			command := exec.Command("python3", "-c", runHermesProfileCreateWithQuotaScript, "2", payload, hermesProfileQuotaExceededMark)
-			command.Env = append(os.Environ(), "HERMES_HOME="+home, "PYTHONPATH="+moduleRoot)
-			output, err := command.CombinedOutput()
-			results <- result{err: err, output: string(output)}
-		}()
-	}
-
-	succeeded := 0
-	quotaRejected := 0
-	for range 2 {
-		result := <-results
-		if result.err == nil {
-			succeeded++
-			continue
-		}
-		if strings.Contains(result.output, hermesProfileQuotaExceededMark) {
-			quotaRejected++
-			continue
-		}
-		t.Fatalf("unexpected concurrent create failure: %v output=%s", result.err, result.output)
-	}
-	if succeeded != 1 || quotaRejected != 1 {
-		t.Fatalf("concurrent results: succeeded=%d quotaRejected=%d", succeeded, quotaRejected)
-	}
-}
-
-func TestIsHermesProfileQuotaExceededErrorReadsDebugOutput(t *testing.T) {
-	err := &debugExecError{
-		cause: errors.New("command failed"),
-		detail: &transport.ExecDebugCommandResponse{
-			Stdout: hermesProfileQuotaExceededMark,
-		},
-	}
-	if !isHermesProfileQuotaExceededError(err) {
-		t.Fatal("expected quota marker to map to the instance Bot quota error")
-	}
-	if isHermesProfileQuotaExceededError(errors.New("command failed")) {
-		t.Fatal("unexpected quota match without a debug command marker")
 	}
 }
 

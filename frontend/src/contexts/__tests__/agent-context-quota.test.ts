@@ -4,16 +4,16 @@ import { resolveBotQuotaPerAgent } from "../agent-context";
 
 describe("resolveBotQuotaPerAgent", () => {
   it.each([
-    ["Launch", 5],
-    ["Launch AI", 5],
-    ["Cruise", 10],
-    ["Cruise AI", 10],
-  ])("uses the %s Pass entitlement", (_plan, quota) => {
-    expect(resolveBotQuotaPerAgent({ bot_quota_per_agent: quota })).toBe(quota);
+    ["bundle_launch_01", 5],
+    ["bundle_launch_ai_01", 5],
+    ["bundle_cruise_01", 10],
+    ["bundle_cruise_ai_01", 10],
+  ])("maps the %s Pass to its frontend Bot limit", (bundleId, quota) => {
+    expect(resolveBotQuotaPerAgent({ bundle_id: bundleId })).toBe(quota);
   });
 
-  it.each([null, {}, { bot_quota_per_agent: 0 }, { bot_quota_per_agent: -1 }, { bot_quota_per_agent: 1.5 }])(
-    "falls back to one Bot for a missing or invalid entitlement",
+  it.each([null, { bundle_id: "" }, { bundle_id: "bundle_free_7d" }, { bundle_id: "bundle_unknown" }])(
+    "falls back to one Bot for a missing, free, or unknown Pass",
     (pass) => {
       expect(resolveBotQuotaPerAgent(pass)).toBe(1);
     },
