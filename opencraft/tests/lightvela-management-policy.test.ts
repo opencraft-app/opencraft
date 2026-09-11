@@ -159,6 +159,57 @@ test("embedded Hermes portals consume the host-owned presentation planes", () =>
   assert.doesNotMatch(automationsSource, /lv-dialog-backdrop[^"\n]*z-\[(?:200|210)\]/);
 });
 
+test("model Select and Option primitives consume the host token contract", () => {
+  const css = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/agent-console.css", import.meta.url),
+    "utf8",
+  );
+  const selectSource = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/select.tsx", import.meta.url),
+    "utf8",
+  );
+  const optionSource = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/components/ui/option-group.tsx", import.meta.url),
+    "utf8",
+  );
+  const modelSource = readFileSync(
+    new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-model-config/agent-model-config-panel.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(css, /--lv-option-background-selected:\s*var\(--color-background-button-secondary\)/);
+  assert.match(css, /--lv-option-border-selected:\s*var\(--color-border-focus\)/);
+  assert.match(css, /\.lightvela-agent-console-portal\.lv-select-content/);
+  assert.match(css, /\.lightvela-agent-console \.lv-option\[data-state="checked"\]/);
+  assert.match(selectSource, /lv-select-trigger/);
+  assert.match(selectSource, /lv-select-content/);
+  assert.match(selectSource, /lv-select-item/);
+  assert.doesNotMatch(selectSource, /\bz-50\b|bg-white|bg-black/u);
+  assert.match(optionSource, /className="lv-option"/);
+  assert.match(optionSource, /className="lv-radio"/);
+  assert.match(modelSource, /<OptionGroup<ConfigurePurpose>/);
+  assert.match(modelSource, /const MODEL_CONTROL_CLASS = "lv-model-control h-12"/);
+  assert.match(modelSource, /const MODEL_RADIO_CLASS = "lv-radio shrink-0"/);
+});
+
+test("custom provider append keeps shared model controls and host option styling", () => {
+  const modelRoot = new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-model-config/", import.meta.url);
+  const panel = readFileSync(new URL("agent-model-config-panel.tsx", modelRoot), "utf8");
+  const form = readFileSync(new URL("configured-provider-model-form.tsx", modelRoot), "utf8");
+  const controls = readFileSync(new URL("model-form-controls.tsx", modelRoot), "utf8");
+
+  assert.match(panel, /<ConfiguredProviderModelForm/);
+  assert.match(panel, /<OptionGroup<ConfigurePurpose>/);
+  assert.match(panel, /canAppendToProviderGroup/);
+  assert.doesNotMatch(panel, /^<{7}|^={7}|^>{7}/m);
+  assert.match(form, /from "\.\/model-form-controls"/);
+  assert.match(form, /<Select/);
+  assert.match(form, /检测模型状态/);
+  assert.match(controls, /MODEL_CONTROL_CLASS = "lv-model-control h-12"/);
+  assert.match(controls, /MODEL_SELECT_CONTENT_CLASS = "lv-model-select-content /);
+  assert.match(controls, /sm:grid-cols-\[minmax\(0,1fr\)_max-content\]/);
+});
+
 test("scheduled tasks delegates controls and surfaces to the host theme", () => {
   const source = readFileSync(
     new URL("../plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-automations-panel.tsx", import.meta.url),

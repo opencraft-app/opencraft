@@ -1,7 +1,7 @@
 ---
 id: task-opencraft-monorepo-migration-2026-09-10
 type: task
-scope: 以保留历史的一次性 subtree 将 OpenCraft 迁入 mono2，并建立唯一真源、CI、Catalog 与共享前端边界。
+scope: 以保留历史的一次性 subtree 将 OpenCraft 迁入 mono2，并建立唯一真源、Catalog 与共享前端边界。
 triggers: ["opencraft migration", "opencraft subtree", "monorepo migration"]
 owner: wisp/mono2-maintainers
 authority: primary
@@ -9,16 +9,16 @@ source_of_truth:
   - docs/context/tasks/opencraft-monorepo-migration.md
   - opencraft/MONO2_MIGRATION.md
 status: active
-reviewed_at: 2026-09-10
+reviewed_at: 2026-09-11
 review_due: 2026-12-09
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
 
 ## goal
 
-将 OpenCraft 工作台仓库以保留历史的一次性 subtree 导入 `mono2/opencraft/`，并使 mono2 成为后续唯一代码真源；建立独立的服务目录、CI 边界和与 `frontend/` 的显式共享边界。
+将 OpenCraft 工作台仓库以保留历史的一次性 subtree 导入 `mono2/opencraft/`，并使 mono2 成为后续唯一代码真源；建立独立的服务目录和与 `frontend/` 的显式共享边界。
 
 ## non_goals
 
@@ -37,9 +37,8 @@ derived: false
 - `opencraft/package.json`：OpenCraft npm workspace 与本地门禁入口。
 - `opencraft/scripts/sync-mono2-agent-console.mjs`：当前 `frontend/` Agent Console 依赖闭包；迁入后必须使用 monorepo 相对路径，禁止机器绝对路径成为接口。
 - `frontend/src/pages/marketing/**`：当前被 OpenCraft 消费的 Agent Console 上游实现。
-- `.ci/opencraft.yml`：OpenCraft 独立 CI 所有权；不得触发 frontend 发布。
 - `docs/engineering/catalog/services.yaml` 与 `opencraft/catalog-info.yaml`：服务登记真源。
-- 不变量：OpenCraft 构建失败不得触发 `frontend`、GitOps 或生产发布；共享源码只能由显式脚本或后续 workspace 包边界消费。
+- 不变量：OpenCraft 不注册 mono2 MR 占位检查或专用 CI 流水线；共享源码只能由显式脚本或后续 workspace 包边界消费，本地完整验证仍由 `npm run gate` 提供。
 
 ## history_context
 
@@ -50,7 +49,7 @@ derived: false
 ## acceptance
 
 - `git log -- opencraft` 能追溯 OpenCraft 原仓库历史，导入不得 squash。
-- `opencraft/` 在 mono2 中保持独立 npm workspace 根和独立 CI 路径触发器。
+- `opencraft/` 在 mono2 中保持独立 npm workspace 根；不注册 MR guard 或专用 CI 路径触发器。
 - OpenCraft 的 mono2 同步脚本默认从 `../frontend/src` 解析，生成清单不包含 worktree 绝对路径。
 - Catalog、OWNERS/AGENTS 边界和迁移谱系说明齐全。
 - `cd opencraft && npm ci && npm run check:mono2-agent-console && npm run gate` 通过，或对环境型失败给出可复现证据且所有受影响聚焦门禁通过。
@@ -59,7 +58,6 @@ derived: false
 ## affected_paths
 
 - `opencraft/**`
-- `.ci/opencraft.yml`
 - `.ci/guards.manifest`
 - `docs/engineering/catalog/services.yaml`
 - `docs/context/tasks/opencraft-monorepo-migration.md`
@@ -81,6 +79,9 @@ derived: false
 | `.ci/frontend.yml@7f636c34d` | frontend CI 与发布所有权 | 保证 OpenCraft 路径不误触发 frontend 发布 |
 | `docs/engineering/catalog/services.yaml@7f636c34d` | 服务目录真源 | 新增独立 `opencraft` 服务登记 |
 | `/vela/package.json@af7e7d0` | OpenCraft 构建与门禁入口 | 定义迁移后 CI 命令和工作目录 |
+| `.ci/AGENTS.md@2026-09-11` | CI 运行时修改与验证约束 | 要求删除注册后运行 CI runtime 契约测试 |
+| `.ci/guards.manifest@2026-09-11` | MR 占位检查注册真源 | 定位并删除 `opencraft` guard |
+| `opencraft/checks/guard.sh@2026-09-11` | OpenCraft 隔离门禁实现 | 确认 Node/npm warning 来自隔离 `npm ci`，并删除该入口 |
 
 ## evidence
 
@@ -99,6 +100,9 @@ derived: false
 - Host Catalog 恢复增量：Catalog readiness、BFCache 页面生命周期与账户认证聚焦测试共 14/14 通过，Workbench Web 类型检查通过。
 - 文档系统 8/8 单测、Service Catalog 25/25 覆盖、42 个路由 smoke case、docs-impact 和 CI runtime 501 个测试通过。
 - 全仓 Context Validator 的既有失败从 `origin/master` 的 387 条变为当前 386 条（重建 catalog 后消除 stale 提示）；剩余为 master 已存在的旧 Task Pack metadata 和 5 个历史文档明文扫描命中，本迁移没有新增失败。
+- 2026-09-11 按 owner 决策移除 `.ci/guards.manifest` 的 `opencraft` MR guard、`.ci/opencraft.yml` 专用流水线和 `opencraft/checks/guard.sh` 隔离安装脚本；OpenCraft 本地 `npm run gate` 保留。
+- `bash .ci/runtime/check_ci_runtime.sh` 在补充临时 Git 测试身份后通过，503 个 runtime 契约测试全部成功；原始运行的 5 个错误仅由机器未配置 Git 提交身份导致。
+- 使用用户报告中的两个 `frontend/src/pages/marketing/**` 文件 dry-run guard 派发，仅命中 `frontend`，不再命中 `opencraft`。
 
 ## risks
 
@@ -114,19 +118,20 @@ derived: false
 - `cd opencraft && npm ci`
 - `cd opencraft && npm run check:mono2-agent-console`
 - `cd opencraft && npm run gate`
-- 检查 `.ci/opencraft.yml` 仅包含 `opencraft/**` 及明确共享路径。
+- `bash .ci/runtime/check_ci_runtime.sh`
+- 检查 `.ci/guards.manifest` 不再注册 `opencraft`，且不存在 `.ci/opencraft.yml` 与 `opencraft/checks/guard.sh`。
 
 ## decisions
 
 - 使用 non-squash `git subtree add` 导入完整历史，并仅在迁移验证窗口内执行一次 non-squash `git subtree pull` 捕获并发落下的登录增量；合入后不建立持续同步，owner：本迁移任务。
 - mono2 在导入后成为唯一写入真源；不建立长期 `subtree pull/split` 双向工作流，owner：本迁移任务。
 - 目标目录为 `opencraft/`，不放入 `frontend/`；前者同时包含 Web、Expo、Electron、AppServer、packages 和 plugins，owner：本迁移任务。
-- 迁移本身只建立 build/test CI，不授权生产发布，owner：本迁移任务。
+- OpenCraft 不设置 mono2 MR guard 或专用 CI 流水线；完整 gate 保留为本地/按需验证能力，且不授权生产发布，owner：本迁移任务。
 
 ## scan_scope
 
 - `opencraft/**`
-- `.ci/opencraft.yml`
+- `.ci/guards.manifest`
 - `docs/engineering/catalog/services.yaml`
 
 ## scan_output
@@ -135,6 +140,6 @@ derived: false
 
 ## handoff
 
-- 当前状态：源仓库更新与 mono2 迁移收尾均已在本地提交；OpenCraft 已保留历史导入 mono2，治理、相对共享路径、独立验证 CI 与完整门禁均已完成。
+- 当前状态：OpenCraft 已保留历史导入 mono2，治理和相对共享路径均已完成；专用 CI 栅栏已按 owner 决策撤销，本地完整门禁保留。
 - 下一步：获得用户明确授权后推送分支并创建 MR。迁移合入后将旧仓库切换为只读并在另一次确认后归档。
 - 阻塞项：推送、MR 和任何发布尚未获得本轮明确授权；本地迁移不受阻。

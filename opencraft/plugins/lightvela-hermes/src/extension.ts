@@ -142,6 +142,17 @@ export function createLightVelaHermesExtension(
               ? Math.max(0, Math.min(100, Math.round((available / total) * 100)))
               : null,
             error: details.error ?? snapshot.error,
+            applicationIntervention: snapshot.phase === "authenticated"
+              ? (snapshot.bots.length === 0
+                ? {
+                    providerId: "lightvela.hermes",
+                    code: "configuration-required" as const,
+                  }
+                : null)
+              : {
+                  providerId: "lightvela.hermes",
+                  code: "authentication-required" as const,
+                },
           });
           return accountSurfaceSnapshot;
         },
@@ -220,6 +231,15 @@ export function createLightVelaHermesExtension(
         surface: "host-connection-intervention",
         providerId: "lightvela.hermes",
         intervention: "authentication-required",
+        order: 100,
+        platforms: ["web", "electron"],
+      });
+      api.workbench.registerSurface({
+        id: "lightvela.hermes.configuration-required",
+        viewId: "lightvela.hermes.empty-view",
+        surface: "host-connection-intervention",
+        providerId: "lightvela.hermes",
+        intervention: "configuration-required",
         order: 100,
         platforms: ["web", "electron"],
       });

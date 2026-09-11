@@ -5,6 +5,8 @@ import {
 } from "../lib/tencent-tat-session-multiplexer";
 import { decodeUtf8, encodeUtf8 } from "../lib/utf8";
 
+const TAT_TERMINAL_KEEPALIVE_INTERVAL_MS = 20_000;
+
 export interface HermesCommandExecNotification {
   readonly jsonrpc: "2.0";
   readonly method: "command/exec/outputDelta";
@@ -256,6 +258,9 @@ export class HermesTatTerminalService implements HermesHostTerminal {
         ...(directPty ? { program: command[0], args: command.slice(1) } : {}),
         ...(typeof params.cwd === "string" && params.cwd !== "" ? { cwd: params.cwd } : {}),
         env,
+        // A terminal owns a TAT session separate from the dashboard/chat
+        // tunnel, so it must also own an independent keepalive lifecycle.
+        keepaliveIntervalMs: TAT_TERMINAL_KEEPALIVE_INTERVAL_MS,
       });
       if (owned.settled || this.disposed) {
         channel.release();

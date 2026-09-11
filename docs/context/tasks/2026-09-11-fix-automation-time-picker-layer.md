@@ -25,6 +25,9 @@
 ## affected_paths
 - `frontend/src/pages/marketing/agent-automations-panel.tsx`
 - `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/pages/marketing/agent-automations-panel.tsx`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
+- `docs/engineering/domains/agent-gateway-runtime.md`
 - `docs/context/tasks/2026-09-11-fix-automation-time-picker-layer.md`
 
 ## required_context
@@ -40,12 +43,14 @@
 | `docs/context/project/services/frontend.md@2.1.0` | 前端服务边界 | 确定实现与正式上下文范围 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 相邻实现与测试入口 | 核对 Popover、组件测试与无 i18n 变更 |
 | `docs/context/tasks/2026-09-06-zero-token-automation-tasks.md@c8463caad` | 当前单次时间选择器设计 | 保持站内受控弹层和草稿确认契约 |
+| `docs/engineering/domains/agent-gateway-runtime.md` | OpenCraft Agent Console 生成边界 | 同步 frontend 真源、vendored 副本与清单 |
 
 ## evidence
 - 源码定位：表单遮罩 `z-[200]`；通用 `PopoverContent` 默认 `z-50`。
 - 用户截图：日期时间面板出现在表单弹窗后方。
 - 本地浏览器：表单计算层级为 `200`，时间面板为 `210`；选择 `2026-09-12 11:30` 后确认写回成功，用户现场确认显示正常。
 - 验证报告：`/tmp/lightvela-validation/automation-time-picker-layer-2026-09-11/report.html`。
+- MR !3900 首轮 CI 因 OpenCraft vendored Agent Console 未同步而失败；按机械生成边界补齐同步副本与 `UPSTREAM.json`。
 
 ## risks
 - 风险：提高全局 Popover 层级可能影响其他页面；缓解：仅在 `OncePicker` 实例覆盖为现有嵌套浮层层级 `z-[210]`。
@@ -57,10 +62,13 @@
 - PASS：`pnpm build`（97 个静态页面生成完成）。
 - BASELINE FAIL：`pnpm test`（242 个文件通过、15 个文件失败、1 个跳过；75 个失败用例均位于本次未修改区域，另有 Vitest worker 4 GB OOM）。
 - PASS：本地桌面浏览器打开定时任务表单，面板完整可见，日期、小时、分钟和确认写回均可操作。
+- PASS：`npm --prefix opencraft run check:mono2-agent-console`（125 个 vendored 文件同步一致）。
+- BASELINE FAIL：`npm --prefix opencraft run gate` 在本机 119 个 Host 测试中 118 个通过，既有 macOS 进程用例因 `posix_spawnp failed` 未通过；vendored 同步、平台边界与全 workspace typecheck 已通过。
 
 ## decisions
 - 只覆盖单次时间 Popover 的层级，不修改通用 Popover 默认值，避免扩大回归面。
 - 使用现有嵌套浮层层级 `z-[210]`，高于表单 `z-[200]` 且低于 Toast/Tooltip 层级。
+- `frontend/` 是 OpenCraft Agent Console 的唯一写入真源；通过同步脚本更新机械生成副本，不直接编辑 vendored 文件。
 - FE-AI Native 因 master 中已共享但未结束的 `upgrade-feai-tools-058` 拒绝创建本次 change；未接管或改写该无关状态，按 skill fallback 使用独立分支与 Task Pack 完成。
 
 ## scan_scope
@@ -72,4 +80,4 @@
 - 无独立扫描产物；精确搜索确认仅 `OncePicker` 需要覆盖 Portal 层级。
 
 ## handoff
-- 已完成最小实现和本地验证；未 commit、push、创建 MR 或发布，线上生产环境尚未回归。
+- 已创建 MR !3900 并完成最小实现、本地验证及 OpenCraft vendored 同步；本次不包含合并、发布或生产环境回归。

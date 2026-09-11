@@ -1,5 +1,5 @@
 import { BlurView } from "expo-blur";
-import { ArrowUp, Check, ChevronDown, Square, X } from "lucide-react-native";
+import { ArrowUp, Check, ChevronDown, Square } from "lucide-react-native";
 import {
   composerDocumentToPlainText,
   resolveComposerPrimaryAction,
@@ -12,10 +12,11 @@ import {
   type WorkbenchComposerModelChoice,
 } from "@opencraft/workbench-runtime";
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, type TextInput as TextInputHandle, View } from "react-native";
+import { ScrollView, Text, TextInput, type TextInput as TextInputHandle, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { IconButton } from "./ui/button";
 import { InteractiveSurface } from "./ui/interactive-surface";
+import { ModalSurface } from "./ui/modal-surface";
 
 interface WorkbenchComposerProps {
   controller: ComposerController;
@@ -173,47 +174,39 @@ export function WorkbenchComposer({
         </BlurView>
       </View>
 
-      <Modal
-        animationType="fade"
-        onRequestClose={() => setModelPickerOpen(false)}
-        transparent
+      <ModalSurface
+        label="Model"
+        onDismiss={() => setModelPickerOpen(false)}
+        size="default"
         visible={modelPickerOpen}
       >
-        <View style={styles.modalRoot}>
-          <Pressable accessibilityLabel="Close model picker" onPress={() => setModelPickerOpen(false)} style={styles.modalScrim} />
-          <View style={styles.modelSheet}>
-            <View style={styles.modelSheetHeader}>
-              <View style={styles.modelSheetTitleCopy}>
-                <Text style={styles.modelSheetTitle}>Model</Text>
-                <Text style={styles.modelSheetSubtitle}>Available from the connected AppServer</Text>
-              </View>
-              <IconButton accessibilityLabel="Close" onPress={() => setModelPickerOpen(false)} size="md">
-                <X color={theme.color.icon.secondary} size={metrics.control.icon} strokeWidth={1.9} />
-              </IconButton>
-            </View>
-            <ScrollView contentContainerStyle={styles.modelList}>
-              {models.map((model) => {
-                const selected = model.value === selectedModel?.value;
-                return (
-                  <InteractiveSurface
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    key={model.id}
-                    onPress={() => selectModel(model)}
-                    style={[styles.modelRow, selected && styles.modelRowSelected]}
-                  >
-                    <View style={styles.modelRowCopy}>
-                      <Text style={styles.modelRowTitle}>{model.label}</Text>
-                      {model.description ? <Text numberOfLines={2} style={styles.modelRowDescription}>{model.description}</Text> : null}
-                    </View>
-                    {selected ? <Check color={theme.color.accent.blue} size={metrics.control.icon} strokeWidth={2.1} /> : null}
-                  </InteractiveSurface>
-                );
-              })}
-            </ScrollView>
+        <View style={styles.modelSheetHeader}>
+          <View style={styles.modelSheetTitleCopy}>
+            <Text style={styles.modelSheetTitle}>Model</Text>
+            <Text style={styles.modelSheetSubtitle}>Available from the connected AppServer</Text>
           </View>
         </View>
-      </Modal>
+        <ScrollView contentContainerStyle={styles.modelList}>
+          {models.map((model) => {
+            const selected = model.value === selectedModel?.value;
+            return (
+              <InteractiveSurface
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                key={model.id}
+                onPress={() => selectModel(model)}
+                style={[styles.modelRow, selected && styles.modelRowSelected]}
+              >
+                <View style={styles.modelRowCopy}>
+                  <Text style={styles.modelRowTitle}>{model.label}</Text>
+                  {model.description ? <Text numberOfLines={2} style={styles.modelRowDescription}>{model.description}</Text> : null}
+                </View>
+                {selected ? <Check color={theme.color.accent.blue} size={metrics.control.icon} strokeWidth={2.1} /> : null}
+              </InteractiveSurface>
+            );
+          })}
+        </ScrollView>
+      </ModalSurface>
     </View>
   );
 }
@@ -275,21 +268,6 @@ const styles = StyleSheet.create((theme) => ({
   actionSpacer: { flex: 1 },
   sendButton: {
     borderRadius: theme.radii.full,
-  },
-  modalRoot: { flex: 1, alignItems: "center", justifyContent: "center", padding: theme.spacing[6] },
-  modalScrim: { position: "absolute", inset: 0, backgroundColor: theme.material.scrim },
-  modelSheet: {
-    width: "100%",
-    maxWidth: 520,
-    maxHeight: "72%",
-    overflow: "hidden",
-    borderRadius: theme.radii.xxl,
-    backgroundColor: theme.material.raised,
-    shadowColor: theme.shadow.prominent.color,
-    shadowOpacity: theme.shadow.prominent.opacity,
-    shadowRadius: theme.shadow.prominent.radius,
-    shadowOffset: { width: 0, height: theme.shadow.prominent.offsetY },
-    elevation: theme.shadow.prominent.elevation,
   },
   modelSheetHeader: {
     minHeight: 68,

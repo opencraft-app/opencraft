@@ -25,7 +25,7 @@ OpenCraft 可以消费 `frontend/` 中显式列入同步闭包的 UI、domain、
 
 ## 验证
 
-在 mono2 根运行 `bash opencraft/checks/guard.sh`，或在 `opencraft/` 运行：
+在 `opencraft/` 运行：
 
 ```bash
 npm ci

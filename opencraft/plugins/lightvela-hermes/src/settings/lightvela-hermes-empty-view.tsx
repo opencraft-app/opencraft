@@ -4,6 +4,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
+import {
+  LightVelaBotCreationGuide,
+  projectLightVelaBotOnboarding,
+} from "../onboarding";
 import { LIGHTVELA_HERMES_HOST_ID } from "./lightvela-hermes-settings-view";
 import { LightVelaLoginOptions } from "./lightvela-login-options";
 
@@ -52,8 +56,26 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
     }, [host, installed, snapshot]);
 
     const error = provisionError ?? (snapshot.phase === "anonymous" ? null : snapshot.error);
-    const waiting = snapshot.phase === "loading"
-      || (snapshot.phase === "authenticated" && snapshot.bots.length > 0 && error === null);
+    const onboarding = projectLightVelaBotOnboarding({
+      region: snapshot.region,
+      phase: snapshot.phase,
+      botCount: snapshot.bots.length,
+      error,
+    });
+    const waiting = onboarding.kind === "loading"
+      || (onboarding.kind === "ready" && !installed && error === null);
+
+    if (onboarding.kind === "bot-required") {
+      return (
+        <LightVelaBotCreationGuide
+          createUrl={onboarding.createUrl}
+          onRefresh={async () => {
+            await account.refreshBots();
+            if (account.getSnapshot().bots.length > 0) window.location.reload();
+          }}
+        />
+      );
+    }
 
     return (
       <section className="hostless-empty-view" aria-live="polite">
@@ -62,13 +84,15 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
         <p>
           {waiting
             ? "Restoring your Hermes workspace…"
-            : snapshot.phase === "authenticated"
-              ? "No running Hermes Bot is available for this account."
-              : error ?? "Sign in to continue to your Hermes workspace."}
+            : onboarding.kind === "error"
+              ? onboarding.error
+              : error ?? (onboarding.kind === "ready"
+                ? "Your Hermes Bot is ready. Reconnecting…"
+                : "Sign in to continue to your Hermes workspace.")}
         </p>
         {!waiting ? (
           <div className="hostless-empty-view__actions">
-            {snapshot.phase === "authenticated" ? (
+            {onboarding.kind === "error" || onboarding.kind === "ready" ? (
               <button type="button" onClick={() => void account.refreshBots().catch(() => undefined)}>
                 <RefreshCw size={15} /> Refresh
               </button>

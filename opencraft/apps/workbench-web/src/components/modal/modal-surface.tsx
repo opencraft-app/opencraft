@@ -1,122 +1,99 @@
+import type {
+  ModalDescriptor,
+  ModalDismissReason,
+} from "@opencraft/design-system/modal";
+import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import {
-  useEffect,
-  useRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from "react";
-import { createPortal } from "react-dom";
+import { useRef, type CSSProperties, type ReactNode } from "react";
 
-export interface ModalSurfaceProps {
+export interface ModalSurfaceProps extends ModalDescriptor {
   readonly children: ReactNode;
   readonly className?: string;
-  readonly label: string;
-  readonly onDismiss: () => void;
+  readonly onDismiss: (reason: ModalDismissReason) => void;
+  readonly portalContainer?: HTMLElement | null;
+  readonly stackIndex?: number;
 }
 
-const FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button:not([disabled])",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
+type ModalLayerStyle = CSSProperties & {
+  "--modal-stack-offset": number;
+};
 
 /**
- * Web adapter for an application-modal presentation. This primitive owns the
- * portal, scrim, focus boundary, background inertness and dismissal. Feature
- * content owns neither browser modality nor the underlying application shell.
+ * Web platform adapter for one modal window. Radix exclusively owns modality,
+ * focus trapping/restoration, Escape, outside interaction and the DOM portal.
  */
 export function ModalSurface({
   children,
   className,
+  dismissOnOutsidePress = true,
   label,
+  layer = "application",
   onDismiss,
+  portalContainer,
+  presentation = "dialog",
+  showCloseButton = true,
+  size = "default",
+  stackIndex = 0,
 }: ModalSurfaceProps) {
-  const dialogRef = useRef<HTMLElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    const applicationShell = document.querySelector<HTMLElement>(".app-shell-root");
-    const shellWasInert = applicationShell?.hasAttribute("inert") ?? false;
-    const previousAriaHidden = applicationShell?.getAttribute("aria-hidden") ?? null;
-    applicationShell?.setAttribute("inert", "");
-    applicationShell?.setAttribute("aria-hidden", "true");
-    closeButtonRef.current?.focus({ preventScroll: true });
-    return () => {
-      if (applicationShell !== null) {
-        if (!shellWasInert) applicationShell.removeAttribute("inert");
-        if (previousAriaHidden === null) applicationShell.removeAttribute("aria-hidden");
-        else applicationShell.setAttribute("aria-hidden", previousAriaHidden);
-      }
-      previouslyFocused?.focus({ preventScroll: true });
-    };
-  }, []);
-
-  const trapFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onDismiss();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
-    ).filter((element) => element.getClientRects().length > 0);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      dialogRef.current?.focus();
-      return;
-    }
-    const first = focusable[0]!;
-    const last = focusable.at(-1)!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
+  const dismissReason = useRef<ModalDismissReason>("system");
   const surfaceClassName = className === undefined
     ? "modal-surface"
     : `modal-surface ${className}`;
+  const layerStyle: ModalLayerStyle = {
+    "--modal-stack-offset": stackIndex * 2,
+  };
 
-  return createPortal(
-    <div
-      className="modal-surface__host"
-      data-selection="chrome"
-      role="presentation"
-      onPointerDown={onDismiss}
+  return (
+    <Dialog.Root
+      modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onDismiss(dismissReason.current);
+      }}
     >
-      <div aria-hidden="true" className="modal-surface__scrim" />
-      <section
-        ref={dialogRef}
-        aria-label={label}
-        aria-modal="true"
-        className={surfaceClassName}
-        role="dialog"
-        tabIndex={-1}
-        onKeyDown={trapFocus}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        {children}
-        <button
-          ref={closeButtonRef}
-          aria-label={`Close ${label.toLocaleLowerCase()}`}
-          className="modal-surface__close"
-          type="button"
-          onClick={onDismiss}
+      <Dialog.Portal container={portalContainer ?? undefined}>
+        <Dialog.Overlay
+          className="modal-surface__scrim"
+          data-layer={layer}
+          data-stack-index={stackIndex}
+          style={layerStyle}
+        />
+        <Dialog.Content
+          aria-label={label}
+          className={surfaceClassName}
+          data-layer={layer}
+          data-presentation={presentation}
+          data-size={size}
+          data-stack-index={stackIndex}
+          style={layerStyle}
+          onPointerDownOutside={(event) => {
+            if (!dismissOnOutsidePress) {
+              event.preventDefault();
+              return;
+            }
+            dismissReason.current = "outside-press";
+          }}
         >
-          <X size={18} />
-        </button>
-      </section>
-    </div>,
-    document.body,
+          <Dialog.Title className="modal-surface__accessible-title">
+            {label}
+          </Dialog.Title>
+          {children}
+          {showCloseButton ? (
+            <Dialog.Close asChild>
+              <button
+                aria-label={`Close ${label.toLocaleLowerCase()}`}
+                className="modal-surface__close"
+                type="button"
+                onClick={() => {
+                  dismissReason.current = "close-button";
+                }}
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </Dialog.Close>
+          ) : null}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
