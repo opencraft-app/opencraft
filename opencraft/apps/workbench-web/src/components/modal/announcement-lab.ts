@@ -1,5 +1,6 @@
 import type { ExtensionActivationIdentity } from "@opencraft/extension-contract";
 import type { AnnouncementCenter } from "@opencraft/extension-runtime";
+import announcementLabMediaUrl from "../../assets/announcement-lab.svg?url";
 
 const workbenchOwner: ExtensionActivationIdentity = Object.freeze({
   extensionId: "opencraft.workbench",
@@ -15,7 +16,7 @@ export function showAnnouncementLab(center: AnnouncementCenter) {
     body: "OpenCraft can present product news, onboarding, and release notes through one themed window on Web, Electron, and native hosts.",
     media: {
       kind: "image-url",
-      url: "/assets/announcement-lab.svg",
+      url: announcementLabMediaUrl,
       alt: "Two OpenCraft workbench surfaces sharing the same design system",
     },
     secondaryAction: { id: "later", label: "Maybe later" },
