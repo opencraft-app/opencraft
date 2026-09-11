@@ -26,6 +26,39 @@ const sidebarBotsSource = readFileSync(
   "utf8",
 );
 
+const sidebarSource = readFileSync(
+  new URL(
+    "../apps/workbench-web/src/components/sidebar.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
+const workbenchStyles = readFileSync(
+  new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
+  "utf8",
+);
+
+test("sidebar actions and account identity share one stable leading slot", () => {
+  assert.equal(
+    sidebarSource.match(/<SidebarActionIcon>/gu)?.length,
+    4,
+    "every primary and footer sidebar action reserves the shared leading slot",
+  );
+  assert.match(
+    workbenchStyles,
+    /\.sidebar-panel\s*\{[\s\S]*?--sidebar-leading-slot-size:\s*28px;/u,
+  );
+  assert.match(
+    workbenchStyles,
+    /\.sidebar-action__icon\s*\{[\s\S]*?width:\s*var\(--sidebar-leading-slot-size\);[\s\S]*?place-items:\s*center;/u,
+  );
+  assert.match(
+    workbenchStyles,
+    /\.sidebar-account__trigger\s*\{[\s\S]*?grid-template-columns:\s*var\(--sidebar-leading-slot-size\) minmax\(0, 1fr\) 18px;/u,
+  );
+});
+
 test("sidebar entity creation presents through the application overlay layer", () => {
   assert.match(sidebarBotsSource, /import \{ createPortal \} from "react-dom";/u);
   assert.match(

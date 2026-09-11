@@ -169,6 +169,10 @@ function SidebarContributionIcon({ name, size = 15 }: { name?: string; size?: nu
   }
 }
 
+function SidebarActionIcon({ children }: { readonly children: ReactNode }) {
+  return <span className="sidebar-action__icon" aria-hidden="true">{children}</span>;
+}
+
 function ExtensionCatalog({ catalog }: { readonly catalog: SidebarCatalogItem }) {
   const [collapsed, setCollapsed] = useState(catalog.initiallyCollapsed ?? false);
   return (
@@ -261,7 +265,7 @@ export function Sidebar({
       <div className="sidebar-panel" data-app-shell-focus-area="left-panel">
       <nav className="sidebar-navigation" aria-label="Primary">
         <button className="sidebar-action" type="button" onClick={onNewTask}>
-          <SquarePen size={15} />
+          <SidebarActionIcon><SquarePen size={15} /></SidebarActionIcon>
           <span>New chat</span>
         </button>
         {primaryActions.map((action) => (
@@ -272,7 +276,7 @@ export function Sidebar({
             aria-current={action.active ? "page" : undefined}
             onClick={action.onInvoke}
           >
-            <SidebarContributionIcon name={action.icon} />
+            <SidebarActionIcon><SidebarContributionIcon name={action.icon} /></SidebarActionIcon>
             <span>{action.title}</span>
           </button>
         ))}
@@ -383,13 +387,13 @@ export function Sidebar({
             aria-current={action.active ? "page" : undefined}
             onClick={action.onInvoke}
           >
-            <SidebarContributionIcon name={action.icon} />
+            <SidebarActionIcon><SidebarContributionIcon name={action.icon} /></SidebarActionIcon>
             <span>{action.title}</span>
           </button>
         ))}
         {account === null ? (
           <button className="sidebar-action" type="button" onClick={onOpenSettings}>
-            <Settings size={15} />
+            <SidebarActionIcon><Settings size={15} /></SidebarActionIcon>
             <span>Settings</span>
           </button>
         ) : <SidebarAccount account={account} onOpenSettings={onOpenSettings} />}
