@@ -38,4 +38,10 @@
 - 预置 Provider 的可选模型由当前区域的产品配置目录提供，前端不使用用户 API Key 临时拉取模型列表；自定义 Provider 仍可按用户填写的端点探测或手动输入模型 ID。
 - 主模型、备用模型和仅添加模型的角色来自 Hermes 配置快照。角色切换不得改变已添加 Provider 的展示顺序，也不得把目录候选误标为已添加模型。
 
+## Skills 已安装来源边界
+
+- 国内站 SkillHub 的搜索结果仍以 SkillHub 作为市场来源；已安装列表则必须保留 `acli skills list` 返回的实例 `source`，不能因同名技能存在于 SkillHub 而覆盖运行时来源。
+- Hermes 或 SkillHub 已安装实例明确报告 `source: builtin` 时，前端统一展示为“系统预置”并禁止删除。只有非预置的市场安装记录才允许按原 registry 身份卸载。
+- 同一技能同时出现在市场记录与 Hermes 已安装清单时，Hermes 的 `builtin` 判定对预置属性具有权威性；技能名称不得用作硬编码预置白名单。
+
 相关 Journey：[双站请求路由](../journeys/dual-site-request-routing.md)。Agent 摘要：[site-environment-routing Context](../../context/domains/site-environment-routing.md)。
