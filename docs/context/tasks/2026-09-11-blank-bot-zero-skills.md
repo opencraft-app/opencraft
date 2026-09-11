@@ -105,7 +105,7 @@ Make an additional Bot created with `空白创建` start with zero user-installe
 - `pnpm check`: passed with zero new TypeScript diagnostics; existing translation warnings remain non-blocking repository baseline warnings.
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`: passed with no errors or warnings.
 - `python3 .agents/context/scripts/validate_context.py --repo . --format json`: no errors for this Task Pack; the command still exits 1 for 579 repository baseline errors.
-- `npm --prefix opencraft run sync:mono2-agent-console` regenerated the two Skills-related vendored files changed by this MR. The full `check:mono2-agent-console` remains blocked by 15 unrelated vendored files already drifted on `origin/master@3c57a0dee`; those baseline rewrites are excluded from this MR.
+- `npm --prefix opencraft run sync:mono2-agent-console` regenerated the two Skills-related vendored files changed by this MR. The full `check:mono2-agent-console` remains blocked by 15 unrelated vendored files already drifted on `origin/master@769c8c945`; those baseline rewrites are excluded from this MR.
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --changed-files-file /tmp/mr3899-full-files.txt`: passed for the complete MR diff; `agent-gateway-runtime` owner review remains required.
 - A temporary installed-Hermes fixture confirmed `hermes profile create --no-skills` writes `.no-bundled-skills`, skips bundled seeding, and retains only the runtime-essential `autonomous-ai-agents/hermes-agent` Skill.
 

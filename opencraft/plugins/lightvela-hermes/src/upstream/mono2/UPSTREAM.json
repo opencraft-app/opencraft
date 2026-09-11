@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "f889277c5b7a041e5a39afe30f61a55a45dd5981",
+  "sourceRevision": "64454f9044bd264c6c591d2ee8f2423de0ea7d05",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -77,35 +77,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "5dcb8ca555eb44001496d40a6a87e5bb108a046b4faafdb35b5a7cd79d92cb31"
+      "sourceSha256": "a002af9767076ca3baf52f593981dab1eb5ec735c92b22d677f01aca83477fbe"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "77f3215f77a6674adad0d30bf26366c74e899975066495464a44162ddc7aa887"
+      "sourceSha256": "07a725f639ae707fd820587e957e69ae77e97781c053572c3ebc6bf7d753902f"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "8a4fd6fbf557ed09ee1fedefea4c3ace68d7e6da013e3fb9fb17b67d0c6cc576"
+      "sourceSha256": "5c830a520160ce28cadfd258ff5e027b070928c4464626059bd4a0535ad16461"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "c78c487c6549e093b92bc38dd794bb4b5f3bacfdf0994207bf950aa07f276fbd"
+      "sourceSha256": "490f0c0fa01d515370a50c10f4f8ee8444a93677e01f07a13f70a2037f9124fe"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "c6276f506eef101b63a682d2ce3ad46926b3bbb22b02e28a336911726e5894c8"
+      "sourceSha256": "356ff6c8ac639b26f4e67ab06d0b9d04b1b12327ca7eb1f8359865c157350e0a"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "fd4544221601df59e9a6df5971cf6539b887741c044280a0d022b6352a2d0806"
+      "sourceSha256": "db5e069bc419abd510a9f87c16146a382ead5ca2b3bf5fb3545d7a17ab2bab50"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "ed4accedc7c1d433803af661cd858fa2b04f4b1a70f1eef6fc19817d9688304d"
+      "sourceSha256": "40ffd4f25d77982798e14836410770f53ede0817729ea26c4c5460614807ba94"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "414fc4adc45b0062edd749d6093b5d4a84085e73b6410cd5a9c71893c7119c4c"
+      "sourceSha256": "7a0c913fbaafae37162514ee23e4a86fb1ea32965c12482d42aa897b30383fcc"
     },
     {
       "file": "i18n/index.ts",
@@ -181,7 +181,7 @@
     },
     {
       "file": "lib/toast.ts",
-      "sourceSha256": "6b26f3fe2f2f07c34a1c573a8825784b2f2a1b31edc1d98506656bc7122100d4"
+      "sourceSha256": "755a9f15f76f4f797d7df06ea30877ca06063db7dfc956b3a2fd34d72316ab52"
     },
     {
       "file": "lib/tssh-file-permissions.ts",
@@ -349,11 +349,15 @@
     },
     {
       "file": "pages/marketing/agent-model-config/agent-model-config-panel.tsx",
-      "sourceSha256": "f5b911868c9cbef32893da59afc5014702b2d360b403b183397cffd47d32c8b2"
+      "sourceSha256": "13459c6041d63a3973c9b55b913426feaf34e63a0a2343c825c93feb88014aae"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/configured-provider-model-form.tsx",
+      "sourceSha256": "543c616656db16c212e7eb09bd09e044d8396fdb1be9193975da3256e523955b"
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "6cb4e15eed4a49a9d7c480d78936160745b6436b0f4baa170d4f4c7d4745ea8f"
+      "sourceSha256": "55c244fd14aa937f52aec3e742f7818f5def0cddf1548f03c6c6183ac091381b"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
@@ -361,7 +365,11 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
-      "sourceSha256": "05153f5ce907b3a34967e9a0dd6b76bffb3dbdaeb72c7e795319142fab8c73d8"
+      "sourceSha256": "5965471734a9ac1a82b75840ad471e7e15c4034dc5e32dc44ba66b9124c213c1"
+    },
+    {
+      "file": "pages/marketing/agent-model-config/model-form-controls.tsx",
+      "sourceSha256": "ae50bdbc9cbcc81f4faf26c30775cb4da14b5a89a11f4ae9093fd4faedfe2ac5"
     },
     {
       "file": "pages/marketing/agent-model-config/product-provider-adapter.ts",
@@ -369,7 +377,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/use-model-config.ts",
-      "sourceSha256": "f81f026ed2d064e784ce04856b75a574f693c87ad823da98fb626980c24482e2"
+      "sourceSha256": "26e44e68cd1e1c41dc03fd5687f304272995e403b25b402c9ba2e3f34dad7392"
     },
     {
       "file": "pages/marketing/agent-provider-locale.ts",

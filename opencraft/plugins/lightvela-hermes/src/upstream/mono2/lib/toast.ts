@@ -69,7 +69,7 @@ function dismissCurrent() {
 }
 
 function show(type: ToastType, content: string, duration = DEFAULT_DURATION_MS) {
-  if (typeof document === "undefined") return; // SSR / node 单测兜底
+  if (typeof document === "undefined") return () => {}; // SSR / node 单测兜底
 
   dismissCurrent();
 
@@ -114,6 +114,13 @@ function show(type: ToastType, content: string, duration = DEFAULT_DURATION_MS) 
       }
     }, 200);
   }, duration);
+
+  // 调用方只能关闭自己的提示，避免组件卸载时误清理其他操作的反馈。
+  return () => {
+    if (currentEl !== el) return;
+    dismissCurrent();
+    if (container.children.length === 0) container.remove();
+  };
 }
 
 export const toast = {
