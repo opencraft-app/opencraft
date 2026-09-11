@@ -125,7 +125,7 @@ derived: false
 - 账户头像槽由 shell-navigation surface 自己声明 `28px` 变量和不可收缩 flex basis，不再借用 `.sidebar-panel` 的局部变量。Footer 入口以 `data-surface` 选择，不使用会被 Radix Portal 子节点改变的 `:first-child/:last-child`，因此打开账户浮层不改变 padding、gap 或文字 x 坐标。
 
 ## evidence
-- 本轮修复的 source commit 尚待生成；`origin/master@c914eb43a` 与工作基线一致，无需冲突融合。完整 gate 与真实 Chromium 已在提交前通过，部署回执将在发布后补录。
+- 本轮不变量修复已提交为 `d8d49042f`（`fix(opencraft): preserve sidecar interaction geometry`），并非强推同步到 `master` 与 `codex/hermes-create-guide`；基线 `origin/master@c914eb43a` 未产生冲突。EO 生产部署 `dppvljtp8nmx`，buildId `20260911093701-9d5d5d262189`；正式域名版本及入口/6 个 CSS/HTML/JSON 共 8 项关键产物 SHA-256 与本地 LightVela release 一致。生产无存储 Chromium 确认 `has-shell-navigation`、Vela、账户展开文字位移 0px、右拉 held frame/viewport 同为 262px、row 为 238px，且无 page error。
 - 最新 `origin/master@fc624a0dc` 已与 Sidecar 实现融合为 `eec248ae6`，并以非强制 fast-forward 同步到 `master` 与 `codex/hermes-create-guide`。master 的 Context leading-slot 对齐保留，已删除的旧账户触发器没有被冲突合并复活。
 - 融合后的 master 已发布到 EdgeOne Pages 生产项目 `vela-cn`：部署 `dpr7x6zi8prk`，buildId `20260911091444-7cd09926ce24`。正式域名返回同一 buildId，包含 Announcement runtime chunk 的 10 项关键产物 SHA-256 与本地 release 完全一致；无存储的新 Chromium 会话确认根节点具有 `has-shell-navigation`，Primary Pane 为 182px，Vela/Chat 均可见且没有 page error。
 - 本轮单 Sidecar/双 Pane、三态 Primary 交互、窄 Application/Footer 几何与 Announcement data-image 契约已形成实现提交 `791f25855`（`feat(opencraft): model responsive sidecar navigation`）；提交不包含部署凭据。
@@ -189,12 +189,12 @@ derived: false
 追加调宽任务路由无匹配 Pack；有界检查 resize handle、共享 projection 及测试邻居。按 deobfuscate-javascript 技能只读检查本地 Codex bundle 的 rhn 账户按钮：透明 sidebar-item、xs 头像与行高；source map 缺失，未修改或重新还原参考代码。
 
 ## handoff
-最新 master 与本轮 Sidecar 实现已融合为 `eec248ae6`，并同步到 `master` 和 `codex/hermes-create-guide`。融合产物已发布到 EO 生产项目 `vela-cn`，正式域名版本、包含修复 runtime chunk 的 10 项产物哈希及 182px 应用栏实际 DOM 均已核验。定制字体仍待资源确认，部署凭据未写入仓库。
+最新 Sidecar 交互几何修复为 `d8d49042f`，已同步到 `master` 和 `codex/hermes-create-guide`。产物已发布到 EO 生产项目 `vela-cn`，正式域名版本、8 项关键产物及右拉/账户入口实际 DOM 几何均已核验。定制字体仍待资源确认，部署凭据未写入仓库。
 
 ## checkpoint
-- stage：最新 master、Sidecar、leading-slot 与 Announcement 契约已融合到 `eec248ae6` 并进入 master；融合产物已发布。定制字体尚未接入。
-- verified：融合后完整 `npm run gate`、42 项聚焦测试、真实 Chromium 122 帧、LightVela release 构建及产品边界检查通过。EO 部署 `dpr7x6zi8prk`，buildId `20260911091444-7cd09926ce24`；正式域名 10 项关键产物逐字节一致，应用栏/Vela/Chat 实际可见且无 page error。
+- stage：最新 master 已包含 `d8d49042f` 的 Sidecar interaction geometry 修复；EO 生产已发布。定制字体尚未接入。
+- verified：完整 `npm run gate`、18 项 Sidecar 聚焦测试、真实 Chromium 119 帧、LightVela ultra-minified release、产品边界及 8 项静态发布测试通过。EO 部署 `dppvljtp8nmx`，buildId `20260911093701-9d5d5d262189`；正式域名 8 项关键产物逐字节一致，生产右拉与账户入口几何无迟滞/位移且无 page error。
 - unverified：Expo 原生视觉未接入；Context 全仓仍有其他历史 Task Pack 元数据和 5 条既有凭据扫描问题，输出未涉及本任务文件。
 - discard：全窗底栏、按钮必须在侧栏关闭后仍可见、所有应用必有会话栏。
 - restore：本任务包及上述实现文件。
-- next_action：等待线上视觉反馈；本地改动的提交与推送另行授权。Vela 定制字体接入仍待资源确认。
+- next_action：等待线上视觉反馈。Vela 定制字体接入仍待资源确认。
