@@ -192,12 +192,10 @@ Run `cd credit && go test ./internal/httpapi` and expect PASS.
 ### Task 5: Gateway Policy And Redis Runtime Wiring
 
 **Files:**
-- Modify: `credit/k8s/base/manifests.yaml`
-- Modify: `argocd/services/credit/common/kustomization.yaml`
-- Modify: `argocd/services/credit/sandbox-bj-7/credit-platform.env`
 - Create: `argocd/services/credit/sandbox-bj-7/patch-credit-redis.yaml`
 - Modify: `argocd/services/credit/sandbox-bj-7/kustomization.yaml`
-- Modify: `argocd/services/credit/beijing-sandbox/credit-platform.env`
+- Create: `argocd/services/credit/beijing-sandbox/patch-credit-redis.yaml`
+- Modify: `argocd/services/credit/beijing-sandbox/kustomization.yaml`
 - Modify: `scripts/ssm_manifest.credit.beijing-sandbox.yaml`
 - Modify: `argocd/secrets/beijing-sandbox/credit-runtime-secrets.sops.yaml`
 - Modify: `argocd/services/service-gateway/sandbox-bj-7/config.yaml`
@@ -205,7 +203,8 @@ Run `cd credit && go test ./internal/httpapi` and expect PASS.
 - Modify: `service-gateway/internal/gateway/config_policy_test.go`
 
 **Interfaces:**
-- ConfigMap provides Redis address, database index, and auth-code TTL.
+- Environment-specific API Deployment patches provide the Redis address,
+  database index, and auth-code TTL without changing the shared Credit base.
 - API Deployment receives the password; worker Deployments do not need it.
 - Gateway optional-auth list contains exactly the Credit payment URL route.
 
