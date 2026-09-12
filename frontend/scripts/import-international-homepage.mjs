@@ -61,14 +61,14 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["work partner", "developer buddy", "plan executor", "life concierge", "financial assistant", "creative companion", "content manager"],
-  "zh-CN": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-  "zh-SG": ["工作搭档", "开发搭子", "计划执行官", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
-  "zh-Hant": ["工作夥伴", "開發夥伴", "計畫執行官", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
-  "id-ID": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
-  es: ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
-  "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
-  "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
+  "en-US": ["work partner", "developer buddy", "plan executor", "market watcher", "life concierge", "financial assistant", "creative companion", "content manager"],
+  "zh-CN": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+  "zh-SG": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+  "zh-Hant": ["工作夥伴", "開發夥伴", "計畫執行官", "盤面觀察員", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
+  "id-ID": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengamat pasar", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
+  es: ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "observador del mercado", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
+  "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
+  "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
 };
 const tokenTrialCopyByLocale = {
   "en-US": "Try an AI token plan free for 7 days.",
@@ -80,8 +80,9 @@ const tokenTrialCopyByLocale = {
   "ko-KR": "AI Token 플랜을 7일 동안 무료로 사용해 보세요.",
 };
 const trialTitleCopyByLocale = {
-  "zh-SG": "免费体验，无需信用卡",
-  "zh-Hant": "免費體驗，無需信用卡",
+  "en-US": "Try it free, activate in 10 seconds",
+  "zh-SG": "免费体验，10秒极速开通",
+  "zh-Hant": "免費體驗，10秒極速開通",
 };
 const soulStripSecondaryCopyByLocale = {
   "en-US": {
@@ -531,7 +532,7 @@ const coreCopyByLocale = {
     "Learn Workbench": "Pelajari ruang kerja",
     "Try it free": "Coba gratis",
     "No credit card required": "Tanpa kartu kredit",
-    "Try it free, no credit card required": "Coba gratis, tanpa kartu kredit",
+    "Try it free, no credit card required": "Coba gratis, aktif dalam 10 detik",
     "Try LightVela free for 14 days.": "Coba LightVela gratis selama 14 hari.",
     "Try an AI token plan free for 3 days.": "Coba paket AI Token gratis selama 3 hari.",
     "Try the Standard plan free for 14 days.": "Coba paket Standard gratis selama 14 hari.",
@@ -706,7 +707,7 @@ const coreCopyByLocale = {
     "Learn Workbench": "Conoce el área de trabajo",
     "Try it free": "Pruébalo gratis",
     "No credit card required": "Sin tarjeta de crédito",
-    "Try it free, no credit card required": "Pruébalo gratis, sin tarjeta de crédito",
+    "Try it free, no credit card required": "Pruébalo gratis, activa en 10 segundos",
     "Try LightVela free for 14 days.": "Prueba LightVela gratis durante 14 días.",
     "Try an AI token plan free for 3 days.": "Prueba un plan de tokens de IA gratis durante 3 días.",
     "Try the Standard plan free for 14 days.": "Prueba el plan Standard gratis durante 14 días.",
@@ -903,7 +904,7 @@ Object.assign(coreCopyByLocale, {
     "Workbench product screen": "ワークベンチ製品画面",
     "Try it free": "無料で試す",
     "No credit card required": "クレジットカード不要",
-    "Try it free, no credit card required": "クレジットカード不要で無料体験",
+    "Try it free, no credit card required": "無料体験、10秒でスピード開通",
     "Try LightVela free for 14 days.": "LightVelaを14日間無料でお試しいただけます。",
     "Try an AI token plan free for 3 days.": "AI Tokenプランを3日間無料でお試しいただけます。",
     "Try the Standard plan free for 14 days.": "Standardプランを14日間無料で試せます。",
@@ -1098,7 +1099,7 @@ Object.assign(coreCopyByLocale, {
     "Workbench product screen": "워크벤치 제품 화면",
     "Try it free": "무료로 사용해 보기",
     "No credit card required": "신용카드 필요 없음",
-    "Try it free, no credit card required": "신용카드 없이 무료로 체험하세요",
+    "Try it free, no credit card required": "무료 체험, 10초 만에 개통",
     "Try LightVela free for 14 days.": "LightVela를 14일 동안 무료로 사용해 보세요.",
     "Try an AI token plan free for 3 days.": "AI Token 플랜을 3일 동안 무료로 사용해 보세요.",
     "Try the Standard plan free for 14 days.": "Standard 플랜을 14일 동안 무료로 사용해 보세요.",
@@ -4591,7 +4592,7 @@ const domesticBrandIconCss = `img.icon--brand {
 const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}\n${domesticBrandIconCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
   "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
-  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
+  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
 ).replace(
   `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     function rotate() {
