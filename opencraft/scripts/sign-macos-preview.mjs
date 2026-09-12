@@ -19,7 +19,6 @@ function signingArguments(appPath, entitlementsPath, deep) {
     appPath,
   ];
 }
-
 /** Ad-hoc signing is preview-only; release signing remains Electron Builder-owned. */
 export async function signMacosPreview({ appPath, entitlementsPath, execFileImpl = execFileAsync }) {
   await execFileImpl("codesign", signingArguments(appPath, entitlementsPath, true));
@@ -31,4 +30,3 @@ export async function signMacosPreview({ appPath, entitlementsPath, execFileImpl
   await execFileImpl("codesign", signingArguments(appPath, entitlementsPath, false));
   await execFileImpl("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
 }
-
