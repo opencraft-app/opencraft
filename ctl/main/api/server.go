@@ -655,13 +655,17 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if r.URL.Query().Get("require_single_bot") == "true" {
+		if r.URL.Query().Get("force") != "true" {
 			bots, err := h.logic.ListInstanceBots(ctx, instanceID)
 			if err != nil {
-				writeHTTPError(w, r, err)
-				return
-			}
-			if bots != nil && len(bots.Items) > 1 {
+				// Profile list unavailable (stopped instance, sandbox exec failure).
+				// Fall through so a broken instance stays deletable; this guard is
+				// misuse protection, not an authorization boundary.
+				ctx.Logger().Warn("destroy instance: bot guard skipped, list failed",
+					zap.String("instance_id", instanceID),
+					zap.Error(err),
+				)
+			} else if bots != nil && len(bots.Items) > 1 {
 				writeHTTPError(w, r, errcode.ErrInstanceBotsRemain)
 				return
 			}

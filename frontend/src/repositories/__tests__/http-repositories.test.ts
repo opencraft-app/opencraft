@@ -570,7 +570,7 @@ describe("http repositories auth token bootstrap", () => {
       if (url.endsWith("/v1/instances/ins_multi/bots")) {
         return jsonResponse({ items: [
           {
-            bot_id: "bot_main",
+            bot_id: "ins_multi",
             instance_id: "ins_multi",
             profile_id: "main",
             name: "主 Bot",
@@ -594,7 +594,7 @@ describe("http repositories auth token bootstrap", () => {
             is_default: false,
             status: "ready",
             created_from: "clone",
-            source_bot_id: "bot_main",
+            source_bot_id: "ins_multi",
             created_at: "2026-09-09T01:00:00Z",
             updated_at: "2026-09-09T01:00:00Z",
           },
@@ -609,7 +609,7 @@ describe("http repositories auth token bootstrap", () => {
           is_default: false,
           status: "ready",
           created_from: "clone",
-          source_bot_id: "bot_main",
+          source_bot_id: "ins_multi",
           created_at: "2026-09-09T01:00:00Z",
           updated_at: "2026-09-09T02:00:00Z",
         });
@@ -645,7 +645,7 @@ describe("http repositories auth token bootstrap", () => {
     const snapshot = await repositories.bots.getDashboardSnapshot("live");
     expect(snapshot.bots).toEqual([
       expect.objectContaining({
-        id: "bot_main",
+        id: "ins_multi",
         instanceId: "ins_multi",
         profileId: "main",
         isDefault: true,
@@ -655,7 +655,7 @@ describe("http repositories auth token bootstrap", () => {
         id: "bot_sales",
         instanceId: "ins_multi",
         profileId: "sales-123",
-        sourceBotId: "bot_main",
+        sourceBotId: "ins_multi",
       }),
     ]);
 
@@ -676,7 +676,7 @@ describe("http repositories auth token bootstrap", () => {
       url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",
       method: "DELETE",
     });
-    await repositories.bots.destroyBot("bot_main");
+    await repositories.bots.destroyBot("ins_multi");
     expect(calls[calls.length - 1]).toEqual({
       url: "https://lightclaw.tech/v1/instances/ins_multi?require_single_bot=true",
       method: "DELETE",
@@ -1675,8 +1675,13 @@ describe("http repositories auth token bootstrap", () => {
     const repositories = createHttpRepositories("https://lightclaw.tech");
     await repositories.bots.destroyBot("ins_delete_me");
 
+    // Without a prior listBots() the scope cache is empty, so the caller is treated as an
+    // unhydrated main-Bot delete. Domestic builds must still go through the Bot guard —
+    // sibling Bots may exist server-side even though this client never listed them.
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/v1/instances/ins_delete_me",
+      isGlobal
+        ? "https://lightclaw.tech/v1/instances/ins_delete_me"
+        : "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
       expect.objectContaining({
         method: "DELETE",
       }),
