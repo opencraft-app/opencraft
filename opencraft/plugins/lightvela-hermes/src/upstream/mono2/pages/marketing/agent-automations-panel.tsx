@@ -763,7 +763,11 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
   );
 }
 
-export function HermesAgentAutomationsPanel({ botId: rawBotId }: { botId: HermesCronTarget | null }) {
+export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, onRestartGateway }: {
+  botId: HermesCronTarget | null;
+  gatewayRunning?: boolean;
+  onRestartGateway?: () => void;
+}) {
   const t = useT();
   const { i18n } = useTranslation();
   const displayLocale = getAutomationDisplayLocale(i18n.language);
@@ -1352,6 +1356,27 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId }: { botId: Hermes
           </div>
         )}
       />
+
+      {gatewayRunning === false && (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#F5D9A8] bg-[#FFFBF3] px-4 py-3 text-sm">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#FDF0DC] text-[#A86108]">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <p className="min-w-0 text-black/70">{t("网关未运行，此 Bot 的定时任务不会执行。")}</p>
+          </div>
+          {onRestartGateway && (
+            <button
+              type="button"
+              onClick={onRestartGateway}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#F5D9A8] bg-white px-3 py-1.5 font-medium text-[#A86108] transition hover:bg-[#FFF7EA]"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              {t("重启网关")}
+            </button>
+          )}
+        </section>
+      )}
 
       <AutomationScenarioTemplatesSection
         templates={templates}
