@@ -929,7 +929,7 @@ describe("cron context panel integration", () => {
       isGlobal ? /Describe what you want the agent to understand and do/ : /请描述需要智能体理解并执行的任务/,
     );
     expect(form).toHaveClass("w-full", "max-w-[800px]", "rounded-lg", "p-5");
-    expect(form).toHaveClass("min-h-[860px]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
     expect(taskDescription).not.toHaveClass("resize-none");
@@ -948,8 +948,12 @@ describe("cron context panel integration", () => {
     const form = dialog.firstElementChild;
     const testRunButton = within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") });
 
-    expect(form).toHaveClass("min-h-[860px]", "flex", "flex-col");
+    if (!(form instanceof HTMLElement)) throw new Error("Expected the template task form");
+    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
     expect(form).not.toHaveClass("overflow-y-auto");
+    const runTimeScrollBody = within(form).getByText(localizedText("执行时间", "Run time")).parentElement?.parentElement;
+    if (!runTimeScrollBody) throw new Error("Expected the task form scroll body");
+    expect(runTimeScrollBody).toHaveClass("overflow-y-auto", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
     expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
   });
 
@@ -1744,12 +1748,14 @@ describe("terminal cron card visibility", () => {
     if (!actionsRollout) throw new Error("Expected current-job action rollout");
     const [actionsMask, actionsContent] = Array.from(actionsRollout.children);
 
-    if (!actionsMask || !actionsContent) throw new Error("Expected rollout mask and action content");
+    if (!(actionsMask instanceof HTMLElement) || !(actionsContent instanceof HTMLElement)) {
+      throw new Error("Expected rollout mask and action content");
+    }
     const actionItems = Array.from(actionsContent.children);
-    const [testAction, viewAction, editAction, resumeAction, copyAction, deleteAction] = actionItems;
+    const [testAction, viewAction, copyAction, deleteAction] = actionItems;
 
-    if (!testAction || !viewAction || !editAction || !resumeAction || !copyAction || !deleteAction) {
-      throw new Error("Expected all current-job actions in the rollout");
+    if (!testAction || !viewAction || !copyAction || !deleteAction) {
+      throw new Error("Expected the remaining current-job actions in the rollout");
     }
 
     expect(actionsMenu).toHaveClass("group/actions", "relative");
@@ -1765,16 +1771,19 @@ describe("terminal cron card visibility", () => {
       "group-hover/actions:opacity-100",
     );
     expect(actionsRollout).not.toHaveClass("border", "p-0.5", "shadow-sm");
-    expect(testAction).toHaveClass("transition-opacity", "delay-0", "group-hover/actions:delay-[100ms]");
+    expect(testAction).toHaveClass("transition-opacity", "delay-0", "group-hover/actions:delay-[60ms]");
     expect(testAction).not.toHaveClass("translate-x-1", "group-hover/actions:translate-x-0");
-    expect(viewAction).toHaveClass("delay-[20ms]", "group-hover/actions:delay-[80ms]");
-    expect(editAction).toHaveClass("delay-[40ms]", "group-hover/actions:delay-[60ms]");
-    expect(resumeAction).toHaveClass("delay-[60ms]", "group-hover/actions:delay-[40ms]");
-    expect(copyAction).toHaveClass("delay-[80ms]", "group-hover/actions:delay-[20ms]");
-    expect(deleteAction).toHaveClass("delay-[100ms]", "group-hover/actions:delay-0");
+    expect(viewAction).toHaveClass("delay-[20ms]", "group-hover/actions:delay-[40ms]");
+    expect(copyAction).toHaveClass("delay-[40ms]", "group-hover/actions:delay-[20ms]");
+    expect(deleteAction).toHaveClass("delay-[60ms]", "group-hover/actions:delay-0");
     expect(fireEvent.pointerDown(actionsToggle)).toBe(false);
     expect(fireEvent.click(actionsToggle)).toBe(false);
-    expect(within(disabledCard).getByRole("button", { name: localizedText("恢复", "Resume") })).toBeTruthy();
+    const resumeButton = within(disabledCard).getByRole("button", { name: localizedText("恢复", "Resume") });
+    expect(resumeButton).toBeTruthy();
+    expect(within(actionsContent).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
+    expect(within(actionsContent).queryByRole("button", { name: localizedText("恢复", "Resume") })).toBeNull();
+    expect(resumeButton.closest("[class~='group/actions']")).toBeNull();
+    expect(Boolean(resumeButton.compareDocumentPosition(actionsToggle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(within(disabledCard).queryByRole("button", { name: localizedText("暂停", "Pause") })).toBeNull();
     endedStates.forEach((state) => {
       expect(screen.queryByText(`结束任务 ${state}`)).toBeNull();
@@ -2793,45 +2802,60 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
 }
 
 describe("once execution time picker", () => {
+  it("uses the same control height across recurring, interval, and one-time schedules", () => {
+    renderAutomationForm();
+
+    const runTime = localizedText("执行时间", "Run time");
+    fireEvent.click(screen.getByRole("button", { name: localizedText("周期", "Recurring") }));
+    const recurringPeriod = screen.getByRole("button", { name: localizedText("每天", "Daily") });
+    const recurringTime = screen.getByRole("button", { name: runTime });
+    expect(recurringPeriod).toHaveClass("h-9");
+    expect(recurringTime.parentElement).toHaveClass("h-9");
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("按间隔", "Interval") }));
+    expect(screen.getByRole("spinbutton")).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: localizedText("小时", "hours") })).toHaveClass("h-9");
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("单次", "One-time") }));
+    expect(screen.getByRole("group", { name: runTime })).toHaveClass("h-9");
+  });
+
   it("keeps time changes as a draft until they are confirmed", () => {
     renderAutomationForm();
 
     const runTime = localizedText("执行时间", "Run time");
-    const trigger = screen.getByRole("button", { name: runTime });
-    const originalValue = trigger.textContent;
+    const inputGroup = screen.getByRole("group", { name: runTime });
+    const hourInput = within(inputGroup).getByRole("textbox", { name: `${runTime} HH` });
+    const trigger = screen.getByRole("button", { name: localizedText("选择", "Select") });
+    const originalValue = (hourInput as HTMLInputElement).value;
 
     fireEvent.click(trigger);
     let picker = screen.getByRole("dialog", { name: runTime });
     const hour = localizedText("小时", "hours");
-    const originalHour = (within(picker).getByRole("combobox", { name: hour }) as HTMLSelectElement).value;
+    const hourListbox = within(picker).getByRole("listbox", { name: hour });
+    const originalHour = within(hourListbox).getByRole("option", { selected: true }).textContent ?? "";
     const changedHour = originalHour === "23" ? "22" : "23";
-    fireEvent.change(within(picker).getByRole("combobox", { name: hour }), {
-      target: { value: changedHour },
-    });
+    fireEvent.click(within(hourListbox).getByRole("option", { name: changedHour }));
     fireEvent.click(within(picker).getByRole("button", { name: localizedText("取消", "Cancel") }));
 
-    expect(trigger).toHaveTextContent(originalValue ?? "");
+    expect(hourInput).toHaveValue(originalValue);
 
     fireEvent.click(trigger);
     picker = screen.getByRole("dialog", { name: runTime });
-    fireEvent.change(within(picker).getByRole("combobox", { name: hour }), {
-      target: { value: changedHour },
-    });
+    fireEvent.click(within(within(picker).getByRole("listbox", { name: hour })).getByRole("option", { name: changedHour }));
     fireEvent.click(within(picker).getByRole("button", { name: localizedText("确认", "Confirm") }));
 
-    expect(trigger).toHaveTextContent(`${changedHour}:`);
+    expect(hourInput).toHaveValue(changedHour);
     expect(screen.queryByRole("dialog", { name: runTime })).toBeNull();
 
-    const confirmedValue = trigger.textContent;
+    const confirmedValue = (hourInput as HTMLInputElement).value;
     fireEvent.click(trigger);
     picker = screen.getByRole("dialog", { name: runTime });
-    fireEvent.change(within(picker).getByRole("combobox", { name: hour }), {
-      target: { value: originalHour },
-    });
+    fireEvent.click(within(within(picker).getByRole("listbox", { name: hour })).getByRole("option", { name: originalHour }));
     fireEvent.keyDown(picker, { key: "Escape" });
 
     expect(screen.queryByRole("dialog", { name: runTime })).toBeNull();
-    expect(trigger).toHaveTextContent(confirmedValue ?? "");
+    expect(hourInput).toHaveValue(confirmedValue);
   });
 });
 
@@ -3098,7 +3122,7 @@ describe("zero-token automation form", () => {
     expect(notificationTaskButton).toHaveClass("min-h-24");
     expect(scriptTaskButton).toHaveClass("min-h-24");
     expect(dialogContent).toHaveClass("flex", "flex-col");
-    expect(dialogContent).toHaveClass("min-h-[860px]");
+    expect(dialogContent).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]");
     expect(dialogContent.parentElement).toHaveClass("items-center");
     expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
     expect(dialogContent).not.toHaveClass("overflow-y-auto", "overflow-hidden");

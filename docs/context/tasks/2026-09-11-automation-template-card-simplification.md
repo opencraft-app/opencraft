@@ -15,6 +15,9 @@ Simplify scheduled-task template cards across domestic and international sites a
 - User follow-up, 2026-09-11: add Copy to both current- and ended-job rollouts and open the standard create flow prefilled with the source job's task type, name, content, schedule, and editable settings.
 - User follow-up, 2026-09-11: keep template-create and edit modals at the same height while switching run-frequency selections, using flexible space above the action row rather than resizing the dialog.
 - User follow-up, 2026-09-11: in the blank Create Task form, preselect every connected notification channel while allowing each channel to be turned off individually.
+- User follow-up, 2026-09-12: keep Edit and Pause/Resume visible to the left of the current-job three-dot action control, and align run-time picker sizing with the latest master implementation without removing the stable create-form height behavior.
+- User follow-up, 2026-09-12: use the same 36px base control height for recurring, interval, and one-time run-time controls in Create Scheduled Task.
+- User follow-up, 2026-09-12: reduce the shared task-form buffer below shorter variants, and make only overflowed form content scroll without a visible scrollbar while the action row remains in place.
 
 ## interface_refs / data_structure_refs
 - `AutomationScenarioTemplatesSection` remains a button per template and continues to call `onEnable(template)`.
@@ -33,6 +36,10 @@ Simplify scheduled-task template cards across domestic and international sites a
 - Template-create and edit dialogs keep that same action-row position while their run-frequency controls change.
 - Current and ended job rollouts include Copy, which opens create mode prefilled from the source without modifying it.
 - A blank Create Task form selects all currently connected notification channels by default, while template, copy, and edit forms preserve their own delivery configuration.
+- Current-job cards keep Edit and Pause/Resume outside the rollout, while Test, View, Copy, and Delete remain inside it.
+- The run-time controls use the latest master picker layout and sizing while the modal keeps its fixed shared-height action-row behavior.
+- Recurring, interval, and one-time scheduling use matching 36px base time controls; daily multi-time chips can grow only when additional selections require it.
+- Shared create, template, and edit dialogs use a compact 720px height. Their body scrolls when a longer task type or timing configuration overflows, while keeping the scrollbar visually hidden and the action row fixed at the bottom.
 - Targeted component tests and locale checks pass.
 
 ## affected_paths
@@ -95,3 +102,4 @@ Simplify scheduled-task template cards across domestic and international sites a
 - The schedule mask is structurally separate from the icon row, so its exit transition cannot shift action buttons while they are retracting.
 - Copy opens create mode with the source job as initial form data, creates a new task and any required managed script, and never edits the source job.
 - Template-create and edit forms use the same 860px minimum-height, bottom-aligned action row as the blank create flow, with page-level scrolling only when needed.
+- The later compact-height update replaces the 860px minimum with a 720px shared dialog height. Overflow is contained in a visually scrollbar-free form body, so the action row remains fixed and shorter forms retain only a modest buffer above it.
