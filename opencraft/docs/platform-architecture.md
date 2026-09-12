@@ -179,6 +179,9 @@ only decorator; it can wrap any physical transport and produces Replay input.
   renderer supplies the themed content recipe through the existing modal Host.
   Campaign eligibility, impression persistence and automatic scheduling stay
   in a separate orchestration layer, matching Codex's announcement model.
+  Renderer-owned static assets must be resolved to an absolute HTTP(S) or blob
+  URL before entering that descriptor. Relative Vite asset strings are a Web
+  adapter concern and must not weaken the renderer-neutral validation contract.
 - Timeline windowing, restore anchors and latest-Turn follow policy: shared
   algorithms. DOM `ResizeObserver`/scrollTop and RN `onLayout`/contentOffset are
   thin platform adapters; neither platform may introduce another virtualizer
@@ -374,6 +377,12 @@ Electron does not use this HTTP gateway. Its loopback server is static-only;
 the application-scoped transferred port described in
 [`architecture/opencraft-app-host.md`](./architecture/opencraft-app-host.md) is the sole
 Renderer-to-native connection boundary.
+
+Local macOS preview builds use a separate product identity, profile directory,
+output tree and ad-hoc signing path. This prevents a preview from taking the
+release app's single-instance lock, daemon socket, browser session or stored
+credentials. The preview hook mutates only the assembled package: it removes
+foreign native prebuilds and signs after all packaged resources are final.
 
 ## Next feature rule
 

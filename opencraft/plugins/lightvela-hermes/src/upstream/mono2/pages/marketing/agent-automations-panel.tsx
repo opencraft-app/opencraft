@@ -20,7 +20,7 @@ import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useR
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "../../components/domain/agent-section-header";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useT } from "../../i18n/t";
 import { useZeroTokenAutomationsEnabled } from "../../contexts/runtime-config-context";
@@ -752,7 +752,7 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
         <FloatingTooltip
           id={tooltipId}
           position={position}
-          className="whitespace-nowrap"
+          className="whitespace-normal break-words text-left"
           onMouseEnter={showTooltip}
           onMouseLeave={scheduleClose}
         >
@@ -2034,23 +2034,27 @@ function CronJobCard({
           )}
         </div>
         <div className="flex shrink-0 items-center">
-          <CronActionButton label={t("测试运行")} onClick={onTestRun} disabled={busy || testState === "running"}>
-            {testState === "running" ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : testState === "ok" ? (
-              <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
-            ) : testState === "fail" ? (
-              <X className="h-3 w-3 text-[#B91C1C]" />
-            ) : (
-              <Zap className="h-3 w-3" />
-            )}
-          </CronActionButton>
+          {!terminal && (
+            <CronActionButton label={t("测试运行")} onClick={onTestRun} disabled={busy || testState === "running"}>
+              {testState === "running" ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : testState === "ok" ? (
+                <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
+              ) : testState === "fail" ? (
+                <X className="h-3 w-3 text-[#B91C1C]" />
+              ) : (
+                <Zap className="h-3 w-3" />
+              )}
+            </CronActionButton>
+          )}
           <CronActionButton label={t("查看")} onClick={onView}>
             <Eye className="h-3 w-3" />
           </CronActionButton>
-          <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
-            <Pencil className="h-3 w-3" />
-          </CronActionButton>
+          {!terminal && (
+            <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
+              <Pencil className="h-3 w-3" />
+            </CronActionButton>
+          )}
           {!terminal && (paused ? (
             <CronActionButton label={t("恢复")} onClick={onResume} disabled={busy}>
               <Play className="h-3 w-3" />
@@ -2927,7 +2931,7 @@ type IntervalUnit = "m" | "h" | "d";
 
 const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
 const MONTHDAY_VALUES = Array.from({ length: 31 }, (_, i) => i + 1);
-const MAX_DAILY_TIME_POINTS = 12;
+const MAX_DAILY_TIME_POINTS = 18;
 const WEIXIN_MIN_INTERVAL_MINUTES = 150;
 const CLOCK_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const CLOCK_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
@@ -5044,7 +5048,7 @@ function RecurringPicker({
             ? "cursor-not-allowed border-black/5 bg-black/[0.03] text-black/25"
             : "border-black/10 bg-white text-black/65 hover:bg-black/[0.04] hover:text-black/85")
         }
-        aria-label={isDailyTimeLimitReached ? t("最多支持12个时间点") : t("添加时间")}
+        aria-label={isDailyTimeLimitReached ? t("最多支持18个时间点") : t("添加时间")}
       >
         <Plus className="h-3 w-3" />
       </button>
@@ -5056,7 +5060,7 @@ function RecurringPicker({
           onMouseEnter={addDailyTimeTooltip.showTooltip}
           onMouseLeave={addDailyTimeTooltip.scheduleClose}
         >
-          {t("最多支持12个时间点")}
+          {t("最多支持18个时间点")}
         </FloatingTooltip>
       )}
     </span>
@@ -5068,7 +5072,7 @@ function RecurringPicker({
           type="button"
           onClick={() => setPeriodPickerOpen((open) => !open)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
+          className="flex h-8 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
           aria-haspopup="listbox"
           aria-expanded={periodPickerOpen}
         >
@@ -5108,11 +5112,11 @@ function RecurringPicker({
         )}
       </div>
       {period === "daily" && (
-        <div className="relative flex w-[400px] max-w-full flex-wrap items-center gap-1">
+        <div className="relative flex w-[588px] max-w-full flex-wrap items-center gap-1">
           {editingDailyTimes.map((dailyTime, index) => (
             <Fragment key={index}>
               <span
-                className="relative inline-flex h-7 w-[90px] shrink-0 items-center rounded-lg border border-black/10 bg-white focus-within:border-black/25"
+                className="relative inline-flex h-8 w-[90px] shrink-0 items-center rounded-lg border border-black/10 bg-white focus-within:border-black/25"
                 ref={activeDailyTimePickerIndex === index ? dailyTimePickerRef : undefined}
               >
                 <button
@@ -5208,7 +5212,7 @@ function RecurringPicker({
         <div ref={weekdayPickerRef} className="relative w-[360px] max-w-full">
           <div
             onClick={() => setWeekdayPickerOpen((open) => !open)}
-            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
+            className="flex min-h-8 w-full items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
           >
             <div
@@ -5253,7 +5257,7 @@ function RecurringPicker({
               ))}
             </div>
           </div>
-          <ChevronDown className="pointer-events-none absolute right-3 top-[21px] h-4 w-4 -translate-y-1/2 text-black/80" />
+          <ChevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 -translate-y-1/2 text-black/80" />
           {weekdayPickerOpen && (
             <div
               className="absolute left-0 top-[calc(100%+6px)] z-10 w-[260px] rounded-xl border border-black/10 bg-white p-2 shadow-xl"
@@ -5296,7 +5300,7 @@ function RecurringPicker({
         <div ref={monthdayPickerRef} className="relative w-[360px] max-w-full">
           <div
             onClick={() => setMonthdayPickerOpen((open) => !open)}
-            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
+            className="flex min-h-8 w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
           >
             <div
@@ -5354,7 +5358,7 @@ function RecurringPicker({
               </button>
             )}
           </div>
-          <ChevronDown className="pointer-events-none absolute right-3 top-[21px] h-4 w-4 -translate-y-1/2 text-black/80" />
+          <ChevronDown className="pointer-events-none absolute right-3 top-4 h-4 w-4 -translate-y-1/2 text-black/80" />
           {monthdayPickerOpen && (
             <div
               className="absolute left-0 top-[calc(100%+6px)] z-10 max-h-[204px] w-[276px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl border border-black/10 bg-white p-2 shadow-xl"
@@ -5398,7 +5402,7 @@ function RecurringPicker({
           value={time}
           onChange={(e) => onTime(e.target.value)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="w-[100px] rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+          className="h-8 w-[100px] rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
         />
       )}
     </div>
@@ -5523,14 +5527,14 @@ function IntervalPicker({
           value={num}
           onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="h-9 w-16 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
+          className="h-8 w-16 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
         />
         <div ref={unitPickerRef} className="relative w-[76px]">
           <button
             type="button"
             onClick={() => setUnitPickerOpen((open) => !open)}
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-            className="flex min-h-9 w-full items-center justify-between rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
+            className="flex h-8 w-full items-center justify-between rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
             aria-haspopup="listbox"
             aria-expanded={unitPickerOpen}
           >
@@ -5624,9 +5628,189 @@ function getCalendarGridDays(month: Date): Date[] {
   ));
 }
 
-function formatOncePickerValue(value: string): string {
+type OncePickerInputSegments = {
+  year: string;
+  month: string;
+  day: string;
+  hour: string;
+  minute: string;
+};
+
+function getOncePickerInputSegments(value: string): OncePickerInputSegments {
   const draft = parseOncePickerDraft(value);
-  return `${draft.date.replaceAll("-", "/")} ${draft.hour}:${draft.minute}`;
+  const [year, month, day] = draft.date.split("-");
+  return {
+    year: year ?? "",
+    month: month ?? "",
+    day: day ?? "",
+    hour: draft.hour,
+    minute: draft.minute,
+  };
+}
+
+function parseOncePickerInputSegments(segments: OncePickerInputSegments): string | null {
+  const year = Number(segments.year);
+  const monthIndex = Number(segments.month) - 1;
+  const day = Number(segments.day);
+  const hour = Number(segments.hour);
+  const minute = Number(segments.minute);
+  const candidate = new Date(year, monthIndex, day);
+  const validDate = segments.year.length === 4
+    && segments.month.length > 0
+    && segments.day.length > 0
+    && candidate.getFullYear() === year
+    && candidate.getMonth() === monthIndex
+    && candidate.getDate() === day;
+  if (
+    !validDate
+    || segments.hour.length === 0
+    || segments.minute.length === 0
+    || hour < 0
+    || hour > 23
+    || minute < 0
+    || minute > 59
+  ) return null;
+
+  return `${formatLocalDateInputValue(candidate)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function OncePickerInputSegment({
+  label,
+  value,
+  maxLength,
+  className,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  maxLength: number;
+  className: string;
+  onChange: (value: string) => void;
+}) {
+  const replaceOnNextDigitRef = useRef(false);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={label}
+      value={value}
+      maxLength={maxLength}
+      onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, maxLength))}
+      onFocus={(event) => {
+        replaceOnNextDigitRef.current = true;
+        event.currentTarget.select();
+      }}
+      onClick={(event) => {
+        replaceOnNextDigitRef.current = true;
+        event.currentTarget.select();
+      }}
+      onKeyDown={(event) => {
+        if (!replaceOnNextDigitRef.current || !/^\d$/.test(event.key)) return;
+        event.preventDefault();
+        replaceOnNextDigitRef.current = false;
+        onChange(event.key);
+      }}
+      spellCheck={false}
+      className={cn(
+        "h-7 rounded px-0.5 text-center text-sm tabular-nums outline-none focus:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500/25",
+        className,
+      )}
+    />
+  );
+}
+
+function OncePickerTimeColumn({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const selectedOptionRef = useRef<HTMLButtonElement | null>(null);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const selectedOption = selectedOptionRef.current;
+    if (!list || !selectedOption) return;
+    const listRect = list.getBoundingClientRect();
+    const optionRect = selectedOption.getBoundingClientRect();
+    list.scrollTop += optionRect.top - listRect.top - (list.clientHeight - optionRect.height) / 2;
+  }, [value]);
+
+  const moveSelection = useCallback((nextIndex: number) => {
+    const boundedIndex = Math.max(0, Math.min(options.length - 1, nextIndex));
+    const nextValue = options[boundedIndex];
+    if (!nextValue) return;
+    onChange(nextValue);
+    const focusNextOption = () => {
+      const nextOption = listRef.current?.querySelector<HTMLButtonElement>(
+        `[data-time-option-index="${boundedIndex}"]`,
+      );
+      nextOption?.focus();
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(focusNextOption);
+    } else {
+      window.setTimeout(focusNextOption, 0);
+    }
+  }, [onChange, options]);
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5 text-center text-xs font-medium text-black/45">{label}</div>
+      <div
+        ref={listRef}
+        role="listbox"
+        aria-label={label}
+        className="h-52 overscroll-contain overflow-y-auto rounded-lg pr-1"
+      >
+        {options.map((option, index) => {
+          const isSelected = option === value;
+          return (
+            <button
+              key={option}
+              ref={isSelected ? selectedOptionRef : undefined}
+              type="button"
+              role="option"
+              aria-selected={isSelected}
+              tabIndex={isSelected ? 0 : -1}
+              data-time-option-index={index}
+              onClick={() => onChange(option)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  moveSelection(index + 1);
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  moveSelection(index - 1);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  moveSelection(0);
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  moveSelection(options.length - 1);
+                }
+              }}
+              className={cn(
+                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30",
+                isSelected
+                  ? "bg-black/[0.06] text-black"
+                  : "text-black/80 hover:bg-black/[0.035]",
+              )}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function OncePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -5634,6 +5818,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
   const { i18n } = useTranslation();
   const selectedDayRef = useRef<HTMLButtonElement | null>(null);
   const initialDraft = useMemo(() => parseOncePickerDraft(value), [value]);
+  const [inputSegments, setInputSegments] = useState(() => getOncePickerInputSegments(value));
   const [open, setOpen] = useState(false);
   const [draftDate, setDraftDate] = useState(initialDraft.date);
   const [draftHour, setDraftHour] = useState(initialDraft.hour);
@@ -5656,18 +5841,37 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
     return Array.from({ length: 7 }, (_, index) => formatter.format(new Date(2024, 0, 7 + index)));
   }, [displayLocale]);
 
-  const resetDraft = useCallback(() => {
-    const next = parseOncePickerDraft(value);
+  useEffect(() => {
+    setInputSegments(getOncePickerInputSegments(value));
+  }, [value]);
+
+  const resetDraft = useCallback((nextValue = value) => {
+    const next = parseOncePickerDraft(nextValue);
     setDraftDate(next.date);
     setDraftHour(next.hour);
     setDraftMinute(next.minute);
     setVisibleMonth(next.month);
   }, [value]);
 
+  const commitInputSegments = useCallback(() => {
+    const nextValue = parseOncePickerInputSegments(inputSegments);
+    if (!nextValue) {
+      setInputSegments(getOncePickerInputSegments(value));
+      return value;
+    }
+    setInputSegments(getOncePickerInputSegments(nextValue));
+    if (nextValue !== value) onChange(nextValue);
+    return nextValue;
+  }, [inputSegments, onChange, value]);
+
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (nextOpen) resetDraft();
+    if (nextOpen) resetDraft(commitInputSegments());
     setOpen(nextOpen);
-  }, [resetDraft]);
+  }, [commitInputSegments, resetDraft]);
+
+  const updateInputSegment = useCallback((segment: keyof OncePickerInputSegments, nextValue: string) => {
+    setInputSegments((current) => ({ ...current, [segment]: nextValue }));
+  }, []);
 
   const changeMonth = useCallback((offset: number) => {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
@@ -5677,118 +5881,174 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
+      <PopoverAnchor asChild>
+        <div
+          role="group"
           aria-label={t("执行时间")}
-          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="flex h-9 min-w-[220px] items-center justify-between gap-4 rounded-md border border-black/10 bg-white px-3 text-left text-sm tabular-nums transition hover:border-black/20 focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
+          onBlur={(event) => {
+            const inputGroup = event.currentTarget;
+            window.setTimeout(() => {
+              if (!inputGroup.contains(document.activeElement)) commitInputSegments();
+            }, 0);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+              event.target.blur();
+            }
+          }}
+          tabIndex={-1}
+          className="flex h-9 w-[220px] max-w-full items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20"
         >
-          <span>{formatOncePickerValue(value)}</span>
-          <CalendarDays className="size-4 shrink-0 text-black/75" aria-hidden="true" />
-        </button>
-      </PopoverTrigger>
+          <div className="flex min-w-0 flex-1 items-center px-2">
+            <OncePickerInputSegment
+              label={`${t("执行时间")} YYYY`}
+              value={inputSegments.year}
+              maxLength={4}
+              className="w-10"
+              onChange={(nextValue) => updateInputSegment("year", nextValue)}
+            />
+            <span aria-hidden="true" className="text-sm text-black/55">/</span>
+            <OncePickerInputSegment
+              label={`${t("执行时间")} MM`}
+              value={inputSegments.month}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("month", nextValue)}
+            />
+            <span aria-hidden="true" className="text-sm text-black/55">/</span>
+            <OncePickerInputSegment
+              label={`${t("执行时间")} DD`}
+              value={inputSegments.day}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("day", nextValue)}
+            />
+            <span aria-hidden="true" className="w-2" />
+            <OncePickerInputSegment
+              label={`${t("执行时间")} HH`}
+              value={inputSegments.hour}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("hour", nextValue)}
+            />
+            <span aria-hidden="true" className="text-sm text-black/55">:</span>
+            <OncePickerInputSegment
+              label={`${t("执行时间")} mm`}
+              value={inputSegments.minute}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("minute", nextValue)}
+            />
+          </div>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={t("选择")}
+              className="mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-black/75 transition hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <CalendarDays className="size-4" aria-hidden="true" />
+            </button>
+          </PopoverTrigger>
+        </div>
+      </PopoverAnchor>
       <PopoverContent
         align="start"
         role="dialog"
         aria-label={t("执行时间")}
-        className="z-[210] w-[342px] max-w-[calc(100vw-32px)] p-3"
+        className="z-[210] max-h-[var(--radix-popover-content-available-height)] w-[420px] max-w-[calc(100vw-32px)] overscroll-contain overflow-y-auto p-0"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           selectedDayRef.current?.focus();
         }}
       >
-        <div className="flex items-center justify-between gap-3 pb-2">
-          <span className="text-sm font-semibold text-black/85">{monthLabel}</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              aria-label={t("上一页")}
-              onClick={() => changeMonth(-1)}
-              className="inline-flex size-8 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-            >
-              <ChevronLeft className="size-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label={t("下一页")}
-              onClick={() => changeMonth(1)}
-              className="inline-flex size-8 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-            >
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </button>
+        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_144px]">
+          <div className="p-2">
+            <div className="flex items-center justify-between gap-2 pb-1">
+              <span className="text-sm font-semibold text-black/85">{monthLabel}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label={t("上一页")}
+                  onClick={() => changeMonth(-1)}
+                  className="inline-flex size-7 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+                >
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("下一页")}
+                  onClick={() => changeMonth(1)}
+                  className="inline-flex size-7 items-center justify-center rounded-md text-black/60 transition hover:bg-black/[0.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+                >
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 gap-0.5" aria-hidden="true">
+              {weekdayLabels.map((label, index) => (
+                <span key={`${label}-${index}`} className="flex h-6 items-center justify-center text-xs text-black/45">
+                  {label}
+                </span>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-0.5">
+              {calendarDays.map((date) => {
+                const dateValue = formatLocalDateInputValue(date);
+                const isSelected = dateValue === draftDate;
+                const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
+                const isToday = dateValue === todayValue;
+                return (
+                  <button
+                    key={dateValue}
+                    ref={isSelected ? selectedDayRef : undefined}
+                    type="button"
+                    aria-label={fullDateFormatter.format(date)}
+                    aria-pressed={isSelected}
+                    aria-current={isToday ? "date" : undefined}
+                    onClick={() => {
+                      setDraftDate(dateValue);
+                      if (!isCurrentMonth) {
+                        setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+                      }
+                    }}
+                    className={cn(
+                      "inline-flex size-8 items-center justify-center rounded-md text-sm tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35",
+                      isSelected
+                        ? "bg-[#2F7BFF] font-semibold text-white hover:bg-[#276FE8]"
+                        : isCurrentMonth
+                          ? "text-black/80 hover:bg-black/[0.05]"
+                          : "text-black/30 hover:bg-black/[0.04]",
+                      isToday && !isSelected ? "font-semibold text-[#245FCE]" : "",
+                    )}
+                  >
+                    {date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 border-t border-black/[0.06] p-2 sm:border-l sm:border-t-0">
+            <OncePickerTimeColumn
+              label={t("小时")}
+              options={CLOCK_HOUR_OPTIONS}
+              value={draftHour}
+              onChange={setDraftHour}
+            />
+            <OncePickerTimeColumn
+              label={t("分钟")}
+              options={CLOCK_MINUTE_OPTIONS}
+              value={draftMinute}
+              onChange={setDraftMinute}
+            />
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-1" aria-hidden="true">
-          {weekdayLabels.map((label, index) => (
-            <span key={`${label}-${index}`} className="flex h-7 items-center justify-center text-xs text-black/45">
-              {label}
-            </span>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {calendarDays.map((date) => {
-            const dateValue = formatLocalDateInputValue(date);
-            const isSelected = dateValue === draftDate;
-            const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
-            const isToday = dateValue === todayValue;
-            return (
-              <button
-                key={dateValue}
-                ref={isSelected ? selectedDayRef : undefined}
-                type="button"
-                aria-label={fullDateFormatter.format(date)}
-                aria-pressed={isSelected}
-                aria-current={isToday ? "date" : undefined}
-                onClick={() => {
-                  setDraftDate(dateValue);
-                  if (!isCurrentMonth) {
-                    setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1));
-                  }
-                }}
-                className={cn(
-                  "inline-flex size-9 items-center justify-center rounded-md text-sm tabular-nums transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35",
-                  isSelected
-                    ? "bg-[#2F7BFF] font-semibold text-white hover:bg-[#276FE8]"
-                    : isCurrentMonth
-                      ? "text-black/80 hover:bg-black/[0.05]"
-                      : "text-black/30 hover:bg-black/[0.04]",
-                  isToday && !isSelected ? "font-semibold text-[#245FCE]" : "",
-                )}
-              >
-                {date.getDate()}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-3 flex items-center gap-2 border-t border-black/[0.06] pt-3">
-          <Clock className="size-4 text-black/45" aria-hidden="true" />
-          <select
-            value={draftHour}
-            onChange={(event) => setDraftHour(event.target.value)}
-            aria-label={t("小时")}
-            className="h-9 rounded-md border border-black/10 bg-white px-2 text-sm tabular-nums focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
-          >
-            {CLOCK_HOUR_OPTIONS.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
-          </select>
-          <span className="text-sm text-black/45" aria-hidden="true">:</span>
-          <select
-            value={draftMinute}
-            onChange={(event) => setDraftMinute(event.target.value)}
-            aria-label={t("分钟")}
-            className="h-9 rounded-md border border-black/10 bg-white px-2 text-sm tabular-nums focus-visible:border-black/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
-          >
-            {CLOCK_MINUTE_OPTIONS.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
-          </select>
-        </div>
-
-        <div className="mt-3 flex items-center justify-end gap-2 border-t border-black/[0.06] pt-3">
+        <div className="flex items-center justify-end gap-2 border-t border-black/[0.06] p-2">
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-black/10 bg-white px-4 text-sm font-medium text-black/75 transition hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-black/10 bg-white px-3 text-sm font-medium text-black/75 transition hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
           >
             {t("取消")}
           </button>
@@ -5798,7 +6058,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange(`${draftDate}T${draftHour}:${draftMinute}`);
               setOpen(false);
             }}
-            className="inline-flex h-9 items-center justify-center rounded-lg bg-black px-4 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
           >
             {t("确认")}
           </button>

@@ -31,12 +31,12 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
 
   document.body.innerHTML = `
-    <div id="lightvela-intl-home" data-rotator-words='["工作助理","知识库"]'>
+    <div id="lightvela-intl-home" data-rotator-words='["工作搭档","开发搭子"]'>
       <h1 class="hero__title">
         <span class="hero__line hero__line--main">越用越懂你，长期在线的 AI 伙伴</span>
         <span class="hero__line hero__line--dynamic">
           <span class="hero__prefix">LightVela 可以成为你的</span>
-          <span class="hero__rotator-wrap"><em id="hero-rotator">工作助理</em></span>
+          <span class="hero__rotator-wrap"><em id="hero-rotator">工作搭档</em></span>
           <span class="hero__suffix">になります</span>
         </span>
       </h1>
@@ -86,10 +86,10 @@ describe("homepage hero headline order", () => {
     );
 
     vi.advanceTimersByTime(revealDelay + 2_459);
-    expect(rotator.textContent).toBe("工作助理");
+    expect(rotator.textContent).toBe("工作搭档");
 
     vi.advanceTimersByTime(1);
-    expect(rotator.textContent).toBe("知识库");
+    expect(rotator.textContent).toBe("开发搭子");
   });
 
   it("keeps dependent hero elements hidden until their timing is ready", () => {

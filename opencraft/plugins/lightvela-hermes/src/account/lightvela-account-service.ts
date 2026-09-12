@@ -274,6 +274,13 @@ export class LightVelaApiError extends Error {
   }
 }
 
+export class LightVelaRegionSwitchRequiresSignOutError extends Error {
+  constructor() {
+    super("Please sign out before switching LightVela region");
+    this.name = "LightVelaRegionSwitchRequiresSignOutError";
+  }
+}
+
 async function errorMessage(response: Response): Promise<string> {
   try {
     const body = await response.json() as { readonly message?: string; readonly request_id?: string };
@@ -354,7 +361,7 @@ export class LightVelaAccountService {
     if (region !== "cn" && region !== "intl") throw new Error("Invalid LightVela region");
     if (region === this.region) return;
     if (this.hasStoredSession() || this.snapshot.phase === "authenticated" || this.signInOperation || this.signOutOperation) {
-      throw new Error("Please sign out before switching LightVela region");
+      throw new LightVelaRegionSwitchRequiresSignOutError();
     }
     this.invalidateAuthority();
     this.region = region;

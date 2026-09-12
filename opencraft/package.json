@@ -8,6 +8,13 @@
     "packages/*",
     "plugins/*"
   ],
+  "allowScripts": {
+    "@parcel/watcher@2.6.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "node-pty@1.1.0": true
+  },
   "scripts": {
     "postinstall": "node scripts/patch-expo-modules-jsi.mjs",
     "protocol:refresh": "node scripts/refresh-codex-protocol.mjs",
@@ -35,8 +42,10 @@
     "update:mac": "bash scripts/update-local-mac.sh",
     "dev:electron": "npm run build:electron && npm run start --workspace @opencraft/workbench-electron",
     "package:electron:mac:arm64:zip": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:mac:arm64:zip --workspace @opencraft/workbench-electron",
+    "package:electron:mac:arm64:preview": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:mac:arm64:preview --workspace @opencraft/workbench-electron",
     "package:electron:mac:arm64:dmg": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:mac:arm64:dmg --workspace @opencraft/workbench-electron",
     "package:electron:mac:x64:zip": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:mac:x64:zip --workspace @opencraft/workbench-electron",
+    "package:electron:mac:x64:preview": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:mac:x64:preview --workspace @opencraft/workbench-electron",
     "package:electron:mac:x64:dmg": "npm run prepare:dsh-runtime && npm run build:electron:release && npm run package:mac:x64:dmg --workspace @opencraft/workbench-electron",
     "package:electron:linux:x64:appimage": "npm run build:electron:release && npm run package:linux:x64:appimage --workspace @opencraft/workbench-electron",
     "package:electron:linux:x64:rpm": "npm run build:electron:release && npm run package:linux:x64:rpm --workspace @opencraft/workbench-electron",

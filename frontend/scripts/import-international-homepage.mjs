@@ -61,14 +61,14 @@ const publicLocalizedPaths = [
   "/terms-of-service",
 ];
 const rotatorWordsByLocale = {
-  "en-US": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
-  "zh-CN": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
-  "zh-SG": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
-  "zh-Hant": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
-  "id-ID": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
-  es: ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
-  "ja-JP": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
-  "ko-KR": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
+  "en-US": ["work partner", "developer buddy", "plan executor", "market watcher", "life concierge", "financial assistant", "creative companion", "content manager"],
+  "zh-CN": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+  "zh-SG": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+  "zh-Hant": ["工作夥伴", "開發夥伴", "計畫執行官", "盤面觀察員", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
+  "id-ID": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengamat pasar", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
+  es: ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "observador del mercado", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
+  "ja-JP": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
+  "ko-KR": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
 };
 const tokenTrialCopyByLocale = {
   "en-US": "Try an AI token plan free for 7 days.",
@@ -80,8 +80,9 @@ const tokenTrialCopyByLocale = {
   "ko-KR": "AI Token 플랜을 7일 동안 무료로 사용해 보세요.",
 };
 const trialTitleCopyByLocale = {
-  "zh-SG": "免费体验，无需信用卡",
-  "zh-Hant": "免費體驗，無需信用卡",
+  "en-US": "Try it free, activate in 10 seconds",
+  "zh-SG": "免费体验，10秒极速开通",
+  "zh-Hant": "免費體驗，10秒極速開通",
 };
 const soulStripSecondaryCopyByLocale = {
   "en-US": {
@@ -531,7 +532,7 @@ const coreCopyByLocale = {
     "Learn Workbench": "Pelajari ruang kerja",
     "Try it free": "Coba gratis",
     "No credit card required": "Tanpa kartu kredit",
-    "Try it free, no credit card required": "Coba gratis, tanpa kartu kredit",
+    "Try it free, no credit card required": "Coba gratis, aktif dalam 10 detik",
     "Try LightVela free for 14 days.": "Coba LightVela gratis selama 14 hari.",
     "Try an AI token plan free for 3 days.": "Coba paket AI Token gratis selama 3 hari.",
     "Try the Standard plan free for 14 days.": "Coba paket Standard gratis selama 14 hari.",
@@ -706,7 +707,7 @@ const coreCopyByLocale = {
     "Learn Workbench": "Conoce el área de trabajo",
     "Try it free": "Pruébalo gratis",
     "No credit card required": "Sin tarjeta de crédito",
-    "Try it free, no credit card required": "Pruébalo gratis, sin tarjeta de crédito",
+    "Try it free, no credit card required": "Pruébalo gratis, activa en 10 segundos",
     "Try LightVela free for 14 days.": "Prueba LightVela gratis durante 14 días.",
     "Try an AI token plan free for 3 days.": "Prueba un plan de tokens de IA gratis durante 3 días.",
     "Try the Standard plan free for 14 days.": "Prueba el plan Standard gratis durante 14 días.",
@@ -903,7 +904,7 @@ Object.assign(coreCopyByLocale, {
     "Workbench product screen": "ワークベンチ製品画面",
     "Try it free": "無料で試す",
     "No credit card required": "クレジットカード不要",
-    "Try it free, no credit card required": "クレジットカード不要で無料体験",
+    "Try it free, no credit card required": "無料体験、10秒でスピード開通",
     "Try LightVela free for 14 days.": "LightVelaを14日間無料でお試しいただけます。",
     "Try an AI token plan free for 3 days.": "AI Tokenプランを3日間無料でお試しいただけます。",
     "Try the Standard plan free for 14 days.": "Standardプランを14日間無料で試せます。",
@@ -1098,7 +1099,7 @@ Object.assign(coreCopyByLocale, {
     "Workbench product screen": "워크벤치 제품 화면",
     "Try it free": "무료로 사용해 보기",
     "No credit card required": "신용카드 필요 없음",
-    "Try it free, no credit card required": "신용카드 없이 무료로 체험하세요",
+    "Try it free, no credit card required": "무료 체험, 10초 만에 개통",
     "Try LightVela free for 14 days.": "LightVela를 14일 동안 무료로 사용해 보세요.",
     "Try an AI token plan free for 3 days.": "AI Token 플랜을 3일 동안 무료로 사용해 보세요.",
     "Try the Standard plan free for 14 days.": "Standard 플랜을 14일 동안 무료로 사용해 보세요.",
@@ -4059,7 +4060,7 @@ function applyFooterLayout(document) {
     <div class="foot__brand"><a class="foot__brand-link" href="/"><img src="/lightvela-logo.svg" alt="LightVela"></a><p class="foot__copyright">© 2026 LightVela. All rights reserved.<br>Built by Tencent Lighthouse.</p></div>
     <div><h3>Product</h3><ul><li><a href="/blog">Blog</a></li><li><a href="/subscribe">14-day free trial</a></li><li><a href="/subscribe">Pricing</a></li><li><a href="/docs/configuration/channel-whatsapp">WhatsApp setup guide</a></li><li><a href="/docs/configuration/channel-telegram">Telegram setup guide</a></li><li><a href="/docs/configuration/channel-discord">Discord setup guide</a></li></ul></div>
     <div><h3>Analysis</h3><ul><li><a href="/docs/compare/lightvela-vs-localhost-ai-agent">Self-hosting analysis</a></li><li><a href="/docs/compare/lightvela-vs-hostinger">Hostinger analysis</a></li><li><a href="/docs/compare/lightvela-vs-manus">Manus analysis</a></li><li><a href="/docs/compare/lightvela-vs-chatgpt">ChatGPT analysis</a></li><li><a href="/docs/compare/lightvela-vs-genspark">Genspark analysis</a></li></ul></div>
-    <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li><li><a href="https://www.youtube.com/@TencentLightVela" target="_blank" rel="noreferrer">YouTube</a></li></ul></div>
+    <div><h3>Community</h3><ul><li><a href="https://x.com/agentlightvela" target="_blank" rel="noreferrer">X / Twitter</a></li><li><a href="https://discord.gg/Myh58xEMe2" target="_blank" rel="noreferrer">Discord</a></li><li><a href="https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b" target="_blank" rel="noreferrer">WhatsApp</a></li></ul></div>
     <div><h3>Company</h3><ul><li><a href="/about">About Us</a></li><li><a href="/privacy-policy">Privacy Policy</a></li><li><a href="/terms-of-service">Terms of Service</a></li><li><a href="/open-source-licenses">Open Source Notice</a></li></ul></div>
     <div><h3>Related products</h3><ul><li><a href="https://edgeone.ai/" target="_blank" rel="noreferrer">Tencent EdgeOne</a></li><li><a href="https://tcb.cloud.tencent.com/en/?from=lightvela" target="_blank" rel="noreferrer">Tencent CloudBase</a></li></ul></div>
   </div></div>
@@ -4132,7 +4133,6 @@ const routeByLabel = new Map([
   ["Discord", "https://discord.gg/Myh58xEMe2"],
   ["WhatsApp", "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b"],
   ["X / Twitter", "https://x.com/agentlightvela"],
-  ["YouTube", "https://www.youtube.com/@TencentLightVela"],
   ["About Us", "/about"],
   ["Privacy Policy", "/privacy-policy"],
   ["Terms of Service", "/terms-of-service"],
@@ -4185,13 +4185,21 @@ let inlineScripts = [];
 const domesticFragment = await readFile(path.join(targetRoot, "index-fragment.zh-CN.html"), "utf8");
 const domesticDocument = new JSDOM(domesticFragment).window.document;
 const domesticChannels = Array.from(domesticDocument.querySelectorAll(".hero__tabs label"), (label) => label.textContent.trim());
+/* 国内 5 个平台改用品牌 PNG，图标 DOM 由国内产物自己维护。
+   与频道名一同纳入防呆：一旦被改回 symbol 线性图标，
+   hero__tabs label img 的灰度滤镜会把品牌色压成灰块，这里提前拦住。 */
+const domesticBrandIcons = Array.from(
+  domesticDocument.querySelectorAll('.hero__tabs label img.icon--brand'),
+  (img) => (img.getAttribute("src") ?? "").replace("/lightvela-intl-home/assets/", ""),
+);
 if (
   domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书"
+  || domesticBrandIcons.join(",") !== "wechat.png,qq.png,wecom.png,dingtalk.png,feishu.png"
   || domesticFragment.includes('href="/zh-cn')
   || domesticFragment.includes("Copyright © 2026 LightVela 版权所有")
   || domesticFragment.includes("© 2026 LightVela 版权所有")
 ) {
-  throw new Error("Domestic homepage must retain its approved channels, unprefixed routes, and concise copyright before international import");
+  throw new Error("Domestic homepage must retain its approved channels, brand icons, unprefixed routes, and concise copyright before international import");
 }
 
 const preservedHarnessAssets = await Promise.all(
@@ -4569,10 +4577,22 @@ const homepageReadingCss = `
   }
 }
 `;
-const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}`;
+/* 品牌位图图标：国内站 Hero 演示区的 5 个平台（微信 / QQ / 企业微信 / 钉钉 / 飞书）
+   用 PNG 真图而非 symbol，需要绕开 .icon 的 stroke/fill 以保留品牌原色。
+   图标 DOM 属国内产物（本 importer 只校验频道名、不生成国内 tab），
+   但 style.css 是本脚本的产物，规则必须在此声明，否则重跑会冲掉手改。 */
+const domesticBrandIconCss = `img.icon--brand {
+  width: 1.25em;
+  height: 1.25em;
+  object-fit: contain;
+  stroke: none;
+  fill: none;
+}
+`;
+const css = `${localizedBaseCss}\n${headerActionsLayerCss}\n${playTabsExpansionCss}\n${heroIntegrationLinkCss}\n${plainHeroEyebrowCss}\n${heroRotatorSweepCss}\n${domesticStableHeroPrefixCss}\n${longLocaleDesktopHeadingCss}\n${footerRefreshCss}\n${voiceSectionRestoreCss}\n${internationalHeroChannelChromeCss}\n${internationalHeroChannelParityCss}\n${homepageReadingCss}\n${domesticBrandIconCss}`;
 const runtimeSource = inlineScripts.join("\n\n").replace(
-  "var words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
-  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
+  "var words = ['work partner', 'developer buddy', 'plan executor', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
+  "var words = JSON.parse((el.closest('#lightvela-intl-home') || {}).dataset?.rotatorWords || '[]');\n    if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
 ).replace(
   `    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     function rotate() {

@@ -117,10 +117,8 @@ describe("LightVelaFooter", () => {
       "href",
       "https://x.com/agentlightvela",
     );
-    expect(within(communitySection as HTMLElement).getByRole("link", { name: "Youtube" })).toHaveAttribute(
-      "href",
-      "https://www.youtube.com/@TencentLightVela",
-    );
+    /* YouTube 入口已下线，社区栏不应再出现该链接。 */
+    expect(within(communitySection as HTMLElement).queryByRole("link", { name: /youtube/i })).toBeNull();
 
     // 对比栏：国际站 5 篇对比文档
     const compareSection = screen.getByRole("heading", { name: "对比" }).closest("section");

@@ -307,11 +307,6 @@ button {
   --app-shell-left-opacity: 1;
   --spacing-token-safe-header-left: 0px;
   --spacing-token-safe-header-right: 0px;
-  --codex-window-material: color-mix(
-    in srgb,
-    var(--color-background-surface-under) 92%,
-    var(--color-text) 8%
-  );
   position: fixed;
   inset: 0;
   width: 100%;
@@ -321,13 +316,8 @@ button {
   overflow: hidden;
   overscroll-behavior: none;
   // Browser fallback for Electron's transparent/vibrant window material.
-  background:
-    radial-gradient(
-      circle at 12% -8%,
-      color-mix(in srgb, var(--color-surface-tertiary) 72%, transparent),
-      transparent 34%
-    ),
-    var(--codex-window-material);
+  background-color: var(--codex-window-material);
+  background-image: var(--codex-window-highlight);
 
   &:has(.app-shell-left-panel__resize[data-resizing="true"]) {
     cursor: col-resize;
@@ -518,7 +508,7 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
   flex: 1;
   flex-direction: column;
   background: var(--color-surface);
-  box-shadow: var(--elevation-prominent);
+  box-shadow: var(--codex-main-surface-elevation);
   overflow: hidden;
 }
 
@@ -3090,6 +3080,25 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
 
     span:last-child {
       background: #3478f6;
+    }
+  }
+
+  &[data-theme-preview="vela.core.web"] {
+    border-color: rgb(0 0 0 / 5%);
+    background: #fff;
+
+    span:first-child {
+      border-right: 1px solid rgb(0 0 0 / 5%);
+      background: #fff;
+    }
+
+    span:nth-child(2) {
+      border-color: rgb(0 0 0 / 5%);
+      background: #fff;
+    }
+
+    span:last-child {
+      background: #285dff;
     }
   }
 }

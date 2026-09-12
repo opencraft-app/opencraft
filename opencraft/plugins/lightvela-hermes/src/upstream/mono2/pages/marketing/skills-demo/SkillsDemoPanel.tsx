@@ -803,6 +803,13 @@ function RegistryBadge({ registry, href }: { registry: Registry; href?: string }
 }
 
 function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[] {
+  const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
+  if (nativeSource === "builtin") {
+    return [{
+      key: `native:${nativeSource}`,
+      label: skill.sourceLabel || "系统预置",
+    }];
+  }
   const registries = Array.from(new Set(skill.registries));
   const marketplaceRegistries = registries.filter((registry) => registry !== "hermes");
   if (marketplaceRegistries.length > 0) {
@@ -813,7 +820,6 @@ function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[]
       sourceUrl: skill.sourceUrls?.[registry],
     }));
   }
-  const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
   return [{
     key: `native:${nativeSource}`,
     label: skill.sourceLabel || "其他",

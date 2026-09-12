@@ -150,7 +150,9 @@
 
 ### 订阅与账户
 
-- `next-site/subscribe-page.tsx` — 套餐选择卡片 + 支付流程（50KB / 1446 行，详见 `plan.md`）
+- `next-site/subscribe-page.tsx` — 套餐选择卡片 + 支付流程（详见 [套餐模块](plan.md)）。合法升级卡片默认显示“升级至此套餐”，按钮完成询价后打开完整确认弹窗。
+- `upgrade-pass-modal.tsx` — 国内微信 / 国际卡支付；创建订单 loading 保留在支付按钮，支付确认后进入 Agents。完整规则见 [升级套餐交互](pass-upgrade.md)。
+- `agent-upgrading-view.tsx` — `/agents` 升级期间使用咖啡插画及目标套餐 / 到期时间信息，不展示模型积分和具体 Bot；交付及 Bot 快照刷新完成后恢复控制台。目标名称与交付条件使用升级规格，不沿用创建流程的完成判定。
 - `account-page.tsx` — 个人资料 / 订阅 / 权益 / 安全中心 / 实名认证入口（41KB / 1084 行）。实名状态以 `user.realnameVerified` 派生，认证弹窗 `VerifyIdentityModal` 调用 `AuthRepository.verifyRealname`；弹窗关闭**仅限右上角 X**（遮罩 / 容器点击不再关闭，避免误触）
 - `account-orders-page.tsx` — 订单列表（筛选、查看支付凭证、14KB）
 - `changelog-page.tsx` — 更新日志（数据驱动列表 + Figma 配图卡片）。文案与配图按 `isGlobal` 分叉：

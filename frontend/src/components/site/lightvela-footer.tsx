@@ -107,7 +107,6 @@ const getCommunityLinks = (t: (zh: string) => string): FooterLink[] =>
           external: true,
         },
         { label: "X / Twitter", href: "https://x.com/agentlightvela", external: true },
-        { label: "Youtube", href: "https://www.youtube.com/@TencentLightVela", external: true },
       ]
     : [{ label: t("加入交流群"), to: "/docs/contact-us" }];
 

@@ -87,14 +87,14 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("Job type")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: /AI-powered/ })).toBeInTheDocument();
+    expect(within(dialog).getByText("Task type")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Agent task/ })).toBeInTheDocument();
     expect(screen.getByText("AI understands your needs and completes tasks automatically")).not.toHaveClass("min-h-8");
     expect(screen.getByText("Sends notifications as written, without calling a model")).not.toHaveClass("min-h-8");
     expect(screen.getByText("Run preset scripts, ideal for developers")).not.toHaveClass("min-h-8");
     expect(screen.queryByText("No model-token usage")).not.toBeInTheDocument();
-    expect(within(dialog).getAllByText("AI-powered", { selector: "span" })).toHaveLength(2);
-    expect(within(dialog).getAllByText("AI-powered", { selector: "span" })[1]).toHaveClass("bg-indigo-600", "text-white");
+    expect(within(dialog).getAllByText("AI-powered", { selector: "span" })).toHaveLength(1);
+    expect(within(dialog).getByText("AI-powered", { selector: "span" })).toHaveClass("bg-indigo-600", "text-white");
     expect(within(dialog).getAllByText("0 Token")).toHaveLength(2);
     within(dialog).getAllByText("0 Token").forEach((label) => {
       expect(label).toHaveClass("bg-blue-50", "text-blue-700");
@@ -145,7 +145,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create|新建/ }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Create Scheduled Task");
     expect(screen.getByRole("dialog")).toHaveTextContent("Instructions");
-    expect(screen.getByRole("combobox", { name: "Upstream Job" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Upstream Task" })).toBeInTheDocument();
   });
 
   it("shows relationship details and safely detaches dependents before deletion", async () => {
@@ -158,7 +158,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     const upstreamCard = await getCronJobCard("Upstream");
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /View|查看/ }));
     expect(within(screen.getByRole("dialog")).getByText("Scheduled Task Details")).toBeInTheDocument();
-    expect(within(screen.getByRole("dialog")).getByText("Upstream Job")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Upstream Task")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Close|关闭/ }));
 
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /Delete|删除/ }));
@@ -190,7 +190,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize upstream output" },
     });
-    fireEvent.click(screen.getByRole("combobox", { name: "Upstream Job" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Upstream Task" }));
     fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
@@ -222,7 +222,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     const card = await getCronJobCard("Downstream");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
-    expect(screen.getByRole("combobox", { name: "Upstream Job" })).toHaveTextContent("Upstream");
+    expect(screen.getByRole("combobox", { name: "Upstream Task" })).toHaveTextContent("Upstream");
     fireEvent.click(screen.getByRole("button", { name: "Deselect" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -277,7 +277,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
   });
 
-  it("separates active and ended jobs with English tabs", async () => {
+  it("separates active and ended tasks with English tabs", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "active", name: "Active task", state: "scheduled" }),
       makeCronJob({ id: "completed", name: "Completed task", state: "completed", enabled: false }),
@@ -285,24 +285,29 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    const currentTab = await screen.findByRole("button", { name: "Current Jobs" });
-    const taskTypeFilter = screen.getByRole("combobox", { name: "Job type" });
+    const currentTab = await screen.findByRole("button", { name: "Current Tasks" });
+    const taskTypeFilter = screen.getByRole("combobox", { name: "Task type" });
     expect(taskTypeFilter).toHaveTextContent("All");
     fireEvent.click(taskTypeFilter);
-    expect(screen.getByRole("option", { name: "AI-powered" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Agent task" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("option", { name: "All" }));
     expect(taskTypeFilter.parentElement).not.toBe(currentTab.parentElement);
-    expect(screen.getByRole("button", { name: "Ended Jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ended Tasks" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
     expect(screen.getByText("Active task")).toBeInTheDocument();
     expect(screen.queryByText("Completed task")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ended Jobs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ended Tasks" }));
 
     const card = await getCronJobCard("Completed task");
     expect(within(card).getByText("Completed")).toBeInTheDocument();
     expect(within(card).queryByText("Paused")).toBeNull();
     expect(within(card).queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Test run" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(within(card).getByRole("button", { name: "View" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 });
 

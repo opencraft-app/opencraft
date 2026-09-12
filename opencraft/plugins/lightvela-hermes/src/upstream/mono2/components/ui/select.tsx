@@ -2,7 +2,7 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
-import { controlFieldClass } from "./control-shell";
+import { controlFieldClass, floatingPanelClass } from "./control-shell";
 import { cn } from "../../lib/utils";
 
 const Select = SelectPrimitive.Root;
@@ -14,7 +14,7 @@ const SelectSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Separator
     ref={ref}
-    className={cn("lv-select-separator my-1 h-px", className)}
+    className={cn("my-1 h-px bg-black/[0.08]", className)}
     {...props}
   />
 ));
@@ -28,7 +28,7 @@ const SelectTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       controlFieldClass,
-      "lv-select-trigger flex h-11 items-center justify-between px-3.5 py-2 text-sm",
+      "flex h-11 items-center justify-between px-3.5 py-2 text-sm",
       className,
     )}
     {...props}
@@ -49,12 +49,13 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "lightvela-agent-console-portal lv-floating-control lv-select-content min-w-[12rem] overflow-hidden",
+        "lightvela-agent-console-portal z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
+        floatingPanelClass,
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className="lv-select-viewport">{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className="p-1.5">{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
@@ -67,12 +68,12 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "lv-select-item relative flex w-full cursor-default select-none items-center py-2.5 pl-8 pr-3 text-sm outline-none",
+      "relative flex w-full cursor-default select-none items-center rounded-[0.85rem] py-2.5 pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none data-[highlighted]:bg-[var(--surface-muted)]",
       className,
     )}
     {...props}
   >
-    <span className="lv-select-item__indicator absolute left-2 flex size-4 items-center justify-center">
+    <span className="absolute left-2 flex size-4 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
         <Check className="size-3.5" />
       </SelectPrimitive.ItemIndicator>

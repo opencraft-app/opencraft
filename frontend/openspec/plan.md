@@ -1,3 +1,141 @@
+# MR3941 全量复核后的收敛修复（2026-09-12）
+
+**Status（提交前记录）:** 本地实现与验证完成，用户于2026-09-12确认将当前37个文件提交到本地，提交信息为“完善升级异常恢复与提示 / fix(frontend): refine upgrade checkout recovery”。本次包含上一轮尚未提交的本地化、测试、共享副本及本轮优化，不推送、更新MR、合并或发布；最终提交状态以Git记录为准。
+**Goal:** 修复支付迟到响应和查询恢复边界，删除无生产调用的兼容残留。
+**Architecture:** 延续现有组件、请求身份与恢复交互；只为当前支付订单校验有效性，套餐首次查询提供有界恢复，失败终态停止自动读取。无需重写 Provider 或引入依赖。
+**Constraints:** 保留既有未提交增量；正常 modifying 没有60秒交付期限；支付前价格复核、未知 creating 防重、国际返回记录、七语错误处理不变；CI/类型基线/后端均不修改。
+
+- [x] **S1 / 支付与首屏询价：** 修改 `src/pages/marketing/upgrade-pass-modal.tsx` 及两个同名测试。先写“订单取消后旧 URL/授权返回不写回、不导航”的 deferred Promise 测试，确认 RED；使支付请求在取消/终态/交接时失效，await 后检查订单身份。将 `initialOption` 必填并删除首次缺报价的内部兼容，测试传入真实入口报价；保留付款前复核、价变再次确认和取消/拒绝后重新询价。
+- [x] **S2 / 套餐查询恢复与终态：** 修改 `src/contexts/agent-context.tsx`、`agent-settings-page.tsx` 及相邻测试。先以 pending Promise 和假时钟推进60000ms证明首次套餐读取无恢复，再覆盖刷新成功、旧响应无效；普通查询异常展示通用提示及刷新按钮，不谎称升级。对 `status=failed/cancelled` 且 `local_status=payment_failed/provision_failed/cancelled` 停止自动轮询，保留显式刷新和支持入口；未知本地状态继续确认。保留90秒正常 modifying 回归。
+- [x] **S3 / 清理与验收：** 删除 `use-pass-upgrade.ts` 中始终为空的 `UpgradeResume/resume` 和 `subscribe-page.tsx` 不可达分支；现有资格/支付行为回归保持通过。同步本规格、Task Pack、正式runtime设计和必要i18n机械副本；运行双站聚焦 Vitest、`pnpm check`、双站build、共享副本检查、文档/实际变更影响与diff检查；交付后等待验收。
+
+**Validation:** `cd frontend && pnpm exec vitest run src/contexts/__tests__/agent-context-modification.test.tsx src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx src/pages/marketing/__tests__/agent-upgrading-view.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx src/lib/__tests__/use-pass-upgrade.test.tsx`；随后加入双站subscribe/新购续费相邻测试。测试红绿和未验证边界记录于本节；前端无lint脚本仍需如实报告。
+
+---
+
+**Verification:** 新增异常回归先RED后GREEN。独立复核补出的首次重试拒绝、迟到手动状态和错误微任务顺序均已直接复现并修复；分项与最终全分支只读审查Approved。最终国内12文件294通过/1区域跳过，国际11文件270通过/6区域跳过；支付两文件59条、Provider/页面/视图三文件42条包含于聚焦回归。删除重复catch后重新执行双站回归。双站build exit0，静态页97/607、公开路由8/42检查通过。生成路径恢复后重跑pnpm check exit0，174 current / 276 baseline / 0 new / 102 resolved；49条既有翻译告警及172条印尼语缺项保留。共享副本127文件检查、文档和实际37文件影响检查、diff检查通过，正式设计仍需maintainer review。
+**Boundary:** 无lint脚本，未安装新依赖或修改检查器/类型基线；不代表全量前端测试、真实扣款、多标签浏览器、远端CI或生产发布通过。原5176预览保持。全分支复核确认一个基线既存限制：支付请求一直pending时，轮询确认取消后busy/inFlight仍等旧请求结束；本轮未扩展支付在途锁处理，已记录并告知用户。
+
+# MR3941 评审建议增量优化（2026-09-12）
+
+**Status:** 本地实现与验证完成，等待用户验收；未提交、推送、更新 MR 或发布。
+**Goal:** 升级异常提示遵循页面语言，轮询测试使用确定性时钟，复用升级路径和时间常量。
+**Architecture:** 为 billing-error 增加可选翻译能力，升级调用方显式接入；未知后端消息使用本地化 fallback，前端受信校验消息单独标记。保留旧调用语义；不改变窗口句柄、Web Locks、支付状态判定、60 秒异常恢复与 24 小时存储期限。
+**Non-goals:** 不增加支付域名白名单、不重构 Provider、不修历史全量测试或 CI 检查器、不接真实支付。
+
+- [x] **R1 / TDD:** 新增真实 `useT` / 英文字典组件测试，验证询价、下单、支付链接、订单查询的已知码本地化，以及未知消息兜底和前端校验提示保留；先运行确认 RED。为通用 resolver 补可选 translator、受信 UI Error 标记和兼容性测试，接入升级弹窗及订阅页升级询价，补齐字典，再验证 GREEN。
+- [x] **R2 / 回归:** 将弹窗 3 处 4500ms 真实等待改为假时钟，显式推进 3000ms；增加支付窗口关闭、查询断网恢复用例，保留同单与跨标签页记录保护断言。复用 AGENTS_HOME_PATH，给升级轮询与异常等待值命名，数值保持不变。
+- [x] **R3 / 同步与验证:** 标准脚本同步 OpenCraft 生成副本，更新升级规格和对应正式设计；运行聚焦双站测试、pnpm check、双站构建、OpenCraft 检查、文档与实际变更集检查。记录真实结果与未验证项，等待用户验收。
+
+**Validation:** `pnpm exec vitest run src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx src/lib/__tests__/billing-error.test.ts --maxWorkers=1`；回归再加 Provider、upgrade-checkout、use-pass-upgrade、双站 subscribe 与新购/续费相邻用例。历史全量测试失败及挂起不在本轮范围。
+
+**Verification:** RED 两文件11项失败（39通过），修复后两文件50项通过；最终国内12文件275通过/1区域跳过，国际11文件251通过/6区域跳过。真实字典组件覆盖7种语言，27条新增文案在7份字典均非空。`pnpm check` exit 0，174 current / 276 baseline / 0 new；原有49条翻译告警及172条印尼语缺项不变。双站构建分别生成97/607页，公开路由检查8/42条通过。OpenCraft 标准生成仅更新8份字典/映射及UPSTREAM哈希；漂移检查先失败后通过127文件，完整gate exit 0，852项测试及Web/Expo Web/iOS JS bundle通过。文档、实际32文件影响检查及diff检查通过；正式设计仍需maintainer review。
+**Boundary:** 项目没有lint脚本，`pnpm run lint`返回Missing script，未修改检查器或类型基线。组件/模拟接口验证不代表真实扣款、真实双浏览器标签页竞争或原生iOS编译；未执行远端CI、全量前端挂起测试、预览切换或发布。构建生成的next-env类型路径已恢复为原值。流程技能用于先复现后修复、按实际变化补齐字典副本与验证记录，不新增审批或支付步骤。
+
+---
+
+# MR3941 OpenCraft 共享副本同步计划
+
+**Status（提交前记录）:** 本地同步与验证完成；用户于 2026-09-12 确认将本轮 15 个文件提交到当前隔离分支，仅本地提交，不推送、更新 MR、合并或发布。最终提交状态以本地 Git 记录为准。
+**Size / Mode:** M / single-agent；沿用既有同步与检查脚本，生成文件不手工编辑。
+**Goal:** OpenCraft 的共享副本与当前 frontend 真源一致，补齐 Dialog、i18n 和同步清单。
+**Architecture / Tech Stack:** 使用 `opencraft/scripts/sync-mono2-agent-console.mjs` 的 Node.js 标准生成流程，保留相对 import、portal 和其他平台适配。`frontend` 业务源码、CI / gate / 同步器、依赖及锁文件保持不变。
+**Scope:** 预计更新 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/` 下 `components/ui/dialog.tsx`、`i18n/generated/{en-US,es,id-ID,ja-JP,ko-KR,zh-CN,zh-Hant,zh-to-key}.json`、`repositories/http-repositories.ts` 和 `UPSTREAM.json`；同步本计划、`specs/pass-upgrade.md`、`docs/context/tasks/2026-09-11-pass-modifying-ui.md` 的验证边界。
+**Baseline:** HEAD 为 `151930306`；原 MR 基线和最新已获取 master 均已有 8 份字典及 HTTP Repository 漂移。本 MR 新增 Dialog 漂移并进一步更新字典。允许通过标准同步一并修复这些已确认的副本差异，不改来源代码。
+**Documentation impact:** 生成副本命中 Agent runtime 正式文档映射；在 `docs/engineering/domains/agent-gateway-runtime.md` 补充实际消费边界（共享 Dialog 可选 prop / 平台适配、字典和 Repository 同步、PASS_MODIFYING 数据降级不放宽权限），不修改映射或检查器。
+
+- [x] **V1｜重跑 `cd opencraft && npm run check:mono2-agent-console`，确认以 Dialog drift 退出 1；运行 `npm run sync:mono2-agent-console`，审核生成差异；再次运行检查应校验全部 127 个共享文件。同步规格和 Task Pack。**
+- [x] **V2｜在 OpenCraft 独立 workspace 中按 package-lock 安装缺失依赖，运行 `npm run gate`；补 frontend 聚焦回归、文档与实际变更集检查。原样记录失败及验证边界，不修改检查器或扩大业务范围；完成后等待用户验收。**
+
+**Acceptance:** 漂移检查先失败后通过；清单不含机器绝对路径且 sourceRevision 指向当前 frontend 提交；生成 Dialog 保留 portal 适配，并含 closeLabel、overlayClassName、键盘焦点样式；所有生成语言文件与来源一致。实际验证结果记入本段，不能用本地检查代替远端 CI 或上线结论。
+
+**Verification:** 标准同步更新 11 个生成文件，`check:mono2-agent-console` 从 Dialog drift / exit 1 转为全部 127 文件通过；sourceRevision 为 `1519303060c00d19c7edef45bb9b2a44e78bfa18`。OpenCraft `npm run gate` 最终 exit 0：平台边界、workspace 类型检查、6 组共 852 项测试、Web 构建、Expo Web 导出与 iOS JS bundle 均通过。frontend Repository / 升级弹窗 2 文件 95 passed / 1 skipped，`pnpm check` exit 0（174 current / 276 baseline / 0 new）；文档校验、实际 15 文件变更影响与 `git diff --check` 通过，正式文档仍需 `wisp/mono2-maintainers` review。
+**Environment:** 初次 `npm ci` 遇到共享 npm cache 权限错误，使用临时独立 cache 按既有锁文件安装成功；首次 gate 的终端测试因新装 `node-pty` 的 macOS `spawn-helper` 缺少执行权限失败。仅修复该本地依赖文件的执行权限后，失败用例及完整 gate 均通过；不修改依赖版本、锁文件、业务代码或检查规则。
+**Boundary:** 本轮只补齐生成副本与 4 份规格 / 交接文档；未做真实支付、登录态浏览器验收、iOS 原生编译或远端 CI 查询。前端历史全量测试失败保留独立处理，不能将上述结果表述为全仓测试通过；5176 原预览保持不变。
+
+---
+
+# MR3941 升级异常恢复增量计划
+
+**Status（提交前记录）:** 实现与本地验证完成，用户已于 2026-09-12 确认仅将本轮 18 个文件提交到本地；不推送或更新 MR，不合并、归档或发布。最终提交状态以本地 Git 记录为准。
+**Size / Mode:** M / single-agent，按任务串行 TDD，保留既有 master 测试失败的独立处理范围。
+**Goal:** 补齐订单/账号防护回归，避免异常查询无限等待，保证手动刷新不被轮询丢弃。
+**Architecture:** Provider 管理升级异常计时与请求合并；等待组件只展示恢复操作，套餐元信息查询在暂停时停止。现有订单交付判定、两步支付、默认升级入口保持不变。
+**Tech Stack:** React Context、TypeScript、Vitest、Testing Library，复用现有 Button；支持入口沿用服务条款中的 lightvela@tencent.com 邮箱。
+**Acceptance:** 连续 60 秒套餐缺失或查询失败后暂停自动查询，保留订单和等待状态；手动刷新可恢复同一订单，不重复下单、不把超时判定为支付失败；正常 modifying 不受 60 秒限制。
+**Non-goals:** 不加域名白名单，不修改服务端支付权限或渠道，不统一全站 Dialog 国际化，不重构全局 activePass 语义。
+
+- [x] **CR1｜Developer / Reviewer：在 `src/lib/__tests__/upgrade-checkout.test.ts` 与 `src/contexts/__tests__/agent-context-modification.test.tsx` 增加同 key 不同订单、切账号迟到回调、过期 modifying 测试；删除两处校验时，对应测试各自 RED，恢复后 GREEN。**
+- [x] **CR2｜Developer / Reviewer：先写 Provider 60 秒异常暂停、恢复、正常升级不超时、手动刷新合并及隔离测试，再实现 `agent-context.tsx` 请求协调；在 `agent-upgrading-view.tsx` 与 `agent-settings-page.tsx` 接入暂停/刷新状态，用组件测试覆盖无 Pass 恢复与按钮 loading。补齐卡住请求、注销、卸载取消和 StrictMode 回归。**
+- [x] **CR3｜Developer / Reviewer：同步 `specs/pass-upgrade.md`、Task Pack 与 i18n；运行双区域升级/新购相邻回归、`pnpm check`、双区域构建、文档/变更影响与 diff 检查，记录未验证边界，等待用户验收。**
+
+**Test contract:** `readUpgradeReturn(correctKeyWithWrongDeal) === null`；当前用户 B 的 `beginPassUpgrade(passOfA)` 无状态变化；假时钟 60 秒异常后查询次数停止增长；手动刷新在途时点击多次只排队一次且 Promise 等待补刷完成；正常 modifying 超过 60 秒继续轮询。
+**Verification commands:** `pnpm exec vitest run src/contexts/__tests__/agent-context-modification.test.tsx src/lib/__tests__/upgrade-checkout.test.ts src/pages/marketing/__tests__/agent-upgrading-view.test.tsx --maxWorkers=1`，随后按区域加入订阅、升级弹窗、账户和 Agent 相邻测试；`pnpm check` 与构建串行执行，避免 Fumadocs 共享目录竞争。
+
+**Verification:** 最终聚焦4文件40条通过；国内13文件183条、国际12文件164条通过（国际不运行国内专用 subscribe-page.test.tsx）。`pnpm check` 174 current / 276 baseline / 0 new；新增5条文案各语言补齐，保留原有172条印尼语缺项。串行 `pnpm build:cn` / `pnpm build:global` 分别生成97 / 607页，公开路由检查8 / 42条通过。文档 errors / warnings / broken links 均为空，真实未提交文件列表的变更影响检查和 `git diff --check` 通过。单 Agent 复核；验证阶段不创建审查任务或 MR 评论。
+**Boundary:** UI 由真实 Provider / 组件测试验证，未执行真实扣款或登录态浏览器验收。保留之前用户已确认独立处理的 master 全量测试失败，本轮不重跑全量挂起测试、不改质量基线；定向测试不能表述为全仓测试通过。5176 仍指向原预览工作树，未切到本轮 clean 分支。构建自动生成的 next-env 类型路径已恢复为原值。
+
+---
+
+# 2026-09-11 升配期间实例列表可见性修复
+
+**Status:** 实现与本地验证完成，等待用户验收；尚未 commit、push 或创建 MR。
+
+**Size:** S。仅调整 HTTP Repository 的预期瞬态错误降级逻辑并补回归测试。
+
+**Goal:** 国内站实例升配期间，嵌套 Bot 查询返回 `PASS_MODIFYING` 时仍展示实例列表中的根 Bot；其他 403 鉴权错误继续抛出。
+
+- [x] **Task 1｜Developer / Reviewer：先补失败回归测试，再将 `PASS_MODIFYING` 纳入嵌套 Bot 查询的兼容降级范围，运行定向 Vitest、类型检查与 diff 检查。**
+
+**Acceptance:** `GET /v1/instances` 返回运行中实例、`GET /v1/instances/{id}/bots` 返回 403 `PASS_MODIFYING` 时，Dashboard snapshot 保留该实例；普通 403 仍失败。
+
+**Verification:** 回归用例先按预期失败于 `RepositoryError: pass is modifying（PASS_MODIFYING）`；修复后 Repository 测试 64 passed / 1 skipped，`tsc --noEmit` 与 `git diff --check` 通过。完整 `pnpm check` 因本机只有 Node.js 20、当前 pnpm 11 要求 Node.js 22.13+ 未执行完成；本次无 i18n 文案变更。
+
+---
+
+# 升级套餐交互优化增量计划
+
+**Status（提交前记录）:** 已迁入 frontsandbox/upgrade-interaction-clean，基于本次拉取的 master b3184f39a；pnpm check 和本需求10个文件152条测试通过。用户已明确确认将 master 可复现的测试失败及挂起另行处理，并授权按37个文件范围提交、推送和创建到 master 的 MR。验证结论为有条件通过（风险豁免，非全量测试通过）；最终提交和 MR 状态以工蜂记录为准，不代表合并或发布。
+
+**Goal:** 国内 / 国际订阅页点击“升级至此套餐”后，先在按钮内显示询价 loading，拿到当前目标套餐的有效报价后才打开完整确认弹窗。
+
+**Design:** SubscribePage 发起点击询价，校验来源套餐、目标 ID 与金额；成功后把 PassModifyOption 传给 UpgradePassModal 作为首屏数据，避免弹窗重复初次询价。支付前的重新询价、价格变化再次确认及支付后 Agent 升级等待保持不变。失败在操作按钮旁提示并恢复重试；重复点击不重复请求，切换套餐 / 计费时长 / 身份、离开页面使在途响应失效。
+
+**当前规格：** [升级套餐交互](specs/pass-upgrade.md)。覆盖默认展示、按钮询价 / 创建订单 loading、双站支付、目标套餐等待页及交付判定；以下 Task 1–7 验证记录保留各轮历史含义。
+
+- [x] **Task 1：先补国内 / 国际组件测试，验证按钮 loading、报价前无弹窗、失败可重试、报价失效与重复点击；补真实弹窗初始报价及支付前复核测试。**
+- [x] **Task 2：在 next-site/subscribe-page.tsx 前移询价并传入初始报价，在 src/pages/marketing/upgrade-pass-modal.tsx 复用首屏报价，保持 16 / 12 / 8px 圆角与支付流程。**
+- [x] **Task 3：运行上述测试、新购相邻回归、pnpm check 与构建；记录本轮验证边界，等待用户验收。**
+- [x] **Task 4：支付按钮点击后保留确认弹窗及完整订单信息，按钮内 loading 覆盖价格复核、订单创建与支付凭证准备；只有二维码 / 卡支付链接就绪后才进入支付视图。补双站异步分段测试、防重复提交及失败 / 刷新回归，运行检查与构建。**
+
+**Verification:** 聚焦6个测试文件99条通过；pnpm check 为174 current / 276 baseline / 0 new；pnpm build:cn 与 pnpm build:global 分别完成97 / 607页静态生成、8 / 42条公开路由检查。独立只读审查无 Critical / Important 问题。本轮交互由组件测试验证，未执行真实支付；5176 保持国内开发预览。
+
+**Task 4 Verification:** 双站分段异步测试及相关回归6个文件100条通过；pnpm check 通过（174 current / 276 baseline / 0 new）；本次 pnpm build:cn 完成97页静态生成与8条公开路由检查。独立只读增量审查无阻断项；未执行真实支付、提交或发布。
+
+- [x] **Task 5：升级加载页删除模型积分；通过当前 Pass 的升级订单目标 ID 与套餐目录展示“目标套餐”，保留到期时间。未获取到目标时显示占位，不使用旧套餐冒充；补恢复、失败和迟到响应测试，不改支付及交付判定。**
+
+**Task 5 Verification:** 8个相关测试文件113条通过，pnpm check 为174 current / 276 baseline / 0 new，国内构建生成97页并完成8条公开路由检查；独立只读审查无实际阻断项。通过组件测试验证信息卡与刷新恢复，未执行真实支付；保留5176开发预览，未提交或发布。
+
+- [x] **Task 6：保存本次26个文件，合入最新 master 并恢复本次修改，核验双方功能与翻译，完成合并后回归、项目检查和双站构建，仅提交本地。**
+
+**Task 6 Verification:** 基于 ac29594cac4feb07070c244e2ea6882f8fa8b705（最新拉取的 master）恢复26个文件；计划文档保留双方章节，翻译逐 key 核验双方新增 / 修改值均无遗漏。15个文件517条测试通过、1条原有跳过；pnpm check 为174 current / 276 baseline / 0 new；国内 / 国际构建分别生成97 / 607页、完成8 / 42条公开路由检查；独立只读合并复核无阻断项。用户已确认仅本地提交，不推送或创建 MR。
+
+- [x] **Task 7：删除升级入口及确认弹窗的 show / hide 控制台开关和域名门禁；保留登录、业务启用条件与后端可升级资格。先补双站生产域名默认展示及匿名保护测试，再修改实现，运行相关回归与项目检查；本轮不提交或发布。**
+
+**Task 7 Verification:** 新回归先按预期出现6条失败（四个生产域名无合法目标、双站弹窗隐藏），删除开关后7个测试文件123条通过，覆盖升级资格、双站订阅、支付弹窗、账户和其他 show 功能；pnpm check 通过（174 current / 276 baseline / 0 new），独立只读审查无问题。5176 /subscribe 返回200仅验证预览可用性，交互由组件测试验证；本轮未重新构建、执行真实支付、提交或发布。
+
+- [x] **Task 8：按用户要求将最新实现同步至 OpenSpec：新增升级套餐当前规格和变更记录，补全套餐 / 营销入口引用；区分支付成功与交付完成、当前规则与历史记录，校验文档链接及相关测试，不修改业务代码或提交。**
+
+**Task 8 Verification:** 9个相关测试文件132条通过；仓库文档检查 errors / warnings / broken links 均为空，额外校验本次新增 / 修改的12个本地链接及 OpenSpec YAML 通过，git diff --check 通过。业务源码 diff 哈希与文档更新前一致；历史 pnpm check / 构建结果单独标注，本轮不重跑构建或真实支付，未提交或发布。
+
+- [x] **Task 9：基于最新 master b3184f39a 创建 frontsandbox/upgrade-interaction-clean，迁入 289b835ff 与其后14个文件的未提交增量，保留旧分支和5176预览；完成 pnpm check、全量测试和差异复核后，展示最终内容并等待提交 / 推送 / MR 确认。**
+
+- [x] **Task 10：修正全量测试发现的关联测试夹具缺口：账户页挂载新增 refreshPasses 调用，实名测试需提供与真实 Context 一致的异步方法；保留实名流程原有断言，复跑失败用例及相邻回归。其余失败在 master 基线对照确认，不修改无关业务或质量基线。**
+
+**Task 9–10 Verification:** clean 工作树包含37个变更文件，原工作树和5176预览保留。独立依赖副本下 pnpm check 通过（174 current / 276 baseline / 0 new）；本需求及实名相邻测试10个文件152条通过。全量首次执行有49条失败，其中20条实名失败已补齐 mock 并转绿；剩余29条失败与 master 独立副本中的失败名称集合完全一致，另有相同的 node:test 加载错误。旧 PlanSelectPage 测试持续重渲染，主运行中终止该 worker 后产生一个 worker error；master 单测20秒仍未结束后受控终止。复测组合共23个文件、217 passed / 29 failed，包含上述152条相关测试；不能据此声明全量测试通过。文档校验及 git diff / cached --check 通过。完整失败清单与待确认交付范围见 [变更记录](changes/2026-09-11-pass-upgrade-interaction.md#clean-分支交付准备)。
+
+---
+
 # 国际站首页顶部入口与多语言展示修复 Implementation Plan
 
 **Status:** 国际站 Footer、顶部入口、日语/韩语动态标题句尾及中文 Footer 全量本地化均已验证，等待用户验收；未 commit、push 或创建 MR。

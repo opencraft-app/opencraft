@@ -8,9 +8,11 @@ import {
   bootstrapLightVelaWebLoginCallback,
   LightVelaApiError,
   LightVelaAccountService,
+  LightVelaRegionSwitchRequiresSignOutError,
   LIGHTVELA_REGION_KEY,
   LIGHTVELA_TOKEN_KEY,
 } from "../plugins/lightvela-hermes/src/account/lightvela-account-service";
+import { selectLightVelaLoginRegion } from "../plugins/lightvela-hermes/src/settings/lightvela-region-selection";
 import { WEB_LOGIN_PENDING_KEY } from "../plugins/lightvela-hermes/src/account/lightvela-web-login";
 import { findHostConnectionInterventionError } from "@opencraft/workbench-runtime";
 
@@ -76,7 +78,9 @@ test("region delegates authentication to the shared OIDC authorization page", as
   await intl.service.signIn();
   assert.equal(new URL(intl.redirects[0]!).origin, "https://api.lightvela.ai");
   intl.storage.setItem(LIGHTVELA_TOKEN_KEY, "test-token");
-  assert.throws(() => intl.service.selectRegion("cn"), /sign out/);
+  assert.throws(() => intl.service.selectRegion("cn"), LightVelaRegionSwitchRequiresSignOutError);
+  assert.equal(selectLightVelaLoginRegion(intl.service, "cn"), "请先退出登录，再切换登录站点。");
+  assert.equal(intl.service.getSnapshot().region, "intl");
 });
 
 test("web OIDC callback atomically exchanges the grant and restores the initiating route", async () => {

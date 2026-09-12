@@ -25,14 +25,14 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { closeLabel?: string; overlayClassName?: string }
+>(({ className, children, closeLabel = "Close", overlayClassName, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay />
+    <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "lightvela-agent-console-portal lv-dialog-surface fixed inset-x-4 bottom-4 p-5 md:inset-auto md:left-1/2 md:top-1/2 md:w-[34rem] md:-translate-x-1/2 md:-translate-y-1/2",
+        "lightvela-agent-console-portal fixed inset-x-4 bottom-4 z-50 rounded-[1.75rem] p-5 md:inset-auto md:left-1/2 md:top-1/2 md:w-[34rem] md:-translate-x-1/2 md:-translate-y-1/2",
         floatingPanelClass,
         className,
       )}
@@ -40,8 +40,8 @@ const DialogContent = React.forwardRef<
     >
       {children}
       <DialogClose
-        aria-label="Close"
-        className="absolute right-3 top-3 rounded-lg p-1 text-[var(--text-tertiary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
+        aria-label={closeLabel}
+        className="absolute right-3 top-3 rounded-lg p-1 text-[var(--text-tertiary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         <X className="size-4" aria-hidden="true" />
       </DialogClose>

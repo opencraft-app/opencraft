@@ -1,6 +1,6 @@
-import { join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
-import { desktopProduct } from "./product-identity.js";
+import { resolveDesktopProduct } from "./product-identity.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
 
@@ -32,6 +32,8 @@ import {
 
 // Resolve storage before requestSingleInstanceLock, session creation or the daemon.
 // A brand change must not create a second runtime owner for the same local work.
+const executableName = basename(process.execPath, extname(process.execPath));
+const desktopProduct = resolveDesktopProduct(executableName);
 app.setName(desktopProduct.displayName);
 const requestedProfile = app.commandLine.getSwitchValue("user-data-dir");
 const userDataDirectory = requestedProfile

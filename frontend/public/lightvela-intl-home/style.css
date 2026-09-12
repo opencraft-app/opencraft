@@ -498,6 +498,15 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* 品牌位图图标（微信 / QQ / 企业微信 / 钉钉 / 飞书）：
+   保留品牌原色，不受 .icon 的 stroke/fill 影响；比线性图标略大以对齐视觉重量。 */
+img.icon--brand {
+  width: 1.25em;
+  height: 1.25em;
+  object-fit: contain;
+  stroke: none;
+  fill: none;
+}
 
 .reveal {
   animation: reveal-in 0.85s var(--ease) both;
