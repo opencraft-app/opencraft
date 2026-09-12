@@ -622,16 +622,17 @@ func projectHermesProfiles(profiles []hermesProfileRecord, instanceID, defaultNa
 		}
 		modifiedAt, _ := time.Parse(time.RFC3339Nano, profile.ModifiedAt)
 		items = append(items, &transport.InstanceBotResponse{
-			BotID:       botID,
-			InstanceID:  instanceID,
-			ProfileID:   profileID,
-			Name:        name,
-			Description: profile.Description,
-			IsDefault:   isDefault,
-			Status:      instanceBotStatusReady,
-			CreatedFrom: instanceBotCreatedFromBlank,
-			CreatedAt:   modifiedAt,
-			UpdatedAt:   modifiedAt,
+			BotID:          botID,
+			InstanceID:     instanceID,
+			ProfileID:      profileID,
+			Name:           name,
+			Description:    profile.Description,
+			IsDefault:      isDefault,
+			Status:         instanceBotStatusReady,
+			GatewayRunning: profile.GatewayRunning,
+			CreatedFrom:    instanceBotCreatedFromBlank,
+			CreatedAt:      modifiedAt,
+			UpdatedAt:      modifiedAt,
 		})
 	}
 	return items

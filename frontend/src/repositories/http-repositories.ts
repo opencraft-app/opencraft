@@ -200,6 +200,7 @@ interface CtlInstanceBotPayload {
   description?: string;
   is_default: boolean;
   status: string;
+  gateway_running?: boolean;
   created_from: "blank" | "clone";
   source_bot_id?: string;
   created_at: string;
@@ -784,6 +785,7 @@ const projectInstanceBotToBot = (
     instanceId: instanceBot.instance_id,
     profileId: instanceBot.profile_id,
     isDefault: instanceBot.is_default,
+    gatewayRunning: instanceBot.gateway_running,
     description: instanceBot.description,
     createdFrom: instanceBot.created_from,
     sourceBotId: instanceBot.source_bot_id,

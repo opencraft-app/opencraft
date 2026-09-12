@@ -179,20 +179,21 @@ type ListInstancesResponse struct {
 
 // InstanceBotResponse describes one product Bot hosted by an instance.
 type InstanceBotResponse struct {
-	BotID        string                          `json:"bot_id" example:"bot-550e8400e29b41d4a716446655440000"`
-	InstanceID   string                          `json:"instance_id" example:"ins-123"`
-	ProfileID    string                          `json:"profile_id" example:"main"`
-	Name         string                          `json:"name" example:"我的助手"`
-	Description  string                          `json:"description,omitempty"`
-	IsDefault    bool                            `json:"is_default"`
-	Status       string                          `json:"status" example:"ready"`
-	CreatedFrom  string                          `json:"created_from" example:"blank"`
-	SourceBotID  string                          `json:"source_bot_id,omitempty"`
-	ErrorCode    string                          `json:"error_code,omitempty"`
-	ErrorMessage string                          `json:"error_message,omitempty"`
-	CreatedAt    time.Time                       `json:"created_at"`
-	UpdatedAt    time.Time                       `json:"updated_at"`
-	WeixinOwner  *InstanceChannelBindingResponse `json:"weixin_owner,omitempty"`
+	BotID          string                          `json:"bot_id" example:"bot-550e8400e29b41d4a716446655440000"`
+	InstanceID     string                          `json:"instance_id" example:"ins-123"`
+	ProfileID      string                          `json:"profile_id" example:"main"`
+	Name           string                          `json:"name" example:"我的助手"`
+	Description    string                          `json:"description,omitempty"`
+	IsDefault      bool                            `json:"is_default"`
+	Status         string                          `json:"status" example:"ready"`
+	GatewayRunning bool                            `json:"gateway_running"`
+	CreatedFrom    string                          `json:"created_from" example:"blank"`
+	SourceBotID    string                          `json:"source_bot_id,omitempty"`
+	ErrorCode      string                          `json:"error_code,omitempty"`
+	ErrorMessage   string                          `json:"error_message,omitempty"`
+	CreatedAt      time.Time                       `json:"created_at"`
+	UpdatedAt      time.Time                       `json:"updated_at"`
+	WeixinOwner    *InstanceChannelBindingResponse `json:"weixin_owner,omitempty"`
 }
 
 type InstanceChannelBindingResponse struct {

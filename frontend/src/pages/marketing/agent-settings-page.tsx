@@ -5608,10 +5608,14 @@ export const AgentSettingsPage = ({
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
-                            <HermesAgentAutomationsPanel botId={{
-                              instanceId: activeBot.instanceId ?? activeBot.id,
-                              profileId: activeBot.profileId ?? "main",
-                            }} />
+                            <HermesAgentAutomationsPanel
+                              botId={{
+                                instanceId: activeBot.instanceId ?? activeBot.id,
+                                profileId: activeBot.profileId ?? "main",
+                              }}
+                              gatewayRunning={activeBot.gatewayRunning}
+                              onRestartGateway={restartOrRepairDisabled ? undefined : () => setShowRestartConfirm(true)}
+                            />
                           )}
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
