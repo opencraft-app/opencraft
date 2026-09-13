@@ -303,6 +303,11 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(within(card).getByText("Completed")).toBeInTheDocument();
     expect(within(card).queryByText("Paused")).toBeNull();
     expect(within(card).queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Test run" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(within(card).getByRole("button", { name: "View" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 });
 

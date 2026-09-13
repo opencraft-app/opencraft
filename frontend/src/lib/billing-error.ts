@@ -2,9 +2,8 @@
  * 计费错误码映射 — 与联调文档 codesign/ctl-frontend-billing-api.md §7 严格对齐
  *
  * 设计要点：
- * - 直接返回中文文案；联调文档明确给的就是中文，国际站不接计费链路
- * - 仅对 ctl 计费侧的 envelope.code 做识别；通用 RepositoryError（如 network_error）
- *   走 fallback 文案
+ * - 调用方可注入 useT，按页面 locale 翻译已知错误码；未知服务端消息使用本地化兜底
+ * - 未注入翻译时保留既有中文映射 / 原始 message 行为，兼容尚未迁移的调用方
  * - 提供分类工具，便于上层做"是否可重试 / 是否要灰化按钮 / 是否需要跳续费链路"判断
  */
 
@@ -12,50 +11,55 @@ import { RepositoryError } from "@/repositories/http-repositories";
 
 const SYSTEM_BUSY_RETRY_MESSAGE = "系统繁忙，请刷新页面后重试";
 const LEGACY_SYSTEM_BUSY_MESSAGE = "系统繁忙，请稍后再试。";
+type BillingTranslator = (message: string) => string;
+const identity: BillingTranslator = message => message;
+
+/** Only construct with frontend-owned, already localized copy; never wrap server messages. */
+export class BillingDisplayError extends Error {}
 
 /**
  * envelope.code → 用户文案映射表
  *
  * 与联调文档 §7 完整对齐（4 通用 + 3 Bundle + 16 Pass + 2 5xx）
  */
-const BILLING_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+const BILLING_ERROR_MESSAGES: Readonly<Record<string, (t: BillingTranslator) => string>> = {
   // §7.1 通用
-  INVALID_PARAMETER: "请求参数有误，请检查后重试。",
-  UNAUTHORIZED: "请先登录后再操作。",
-  FORBIDDEN: "当前操作被拒绝，请刷新页面或联系客服。",
-  NOT_FOUND: "请求的资源不存在。",
-  METHOD_NOT_ALLOWED: "请求方式不正确。",
+  INVALID_PARAMETER: t => t("请求参数有误，请检查后重试。"),
+  UNAUTHORIZED: t => t("请先登录后再操作。"),
+  FORBIDDEN: t => t("当前操作被拒绝，请刷新页面或联系客服。"),
+  NOT_FOUND: t => t("请求的资源不存在。"),
+  METHOD_NOT_ALLOWED: t => t("请求方式不正确。"),
 
   // §7.2 Bundle
-  BUNDLE_NOT_FOUND: "套餐不存在或已下架。",
-  BUNDLE_STATE_INVALID: "套餐状态异常，请刷新后重试。",
-  BUNDLE_AIGATEWAY_UNAVAILABLE: "计费服务暂时不可用，请稍后再试。",
+  BUNDLE_NOT_FOUND: t => t("套餐不存在或已下架。"),
+  BUNDLE_STATE_INVALID: t => t("套餐状态异常，请刷新后重试。"),
+  BUNDLE_AIGATEWAY_UNAVAILABLE: t => t("计费服务暂时不可用，请稍后再试。"),
 
   // §7.3 Pass
-  PASS_NOT_FOUND: "套餐已删除或不属于当前账号。",
-  PASS_INVALID_PARAM: "请求参数有误，请检查后重试。",
-  PASS_INVALID_TIME_UNIT: "请重新选择时长单位。",
-  PASS_BUNDLE_OFFLINE: "套餐已下架，请选择其他套餐。",
-  PASS_BUNDLE_SOLD_OUT: "套餐已售罄，请选择其他套餐。",
-  PASS_NOT_ISOLATED: "请等待套餐隔离完成后再销毁。",
-  PASS_EXPIRED: "套餐已到期，请前往续费。",
-  PASS_QUOTA_EXCEEDED: "Agent 数量已达上限，请升级套餐或释放后重试。",
-  PASS_ISOLATING: "套餐正在隔离，请稍候再试。",
-  PASS_ISOLATED: "套餐已隔离，请前往续费。",
-  PASS_RENEWING: "续费正在处理中，请稍候。",
-  PASS_NOT_RENEWABLE: "当前套餐状态不支持续费。",
-  PASS_DELETING: "销毁操作正在执行中，请稍候。",
-  PASS_TERMINATING: "套餐正在销毁中，请稍候。",
-  PASS_SHADOW_BINDING_NOT_FOUND: "用户身份信息异常，请联系客服。",
-  PASS_SHADOW_BINDING_REQUIRED: "请先完成手机号验证后再开通套餐。",
-  PASS_ALREADY_EXISTS: "您已有有效套餐，无需重复购买。",
+  PASS_NOT_FOUND: t => t("套餐已删除或不属于当前账号。"),
+  PASS_INVALID_PARAM: t => t("请求参数有误，请检查后重试。"),
+  PASS_INVALID_TIME_UNIT: t => t("请重新选择时长单位。"),
+  PASS_BUNDLE_OFFLINE: t => t("套餐已下架，请选择其他套餐。"),
+  PASS_BUNDLE_SOLD_OUT: t => t("套餐已售罄，请选择其他套餐。"),
+  PASS_NOT_ISOLATED: t => t("请等待套餐隔离完成后再销毁。"),
+  PASS_EXPIRED: t => t("套餐已到期，请前往续费。"),
+  PASS_QUOTA_EXCEEDED: t => t("Agent 数量已达上限，请升级套餐或释放后重试。"),
+  PASS_ISOLATING: t => t("套餐正在隔离，请稍候再试。"),
+  PASS_ISOLATED: t => t("套餐已隔离，请前往续费。"),
+  PASS_RENEWING: t => t("续费正在处理中，请稍候。"),
+  PASS_NOT_RENEWABLE: t => t("当前套餐状态不支持续费。"),
+  PASS_DELETING: t => t("销毁操作正在执行中，请稍候。"),
+  PASS_TERMINATING: t => t("套餐正在销毁中，请稍候。"),
+  PASS_SHADOW_BINDING_NOT_FOUND: t => t("用户身份信息异常，请联系客服。"),
+  PASS_SHADOW_BINDING_REQUIRED: t => t("请先完成手机号验证后再开通套餐。"),
+  PASS_ALREADY_EXISTS: t => t("您已有有效套餐，无需重复购买。"),
 
   // Instance
-  INSTANCE_SHADOW_BINDING_REQUIRED: "请先完成手机号验证后再创建 Hermes。",
+  INSTANCE_SHADOW_BINDING_REQUIRED: t => t("请先完成手机号验证后再创建 Hermes。"),
 
   // §7.4 5xx
-  INTERNAL_SERVER_ERROR: SYSTEM_BUSY_RETRY_MESSAGE,
-  UPSTREAM_ERROR: "计费服务暂时不可用，请稍后再试。",
+  INTERNAL_SERVER_ERROR: t => t("系统繁忙，请刷新页面后重试"),
+  UPSTREAM_ERROR: t => t("计费服务暂时不可用，请稍后再试。"),
 } as const;
 
 /**
@@ -99,7 +103,8 @@ export const getBillingErrorCode = (error: unknown): string | null => {
  *
  * @param error    任意错误对象
  * @param fallback 自定义兜底文案；不传则按状态码 / 默认兜底
- * @returns 中文文案（永远非空）
+ * @param t        可选页面翻译函数；传入时仅保留已知错误码和受信 UI 提示，其余走本地化兜底
+ * @returns 用户文案
  *
  * @example
  * try { await repo.createPassOrder(...); }
@@ -108,10 +113,17 @@ export const getBillingErrorCode = (error: unknown): string | null => {
 export const resolveBillingErrorMessage = (
   error: unknown,
   fallback?: string,
+  t?: BillingTranslator,
 ): string => {
   const code = getBillingErrorCode(error);
-  if (code && code in BILLING_ERROR_MESSAGES) {
-    return BILLING_ERROR_MESSAGES[code]!;
+  if (code && Object.prototype.hasOwnProperty.call(BILLING_ERROR_MESSAGES, code)) {
+    return BILLING_ERROR_MESSAGES[code]!(t ?? identity);
+  }
+
+  if (t) {
+    if (error instanceof BillingDisplayError && error.message) return error.message;
+    // Do not translate or expose arbitrary backend/network details as user copy.
+    return fallback ?? t("操作失败，请稍后再试。");
   }
 
   // 走原始 message（如 RepositoryError 已经把 ctl 的 message 拼好了）

@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -115,6 +116,7 @@ import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
 import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
+import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
   buildWorkspaceActionDisabledReason,
@@ -2621,7 +2623,10 @@ export const AgentSettingsPage = ({
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
+  const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
+  const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
+  useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
@@ -2683,11 +2688,12 @@ export const AgentSettingsPage = ({
     createLimitMessage,
   );
   const provisioningBot = useMemo(() => {
+    if (isModifying) return null;
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
     }
     return bots.find((bot) => bot.status === "provisioning") ?? null;
-  }, [bots, requestedCreatingBotId]);
+  }, [bots, requestedCreatingBotId, isModifying]);
   const completedCreatingBot = useMemo(
     () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
     [visibleBots, requestedCreatingBotId],
@@ -2883,7 +2889,7 @@ export const AgentSettingsPage = ({
       setActiveTabId(visibleBots[0]!.id);
     }
   }, [visibleBots, activeTabId, isCreating, requestedBotId]);
-  const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBot = isModifying || passesLoading ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
   const isFirstBotCreation = !activeBot;
@@ -3748,7 +3754,7 @@ export const AgentSettingsPage = ({
       ProfileId: activeBot.profileId ?? "main",
       RegionId: 1,
     };
-  }, [activeBot?.instanceId, activeBot?.profileId]);
+  }, [activeBot?.id, activeBot?.instanceId, activeBot?.profileId]);
 
   /**
    * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
@@ -4961,14 +4967,23 @@ export const AgentSettingsPage = ({
       <main className="lw-app-top-pad flex-grow bg-white pb-6">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
-          {isInitialBotsLoading && (
+          {!isModifying && !(passesLoading && passesError) && (isInitialBotsLoading || passesLoading) && (
             <AgentSettingsDataLoading />
           )}
 
+          {!isModifying && passesLoading && passesError && (
+            <div role="alert" className="flex flex-col items-center gap-4 py-20 text-center">
+              <p className="text-pretty text-sm text-[var(--text-secondary)]">{t("套餐列表加载失败")}</p>
+              <Button type="button" variant="outline" onClick={() => void refreshPasses()}>{t("刷新状态")}</Button>
+            </div>
+          )}
+
           {/* ── 创建 Loading 动画 ── */}
-          {isCreating && (
+          {!isModifying && !passesLoading && isCreating && (
             <CreatingLoadingView errorMessage={creationError} />
           )}
+
+          {isModifying && <AgentUpgradingView pass={upgradingPass} failed={passUpgradeFailed} paused={passUpgradePaused} refreshing={passUpgradeRefreshing} onRetry={retryPassUpgrade} />}
 
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
@@ -5725,7 +5740,7 @@ export const AgentSettingsPage = ({
 
           {/* 空状态 */}
           {
-            !isCreating && !botsLoading && visibleBots.length === 0 && (
+            !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (
