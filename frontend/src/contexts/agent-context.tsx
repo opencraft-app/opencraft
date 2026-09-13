@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
-import type { Bot, Pass } from "@/domain/types";
+import type { Bot, BotSiblingsUnknownReason, Pass } from "@/domain/types";
 import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_RECOVERY_TIMEOUT_MS, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
 import { isGlobal } from "@/lib/region";
 
@@ -22,7 +22,7 @@ export interface OpenClawBot {
   profileId?: string;
   isDefault?: boolean;
   gatewayRunning?: boolean;
-  siblingsUnknown?: boolean;
+  siblingsUnknown?: BotSiblingsUnknownReason;
   description?: string;
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;

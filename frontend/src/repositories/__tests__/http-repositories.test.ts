@@ -819,10 +819,53 @@ describe("http repositories auth token bootstrap", () => {
     const snapshot = await repositories.bots.getDashboardSnapshot("live");
 
     // The nested /bots call is skipped, so the list collapses to the root Bot and
-    // cannot prove whether siblings exist. The UI relies on this flag to keep the
-    // main-Bot delete action disabled.
+    // cannot prove whether siblings exist. The UI relies on this reason to warn the
+    // user before deleting the whole Agent.
     expect(snapshot.bots).toEqual([
-      expect.objectContaining({ id: "ins_paused", siblingsUnknown: true }),
+      expect.objectContaining({ id: "ins_paused", siblingsUnknown: "instance_stopped" }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("marks siblings as unavailable rather than stopped when a running instance cannot list Bots", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        // Older backends answer 404 here; the instance itself is healthy, so the UI
+        // must not tell the user to start it.
+        return new Response(JSON.stringify({ code: "NOT_FOUND", message: "not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_running", siblingsUnknown: "bot_list_unavailable" }),
     ]);
   });
 
@@ -879,7 +922,7 @@ describe("http repositories auth token bootstrap", () => {
     const snapshot = await repositories.bots.getDashboardSnapshot("live");
 
     expect(snapshot.bots).toEqual([
-      expect.objectContaining({ id: "ins_running", siblingsUnknown: false }),
+      expect.objectContaining({ id: "ins_running", siblingsUnknown: undefined }),
     ]);
   });
 
