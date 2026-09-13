@@ -895,12 +895,16 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     botScopeCache.clear();
     bots.forEach((bot) => {
       const instanceId = bot.instanceId ?? bot.id;
+      const projected = projectedInstanceIds.has(instanceId);
       botScopeCache.set(bot.id, {
         instanceId,
         profileId: bot.profileId ?? "main",
         isDefault: bot.isDefault ?? true,
-        legacy: isGlobal || projectedInstanceIds.has(instanceId),
+        legacy: isGlobal || projected,
       });
+      // Surface the incomplete-list signal to the UI. Global builds are single-Bot
+      // by design, so only the domestic multi-Bot path can have hidden siblings.
+      bot.siblingsUnknown = !isGlobal && projected;
     });
     return bots;
   };

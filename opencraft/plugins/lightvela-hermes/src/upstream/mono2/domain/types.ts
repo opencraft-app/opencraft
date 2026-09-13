@@ -58,6 +58,9 @@ export interface Bot {
   profileId?: string;
   isDefault?: boolean;
   gatewayRunning?: boolean;
+  // True when this Bot came from the single-instance projection instead of
+  // /bots, so sibling Bots may exist on the server but cannot be listed.
+  siblingsUnknown?: boolean;
   description?: string;
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;
