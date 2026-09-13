@@ -3557,6 +3557,9 @@ export const AgentSettingsPage = ({
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
         return;
       }
+      // 重新读取 Bot 列表：网关状态是重启后唯一会变的字段，不刷新的话
+      // 「网关未运行」提示条会一直挂着，直到用户整页刷新。
+      void refreshBots();
       // 命令已成功执行完毕，短暂保持视觉反馈后恢复
       setTimeout(() => {
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });

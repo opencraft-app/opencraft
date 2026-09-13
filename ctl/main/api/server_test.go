@@ -27,6 +27,9 @@ import (
 type stubLogic struct {
 	listInstanceBotsResp                   *transport.ListInstanceBotsResponse
 	listInstanceBotsErr                    error
+	getInstanceResp                        *transport.InstanceResponse
+	getInstanceErr                         error
+	getInstanceID                          string
 	listInstanceBotsInstanceID             string
 	createInstanceBotResp                  *transport.InstanceBotResponse
 	createInstanceBotErr                   error
@@ -270,6 +273,10 @@ func (s *stubLogic) GetUserUsage(ctx pctx.Context) (*transport.UserUsageResponse
 }
 
 func (s *stubLogic) GetInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error) {
+	if s.getInstanceResp != nil || s.getInstanceErr != nil {
+		s.getInstanceID = instanceID
+		return s.getInstanceResp, s.getInstanceErr
+	}
 	return nil, errors.New("unexpected call")
 }
 
@@ -859,36 +866,13 @@ func TestDeleteInstanceDestroysLastBot(t *testing.T) {
 	}
 }
 
-func TestDeleteInstanceForceSkipsBotGuard(t *testing.T) {
-	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1?force=true", nil)
-	req.Header.Set(headerUserID, "user-1")
-	rec := httptest.NewRecorder()
-	stub := &stubLogic{
-		listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{
-			{BotID: "ins-1", InstanceID: "ins-1", ProfileID: "main", IsDefault: true},
-			{BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2"},
-		}},
-		destroyResp: &transport.InstanceResponse{InstanceID: "ins-1", Status: "Deleting"},
-	}
-	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
-	}
-	if stub.listInstanceBotsInstanceID != "" {
-		t.Fatalf("force must skip the Bot guard, but the list was queried: %q", stub.listInstanceBotsInstanceID)
-	}
-	if stub.destroyInstanceID != "ins-1" {
-		t.Fatalf("unexpected destroy target: %q", stub.destroyInstanceID)
-	}
-}
-
-func TestDeleteInstanceProceedsWhenBotListUnavailable(t *testing.T) {
+func TestDeleteInstanceSkipsBotGuardWhenInstanceStopped(t *testing.T) {
 	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1", nil)
 	req.Header.Set(headerUserID, "user-1")
 	rec := httptest.NewRecorder()
 	stub := &stubLogic{
 		listInstanceBotsErr: errcode.ErrInstanceInvalidParam,
+		getInstanceResp:     &transport.InstanceResponse{InstanceID: "ins-1", Status: "Paused"},
 		destroyResp:         &transport.InstanceResponse{InstanceID: "ins-1", Status: "Deleting"},
 	}
 	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
@@ -896,8 +880,67 @@ func TestDeleteInstanceProceedsWhenBotListUnavailable(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a stopped instance must stay deletable: %d body=%s", rec.Code, rec.Body.String())
 	}
+	if stub.getInstanceID != "ins-1" {
+		t.Fatalf("instance state must be confirmed before skipping the guard, got %q", stub.getInstanceID)
+	}
 	if stub.destroyInstanceID != "ins-1" {
 		t.Fatalf("unexpected destroy target: %q", stub.destroyInstanceID)
+	}
+}
+
+func TestDeleteInstanceFailsClosedWhenRunningBotListUnavailable(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{
+		listInstanceBotsErr: errcode.ErrInstanceInvalidParam,
+		getInstanceResp:     &transport.InstanceResponse{InstanceID: "ins-1", Status: "Running"},
+		destroyResp:         &transport.InstanceResponse{InstanceID: "ins-1", Status: "Deleting"},
+	}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("a transient read failure on a running instance must not destroy it: body=%s", rec.Body.String())
+	}
+	if stub.destroyInstanceID != "" {
+		t.Fatalf("instance destroy must not run, got %q", stub.destroyInstanceID)
+	}
+}
+
+func TestDeleteInstanceFailsClosedWhenInstanceStateUnknown(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{
+		listInstanceBotsErr: errcode.ErrInstanceInvalidParam,
+		getInstanceErr:      errcode.ErrInstanceInvalidParam,
+		destroyResp:         &transport.InstanceResponse{InstanceID: "ins-1", Status: "Deleting"},
+	}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatalf("an unverifiable instance state must not allow destroy: body=%s", rec.Body.String())
+	}
+	if stub.destroyInstanceID != "" {
+		t.Fatalf("instance destroy must not run, got %q", stub.destroyInstanceID)
+	}
+}
+
+func TestDeleteInstanceIgnoresForceQueryParam(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/ins-1?force=true", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+	stub := &stubLogic{listInstanceBotsResp: &transport.ListInstanceBotsResponse{Items: []*transport.InstanceBotResponse{
+		{BotID: "ins-1", InstanceID: "ins-1", ProfileID: "main", IsDefault: true},
+		{BotID: "bot-2", InstanceID: "ins-1", ProfileID: "profile-2"},
+	}}}
+	newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("force must not bypass the guard: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if stub.destroyInstanceID != "" {
+		t.Fatalf("instance destroy must not run, got %q", stub.destroyInstanceID)
 	}
 }
 

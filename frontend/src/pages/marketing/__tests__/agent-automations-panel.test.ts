@@ -998,6 +998,24 @@ describe("cron context panel integration", () => {
     expect(within(dialog).getByRole("button", { name: isGlobal ? "Create" : "新建" })).toBeTruthy();
   });
 
+  it("warns only while the gateway is known to be down, and clears once it recovers", async () => {
+    const warning = isGlobal
+      ? "The gateway is not running, so this Bot's scheduled tasks will not run."
+      : "网关未运行，此 Bot 的定时任务不会执行。";
+
+    // 网关状态未知（旧后端 / 实例非 active 的降级投影）时不得报警。
+    const { rerender } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+    expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
+    expect(screen.queryByText(warning)).toBeNull();
+
+    rerender(createElement(HermesAgentAutomationsPanel, { botId: "bot-1", gatewayRunning: false }));
+    expect(screen.getByText(warning)).toBeTruthy();
+
+    // 重启成功后 refreshBots 会把状态刷成 true，提示条必须随之消失。
+    rerender(createElement(HermesAgentAutomationsPanel, { botId: "bot-1", gatewayRunning: true }));
+    expect(screen.queryByText(warning)).toBeNull();
+  });
+
   it("uses new-task copy when confirming creation above the active-job limit", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue(Array.from({ length: 20 }, (_, index) => makeCronJob({
       id: `limit-${index}`,
