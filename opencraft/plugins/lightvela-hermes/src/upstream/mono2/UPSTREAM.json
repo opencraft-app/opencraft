@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "b991d7f225b4bf1f2b6e2a451bbcd8d336b89a3e",
+  "sourceRevision": "991496ebf3b7574451a2b15cfbe1beeb1fdf8f7e",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -69,7 +69,7 @@
     },
     {
       "file": "domain/types.ts",
-      "sourceSha256": "577eb1efc9de7fee1bf92f25f65dcd46691a53300401dee479838454e1f3be66"
+      "sourceSha256": "398bcafcf3ce0fbdc043895ab4deab5f710a2a1ebe8efc599606bfd0aa43c32d"
     },
     {
       "file": "i18n/default-agent-name.ts",
@@ -77,35 +77,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "695839442d30128f73f5816033852e001163dbe1d62121a0d8d6c1144ddcd3bb"
+      "sourceSha256": "c592a533536c0bc9c56112efae03455058534e359917f617d466b420f3d863ea"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "dbe1e798ebcb20dadba5942985b9fd20999715766109043463958bc7be3c05a7"
+      "sourceSha256": "da13d40c000e590f3661263843ab64b090d06e8258a5adf761dc9f6be733c49b"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "46a59cc8f8c2ca4dea2e2f9f8afd9361ddc9f3f65bef68178d86dfabead46eee"
+      "sourceSha256": "947abe32fc5a827261eb8a4abd0d797b857b4f87227deda7a7eb68f89d4f95b0"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "dbeb954233bddbed0cbe7c30107e46f0e9c45abc1747b9e1f667ba0fe916f6f8"
+      "sourceSha256": "e813c8ad7b23b96862b4bbffe3ef825d59cb5552296fea6c6c0538b08ca62c6a"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "11c1a0f60ffc68f9ecd909330ea2d951d4d77db6a3db4954f04f75b572c2900d"
+      "sourceSha256": "309cb0fab16f4225ccd09d5ce8a868db5d137676c5451d13425067188276897d"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "1470bb76aa67515d164994323462bc98d9321b145b1bb4801ca5ad39918d3bf9"
+      "sourceSha256": "3949ffe44a96882f01caf0a07ee38fbffb59b90772cb101e55d2f85311a7a707"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "db38dae9e18003fce22e0c75d0b0641869f9a5bd6c7a37f6bbcf2687c9ac3b9d"
+      "sourceSha256": "9fa58368cff996eaedc29cc487467dab866497196f51a1fbe0eb74ddd5792db0"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "2f4bd9f0a82dd8570419286ad95216806d8a0e599ed913443af130a52c8afa42"
+      "sourceSha256": "b09f0a62f5c363c9cc9cb8976e8450ff3d7ff269cc3c6b6b9b6baf1784101e8e"
     },
     {
       "file": "i18n/index.ts",
@@ -501,7 +501,7 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "1bf4f6ccd98b238d05aad30a2fff3ed80c671fd539c345f2aebf61d43bf16c63"
+      "sourceSha256": "54ea43f283fc1f038011e8a73ee11ce102b0e217b3e98682e98699ff16ee6009"
     },
     {
       "file": "repositories/types.ts",

@@ -52,15 +52,22 @@ export const REALNAME_LEVEL = {
   PHONE_3FA: "phone_3fa",
 } as const;
 
+/**
+ * 为什么这个 Bot 的兄弟 Bot 列不出来：
+ * - instance_stopped: 实例非运行态，/bots 无法进沙箱读取
+ * - bot_list_unavailable: 实例运行中，但 /bots 暂时不可用（旧后端 404/405、套餐变更 403、响应无效）
+ */
+export type BotSiblingsUnknownReason = "instance_stopped" | "bot_list_unavailable";
+
 export interface Bot {
   id: string;
   instanceId?: string;
   profileId?: string;
   isDefault?: boolean;
   gatewayRunning?: boolean;
-  // True when this Bot came from the single-instance projection instead of
+  // Set when this Bot came from the single-instance projection instead of
   // /bots, so sibling Bots may exist on the server but cannot be listed.
-  siblingsUnknown?: boolean;
+  siblingsUnknown?: BotSiblingsUnknownReason;
   description?: string;
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;

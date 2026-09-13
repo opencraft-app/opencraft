@@ -11,6 +11,7 @@ import type {
   BotChannelConfigResult,
   BotTerminalSession,
   BotRuntime,
+  BotSiblingsUnknownReason,
   BotVersion,
   Bundle,
   CreateDianshiPassOrderAndPayResult,
@@ -864,14 +865,15 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     instanceCache.clear();
     instances.forEach((instance) => instanceCache.set(instance.instance_id, instance));
     // Instances whose Bot list came from the single-instance projection instead of
-    // /bots. Their root Bot must not be treated as a legacy single-Bot instance:
-    // sibling Bots may exist on the server even though this list cannot show them.
-    const projectedInstanceIds = new Set<string>();
+    // /bots, mapped to why the real list was unavailable. Their root Bot must not be
+    // treated as a legacy single-Bot instance: sibling Bots may exist on the server
+    // even though this list cannot show them.
+    const projectedInstanceReasons = new Map<string, BotSiblingsUnknownReason>();
     const bots = isGlobal
       ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
       : (await Promise.all(instances.map(async (instance) => {
         if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
-          projectedInstanceIds.add(instance.instance_id);
+          projectedInstanceReasons.set(instance.instance_id, "instance_stopped");
           return [projectInstanceToBot(instance, drafts[instance.instance_id])];
         }
         try {
@@ -889,22 +891,24 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           }
           // Backend rollout and pass upgrades can make profiles briefly unavailable; keep the root Bot visible.
         }
-        projectedInstanceIds.add(instance.instance_id);
+        // The instance is running, so this is a transient /bots outage rather than a
+        // stopped instance. Callers must not tell the user to start the instance.
+        projectedInstanceReasons.set(instance.instance_id, "bot_list_unavailable");
         return [projectInstanceToBot(instance, drafts[instance.instance_id])];
       }))).flat();
     botScopeCache.clear();
     bots.forEach((bot) => {
       const instanceId = bot.instanceId ?? bot.id;
-      const projected = projectedInstanceIds.has(instanceId);
+      const projectedReason = projectedInstanceReasons.get(instanceId);
       botScopeCache.set(bot.id, {
         instanceId,
         profileId: bot.profileId ?? "main",
         isDefault: bot.isDefault ?? true,
-        legacy: isGlobal || projected,
+        legacy: isGlobal || projectedReason !== undefined,
       });
       // Surface the incomplete-list signal to the UI. Global builds are single-Bot
       // by design, so only the domestic multi-Bot path can have hidden siblings.
-      bot.siblingsUnknown = !isGlobal && projected;
+      bot.siblingsUnknown = isGlobal ? undefined : projectedReason;
     });
     return bots;
   };
