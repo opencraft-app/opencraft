@@ -26,6 +26,7 @@
 - 用户刷新态反馈（2026-09-13）：页面刷新期间的 loading 骨架仍使用旧版居中卡片布局，需要与当前 Agent 新布局保持一致。
 - 用户确认（2026-09-13）：把“微信已被占用”提示移到通道标题说明文案下方、通道卡片之前，并检查其他 Agent 页面里的多 Bot 提示是否存在相同层级问题。
 - 用户最新截图反馈（2026-09-13）：移除反馈入口上方横线，把“有建议？提交反馈”下移到账号区附近，去掉侧栏横向滚动条，并将右侧内容再整体上移一点。
+- 用户追加截图反馈（2026-09-13）：缩小账号区分隔线与头像内容之间的空白高度。
 
 ## interface_refs / data_structure_refs
 - 无 API、事件或数据结构变更；复用同一 `UserAvatarMenu` 账户动作。
@@ -57,6 +58,7 @@
 - 微信占用提示的顺序为通道标题、说明文案、占用提示、通道卡片；提示文案和“前往管理”交互保持不变。
 - 检查 Agent 页面中的其他多 Bot 提示，页面级提示不得出现在对应标题上方；动作限制继续贴近按钮、toast 或对话框。
 - 桌面端反馈入口使用剩余空间下沉到账号区上方，与账号区保持 8px 间距；无反馈入口的页面仍由账号区自身贴底。
+- 账号区分隔线后的顶部内边距由 16px 收紧为 8px，分隔线、头像尺寸与账户菜单交互保持不变。
 - 桌面侧栏滚动容器禁止横向滚动，不再显示横向滚动条；纵向滚动能力保持不变。
 - 桌面右侧内容相对 shell 顶部上移 24px，Loading 与正式内容继续共用同一几何 class。
 - 三条侧栏分隔线延伸到 280px 侧栏的右侧 1px 竖边界前，不再受 220px 导航项宽度或 28px 右内边距限制。
@@ -167,6 +169,8 @@
 - 第二十四轮为 `.lv-agents-sidebar-scroll-isolated` 增加 `overflow-x: hidden`，保留 `overflow-y: auto`；右侧 `.lv-agent-settings-content` 的桌面偏移从 -16px 调整为 -24px。
 - 第二十四轮聚焦 Vitest 通过：2 passed / 4 skipped；完整该测试文件另有已记录的续费徽标旧断言失败，与本轮样式无关。`pnpm check` 通过，TypeScript 0 个新增诊断。
 - 第二十四轮浏览器 CSS 探针：反馈入口 `border-top-width=0px`、反馈到账号区间距 8px、侧栏 `overflow-x=hidden`、shell top=68px、右侧 content top=44px（偏移 -24px）；5174 `/agents/channels/` 返回 HTTP 200。
+- 第二十五轮按用户截图仅将 `.lv-agent-account-footer` 的顶部内边距从 16px 收紧为 8px；不改分隔线、反馈入口或账户触发器尺寸。
+- 第二十五轮聚焦 Vitest 通过：2 passed / 4 skipped；`pnpm check`、documentation、change-impact 与 `git diff --check` 均通过。浏览器 CSS 探针确认账号区 `padding-top=8px`、分隔线仍为 1px，内容距容器顶部为 9px（含边框）。
 
 ## risks
 - 宽屏内容区变宽可能放大内部卡片；用 Agent 页作用域样式和桌面截图检查缓解。

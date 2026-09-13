@@ -101,6 +101,7 @@ describe("Agent settings navigation spacing", () => {
     expect(page).toContain("showDesktopUserMenu={false}");
     expect(agentsPageClient).toContain("showDesktopUserMenu={isWorkbench}");
     expect(accountFooter).toContain("margin-top: auto;");
+    expect(accountFooter).toContain("padding-top: 8px;");
     expect(accountFooter).toContain("border-top: 1px solid #e9ecf1;");
     expect(styles).toContain("height: calc(100dvh - 68px);");
     expect(desktopSidebar).toContain("padding-top: 20px;");

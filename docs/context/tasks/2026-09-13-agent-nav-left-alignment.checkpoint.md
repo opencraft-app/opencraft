@@ -1,5 +1,5 @@
 ## stage
-第二十四轮已移除反馈入口上方横线，将反馈入口下沉到账号区附近，隐藏侧栏横向滚动，并把桌面右侧内容再上移 8px；微信占用提示和多 Bot 提示审计结果保持不变。
+第二十五轮已把账号区分隔线后的顶部内边距从 16px 收紧为 8px；第二十四轮的反馈入口、横向滚动和右侧内容调整保持不变。
 
 ## verified
 - 隔离 worktree `/Users/pablozhong/codex/lightvela-agent-nav-left` 基于 `origin/master@5eeed5b8080abf06e3f54970eb18a6f11e94f796`。
@@ -55,6 +55,8 @@
 - 第二十四轮聚焦 Vitest 2 passed / 4 skipped；`pnpm check` 通过，TypeScript 174 current / 276 baseline / 0 new / 102 resolved。
 - 第二十四轮浏览器 CSS 探针确认：反馈入口上边框为 0px、与账号区间距为 8px，侧栏横向 overflow 为 hidden；shell top=68px、右侧 content top=44px，即桌面偏移为 -24px。截图 `/tmp/lightvela-agent-sidebar-bottom-up.png`。
 - 5174 `/agents/channels/` 返回 HTTP 200；完整侧栏测试文件仍只有已记录的续费徽标旧断言不匹配，本轮新增两项断言均通过。
+- 第二十五轮只调整 `.lv-agent-account-footer` 顶部内边距并增加聚焦断言；分隔线与头像账户交互未改变。
+- 第二十五轮聚焦 Vitest 2 passed / 4 skipped，`pnpm check` 与 context 门禁通过；浏览器探针确认 `padding-top=8px`、顶部边框仍为 1px，5174 `/agents/` 返回 HTTP 200。
 
 ## unverified
 - 自动化浏览器无登录态，只验证到登录门禁，无法截图验证真实 Agent 数据侧栏；账户布局由聚焦组件测试覆盖，仍需用户当前登录会话目视确认。
