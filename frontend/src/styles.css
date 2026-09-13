@@ -149,7 +149,7 @@ html.lw-settings-scrollbar-stable body[data-scroll-locked] {
 @media (min-width: 1024px) {
   html.lw-settings-scrollbar-stable body[data-scroll-locked] .lv-agents-sidebar-scroll-isolated {
     position: fixed;
-    top: var(--lv-agents-sidebar-locked-top, 84px);
+    top: var(--lv-agents-sidebar-locked-top, 68px);
   }
 }
 
@@ -167,6 +167,41 @@ html.lw-settings-scrollbar-stable {
 @media (min-width: 768px) {
   .lw-settings-shell {
     width: min(1440px, calc(100vw - 160px));
+  }
+}
+
+@media (min-width: 1024px) {
+  header.lv-agent-sidebar-header {
+    right: auto;
+    width: 264px;
+    height: 68px;
+    border-right: 1px solid #e9ecf1;
+    border-bottom-color: #e9ecf1 !important;
+  }
+
+  .lw-settings-shell.lv-agent-settings-shell {
+    width: min(1760px, calc(100vw - 32px));
+    margin-left: 16px;
+    margin-right: auto;
+  }
+
+  .lw-app-top-pad.lv-agent-settings-main {
+    padding-top: 68px;
+  }
+
+  .lv-agent-settings-content {
+    width: 100%;
+    max-width: 1280px;
+    margin-top: -24px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  header.lv-agent-sidebar-header > div {
+    height: 68px !important;
+    max-width: none;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
   }
 }
 
@@ -323,14 +358,49 @@ a {
 
   min-height: calc(100dvh - 178px);
   padding-bottom: 24px;
-  padding-right: 28px;
+  padding-right: 12px;
   border-right: 1px solid #e9ecf1;
 }
 
-.lv-agent-profile-wrap {
+.lv-agent-account-footer {
+  display: flex;
+  width: calc(100% + 12px + 16px);
+  margin-top: auto;
+  margin-left: -16px;
+  padding-left: 16px;
+  padding-top: 8px;
+  border-top: 1px solid #e9ecf1;
+}
+
+.lv-agent-account-menu {
   width: var(--lv-agents-nav-width);
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e9ecf1;
+}
+
+.lv-agent-account-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 150ms ease;
+}
+
+.lv-agent-account-trigger:hover,
+.lv-agent-account-trigger:focus-visible,
+.lv-agent-account-trigger[aria-expanded="true"] {
+  background: rgb(0 0 0 / 4%);
+  outline: none;
+}
+
+.lv-agent-account-trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 18%);
+}
+
+.lv-agent-profile-wrap {
+  width: calc(100% + 12px);
+  padding-bottom: 8px;
 }
 
 .lv-agent-profile {
@@ -371,9 +441,9 @@ a {
   display: block;
   overflow: hidden;
   color: #1f1f1f;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 22px;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -834,12 +904,11 @@ a {
 
 .lv-agent-feedback-link {
   display: flex;
-  width: var(--lv-agents-nav-width);
+  width: calc(100% + 12px);
   align-items: center;
   gap: 8px;
   margin-top: 16px;
-  padding: 14px 12px 8px;
-  border-top: 1px solid #e9ecf1;
+  padding: 8px 12px;
   border-radius: 6px;
   color: rgb(0 0 0 / 40%);
   font-size: 12px;
@@ -865,11 +934,30 @@ a {
 @media (min-width: 1024px) {
   .lv-agents-sidebar-scroll-isolated {
     position: sticky;
-    top: 84px;
-    width: 280px;
-    max-height: calc(100dvh - 84px);
+    top: 68px;
+    width: 264px;
+    max-height: calc(100dvh - 68px);
+    margin-left: -16px;
+    padding-left: 16px;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  .lv-agents-sidebar {
+    display: flex;
+    height: calc(100dvh - 68px);
+    min-height: 0;
+    flex-direction: column;
+    padding-top: 20px;
+  }
+
+  .lv-agent-feedback-link {
+    margin-top: auto;
+  }
+
+  .lv-agent-feedback-link + .lv-agent-account-footer {
+    margin-top: 8px;
   }
 }
 

@@ -40,6 +40,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { useIsDesktop } from "@/components/site/public-site-header";
+import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -116,6 +118,7 @@ import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
 import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
+import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -257,6 +260,7 @@ function TeaSdkSettingsPanel({
   commandExecutor,
   execDebugCommand,
   useEnglish,
+  channelAfterDescription,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
@@ -265,6 +269,8 @@ function TeaSdkSettingsPanel({
   execDebugCommand?: Repositories["bots"]["execDebugCommand"];
   /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
+  /** 通道页标题说明后的上下文提示；模型页不会消费。 */
+  channelAfterDescription?: ReactNode;
 }) {
   const t = useT();
   const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
@@ -324,6 +330,7 @@ function TeaSdkSettingsPanel({
           featureFlags={featureFlags}
           productConfig={productConfig}
           commandExecutor={commandExecutor}
+          afterDescription={channelAfterDescription}
         />
       </Suspense>
     </StableTeaSdkPanelHost>
@@ -2570,37 +2577,7 @@ const formatWorkspaceImportFileSize = (bytes: number) => {
 };
 
 function AgentSettingsDataLoading() {
-  return (
-    <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]" aria-hidden="true">
-      <aside className="lg:sticky lg:top-[84px]">
-        <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-3 rounded-md px-2.5 py-2.5">
-            <span className="h-10 w-10 flex-shrink-0 animate-pulse rounded-md bg-black/[0.045]" />
-            <span className="min-w-0 flex-1 space-y-2">
-              <span className="block h-4 w-28 animate-pulse rounded bg-black/[0.045]" />
-              <span className="block h-3 w-16 animate-pulse rounded bg-black/[0.035]" />
-            </span>
-          </div>
-          <span className="mt-3 block h-9 w-full animate-pulse rounded-md bg-black/[0.035]" />
-        </div>
-        <nav className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <span key={index} className="flex items-center gap-2.5 rounded-md px-3 py-2.5">
-              <span className="h-5 w-5 animate-pulse rounded bg-black/[0.035]" />
-              <span className="h-4 w-16 animate-pulse rounded bg-black/[0.035]" />
-            </span>
-          ))}
-        </nav>
-      </aside>
-      <section className="min-w-0">
-        <div className="rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          <span className="block h-5 w-36 animate-pulse rounded bg-black/[0.045]" />
-          <span className="mt-3 block h-4 w-64 max-w-full animate-pulse rounded bg-black/[0.035]" />
-          <span className="mt-8 block h-40 w-full animate-pulse rounded-md bg-black/[0.025]" />
-        </div>
-      </section>
-    </div>
-  );
+  return <AgentSettingsLoadingContent />;
 }
 
 const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
@@ -2618,6 +2595,7 @@ export const AgentSettingsPage = ({
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
+  const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
@@ -4409,7 +4387,13 @@ export const AgentSettingsPage = ({
 
   return (
     <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
-      {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
+      {showHeader && (
+        <ProductReturnHomeHeader
+          className="lv-agent-sidebar-header"
+          reloadLanguageAfterSwitch
+          showDesktopUserMenu={false}
+        />
+      )}
       {automationModelSwitchDialog}
 
       <Dialog
@@ -4964,8 +4948,8 @@ export const AgentSettingsPage = ({
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-white pb-6">
-        <section className="lw-settings-shell">
+      <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
+        <section className="lw-settings-shell lv-agent-settings-shell">
           {/* ── Loading 状态 ── */}
           {!isModifying && !(passesLoading && passesError) && (isInitialBotsLoading || passesLoading) && (
             <AgentSettingsDataLoading />
@@ -5083,7 +5067,7 @@ export const AgentSettingsPage = ({
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
-                <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                <div className="grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <Popover
@@ -5563,19 +5547,30 @@ export const AgentSettingsPage = ({
                         <span>{t("有建议？提交反馈")}</span>
                       </a>
                     ) : null}
+
+                    {isDesktop ? (
+                      <div className="lv-agent-account-footer">
+                        <UserAvatarMenu variant="sidebar" />
+                      </div>
+                    ) : null}
                   </aside>
 
-                  <section className="min-w-0 lg:col-start-2">
+                  <section className="lv-agent-settings-content min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (
-                            <>
-                              {weixinOccupiedByOther && activeBot.weixinOwner && (
+                            <TeaSdkSettingsPanel
+                              kind="channel"
+                              instance={sdkInstance}
+                              featureFlags={sdkFeatureFlags}
+                              commandExecutor={teaSdkCommandExecutor}
+                              useEnglish={useEnglish}
+                              channelAfterDescription={weixinOccupiedByOther && activeBot.weixinOwner ? (
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                  <span>
+                                  <span className="text-pretty">
                                     {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
                                       name: activeBot.weixinOwner.botName || t("其他 Bot"),
                                     })}
@@ -5588,15 +5583,8 @@ export const AgentSettingsPage = ({
                                     {t("前往管理")}
                                   </button>
                                 </div>
-                              )}
-                              <TeaSdkSettingsPanel
-                                kind="channel"
-                                instance={sdkInstance}
-                                featureFlags={sdkFeatureFlags}
-                                commandExecutor={teaSdkCommandExecutor}
-                                useEnglish={useEnglish}
-                              />
-                            </>
+                              ) : undefined}
+                            />
                           )}
                           {activeSection === "model" && (
                             <TeaSdkSettingsPanel

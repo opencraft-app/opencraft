@@ -134,6 +134,42 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
+  it("renders a full-width account trigger and opens the menu upward in a sidebar", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: {
+          name: "海盐小猫",
+          email: "cat@example.com",
+          avatarUrl: "https://example.com/avatar.png",
+        },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu variant="sidebar" />);
+
+    const trigger = screen.getByRole("button", { name: "打开用户菜单" });
+    expect(trigger).toHaveClass("lv-agent-account-trigger");
+    expect(trigger).toHaveTextContent("海盐小猫");
+    expect(trigger).toHaveTextContent("cat@example.com");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "avatar" })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelector(".lw-user-avatar-menu")).toHaveClass(
+      "bottom-full",
+      "left-0",
+      "origin-bottom-left",
+    );
+    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+  });
+
   it("returns to the public home after signing out from the console menu", () => {
     const signOut = vi.fn();
     const navigate = vi.fn();

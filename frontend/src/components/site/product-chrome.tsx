@@ -9,8 +9,10 @@ import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 interface ProductReturnHomeHeaderProps {
+  className?: string;
   reloadLanguageAfterSwitch?: boolean;
   renderLink?: RenderPublicSiteHeaderLink;
+  showDesktopUserMenu?: boolean;
 }
 
 const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
@@ -25,14 +27,17 @@ const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
 );
 
 export function ProductReturnHomeHeader({
+  className,
   reloadLanguageAfterSwitch = false,
   renderLink = renderAppHeaderLink,
+  showDesktopUserMenu = true,
 }: ProductReturnHomeHeaderProps) {
   const { authReady, isAuthenticated: isLoggedIn } = useSession();
 
   return (
     <PublicSiteHeader
       authSnapshot={{ authReady, isAuthenticated: isLoggedIn }}
+      className={className}
       position="fixed"
       reloadLanguageAfterSwitch={reloadLanguageAfterSwitch}
       renderLink={renderLink}
@@ -40,6 +45,7 @@ export function ProductReturnHomeHeader({
         <LanguageSwitcher activeLocale={activeLocale} reloadAfterSwitch={reloadAfterSwitch} variant={variant} />
       )}
       showLanguageSwitcher={isGlobal}
+      showDesktopUserMenu={showDesktopUserMenu}
       showNav={false}
       showUnauthenticatedActions={false}
     />
