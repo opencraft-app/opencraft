@@ -5053,10 +5053,17 @@ export const AgentSettingsPage = ({
                   ? t("请稍后")
                   : t("重装 Agent（保留数据）");
               const deleteRequiresOtherBotsRemoved = Boolean(activeBot.isDefault && remainingInstanceBotCount > 0);
-              const deleteDisabled = resettingAcli || deleteRequiresOtherBotsRemoved;
+              // The Bot list collapses to the root Bot while the instance is not running,
+              // so remainingInstanceBotCount reads 0 even when siblings exist. Keep the
+              // action disabled instead of letting the backend reject a deletion the user
+              // cannot make sense of.
+              const deleteBlockedByHiddenSiblings = Boolean(activeBot.isDefault && activeBot.siblingsUnknown);
+              const deleteDisabled = resettingAcli || deleteRequiresOtherBotsRemoved || deleteBlockedByHiddenSiblings;
               const deleteTooltip = deleteRequiresOtherBotsRemoved
                 ? t("请先删除其他 Bot，再删除主 Bot")
-                : activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
+                : deleteBlockedByHiddenSiblings
+                  ? t("实例未运行，无法确认是否还有其他 Bot，请先启动实例")
+                  : activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
