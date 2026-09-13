@@ -144,8 +144,8 @@ function applyWorkbenchAdapter(contents, file) {
         'className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[210] flex items-center justify-center bg-black/40',
       )
       .replace(
-        'className="relative min-w-0 w-full max-w-[800px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"',
-        'className="lv-dialog-surface relative min-w-0 w-full max-w-[800px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"',
+        'className={`relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ',
+        'className={`lv-dialog-surface relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ',
       )
       .replaceAll(
         'className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"',
