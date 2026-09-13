@@ -60,6 +60,7 @@ describe("Agent settings navigation spacing", () => {
     expect(agentHeaderShell).toContain("height: 68px;");
     expect(agentHeaderShell).toContain("border-right: 1px solid #e9ecf1;");
     expect(agentHeaderShell).toContain("border-bottom-color: #e9ecf1 !important;");
+    expect(agentHeader).toContain("height: 68px !important;");
     expect(agentHeader).toContain("max-width: none;");
     expect(agentHeader).toContain("padding-left: 16px !important;");
     expect(agentHeader).toContain("padding-right: 16px !important;");

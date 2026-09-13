@@ -198,6 +198,7 @@ html.lw-settings-scrollbar-stable {
   }
 
   header.lv-agent-sidebar-header > div {
+    height: 68px !important;
     max-width: none;
     padding-left: 16px !important;
     padding-right: 16px !important;

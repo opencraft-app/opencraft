@@ -27,6 +27,7 @@
 - 用户确认（2026-09-13）：把“微信已被占用”提示移到通道标题说明文案下方、通道卡片之前，并检查其他 Agent 页面里的多 Bot 提示是否存在相同层级问题。
 - 用户最新截图反馈（2026-09-13）：移除反馈入口上方横线，把“有建议？提交反馈”下移到账号区附近，去掉侧栏横向滚动条，并将右侧内容再整体上移一点。
 - 用户追加截图反馈（2026-09-13）：缩小账号区分隔线与头像内容之间的空白高度。
+- 用户 Logo 留白确认（2026-09-13）：上下留白应保持一致，下方留白可以比现状小。
 
 ## interface_refs / data_structure_refs
 - 无 API、事件或数据结构变更；复用同一 `UserAvatarMenu` 账户动作。
@@ -46,7 +47,7 @@
 - 1024px 以下时，侧栏账户入口不挂载，Header 头像保持可用。
 - `/agents/workbench` 不具备设置侧栏，继续保留桌面 Header 头像。
 - 1024px 及以上时，Agent 设置页 Header 仅占左侧 280px 视觉侧栏，Logo 与侧栏内容保持 16px 左对齐，右侧内容区不再出现横贯页面的 Header 底线。
-- Agent Header、主内容 shell 与侧栏 sticky 起点在桌面端统一为 68px，右侧竖线连续，Logo 底部到横线的间距从 14px 增加为 22px。
+- Agent Header、内部容器、主内容 shell 与侧栏 sticky 起点在桌面端统一为 68px，右侧竖线连续；32px Logo 上下留白均为 18px。
 - Agent Header 底部使用与侧栏其余分隔线一致的 `#e9ecf1` 1px 横线，范围为 296px 侧栏列，不延伸进主内容区。
 - 分隔线下方与 Bot 信息之间保留 12px 桌面侧栏内边距；移动端布局不变。
 - Bot 信息下方和反馈入口上方不再绘制分隔线；保留 Logo 底部与账户入口上方的分隔线。
@@ -171,6 +172,7 @@
 - 第二十四轮浏览器 CSS 探针：反馈入口 `border-top-width=0px`、反馈到账号区间距 8px、侧栏 `overflow-x=hidden`、shell top=68px、右侧 content top=44px（偏移 -24px）；5174 `/agents/channels/` 返回 HTTP 200。
 - 第二十五轮按用户截图仅将 `.lv-agent-account-footer` 的顶部内边距从 16px 收紧为 8px；不改分隔线、反馈入口或账户触发器尺寸。
 - 第二十五轮聚焦 Vitest 通过：2 passed / 4 skipped；`pnpm check`、documentation、change-impact 与 `git diff --check` 均通过。浏览器 CSS 探针确认账号区 `padding-top=8px`、分隔线仍为 1px，内容距容器顶部为 9px（含边框）。
+- 第二十六轮将 Agent Header 内部容器从 60px 同步为 68px，使 32px Logo 从上 14px/下 22px 调整为上下各 18px；仅作用于桌面 Agent Header，不改变共享 Header、侧栏接缝或右侧内容位置。聚焦 Vitest 1 passed / 5 skipped；5174 编译后 CSS 浏览器探针确认 Header/内部容器/Logo 为 68px/68px/32px，上下留白为 18px/18px。
 
 ## risks
 - 宽屏内容区变宽可能放大内部卡片；用 Agent 页作用域样式和桌面截图检查缓解。
