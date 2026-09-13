@@ -13,8 +13,15 @@ const createRenewOrder = vi.fn();
 const listMyPasses = vi.fn();
 const execDebugCommand = vi.fn();
 const refreshProfile = vi.fn();
+const getModifyCheckout = vi.fn();
+const listBundles = vi.fn();
 
 let activePass: Pass | null = null;
+let passUpgradeFailed = false;
+let passUpgradePaused = false;
+let returningUpgrade = false;
+let passesLoading = false;
+let passesError = false;
 let bots: OpenClawBot[] = [];
 let currentSessionUser: User;
 
@@ -80,6 +87,12 @@ vi.mock("@/contexts/agent-context", () => ({
     isSubscribed: true,
     addBot: vi.fn(),
     activePass,
+    passUpgradeFailed,
+    passUpgradePaused,
+    returningUpgrade,
+    passesLoading: passesLoading || returningUpgrade,
+    passesError,
+    retryPassUpgrade: refreshPasses,
   }),
 }));
 
@@ -92,6 +105,8 @@ vi.mock("@/contexts/repository-context", () => ({
       getRenewPrice,
       createRenewOrder,
       listMyPasses,
+      getModifyCheckout,
+      listBundles,
     },
   }),
 }));
@@ -147,6 +162,11 @@ const renderAgentSettingsPage = () => render(
 describe("AgentSettingsPage renewal reminder", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("IntersectionObserver", class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    });
     delete (window as Window & { show?: unknown }).show;
     vi.setSystemTime(new Date("2026-07-27T00:00:00.000Z"));
     currentSessionUser = {
@@ -160,6 +180,11 @@ describe("AgentSettingsPage renewal reminder", () => {
     };
     bots = [buildBot()];
     activePass = buildPass();
+    passUpgradeFailed = false;
+    passUpgradePaused = false;
+    returningUpgrade = false;
+    passesLoading = false;
+    passesError = false;
     getRenewPrice.mockResolvedValue({
       bundle_id: "bundle_launch",
       price: 4900,
@@ -175,10 +200,73 @@ describe("AgentSettingsPage renewal reminder", () => {
       deal_names: ["renew_deal_agent"],
     });
     listMyPasses.mockResolvedValue([]);
+    getModifyCheckout.mockResolvedValue({ checkout: { deal_name: "upgrade", big_order_id: "upgrade-big", target_bundle_id: "bundle_cruise", local_status: "paid_pending_provision" } });
+    listBundles.mockResolvedValue([{ bundle_id: "bundle_cruise", bundle_name: "巡航套餐" }]);
     refreshPasses.mockResolvedValue(undefined);
   });
 
+  it("offers a generic retry when the initial Pass query stalls, without claiming an upgrade", async () => {
+    activePass = null;
+    passesLoading = true;
+    passesError = true;
+    renderAgentSettingsPage();
+    expect(screen.getByRole("alert")).toHaveTextContent("套餐列表加载失败");
+    expect(screen.queryByText("Hermes Renewal")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在为 Hermes Agent 升级套餐")).not.toBeInTheDocument();
+    expect(screen.queryByText("套餐升级失败")).not.toBeInTheDocument();
+    refreshPasses.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "刷新状态" }));
+    expect(refreshPasses).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows recovery instead of an endless spinner when a return has no Pass", async () => {
+    activePass = null;
+    passUpgradePaused = true;
+    returningUpgrade = true;
+    renderAgentSettingsPage();
+    expect(screen.getByRole("status")).toHaveTextContent("暂时无法确认升级进度");
+    expect(screen.getByRole("button", { name: "刷新状态" })).toBeInTheDocument();
+    expect(screen.queryByText("Skills panel")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "创建 Agent" })).not.toBeInTheDocument();
+  });
+
+  it("shows the target plan without credits and hides Bot controls while the Pass is modifying", async () => {
+    activePass = { ...buildPass(), status: "modifying" };
+    const view = renderAgentSettingsPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("正在为 Hermes Agent 升级套餐");
+    expect(await screen.findByText("巡航套餐")).toBeInTheDocument();
+    expect(screen.getByText("目标套餐")).toBeInTheDocument();
+    expect(screen.queryByText("当前套餐")).not.toBeInTheDocument();
+    expect(screen.queryByText("启航套餐")).not.toBeInTheDocument();
+    expect(screen.queryByText("模型积分")).not.toBeInTheDocument();
+    expect(screen.getByText("到期时间")).toBeInTheDocument();
+    expect(screen.queryByText("Hermes Renewal")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+
+    activePass = { ...buildPass(), bundle_name: "巡航套餐", status: "active" };
+    view.rerender(
+      <AppNavigationProvider value={createNavigation()}>
+        <AgentSettingsPage sectionId="skill" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    expect(screen.queryByText("正在为 Hermes Agent 升级套餐")).not.toBeInTheDocument();
+    expect(screen.getByText("Hermes Renewal")).toBeInTheDocument();
+  });
+
+  it("keeps Bot controls hidden and shows support guidance after upgrade delivery fails", () => {
+    activePass = { ...buildPass(), status: "modifying" };
+    passUpgradeFailed = true;
+    renderAgentSettingsPage();
+    expect(screen.getByRole("status")).toHaveTextContent("套餐升级失败");
+    expect(screen.getByText("订单已关闭或失败，请联系支持确认后再操作。")).toBeInTheDocument();
+    expect(screen.queryByText("Hermes Renewal")).not.toBeInTheDocument();
+    expect(screen.queryByText("套餐升级中，完成后将自动展示 Agent。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+  });
+
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
     vi.useRealTimers();
   });

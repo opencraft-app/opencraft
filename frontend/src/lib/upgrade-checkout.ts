@@ -1,5 +1,37 @@
 import type { Pass, PassModifyOption, PassOrderStatus } from '@/domain/types';
 
+export interface PaidUpgradeCheckout {
+  dealName: string;
+  targetBundleId: string;
+}
+
+export const UPGRADE_RETURN_QUERY = 'upgrade_return';
+export const UPGRADE_POLL_INTERVAL_MS = 3_000;
+export const UPGRADE_PAYMENT_RETRY_DELAY_MS = 3_000;
+// Recovery for unavailable/stalled queries; never a deadline for healthy modifying.
+export const UPGRADE_RECOVERY_TIMEOUT_MS = 60_000;
+const RETURN_TTL_MS = 24 * 60 * 60 * 1000;
+export const upgradeReturnKey = (userId: string, dealName: string) => `lightvela-upgrade-return-v1:${encodeURIComponent(userId)}:${encodeURIComponent(dealName)}`;
+interface UpgradeReturn extends PaidUpgradeCheckout { passId: string }
+
+/** Retain non-secret identifiers across the hosted payment window and its return page. */
+export function saveUpgradeReturn(storage: Pick<Storage, 'setItem'>, userId: string, checkout: UpgradeReturn, now = Date.now()) {
+  storage.setItem(upgradeReturnKey(userId, checkout.dealName), JSON.stringify({ passId: checkout.passId, targetBundleId: checkout.targetBundleId, dealName: checkout.dealName, createdAt: now }));
+}
+
+export function readUpgradeReturn(storage: Pick<Storage, 'getItem'>, userId: string, search: string, now = Date.now()): UpgradeReturn | null {
+  try {
+    const dealName = new URLSearchParams(search).get(UPGRADE_RETURN_QUERY);
+    if (!userId || !dealName) return null;
+    const raw: unknown = JSON.parse(storage.getItem(upgradeReturnKey(userId, dealName)) ?? 'null');
+    if (!raw || typeof raw !== 'object') return null;
+    const value = raw as Record<string, unknown>;
+    if (value.dealName !== dealName || typeof value.passId !== 'string' || !value.passId || typeof value.targetBundleId !== 'string' || !value.targetBundleId) return null;
+    if (typeof value.createdAt !== 'number' || !Number.isFinite(value.createdAt) || value.createdAt > now || now - value.createdAt > RETURN_TTL_MS) return null;
+    return { dealName, passId: value.passId, targetBundleId: value.targetBundleId };
+  } catch { return null; }
+}
+
 export function isUpgradeDelivered(order: PassOrderStatus, pass: Pass | undefined, passId: string, targetBundleId: string) {
   return order.order_type === 'modify' && order.status === 'success' && order.local_status === 'provisioned'
     && pass?.pass_id === passId && pass.bundle_id === targetBundleId && pass.status === 'active';

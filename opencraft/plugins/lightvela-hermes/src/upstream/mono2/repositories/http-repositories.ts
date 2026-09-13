@@ -201,7 +201,6 @@ interface CtlInstanceBotPayload {
   description?: string;
   is_default: boolean;
   status: string;
-  gateway_running?: boolean;
   created_from: "blank" | "clone";
   source_bot_id?: string;
   created_at: string;
@@ -719,7 +718,6 @@ const writeBotDrafts = (drafts: Record<string, BotDraft>) => {
 const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
   switch (status.trim().toLowerCase()) {
     case "creating":
-    case "resuming":
     case "provisioning":
     case "pending":
     case "queued":
@@ -787,7 +785,6 @@ const projectInstanceBotToBot = (
     instanceId: instanceBot.instance_id,
     profileId: instanceBot.profile_id,
     isDefault: instanceBot.is_default,
-    gatewayRunning: instanceBot.gateway_running,
     description: instanceBot.description,
     createdFrom: instanceBot.created_from,
     sourceBotId: instanceBot.source_bot_id,
@@ -863,15 +860,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const instances = Array.isArray(response.items) ? response.items : [];
     instanceCache.clear();
     instances.forEach((instance) => instanceCache.set(instance.instance_id, instance));
-    // Instances whose Bot list came from the single-instance projection instead of
-    // /bots. Their root Bot must not be treated as a legacy single-Bot instance:
-    // sibling Bots may exist on the server even though this list cannot show them.
-    const projectedInstanceIds = new Set<string>();
     const bots = isGlobal
       ? instances.map((instance) => projectInstanceToBot(instance, drafts[instance.instance_id]))
       : (await Promise.all(instances.map(async (instance) => {
         if (mapInstanceStatusToBotStatus(instance.status) !== "active") {
-          projectedInstanceIds.add(instance.instance_id);
           return [projectInstanceToBot(instance, drafts[instance.instance_id])];
         }
         try {
@@ -889,17 +881,15 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           }
           // Backend rollout and pass upgrades can make profiles briefly unavailable; keep the root Bot visible.
         }
-        projectedInstanceIds.add(instance.instance_id);
         return [projectInstanceToBot(instance, drafts[instance.instance_id])];
       }))).flat();
     botScopeCache.clear();
     bots.forEach((bot) => {
-      const instanceId = bot.instanceId ?? bot.id;
       botScopeCache.set(bot.id, {
-        instanceId,
+        instanceId: bot.instanceId ?? bot.id,
         profileId: bot.profileId ?? "main",
         isDefault: bot.isDefault ?? true,
-        legacy: isGlobal || projectedInstanceIds.has(instanceId),
+        legacy: bot.id === (bot.instanceId ?? bot.id),
       });
     });
     return bots;
@@ -1047,15 +1037,11 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async destroyBot(botId) {
       const scope = await resolveBotScope(botId);
-      if (isGlobal) {
+      if (isGlobal || scope.legacy) {
         await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(scope.instanceId)}`, {
           method: "DELETE",
         });
-      } else if (scope.isDefault || scope.legacy) {
-        // Destroying the main Bot destroys the whole instance. `legacy` scopes come from the
-        // single-instance projection, so sibling Bots may exist even though this client cannot
-        // see them — both cases must go through the guard. The query flag is kept for older
-        // backends where the guard is still opt-in; newer ones enforce it by default.
+      } else if (scope.isDefault) {
         await requestEnvelope<CtlInstancePayload>(
           baseUrl,
           `/v1/instances/${encodeURIComponent(scope.instanceId)}?require_single_bot=true`,

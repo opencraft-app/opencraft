@@ -182,15 +182,14 @@ describe("automation scenario templates section", () => {
     expect(templates.some((template) => template.name === "每日 AI 资讯摘要")).toBe(true);
 
     expect(screen.getByRole("heading", { name: "任务模板" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /^启用/ })).toHaveLength(6);
     for (const template of templates.slice(0, 6)) {
-      expect(screen.getByRole("button", { name: `启用${template.name}` })).toBeTruthy();
+      expect(screen.getByRole("button", { name: template.name })).toBeTruthy();
     }
 
     expect(screen.getByText("1 / 2")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "启用每日工作小结" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "每日工作小结" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: `启用${templates[0]!.name}` }));
+    fireEvent.click(screen.getByRole("button", { name: templates[0]!.name }));
 
     expect(onEnable).toHaveBeenCalledTimes(1);
     expect(onEnable).toHaveBeenCalledWith(templates[0]);
@@ -198,7 +197,7 @@ describe("automation scenario templates section", () => {
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 
     expect(screen.getByText("2 / 2")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "启用每日工作小结" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "每日工作小结" })).toBeTruthy();
   });
 
   it("filters the catalog by category and exposes useful template facts", () => {
@@ -214,8 +213,8 @@ describe("automation scenario templates section", () => {
     fireEvent.click(screen.getByRole("button", { name: "监控提醒" }));
 
     expect(screen.getByRole("button", { name: "监控提醒" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getAllByText("有变化才提醒").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+    expect(screen.queryByText("有变化才提醒")).toBeNull();
+    expect(screen.queryByRole("button", { name: "喝水与吃药提醒" })).toBeNull();
   });
 
   it("hides categories that have no templates and keeps catalog loading static", () => {
@@ -228,21 +227,26 @@ describe("automation scenario templates section", () => {
     expect(screen.getByLabelText("正在加载官方模板")).not.toHaveClass("animate-spin");
   });
 
-  it("shows the concrete required skill and summarizes additional skills", () => {
+  it("shows only the schedule in a template card footer", () => {
     const t = (text: string) => text;
     const template = {
       ...getUnifiedAutomationTemplates(t, "zh-CN")[0]!,
+      source: "hermes" as const,
+      notificationPolicy: "only-when-needed" as const,
       skills: ["google-workspace", "weather"],
     };
 
     render(createElement(AutomationScenarioTemplatesSection, { templates: [template], onEnable: vi.fn() }));
 
-    expect(screen.getByText("google-workspace")).toBeTruthy();
-    expect(screen.getByText("+1")).toBeTruthy();
-    expect(screen.queryByText("需要技能")).toBeNull();
+    expect(screen.getByText(template.scheduleLabel)).toBeTruthy();
+    expect(screen.queryByText("Hermes")).toBeNull();
+    expect(screen.queryByText("有变化才提醒")).toBeNull();
+    expect(screen.queryByText("google-workspace")).toBeNull();
+    expect(screen.queryByText("+1")).toBeNull();
+    expect(screen.queryByText("启用")).toBeNull();
   });
 
-  it("keeps upgraded Hermes templates in the original compact card treatment", () => {
+  it("keeps upgraded Hermes templates compact without source badges", () => {
     const t = (text: string) => text;
     const baseTemplate = getUnifiedAutomationTemplates(t, "zh-CN")[0]!;
     const templates = [
@@ -257,7 +261,7 @@ describe("automation scenario templates section", () => {
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText("每天 08:00")).toBeTruthy();
     expect(screen.getByText("每 6 小时")).toBeTruthy();
-    expect(screen.getAllByText("Hermes")).toHaveLength(4);
+    expect(screen.queryByText("Hermes")).toBeNull();
   });
 
   it("does not fabricate conversation previews for untested templates", () => {
@@ -278,17 +282,17 @@ describe("automation scenario templates section", () => {
 
     const { unmount } = render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable }));
 
-    expect(screen.getByRole("button", { name: "启用喝水与吃药提醒" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "喝水与吃药提醒" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "收起任务模板" }));
 
-    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "喝水与吃药提醒" })).toBeNull();
 
     unmount();
     render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable }));
 
-    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "喝水与吃药提醒" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "展开任务模板" }));
-    expect(screen.getByRole("button", { name: "启用喝水与吃药提醒" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "喝水与吃药提醒" })).toBeTruthy();
   });
 
   it("keeps templates usable when browser storage is unavailable", () => {
@@ -303,9 +307,9 @@ describe("automation scenario templates section", () => {
 
     render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
 
-    expect(screen.getByRole("button", { name: "启用喝水与吃药提醒" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "喝水与吃药提醒" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "收起任务模板" }));
-    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "喝水与吃药提醒" })).toBeNull();
 
     getItemSpy.mockRestore();
     setItemSpy.mockRestore();
@@ -318,7 +322,7 @@ describe("automation scenario templates section", () => {
     render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
 
     const region = screen.getByRole("region", { name: "任务模板" });
-    const enableButton = screen.getByRole("button", { name: "启用喝水与吃药提醒" });
+    const enableButton = screen.getByRole("button", { name: "喝水与吃药提醒" });
     const collapseButton = screen.getByRole("button", { name: "收起任务模板" });
     const iconBox = enableButton.querySelector(".size-9");
     const grid = region.querySelector("#automation-scenario-templates-grid");
@@ -362,7 +366,7 @@ describe("automation scenario templates section", () => {
 
     render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
 
-    const enableButton = screen.getByRole("button", { name: "启用喝水与吃药提醒" });
+    const enableButton = screen.getByRole("button", { name: "喝水与吃药提醒" });
 
     expect(enableButton).toHaveClass("bg-white", "border-black/[0.06]", "hover:bg-white", "hover:border-black/[0.12]");
     expect(enableButton).not.toHaveClass("bg-black/[0.015]", "hover:bg-black/[0.035]", "border-black/[0.06]");
@@ -386,7 +390,7 @@ describe("automation scenario templates section", () => {
     expect(expandButton).toHaveClass("h-6", "border-0", "text-[11px]", "text-black/40");
     expect(expandButton).not.toHaveClass("rounded-full", "bg-white", "border");
     expect(screen.queryByText("从常用场景开始，确认内容后启用。")).toBeNull();
-    expect(screen.queryByRole("button", { name: "启用喝水与吃药提醒" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "喝水与吃药提醒" })).toBeNull();
   });
 });
 
@@ -887,9 +891,9 @@ describe("cron context panel integration", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: isGlobal ? "Daily assistant" : "每日助理" }));
-    const enable = await screen.findByRole("button", { name: isGlobal ? "Enable Morning briefing" : "启用晨间简报" });
+    const enable = await screen.findByRole("button", { name: isGlobal ? "Morning briefing" : "晨间简报" });
     expect(enable).toBeTruthy();
-    expect(screen.getByText("google-workspace")).toBeTruthy();
+    expect(screen.queryByText("google-workspace")).toBeNull();
     fireEvent.click(enable);
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Google Workspace")).toBeTruthy();
@@ -919,12 +923,12 @@ describe("cron context panel integration", () => {
 
     const { rerender } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
     fireEvent.click(await screen.findByRole("button", { name: isGlobal ? "Daily assistant" : "每日助理" }));
-    expect(await screen.findByRole("button", { name: isGlobal ? "Enable Morning briefing" : "启用晨间简报" })).toBeTruthy();
-    expect(screen.getByText("runtime-only-skill")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: isGlobal ? "Morning briefing" : "晨间简报" })).toBeTruthy();
+    expect(screen.queryByText("runtime-only-skill")).toBeNull();
 
     rerender(createElement(HermesAgentAutomationsPanel, { botId: "bot-2" }));
     await waitFor(() => expect(cronClientMocks.listAutomationBlueprints).toHaveBeenCalledWith("bot-2"));
-    expect(screen.getByRole("button", { name: isGlobal ? "Enable Morning briefing" : "启用晨间简报" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: isGlobal ? "Morning briefing" : "晨间简报" })).toBeTruthy();
     expect(screen.queryByText("runtime-only-skill")).toBeNull();
 
     resolveSecond?.([]);
@@ -935,7 +939,7 @@ describe("cron context panel integration", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("button", { name: isGlobal ? "Enable Water & medication reminders" : "启用喝水与吃药提醒" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") })).toBeTruthy();
   });
 
   it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", (mode) => {
@@ -950,7 +954,8 @@ describe("cron context panel integration", () => {
       isGlobal ? /Describe what you want the agent to understand and do/ : /请描述需要智能体理解并执行的任务/,
     );
     expect(form).toHaveClass("w-full", "max-w-[800px]", "rounded-lg", "p-5");
-    expect(form).toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
+    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
+    expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
     expect(taskDescription).not.toHaveClass("resize-none");
     expect(within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") })).toHaveClass("rounded-lg", "text-sm");
@@ -958,6 +963,23 @@ describe("cron context panel integration", () => {
     expect(within(dialog).getByRole("button", {
       name: mode === "create" ? localizedText("新建", "Create") : localizedText("保存", "Save"),
     })).toHaveClass("rounded-lg", "text-sm");
+  });
+
+  it("keeps template create forms at the shared modal height", () => {
+    const template = getUnifiedAutomationTemplates((text) => text, "zh-CN")[0]!;
+    renderAutomationForm({ template });
+
+    const dialog = screen.getByRole("dialog");
+    const form = dialog.firstElementChild;
+    const testRunButton = within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") });
+
+    if (!(form instanceof HTMLElement)) throw new Error("Expected the template task form");
+    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]", "flex", "flex-col");
+    expect(form).not.toHaveClass("overflow-y-auto");
+    const runTimeScrollBody = within(form).getByText(localizedText("执行时间", "Run time")).parentElement?.parentElement;
+    if (!runTimeScrollBody) throw new Error("Expected the task form scroll body");
+    expect(runTimeScrollBody).toHaveClass("overflow-y-auto", "[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
+    expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
   });
 
   it("uses the new copy for the blank create entry and modal title", async () => {
@@ -1731,26 +1753,68 @@ describe("terminal cron card visibility", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    const createdTab = await screen.findByRole("button", { name: "当前任务" });
-    const taskTypeFilter = screen.getByRole("combobox", { name: "任务类型" });
-    const recentTab = screen.getByRole("button", { name: "最近执行" });
-    const endedTab = screen.getByRole("button", { name: "已结束任务" });
-    expect(taskTypeFilter).toHaveTextContent("全部");
-    expect(screen.queryByText("任务类型")).not.toBeInTheDocument();
+    const createdTab = await screen.findByRole("button", { name: localizedText("当前任务", "Current Jobs") });
+    const taskTypeFilter = screen.getByRole("combobox", { name: localizedText("任务类型", "Job type") });
+    const recentTab = screen.getByRole("button", { name: localizedText("最近执行", "Recent Runs") });
+    const endedTab = screen.getByRole("button", { name: localizedText("已结束任务", "Ended Jobs") });
+    expect(taskTypeFilter).toHaveTextContent(localizedText("全部", "All"));
+    expect(screen.queryByText(localizedText("任务类型", "Job type"))).not.toBeInTheDocument();
     expect(taskTypeFilter.parentElement).not.toBe(createdTab.parentElement);
     expect(Boolean(createdTab.compareDocumentPosition(endedTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(Boolean(endedTab.compareDocumentPosition(recentTab) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(await screen.findByText("生效任务")).toBeTruthy();
     expect(screen.getByText("停用任务")).toBeTruthy();
-    expect(screen.getByText("已停用")).toBeTruthy();
+    expect(screen.getByText(localizedText("已停用", "Disabled"))).toBeTruthy();
     const disabledCard = await getCronJobCard("停用任务");
-    expect(within(disabledCard).getByRole("button", { name: "恢复" })).toBeTruthy();
-    expect(within(disabledCard).queryByRole("button", { name: "暂停" })).toBeNull();
+    const actionsToggle = within(disabledCard).getByRole("button", { name: localizedText("操作", "Actions") });
+    const actionsMenu = actionsToggle.parentElement;
+    const actionsRollout = actionsToggle.nextElementSibling;
+
+    if (!actionsRollout) throw new Error("Expected current-job action rollout");
+    const [actionsMask, actionsContent] = Array.from(actionsRollout.children);
+
+    if (!(actionsMask instanceof HTMLElement) || !(actionsContent instanceof HTMLElement)) {
+      throw new Error("Expected rollout mask and action content");
+    }
+    const actionItems = Array.from(actionsContent.children);
+    const [testAction, viewAction, copyAction, deleteAction] = actionItems;
+
+    if (!testAction || !viewAction || !copyAction || !deleteAction) {
+      throw new Error("Expected the remaining current-job actions in the rollout");
+    }
+
+    expect(actionsMenu).toHaveClass("group/actions", "relative");
+    expect(actionsRollout).toHaveClass(
+      "right-[72px]",
+      "top-1/2",
+      "-translate-y-1/2",
+      "pointer-events-none",
+    );
+    expect(actionsMask).toHaveClass(
+      "bg-white",
+      "opacity-0",
+      "group-hover/actions:opacity-100",
+    );
+    expect(actionsRollout).not.toHaveClass("border", "p-0.5", "shadow-sm");
+    expect(testAction).toHaveClass("transition-opacity", "delay-0", "group-hover/actions:delay-[60ms]");
+    expect(testAction).not.toHaveClass("translate-x-1", "group-hover/actions:translate-x-0");
+    expect(viewAction).toHaveClass("delay-[20ms]", "group-hover/actions:delay-[40ms]");
+    expect(copyAction).toHaveClass("delay-[40ms]", "group-hover/actions:delay-[20ms]");
+    expect(deleteAction).toHaveClass("delay-[60ms]", "group-hover/actions:delay-0");
+    expect(fireEvent.pointerDown(actionsToggle)).toBe(false);
+    expect(fireEvent.click(actionsToggle)).toBe(false);
+    const resumeButton = within(disabledCard).getByRole("button", { name: localizedText("恢复", "Resume") });
+    expect(resumeButton).toBeTruthy();
+    expect(within(actionsContent).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
+    expect(within(actionsContent).queryByRole("button", { name: localizedText("恢复", "Resume") })).toBeNull();
+    expect(resumeButton.closest("[class~='group/actions']")).toBeNull();
+    expect(Boolean(resumeButton.compareDocumentPosition(actionsToggle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(within(disabledCard).queryByRole("button", { name: localizedText("暂停", "Pause") })).toBeNull();
     endedStates.forEach((state) => {
       expect(screen.queryByText(`结束任务 ${state}`)).toBeNull();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "已结束任务" }));
+    fireEvent.click(screen.getByRole("button", { name: localizedText("已结束任务", "Ended Jobs") }));
 
     expect(screen.queryByText("生效任务")).toBeNull();
     expect(screen.queryByText("停用任务")).toBeNull();
@@ -1758,13 +1822,136 @@ describe("terminal cron card visibility", () => {
       expect(await screen.findByText(`结束任务 ${state}`)).toBeTruthy();
     }
     expect(screen.getByText("任务结束但执行失败")).toBeTruthy();
-    expect(screen.getAllByText("已完成")).toHaveLength(2);
-    expect(screen.getAllByText("执行失败")).toHaveLength(2);
-    expect(screen.getByText("已过期")).toBeTruthy();
-    expect(screen.getAllByText("已取消")).toHaveLength(2);
+    expect(screen.getAllByText(localizedText("已完成", "Completed"))).toHaveLength(2);
+    expect(screen.getAllByText(localizedText("执行失败", "Failed"))).toHaveLength(2);
+    expect(screen.getByText(localizedText("已过期", "Expired"))).toBeTruthy();
+    expect(screen.getAllByText(localizedText("已取消", "Cancelled"))).toHaveLength(2);
     const endedCard = await getCronJobCard("结束任务 completed");
-    expect(within(endedCard).queryByRole("button", { name: "恢复" })).toBeNull();
-    expect(within(endedCard).queryByRole("button", { name: "暂停" })).toBeNull();
+    const endedActionsToggle = within(endedCard).getByRole("button", { name: localizedText("操作", "Actions") });
+    const endedActionsRollout = endedActionsToggle.nextElementSibling;
+    const viewButton = within(endedCard).getByRole("button", { name: localizedText("查看", "View") });
+    const deleteButton = within(endedCard).getByRole("button", { name: localizedText("删除", "Delete") });
+
+    if (!endedActionsRollout) throw new Error("Expected ended-job action rollout");
+    const endedActionsMask = endedActionsRollout.firstElementChild;
+    const endedActionsContent = endedActionsRollout.lastElementChild;
+
+    expect(endedActionsMask).toHaveClass("bg-white", "opacity-0", "delay-[40ms]", "group-hover/actions:opacity-100");
+    expect(endedActionsContent?.children).toHaveLength(2);
+    expect(viewButton.parentElement).toHaveClass("delay-0", "group-hover/actions:delay-[40ms]");
+    expect(within(endedCard).getByRole("button", { name: localizedText("复制", "Copy") }).parentElement).toHaveClass(
+      "delay-[20ms]",
+      "group-hover/actions:delay-[20ms]",
+    );
+    expect(deleteButton.closest("[class~='group/actions']")).toBeNull();
+    expect(Boolean(deleteButton.compareDocumentPosition(endedActionsToggle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(fireEvent.pointerDown(endedActionsToggle)).toBe(false);
+    expect(fireEvent.click(endedActionsToggle)).toBe(false);
+    expect(viewButton.closest(".ml-auto")).toBeTruthy();
+    expect(deleteButton).toBeTruthy();
+    expect(within(endedCard).queryByRole("button", { name: localizedText("测试运行", "Test run") })).toBeNull();
+    expect(within(endedCard).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
+    expect(within(endedCard).queryByRole("button", { name: localizedText("恢复", "Resume") })).toBeNull();
+    expect(within(endedCard).queryByRole("button", { name: localizedText("暂停", "Pause") })).toBeNull();
+  });
+
+  it("copies an ended intelligent job into a prefilled create form without editing the source", async () => {
+    const prompt = composeAutomationExecutionPrompt(
+      "整理每日产品进展。",
+      "Keep the summary concise and preserve source links.",
+    );
+    const source = makeCronJob({
+      id: "copy-ended-agent",
+      name: "每日产品进展",
+      prompt,
+      schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
+      state: "completed",
+      enabled: false,
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([source]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: localizedText("已结束任务", "Ended Jobs") }));
+    const sourceCard = await getCronJobCard(source.name);
+    fireEvent.click(within(sourceCard).getByRole("button", { name: localizedText("复制", "Copy") }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(localizedText("新建定时任务", "Create Job"))).toBeTruthy();
+    expect(within(dialog).getByDisplayValue(source.name)).toBeTruthy();
+    expect(within(dialog).getByDisplayValue("整理每日产品进展。")).toBeTruthy();
+    expect(within(dialog).getByRole("button", {
+      name: new RegExp(localizedText("智能任务", "AI-powered")),
+    })).toHaveClass("border-blue-300", "bg-blue-50");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
+
+    await waitFor(() => expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1",
+      expect.objectContaining({
+        name: source.name,
+      prompt,
+      schedule: "0 9 * * *",
+      deliver: "local",
+      pinCurrentModel: true,
+    }),
+      undefined,
+    ));
+    expect(cronClientMocks.editCronJob).not.toHaveBeenCalled();
+    expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
+  });
+
+  it("copies a current notification job with its zero-token task type and content", async () => {
+    const source = makeCronJob({
+      id: "copy-current-notification",
+      name: "喝水通知",
+      prompt: "",
+      schedule: { kind: "cron", expr: "0 10 * * *", display: "0 10 * * *" },
+      state: "scheduled",
+      script: "lightvela-zero-token-copy-source.py",
+      inference_config: { provider: null, model: null, no_agent: true },
+      zero_token_config: {
+        kind: "fixed_notification",
+        language: "python",
+        content: "该喝水啦 💧",
+        managed: true,
+        editable: true,
+      },
+    });
+    cronClientMocks.listCronJobs.mockResolvedValue([source]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const sourceCard = await getCronJobCard(source.name);
+    fireEvent.click(within(sourceCard).getByRole("button", { name: localizedText("复制", "Copy") }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByDisplayValue(source.name)).toBeTruthy();
+    expect(within(dialog).getByDisplayValue("该喝水啦 💧")).toBeTruthy();
+    expect(within(dialog).getByRole("button", {
+      name: new RegExp(localizedText("通知任务", "Notification task")),
+    })).toHaveClass("border-blue-300", "bg-blue-50");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
+
+    await waitFor(() => expect(cronClientMocks.writeZeroTokenScript).toHaveBeenCalledWith(
+      "bot-1",
+      expect.stringMatching(/^lightvela-zero-token-[a-z0-9-]+\.py$/),
+      expect.objectContaining({
+        kind: "fixed_notification",
+        language: "python",
+        content: "该喝水啦 💧",
+      }),
+    ));
+    expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1",
+      expect.objectContaining({
+        name: source.name,
+        schedule: "0 10 * * *",
+        deliver: "local",
+        noAgent: true,
+      }),
+      expect.stringMatching(/^lightvela-zero-token-[a-z0-9-]+\.py$/),
+    );
+    expect(cronClientMocks.editCronJob).not.toHaveBeenCalled();
   });
 
   it("moves an overdue one-shot without a terminal state into ended jobs", async () => {
@@ -1798,6 +1985,42 @@ describe("terminal cron card visibility", () => {
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
   });
 
+  // 已结束任务的卡片只保留只读动作：测试运行会真的执行一次并往 IM 发消息，编辑/暂停/恢复
+  // 都是改调度，对已经终态的任务都没有意义。这里把三个门控和两个保留项一次钉死，避免后续
+  // 只改其中一个导致「能试跑却不能编辑」这种半截状态。
+  it("gates test run, edit and pause/resume on ended job cards while keeping view and delete", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([
+      makeCronJob({ id: "active", name: "生效任务", state: "scheduled" }),
+      makeCronJob({ id: "ended", name: "结束任务", state: "completed" }),
+    ]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const activeCard = await getCronJobCard("生效任务");
+    for (const label of [
+      localizedText("测试运行", "Test run"),
+      localizedText("查看", "View"),
+      localizedText("编辑", "Edit"),
+      localizedText("暂停", "Pause"),
+      localizedText("删除", "Delete"),
+    ]) {
+      expect(within(activeCard).getByRole("button", { name: label })).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("已结束任务", "Ended Tasks") }));
+
+    const endedCard = await getCronJobCard("结束任务");
+    for (const label of [
+      localizedText("测试运行", "Test run"),
+      localizedText("编辑", "Edit"),
+      localizedText("暂停", "Pause"),
+      localizedText("恢复", "Resume"),
+    ]) {
+      expect(within(endedCard).queryByRole("button", { name: label })).toBeNull();
+    }
+    expect(within(endedCard).getByRole("button", { name: localizedText("查看", "View") })).toBeTruthy();
+    expect(within(endedCard).getByRole("button", { name: localizedText("删除", "Delete") })).toBeTruthy();
+  });
+
   it("returns to active jobs after creating from the ended-jobs tab", async () => {
     const ended = makeCronJob({ id: "ended", name: "旧任务", state: "completed" });
     const created = makeCronJob({ id: "created", name: "新任务", state: "scheduled" });
@@ -1828,7 +2051,7 @@ describe("terminal cron card visibility", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
-    fireEvent.click(screen.getByRole("button", { name: "启用喝水与吃药提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));
     const submitButton = within(screen.getByRole("dialog")).getByRole("button", { name: "新建" });
     await waitFor(() => {
       expect(submitButton).toBeEnabled();
@@ -2239,6 +2462,25 @@ describe("automation notification channel options", () => {
     ]);
   });
 
+  it("selects every connected channel by default in the blank create form", () => {
+    const [firstChannel, secondChannel] = isGlobal
+      ? ["telegram", "discord"]
+      : ["qqbot", "wecom"];
+    const [firstLabel, secondLabel] = isGlobal
+      ? ["Telegram", "Discord"]
+      : ["QQ", "企业微信"];
+    renderAutomationForm({ enabledChannels: new Set([firstChannel, secondChannel]) });
+
+    const firstCheckbox = screen.getByRole("checkbox", { name: firstLabel });
+    const secondCheckbox = screen.getByRole("checkbox", { name: secondLabel });
+    expect(firstCheckbox).toBeChecked();
+    expect(secondCheckbox).toBeChecked();
+
+    fireEvent.click(firstCheckbox);
+    expect(firstCheckbox).not.toBeChecked();
+    expect(secondCheckbox).toBeChecked();
+  });
+
   it("requires at least 150 minutes between Weixin notifications", () => {
     if (isGlobal) return;
     renderAutomationForm({
@@ -2620,6 +2862,24 @@ function renderAutomationForm(overrides: Partial<Parameters<typeof AutomationFor
 }
 
 describe("once execution time picker", () => {
+  it("uses the same control height across recurring, interval, and one-time schedules", () => {
+    renderAutomationForm();
+
+    const runTime = localizedText("执行时间", "Run time");
+    fireEvent.click(screen.getByRole("button", { name: localizedText("周期", "Recurring") }));
+    const recurringPeriod = screen.getByRole("button", { name: localizedText("每天", "Daily") });
+    const recurringTime = screen.getByRole("button", { name: runTime });
+    expect(recurringPeriod).toHaveClass("h-9");
+    expect(recurringTime.parentElement).toHaveClass("h-9");
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("按间隔", "Interval") }));
+    expect(screen.getByRole("spinbutton")).toHaveClass("h-9");
+    expect(screen.getByRole("button", { name: localizedText("小时", "hours") })).toHaveClass("h-9");
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("单次", "One-time") }));
+    expect(screen.getByRole("group", { name: runTime })).toHaveClass("h-9");
+  });
+
   it("edits and commits each date-time segment independently on group blur", async () => {
     const user = userEvent.setup();
     renderAutomationForm();
@@ -2858,7 +3118,6 @@ describe("automation form test run", () => {
     chooseUpstream("上游任务 A");
     fireEvent.click(screen.getByRole("button", { name: "调用技能" }));
     fireEvent.click(screen.getByRole("option", { name: /news/ }));
-    fireEvent.click(screen.getByRole("checkbox", { name: /企业微信/ }));
     fireEvent.click(screen.getByRole("button", { name: "测试运行" }));
 
     expect(onTestRun).toHaveBeenCalledWith(expect.objectContaining({
@@ -2971,7 +3230,7 @@ describe("zero-token automation form", () => {
     });
     expect(agentTaskButton).toHaveClass("border-blue-300", "bg-blue-50");
     expect(agentTaskButton.parentElement).toHaveClass("items-stretch");
-    expect(agentTaskButton).toHaveClass("flex", "flex-col", "justify-start");
+    expect(agentTaskButton).toHaveClass("flex", "min-h-24", "flex-col", "justify-start");
     expect(screen.getByText(localizedText(
       "由 AI 理解你的需求并自动完成任务",
       "AI understands your needs and completes tasks automatically",
@@ -3000,6 +3259,20 @@ describe("zero-token automation form", () => {
     const notificationTaskButton = screen.getByRole("button", {
       name: new RegExp(localizedText("通知任务", "Notification task")),
     });
+    const scriptTaskButton = screen.getByRole("button", { name: localizedText("脚本任务", "Script task") });
+    const dialogContent = screen.getByRole("dialog").firstElementChild;
+    const testRunButton = screen.getByRole("button", { name: localizedText("测试运行", "Test run") });
+
+    if (!dialogContent) throw new Error("Expected create-task dialog content");
+
+    expect(notificationTaskButton).toHaveClass("min-h-24");
+    expect(scriptTaskButton).toHaveClass("min-h-24");
+    expect(dialogContent).toHaveClass("flex", "flex-col");
+    expect(dialogContent).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]");
+    expect(dialogContent.parentElement).toHaveClass("items-center");
+    expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
+    expect(dialogContent).not.toHaveClass("overflow-y-auto", "overflow-hidden");
+
     fireEvent.click(notificationTaskButton);
     expect(notificationTaskButton).toHaveClass("border-blue-300", "bg-blue-50");
     expect(agentTaskButton).not.toHaveClass("border-blue-300");
@@ -3021,13 +3294,12 @@ describe("zero-token automation form", () => {
     expect(notificationContent).toHaveAttribute("maxLength", "1000");
     fireEvent.change(notificationContent, { target: { value: "a".repeat(1001) } });
     expect(notificationContent).toHaveValue("a".repeat(1000));
-    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter the job name")), {
+    fireEvent.change(screen.getByPlaceholderText(localizedText("请输入定时任务名称", "Enter the scheduled task name")), {
       target: { value: "Hydration test" },
     });
     fireEvent.change(notificationContent, {
       target: { value: "该喝水啦 💧" },
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: isGlobal ? "Telegram" : /企业微信/ }));
     fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
 
     await waitFor(() => expect(cronClientMocks.writeZeroTokenScript).toHaveBeenCalledWith(
@@ -3120,7 +3392,7 @@ describe("zero-token automation form", () => {
   it("keeps shared notification selections while switching task types", () => {
     renderAutomationForm({ enabledChannels: new Set([isGlobal ? "telegram" : "wecom"]) });
     const channel = screen.getByRole("checkbox", { name: isGlobal ? "Telegram" : /企业微信/ });
-    fireEvent.click(channel);
+    expect(channel).toBeChecked();
     fireEvent.click(screen.getByRole("button", {
       name: new RegExp(localizedText("通知任务", "Notification task")),
     }));
@@ -3291,7 +3563,7 @@ describe("automation form test-state wiring", () => {
         fireEvent.click(await screen.findByRole("button", { name: "新建" }));
         fillCreateFields();
       } else {
-        fireEvent.click(await screen.findByRole("button", { name: "启用喝水与吃药提醒" }));
+        fireEvent.click(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));
       }
 
       const testButton = within(screen.getByRole("dialog")).getByRole("button", { name: "测试运行" });
@@ -3326,8 +3598,6 @@ describe("automation notification channel options", () => {
     });
 
     fillCreateFields("  下游任务  ");
-    fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "企业微信" }));
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => {
@@ -3370,7 +3640,6 @@ describe("automation notification channel options", () => {
     });
 
     fillCreateFields();
-    fireEvent.click(screen.getByRole("checkbox", { name: "QQ" }));
     fireEvent.click(screen.getByRole("button", { name: "新建" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
