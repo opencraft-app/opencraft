@@ -19,7 +19,11 @@ export function AgentsPageClient({
 
   return (
     <AppRouteShell loadingFallback={loadingFallback}>
-      <ProductReturnHomeHeader reloadLanguageAfterSwitch />
+      <ProductReturnHomeHeader
+        className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}
+        reloadLanguageAfterSwitch
+        showDesktopUserMenu={isWorkbench}
+      />
       {isWorkbench ? (
         <AgentsWorkbenchPage />
       ) : (

@@ -20,6 +20,7 @@ vi.mock("@/components/site/language-switcher", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   translationMock.language = "en-US";
 });
 
@@ -143,6 +144,42 @@ describe("PublicSiteHeader", () => {
     expect(screen.queryByRole("button", { name: "退出" })).not.toBeInTheDocument();
     expect(screen.queryByText("已登录")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "进入控制台" })).not.toBeInTheDocument();
+  });
+
+  it("can move only the desktop avatar menu out of the header", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      addEventListener: vi.fn(),
+      matches: true,
+      removeEventListener: vi.fn(),
+    })));
+
+    render(
+      <PublicSiteHeader
+        authSnapshot={{ authReady: true, isAuthenticated: true }}
+        showDesktopUserMenu={false}
+        showLanguageSwitcher={false}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "avatar menu" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the avatar menu in the mobile header when the desktop trigger moves", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      addEventListener: vi.fn(),
+      matches: false,
+      removeEventListener: vi.fn(),
+    })));
+
+    render(
+      <PublicSiteHeader
+        authSnapshot={{ authReady: true, isAuthenticated: true }}
+        showDesktopUserMenu={false}
+        showLanguageSwitcher={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "avatar menu" })).toBeInTheDocument();
   });
 
   it("keeps mobile menu navigation and creation action together", () => {

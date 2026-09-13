@@ -10,12 +10,17 @@ import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
+import { cn } from "@/lib/utils";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
 };
 
-export const UserAvatarMenu = () => {
+type UserAvatarMenuProps = {
+  variant?: "header" | "sidebar";
+};
+
+export const UserAvatarMenu = ({ variant = "header" }: UserAvatarMenuProps) => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
@@ -89,34 +94,70 @@ export const UserAvatarMenu = () => {
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
+  const isSidebar = variant === "sidebar";
 
   return (
-    <div ref={containerRef} className="relative">
+    <div
+      ref={containerRef}
+      className={cn("relative", isSidebar && "lv-agent-account-menu")}
+    >
       {/* Avatar trigger */}
-      <div
-        onMouseEnter={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
-      >
-        <a href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
-          <img
-            src={avatarSrc}
-            alt="avatar"
-            className="h-9 w-9 cursor-pointer object-cover"
-            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
-          />
-        </a>
+      {isSidebar ? (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-7 w-5 items-center justify-center"
+          className="lv-agent-account-trigger"
           aria-label={t("打开用户菜单")}
+          aria-expanded={open}
+          aria-haspopup="true"
+          onClick={() => setOpen((value) => !value)}
         >
+          <img
+            src={avatarSrc}
+            alt=""
+            className="h-9 w-9 shrink-0 object-cover"
+            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+          />
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-sm font-semibold text-black/80">
+              {user?.name || t("用户")}
+            </span>
+            <span className="block truncate text-xs text-black/40">
+              {user?.email || subscriptionLabel}
+            </span>
+          </span>
           <ChevronDown
-            className="h-3.5 w-3.5 transition-transform duration-200"
-            style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+            className="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+            style={{ color: "#aaa", transform: open ? "rotate(0deg)" : "rotate(180deg)" }}
           />
         </button>
-      </div>
+      ) : (
+        <div
+          onMouseEnter={() => setOpen(true)}
+          className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
+        >
+          <a href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
+            <img
+              src={avatarSrc}
+              alt="avatar"
+              className="h-9 w-9 cursor-pointer object-cover"
+              style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+            />
+          </a>
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            className="inline-flex h-7 w-5 items-center justify-center"
+            aria-label={t("打开用户菜单")}
+            aria-expanded={open}
+            aria-haspopup="true"
+          >
+            <ChevronDown
+              className="h-3.5 w-3.5 transition-transform duration-200"
+              style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+            />
+          </button>
+        </div>
+      )}
 
       {/* Dropdown */}
       <AnimatePresence>
@@ -126,7 +167,12 @@ export const UserAvatarMenu = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
-            className="lw-user-avatar-menu absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden border border-black/[0.05] bg-white/95"
+            className={cn(
+              "lw-user-avatar-menu absolute z-50 overflow-hidden border border-black/[0.05] bg-white/95",
+              isSidebar
+                ? "bottom-full left-0 mb-2 w-[var(--lv-agents-nav-width)] origin-bottom-left"
+                : "right-0 top-full mt-2 w-52 origin-top-right",
+            )}
             style={menuStyle}
             onMouseLeave={() => setOpen(false)}
           >
