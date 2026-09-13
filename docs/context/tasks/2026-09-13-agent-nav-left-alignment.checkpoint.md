@@ -1,5 +1,5 @@
 ## stage
-第二十六轮已把 Agent Header 内部容器同步为 68px，使 LightVela Logo 上下留白均为 18px；此前侧栏与右侧布局调整保持不变。
+第二十七轮已移除导航间距测试中与既有续费徽章单行契约冲突的越界断言；生产 CSS 与续费展示行为保持不变。
 
 ## verified
 - 隔离 worktree `/Users/pablozhong/codex/lightvela-agent-nav-left` 基于 `origin/master@5eeed5b8080abf06e3f54970eb18a6f11e94f796`。
@@ -54,10 +54,11 @@
 - 第二十三轮验证报告位于 `/tmp/lightvela-multibot-notice-validation/report.html`；5174 的 `/agents/channels/` 返回 HTTP 200，进程仍在监听。
 - 第二十四轮聚焦 Vitest 2 passed / 4 skipped；`pnpm check` 通过，TypeScript 174 current / 276 baseline / 0 new / 102 resolved。
 - 第二十四轮浏览器 CSS 探针确认：反馈入口上边框为 0px、与账号区间距为 8px，侧栏横向 overflow 为 hidden；shell top=68px、右侧 content top=44px，即桌面偏移为 -24px。截图 `/tmp/lightvela-agent-sidebar-bottom-up.png`。
-- 5174 `/agents/channels/` 返回 HTTP 200；完整侧栏测试文件仍只有已记录的续费徽标旧断言不匹配，本轮新增两项断言均通过。
+- 5174 `/agents/channels/` 返回 HTTP 200；完整侧栏测试文件当时仍有该分支新增、但与既有续费徽章单行契约冲突的断言失败，本轮新增两项布局断言均通过。
 - 第二十五轮只调整 `.lv-agent-account-footer` 顶部内边距并增加聚焦断言；分隔线与头像账户交互未改变。
 - 第二十五轮聚焦 Vitest 2 passed / 4 skipped，`pnpm check` 与 context 门禁通过；浏览器探针确认 `padding-top=8px`、顶部边框仍为 1px，5174 `/agents/` 返回 HTTP 200。
 - 第二十六轮仅增加 Agent Header 内部容器的 68px 高度覆盖及聚焦断言；聚焦 Vitest 1 passed / 5 skipped，5174 编译后 CSS 浏览器探针确认 Header/内部容器/Logo 为 68px/68px/32px，Logo 上下留白由 14px/22px 收敛为 18px/18px。
+- 第二十七轮复核最新 MR SHA，确认生产 CSS 与既有专项测试均要求续费徽章 `nowrap`；仅移除导航间距测试里反向要求 `normal` 的新增用例，未修改生产代码。导航间距与续费徽章专项测试合跑为 2 files / 38 tests passed。
 
 ## unverified
 - 自动化浏览器无登录态，只验证到登录门禁，无法截图验证真实 Agent 数据侧栏；账户布局由聚焦组件测试覆盖，仍需用户当前登录会话目视确认。

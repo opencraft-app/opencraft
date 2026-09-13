@@ -151,13 +151,4 @@ describe("Agent settings navigation spacing", () => {
     expect(desktopScrollContainer).toContain("overflow-x: hidden;");
   });
 
-  it("lets localized renewal badges use the available width without clipping", () => {
-    const renewalBadge = getBlockBody(styles, "\n.lv-agent-renewal-badge {");
-
-    expect(renewalBadge).toContain("max-width: 100%;");
-    expect(renewalBadge).toContain("min-height: 18px;");
-    expect(renewalBadge).toContain("white-space: normal;");
-    expect(renewalBadge).not.toContain("max-width: 112px;");
-    expect(renewalBadge).not.toContain("overflow: hidden;");
-  });
 });

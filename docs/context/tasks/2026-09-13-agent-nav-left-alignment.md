@@ -28,6 +28,7 @@
 - 用户最新截图反馈（2026-09-13）：移除反馈入口上方横线，把“有建议？提交反馈”下移到账号区附近，去掉侧栏横向滚动条，并将右侧内容再整体上移一点。
 - 用户追加截图反馈（2026-09-13）：缩小账号区分隔线与头像内容之间的空白高度。
 - 用户 Logo 留白确认（2026-09-13）：上下留白应保持一致，下方留白可以比现状小。
+- 用户 CR 修复确认（2026-09-14）：移除导航间距测试中与既有续费徽章单行契约冲突的新增断言；不改变续费展示行为，不扩大到非阻塞观察项。
 
 ## interface_refs / data_structure_refs
 - 无 API、事件或数据结构变更；复用同一 `UserAvatarMenu` 账户动作。
@@ -58,6 +59,7 @@
 - 1024px 以下与 `/agents/workbench` 的 Header 布局保持现状。
 - 微信占用提示的顺序为通道标题、说明文案、占用提示、通道卡片；提示文案和“前往管理”交互保持不变。
 - 检查 Agent 页面中的其他多 Bot 提示，页面级提示不得出现在对应标题上方；动作限制继续贴近按钮、toast 或对话框。
+- 导航布局测试只覆盖本次布局边界，不重复或反向定义既有续费徽章的单行展示契约。
 - 桌面端反馈入口使用剩余空间下沉到账号区上方，与账号区保持 8px 间距；无反馈入口的页面仍由账号区自身贴底。
 - 账号区分隔线后的顶部内边距由 16px 收紧为 8px，分隔线、头像尺寸与账户菜单交互保持不变。
 - 桌面侧栏滚动容器禁止横向滚动，不再显示横向滚动条；纵向滚动能力保持不变。
@@ -101,14 +103,14 @@
 - 有界搜索定位到 `AgentSettingsPage` 的 `.lw-settings-shell`、两列网格、`.lv-agents-sidebar` 与相邻 `agent-settings-nav-spacing.test.ts`。
 - `git blame`/`git log -S` 证明通用 shell 当前桌面最大 1440px，历史 Agent 稳定布局曾使用最大 1760px。
 - 第一轮为 Agent 页增加 `lv-agent-settings-shell`，桌面端左留白 48px；用户截图反馈后进一步收至 16px，宽度同步为 `min(1760px, calc(100vw - 32px))`；共享 shell 规则未改。
-- 聚焦 Vitest 新增布局用例通过（1 passed）；完整相邻文件中本次两个布局用例通过，另一个 renewal badge 既存断言失败。
+- 聚焦 Vitest 新增布局用例通过（1 passed）；当时完整相邻文件中本次两个布局用例通过，但该分支新增的 renewal badge 断言与既有单行契约冲突并失败。
 - `pnpm check` 通过：i18n、文档、MDX 与类型基线完成，TypeScript 为 174 current / 276 baseline / 0 new / 102 resolved。
 - `pnpm typecheck` 通过：0 个新增诊断。`pnpm lint` 不可运行，因为当前 package 没有 `lint` script。
 - `pnpm test` 完整运行：244 files / 3075 tests passed；16 files / 113 tests failed，另有 1 个 worker OOM，失败来自 master 既有模型配置 Python 依赖、静态资源、字典、价格与旧断言等基线，不涉及本次新增布局用例。
 - 第二轮本地 CN `/agents/` 返回 HTTP 200，无 Next/Vite error overlay；自动化会话无登录态。真实 CSS 布局探针测得：1920px 时 shell/sidebar left=16px、shell width=1760px、sidebar width=280px；1024px 时 left=16px；900px 时保持原规则 left=80px、sidebar width=740px。
 - 第二轮聚焦 Vitest 通过：2 passed / 1 skipped，覆盖 Agent 专用 shell 与既有桌面/移动间距边界。
 - 第三轮复用 `UserAvatarMenu` 新增 `sidebar` 展示形态；`PublicSiteHeader` 可只移出桌面头像，移动端仍挂载，Next Agent 设置路由在 Workbench 之外启用该行为。
-- 新增账户菜单、Header 响应式与侧栏落位 4 个聚焦断言；连同前两轮布局共 6 passed / 21 skipped。完整相关文件还存在 1 条与本次无关的既存续费徽标断言（源码 `nowrap`、旧测试期待 `normal`）。
+- 新增账户菜单、Header 响应式与侧栏落位 4 个聚焦断言；连同前两轮布局共 6 passed / 21 skipped。完整相关文件当时存在 1 条该分支新增但与既有续费徽章单行契约冲突的断言（源码与既有专项测试要求 `nowrap`，新增测试误写为 `normal`）。
 - 第三轮 `pnpm check` 通过：i18n、文档、MDX 与类型基线完成，TypeScript 为 174 current / 276 baseline / 0 new / 102 resolved。
 - 第三轮浏览器验证：`/agents/` 与首页均成功加载、正文非空、无 Next/Vite error overlay；请求命中 `https://lightclaw.tech/auth/session` 与 `https://lightclaw.tech/v1/frontend/runtime-config`。自动化会话无登录态，因此头像下移的真实数据截图仍由用户当前登录会话验收。
 - 5174 已按 `cn` region 与 `https://lightclaw.tech` 后端参数恢复运行。
@@ -168,11 +170,12 @@
 - 第二十三轮验证报告为 `/tmp/lightvela-multibot-notice-validation/report.html`；5174 本地 CN 页面 `/agents/channels/` 返回 HTTP 200，进程继续监听北京后端预览端口。
 - 第二十四轮移除 `.lv-agent-feedback-link` 的顶部边框，并在桌面端用自动外边距将其下沉；相邻账号区覆盖为 8px 顶部间距，无反馈入口时账号区原有 `margin-top: auto` 规则不变。
 - 第二十四轮为 `.lv-agents-sidebar-scroll-isolated` 增加 `overflow-x: hidden`，保留 `overflow-y: auto`；右侧 `.lv-agent-settings-content` 的桌面偏移从 -16px 调整为 -24px。
-- 第二十四轮聚焦 Vitest 通过：2 passed / 4 skipped；完整该测试文件另有已记录的续费徽标旧断言失败，与本轮样式无关。`pnpm check` 通过，TypeScript 0 个新增诊断。
+- 第二十四轮聚焦 Vitest 通过：2 passed / 4 skipped；完整该测试文件当时另有已记录的续费徽章冲突断言失败，与本轮样式无关。`pnpm check` 通过，TypeScript 0 个新增诊断。
 - 第二十四轮浏览器 CSS 探针：反馈入口 `border-top-width=0px`、反馈到账号区间距 8px、侧栏 `overflow-x=hidden`、shell top=68px、右侧 content top=44px（偏移 -24px）；5174 `/agents/channels/` 返回 HTTP 200。
 - 第二十五轮按用户截图仅将 `.lv-agent-account-footer` 的顶部内边距从 16px 收紧为 8px；不改分隔线、反馈入口或账户触发器尺寸。
 - 第二十五轮聚焦 Vitest 通过：2 passed / 4 skipped；`pnpm check`、documentation、change-impact 与 `git diff --check` 均通过。浏览器 CSS 探针确认账号区 `padding-top=8px`、分隔线仍为 1px，内容距容器顶部为 9px（含边框）。
 - 第二十六轮将 Agent Header 内部容器从 60px 同步为 68px，使 32px Logo 从上 14px/下 22px 调整为上下各 18px；仅作用于桌面 Agent Header，不改变共享 Header、侧栏接缝或右侧内容位置。聚焦 Vitest 1 passed / 5 skipped；5174 编译后 CSS 浏览器探针确认 Header/内部容器/Logo 为 68px/68px/32px，上下留白为 18px/18px。
+- 第二十七轮 CR 复核确认新增导航间距测试误要求 `white-space: normal`，与既有续费徽章专项测试及生产 CSS 的 `nowrap` 契约冲突；移除该越界用例，不修改生产 CSS 或续费行为。导航间距与续费徽章专项测试合跑为 2 files / 38 tests passed。
 
 ## risks
 - 宽屏内容区变宽可能放大内部卡片；用 Agent 页作用域样式和桌面截图检查缓解。
