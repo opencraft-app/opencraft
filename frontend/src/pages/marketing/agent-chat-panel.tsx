@@ -205,6 +205,8 @@ export const AgentChatPanel = ({
             features={{
               autoActivate: true,
               nativeWsGray: true,
+              // 开放对话发送器的模型切换：开启后加载模型配置并在发送器展示模型选择器（默认 false）。
+              modelSwitch: true,
             }}
           />
           {/* 工作台模板 → 对话自动发送：读取 pending prompt 后填入输入框并发送。 */}
