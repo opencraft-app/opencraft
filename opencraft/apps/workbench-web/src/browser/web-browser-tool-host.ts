@@ -60,6 +60,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
       if (requestedId === null && url === null)
         throw new BrowserToolError("INVALID_ARGUMENT", "url or tab_id is required");
       const opened = this.workbench.open(this.threadScope(context), {
+        visible: args["visible"] !== false,
         ...(requestedId === null ? {} : { tabId: asTabId(requestedId) }),
         ...(url === null ? {} : { initialUrl: url }),
       });
@@ -69,6 +70,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
         tabId: opened.tabId,
         panelTabId: opened.tab?.id ?? null,
         placement,
+        visible: args["visible"] !== false,
         url: page?.navigation.currentUrl ?? url,
       };
     });
@@ -111,6 +113,8 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
       const tabId = asTabId(stringArgument(args, "tab_id", true)!);
       const { page } = this.requireOwnedTab(context, tabId);
       switch (action) {
+        case "screenshot": return { screenshot: true, imageUrl: await this.pages.capturePage(page.id) };
+        case "close": this.workbench.close(this.threadScope(context), tabId); return { closed: true, tabId };
         case "navigate": {
           const url = this.pages.navigate(page.id, stringArgument(args, "url", true)!);
           return { action, tabId, url };

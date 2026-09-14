@@ -128,7 +128,7 @@ export function SidebarResizeHandle({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || transactionRef.current !== null) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     transactionRef.current = {
@@ -173,9 +173,10 @@ export function SidebarResizeHandle({
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       onPointerCancel={(event) => finish(event, true)}
+      onLostPointerCapture={(event) => finish(event, true)}
       onPointerDown={handlePointerDown}
       onPointerMove={(event) => {
-        if (transactionRef.current !== null) {
+        if (transactionRef.current?.pointerId === event.pointerId) {
           event.preventDefault();
           resolve(event.clientX);
         }

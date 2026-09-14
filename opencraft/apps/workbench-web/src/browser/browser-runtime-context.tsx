@@ -27,6 +27,7 @@ interface BrowserRuntimeContextValue {
 }
 
 const BrowserRuntimeContext = createContext<BrowserRuntimeContextValue | null>(null);
+export function useOptionalBrowserRuntime() { return useContext(BrowserRuntimeContext); }
 
 export function BrowserEnvironmentProvider({
   children,

@@ -11,6 +11,11 @@ import {
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { Bot, Pass } from "@/domain/types";
+import {
+  createBotIdentity,
+  normalizeBotLifecycle,
+  projectBotCatalog,
+} from "@lightvela/agent-core";
 
 /* ─── Types ─── */
 
@@ -79,34 +84,32 @@ interface OpenClawContextValue {
 /* ─── Helpers ─── */
 
 /** Map a backend Bot to the frontend OpenClawBot shape */
-const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => ({
-  id: bot.id,
-  instanceId: bot.instanceId ?? bot.id,
-  profileId: bot.profileId ?? "main",
-  isDefault: bot.isDefault ?? true,
-  description: bot.description,
-  createdFrom: bot.createdFrom,
-  sourceBotId: bot.sourceBotId,
-  weixinOwner: bot.weixinOwner,
-  name: bot.name,
-  personality: bot.template || "默认设定",
-  personalityEmoji: "✨",
-  intro: bot.mission || "",
-  status: bot.status === "active"
-    ? "running"
-    : bot.status === "paused"
-      ? "paused"
-      : bot.status === "provisioning"
-        ? "provisioning"
-        : bot.status === "failed"
-          ? "failed"
-          : bot.status === "deleting"
-            ? "deleting"
-            : "draft",
-  createdAt: bot.createdAt,
-  connectedChannels: channels ?? [],
-  installedSkills: [],
-});
+const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => {
+  const identity = createBotIdentity({
+    botId: bot.id,
+    instanceId: bot.instanceId,
+    profileId: bot.profileId,
+    isDefault: bot.isDefault ?? true,
+  });
+  return {
+    id: identity.botId,
+    instanceId: identity.instanceId,
+    profileId: identity.profileId,
+    isDefault: identity.isDefault,
+    description: bot.description,
+    createdFrom: bot.createdFrom,
+    sourceBotId: bot.sourceBotId,
+    weixinOwner: bot.weixinOwner,
+    name: bot.name,
+    personality: bot.template || "默认设定",
+    personalityEmoji: "✨",
+    intro: bot.mission || "",
+    status: normalizeBotLifecycle(bot.status),
+    createdAt: bot.createdAt,
+    connectedChannels: channels ?? [],
+    installedSkills: [],
+  };
+};
 
 // NOTE: parseChannelsFromConfig 暂时注释，待通道探测功能恢复后启用
 // const parseChannelsFromConfig = (configOutput: string): ("wechat" | "qq")[] => {
@@ -275,7 +278,8 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     setBotsLoading(true);
     try {
       const snapshot = await repositories.bots.getDashboardSnapshot("live");
-      const mappedBots = snapshot.bots.map((bot) => mapBotToOpenClawBot(bot));
+      const mappedBots = projectBotCatalog(snapshot.bots)
+        .map(({ source }) => mapBotToOpenClawBot(source));
       setBots(mappedBots);
 
       /* 对每个 bot 尝试获取 openclaw 配置，恢复通道状态 */

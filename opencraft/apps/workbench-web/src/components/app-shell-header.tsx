@@ -21,6 +21,7 @@ import type {
   HeaderNavigationAction,
 } from "../window-chrome";
 import { useAppShellLayoutMotion } from "./app-shell";
+import { useShellPresentation } from "./shell-presentation";
 
 export interface AppShellNavigationControlsProps {
   readonly hostRole: "persistent" | "transient";
@@ -41,15 +42,18 @@ export interface AppShellNavigationControlsProps {
  */
 export function AppShellNavigationControls({
   hostRole,
-  sidebarOpen,
+  sidebarOpen: requestedSidebarOpen,
   canGoBack,
   canGoForward,
-  onToggleSidebar,
+  onToggleSidebar: requestedToggleSidebar,
   onHome,
   onBack,
   onForward,
   actions,
 }: AppShellNavigationControlsProps) {
+  const presentation = useShellPresentation();
+  const sidebarOpen = hostRole === "persistent" && presentation ? presentation.sidebarOpen : requestedSidebarOpen;
+  const onToggleSidebar = hostRole === "persistent" && presentation ? presentation.toggleSidebar : requestedToggleSidebar;
   const { headerLeftFitWidth } = useAppShellLayoutMotion();
   const measureRef = useRef<HTMLDivElement | null>(null);
   const sidebarToggleRef = useChromeActionFocusRef("sidebar-toggle", hostRole);
@@ -201,11 +205,11 @@ export function AppShellHeader({
   title,
   project,
   sidebarOpen,
-  rightPanelOpen,
-  rightPanelFullWidth,
+  rightPanelOpen: requestedRightPanelOpen,
+  rightPanelFullWidth: requestedRightPanelFullWidth,
   showRightPanelAction = true,
   onToggleSidebar,
-  onToggleRightPanel,
+  onToggleRightPanel: requestedToggleRightPanel,
   onHome,
   canGoBack,
   canGoForward,
@@ -213,6 +217,10 @@ export function AppShellHeader({
   onForward,
   navigationActions,
 }: AppShellHeaderProps) {
+  const presentation = useShellPresentation();
+  const rightPanelOpen = presentation?.rightPanelOpen ?? requestedRightPanelOpen;
+  const rightPanelFullWidth = presentation?.rightPanelFullWidth ?? requestedRightPanelFullWidth;
+  const onToggleRightPanel = presentation?.toggleRightPanel ?? requestedToggleRightPanel;
   const { headerRightWidth, isHeaderEdgeScroll, rightPanelAnimatedWidth } =
     useAppShellLayoutMotion();
   const headerRightWidthPx = useTransform(

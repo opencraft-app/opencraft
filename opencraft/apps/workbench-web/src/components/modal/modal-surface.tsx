@@ -12,6 +12,7 @@ export interface ModalSurfaceProps extends ModalDescriptor {
   readonly onDismiss: (reason: ModalDismissReason) => void;
   readonly portalContainer?: HTMLElement | null;
   readonly stackIndex?: number;
+  readonly returnFocus?: () => HTMLElement | null;
 }
 
 type ModalLayerStyle = CSSProperties & {
@@ -24,6 +25,7 @@ type ModalLayerStyle = CSSProperties & {
  */
 export function ModalSurface({
   children,
+  appearance = "default",
   className,
   dismissOnOutsidePress = true,
   label,
@@ -33,9 +35,11 @@ export function ModalSurface({
   presentation = "dialog",
   showCloseButton = true,
   size = "default",
+  returnFocus,
   stackIndex = 0,
 }: ModalSurfaceProps) {
   const dismissReason = useRef<ModalDismissReason>("system");
+  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const surfaceClassName = className === undefined
     ? "modal-surface"
     : `modal-surface ${className}`;
@@ -55,13 +59,16 @@ export function ModalSurface({
         <Dialog.Overlay
           className="modal-surface__scrim"
           data-layer={layer}
+          data-appearance={appearance}
           data-stack-index={stackIndex}
           style={layerStyle}
         />
         <Dialog.Content
           aria-label={label}
+          aria-describedby={undefined}
           className={surfaceClassName}
           data-layer={layer}
+          data-appearance={appearance}
           data-presentation={presentation}
           data-size={size}
           data-stack-index={stackIndex}
@@ -72,6 +79,12 @@ export function ModalSurface({
               return;
             }
             dismissReason.current = "outside-press";
+          }}
+          onCloseAutoFocus={event => {
+            const target = returnFocus?.() ?? opener.current;
+            if (target?.isConnected && !target.closest("[inert]")) {
+              event.preventDefault(); target.focus({ preventScroll: true });
+            }
           }}
         >
           <Dialog.Title className="modal-surface__accessible-title">

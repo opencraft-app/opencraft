@@ -6,6 +6,7 @@ OpenCraft 是 mono2 内的多端 Agent Workbench 服务根，包含 Codex-faithf
 
 - 服务所有权、依赖和生成路径：`opencraft/catalog-info.yaml`。
 - Agent 工作规则：`opencraft/AGENTS.md`。
+- 项目维护方法与验收路由：[OpenCraft 维护总纲 Skill](../.agents/skills/opencraft-maintenance/SKILL.md)；不替代下列正式架构文档。
 - 一次性迁移谱系和共享前端边界：`opencraft/MONO2_MIGRATION.md`。
 - 平台与插件架构：`opencraft/docs/platform-architecture.md`、`opencraft/docs/plugin-architecture.md`。
 - Chat 与浏览器 Workbench：`opencraft/docs/chat-ui-architecture.md`、`opencraft/docs/browser-workbench-architecture.md`。
@@ -34,3 +35,6 @@ npm run gate
 ```
 
 只改局部包时可以先跑相邻类型检查和聚焦测试，但跨包、共享前端、协议、构建矩阵或平台入口变更必须完成全门禁。发布需要单独、明确授权，构建通过不代表已经发布。
+# 任务工作区设计
+
+Codex 工作区复刻的所有权、呈现策略、不变量及验证账本见 [design/](../design/README.md)。

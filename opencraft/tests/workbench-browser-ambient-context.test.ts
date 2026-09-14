@@ -81,6 +81,7 @@ test("dynamic browser tools authorize logical Tab IDs, then operate their Pages"
   const pageSnapshots = new Map<string, BrowserPageSnapshot>();
   let nextPage = 0;
   const pages = {
+    setNewWindowHandler() {},
     create(input: { ownerId: string }) {
       createdOwners.push(input.ownerId);
       const id = `page-${++nextPage}` as BrowserPageSnapshot["id"];

@@ -1,19 +1,45 @@
 # Local Agent custom providers
 
+当前桌面模型配置真源已改为 OpenCraft 自己读写的 `~/.opencraft/models.json`，凭据独立存储在私有 credentials.json 中。详见 [模型配置所有权](../design/model-configuration.md)。下文的 DSH namespace/API 是兼容适配层，不是产品持久化格式。
+
+## 界面状态
+
+地址输入明确为“API 基础地址（Base URL）”，不接受 /chat/completions、/responses、/models 操作路径作为基础地址。界面内联说明并阻止保存/检查，主机保存、探测、发现及引擎应用使用同一校验规则；保留合法网关/部署前缀，不静默截断用户输入。旧错误配置可读取并明确修正，不因新增规则清空存储。
+
+提供商列表每行以共享 SettingsSwitch 滑动开关替代绿点，打开启用、关闭停用；名称按钮与开关为兄弟控件，点击名称只选择，不嵌套交互控件。自定义项右键只保留重命名和删除。默认提供商的关闭有保护及说明，未提供启停能力的项只读。详情摘要明确区分“连接已配置 · 未启用／已启用”；窄屏隐藏列表时保留直接启用和详情更多入口。所有入口调用同一 toggle 命令，不自动保存脏草稿或改变默认模型。不另建原生 checkbox 样式分支。
+
+品牌标识是纯呈现层：`model-services/brand-mark.tsx` 为提供商列表、标题与模型行提供固定尺寸槽位。提供商按精确 ID/显式别名匹配，模型独立按家族匹配，不把网关品牌当作模型品牌；未知项使用 Lucide 通用图标。映射不得参与默认选择、配置、凭据或路由。品牌资源使用 MIT 标识的 `@lobehub/icons-static-svg@1.95.0`（[Lobe Icons](https://github.com/lobehub/lobe-icons)），随应用本地打包、按需加载，不引入其 UI 框架；单色 SVG mask 继承主题文字颜色。品牌商标仍属于各自权利人。
+
+两版旧模型设置 UI 已移除且不恢复。用户确认的 LobeChat 风格页面由 `model-services/controller.ts` 与 `model-services/view.tsx` 实现：提供商分组/搜索，同页配置与模型列表；不使用 WB 弹窗和旧连接页面。当前注册“模型服务”，默认模型接口保留但旧默认模型设置页不恢复。
+
+DSH 运行时、配置/凭据协议及其测试继续保留。实际模型配置、凭据和用户数据没有删除。LocalAgentSettingsService 是无界面的 Host-scoped 配置客户端，并固定绑定本机 `local` Host；ModelServicesController 持有选择、搜索和内存草稿。连接表单采用明确的“保存并收起”，取消放弃未提交输入并取消待保存计时器；原始 revision 的 CAS 不变。界面检查通过 runtime/models/check 读取后端已保存的连接和密钥，脏草稿必须先保存，不隐式提交。离开提供商后清空已保存草稿中的明文输入，存储密钥不会返回给页面。
+
+简化呈现保留“提供商 → 模型”：已有配置且凭据确认存在时默认折叠连接表单，首次配置自动展开，未知凭据状态不冒充已配置；“连接已配置”不表示检查成功。脏草稿始终展开，显式展开偏好按提供商保留。模型行常驻名称、品牌、当前默认标记和开关，ID 与设为默认放入 Radix 操作弹层；取消重复的全部/对话分类。未启用提供商默认折叠，搜索或选中其中项目时展开。模型服务作为 Settings 中“本机”分组下的 master-detail 页面呈现，不再经过环境选择、概览或面包屑。
+
+新发现模型通过 `disableNewModels` 在同一次 CAS 保存目录并设置为未启用，既有开关状态保留；手动添加模型是独立用户意图。配置保存、provider 启用、模型开关、文本检查均不改默认模型或会话选择。DeepSeek 与其他提供商共享启停命令和默认模型保护；维护补丁在其原有 settings namespace 增加 enabled，并真实释放/重新注册适配器路由。停用不删除配置或凭据，重启后仍保持停用。其原生协议差异只留在适配层，公开草稿检查默认地址不代表环境变量覆盖后的实际路由。
+
+Settings Shell 只拥有分类导航和容器。master-detail 决定模型服务内部提供商目录与详情布局；提供商页面不自行绘制第二个标题栏。宽度由实际容器决定，窄容器只改呈现，不重建配置服务，也不改变其固定的本机 Host 目标。
+
+成功的提供商/模型变更统一取消并失效对应 Host 的 Composer 能力查询。TanStack Query 缓存 agents 与 models 的联合结果，按 Host 和必要的 thread 范围隔离；两边所有分页完成后一次发布，不能用新模型目录拼接上一轮 Agent modelIds。打开模型菜单检查 60 秒新鲜度，失效或上次失败时重新读取；失败保留完整旧结果并提示重试，空结果正常覆盖。RPC 当前不支持中断网络 I/O，但查询消费 AbortSignal 并在发布前校验，取消后迟到结果不得发布。现有协议没有事务 revision，联合读取只保证前端成组发布，不声称后端事务一致性。目录更新不写用户模型选择；原选择不可用时提示重新选择。
+
+每个已启用模型都有统一的“设为默认”入口，当前默认模型显示标记。默认提供商的停用保护对所有适配器相同，用户可先显式更换默认模型再停用原提供商。原生 DeepSeek 的 enabled 默认值保留存量兼容性，但显式停用不会因刷新或重启而恢复；停用释放新请求的路由，不删除既有配置，也不承诺取消在途请求。
+
 ## Ownership
 
-The settings plugin owns an unsaved draft only. All calls go through the selected
-AppServer host. `RuntimeProviderService` in local-agent-host is the application
-coordinator; it owns no persistent provider database. DSH settings owns provider
-profiles, revisions and validation; DSH credentials owns secret values; the
-runtime LLM registry owns the effective model catalog. Renderer unmount or
-WebSocket disconnect does not cancel a submitted provider application command.
+Responses API 协议开关只在适配器声明支持时出现在连接表单的“高级设置”内，默认折叠；启用时摘要显示“协议：Responses API”。折叠仅影响可见性，不重置协议、草稿或保存状态。
+
+Configuration clients call the selected AppServer host. OpenCraft's ModelConfigurationRepository owns the versioned JSON document and CAS; ModelConfigurationService coordinates commits and a replaceable ModelEnginePort. DSH settings and credentials are execution projections through the DSH adapter. The runtime registry still owns actual availability, separately from saved product intent. Renderer unmount or WebSocket disconnect does not cancel a submitted command.
 
 The bundled pi-ai adapter supports `openai-completions` and `openai-responses`.
 These are API wire formats, not authentication mechanisms or a guarantee that
 every provider implements every model capability. Codex OAuth remains separate.
 
 ## AppServer surface
+
+- `runtime/models/check`: 调用方只能传 provider、model、expectedRevision。后端绑定已保存的地址、协议、模型和凭据引用，缺失密钥才提示配置；解析凭据后再次检查连接快照，防止新地址接收旧密钥。可以检查尚未启用的完整连接，但不改变启用或默认模型状态。前端仅在宿主声明 canCheckSaved 时呈现此能力。
+
+- `runtime/providers/delete`: 仅删除 `llm-pi-ai` 声明的自定义提供商，按 namespace revision 进行 CAS；验证精确配置路径，保护默认提供商，同次移除其 modelSelection 配置，不删除可能共享的凭据。内置提供商不提供删除入口。
+- 自定义提供商行通过 Radix 右键菜单提供重命名和删除。重命名沿用 apply，只更新显示名，保留连接身份、模型和凭据。脏连接草稿需先保存或取消，确认窗口捕获打开时的 revision；冲突不自动重试。删除需要确认，删除当前项后回到已有启用项或目录。
 
 - `runtime/providers/list`: directory and host-supplied creation capabilities
   (`kind`, supported `apis`, namespace `revision`). Existing providers advertise
@@ -31,6 +57,12 @@ every provider implements every model capability. Codex OAuth remains separate.
   Only an explicitly supplied draft key is used; stored credentials are never
   implicitly forwarded to a new host. Results are unsaved candidates.
 - `runtime/models/list`: effective model registry, not discovery candidates.
+- `runtime/models/probe`: one explicit draft text request, capability-gated by
+  `configuration.canProbe`. Takes protocol, base URL, model ID and optional write-only
+  probe key. Does not read DSH credentials, persist anything, enable a route or create
+  a session. Rejects redirects, bounds time to 15 seconds and body to 256 KiB, makes
+  no retry and never returns provider body or key. A valid text response verifies
+  only that draft request, not streaming/tools/vision or the effective DSH route.
 - `runtime/settings/mutate`: remains for generic settings such as default model;
   provider saves from this UI no longer use it directly.
 
@@ -67,14 +99,10 @@ missing required credential. No shared old secret is overwritten or deleted.
 - `npx tsx --test tests/runtime-provider-service.test.ts tests/local-agent-host.test.ts`
 - `npm run smoke:local-agent`: actual bundled DSH, isolated data, authenticated
   WebSocket, both protocol registrations, restart persistence, unchanged defaults.
-- `npx tsx scripts/smoke-local-agent-settings.ts`: real plugin UI in Chromium,
-  real AppServer/DSH, isolated `/models` fixture; creation/discovery/selection/save.
-  Requires Playwright and Chromium. `OPENCRAFT_PLAYWRIGHT_MODULE` and
-  `OPENCRAFT_CHROMIUM_EXECUTABLE` may point at existing installations.
 
 Tests use synthetic credentials and make no paid or external inference request.
 
-## Settings layout and provider lifecycle
+## Provider and model lifecycle
 
 Model management separates catalog definition from selection policy. Runtime-owned
 `llm-pi-ai.modelSelection` records disabled model IDs per provider (including native
@@ -91,57 +119,12 @@ disabling/deleting the default or selecting a disabled default. Generic AppServe
 mutations of llm-pi-ai must use the domain commands instead. Direct external DSH
 writers are outside that adapter queue; this is not a cross-process transaction.
 
-The settings shell provides document and master-detail layouts. The plugin contributes
-`Default model` and `Model services` pages under Local Agent. Provider navigation and
-the detail body use shared scroll surfaces, not a plugin-owned application shell.
-Default-model edits and connection edits are independent drafts. Dirty connection
-drafts retain their original namespace revision across refresh; stale writes cannot
-silently acquire the latest revision. Switching connections asks before discarding.
-Existing-provider edit sessions belong to the settings service, not the pane.
-They survive pane resizing and view reattachment while that service is alive.
-Explicit discard removes the edit session; service disposal releases all sessions.
-Drafts (including newly typed credentials) are memory-only, not durably saved.
-Creation and default-model forms currently retain component-local drafts.
 
-Provider list, provider detail (addressed by providerId), and creation are independent
-page components. The panel composer supplies identified pages to `AdaptivePanelView`;
-the list is the primary page and the selected detail/create page is secondary.
-An initially selected detail has the same identity when entered in compact mode.
-Unknown provider IDs show an unavailable page,
-never another provider's form. List search belongs to the list page; edit drafts
-belong to the service. The old `SettingsMasterDetail` component was removed.
+The protocol client carries an immutable hostId for every read/write/probe; it owns no UI state.
 
-Provider panels use `AdaptivePanel`: selected secondary page and compact active
-page are independent state. `projectPanel` takes container width, never device type
-or an application route. Back only focuses the list; it does not discard, unmount,
-or deselect the secondary page, even with an unsaved draft. Reopening that page
-resumes it. Switching to another page retains the pending/dirty guard; explicit
-creation cancellation closes the page. Resizing never mutates panel state.
-At the combined page minimum widths both pages are shown; otherwise the active
-page occupies the panel. Web keeps the same editor subtree when visibility changes.
-Each visible pane owns its scroll. No Settings route is pushed by this panel.
-The Web settings shell (connected and hostless) also projects its category rail:
-below the category + content width budget, it yields the full viewport to content.
-The lightweight Settings link opens the category index without unmounting content.
-Category width is shell-owned and does not overwrite conversation sidebar preferences.
-The Expo native `AdaptivePanelView` measures with `onLayout` and consumes the same
-state/projection, including internal Back and hidden-page retention. Its old
-path-based adapter has been removed. Actual native provider forms/settings entry
-are not integrated yet; this change does not claim that whole Expo feature is shipped.
+Verification additionally uses `tests/model-services.test.ts` and
+`scripts/smoke-model-services.ts` (real UI → isolated AppServer/DSH, with a local
+model endpoint). Empty optional `input: []` materialized by DSH is normalized to
+omission in the client read projection so round-trip saves keep inherited semantics.
 
-Custom connections are created disabled, including incomplete connections. Installed
-adapter activation preserves its native protocol/catalog instead of treating every
-adapter as OpenAI-compatible. Installed adapters are not cloneable presets in this
-implementation. Multiple custom connections have independent stable route IDs.
-
-`scripts/patch-dsh-provider-lifecycle.mjs` adds enabled-state support to the pinned
-DSH pi-ai adapter during runtime preparation. It changes the same settings schema,
-route resolver and configurable-provider directory; no parallel database is added.
-Exact anchors fail closed when the upstream artifact changes. Disabled routes are
-excluded from runtime resolution but remain in the directory for editing.
-
-The host prevents disabling the current default using an authoritative read, but
-this is not an atomic transaction across the provider and default-model namespaces.
-Concurrent generic settings writes are not globally serialized by this command.
-Unauthenticated inference, interactive OAuth, multi-endpoint failover and durable
-draft recovery are not introduced by this UI change.
+`scripts/patch-dsh-provider-lifecycle.mjs` adds enabled-state support to the pinned DSH pi-ai adapter. Disabled routes remain editable through the domain API but are excluded from runtime resolution. OAuth, unauthenticated inference and failover are not introduced by this surface.

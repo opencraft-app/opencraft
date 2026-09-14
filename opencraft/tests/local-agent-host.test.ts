@@ -85,12 +85,17 @@ async function fakeDsh() {
     if (envelope.method === "session.list") value = { items: [{ sessionId: "s1", updatedAt: 1_788_000_000_000, running: false, blank: false, cwd: "/workspace/demo", projections: { asOfSeq: 8, values: { title: "Demo" } } }] };
     if (envelope.method === "session.history") value = {
       events: [
+        { event: { type: "permission/preset", seq: 0, time: 1_788_000_000_000, data: { preset: "workspace-write" } } },
+        { event: { type: "sandbox/mode", seq: 1, time: 1_788_000_000_000, data: { mode: "workspace-write" } } },
+        { event: { type: "approval/policy", seq: 2, time: 1_788_000_000_000, data: { policy: "ask" } } },
+        ...[
         { event: { type: "turn/start", seq: 0, time: 1_788_000_000_000, data: { turn: 1 } } },
         { event: { type: "step/start", seq: 1, time: 1_788_000_000_001, data: { turn: 1, step: 1 } } },
         { event: { type: "user/message", seq: 2, time: 1_788_000_000_002, data: { id: "m-user", role: "user", content: [{ type: "text", text: "hello" }], source: { kind: "human", rpcId: "history-client-message" } } } },
         { event: { type: "user/message", seq: 3, time: 1_788_000_000_002, data: { id: "m-system", role: "user", content: [{ type: "text", text: "runtime context" }], source: { kind: "plugin", plugin: "system-prompt" } } } },
         { event: { type: "assistant/message", seq: 4, time: 1_788_000_000_003, data: { turn: 1, step: 1, message: { id: "m-agent", role: "assistant", content: [{ type: "reasoning", text: "think" }, { type: "text", text: "world" }] } } } },
-        { event: { type: "turn/end", seq: 5, time: 1_788_000_000_004, data: { turn: 1, reason: "completed" } } },
+        { event: { type: "turn/end", seq: 5, time: 1_788_000_000_004, data: { turn: 1, reason: { kind: "completed" } } } },
+        ].map(entry => ({ event: { ...entry.event, seq: entry.event.seq + 3 } })),
       ],
       hasMore: false,
       projections: { asOfSeq: 5, values: { title: "Demo" } },
@@ -123,11 +128,16 @@ async function fakeDsh() {
         setTimeout(() => publishQueue(sessionId), 0);
       } else if (envelope.payload.mode === "queue") {
         activeSessions.add(sessionId);
-        setTimeout(() => publishMux({
+        setTimeout(() => { publishMux({
           type: "session/event",
           sessionId,
           event: { type: "turn/start", seq: 10, time: 1_788_000_000_100, data: { turn: 1 } },
-        }), 0);
+        }); publishMux({
+          type: "session/event", sessionId,
+          event: { type: "user/message", seq: 11, time: 1_788_000_000_101, data: {
+            content: envelope.payload.content, source: { kind: "user", rpcId: envelope.rpcId },
+          } },
+        }); }, 0);
       }
     }
     if (envelope.method === "session.updateQueue") {

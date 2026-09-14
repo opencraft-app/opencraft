@@ -1,16 +1,13 @@
 import {
-  useEffect,
   useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
 
 /**
- * The Web workbench always uses desktop topology. This threshold is only a
- * space-pressure policy: entering a narrow desktop window closes the dock via
- * its normal animation. It does not create a mobile/overlay presentation.
+ * Owns the user's sidebar intent. AppShell projects it against the complete
+ * window budget, so an automatic collapse cannot overwrite a manual choice.
  */
-export const SIDEBAR_AUTO_COLLAPSE_MEDIA_QUERY = "(max-width: 720px)";
 
 interface ResponsiveSidebarDock {
   readonly sidebarOpen: boolean;
@@ -18,18 +15,7 @@ interface ResponsiveSidebarDock {
 }
 
 export function useResponsiveSidebarDock(): ResponsiveSidebarDock {
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => !window.matchMedia(SIDEBAR_AUTO_COLLAPSE_MEDIA_QUERY).matches,
-  );
-
-  useEffect(() => {
-    const query = window.matchMedia(SIDEBAR_AUTO_COLLAPSE_MEDIA_QUERY);
-    const handleChange = (event: MediaQueryListEvent) => {
-      if (event.matches) setSidebarOpen(false);
-    };
-    query.addEventListener("change", handleChange);
-    return () => query.removeEventListener("change", handleChange);
-  }, []);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return { sidebarOpen, setSidebarOpen };
 }

@@ -1,4 +1,5 @@
-import type { Model } from "@opencraft/appserver-protocol/generated/v2";
+import type { CatalogModel as Model } from "@opencraft/appserver-protocol";
+import { reasoningCapability } from "@opencraft/composer-core";
 
 export interface WorkbenchReasoningEffortChoice {
   readonly value: string;
@@ -56,7 +57,7 @@ export function projectComposerModelChoices(
       label: model.displayName,
       description: model.description || null,
       isDefault: model.isDefault,
-      defaultEffort: model.defaultReasoningEffort || null,
+      defaultEffort: reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort).defaultEffort,
       efforts: model.supportedReasoningEfforts.map((effort) => Object.freeze({
         value: effort.reasoningEffort,
         label: reasoningEffortLabel(effort.reasoningEffort),

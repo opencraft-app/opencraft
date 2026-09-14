@@ -35,6 +35,7 @@ import {
   AppShellNavigationControls,
 } from "./app-shell-header";
 import { Sidebar } from "./sidebar";
+import { Button } from "./ui/button";
 import {
   getSidebarMaximumWidth,
   SIDEBAR_DEFAULT_WIDTH,
@@ -89,7 +90,7 @@ export function HostlessWorkbench({
       : SIDEBAR_DEFAULT_WIDTH;
     return Math.max(
       SIDEBAR_MINIMUM_WIDTH,
-      Math.min(initialWidth, getSidebarMaximumWidth(window.innerWidth)),
+      Math.min(initialWidth, getSidebarMaximumWidth(Number.POSITIVE_INFINITY)),
     );
   });
   const [applicationRoute, setApplicationRoute] = useState<ApplicationRoute>(() =>
@@ -133,16 +134,6 @@ export function HostlessWorkbench({
   }, [sidebarWidth]);
 
   useEffect(() => {
-    const clampSidebarToViewport = () => {
-      setSidebarWidth((currentWidth) =>
-        Math.min(currentWidth, getSidebarMaximumWidth(window.innerWidth)),
-      );
-    };
-    window.addEventListener("resize", clampSidebarToViewport);
-    return () => window.removeEventListener("resize", clampSidebarToViewport);
-  }, []);
-
-  useEffect(() => {
     const restoreRoute = () => {
       const route = parseApplicationRouteUrl(new URL(window.location.href));
       applicationReturnsToPreviousEntry.current =
@@ -154,7 +145,7 @@ export function HostlessWorkbench({
     return () => window.removeEventListener("popstate", restoreRoute);
   }, []);
 
-  const openSettings = (section = "connections") => {
+  const openSettings = (section = "appearance") => {
     if (applicationRoute.kind === "settings" && applicationRoute.slug === section) return;
     const url = `/settings/${encodeURIComponent(section)}`;
     if (applicationRoute.kind === "conversation") {
@@ -169,7 +160,6 @@ export function HostlessWorkbench({
     }
     setApplicationRoute({ kind: "settings", slug: section });
   };
-
   const closeApplicationRoute = () => {
     if (applicationReturnsToPreviousEntry.current) {
       window.history.back();
@@ -215,9 +205,11 @@ export function HostlessWorkbench({
       .opencraftDesktop?.kind === "electron" ? "electron" : "web",
     activeHostId: "",
     profiles: profileSnapshot.profiles,
+    authentication: supervisor.authenticationFlows,
     provisionHost: supervisor.provisionHost,
     removeHost: supervisor.removeHost,
     openView: openExtensionView,
+    openSettings: (section: string) => { setAccountOpen(false); openSettings(section); },
     replaceViewResource: replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await supervisor.images.compress(blob)).blob,
   }), [applicationRoute, profileSnapshot.profiles, supervisor]);
@@ -234,6 +226,7 @@ export function HostlessWorkbench({
   useEffect(() => {
     if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
   }, [extensionProjection.account?.snapshot.phase]);
+  const authenticationPresentation = useAuthenticationPresentation(supervisor.authenticationFlows, extensionProjection.account, JSON.stringify(applicationRoute));
   const sharedSidebarOpen = sidebarOpen;
   const selectSettingsSection = (section: string) => openSettings(section);
   const collapseSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
@@ -276,7 +269,7 @@ export function HostlessWorkbench({
   const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
-        section={settingsSection ?? "connections"}
+        section={settingsSection ?? "appearance"}
         onSectionChange={selectSettingsSection}
         extensionContributions={supervisor.extensions.contributions}
         profiles={profileSnapshot.profiles}
@@ -310,12 +303,11 @@ export function HostlessWorkbench({
       }
     >
       <SettingsContent
-        section={settingsSection ?? "connections"}
+        section={settingsSection ?? "appearance"}
         onSectionChange={selectSettingsSection}
         activeHostId=""
         extensionContributions={supervisor.extensions.contributions}
         extensionManager={supervisor.extensionManager}
-        onAdd={supervisor.addWebSocketHost}
         onProvisionHost={supervisor.provisionHost}
         onOpenView={openExtensionView}
         onReplaceViewResource={replaceExtensionViewResource}
@@ -356,13 +348,15 @@ export function HostlessWorkbench({
     modalRequests.push({
       id: "account",
       label: "Account Settings",
+      appearance: "utility",
+      returnFocus: () => [...document.querySelectorAll<HTMLButtonElement>('.shell-navigation__entrance[data-surface="account"]')].find(button => button.getClientRects().length > 0) ?? null,
       size: "wide",
-      className: "account-center-dialog",
       dismissOnOutsidePress: false,
       content: extensionProjection.account.content,
       onDismiss: () => setAccountOpen(false),
     });
   }
+  if (authenticationPresentation.modal) modalRequests.push(authenticationPresentation.modal);
   modalRequests.push(...announcementModalRequests);
 
   return (
@@ -375,9 +369,10 @@ export function HostlessWorkbench({
             { id: "shell.chat", title: "Chat", icon: "chat", active: applicationRoute.kind === "conversation", onInvoke: closeApplicationRoute },
             ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
           ],
-          account: extensionProjection.account === null || extensionProjection.account.snapshot.phase === "anonymous" ? null : {
+          account: extensionProjection.account === null ? null : {
             snapshot: extensionProjection.account.snapshot,
-            onOpen: () => setAccountOpen(true),
+            signIn: authenticationPresentation.signIn,
+            onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" ? authenticationPresentation.open() : setAccountOpen(true),
             onRefresh: extensionProjection.account.provider.refresh,
             onSignOut: extensionProjection.account.provider.signOut,
           },
@@ -432,7 +427,11 @@ export function HostlessWorkbench({
               </section>
             ) : (
               <div className="hostless-workbench__empty-stage">
-                {extensionProjection.emptyWorkbenchNode}
+                {extensionProjection.emptyWorkbenchNode ?? <section className="hostless-empty-view">
+                  <h1>暂无可用 Agent</h1>
+                  <p>你仍可以调整 OpenCraft 的设备设置。</p>
+                  <Button variant="secondary" onClick={() => openSettings()}>打开设置</Button>
+                </section>}
               </div>
             )}
         </div>
@@ -441,3 +440,4 @@ export function HostlessWorkbench({
     </QueryClientProvider>
   );
 }
+import { useAuthenticationPresentation } from "../runtime/use-authentication-presentation";

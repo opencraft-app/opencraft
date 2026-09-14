@@ -38,8 +38,9 @@ export function LightVelaBotCreationGuide({
   }, [refresh]);
 
   const createBot = () => {
-    const created = window.open(createUrl, "_blank", "noopener,noreferrer");
-    if (created === null) window.location.assign(createUrl);
+    // noopener and Electron's system-browser handoff both return null on success.
+    // Never replace the Workbench document as a supposed popup-blocker fallback.
+    window.open(createUrl, "_blank", "noopener,noreferrer");
   };
 
   return (

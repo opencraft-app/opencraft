@@ -4,8 +4,26 @@ import test from "node:test";
 import { ExtensionContributionStore } from "@opencraft/extension-runtime";
 import {
   buildCodexThemeCssProperties,
+  codexThemePalette,
   velaThemePalette,
 } from "@opencraft/design-system/theme-engine";
+
+test("utility controls receive semantic status colors in both themes and accept theme overrides", () => {
+  for (const mode of ["light", "dark"] as const) {
+    for (const definition of [codexThemePalette[mode], velaThemePalette[mode]]) {
+      const css = buildCodexThemeCssProperties(mode, definition);
+      for (const key of ["--color-text-warning", "--color-text-danger", "--color-status-success", "--color-usage-track", "--color-dialog-scrim", "--elevation-dialog-utility"]) {
+        assert.ok(css[key], `${mode} must define ${key}`);
+      }
+    }
+    const custom = buildCodexThemeCssProperties(mode, {
+      ...codexThemePalette[mode], semanticColors: { ...codexThemePalette[mode].semanticColors, warning: "#9b4a00", error: "#b42318", success: "#18743b" },
+    });
+    assert.equal(custom["--color-text-warning"], "#9b4a00");
+    assert.equal(custom["--color-text-danger"], "#b42318");
+    assert.equal(custom["--color-status-success"], "#18743b");
+  }
+});
 
 test("Vela defines a web-native shell material without changing the Codex fallback", () => {
   const vela = buildCodexThemeCssProperties("light", velaThemePalette.light);

@@ -30,6 +30,9 @@ export interface CodexThemeDefinition {
     diffAdded: string;
     diffRemoved: string;
     skill: string;
+    warning?: string;
+    error?: string;
+    success?: string;
   };
   surface: string;
 }
@@ -427,5 +430,11 @@ export function buildCodexThemeCssProperties(
     "--color-text": semantic.textForeground,
     "--color-text-secondary": semantic.textForegroundSecondary,
     "--color-text-tertiary": semantic.textForegroundTertiary,
+    "--color-text-warning": definition.semanticColors.warning ?? (mode === "light" ? "#a84808" : "#ffb579"),
+    "--color-text-danger": definition.semanticColors.error ?? (mode === "light" ? "#b42318" : "#ff8f87"),
+    "--color-status-success": definition.semanticColors.success ?? (mode === "light" ? "#18743b" : "#79d99b"),
+    "--color-usage-track": mix(theme.surface, theme.ink, .09),
+    "--color-dialog-scrim": mode === "light" ? "rgb(0 0 0 / 18%)" : "rgb(0 0 0 / 35%)",
+    "--elevation-dialog-utility": mode === "light" ? "0 12px 40px rgb(0 0 0 / 16%)" : "0 12px 40px rgb(0 0 0 / 40%)",
   };
 }

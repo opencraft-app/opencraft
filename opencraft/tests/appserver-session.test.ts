@@ -206,6 +206,23 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
   };
 }
 
+test("ephemeral fork adopts its live baseline without issuing rollout Resume", async () => {
+  const harness = await createHarness({});
+  try {
+    const response = resumeResult({ responseTurns: [{ id: "inherited", items: [] }] });
+    const view = harness.runtime.resume.adoptFork(response as never, harness.client.connectionGeneration);
+    assert.equal(view.historySource, "fork");
+    assert.equal(view.resumeState, "resumed");
+    assert.deepEqual(view.streamRole, { role: "owner" });
+    assert.equal(view.execution.cwd, "/workspace");
+    await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(harness.requests.some(request => request.method === "thread/resume"), false);
+    assert.throws(() => harness.runtime.resume.adoptFork(response as never, harness.client.connectionGeneration - 1));
+    await harness.emit("turn/started", { threadId: "thread-one", turn: { id: "child-turn", status: "inProgress", items: [] } });
+    assert.equal(harness.runtime.views.get("thread-one")?.turns.some(turn => turn.id === "child-turn"), true);
+  } finally { await harness.close(); }
+});
+
 test("ordinary tail hydration commits newest Turns then drains older history", async () => {
   const harness = await createHarness({
     initialTurnsPage: {

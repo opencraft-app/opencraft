@@ -1,13 +1,23 @@
-import { Gauge, LogOut, Settings, User } from "lucide-react";
+import { Gauge, LogIn, LogOut, Settings, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PlatformAccountSnapshot } from "@opencraft/extension-react";
 import { NavigationIcon, type NavigationAction } from "./navigation-action";
 
 export interface ShellAccount {
+  readonly signIn?: ShellSignIn | null;
   readonly snapshot: PlatformAccountSnapshot;
   readonly onOpen: () => void;
   readonly onRefresh: () => Promise<unknown>;
   readonly onSignOut: () => Promise<void>;
+}
+
+export interface ShellSignIn {
+  readonly options: readonly { readonly id: string; readonly label: string; readonly description: string }[];
+  readonly pending: boolean;
+  readonly error: string | null;
+  select(optionId: string): void;
+  cancel(): void;
+  retry(): void;
 }
 
 export interface ShellNavigationConfig {
@@ -16,6 +26,20 @@ export interface ShellNavigationConfig {
   readonly onOpenSettings: () => void;
   readonly settingsActive?: boolean;
   readonly allowDock?: boolean;
+}
+
+export function isAnonymousShellAccount(account: ShellAccount | null): boolean {
+  return account?.snapshot.phase === "anonymous";
+}
+
+export function shellAccountEntranceLabel(account: ShellAccount | null): string | null {
+  if (account === null) return null;
+  if (isAnonymousShellAccount(account)) {
+    if (account.signIn?.pending) return "正在登录…";
+    if (account.signIn?.error) return "登录未完成";
+    return "Sign in";
+  }
+  return account.snapshot.name || "Account";
 }
 
 export function AccountAvatar({ account }: { account: ShellAccount | null }) {
@@ -53,8 +77,16 @@ function AccountContent({ config, compact, onInvoke }: {
   useEffect(() => {
     void account?.onRefresh().catch(() => undefined);
   }, [account?.onRefresh]);
+  if (account === null) return null;
+  if (isAnonymousShellAccount(account)) {
+    return <div className="shell-navigation__items">
+      <button type="button" onClick={() => onInvoke(account.onOpen)}>
+        <LogIn size={16} /><span>Sign in to LightVela</span>
+      </button>
+    </div>;
+  }
   return <div className="shell-navigation__items">
-    {account ? <>
+    <>
       <button type="button" title={compact ? account.snapshot.name || "Account" : undefined} onClick={() => onInvoke(account.onOpen)}>
         <AccountAvatar account={account} /><span className="shell-navigation__identity">
           <strong>{account.snapshot.name || "LightVela"}</strong>
@@ -65,15 +97,15 @@ function AccountContent({ config, compact, onInvoke }: {
         <Gauge size={16} /><span>Usage</span><small>{account.snapshot.usageRemainingPercent}% left</small>
       </button>}
       <button type="button" onClick={() => onInvoke(account.onOpen)}><User size={16} /><span>Account</span></button>
-    </> : <p>Connect an account in Settings.</p>}
+    </>
     <button type="button" onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span>Settings</span></button>
-    {account ? <button type="button" disabled={signingOut} onClick={async () => {
+    <button type="button" disabled={signingOut} onClick={async () => {
       setSigningOut(true);
       setError(null);
       try { await account.onSignOut(); onInvoke(() => undefined); }
       catch { setError("Could not sign out. Please try again."); }
       finally { setSigningOut(false); }
-    }}><LogOut size={16} /><span>{signingOut ? "Signing out…" : "Sign out"}</span></button> : null}
+    }}><LogOut size={16} /><span>{signingOut ? "Signing out…" : "Sign out"}</span></button>
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }

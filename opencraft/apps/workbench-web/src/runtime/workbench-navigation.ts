@@ -9,7 +9,7 @@ import {
   type RouteScopeId,
 } from "@opencraft/workbench-runtime";
 
-const HISTORY_NAMESPACE = "vela.application.route.v6";
+const HISTORY_NAMESPACE = "vela.application.route.v7";
 
 export type ApplicationRoute =
   | { readonly kind: "conversation" }
@@ -95,6 +95,15 @@ function isWorkbenchHistoryState(
 }
 
 export function parseApplicationRouteUrl(url: URL): ApplicationRoute {
+  if (url.pathname === "/environments" || url.pathname === "/environments/") {
+    const formerSection = url.searchParams.get("section");
+    return {
+      kind: "settings",
+      slug: formerSection !== null && formerSection !== "overview" && formerSection !== "connections"
+        ? formerSection
+        : "appearance",
+    };
+  }
   const settingsMatch = /^\/settings\/([^/]+)\/?$/u.exec(url.pathname);
   if (settingsMatch !== null) try {
     const slug = decodeURIComponent(settingsMatch[1]!);
@@ -313,7 +322,7 @@ export function createBrowserWorkbenchNavigation(
       );
       publish();
     },
-    openSettings(slug = "connections") {
+    openSettings(slug = "appearance") {
       if (disposed) throw new Error("Workbench navigation is disposed");
       if (
         applicationRoute.kind === "settings" &&

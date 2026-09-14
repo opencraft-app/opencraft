@@ -8,6 +8,7 @@ import type {
   PanelToolbarActionDefinition,
 } from "@opencraft/workbench-panels";
 import type { Context } from "@deepseek-ai/cordis";
+import { restoreRightPanelTabs } from "./restore-right-panel-tabs";
 import {
   createContext,
   type ReactNode,
@@ -51,6 +52,7 @@ export function useConversationPanelState(ownerId: string): ConversationPanelSta
   const { panels } = useWorkbenchPanelRuntime();
   useLayoutEffect(() => {
     panels.ensureOwner(ownerId);
+    restoreRightPanelTabs(panels, ownerId);
   }, [ownerId, panels]);
   const subscribe = useCallback(
     (listener: () => void) => panels.subscribeOwner(ownerId, listener),

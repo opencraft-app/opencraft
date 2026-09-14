@@ -17,6 +17,7 @@ import {
 
 import type { WebBrowserPageRuntime } from "./web-browser-runtime";
 
+import type { BrowserMetadataStorage } from "./desktop-browser-storage";
 const STORAGE_KEY = "vela.browser-tabs.v1";
 
 interface StoredBrowserTab {
@@ -52,8 +53,14 @@ export class BrowserWorkbenchCoordinator {
     private readonly pages: WebBrowserPageRuntime,
     private readonly panels: WorkbenchPanelService,
     private readonly bindings: ConversationBindingStore,
+    private readonly storage: BrowserMetadataStorage | null = null,
   ) {
     this.restoreTabs();
+    this.pages.setNewWindowHandler((pageId, url, background) => {
+      const source = [...this.tabs.values()].find(tab => tab.pageId === pageId);
+      if (!source) return;
+      this.open(source.ownerId, { initialUrl: url, background });
+    });
   }
 
   getTabSnapshot = (tabId: BrowserTabId): BrowserTabSnapshot | null =>
@@ -152,6 +159,8 @@ export class BrowserWorkbenchCoordinator {
     readonly tabId?: BrowserTabId;
     readonly panelOwnerId?: string;
     readonly hostId?: string;
+    readonly background?: boolean;
+    readonly visible?: boolean;
   } = {}) {
     const created = options.tabId === undefined;
     const normalizedUrl = options.initialUrl === undefined
@@ -180,8 +189,9 @@ export class BrowserWorkbenchCoordinator {
     }
     try {
       const panelOwnerId = options.panelOwnerId ?? ownerId;
-      const panelTab = this.presentTab(panelOwnerId, tab.id, true);
+      const panelTab = options.visible === false ? null : this.presentTab(panelOwnerId, tab.id, !options.background);
       this.observeTab(tab.id);
+      if (options.background || options.visible === false) this.pages.prepareSurface(tab.pageId);
       if (!created && normalizedUrl !== undefined) this.pages.navigate(tab.pageId, normalizedUrl);
       return { tabId: tab.id, pageId: tab.pageId, tab: panelTab };
     } catch (error) {
@@ -197,10 +207,12 @@ export class BrowserWorkbenchCoordinator {
     }
     for (const tab of [...this.tabs.values()]) {
       const scopeId = tab.ownerId as ConversationScopeId;
-      if (this.pages.getSnapshot(tab.pageId) === null || this.bindings.resolve(scopeId) === null) {
+      if (this.pages.getSnapshot(tab.pageId) === null) {
         this.destroyTab(tab.id);
         continue;
       }
+      // Unresolved ownership is a restoration state, never a close command.
+      if (this.bindings.resolve(scopeId) === null) continue;
       this.observeTab(tab.id);
     }
   }
@@ -210,8 +222,9 @@ export class BrowserWorkbenchCoordinator {
     this.closingTabs.add(tabId);
     const panelOwners = [...(this.panelOwners.get(tabId) ?? [])];
     this.panelOwners.delete(tabId);
-    for (const panelOwnerId of panelOwners)
-      this.panels.close(panelOwnerId, "right", `browser:${tabId}`);
+    for (const panelOwnerId of panelOwners) {
+      for (const region of ["right", "bottom"] as const) this.panels.close(panelOwnerId, region, `browser:${tabId}`);
+    }
     this.closingTabs.delete(tabId);
     this.destroyTab(tabId);
   }
@@ -221,6 +234,7 @@ export class BrowserWorkbenchCoordinator {
   }
 
   dispose(): void {
+    this.pages.setNewWindowHandler(null);
     for (const tabId of [...this.tabs.keys()]) this.stopObserving(tabId);
     this.panelOwners.clear();
     this.scopeByView.clear();
@@ -240,12 +254,14 @@ export class BrowserWorkbenchCoordinator {
       const page = this.pages.getSnapshot(tab.pageId);
       if (page === null) return;
       for (const panelOwnerId of this.panelOwners.get(tabId) ?? []) {
+        for (const region of ["right", "bottom"] as const) {
         this.panels.dispatch(panelOwnerId, {
           type: "update-tab",
-          region: "right",
+          region,
           tabId: `browser:${tabId}`,
           patch: { title: page.title },
         });
+        }
       }
     };
     this.pageSubscriptions.set(tabId, this.pages.subscribe(tab.pageId, synchronize));
@@ -293,7 +309,7 @@ export class BrowserWorkbenchCoordinator {
   private persistTabs(): void {
     const stored: StoredBrowserTab[] = [...this.tabs.values()];
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+      (this.storage ?? window.localStorage).setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {
       // Browser tabs remain valid in memory when storage is unavailable.
     }
@@ -302,7 +318,7 @@ export class BrowserWorkbenchCoordinator {
   private restoreTabs(): void {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
+      parsed = JSON.parse((this.storage ?? window.localStorage).getItem(STORAGE_KEY) ?? "[]");
     } catch {
       return;
     }

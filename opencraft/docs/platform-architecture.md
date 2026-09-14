@@ -1,5 +1,8 @@
 # OpenCraft platform architecture
 
+Page teardown and owned DSH process recovery follow the
+[host lifecycle contract and acceptance matrix](../design/dsh-host-acceptance.md).
+
 OpenCraft is a dual-renderer workbench with one semantic application model. This
 does not mean one global dependency-injection container. An explicit
 Application Supervisor owns multiple lifecycle-scoped runtimes: Host
@@ -45,6 +48,14 @@ Electron bridge               native/web adapters
 ```
 
 ## Package ownership
+
+Task workspace presentation is specified in [the workspace design](../design/README.md).
+The product exposes right-side tools only; no bottom outlet or move/reveal controls.
+Legacy bottom tabs return to the right without disposing their resources.
+The Cordis panel service owns tab state; main-chat overlay consumes
+the existing Composer controller and Shell geometry. SideChatService owns explicit
+ephemeral forks, not parent navigation. Implementation/verification status and
+protocol adaptations are tracked there rather than implied by a successful build.
 
 | Layer | Owns | Platform imports |
 | --- | --- | --- |
@@ -141,16 +152,30 @@ only decorator; it can wrap any physical transport and produces Replay input.
 
 ## Deliberate reuse boundary
 
+`@lightvela/agent-core` comes from the mono2-neutral
+`shared/lightvela-agent-core` package. mono2 Web validates each product behavior
+first; OpenCraft injects AppServer/Host adapters only after that contract is
+stable. The core never imports either renderer, storage, auth transport, i18n or
+analytics. During migration the generated mono2 HTTP repository may resolve the
+package for shared Bot identity/lifecycle, but remains a compatibility consumer,
+not a second source of product policy.
+
 - Protocol, content models, session state, restore/replica logic, commands,
   deterministic tests, routing identifiers, and design tokens: 100% shared.
 - React subscriptions and feature view-model hooks: share when they remain
   renderer-neutral.
-- Product onboarding shares a renderer-neutral account-state projection. In
-  particular, an authenticated LightVela account with zero executable Bots is
-  `bot-required`, not an authentication or Host transport error. Web renders
-  that state through an extension-owned DOM surface and Expo through a native
-  screen; both resolve the same region-aware `/dashboard/create` target and
-  refresh the account catalog after the application regains focus.
+- Account authentication and cloud Bot availability do not own the Web/Electron
+  conversation surface. Zero cloud Bots, account refresh/errors, and sign-in do
+  not replace a usable local or other-Host Workbench with a creation guide.
+  Account-level `applicationIntervention` is a deprecated compatibility field
+  ignored by the Shell. Only the selected Host's actual connection failure can
+  request a matching provider intervention. LightVela no longer contributes an
+  automatic `empty-workbench` creation guide; zero-Host startup has a neutral
+  no-Agent state with a Settings action. Environment discovery and cloud
+  creation services do not create an application-level Environment surface.
+  The onboarding `bot-required` projection is retained for explicitly selected
+  LightVela configuration, not as a global desktop prerequisite. Native Expo
+  account onboarding is a separate adapter and is not changed by this desktop fix.
 - Conversation and composer behavior: shared models/controllers; separate DOM
   and native views.
 - Workbench resource identity and durable routes: shared. AppShell geometry,
@@ -194,6 +219,109 @@ typed feature contract, not the rendered element tree.
 
 ## Fixed navigation entrances
 
+Chat and Settings are the built-in application routes. Local Model Services is
+a normal Settings page using the shared Settings category and master-detail
+container; there is no Environment application route, parent context pane,
+breadcrumb, overview or connection-management page. Historical `/environments`
+URLs normalize to Settings, preserving a concrete contributed settings slug when
+one exists and otherwise opening Appearance.
+
+The Built-in Agents extension registers Model Services only for Electron and its
+configuration client remains permanently bound to the immutable `local` Host ID.
+Moving the View does not make it follow the active conversation Host. Provider
+connection identity, provider-scoped model declarations, write-only credential
+intents and per-session selection remain separate; see
+[Local Agent custom providers](local-agent-custom-providers.md). Model edit drafts
+survive View reattachment and must be applied before saving a connection. A
+capability-gated draft endpoint probe uses only explicitly entered credentials,
+does not mutate the runtime and is not a substitute for full runtime validation.
+The page is absent when that extension/platform contribution is unavailable; the
+Shell never falls back to an active remote Host. Global Settings retains
+Appearance, Plugins and Laboratory. EnvironmentDirectory, account discovery and
+persisted Host profiles remain runtime services used by Chat and providers, but
+they have no built-in application navigation or creation UI.
+Desktop account restoration runs asynchronously after extension activation and
+never depends on OS Keychain. A Main-process `PrivateStorage` port persists only
+region and session token in `userData/private-storage/lightvela-account.json`.
+This is explicitly plaintext protected by directory 0700/file 0600 permissions,
+not encryption or protection against same-account processes. Writes use private
+temporary files and atomic replacement; keys and file types are validated. The
+renderer still has no filesystem port or durable token storage. Legacy
+`lightvela-account.encrypted` is not decrypted or migrated: one fresh login is
+required. Logout clears new session data and obsolete local ciphertext without
+accessing the system keychain. Generation/abort guards prevent cancelled saves
+and late restoration from undoing sign-out.
+
+### Authentication ownership
+
+The application supervisor installs two renderer-neutral Cordis services before
+activating extensions, and disposes them with the application (including startup
+rollback). They are not per-Host, per-Conversation or per-React-View state:
+
+- `authentication` registers provider-owned session/operation ports by activation
+  owner through `authenticationProvider`. It validates explicit completion against
+  the current session epoch and serializes cancellation before a replacement login.
+  Providers retain credential storage, OAuth exchange, restore, logout and expiry.
+  Neither this service nor the public View capability receives tokens.
+- `authenticationFlows` owns the active interactive flow ID, feature lease, reason,
+  presentation, pending/error state and result. Identity/profile changes are not
+  login completion; a same-account reauthentication still has its own completion.
+  Restore never opens a flow. Close/cancel retires its transaction; route departure
+  or inline View disposal abandons only continuation. A valid late callback may
+  update session truth but cannot close newer UI, navigate, or invoke feature writes.
+
+The anonymous footer projects provider-owned `signInOptions` as one Radix menu,
+using the shared menu theme and keyboard/focus primitives. Selecting an option
+closes the menu and directly submits a `presentation: menu` flow; no intermediate
+login dialog is mounted. Only the provider interprets/validates its opaque
+`optionId` and selects a region, after any prior native cancellation has retired.
+The footer reflects pending/error state; reopening its menu exposes retry/cancel.
+Closing just the menu never cancels an already selected browser login. The same
+content works in fixed/floating Sidecars, with its portal inside its owning footer.
+
+For explicit reauthentication/other contributed surfaces the shared Shell projection
+can render `signInViewId` separately from `viewId` (Account).
+Matching login success dismisses only its own prompt; Account remains an explicitly
+opened utility view. Views receive only `AuthenticationFlowPort`, not Cordis Context.
+Inline environment login is owned by its form lease: authentication allows the
+form to recheck prerequisites, and creation still requires explicit confirmation.
+No flow persists callbacks, arbitrary URLs or privileged continuation commands.
+
+LightVela exposes `snapshot.session` (status + auth epoch) separately from its
+legacy `phase` (Bot-catalog loading/error compatibility for existing Host consumers)
+and `details.phase` (profile/entitlements). Shell identity, login, and environment
+discovery consume session truth. A resource 5xx never logs out or invalidates a
+successful login. Authoritative 401 is handled centrally with an epoch/abort fence;
+old requests cannot clear a newer session. Account changes clear old details before
+new data loads, and profile mutations are fenced after their asynchronous boundary.
+
+Account content composes shared utility-window controls: SettingsPanel owns its
+header/body/footer tracks; plain SettingsGroup/Row own compact alignment;
+editable text uses Radix Popover, while the host Radix Dialog owns modality and
+restores focus. Avatar editing, clipboard feedback and the semantic usage meter
+are reusable renderer controls. The account feature retains profile mutations,
+credit interpretation and regional billing URLs. Utility modal appearance is
+theme-owned and content-sized, with no account-specific fixed canvas. Warning,
+error, usage-track, utility-shadow and scrim colors are emitted by the theme
+engine, not hard-coded in account CSS. Returning from external billing refreshes
+account details; model configuration uses the host's settings navigation.
+
+Desktop LightVela login uses the system browser and the registered native OIDC
+client/callback. Electron Main owns random state, PKCE, timeout, cancellation,
+single-use exchange and OS-encrypted per-profile session storage. Only the trusted
+top-level renderer may invoke the narrow preload account port. A callback received
+by another profile is forwarded to its live owner through a state-addressed local
+socket; the socket carries only the one-time callback and is retired on completion.
+Renderer credentials stay in memory; ordinary preferences remain origin-local.
+Web retains its browser-navigation PKCE path. Remote login pages never replace the
+desktop workbench or receive desktop IPC capabilities. Closing/reloading the
+initiating renderer cancels its pending transaction; late callbacks cannot log in.
+Authenticated account/control-plane reads and updates use a Main-owned HTTP port,
+restricted to the saved session's regional authority and known account, instance
+listing, TAT-session and configuration endpoints. Main attaches the credential;
+renderer-supplied destinations cannot turn it into a general proxy. This avoids
+depending on production Web CORS rules for random desktop loopback origins.
+
 The Shell's Sidecar owns the application/account split entrance as its footer,
 not as a window-wide bottom bar. Pinning changes content placement, never the
 entrance's parent or local anchor while its owner remains visible. Closing all
@@ -223,25 +351,70 @@ wide-screen preference. Account retains its independent menu and optional pin.
 `aria-expanded`/pressed feedback for applications reflects current presentation,
 not a suspended wide-screen pin. Radix still owns drawer dismissal and focus.
 
+Environment discovery lives in `workbench-runtime/src/environment-directory`,
+owned by the Cordis `environmentDirectory` service. Configured local/manual
+profiles and trusted provider sources feed one directory. Entries are lazy
+connection recipes, not connected Hosts: cloud lifecycle, source freshness and
+transport phase remain separate. LightVela discovery lives in its plugin's
+`environment-directory` folder and binds identity to region, account and instance.
+It lists non-running states, paginates with generation fences, and clears entries
+on sign-out. Explicit saved bindings preserve Host IDs; unbound legacy profiles
+are not silently reassigned. Environment and Chat share an ephemeral profile
+projection; discovery registers factories without connecting or changing the
+active conversation. Passive Chat queries only connected/auto-connect Hosts.
+New instance creation refreshes this same source, not a second profile registry.
+
 There is exactly one Sidecar. It composes a primary application `SidecarPane`, an
 optional contextual `SidecarPane`, and one Footer; the panes are not independent
-sidebars. Each Pane separates three geometries: Frame contributes live width to
-layout, Clip contains all feature ink to that Frame, and Viewport retains stable
-content width throughout a gesture. Application and contextual content therefore
-never reflow through progressively narrower intermediate widths or paint into a
-neighbor. Feature code provides only pane content. It does not own clipping,
+sidebars. Each Pane separates layout from visibility: normal pointer resizing
+changes the live layout width in both directions, and Frame and Viewport consume
+that same width. Clip is only ink containment for explicit visibility/detent
+transitions, not a way to freeze content during ordinary contraction.
+Feature code provides only pane content. It does not own clipping,
 opacity, mounting, dividers, Footer placement or numeric stacking levels. The
 visual three-column layout is `Sidecar(primary + optional context) + main`; two-
 column and immersive layouts are projections of those same slots.
 
+`useContextPaneGeometry` owns one live MotionValue, shared by contextual frame
+and viewport (not two independently writable values). Its projection enforces
+`viewport = frame = live layout width` during normal drag, including contraction
+and reversal. The committed width is only a persistence/rollback value. Release
+updates that preference without deferred reflow. Explicit visibility progress
+may clip the live layout on open/close without becoming its width authority.
+AppShell dispatches preview/settle/synchronize operations. External preference synchronization runs
+after dock and floating readers subscribe, so transforms cannot miss the write.
+Floating presentation consumes the same viewport with its window-space cap.
+Validation samples held-pointer frames, actual environment control containment,
+contraction/reversal, no-jump release and cancellation/capture loss. A test that
+accepts a wider frozen viewport during contraction encodes the wrong contract.
+
+Docked and floating presentations share the same `SharedSidebarContent` owner:
+primary navigation, context and footer each have one stable React portal and DOM
+container. The presentation surfaces supply mount slots only. Reparenting retains
+component state, scroll receipts and eligible keyboard focus instead of recreating
+the conversation/settings tree. The floating surface budgets primary plus context
+against its own viewport rectangle; it can project compact icons without losing
+application actions or overwriting saved widths. Its Applications entrance changes
+the in-overlay rail (or opens the existing drawer on very narrow widths), never
+implicitly docks the entire Sidecar. Docking remains a separate header action.
+Escape/outside dismissal retires both explicit peek and pointer-hover intent.
+
 The primary pane has three semantic detents: `expanded`, `compact` and `hidden`.
 Expanded width remains a separately persisted preference; compact is
-a 72px icon projection, not an overwritten width preference, and hidden only
+a 52px icon projection, not an overwritten width preference, and hidden only
 changes pane visibility; it never clears application/account Pin preferences.
-Pointer down creates a Web-owned resize transaction that snapshots the committed
-detent and Viewport. Pointer move updates only Frame/Clip preview geometry,
-content opacity and an adjacent candidate detent. Pointer up atomically commits
-that candidate; cancel restores the snapshot. Dock availability, persistence and
+Pointer down creates a Web-owned resize transaction that snapshots the semantic
+detent and live physical width, including takeover of a running settle animation.
+The old animation must be stopped before reading that origin: stop can flush its
+final value, so capturing first can leave a stale pointer baseline.
+Pointer move directly updates live geometry and an adjacent candidate detent;
+there is no spring chase of the pointer. Primary viewport is derived from that
+frame: it equals the frame in the expanded range and uses only the expanded
+minimum as a layout floor in the compact/hidden transition. One frame animation
+drives detent settlement; viewport has no independent animation/writer.
+Pointer up commits the candidate; cancel restores the saved target. Lost pointer
+capture cancels once and foreign pointer events cannot drive the transaction.
+Dock availability, persistence and
 the renderer-free reducer cannot observe intermediate pointer positions. Keyboard
 actions traverse the same adjacent state machine.
 
@@ -261,7 +434,20 @@ over either fixed region.
 projection. The initial preference pins applications, not account. Width pressure
 temporarily suspends docking with hysteresis without overwriting the preference.
 Web owns persistence, measurement, Radix nonmodal surfaces and spring animation.
+Primary visibility progress and base resize geometry are separate owners: when
+the semantic projection becomes hidden, base Frame/Viewport geometry is retained
+until visibility reaches zero. It must not copy the hidden projection's zero into
+the base width and erase the exit animation. Outgoing navigation keeps its last
+content snapshot mounted until terminal zero, but is immediately inert. Reversal
+retargets the existing visibility progress; it does not remount or restart it.
 Primary expanded width is persisted separately from contextual pane width.
+Applications defaults to 137px (about 25% narrower than the former 182px), with a
+126px expanded minimum and 137px content-owned maximum shared by pointer and
+keyboard resizing, persisted-value normalization and projection. The pointer
+frame stops at that cap while held, not just on release. Context keeps its own
+240px minimum and independent maximum. Valid custom widths remain intact; legacy
+oversize values read as 137px without clearing other preferences. Double-clicking the
+primary divider restores the new default without changing the contextual width.
 Dedicated resize transaction owners handle the primary three-detent pane and the
 contextual two-state pane; the Shell limits primary width against available content
 space. Shared projection uses that width for docking pressure, without rewriting
@@ -269,10 +455,29 @@ the saved preference when the viewport narrows. Resizing preserves the footer's
 left/bottom anchor and square entrance; the account item's trailing edge follows
 the live Footer width. Pin transitions interpolate the Sidecar's primary and
 contextual pane widths using existing motion values, without remounting items.
+Footer controls participate in normal flow inside their dedicated Sidecar track;
+they are not an absolute overlay and do not consume Primary's expanded-width
+animation. The track fills the aggregate Sidecar width. One square entrance and
+one `minmax(0, 1fr)` account cell share design-system group gap/padding tokens.
+Only menu surfaces are positioned overlays. Portal viewport-fill rules exclude
+the footer so width and insets cannot overconstrain it. The Applications entrance
+reuses the existing `SidebarToggleIcon` used by window chrome, not stacked app
+icons. Compact-only presentation stacks the same controls with the same gap.
 Its entrance survives pinned/unpinned transitions within the Sidecar. The primary
 and current contextual panes contribute to one aggregate left width consumed by
 header, timeline and right-panel geometry. Neither pane
 owns Host or conversation runtime lifetime.
+
+`workbench-runtime/shell-space` arbitrates the complete window budget, including
+both Sidecar panes and the task panel. The desktop main viewport reserves 480px;
+ordinary right tools additionally reserve at least 320px. Under pressure, the
+application pane becomes compact, then transient; tools are then suspended, and
+finally context becomes floating. A 32px restoration margin avoids breakpoint
+chatter. Saved widths, pins, and explicit open/close intent are not resize output.
+Header controls consume the actual presentation. Explicitly revealing tools when
+split mode cannot fit uses the full work area; revealing a suppressed sidebar uses
+the existing floating owner, dismissible with Escape or an outside click. No
+responsive transition disposes a Host, tab, terminal, or conversation.
 
 Thread-edge header eligibility consumes Shell width minus the live right-panel
 width from the layout owner. It must not add a rounded DOM viewport measurement
@@ -385,6 +590,15 @@ credentials. The preview hook mutates only the assembled package: it removes
 foreign native prebuilds and signs after all packaged resources are final.
 
 ## Next feature rule
+
+### Settings-owned local Model Services
+
+Settings owns only the page placement, category navigation and master-detail
+viewport. The extension-owned Model Services View keeps its provider directory,
+drafts and immutable local Host client across Settings reattachment. Connected and
+hostless shells use the same Settings route; neither creates an Environment parent
+or a second model settings service. Removing the page from view must not dispose a
+Host, alter the active conversation, or rewrite model/provider configuration.
 
 Implement a feature in this order:
 

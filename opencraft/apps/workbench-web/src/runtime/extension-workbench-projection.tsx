@@ -44,6 +44,8 @@ export interface ExtensionAccountProjection {
   readonly provider: PlatformAccountContribution;
   readonly snapshot: PlatformAccountSnapshot;
   readonly content: ReactNode;
+  renderSignIn(flowId: string): ReactNode;
+  renderEnvironmentCreation(onDismiss: () => void): ReactNode;
 }
 
 export interface ExtensionWorkbenchProjection {
@@ -138,7 +140,7 @@ export function useExtensionWorkbenchProjection({
         .filter((view) => supportsPlatform(view, host.platform))
         .map((view) => [view.id, view] as const),
     );
-    const renderView = (viewId: string, resourceUri: string | null = null): ReactNode => {
+    const renderView = (viewId: string, resourceUri: string | null = null, onDismiss?: () => void, authenticationFlowId?: string): ReactNode => {
       const view = views.get(viewId);
       if (view === undefined) return null;
       const Component = renderers.resolve(view.viewType);
@@ -147,6 +149,8 @@ export function useExtensionWorkbenchProjection({
           activation={{ viewId, resourceUri }}
           contribution={view}
           host={host}
+          onDismiss={onDismiss}
+          authenticationFlowId={authenticationFlowId}
         />
       );
     };
@@ -305,7 +309,9 @@ export function useExtensionWorkbenchProjection({
       connectionInterventions,
       account: accountProvider === null || accountContent === null
         ? null
-        : { provider: accountProvider, snapshot: accountSnapshot, content: accountContent },
+        : { provider: accountProvider, snapshot: accountSnapshot, content: accountContent,
+          renderSignIn: flowId => accountProvider.signInViewId ? renderView(accountProvider.signInViewId, null, undefined, flowId) : null,
+          renderEnvironmentCreation: onDismiss => accountProvider.environmentCreation ? renderView(accountProvider.environmentCreation.viewId, null, onDismiss) : null },
     };
   }, [
     applicationRoute,

@@ -3,6 +3,9 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { Context } from "@deepseek-ai/cordis";
+import { AuthenticationService } from "@opencraft/workbench-runtime";
+import { authenticationProviderAdapter } from "../apps/workbench-web/src/runtime/authentication-contributions";
 import type { AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 import { deserialize, serialize } from "bson";
 import { IDBFactory } from "fake-indexeddb";
@@ -28,7 +31,8 @@ import {
   lightVelaBotCreationUrl,
   projectLightVelaBotOnboarding,
 } from "@opencraft/plugin-lightvela-hermes";
-import { preflightHostConnection, type HostConnectionProvider } from "@opencraft/workbench-runtime";
+import { EnvironmentDirectory, preflightHostConnection, type HostConnectionProvider } from "@opencraft/workbench-runtime";
+import { environmentSourceAdapter } from "../apps/workbench-web/src/runtime/environment-directory/contribution-adapter";
 import {
   createHermesDashboardEnsureCommand,
   ensureHermesDashboard,
@@ -121,7 +125,7 @@ test("LightVela first-Bot onboarding is shared and region-aware", () => {
     error: null,
   }), {
     kind: "bot-required",
-    createUrl: "https://lightvela.com/dashboard/create",
+    createUrl: "https://lightvela.com/agents",
   });
   assert.deepEqual(projectLightVelaBotOnboarding({
     region: "intl",
@@ -129,7 +133,7 @@ test("LightVela first-Bot onboarding is shared and region-aware", () => {
     botCount: 1,
     error: null,
   }), { kind: "ready" });
-  assert.equal(lightVelaBotCreationUrl("intl"), "https://lightvela.ai/dashboard/create");
+  assert.equal(lightVelaBotCreationUrl("intl"), "https://lightvela.ai/agents");
   assert.throws(() => projectLightVelaBotOnboarding({
     region: "intl",
     phase: "authenticated",
@@ -403,12 +407,19 @@ test("LightVela account catalog refresh is one authoritative single-flight", asy
   assert.equal(service.getSnapshot().activeBotId, "bot-a");
 });
 
-test("LightVela plugin contributes generic settings, empty-Workbench, and Host provider seams", async () => {
+for (const authenticated of [false, true]) {
+test(`LightVela account (${authenticated ? "authenticated without Bots" : "anonymous"}) does not gate the workspace`, async () => {
+  const context = new Context();
+  const authenticationFiber = context.plugin(AuthenticationService); await authenticationFiber;
   const storage = new MemoryStorage();
+  if (authenticated) storage.setItem(LIGHTVELA_TOKEN_KEY, "synthetic-test-session");
+  const environments = new EnvironmentDirectory();
   const renderers = new PlatformViewRendererRegistry();
   let platformAccount: PlatformAccountContribution | null = null;
   let provider: HostConnectionProvider | null = null;
   const adapters: Record<string, InternalContributionAdapter> = {
+    authenticationProvider: authenticationProviderAdapter(context.authentication),
+    environmentSource: environmentSourceAdapter(environments),
     platformViewRenderer: {
       prepare(owner, value) {
         const contribution = value as PlatformViewRendererContribution;
@@ -446,11 +457,15 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
       assign: () => undefined,
     },
     history: { state: null, replaceState: () => undefined },
-    fetchImpl: async () => new Response("{}", { status: 401 }),
+    fetchImpl: async () => authenticated
+      ? Response.json({ code: "OK", message: "ok", data: { items: [], user: { id: "test-user", name: "Test user" }, hasSubscription: false, passes: [] } })
+      : new Response("{}", { status: 401 }),
   }));
+  await new Promise<void>(resolve => setImmediate(resolve));
 
   const views = supervisor.contributions.getSnapshot().views;
-  assert.equal(views.length, 12);
+  assert.equal(views.length, 14);
+  assert.ok(views.some(({ contribution }) => contribution.id === "lightvela.hermes.sign-in"));
   assert.ok(views.some(({ contribution }) => contribution.id === "lightvela.hermes.account-view"));
   assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.models"));
   assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.diagnostics"));
@@ -466,6 +481,7 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(managementPages.filter(({ contribution }) => contribution.management?.scope === "agent").length, 6);
   assert.equal(managementPages.filter(({ contribution }) => contribution.management?.scope === "host").length, 3);
   assert.equal(supervisor.contributions.getSnapshot().workbenchSurfaces[0]?.contribution.viewId, "lightvela.hermes.empty-view");
+  assert.equal(supervisor.contributions.getSnapshot().workbenchSurfaces.some(({ contribution }) => contribution.surface === "empty-workbench"), false);
   assert.ok(supervisor.contributions.getSnapshot().workbenchSurfaces.some(({ contribution }) =>
     contribution.surface === "host-connection-intervention"
       && contribution.providerId === "lightvela.hermes"
@@ -479,10 +495,14 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(provider?.id, "lightvela.hermes");
   assert.equal(provider?.settingsPageId, "lightvela.hermes.settings");
   assert.equal(platformAccount?.viewId, "lightvela.hermes.account-view");
-  assert.deepEqual(platformAccount?.getSnapshot().applicationIntervention, {
-    providerId: "lightvela.hermes",
-    code: "authentication-required",
-  });
+  assert.equal(platformAccount?.signInViewId, "lightvela.hermes.sign-in");
+  assert.equal(platformAccount?.authenticationProviderId, "lightvela.hermes.account");
+  assert.deepEqual(platformAccount?.signInOptions?.map(option => option.id), ["cn", "intl"]);
+  await assert.rejects(context.authentication.signIn("lightvela.hermes.account", "https://not-a-login-option.invalid"), /Invalid sign-in option/);
+  assert.equal(platformAccount?.environmentCreation?.label, "添加环境");
+  assert.equal(platformAccount?.environmentCreation?.viewId, "lightvela.hermes.environment-create");
+  assert.equal(platformAccount?.getSnapshot().applicationIntervention, null);
+  assert.equal(platformAccount?.getSnapshot().phase, authenticated ? "authenticated" : "anonymous");
   assert.deepEqual(provider?.targets, ["web", "electron"]);
   assert.deepEqual(
     provider?.validate({ botId: " bot-1 " }, { platform: "web", hostId: LIGHTVELA_HERMES_HOST_ID, profileRevision: 1 }),
@@ -496,7 +516,10 @@ test("LightVela plugin contributes generic settings, empty-Workbench, and Host p
   assert.equal(renderers.resolve("lightvela.hermes.empty-workbench"), null);
   assert.equal(supervisor.contributions.getSnapshot().views.length, 0);
   await supervisor.dispose();
+  assert.equal(context.authentication.getSession("lightvela.hermes.account"), null);
+  await authenticationFiber.dispose();
 });
+}
 
 test("LightVela Host preflight validates the selected Bot without minting a TAT session", async () => {
   const storage = new MemoryStorage();

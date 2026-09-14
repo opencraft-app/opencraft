@@ -6,6 +6,7 @@ import {
 import { TimelineBlockRendererRegistryService } from "@opencraft/timeline-render-react";
 import {
   createConversationBindingStore,
+  SideChatService,
   type PersistedConversationBinding,
 } from "@opencraft/workbench-runtime";
 
@@ -13,10 +14,13 @@ import { createBrowserWorkbenchPanelPlugin } from "../browser/browser-panel-plug
 import { BrowserPresentationCoordinator } from "../browser/browser-presentation-coordinator";
 import { BrowserWorkbenchCoordinator } from "../browser/browser-workbench-coordinator";
 import { WebBrowserPageRuntime } from "../browser/web-browser-runtime";
-import { WebIframeSurfaceHost } from "../browser/web-browser-surface-host";
+import { WebIframeSurfaceHost, type BrowserSurfaceHost } from "../browser/web-browser-surface-host";
+import { ElectronBrowserSurfaceHost } from "../browser/electron-browser-surface-host";
+import { createDesktopBrowserStorage, type BrowserMetadataStorage } from "../browser/desktop-browser-storage";
 import { WebBrowserDynamicToolHost } from "../browser/web-browser-tool-host";
 import { WebHostProxyBroker } from "../browser/web-host-proxy-broker";
 import { BuiltinWorkbenchPanelPlugin } from "../panels/builtin-panel-plugin";
+import { createSideChatPanelPlugin } from "../panels/side-chat-panel-plugin";
 import { BuiltinTimelineRendererPlugin } from "../components/conversation-renderers/builtin-timeline-renderer-plugin";
 import {
   createWebWorkbenchApplicationSupervisor,
@@ -35,7 +39,7 @@ import {
 export interface WebWorkbenchApplication {
   readonly cordis: Context;
   readonly browserPages: WebBrowserPageRuntime;
-  readonly browserSurfaces: WebIframeSurfaceHost;
+  readonly browserSurfaces: BrowserSurfaceHost;
   readonly browserPresentations: BrowserPresentationCoordinator;
   readonly browserWorkbench: BrowserWorkbenchCoordinator;
   readonly chatRenderRuntime: ChatRenderRuntime;
@@ -48,9 +52,9 @@ export interface WebWorkbenchApplication {
 
 const CONVERSATION_BINDINGS_STORAGE_KEY = "vela.conversation-bindings.v1";
 
-function loadConversationBindings(): readonly PersistedConversationBinding[] {
+function loadConversationBindings(storage: BrowserMetadataStorage = window.localStorage): readonly PersistedConversationBinding[] {
   try {
-    const value = JSON.parse(window.localStorage.getItem(CONVERSATION_BINDINGS_STORAGE_KEY) ?? "[]");
+    const value = JSON.parse(storage.getItem(CONVERSATION_BINDINGS_STORAGE_KEY) ?? "[]");
     if (!Array.isArray(value)) return [];
     return value.flatMap((row): PersistedConversationBinding[] => {
       if (typeof row !== "object" || row === null) return [];
@@ -76,15 +80,21 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
   // OAuth can return into any Workbench route. Consume its one-time fragment
   // before IndexedDB, Cordis and extension activation so authentication does
   // not depend on the latency or success of the rest of application startup.
-  await bootstrapLightVelaWebLoginCallback();
-  bootstrapLightVelaOAuthCallback();
+  const desktop = (globalThis as typeof globalThis & { opencraftDesktop?: { kind?: string } }).opencraftDesktop?.kind === "electron";
+  const browserStorage = desktop ? await createDesktopBrowserStorage() : null;
+  if (!desktop) {
+    await bootstrapLightVelaWebLoginCallback();
+    bootstrapLightVelaOAuthCallback();
+  }
+  // Desktop account restoration is independent of local Host startup. The
+  // local Host and its environment configuration must remain usable meanwhile.
   const cordis = new Context();
   const conversationBindings = createConversationBindingStore({
     persistence: {
-      load: loadConversationBindings,
+      load: () => loadConversationBindings(browserStorage ?? window.localStorage),
       save(bindings) {
         try {
-          window.localStorage.setItem(CONVERSATION_BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
+          (browserStorage ?? window.localStorage).setItem(CONVERSATION_BINDINGS_STORAGE_KEY, JSON.stringify(bindings));
         } catch {
           // Client aliases are a startup optimization, not authoritative data.
         }
@@ -92,6 +102,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     },
   });
   let supervisor: WebWorkbenchApplicationSupervisor;
+  let releaseSupervisor: (() => Promise<void>) | undefined;
   const hostProxy = new WebHostProxyBroker(async (hostId, targetUrl, init) => {
     if (supervisor.mode !== "active") {
       throw new Error("Host proxy is unavailable without an active AppServer runtime");
@@ -99,13 +110,14 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     const runtime = await supervisor.registry.ensureConnected(hostId);
     return runtime.resources.host.fetchLoopback(targetUrl, init);
   });
-  const browserSurfaces = new WebIframeSurfaceHost();
+  const browserSurfaces = desktop ? new ElectronBrowserSurfaceHost(browserStorage!) : new WebIframeSurfaceHost();
   const browserPages = new WebBrowserPageRuntime(
     browserSurfaces,
     hostProxy,
     (ownerId) => conversationBindings.resolve(
       ownerId as Parameters<typeof conversationBindings.resolve>[0],
     )?.hostId ?? null,
+    browserStorage,
   );
   const browserPresentations = new BrowserPresentationCoordinator(browserPages, browserSurfaces);
   const panelRuntime = await createWorkbenchPanelRuntime(cordis);
@@ -130,6 +142,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       browserPages,
       panelRuntime.panels,
       conversationBindings,
+      browserStorage,
     );
     await panelRuntime.install(createBrowserWorkbenchPanelPlugin(
       browserPages,
@@ -161,8 +174,11 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       },
       (viewId) => browserWorkbench.releaseView(viewId),
     );
+    releaseSupervisor = () => supervisor.dispose();
     if (supervisor.mode === "active") {
       const activeSupervisor = supervisor;
+      await panelRuntime.install(SideChatService, { resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
+      await panelRuntime.install(createSideChatPanelPlugin(panelRuntime.context.sideChats, conversationBindings));
       const desktopKind = (
         globalThis as typeof globalThis & { readonly opencraftDesktop?: { readonly kind?: string } }
       ).opencraftDesktop?.kind;
@@ -199,6 +215,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     await terminalSessions?.dispose().catch(() => undefined);
     await panelRuntime.dispose().catch(() => undefined);
     await chatRenderRuntime.dispose().catch(() => undefined);
+    await releaseSupervisor?.().catch(() => undefined);
     throw error;
   }
   let disposed = false;
@@ -225,11 +242,6 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
         failures.push(error);
       }
       try {
-        await supervisor.dispose();
-      } catch (error) {
-        failures.push(error);
-      }
-      try {
         await panelRuntime.dispose();
       } catch (error) {
         failures.push(error);
@@ -243,6 +255,11 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       browserPresentations.dispose();
       browserPages.dispose();
       browserSurfaces.dispose();
+      try {
+        await supervisor.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
       if (failures.length > 0) {
         throw new AggregateError(failures, "Failed to dispose Web Workbench application");
       }

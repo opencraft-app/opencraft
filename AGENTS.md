@@ -13,6 +13,7 @@ LightVela 是多语言 monorepo。国内生产站为 `lightvela.com`，国际生
 | 前端 | `frontend/`, `frontend-ds/`, `nextgen-dashboard/`, `gateway-dashboard/` |
 | 身份与商业化 | `user/auth/`, `shadow/`, `subscription/`, `payment/`, `trade/` |
 | Agent 与网关运行时 | `cloudagent/`, `ai-gateway/`, `velagw/`, `velalink/`, gateway services |
+| 共享产品内核 | `shared/` |
 | 控制与沙箱 | `ctl/`, `sandbox/` |
 | 交付与基础设施 | `argocd/`, `.ci/`, `infra_pulumi/` |
 

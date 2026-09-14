@@ -30,6 +30,24 @@ ProseMirror adapter                 Native editor adapter
 
 ## Non-negotiable boundaries
 
+DSH terminal adaptation follows the HyperNode reference contract: completion,
+interruption and failure notifications are lifecycle summaries (`itemsView:
+"summary"`), never empty full Item snapshots. Full membership belongs to
+history reconstruction. Visible reasoning, assistant and tool Items settle
+before the Turn; only explicit completed output receives final-answer phase.
+Aborted/interrupted runs retain partial output with final-answer phase, blocked/max-token/unknown
+terminal reasons fail closed, and failures emit a typed error before completion.
+The same terminal policy is consumed by live and history projection.
+
+The source implementations live in `apps/local-agent-host/src/hypernode/`:
+TurnManager, DSH tool projection and the engine event/terminal core.
+`dsh-execution-record.ts` supplies local clock, replay-stable unique Item
+allocation, notification and synchronous pacing ports. One ordered ledger is
+used for live snapshots and native history replay, including active reasoning.
+The local HTTP/mux transport, product-owned models and credentials remain host
+ports; HyperNode SSH tenancy and per-workspace process launch are not local
+execution policy. See [migration contract](../design/dsh-engine-migration.md).
+
 1. A conversation is identified by `(hostId, threadId)`. A bare `threadId` is
    not a cross-host identity.
 2. React components never import a WebSocket, JSON-RPC client, Electron bridge,
@@ -47,6 +65,18 @@ ProseMirror adapter                 Native editor adapter
    growth must not blank the conversation surface.
 
 ## Package ownership
+
+The Composer permissions menu contains only declared permission profiles, without
+an AppServer-default row or explanatory question. An absent or null draft choice
+inherits the runtime's effective profile for display only; rendering never writes
+that derived value into the draft. Until resolved, the trigger reads `Permissions`
+and no profile is checked. Explicit choices still use the existing submit path.
+
+Temporary Side Chat forks are adopted by `ThreadResumeCoordinator.adoptFork` from
+the validated `thread/fork` response in its original connection generation. They
+use the same metadata/notification projectors and Replica reader, but never issue
+a rollout Resume or persistent queue query. Their history source is `fork` and a
+lost connection expires that temporary baseline. See the [workspace design](../design/README.md).
 
 | Package | Owns | Must not own |
 | --- | --- | --- |

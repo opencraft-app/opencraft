@@ -156,7 +156,7 @@ export function createWorkbenchNavigationTransaction<
       publish();
       return true;
     },
-    openSettings(slug = "connections") {
+    openSettings(slug = "appearance") {
       if (disposed)
         throw new Error("Workbench navigation transaction is disposed");
       if (navigationBlocked()) return;

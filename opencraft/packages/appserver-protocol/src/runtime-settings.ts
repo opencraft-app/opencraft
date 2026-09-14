@@ -64,18 +64,22 @@ export interface RuntimeProviderView {
   readonly configured?: boolean;
   readonly enabled?: boolean;
   readonly declared?: boolean;
-  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly canToggle?: boolean };
+  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean;
+    readonly defaultBaseURL?: string; readonly defaultApi?: RuntimeOpenAIProtocol };
 }
 
 export interface RuntimeProvidersListResponse {
+  readonly application?: { readonly state: "pending" | "applied" | "failed"; readonly revision: number; readonly error?: string };
   readonly providers: readonly RuntimeProviderView[];
-  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[] };
+  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
 }
 
 export type RuntimeOpenAIProtocol = "openai-completions" | "openai-responses";
 
 /** Host application command: credentials and settings are coordinated behind this boundary. */
 export interface RuntimeProviderApplyParams {
+  /** Discovery imports new declarations disabled in the same settings revision. */
+  readonly disableNewModels?: boolean;
   readonly target: { readonly kind: "create"; readonly id: string } | { readonly kind: "update"; readonly id: string };
   readonly expectedRevision: number;
   readonly baseURL: string;
@@ -103,6 +107,9 @@ export interface RuntimeProviderSetEnabledParams {
 }
 
 export interface RuntimeModelView {
+  readonly contextWindow?: number;
+  readonly maxTokens?: number;
+  readonly input?: readonly ("text" | "image")[];
   readonly enabled?: boolean;
   readonly source?: "builtin" | "custom";
   readonly id: string;
@@ -147,6 +154,27 @@ export interface RuntimeDiscoveredModelView {
   readonly name?: string;
   readonly contextWindow?: number;
   readonly maxTokens?: number;
+  readonly input?: readonly ("text" | "image")[];
+}
+
+/** Explicit one-off draft probe. No persisted credential or session may be resolved for it. */
+export interface RuntimeModelProbeParams {
+  readonly baseURL: string;
+  readonly api: RuntimeOpenAIProtocol;
+  readonly model: string;
+  readonly apiKey?: string;
+}
+
+export interface RuntimeModelProbeResponse {
+  readonly ok: boolean;
+  readonly model: string;
+  readonly elapsedMs: number;
+  readonly error?: string;
+}
+export interface RuntimeSavedModelCheckParams {
+  readonly provider: string;
+  readonly model: string;
+  readonly expectedRevision: number;
 }
 
 export interface RuntimeModelsDiscoverResponse {

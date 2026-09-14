@@ -30,11 +30,14 @@ import type {
   ThreadQueueListResponse,
   QueuedSubmission as ProtocolQueuedSubmission,
   ThreadStartParams,
+  ThreadForkParams,
 } from "@opencraft/appserver-protocol";
 import {
   OPENCRAFT_AGENT_CATALOG_CAPABILITY,
   OPENCRAFT_AGENT_CATALOG_EXTENSION,
+  OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
 } from "@opencraft/appserver-protocol";
+import { reasoningCapability } from "@opencraft/composer-core";
 import type {
   DynamicToolSpec,
   FsChangedNotification,
@@ -171,6 +174,8 @@ export interface StartThreadOptions {
 export interface AppServerThreadResourcePort {
   list(params?: Partial<ThreadListParams>): Promise<ThreadListResponse>;
   start(options: StartThreadOptions): Promise<ProtocolThread>;
+  fork?(params: ThreadForkParams): Promise<ProtocolThread>;
+  unsubscribe?(threadId: string): Promise<void>;
 }
 
 export interface AppServerComposerCatalogResourcePort {
@@ -358,6 +363,7 @@ export function createAppServerWorkbenchRuntime(
   const maxInactiveThreads = config.maxInactiveThreads ?? 4;
   const listeners = new Set<() => void>();
   const bindings = new Map<string, ConversationBinding>();
+  const ephemeralThreadIds = new Set<string>();
   const bindingOperations = new Map<string, Promise<ConversationBinding>>();
   let revision = 0;
   let phase: AppServerWorkbenchPhase = "idle";
@@ -604,7 +610,8 @@ export function createAppServerWorkbenchRuntime(
         // concurrently completing snapshot and the live notification stream
         // can each publish the first user message, and a backend such as
         // Hermes cannot reconcile them because durable history has no client
-        // message identity. Resume is the single baseline owner.
+        // message identity. Session owns the baseline: Resume for persisted
+        // threads, adopted fork response for ephemeral side conversations.
         if (!owner.runtime.getSnapshot().authoritative) {
           await hydrateBinding(owner, false);
         }
@@ -791,7 +798,7 @@ export function createAppServerWorkbenchRuntime(
       // Queue hydration is deliberately not on the visible Thread critical
       // path. The Composer paints from its optimistic projection and is
       // reconciled when this background read completes.
-      void refreshQueue().catch(() => undefined);
+      if (!ephemeralThreadIds.has(threadId)) void refreshQueue().catch(() => undefined);
       return binding;
     } catch (cause) {
       navigation?.dispose();
@@ -845,7 +852,15 @@ export function createAppServerWorkbenchRuntime(
           }
         });
         try {
-          await currentSession.resume.resume({ threadId: binding.threadId, force });
+          if (ephemeralThreadIds.has(binding.threadId)) {
+            const view = currentSession.views.get(binding.threadId);
+            if (view?.resumeState !== "resumed" || view.connectionGeneration !== requireClient().connectionGeneration) {
+              throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
+            }
+          } else await currentSession.resume.resume({ threadId: binding.threadId, force });
+          if (config.dynamicTools && requireClient().initializeResult?.capabilities?.extensions?.["opencraft/host-capabilities"]) {
+            await requireClient().request("runtime/capabilities/register", { threadId: binding.threadId, dynamicTools: config.dynamicTools });
+          }
         } finally { stopPreview(); }
         const source = createCodexThreadReplicaSource(
           currentSession.views,
@@ -979,6 +994,26 @@ export function createAppServerWorkbenchRuntime(
         client,
         interactions,
         compiler: { historyMode: "paginated" },
+        resolveCompilerOptions: async (intent) => {
+          if (intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up") return {};
+          const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
+          const modelId = intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
+          if (!modelId) {
+            if (intent.selections.effort !== undefined) throw new Error("请先选择模型，再设置推理档位");
+            return {};
+          }
+          const scope = client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
+          let cursor: string | null = null;
+          const seen = new Set<string>();
+          do {
+            const page: ModelListResponse = await client!.request("model/list", {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})});
+            const model = page.data.find(model => model.id === modelId || model.model === modelId);
+            if (model) return {reasoning:reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort)};
+            cursor = page.nextCursor;
+            if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
+          } while (cursor);
+          throw new Error("所选模型已不可用，请重新选择");
+        },
         dynamicTools: config.dynamicTools,
       });
     })()
@@ -1027,15 +1062,50 @@ export function createAppServerWorkbenchRuntime(
         getInitializeResult() {
           return client?.initializeResult ?? null;
         },
-        fetchLoopback(input, init) {
+        async fetchLoopback(input, init) {
           const transport = loopbackHttpTransport(config.transport);
           if (transport === null) {
-            return Promise.reject(new Error(`Host ${hostId} does not provide loopback HTTP`));
+            const client = requireClient();
+            if (!client.initializeResult?.capabilities?.extensions?.["opencraft/loopback-http"]) throw new Error(`Host ${hostId} does not provide loopback HTTP`);
+            const requestId = crypto.randomUUID();
+            let bodyBase64: string | undefined;
+            if (init?.body != null) {
+              const bytes = new Uint8Array(await new Response(init.body).arrayBuffer());
+              let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
+              bodyBase64 = btoa(binary);
+            }
+            const abort = () => { void client.request("runtime/http/cancel", { requestId }).catch(() => {}); };
+            if (init?.signal?.aborted) throw new Error("Loopback HTTP request cancelled");
+            init?.signal?.addEventListener("abort", abort, { once: true });
+            try {
+              const result = await client.request("runtime/http/request", { requestId, url: input,
+                method: init?.method, headers: Object.fromEntries(new Headers(init?.headers).entries()), bodyBase64 }, { signal: init?.signal ?? undefined });
+              const body = Uint8Array.from(atob(result.bodyBase64), char => char.charCodeAt(0));
+              return new Response([101, 204, 205, 304].includes(result.status) || init?.method === "HEAD" ? null : body,
+                { status: result.status, statusText: result.statusText, headers: result.headers });
+            } finally { init?.signal?.removeEventListener("abort", abort); }
           }
           return transport.fetchLoopback(input, init);
         },
       },
       threads: {
+        async fork(params) {
+          const generation = requireClient().connectionGeneration;
+          const response = await requireClient().request("thread/fork", params);
+          if (params.ephemeral === true) {
+            requireSession().resume.adoptFork(response, generation);
+            ephemeralThreadIds.add(response.thread.id);
+          }
+          return response.thread;
+        },
+        async unsubscribe(threadId) {
+          const binding = bindings.get(threadId);
+          if (binding && binding.retainCount > 0) throw new Error("Cannot unsubscribe a thread with active consumers");
+          await requireClient().request("thread/unsubscribe", { threadId });
+          if (binding && binding.retainCount === 0) disposeBinding(binding);
+          ephemeralThreadIds.delete(threadId);
+          requireSession().views.remove(threadId);
+        },
         async list(params = {}) {
           return requireClient().request("thread/list", {
             archived: false,

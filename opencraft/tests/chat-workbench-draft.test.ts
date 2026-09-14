@@ -65,6 +65,8 @@ function createHarness(
       }));
       if (message.method === "initialize") {
         send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "draft-test" });
+      } else if (message.method === "model/list") {
+        send({ data: [{ id: "codex", model: "codex", supportedReasoningEfforts: [{reasoningEffort:"medium",description:"Medium"}], defaultReasoningEffort:"medium" }], nextCursor:null });
       } else if (message.method === "thread/read" && historyTurns.length > 0) {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
         send({ thread: protocolThread(threadId) });

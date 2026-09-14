@@ -1,0 +1,114 @@
+// Shared utility-window controls. Product views provide content, not a second UI kit.
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: inherit;
+  container: settings-panel / inline-size;
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.5;
+  .settings-control-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); min-height: 48px; gap: 16px; padding: 10px 0; }
+  .settings-control-row__label { font-size: 13px; font-weight: 500; }
+  .settings-control-row__value { width: 100%; justify-content: flex-start; }
+  .settings-control-notice { margin: 0 0 12px; }
+}
+.settings-panel__header {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 56px 0 24px;
+  border-bottom: .5px solid var(--color-border-subtle);
+  h2 { margin: 0; font-size: 16px; font-weight: 600; text-wrap: balance; }
+}
+.settings-panel__actions { display: flex; align-items: center; }
+.settings-panel__body { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 24px; overscroll-behavior: contain; }
+.settings-panel__footer {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  flex: 0 0 auto; min-height: 52px; padding: 8px 16px;
+  border-top: .5px solid var(--color-border-subtle);
+  .settings-control-notice { flex: 1 0 100%; margin: 0; }
+}
+.settings-control-group[data-appearance="plain"] {
+  overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  padding-block: 12px;
+  > *:not(:last-child)::after { display: none; }
+  & + & { border-top: .5px solid var(--color-border-subtle); }
+}
+.settings-control-button.settings-control-button--quiet {
+  width: auto; border-color: transparent; box-shadow: none; background: transparent; color: var(--color-text-secondary);
+  &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); border-color: transparent; color: var(--color-text); }
+}
+.settings-control-button.settings-icon-button {
+  width: 28px; height: 28px; padding: 0; border: 0; box-shadow: none; background: transparent;
+  color: var(--color-icon-secondary); flex: 0 0 auto;
+  > span { display: grid; place-items: center; }
+  &:hover:not(:disabled) { background: var(--color-background-primary-ghost-hover); }
+}
+.settings-copy-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 28px; }
+.settings-copy-control > .settings-control-button { height: 26px; font-size: 11px; padding-inline: 0; }
+.settings-copy-control__status { color: var(--color-text-secondary); font-size: 11px; }
+.settings-editable-text { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.settings-editable-text > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
+.settings-edit-popover {
+  z-index: var(--layer-floating-control);
+  width: min(300px, calc(100vw - 24px)); box-sizing: border-box; padding: 16px;
+  border: .5px solid var(--color-border-default); border-radius: 10px;
+  background: var(--color-background-elevated-primary-opaque); color: var(--color-text);
+  box-shadow: var(--elevation-dialog-utility);
+  form { display: grid; gap: 10px; }
+  label { font-size: 13px; font-weight: 500; }
+  small { color: var(--color-text-danger); font-size: 12px; }
+  input { min-width: 0; }
+}
+.settings-edit-popover__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.settings-avatar-editor {
+  position: relative; width: 44px; height: 44px; border-radius: 50%; flex: 0 0 auto;
+  border: .5px solid var(--color-border-default); padding: 0;
+  background: var(--color-surface-secondary); color: var(--color-text-secondary);
+  font-size: 18px; font-weight: 500; cursor: pointer;
+  img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+  i { position: absolute; right: -3px; bottom: -2px; display: grid; place-items: center; width: 18px; height: 18px;
+    border: .5px solid var(--color-border-default); border-radius: 50%; background: var(--color-background-elevated-primary-opaque); }
+  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 3px; }
+  &:disabled { opacity: .6; cursor: default; }
+}
+.settings-usage-meter {
+  display: block; appearance: none; width: 100%; height: 4px; border: 0; border-radius: 4px; overflow: hidden;
+  --meter-color: var(--color-text-accent);
+  background: var(--color-usage-track); color: var(--meter-color);
+  &[data-tone="warning"] { --meter-color: var(--color-text-warning); }
+  &[data-tone="error"] { --meter-color: var(--color-text-danger); }
+  &::-webkit-progress-bar { background: var(--color-usage-track); border-radius: inherit; }
+  &::-webkit-progress-value { background: var(--meter-color); border-radius: inherit; }
+  &::-moz-progress-bar { background: var(--meter-color); border-radius: inherit; }
+}
+.settings-status { font-size: 12px; color: var(--color-text-secondary); }
+
+.settings-status[data-tone="warning"] { color: var(--color-text-warning); }
+.settings-skeleton { display: inline-block; width: 9em; max-width: 100%; height: 16px; border-radius: 4px; background: var(--color-usage-track); }
+.account-profile { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 16px; align-items: center; padding-block: 24px; border-bottom: .5px solid var(--color-border-subtle); }
+.account-profile__copy { display: grid; gap: 2px; min-width: 0; }
+.account-profile__copy > .settings-skeleton:first-child { height: 28px; }
+.settings-skeleton.settings-skeleton--action { height: 26px; }
+.account-usage__hint { min-height: 32px; }
+.account-profile__metadata { font-size: 12px; color: var(--color-text-secondary); }
+.account-profile__error { grid-column: 1 / -1; }
+.account-value-action { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.account-value-action > span { min-width: 0; overflow-wrap: anywhere; }
+.account-secondary-value { color: var(--color-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.account-numeric-value { font-variant-numeric: tabular-nums; }
+.account-usage { padding: 0 0 8px; }
+.account-usage__hint { margin-top: 12px; font-size: 12px; color: var(--color-text-secondary); }
+.settings-panel__body > .lightvela-login-options { margin-block: 24px; }
+@container settings-panel (max-width: 480px) {
+  .settings-panel__body { padding-inline: 16px; }
+  .settings-control-row { grid-template-columns: 1fr; gap: 6px; }
+  .account-value-action { flex-wrap: wrap; gap: 8px; }
+  .account-usage__hint > span { flex-basis: 100%; }
+}
