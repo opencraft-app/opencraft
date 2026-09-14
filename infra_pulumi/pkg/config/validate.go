@@ -2,8 +2,11 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var pulsarNamespacePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,16}$`)
 
 func ValidateInventory(inv *Inventory) error {
 	if inv == nil {
@@ -95,6 +98,9 @@ func validatePulsarInventory(inv PulsarInventory) error {
 			return fmt.Errorf("inventory missing stacks.pulsar.%s", field)
 		}
 	}
+	if !pulsarNamespacePattern.MatchString(inv.Namespace) {
+		return fmt.Errorf("inventory stacks.pulsar.namespace must be 1-16 ASCII letters, digits, hyphens, or underscores")
+	}
 	if len(inv.ExpectedZoneIDs) == 0 {
 		return fmt.Errorf("inventory missing stacks.pulsar.expected_zone_ids")
 	}
@@ -111,6 +117,12 @@ func validatePulsarInventory(inv PulsarInventory) error {
 	}
 	if inv.RetentionSizeMB < 0 {
 		return fmt.Errorf("inventory stacks.pulsar.retention_size_mb must not be negative")
+	}
+	if (inv.RetentionMinutes == 0) != (inv.RetentionSizeMB == 0) {
+		return fmt.Errorf("inventory stacks.pulsar retention time and size must either both be zero or both be configured")
+	}
+	if inv.RetentionSizeMB > 0 && inv.RetentionSizeMB < 10240 {
+		return fmt.Errorf("inventory stacks.pulsar.retention_size_mb must be at least 10240 when retention is enabled")
 	}
 	return nil
 }

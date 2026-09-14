@@ -1,3 +1,4 @@
+-- Initial Beijing referral campaign and reward state.
 CREATE TABLE referral_campaign (
     campaign_id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,

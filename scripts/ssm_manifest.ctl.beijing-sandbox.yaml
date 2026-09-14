@@ -25,6 +25,8 @@ items:
     kubernetes_resource_kind: Secret
     output_path: argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml
     secret_type: Opaque
+    required_keys:
+      - REFERRAL_PULSAR_TOKEN
     # These values describe routing/topology policy, not credentials. Keep them
     # reviewable in Git while SOPS encrypts all remaining keys individually.
     plaintext_keys:

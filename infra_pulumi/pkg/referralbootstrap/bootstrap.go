@@ -185,8 +185,7 @@ func (s *TencentSecretStore) Read(ctx context.Context, secretName string) (map[s
 	request.VersionId = sdkcommon.StringPtr(secretVersionID)
 	response, err := s.client.GetSecretValueWithContext(ctx, request)
 	if err != nil {
-		var sdkErr *tcerr.TencentCloudSDKError
-		if errors.As(err, &sdkErr) && sdkErr.Code == ssm.RESOURCENOTFOUND_SECRETNOTEXIST {
+		if isSecretNotFoundError(err) {
 			return map[string]any{}, false, nil
 		}
 		return nil, false, err
@@ -201,6 +200,12 @@ func (s *TencentSecretStore) Read(ctx context.Context, secretName string) (map[s
 		return nil, false, fmt.Errorf("SSM secret %s is not a JSON object: %w", secretName, err)
 	}
 	return payload, true, nil
+}
+
+func isSecretNotFoundError(err error) bool {
+	var sdkErr *tcerr.TencentCloudSDKError
+	return errors.As(err, &sdkErr) &&
+		(sdkErr.Code == ssm.RESOURCENOTFOUND || sdkErr.Code == ssm.RESOURCENOTFOUND_SECRETNOTEXIST)
 }
 
 func (s *TencentSecretStore) Write(ctx context.Context, secretName string, payload map[string]any, create bool) error {

@@ -16,6 +16,8 @@ items:
     kubernetes_resource_kind: Secret
     output_path: argocd/secrets/beijing-sandbox/lightclaw-auth-secrets.sops.yaml
     secret_type: Opaque
+    required_keys:
+      - REFERRAL_PULSAR_TOKEN
     labels:
       app.kubernetes.io/name: lightclaw-auth
       app.kubernetes.io/managed-by: argocd
