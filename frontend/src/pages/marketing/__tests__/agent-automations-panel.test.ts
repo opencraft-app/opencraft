@@ -3648,16 +3648,14 @@ describe("automation create button placement", () => {
     expect(container.querySelector("header")?.textContent).toContain(localizedText("新建", "Create"));
   });
 
-  it("moves the create button above the empty hint when there is no task", async () => {
+  it("keeps the create button in the header when there is no task", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
     const { container } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     await screen.findByText(localizedText("暂无定时任务，", "No scheduled tasks yet,"));
-    const createButton = screen.getByRole("button", { name: localizedText("新建", "Create") });
-    // 只保留一个入口：此时 header 右上角不再重复放一个
+    // 入口只有一个且恒定在 header 右上角，避免列表加载完成后按钮从 header 换到空状态导致节点被替换
     expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(1);
-    expect(container.querySelector("header")?.textContent ?? "").not.toContain(localizedText("新建", "Create"));
-    expect(createButton.nextElementSibling?.textContent ?? "").toContain(localizedText("暂无定时任务", "No scheduled tasks"));
+    expect(container.querySelector("header")?.textContent ?? "").toContain(localizedText("新建", "Create"));
   });
 });
 
@@ -3669,9 +3667,7 @@ describe("automation form test-state wiring", () => {
       render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
       if (entry === "blank") {
-        // 空列表时「新建」下沉到空状态里，需等列表加载完成再点，否则会点到加载中的旧节点
-        await screen.findByText(localizedText("暂无定时任务，", "No scheduled tasks yet,"));
-        fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
+        fireEvent.click(await screen.findByRole("button", { name: localizedText("新建", "Create") }));
         fillCreateFields();
       } else {
         fireEvent.click(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));

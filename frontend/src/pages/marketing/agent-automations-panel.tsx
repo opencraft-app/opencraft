@@ -126,7 +126,6 @@ const BASH_SCRIPT_PLACEHOLDER = [
 const CHAT_ID_MAX_LENGTH = 60;
 const AUTOMATION_FORM_TEST_JOB_ID = "automation-form-test-run";
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
-const AUTOMATION_CREATE_BUTTON_CLASS = "inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85";
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
 type AutomationTestState = "idle" | "running" | "ok" | "fail";
 type ActiveTaskFilter = "all" | "agent" | CronZeroTokenKind;
@@ -1397,15 +1396,6 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
     );
   }
 
-  // 一个定时任务都没有时，主操作下沉到空状态里更醒目；有任务后回到 header 右上角
-  const showCreateInEmptyState = activeView !== "recent"
-    && !loadingJobs
-    && !listError
-    && displayedJobs.length === 0
-    && activeTaskFilter === "all"
-    && activeView !== "ended";
-  const showHeaderCreate = !showCreateInEmptyState;
-
   return (
     <div className="space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
@@ -1414,18 +1404,18 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
       <AgentSectionHeader
         title={t("定时任务")}
         description={t("让你的智能体伙伴按计划自动执行任务")}
-        actions={showHeaderCreate ? (
+        actions={(
           <div className="inline-flex items-center gap-2.5">
             <button
               type="button"
               onClick={requestCreate}
-              className={AUTOMATION_CREATE_BUTTON_CLASS}
+              className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
             >
               <Plus className="h-5 w-5" />
               <span className="text-base font-semibold leading-none">{t("新建")}</span>
             </button>
           </div>
-        ) : undefined}
+        )}
       />
 
       {gatewayRunning === false && (
@@ -1560,16 +1550,6 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
           />
         ) : displayedJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
-            {showCreateInEmptyState && (
-              <button
-                type="button"
-                onClick={requestCreate}
-                className={`mb-3 ${AUTOMATION_CREATE_BUTTON_CLASS}`}
-              >
-                <Plus className="h-5 w-5" />
-                <span className="text-base font-semibold leading-none">{t("新建")}</span>
-              </button>
-            )}
             {activeView === "ended" ? (
               <p>{t("暂无已结束任务")}</p>
             ) : activeTaskFilter !== "all" ? (
