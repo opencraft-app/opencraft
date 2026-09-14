@@ -25,6 +25,25 @@ worker_actions:
     upload_key_prefix: rescue-imports
     upload_url_ttl_seconds: 900
 routes:
+  - name: referral-code-public
+    prefix: /v1/referrals/codes
+    methods: [GET, OPTIONS]
+    upstream: http://referral.referral.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/referrals/codes/{code}" }
+  - name: referral-user
+    prefix: /v1/referrals/me
+    methods: [GET, POST, OPTIONS]
+    upstream: http://referral.referral.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/referrals/me" }
+      - { method: POST, path: "/v1/referrals/me/code" }
+      - { method: GET, path: "/v1/referrals/me/stats" }
   - name: users
     prefix: /users
     methods: [GET, OPTIONS]
@@ -226,6 +245,8 @@ routes:
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
+      - method: POST
+        path: /auth/referral/prepare
       - method: POST
         path: /auth/tat/device-bind
       - method: POST
