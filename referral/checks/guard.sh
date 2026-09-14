@@ -2,6 +2,16 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "${repo_root}"
+source .ci/init.sh
+ci_init_repo_root
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+  ci_ensure_go
+  ci_ensure_kustomize
+else
+  ci_require_commands go kustomize
+fi
 
 (
   cd "${repo_root}/referral"
