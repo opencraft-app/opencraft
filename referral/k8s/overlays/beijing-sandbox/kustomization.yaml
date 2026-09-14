@@ -53,3 +53,10 @@ patches:
       - op: replace
         path: /spec/template/spec/nodeSelector/pool
         value: "general-bj8"
+  - target:
+      kind: Deployment
+      name: referral-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0

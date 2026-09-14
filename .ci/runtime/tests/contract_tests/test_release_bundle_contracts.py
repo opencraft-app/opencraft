@@ -1204,6 +1204,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/referral.yaml", referral.publish_paths)
         self.assertIn("argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml", referral.publish_paths)
 
+        overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/beijing-sandbox/kustomization.yaml").read_text()
+        )
+        patches = overlay.get("patches") or []
+        deployment_patch = next(
+            item["patch"]
+            for item in patches
+            if (item.get("target") or {}).get("name") == "referral-worker"
+        )
+        self.assertIn("path: /spec/replicas", deployment_patch)
+        self.assertIn("value: 0", deployment_patch)
+
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
         actual_buildable: set[str] = set()
