@@ -173,7 +173,7 @@ describe("automation scenario templates section", () => {
 
     render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable }));
 
-    expect(templates.length).toBeGreaterThan(6);
+    expect(templates.length).toBeGreaterThan(8);
     expect(templates.some((template) => template.name === "喝水与吃药提醒")).toBe(true);
     expect(templates.some((template) => template.name === "股票信息速递")).toBe(true);
     expect(templates.some((template) => template.name === "喝水休息提醒")).toBe(false);
@@ -182,12 +182,17 @@ describe("automation scenario templates section", () => {
     expect(templates.some((template) => template.name === "每日 AI 资讯摘要")).toBe(true);
 
     expect(screen.getByRole("heading", { name: "任务模板" })).toBeTruthy();
-    for (const template of templates.slice(0, 6)) {
+
+    // 每页数量随视口自适应（jsdom 默认 768px 高：2 列 × 5 行 = 10 个），断言跟实际 N 自洽
+    const pageSize = 10;
+    const totalPages = Math.ceil(templates.length / pageSize);
+    expect(screen.getByText(`1 / ${totalPages}`)).toBeTruthy();
+    for (const template of templates.slice(0, pageSize)) {
       expect(screen.getByRole("button", { name: template.name })).toBeTruthy();
     }
-
-    expect(screen.getByText("1 / 2")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "每日工作小结" })).toBeNull();
+    for (const template of templates.slice(pageSize)) {
+      expect(screen.queryByRole("button", { name: template.name })).toBeNull();
+    }
 
     fireEvent.click(screen.getByRole("button", { name: templates[0]!.name }));
 
@@ -196,8 +201,68 @@ describe("automation scenario templates section", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 
-    expect(screen.getByText("2 / 2")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "每日工作小结" })).toBeTruthy();
+    expect(screen.getByText(`2 / ${totalPages}`)).toBeTruthy();
+    expect(screen.getByRole("button", { name: templates[pageSize]!.name })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: templates[0]!.name })).toBeNull();
+  });
+
+  it("fills the viewport-derived row count on a wide viewport", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 1400 });
+
+    try {
+      render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+      const visible = templates.filter((template) => screen.queryByRole("button", { name: template.name }));
+      expect(visible.length).toBe(Math.min(templates.length, 15));
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: originalWidth });
+    }
+  });
+
+  it("fills the viewport-derived row count on a narrow viewport", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 500 });
+
+    try {
+      render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+      const visible = templates.filter((template) => screen.queryByRole("button", { name: template.name }));
+      expect(visible.length).toBe(Math.min(templates.length, 5));
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: originalWidth });
+    }
+  });
+
+  it("adapts row count to viewport height instead of hardcoding it", () => {
+    const t = (text: string) => text;
+    const templates = getUnifiedAutomationTemplates(t, "zh-CN");
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    const setSize = (width: number, height: number) => {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+      Object.defineProperty(window, "innerHeight", { configurable: true, writable: true, value: height });
+    };
+    const countVisible = () => templates.filter(
+      (template) => screen.queryByRole("button", { name: template.name }),
+    ).length;
+
+    try {
+      // 3 列 × 2 行：(600 - 400) / 86 ≈ 2.3 → 2 行
+      setSize(1400, 600);
+      const short = render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+      expect(countVisible()).toBe(Math.min(templates.length, 6));
+      short.unmount();
+
+      // 3 列 × 5 行：(1000 - 400) / 86 ≈ 6.9 → 封顶 5 行
+      setSize(1400, 1000);
+      render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
+      expect(countVisible()).toBe(Math.min(templates.length, 15));
+    } finally {
+      setSize(originalWidth, originalHeight);
+    }
   });
 
   it("filters the catalog by category and exposes useful template facts", () => {
@@ -208,7 +273,7 @@ describe("automation scenario templates section", () => {
 
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "健康生活" })).toBeTruthy();
-    expect(screen.getByText("每天 08:00")).toBeTruthy();
+    expect(screen.queryByText("每天 08:00")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "监控提醒" }));
 
@@ -227,7 +292,7 @@ describe("automation scenario templates section", () => {
     expect(screen.getByLabelText("正在加载官方模板")).not.toHaveClass("animate-spin");
   });
 
-  it("shows only the schedule in a template card footer", () => {
+  it("hides the schedule footer on a template card", () => {
     const t = (text: string) => text;
     const template = {
       ...getUnifiedAutomationTemplates(t, "zh-CN")[0]!,
@@ -238,7 +303,7 @@ describe("automation scenario templates section", () => {
 
     render(createElement(AutomationScenarioTemplatesSection, { templates: [template], onEnable: vi.fn() }));
 
-    expect(screen.getByText(template.scheduleLabel)).toBeTruthy();
+    expect(screen.queryByText(template.scheduleLabel)).toBeNull();
     expect(screen.queryByText("Hermes")).toBeNull();
     expect(screen.queryByText("有变化才提醒")).toBeNull();
     expect(screen.queryByText("google-workspace")).toBeNull();
@@ -259,8 +324,8 @@ describe("automation scenario templates section", () => {
     render(createElement(AutomationScenarioTemplatesSection, { templates, onEnable: vi.fn() }));
 
     expect(screen.queryByRole("img")).toBeNull();
-    expect(screen.getByText("每天 08:00")).toBeTruthy();
-    expect(screen.getByText("每 6 小时")).toBeTruthy();
+    expect(screen.queryByText("每天 08:00")).toBeNull();
+    expect(screen.queryByText("每 6 小时")).toBeNull();
     expect(screen.queryByText("Hermes")).toBeNull();
   });
 
@@ -324,19 +389,21 @@ describe("automation scenario templates section", () => {
     const region = screen.getByRole("region", { name: "任务模板" });
     const enableButton = screen.getByRole("button", { name: "喝水与吃药提醒" });
     const collapseButton = screen.getByRole("button", { name: "收起任务模板" });
-    const iconBox = enableButton.querySelector(".size-9");
+    const icon = enableButton.querySelector("svg");
     const grid = region.querySelector("#automation-scenario-templates-grid");
 
     expect(region).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-4", "shadow-none");
     expect(region).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
     expect(enableButton).toHaveClass("rounded-sm");
     expect(collapseButton).toHaveClass("rounded-sm");
-    expect(iconBox).toHaveClass("rounded-sm");
+    // 图标不再套彩色底块，只保留彩色线性图标本身
+    expect(icon?.getAttribute("class")).not.toMatch(/\bbg-\S+/);
     expect(enableButton).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
     expect(collapseButton).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
-    expect(iconBox).not.toHaveClass("rounded-xl", "rounded-lg", "rounded-full");
-    expect(grid).toHaveClass("min-h-[248px]", "content-start");
+    expect(icon?.getAttribute("class")).not.toMatch(/\brounded-(xl|lg|full)\b/);
+    expect(grid).toHaveClass("content-start");
     expect(grid).not.toHaveClass("auto-rows-[330px]");
+    expect(grid).not.toHaveClass("min-h-[248px]");
   });
 
   it("keeps collapse and expand controls beside the subtitle", () => {
@@ -368,8 +435,9 @@ describe("automation scenario templates section", () => {
 
     const enableButton = screen.getByRole("button", { name: "喝水与吃药提醒" });
 
-    expect(enableButton).toHaveClass("bg-white", "border-black/[0.06]", "hover:bg-white", "hover:border-black/[0.12]");
-    expect(enableButton).not.toHaveClass("bg-black/[0.015]", "hover:bg-black/[0.035]", "border-black/[0.06]");
+    // 卡片保留白底（不是灰底 pressed-looking），但不再用描边分隔，hover 才给浅底反馈
+    expect(enableButton).toHaveClass("bg-white", "border-0");
+    expect(enableButton).not.toHaveClass("bg-black/[0.015]", "bg-black/[0.02]", "border-black/[0.06]");
   });
 
   it("keeps the restrained outer card when templates are collapsed", () => {
@@ -987,7 +1055,7 @@ describe("cron context panel integration", () => {
 
     expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
     const templateHint = await screen.findByText(
-      isGlobal ? "quickly enable one from the task templates above" : "可从上方任务模板快速启用",
+      isGlobal ? "quickly enable one from the task templates below" : "可从下方任务模板快速启用",
     );
     expect(templateHint).not.toHaveClass("font-medium", "text-black/70");
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
@@ -3570,6 +3638,29 @@ describe("zero-token automation form", () => {
   });
 });
 
+describe("automation create button placement", () => {
+  it("keeps the create button in the header once tasks exist", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([makeCronJob({ id: "existing", name: "已存在的任务" })]);
+    const { container } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    await screen.findByText("已存在的任务");
+    expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(1);
+    expect(container.querySelector("header")?.textContent).toContain(localizedText("新建", "Create"));
+  });
+
+  it("moves the create button above the empty hint when there is no task", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([]);
+    const { container } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    await screen.findByText(localizedText("暂无定时任务，", "No scheduled tasks yet,"));
+    const createButton = screen.getByRole("button", { name: localizedText("新建", "Create") });
+    // 只保留一个入口：此时 header 右上角不再重复放一个
+    expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(1);
+    expect(container.querySelector("header")?.textContent ?? "").not.toContain(localizedText("新建", "Create"));
+    expect(createButton.nextElementSibling?.textContent ?? "").toContain(localizedText("暂无定时任务", "No scheduled tasks"));
+  });
+});
+
 describe("automation form test-state wiring", () => {
   it.each(["blank", "template"] as const)(
     "shows the running state in the %s create form while the test job is starting",
@@ -3578,7 +3669,9 @@ describe("automation form test-state wiring", () => {
       render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
       if (entry === "blank") {
-        fireEvent.click(await screen.findByRole("button", { name: "新建" }));
+        // 空列表时「新建」下沉到空状态里，需等列表加载完成再点，否则会点到加载中的旧节点
+        await screen.findByText(localizedText("暂无定时任务，", "No scheduled tasks yet,"));
+        fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
         fillCreateFields();
       } else {
         fireEvent.click(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));
