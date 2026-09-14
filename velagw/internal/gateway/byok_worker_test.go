@@ -94,7 +94,7 @@ func TestSyncUserLLMProviderUsesPersistedRemoteChannelID(t *testing.T) {
 		RemoteChannelID: 42,
 		ModelMappings:   map[string]string{"auto": "upstream-model"},
 	}
-	client := svc.newAPIClient(upstream.URL)
+	client := svc.newAPIClient("set-a", upstream.URL)
 	if err := svc.syncUserLLMProvider(t.Context(), client, newapi.AdminAuth{UserID: 1, AccessToken: "admin"}, "user-1", "byok_user_1", 0, 1, &provider); err != nil {
 		t.Fatal(err)
 	}

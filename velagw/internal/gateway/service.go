@@ -135,6 +135,8 @@ func optionalNonNegativeInt(value *int) int {
 }
 
 func (s *Service) RegisterSet(ctx context.Context, input RegisterSetInput) error {
+	input.ID = strings.TrimSpace(input.ID)
+	input.BaseURL = strings.TrimRight(strings.TrimSpace(input.BaseURL), "/")
 	if input.ID == "" {
 		return fmt.Errorf("set id is required")
 	}
@@ -144,12 +146,12 @@ func (s *Service) RegisterSet(ctx context.Context, input RegisterSetInput) error
 	if input.Status == "" {
 		input.Status = SetStatusActive
 	}
-	if _, err := url.ParseRequestURI(input.BaseURL); err != nil {
+	if err := s.validateSetAdminBaseURL(input.ID, input.BaseURL); err != nil {
 		return fmt.Errorf("invalid base url: %w", err)
 	}
 	input.TrafficBaseURL = strings.TrimRight(strings.TrimSpace(input.TrafficBaseURL), "/")
 	if input.TrafficBaseURL != "" {
-		if _, err := url.ParseRequestURI(input.TrafficBaseURL); err != nil {
+		if err := s.validateSetTrafficBaseURL(input.ID, input.TrafficBaseURL); err != nil {
 			return fmt.Errorf("invalid traffic base url: %w", err)
 		}
 	}
@@ -588,7 +590,7 @@ func (s *Service) BootstrapSet(ctx context.Context, setID string) (Set, error) {
 	if !ok {
 		return Set{}, fmt.Errorf("set %q not found", setID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	setup, err := client.GetSetup(ctx)
 	if err != nil {
 		return Set{}, err
@@ -692,7 +694,7 @@ func (s *Service) GetManagedChannelKey(ctx context.Context, setID string, remote
 	if err != nil {
 		return "", err
 	}
-	return s.newAPIClient(set.BaseURL).GetChannelKey(ctx, adminAuthForSet(set), remoteChannelID, code)
+	return s.newAPIClient(set.ID, set.BaseURL).GetChannelKey(ctx, adminAuthForSet(set), remoteChannelID, code)
 }
 
 func (s *Service) EnsureUserBinding(ctx context.Context, externalUserID string) (UserBinding, error) {
@@ -884,7 +886,7 @@ func (s *Service) MigrateUser(ctx context.Context, req MigrationRequest) (Migrat
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	adminAuth := adminAuthForSet(set)
 	if binding.UpstreamUserID == 0 {
 		binding, err = s.ensureUpstreamUser(ctx, client, adminAuth, binding)
@@ -1392,7 +1394,7 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		attribute.String("llmgateway.set.id", set.ID),
 		attribute.Int("llmgateway.upstream_plan.id", upstreamPlanID),
 	)
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	adminAuth := adminAuthForSet(set)
 	if binding.UpstreamUserID == 0 {
 		binding, err = traceGatewayValue(ctx, "llmgateway.ensure_upstream_user", func(spanCtx context.Context) (UserBinding, error) {
@@ -1671,7 +1673,7 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 		)
 		return nil
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	if err := s.withUserSubscriptionWriteLease(ctx, set, externalUserID, func(userLeaseCtx context.Context) error {
 		return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
@@ -1729,7 +1731,7 @@ func (s *Service) CancelSelectedSubscriptions(ctx context.Context, req CancelSel
 
 	matchedIDs := make([]int, 0)
 	if binding.UpstreamUserID > 0 {
-		client := s.newAPIClient(set.BaseURL)
+		client := s.newAPIClient(set.ID, set.BaseURL)
 		auth := adminAuthForSet(set)
 		if err := s.withUserSubscriptionWriteLease(ctx, set, req.UserID, func(userLeaseCtx context.Context) error {
 			return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
@@ -1856,7 +1858,7 @@ func (s *Service) GetActiveSubscription(ctx context.Context, externalUserID stri
 	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
 		return Subscription{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
-	subs, err := s.newAPIClient(set.BaseURL).AdminListUserSubscriptions(ctx, adminAuthForSet(set), binding.UpstreamUserID)
+	subs, err := s.newAPIClient(set.ID, set.BaseURL).AdminListUserSubscriptions(ctx, adminAuthForSet(set), binding.UpstreamUserID)
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -1889,7 +1891,7 @@ func (s *Service) ListActiveSubscriptions(ctx context.Context, externalUserID st
 	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
 		return ActiveSubscriptionList{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
-	activeSubs, err := s.listActiveSubscriptions(ctx, s.newAPIClient(set.BaseURL), adminAuthForSet(set), binding.UpstreamUserID)
+	activeSubs, err := s.listActiveSubscriptions(ctx, s.newAPIClient(set.ID, set.BaseURL), adminAuthForSet(set), binding.UpstreamUserID)
 	if err != nil {
 		return ActiveSubscriptionList{}, err
 	}
@@ -2367,7 +2369,7 @@ func (s *Service) createExternalKey(ctx context.Context, externalUserID string, 
 	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
 		return APIKeyBinding{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	adminAuth := newapi.AdminAuth{UserID: set.AdminUserID, AccessToken: set.AdminAccessToken}
 	if binding.UpstreamUserID == 0 {
 		binding, err = traceGatewayValue(ctx, "llmgateway.ensure_upstream_user", func(spanCtx context.Context) (UserBinding, error) {
@@ -2417,7 +2419,7 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 	if binding.Username == "" || binding.Password == "" {
 		return APIKeyBinding{}, fmt.Errorf("upstream username and password are required")
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := traceGatewayValue(ctx, "newapi.user_login", func(spanCtx context.Context) (newapi.Session, error) {
 		return client.Login(spanCtx, binding.Username, binding.Password)
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
@@ -2673,7 +2675,7 @@ func (s *Service) deleteUpstreamAPIKey(ctx context.Context, binding APIKeyBindin
 	if !ok {
 		return fmt.Errorf("set %q not found", binding.SetID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := client.Login(ctx, userBinding.Username, userBinding.Password)
 	if err != nil {
 		return fmt.Errorf("login upstream user before key revoke: %w", err)
@@ -2919,6 +2921,12 @@ func (s *Service) proxyWithTrafficRouteSnapshot(w http.ResponseWriter, r *http.R
 			http.Error(w, "set runtime route missing", http.StatusServiceUnavailable)
 			return
 		}
+	}
+	if err := s.validateSetTrafficBaseURL(snapshot.SetID, targetBaseURL); err != nil {
+		accessLog.Status = http.StatusBadGateway
+		accessLog.ErrorType = "unsafe_set_url"
+		http.Error(w, "unsafe set url", http.StatusBadGateway)
+		return
 	}
 	target, err := url.Parse(targetBaseURL)
 	if err != nil {
@@ -3342,6 +3350,10 @@ func (s *Service) ProxyConsoleHTTP(w http.ResponseWriter, r *http.Request, setID
 		http.Error(w, "set unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if err := s.validateSetAdminBaseURL(set.ID, set.BaseURL); err != nil {
+		http.Error(w, "unsafe set url", http.StatusBadGateway)
+		return
+	}
 	if upstreamPath == "" {
 		upstreamPath = "/"
 	}
@@ -3438,7 +3450,7 @@ func (s *Service) roundTripConsoleRequest(outReq *http.Request) (*http.Response,
 }
 
 func (s *Service) roundTripConsoleDashboardSession(ctx context.Context, set Set, original *http.Request, upstreamPath string, body []byte) (*http.Response, []byte, error) {
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := s.loginRootSession(ctx, client, set)
 	if err != nil {
 		return nil, nil, err
@@ -3452,12 +3464,32 @@ func (s *Service) roundTripConsoleDashboardSession(ctx context.Context, set Set,
 	return client.DoRaw(ctx, original.Method, upstreamPath, upstreamConsoleRawQuery(original), headers, body)
 }
 
-func (s *Service) newAPIClient(baseURL string) *newapi.Client {
+func (s *Service) newAPIClient(setID string, baseURL string) *newapi.Client {
 	timeout := s.options.NewAPIClientTimeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return newapi.NewClient(baseURL, &http.Client{Transport: s.transport, Timeout: timeout})
+	client := &http.Client{Transport: s.transport, Timeout: timeout}
+	if s.options.EnforceManagedSetURLs {
+		return newapi.NewClientWithURLPolicy(baseURL, client, managedSetAdminURLPolicy(setID, baseURL))
+	}
+	return newapi.NewClient(baseURL, client)
+}
+
+func (s *Service) validateSetAdminBaseURL(setID string, rawURL string) error {
+	if s.options.EnforceManagedSetURLs {
+		return validateManagedSetAdminBaseURL(setID, rawURL)
+	}
+	_, err := url.ParseRequestURI(rawURL)
+	return err
+}
+
+func (s *Service) validateSetTrafficBaseURL(setID string, rawURL string) error {
+	if s.options.EnforceManagedSetURLs {
+		return validateManagedSetTrafficBaseURL(setID, rawURL)
+	}
+	_, err := url.ParseRequestURI(rawURL)
+	return err
 }
 
 func (s *Service) capacityPicker() SetCapacityPicker {

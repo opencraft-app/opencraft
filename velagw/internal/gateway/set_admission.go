@@ -97,7 +97,7 @@ func (s *Service) checkSetAdmission(ctx context.Context, set Set) error {
 	if !set.Setup || set.AdminUserID == 0 || set.AdminAccessToken == "" {
 		return fmt.Errorf("set is not bootstrapped")
 	}
-	setup, err := s.newAPIClient(set.BaseURL).GetSetup(ctx)
+	setup, err := s.newAPIClient(set.ID, set.BaseURL).GetSetup(ctx)
 	if err != nil {
 		return fmt.Errorf("check remote setup: %w", err)
 	}

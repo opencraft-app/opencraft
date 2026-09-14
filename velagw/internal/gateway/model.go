@@ -2165,6 +2165,7 @@ type Options struct {
 	SetRuntimeRouteRequired     bool
 	TrafficTransportManager     *TransportManager
 	NewAPIClientTimeout         time.Duration
+	EnforceManagedSetURLs       bool
 	WorkerSetCapacityEnabled    bool
 	WorkerSetCapacityPolicy     SetCapacityPolicy
 	WorkerBYOKSyncBatchSize     int
