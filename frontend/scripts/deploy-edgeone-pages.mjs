@@ -10,6 +10,8 @@ const defaultArea = "global";
 const defaultSmokeAttempts = 18;
 const defaultSmokeRetryDelayMs = 5_000;
 const smokeRequestTimeoutMs = 20_000;
+const previewResolutionTimeoutSeconds = 120;
+const previewResolutionPollIntervalSeconds = 2;
 
 export function resolveDeployDir(env = process.env) {
   const configured = env.EDGEONE_PAGES_DIR?.trim();
@@ -183,13 +185,67 @@ function runCommand(command, args, options) {
 
 export function parseEdgeOneDeploymentResult(output) {
   const line = output.trim().split(/\r?\n/).reverse().find((candidate) => candidate.startsWith("{") && candidate.includes('"deploymentId"'));
-  if (line) return JSON.parse(line);
+  if (line) {
+    const parsed = JSON.parse(line);
+    const url = parsed.url ?? parsed.previewUrl;
+    if (!url) throw new Error("EdgeOne CLI JSON output did not include a deployment URL");
+    return {
+      ...(parsed.projectId ? { projectId: parsed.projectId } : {}),
+      deploymentId: parsed.deploymentId,
+      url,
+    };
+  }
 
   const plainOutput = output.replace(/\u001b\[[0-9;]*m/g, "");
   const url = plainOutput.match(/Deploy URL:\s*(https:\/\/\S+)/)?.[1];
   const deploymentId = plainOutput.match(/Deployment ID:\s*([^\s]+)/)?.[1];
+  const projectId = plainOutput.match(/Using Project ID:\s*([^\s]+)/)?.[1];
   if (!url) throw new Error("EdgeOne CLI output did not include a deployment URL");
-  return { deploymentId, url };
+  return {
+    ...(projectId ? { projectId } : {}),
+    deploymentId,
+    url,
+  };
+}
+
+function hasPreviewSignature(rawUrl) {
+  const url = new URL(rawUrl);
+  return url.searchParams.has("eo_token") && url.searchParams.has("eo_time");
+}
+
+async function createMakersClient({ token }) {
+  const { Makers } = await import("@edgeone/makers-sdk");
+  return new Makers({ token });
+}
+
+export async function resolvePreviewDeploymentUrl({
+  deployment,
+  token,
+  makersClientFactory = createMakersClient,
+}) {
+  if (hasPreviewSignature(deployment.url)) return deployment.url;
+  if (!token) throw new Error("EdgeOne API token is required to resolve a signed Preview URL");
+  if (!deployment.projectId || !deployment.deploymentId) {
+    throw new Error("EdgeOne CLI output did not include projectId and deploymentId for Preview URL signing");
+  }
+
+  const makers = await makersClientFactory({ token });
+  const resolved = await makers.deployments.wait({
+    projectId: deployment.projectId,
+    deploymentId: deployment.deploymentId,
+    timeout: previewResolutionTimeoutSeconds,
+    pollInterval: previewResolutionPollIntervalSeconds,
+  });
+  const previewUrl = resolved.previewUrl?.trim();
+  if (!previewUrl) throw new Error("EdgeOne Makers SDK did not return a signed Preview URL");
+
+  const originalOrigin = new URL(deployment.url).origin;
+  const signedOrigin = new URL(previewUrl).origin;
+  if (signedOrigin !== originalOrigin) {
+    throw new Error("EdgeOne Makers SDK returned a Preview URL for an unexpected origin");
+  }
+  console.log("[edgeone-smoke] resolved signed Preview URL through Makers SDK");
+  return previewUrl;
 }
 
 export async function main(env = process.env) {
@@ -229,7 +285,8 @@ export async function main(env = process.env) {
 
     if (env.EDGEONE_PAGES_VERIFY_DEPLOYMENT === "1") {
       const deployment = parseEdgeOneDeploymentResult(result.stdout);
-      await verifyEdgeOneDeployment({ deployUrl: deployment.url, deployDir });
+      const deployUrl = await resolvePreviewDeploymentUrl({ deployment, token });
+      await verifyEdgeOneDeployment({ deployUrl, deployDir });
     }
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true });

@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { parseEdgeOneDeploymentResult, verifyEdgeOneDeployment } from "./deploy-edgeone-pages.mjs";
+import {
+  parseEdgeOneDeploymentResult,
+  resolvePreviewDeploymentUrl,
+  verifyEdgeOneDeployment,
+} from "./deploy-edgeone-pages.mjs";
 
 function response(body: string, init: ResponseInit = {}) {
   return new Response(body, init);
@@ -13,13 +17,75 @@ function response(body: string, init: ResponseInit = {}) {
 describe("deploy-edgeone-pages", () => {
   it("parses current EdgeOne CLI output without a final JSON line", () => {
     expect(parseEdgeOneDeploymentResult([
+      "Using Project ID: pages-project-id",
       "Created deployment with Deployment ID: dppkdoh9862k",
       "Deploy Success",
       "Deploy URL: https://preview.example.com?eo_token=token&eo_time=123",
     ].join("\n"))).toEqual({
       deploymentId: "dppkdoh9862k",
+      projectId: "pages-project-id",
       url: "https://preview.example.com?eo_token=token&eo_time=123",
     });
+  });
+
+  it("normalizes the signed previewUrl from EdgeOne CLI JSON output", () => {
+    expect(parseEdgeOneDeploymentResult(JSON.stringify({
+      deploymentId: "dppkdoh9862k",
+      projectId: "pages-project-id",
+      previewUrl: "https://preview.example.com?eo_token=token&eo_time=123",
+    }))).toEqual({
+      deploymentId: "dppkdoh9862k",
+      projectId: "pages-project-id",
+      url: "https://preview.example.com?eo_token=token&eo_time=123",
+    });
+  });
+
+  it("keeps a complete signed Preview URL returned by the CLI", async () => {
+    const makersClientFactory = vi.fn();
+
+    await expect(resolvePreviewDeploymentUrl({
+      deployment: {
+        deploymentId: "dppkdoh9862k",
+        projectId: "pages-project-id",
+        url: "https://preview.example.com?eo_token=token&eo_time=123",
+      },
+      token: "edgeone-api-token",
+      makersClientFactory,
+    })).resolves.toBe("https://preview.example.com?eo_token=token&eo_time=123");
+
+    expect(makersClientFactory).not.toHaveBeenCalled();
+  });
+
+  it("resolves a signed Preview URL through Makers SDK when the CLI returns a bare URL", async () => {
+    const wait = vi.fn().mockResolvedValue({
+      previewUrl: "https://preview.example.com?eo_token=signed-token&eo_time=456",
+    });
+    const makersClientFactory = vi.fn().mockResolvedValue({ deployments: { wait } });
+
+    await expect(resolvePreviewDeploymentUrl({
+      deployment: {
+        deploymentId: "dppkdoh9862k",
+        projectId: "pages-project-id",
+        url: "https://preview.example.com",
+      },
+      token: "edgeone-api-token",
+      makersClientFactory,
+    })).resolves.toBe("https://preview.example.com?eo_token=signed-token&eo_time=456");
+
+    expect(makersClientFactory).toHaveBeenCalledWith({ token: "edgeone-api-token" });
+    expect(wait).toHaveBeenCalledWith({
+      projectId: "pages-project-id",
+      deploymentId: "dppkdoh9862k",
+      timeout: 120,
+      pollInterval: 2,
+    });
+  });
+
+  it("rejects a bare Preview URL when deployment identifiers are unavailable", async () => {
+    await expect(resolvePreviewDeploymentUrl({
+      deployment: { url: "https://preview.example.com" },
+      token: "edgeone-api-token",
+    })).rejects.toThrow("projectId and deploymentId");
   });
 
   it("verifies HTML, entry JS, Flight, search, and missing asset behavior", async () => {
