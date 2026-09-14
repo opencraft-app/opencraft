@@ -4563,6 +4563,17 @@ export const AgentSettingsPage = ({
                   : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
               </span>
             </p>
+            {activeBot.isDefault && activeBot.siblingsUnknown && (
+              <p
+                data-testid="delete-siblings-unknown-warning"
+                className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm leading-relaxed text-amber-800"
+                style={{ marginBottom: "6px" }}
+              >
+                {activeBot.siblingsUnknown === "instance_stopped"
+                  ? t("实例未运行，当前无法列出这个 Agent 下的其他 Bot。继续删除会一并销毁实例上的全部 Bot 及其数据。")
+                  : t("暂时无法获取这个 Agent 的 Bot 列表。继续删除会一并销毁实例上的全部 Bot 及其数据。")}
+              </p>
+            )}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
               <span className="block">
                 {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
