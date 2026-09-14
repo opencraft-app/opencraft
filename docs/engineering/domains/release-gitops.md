@@ -49,6 +49,10 @@ master 源码
   不把 chat origin 加入全局 `allowed_origins`。国内与国际生产配置必须成对审查，并分别验证
   OPTIONS 预检、凭据响应头和未声明相邻路径仍不返回 CORS 许可；配置变更仍按各环境独立
   promote、GitOps 合入和 Argo 收敛确认。
+- Sandbox Worker 必须使用 Kubernetes 默认 Pod 网络和集群 DNS，不得设置 `hostNetwork`、
+  `ClusterFirstWithHostNet`，也不得用 `hostAliases` 把腾讯云 CloudAPI 域名固定到链路本地地址。
+  发布前应在目标集群的普通 Pod 中验证 `cvm.internal.tencentcloudapi.com` 可解析且 HTTPS 可达；
+  该连通性证明不能用作共享宿主机网络命名空间的理由。
 
 ## 跨服务计费能力的发布门禁
 

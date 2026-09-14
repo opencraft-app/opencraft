@@ -268,8 +268,6 @@ spec:
       annotations:
         sandbox.clawhub.dev/redeploy-at: "2026-03-22T11:40:00Z"
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       initContainers:
         - name: wait-db-schema
           image: mysql:8.0
@@ -300,10 +298,6 @@ spec:
                 matchLabels:
                   app: sandbox-worker
               topologyKey: kubernetes.io/hostname
-      hostAliases:
-        - ip: 169.254.0.95
-          hostnames:
-            - cvm.internal.tencentcloudapi.com
       containers:
         - name: worker
           image: REPLACE_REGISTRY_SERVER/lightclaw/sandbox-worker:bj8-20260418-pool-sg-c0c7a32a
@@ -367,8 +361,6 @@ spec:
       annotations:
         sandbox.clawhub.dev/redeploy-at: "2026-03-22T11:40:00Z"
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       initContainers:
         - name: wait-db-schema
           image: mysql:8.0
@@ -406,10 +398,6 @@ spec:
           labelSelector:
             matchLabels:
               app: sandbox-worker-sharded
-      hostAliases:
-        - ip: 169.254.0.95
-          hostnames:
-            - cvm.internal.tencentcloudapi.com
       containers:
         - name: worker
           image: REPLACE_REGISTRY_SERVER/lightclaw/sandbox-worker:bj8-20260418-pool-sg-c0c7a32a
