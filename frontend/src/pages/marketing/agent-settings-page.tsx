@@ -113,10 +113,6 @@ import {
   isHermesMemoryOperationCurrent,
   saveHermesMemoryLimit as executeHermesMemoryLimitSave,
 } from "@/pages/marketing/agent-memory-save";
-import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
-import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
-import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
-import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
@@ -187,6 +183,18 @@ const AgentWebsitePanel = lazy(() =>
 );
 const AgentCommonSettingsPanel = lazy(() =>
   import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
+);
+const BuddyPanel = lazy(() =>
+  import("@/pages/marketing/agent-buddy-panel").then((module) => ({ default: module.BuddyPanel })),
+);
+const HermesAgentSkillsPanel = lazy(() =>
+  import("@/pages/marketing/agent-skills-panel").then((module) => ({ default: module.HermesAgentSkillsPanel })),
+);
+const AchievementsPanel = lazy(() =>
+  import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
+);
+const HermesAgentAutomationsPanel = lazy(() =>
+  import("@/pages/marketing/agent-automations-panel").then((module) => ({ default: module.HermesAgentAutomationsPanel })),
 );
 
 // ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
@@ -2604,7 +2612,6 @@ export const AgentSettingsPage = ({
   const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
   const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
-  useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
@@ -2867,7 +2874,7 @@ export const AgentSettingsPage = ({
       setActiveTabId(visibleBots[0]!.id);
     }
   }, [visibleBots, activeTabId, isCreating, requestedBotId]);
-  const activeBot = isModifying || passesLoading ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
   const isFirstBotCreation = !activeBot;
@@ -2911,8 +2918,9 @@ export const AgentSettingsPage = ({
     setRenewPassModalOpen(false);
     await refreshPasses();
   }, [refreshPasses]);
-  const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
+  const shouldShowDataLoading = shouldShowAgentSettingsDataLoading({
     botsLoading,
+    passesLoading,
     isCreating,
     visibleBotCount: visibleBots.length,
   });
@@ -4965,7 +4973,7 @@ export const AgentSettingsPage = ({
       <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
         <section className="lw-settings-shell lv-agent-settings-shell">
           {/* ── Loading 状态 ── */}
-          {!isModifying && !(passesLoading && passesError) && (isInitialBotsLoading || passesLoading) && (
+          {!isModifying && !(passesLoading && passesError) && shouldShowDataLoading && (
             <AgentSettingsDataLoading />
           )}
 

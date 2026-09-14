@@ -450,9 +450,6 @@ pod = {
 
 for key in [
     "affinity",
-    "dnsPolicy",
-    "hostAliases",
-    "hostNetwork",
     "imagePullSecrets",
     "nodeSelector",
     "priorityClassName",

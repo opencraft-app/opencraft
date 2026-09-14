@@ -205,13 +205,19 @@ describe("AgentSettingsPage renewal reminder", () => {
     refreshPasses.mockResolvedValue(undefined);
   });
 
-  it("offers a generic retry when the initial Pass query stalls, without claiming an upgrade", async () => {
+  it("does not duplicate the AgentProvider Pass refresh when the page mounts", () => {
+    renderAgentSettingsPage();
+
+    expect(refreshPasses).not.toHaveBeenCalled();
+  });
+
+  it("keeps the existing Agent visible and offers retry when the Pass query stalls", async () => {
     activePass = null;
     passesLoading = true;
     passesError = true;
     renderAgentSettingsPage();
     expect(screen.getByRole("alert")).toHaveTextContent("套餐列表加载失败");
-    expect(screen.queryByText("Hermes Renewal")).not.toBeInTheDocument();
+    expect(screen.getByText("Hermes Renewal")).toBeInTheDocument();
     expect(screen.queryByText("正在为 Hermes Agent 升级套餐")).not.toBeInTheDocument();
     expect(screen.queryByText("套餐升级失败")).not.toBeInTheDocument();
     refreshPasses.mockClear();
