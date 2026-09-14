@@ -1197,7 +1197,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         manifest = load_manifest()
         referral = load_bundle(manifest, "referral", "beijing-sandbox")
+        self.assertEqual(len(referral.publish_paths), 8)
         self.assertIn("argocd/services/referral/beijing-sandbox/**", referral.publish_paths)
+        self.assertIn("argocd/services/referral/common/**", referral.publish_paths)
+        self.assertIn("argocd/apps/beijing-sandbox/sandbox-family-appset.yaml", referral.publish_paths)
         self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/referral.yaml", referral.publish_paths)
         self.assertIn("argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml", referral.publish_paths)
 
