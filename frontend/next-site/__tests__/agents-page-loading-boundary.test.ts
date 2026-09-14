@@ -19,7 +19,12 @@ describe("Agents route loading boundary", () => {
     expect(source).toContain(
       "lazy(() => import('@/pages/marketing/agents-workbench/AgentsWorkbenchPage')",
     );
+    expect(source).toContain(
+      "const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;",
+    );
+    expect(source).toContain("<AppRouteShell loadingFallback={loadingFallback}>");
     expect(source).toContain("<Suspense fallback={loadingFallback}>");
+    expect(source).toContain("{productHeader}");
   });
 
   it("loads only the selected settings panel instead of bundling every panel upfront", () => {

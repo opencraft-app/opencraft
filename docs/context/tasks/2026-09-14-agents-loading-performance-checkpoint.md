@@ -22,8 +22,10 @@ derived: false
 - 已完成：路由级 lazy 边界、四个非当前面板 lazy 边界、移除页面级重复 Pass 刷新、已存在 Bot 时不再被 Pass 加载整页遮挡。
 - 已验证：聚焦 Vitest 41 项、`pnpm check`、国内/国际构建、国内/国际浏览器回归、同 SHA 性能对比。
 - 已知基线问题：全量 Vitest 的多个既有失败已在 detached master worktree 复现；本次未扩大修复范围。
+- CR 跟进：不直接把 header 提到 Suspense 外；复用同一 productHeader 作为 Workbench 鉴权壳和内容加载 fallback，普通设置页仍由 AgentsRouteLoading 提供唯一 header。
+- CR 验证：延迟两个目标懒加载 chunk 2.5 秒，Workbench 与 Channels 加载态均只有 1 个 header 和 1 个 LightVela logo；聚焦 41 项测试、`pnpm check`、国内/国际构建通过。
 - 交付边界：只提交源码与测试，不合并、不发布、不改 GitOps。
-- 下一步：检查 staged change impact，commit、push、创建并回查工蜂 MR。
+- 下一步：提交 Workbench 与普通设置页 loading fallback 修复到 MR !3955，并回查远端 source SHA 与检查状态。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户要求修复 `/agents` 加载偏慢并提交新的 MR。

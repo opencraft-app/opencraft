@@ -40,6 +40,7 @@ derived: false
 - 未通过鉴权时不加载 Agent 设置页与工作台主包。
 - 登录后初始 Pass 刷新只由 `AgentProvider` 发起一次。
 - 已有 Bot 时，Pass 加载不替换整个设置页；无 Bot 时仍等待 Pass 解析后再展示创建状态。
+- Workbench 在鉴权与懒加载 chunk 等待阶段均保留单个产品 header，普通 Agent 设置页不出现双 header。
 - 通过聚焦测试、前端 `pnpm check`、构建和浏览器回归。
 
 ## affected_paths
@@ -70,6 +71,8 @@ derived: false
 - 构建：`pnpm build:cn`、`pnpm build:global` 通过。
 - 同 SHA 生产静态构建对比（全新浏览器上下文，各 5 次）：首屏脚本传输量 5,556,714 B 降至 4,065,129 B（-26.8%）；window load 均值 129.8 ms 降至 80.8 ms（-37.8%）；通道内容可见均值 1911.6 ms 降至 1868.8 ms。
 - 浏览器验证：国内/国际 Channels 页面及国际 Models、Skills、Automations 页面均返回 200、内容完整、无框架错误覆盖层。
+- CR 跟进：Workbench 的鉴权壳与内容级 Suspense 均使用产品 header 作为 fallback；普通设置页继续使用自带 header 的完整 Agent 骨架，避免双 header。
+- CR 浏览器验证：分别延迟 Workbench 与 AgentSettings 懒加载 chunk 2.5 秒，在延迟窗口内两条路由均仅渲染 1 个 header 和 1 个 LightVela logo；报告见本机 `lightvela-mr3955-loading-fallback/report.html`。
 - 全量 Vitest 在本机出现 master 基线既有失败并长时间不退出；已在同 SHA detached worktree 复现代表性失败，未将其计作本改动通过。
 
 ## risks
@@ -97,5 +100,5 @@ derived: false
 - Graphify 查询 `agent agents page loading settings session refresh import route` 用于复核依赖边界。
 
 ## handoff
-- 状态：实现与本地验证完成，待提交并创建新 MR。
+- 状态：MR !3955 已创建；Workbench header loading fallback 已实现并完成验证，用户已确认提交。
 - 阻塞项：无。

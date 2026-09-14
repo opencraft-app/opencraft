@@ -22,16 +22,19 @@ export function AgentsPageClient({
   sectionId?: AgentSectionId;
 }) {
   const isWorkbench = sectionId === 'workbench';
-  const loadingFallback = isWorkbench ? null : <AgentsRouteLoading />;
+  const productHeader = (
+    <ProductReturnHomeHeader
+      className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}
+      reloadLanguageAfterSwitch
+      showDesktopUserMenu={isWorkbench}
+    />
+  );
+  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;
 
   return (
     <AppRouteShell loadingFallback={loadingFallback}>
       <Suspense fallback={loadingFallback}>
-        <ProductReturnHomeHeader
-          className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}
-          reloadLanguageAfterSwitch
-          showDesktopUserMenu={isWorkbench}
-        />
+        {productHeader}
         {isWorkbench ? (
           <AgentsWorkbenchPage />
         ) : (
