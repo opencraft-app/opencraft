@@ -8,4 +8,3 @@ export function resolveAnnouncementMediaUrl(assetUrl: string, moduleUrl: string)
   }
   return resolved.href;
 }
-

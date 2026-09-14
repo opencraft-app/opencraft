@@ -1,0 +1,53 @@
+bundles:
+  referral:
+    owner: referral
+    source: referral
+    db_contract:
+      mode: migration
+      db_job_service: referral
+      migration_operation: migration
+      migration_paths:
+      - referral/migrations/**
+      expected_migration_source: referral/migrations
+      verifier:
+        namespace: referral
+        configmap: referral-config
+        secret: referral-runtime-secrets
+        database_env: REFERRAL_DB
+        user_env: REFERRAL_DB_USER
+        password_env: REFERRAL_DB_PASSWORD
+    reason: Referral campaign API and Pulsar reward worker for the Beijing pilot.
+    allowed_paths:
+    - referral/k8s/base
+    - referral/k8s/overlays/beijing-sandbox
+    - referral/Dockerfile
+    - referral/migrations
+    - argocd/catalogs/sandbox/beijing-sandbox/referral.yaml
+    - argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml
+    - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+    exit_condition: Can be removed only after referral ownership moves into another entitlement service.
+    publish_paths:
+    - argocd/services/referral/{env}/**
+    - argocd/services/referral/common/**
+    - referral/k8s/base/**
+    - referral/k8s/overlays/{env}/**
+    - argocd/catalogs/sandbox/{env}/referral.yaml
+    - argocd/secrets/{env}/referral-runtime-secrets.sops.yaml
+    - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/referral/beijing-sandbox/**
+      - argocd/services/referral/common/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - referral/k8s/base/**
+      - referral/k8s/overlays/beijing-sandbox/**
+      - argocd/catalogs/sandbox/beijing-sandbox/referral.yaml
+      - argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml
+      - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+    dockerfile: referral/Dockerfile
+    build_context: referral
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/referral
+      sandbox-bj-*: lightclaw-bj8.tencentcloudcr.com/lightclaw/referral
+      sandbox-kr-*: null
+      sandbox-jp-*: null

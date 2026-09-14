@@ -66,6 +66,36 @@ func TestEnsureUserRequiresInternalToken(t *testing.T) {
 	}
 }
 
+func TestApplySubscriptionAcceptsTokenAmountWithoutPlanID(t *testing.T) {
+	var request ApplySubscriptionRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/internal/subscriptions/apply" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(apiResponse{Data: mustRawJSON(t, Subscription{
+			ID: "sub-free", UserID: request.UserID, PlanID: "promotional-credit-generated", Status: "active",
+		})})
+	}))
+	defer server.Close()
+
+	adapter := NewLLMGatewayAdapter(&config.LLMGatewayConfig{
+		BaseURL: server.URL, InternalServiceToken: "internal-token", Timeout: 5,
+	}, nil)
+	result, err := adapter.ApplySubscription(t.Context(), &ApplySubscriptionRequest{
+		UserID: "usr-test", TokenAmount: 5_000_000, IdempotencyKey: "referral:test", SubscriptionName: "free-credit:referral:test",
+	})
+	if err != nil {
+		t.Fatalf("apply subscription: %v", err)
+	}
+	if request.PlanID != "" || request.TokenAmount != 5_000_000 || result.PlanID != "promotional-credit-generated" {
+		t.Fatalf("request=%+v result=%+v", request, result)
+	}
+}
+
 func TestListActiveSubscriptionsUsesInternalContract(t *testing.T) {
 	var authHeader string
 	var gotPath string

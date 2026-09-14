@@ -1240,7 +1240,7 @@ func TestNewAPIClientUsesConfiguredTimeout(t *testing.T) {
 	defer upstream.Close()
 
 	svc := NewService(NewMemoryStore(), upstream.Client().Transport, Options{NewAPIClientTimeout: 20 * time.Millisecond})
-	_, err := svc.newAPIClient(upstream.URL).GetSetup(t.Context())
+	_, err := svc.newAPIClient("set-a", upstream.URL).GetSetup(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "Client.Timeout") {
 		t.Fatalf("error = %v, want configured client timeout", err)
 	}

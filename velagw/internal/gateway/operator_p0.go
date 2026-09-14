@@ -647,7 +647,7 @@ func (s *Service) checkSetAdminHealthJob(ctx context.Context, job *WorkerJob) (i
 		processed++
 		checked++
 		probeCtx, cancel := context.WithTimeout(ctx, timeout)
-		_, probeErr := s.newAPIClient(set.BaseURL).FindUser(probeCtx, adminAuthForSet(set), set.AdminUsername)
+		_, probeErr := s.newAPIClient(set.ID, set.BaseURL).FindUser(probeCtx, adminAuthForSet(set), set.AdminUsername)
 		cancel()
 		now := s.nowUTC()
 		set.AdminHealthCheckedAt = now

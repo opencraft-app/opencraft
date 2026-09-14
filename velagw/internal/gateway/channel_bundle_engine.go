@@ -143,7 +143,7 @@ func (s *Service) channelBundleSnapshotFromSet(ctx context.Context, input Import
 	if set.Status != SetStatusActive || !set.Setup || set.AdminUserID == 0 || set.AdminAccessToken == "" {
 		return ChannelBundle{}, fmt.Errorf("set %q is not active and bootstrapped", set.ID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth, temporarySession, err := s.resolveSetAdminAuth(ctx, client, set)
 	if err != nil {
 		return ChannelBundle{}, err
@@ -468,7 +468,7 @@ func (s *Service) planChannelBundleSnapshotForSet(ctx context.Context, bundle Ch
 		return plan, nil
 	}
 
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	if err := s.addChannelBundleOptionPlan(ctx, client, auth, bundle, state, opts, &plan); err != nil {
 		return ChannelBundlePlan{}, s.failChannelBundlePlan(ctx, state, err)
@@ -779,7 +779,7 @@ func (s *Service) applyChannelBundleOptions(ctx context.Context, bundle ChannelB
 	if set.Status != SetStatusActive || !set.Setup || set.AdminUserID == 0 || set.AdminAccessToken == "" {
 		return fmt.Errorf("set %q is not active and bootstrapped", set.ID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	optionAuth, temporarySession, err := s.resolveSetAdminAuth(ctx, client, set)
 	if err != nil {
 		return err
@@ -993,7 +993,7 @@ func (s *Service) remoteStillMatchesAppliedBundle(ctx context.Context, state Cha
 	if !ok {
 		return false, fmt.Errorf("set %q not found", state.SetID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 
 	if len(applied.Spec.Options) > 0 || len(target.Spec.Options) > 0 {

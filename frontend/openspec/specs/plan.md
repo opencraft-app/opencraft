@@ -6,27 +6,33 @@
 是产品的变现核心链路。与 `auth`、`marketing` 模块强耦合，并对接后端 `subscription/`
 与 `payment/` 微服务。
 
+> 升级套餐当前规格（2026-09-11）：[升级套餐交互](pass-upgrade.md)。升级使用独立 `modify` 订单接口，支付确认后进入 Agents 等待交付；本页的旧 `createPass` / success 页描述不适用于升级流程。
+
 ## 页面 / 路由
 
 | 路由 | 组件 | 守卫 | 职责 |
 |------|------|------|------|
 | `/plans/select` | `PlanSelectPage` | AuthenticatedGuard + PlanGuard | 首次登录时强制选套餐 |
-| `/subscribe` | `next-site/SubscribePage` | Next App Router + client auth island | 套餐升级/续费（49KB，含支付 UI） |
+| `/subscribe` | `next-site/SubscribePage` | Next App Router + client auth island | 套餐选择、新购与合法目标升级入口 |
 | `/account` | `AccountPage` | MarketingAuthGuard | 查看当前订阅 + 权益 |
 | `/account/orders` | `AccountOrdersPage` | MarketingAuthGuard | 订单列表与凭证 |
 
 ## 核心组件
 
 - `pages/app/plan-select-page.tsx` — 首次登录套餐选择页（3.6KB，走 PlanGuard）
-- `next-site/subscribe-page.tsx` — **支付主页面**（49KB）：
+- `next-site/subscribe-page.tsx` — **支付主页面**：
   - 套餐卡片展示（Bundle 列表）
-  - 支付方式选择（微信、支付宝、企业微信"即将支持"豆腐块）
+  - 国内微信支付、国际卡支付；升级确认及支付流程见专项规格
+  - 合法升级目标默认显示“升级至此套餐”，按钮完成询价后才打开确认弹窗
   - 订单生成与轮询
   - 支付成功/失败态
 - `components/domain/plan-card.tsx` — 套餐卡片（定价 / 特性 / CTA）
 - `components/domain/billing-summary-card.tsx` — 计费摘要
 - `domain/plan-catalog.ts` — 套餐目录常量（`free` / `lite` / `pro` 三档配置）
 - `router/guards.tsx > PlanGuard` — 强制选套餐的路由守卫
+- `pages/marketing/upgrade-pass-modal.tsx` — 目标套餐确认与双站升级支付
+- `lib/use-pass-upgrade.ts` — 当前用户的有效 Pass 与后端合法升级目标
+- `pages/marketing/agent-upgrading-view.tsx` — 升级中目标套餐 / 到期时间展示
 
 ## 数据流
 
@@ -70,17 +76,17 @@ Pass           // 用户权益：bundleId / status / expiresAt
 2. **套餐分档**：
    - `free` — 免费体验（`updateSubscription("free")` 直接生效，无需支付）
    - `lite` / `pro` — 付费档，走 `listBundles` → `createPass(bundleId)` 下单流程
-3. **支付流程**：
+3. **旧 `createPass` 支付流程（不适用于升级）**：
    - `createPass(bundleId)` 创建订单返回 Pass（含支付 URL / 二维码）
    - 前端轮询 Pass 状态或 Subscription 状态，支付完成后跳转 `success` 页
-4. **企业微信支付**：暂未支持，在支付方式中以"企业微信（即将支持）"豆腐块呈现，
-   放在最后一个位置。
+4. **升级支付**：第一步国内“微信支付”、国际“卡支付”；支付成功即跳转 Agents 展示升级等待。升级确认不提供支付宝或企业微信支付选项。
 5. **订单列表**：`account-orders-page.tsx` 展示历史 Pass 列表，支持筛选/凭证查看。
 6. **权益过期**：`Pass.status` 包含过期状态，前端需根据 `expiresAt` 显示剩余天数提醒。
 
 ## 测试覆盖
 
 - `plan-select-page.test.tsx` — 套餐选择主流程
+- 升级入口、双站支付、目标信息与交付判定的回归映射见 [升级规格](pass-upgrade.md) 的“实现与回归锚点”。
 
 ## 相关后端服务
 

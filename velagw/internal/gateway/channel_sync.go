@@ -110,7 +110,7 @@ func (s *Service) FetchChannelModels(ctx context.Context, input ChannelModelFetc
 		if set.Status != SetStatusActive || !set.Setup || set.AdminUserID == 0 || set.AdminAccessToken == "" {
 			continue
 		}
-		models, err := s.newAPIClient(set.BaseURL).FetchModels(ctx, adminAuthForSet(set), newapi.FetchModelsRequest{
+		models, err := s.newAPIClient(set.ID, set.BaseURL).FetchModels(ctx, adminAuthForSet(set), newapi.FetchModelsRequest{
 			Type:    input.Type,
 			BaseURL: input.BaseURL,
 			Key:     input.Key,
@@ -161,7 +161,7 @@ func (s *Service) syncChannelSpecToSet(ctx context.Context, spec ChannelSpec, se
 		return state, nil
 	}
 
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	remote, found, err := s.findRemoteChannel(ctx, client, auth, spec)
 	if err != nil {

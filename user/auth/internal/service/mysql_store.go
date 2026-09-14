@@ -416,6 +416,9 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 	}
 	if created {
 		user.InviteRequired = false
+		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "sms", now); err != nil {
+			return nil, err
+		}
 	}
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodSMS)
 	if err != nil {
@@ -428,16 +431,21 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 	return session, nil
 }
 
-func (s *MySQLStore) FindOrCreatePhoneAuthUser(ctx context.Context, phone string, name string, now time.Time) (User, error) {
+func (s *MySQLStore) FindOrCreatePhoneAuthUser(ctx context.Context, phone string, name string, referralCode string, now time.Time) (User, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return User{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer rollback(tx)
 
-	user, _, err := s.findOrCreatePhoneUserTx(ctx, tx, phone, strings.TrimSpace(name), now, false)
+	user, created, err := s.findOrCreatePhoneUserTx(ctx, tx, phone, strings.TrimSpace(name), now, false)
 	if err != nil {
 		return User{}, err
+	}
+	if created {
+		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, referralCode, "phone_shadow", now); err != nil {
+			return User{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit phone auth user: %w", err)
@@ -873,6 +881,9 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 	`, user.ID, passwordHash, now, now); err != nil {
 		return nil, fmt.Errorf("insert password credential: %w", err)
 	}
+	if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "password", now); err != nil {
+		return nil, err
+	}
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodPassword)
 	if err != nil {
 		return nil, err
@@ -936,6 +947,9 @@ func (s *MySQLStore) CreateOAuthSession(ctx context.Context, input OAuthSignInIn
 	}
 	if created {
 		user.InviteRequired = false
+		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "oauth:"+input.Provider, now); err != nil {
+			return nil, err
+		}
 	}
 
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodOAuth)

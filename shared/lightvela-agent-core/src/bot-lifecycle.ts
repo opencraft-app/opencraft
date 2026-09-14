@@ -9,6 +9,7 @@ export function normalizeBotLifecycle(status: string): BotLifecycle {
     case "success":
       return "running";
     case "creating":
+    case "resuming":
     case "provisioning":
     case "pending":
     case "queued":

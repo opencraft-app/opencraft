@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  BillingDisplayError,
   getBillingErrorCode,
   isPassConflictError,
   isPassRequiresRenewError,
@@ -51,6 +52,37 @@ describe("billing-error", () => {
   });
 
   describe("resolveBillingErrorMessage", () => {
+    it("preserves only frontend-owned localized display errors", () => {
+      const translate = vi.fn((message: string) => message);
+      const message = "The order details do not match. Please contact support.";
+      expect(resolveBillingErrorMessage(new BillingDisplayError(message), "Fallback", translate)).toBe(message);
+      expect(resolveBillingErrorMessage({ name: "BillingDisplayError", message }, "Fallback", translate)).toBe("Fallback");
+      expect(translate).not.toHaveBeenCalled();
+    });
+
+    it("translates the default fallback when no custom fallback is supplied", () => {
+      const translate = vi.fn(() => "The operation failed. Please try again later.");
+      expect(resolveBillingErrorMessage(null, undefined, translate)).toBe("The operation failed. Please try again later.");
+      expect(translate).toHaveBeenCalledExactlyOnceWith("操作失败，请稍后再试。");
+    });
+
+    it("uses the supplied translator for a known code", () => {
+      const translate = vi.fn(() => "Please sign in before continuing.");
+      expect(resolveBillingErrorMessage(new RepositoryError("server text", 401, "UNAUTHORIZED"), "Fallback", translate)).toBe("Please sign in before continuing.");
+      expect(translate).toHaveBeenCalledExactlyOnceWith("请先登录后再操作。");
+    });
+
+    it.each([
+      new RepositoryError("未知服务端原文", 500, "UNRECOGNIZED_CODE"),
+      new Error("网络断开"),
+      { code: "toString" },
+      { code: "__proto__" },
+    ])("uses localized fallback without translating unknown errors: %s", error => {
+      const translate = vi.fn((message: string) => message);
+      expect(resolveBillingErrorMessage(error, "Could not complete the upgrade.", translate)).toBe("Could not complete the upgrade.");
+      expect(translate).not.toHaveBeenCalled();
+    });
+
     it("命中映射表时返回中文文案", () => {
       const err = new RepositoryError("ignored", 409, "PASS_ALREADY_EXISTS");
       expect(resolveBillingErrorMessage(err)).toBe("您已有有效套餐，无需重复购买。");

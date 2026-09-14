@@ -21,6 +21,12 @@ func TestBuildHermesProfileCreateCommandCreatesBlankProfileWithMetadata(t *testi
 	command := buildHermesProfileCreateCommand("profile-2", "", "# New Bot", "New Bot", "Support")
 	checks := []string{
 		"hermes profile create 'profile-2' --no-skills",
+		`source_home = Path(sys.argv[1])`,
+		`target_config.pop("fallback_providers", None)`,
+		`target_config["providers"] = {provider_key: selected_provider}`,
+		`source_env = dotenv_values(source_home / ".env", interpolate=False)`,
+		`Other profile credentials are intentionally not inherited.`,
+		`"$hermes_home/profiles/profile-2"`,
 		"profiles/profile-2/SOUL.md",
 		base64.StdEncoding.EncodeToString([]byte("# New Bot")),
 		`"display_name":"New Bot"`,
@@ -29,6 +35,36 @@ func TestBuildHermesProfileCreateCommandCreatesBlankProfileWithMetadata(t *testi
 	for _, check := range checks {
 		if !strings.Contains(command, check) {
 			t.Fatalf("blank profile command missing %q: %s", check, command)
+		}
+	}
+	if strings.Contains(command, `cp "$hermes_home/.env"`) {
+		t.Fatalf("blank profile must not copy the complete root env: %s", command)
+	}
+}
+
+func TestCopyHermesPrimaryModelScriptScopesProviderAndCredentials(t *testing.T) {
+	checks := []string{
+		`model_keys = (`,
+		`"default", "model", "name", "provider", "base_url", "api_mode", "transport"`,
+		`"key_env", "api_key_env"`,
+		`target_config.pop("fallback_model", None)`,
+		`target_config.pop("fallback_providers", None)`,
+		`target_config.pop("providers", None)`,
+		`target_config.pop("custom_providers", None)`,
+		`target_config["custom_providers"] = [selected_legacy_provider]`,
+		`provider_config.get("key_env")`,
+		`for name in credential_env:`,
+		`for name in dependency_env:`,
+		`break`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(copyHermesPrimaryModelScript, check) {
+			t.Fatalf("primary model snapshot script missing %q", check)
+		}
+	}
+	for _, excluded := range []string{`copy2(source_home / ".env"`, `source_config.get("fallback_providers")`} {
+		if strings.Contains(copyHermesPrimaryModelScript, excluded) {
+			t.Fatalf("primary model snapshot script must not include %q", excluded)
 		}
 	}
 }
@@ -56,6 +92,9 @@ func TestBuildHermesProfileCreateCommandClonesMainAndSanitizesChannels(t *testin
 	}
 	if strings.Contains(command, "--no-skills") {
 		t.Fatalf("clone creation must preserve the source profile skills: %s", command)
+	}
+	if strings.Contains(command, "copyHermesPrimaryModelScript") || strings.Contains(command, `source_home = Path(sys.argv[1])`) {
+		t.Fatalf("explicit clone must not be replaced by the blank-profile model snapshot: %s", command)
 	}
 }
 
@@ -127,6 +166,26 @@ func TestListHermesProfilesScriptUsesOfficialProfileAPI(t *testing.T) {
 	}
 	if strings.Contains(listHermesProfilesScript, "from hermes_cli.profiles import list_profiles") {
 		t.Fatal("profile list script must use the official GET /api/profiles route")
+	}
+}
+
+func TestListHermesProfilesScriptKeepsGatewayRunningTriState(t *testing.T) {
+	if !strings.Contains(listHermesProfilesScript, `bool(profile["gateway_running"]) if "gateway_running" in profile else None`) {
+		t.Fatal("gateway_running must stay tri-state; a missing field has to surface as null, not false")
+	}
+}
+
+func TestProjectHermesProfilesPropagatesUnknownGatewayState(t *testing.T) {
+	running := true
+	bots := projectHermesProfiles([]hermesProfileRecord{
+		{NativeID: defaultHermesProfileID, IsDefault: true},
+		{NativeID: "profile-sales", GatewayRunning: &running},
+	}, "ins-1", "")
+	if bots[0].GatewayRunning != nil {
+		t.Fatalf("unknown gateway state must stay nil, got %v", *bots[0].GatewayRunning)
+	}
+	if bots[1].GatewayRunning == nil || !*bots[1].GatewayRunning {
+		t.Fatalf("known gateway state must be preserved: %+v", bots[1].GatewayRunning)
 	}
 }
 

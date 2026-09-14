@@ -55,6 +55,16 @@ guards:
       - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
     command: .ci/checks/service-gateway_guard.sh
 
+  - name: referral
+    paths:
+      - referral/**
+      - ctl/pkg/model/eventoutbox/**
+      - ctl/pkg/logic/pass/referral_event.go
+      - user/auth/internal/eventoutbox/**
+      - user/auth/internal/httpapi/referral.go
+      - user/auth/internal/service/referral_outbox.go
+    command: .ci/checks/referral_guard.sh
+
   - name: admin-gateway
     paths:
       - admin-gateway/**

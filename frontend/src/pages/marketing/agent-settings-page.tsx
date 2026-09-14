@@ -35,12 +35,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useLayoutEffect, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { useIsDesktop } from "@/components/site/public-site-header";
+import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -111,11 +114,9 @@ import {
   isHermesMemoryOperationCurrent,
   saveHermesMemoryLimit as executeHermesMemoryLimitSave,
 } from "@/pages/marketing/agent-memory-save";
-import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
-import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
-import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
-import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
+import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
+import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
   buildWorkspaceActionDisabledReason,
@@ -183,6 +184,18 @@ const AgentWebsitePanel = lazy(() =>
 );
 const AgentCommonSettingsPanel = lazy(() =>
   import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
+);
+const BuddyPanel = lazy(() =>
+  import("@/pages/marketing/agent-buddy-panel").then((module) => ({ default: module.BuddyPanel })),
+);
+const HermesAgentSkillsPanel = lazy(() =>
+  import("@/pages/marketing/agent-skills-panel").then((module) => ({ default: module.HermesAgentSkillsPanel })),
+);
+const AchievementsPanel = lazy(() =>
+  import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
+);
+const HermesAgentAutomationsPanel = lazy(() =>
+  import("@/pages/marketing/agent-automations-panel").then((module) => ({ default: module.HermesAgentAutomationsPanel })),
 );
 
 // ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
@@ -256,6 +269,7 @@ function TeaSdkSettingsPanel({
   commandExecutor,
   execDebugCommand,
   useEnglish,
+  channelAfterDescription,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
@@ -264,6 +278,8 @@ function TeaSdkSettingsPanel({
   execDebugCommand?: Repositories["bots"]["execDebugCommand"];
   /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
+  /** 通道页标题说明后的上下文提示；模型页不会消费。 */
+  channelAfterDescription?: ReactNode;
 }) {
   const t = useT();
   const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
@@ -323,6 +339,7 @@ function TeaSdkSettingsPanel({
           featureFlags={featureFlags}
           productConfig={productConfig}
           commandExecutor={commandExecutor}
+          afterDescription={channelAfterDescription}
         />
       </Suspense>
     </StableTeaSdkPanelHost>
@@ -344,29 +361,134 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const SETTINGS_ICON_TOOLTIP_ARROW_CLASS =
-  "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
+type WorkspaceActionTooltipSide = "top" | "bottom";
 
-function WorkspaceActionTooltip({ children, content }: { children: ReactNode; content?: ReactNode }) {
+const WORKSPACE_ACTION_TOOLTIP_GAP = 8;
+const WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN = 16;
+
+function WorkspaceActionTooltip({
+  children,
+  content,
+  side = "top",
+}: {
+  children: ReactNode;
+  content?: ReactNode;
+  side?: WorkspaceActionTooltipSide;
+}) {
   const tooltipId = useId();
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimerRef.current === null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const showTooltip = useCallback(() => {
+    clearCloseTimer();
+    setOpen(true);
+  }, [clearCloseTimer]);
+
+  const scheduleClose = useCallback(() => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      closeTimerRef.current = null;
+    }, 120);
+  }, [clearCloseTimer]);
+
+  const updatePosition = useCallback(() => {
+    const triggerRect = triggerRef.current?.getBoundingClientRect();
+    const tooltipRect = tooltipRef.current?.getBoundingClientRect();
+    if (!triggerRect || !tooltipRect) return;
+
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const halfWidth = tooltipRect.width / 2;
+    const centeredLeft = triggerRect.left + triggerRect.width / 2;
+    const minLeft = WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN + halfWidth;
+    const maxLeft = Math.max(minLeft, viewportWidth - WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN - halfWidth);
+
+    setPosition({
+      left: Math.min(Math.max(centeredLeft, minLeft), maxLeft),
+      top: side === "bottom"
+        ? triggerRect.bottom + WORKSPACE_ACTION_TOOLTIP_GAP
+        : triggerRect.top - WORKSPACE_ACTION_TOOLTIP_GAP,
+    });
+  }, [side]);
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [content, open, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
+  useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
+
+  useEffect(() => {
+    if (content) return;
+    clearCloseTimer();
+    setOpen(false);
+  }, [clearCloseTimer, content]);
+
   if (!content) return <>{children}</>;
 
   return (
     <span
-      className="group relative inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+      ref={triggerRef}
+      className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
       tabIndex={0}
-      aria-describedby={tooltipId}
+      aria-describedby={open ? tooltipId : undefined}
+      onMouseEnter={showTooltip}
+      onMouseLeave={scheduleClose}
+      onFocus={showTooltip}
+      onBlur={scheduleClose}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        clearCloseTimer();
+        setOpen(false);
+      }}
     >
       {children}
-      <span className="absolute bottom-full left-0 h-2 w-full" aria-hidden="true" />
-      <span
-        id={tooltipId}
-        role="tooltip"
-        className="invisible pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 w-72 -translate-x-1/2 rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
-      >
-        {content}
-        <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
-      </span>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              ref={tooltipRef}
+              id={tooltipId}
+              role="tooltip"
+              className={cn(
+                "pointer-events-auto fixed z-50 w-72 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+                side === "top" && "-translate-y-full",
+              )}
+              style={{ left: position.left, top: position.top }}
+              onMouseEnter={showTooltip}
+              onMouseLeave={scheduleClose}
+            >
+              {content}
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute left-1/2 size-2 -translate-x-1/2 rotate-45 border-[var(--border-subtle)] bg-white",
+                  side === "bottom"
+                    ? "bottom-full translate-y-1/2 border-l border-t"
+                    : "top-full -translate-y-1/2 border-b border-r",
+                )}
+              />
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }
@@ -2464,37 +2586,7 @@ const formatWorkspaceImportFileSize = (bytes: number) => {
 };
 
 function AgentSettingsDataLoading() {
-  return (
-    <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]" aria-hidden="true">
-      <aside className="lg:sticky lg:top-[84px]">
-        <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-3 rounded-md px-2.5 py-2.5">
-            <span className="h-10 w-10 flex-shrink-0 animate-pulse rounded-md bg-black/[0.045]" />
-            <span className="min-w-0 flex-1 space-y-2">
-              <span className="block h-4 w-28 animate-pulse rounded bg-black/[0.045]" />
-              <span className="block h-3 w-16 animate-pulse rounded bg-black/[0.035]" />
-            </span>
-          </div>
-          <span className="mt-3 block h-9 w-full animate-pulse rounded-md bg-black/[0.035]" />
-        </div>
-        <nav className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <span key={index} className="flex items-center gap-2.5 rounded-md px-3 py-2.5">
-              <span className="h-5 w-5 animate-pulse rounded bg-black/[0.035]" />
-              <span className="h-4 w-16 animate-pulse rounded bg-black/[0.035]" />
-            </span>
-          ))}
-        </nav>
-      </aside>
-      <section className="min-w-0">
-        <div className="rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          <span className="block h-5 w-36 animate-pulse rounded bg-black/[0.045]" />
-          <span className="mt-3 block h-4 w-64 max-w-full animate-pulse rounded bg-black/[0.035]" />
-          <span className="mt-8 block h-40 w-full animate-pulse rounded-md bg-black/[0.025]" />
-        </div>
-      </section>
-    </div>
-  );
+  return <AgentSettingsLoadingContent />;
 }
 
 const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
@@ -2512,12 +2604,15 @@ export const AgentSettingsPage = ({
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
+  const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
+  const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
+  const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
@@ -2579,11 +2674,12 @@ export const AgentSettingsPage = ({
     createLimitMessage,
   );
   const provisioningBot = useMemo(() => {
+    if (isModifying) return null;
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
     }
     return bots.find((bot) => bot.status === "provisioning") ?? null;
-  }, [bots, requestedCreatingBotId]);
+  }, [bots, requestedCreatingBotId, isModifying]);
   const completedCreatingBot = useMemo(
     () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
     [visibleBots, requestedCreatingBotId],
@@ -2779,7 +2875,7 @@ export const AgentSettingsPage = ({
       setActiveTabId(visibleBots[0]!.id);
     }
   }, [visibleBots, activeTabId, isCreating, requestedBotId]);
-  const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
   const isFirstBotCreation = !activeBot;
@@ -2823,8 +2919,9 @@ export const AgentSettingsPage = ({
     setRenewPassModalOpen(false);
     await refreshPasses();
   }, [refreshPasses]);
-  const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
+  const shouldShowDataLoading = shouldShowAgentSettingsDataLoading({
     botsLoading,
+    passesLoading,
     isCreating,
     visibleBotCount: visibleBots.length,
   });
@@ -3447,6 +3544,9 @@ export const AgentSettingsPage = ({
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
         return;
       }
+      // 重新读取 Bot 列表：网关状态是重启后唯一会变的字段，不刷新的话
+      // 「网关未运行」提示条会一直挂着，直到用户整页刷新。
+      void refreshBots();
       // 命令已成功执行完毕，短暂保持视觉反馈后恢复
       setTimeout(() => {
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
@@ -3644,7 +3744,7 @@ export const AgentSettingsPage = ({
       ProfileId: activeBot.profileId ?? "main",
       RegionId: 1,
     };
-  }, [activeBot?.instanceId, activeBot?.profileId]);
+  }, [activeBot?.id, activeBot?.instanceId, activeBot?.profileId]);
 
   /**
    * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
@@ -4303,7 +4403,13 @@ export const AgentSettingsPage = ({
 
   return (
     <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
-      {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
+      {showHeader && (
+        <ProductReturnHomeHeader
+          className="lv-agent-sidebar-header"
+          reloadLanguageAfterSwitch
+          showDesktopUserMenu={false}
+        />
+      )}
       {automationModelSwitchDialog}
 
       <Dialog
@@ -4470,6 +4576,17 @@ export const AgentSettingsPage = ({
                   : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
               </span>
             </p>
+            {activeBot.isDefault && activeBot.siblingsUnknown && (
+              <p
+                data-testid="delete-siblings-unknown-warning"
+                className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm leading-relaxed text-amber-800"
+                style={{ marginBottom: "6px" }}
+              >
+                {activeBot.siblingsUnknown === "instance_stopped"
+                  ? t("实例未运行，当前无法列出这个 Agent 下的其他 Bot。继续删除会一并销毁实例上的全部 Bot 及其数据。")
+                  : t("暂时无法获取这个 Agent 的 Bot 列表。继续删除会一并销毁实例上的全部 Bot 及其数据。")}
+              </p>
+            )}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
               <span className="block">
                 {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
@@ -4785,9 +4902,16 @@ export const AgentSettingsPage = ({
                     </div>
                   </fieldset>
                   {createBotMode === "blank" ? (
-                    <p className="rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
-                      {t("使用 LightVela 默认配置创建一个独立 Bot。")}
-                    </p>
+                    <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
+                      <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>
+                        <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
+                        <dd>{t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")}</dd>
+                      </div>
+                    </dl>
                   ) : (
                     <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
                       <div className="flex items-start gap-2">
@@ -4851,17 +4975,26 @@ export const AgentSettingsPage = ({
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-white pb-6">
-        <section className="lw-settings-shell">
+      <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
+        <section className="lw-settings-shell lv-agent-settings-shell">
           {/* ── Loading 状态 ── */}
-          {isInitialBotsLoading && (
+          {!isModifying && !(passesLoading && passesError) && shouldShowDataLoading && (
             <AgentSettingsDataLoading />
           )}
 
+          {!isModifying && passesLoading && passesError && (
+            <div role="alert" className="flex flex-col items-center gap-4 py-20 text-center">
+              <p className="text-pretty text-sm text-[var(--text-secondary)]">{t("套餐列表加载失败")}</p>
+              <Button type="button" variant="outline" onClick={() => void refreshPasses()}>{t("刷新状态")}</Button>
+            </div>
+          )}
+
           {/* ── 创建 Loading 动画 ── */}
-          {isCreating && (
+          {!isModifying && !passesLoading && isCreating && (
             <CreatingLoadingView errorMessage={creationError} />
           )}
+
+          {isModifying && <AgentUpgradingView pass={upgradingPass} failed={passUpgradeFailed} paused={passUpgradePaused} refreshing={passUpgradeRefreshing} onRetry={retryPassUpgrade} />}
 
           {/* ── 设置区域 ── */}
           {!isCreating && activeBot && sdkInstance && (
@@ -4961,7 +5094,7 @@ export const AgentSettingsPage = ({
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
-                <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                <div className="grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <Popover
@@ -5163,7 +5296,7 @@ export const AgentSettingsPage = ({
                       )}
 
                       {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage}>
+                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
                           <button
                             type="button"
                             onClick={handleCreateNew}
@@ -5441,19 +5574,30 @@ export const AgentSettingsPage = ({
                         <span>{t("有建议？提交反馈")}</span>
                       </a>
                     ) : null}
+
+                    {isDesktop ? (
+                      <div className="lv-agent-account-footer">
+                        <UserAvatarMenu variant="sidebar" />
+                      </div>
+                    ) : null}
                   </aside>
 
-                  <section className="min-w-0 lg:col-start-2">
+                  <section className="lv-agent-settings-content min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (
-                            <>
-                              {weixinOccupiedByOther && activeBot.weixinOwner && (
+                            <TeaSdkSettingsPanel
+                              kind="channel"
+                              instance={sdkInstance}
+                              featureFlags={sdkFeatureFlags}
+                              commandExecutor={teaSdkCommandExecutor}
+                              useEnglish={useEnglish}
+                              channelAfterDescription={weixinOccupiedByOther && activeBot.weixinOwner ? (
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                  <span>
+                                  <span className="text-pretty">
                                     {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
                                       name: activeBot.weixinOwner.botName || t("其他 Bot"),
                                     })}
@@ -5466,15 +5610,8 @@ export const AgentSettingsPage = ({
                                     {t("前往管理")}
                                   </button>
                                 </div>
-                              )}
-                              <TeaSdkSettingsPanel
-                                kind="channel"
-                                instance={sdkInstance}
-                                featureFlags={sdkFeatureFlags}
-                                commandExecutor={teaSdkCommandExecutor}
-                                useEnglish={useEnglish}
-                              />
-                            </>
+                              ) : undefined}
+                            />
                           )}
                           {activeSection === "model" && (
                             <TeaSdkSettingsPanel
@@ -5501,10 +5638,14 @@ export const AgentSettingsPage = ({
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
-                            <HermesAgentAutomationsPanel botId={{
-                              instanceId: activeBot.instanceId ?? activeBot.id,
-                              profileId: activeBot.profileId ?? "main",
-                            }} />
+                            <HermesAgentAutomationsPanel
+                              botId={{
+                                instanceId: activeBot.instanceId ?? activeBot.id,
+                                profileId: activeBot.profileId ?? "main",
+                              }}
+                              gatewayRunning={activeBot.gatewayRunning}
+                              onRestartGateway={restartOrRepairDisabled ? undefined : () => setShowRestartConfirm(true)}
+                            />
                           )}
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
@@ -5607,7 +5748,7 @@ export const AgentSettingsPage = ({
 
           {/* 空状态 */}
           {
-            !isCreating && !botsLoading && visibleBots.length === 0 && (
+            !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (

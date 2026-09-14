@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -181,11 +180,11 @@ func (s *Service) buildSetReconcileFact(ctx context.Context, source string, name
 	if input.BaseURL == "" {
 		return SetReconcileFact{}, fmt.Errorf("base_url is required")
 	}
-	if _, err := url.ParseRequestURI(input.BaseURL); err != nil {
+	if err := s.validateSetAdminBaseURL(input.SetID, input.BaseURL); err != nil {
 		return SetReconcileFact{}, fmt.Errorf("invalid base_url for set %q: %w", input.SetID, err)
 	}
 	if input.TrafficBaseURL != "" {
-		if _, err := url.ParseRequestURI(input.TrafficBaseURL); err != nil {
+		if err := s.validateSetTrafficBaseURL(input.SetID, input.TrafficBaseURL); err != nil {
 			return SetReconcileFact{}, fmt.Errorf("invalid traffic_base_url for set %q: %w", input.SetID, err)
 		}
 	}
@@ -421,7 +420,7 @@ func (s *Service) syncSetPlanLocked(ctx context.Context, set Set, plan Plan, sta
 	if err := s.store.SaveSetPlan(ctx, state); err != nil {
 		return err
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	marker := managedPlanMarker(plan)
 	upstreamPlans, err := client.AdminListSubscriptionPlans(ctx, auth)

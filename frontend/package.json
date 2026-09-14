@@ -92,6 +92,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@edgeone/makers-sdk": "0.1.0",
     "@rollup/rollup-darwin-x64": "^4.60.0",
     "@tailwindcss/postcss": "^4.3.1",
     "@testing-library/jest-dom": "^6.9.1",

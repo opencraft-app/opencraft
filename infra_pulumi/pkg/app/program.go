@@ -15,6 +15,7 @@ import (
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/cynosdb"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/networking"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/notify"
+	"github.com/skipzhang/mono/infra_pulumi/pkg/components/pulsar"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/redis"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/securitygroup"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/components/storage"
@@ -93,6 +94,7 @@ func selectedSteps(scope string) ([]func(*stackctx.Context) error, error) {
 		storage.Ensure,
 		cls.Ensure,
 		notify.Ensure,
+		pulsar.Ensure,
 		compute.Ensure,
 	}
 	switch strings.TrimSpace(scope) {
@@ -100,6 +102,8 @@ func selectedSteps(scope string) ([]func(*stackctx.Context) error, error) {
 		return all, nil
 	case "notify":
 		return []func(*stackctx.Context) error{notify.Ensure}, nil
+	case "pulsar":
+		return []func(*stackctx.Context) error{pulsar.Ensure}, nil
 	default:
 		return nil, fmt.Errorf("unsupported INFRA_COMPONENT_SCOPE %q", scope)
 	}

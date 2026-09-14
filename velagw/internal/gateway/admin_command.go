@@ -65,8 +65,13 @@ func (s *Service) CancelSubscriptionManaged(ctx context.Context, externalUserID 
 func (s *Service) ApplySubscriptionManaged(ctx context.Context, req ApplySubscriptionRequest) (Subscription, *AdminCommand, error) {
 	req.UserID = strings.TrimSpace(req.UserID)
 	req.PlanID = strings.TrimSpace(req.PlanID)
+	var err error
+	req, err = s.resolveAmountBasedSubscriptionPlan(ctx, req)
+	if err != nil {
+		return Subscription{}, nil, err
+	}
 	if req.UserID == "" || req.PlanID == "" {
-		return Subscription{}, nil, fmt.Errorf("user_id and plan_id are required")
+		return Subscription{}, nil, fmt.Errorf("user_id and exactly one of plan_id or token_amount are required")
 	}
 	if err := s.validateApplySubscriptionRequest(req); err != nil {
 		return Subscription{}, nil, err

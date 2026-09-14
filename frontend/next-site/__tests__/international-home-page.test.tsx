@@ -50,7 +50,6 @@ const requiredInternalRoutes = [
 const requiredExternalRoutes = [
   "https://chat.whatsapp.com/KLF9OvdAj4sDdojG20JA9b",
   "https://discord.gg/Myh58xEMe2",
-  "https://www.youtube.com/@TencentLightVela",
   "https://x.com/agentlightvela",
 ] as const;
 
@@ -748,18 +747,18 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);
     expect(Array.from(footer?.querySelectorAll(".foot__links-grid h3") ?? [], (heading) => heading.textContent)).toEqual([
       "Product",
-      "Analysis",
+      "Compare",
       "Community",
       "Company",
       "Related products",
     ]);
     expect(footer?.querySelectorAll(".foot__links-grid ul")).toHaveLength(5);
-    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(21);
+    expect(footer?.querySelectorAll(".foot__links-grid li")).toHaveLength(20);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:nth-child(4) a") ?? [], (anchor) =>
         anchor.textContent,
       ),
-    ).toEqual(["X / Twitter", "Discord", "WhatsApp", "YouTube"]);
+    ).toEqual(["X / Twitter", "Discord", "WhatsApp"]);
     expect(
       Array.from(footer?.querySelectorAll<HTMLAnchorElement>(".foot__links-grid > div:last-child a") ?? [], (anchor) => [
         anchor.textContent,
@@ -772,7 +771,7 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
     expect(footer?.textContent).toContain("14-day free trial");
-    expect(footer?.textContent).toContain("Self-hosting analysis");
+    expect(footer?.textContent).toContain("Compare with self-hosting");
     expect(footer?.textContent).not.toContain("Comparison");
     expect(footer?.textContent).not.toContain("LightVela keeps your personal AI companion online in the cloud.");
     expect(footer?.textContent).not.toContain("Create it once, connect your channels, and let it keep learning how you work.");
@@ -797,14 +796,14 @@ describe("international v2 homepage artifact", () => {
       "zh-SG": {
         title: ["把想法交给 Hermes Agent，", "让它们在云端持续推进。"],
         cta: "我的智能体伙伴",
-        headings: ["产品", "分析", "社区", "公司", "相关产品"],
-        links: ["14 天免费试用", "定价", "接入 WhatsApp 指引", "本地部署分析", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
+        headings: ["产品", "对比", "社区", "公司", "相关产品"],
+        links: ["14 天免费试用", "定价", "接入 WhatsApp 指引", "与本地部署对比", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
       },
       "zh-Hant": {
         title: ["把想法交給 Hermes Agent，", "讓它們在雲端持續推進。"],
         cta: "我的智能體夥伴",
-        headings: ["產品", "分析", "社群", "公司", "相關產品"],
-        links: ["14 天免費試用", "定價", "接入 WhatsApp 指引", "本地部署分析", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
+        headings: ["產品", "對比", "社群", "公司", "相關產品"],
+        links: ["14 天免費試用", "定價", "接入 WhatsApp 指引", "與本地部署對比", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
       },
     } as const;
 
@@ -886,15 +885,15 @@ describe("international v2 homepage artifact", () => {
 
   it("uses the approved companion roles in every localized hero rotator", () => {
     const expectedWordsByFragment = {
-      "index-fragment.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
-      "index-fragment.en-US.html": ["work assistant", "knowledge base", "monitoring radar", "scheduled reminder", "business assistant", "life manager"],
-      "index-fragment.zh-CN.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
-      "index-fragment.zh-SG.html": ["工作助理", "知识库", "监控雷达", "定时闹钟", "经营助手", "生活管家"],
-      "index-fragment.zh-Hant.html": ["工作助理", "知識庫", "監控雷達", "定時鬧鐘", "經營助手", "生活管家"],
-      "index-fragment.id-ID.html": ["asisten kerja", "basis pengetahuan", "radar pemantau", "pengingat terjadwal", "asisten bisnis", "pengelola hidup"],
-      "index-fragment.es.html": ["asistente de trabajo", "base de conocimientos", "radar de monitoreo", "recordatorio programado", "asistente de negocio", "gestor personal"],
-      "index-fragment.ja-JP.html": ["仕事のアシスタント", "ナレッジベース", "監視レーダー", "リマインダー", "ビジネスアシスタント", "生活アシスタント"],
-      "index-fragment.ko-KR.html": ["업무 어시스턴트", "지식 베이스", "모니터링 레이더", "예약 알림", "비즈니스 어시스턴트", "생활 매니저"],
+      "index-fragment.html": ["work partner", "developer buddy", "plan executor", "market watcher", "life concierge", "financial assistant", "creative companion", "content manager"],
+      "index-fragment.en-US.html": ["work partner", "developer buddy", "plan executor", "market watcher", "life concierge", "financial assistant", "creative companion", "content manager"],
+      "index-fragment.zh-CN.html": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-SG.html": ["工作搭档", "开发搭子", "计划执行官", "盘面观察员", "生活管家", "理财助理", "创意同行者", "自媒体运营官"],
+      "index-fragment.zh-Hant.html": ["工作夥伴", "開發夥伴", "計畫執行官", "盤面觀察員", "生活管家", "理財助理", "創意同行者", "自媒體營運官"],
+      "index-fragment.ja-JP.html": ["仕事の相棒", "開発仲間", "計画実行役", "相場ウォッチャー", "暮らしのコンシェルジュ", "資産管理アシスタント", "クリエイティブパートナー", "コンテンツマネージャー"],
+      "index-fragment.ko-KR.html": ["업무 파트너", "개발 동료", "계획 실행자", "시세 관찰자", "생활 매니저", "재무 어시스턴트", "창의적 동반자", "콘텐츠 매니저"],
+      "index-fragment.es.html": ["compañero de trabajo", "compañero de desarrollo", "ejecutor de planes", "observador del mercado", "gestor personal", "asistente financiero", "compañero creativo", "gestor de contenido"],
+      "index-fragment.id-ID.html": ["rekan kerja", "teman pengembang", "pelaksana rencana", "pengamat pasar", "pengelola hidup", "asisten keuangan", "rekan kreatif", "manajer konten"],
     } as const;
 
     for (const [fragmentName, expectedWords] of Object.entries(expectedWordsByFragment)) {
@@ -910,7 +909,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     expect(readFileSync(runtimePath, "utf8")).toContain(
-      "if (!words.length) words = ['knowledge base', 'monitoring radar', 'reminder scheduler', 'business assistant', 'life concierge', 'work assistant'];",
+      "if (!words.length) words = ['work partner', 'developer buddy', 'plan executor', 'market watcher', 'life concierge', 'financial assistant', 'creative companion', 'content manager'];",
     );
   });
 
@@ -999,18 +998,22 @@ describe("international v2 homepage artifact", () => {
 
   it("localizes the revised free-trial CTA in every non-English locale", () => {
     const expectedCtaCopy = {
-      "zh-SG": ["免费体验，无需信用卡", "LightVela免费体验 14 天", "AI Token 套餐免费体验 7 天"],
-      "zh-Hant": ["免費體驗，無需信用卡", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 7 天"],
-      "id-ID": ["Coba gratis, tanpa kartu kredit", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 7 hari."],
-      es: ["Pruébalo gratis, sin tarjeta de crédito", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 7 días."],
-      "ja-JP": ["クレジットカード不要で無料体験", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを7日間無料でお試しいただけます。"],
-      "ko-KR": ["신용카드 없이 무료로 체험하세요", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 7일 동안 무료로 사용해 보세요."],
+      "zh-SG": ["免费体验，10秒极速开通", "LightVela免费体验 14 天", "AI Token 套餐免费体验 7 天"],
+      "zh-Hant": ["免費體驗，10秒極速開通", "LightVela免費體驗 14 天", "AI Token 套餐免費體驗 7 天"],
+      "id-ID": ["Coba gratis, aktif dalam 10 detik", "Coba LightVela gratis selama 14 hari.", "Coba paket AI Token gratis selama 7 hari."],
+      es: ["Pruébalo gratis, activa en 10 segundos", "Prueba LightVela gratis durante 14 días.", "Prueba un plan de tokens de IA gratis durante 7 días."],
+      "ja-JP": ["無料体験、10秒でスピード開通", "LightVelaを14日間無料でお試しいただけます。", "AI Tokenプランを7日間無料でお試しいただけます。"],
+      "ko-KR": ["무료 체험, 10초 만에 개통", "LightVela를 14일 동안 무료로 사용해 보세요.", "AI Token 플랜을 7일 동안 무료로 사용해 보세요."],
     } as const;
 
     for (const [locale, phrases] of Object.entries(expectedCtaCopy)) {
       const html = readFileSync(path.join(homeRoot, `index-fragment.${locale}.html`), "utf8");
       for (const phrase of phrases) expect(html).toContain(phrase);
+      expect(html).not.toContain("Try it free, activate in 10 seconds");
+      // 旧文案不得回流：importer 的 trialTitleCopyByLocale 与各语种词典都已改，
+      // 任何一处漏改都会让这句英文或「无需信用卡」重新出现在产物里。
       expect(html).not.toContain("Try it free, no credit card required");
+      expect(html).not.toContain("信用卡");
       expect(html).not.toContain("Try LightVela free for 14 days.");
       expect(html).not.toContain("Try an AI token plan free for 3 days.");
     }
@@ -1028,7 +1031,7 @@ describe("international v2 homepage artifact", () => {
     }
 
     const domesticDocument = new DOMParser().parseFromString(domesticHtml, "text/html");
-    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，30秒极速部署");
+    expect(domesticDocument.querySelector(".cta__title")?.textContent?.trim()).toBe("免费体验，10秒极速开通");
     expect(Array.from(domesticDocument.querySelectorAll(".cta__copy li"), (item) => item.textContent?.trim())).toEqual([
       "LightVela免费体验 14 天",
       "AI Token 套餐免费体验 3 天",
@@ -1059,11 +1062,11 @@ describe("international v2 homepage artifact", () => {
     const expectedHeadings = {
       "index-fragment.html": {
         h1: "Your AI companion—always on, always evolving with you.",
-        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
+        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, activate in 10 seconds"],
       },
       "index-fragment.en-US.html": {
         h1: "Your AI companion—always on, always evolving with you.",
-        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, no credit card required"],
+        h2: ["From first hello to trusted companion", "How to Get Started", "Try it free, activate in 10 seconds"],
       },
       "index-fragment.zh-CN.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
@@ -1071,27 +1074,27 @@ describe("international v2 homepage artifact", () => {
       },
       "index-fragment.zh-SG.html": {
         h1: "越用越懂你，长期在线的 AI 伙伴",
-        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，无需信用卡"],
+        h2: ["从认识，到成为你的伙伴", "如何拥有？", "免费体验，10秒极速开通"],
       },
       "index-fragment.zh-Hant.html": {
         h1: "越用越懂你，長期在線的 AI 夥伴",
-        h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，無需信用卡"],
+        h2: ["從認識，到成為你的夥伴", "如何擁有？", "免費體驗，10秒極速開通"],
       },
       "index-fragment.id-ID.html": {
         h1: "Semakin sering dipakai, semakin memahami kamu, mitra AI yang selalu aktif",
-        h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, tanpa kartu kredit"],
+        h2: ["Dari sapaan pertama hingga pendamping tepercaya", "Cara Memulai", "Coba gratis, aktif dalam 10 detik"],
       },
       "index-fragment.es.html": {
         h1: "Cuanto más lo uses, mejor te entenderá, tu compañero de IA siempre en línea",
-        h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, sin tarjeta de crédito"],
+        h2: ["Del primer hola a un compañero de confianza", "Cómo empezar", "Pruébalo gratis, activa en 10 segundos"],
       },
       "index-fragment.ja-JP.html": {
         h1: "使うほどあなたを理解する、ずっとオンラインのAIパートナー",
-        h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "クレジットカード不要で無料体験"],
+        h2: ["最初の挨拶から、信頼できるパートナーへ", "始め方", "無料体験、10秒でスピード開通"],
       },
       "index-fragment.ko-KR.html": {
         h1: "쓸수록 나를 더 잘 이해하는, 늘 온라인인 AI 파트너",
-        h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "신용카드 없이 무료로 체험하세요"],
+        h2: ["첫 인사에서 믿을 수 있는 파트너까지", "시작 방법", "무료 체험, 10초 만에 개통"],
       },
     } as const;
 
@@ -1127,15 +1130,17 @@ describe("international v2 homepage artifact", () => {
       "ko-KR": ["예약 작업", "워크벤치", "DeepSeek Harness"],
     } as const;
 
+    /* Hero CTA 沿用现网结构：国内站输出「免费试用 → /subscribe」并由 runtime 在登录后切换，
+       国际站为固定的产品入口文案与链接，不做状态化。 */
     const expectedCtaLabels = {
-      "en-US": "My AI Companion",
-      "zh-CN": "我的智能体伙伴",
-      "zh-SG": "我的智能体伙伴",
-      "zh-Hant": "我的智能體夥伴",
-      "id-ID": "Pendamping AI saya",
-      es: "Mi compañero de IA",
-      "ja-JP": "私のAIパートナー",
-      "ko-KR": "내 AI 파트너",
+      "en-US": { label: "My AI Companion", href: "/agents" },
+      "zh-CN": { label: "免费试用", href: "/subscribe" },
+      "zh-SG": { label: "我的智能体伙伴", href: "/agents" },
+      "zh-Hant": { label: "我的智能體夥伴", href: "/agents" },
+      "id-ID": { label: "Pendamping AI saya", href: "/agents" },
+      es: { label: "Mi compañero de IA", href: "/agents" },
+      "ja-JP": { label: "私のAIパートナー", href: "/agents" },
+      "ko-KR": { label: "내 AI 파트너", href: "/agents" },
     } as const;
 
     for (const locale of publishedInternationalLocales) {
@@ -1144,7 +1149,10 @@ describe("international v2 homepage artifact", () => {
         expect(html).toContain(`<span>${label}</span>`);
       }
       const document = new DOMParser().parseFromString(html, "text/html");
-      expect(document.querySelector(".hero__cta .btn-dark")?.textContent).toContain(expectedCtaLabels[locale]);
+      const heroCta = document.querySelector<HTMLAnchorElement>(".hero__cta .btn-dark");
+      const expectedCta = expectedCtaLabels[locale];
+      expect(heroCta?.textContent).toContain(expectedCta.label);
+      expect(heroCta?.getAttribute("href")).toBe(expectedCta.href);
       expect(html).toContain("play__new-badge");
       expect(html).not.toContain("Separate runtime");
       expect(html).not.toContain("独立运行时");

@@ -96,7 +96,8 @@ type AssignmentInput struct {
 type ApplySubscriptionInput struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 	UserID         string `json:"user_id"`
-	PlanID         string `json:"plan_id"`
+	PlanID         string `json:"plan_id,omitempty"`
+	TokenAmount    int64  `json:"token_amount,omitempty"`
 	Nickname       string `json:"nickname,omitempty"`
 	Phone          string `json:"phone,omitempty"`
 	PeriodValue    int    `json:"period_value,omitempty"`

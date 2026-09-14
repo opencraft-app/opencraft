@@ -2768,7 +2768,7 @@ func (s *Server) internalApplySubscription(w http.ResponseWriter, r *http.Reques
 	}
 	var req gateway.ApplySubscriptionRequest
 	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required fields: user_id, plan_id")
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required fields: user_id and plan_id or token_amount")
 		return
 	}
 	sub, command, err := s.svc.ApplySubscriptionManaged(r.Context(), req)

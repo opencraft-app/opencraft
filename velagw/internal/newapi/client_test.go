@@ -2,13 +2,32 @@ package newapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestClientURLPolicyRunsBeforeHTTPRequest(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("request reached transport before URL policy")
+	}))
+	defer server.Close()
+
+	policyError := errors.New("blocked target")
+	client := NewClientWithURLPolicy(server.URL, server.Client(), func(*url.URL) error {
+		return policyError
+	})
+	_, err := client.GetSetup(t.Context())
+	if !errors.Is(err, policyError) {
+		t.Fatalf("error = %v, want policy error", err)
+	}
+}
 
 func TestNewClientAddsDefaultTimeoutToProvidedHTTPClient(t *testing.T) {
 	provided := &http.Client{Transport: http.DefaultTransport}

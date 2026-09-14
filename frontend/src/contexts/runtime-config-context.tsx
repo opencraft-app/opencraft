@@ -15,6 +15,7 @@ export interface RuntimeFeatureFlags {
   realnamePhoneVerificationEnabled: boolean;
   zeroTokenAutomationsEnabled: boolean;
   multiBotEnabled: boolean;
+  referralEnabled: boolean;
 }
 
 export interface RuntimeConfig {
@@ -62,6 +63,7 @@ const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
     realnamePhoneVerificationEnabled: true,
     zeroTokenAutomationsEnabled: readBuildTimeZeroTokenAutomationsDefault(),
     multiBotEnabled: readBuildTimeMultiBotDefault(),
+    referralEnabled: false,
   },
 };
 
@@ -87,6 +89,7 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
   const zeroTokenAutomationsEnabled =
     (features as { zeroTokenAutomationsEnabled?: unknown }).zeroTokenAutomationsEnabled;
   const multiBotEnabled = (features as { multiBotEnabled?: unknown }).multiBotEnabled;
+  const referralEnabled = (features as { referralEnabled?: unknown }).referralEnabled;
   return {
     features: {
       paidBillingEnabled:
@@ -101,6 +104,7 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
         typeof multiBotEnabled === "boolean"
           ? multiBotEnabled
           : DEFAULT_RUNTIME_CONFIG.features.multiBotEnabled,
+      referralEnabled: referralEnabled === true,
     },
   };
 };
@@ -232,6 +236,11 @@ export const useZeroTokenAutomationsEnabled = (): boolean => {
 export const useMultiBotEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
   return isCN && config.features.multiBotEnabled === true;
+};
+
+export const useReferralEnabled = (): boolean => {
+  const { config } = useRuntimeConfig();
+  return isCN && config.features.referralEnabled === true;
 };
 
 export const __runtimeConfigTestHooks = {

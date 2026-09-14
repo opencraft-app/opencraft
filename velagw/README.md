@@ -222,6 +222,13 @@ Ingress 或公网负载均衡。因此 slave 虽然仍由同一个 new-api 二�
 - `<fleet>-<set>-g<generation>-newapi-traffic` 只选择对应版本代际的 slave。Set runtime
   路由指向当前 active generation；master 即使具备 relay 能力也不承载生产推理流量。
 
+生产拆分进程对 Set URL 启用强制 SSRF 边界：admin 和 traffic 地址必须是上述受管
+Kubernetes Service、使用 `http` 和端口 `3000`，不得携带用户信息、路径、query 或 fragment。
+历史 `<fleet>-<set>-newapi` Admin Service 继续按相同 Set ID 约束兼容。
+NewAPI 客户端还会在每次请求和重定向后校验同源，防止数据库旧值或跨域 30x 绕过。
+本地 all-in-one 开发如需验证生产策略，可显式设置
+`LLMGATEWAY_ENFORCE_MANAGED_SET_URLS=true`；生产 control、traffic 和 worker 不能通过环境变量关闭该策略。
+
 `LLMFleet.spec.sets[].replicas` 只表示每个 Set 的 **new-api slave 数量**。因此单个
 Set 的生产推理端点数是 `replicas slaves`；单个 master 独立存在于管理面，这两个值
 都不包含全局 `llmgateway-traffic` Deployment 的副本数。

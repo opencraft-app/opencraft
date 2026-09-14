@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } fro
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/agent-context";
-import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
+import { ReferralSection } from "./referral-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 
@@ -762,7 +763,8 @@ const SubscriptionSection = ({
   const t = useT();
   const { i18n } = useTranslation();
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
-  const { refreshPasses, user } = useOpenClaw();
+  const { refreshPasses, user, modifyingPass, passUpgradeFailed } = useOpenClaw();
+  useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const { session } = useSession();
   const { plans } = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
@@ -806,11 +808,12 @@ const SubscriptionSection = ({
   }, [paidBillingActive, pass, plans]);
 
   /** 可操作的 pass：优先 active，其次 fallback */
-  const operablePass = pass ?? fallbackPass;
+  const operablePass = modifyingPass ?? pass ?? fallbackPass;
+  const isModifying = operablePass?.status === "modifying";
   const passStatus = operablePass ? getPassStatus(operablePass) : null;
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
-  const canRenew = (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
-  const canDelete = paidBillingActive && operablePass != null && canDeletePass(operablePass);
+  const canRenew = !isModifying && (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
+  const canDelete = !isModifying && paidBillingActive && operablePass != null && canDeletePass(operablePass);
   const upgrade = usePassUpgrade({ userId: session.user?.id, passId: operablePass?.pass_id, currentPass: operablePass, enabled: paidBillingActive });
 
   const handleRenewSuccess = useCallback(async () => {
@@ -831,7 +834,7 @@ const SubscriptionSection = ({
    * 2. 有 fallbackPass 〔过期 / 隔离期，仍需展示以供续费 / 销毁〕
    * 3. 后退到旧的 subscription
    */
-  const hasActive = Boolean(pass) || Boolean(fallbackPass) || Boolean(subscription);
+  const hasActive = Boolean(operablePass) || Boolean(subscription);
 
   /**
    * 所有 Hook 必须在任何 early return 之前调用，以保证每次渲染 Hook 数量恒定。
@@ -977,11 +980,11 @@ const SubscriptionSection = ({
             </div> */}
             <div>
               <p className="text-sm font-bold" style={{ color: "#333" }}>{displayName}</p>
-              <p className="text-xs" style={{ color: "#999" }}>{t("当前生效")}</p>
+              <p className="text-xs" style={{ color: "#999" }}>{isModifying ? t("套餐信息将在升级完成后更新，到期时间不变。") : t("当前生效")}</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            {t("当前套餐")}
+          <span role={isModifying ? "status" : undefined} className="inline-flex shrink-0 items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
+            {isModifying ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中")) : t("当前套餐")}
           </span>
         </div>
 
@@ -1186,6 +1189,7 @@ export const AccountPage = () => {
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  const referralEnabled = useReferralEnabled();
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
   const facelessFlowEnabled = user?.realnameAssuranceMode === "faceless";
@@ -1935,6 +1939,8 @@ export const AccountPage = () => {
 
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
+
+            {referralEnabled && <ReferralSection />}
 
             {isGlobal && <SavedCardsSection />}
           </motion.div>

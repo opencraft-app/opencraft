@@ -64,12 +64,31 @@ export const SignInPage = () => {
   const showPhoneLogin = usePhoneLoginVisibility();
   const oauthError = new URLSearchParams(location.search).get("oauth_error");
   const errorMessage = oauthErrorMessage(oauthError);
+  const referralCode = new URLSearchParams(location.search).get("ref")?.trim().toUpperCase() ?? "";
 
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const [oauthPrompt, setOAuthPrompt] = useState<string | null>(null);
   const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
   const [phoneLoginOpen, setPhoneLoginOpen] = useState(false);
+  const [referralPrepared, setReferralPrepared] = useState(false);
+  const [referralPreparing, setReferralPreparing] = useState(false);
+
+  const prepareReferral = async (): Promise<boolean> => {
+    if (!referralCode || referralPrepared) return true;
+    setReferralPreparing(true);
+    setOAuthPrompt(null);
+    try {
+      await repositories.auth.prepareReferralCode(referralCode);
+      setReferralPrepared(true);
+      return true;
+    } catch {
+      setOAuthPrompt(t("邀请返利码不存在或当前不可用。"));
+      return false;
+    } finally {
+      setReferralPreparing(false);
+    }
+  };
 
   useEffect(() => installShowGitHubLoginHelper(), []);
   useEffect(() => installShowPhoneLoginHelper(), []);
@@ -85,7 +104,7 @@ export const SignInPage = () => {
     return repositories.auth.getOAuthStartUrl("wechat", { wechatMode: target });
   };
 
-  const handleOAuthLogin = async (provider: OAuthProvider) => {
+  const continueOAuthLogin = (provider: OAuthProvider) => {
     if (provider === "wechat" && wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) === "unsupported_mobile_browser") {
       const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
         wechatMode: "official_account",
@@ -105,6 +124,16 @@ export const SignInPage = () => {
     setOAuthPrompt(null);
     setWechatMobileGuideUrl(null);
     redirectToOAuthStart(loginUrl);
+  };
+
+  const handleOAuthLogin = (provider: OAuthProvider) => {
+    if (!referralCode || referralPrepared) {
+      continueOAuthLogin(provider);
+      return;
+    }
+    void prepareReferral().then((ready) => {
+      if (ready) continueOAuthLogin(provider);
+    });
   };
 
   const handleGuestLogin = async () => {
@@ -153,7 +182,8 @@ export const SignInPage = () => {
           return (
             <Button
               key={provider}
-              onClick={() => void handleOAuthLogin(provider)}
+              onClick={() => handleOAuthLogin(provider)}
+              disabled={referralPreparing}
               variant={provider === "qq" || provider === "wechat" ? undefined : "outline"}
               className={visual.className}
               style={visual.style}
@@ -171,10 +201,20 @@ export const SignInPage = () => {
               variant="outline"
               className={OUTLINE_CLASS}
               onClick={() => {
-                setWechatMobileGuideUrl(null);
-                setOAuthPrompt(null);
-                setPhoneLoginOpen(true);
+                const openPhoneLogin = () => {
+                  setWechatMobileGuideUrl(null);
+                  setOAuthPrompt(null);
+                  setPhoneLoginOpen(true);
+                };
+                if (!referralCode || referralPrepared) {
+                  openPhoneLogin();
+                  return;
+                }
+                void prepareReferral().then((ready) => {
+                  if (ready) openPhoneLogin();
+                });
               }}
+              disabled={referralPreparing}
             >
               使用手机号登录
             </Button>

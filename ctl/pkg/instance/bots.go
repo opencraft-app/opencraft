@@ -32,7 +32,7 @@ type hermesProfileRecord struct {
 	DisplayName    string `json:"display_name"`
 	Description    string `json:"description"`
 	IsDefault      bool   `json:"is_default"`
-	GatewayRunning bool   `json:"gateway_running"`
+	GatewayRunning *bool  `json:"gateway_running"`
 	ModifiedAt     string `json:"modified_at"`
 }
 
@@ -100,7 +100,7 @@ async def main():
             "display_name": profile.get("display_name", ""),
             "description": profile.get("description", ""),
             "is_default": bool(profile.get("is_default", False)),
-            "gateway_running": bool(profile.get("gateway_running", False)),
+            "gateway_running": bool(profile["gateway_running"]) if "gateway_running" in profile else None,
             "modified_at": modified,
         })
     print(json.dumps({"items": items}, ensure_ascii=False))
@@ -219,6 +219,200 @@ temporary = env_path.with_name(".env.lightvela.tmp")
 temporary.write_text("".join(kept), encoding="utf-8")
 os.chmod(temporary, 0o600)
 temporary.replace(env_path)
+`
+
+const copyHermesPrimaryModelScript = `from copy import deepcopy
+import os
+from pathlib import Path
+import re
+import sys
+
+from dotenv import dotenv_values, set_key
+import yaml
+
+source_home = Path(sys.argv[1])
+target_home = Path(sys.argv[2])
+source_config_path = source_home / "config.yaml"
+target_config_path = target_home / "config.yaml"
+
+def read_yaml(path):
+    if not path.is_file():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        value = yaml.safe_load(handle) or {}
+    return value if isinstance(value, dict) else {}
+
+def text(value):
+    return str(value or "").strip()
+
+def model_id(model):
+    if isinstance(model, str):
+        return model.strip()
+    if isinstance(model, dict):
+        return text(model.get("default") or model.get("model") or model.get("name"))
+    return ""
+
+def trim_provider_models(provider, primary_model):
+    provider = deepcopy(provider)
+    candidates = {primary_model}
+    if "/" in primary_model:
+        candidates.add(primary_model.split("/", 1)[1])
+    models = provider.get("models")
+    if isinstance(models, dict):
+        provider["models"] = {
+            key: deepcopy(value)
+            for key, value in models.items()
+            if text(key) in candidates
+        }
+        if not provider["models"]:
+            provider.pop("models", None)
+    elif isinstance(models, list):
+        kept = []
+        for value in models:
+            item_id = text(value.get("id") or value.get("name")) if isinstance(value, dict) else text(value)
+            if item_id in candidates:
+                kept.append(deepcopy(value))
+        if kept:
+            provider["models"] = kept
+        else:
+            provider.pop("models", None)
+    provider.pop("fallback", None)
+    provider.pop("fallback_models", None)
+    return provider
+
+source_config = read_yaml(source_config_path)
+source_model = source_config.get("model")
+primary_model = model_id(source_model)
+
+target_config = read_yaml(target_config_path)
+target_config.pop("fallback_model", None)
+target_config.pop("fallback_providers", None)
+target_config.pop("providers", None)
+target_config.pop("custom_providers", None)
+
+selected_model = None
+provider_key = ""
+if isinstance(source_model, str):
+    selected_model = source_model.strip()
+elif isinstance(source_model, dict):
+    model_keys = (
+        "default", "model", "name", "provider", "base_url", "api_mode", "transport",
+        "key_env", "api_key_env",
+    )
+    selected_model = {
+        key: deepcopy(source_model[key])
+        for key in model_keys
+        if key in source_model
+    }
+    provider_key = text(source_model.get("provider"))
+
+if not provider_key and "/" in primary_model:
+    provider_key = primary_model.split("/", 1)[0].strip()
+
+selected_provider = None
+source_providers = source_config.get("providers")
+if provider_key and isinstance(source_providers, dict):
+    for stored_key, value in source_providers.items():
+        if text(stored_key).casefold() == provider_key.casefold() and isinstance(value, dict):
+            provider_key = text(stored_key)
+            selected_provider = trim_provider_models(value, primary_model)
+            break
+
+selected_legacy_provider = None
+legacy_providers = source_config.get("custom_providers")
+if selected_provider is None and isinstance(legacy_providers, list):
+    source_base_url = text(source_model.get("base_url")) if isinstance(source_model, dict) else ""
+    matches = []
+    for value in legacy_providers:
+        if not isinstance(value, dict):
+            continue
+        identity = text(value.get("provider_key") or value.get("provider") or value.get("name"))
+        base_url = text(value.get("base_url") or value.get("url") or value.get("api"))
+        if provider_key and identity.casefold() == provider_key.casefold():
+            matches.append(value)
+        elif source_base_url and base_url.rstrip("/") == source_base_url.rstrip("/"):
+            matches.append(value)
+    if len(matches) == 1:
+        selected_legacy_provider = trim_provider_models(matches[0], primary_model)
+
+if selected_model:
+    target_config["model"] = selected_model
+else:
+    target_config.pop("model", None)
+if selected_provider is not None:
+    target_config["providers"] = {provider_key: selected_provider}
+elif selected_legacy_provider is not None:
+    target_config["custom_providers"] = [selected_legacy_provider]
+
+target_config_path.parent.mkdir(parents=True, exist_ok=True)
+temporary_config = target_config_path.with_name("config.yaml.lightvela.tmp")
+temporary_config.write_text(yaml.safe_dump(target_config, sort_keys=False), encoding="utf-8")
+os.chmod(temporary_config, 0o600)
+temporary_config.replace(target_config_path)
+
+provider_config = selected_provider or selected_legacy_provider or {}
+credential_env = []
+for value in (
+    provider_config.get("key_env"), provider_config.get("api_key_env"),
+    source_model.get("key_env") if isinstance(source_model, dict) else None,
+    source_model.get("api_key_env") if isinstance(source_model, dict) else None,
+):
+    name = text(value)
+    if name and name not in credential_env:
+        credential_env.append(name)
+
+dependency_env = []
+if provider_key:
+    try:
+        from hermes_cli.provider_catalog import provider_catalog_by_slug
+        descriptor = provider_catalog_by_slug().get(provider_key)
+        if descriptor:
+            if not credential_env:
+                for name in descriptor.api_key_env_vars:
+                    if text(name) and text(name) not in credential_env:
+                        credential_env.append(text(name))
+            base_url_env = text(descriptor.base_url_env_var)
+            if base_url_env:
+                dependency_env.append(base_url_env)
+    except Exception:
+        pass
+
+env_reference = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
+def collect_env_references(value):
+    if isinstance(value, str):
+        for name in env_reference.findall(value):
+            if name not in dependency_env:
+                dependency_env.append(name)
+    elif isinstance(value, dict):
+        for nested in value.values():
+            collect_env_references(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            collect_env_references(nested)
+
+collect_env_references(selected_model)
+collect_env_references(provider_config)
+
+source_env = dotenv_values(source_home / ".env", interpolate=False)
+target_env_path = target_home / ".env"
+target_env_path.write_text(
+    "# Per-profile secrets copied for the inherited primary model.\n"
+    "# Other profile credentials are intentionally not inherited.\n",
+    encoding="utf-8",
+)
+os.chmod(target_env_path, 0o600)
+for name in credential_env:
+    value = text(source_env.get(name) or os.environ.get(name))
+    if value:
+        set_key(str(target_env_path), name, value, quote_mode="always")
+        break
+for name in dependency_env:
+    if name in credential_env:
+        continue
+    value = text(source_env.get(name) or os.environ.get(name))
+    if value:
+        set_key(str(target_env_path), name, value, quote_mode="always")
+os.chmod(target_env_path, 0o600)
 `
 
 func (l *logic) ListInstanceBots(ctx pctx.Context, instanceID string) (*transport.ListInstanceBotsResponse, error) {
@@ -428,16 +622,17 @@ func projectHermesProfiles(profiles []hermesProfileRecord, instanceID, defaultNa
 		}
 		modifiedAt, _ := time.Parse(time.RFC3339Nano, profile.ModifiedAt)
 		items = append(items, &transport.InstanceBotResponse{
-			BotID:       botID,
-			InstanceID:  instanceID,
-			ProfileID:   profileID,
-			Name:        name,
-			Description: profile.Description,
-			IsDefault:   isDefault,
-			Status:      instanceBotStatusReady,
-			CreatedFrom: instanceBotCreatedFromBlank,
-			CreatedAt:   modifiedAt,
-			UpdatedAt:   modifiedAt,
+			BotID:          botID,
+			InstanceID:     instanceID,
+			ProfileID:      profileID,
+			Name:           name,
+			Description:    profile.Description,
+			IsDefault:      isDefault,
+			Status:         instanceBotStatusReady,
+			GatewayRunning: profile.GatewayRunning,
+			CreatedFrom:    instanceBotCreatedFromBlank,
+			CreatedAt:      modifiedAt,
+			UpdatedAt:      modifiedAt,
 		})
 	}
 	return items
@@ -576,6 +771,15 @@ func buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, na
 				shellQuote(sanitizeClonedProfileEnvScript)+" \"$hermes_home/profiles/"+profileID+"/.env\"",
 			),
 		)
+	} else {
+		commands = append(commands, fmt.Sprintf(
+			"hermes_home=${HERMES_HOME:-$HOME/.hermes}; %s %s %s %s %s",
+			`"$hermes_home/hermes-agent/venv/bin/python"`,
+			shellQuote("-c"),
+			shellQuote(copyHermesPrimaryModelScript),
+			`"$hermes_home"`,
+			`"$hermes_home/profiles/`+profileID+`"`,
+		))
 	}
 	if initialSoul != "" {
 		commands = append(commands, fmt.Sprintf(

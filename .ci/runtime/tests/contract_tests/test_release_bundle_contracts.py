@@ -156,6 +156,34 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_sandbox_workers_use_isolated_pod_networking(self) -> None:
+        documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "sandbox/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+
+        for kind, name in (
+            ("Deployment", "sandbox-worker"),
+            ("StatefulSet", "sandbox-worker-sharded"),
+        ):
+            with self.subTest(kind=kind, name=name):
+                workload = next(
+                    document
+                    for document in documents
+                    if document.get("kind") == kind
+                    and (document.get("metadata") or {}).get("name") == name
+                )
+                pod_spec = workload["spec"]["template"]["spec"]
+                self.assertFalse(pod_spec.get("hostNetwork", False))
+                self.assertNotEqual(pod_spec.get("dnsPolicy"), "ClusterFirstWithHostNet")
+                self.assertNotIn("hostAliases", pod_spec)
+
+        update_script = (REPO_ROOT / "sandbox/scripts/update-image.sh").read_text()
+        for inherited_field in ('"hostNetwork"', '"dnsPolicy"', '"hostAliases"'):
+            with self.subTest(update_image_inherited_field=inherited_field):
+                self.assertNotIn(inherited_field, update_script)
+
     def test_ctl_production_schema_versions_match_environment_policy(self) -> None:
         manifest = load_manifest()
 
@@ -1157,6 +1185,56 @@ class ReleaseBundleContractTests(unittest.TestCase):
         ).read_text()
         self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
         self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
+
+    def test_referral_pipeline_keeps_manual_release_and_complete_beijing_closure(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
+        parameters = ((workflow.get("extends") or {}).get("parameters") or {})
+
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
+        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        manifest = load_manifest()
+        referral = load_bundle(manifest, "referral", "beijing-sandbox")
+        self.assertEqual(len(referral.publish_paths), 8)
+        self.assertIn("argocd/services/referral/beijing-sandbox/**", referral.publish_paths)
+        self.assertIn("argocd/services/referral/common/**", referral.publish_paths)
+        self.assertIn("argocd/apps/beijing-sandbox/sandbox-family-appset.yaml", referral.publish_paths)
+        self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/referral.yaml", referral.publish_paths)
+        self.assertIn("argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml", referral.publish_paths)
+
+        overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/beijing-sandbox/kustomization.yaml").read_text()
+        )
+        patches = overlay.get("patches") or []
+        deployment_patch = next(
+            item["patch"]
+            for item in patches
+            if (item.get("target") or {}).get("name") == "referral-worker"
+        )
+        self.assertIn("path: /spec/replicas", deployment_patch)
+        self.assertIn("value: 2", deployment_patch)
+
+        config_patch = next(
+            item["patch"]
+            for item in patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", config_patch)
+        self.assertIn('value: "true"', config_patch)
+
+        auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/beijing-sandbox/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', auth_patch)
+
+        ctl_overlay = (
+            REPO_ROOT / "argocd/services/ctl/beijing-sandbox/kustomization.yaml"
+        ).read_text()
+        self.assertIn("name: REFERRAL_ENABLED", ctl_overlay)
+        self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", ctl_overlay)
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()

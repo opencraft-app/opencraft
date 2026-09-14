@@ -25,7 +25,10 @@ const inviteCodeCollisionRetries = 5
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	urlPolicy  URLPolicy
 }
+
+type URLPolicy func(*url.URL) error
 
 type SetupInfo struct {
 	Status       bool   `json:"status"`
@@ -274,10 +277,18 @@ type UserSubscription struct {
 }
 
 func NewClient(baseURL string, httpClient *http.Client) *Client {
+	return newClient(baseURL, httpClient, nil)
+}
+
+func NewClientWithURLPolicy(baseURL string, httpClient *http.Client, policy URLPolicy) *Client {
+	return newClient(baseURL, httpClient, policy)
+}
+
+func newClient(baseURL string, httpClient *http.Client, policy URLPolicy) *Client {
 	if httpClient == nil {
 		jar, _ := cookiejar.New(nil)
 		httpClient = &http.Client{Timeout: 15 * time.Second, Jar: jar}
-	} else if httpClient.Jar == nil || httpClient.Timeout == 0 {
+	} else {
 		copied := *httpClient
 		if copied.Jar == nil {
 			jar, _ := cookiejar.New(nil)
@@ -288,9 +299,27 @@ func NewClient(baseURL string, httpClient *http.Client) *Client {
 		}
 		httpClient = &copied
 	}
+	if policy != nil {
+		copied := *httpClient
+		previousCheckRedirect := copied.CheckRedirect
+		copied.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+			if err := policy(request.URL); err != nil {
+				return err
+			}
+			if previousCheckRedirect != nil {
+				return previousCheckRedirect(request, via)
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		}
+		httpClient = &copied
+	}
 	return &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		httpClient: httpClient,
+		urlPolicy:  policy,
 	}
 }
 
@@ -368,7 +397,7 @@ func (c *Client) isolatedSessionClient() *Client {
 	copied := *c.httpClient
 	jar, _ := cookiejar.New(nil)
 	copied.Jar = jar
-	return &Client{baseURL: c.baseURL, httpClient: &copied}
+	return &Client{baseURL: c.baseURL, httpClient: &copied, urlPolicy: c.urlPolicy}
 }
 
 func (c *Client) Complete2FALogin(ctx context.Context, flowToken string, code string) (Session, error) {
@@ -1178,6 +1207,11 @@ func (c *Client) do(ctx context.Context, method string, path string, headers map
 	if err != nil {
 		return err
 	}
+	if c.urlPolicy != nil {
+		if err := c.urlPolicy(req.URL); err != nil {
+			return err
+		}
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -1215,6 +1249,11 @@ func (c *Client) DoRaw(ctx context.Context, method string, path string, rawQuery
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
+	}
+	if c.urlPolicy != nil {
+		if err := c.urlPolicy(req.URL); err != nil {
+			return nil, nil, err
+		}
 	}
 	req.Header = headers.Clone()
 	req.ContentLength = int64(len(body))

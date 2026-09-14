@@ -14,10 +14,10 @@ import (
 //
 // 鉴权决策树：
 //
-//	if X-User-Id 存在:
-//	    走原有 Bearer 链路，userID = header value（不消费 ticket，A8 协同）
-//	elif req.AuthCode 非空:
+//	if req.AuthCode 非空:
 //	    走 ticket 链路：authcode.DefaultStore.Consume → 校验 deal_names + pass_id → 提取 user_id
+//	elif X-User-Id 存在:
+//	    走原有 Bearer 链路，userID = header value
 //	else:
 //	    返 401 unauthorized
 //
@@ -35,12 +35,8 @@ import (
 // RenewPassOrderUrl 内部用 resource.ZapLogger 自起 logger，trace_id 单独管理；
 // userID 字符串透传即可。
 func resolveOrderUrlAuth(r *http.Request, authCode string, reqDealNames []string, passID string) (string, error) {
-	// 路径 1：X-User-Id 存在 → 走原有 Bearer 链路
-	if userID := requestUserID(r); userID != "" {
-		return userID, nil
-	}
-
-	// 路径 2：缺 X-User-Id 但带 auth_code → 走 ticket 反查
+	// 路径 1：带 auth_code → 优先走 ticket 反查。扫码 OAuth 可能同时注入付款人的
+	// 登录态，但订单归属必须以 PC 下单时签发的 ticket 为准。
 	if authCode != "" {
 		store := authcode.DefaultStore
 		if store == nil {
@@ -65,6 +61,11 @@ func resolveOrderUrlAuth(r *http.Request, authCode string, reqDealNames []string
 			return "", errcode.ErrAuthCodeMismatch
 		}
 		return ticket.UserID, nil
+	}
+
+	// 路径 2：缺 auth_code 但有 X-User-Id → 兼容 PC 端原有 Bearer 链路。
+	if userID := requestUserID(r); userID != "" {
+		return userID, nil
 	}
 
 	// 路径 3：双缺失

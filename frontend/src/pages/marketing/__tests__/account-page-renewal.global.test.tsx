@@ -69,6 +69,7 @@ vi.mock("@/i18n/t", () => ({
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/lib/region", () => ({
@@ -274,6 +275,18 @@ describe("AccountPage global renewal action", () => {
     expect(screen.queryByRole("button", { name: "查看升级进度" })).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
+  });
+
+  it("preserves the plan details with an upgrading status and pauses renewal", () => {
+    activePass = { ...buildActivePass(), status: "modifying" };
+    renderAccountPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("套餐升级中");
+    expect(screen.getByText(activePass.bundle_name)).toBeInTheDocument();
+    expect(screen.getByText("订阅有效期")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "立即续费" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "立即创建" })).not.toBeInTheDocument();
   });
 
   it("opens the global renewal flow when paid billing is enabled", async () => {

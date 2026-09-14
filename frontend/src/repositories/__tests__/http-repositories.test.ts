@@ -570,7 +570,7 @@ describe("http repositories auth token bootstrap", () => {
       if (url.endsWith("/v1/instances/ins_multi/bots")) {
         return jsonResponse({ items: [
           {
-            bot_id: "bot_main",
+            bot_id: "ins_multi",
             instance_id: "ins_multi",
             profile_id: "main",
             name: "主 Bot",
@@ -594,7 +594,7 @@ describe("http repositories auth token bootstrap", () => {
             is_default: false,
             status: "ready",
             created_from: "clone",
-            source_bot_id: "bot_main",
+            source_bot_id: "ins_multi",
             created_at: "2026-09-09T01:00:00Z",
             updated_at: "2026-09-09T01:00:00Z",
           },
@@ -609,7 +609,7 @@ describe("http repositories auth token bootstrap", () => {
           is_default: false,
           status: "ready",
           created_from: "clone",
-          source_bot_id: "bot_main",
+          source_bot_id: "ins_multi",
           created_at: "2026-09-09T01:00:00Z",
           updated_at: "2026-09-09T02:00:00Z",
         });
@@ -645,7 +645,7 @@ describe("http repositories auth token bootstrap", () => {
     const snapshot = await repositories.bots.getDashboardSnapshot("live");
     expect(snapshot.bots).toEqual([
       expect.objectContaining({
-        id: "bot_main",
+        id: "ins_multi",
         instanceId: "ins_multi",
         profileId: "main",
         isDefault: true,
@@ -655,7 +655,7 @@ describe("http repositories auth token bootstrap", () => {
         id: "bot_sales",
         instanceId: "ins_multi",
         profileId: "sales-123",
-        sourceBotId: "bot_main",
+        sourceBotId: "ins_multi",
       }),
     ]);
 
@@ -676,7 +676,7 @@ describe("http repositories auth token bootstrap", () => {
       url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",
       method: "DELETE",
     });
-    await repositories.bots.destroyBot("bot_main");
+    await repositories.bots.destroyBot("ins_multi");
     expect(calls[calls.length - 1]).toEqual({
       url: "https://lightclaw.tech/v1/instances/ins_multi?require_single_bot=true",
       method: "DELETE",
@@ -802,6 +802,184 @@ describe("http repositories auth token bootstrap", () => {
       expect.objectContaining({ id: "ins_provisioning", status: "provisioning" }),
     ]);
     expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
+  });
+
+  it.skipIf(isGlobal)("marks siblings as unknown when the Bot list falls back to the instance projection", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_paused",
+              status: "Paused",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request while the instance is paused: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    // The nested /bots call is skipped, so the list collapses to the root Bot and
+    // cannot prove whether siblings exist. The UI relies on this reason to warn the
+    // user before deleting the whole Agent.
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_paused", siblingsUnknown: "instance_stopped" }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("marks siblings as unavailable rather than stopped when a running instance cannot list Bots", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        // Older backends answer 404 here; the instance itself is healthy, so the UI
+        // must not tell the user to start it.
+        return new Response(JSON.stringify({ code: "NOT_FOUND", message: "not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_running", siblingsUnknown: "bot_list_unavailable" }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("does not mark siblings as unknown when the Bot list came from /bots", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            items: [{
+              bot_id: "ins_running",
+              instance_id: "ins_running",
+              profile_id: "main",
+              name: "主 Bot",
+              is_default: true,
+              status: "ready",
+              created_from: "blank",
+              created_at: "2026-09-10T09:25:38Z",
+              updated_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_running", siblingsUnknown: undefined }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("keeps the root bot visible while its pass is modifying", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_modifying",
+              name: "升配中的 Bot",
+              status: "Running",
+              created_at: "2026-09-11T00:00:00Z",
+            }],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ code: "PASS_MODIFYING", message: "pass is modifying" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_modifying",
+        name: "升配中的 Bot",
+        status: "active",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
@@ -1651,8 +1829,13 @@ describe("http repositories auth token bootstrap", () => {
     const repositories = createHttpRepositories("https://lightclaw.tech");
     await repositories.bots.destroyBot("ins_delete_me");
 
+    // Without a prior listBots() the scope cache is empty, so the caller is treated as an
+    // unhydrated main-Bot delete. Domestic builds must still go through the Bot guard —
+    // sibling Bots may exist server-side even though this client never listed them.
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/v1/instances/ins_delete_me",
+      isGlobal
+        ? "https://lightclaw.tech/v1/instances/ins_delete_me"
+        : "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
       expect.objectContaining({
         method: "DELETE",
       }),

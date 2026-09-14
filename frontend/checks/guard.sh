@@ -84,6 +84,7 @@ echo "============================================================"
   scripts/frontend-artifact.test.ts \
   scripts/build-release-artifacts.test.ts \
   scripts/release-cloudflare-from-artifact.test.ts \
+  scripts/deploy-edgeone-pages.test.ts \
   scripts/release-edgeone-from-artifact.test.ts
 
 echo "============================================================"
