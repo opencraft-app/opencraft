@@ -28,6 +28,7 @@ import (
 	snapshotlogic "ctl/pkg/logic/snapshot"
 	websitelogic "ctl/pkg/logic/website"
 	"ctl/pkg/metric"
+	modelinstance "ctl/pkg/model/instance"
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
@@ -54,6 +55,18 @@ type apiServer struct {
 
 type instanceHandler struct {
 	logic instancelogic.Logic
+}
+
+// instanceConfirmedNotRunning reports whether the instance is known to be in a
+// non-running state. Used to decide if a failed Profile list read may be
+// ignored: a stopped instance can never serve that list, so it must stay
+// deletable, while a running one has to fail closed.
+func instanceConfirmedNotRunning(ctx pctx.Context, logic instancelogic.Logic, instanceID string) bool {
+	resp, err := logic.GetInstance(ctx, instanceID)
+	if err != nil || resp == nil {
+		return false
+	}
+	return resp.Status != modelinstance.InstanceStatusRunning
 }
 
 func readRuntimeFeatureFlag(name string, fallback bool) bool {
@@ -655,16 +668,25 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
-		if r.URL.Query().Get("require_single_bot") == "true" {
-			bots, err := h.logic.ListInstanceBots(ctx, instanceID)
-			if err != nil {
-				writeHTTPError(w, r, err)
-				return
-			}
+		bots, botsErr := h.logic.ListInstanceBots(ctx, instanceID)
+		switch {
+		case botsErr == nil:
 			if bots != nil && len(bots.Items) > 1 {
 				writeHTTPError(w, r, errcode.ErrInstanceBotsRemain)
 				return
 			}
+		case instanceConfirmedNotRunning(ctx, h.logic, instanceID):
+			// A stopped instance can never serve the Profile list, and must stay
+			// deletable. Only skip the guard once that is confirmed.
+			ctx.Logger().Warn("destroy instance: bot guard skipped, instance not running",
+				zap.String("instance_id", instanceID),
+				zap.Error(botsErr),
+			)
+		default:
+			// Instance is running (or its state is unknown): a transient read failure
+			// must not let the destroy proceed and take the remaining Bots with it.
+			writeHTTPError(w, r, botsErr)
+			return
 		}
 		resp, err := h.logic.DestroyInstance(ctx, instanceID)
 		if err != nil {

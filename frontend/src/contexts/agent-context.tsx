@@ -21,6 +21,7 @@ export interface OpenClawBot {
   instanceId?: string;
   profileId?: string;
   isDefault?: boolean;
+  gatewayRunning?: boolean;
   description?: string;
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;
@@ -98,6 +99,7 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
   instanceId: bot.instanceId ?? bot.id,
   profileId: bot.profileId ?? "main",
   isDefault: bot.isDefault ?? true,
+  gatewayRunning: bot.gatewayRunning,
   description: bot.description,
   createdFrom: bot.createdFrom,
   sourceBotId: bot.sourceBotId,

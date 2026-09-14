@@ -56,6 +56,7 @@ export interface Bot {
   instanceId?: string;
   profileId?: string;
   isDefault?: boolean;
+  gatewayRunning?: boolean;
   description?: string;
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;

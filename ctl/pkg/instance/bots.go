@@ -32,7 +32,7 @@ type hermesProfileRecord struct {
 	DisplayName    string `json:"display_name"`
 	Description    string `json:"description"`
 	IsDefault      bool   `json:"is_default"`
-	GatewayRunning bool   `json:"gateway_running"`
+	GatewayRunning *bool  `json:"gateway_running"`
 	ModifiedAt     string `json:"modified_at"`
 }
 
@@ -100,7 +100,7 @@ async def main():
             "display_name": profile.get("display_name", ""),
             "description": profile.get("description", ""),
             "is_default": bool(profile.get("is_default", False)),
-            "gateway_running": bool(profile.get("gateway_running", False)),
+            "gateway_running": bool(profile["gateway_running"]) if "gateway_running" in profile else None,
             "modified_at": modified,
         })
     print(json.dumps({"items": items}, ensure_ascii=False))
@@ -622,16 +622,17 @@ func projectHermesProfiles(profiles []hermesProfileRecord, instanceID, defaultNa
 		}
 		modifiedAt, _ := time.Parse(time.RFC3339Nano, profile.ModifiedAt)
 		items = append(items, &transport.InstanceBotResponse{
-			BotID:       botID,
-			InstanceID:  instanceID,
-			ProfileID:   profileID,
-			Name:        name,
-			Description: profile.Description,
-			IsDefault:   isDefault,
-			Status:      instanceBotStatusReady,
-			CreatedFrom: instanceBotCreatedFromBlank,
-			CreatedAt:   modifiedAt,
-			UpdatedAt:   modifiedAt,
+			BotID:          botID,
+			InstanceID:     instanceID,
+			ProfileID:      profileID,
+			Name:           name,
+			Description:    profile.Description,
+			IsDefault:      isDefault,
+			Status:         instanceBotStatusReady,
+			GatewayRunning: profile.GatewayRunning,
+			CreatedFrom:    instanceBotCreatedFromBlank,
+			CreatedAt:      modifiedAt,
+			UpdatedAt:      modifiedAt,
 		})
 	}
 	return items
