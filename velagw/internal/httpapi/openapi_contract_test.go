@@ -79,12 +79,18 @@ func TestOpenAPIIncludesControlPlaneChannelContract(t *testing.T) {
 	if len(applySchema.Properties["subscription_name"]) == 0 {
 		t.Fatal("ApplySubscriptionRequest missing subscription_name")
 	}
+	if len(applySchema.Properties["token_amount"]) == 0 {
+		t.Fatal("ApplySubscriptionRequest missing token_amount")
+	}
 	required := map[string]bool{}
 	for _, field := range applySchema.Required {
 		required[field] = true
 	}
 	if required["idempotency_key"] {
 		t.Fatal("ApplySubscriptionRequest idempotency_key must remain optional for legacy callers")
+	}
+	if required["plan_id"] {
+		t.Fatal("ApplySubscriptionRequest plan_id must be optional for direct promotional credit")
 	}
 }
 

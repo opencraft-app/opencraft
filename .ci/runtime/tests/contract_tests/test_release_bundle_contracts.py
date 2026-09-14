@@ -1186,6 +1186,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
         self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
 
+    def test_referral_pipeline_builds_without_preconditioned_release(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
+        parameters = ((workflow.get("extends") or {}).get("parameters") or {})
+
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
+        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
         actual_buildable: set[str] = set()

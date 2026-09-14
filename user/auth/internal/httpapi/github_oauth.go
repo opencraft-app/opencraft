@@ -216,6 +216,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	identity.RegistrationDisabled = h.githubOAuth.registrationDisabled
 	identity.ClientIP = ctx.ClientIP()
 	identity.ClientUA = ctx.Request.UserAgent()
@@ -248,6 +249,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 
 	logger.Info("github oauth callback succeeded", "user_id", session.User.ID)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "github", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
 	h.completeFederationSwitch(ctx, session.Token)

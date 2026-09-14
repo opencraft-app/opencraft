@@ -20,6 +20,7 @@ import (
 	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/logic/objectid"
 	bundlemodel "ctl/pkg/model/bundle"
+	"ctl/pkg/model/eventoutbox"
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
 	passmigrationmodel "ctl/pkg/model/passbillingmigration"
@@ -41,6 +42,7 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 const (
 	packageSubscriptionNamePrefix    = "package:"
 	freeCreditSubscriptionNamePrefix = "free-credit:"
+	maxFreeCreditAmount              = int64(1_000_000)
 	// International payment URL generation can include auth credential
 	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
 	// below the common 60-second edge timeout while leaving room for fallback.
@@ -57,6 +59,14 @@ func freeCreditSubscriptionName(source, idempotencyKey string) string {
 		source = "manual"
 	}
 	return freeCreditSubscriptionNamePrefix + source + ":" + strings.TrimSpace(idempotencyKey)
+}
+
+func freeCreditTokens(creditAmount int64) (int64, error) {
+	if creditAmount <= 0 || creditAmount > maxFreeCreditAmount {
+		return 0, errcode.Wrap(errcode.ErrPassInvalidParam,
+			"credit_amount must be between 1 and %d", maxFreeCreditAmount)
+	}
+	return bundlelogic.CreditToTokens(creditAmount), nil
 }
 
 type newPassSubscriptionRequest struct {
@@ -898,6 +908,11 @@ func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*Pa
 			if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
 				return err
 			}
+			if referralEventsEnabled() {
+				if err := insertFirstPaidEvent(tx, passEntity.UserID, passID, targetBundleID, dealName, time.Now().UTC()); err != nil {
+					return fmt.Errorf("insert paid transfer event: %w", err)
+				}
+			}
 			saved = passEntity
 			return nil
 		}
@@ -925,6 +940,11 @@ func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*Pa
 		if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
 			return err
 		}
+		if referralEventsEnabled() {
+			if err := insertFirstPaidEvent(tx, passEntity.UserID, passID, targetBundleID, dealName, time.Now().UTC()); err != nil {
+				return fmt.Errorf("insert paid transfer event: %w", err)
+			}
+		}
 
 		passEntity.BundleID = targetBundleID
 		passEntity.Uin = req.NewUin
@@ -948,11 +968,17 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 	if userID == "" {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required")
 	}
-	if planID == "" {
-		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "plan_id is required")
+	if planID != "" && req.CreditAmount > 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "plan_id and credit_amount cannot both be set")
+	}
+	if planID == "" && req.CreditAmount <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "credit_amount is required when plan_id is empty")
 	}
 	if idempotencyKey == "" {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "idempotency_key is required")
+	}
+	if err := validateQualifyingPassForFreeCredit(req.QualifyingPassID, req.InviteeUserID); err != nil {
+		return nil, err
 	}
 	if !config.LLMGatewayEnabled() {
 		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "llmgateway is disabled")
@@ -967,10 +993,20 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
+	llm := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter()
+	tokenAmount := int64(0)
+	if planID == "" {
+		var tokenErr error
+		tokenAmount, tokenErr = freeCreditTokens(req.CreditAmount)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
+	}
+	sub, err := llm.ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 		IdempotencyKey:   idempotencyKey,
 		UserID:           userID,
 		PlanID:           planID,
+		TokenAmount:      tokenAmount,
 		SubscriptionName: subscriptionName,
 		IsUnique:         false,
 	})
@@ -988,6 +1024,26 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 		SubscriptionName: subscriptionName,
 		PeriodEnd:        periodEnd,
 	}, nil
+}
+
+func validateQualifyingPassForFreeCredit(passID, inviteeUserID string) error {
+	passID = strings.TrimSpace(passID)
+	inviteeUserID = strings.TrimSpace(inviteeUserID)
+	if passID == "" && inviteeUserID == "" {
+		return nil
+	}
+	if passID == "" || inviteeUserID == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "qualifying_pass_id and invitee_user_id must be provided together")
+	}
+	qualifyingPass, err := modelfactory.DefaultDaoFactory.PassDao(nil).GetByPassID(passID)
+	if err != nil {
+		return errcode.Wrap(errcode.ErrPassNotFound, "qualifying pass not found: %v", err)
+	}
+	if qualifyingPass.UserID != inviteeUserID || qualifyingPass.Status != passmodel.StatusActive ||
+		qualifyingPass.DeletedTime != nil || !qualifyingPass.ExpiredTime.After(time.Now().UTC()) {
+		return errcode.Wrap(errcode.ErrPassNotActive, "qualifying pass is no longer active")
+	}
+	return nil
 }
 
 func findActivePassForFreeCredit(userID string, now time.Time) (*passmodel.Entity, error) {
@@ -1598,7 +1654,14 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		RenewFlag:   normalizeCompletePassRenewFlag(req.RenewFlag),
 		Status:      passmodel.StatusActive, // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
 	}
-	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
+	var firstPaidEvent *eventoutbox.Event
+	if referralEventsEnabled() && bundle.BundleType != bundlemodel.BundleTypeFree {
+		firstPaidEvent, err = buildFirstPaidEvent(req.UserID, passID, req.BundleID, req.DealName, now)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := passDao.CreatePassWithQuotaAndEvent(entity, req.UserID, agentQuota, firstPaidEvent); err != nil {
 		return nil, compensateEnsuredEntitlement(
 			logger,
 			req.UserID,

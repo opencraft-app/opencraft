@@ -7078,7 +7078,14 @@
             "type": "string"
           },
           "plan_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Existing entitlement Plan ID. Mutually exclusive with token_amount."
+          },
+          "token_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "Direct promotional token grant. VelaGW automatically owns and synchronizes the internal Plan. Mutually exclusive with plan_id."
           },
           "subscription_name": {
             "type": "string",
@@ -7119,8 +7126,7 @@
           }
         },
         "required": [
-          "user_id",
-          "plan_id"
+          "user_id"
         ]
       },
       "CancelSubscriptionRequest": {

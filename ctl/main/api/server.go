@@ -217,6 +217,7 @@ func newRouterWithWebsiteAuth(
 				"paidBillingEnabled":               true,
 				"realnamePhoneVerificationEnabled": true,
 				"multiBotEnabled":                  readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true),
+				"referralEnabled":                  readRuntimeFeatureFlag("REFERRAL_ENABLED", false),
 			},
 		})
 	})
@@ -416,6 +417,7 @@ func normalizePath(path string) string {
 		"/admin/api/ctl/dianshi/orders",
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete",
+		"/internal/ctl/passes/free-credit",
 		"/cloudapi":
 		return path
 	}

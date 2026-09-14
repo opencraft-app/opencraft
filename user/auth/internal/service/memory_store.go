@@ -215,7 +215,7 @@ func (s *MemoryStore) CompleteSMSVerification(_ context.Context, input VerifySMS
 	return s.createSessionLocked(user, now, sessionTTL, AuthMethodSMS)
 }
 
-func (s *MemoryStore) FindOrCreatePhoneAuthUser(_ context.Context, phone string, name string, now time.Time) (User, error) {
+func (s *MemoryStore) FindOrCreatePhoneAuthUser(_ context.Context, phone string, name string, _ string, now time.Time) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, created := s.findOrCreatePhoneUserLocked(phone, strings.TrimSpace(name), now, false)

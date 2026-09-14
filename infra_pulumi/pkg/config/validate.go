@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func ValidateInventory(inv *Inventory) error {
 	if inv == nil {
@@ -59,6 +62,55 @@ func ValidateInventory(inv *Inventory) error {
 				return fmt.Errorf("inventory missing stacks.connectivity.private_link.consumer_endpoint_name")
 			}
 		}
+	}
+	if err := validatePulsarInventory(inv.Stacks.Pulsar); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePulsarInventory(inv PulsarInventory) error {
+	if !inv.Enabled {
+		return nil
+	}
+	required := map[string]string{
+		"existing_cluster_id":     inv.ExistingClusterID,
+		"broker_url":              inv.BrokerURL,
+		"expected_cluster_name":   inv.ExpectedClusterName,
+		"expected_product_name":   inv.ExpectedProductName,
+		"expected_vpc_id":         inv.ExpectedVPCID,
+		"expected_subnet_id":      inv.ExpectedSubnetID,
+		"namespace":               inv.Namespace,
+		"topic":                   inv.Topic,
+		"dead_letter_topic":       inv.DeadLetterTopic,
+		"user_auth_producer_role": inv.UserAuthProducerRole,
+		"ctl_producer_role":       inv.CTLProducerRole,
+		"referral_consumer_role":  inv.ReferralConsumerRole,
+		"user_auth_ssm_secret":    inv.UserAuthSSMSecret,
+		"ctl_ssm_secret":          inv.CTLSSMSecret,
+		"referral_ssm_secret":     inv.ReferralSSMSecret,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("inventory missing stacks.pulsar.%s", field)
+		}
+	}
+	if len(inv.ExpectedZoneIDs) == 0 {
+		return fmt.Errorf("inventory missing stacks.pulsar.expected_zone_ids")
+	}
+	for _, zoneID := range inv.ExpectedZoneIDs {
+		if zoneID <= 0 {
+			return fmt.Errorf("inventory stacks.pulsar.expected_zone_ids must contain positive values")
+		}
+	}
+	if inv.MessageTTLSeconds <= 0 {
+		return fmt.Errorf("inventory stacks.pulsar.message_ttl_seconds must be positive")
+	}
+	if inv.RetentionMinutes < 0 {
+		return fmt.Errorf("inventory stacks.pulsar.retention_minutes must not be negative")
+	}
+	if inv.RetentionSizeMB < 0 {
+		return fmt.Errorf("inventory stacks.pulsar.retention_size_mb must not be negative")
 	}
 	return nil
 }

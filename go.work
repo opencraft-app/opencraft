@@ -10,6 +10,7 @@ use (
 	./nextgen-dashboard
 	./nextgen-dashboard-client
 	./payment
+	./referral
 	./service-gateway
 	./shared/cloudladdertransport
 	./site-gateway

@@ -89,6 +89,32 @@ INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl preview --stack be
 INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl up --stack beijing-sandbox
 ```
 
+北京 Referral 使用现有 TDMQ Pulsar P2 集群。集群购买生命周期保持在 Pulumi 之外，
+`pulsar` scope 只管理 namespace、主 topic、DLQ、三个隔离角色及权限：
+
+```bash
+INFRA_COMPONENT_SCOPE=pulsar GOWORK=off go run ./cmd/infractl preview --stack beijing-sandbox
+```
+
+首次创建子资源前由 preview 通过腾讯云只读 API 核对 inventory 中的集群 ID、名称、规格、
+可用区、VPC、子网和 broker endpoint。未经 preview 审阅不得执行 `up`。
+
+角色创建后，用同一参数化命令把角色 Token 安全合并到该环境的 Auth、CTL 和 Referral SSM：
+
+```bash
+GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack beijing-sandbox
+GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack beijing-sandbox --apply
+```
+
+命令默认只预检，显式 `--apply` 才写入；普通重跑不轮换 Token。只有明确进行
+角色 Token 轮换时才追加 `--allow-token-change`。它不会打印 Token，也不会把 Token 写入
+Pulumi state 或本地文件。Referral SSM 不存在时可创建仅含 consumer Token 的初始版本；
+Auth/CTL SSM 必须预先存在，以避免命令误建不完整的核心服务 Secret。
+
+上海首次启用时，在 `shprod` inventory 增加独立集群或经批准共享集群的完整 Pulsar 配置、
+角色和三个 SSM 名称，先运行 `preview/up`，再预检并以 `--stack shprod --apply` 执行。普通上海
+镜像发布不执行该 bootstrap。
+
 ### 5. 只同步部署输出
 
 如果云资源不需要变更，只想把最新 infra 输出重新写回部署层：

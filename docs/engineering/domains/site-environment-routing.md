@@ -86,6 +86,13 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 登录态头像菜单的主要入口固定为“我的智能体伙伴”与“账号管理”，并在底部保留退出登录；个人工作台仍从 Agent 控制台左侧导航进入，不在头像菜单重复展示。
 - 国际站英文使用 `My AI Companion` 与 `Account Settings`，避免生硬的复数伙伴表达和后台管理员语气。
 
+## 邀请返利环境边界
+
+- 邀请返利首期只在 `beijing-sandbox` 配置。前端入口消费 CTL runtime flag，默认关闭；只有 Referral
+  API/worker、Pulsar、数据库、VelaGW 直接送积分能力和 Gateway 全部就绪后才显式开启。上海和新加坡不继承北京路由。
+- 每个后续环境在自己的 inventory 中声明集群、namespace、角色和 SSM 目标，并通过参数化 bootstrap
+  交付独立 Token。跨环境复制北京 Token、根据 Region 猜 Secret 名或用 UI 隐藏代替 Gateway 边界均不允许。
+
 ## Agent 高级设置展示边界
 
 - 高级设置初次读取使用面向用户的加载文案：中文为“正在加载设置…”，英文为 `Loading settings...`；加载结果、错误和重试逻辑保持不变。

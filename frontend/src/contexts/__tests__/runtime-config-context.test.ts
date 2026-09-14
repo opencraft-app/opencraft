@@ -18,6 +18,7 @@ describe("runtime config normalization", () => {
     expect(normalizeRuntimeConfig(null).features.realnamePhoneVerificationEnabled).toBe(true);
     expect(normalizeRuntimeConfig(null).features.zeroTokenAutomationsEnabled).toBe(true);
     expect(normalizeRuntimeConfig(null).features.multiBotEnabled).toBe(true);
+    expect(normalizeRuntimeConfig(null).features.referralEnabled).toBe(false);
     expect(normalizeRuntimeConfig({}).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: null }).features.paidBillingEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { paidBillingEnabled: "true" } }).features.paidBillingEnabled).toBe(false);
@@ -26,6 +27,12 @@ describe("runtime config normalization", () => {
         .features
         .realnamePhoneVerificationEnabled,
     ).toBe(false);
+  });
+
+  it("enables referrals only for an explicit runtime true", () => {
+    expect(normalizeRuntimeConfig({ features: { referralEnabled: true } }).features.referralEnabled).toBe(true);
+    expect(normalizeRuntimeConfig({ features: { referralEnabled: false } }).features.referralEnabled).toBe(false);
+    expect(normalizeRuntimeConfig({ features: { referralEnabled: "true" } }).features.referralEnabled).toBe(false);
   });
 
   it("defaults multi-bot on but accepts an explicit runtime rollback", () => {
