@@ -156,6 +156,34 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_sandbox_workers_use_isolated_pod_networking(self) -> None:
+        documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "sandbox/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+
+        for kind, name in (
+            ("Deployment", "sandbox-worker"),
+            ("StatefulSet", "sandbox-worker-sharded"),
+        ):
+            with self.subTest(kind=kind, name=name):
+                workload = next(
+                    document
+                    for document in documents
+                    if document.get("kind") == kind
+                    and (document.get("metadata") or {}).get("name") == name
+                )
+                pod_spec = workload["spec"]["template"]["spec"]
+                self.assertFalse(pod_spec.get("hostNetwork", False))
+                self.assertNotEqual(pod_spec.get("dnsPolicy"), "ClusterFirstWithHostNet")
+                self.assertNotIn("hostAliases", pod_spec)
+
+        update_script = (REPO_ROOT / "sandbox/scripts/update-image.sh").read_text()
+        for inherited_field in ('"hostNetwork"', '"dnsPolicy"', '"hostAliases"'):
+            with self.subTest(update_image_inherited_field=inherited_field):
+                self.assertNotIn(inherited_field, update_script)
+
     def test_ctl_production_schema_versions_match_environment_policy(self) -> None:
         manifest = load_manifest()
 
