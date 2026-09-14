@@ -23,6 +23,9 @@
   回调采用相同的同步销毁语义。
 - 积分包用量使用定点小数存储，并通过带 CAS 租约的每日 outbox 调用 `sendResource`；普通零用量
   也要上报，到期或已归档资源不再推量。
+- 计费通过 `getUsedAmount` 查询积分包用量时，购买周期以已完成的 `create_resource` Flow 原始请求
+  为审计真源，并核对资源 ID、UIN、AppID、地域、付费模式和商品定义。该查询不能依赖
+  `trade_order`，因为计费后台直接下单并支付的合法链路可能只有完整 Flow 而没有本地订单记录。
 - Trade migration 版本号必须唯一；积分包定义表使用独立版本，不能与既有 Pass/变配 migration
   共用版本号。北京测试首次初始化时必须先完成 Trade/Credit schema migration，再分别用对应库账号
   幂等执行 `scripts/seed_trade_beijing_sandbox_credit_definitions.sql` 和

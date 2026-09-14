@@ -18,6 +18,7 @@ type fakeFlowStore struct {
 	acquireType           string
 	acquireAppID          string
 	deletedID             int64
+	getFlowFunc           func(context.Context, string, string, string) (*store.Flow, error)
 	tryAcquireIsolateFunc func(context.Context, string, string, string, string, []byte, *string) (bool, *store.Flow, error)
 }
 
@@ -62,7 +63,10 @@ func (f *fakeFlowStore) DeleteByID(_ context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeFlowStore) GetFlow(context.Context, string, string, string) (*store.Flow, error) {
+func (f *fakeFlowStore) GetFlow(ctx context.Context, dealName, flowType, appID string) (*store.Flow, error) {
+	if f.getFlowFunc != nil {
+		return f.getFlowFunc(ctx, dealName, flowType, appID)
+	}
 	return &store.Flow{ID: 123, Status: store.FlowStatusInProgress}, nil
 }
 
@@ -109,23 +113,6 @@ func (c fakeCreditClient) IsolatePackage(ctx context.Context, packageID, reason 
 	return errors.New("not used")
 }
 
-type fakeOrderStore struct {
-	order *store.TradeOrder
-}
-
-func (s fakeOrderStore) GetOrderByDealName(_ context.Context, dealName string) (*store.TradeOrder, error) {
-	if dealName != "deal-1" {
-		return nil, store.ErrTradeOrderNotFound
-	}
-	if s.order != nil {
-		return s.order, nil
-	}
-	return &store.TradeOrder{
-		DealName: dealName, BundleID: "credit_100", Uin: "700000164995", AppID: "1300000001",
-		ResourceType: "credit_package", Period: 3, TimeUnit: "m",
-	}, nil
-}
-
 type fakeDefinitionStore struct{}
 
 func (fakeDefinitionStore) GetCreditDefinitionByProductID(_ context.Context, productID string) (*store.CreditDefinition, error) {
@@ -153,12 +140,12 @@ func (fakeDefinitionStore) ListCreditDefinitions(_ context.Context, productCode,
 	return []*store.CreditDefinition{def}, nil
 }
 
-func TestGetUsedAmountReturnsRealOrderPeriodAndRatio(t *testing.T) {
+func TestGetUsedAmountUsesCompletedCreateFlowWhenTradeOrderIsMissing(t *testing.T) {
 	handler := makeGetUsedAmountHandler(Deps{
+		FlowStore: completedCreditCreateFlow(t, "cpkg-test001"),
 		CreditClient: fakeCreditClient{used: map[string]creditclient.UsedAmountItem{
 			"cpkg-test001": {PackageID: "cpkg-test001", ProductID: "credit_100", DealName: "deal-1", UsedRatio: "0.2356"},
 		}},
-		OrderStore:            fakeOrderStore{},
 		CreditDefinitionStore: fakeDefinitionStore{},
 		Builder:               jifei.NewFrameworkBuilder("trade", "1.0"),
 	})
@@ -286,14 +273,11 @@ func TestGetUserResourcesReturnsCreditPackages(t *testing.T) {
 	}
 }
 
-func TestGetUsedAmountRejectsOrderOwnedByAnotherResource(t *testing.T) {
+func TestGetUsedAmountRejectsCreateFlowOwnedByAnotherResource(t *testing.T) {
 	handler := makeGetUsedAmountHandler(Deps{
+		FlowStore: completedCreditCreateFlow(t, "cpkg-other"),
 		CreditClient: fakeCreditClient{used: map[string]creditclient.UsedAmountItem{
 			"cpkg-test001": {PackageID: "cpkg-test001", ProductID: "credit_100", DealName: "deal-1", UsedRatio: "0.2356"},
-		}},
-		OrderStore: fakeOrderStore{order: &store.TradeOrder{
-			DealName: "deal-1", BundleID: "credit_other", Uin: "700000164995", AppID: "1300000001",
-			ResourceType: "credit_package", Period: 3, TimeUnit: "m",
 		}},
 		CreditDefinitionStore: fakeDefinitionStore{},
 		Builder:               jifei.NewFrameworkBuilder("trade", "1.0"),
@@ -305,8 +289,53 @@ func TestGetUsedAmountRejectsOrderOwnedByAnotherResource(t *testing.T) {
 		t.Fatalf("get used amount handler: %v", err)
 	}
 	if resp.ReturnCode == 0 {
-		t.Fatalf("mismatched order must fail: %+v", resp)
+		t.Fatalf("mismatched create flow must fail: %+v", resp)
 	}
+}
+
+func TestGetUsedAmountRequiresCompletedCreateFlow(t *testing.T) {
+	resourceID := "cpkg-test001"
+	handler := makeGetUsedAmountHandler(Deps{
+		FlowStore: &fakeFlowStore{getFlowFunc: func(context.Context, string, string, string) (*store.Flow, error) {
+			return &store.Flow{Status: store.FlowStatusInProgress, ResourceID: &resourceID}, nil
+		}},
+		CreditClient: fakeCreditClient{used: map[string]creditclient.UsedAmountItem{
+			resourceID: {PackageID: resourceID, ProductID: "credit_100", DealName: "deal-1", UsedRatio: "0.2356"},
+		}},
+		CreditDefinitionStore: fakeDefinitionStore{},
+		Builder:               jifei.NewFrameworkBuilder("trade", "1.0"),
+	})
+
+	resp, err := handler(context.Background(), json.RawMessage(`{"appId":1300000001,"uin":"700000164995","region":8,"payMode":1,"resourceIdList":["cpkg-test001"]}`))
+	if err != nil {
+		t.Fatalf("get used amount handler: %v", err)
+	}
+	if resp.ReturnCode != 610506 {
+		t.Fatalf("returnCode=%d, want 610506: %+v", resp.ReturnCode, resp)
+	}
+}
+
+func completedCreditCreateFlow(t *testing.T, resourceID string) *fakeFlowStore {
+	t.Helper()
+	requestBody := json.RawMessage(`{
+		"dealName":"deal-1","bigDealId":"big-1","appId":1300000001,
+		"uin":"700000164995","region":8,"payMode":1,
+		"goodsDetail":{
+			"externalUserId":"usr_1","productId":"credit_100","productCode":"p_lighthouse",
+			"subProductCode":"sp_lighthouse_lv_credit_pkg","pid":10001,"goodsNum":1,
+			"timeSpan":1,"timeUnit":"p","packageTimeSpan":3,"packageTimeUnit":"m",
+			"sv_credit_package":1
+		}
+	}`)
+	return &fakeFlowStore{getFlowFunc: func(_ context.Context, dealName, flowType, appID string) (*store.Flow, error) {
+		if dealName != "deal-1" || flowType != store.FlowTypeCreateResource || appID != "1300000001" {
+			t.Fatalf("unexpected flow key: deal=%s type=%s app=%s", dealName, flowType, appID)
+		}
+		return &store.Flow{
+			DealName: dealName, FlowType: flowType, AppID: appID,
+			Status: store.FlowStatusCompleted, ResourceID: &resourceID, RequestBody: requestBody,
+		}, nil
+	}}
 }
 
 func TestCheckCreateRequiresRealResourcePackagePeriod(t *testing.T) {
