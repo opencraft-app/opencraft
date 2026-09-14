@@ -89,9 +89,9 @@ function extractText(node: ReactNode): string {
  */
 function detectCallout(text: string): "info" | "tip" | "warn" | null {
   const head = text.slice(0, 40);
-  if (/⚠️|warning|警告/i.test(head)) return "warn";
-  if (/💡|tip|提示|小技巧/i.test(head)) return "tip";
-  if (/ℹ️|info|note|^注:/i.test(head)) return "info";
+  if (/⚠️|\bwarning\b|警告/i.test(head)) return "warn";
+  if (/💡|\btip\b|提示|小技巧/i.test(head)) return "tip";
+  if (/ℹ️|\binfo\b|\bnote\b|^注:/i.test(head)) return "info";
   return null;
 }
 
