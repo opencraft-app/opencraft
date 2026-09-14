@@ -57,9 +57,9 @@ func TestUpsertCampaignRejectsUnboundedConfiguration(t *testing.T) {
 	err := store.UpsertCampaign(t.Context(), domain.Campaign{
 		ID: "campaign", Name: "campaign", Status: domain.CampaignStatusActive,
 		StartsAt: nowForTest(), EndsAt: nowForTest().Add(30 * 24 * time.Hour),
-		InviterCredit: 500, InviteeCredit: 200,
+		InviterCredit: 500, InviteeCredit: 500,
 		VestingDays: 7, PendingTTLDays: 90, MaxRewardsPerInviter: 50,
-		BudgetCredit: 699,
+		BudgetCredit: 999,
 	})
 	if err == nil {
 		t.Fatal("campaign budget below one reward pair must be rejected")

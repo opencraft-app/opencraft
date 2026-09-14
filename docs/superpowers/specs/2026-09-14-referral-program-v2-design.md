@@ -17,7 +17,7 @@ adds its own campaign, infrastructure, secrets, and release configuration.
 - The qualifying fact for the Beijing pilot is the invitee's first successfully
   provisioned non-free Pass.
   Both a new Pass activation and a free-Pass-to-paid transfer qualify.
-- The inviter receives 500 credits and the invitee receives 200 credits.
+- The inviter and invitee each receive 500 credits.
 - Rewards vest for seven days. A refund during vesting cancels the rewards.
 - Granted credits follow the beneficiary's existing active Pass lifecycle and
   are cleaned up by the established `free-credit:*` entitlement path.
@@ -125,7 +125,7 @@ an arbitrary owner ID from the browser.
 2. Deploy the referral schema, API, and worker with processing disabled.
 3. Add disabled user/auth and CTL outboxes and relays.
 4. Validate duplicate delivery, ordering, retry, dead-letter, and recovery.
-5. Verify that the CTL promotional-credit API can grant 500/200 credits without
+5. Verify that the CTL promotional-credit API can grant 500/500 credits without
    a caller-supplied Plan ID. VelaGW owns automatic preparation and Set
    synchronization of any internal entitlement template required by the grant.
 6. Enable Beijing relays and worker processing.

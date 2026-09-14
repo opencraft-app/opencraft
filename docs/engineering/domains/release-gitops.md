@@ -103,7 +103,7 @@ master 源码
   preview 必须先只读核对 cluster id、名称、规格、可用区、VPC、子网和 broker endpoint，不能把弹性存储
   集群误导入固定 `storage_size` 资源。
 - 发布顺序固定为 Pulsar 子资源和角色 token、Referral/Auth/CTL Secret、Auth/CTL/Referral schema、
-  Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。500/200 积分通过 CTL 送积分
+  Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。邀请双方各 500 积分通过 CTL 送积分
   接口按额度发放，VelaGW 自动准备内部权益模板，不要求运营预先导入 Plan。
 - 基础 MR 的 Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
   `ENABLE_MASTER_PROD_PROMOTE=false`；在上述前置条件完成前不得加入 Argo catalog、Gateway 路由或自动 DB gate。
