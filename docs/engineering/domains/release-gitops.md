@@ -29,6 +29,10 @@ master 源码
 
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - Secret 值不进 Git、日志、渲染输出或文档。
+- EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
+  `*.edgeone.dev` URL 缺少 `eo_token` / `eo_time` 时，应根据同次部署的 project ID 和 deployment ID
+  通过 Makers SDK 获取签名 URL；不得依赖 runner 出口地域绕过 Preview 认证，也不得记录签名 query
+  或认证 Cookie。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
 - migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
   合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
