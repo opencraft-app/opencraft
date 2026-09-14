@@ -63,7 +63,7 @@ guards:
       - user/auth/internal/eventoutbox/**
       - user/auth/internal/httpapi/referral.go
       - user/auth/internal/service/referral_outbox.go
-    command: referral/checks/guard.sh
+    command: .ci/checks/referral_guard.sh
 
   - name: admin-gateway
     paths:
