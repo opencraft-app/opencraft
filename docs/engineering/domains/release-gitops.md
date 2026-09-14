@@ -89,6 +89,24 @@ master 源码
   `POST /v1/credit/packages/order-url`。首轮只更新 `sandbox-bj-7` 与 `beijing-sandbox`；不得因共享
   源码或策略测试把该路由自动扩散到上海、新加坡等尚未完成 Credit 接线的环境。
 
+### Referral 北京试点交付
+
+- 现有北京 P2 Pulsar 集群是外部依赖，Pulumi 只管理 namespace、主 topic、DLQ、三类角色和最小权限；
+  preview 必须先只读核对 cluster id、名称、规格、可用区、VPC、子网和 broker endpoint，不能把弹性存储
+  集群误导入固定 `storage_size` 资源。
+- 发布顺序固定为 Pulsar 子资源和角色 token、Referral/Auth/CTL Secret、Auth/CTL/Referral schema、
+  Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。500/200 积分通过 CTL 送积分
+  接口按额度发放，VelaGW 自动准备内部权益模板，不要求运营预先导入 Plan。
+- 基础 MR 的 Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
+  `ENABLE_MASTER_PROD_PROMOTE=false`；在上述前置条件完成前不得加入 Argo catalog、Gateway 路由或自动 DB gate。
+- 北京环境显式设置 `REFERRAL_ENABLED=true`；全局和上海/新加坡默认关闭。CTL migration 31 未执行时
+  严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
+- 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
+  bootstrap 证据；镜像构建、Pulsar 资源存在或 UI 可见均不能单独代表返利闭环。
+- Role Token 交付统一使用 `infractl bootstrap-referral-tokens --stack <env>`。命令从目标环境 inventory
+  读取集群、角色和 SSM 名称，默认只做全量预检，显式 `--apply` 后才幂等合并；默认拒绝覆盖不同 Token。上海首次上线复用
+  同一入口，必须先补齐并审查 `shprod` inventory，不能复制北京 Token 或在日常发布中重复执行。
+
 ## CloudLadder Gateway 回调环境
 
 `tkexgz` 的三个 CloudLadder Gateway workload 共享路由定义，但通过各自

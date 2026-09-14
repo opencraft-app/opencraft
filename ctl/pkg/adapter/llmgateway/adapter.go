@@ -371,8 +371,8 @@ func (a *LLMGatewayAdapter) ApplySubscription(ctx context.Context, req *ApplySub
 	}
 	req.UserID = strings.TrimSpace(req.UserID)
 	req.PlanID = strings.TrimSpace(req.PlanID)
-	if req.UserID == "" || req.PlanID == "" {
-		return nil, fmt.Errorf("llmgateway user_id and plan_id are required")
+	if req.UserID == "" || (req.PlanID == "" && req.TokenAmount <= 0) || (req.PlanID != "" && req.TokenAmount > 0) {
+		return nil, fmt.Errorf("llmgateway user_id and exactly one of plan_id or token_amount are required")
 	}
 
 	reqBody, err := json.Marshal(req)

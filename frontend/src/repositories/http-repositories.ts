@@ -1684,6 +1684,48 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       body: { code },
     });
   },
+  async prepareReferralCode(code: string) {
+    const normalized = code.trim().toUpperCase();
+    await requestEnvelope(baseUrl, `/v1/referrals/codes/${encodeURIComponent(normalized)}`, {
+      method: "GET",
+    });
+    await request<void>(baseUrl, "/auth/referral/prepare", {
+      method: "POST",
+      body: { code: normalized },
+    });
+  },
+  async issueReferralCode() {
+    const payload = await requestEnvelope<{
+      code: string;
+      url: string;
+      campaign_id: string;
+      campaign_name: string;
+      starts_at: string;
+      ends_at: string;
+    }>(baseUrl, "/v1/referrals/me/code", { method: "POST" });
+    return {
+      code: payload.code,
+      url: payload.url,
+      campaignId: payload.campaign_id,
+      campaignName: payload.campaign_name,
+      startsAt: payload.starts_at,
+      endsAt: payload.ends_at,
+    };
+  },
+  async getReferralStats() {
+    const payload = await requestEnvelope<{
+      successful_referrals: number;
+      granted_credits: number;
+      pending_rewards: number;
+      granted_rewards: number;
+    }>(baseUrl, "/v1/referrals/me/stats", { method: "GET" });
+    return {
+      successfulReferrals: payload.successful_referrals,
+      grantedCredits: payload.granted_credits,
+      pendingRewards: payload.pending_rewards,
+      grantedRewards: payload.granted_rewards,
+    };
+  },
   async activateInviteCode(code: string) {
     const response = await request<{ user: User }>(baseUrl, "/auth/invite/activate", {
       method: "POST",

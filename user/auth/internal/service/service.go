@@ -327,21 +327,23 @@ type PhoneAuthChallenge struct {
 const impersonationSessionTTL = 30 * time.Minute
 
 type VerifySMSInput struct {
-	Name       string
-	Phone      string
-	Code       string
-	InviteCode string
-	ClientIP   string
-	ClientUA   string
+	Name         string
+	Phone        string
+	Code         string
+	InviteCode   string
+	ReferralCode string
+	ClientIP     string
+	ClientUA     string
 }
 
 type PasswordSignUpInput struct {
-	Name       string
-	Email      string
-	Password   string
-	InviteCode string
-	ClientIP   string
-	ClientUA   string
+	Name         string
+	Email        string
+	Password     string
+	InviteCode   string
+	ReferralCode string
+	ClientIP     string
+	ClientUA     string
 }
 
 type OAuthSignInInput struct {
@@ -352,6 +354,7 @@ type OAuthSignInInput struct {
 	Name            string
 	AvatarURL       string
 	InviteCode      string
+	ReferralCode    string
 	ClientIP        string
 	ClientUA        string
 	// RegistrationDisabled allows a provider to authenticate or link existing
@@ -718,7 +721,7 @@ func (s *Service) verifyNewUserPhoneAuthSMS(ctx context.Context, input VerifySMS
 		return nil, newError("phone_auth_unavailable", "手机号登录暂未启用。", http.StatusServiceUnavailable)
 	}
 	userID := strings.TrimSpace(challenge.UserID)
-	user, err := s.store.FindOrCreatePhoneAuthUser(ctx, input.Phone, input.Name, s.now())
+	user, err := s.store.FindOrCreatePhoneAuthUser(ctx, input.Phone, input.Name, input.ReferralCode, s.now())
 	if err != nil {
 		return nil, err
 	}

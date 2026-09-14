@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } fro
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/agent-context";
-import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
+import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
 import { SavedCardsSection } from "./saved-cards-section";
+import { ReferralSection } from "./referral-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 
@@ -1188,6 +1189,7 @@ export const AccountPage = () => {
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  const referralEnabled = useReferralEnabled();
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
   const facelessFlowEnabled = user?.realnameAssuranceMode === "faceless";
@@ -1937,6 +1939,8 @@ export const AccountPage = () => {
 
             {/* ── Section 2: Subscription ── */}
             <SubscriptionSection subscription={subscription} pass={activePass} />
+
+            {referralEnabled && <ReferralSection />}
 
             {isGlobal && <SavedCardsSection />}
           </motion.div>

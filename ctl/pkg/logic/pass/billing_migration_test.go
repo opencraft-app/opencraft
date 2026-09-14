@@ -9,6 +9,7 @@ import (
 	adapterfactory "ctl/pkg/adapter/factory"
 	tradeadapter "ctl/pkg/adapter/trade"
 	bundlemodel "ctl/pkg/model/bundle"
+	"ctl/pkg/model/eventoutbox"
 	passmodel "ctl/pkg/model/pass"
 	passmigrationmodel "ctl/pkg/model/passbillingmigration"
 	"ctl/pkg/resource"
@@ -19,9 +20,10 @@ import (
 )
 
 func TestTransferPassFromBillingUpdatesExistingFreePassOnlyOnCallback(t *testing.T) {
+	t.Setenv("REFERRAL_ENABLED", "true")
 	originalDB := resource.GormDB
 	t.Cleanup(func() { resource.GormDB = originalDB })
-	testutil.NewSQLiteDB(t, &passmodel.Entity{}, &passmigrationmodel.Entity{})
+	testutil.NewSQLiteDB(t, &passmodel.Entity{}, &passmigrationmodel.Entity{}, &eventoutbox.Entity{})
 
 	expired := time.Date(2026, time.August, 20, 9, 45, 16, 0, time.UTC)
 	if err := passmodel.NewDao().Create(&passmodel.Entity{
@@ -82,9 +84,11 @@ func TestTransferPassFromBillingUpdatesExistingFreePassOnlyOnCallback(t *testing
 	if migration.Status != passmigrationmodel.StatusCompleted {
 		t.Fatalf("migration status=%s, want completed", migration.Status)
 	}
+	assertFirstPaidOutboxEvent(t, "pass-transfer-1")
 }
 
 func TestMigrateFreeTrialPassToBillingDoesNotOverwriteCompletedCallback(t *testing.T) {
+	t.Setenv("REFERRAL_ENABLED", "true")
 	setupBillingMigrationTestDB(t)
 	seedBillingMigrationBundle(t)
 	seedBillingMigrationPass(t, "pass-race-1", "usr-race-1")
@@ -181,7 +185,18 @@ func setupBillingMigrationTestDB(t *testing.T) {
 	t.Helper()
 	originalDB := resource.GormDB
 	t.Cleanup(func() { resource.GormDB = originalDB })
-	testutil.NewSQLiteDB(t, &passmodel.Entity{}, &passmigrationmodel.Entity{}, &bundlemodel.Entity{})
+	testutil.NewSQLiteDB(t, &passmodel.Entity{}, &passmigrationmodel.Entity{}, &bundlemodel.Entity{}, &eventoutbox.Entity{})
+}
+
+func assertFirstPaidOutboxEvent(t *testing.T, passID string) {
+	t.Helper()
+	var event eventoutbox.Entity
+	if err := resource.GormDB.Where("event_id = ?", "pass.first_paid:"+passID).First(&event).Error; err != nil {
+		t.Fatalf("read first-paid outbox event: %v", err)
+	}
+	if event.EventType != "pass.first_paid.v1" || event.AggregateID != passID || event.Status != "pending" {
+		t.Fatalf("unexpected first-paid outbox event: %+v", event)
+	}
 }
 
 func seedBillingMigrationBundle(t *testing.T) {

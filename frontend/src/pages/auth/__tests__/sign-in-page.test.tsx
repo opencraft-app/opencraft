@@ -11,6 +11,7 @@ import i18n from "@/i18n";
 const repositories = {
   auth: {
     getOAuthStartUrl: vi.fn(),
+    prepareReferralCode: vi.fn(),
   },
 };
 const writeClipboardText = vi.fn();
@@ -49,6 +50,7 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
       configurable: true,
     });
     repositories.auth.getOAuthStartUrl.mockReset();
+    repositories.auth.prepareReferralCode.mockReset().mockResolvedValue(undefined);
     repositories.auth.getOAuthStartUrl.mockImplementation((provider: OAuthProvider, options?: {
       returnTo?: string;
       switchAccount?: boolean;
@@ -126,6 +128,24 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
 
     expect(redirectSpy).toHaveBeenNthCalledWith(1, oauthStartUrls.qq);
     expect(redirectSpy).toHaveBeenNthCalledWith(2, `${oauthStartUrls.wechat}?mode=website`);
+    redirectSpy.mockRestore();
+  });
+
+  it("带返利码时先写入服务端上下文再跳转 OAuth", async () => {
+    window.history.replaceState({}, "", "/auth/sign-in?ref=abc234");
+    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+    render(
+      <MemoryRouter>
+        <SignInPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "使用 QQ 登录" }));
+
+    await waitFor(() => {
+      expect(repositories.auth.prepareReferralCode).toHaveBeenCalledWith("ABC234");
+      expect(redirectSpy).toHaveBeenCalledWith(oauthStartUrls.qq);
+    });
     redirectSpy.mockRestore();
   });
 

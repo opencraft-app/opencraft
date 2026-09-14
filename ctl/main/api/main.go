@@ -6,7 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"strings"
+	"time"
 
+	"ctl/pkg/model/eventoutbox"
 	"ctl/pkg/tracing"
 	"go.uber.org/zap"
 
@@ -98,6 +102,15 @@ func main() {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	})
 
+	referralRelay, err := startReferralOutboxRelay()
+	if err != nil {
+		fmt.Println("start referral outbox relay error:", err)
+		return
+	}
+	if referralRelay != nil {
+		defer referralRelay.Close()
+	}
+
 	err = tracing.Init(config.ServerConf.TracingConfig, "lightglobal-api")
 	if err != nil {
 		resource.ZapLogger.Error("tracing.Init error", zap.Error(err))
@@ -120,6 +133,28 @@ func main() {
 		fmt.Println("APIServer run error:", err)
 		return
 	}
+}
+
+func startReferralOutboxRelay() (*eventoutbox.Relay, error) {
+	if strings.TrimSpace(os.Getenv("REFERRAL_OUTBOX_RELAY_ENABLED")) != "true" {
+		return nil, nil
+	}
+	sqlDB, err := resource.GormDB.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get SQL database: %w", err)
+	}
+	relay, err := eventoutbox.NewRelay(sqlDB, eventoutbox.RelayConfig{
+		URL:          strings.TrimSpace(os.Getenv("REFERRAL_PULSAR_URL")),
+		Token:        strings.TrimSpace(os.Getenv("REFERRAL_PULSAR_TOKEN")),
+		Topic:        strings.TrimSpace(os.Getenv("REFERRAL_PULSAR_TOPIC")),
+		PollInterval: time.Second,
+		Lease:        30 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	relay.Start(context.Background())
+	return relay, nil
 }
 
 func parseArgs() error {

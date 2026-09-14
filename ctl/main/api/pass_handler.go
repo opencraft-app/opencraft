@@ -549,6 +549,8 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 			h.transferPass(w, r)
 		case "billing-migration":
 			h.internalPassBillingMigration(w, r)
+		case "free-credit":
+			h.handleAdminPassesFreeCredit(w, r)
 		case "app-ids":
 			h.listInternalPassAppIDs(w, r)
 		case "by-app":

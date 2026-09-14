@@ -8,6 +8,7 @@ import (
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instanceasync "ctl/pkg/instance"
+	"ctl/pkg/model/eventoutbox"
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
 	"ctl/pkg/resource"
@@ -73,7 +74,7 @@ func (l *logic) IsolatePass(passID string, tradeFlowID int64, newDeadline *time.
 	// 不接受等于（业务无意义），不接受拉长（防止 jifei 协议层 bug 被薄薄拉长有效期）。
 	//
 	// 与到期隔离不同点：不检验 expired_time < now。退费可发生在 pass 未到期时。
-	if newDeadline != nil {
+	if referralEventsEnabled() && newDeadline != nil {
 		if !entity.ExpiredTime.After(*newDeadline) {
 			logger.Warn("IsolatePass: refund newDeadline rejected (must be strictly earlier than current expired_time)",
 				zap.Time("current_expired_time", entity.ExpiredTime),
@@ -98,8 +99,16 @@ func (l *logic) IsolatePass(passID string, tradeFlowID int64, newDeadline *time.
 		return "", errcode.ErrPassIsolated
 	}
 
-	// CAS active → isolating
-	acquired, err := passDao.TryAcquireSlotForIsolate(passID)
+	// CAS active → isolating. Refund observations are persisted in the same
+	// transaction so the referral vesting decision cannot miss an accepted refund.
+	var refundedEvent *eventoutbox.Event
+	if newDeadline != nil {
+		refundedEvent, err = buildRefundedEvent(entity.UserID, passID, strings.TrimSpace(dealName), time.Now().UTC())
+		if err != nil {
+			return "", errcode.Wrap(errcode.ErrPassInvalidParam, "build refunded event: %v", err)
+		}
+	}
+	acquired, err := passDao.TryAcquireSlotForIsolateWithEvent(passID, refundedEvent)
 	if err != nil {
 		return "", errcode.Wrap(errcode.ErrPassNotFound, "TryAcquireSlotForIsolate: %v", err)
 	}

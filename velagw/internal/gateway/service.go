@@ -1271,6 +1271,10 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	req.UserID = strings.TrimSpace(req.UserID)
 	req.PlanID = strings.TrimSpace(req.PlanID)
+	req, err = s.resolveAmountBasedSubscriptionPlan(ctx, req)
+	if err != nil {
+		return Subscription{}, err
+	}
 	req.SubscriptionName = strings.TrimSpace(req.SubscriptionName)
 	req.PeriodUnit = strings.TrimSpace(req.PeriodUnit)
 	if req.PeriodEnd != nil {
@@ -1291,7 +1295,7 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		}
 	}
 	if req.UserID == "" || req.PlanID == "" {
-		return Subscription{}, fmt.Errorf("user_id and plan_id are required")
+		return Subscription{}, fmt.Errorf("user_id and exactly one of plan_id or token_amount are required")
 	}
 	if err := s.validateApplySubscriptionRequest(req); err != nil {
 		return Subscription{}, err

@@ -48,6 +48,18 @@
   不等于资源已创建，前端须重新调用 `GET /v1/credit/packages` 观察积分包出现，并兼容计费回调与
   LLMGateway 订阅创建的短暂延迟。
 
+## 邀请返利首付链路
+
+1. 登录前，前端先通过公开的隐私安全接口校验返利码，再由 Auth 写入 30 分钟 HttpOnly 上下文。
+2. Auth 只在真正创建新用户的事务中写 `user.registered.v1` outbox；已有用户登录不会建立归因。
+3. CTL 只对启用环境中的非免费新 Pass 或免费转付费写 `pass.first_paid.v1`，续费不重复触发。
+4. Referral 将注册、首付和退款分别持久化，两个事实齐备时在活动预算与邀请人上限内创建两侧奖励。
+5. 观察期结束后 worker 调 CTL 幂等发放 30 天积分 Plan；CTL 发放前再次验证资格 Pass。
+6. `pass.refunded.v1` 可早于或晚于首付事件到达，并只取消同一资格 Pass 尚未发放的奖励。
+
+成功不能只看邀请码已创建或首付事件已消费，必须同时核对 attribution、资格 Pass、两侧 reward、
+LLMGateway named subscription 和最终统计。没有 active Pass 的邀请人是可重试 pending，不是奖励丢失。
+
 ## 验证
 
 成对验证订单、支付、订阅和 CTL 各阶段的成功/失败记录；线上金额、活动、API 地址和签名规则必须从登记的外部 authority 现场确认。

@@ -91,6 +91,19 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
             'export CREDIT_MYSQL_DSN="${CREDIT_DB_USER}:${CREDIT_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${CREDIT_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/credit-migrate',
         ],
     },
+    ("referral", "migration"): {
+        "namespace": "referral",
+        "deployment": "referral",
+        "configmap": "referral-config",
+        "secret": "referral-runtime-secrets",
+        "platform_env_file": "argocd/services/referral/{env}/referral-platform.env",
+        "image_env_key": "REFERRAL_IMAGE",
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export REFERRAL_MYSQL_DSN="${REFERRAL_DB_USER}:${REFERRAL_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${REFERRAL_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/referral-migrate',
+        ],
+    },
     ("lightclaw-auth", "migration"): {
         "namespace": "user-auth",
         "deployment": "lightclaw-auth",

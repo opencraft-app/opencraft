@@ -20,6 +20,8 @@ import (
 	auto "github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
+	"github.com/skipzhang/mono/infra_pulumi/pkg/config"
+	"github.com/skipzhang/mono/infra_pulumi/pkg/referralbootstrap"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/tencenttke"
 )
 
@@ -48,7 +50,7 @@ type stackSecrets struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: infractl <preview|up|sync|reconcile|validate|import|set-secrets> [--stack <name>]")
+		fatalf("usage: infractl <preview|up|sync|reconcile|validate|import|set-secrets|bootstrap-referral-tokens> [--stack <name>]")
 	}
 
 	projectRoot, err := findProjectRoot()
@@ -119,9 +121,61 @@ func main() {
 		if err := setSecrets(projectRoot, stack); err != nil {
 			fatalf("%v", err)
 		}
+	case "bootstrap-referral-tokens":
+		stack, apply, allowTokenChange, err := parseReferralBootstrapArgs(args)
+		if err != nil {
+			fatalf("%v", err)
+		}
+		if err := bootstrapReferralTokens(projectRoot, stack, apply, allowTokenChange); err != nil {
+			fatalf("%v", err)
+		}
 	default:
 		fatalf("unknown command %q", cmd)
 	}
+}
+
+func bootstrapReferralTokens(projectRoot, stack string, apply, allowTokenChange bool) error {
+	inventoryPath := filepath.Join(projectRoot, "envs", "tencentcloud", stack, "inventory.yaml")
+	inventory, err := config.LoadInventory(inventoryPath)
+	if err != nil {
+		return fmt.Errorf("load inventory for %s: %w", stack, err)
+	}
+	if inventory.EnvName != stack {
+		return fmt.Errorf("inventory environment %q does not match stack %q", inventory.EnvName, stack)
+	}
+	secretID := strings.TrimSpace(os.Getenv("TENCENTCLOUD_SECRET_ID"))
+	secretKey := strings.TrimSpace(os.Getenv("TENCENTCLOUD_SECRET_KEY"))
+	roles, err := referralbootstrap.NewTencentRoleReader(secretID, secretKey, inventory.Region)
+	if err != nil {
+		return err
+	}
+	secrets, err := referralbootstrap.NewTencentSecretStore(secretID, secretKey, inventory.Region)
+	if err != nil {
+		return err
+	}
+	results, err := referralbootstrap.Run(context.Background(), inventory, roles, secrets, referralbootstrap.Options{
+		Apply:            apply,
+		AllowTokenChange: allowTokenChange,
+	})
+	if err != nil {
+		return err
+	}
+	for _, result := range results {
+		status := "unchanged"
+		if result.Updated {
+			if result.Applied && result.Created {
+				status = "created"
+			} else if result.Applied {
+				status = "updated"
+			} else if result.Created {
+				status = "would-create"
+			} else {
+				status = "would-update"
+			}
+		}
+		fmt.Printf("referral token delivered: role=%s secret=%s status=%s\n", result.RoleName, result.SecretName, status)
+	}
+	return nil
 }
 
 func preview(projectRoot, stack string) error {
@@ -576,6 +630,32 @@ func parseStackArg(args []string) (string, error) {
 		}
 	}
 	return stack, nil
+}
+
+func parseReferralBootstrapArgs(args []string) (string, bool, bool, error) {
+	stack := defaultStack
+	apply := false
+	allowTokenChange := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--stack", "-s":
+			if i+1 >= len(args) {
+				return "", false, false, fmt.Errorf("missing value for %s", args[i])
+			}
+			stack = args[i+1]
+			i++
+		case "--apply":
+			apply = true
+		case "--allow-token-change":
+			allowTokenChange = true
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return "", false, false, fmt.Errorf("unknown flag %s", args[i])
+			}
+			stack = args[i]
+		}
+	}
+	return stack, apply, allowTokenChange, nil
 }
 
 func findProjectRoot() (string, error) {

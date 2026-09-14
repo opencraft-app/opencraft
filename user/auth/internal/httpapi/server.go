@@ -44,6 +44,7 @@ type ServerConfig struct {
 	TrustedProxyCIDRs          []string
 	Federation                 *FederationConfig
 	OIDC                       *OIDCConfig
+	ReferralEnabled            bool
 }
 
 type FederationConfig struct {
@@ -84,6 +85,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	handler.federation = config.Federation
 	handler.oidc = config.OIDC
+	handler.referralEnabled = config.ReferralEnabled
 	router.POST("/auth/session/exchange", handler.ExchangeFirstPartySession)
 	// Compatibility alias for already released native clients. New first-party
 	// clients use the neutral session adapter above.
@@ -93,6 +95,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
+	router.POST("/auth/referral/prepare", handler.PrepareReferral)
 	router.POST("/v1/shadow/binding/send-sms", handler.SendShadowBindingSMS)
 	router.POST("/v1/shadow/binding/verify-phone", handler.VerifyShadowBindingPhone)
 	router.POST("/auth/profile/phone/send", handler.SendPhoneChangeSMS)

@@ -17,6 +17,10 @@
 
 回滚目标是上一已知健康的 GitOps pin 或应用 revision，不用本地未审阅 manifest 覆盖集群。数据库变更必须预先声明向前/向后兼容与独立恢复方式。
 
+邀请返利在北京按依赖分段放行：先准备 Pulsar/Secret/Plan 和三个 schema，再启用生产者 relay 与
+consumer，最后开放 Gateway 与前端。任一步失败时关闭环境级开关即可停止新增事件和用户入口，已写
+outbox/inbox/reward 记录保留用于恢复；不得通过删除审计记录或重复创建奖励来回滚。
+
 ## 授权
 
 commit、push、MR、流水线触发、GitOps 合并、Argo 操作和生产验证是不同授权面。用户只批准前一层时不得自动扩大到后一层。
