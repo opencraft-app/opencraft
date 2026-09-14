@@ -17,6 +17,7 @@ class ReferralGuardWorkflowTests(unittest.TestCase):
         self.assertIn("source .ci/init.sh", guard)
         self.assertIn("ci_ensure_go", guard)
         self.assertIn("ci_ensure_kustomize", guard)
+        self.assertIn("export GOWORK=off", guard)
         self.assertIn("go test ./...", guard)
         self.assertIn("go vet ./...", guard)
 

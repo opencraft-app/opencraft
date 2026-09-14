@@ -11,6 +11,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
 else
   ci_require_commands go kustomize
 fi
+export GOWORK=off
 
 (
   cd referral
