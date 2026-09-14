@@ -59,7 +59,8 @@ purchase.
 
 Pulumi manages only child resources:
 
-- namespace `lightvela-platform`
+- namespace `lightvela-ref`
+- one-day acknowledged-message retention with the Tencent Cloud minimum 10 GiB retention quota
 - persistent non-partitioned topic `lightvela.referral.events.v1`
 - persistent non-partitioned DLQ `lightvela.referral.events.v1-dlq`
 - producer role `lightvela-user-auth-referral-producer`

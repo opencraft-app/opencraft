@@ -8,6 +8,8 @@ on:
     paths:
       - referral/**
       - argocd/services/referral/**
+      - argocd/catalogs/sandbox/*/referral.yaml
+      - argocd/secrets/*/referral-runtime-secrets.sops.yaml
       - scripts/ssm_manifest.referral.beijing-sandbox.yaml
     paths-ignore:
       - OWNERS

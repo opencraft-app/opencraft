@@ -197,10 +197,10 @@ stacks:
     expected_zone_ids: [800008]
     expected_vpc_id: vpc-21gzr2dc
     expected_subnet_id: subnet-ieszm71b
-    namespace: lightvela-platform
+    namespace: lightvela-ref
     message_ttl_seconds: 604800
     retention_minutes: 1440
-    retention_size_mb: 0
+    retention_size_mb: 10240
     topic: lightvela.referral.events.v1
     dead_letter_topic: lightvela.referral.events.v1-dlq
     user_auth_producer_role: lightvela-user-auth-referral-producer

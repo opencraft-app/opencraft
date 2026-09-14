@@ -93,9 +93,10 @@ func TestValidatePulsarInventoryRejectsUnsafeValues(t *testing.T) {
 		ExpectedZoneIDs:      []int{800008},
 		ExpectedVPCID:        "vpc-existing",
 		ExpectedSubnetID:     "subnet-existing",
-		Namespace:            "lightvela-platform",
+		Namespace:            "lightvela-ref",
 		MessageTTLSeconds:    604800,
 		RetentionMinutes:     1440,
+		RetentionSizeMB:      10240,
 		Topic:                "lightvela.referral.events.v1",
 		DeadLetterTopic:      "lightvela.referral.events.v1-dlq",
 		UserAuthProducerRole: "auth-producer",
@@ -113,6 +114,10 @@ func TestValidatePulsarInventoryRejectsUnsafeValues(t *testing.T) {
 		{name: "invalid zone", mutate: func(v *PulsarInventory) { v.ExpectedZoneIDs = []int{0} }},
 		{name: "invalid ttl", mutate: func(v *PulsarInventory) { v.MessageTTLSeconds = 0 }},
 		{name: "negative retention", mutate: func(v *PulsarInventory) { v.RetentionSizeMB = -1 }},
+		{name: "partial retention", mutate: func(v *PulsarInventory) { v.RetentionSizeMB = 0 }},
+		{name: "retention below minimum", mutate: func(v *PulsarInventory) { v.RetentionSizeMB = 10239 }},
+		{name: "namespace too long", mutate: func(v *PulsarInventory) { v.Namespace = "lightvela-platform" }},
+		{name: "invalid namespace characters", mutate: func(v *PulsarInventory) { v.Namespace = "lightvela.ref" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

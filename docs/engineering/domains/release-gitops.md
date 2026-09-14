@@ -105,8 +105,9 @@ master 源码
 - 发布顺序固定为 Pulsar 子资源和角色 token、Referral/Auth/CTL Secret、Auth/CTL/Referral schema、
   Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。邀请双方各 500 积分通过 CTL 送积分
   接口按额度发放，VelaGW 自动准备内部权益模板，不要求运营预先导入 Plan。
-- 基础 MR 的 Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
-  `ENABLE_MASTER_PROD_PROMOTE=false`；在上述前置条件完成前不得加入 Argo catalog、Gateway 路由或自动 DB gate。
+- Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
+  `ENABLE_MASTER_PROD_PROMOTE=false`。Pulsar、独立 DB/user 和 SSM/SOPS 前置条件完成后才加入 Argo catalog；
+  首次基础发布保持 worker processing、Gateway 路由和前端入口关闭，待 schema/API/campaign 健康后单独启用。
 - 北京环境显式设置 `REFERRAL_ENABLED=true`；全局和上海/新加坡默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign

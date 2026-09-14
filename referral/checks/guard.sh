@@ -9,4 +9,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   go vet ./...
 )
 
-kubectl kustomize "${repo_root}/argocd/services/referral/beijing-sandbox" >/dev/null
+if [[ -n "${SOPS_AGE_KEY_FILE:-}" && -r "${SOPS_AGE_KEY_FILE}" ]]; then
+  kustomize build "${repo_root}/argocd/services/referral/beijing-sandbox" \
+    --enable-alpha-plugins \
+    --enable-exec >/dev/null
+else
+  # Local contributors usually have only the public age recipient. CI and Argo
+  # render the full KSOPS target with the private key.
+  kustomize build "${repo_root}/referral/k8s/base" >/dev/null
+fi

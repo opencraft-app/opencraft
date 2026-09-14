@@ -10,7 +10,7 @@ patches:
         value: "true"
       - op: replace
         path: /data/REFERRAL_PROCESSING_ENABLED
-        value: "true"
+        value: "false"
       - op: replace
         path: /data/MYSQL_HOST
         value: "10.15.224.4"
@@ -25,10 +25,10 @@ patches:
         value: "http://pulsar-n57ovqb7r7gv.eap-vle3kjgi.tdmq.ap-bj.qcloud.tencenttdmq.com:8080"
       - op: replace
         path: /data/REFERRAL_PULSAR_TOPIC
-        value: "persistent://pulsar-n57ovqb7r7gv/lightvela-platform/lightvela.referral.events.v1"
+        value: "persistent://pulsar-n57ovqb7r7gv/lightvela-ref/lightvela.referral.events.v1"
       - op: replace
         path: /data/REFERRAL_PULSAR_DLQ_TOPIC
-        value: "persistent://pulsar-n57ovqb7r7gv/lightvela-platform/lightvela.referral.events.v1-dlq"
+        value: "persistent://pulsar-n57ovqb7r7gv/lightvela-ref/lightvela.referral.events.v1-dlq"
       - op: replace
         path: /data/CTL_INTERNAL_BASE_URL
         value: "http://ctl-api.ctl.svc.cluster.local"

@@ -6,6 +6,8 @@ components:
   - ../../../../referral/k8s/overlays/beijing-sandbox
 resources:
   - referral-campaign.yaml
+generators:
+  - ksops-secret-generator.yaml
 configMapGenerator:
   - name: referral-platform-values
     envs:

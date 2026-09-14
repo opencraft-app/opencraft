@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
+	ssm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ssm/v20190923"
+
 	"github.com/skipzhang/mono/infra_pulumi/pkg/config"
 )
 
@@ -150,6 +153,20 @@ func TestRunDryRunReportsWithoutWriting(t *testing.T) {
 		if !result.Updated || result.Applied {
 			t.Fatalf("unexpected dry-run result: %+v", result)
 		}
+	}
+}
+
+func TestTencentSecretStoreRecognizesBothSecretNotFoundCodes(t *testing.T) {
+	for _, code := range []string{ssm.RESOURCENOTFOUND, ssm.RESOURCENOTFOUND_SECRETNOTEXIST} {
+		t.Run(code, func(t *testing.T) {
+			err := tcerr.NewTencentCloudSDKError(code, "secret not found", "request-id")
+			if !isSecretNotFoundError(err) {
+				t.Fatalf("error code %q should be treated as a missing secret", code)
+			}
+		})
+	}
+	if isSecretNotFoundError(context.Canceled) {
+		t.Fatal("unrelated error must not be treated as a missing secret")
 	}
 }
 
