@@ -26,6 +26,26 @@ patches:
       value:
         name: CTL_CLOUDAPI_ALLOWED_REGIONS
         value: ap-beijing
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: REFERRAL_ENABLED
+        value: "true"
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: REFERRAL_OUTBOX_RELAY_ENABLED
+        value: "true"
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: REFERRAL_PULSAR_URL
+        value: http://pulsar-n57ovqb7r7gv.eap-vle3kjgi.tdmq.ap-bj.qcloud.tencenttdmq.com:8080
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: REFERRAL_PULSAR_TOPIC
+        value: persistent://pulsar-n57ovqb7r7gv/lightvela-ref/lightvela.referral.events.v1
 - target:
     kind: Deployment
     name: ctl-service

@@ -10,7 +10,7 @@ patches:
         value: "true"
       - op: replace
         path: /data/REFERRAL_PROCESSING_ENABLED
-        value: "false"
+        value: "true"
       - op: replace
         path: /data/MYSQL_HOST
         value: "10.15.224.4"
@@ -59,4 +59,4 @@ patches:
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 0
+        value: 2

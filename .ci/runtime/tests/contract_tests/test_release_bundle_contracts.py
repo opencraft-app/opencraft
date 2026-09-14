@@ -1186,7 +1186,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
         self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
 
-    def test_referral_pipeline_keeps_manual_activation_and_complete_beijing_closure(self) -> None:
+    def test_referral_pipeline_keeps_manual_release_and_complete_beijing_closure(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
@@ -1214,7 +1214,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
             if (item.get("target") or {}).get("name") == "referral-worker"
         )
         self.assertIn("path: /spec/replicas", deployment_patch)
-        self.assertIn("value: 0", deployment_patch)
+        self.assertIn("value: 2", deployment_patch)
+
+        config_patch = next(
+            item["patch"]
+            for item in patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", config_patch)
+        self.assertIn('value: "true"', config_patch)
+
+        auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/beijing-sandbox/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', auth_patch)
+
+        ctl_overlay = (
+            REPO_ROOT / "argocd/services/ctl/beijing-sandbox/kustomization.yaml"
+        ).read_text()
+        self.assertIn("name: REFERRAL_ENABLED", ctl_overlay)
+        self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", ctl_overlay)
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
