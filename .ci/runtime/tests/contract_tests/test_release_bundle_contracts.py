@@ -1195,6 +1195,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
         self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
+        manifest = load_manifest()
+        referral = load_bundle(manifest, "referral", "beijing-sandbox")
+        self.assertEqual(referral.publish_paths, [])
+
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
         actual_buildable: set[str] = set()

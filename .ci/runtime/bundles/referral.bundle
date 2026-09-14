@@ -30,11 +30,8 @@ bundles:
     - referral/k8s/overlays/{env}/**
     - scripts/ssm_manifest.referral.beijing-sandbox.yaml
     publish_paths_by_env:
-      beijing-sandbox:
-      - argocd/services/referral/beijing-sandbox/**
-      - referral/k8s/base/**
-      - referral/k8s/overlays/beijing-sandbox/**
-      - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+      # Build-only until DB, SSM, Pulsar roles, catalog, and gateway routes are ready.
+      beijing-sandbox: []
     dockerfile: referral/Dockerfile
     build_context: referral
     image_repo:
