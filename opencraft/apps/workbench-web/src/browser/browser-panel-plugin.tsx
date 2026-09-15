@@ -4,13 +4,14 @@ import type {
   BrowserViewportMode,
 } from "@opencraft/browser-core";
 import {
-  BROWSER_DEVICE_PRESETS,
   browserUrlDisplayValue,
-  rotateBrowserViewportMode,
 } from "@opencraft/browser-core";
+import { BrowserDeviceToolbar, BrowserDeviceHandles } from "./browser-device-toolbar";
 import type { Context } from "@deepseek-ai/cordis";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import type { PanelToolbarActionContext } from "@opencraft/workbench-panels";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
+import { usePanelPresentation } from "../components/panel-presentation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,7 +19,6 @@ import {
   Globe2,
   LoaderCircle,
   MonitorSmartphone,
-  RotateCcw,
   RotateCw,
   X,
 } from "lucide-react";
@@ -31,6 +31,7 @@ import {
 } from "react";
 
 import { useAppShellLayoutMotion } from "../components/app-shell";
+import { FloatingComposerToggle } from "../components/thread-composer-presentation";
 import {
   useBrowserPresentationCoordinator,
   useBrowserTab,
@@ -44,30 +45,6 @@ import type { WebBrowserPageRuntime } from "./web-browser-runtime";
 
 const FIT_VIEWPORT = { type: "fit", width: 1440, height: 900 } as const;
 
-function viewportModeKey(mode: BrowserViewportMode): string {
-  if (mode.type === "responsive") return "responsive";
-  if (mode.type === "fit") return "fit";
-  return `device:${mode.presetId}`;
-}
-
-function viewportModeFromKey(key: string): BrowserViewportMode {
-  if (key === "fit") return FIT_VIEWPORT;
-  if (key.startsWith("device:")) {
-    const preset = BROWSER_DEVICE_PRESETS.find(
-      (candidate) => candidate.id === key.slice("device:".length),
-    );
-    if (preset !== undefined) {
-      return {
-        type: "device",
-        presetId: preset.id,
-        width: preset.width,
-        height: preset.height,
-      };
-    }
-  }
-  return { type: "responsive" };
-}
-
 function browserTabIdFromPanel(tab: PanelRendererProps["tab"]): BrowserTabId {
   if (tab.resource === undefined) throw new Error(`Browser panel ${tab.id} has no tab resource`);
   return tab.resource as BrowserTabId;
@@ -78,12 +55,15 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
   const pages = useWebBrowserPageRuntime();
   const workbench = useBrowserWorkbench();
   const presentations = useBrowserPresentationCoordinator();
-  const { rightPanelLayoutTick, rightPanelPresentationActive } = useAppShellLayoutMotion();
+  const { rightPanelLayoutTick } = useAppShellLayoutMotion();
+  const { active: rightPanelPresentationActive } = usePanelPresentation();
   const tab = useBrowserTab(tabId);
   const pageId = tab?.pageId ?? ("missing-browser-page" as BrowserPageId);
   const page = useWebBrowserPage(pageId);
   const slotRef = useRef<HTMLDivElement | null>(null);
   const presentationRef = useRef<BrowserPresentationHandle | null>(null);
+  const [zoom,setZoom]=useState(100);
+  useEffect(()=>{setZoom(pages.getZoom(pageId));},[pageId,pages]);
   const [address, setAddress] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
 
@@ -98,7 +78,7 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
       pageId: tab.pageId,
       tabId: tab.id,
       viewId: presentationId,
-      surface: "right-panel",
+      surface: panelTab.region === "bottom" ? "bottom-panel" : "right-panel",
       slot,
       viewportMode: tab.viewportMode,
     });
@@ -127,6 +107,7 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
     rightPanelLayoutTick,
     rightPanelPresentationActive,
     tabId,
+    panelTab.region,
   ]);
 
   useLayoutEffect(() => {
@@ -185,37 +166,39 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
           onClick={() => currentUrl !== null && window.open(currentUrl, "_blank", "noopener,noreferrer")}>
           <ExternalLink size={13} />
         </button>
-        <label className="browser-viewport-mode-picker" title="Browser viewport">
-          <MonitorSmartphone size={13} aria-hidden="true" />
-          <select aria-label="Browser viewport" value={viewportModeKey(tab.viewportMode)}
-            onChange={(event) => workbench.setViewportMode(tab.id, viewportModeFromKey(event.currentTarget.value))}>
-            <option value="responsive">Responsive</option>
-            <option value="fit">Fit · {tab.viewportMode.type === "fit"
-              ? `${tab.viewportMode.width} × ${tab.viewportMode.height}` : "1440 × 900"}</option>
-            {BROWSER_DEVICE_PRESETS.map((preset) => (
-              <option key={preset.id} value={`device:${preset.id}`}>
-                {preset.label} · {tab.viewportMode.type === "device" && tab.viewportMode.presetId === preset.id
-                  ? `${tab.viewportMode.width} × ${tab.viewportMode.height}`
-                  : `${preset.width} × ${preset.height}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="browser-toolbar-button browser-viewport-rotate"
-          disabled={tab.viewportMode.type === "responsive"} aria-label="Rotate viewport" title="Rotate viewport"
-          onClick={() => workbench.setViewportMode(tab.id, rotateBrowserViewportMode(tab.viewportMode))}>
-          <RotateCcw size={13} />
+        <button type="button" className="browser-toolbar-button" aria-label="Toggle device toolbar" title="Toggle device toolbar"
+          aria-pressed={tab.viewportMode.type !== "responsive"}
+          onClick={()=>workbench.setViewportMode(tab.id,tab.viewportMode.type==="responsive"?FIT_VIEWPORT:{type:"responsive"})}>
+          <MonitorSmartphone size={15}/>
         </button>
+        <FloatingComposerToggle activeTabId={panelTab.id} />
+        {pages.supportsSiteSettings && currentUrl ? <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild><button type="button" className="browser-toolbar-button" aria-label="网站设置" title="网站设置"><Globe2 size={13} /></button></DropdownMenu.Trigger>
+          <DropdownMenu.Portal><DropdownMenu.Content className="new-thread-project-menu" align="end" sideOffset={6} collisionPadding={8}>
+            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "permissions").catch(error => setInputError(error.message)); }}>网站权限</DropdownMenu.Item>
+            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "clear-data").catch(error => setInputError(error.message)); }}>清除网站数据</DropdownMenu.Item>
+            <DropdownMenu.Separator className="new-thread-project-menu__separator" />
+            <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.clearClosedData().catch((error: Error) => setInputError(error.message)); }}>清理已关闭标签数据</DropdownMenu.Item>
+          </DropdownMenu.Content></DropdownMenu.Portal>
+        </DropdownMenu.Root> : null}
       </form>
+      {tab.viewportMode.type!=="responsive"?<BrowserDeviceToolbar mode={tab.viewportMode}
+        onChange={mode=>workbench.setViewportMode(tab.id,mode)}
+        onClose={()=>workbench.setViewportMode(tab.id,{type:"responsive"})}
+        zoom={zoom} onZoom={pages.supportsZoom?value=>{pages.setZoom(page.id,value);setZoom(value);}:undefined}/>:null}
       {inputError ?? page.error ? (
         <div className="browser-panel__notice" role="status">
           <span>{inputError ?? page.error}</span>
+          <button type="button" onClick={() => { pages.reload(page.id); setInputError(null); }}>重新加载页面</button>
           {currentUrl !== null ? <button type="button"
             onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}>Open externally</button> : null}
         </div>
       ) : null}
       <div ref={slotRef} className="browser-viewport-slot"
-        data-viewport-mode={tab.viewportMode.type} />
+        data-viewport-mode={tab.viewportMode.type}>
+        {tab.viewportMode.type!=="responsive"?<BrowserDeviceHandles mode={tab.viewportMode} slot={slotRef}
+          onChange={mode=>workbench.setViewportMode(tab.id,mode)}/>:null}
+      </div>
     </section>
   );
 }

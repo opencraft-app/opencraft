@@ -13,3 +13,4 @@ export * from "./legacy-codec";
 export * from "./model";
 export * from "./store";
 export * from "./submission";
+export * from "./reasoning";

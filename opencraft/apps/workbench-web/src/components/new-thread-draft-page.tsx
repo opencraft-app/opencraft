@@ -1,4 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ThreadComposerPresentation } from "./thread-composer-presentation";
 import {
   CodexComposer,
   type CodexComposerHandle,
@@ -53,6 +54,8 @@ export interface DraftHostOption {
 }
 
 export interface NewThreadDraftPageProps {
+  activeTabId?: string | null;
+  composerPresentationEnabled?: boolean;
   readonly draft: NewThreadDraftSnapshot;
   readonly controller: ComposerController;
   readonly selectionCatalog: ComposerSelectionCatalog;
@@ -388,6 +391,8 @@ function ExecutionUtilityBar({
 }
 
 export function NewThreadDraftPage({
+  activeTabId = null,
+  composerPresentationEnabled = true,
   draft,
   controller,
   selectionCatalog,
@@ -431,6 +436,7 @@ export function NewThreadDraftPage({
           </section>
           <section className="new-thread-draft-composer-zone" aria-label="Start a new task">
             <div className="thread-layout-width new-thread-draft-composer-width">
+              <ThreadComposerPresentation controller={controller} scopeId={draft.scopeId} activeTabId={activeTabId} enabled={composerPresentationEnabled} timeline={null}>
               <div className="thread-composer-region" data-thread-find-composer="true">
                 <CodexComposer
                   ref={composerRef}
@@ -463,6 +469,7 @@ export function NewThreadDraftPage({
                   onCancel={() => undefined}
                 />
               </div>
+              </ThreadComposerPresentation>
             </div>
           </section>
         </div>

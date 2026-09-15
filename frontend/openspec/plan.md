@@ -1,10 +1,10 @@
 # Agents/账号页 Footer 移除与 AgentChat 高度优化（2026-09-15）
 
-**Status:** Mono2 宿主侧实现与本地验证完成，等待用户验收；未提交、推送、创建 MR 或发布。
+**Status:** Mono2 宿主侧实现与合并后本地验证完成；本地功能提交为 `4b86ab6de`，已合入 `origin/master@975b48ef5`；未推送、创建 MR 或发布。
 **Size / Mode:** S / 单 Agent inline quick。
 **Goal:** 在不修改 `@tencent/agentchat-lightvela-panel` SDK 的前提下，移除 `/agents/*`、`/account`、`/account/orders` 的 Footer，并让 `/agents/chat` 桌面端对话面板使用剩余视口高度，消除页面外层滚动。
 **Design:** 小于 1024px 时保留现有 `clamp(516px, calc(100vh - 220px), 960px)` 高度；桌面对话页根节点限制为 `100dvh`，main、shell、grid、内容区和面板建立可收缩的高度链，对话面板使用 `lg:h-full`。目标页面分别关闭自身 Footer；共享 `AppRouteShell` 增加默认开启的认证提示页 Footer 配置，仅 Agents 与账号相关客户端显式关闭。SDK props、内部样式、消息滚动和会话逻辑均不调整。
-**Non-goals:** 不修改 SDK 或依赖版本，不改左侧栏自身的长列表滚动、输入框、消息样式、移动端布局或其他公开页面，不提交、推送、创建 MR 或发布。
+**Non-goals:** 不修改 SDK 或依赖版本，不改左侧栏自身的长列表滚动、输入框、消息样式、移动端布局或其他公开页面，不推送、创建 MR 或发布。
 
 **Files:**
 - Modify: `next-site/app-route-shell.tsx`
@@ -37,8 +37,25 @@
 - [x] **PRIVATE-FOOTER-1 / Developer：** 先增加认证提示页和三个页面本体的 Footer 失败守卫，再用显式页面配置移除目标 Footer；Task 1 的 11 项与 Task 2 的 69 项测试分别 GREEN。
 - [x] **VERIFY-1 / Developer：** 运行最终聚焦测试、`pnpm check`、`git diff --check` 和三个目标页面的浏览器验收，记录实际结果。
 
-**Verification:** Footer 范围增量按 TDD 执行。认证提示页测试先以 4 failed / 7 passed 进入 RED，实施共享默认开启、目标路由显式关闭后 11 项通过；页面本体测试先以 6 failed / 63 passed 进入 RED，删除目标 Footer 和失效 CSS 后 69 项通过。最终 7 个聚焦测试文件共 85 项通过；`pnpm check` exit 0（TypeScript diagnostics：174 current / 276 baseline / 0 new / 102 resolved），既有 49 条翻译告警及印尼语 172 条待翻译保持不变；`pnpm build:cn` exit 0，Next.js 编译、TypeScript、100 个静态页面生成及 8 条公开路由 SEO 检查通过，保留既有 MDX deprecated option 提示；`git diff --check` 通过。本地 1280×720 浏览器中，`/agents/chat` Footer 数量为 0，document、html、body 与页面根节点均为 clientHeight 720 / scrollHeight 720，`scrollY=0`；main top 0 / bottom 720，对话面板 top 44 / bottom 696。`/account` 与 `/account/orders` Footer 数量均为 0，主要内容与操作入口正常渲染，控制台无错误；订单页 document 为 720 / 720，账号页因本地预览状态面板为 720 / 889。
-**Boundary:** 本轮未修改 SDK 包、依赖版本或 `<LightVelaPanel>` 参数。本地预览使用模拟认证，AgentChat token 获取失败，无法加载真实会话；SDK 内部消息滚动继续以现网登录态只读量测（消息区 6076 / 425、`overflow-y:auto`）、未变更的 SDK CSS 和宿主无外层滚动量测确认。未执行远端 CI、构建、提交或发布，现网仍是修改前版本。
+**Verification:** Footer 范围增量按 TDD 执行。认证提示页测试先以 4 failed / 7 passed 进入 RED，实施共享默认开启、目标路由显式关闭后 11 项通过；页面本体测试先以 6 failed / 63 passed 进入 RED，删除目标 Footer 和失效 CSS 后 69 项通过。合并 `origin/master@975b48ef5` 后，`pnpm install --frozen-lockfile` exit 0；最终 7 个聚焦测试文件共 85 项通过；`pnpm check` exit 0（TypeScript diagnostics：174 current / 276 baseline / 0 new / 102 resolved），既有 49 条翻译告警及印尼语 172 条待翻译保持不变；`pnpm build:cn` exit 0，Next.js 编译、TypeScript、100 个静态页面生成及 8 条公开路由 SEO 检查通过，保留既有 MDX deprecated option 提示；相对 `origin/master` 的最终差异通过 `git diff --check`。合并前本地 1280×720 浏览器中，`/agents/chat` Footer 数量为 0，document、html、body 与页面根节点均为 clientHeight 720 / scrollHeight 720，`scrollY=0`；main top 0 / bottom 720，对话面板 top 44 / bottom 696。合并并干净重启 dev server 后再次量测，页面根节点、main、body 与 document 均为 720 / 720，`scrollY=0`，Footer 数量为 0。`/account` 与 `/account/orders` Footer 数量均为 0，主要内容与操作入口正常渲染，控制台无错误；订单页 document 为 720 / 720，账号页因本地预览状态面板为 720 / 889。
+**Boundary:** 本轮未修改 SDK 包、依赖版本或 `<LightVelaPanel>` 参数。合并前本地预览使用模拟认证，AgentChat token 获取失败，无法加载真实会话；合并后干净重启时模拟数据没有返回 Bot，未再次渲染 SDK 面板。SDK 内部消息滚动继续以现网登录态只读量测（消息区 6076 / 425、`overflow-y:auto`）、未变更的 SDK CSS、聚焦守卫及宿主无外层滚动量测确认。未执行远端 CI、推送、创建 MR 或发布，现网仍是修改前版本。
+
+---
+
+# 国际站升级入口临时收起（2026-09-15）
+
+**Goal / user decision:** 国际站默认隐藏升级入口，控制台 `show()` 后可见；国内站保持默认可见。延续此前 console opt-in 交互，增加区域区分。
+**Scope:** `use-pass-upgrade.ts` 共用资格入口及同职责 rollout helper、资格/国际订阅页/账户页测试、升级规格和本任务记录。复用 `isGlobal`，无域名白名单或本地持久化开关；同一文档内跨组件/SPA 路由共享开关，刷新恢复隐藏，`hide()` 可收起。
+**Non-goals:** 不修本轮下单 500 或未知订单恢复，不变更新购/续费/支付回跳/Agents 升级中状态，不修改后端、架构文档、CI、类型基线或生成器，不合并 MR 或发布。交付时仅按 master 锁文件刷新依赖。
+
+**Delivery approval（2026-09-15）:** 用户已确认当前8文件提交范围、提交/MR标题“国际站升级入口改为手动显示 / fix(frontend): gate intl plan upgrade behind show”，以及提交后合并最新 master、复测、必要的 sourceRevision-only 标准生成同步、正常推送并新建 MR。旧 MR !3941 已合并；不重写历史、不修改无关架构文档或检查器，不扩大生成差异范围。
+
+- [ ] **D1 / 已确认交付：** 提交当前8文件，合并最新 master 并按锁文件刷新依赖；重新验证相关测试、pnpm check、国际构建、文档与实际差异。共享副本若仅需 sourceRevision 更新，由标准脚本单独提交；出现其他生成漂移或门禁范围扩大则停止报告。正常推送并新建 master MR，读回远端状态，不合并或发布。
+
+- [x] **H1 / 入口隐藏与回归：** 先用真实资格 hook 和页面测试复现国际站默认可见；接入共享 show/hide 开关，资格启用条件纳入区域可见性，使隐藏时无升级资格请求、旧目标即时失效，show 后仍须通过既有资格。验证国内默认行为、国际 show/hide、迟到资格响应、显式 upgrade_pass_id、账户链接和既有隐藏工具兼容；同步升级规格，运行聚焦 Vitest、pnpm check、国际构建和差异检查。
+
+**Validation status（合并前）:** 本地实现与验收完成，用户已确认交付；9文件179条相关测试通过，pnpm check 174 current / 276 baseline / 0 new / 102 resolved（49条既有翻译告警）。国际构建 exit 0，607静态页与42公开路由检查通过；文档与实际8文件影响检查通过。项目没有lint脚本，不新增检查器。按TDD先复现默认可见、hide无效、迟到响应和命令挂载兼容再修正；组件测试中错误CTA断言及缺失console类型均已修正。构建生成的next-env路径恢复，未改变依赖、类型基线或共享副本。合并后结果须重新记录，不以本段替代。
+**Review / boundary:** 独立只读复核无Critical/Important；多消费者同序卸载可能保留先前wrapper，属于Minor，未发现当前单入口消费者的功能影响；如新增同时挂载入口，可在本helper内共享注册/引用计数，不扩展全站框架。本次未验证真实支付/浏览器登录态/远端CI，没有提交推送或发布；不表示生产已隐藏，也未修复原下单500。
 
 ---
 

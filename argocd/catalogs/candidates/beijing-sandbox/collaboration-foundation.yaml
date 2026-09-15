@@ -1,0 +1,7 @@
+# First approved sync creates only namespace, service account and Secret, never workload or migration.
+service: collaboration
+env: beijing-sandbox
+project: beijing-sandbox
+destinationName: beijing-sandbox
+namespace: lightvela-collaboration
+sourcePath: argocd/services/collaboration/beijing-sandbox-foundation

@@ -33,6 +33,10 @@
   --font-text-2xs-size: 10px;
   --font-text-2xs-line-height: 14px;
   --spacing: 4px;
+  --gap-control-group: calc(var(--spacing) * 2);
+  --padding-control-inline: calc(var(--spacing) * 2);
+  --gap-sidebar-entrances: var(--gap-control-group);
+  --padding-sidebar-entrances: calc(var(--spacing) * 3);
   --radius-control: 7px;
   --height-navigation-row: 34px;
   --gap-navigation-groups: 24px;
@@ -68,6 +72,9 @@
   --codex-sidebar-meta-font-size: 12px;
   --codex-sidebar-meta-line-height: 18px;
   --transition-duration-basic: 150ms;
+  // Codex 26.908.40834 motion tokens (app-dddf03d14541.css).
+  --cubic-enter: cubic-bezier(.19, 1, .22, 1);
+  --ease-enter-snappy: cubic-bezier(.23, 1, .32, 1);
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -86,6 +93,7 @@
   // z-index numbers of their own. In particular, a dialog opened from inside
   // an application modal must paint above that modal, while its popovers,
   // tooltips and transient notices remain ordered deterministically.
+  --layer-workspace-composer: 80;
   --layer-shell-navigation: 90;
   --layer-application-modal: 230;
   --layer-nested-modal: 240;

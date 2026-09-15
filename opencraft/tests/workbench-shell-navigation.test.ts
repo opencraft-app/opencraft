@@ -11,14 +11,19 @@ test("application width preferences are bounded and invalid storage falls back s
     expanded: shellNavigationMetrics.columnWidth,
     expandedMinimum: shellNavigationMetrics.expandedMinimumWidth,
     footerMinimum: shellNavigationMetrics.footerMinimumWidth,
-  }, { compact: 52, expanded: 182, expandedMinimum: 168, footerMinimum: 260 });
-  for (const value of [undefined, null, "300", NaN, Infinity]) assert.equal(resolveShellNavigationWidth(value), 182);
-  assert.equal(resolveShellNavigationWidth(100), 168);
-  assert.equal(resolveShellNavigationWidth(340), 340);
-  assert.equal(resolveShellNavigationWidth(900), 520);
+  }, { compact: 52, expanded: 137, expandedMinimum: 126, footerMinimum: 260 });
+  for (const value of [undefined, null, "300", NaN, Infinity]) assert.equal(resolveShellNavigationWidth(value), 137);
+  assert.equal(resolveShellNavigationWidth(100), 126);
+  assert.equal(resolveShellNavigationWidth(137), 137);
+  assert.equal(shellNavigationMetrics.expandedMaximumWidth, 137);
+  assert.equal(resolveShellNavigationWidth(132), 132, "valid custom widths remain intact");
+  for (const width of [182.828125, 340, 520, 900]) {
+    assert.equal(resolveShellNavigationWidth(width), 137, "legacy oversize preferences respect the content cap");
+  }
   const input = { state: createShellNavigationState(), viewportWidth: 1100, contextWidth: 275, contextAvailable: true, sidecarOpen: true };
   assert.equal(projectShellNavigation({ ...input, navigationWidth: 340 }).dockOpen, true);
-  assert.equal(projectShellNavigation({ ...input, navigationWidth: 520 }).dockOpen, false);
+  assert.equal(projectShellNavigation({ ...input, navigationWidth: 520 }).railWidth, 137);
+  assert.equal(projectShellNavigation({ ...input, viewportWidth: 800, navigationWidth: 520 }).dockOpen, false);
   assert.equal(project().footer.right, project().footer.left, "symmetric insets let the platform fill the first rail");
 });
 
@@ -74,10 +79,10 @@ test("width pressure with a collapsed conversation leaves no orphan footer", () 
 
 test("narrow presentation preserves pins, supports peek, restores with hysteresis", () => {
   const state = createShellNavigationState({ applications: true, account: true });
-  assert.equal(project(state, 876).dockOpen, false);
-  assert.equal(project(state, 892, false).dockOpen, false);
-  assert.equal(project(state, 909, false).dockOpen, true);
-  assert.equal(project(state, 892, true).dockOpen, true);
+  assert.equal(project(state, 831).dockOpen, false);
+  assert.equal(project(state, 847, false).dockOpen, false);
+  assert.equal(project(state, 864, false).dockOpen, true);
+  assert.equal(project(state, 847, true).dockOpen, true);
   const peek = reduceShellNavigation(state, { type: "toggle", surface: "applications", dockAvailable: false });
   assert.equal(project(peek, 400).peek, "applications");
   assert.deepEqual(peek.pinned, state.pinned);

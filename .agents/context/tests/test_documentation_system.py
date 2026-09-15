@@ -16,6 +16,7 @@ PRIMARY_SERVICES = {
     "ai-gateway": "ai-gateway",
     "cloudagent": "cloudagent",
     "cloudladdergateway": "cloudladdergateway",
+    "collaboration": "collaboration",
     "codesign": "codesign",
     "credit": "credit",
     "ctl": "ctl",
@@ -34,6 +35,7 @@ PRIMARY_SERVICES = {
     "trade": "trade",
     "user-auth": "user/auth",
     "velagw": "velagw",
+    "vela-computer": "vela-computer",
     "velalink": "velalink",
     "workers": "workers",
 }

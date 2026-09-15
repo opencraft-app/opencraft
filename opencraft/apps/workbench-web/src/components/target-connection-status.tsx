@@ -1,8 +1,8 @@
 import { useHostConnectionPhase } from "../runtime/appserver-runtime-context";
 
-export function TargetConnectionStatus({ hostId }: { hostId: string }) {
+export function TargetConnectionStatus({ hostId, showLabel = false }: { hostId: string; showLabel?: boolean }) {
   const phase = useHostConnectionPhase(hostId);
-  return <ConnectionStatus phase={phase} />;
+  return showLabel ? <span className="environment-connection-label"><ConnectionStatus phase={phase} /><span>{phase === "ready" ? "已连接" : phase === "idle" ? "未连接" : phase === "error" ? "连接失败" : phase === "reconnecting" ? "重新连接中" : "连接中"}</span></span> : <ConnectionStatus phase={phase} />;
 }
 
 /** Pure presentation: only the runtime owns connection state. */

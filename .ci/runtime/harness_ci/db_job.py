@@ -43,6 +43,22 @@ class CommandResult:
 
 
 SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
+    ("collaboration", "migration"): {
+        "namespace": "lightvela-collaboration",
+        "deployment": "collaboration",
+        "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
+        "image_env_key": "COLLABORATION_IMAGE",
+        "command": ["/usr/local/bin/chatserver", "database", "migrate", "--database-driver", "tdsql",
+                    "--database-dsn-file", "/var/run/secrets/collaboration/database.dsn"],
+        "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
+        "volumes": [{"name": "database-secret", "secret": {
+            "secretName": "collaboration-runtime-secrets", "defaultMode": 0o440,
+            "items": [{"key": "database.dsn", "path": "database.dsn"}],
+        }}],
+        "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
+        "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                     "capabilities": {"drop": ["ALL"]}},
+    },
     ("payment", "migration"): {
         "namespace": "user-auth",
         "deployment": "payment",
@@ -655,16 +671,18 @@ def build_job_manifest(
         container["command"] = copy.deepcopy(spec["command"])
     if spec.get("args"):
         container["args"] = copy.deepcopy(spec["args"])
+    if spec.get("containerSecurityContext"):
+        container["securityContext"] = copy.deepcopy(spec["containerSecurityContext"])
     if dynamic.get("env"):
         container["env"] = copy.deepcopy(dynamic["env"])
-    if dynamic.get("volumeMounts"):
-        container["volumeMounts"] = copy.deepcopy(dynamic["volumeMounts"])
+    if dynamic.get("volumeMounts") or spec.get("volumeMounts"):
+        container["volumeMounts"] = copy.deepcopy(dynamic.get("volumeMounts") or spec["volumeMounts"])
 
     pod_spec: dict[str, Any] = {
         "restartPolicy": spec.get("restartPolicy", "Never"),
         "containers": [container],
     }
-    for field in ("initContainers", "volumes", "nodeSelector", "dnsPolicy", "hostNetwork"):
+    for field in ("initContainers", "volumes", "nodeSelector", "dnsPolicy", "hostNetwork", "securityContext"):
         if field in spec:
             pod_spec[field] = copy.deepcopy(spec[field])
     for field in ("initContainers", "volumes", "nodeSelector", "dnsPolicy", "hostNetwork"):

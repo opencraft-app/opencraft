@@ -27,6 +27,12 @@ master 源码
 
 ## 不变量
 
+- 前端 MR guard 的隔离工作目录必须保持 `frontend/package.json` 中本地 `file:` 依赖的相对布局：
+  当前复制 `frontend`、`velalink` 和 `shared/lightvela-agent-core`，排除依赖目录与构建缓存后执行
+  frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。
+  MR runner 仍从可信 `origin/master` 提取注册入口；旧 guard 无法校验自身修复时，先通过独立
+  `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
+  回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
@@ -78,24 +84,27 @@ master 源码
 - 环境启用顺序为 Credit/Trade schema、LLMGateway plan 与 Trade 商品定义、服务和 worker、
   Service Gateway 用户路由，最后才开放真实购买流量。
 - `sandbox-bj-7` 是首个验证环境；北京验证通过后由 `master` 为 `beijing-sandbox` 构建并
-  auto-pin Credit。北京使用独立 `credit` 库/用户和 SSM Secret，不沿用 playground 敏感输入。
-- Credit API 的支付票据依赖 Redis：`sandbox-bj-7` 复用命名空间 Redis 和已有 playground Secret，
-  `beijing-sandbox` 从 Credit 自己的 SSM/SOPS runtime Secret 注入密码。发布 API 前必须验证 Redis
-  地址、凭据和连通性；每日用量与生命周期 worker 不依赖该连接。只有 API 与精确的 Service Gateway
-  `optional_auth_allow` 同时收敛后，才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与
-  ticket TTL 属于环境级 API 配置，必须留在各环境的 Deployment patch；不能提升到 Credit shared
-  base/common，否则未接入 Redis 的其他地域也会被共享 replacement 阻断发布。
-- `beijing-sandbox` 的 Pass/default 计费地域保持 `LIGHTVELA_TRADE_REGION=ap-guangzhou`；
-  Credit 通过环境 patch 单独设置 `LIGHTVELA_CREDIT_REGION=ap-beijing`。其他环境未声明 Credit
-  专用地域时继承 Trade 地域，避免仅引入新配置键就改变存量行为。
-- 上海 Credit 仍按生产晋级流程单独接线；在上海验证完成前，Credit 的地域计费回调统一指向
-  北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
+  auto-pin Credit。`master` 同时构建上海和新加坡 Credit 镜像，但两地仍须人工 promote 到 `gitops`；
+  东京由 `.ci/tokyo-credit.yml` 构建并更新 `sandbox-jp-1`，不得用北京 auto-pin 代替东京发布。
+- 每个已接入地域使用独立 `credit` 库/用户、Redis 和 SSM/SOPS runtime Secret，不跨地域复用敏感输入。
+  Credit API 的支付票据依赖 Redis，每日用量与生命周期 worker 不依赖该连接。发布 API 前必须验证
+  Redis 地址、凭据和连通性；只有 API 与精确的 Service Gateway `optional_auth_allow` 同时收敛后，
+  才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与 ticket TTL 属于环境级 API 配置，
+  必须留在各环境的 Deployment patch，不能提升到 Credit shared base/common。
+- 各环境通过 patch 独立设置 `LIGHTVELA_CREDIT_REGION`：北京 `ap-beijing`、东京 `ap-seoul`、上海
+  `ap-shanghai`、新加坡 `ap-singapore`。Pass/default 的 `LIGHTVELA_TRADE_REGION` 保持原值；单独
+  发布 Credit 不得改变存量 Pass 地域。
+- 东京、上海和新加坡接入 Credit 时，Credit、Trade 与 Service Gateway 的环境配置必须在同一候选
+  revision 完成渲染和 contract 校验。上海、新加坡保持生产人工晋级，不因源码包含环境配置而自动发布。
+- Credit 每日用量的 `sendResource` 依赖 CloudLadder 的 `qbilling-send-resource-test` 签名路由；
+  `tkexgz` 与 `tkexsg` 的 CloudLadder 源码、Trade transport 和目标镜像必须协同构建/晋级，避免 Trade
+  已切换签名路由而网关仍返回 404。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
 - 积分包控制台 checkout 新增用户路由时，先发布支持订单归属和资源类型校验的 Trade 与 Credit，
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
-  `POST /v1/credit/packages/order-url`。首轮只更新 `sandbox-bj-7` 与 `beijing-sandbox`；不得因共享
-  源码或策略测试把该路由自动扩散到上海、新加坡等尚未完成 Credit 接线的环境。
+  `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
+  接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
 
 ### Referral 北京试点交付
 
@@ -110,6 +119,8 @@ master 源码
   首次基础发布保持 worker processing、Gateway 路由和前端入口关闭，待 schema/API/campaign 健康后单独启用。
 - 基础阶段 `REFERRAL_PROCESSING_ENABLED=false` 时，`referral-worker` Deployment 必须同步缩容到 0；
   正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
+- 北京正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
+  公共面只允许查询单个返利码与准备注册上下文，用户统计和返利码创建必须经过 session 鉴权。
 - 北京环境显式设置 `REFERRAL_ENABLED=true`；全局和上海/新加坡默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
@@ -178,6 +189,21 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 再批准包含新 registry 的部署候选；配置与镜像一起审核，不能把“源码已合入”当作部署前置完成。
 配置先回填 `master`，再通过正常晋级生成的 `gitops` MR 下发，禁止直接修改 `gitops` 或仅改 live。
 回滚至旧镜像前须移除 native client。发布验收同时覆盖 App 回跳/兑换和存量 Sites 登录。
+
+## Collaboration 北京候选交付
+
+- Collaboration 使用独立 `collaboration` release bundle 与 Stream 构建入口，仅构建北京镜像；
+  默认不 auto-pin、不创建生产 promote，不因源码合入就加入自动同步 AppSet。
+- Argo 描述符先保存在 `argocd/catalogs/candidates/beijing-sandbox/`，不在 AppSet 扫描范围。
+  SSM/SOPS 和独立逻辑 DB/user/DSN 就绪后，先用 foundation 描述符交付 Namespace/Secret，
+  再将同一个 active catalog 描述符切为 runtime 组合层；不新增手写 leaf Application。
+- Runtime promote 的配置门禁要求 active catalog 与真正的 SOPS artifact 已存在，并拒绝未替换
+  的 IM/镜像占位符。内部 Gateway token 由同环境两端 Secret 对齐后单独激活用户路由。
+- Collaboration 使用 Atlas/Ent 迁移历史。DB gate 每次先用候选镜像执行幂等 `database migrate`，
+  再由同一 digest 镜像执行 `database verify`；只以 Secret 文件挂载 DSN，不使用其他服务的
+  `schema_migrations` SQL 或 shell 拼接凭据。Migration/verify 都是受控一次性 Job，不进入应用启动。
+- 本轮只准备源码接线，不创建数据库实例、逻辑库、Secret 或 live workload。北京成功不能替代
+  上海/新加坡的独立接入；CI、GitOps、Argo 收敛和真实 IM 使用仍须分层验收。
 
 ## Secret 交付
 

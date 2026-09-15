@@ -11,7 +11,7 @@ export class DshInteractions {
   private readonly preparing = new Map<string, object>();
   constructor(
     private readonly client: Pick<DshClient, "respond">,
-    private readonly context: (sessionId: string) => Promise<{ turnId: string }>,
+    private readonly context: (sessionId: string, callId?: string) => Promise<{ turnId: string; itemId?: string }>,
     private readonly resolved: (params: { threadId: string; requestId: string }) => void,
   ) {}
   subscribe(listener: (request: InteractionRequest) => void) {
@@ -41,7 +41,7 @@ export class DshInteractions {
     if (this.pending.has(id) || this.preparing.has(id)) return;
     this.preparing.set(id, frame);
     try {
-      const context = await this.context(frame.sessionId);
+      const context = await this.context(frame.sessionId, frame.callId);
       if (this.preparing.get(id) !== frame) return;
       const approval = frame.type === "approval/requested";
       const request: InteractionRequest = {
@@ -49,7 +49,7 @@ export class DshInteractions {
         method: approval ? "item/commandExecution/requestApproval" : "item/tool/requestUserInput",
         params: {
           threadId: frame.sessionId, turnId: context.turnId,
-          itemId: frame.callId ? `dsh-tool-${frame.sessionId}-${frame.callId}` : `dsh-question-${id}`,
+          itemId: context.itemId ?? (frame.callId ? `dsh-tool-${frame.sessionId}-${frame.callId}` : `dsh-question-${id}`),
           ...(approval ? {
             approvalId: frame.approvalId, startedAtMs: Date.now(), environmentId: null,
             reason: frame.reason ?? `Allow tool ${frame.toolName}?`, command: null, cwd: null,

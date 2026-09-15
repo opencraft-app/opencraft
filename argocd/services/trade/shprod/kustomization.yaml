@@ -16,3 +16,4 @@ configMapGenerator:
       - trade-platform.env
 patches:
   - path: patch-account-binding.yaml
+  - path: patch-credit.yaml

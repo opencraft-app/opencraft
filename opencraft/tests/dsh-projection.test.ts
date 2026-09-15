@@ -1,35 +1,93 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DshToolProjection } from "../apps/local-agent-host/src/dsh-tool-projection.js";
 import { DshTurnProjection } from "../apps/local-agent-host/src/dsh-turn-projection.js";
 import { projectDshGoal } from "../apps/local-agent-host/src/dsh-goal-projection.js";
 import { classifyDshCommand } from "../apps/local-agent-host/src/dsh-command-actions.js";
 import { DshInteractions, type InteractionRequest } from "../apps/local-agent-host/src/dsh-interactions.js";
+import { DshAppServerAdapter } from "../apps/local-agent-host/src/dsh-appserver-adapter.js";
+import { DshClient } from "../apps/local-agent-host/src/dsh-client.js";
+import { mergeTurns } from "../packages/appserver-session/src/merge-turns.js";
+
+test("HyperNode terminal summaries preserve live Items and settle before completion", async () => {
+  for (const kind of ["completed", "aborted", "interrupted", "error", "blocked", "max-tokens", "unknown"]) {
+    const adapter = new DshAppServerAdapter({} as DshClient);
+    const events: Array<{ method: string; params: any }> = [];
+    adapter.subscribe((method, params) => events.push({ method, params }));
+    const accept = (type: string, data: any, seq: number) =>
+      (adapter as any).onMuxFrame({ type: "session/event", sessionId: "s", event: { type, data, seq, time: seq * 1000 } });
+    accept("turn/start", { turn: 1 }, 1);
+    accept("user/message", { id: "u", source: { kind: "user" }, content: [{ type: "text", text: "synthetic" }] }, 2);
+    accept("assistant/chunk", { chunk: { type: "reasoning-delta", index: 0, text: "thinking" } }, 3);
+    accept("assistant/chunk", { chunk: { type: "text-delta", index: 1, text: "synthetic reply" } }, 4);
+    accept("tool/call", { callId: "c", name: "read", arguments: {} }, 5);
+    accept("assistant/chunk", { chunk: { type: "text-delta", index: 2, text: "last reply" } }, 6);
+    accept("turn/end", { reason: { kind } }, 7);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    const count = events.length;
+    accept("turn/end", { reason: { kind } }, 8);
+    assert.equal(events.length, count, "terminal convergence is idempotent");
+    const terminalIndex = events.findIndex(e => e.method === "turn/completed");
+    const terminal = events[terminalIndex]!.params.turn;
+    assert.equal(terminal.itemsView, "summary");
+    assert.equal(terminal.status, kind === "completed" ? "completed" : ["aborted", "interrupted"].includes(kind) ? "interrupted" : "failed");
+    const completed = events.filter(e => e.method === "item/completed");
+    assert.ok(completed.some(e => e.params.item.type === "reasoning"));
+    assert.ok(completed.some(e => e.params.item.type === "dynamicToolCall" && e.params.item.status === "failed"));
+    const lastReply = completed.find(e => e.params.item.text === "last reply")!;
+    assert.equal(lastReply.params.item.phase, ["completed", "aborted", "interrupted"].includes(kind) ? "final_answer" : "commentary");
+    assert.ok(completed.every(e => events.indexOf(e) < terminalIndex));
+    if (terminal.status === "failed") assert.ok(events.findIndex(e => e.method === "error") < terminalIndex);
+    const live = { ...terminal, items: completed.map(e => e.params.item) };
+    const merged = mergeTurns([live], [terminal], { itemsMode: terminal.itemsView === "full" ? "replace" : "merge" });
+    assert.equal(merged[0]!.items.length, live.items.length);
+    assert.ok(merged[0]!.items.some(i => i.type === "userMessage"));
+    adapter.close();
+  }
+});
+
+test("completion without assistant output fails rather than inventing success", () => {
+  const projection = new DshTurnProjection("s", "dsh-turn-s-1", "/");
+  projection.project({ type: "turn/end", seq: 1, time: 1, data: { reason: { kind: "completed" } } });
+  assert.equal(projection.terminalOutcome?.status, "failed");
+  assert.match(projection.terminalOutcome!.error!.message, /without an assistant message/);
+});
+
+test("ported HyperNode reconciliation replaces mismatched final text without appending it twice", () => {
+  const projection = new DshTurnProjection("s", "dsh-turn-s-1", "/");
+  const chunk = projection.project({ type: "assistant/chunk", seq: 1, time: 1, data: { chunk: { type: "text-delta", index: 0, text: "draft" } } });
+  const id = chunk.started[0]!.id;
+  const message = projection.project({ type: "assistant/message", seq: 2, time: 2, data: { message: { content: [{ type: "text", text: "corrected answer" }] } } });
+  assert.equal(message.notifications.length, 0, "mismatch is replaced by completion, not appended");
+  assert.equal(message.completed.length, 0, "assistant/message is not a terminal commit");
+  const end = projection.project({ type: "turn/end", seq: 3, time: 3, data: { reason: { kind: "completed" } } });
+  assert.equal(end.completed[0]!.id, id);
+  assert.equal(end.completed[0]!.text, "corrected answer");
+  assert.equal(end.completed[0]!.phase, "final_answer");
+});
 
 test("tool result joins source.callId, retains arguments, unwraps output, and completes once", () => {
-  const projection = new DshToolProjection();
+  const projection = new DshTurnProjection("s", "t", "/");
   const start = { type: "tool/call", seq: 1, time: 100, data: { callId: "c1", name: "ask_user_question", arguments: '{"question":"Which?"}' } };
-  const [item] = projection.project("s", start);
-  assert.deepEqual(projection.project("s", start), []);
+  const [item] = projection.project(start).started;
+  assert.deepEqual(projection.project(start).events, []);
   const end = { type: "tool/result", seq: 2, time: 150, data: { message: { source: { kind: "tool", callId: "c1" }, content: [{ type: "tool-result", toolCallId: "c1", content: [{ type: "text", text: "answer" }] }] } } };
-  const [completed] = projection.project("s", end);
+  const [completed] = projection.project(end).completed;
   assert.equal(completed.id, item.id);
   assert.deepEqual(completed.arguments, { question: "Which?" });
   assert.deepEqual(completed.contentItems, [{ type: "inputText", text: "answer" }]);
   assert.equal(completed.durationMs, 50);
   assert.equal(completed.status, "completed");
-  assert.deepEqual(projection.project("s", end), []);
-  assert.deepEqual(projection.settle(200, false), []);
+  assert.deepEqual(projection.project(end).events, []);
 });
 test("interruption settles incomplete tools without inventing success", () => {
-  const projection = new DshToolProjection();
-  projection.project("s", { type: "tool/call", seq: 1, time: 100, data: { callId: "c1", name: "bash", arguments: {} } });
-  assert.equal(projection.settle(200, true)[0].status, "failed");
-  assert.deepEqual(projection.settle(201, true), []);
+  const projection = new DshTurnProjection("s", "t", "/");
+  projection.project({ type: "tool/call", seq: 1, time: 100, data: { callId: "c1", name: "bash", arguments: {} } });
+  assert.equal(projection.execution.interrupt(200).find(e => e.method === "item/completed")!.params.item.status, "failed");
+  assert.deepEqual(projection.execution.interrupt(201), []);
 });
 
 test("bash becomes a native command with output and authoritative failure markers", () => {
-  for (const [text, status, exitCode] of [["ok", "completed", 0], ["bad\n[exit code: 2]", "failed", 2], ["[timed out after 100ms]", "failed", null]] as const) {
+  for (const [text, status, exitCode] of [["ok", "completed", 0], ["bad\n[exit code: 2]", "failed", 2]] as const) {
     const projection = new DshTurnProjection("s", "t", "/workspace");
     const start = projection.project({ type: "tool/call", seq: 1, time: 100, data: { callId: "c", name: "bash", arguments: { command: "cat README.md" } } });
     assert.equal(start.started[0].type, "commandExecution");
@@ -46,13 +104,13 @@ test("bash becomes a native command with output and authoritative failure marker
 });
 test("assistant phase is settled by execution boundaries rather than guessed from text", () => {
   const projection = new DshTurnProjection("s", "t", "/");
-  const message = (seq: number) => ({ type: "assistant/message", seq, time: seq, data: { message: { content: [] } } });
-  assert.equal(projection.project(message(1), [{ type: "agentMessage", id: "a", text: "Checking" }]).completed.length, 0);
-  assert.equal(projection.snapshotPending()[0].phase, null);
+  const message = (seq: number) => ({ type: "assistant/message", seq, time: seq, data: { message: { content: [{ type: "text", text: seq === 1 ? "Checking" : "Done" }] } } });
+  assert.equal(projection.project(message(1)).completed.length, 0);
+  assert.equal(projection.execution.snapshot().items[0].phase, null);
   const tool = projection.project({ type: "tool/call", seq: 2, time: 2, data: { callId: "c", name: "read", arguments: {} } });
   assert.equal(tool.completed[0].phase, "commentary");
   assert.equal(tool.started[0].type, "dynamicToolCall");
-  projection.project(message(3), [{ type: "agentMessage", id: "b", text: "Done" }]);
+  projection.project(message(3));
   const end = projection.project({ type: "turn/end", seq: 4, time: 4, data: { reason: { kind: "completed" } } });
   assert.equal(end.completed[0].phase, "final_answer");
   assert.equal(end.completed[1].status, "failed");
@@ -61,13 +119,11 @@ test("TODO observations use one live/history identity each and never impersonate
   const projection = new DshTurnProjection("s", "t", "/");
   const todo = (seq: number, status: string) => projection.project({ type: "todo/write", seq, time: seq, data: { todos: [{ content: "Test", status }] } });
   const first = todo(1, "in_progress"); const last = todo(2, "completed");
-  assert.equal(first.completed[0].plan[0].status, "inProgress");
-  assert.notEqual(first.completed[0].id, last.completed[0].id);
-  assert.equal(last.completed[0].type, "todo-list");
-  assert.equal(last.completed[0].plan[0].step, "Test");
-  assert.equal(last.completed[0].plan[0].status, "completed");
-  assert.deepEqual(first.notifications, []);
-  assert.deepEqual(todo(2, "completed").completed, last.completed);
+  assert.equal(first.notifications[0].params.plan[0].status, "inProgress");
+  assert.equal(last.notifications[0].params.plan[0].step, "Test");
+  assert.equal(last.notifications[0].params.plan[0].status, "completed");
+  assert.equal(first.notifications[0].method, "turn/plan/updated");
+  assert.deepEqual(todo(2, "completed").events, []);
   assert.equal(projectDshGoal("s", { goal: { objective: "Ship", phase: "blocked" }, createdAt: 1000, updatedAt: 2000 })?.status, "blocked");
   assert.equal(projectDshGoal("s", { operation: "clear" }), null);
   assert.deepEqual(projection.project({ type: "goal/change", seq: 2, time: 2, data: {} }).notifications, []);

@@ -65,11 +65,11 @@ export function SettingsSection({
   );
 }
 
-export interface SettingsGroupProps extends HTMLAttributes<HTMLDivElement> {}
+export interface SettingsGroupProps extends HTMLAttributes<HTMLDivElement> { readonly appearance?: "card" | "plain" }
 
 /** One inset Settings card. Direct child rows receive the shared separator contract. */
-export function SettingsGroup({ children, className, ...props }: SettingsGroupProps) {
-  return <div {...props} className={classes("settings-control-group", className)}>{children}</div>;
+export function SettingsGroup({ children, className, appearance = "card", ...props }: SettingsGroupProps) {
+  return <div {...props} data-appearance={appearance} className={classes("settings-control-group", className)}>{children}</div>;
 }
 
 export interface SettingsRowProps extends HTMLAttributes<HTMLDivElement> {
@@ -222,9 +222,10 @@ export interface SettingsSwitchProps {
   readonly onCheckedChange: (checked: boolean) => void;
   readonly label: string;
   readonly disabled?: boolean;
+  readonly title?: string;
 }
 
-export function SettingsSwitch({ checked, onCheckedChange, label, disabled = false }: SettingsSwitchProps) {
+export function SettingsSwitch({ checked, onCheckedChange, label, disabled = false, title }: SettingsSwitchProps) {
   return (
     <button
       type="button"
@@ -232,6 +233,7 @@ export function SettingsSwitch({ checked, onCheckedChange, label, disabled = fal
       role="switch"
       aria-label={label}
       aria-checked={checked}
+      title={title}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
     >
@@ -289,8 +291,9 @@ export function SettingsActions({ align = "end", className, children, ...props }
 }
 
 export interface SettingsButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  readonly variant?: "primary" | "secondary" | "danger" | "ghost";
+  readonly variant?: "primary" | "secondary" | "danger" | "ghost" | "quiet";
 }
+
 
 export function SettingsButton({ variant = "secondary", className, children, ...props }: SettingsButtonProps) {
   return (

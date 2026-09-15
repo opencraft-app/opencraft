@@ -6,7 +6,9 @@ import {
   useInfiniteQuery,
   useQueries,
   useQueryClient,
+  useQuery,
 } from "@tanstack/react-query";
+import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
 import {
   createCordisAppServerRegistry,
   type CordisAppServerRegistryRuntime,
@@ -17,6 +19,8 @@ import {
 } from "@opencraft/bot-conversation-appserver";
 import { createCordisProfileSkillsRuntime } from "@opencraft/profile-skills-appserver";
 import type { Context as CordisContext } from "@deepseek-ai/cordis";
+import { AUTHENTICATION_PROVIDER_CHANNEL, AuthenticationService, AuthenticationFlowService } from "@opencraft/workbench-runtime";
+import { authenticationProviderAdapter } from "./authentication-contributions";
 import { BlobResourceService } from "@opencraft/blob-resources";
 import { ImageProcessingService } from "@opencraft/image-processing";
 import { processBrowserImage } from "@opencraft/image-processing/browser";
@@ -41,7 +45,6 @@ import {
   type ComposerExecutionTarget,
 } from "@opencraft/composer-core";
 import type {
-  Model,
   PermissionProfileSummary,
   Project,
   Thread,
@@ -51,6 +54,7 @@ import {
   OPENCRAFT_AGENT_CATALOG_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   type AgentCatalogEntry,
+  type CatalogModel as Model,
 } from "@opencraft/appserver-protocol";
 import {
   type AnnouncementCenter,
@@ -71,6 +75,11 @@ import {
 } from "@opencraft/chat-core";
 import {
   createCordisHostConnectionProviderRuntime,
+  EnvironmentDirectoryService,
+  EnvironmentProfileStore,
+  ENVIRONMENT_SOURCE_CHANNEL,
+  connectEnvironmentRuntimeRegistry,
+  type EnvironmentDirectory,
   createAppServerWorkbenchRuntime,
   createConversationActivationCoordinator,
   createConversationScopeLeaseRegistry,
@@ -114,10 +123,12 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { parseWorkbenchLocationUrl } from "./workbench-navigation";
 import { IndexedDbHostConnectionProfileStore } from "./indexeddb-host-profile-store";
+import { environmentSourceAdapter } from "./environment-directory/contribution-adapter";
 import { IndexedDbExtensionSettingsStorage } from "./indexeddb-extension-settings-storage";
 import { IndexedDbExtensionInstallationPersistence } from "./indexeddb-extension-installation-persistence";
 import { IndexedDbSidebarLayoutStorage } from "./indexeddb-sidebar-layout-storage";
@@ -144,6 +155,8 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly authenticationFlows: AuthenticationFlowService;
+  readonly environmentDirectory: EnvironmentDirectory;
   readonly selectedHostId: string;
   readonly hosts: readonly HostRuntimeDescriptor[];
   readonly profiles: readonly HostConnectionProfile[];
@@ -391,7 +404,7 @@ export function productDatabaseName(productId: string, base: string): string {
   return productId === "opencraft" ? base : `${base}-${productId}`;
 }
 
-function currentProductStorageKey(key: string): string {
+export function currentProductStorageKey(key: string): string {
   return productStorageKey(workbenchProductId, key);
 }
 
@@ -449,6 +462,8 @@ async function disposeOwnedSteps(
 }
 
 interface WebWorkbenchApplicationBase {
+  readonly authenticationFlows: AuthenticationFlowService;
+  readonly environmentDirectory: EnvironmentDirectory;
   readonly blobs: BlobResourceService;
   readonly images: ImageProcessingService;
   readonly cordis: CordisContext;
@@ -600,6 +615,7 @@ function createWebWorkbenchCommands(input: {
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
   commands = {
     async selectHost(hostId) {
+      if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && profile.enabled)) throw new Error("此环境当前不可连接，请刷新环境目录。");
       const activeDraft = input.scopes.getActiveDraft();
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
@@ -679,7 +695,7 @@ function createWebWorkbenchCommands(input: {
         input.registry.getSnapshot().hosts.map(({ hostId }) => hostId),
       );
       try {
-        input.registry.register(input.createHostRegistration(profile));
+        if (!input.registry.has(profile.hostId)) input.registry.register(input.createHostRegistration(profile));
       } catch (error) {
         await input.hostProfiles.remove(profile.hostId).catch(() => undefined);
         throw error;
@@ -843,20 +859,43 @@ export async function createWebWorkbenchApplicationSupervisor(
       connectionProviders.providers,
     );
     const hostProfileContributions = new HostProfileContributionRegistry();
+    const environmentFiber = cordis.plugin(EnvironmentDirectoryService);
+    await environmentFiber;
+    startupRollback.push(() => environmentFiber.dispose());
+    const environmentDirectory = cordis.environmentDirectory.directory;
     const platformViewRenderers = new PlatformViewRendererRegistry();
     const platformAccounts = new PlatformAccountContributionRegistry();
+    const authenticationFiber = cordis.plugin(AuthenticationService);
+    startupRollback.push(() => authenticationFiber.dispose());
+    await authenticationFiber;
+    const authenticationFlowFiber = cordis.plugin(AuthenticationFlowService);
+    startupRollback.push(() => authenticationFlowFiber.dispose());
+    await authenticationFlowFiber;
+    const authenticationFlows = cordis.authenticationFlows;
     const composerActionRenderers = new ComposerActionRendererRegistry();
     const platform = currentWorkbenchPlatform();
     const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
     if (electronAppHost !== null) startupRollback.push(() => electronAppHost.close());
+    const [lightVelaPlatform, lightVela] = await Promise.all([
+      import("@opencraft/plugin-lightvela-platform"),
+      import("@opencraft/plugin-lightvela-hermes"),
+    ]);
+    const lightVelaAccount = new lightVelaPlatform.LightVelaAccountService({
+      runtimeCommands: new lightVela.AppServerLightVelaRuntimeCommandPort(
+        appServerRegistry.clients,
+      ),
+    });
+    startupRollback.push(() => lightVelaAccount.dispose());
     const extensions = new ExtensionSupervisor({
       context: cordis,
       platform,
       internalContributions: {
         hostConnectionProvider: hostConnectionProviderAdapter,
         [HOST_PROFILE_CONTRIBUTION_CHANNEL]: hostProfileContributions.createAdapter(),
+        [ENVIRONMENT_SOURCE_CHANNEL]: environmentSourceAdapter(environmentDirectory),
         platformViewRenderer: createPlatformViewRendererContributionAdapter(platformViewRenderers),
         platformAccount: platformAccounts.createAdapter(),
+        [AUTHENTICATION_PROVIDER_CHANNEL]: authenticationProviderAdapter(cordis.authentication),
         composerActionRenderer: createComposerActionRendererContributionAdapter(composerActionRenderers),
       },
     });
@@ -883,13 +922,19 @@ export async function createWebWorkbenchApplicationSupervisor(
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
       const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
       await extensions.activate(createBuiltinAgentsExtension({
+        requestHost: async (hostId, method, params) => {
+          const result = await appServerRegistry.clients.getOrThrow(hostId).request(method, params);
+          if (changesComposerCapabilities(method)) {
+            // UI requests start after application construction. Invalidate the
+            // existing host-scoped catalog owner, never a session's selection.
+            void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
+          }
+          return result;
+        },
         createTransport: (hostId) => {
           if (electronAppHost === null) throw new Error("Electron App Host is unavailable");
           return electronAppHost.createTransport(hostId);
         },
-        requestHost: (hostId, method, params) => appServerRegistry.clients
-          .getOrThrow(hostId)
-          .request(method, params),
       }));
     }
     // Keep this expression direct: Vite can erase the entire dynamic-import
@@ -898,13 +943,21 @@ export async function createWebWorkbenchApplicationSupervisor(
       const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
       await extensions.activate(createHyperNodeExtension({ url: appServerUrl() }));
     }
-    const createLightVelaHermesExtension = (
-      await import("@opencraft/plugin-lightvela-hermes/runtime-entry")
-    ).default;
-    await extensions.activate(createLightVelaHermesExtension({
-      profileSkills: profileSkills.service,
-      appServerClients: appServerRegistry.clients,
+    await extensions.activate(lightVelaPlatform.createLightVelaPlatformExtension({
+      account: lightVelaAccount,
     }));
+    await extensions.activate(lightVela.createLightVelaHermesExtension({
+      account: lightVelaAccount,
+      profileSkills: profileSkills.service,
+    }));
+    if (platform === "web") {
+      const createLightVelaCollaborationExtension = (
+        await import("@opencraft/plugin-lightvela-collaboration/runtime-entry")
+      ).default;
+      await extensions.activate(createLightVelaCollaborationExtension({
+        account: lightVelaAccount,
+      }));
+    }
     const extensionInstallationPersistence = await IndexedDbExtensionInstallationPersistence.open({
       databaseName: currentProductDatabaseName("vela-extension-installations"),
     });
@@ -932,12 +985,16 @@ export async function createWebWorkbenchApplicationSupervisor(
     import.meta.env.VITE_APPSERVER_HOSTS_JSON as string | undefined,
     appServerUrl(),
   );
-  const hostProfiles = await IndexedDbHostConnectionProfileStore.open({
+  const configuredHostProfiles = await IndexedDbHostConnectionProfileStore.open({
     databaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
     ephemeral: hostProfileContributions.list(),
   });
+  const hostProfiles = new EnvironmentProfileStore(configuredHostProfiles, environmentDirectory);
   startupRollback.push(() => hostProfiles.close());
+  if (!configuredHostProfiles.getSnapshot().profiles.some(profile => profile.enabled)) {
+    await environmentDirectory.refresh().catch(() => undefined);
+  }
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
   if (profiles.length === 0) {
     const provisionHost = (input: ProvisionHostInput) => persistProvisionedHost(
@@ -946,6 +1003,8 @@ export async function createWebWorkbenchApplicationSupervisor(
       connectionProviders.providers,
     );
     const hostless: HostlessWebWorkbenchApplicationSupervisor = {
+      environmentDirectory,
+      authenticationFlows,
       blobs,
       images,
       mode: "hostless",
@@ -974,7 +1033,11 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => extensionSettings.close(),
           () => sidebarLayout.close(),
           () => extensionInstallationFiber.dispose(),
+          () => authenticationFlowFiber.dispose(),
           () => extensions.dispose(),
+          () => authenticationFiber.dispose(),
+          () => environmentFiber.dispose(),
+          () => lightVelaAccount.dispose(),
           disconnectAppearanceThemes,
           () => botDirectory.dispose(),
           () => profileSkills.dispose(),
@@ -1015,6 +1078,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   ): HostRuntimeRegistration<AppServerWorkbenchRuntime> => ({
     descriptor: profileDescriptor(profile),
     createRuntime: () => {
+      if (!hostProfiles.getSnapshot().profiles.some(current => current.hostId === profile.hostId && current.enabled)) throw new Error("此环境当前不可连接，请刷新环境目录。");
       const providerLease = connectionProviders.providers.acquire(profile.providerId, platform);
       let runtime: AppServerWorkbenchRuntime;
       try {
@@ -1058,6 +1122,10 @@ export async function createWebWorkbenchApplicationSupervisor(
       let disposed = false;
       return {
         ...runtime,
+        async connect() {
+          if (!hostProfiles.getSnapshot().profiles.some(current => current.hostId === profile.hostId && current.enabled)) throw new Error("此环境当前不可连接，请刷新环境目录。");
+          return runtime.connect();
+        },
         async dispose() {
           if (disposed) return;
           disposed = true;
@@ -1073,6 +1141,8 @@ export async function createWebWorkbenchApplicationSupervisor(
   const registrations = profiles.map(createHostRegistration);
   const registry = new HostRuntimeRegistry(registrations);
   startupRollback.push(() => registry.dispose());
+  const stopEnvironmentRegistry = connectEnvironmentRuntimeRegistry(hostProfiles, registry, createHostRegistration);
+  startupRollback.push(stopEnvironmentRegistry);
   const active = registry.getRuntime(initialHostId).getSnapshot();
   const persistedThreadId = window.localStorage.getItem(activeThreadStorageKey(initialHostId))
     ?? window.localStorage.getItem(currentProductStorageKey("vela.active-thread-id"));
@@ -1162,6 +1232,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     connectionProviders: connectionProviders.providers,
   });
   const supervisor: WebWorkbenchApplicationSupervisor = {
+    environmentDirectory,
+    authenticationFlows,
     blobs,
     images,
     mode: "active",
@@ -1195,6 +1267,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     removeHost: commands.removeHost,
     async dispose() {
       await disposeOwnedSteps([
+        stopEnvironmentRegistry,
         () => navigation.dispose(),
         () => conversationActivation.dispose(),
         () => conversationViews.dispose(),
@@ -1210,7 +1283,11 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => extensionSettings.close(),
         () => sidebarLayout.close(),
         () => extensionInstallationFiber.dispose(),
+        () => authenticationFlowFiber.dispose(),
         () => extensions.dispose(),
+        () => authenticationFiber.dispose(),
+        () => environmentFiber.dispose(),
+        () => lightVelaAccount.dispose(),
         disconnectAppearanceThemes,
         () => botDirectory.dispose(),
         () => profileSkills.dispose(),
@@ -1302,6 +1379,8 @@ export function AppServerRuntimeProvider({
   }
   const composerController = conversationView.composer;
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    environmentDirectory: supervisor.environmentDirectory,
+    authenticationFlows: supervisor.authenticationFlows,
     blobs: supervisor.blobs,
     images: supervisor.images,
     conversationScopes,
@@ -1555,6 +1634,7 @@ export function useMultiHostThreadCatalog(): {
   readonly isFetching: boolean;
 } {
   const application = useContext(ApplicationRuntimeContext);
+  const [, setReadinessRevision] = useState(0);
   if (application === null) throw new Error("AppServerRuntimeProvider is missing");
   const visibleHostIds = useMemo(() => new Set(
     application.profiles
@@ -1571,6 +1651,7 @@ export function useMultiHostThreadCatalog(): {
     application.registry,
     hostIds,
     (hostId) => {
+      setReadinessRevision(value => value + 1);
       void queryClient.invalidateQueries({
         queryKey: ["appserver", hostId, "threads"],
       });
@@ -1578,6 +1659,9 @@ export function useMultiHostThreadCatalog(): {
   ), [application.registry, hostIds, queryClient]);
   const queries = useQueries({
     queries: hosts.map((host) => ({
+      // Discovery must not establish a remote connection merely to paint Chat.
+      enabled: application.profiles.find(profile => profile.hostId === host.hostId)?.autoConnect === true
+        || application.registry.peekRuntime(host.hostId)?.getSnapshot().phase === "ready",
       queryKey: ["appserver", host.hostId, "threads", "sidebar", "updated_at", "desc", false] as const,
       queryFn: async () => {
         const runtime = await application.registry.ensureConnected(host.hostId);
@@ -1645,6 +1729,8 @@ export interface ComposerCatalogSnapshot {
   readonly modelError: Error | null;
   readonly permissionProfileError: Error | null;
   readonly agentError: Error | null;
+  readonly onModelMenuOpen: () => void;
+  readonly retryModels: () => void;
 }
 
 function errorOrNull(error: unknown): Error | null {
@@ -1669,36 +1755,17 @@ export function useComposerCatalog(
       OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION
     ] !== undefined;
   const modelCatalogOwner = supportsScopedModelCatalog ? threadId : null;
-  const agents = useInfiniteQuery({
-    queryKey: ["appserver", snapshot.hostId, "agents"] as const,
-    enabled,
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listAgents({
-      cursor: pageParam,
-      limit: 100,
-    }),
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
-    staleTime: 60_000,
-    retry: false,
-  });
-  const models = useInfiniteQuery({
-    queryKey: [
-      "appserver",
-      snapshot.hostId,
-      "composer-models",
-      modelCatalogOwner ?? "host",
-    ] as const,
-    enabled,
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listModels({
-      cursor: pageParam,
-      limit: 100,
-      includeHidden: false,
-      ...(modelCatalogOwner === null ? {} : { threadId: modelCatalogOwner }),
-    }),
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
-    staleTime: 60_000,
-  });
+  const queryClient = useQueryClient();
+  const options = useMemo(() => composerCapabilitiesOptions(snapshot.hostId, modelCatalogOwner, runtime.resources.composerCatalog), [snapshot.hostId, modelCatalogOwner, runtime]);
+  const capabilities = useQuery({ ...options, enabled });
+  const catalogActions = useMemo(() => ({
+    onModelMenuOpen: () => {
+      if (!enabled) return;
+      const failed = queryClient.getQueryState(options.queryKey)?.error != null;
+      void queryClient.fetchQuery({ ...options, ...(failed ? { staleTime: 0 } : {}) }).catch(() => undefined);
+    },
+    retryModels: () => { if (enabled) void invalidateComposerCapabilities(queryClient, snapshot.hostId).catch(() => undefined); },
+  }), [enabled, options, queryClient, snapshot.hostId]);
   const permissionProfiles = useInfiniteQuery({
     queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,
     enabled,
@@ -1712,17 +1779,9 @@ export function useComposerCatalog(
     staleTime: 60_000,
   });
 
-  useEffect(() => {
-    if (agents.hasNextPage && !agents.isFetchingNextPage) void agents.fetchNextPage();
-  }, [agents.fetchNextPage, agents.hasNextPage, agents.isFetchingNextPage]);
   useEffect(() => runtime.resources.composerCatalog.subscribeAgentsChanged(() => {
-    void agents.refetch();
-  }), [agents.refetch, runtime]);
-  useEffect(() => {
-    if (models.hasNextPage && !models.isFetchingNextPage) {
-      void models.fetchNextPage();
-    }
-  }, [models.fetchNextPage, models.hasNextPage, models.isFetchingNextPage]);
+    void invalidateComposerCapabilities(queryClient, snapshot.hostId).catch(() => undefined);
+  }), [queryClient, snapshot.hostId, runtime]);
   useEffect(() => {
     if (permissionProfiles.hasNextPage && !permissionProfiles.isFetchingNextPage) {
       void permissionProfiles.fetchNextPage();
@@ -1733,23 +1792,20 @@ export function useComposerCatalog(
     permissionProfiles.isFetchingNextPage,
   ]);
 
-  const modelData = useMemo(
-    () => models.data?.pages.flatMap((page) => page.data) ?? [],
-    [models.data],
-  );
   const permissionProfileData = useMemo(
     () => permissionProfiles.data?.pages.flatMap((page) => page.data) ?? [],
     [permissionProfiles.data],
   );
 
   return {
-    agents: agents.data?.pages.flatMap((page) => page.data) ?? [],
-    models: modelData,
+    agents: capabilities.data?.agents ?? [],
+    models: capabilities.data?.models ?? [],
     permissionProfiles: permissionProfileData,
-    isFetching: agents.isFetching || models.isFetching || permissionProfiles.isFetching,
-    agentError: errorOrNull(agents.error),
-    modelError: errorOrNull(models.error),
+    isFetching: capabilities.isFetching || permissionProfiles.isFetching,
+    agentError: errorOrNull(capabilities.error),
+    modelError: capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
     permissionProfileError: errorOrNull(permissionProfiles.error),
+    ...catalogActions,
   };
 }
 

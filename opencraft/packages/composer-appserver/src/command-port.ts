@@ -22,6 +22,7 @@ import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
 import {
   compileSubmitIntent,
+  SubmitCompileError,
   type SubmitCompileDiagnostic,
   type SubmitCompilerOptions,
 } from "./compiler";
@@ -35,6 +36,7 @@ export interface AppServerConversationCommandPortConfig {
   readonly client: Pick<AppServerClient, "hostId" | "request">;
   readonly interactions: InteractionResponsePort;
   readonly compiler?: SubmitCompilerOptions;
+  readonly resolveCompilerOptions?: (intent: SubmitIntent) => Promise<SubmitCompilerOptions>;
   /** Product-owned tools installed on every newly-created Thread. */
   readonly dynamicTools?: readonly DynamicToolSpec[];
   readonly now?: () => number;
@@ -103,6 +105,12 @@ function forkOptions(
 export function createAppServerConversationCommandPort(
   config: AppServerConversationCommandPortConfig,
 ): ConversationCommandPort {
+  const compile = async (intent: SubmitIntent) => {
+    let resolved: SubmitCompilerOptions | undefined;
+    try { resolved = await config.resolveCompilerOptions?.(intent); }
+    catch (cause) { throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", `无法确认模型能力，尚未发送请求：${cause instanceof Error ? cause.message : String(cause)}`); }
+    return compileSubmitIntent(intent, { ...config.compiler, ...resolved });
+  };
   const now = config.now ?? Date.now;
   const createCommandId =
     config.createCommandId ?? (() => `continue-command-${crypto.randomUUID()}`);
@@ -162,7 +170,7 @@ export function createAppServerConversationCommandPort(
         `SubmitIntent host ${hostId} cannot be sent through AppServer host ${config.hostId}`,
       );
     }
-    const compiled = compileSubmitIntent(intent, config.compiler);
+    const compiled = await compile(intent);
     for (const diagnostic of compiled.diagnostics)
       config.onDiagnostic?.(diagnostic, intent);
     let threadId: string;
@@ -281,7 +289,7 @@ export function createAppServerConversationCommandPort(
         `SubmitIntent host ${hostId} cannot be sent through AppServer host ${config.hostId}`,
       );
     }
-    const compiled = compileSubmitIntent(intent, config.compiler);
+    const compiled = await compile(intent);
     for (const diagnostic of compiled.diagnostics)
       config.onDiagnostic?.(diagnostic, intent);
     const started = await config.client.request("thread/start", {

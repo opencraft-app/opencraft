@@ -29,7 +29,7 @@ export type ThreadResumeState = "needs_resume" | "resuming" | "resumed";
 export type ThreadStreamRole =
   | { role: "owner" }
   | { role: "follower"; ownerClientId: string };
-export type ThreadHistorySource = "legacy" | "tail" | "paginated" | "durable" | "thread-read-fallback" | "message-window";
+export type ThreadHistorySource = "legacy" | "tail" | "paginated" | "durable" | "thread-read-fallback" | "message-window" | "fork";
 
 export interface ThreadItemsPagination {
   olderCursor: string | null;

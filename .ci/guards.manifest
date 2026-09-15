@@ -65,6 +65,15 @@ guards:
       - user/auth/internal/service/referral_outbox.go
     command: .ci/checks/referral_guard.sh
 
+  - name: collaboration
+    paths:
+      - collaboration/**
+      - argocd/services/collaboration/**
+      - argocd/catalogs/candidates/*/collaboration*.yaml
+      - argocd/catalogs/sandbox/*/collaboration.yaml
+      - scripts/ssm_manifest.collaboration.beijing-sandbox.yaml
+    command: .ci/checks/collaboration_guard.sh
+
   - name: admin-gateway
     paths:
       - admin-gateway/**
@@ -75,7 +84,8 @@ guards:
 
   - name: frontend
     paths:
+      - .ci/checks/frontend_guard.sh
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
-    command: frontend/checks/guard.sh
+    command: .ci/checks/frontend_guard.sh

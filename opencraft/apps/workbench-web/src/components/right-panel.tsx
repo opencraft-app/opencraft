@@ -12,13 +12,14 @@ import {
   GitBranch,
   Maximize2,
   Minimize2,
+  MessageSquare,
   Plus,
   TerminalSquare,
   X,
 } from "lucide-react";
 import {
-  closestCenter,
   DndContext,
+  closestCenter,
   DragOverlay,
   PointerSensor,
   pointerWithin,
@@ -42,6 +43,8 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppShellLayoutMotion } from "./app-shell";
+import { useShellPresentation } from "./shell-presentation";
+import { PanelPresentationContext } from "./panel-presentation";
 import {
   reorderPanelTabPreview,
   resolvePanelTabCommit,
@@ -59,6 +62,7 @@ interface RightPanelProps {
 }
 
 function ToolbarActionIcon({ icon }: { readonly icon: string }) {
+  if (icon === "chat") return <MessageSquare size={14} />;
   if (icon === "terminal") return <TerminalSquare size={14} />;
   if (icon === "browser") return <Globe2 size={14} />;
   return <Plus size={14} />;
@@ -180,6 +184,7 @@ function PanelCreationMenu({
 }
 
 function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
+  if (tab.icon === "chat") return <MessageSquare size={13} />;
   if (tab.icon === "changes") return <GitBranch size={13} />;
   if (tab.icon === "terminal") return <TerminalSquare size={13} />;
   if (tab.icon === "browser") return <Globe2 size={13} />;
@@ -187,6 +192,8 @@ function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
 }
 
 interface DraggedPanelTab {
+  readonly presentationId: string;
+  readonly ownerId: string;
   readonly id: string;
   readonly tab: PanelTabDescriptor;
   readonly width: number | null;
@@ -220,7 +227,7 @@ function SortablePanelTab({
     setNodeRef,
     transform,
     transition,
-  } = useSortable({ id: tab.id });
+  } = useSortable({ id: tab.id, data: { panelRegion: tab.region } });
 
   return (
     <div
@@ -274,8 +281,8 @@ function SortablePanelTab({
   );
 }
 
-function PanelTabDropTail() {
-  const { setNodeRef } = useDroppable({ id: RIGHT_PANEL_TAB_DROP_TAIL_ID });
+function PanelTabDropTail({ region }: { region: "right" | "bottom" }) {
+  const { setNodeRef } = useDroppable({ id: `${region}:${RIGHT_PANEL_TAB_DROP_TAIL_ID}`, data: { panelRegion: region, panelTail: true } });
   return <div ref={setNodeRef} className="right-panel-tab-strip__drop-tail" />;
 }
 
@@ -316,7 +323,11 @@ export function RightPanel({
   toolbarActions,
   toolbarActionContext,
 }: RightPanelProps) {
-  const { headerRightWidth, rightPanelTabBarLeftInset } =
+  const region = "right" as const;
+  const regionState = state[region];
+  const presentation = useShellPresentation();
+  const fullWidth = presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth;
+  const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive } =
     useAppShellLayoutMotion();
   const headerRightWidthPx = useTransform(
     headerRightWidth,
@@ -338,23 +349,23 @@ export function RightPanel({
   );
   const previewTabIdsRef = useRef<readonly string[] | null>(null);
   const committedTabIds = useMemo(
-    () => state.right.tabs.map((tab) => tab.id),
-    [state.right.tabs],
+    () => regionState.tabs.map((tab) => tab.id),
+    [regionState.tabs],
   );
   const presentedTabs = useMemo(() => {
-    if (previewTabIds === null) return state.right.tabs;
-    const byId = new Map(state.right.tabs.map((tab) => [tab.id, tab]));
+    if (previewTabIds === null) return regionState.tabs;
+    const byId = new Map(regionState.tabs.map((tab) => [tab.id, tab]));
     return previewTabIds.flatMap((id) => {
       const tab = byId.get(id);
       return tab === undefined ? [] : [tab];
     });
-  }, [previewTabIds, state.right.tabs]);
+  }, [previewTabIds, regionState.tabs]);
   const draggedTabId = draggedTab?.id ?? null;
   const activeTab =
-    state.right.tabs.find((tab) => tab.id === state.right.activeTabId) ?? null;
+    regionState.tabs.find((tab) => tab.id === regionState.activeTabId) ?? null;
   const creationActions = toolbarActions.filter(
     (action) =>
-      action.region === "right" &&
+      action.region === region &&
       action.creationLabel !== undefined &&
       (action.isAvailable?.(toolbarActionContext) ?? true),
   );
@@ -371,11 +382,11 @@ export function RightPanel({
     const strip = stripRef.current;
     if (
       strip !== null &&
-      Math.abs(strip.scrollLeft - state.right.scrollOffset) > 1
+      Math.abs(strip.scrollLeft - regionState.scrollOffset) > 1
     ) {
-      strip.scrollLeft = state.right.scrollOffset;
+      strip.scrollLeft = regionState.scrollOffset;
     }
-  }, [state.right.scrollOffset, state.ownerId]);
+  }, [regionState.scrollOffset, state.ownerId]);
 
   useEffect(() => {
     setDraggedTab(null);
@@ -408,7 +419,7 @@ export function RightPanel({
   };
   const updatePreview = (event: DragOverEvent) => {
     const activeId = String(event.active.id);
-    const overId = event.over === null ? null : String(event.over.id);
+    const overId = event.over === null ? null : event.over.data.current?.panelTail ? RIGHT_PANEL_TAB_DROP_TAIL_ID : String(event.over.id);
     if (overId === null) return;
     const next = reorderPanelTabPreview(
       previewTabIdsRef.current ?? committedTabIds,
@@ -420,11 +431,13 @@ export function RightPanel({
   };
   const startDrag = (event: DragStartEvent) => {
     const id = String(event.active.id);
-    const tab = state.right.tabs.find((candidate) => candidate.id === id);
+    const tab = regionState.tabs.find((candidate) => candidate.id === id);
     if (tab === undefined) return;
     previewTabIdsRef.current = committedTabIds;
     setPreviewTabIds(committedTabIds);
     setDraggedTab({
+      presentationId,
+      ownerId: state.ownerId,
       id,
       tab,
       width: event.active.rect.current.initial?.width ?? null,
@@ -432,6 +445,7 @@ export function RightPanel({
     });
   };
   const finishDrag = (event: DragEndEvent) => {
+    if (draggedTab?.presentationId !== presentationId || draggedTab.ownerId !== state.ownerId) { resetDrag(); return; }
     const activeId = String(event.active.id);
     if (event.over !== null) {
       const finalPreview =
@@ -439,7 +453,7 @@ export function RightPanel({
         reorderPanelTabPreview(
           committedTabIds,
           activeId,
-          String(event.over.id),
+          event.over.data.current?.panelTail ? RIGHT_PANEL_TAB_DROP_TAIL_ID : String(event.over.id),
         );
       const commit = resolvePanelTabCommit(
         committedTabIds,
@@ -447,13 +461,14 @@ export function RightPanel({
         activeId,
       );
       if (commit !== null) {
-        onAction({ type: "move-tab", region: "right", ...commit });
+        onAction({ type: "move-tab", region, ...commit });
       }
     }
     resetDrag();
   };
 
   return (
+    <PanelPresentationContext.Provider value={{ region, active: rightPanelPresentationActive }}>
     <DndContext
       sensors={sensors}
       collisionDetection={panelTabCollisionDetection}
@@ -462,7 +477,7 @@ export function RightPanel({
       onDragCancel={resetDrag}
       onDragEnd={finishDrag}
     >
-      <div className="right-panel-content" data-app-shell-tabs="true">
+      <div className="right-panel-content" data-app-shell-tabs="true" data-panel-region={region}>
         <header className="right-panel-toolbar">
           <motion.div
             aria-hidden="true"
@@ -477,7 +492,7 @@ export function RightPanel({
             onScroll={(event) =>
               onAction({
                 type: "set-scroll-offset",
-                region: "right",
+                region,
                 offset: event.currentTarget.scrollLeft,
               })
             }
@@ -487,7 +502,7 @@ export function RightPanel({
               strategy={horizontalListSortingStrategy}
             >
               {presentedTabs.map((tab) => {
-                const active = tab.id === state.right.activeTabId;
+                const active = tab.id === regionState.activeTabId;
                 return (
                   <SortablePanelTab
                     key={tab.id}
@@ -498,7 +513,7 @@ export function RightPanel({
                     onActivate={() =>
                       onAction({
                         type: "activate-tab",
-                        region: "right",
+                        region,
                         tabId: tab.id,
                       })
                     }
@@ -507,47 +522,51 @@ export function RightPanel({
                 );
               })}
             </SortableContext>
-            {state.right.tabs.length > 0 ? (
+            {regionState.tabs.length > 0 ? (
               <PanelCreationMenu
                 key={state.ownerId}
                 actions={creationActions}
                 context={toolbarActionContext}
               />
             ) : null}
-            <PanelTabDropTail />
+            <PanelTabDropTail region={region} />
           </div>
           <div className="right-panel-toolbar__actions">
             {toolbarActions
               .filter(
                 (action) =>
-                  action.region === "right" &&
+                  action.region === region &&
                   (action.isAvailable?.(toolbarActionContext) ?? true),
               )
               .map((action) => (
                 <PanelToolbarAction
-                  key={action.id}
+                  key={`${state.ownerId}:${action.id}`}
                   action={action}
                   context={toolbarActionContext}
                 />
               ))}
-            <button
+            {presentation?.restoreRightPanel ? <button
+              className="chrome-button right-panel-back-to-chat"
+              type="button"
+              onClick={presentation.restoreRightPanel}
+            >Back to chat</button> : <button
               className="chrome-button"
               type="button"
               title={
-                state.rightPanelFullWidth ? "Restore panel" : "Maximize panel"
+                fullWidth ? "Restore panel" : "Maximize panel"
               }
               onClick={() => onAction({ type: "toggle-right-full-width" })}
               aria-label={
-                state.rightPanelFullWidth ? "Restore panel" : "Maximize panel"
+                fullWidth ? "Restore panel" : "Maximize panel"
               }
-              aria-pressed={state.rightPanelFullWidth}
+              aria-pressed={fullWidth}
             >
-              {state.rightPanelFullWidth ? (
+              {fullWidth ? (
                 <Minimize2 size={14} />
               ) : (
                 <Maximize2 size={14} />
               )}
-            </button>
+            </button>}
             <motion.div
               aria-hidden="true"
               className="right-panel-header-action-spacer"
@@ -590,6 +609,7 @@ export function RightPanel({
             </div>
           ) : (
             <ActivePanel
+              key={activeTab.id}
               tab={activeTab}
               ownerId={state.ownerId}
               presentationId={presentationId}
@@ -611,7 +631,7 @@ export function RightPanel({
                 {draggedTab === null ? null : (
                   <DraggedPanelTabOverlay
                     dragged={draggedTab}
-                    active={draggedTab.id === state.right.activeTabId}
+                    active={draggedTab.id === regionState.activeTabId}
                   />
                 )}
               </DragOverlay>
@@ -619,5 +639,6 @@ export function RightPanel({
             document.body,
           )}
     </DndContext>
+    </PanelPresentationContext.Provider>
   );
 }

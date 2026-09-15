@@ -7,6 +7,11 @@ export interface DshSupervisorOptions {
   readonly repository?: string;
   readonly executable?: string;
   readonly dataDirectory?: string;
+  readonly startupTimeoutMs?: number;
+  readonly shutdownTimeoutMs?: number;
+  readonly onUnexpectedExit?: (error: Error) => void;
+  readonly patches?: readonly string[];
+  readonly onCapabilityBridge?: (url: string) => void;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -15,7 +20,9 @@ async function exists(path: string): Promise<boolean> {
 
 export class DshSupervisor {
   private child: ChildProcessByStdio<null, Readable, Readable> | null = null;
+  private readonly stopping = new WeakSet<object>();
   constructor(private readonly options: DshSupervisorOptions = {}) {}
+  get processId(): number | null { return this.child?.pid ?? null; }
 
   async start(): Promise<string> {
     const externallyManaged = process.env.OPENCRAFT_DSH_URL?.trim();
@@ -41,6 +48,7 @@ export class DshSupervisor {
     const args = useSource
       ? ["--expose-internals", tsxEntry, sourceEntry!, "web", "--host", "127.0.0.1", "--port", "0", "--no-open"]
       : ["--expose-internals", packagedEntry, "web", "--host", "127.0.0.1", "--port", "0", "--no-open"];
+    for (const path of this.options.patches ?? []) args.splice(args.indexOf("web") + 1, 0, "--patch", path);
     const child = spawn(command, args, {
       cwd: useSource ? repository : process.cwd(),
       env: {
@@ -54,34 +62,53 @@ export class DshSupervisor {
     child.stderr.pipe(process.stderr);
     return new Promise<string>((resolve, reject) => {
       let stdout = "";
+      let settled = false;
+      let ready = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        void this.stopChild(child).finally(() => reject(error));
+      };
       const timer = setTimeout(() => {
-        child.kill("SIGTERM");
-        reject(new Error("Timed out waiting for the bundled DSH host"));
-      }, 30_000);
-      const finish = (callback: () => void) => { clearTimeout(timer); callback(); };
+        fail(new Error("Timed out waiting for the bundled DSH host"));
+      }, this.options.startupTimeoutMs ?? 30_000);
       child.stdout.on("data", (chunk: Buffer) => {
         const text = chunk.toString("utf8");
         process.stdout.write(`[dsh] ${text}`);
-        stdout += text;
+        stdout = (stdout + text).slice(-8192);
         const match = /dsh web:\s*(https?:\/\/[^\s]+)/u.exec(stdout);
-        if (match) finish(() => resolve(match[1]!));
+        const bridge = /opencraft capability bridge:\s*(http:\/\/127\.0\.0\.1:\d+)/u.exec(stdout);
+        if (bridge) this.options.onCapabilityBridge?.(bridge[1]!);
+        if (match && !settled) {
+          settled = true;
+          ready = true;
+          clearTimeout(timer);
+          resolve(match[1]!);
+        }
       });
-      child.once("error", (error) => finish(() => reject(error)));
+      child.once("error", fail);
       child.once("exit", (code, signal) => {
-        this.child = null;
-        finish(() => reject(new Error(`DSH exited before startup (${code ?? signal ?? "unknown"})`)));
+        if (this.child === child) this.child = null;
+        const error = new Error(`DSH exited ${ready ? "during execution" : "before startup"} (${code ?? signal ?? "unknown"})`);
+        if (!ready) fail(error);
+        else if (!this.stopping.has(child)) this.options.onUnexpectedExit?.(error);
       });
     });
   }
 
   async stop(): Promise<void> {
     const child = this.child;
-    this.child = null;
-    if (child === null || child.exitCode !== null) return;
-    child.kill("SIGTERM");
-    await Promise.race([
-      new Promise<void>((resolve) => child.once("exit", () => resolve())),
-      new Promise<void>((resolve) => setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 3_000)),
-    ]);
+    if (child !== null) await this.stopChild(child);
+  }
+  private async stopChild(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
+    this.stopping.add(child);
+    if (this.child === child) this.child = null;
+    if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(() => { child.kill("SIGKILL"); }, this.options.shutdownTimeoutMs ?? 3_000);
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
+      child.kill("SIGTERM");
+    });
   }
 }

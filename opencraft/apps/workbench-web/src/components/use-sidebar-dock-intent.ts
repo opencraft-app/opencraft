@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   resolveSidebarFloatingIntent,
@@ -14,6 +14,7 @@ interface SidebarDockIntentOptions {
 
 interface SidebarDockIntent {
   readonly requested: boolean;
+  dismiss(): void;
 }
 
 function isSidebarTrigger(target: EventTarget | null): boolean {
@@ -120,6 +121,9 @@ export function useSidebarDockIntent({
       const wasOverTrigger = pointerOverTriggerRef.current;
       pointerXRef.current = event.clientX;
       pointerOverTriggerRef.current = overTrigger;
+      if (triggerSuppressedRef.current && !overTrigger && event.clientX > getPanelWidthRef.current()) {
+        triggerSuppressedRef.current = false;
+      }
 
       if (overTrigger && !wasOverTrigger) scheduleTriggerPeek();
       if (!overTrigger && wasOverTrigger) {
@@ -164,5 +168,13 @@ export function useSidebarDockIntent({
     resolveFromPointer();
   }, [enabled, lockOpen]);
 
-  return { requested };
+  const dismiss = useCallback(() => {
+    if (peekTimerRef.current !== null) window.clearTimeout(peekTimerRef.current);
+    peekTimerRef.current = null;
+    triggerPeekedRef.current = false;
+    triggerSuppressedRef.current = true;
+    requestedRef.current = false;
+    setRequested(false);
+  }, []);
+  return { requested, dismiss };
 }

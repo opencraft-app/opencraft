@@ -29,12 +29,18 @@ export function beginSidecarPrimaryResize(input: {
   readonly detent: ShellNavigationVisibleDetent;
   readonly expandedWidth: number;
   readonly compactWidth: number;
+  readonly currentWidth?: number;
 }): SidecarPrimaryResizeTransaction {
   return {
     originDetent: input.detent,
-    originWidth: input.detent === "compact" ? input.compactWidth : input.expandedWidth,
+    originWidth: input.currentWidth ?? (input.detent === "compact" ? input.compactWidth : input.expandedWidth),
     startClientX: input.clientX,
   };
+}
+
+/** Reflow in the normal expanded range; only the compact/hidden transition uses a layout floor. */
+export function primaryViewportWidth(frameWidth: number, expandedMinimumWidth: number): number {
+  return Math.max(expandedMinimumWidth, frameWidth);
 }
 
 /**

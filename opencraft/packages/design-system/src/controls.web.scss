@@ -46,7 +46,7 @@
   min-height: var(--height-navigation-row);
   width: auto;
   border-radius: var(--radius-lg);
-  gap: 8px;
+  gap: var(--gap-control-group);
   transition: background-color var(--transition-duration-basic);
   &[aria-pressed="true"], &:active:not(:disabled) {
     background: var(--color-background-button-tertiary-hover);

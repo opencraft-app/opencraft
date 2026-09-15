@@ -9,7 +9,7 @@ import {
   type RouteScopeId,
 } from "@opencraft/workbench-runtime";
 
-const HISTORY_NAMESPACE = "vela.application.route.v6";
+const HISTORY_NAMESPACE = "vela.application.route.v7";
 
 export type ApplicationRoute =
   | { readonly kind: "conversation" }
@@ -49,6 +49,7 @@ export interface BrowserWorkbenchNavigation {
   push(location: WorkbenchLocation): void;
   openSettings(slug?: string): void;
   openExtensionView(viewId: string, resourceUri?: string | null): void;
+  pushExtensionViewResource(viewId: string, resourceUri: string): void;
   replaceExtensionViewResource(viewId: string, resourceUri: string): void;
   closeSettings(): void;
   closeExtensionView(): void;
@@ -95,6 +96,15 @@ function isWorkbenchHistoryState(
 }
 
 export function parseApplicationRouteUrl(url: URL): ApplicationRoute {
+  if (url.pathname === "/environments" || url.pathname === "/environments/") {
+    const formerSection = url.searchParams.get("section");
+    return {
+      kind: "settings",
+      slug: formerSection !== null && formerSection !== "overview" && formerSection !== "connections"
+        ? formerSection
+        : "appearance",
+    };
+  }
   const settingsMatch = /^\/settings\/([^/]+)\/?$/u.exec(url.pathname);
   if (settingsMatch !== null) try {
     const slug = decodeURIComponent(settingsMatch[1]!);
@@ -313,7 +323,7 @@ export function createBrowserWorkbenchNavigation(
       );
       publish();
     },
-    openSettings(slug = "connections") {
+    openSettings(slug = "appearance") {
       if (disposed) throw new Error("Workbench navigation is disposed");
       if (
         applicationRoute.kind === "settings" &&
@@ -414,6 +424,36 @@ export function createBrowserWorkbenchNavigation(
       } else {
         window.history.replaceState(state, "", workbenchLocationUrl(location, applicationRoute));
       }
+      publish();
+    },
+    pushExtensionViewResource(viewId, resourceUri) {
+      if (disposed) throw new Error("Workbench navigation is disposed");
+      const normalizedViewId = viewId.trim();
+      const normalizedResourceUri = resourceUri.trim();
+      if (normalizedViewId.length === 0)
+        throw new RangeError("Extension View ID must not be empty");
+      if (normalizedResourceUri.length === 0)
+        throw new RangeError("Extension View resource URI must not be empty");
+      if (
+        applicationRoute.kind !== "extension-view" ||
+        applicationRoute.viewId !== normalizedViewId
+      ) {
+        throw new Error("Only the active Extension View can push one of its resources");
+      }
+      if (applicationRoute.resourceUri === normalizedResourceUri) return;
+      currentIndex += 1;
+      maximumIndex = currentIndex;
+      applicationRoute = {
+        kind: "extension-view",
+        viewId: normalizedViewId,
+        resourceUri: normalizedResourceUri,
+      };
+      action = "push";
+      window.history.pushState(
+        stateFor(location, currentIndex, routeScopeId, applicationRoute, applicationReturnIndex),
+        "",
+        workbenchLocationUrl(location, applicationRoute),
+      );
       publish();
     },
     replaceExtensionViewResource(viewId, resourceUri) {

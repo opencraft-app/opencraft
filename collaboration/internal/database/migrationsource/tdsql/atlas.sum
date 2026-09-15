@@ -1,0 +1,9 @@
+h1:gKE+Usz9+g837fFsUXLSvDJ4GzC92aR8nobHuvm5EKM=
+20260801000000_baseline.sql h1:/AQBkOinoGWFa1+BSuAPTjenQo/pZefRLzadxFMOXlA=
+20260802100000_computer_enrollment.sql h1:9JJrHG97mZCUgvkcdY+XgplAUnOznuFUDhTbEghmF2I=
+20260802170000_reminder_anchors.sql h1:x5L9lfx8IrdidoFN0McOrKH+udUX6Fv+GjDk6Bc9yOk=
+20260802180000_computer_setup_codes.sql h1:VO7g9/3YWLE0hIIrOPA/BvENsmpT+2R2BLUF0gwUv+I=
+20260803190328_agent_delete.sql h1:IjKRqM7cmfKhpidmswXJSWVI8uc6H+RN1MPbOnVo5qg=
+20260804110000_computer_display_name.sql h1:9XGMiVKOA4kgQdaW0aabMplsRra1aocp/Iui9iNiG1M=
+20260804120000_agent_handle_reuse.sql h1:15qhn3PV6m0iNS52COcPxAEBXx/svqRvJizWGj9HhjU=
+20260804130000_server_scoped_direct_messages.sql h1:Rwe7GxIR0WOzfuGBQB8IrvW/+C6xUoYfscXE7qEiJUI=

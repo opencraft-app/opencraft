@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import {
   useEffect,
   useRef,
@@ -75,14 +76,26 @@ export function RightPanelResizeHandle({
       setResizing(false);
       onResizingChange(false);
     };
+    const cancelResize = () => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      dragRef.current = null;
+      onResize(drag.startSize);
+      setResizing(false);
+      onResizingChange(false);
+    };
 
     window.addEventListener("pointermove", handlePointerMove, { passive: false });
     window.addEventListener("pointerup", finishResize, { passive: false });
-    window.addEventListener("pointercancel", finishResize, { passive: false });
+    window.addEventListener("pointercancel", cancelResize);
+    window.addEventListener("blur", cancelResize);
+    window.addEventListener("lostpointercapture", cancelResize);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", finishResize);
-      window.removeEventListener("pointercancel", finishResize);
+      window.removeEventListener("pointercancel", cancelResize);
+      window.removeEventListener("blur", cancelResize);
+      window.removeEventListener("lostpointercapture", cancelResize);
     };
   }, [getMaximumSize, onResize, onResizeEnd, onResizingChange, resizing]);
 
@@ -132,6 +145,7 @@ export function RightPanelResizeHandle({
   };
 
   return (
+    <>
     <div
       className="right-panel-resize-handle"
       data-resizing={resizing}
@@ -148,5 +162,7 @@ export function RightPanelResizeHandle({
     >
       <span aria-hidden="true" />
     </div>
+    {resizing ? createPortal(<div className="right-panel-resize-cursor" aria-hidden="true" />, document.body) : null}
+    </>
   );
 }

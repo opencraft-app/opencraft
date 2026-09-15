@@ -26,6 +26,8 @@ export const OPENCRAFT_BROWSER_CAPABILITY = Object.freeze({
     "press",
     "scroll",
     "wait",
+    "screenshot",
+    "close",
   ] as const,
   supportsCaptureViewport: false,
 });
@@ -37,6 +39,7 @@ const openInOpenCraftSchema = Object.freeze({
     url: { type: "string", description: "Absolute http(s) URL to open." },
     tab_id: { type: "string", description: "Existing OpenCraft browser tab ID." },
     placement: { type: "string", enum: ["right"], default: "right" },
+    visible: { type: "boolean", default: true, description: "False creates a background browser tab without taking focus. Open the same tab_id with visible=true to show it." },
   },
   anyOf: [{ required: ["url"] }, { required: ["tab_id"] }],
 });
@@ -62,7 +65,7 @@ const browserUseSchema = Object.freeze({
       enum: [
         "list_tabs", "navigate", "back", "forward",
         "reload", "stop", "inspect", "click", "fill", "press", "scroll",
-        "wait",
+        "wait", "screenshot", "close",
       ],
     },
     tab_id: { type: "string" },
@@ -180,7 +183,11 @@ async function executeBrowserTool(
       return textResponse(await host.getTabContext(contextOf(hostId, params), argumentsValue));
     }
     if (params.namespace === "vela_browser" && params.tool === "browser_use") {
-      return textResponse(await host.browserUse(contextOf(hostId, params), argumentsValue));
+      const result = await host.browserUse(contextOf(hostId, params), argumentsValue);
+      const image = record(result);
+      if (image?.["screenshot"] === true && typeof image["imageUrl"] === "string")
+        return { success: true, contentItems: [{ type: "inputImage", imageUrl: image["imageUrl"] }] };
+      return textResponse(result);
     }
     return null;
   } catch (error) {

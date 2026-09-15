@@ -1,0 +1,52 @@
+{
+  "name": "hypernode-policy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:model-metadata": "node scripts/generate-model-metadata.mjs",
+    "migrate:canonical-timeline": "node scripts/migrate-canonical-timeline.mjs",
+    "build:policy": "npm run generate:model-metadata && esbuild policy/src/main.ts --bundle --platform=neutral --format=iife --target=es2017 --alias:cloudflare:sockets=./policy/src/runtime/cloudflare-sockets.js --alias:node:path=./policy/src/runtime/node-path.js --alias:node:module=./policy/src/runtime/node-module.js --outfile=policy/default.js",
+    "build:workspace-agent": "esbuild policy/src/workspace-agent.js --bundle --platform=neutral --format=iife --target=es2017 --alias:cloudflare:sockets=./policy/src/runtime/cloudflare-sockets.js --alias:node:path=./policy/src/runtime/node-path.js --alias:node:module=./policy/src/runtime/node-module.js --outfile=policy/workspace-agent.js",
+    "promote:policy": "node scripts/promote-policy-candidate.mjs",
+    "promote:plugin": "node scripts/promote-runtime-plugin.mjs",
+    "project:protocol": "node scripts/project-protocol-schema.mjs",
+    "report:desktop-host": "node scripts/report-desktop-host-capabilities.mjs",
+    "check:types": "tsc -p tsconfig.policy.json && node scripts/check-strong-types.mjs",
+    "check:policy": "npm run project:protocol && npm run check:types && npm run build:policy && npm run build:workspace-agent && node scripts/check-policy-bundle.mjs",
+    "test:policy": "node --test policy/test/*.test.mjs",
+    "test:remote": "node --test policy/test/remote-control.test.mjs",
+    "e2e:policy": "node scripts/e2e-policy-over-ssh.mjs",
+    "e2e:vssh": "HYPERNODE_E2E_SSH_STACK=vssh node scripts/e2e-policy-over-ssh.mjs",
+    "e2e:workspace-agent": "go build -o /tmp/hypernode-workspace-agent ./cmd/hypernode && node scripts/e2e-workspace-agent.mjs",
+    "probe:app-server:ws": "node scripts/probe-app-server-direct-websocket.mjs",
+    "smoke:dsh": "go build -o /tmp/hypernode-dsh-workspace-agent ./cmd/hypernode && node scripts/smoke-dsh-engine.mjs && node scripts/smoke-dsh-browser-capability.mjs && HYPERNODE_WORKSPACE_AGENT_BIN=/tmp/hypernode-dsh-workspace-agent node scripts/smoke-dsh-worker.mjs",
+    "smoke:dsh:browser": "node scripts/smoke-dsh-browser-capability.mjs",
+    "smoke:dsh:ssh": "node scripts/smoke-dsh-over-ssh.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-agent-spine-demo": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-attachment-local": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-bash-local": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-checkpoint-policy": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-persistence-sqlite": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-subprocess": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-subprocess-local": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
+    "@earendil-works/pi-ai": "0.82.1",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
+    "aes-js": "^3.1.2",
+    "ssh2": "1.17.0",
+    "web-streams-polyfill": "^4.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "typescript": "7.0.2"
+  }
+}

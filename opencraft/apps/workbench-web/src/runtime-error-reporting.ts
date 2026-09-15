@@ -9,7 +9,8 @@ export interface RuntimeErrorReport {
     | "window-error"
     | "unhandled-rejection"
     | "panel-runtime-bootstrap"
-    | "application-bootstrap";
+    | "application-bootstrap"
+    | "application-disposal";
   url: string;
 }
 

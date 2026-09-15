@@ -53,6 +53,7 @@ import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerification
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
+import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
 // 治本（见该文件说明），barrel 顶层已无 SSR 危险依赖，页面层可安全静态导入。
@@ -4073,16 +4074,20 @@ export const AgentSettingsPage = ({
       setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
       return;
     }
-    const requestedCreateMode = isFirstBotCreation ? "blank" : createBotMode;
-    const sourceBot = requestedCreateMode === "clone-current" ? activeBot : defaultBot;
-    if (requestedCreateMode !== "blank" && !sourceBot) {
+    const cloneIntent = resolveBotCloneIntent({
+      isInitialCreation: isFirstBotCreation,
+      selection: createBotMode,
+      currentBotId: activeBot?.id,
+      mainBotId: defaultBot?.id,
+    });
+    if (!cloneIntent.ok) {
       setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
       return;
     }
     await createBotAndNavigate({
       name: normalizedName,
-      createMode: requestedCreateMode === "blank" ? "blank" : "clone",
-      sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id,
+      createMode: cloneIntent.intent.mode,
+      sourceBotId: cloneIntent.intent.mode === "clone" ? cloneIntent.intent.sourceBotId : undefined,
     });
   };
 

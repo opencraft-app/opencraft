@@ -6,6 +6,7 @@ export interface ModalRequest extends ModalDescriptor {
   readonly content: ReactNode;
   readonly className?: string;
   readonly onDismiss: (reason: ModalDismissReason) => void;
+  readonly returnFocus?: () => HTMLElement | null;
 }
 
 export interface ModalStackEntry extends ModalRequest {
@@ -38,4 +39,3 @@ export function resolveModalStack(
     stackIndex,
   }));
 }
-

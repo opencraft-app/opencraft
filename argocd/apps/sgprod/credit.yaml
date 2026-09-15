@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: credit-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-credit
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/credit/sgprod
+  destination:
+    namespace: credit
+    name: sgprod

@@ -469,6 +469,29 @@ export const createFakeRepositories = (): Repositories => {
       async prepareInviteCode() {
         await wait(NETWORK_DELAY_MS);
       },
+      async prepareReferralCode() {
+        await wait(NETWORK_DELAY_MS);
+      },
+      async issueReferralCode() {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          code: "DEMO234ABC",
+          url: "https://lightvela.com/auth/sign-in?ref=DEMO234ABC",
+          campaignId: "campaign-demo",
+          campaignName: "邀请返利内测",
+          startsAt: new Date().toISOString(),
+          endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        };
+      },
+      async getReferralStats() {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          successfulReferrals: 0,
+          grantedCredits: 0,
+          pendingRewards: 0,
+          grantedRewards: 0,
+        };
+      },
       async activateInviteCode() {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();

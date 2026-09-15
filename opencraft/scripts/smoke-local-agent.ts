@@ -83,6 +83,24 @@ try {
   const after = await request(id++, "runtime/settings/describe");
   assert.deepEqual(after.namespaces.find((entry: any) => entry.ns === "agent-default-model").value, defaults);
   assert.equal(JSON.stringify(after).includes("synthetic-smoke-key-not-a-real-secret"), false);
+  const nativeRevision = () => request(id++, "runtime/settings/describe").then((settings: any) => settings.namespaces.find((entry: any) => entry.ns === "llm-deepseek").revision);
+  await assert.rejects(request(id++, "runtime/providers/setEnabled", { provider: "deepseek-official", enabled: false, expectedRevision: await nativeRevision() }), /default model/);
+  const defaultRevision = after.namespaces.find((entry: any) => entry.ns === "agent-default-model").revision;
+  await request(id++, "runtime/settings/mutate", { ns: "agent-default-model", expectedRevision: defaultRevision, ops: [
+    { op: "set", path: ["provider"], value: "smoke-openai-completions" }, { op: "set", path: ["model"], value: "smoke-model-openai-completions" },
+  ] });
+  await request(id++, "runtime/providers/apply", { target: { kind: "update", id: "deepseek-official" }, expectedRevision: await nativeRevision(), baseURL: "", enabled: false, credential: { kind: "none" } });
+  await assert.rejects(request(id++, "runtime/providers/setEnabled", { provider: "deepseek-official", enabled: true, expectedRevision: await nativeRevision() }), /authentication/);
+  await request(id++, "runtime/providers/apply", { target: { kind: "update", id: "deepseek-official" }, expectedRevision: await nativeRevision(), baseURL: "",
+    credential: { kind: "replace", value: "synthetic-native-key" } });
+  await request(id++, "runtime/providers/setEnabled", { provider: "deepseek-official", enabled: true, expectedRevision: await nativeRevision() });
+  const nativeBefore = await request(id++, "runtime/settings/describe");
+  const nativeConfig = nativeBefore.namespaces.find((entry: any) => entry.ns === "llm-deepseek").value;
+  await request(id++, "runtime/providers/setEnabled", { provider: "deepseek-official", enabled: false, expectedRevision: await nativeRevision() });
+  const nativeDisabled = (await request(id++, "runtime/providers/list")).providers.find((entry: any) => entry.provider === "deepseek-official");
+  assert.equal(nativeDisabled.configuration.canToggle, true);
+  assert.equal(nativeDisabled.enabled, false); assert.equal(nativeDisabled.active, false);
+  assert.equal((await request(id++, "runtime/models/list")).groups.some((group: any) => group.id === "deepseek-official"), false);
   await request(id++, "runtime/models/setEnabled", { provider: "smoke-openai-responses", model: "smoke-model-openai-responses", enabled: false,
     expectedRevision: after.namespaces.find((entry: any) => entry.ns === "llm-pi-ai").revision });
   socket.terminate();
@@ -95,6 +113,21 @@ try {
   assert.equal(restored.groups.find((group: any) => group.id === "smoke-openai-responses").models.length, 0);
   const managed = await request(id++, "runtime/models/list", { includeDisabled: true });
   assert.equal(managed.groups.find((group: any) => group.id === "smoke-openai-responses").models[0].enabled, false);
+  const nativeRestored = (await request(id++, "runtime/providers/list")).providers.find((entry: any) => entry.provider === "deepseek-official");
+  assert.equal(nativeRestored.active, false); assert.equal(nativeRestored.enabled, false);
+  assert.ok(managed.groups.find((group: any) => group.id === "deepseek-official").models.length > 0);
+  const nativeAfter = (await request(id++, "runtime/settings/describe")).namespaces.find((entry: any) => entry.ns === "llm-deepseek").value;
+  assert.deepEqual(nativeAfter.models, nativeConfig.models);
+  assert.equal(nativeAfter.apiKeyEnv, nativeConfig.apiKeyEnv);
+  assert.equal((await request(id++, "runtime/credentials/describe", { refs: [nativeAfter.apiKeyEnv] })).credentials[nativeAfter.apiKeyEnv].configured, true);
+  await request(id++, "runtime/providers/setEnabled", { provider: "deepseek-official", enabled: true, expectedRevision: await nativeRevision() });
+  assert.equal((await request(id++, "runtime/providers/list")).providers.find((entry: any) => entry.provider === "deepseek-official").active, true);
+  const restoreSettings = await request(id++, "runtime/settings/describe");
+  await request(id++, "runtime/settings/mutate", { ns: "agent-default-model", expectedRevision: restoreSettings.namespaces.find((entry: any) => entry.ns === "agent-default-model").revision, ops: [
+    { op: "set", path: ["provider"], value: defaults.provider }, { op: "set", path: ["model"], value: defaults.model },
+  ] });
+  assert.deepEqual((await request(id++, "runtime/settings/describe")).namespaces.find((entry: any) => entry.ns === "agent-default-model").value, defaults);
+  console.log("Native provider parity passed: default and credential guards, unregister, disabled restart, preserved catalog/credential, re-enable.");
   console.log("Local Agent smoke passed: real DSH → AppServer → WebSocket, both custom protocols registered, restart persistence, unchanged defaults, no external model request.");
 } finally {
   socket?.terminate();

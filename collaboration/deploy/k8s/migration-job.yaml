@@ -1,0 +1,93 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chatserver-canary-20260804-clean-v4-migrate-template
+  namespace: dep
+  labels:
+    app.kubernetes.io/name: chatserver
+    app.kubernetes.io/instance: canary
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chatserver
+        app.kubernetes.io/instance: canary-migration
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: csighub-skipzhang
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      initContainers:
+        - name: bootstrap-database
+          image: mysql@sha256:a2d126916bc2ba79a890a4bf62d305eb8b68fcbdd35c6e582d529df18faf5ebb
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - >-
+              exec mysql
+              --defaults-extra-file=/var/run/secrets/chatserver/mysql-bootstrap.cnf
+              -e "CREATE DATABASE IF NOT EXISTS chatserver_canary_20260804_clean_v4 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: secrets
+              mountPath: /var/run/secrets/chatserver
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: migration
+          image: csighub.tencentyun.com/skipzhang/chatserver@sha256:c929bd8e45d1b8703c5706cb052f9985c5379f2ba7d8fa23f6a3489ce6bfb307
+          imagePullPolicy: IfNotPresent
+          args:
+            - database
+            - migrate
+            - --database-driver
+            - tdsql
+            - --database-dsn-file
+            - /var/run/secrets/chatserver/tdsql.dsn
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: secrets
+              mountPath: /var/run/secrets/chatserver
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          secret:
+            secretName: chatserver-canary-20260804-clean-v4-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,29 @@
+{
+  "name": "@opencraft/plugin-lightvela-platform",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./account-contract": "./src/account/lightvela-account-contract.ts",
+    "./account-view": "./src/account/lightvela-account-view.tsx",
+    "./web-login": "./src/account/lightvela-web-login.ts",
+    "./runtime-entry": "./src/runtime-entry.ts"
+  },
+  "dependencies": {
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0",
+    "lucide-react": "^1.35.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "~19.2.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

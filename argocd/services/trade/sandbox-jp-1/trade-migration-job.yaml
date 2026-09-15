@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trade-migrate
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+  labels:
+    app: trade
+    job: trade-migrate
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: trade
+        job: trade-migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: trade-migrate
+          image: lightclaw-jp1.tencentcloudcr.com/lightclaw/trade@sha256:03c05b967004d886a2b44aec0151fc8c1eeea1f695e98bbc203df38d5ac94c99
+          command:
+            - /usr/local/bin/trade-migrate
+          envFrom:
+            - configMapRef:
+                name: trade-config
+            - secretRef:
+                name: trade-runtime-secrets

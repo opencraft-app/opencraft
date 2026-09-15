@@ -54,13 +54,15 @@ type Config struct {
 	Addr     string
 	MySQLDSN string
 
-	InternalServiceToken          string
-	CtlInternalBaseURL            string
-	AccountBindingInternalBaseURL string
-	CreditInternalBaseURL         string
-	CreditSendResourceURL         string
-	CreditSendResourceHost        string
-	CreditSendResourceCID         string
+	InternalServiceToken                    string
+	CtlInternalBaseURL                      string
+	AccountBindingInternalBaseURL           string
+	CreditInternalBaseURL                   string
+	CreditSendResourceURL                   string
+	CreditSendResourceHost                  string
+	CreditSendResourceCID                   string
+	CreditSendResourceCloudLadderGatewayURL string
+	CreditSendResourceCloudLadderRouteID    string
 
 	JifeiCGWGatewayURL        string
 	JifeiCGWHostHeader        string
@@ -157,12 +159,17 @@ func Load() (Config, error) {
 				strings.TrimSpace(os.Getenv("TRADE_DB")),
 			),
 		),
-		InternalServiceToken:   strings.TrimSpace(os.Getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN")),
-		CtlInternalBaseURL:     strings.TrimSpace(os.Getenv("CTL_INTERNAL_BASE_URL")),
-		CreditInternalBaseURL:  strings.TrimSpace(os.Getenv("CREDIT_INTERNAL_BASE_URL")),
-		CreditSendResourceURL:  strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_URL")),
-		CreditSendResourceHost: strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_HOST")),
-		CreditSendResourceCID:  envOrDefault("CREDIT_SEND_RESOURCE_CID", "101433"),
+		InternalServiceToken:                    strings.TrimSpace(os.Getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN")),
+		CtlInternalBaseURL:                      strings.TrimSpace(os.Getenv("CTL_INTERNAL_BASE_URL")),
+		CreditInternalBaseURL:                   strings.TrimSpace(os.Getenv("CREDIT_INTERNAL_BASE_URL")),
+		CreditSendResourceURL:                   strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_URL")),
+		CreditSendResourceHost:                  strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_HOST")),
+		CreditSendResourceCID:                   envOrDefault("CREDIT_SEND_RESOURCE_CID", "101433"),
+		CreditSendResourceCloudLadderGatewayURL: strings.TrimSpace(os.Getenv("CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL")),
+		CreditSendResourceCloudLadderRouteID: firstNonEmpty(
+			os.Getenv("CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"),
+			"qbilling-send-resource-test",
+		),
 		AccountBindingInternalBaseURL: firstNonEmpty(
 			strings.TrimSpace(os.Getenv("ACCOUNT_BINDING_INTERNAL_BASE_URL")),
 			strings.TrimSpace(os.Getenv("SHADOW_INTERNAL_BASE_URL")),

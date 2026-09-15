@@ -6,9 +6,9 @@ import {
   type HostConnectionProvider,
   type HostConnectionProviderContext,
 } from "@opencraft/workbench-runtime";
-
 import { LocalAgentSettingsService, type HostProtocolRequest } from "./local-agent-settings-service";
-import { createLocalAgentSettingsView, createLocalAgentDefaultModelView } from "./local-agent-settings-view";
+import { ModelServicesController } from "./model-services/controller";
+import { createModelServicesView } from "./model-services/view";
 
 type LocalAgentConfig = Readonly<Record<string, never>>;
 
@@ -18,8 +18,8 @@ function validate(value: HostConnectionJson): LocalAgentConfig {
 }
 
 export interface BuiltinAgentsExtensionOptions {
-  readonly createTransport: (hostId: string) => DuplexTransport;
   readonly requestHost: HostProtocolRequest;
+  readonly createTransport: (hostId: string) => DuplexTransport;
 }
 
 export function createBuiltinAgentsExtension(options: BuiltinAgentsExtensionOptions): TrustedExtensionDefinition {
@@ -34,8 +34,6 @@ export function createBuiltinAgentsExtension(options: BuiltinAgentsExtensionOpti
       return options.createTransport(context.hostId);
     },
   });
-  const settings = new LocalAgentSettingsService(options.requestHost);
-  const SettingsView = createLocalAgentSettingsView(settings);
   return {
     manifest: {
       manifestVersion: 1,
@@ -49,30 +47,12 @@ export function createBuiltinAgentsExtension(options: BuiltinAgentsExtensionOpti
       activationEvents: ["onStartupFinished"],
     },
     activate(api) {
-      api.views.register({
-        id: "vela.builtin-agents.settings-view",
-        title: "Model services",
-        viewType: "vela.builtin-agents.settings",
-        icon: "bot",
-        platforms: ["electron"],
-      });
-      api.settings.registerPage({
-        id: "vela.builtin-agents.settings",
-        title: "Model services",
-        viewId: "vela.builtin-agents.settings-view",
-        icon: "bot",
-        order: 250,
-        layout: "master-detail",
-        group: "Local Agent",
-        platforms: ["electron"],
-      });
-      api.internal.register("platformViewRenderer", {
-        viewType: "vela.builtin-agents.settings",
-        Component: SettingsView,
-      });
-      api.views.register({ id: "vela.builtin-agents.defaults-view", title: "Default model", viewType: "vela.builtin-agents.defaults", platforms: ["electron"] });
-      api.settings.registerPage({ id: "vela.builtin-agents.defaults", title: "Default model", viewId: "vela.builtin-agents.defaults-view", order: 249, group: "Local Agent", platforms: ["electron"] });
-      api.internal.register("platformViewRenderer", { viewType: "vela.builtin-agents.defaults", Component: createLocalAgentDefaultModelView(settings) });
+      const service = new LocalAgentSettingsService(options.requestHost, "local");
+      const controller = new ModelServicesController(service);
+      api.views.register({ id: "vela.builtin-agents.model-services-view", title: "模型服务", viewType: "vela.builtin-agents.model-services", platforms: ["electron"] });
+      api.settings.registerPage({ id: "vela.builtin-agents.model-services", title: "模型服务", viewId: "vela.builtin-agents.model-services-view", layout: "master-detail", group: "本机", icon: "brain", platforms: ["electron"] });
+      api.internal.register("platformViewRenderer", { viewType: "vela.builtin-agents.model-services", Component: createModelServicesView(controller) });
+      api.subscriptions.add(() => { controller.dispose(); service.dispose(); });
       api.internal.register("hostConnectionProvider", hostProvider);
       api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, {
         profile: {
@@ -92,7 +72,6 @@ export function createBuiltinAgentsExtension(options: BuiltinAgentsExtensionOpti
           revision: 0,
         },
       });
-      api.subscriptions.add(() => settings.dispose());
     },
   };
 }

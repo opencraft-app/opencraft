@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lightvela-playground-sandbox-jp-1
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: trade-platform-values
+    envs:
+      - trade-platform.env
+resources:
+  - trade-migration-job.yaml
+  - trade-nodeport.yaml
+replacements:
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.DIANSHI_PREVIEW
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.DIANSHI_PREVIEW
+patches:
+  - path: delete-shared-namespace.yaml
+  - path: delete-shared-serviceaccount.yaml
+  - path: patch-playground-db.yaml

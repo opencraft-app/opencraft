@@ -1,0 +1,8 @@
+service: credit
+env: sandbox-jp-1
+project: tokyo-playground
+destinationName: tokyo-playground
+namespace: lightvela-playground-sandbox-jp-1
+sourcePath: argocd/services/credit/sandbox-jp-1
+environmentModel: playground
+playgroundCluster: tokyo-playground
