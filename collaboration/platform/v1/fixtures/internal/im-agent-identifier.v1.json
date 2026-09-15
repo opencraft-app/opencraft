@@ -1,0 +1,13 @@
+{
+  "schema": "chatserver.im-agent-identifier-test/v1",
+  "algorithm": "a_first29_base32nopad_hmac_sha256",
+  "fixtureHmacKeyUtf8": "TEST-ONLY-NOT-A-SECRET-im-identity-v1",
+  "agentId": "0198f4c2-7a33-79f2-8cd1-8ad6b57f7d1b",
+  "lengthPrefix": "uint32be_utf8_byte_length",
+  "hmacInputHex": "0000002430313938663463322d376133332d373966322d386364312d386164366235376637643162",
+  "hmacSha256Hex": "51b57f691d69c8168d856ae6e159747f1664743f1d747396f90a7d50278f8a4f",
+  "base32NoPad": "KG2X62I5NHEBNDMFNLTOCWLUP4LGI5B7DV2HHFXZBJ6VAJ4PRJHQ",
+  "imAgentUserId": "a_KG2X62I5NHEBNDMFNLTOCWLUP4LGI",
+  "utf8ByteLength": 31,
+  "pattern": "^a_[A-Z2-7]{29}$"
+}
