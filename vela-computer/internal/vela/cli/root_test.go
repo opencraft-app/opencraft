@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -113,7 +114,7 @@ func TestHiddenInstallNormalizesAbsoluteTemporaryPaths(t *testing.T) {
 	}
 }
 
-func TestHiddenInstallDefaultsToPrivateComputerSubdirectory(t *testing.T) {
+func TestHiddenInstallDefaultsToPlatformComputerSubdirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -136,6 +137,9 @@ func TestHiddenInstallDefaultsToPrivateComputerSubdirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantRoot := filepath.Join(home, ".vela", "computer")
+	if runtime.GOOS == "linux" {
+		wantRoot = "/var/lib/vela/computer"
+	}
 	if actions.install.InstallationRoot != wantRoot ||
 		actions.install.StateDirectory != filepath.Join(wantRoot, "state") {
 		t.Fatalf("install options = %#v", actions.install)

@@ -470,6 +470,10 @@ func createRewardsIfQualified(ctx context.Context, tx *sql.Tx, campaignID, invit
 	}
 
 	eligibleAt := paidAt.AddDate(0, 0, campaign.VestingDays).UTC()
+	status := domain.RewardStatusVesting
+	if campaign.VestingDays == 0 {
+		status = domain.RewardStatusPending
+	}
 	grantDeadline := paidAt.AddDate(0, 0, campaign.PendingTTLDays).UTC()
 	now := time.Now().UTC()
 	for _, reward := range []struct {
@@ -488,7 +492,7 @@ func createRewardsIfQualified(ctx context.Context, tx *sql.Tx, campaignID, invit
 				eligible_at, grant_deadline, next_attempt_at, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, "rrwd_"+uuid.NewString(), campaign.ID, inviteeUserID, qualifyingPassID, reward.beneficiary,
-			reward.side, reward.amount, idempotencyKey, domain.RewardStatusVesting,
+			reward.side, reward.amount, idempotencyKey, status,
 			eligibleAt, grantDeadline, eligibleAt, now, now)
 		if err != nil && !isDuplicate(err) {
 			return err

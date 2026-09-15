@@ -190,10 +190,11 @@ func TestParseDatabaseConfig支持显式TDSQLDSN文件(t *testing.T) {
 	}
 }
 
-func TestParseDatabaseConfig拒绝旧MySQL方言(t *testing.T) {
-	_, err := parseDatabaseConfig("migrate", []string{"--database-driver", "mysql"})
-	if code := apperror.CodeOf(err); code != "CONFIG_INVALID" {
-		t.Fatalf("错误码 = %q，期望 CONFIG_INVALID；err=%v", code, err)
+func TestParseDatabaseConfig支持显式MySQL方言(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mysql.dsn")
+	cfg, err := parseDatabaseConfig("migrate", []string{"--database-driver", "mysql", "--database-dsn-file", path})
+	if err != nil || cfg.Driver != config.DatabaseDriverMySQL || cfg.DSNFile != path {
+		t.Fatalf("MySQL config = %#v err=%v", cfg, err)
 	}
 }
 

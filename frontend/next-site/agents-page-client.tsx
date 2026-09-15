@@ -26,7 +26,9 @@ export function AgentsPageClient({
     <ProductReturnHomeHeader
       className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}
       reloadLanguageAfterSwitch
+      showAccountLanguageSwitcher
       showDesktopUserMenu={isWorkbench}
+      showLanguageSwitcher={false}
     />
   );
   const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;

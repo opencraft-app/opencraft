@@ -289,6 +289,10 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
+    const handleCreateNew = page.slice(
+      page.indexOf("const handleCreateNew"),
+      page.indexOf("const handleConfirmCreate"),
+    );
 
     expect(page).toContain("if (!activeBot)");
     expect(page).toContain("setShowCreateConfirm(true)");
@@ -306,7 +310,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
     expect(page).toContain("const MAX_BOT_NAME_LENGTH = 60");
-    expect(page.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
+    expect(handleCreateNew.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
     expect(page).not.toContain('setCreateBotName(t("新 Bot"))');
     expect(page).toContain('placeholder={t("请输入 Bot 名称")}');
     expect(page).toContain("maxLength={MAX_BOT_NAME_LENGTH}");

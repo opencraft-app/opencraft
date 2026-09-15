@@ -268,6 +268,27 @@ export const LoginModal = ({
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
   const forceProviderSwitch = mode === "switch-account";
 
+  const [preparedReferral, setPreparedReferral] = useState<string | null>(null);
+  const [referralError, setReferralError] = useState(false);
+  const [referralRetry, setReferralRetry] = useState(0);
+  const referralCode = typeof window === "undefined" || forceProviderSwitch
+    ? ""
+    : new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase() ?? "";
+  const referralReady = !referralCode || preparedReferral === referralCode;
+
+  useEffect(() => {
+    if (!open || !referralCode) return;
+    let cancelled = false;
+    setPreparedReferral(null);
+    setReferralError(false);
+    void repositories.auth.prepareReferralCode(referralCode).then(() => {
+      if (!cancelled) setPreparedReferral(referralCode);
+    }).catch(() => {
+      if (!cancelled) setReferralError(true);
+    });
+    return () => { cancelled = true; };
+  }, [open, referralCode, referralRetry, repositories.auth]);
+
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -340,6 +361,7 @@ export const LoginModal = ({
   }, [open]);
 
   const checkAgreed = () => {
+    if (!referralReady) return false;
     if (!agreed) {
       setShowAgreeHint(true);
       return false;
@@ -528,7 +550,16 @@ export const LoginModal = ({
               ) : null}
             </div>
 
-            {isGlobal ? (
+            {!referralReady ? (
+              <div className="px-9 pb-6 text-center" role={referralError ? "alert" : "status"}>
+                {referralError ? (
+                  <>
+                    <p className="text-sm text-[var(--danger)]">{t("邀请返利码不存在或当前不可用。")}</p>
+                    <Button type="button" variant="outline" onClick={() => setReferralRetry((value) => value + 1)}>{t("重试")}</Button>
+                  </>
+                ) : <Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label={t("正在加载…")} />}
+              </div>
+            ) : isGlobal ? (
               <div className="flex w-full flex-col gap-4 px-9 pt-2">
                 {(() => {
                   const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];

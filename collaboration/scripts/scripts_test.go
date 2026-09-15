@@ -135,6 +135,41 @@ func TestWebReleaseScan覆盖静态产物和最终二进制(t *testing.T) {
 	}
 }
 
+func Test安全扫描在缺少Ripgrep时保持同等拒绝语义(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, filepath.Join(root, "clean.txt"), "SDKAppID=0000000000\nSecretId=<从环境变量读取>\n")
+
+	secretScan := commandWithoutRipgrep(t, scriptPath(t, "scan-secrets.sh"), root)
+	if output, err := secretScan.CombinedOutput(); err != nil {
+		t.Fatalf("无 rg 的脱敏 fixture 扫描失败：%v\n%s", err, output)
+	}
+	writeTestFile(t, filepath.Join(root, "leaked.txt"), "Secret"+"Key="+"abcdefghijklmnopqrstuvwxyz123456\n")
+	secretScan = commandWithoutRipgrep(t, scriptPath(t, "scan-secrets.sh"), root)
+	if output, err := secretScan.CombinedOutput(); err == nil || !strings.Contains(string(output), "疑似真实凭证") {
+		t.Fatalf("无 rg 时未拒绝凭证：err=%v output=%s", err, output)
+	}
+
+	assets := filepath.Join(root, "dist")
+	if err := os.MkdirAll(filepath.Join(assets, "static", "js"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(assets, "index.html"), `<div id="root"></div>`)
+	javascript := filepath.Join(assets, "static", "js", "app.js")
+	writeTestFile(t, javascript, `console.log("clean release")`)
+	binary := filepath.Join(root, "chatserver")
+	writeTestFile(t, binary, "clean-binary")
+
+	webScan := commandWithoutRipgrep(t, scriptPath(t, "scan-web-release.sh"), assets, binary)
+	if output, err := webScan.CombinedOutput(); err != nil {
+		t.Fatalf("无 rg 的干净发布物扫描失败：%v\n%s", err, output)
+	}
+	writeTestFile(t, javascript, `fetch("http://localhost:18080/v1/me")`)
+	webScan = commandWithoutRipgrep(t, scriptPath(t, "scan-web-release.sh"), assets, binary)
+	if output, err := webScan.CombinedOutput(); err == nil || !strings.Contains(string(output), "固定开发地址") {
+		t.Fatalf("无 rg 时未拒绝固定开发地址：err=%v output=%s", err, output)
+	}
+}
+
 func TestRelease只发布内嵌IM的CanonicalGoHost(t *testing.T) {
 	t.Parallel()
 
@@ -356,4 +391,32 @@ func writeTestFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func commandWithoutRipgrep(t *testing.T, name string, args ...string) *exec.Cmd {
+	t.Helper()
+	path := t.TempDir()
+	for _, tool := range []string{"find", "grep"} {
+		target, err := exec.LookPath(tool)
+		if err != nil {
+			t.Fatalf("缺少测试 fallback 所需的 %s：%v", tool, err)
+		}
+		if err := os.Symlink(target, filepath.Join(path, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	command := exec.Command(name, args...)
+	command.Env = append(envWithoutKey(os.Environ(), "PATH"), "PATH="+path)
+	return command
+}
+
+func envWithoutKey(environment []string, key string) []string {
+	prefix := key + "="
+	filtered := make([]string, 0, len(environment))
+	for _, value := range environment {
+		if !strings.HasPrefix(value, prefix) {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
 }

@@ -755,6 +755,21 @@ func TestServeCLI支持显式TDSQLDSN文件(t *testing.T) {
 	}
 }
 
+func TestServeCLI支持显式MySQLDSN文件(t *testing.T) {
+	root := t.TempDir()
+	dsnFile := filepath.Join(root, "mysql.dsn")
+	cfg, err := parseServeConfig([]string{
+		"--database-driver", "mysql", "--database-dsn-file", dsnFile,
+		"--database-auto-migrate=false", "--listen", "0.0.0.0:8080",
+		"--jwt-key-file", filepath.Join(root, "jwt.key"), "--im-sdk-app-id", "1600000000",
+		"--im-admin-user-id", "platform_admin", "--im-secret-key-file", filepath.Join(root, "im-secret.key"),
+		"--im-identity-key-file", filepath.Join(root, "im-identity.key"),
+	})
+	if err != nil || cfg.database.Driver != config.DatabaseDriverMySQL || cfg.database.DSNFile != dsnFile {
+		t.Fatalf("serve MySQL config = %#v err=%v", cfg.database, err)
+	}
+}
+
 func TestLoadTextSecret接受Kubernetes只读挂载(t *testing.T) {
 	root := t.TempDir()
 	path := writeTextSecret(t, root, "mounted-secret", "safe-kubernetes-secret", 0o440)

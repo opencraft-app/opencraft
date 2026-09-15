@@ -26,7 +26,7 @@ func tdsqlPreflightError(state State) error {
 	case StatePending, StateDirty:
 		return apperror.New(
 			"DATABASE_MIGRATION_UNSAFE",
-			"数据库存在不可续跑的 TDSQL baseline 状态",
+			"数据库存在不可续跑的 MySQL 系迁移状态",
 			nil,
 		)
 	default:
@@ -45,11 +45,11 @@ func applyTDSQLBaseline(
 ) error {
 	expected, err := tdsqlRuntimeExpectationFromDir(dir)
 	if err != nil {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "无法读取 TDSQL 迁移规格", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "无法读取 MySQL 系迁移规格", err)
 	}
 	snapshot, err := readTDSQLSnapshot(ctx, db)
 	if err != nil {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "无法读取 TDSQL 迁移状态", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "无法读取 MySQL 系迁移状态", err)
 	}
 	state := classifyTDSQLRuntime(snapshot, expected)
 	if state.Kind == StateClean {
@@ -62,12 +62,12 @@ func applyTDSQLBaseline(
 	}
 	files, err := dir.Files()
 	if err != nil || len(files) != len(expected.Migrations) {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "TDSQL migration 文件集合无效", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "MySQL 系 migration 文件集合无效", err)
 	}
 	for index := len(snapshot.Revisions); index < len(files); index++ {
 		statements, err := files[index].Stmts()
 		if err != nil || len(statements) != expected.Migrations[index].Total {
-			return apperror.New("DATABASE_MIGRATION_FAILED", "TDSQL migration 语句集合无效", err)
+			return apperror.New("DATABASE_MIGRATION_FAILED", "MySQL 系 migration 语句集合无效", err)
 		}
 		if err := applyOwnedTDSQLMigration(
 			ctx,
@@ -112,11 +112,11 @@ func applyOwnedTDSQLMigration(
 	statements []string,
 ) error {
 	if err := ensureTDSQLRevisionTable(ctx, db); err != nil {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "无法初始化 TDSQL revision control", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "无法初始化 MySQL 系 revision control", err)
 	}
 	claimID, err := newClaimID()
 	if err != nil {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "无法生成 TDSQL migration owner", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "无法生成 MySQL 系 migration owner", err)
 	}
 	revision := &atlasmigrate.Revision{
 		Version:         expected.Version,
@@ -129,12 +129,12 @@ func applyOwnedTDSQLMigration(
 	}
 	outcome, err := claimRevision(ctx, db, revision, claimID)
 	if err != nil || outcome == ClaimFailed {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "无法声明 TDSQL baseline owner", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "无法声明 MySQL 系 migration owner", err)
 	}
 	if outcome == ClaimDuplicate {
 		snapshot, inspectErr := readTDSQLSnapshot(ctx, db)
 		if inspectErr != nil {
-			return apperror.New("DATABASE_MIGRATION_FAILED", "无法读取并发 TDSQL migration 状态", inspectErr)
+			return apperror.New("DATABASE_MIGRATION_FAILED", "无法读取并发 MySQL 系 migration 状态", inspectErr)
 		}
 		for _, competing := range snapshot.Revisions {
 			if competing.Version == expected.Version && competing.Hash == expected.Hash &&
@@ -145,7 +145,7 @@ func applyOwnedTDSQLMigration(
 		}
 		return apperror.New(
 			"DATABASE_MIGRATION_UNSAFE",
-			"另一个进程已经声明了同一 TDSQL migration",
+			"另一个进程已经声明了同一 MySQL 系 migration",
 			nil,
 		)
 	}
@@ -157,7 +157,7 @@ func applyOwnedTDSQLMigration(
 		)
 	}
 	if err := executeOwnedStatements(ctx, db, revision, claimID, statements); err != nil {
-		return apperror.New("DATABASE_MIGRATION_FAILED", "TDSQL migration 执行失败", err)
+		return apperror.New("DATABASE_MIGRATION_FAILED", "MySQL 系 migration 执行失败", err)
 	}
 	return nil
 }

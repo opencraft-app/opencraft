@@ -79,8 +79,8 @@ func TestSQLiteAdapter统一连接迁移状态和审计(t *testing.T) {
 	}
 }
 
-func TestResolveAdapter拒绝旧MySQL方言(t *testing.T) {
-	_, err := AdapterFor(config.DatabaseDriver("mysql"))
+func TestResolveAdapter拒绝未知方言(t *testing.T) {
+	_, err := AdapterFor(config.DatabaseDriver("oracle"))
 	if code := apperror.CodeOf(err); code != "CONFIG_INVALID" {
 		t.Fatalf("错误码 = %q，期望 CONFIG_INVALID；err=%v", code, err)
 	}

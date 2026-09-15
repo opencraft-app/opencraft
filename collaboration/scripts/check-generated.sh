@@ -68,3 +68,5 @@ else
   "$source_root/scripts/check-migration-release.sh" "$source_root"
 fi
 "$source_root/scripts/check-openapi-compatibility.sh" "$source_root"
+(cd "$source_root" && go run ./cmd/migrationgen --dialect mysql --verify)
+(cd "$source_root" && go run ./cmd/migrationgen --dialect tdsql --verify)

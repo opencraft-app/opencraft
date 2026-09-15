@@ -4,6 +4,7 @@ import {
   AGENT_LAB_SECTION_ID_BY_SLUG,
   AGENT_SECTION_PATH_BY_ID,
   getAgentBotSectionHref,
+  getAgentCreateBotPath,
   getAgentCreatingPath,
   getAgentLabSectionFromSlug,
   getAgentSectionFromSlug,
@@ -55,6 +56,11 @@ describe("agent route constants", () => {
   it("builds the agent creating url with the requested instance id", () => {
     expect(getAgentCreatingPath("ins-123")).toBe("/agents?creating=ins-123");
     expect(getAgentCreatingPath(true)).toBe("/agents?creating=true");
+  });
+
+  it("builds the post-subscribe naming intent url distinct from the creating wait state", () => {
+    // 订阅成功后引导命名的落点，控制台据此打开命名向导；与 creating 的等待态区分
+    expect(getAgentCreateBotPath()).toBe("/agents?create=1");
   });
 
   it("does not carry creation flow params into agent section routes", () => {

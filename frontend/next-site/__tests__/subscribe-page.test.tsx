@@ -25,10 +25,20 @@ const openClawState = {
   beginPassUpgrade: vi.fn(),
   activePass: null as unknown,
   latestPass: null as unknown,
+  /* usePostLoginRedirect（订阅页 LoginModal onSuccess 分流）所需的权益快照字段。 */
+  hasResolvedPasses: true,
+  passesLoading: false,
+  passesError: false,
 };
 
 vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => openClawState,
+}));
+
+/* usePostLoginRedirect 使用 next/navigation 的 useRouter；测试环境需 mock 掉。 */
+const routerPushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock }),
 }));
 
 const sessionState = {
@@ -145,6 +155,10 @@ const resetState = () => {
   openClawState.beginPassUpgrade = vi.fn();
   openClawState.activePass = null;
   openClawState.latestPass = null;
+  openClawState.hasResolvedPasses = true;
+  openClawState.passesLoading = false;
+  openClawState.passesError = false;
+  routerPushMock.mockReset();
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   sessionState.user = null;
@@ -289,6 +303,26 @@ describe("SubscribePage", () => {
     await waitFor(() => {
       expect(openClawState.refreshPasses).toHaveBeenCalledTimes(1);
     });
+  });
+
+  /* issue #73 红线：已订阅用户在订阅页登录成功后应自动跳控制台 /agents，不停在订阅页再次购买。
+     覆盖两条登录路径：
+     - OAuth 整页跳转：点订阅弹登录前 armPostLoginRedirect()，回跳后由 usePostLoginRedirect 消费分流；
+     - 手机验证码弹窗内登录：LoginModal onSuccess → redirectAfterLogin()。
+     这里做源码级断言，保证两条接线都不被回归掉；具体分流行为由 use-post-login-redirect.test 覆盖。 */
+  it("wires post-login redirect (both OAuth-return and in-modal login) into the subscribe page", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(
+      join(process.cwd(), "next-site/subscribe-page.tsx"),
+      "utf8",
+    );
+    expect(source).toContain("usePostLoginRedirect");
+    // OAuth 整页跳转路径：弹登录前 arm，关闭弹窗 disarm
+    expect(source).toContain("armPostLoginRedirect()");
+    expect(source).toContain("disarmPostLoginRedirect()");
+    // 弹窗内登录路径：onSuccess 接 redirectAfterLogin
+    expect(source).toContain("onSuccess={() => redirectAfterLogin()}");
   });
 
   it("disables subscription actions when an active pass is already present", async () => {

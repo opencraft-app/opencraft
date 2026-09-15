@@ -48,13 +48,15 @@
   不等于资源已创建，前端须重新调用 `GET /v1/credit/packages` 观察积分包出现，并兼容计费回调与
   LLMGateway 订阅创建的短暂延迟。
 
-## 邀请返利首付链路
+## 邀请返利首次开通链路
 
 1. 登录前，前端先通过公开的隐私安全接口校验返利码，再由 Auth 写入 30 分钟 HttpOnly 上下文。
 2. Auth 只在真正创建新用户的事务中写 `user.registered.v1` outbox；已有用户登录不会建立归因。
-3. CTL 只对启用环境中的非免费新 Pass 或免费转付费写 `pass.first_paid.v1`，续费不重复触发。
+3. CTL 对启用环境中 dianshi 订单完成发货的新 Pass 或存量免费 Pass 转订单开通写 `pass.first_paid.v1`，
+   0 元订单也符合，不检查实付金额。事件名为兼容旧消费者保留，续费及无订单免费试用不重复触发。
 4. Referral 将注册、首付和退款分别持久化，两个事实齐备时在活动预算与邀请人上限内创建两侧奖励。
-5. 观察期结束后 worker 调 CTL 幂等发放 30 天积分 Plan；CTL 发放前再次验证资格 Pass。
+5. 默认不等待观察期；worker 在下一轮处理时调用 CTL 幂等送积分，VelaGW 按额度自动准备内部权益模板。
+   CTL 发放前再次验证资格 Pass 和受益人 active Pass，无有效 Pass 时保留待发重试。
 6. `pass.refunded.v1` 可早于或晚于首付事件到达，并只取消同一资格 Pass 尚未发放的奖励。
 
 成功不能只看邀请码已创建或首付事件已消费，必须同时核对 attribution、资格 Pass、两侧 reward、

@@ -33,10 +33,20 @@ const openClawState = {
   beginPassUpgrade: vi.fn(),
   activePass: null as unknown,
   latestPass: null as unknown,
+  /* usePostLoginRedirect（订阅页 LoginModal onSuccess 分流）所需的权益快照字段。 */
+  hasResolvedPasses: true,
+  passesLoading: false,
+  passesError: false,
 };
 
 vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => openClawState,
+}));
+
+/* usePostLoginRedirect 使用 next/navigation 的 useRouter；测试环境需 mock 掉。 */
+const routerPushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock }),
 }));
 
 const sessionState = {

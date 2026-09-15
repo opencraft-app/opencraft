@@ -17,6 +17,11 @@ export interface DebugCommandResult {
 }
 
 export type ExecDebugCommand = (botId: string, command: string) => Promise<DebugCommandResult>;
+export type ExecDebugCommandStream = (
+  botId: string,
+  command: string,
+  onChunk: (event: { stream: string; chunk: string }) => void,
+) => Promise<DebugCommandResult>;
 
 export interface AgentDiagnosticCommand {
   id: DiagnosticCommandId;
@@ -44,13 +49,30 @@ function getLogsSinceLabel(value: LogsSinceOption, t: ReturnType<typeof useT>): 
 }
 
 const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
+const LOGS_PREVIEW_LINES = 50;
+const LOGS_EXPORT_LINES = 100_000;
 
 export function buildLogsCommand(since: LogsSinceOption, profileId = "main"): string {
-  return withHermesProfile(`logs --since ${since}`, profileId);
+  return withHermesProfile(`logs --since ${since} -n ${LOGS_PREVIEW_LINES}`, profileId);
 }
 
 export function buildLogsExportCommand(since: LogsSinceOption, profileId = "main"): string {
-  return buildLogsCommand(since, profileId);
+  return withHermesProfile(`logs --since ${since} -n ${LOGS_EXPORT_LINES}`, profileId);
+}
+
+export async function collectStreamedDiagnosticOutput(
+  botId: string,
+  command: string,
+  execDebugCommandStream: ExecDebugCommandStream,
+): Promise<DebugCommandResult> {
+  let streamedOutput = "";
+  const result = await execDebugCommandStream(botId, command, ({ chunk }) => {
+    streamedOutput += chunk;
+  });
+  return {
+    ...result,
+    output: streamedOutput || result.output,
+  };
 }
 
 export function getAgentDiagnosticCommands(logsSince: LogsSinceOption, profileId = "main"): AgentDiagnosticCommand[] {
@@ -135,6 +157,7 @@ export function AgentDiagnosticsPanel({
   botName,
   isMainBot,
   execDebugCommand,
+  execDebugCommandStream,
   resetConfigAction,
   resetAgentAction,
   resetAgentConsole,
@@ -146,6 +169,7 @@ export function AgentDiagnosticsPanel({
   botName: string;
   isMainBot: boolean;
   execDebugCommand: ExecDebugCommand;
+  execDebugCommandStream: ExecDebugCommandStream;
   resetConfigAction: DiagnosticsMaintenanceAction;
   resetAgentAction: DiagnosticsMaintenanceAction;
   resetAgentConsole: string[];
@@ -206,7 +230,11 @@ export function AgentDiagnosticsPanel({
   const exportLogs = useCallback(async () => {
     setExportingLogs(true);
     try {
-      const result = await execDebugCommand(botId, buildLogsExportCommand(logsSince, profileId));
+      const result = await collectStreamedDiagnosticOutput(
+        botId,
+        buildLogsExportCommand(logsSince, profileId),
+        execDebugCommandStream,
+      );
       if (!isDiagnosticCommandSucceeded(result)) {
         toast.error(t("获取最近日志失败"));
         return;
@@ -217,7 +245,7 @@ export function AgentDiagnosticsPanel({
     } finally {
       setExportingLogs(false);
     }
-  }, [botId, botName, profileId, execDebugCommand, logsSince, t]);
+  }, [botId, botName, profileId, execDebugCommandStream, logsSince, t]);
 
   const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
     setLogsSince(next);
@@ -227,7 +255,11 @@ export function AgentDiagnosticsPanel({
     <div className="space-y-4">
       <AgentSectionHeader
         title={t("诊断中心")}
-        description={t("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")}
+        description={
+          isMainBot
+            ? t("查看 Hermes Agent 日志，并集中执行相关维护操作")
+            : t("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")
+        }
       />
 
       <div className="grid gap-4">
@@ -241,8 +273,8 @@ export function AgentDiagnosticsPanel({
           />
           {isMainBot && <MaintenanceActionCard
             icon={<RotateCcw className="h-3 w-3" />}
-            title={t("重装 Agent（保留数据）")}
-            description={t("重装整个 Agent 并保留数据，期间所有 Bot 将暂时不可用")}
+            title={t("重置 Hermes（保留数据）")}
+            description={t("重置 Hermes 运行环境并保留数据，期间所有 Bot 将暂时不可用")}
             action={resetAgentAction}
             loadingLabel={t("重置中...")}
             consoleLines={resetAgentConsole}

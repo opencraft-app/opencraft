@@ -80,7 +80,15 @@ class CollaborationDeliveryTests(unittest.TestCase):
         candidate = yaml.safe_load((root / "collaboration.yaml").read_text())
         self.assertEqual(candidate["sourcePath"], "argocd/services/collaboration/beijing-sandbox")
         self.assertEqual(candidate["namespace"], "lightvela-collaboration")
-        self.assertFalse((REPO_ROOT / "argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml").exists())
+        active_catalog = "argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml"
+        self.assertFalse((REPO_ROOT / active_catalog).exists())
+        bundle_source = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/collaboration.bundle").read_text()
+        )
+        publish_paths = bundle_source["bundles"]["collaboration"]["publish_paths_by_env"][
+            "beijing-sandbox"
+        ]
+        self.assertNotIn(active_catalog, publish_paths)
         appset = (REPO_ROOT / "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml").read_text()
         self.assertNotIn("catalogs/candidates", appset)
         spec = yaml.safe_load((REPO_ROOT / "scripts/ssm_manifest.collaboration.beijing-sandbox.yaml").read_text())
@@ -146,6 +154,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
                     contextlib.redirect_stdout(output):
                 self.assertEqual(db_contract_verifier.main(), 0)
             self.assertEqual(build.call_args.args[2]["image"], image)
+            self.assertEqual(build.call_args.args[2]["command"][4], "mysql")
             audit = json.loads(output.getvalue())
             self.assertEqual(audit["verification_mode"], "service-command")
             self.assertIsNone(audit["expected_schema_version"])
@@ -189,6 +198,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         pod = manifest["spec"]["template"]["spec"]
         container = pod["containers"][0]
         self.assertEqual(container["command"][:3], ["/usr/local/bin/chatserver", "database", "migrate"])
+        self.assertEqual(container["command"][4], "mysql")
         self.assertNotIn("envFrom", container)
         self.assertEqual(pod["volumes"][0]["secret"]["items"], [{"key": "database.dsn", "path": "database.dsn"}])
         self.assertTrue(pod["securityContext"]["runAsNonRoot"])

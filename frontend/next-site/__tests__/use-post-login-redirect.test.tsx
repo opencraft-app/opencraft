@@ -1,0 +1,119 @@
+import { renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+
+/* ── mocks ── */
+
+const routerPushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock }),
+}));
+
+const sessionState = {
+  authReady: true,
+  isAuthenticated: false,
+};
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => ({
+    authReady: sessionState.authReady,
+    isAuthenticated: sessionState.isAuthenticated,
+  }),
+}));
+
+const openClawState = {
+  bots: [] as { id: string }[],
+  hasResolvedPasses: true,
+  isSubscribed: false,
+  passesError: false,
+  passesLoading: false,
+  refreshPasses: vi.fn(),
+};
+vi.mock("@/contexts/agent-context", () => ({
+  useOpenClaw: () => openClawState,
+}));
+
+/* 国内站：localized=false，落点即规范路径，便于断言。 */
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/region")>()),
+  isGlobal: false,
+}));
+
+/* 被测 hook 在上面 mock 之后再导入，确保 mock 生效。 */
+import {
+  armPostLoginRedirect,
+  disarmPostLoginRedirect,
+  usePostLoginRedirect,
+} from "../use-post-login-redirect";
+
+const resetState = () => {
+  routerPushMock.mockClear();
+  openClawState.refreshPasses.mockClear();
+  sessionState.authReady = true;
+  sessionState.isAuthenticated = false;
+  openClawState.bots = [];
+  openClawState.hasResolvedPasses = true;
+  openClawState.isSubscribed = false;
+  openClawState.passesError = false;
+  openClawState.passesLoading = false;
+  disarmPostLoginRedirect();
+};
+
+beforeEach(resetState);
+afterEach(resetState);
+
+describe("usePostLoginRedirect — OAuth 整页跳转回跳分流", () => {
+  it("armed + 已登录已订阅：回跳后自动分流到控制台 /agents", async () => {
+    // 用户点登录前 arm（OAuth 整页跳转），回跳后已是登录态且已订阅
+    armPostLoginRedirect();
+    sessionState.isAuthenticated = true;
+    openClawState.isSubscribed = true;
+    openClawState.bots = [{ id: "bot-1" }];
+
+    renderHook(() => usePostLoginRedirect({ locale: "zh-CN" }));
+
+    await waitFor(() => {
+      expect(routerPushMock).toHaveBeenCalledWith(AGENTS_HOME_PATH);
+    });
+    // 消费后意图应被清除，避免二次误触发
+    expect(sessionStorage.getItem("lc_post_login_redirect")).toBeNull();
+  });
+
+  it("armed + 已登录未订阅：回跳后留在订阅页 /subscribe", async () => {
+    armPostLoginRedirect();
+    sessionState.isAuthenticated = true;
+    openClawState.isSubscribed = false;
+
+    renderHook(() => usePostLoginRedirect({ locale: "zh-CN" }));
+
+    await waitFor(() => {
+      expect(routerPushMock).toHaveBeenCalledWith(SUBSCRIBE_PATH);
+    });
+  });
+
+  it("未 arm（未经登录动作）+ 已登录：不自动分流，避免误跳", async () => {
+    // 已订阅用户只是正常访问，没有点过登录 → 不应被自动带走
+    sessionState.isAuthenticated = true;
+    openClawState.isSubscribed = true;
+    openClawState.bots = [{ id: "bot-1" }];
+
+    renderHook(() => usePostLoginRedirect({ locale: "zh-CN" }));
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it("弹窗内登录成功（onSuccess → redirectAfterLogin）也分流", async () => {
+    // 手机验证码登录：不整页跳转，靠 onSuccess 触发
+    sessionState.isAuthenticated = true;
+    openClawState.isSubscribed = true;
+    openClawState.bots = [{ id: "bot-1" }];
+
+    const { result } = renderHook(() => usePostLoginRedirect({ locale: "zh-CN" }));
+    result.current();
+
+    await waitFor(() => {
+      expect(routerPushMock).toHaveBeenCalledWith(AGENTS_HOME_PATH);
+    });
+  });
+});

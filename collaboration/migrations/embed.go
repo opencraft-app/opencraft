@@ -3,7 +3,7 @@ package migrations
 
 import "embed"
 
-// FS 只包含正式 SQLite/TDSQL runtime migration SQL 和 atlas.sum。
+// FS 只包含正式 SQLite/MySQL/TDSQL runtime migration SQL 和绑定文件。
 //
-//go:embed sqlite/*.sql sqlite/atlas.sum tdsql/*.sql tdsql/atlas.sum
+//go:embed sqlite/*.sql sqlite/atlas.sum tdsql/*.sql tdsql/atlas.sum mysql/*.sql mysql/atlas.sum mysql/*.source.sum
 var FS embed.FS

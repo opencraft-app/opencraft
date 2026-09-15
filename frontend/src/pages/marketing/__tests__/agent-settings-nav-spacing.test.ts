@@ -38,6 +38,49 @@ function getBlockBody(source: string, marker: string): string | undefined {
 }
 
 describe("Agent settings navigation spacing", () => {
+  it("keeps the desktop chat height chain within the viewport", () => {
+    const chatPage = getBlockBody(styles, "\n  .lv-agent-chat-page {");
+    const chatMain = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agent-settings-main {",
+    );
+    const chatShell = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agent-settings-shell {",
+    );
+    const chatContentChain = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agent-settings-grid,",
+    );
+    const chatContentChainStart = styles.indexOf(
+      "\n  .lv-agent-chat-page .lv-agent-settings-grid,",
+    );
+    const chatContentChainSelectors = styles.slice(
+      chatContentChainStart,
+      styles.indexOf("{", chatContentChainStart),
+    );
+    const chatContentChainSelectorSet = chatContentChainSelectors
+      .trim()
+      .split(",")
+      .map((selector) => selector.trim());
+
+    expect(chatPage).toContain("height: 100dvh;");
+    expect(chatPage).toContain("overflow: hidden;");
+    expect(chatMain).toContain("display: flex;");
+    expect(chatMain).toContain("min-height: 0;");
+    expect(chatMain).toContain("overflow: hidden;");
+    expect(chatShell).toContain("min-height: 0;");
+    expect(chatShell).toContain("flex: 1;");
+    expect(chatContentChainSelectorSet).toEqual([
+      ".lv-agent-chat-page .lv-agent-settings-grid",
+      ".lv-agent-chat-page .lv-agent-settings-content",
+      ".lv-agent-chat-page ._lh-claw-bot-panel",
+      ".lv-agent-chat-page ._lh-claw-bot-panel__cards",
+    ]);
+    expect(chatContentChain).toContain("height: 100%;");
+    expect(chatContentChain).toContain("min-height: 0;");
+  });
+
   it("keeps the scroll-locked desktop sidebar within the viewport", () => {
     const lockedSidebar = getBlockBody(
       styles,
@@ -115,7 +158,7 @@ describe("Agent settings navigation spacing", () => {
     const accountFooter = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
 
-    expect(page).toContain('<UserAvatarMenu variant="sidebar" />');
+    expect(page).toMatch(/<UserAvatarMenu\b[^>]*\bvariant="sidebar"[^>]*\/>/);
     expect(page).toContain("showDesktopUserMenu={false}");
     expect(agentsPageClient).toContain("showDesktopUserMenu={isWorkbench}");
     expect(accountFooter).toContain("margin-top: auto;");

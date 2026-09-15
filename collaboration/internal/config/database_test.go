@@ -78,9 +78,9 @@ func TestNewTDSQLDatabase拒绝相对DSN文件(t *testing.T) {
 	}
 }
 
-func TestDatabaseValidate拒绝旧MySQL运行时方言(t *testing.T) {
+func TestDatabaseValidate拒绝没有DSN的MySQL配置(t *testing.T) {
 	cfg := Database{Driver: DatabaseDriver("mysql")}
 	if err := cfg.Validate(); apperror.CodeOf(err) != "CONFIG_INVALID" {
-		t.Fatalf("Validate() error = %v，期望拒绝旧 mysql 方言", err)
+		t.Fatalf("Validate() error = %v，期望拒绝不完整 mysql 配置", err)
 	}
 }

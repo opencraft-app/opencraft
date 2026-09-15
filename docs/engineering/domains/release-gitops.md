@@ -27,6 +27,35 @@ master 源码
 
 ## 不变量
 
+- Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
+  带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。
+
+- Collaboration 北京复用现有普通 MySQL 8 服务的独立逻辑库/账号/DSN，不新建 DB 实例。
+  Runtime 与 migration/verify Job 显式使用 `mysql`；`tdsql` 只用于真实 TDSQL Proxy。
+  MySQL 独立迁移线不修改已发布 SQLite/TDSQL 历史，保留业务 ID、逻辑路由键、主键/索引和
+  字符语义；不伪造物理分片审计，不削弱 owner claim、进度 CAS、失败状态拒绝及只读校验。
+  foundation、迁移/verify、Runtime、Gateway 和产品 Web 仍按既定分段门禁交付。
+
+- vela-computer候选流水线在checkout前独立内联隔离旧工作树和全部复用的普通`.git`元数据，关闭浅克隆
+  （`fetchDepth=0`），让checkout从空对象库获取完整历史。连通性正常的浅缓存也不复用：
+  SDK按SHA做depth1增量fetch时曾在预检通过后仍报缺失父对象，预检不能覆盖该协商失败路径。
+  仅隔离元数据会使旧源码成为未跟踪文件，SDK先checkout基线再merge目标提交时仍可能拒绝覆盖。
+  当前候选CI目录的旧内容移入0700私有隔离目录：元数据置于`git`，工作树/制品/业务文件置于
+  `worktree`，不删除，必要时可恢复；即使`.git`缺失也隔离遗留文件。旧隔离目录保留原位，
+  不跟随普通文件的外部symlink；拒绝symlink/gitfile类型的`.git`和共享commondir，隔离目录不归档。
+  checkout后在执行源码脚本前验证完整目标SHA、HEAD连通性和源提交属于当前checkout；MR的SDK
+  checkout可能生成合并快照，必须显式detach到`ci.sha`，再严格核对HEAD并构建源提交候选。
+  切换不使用force、不执行checkout hooks；日志输出checkout SHA与候选source SHA，错误不得静默放过。
+  不能删除SHA判断，或以MR合并快照内容冒充源提交候选；本步骤只影响候选流水线，
+  不修改独立的可信MR guard或其校验对象。干净工作树、对象库与全量拉取必须同时成立。
+- LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
+  产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
+  通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
+  实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
+  平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。
+  候选构建禁用CGO/个人Go配置/额外build tags，不引入旧TAT桥或升级签名参数。正式Linux
+  下发仍需独立的凭据注入、Runtime/IM Canary和目标实例审批；制品不是新的常驻后台组件。
 - 前端 MR guard 的隔离工作目录必须保持 `frontend/package.json` 中本地 `file:` 依赖的相对布局：
   当前复制 `frontend`、`velalink` 和 `shared/lightvela-agent-core`，排除依赖目录与构建缓存后执行
   frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。
@@ -50,6 +79,9 @@ master 源码
 - `.ci/runtime/bundles/*.bundle` 是 release bundle 的拆分真源，必须全部登记在
   `.ci/runtime/materialize-files.txt` 中。GitOps promotion 从物化后的 runtime snapshot 生成
   `release-bundles.manifest`；新增 bundle 却未登记会让发布候选在前置验收阶段失去对应路径契约。
+- 尚未激活、仅保存在 `argocd/catalogs/candidates/` 的服务，不得提前把不存在的 active catalog
+  写入 `publish_paths_by_env`。候选可以留在 `allowed_paths` 和流水线触发路径中；正式激活时再将
+  active catalog 文件与对应发布路径在同一变更中加入，避免阻塞其他服务的环境级 GitOps 静态校验。
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
