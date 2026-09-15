@@ -9,6 +9,7 @@
 | `user/auth` | 登录、会话、实名与身份 API 真源 |
 | `shadow` | 影子账号注册、临时凭据与平台回调编排 |
 | `service-gateway` | 在公共入口消费身份/实名状态 |
+| `collaboration` | 消费 Gateway 已验证的 LightVela Human 断言并映射本地协作 actor；不签发登录会话 |
 | `frontend` / `admin-gateway` | 表达登录状态和引导，不独占授权逻辑 |
 
 ## 稳定不变量
@@ -18,6 +19,7 @@
 - 公共行为至少验证网关路径；直连 `user/auth` 只证明内部 API。
 - 外部 IdP、腾讯云账号/CAM/STS 的实时契约通过登记来源校验，不把凭据或完整响应复制进文档。
 - `service-gateway` 必须先完成会话、实名门禁和 Bot 所有权校验，再启动后台 Worker Action；认证完成后的 TAT 执行超时、重试和清理策略属于运行控制，不得改变或绕过身份判定。
+- Collaboration Human 请求必须经过 `service-gateway`。浏览器只携现有 LightVela session，不能持有 Gateway 到 Collaboration 的内部 Bearer，也不能通过自定义身份头声明用户。
 - 邀请返利上下文不是访问邀请码或登录凭据。浏览器只能先通过公开接口校验返利码，再由 Auth 写入
   30 分钟 HttpOnly Cookie；OAuth/手机号/密码注册仅在新用户事务中消费它并写 outbox。已有用户登录、
   自行构造 `X-User-Id` 或直接提交任意 owner ID 都不能建立归因。成功或退出后清除上下文。
@@ -64,6 +66,31 @@ SecureStore 待完成事务寿命 10 分钟。进程共享存储串行化写入�
 确保既有 /oauth2 路由可达，并仅增加 POST /auth/session/exchange 的公开兑换规则。
 不要公开整个 /auth，不再增加 GET /auth/native/start。服务端、授权页面及 App
 须一起验证；源码测试不等于生产发布或真实 IdP 登录成功。
+
+### Collaboration 的 LightVela Human 身份委托
+
+OpenCraft 登录仍由上述 LightVela OIDC public client 完成。客户端兑换得到正常
+`session_token` 后，通过公共 `/v1/collaboration/**` namespace 请求 `service-gateway`；
+Collaboration 本身不是新的 OIDC client，也不接收授权码、ID Token 或用户密码。
+
+`service-gateway` 必须先用原始 Bearer 或 `lc_session` 调用 `user/auth` 的
+`/auth/session` 内省。内省成功后，Gateway 清除调用方提供的
+`X-Lightclaw-User-ID`、`X-User-Id`、`X-Uin` 等身份头，再注入权威
+`X-Lightclaw-User-ID`。转发到 Collaboration 时，原始用户 Authorization 和 Cookie
+不得继续传递；Gateway 将 Authorization 替换为运行时 Secret 提供的内部 Bearer，并把
+`/v1/collaboration` 重写为 Collaboration 的 `/v1`。
+
+Collaboration 同时验证内部 Bearer 和 LightVela subject。首次出现的合法 subject 只创建稳定的
+`lightvela subject -> local collaboration actor` 映射，并调度腾讯云 IM identity projection；
+映射记录不包含密码，也不产生第二套登录 session。配置内部 Gateway token 时，本地注册、密码登录、
+refresh 和 logout 路由不进入已实现路由集合。Human 产品路径由 Gateway 的精确 allowlist 控制；
+旧 Computer/TAT bootstrap 不因复用 Handler 而扩大公开认证面。腾讯云 IM 状态 callback 是单独的
+provider callback 路径，仍由 callback token 校验，不产生 Human principal。
+
+部署边界是一个只在集群内可达的 Collaboration Service，以及两端独立挂载但值相同的内部 token。
+缺少 token、会话内省失败、subject 为空或 subject 与内部 Bearer 不匹配时必须 fail closed，不能降级为
+本地账号认证或信任浏览器身份头。验证至少覆盖身份头覆盖、用户凭据剥离、内部 Bearer 替换、JIT 映射
+幂等，以及独立登录路由为 404。
 
 API 真源是 `user/auth/api/openapi.yaml`，Shadow 的实现/架构在 `shadow/internal/` 和 `shadow/ARCHITECTURE.md`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 
