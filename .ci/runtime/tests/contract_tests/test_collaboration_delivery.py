@@ -75,6 +75,47 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertIn(".ci/runtime/bundles/collaboration.bundle",
                       (REPO_ROOT / ".ci/runtime/materialize-files.txt").read_text().splitlines())
 
+    def test_beijing_bootstrap_pipeline_is_manual_two_phase_and_never_auto_merges(self):
+        workflow_path = REPO_ROOT / ".ci/collaboration-bootstrap.yml"
+        workflow = yaml.safe_load(workflow_path.read_text())
+        trigger = workflow.get("on", workflow.get(True))
+        self.assertEqual(trigger, {"manual": "enabled"})
+        self.assertEqual(workflow["variables"]["BOOTSTRAP_PHASE"]["value"], "foundation")
+        self.assertIn("@sha256:", workflow["variables"]["COLLABORATION_IMAGE"]["value"])
+        self.assertEqual(len(workflow["stages"]), 3)
+        self.assertIn("check-in", workflow["stages"][1])
+        text = workflow_path.read_text()
+        for required in (
+            "bootstrap-collaboration",
+            "--apply",
+            "export_ssm_to_sops.py",
+            "run_gitops_db_job.py",
+            "verify_db_contract.py",
+            "promote_collaboration_bootstrap_to_gitops.sh",
+            "DB_JOB_KUBECONFIG_B64",
+            "COLLABORATION_IM_CREDENTIAL.password",
+        ):
+            self.assertIn(required, text)
+        for forbidden in ("--allow-database-password-reset", "--allow-im-secret-rotation", "--env shprod", "--env sgprod"):
+            self.assertNotIn(forbidden, text)
+
+    def test_collaboration_bootstrap_gitops_script_reuses_projector_and_creates_reviewable_mr(self):
+        script = (REPO_ROOT / ".ci/runtime/promote_collaboration_bootstrap_to_gitops.sh").read_text()
+        for required in (
+            "project_release_bundle.py",
+            "project_collaboration_bootstrap.py",
+            "gitops_merge_request.py",
+            "--target-branch \"$GITOPS_BRANCH\"",
+            "--force-with-lease",
+            "--remove-source-branch",
+            "foundation 只创建 Namespace、ServiceAccount 和加密 Secret",
+        ):
+            self.assertIn(required, script)
+        for forbidden in ("kubectl apply", "git push --force ", "merge_gitops", "--auto-merge"):
+            self.assertNotIn(forbidden, script)
+        materialized = (REPO_ROOT / ".ci/runtime/materialize-files.txt").read_text().splitlines()
+        self.assertIn(".ci/runtime/commands/project_collaboration_bootstrap.py", materialized)
+
     def test_argo_candidate_waits_outside_appset_and_ssm_covers_all_runtime_files(self):
         root = REPO_ROOT / "argocd/catalogs/candidates/beijing-sandbox"
         candidate = yaml.safe_load((root / "collaboration.yaml").read_text())

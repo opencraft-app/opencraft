@@ -115,6 +115,27 @@ Auth/CTL SSM 必须预先存在，以避免命令误建不完整的核心服务 
 角色和三个 SSM 名称，先运行 `preview/up`，再预检并以 `--stack shprod --apply` 执行。普通上海
 镜像发布不执行该 bootstrap。
 
+北京 Collaboration 首次发布复用 inventory 中登记的现有 CynosDB 集群，使用独立逻辑库、
+账号和 SSM。IM material 必须是权限不超过 `0640` 的 JSON 文件，只包含 `sdkAppId`、
+`adminUserId` 和 `secretKey`；命令不会打印文件内容：
+
+```bash
+GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
+  --stack beijing-sandbox \
+  --im-material-file /安全目录/collaboration-im.json
+
+GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
+  --stack beijing-sandbox \
+  --im-material-file /安全目录/collaboration-im.json \
+  --apply
+```
+
+默认只做全量预检；显式 `--apply` 后才按 SSM → 数据库账号 → 逻辑库 → DB 级权限的顺序
+幂等写入。SSM 先保存 DSN 与生成材料，使账号或建库失败后可安全重入。已有 SSM、账号、库和
+权限完全匹配时不写入。账号存在但 SSM 丢失时默认拒绝；仅故障恢复可显式追加
+`--allow-database-password-reset`。IM Secret 不一致时默认拒绝；仅明确轮换时追加
+`--allow-im-secret-rotation`。日常镜像发布不得使用这两个恢复开关。
+
 ### 5. 只同步部署输出
 
 如果云资源不需要变更，只想把最新 infra 输出重新写回部署层：

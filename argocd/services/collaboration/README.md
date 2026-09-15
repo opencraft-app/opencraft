@@ -8,23 +8,26 @@
 它们描述同一个 `collaboration-beijing-sandbox` Application 的先后两个阶段，
 不能同时加入 active catalog，也不能新增手写 leaf Application。
 
-首次上线顺序（均需另行授权）：
+首次上线只通过 `.ci/collaboration-bootstrap.yml` 执行，禁止在 DevCloud 手工调用 CynosDB、SSM、
+kubectl 或复制 YAML。流水线固定为 dry-run → 人工审批 → apply/GitOps MR；MR 不自动合并。
 
-1. 在现有普通 DB 服务上准备独立 Collaboration 逻辑库/账号/DSN；不新建 DB 实例。
-2. 准备 SSM `mono-beijing-sandbox-collaboration-runtime-secrets` 的六个必填键，按
+1. `foundation` 阶段由 `infractl bootstrap-collaboration` 从 inventory 核对并幂等准备现有
+   普通 DB 服务内的独立逻辑库/账号/DSN；不新建 DB 实例。IM material 只从 protected setting
+   生成的临时 `0600` 文件读取。
+2. 同一阶段创建/核对 SSM `mono-beijing-sandbox-collaboration-runtime-secrets` 的六个必填键，按
    `scripts/ssm_manifest.collaboration.beijing-sandbox.yaml` 导出真正的 SOPS artifact。
-3. 以 `collaboration-foundation.yaml` 的内容建立 active
+3. 自动 GitOps 投影以 `collaboration-foundation.yaml` 建立 active
    `argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml`。审查并通过正常 GitOps
    流程交付，等待 Namespace/Secret 基础阶段收敛；该阶段没有 Deployment/Service/Job。
-4. 在源码中配置 `beijing-sandbox/collaboration-platform.env` 的真实 IM AppID/管理员，
-   将同一个 active 描述符切换为 `collaboration.yaml` 的 runtime sourcePath。
-5. 构建/选择 digest 镜像，再手动发起 Collaboration promote。配置门禁要求 active
-   catalog 与 SOPS artifact 均存在，并校验完整 Kustomize closure、镜像 pin 与所有占位符。
-6. DB gate 以显式普通 `mysql` 方言先执行受控 `collaboration/migration` Job，再执行同一候选镜像的
+4. 流水线把 protected setting 中的公开 IM AppID/管理员与 digest 镜像写入
+   `beijing-sandbox/collaboration-platform.env`；不把 IM Secret 写入普通配置。
+5. foundation 收敛后以 `BOOTSTRAP_PHASE=runtime` 重跑。配置门禁要求 active catalog 仍指向
+   foundation、SOPS artifact 存在、镜像按 digest 固定且所有占位符已消除。
+6. runtime 阶段 DB gate 以显式普通 `mysql` 方言先执行受控 `collaboration/migration` Job，再执行同一候选镜像的
    `database verify`；两者只挂 `database.dsn` 文件，不把 DSN 放入 argv/env 或日志。
    每次晋级都跑幂等迁移和 verify，首次发布不会依赖当前 diff 恰好包含 SQL；不得把普通
    MySQL DSN 改标成 `tdsql` 来绕过平台差异。
-7. 门禁成功后才创建/合入 GitOps runtime MR，再确认 Argo revision、镜像、
+7. 门禁成功后自动投影 active 描述符为 runtime sourcePath 并创建 GitOps MR；合入后再确认 Argo revision、镜像、
    `Synced/Healthy` 与 API 健康。Migration 不在常驻 Kustomize 中。
 
 Gateway 上游配置与匹配的内部 token 仍是单独的激活步骤，本轮不开放用户流量。
