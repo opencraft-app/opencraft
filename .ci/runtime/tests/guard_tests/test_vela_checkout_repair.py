@@ -14,7 +14,7 @@ class VelaCheckoutRepairTests(unittest.TestCase):
     def repair_script(self):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/vela-computer.yml").read_text())
         steps = workflow["stages"][0]["jobs"]["candidate"]["steps"]
-        repair = next((step for step in steps if step.get("name") == "隔离损坏的复用 checkout 元数据"), None)
+        repair = next((step for step in steps if step.get("name") == "准备全量干净 checkout"), None)
         self.assertIsNotNone(repair, "missing pre-checkout Git connectivity repair")
         self.assertLess(steps.index(repair), next(index for index, step in enumerate(steps) if "checkout" in step))
         self.assertNotIn("source .ci/", repair["run"])
@@ -39,7 +39,7 @@ class VelaCheckoutRepairTests(unittest.TestCase):
         return subprocess.run(["bash", "-euo", "pipefail", "-c", self.repair_script()],
                               cwd=root, env=os.environ.copy(), capture_output=True, text=True)
 
-    def test_missing_parent_is_quarantined_and_fresh_shallow_fetch_succeeds(self):
+    def test_missing_parent_is_quarantined_and_fresh_full_fetch_succeeds(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             remote = self.repository(root / "remote")
@@ -60,12 +60,14 @@ class VelaCheckoutRepairTests(unittest.TestCase):
             self.assertEqual((cached / "business-data").read_text(), "preserve me")
             self.git(cached, "init", "-q")
             self.git(cached, "remote", "add", "origin", remote.as_uri())
-            self.git(cached, "fetch", "--depth=1", "origin", "master")
+            self.git(cached, "fetch", "origin", "master")
             self.git(cached, "checkout", "--detach", "--force", "FETCH_HEAD")
             self.git(cached, "rev-list", "--objects", "--all")
+            self.assertEqual(self.git(cached, "rev-parse", "--is-shallow-repository").stdout.strip(), "false")
+            self.git(cached, "rev-parse", "HEAD^")
             self.assertEqual((cached / "business-data").read_text(), "preserve me")
 
-    def test_healthy_full_and_valid_shallow_repositories_are_preserved(self):
+    def test_healthy_full_and_valid_shallow_metadata_is_also_isolated(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             full = self.repository(root / "full")
@@ -75,10 +77,30 @@ class VelaCheckoutRepairTests(unittest.TestCase):
             self.assertTrue((shallow / ".git/shallow").is_file())
             for repo in (full, shallow):
                 with self.subTest(repository=repo.name):
+                    self.git(repo, "rev-list", "--objects", "--all")
+                    (repo / "business-data").write_text("preserve me")
                     result = self.repair(repo)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertTrue((repo / ".git/HEAD").is_file())
-                    self.assertEqual(list(repo.glob(".checkout-quarantine.*")), [])
+                    self.assertFalse((repo / ".git").exists())
+                    quarantines = list(repo.glob(".checkout-quarantine.*"))
+                    self.assertEqual(len(quarantines), 1)
+                    self.assertTrue((quarantines[0] / "git/HEAD").is_file())
+                    self.assertEqual((repo / "business-data").read_text(), "preserve me")
+
+    def test_pipeline_disables_shallow_checkout(self):
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/vela-computer.yml").read_text())
+        steps = workflow["stages"][0]["jobs"]["candidate"]["steps"]
+        checkout = next(step for step in steps if "checkout" in step)
+        self.assertEqual(checkout["with"]["fetchDepth"], 0)
+
+    def test_empty_checkout_preserves_existing_worktree_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "business-data").write_text("preserve me")
+            result = self.repair(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / "business-data").read_text(), "preserve me")
+            self.assertEqual(list(root.glob(".checkout-quarantine.*")), [])
 
     def test_symlink_gitdir_and_shared_worktree_markers_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

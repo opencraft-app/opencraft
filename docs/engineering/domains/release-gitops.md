@@ -27,10 +27,12 @@ master 源码
 
 ## 不变量
 
-- vela-computer候选流水线在checkout前独立内联检查index与可达对象连通性，合法shallow边界
-  不当作损坏。异常只将当前CI工作目录的普通`.git`元数据移入0700私有隔离目录，由checkout
+- vela-computer候选流水线在checkout前独立内联隔离全部复用的普通`.git`元数据，关闭浅克隆
+  （`fetchDepth=0`），让checkout从空对象库获取完整历史。连通性正常的浅缓存也不复用：
+  SDK按SHA做depth1增量fetch时曾在预检通过后仍报缺失父对象，预检不能覆盖该协商失败路径。
+  元数据只移入当前CI目录的0700私有隔离目录，由checkout
   插件重建，不删工作树/制品/业务数据；拒绝symlink、gitfile和共享commondir，隔离目录不归档。
-  checkout后在执行源码脚本前核对完整目标SHA与HEAD连通性；修改depth不能代替异常缓存恢复。
+  checkout后在执行源码脚本前核对完整目标SHA与HEAD连通性；干净对象库与全量拉取必须同时成立。
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
   通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。

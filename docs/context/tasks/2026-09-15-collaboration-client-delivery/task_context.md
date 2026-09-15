@@ -108,3 +108,11 @@ OpenCraft沿用现有Web本地发布契约，不恢复专用CI；明确产品产
 - RED：真实Git fixture确认缺父对象，因缺pre-checkout步骤而失败；GREEN为3项真实Git测试/6个case，重新depth1 fetch/checkout成功且业务文件保留，正常full/shallow与共享gitdir边界符合预期。
 - 完整CI runtime529项、物化smoke、shell/YAML与文档检查通过；真实CI重跑尚未执行，待提交确认。
 - Context receipt沿用本Pack，并追加argocd-ci-secrets邻接核对mr-placeholder既有index恢复与候选checkout。
+
+## 预检通过但fetch失败后的修正
+
+- #4实际执行43b6b8bf6预检，日志报告连通性有效；随后SDK depth1按SHA增量fetch仍报相同父对象缺失。MR占位检查已成功，不改其可信语义。
+- 用户确认新策略：候选每次隔离全部复用普通.git元数据并fetchDepth=0，全量从空对象库拉取；正常浅缓存不再保留复用，不删除业务文件，仍拒绝链接/共享gitdir。
+- RED：旧策略在健康full/shallow fixture仍留.git，且depth仍为1；新回归按目标策略失败。
+- GREEN：5项Git回归通过，包括健康full/shallow也隔离、缺父对象后fresh full fetch与父提交可读、空checkout和共享gitdir边界；完整CI runtime531项、物化smoke、shell/YAML/文档通过。
+- 真实CI重跑/恢复尚未证明，待源码验证及推送确认；不合并、不部署。
