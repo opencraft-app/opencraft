@@ -28,17 +28,25 @@ export interface CollaborationServerPage {
 }
 
 export interface CollaborationComputer {
-	readonly id: string;
-	readonly serverId: string;
-	readonly kind: "lightvela_instance";
-	readonly instanceId: string;
-	readonly name: string;
-	readonly lifecycleState: "attaching" | "active" | "removed";
-	readonly observedState: "creating" | "running" | "paused" | "isolating" | "deleting" | "deleted" | "failed" | "unknown";
-	readonly lastObservedAt?: string | null;
-	readonly lastErrorCode?: string | null;
-	readonly revision: number;
-	readonly createdAt: string;
+  readonly id: string;
+  readonly serverId: string;
+  readonly kind: "lightvela_instance";
+  readonly instanceId: string;
+  readonly name: string;
+  readonly lifecycleState: "attaching" | "active" | "removed";
+  readonly observedState:
+    | "creating"
+    | "running"
+    | "paused"
+    | "isolating"
+    | "deleting"
+    | "deleted"
+    | "failed"
+    | "unknown";
+  readonly lastObservedAt?: string | null;
+  readonly lastErrorCode?: string | null;
+  readonly revision: number;
+  readonly createdAt: string;
 }
 
 interface CursorPage<T> {
@@ -46,61 +54,67 @@ interface CursorPage<T> {
   readonly nextCursor?: string | null;
 }
 
+const COLLABORATION_API_PREFIX = "/v1/collaboration";
+
+function collaborationPath(path: string): string {
+  return `${COLLABORATION_API_PREFIX}${path}`;
+}
+
 export class CollaborationClient {
   constructor(private readonly account: LightVelaAccountRequestPort) {}
 
   listServers(): Promise<CollaborationServerPage> {
-    return this.account.requestRaw<CollaborationServerPage>("/v1/servers", {
+    return this.account.requestRaw<CollaborationServerPage>(collaborationPath("/servers"), {
       method: "GET",
     });
   }
 
   createHumanImSession(): Promise<HumanImSession> {
-    return this.account.requestRaw<HumanImSession>("/v1/me/im/session", {
+    return this.account.requestRaw<HumanImSession>(collaborationPath("/me/im/session"), {
       method: "POST",
     });
   }
 
   getMe(): Promise<Account> {
-    return this.account.requestRaw<Account>("/v1/me", { method: "GET" });
+    return this.account.requestRaw<Account>(collaborationPath("/me"), { method: "GET" });
   }
 
   listComputersV2(serverId: string): Promise<readonly CollaborationComputer[]> {
-	return this.drainCursor<CollaborationComputer>(
-	  `/v1/servers/${encodeURIComponent(serverId)}/computers-v2`,
-	);
+    return this.drainCursor<CollaborationComputer>(
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/computers-v2`),
+    );
   }
 
   attachComputerV2(
-	serverId: string,
-	instanceId: string,
-	name: string | null,
-	idempotencyKey: string,
+    serverId: string,
+    instanceId: string,
+    name: string | null,
+    idempotencyKey: string,
   ): Promise<CollaborationComputer> {
-	return this.account.requestRaw<CollaborationComputer>(
-	  `/v1/servers/${encodeURIComponent(serverId)}/computers-v2`,
-	  {
-		method: "POST",
-		headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-		body: JSON.stringify({
-		  kind: "lightvela_instance",
-		  instanceId,
-		  ...(name?.trim() ? { name: name.trim() } : {}),
-		}),
-	  },
-	);
+    return this.account.requestRaw<CollaborationComputer>(
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/computers-v2`),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify({
+          kind: "lightvela_instance",
+          instanceId,
+          ...(name?.trim() ? { name: name.trim() } : {}),
+        }),
+      },
+    );
   }
 
   listChannels(serverId: string): Promise<readonly Channel[]> {
     return this.account.requestRaw<readonly Channel[]>(
-      `/v1/servers/${encodeURIComponent(serverId)}/channels`,
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/channels`),
       { method: "GET" },
     );
   }
 
   listMembers(serverId: string): Promise<readonly Member[]> {
     return this.drainCursor<Member>(
-      `/v1/servers/${encodeURIComponent(serverId)}/members`,
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/members`),
     );
   }
 
@@ -108,7 +122,7 @@ export class CollaborationClient {
     serverId: string,
   ): Promise<readonly DirectConversationResource[]> {
     return this.drainCursor<DirectConversationResource>(
-      `/v1/servers/${encodeURIComponent(serverId)}/direct-conversations`,
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/direct-conversations`),
     );
   }
 
@@ -118,7 +132,7 @@ export class CollaborationClient {
     idempotencyKey: string,
   ): Promise<CreateDirectConversationResult> {
     const value = await this.account.requestRaw<DirectConversationResource | AcceptedResource>(
-      `/v1/servers/${encodeURIComponent(serverId)}/direct-conversations`,
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/direct-conversations`),
       {
         method: "POST",
         headers: {

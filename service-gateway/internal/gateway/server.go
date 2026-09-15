@@ -194,9 +194,17 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 	}
 	authTransport := newUpstreamTransport(defaultResponseHeaderTimeout)
 
-	routes := make([]compiledRoute, 0, len(cfg.Routes))
+	configuredRoutes := append([]Route(nil), cfg.Routes...)
+	if cfg.Collaboration != nil {
+		if strings.TrimSpace(cfg.Collaboration.Upstream) == "" ||
+			strings.TrimSpace(cfg.Collaboration.UpstreamBearerTokenEnv) == "" {
+			return nil, errors.New("collaboration upstream and bearer token env are required")
+		}
+		configuredRoutes = append(configuredRoutes, collaborationRoute(*cfg.Collaboration))
+	}
+	routes := make([]compiledRoute, 0, len(configuredRoutes))
 	subscriptionServiceURL := ""
-	for _, route := range cfg.Routes {
+	for _, route := range configuredRoutes {
 		if err := validateRoute(route); err != nil {
 			return nil, err
 		}
@@ -406,6 +414,40 @@ func validateRoute(route Route) error {
 		return fmt.Errorf("route %s vela_instance_key_allow requires allow_vela_instance_key", route.Name)
 	}
 	return nil
+}
+
+func collaborationRoute(config CollaborationRouteConfig) Route {
+	const prefix = "/v1/collaboration"
+	paths := []PublicRule{
+		{Method: http.MethodGet, Path: prefix + "/me"},
+		{Method: http.MethodPost, Path: prefix + "/me/im/session"},
+		{Method: http.MethodGet, Path: prefix + "/servers"},
+		{Method: http.MethodPost, Path: prefix + "/servers"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/members"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/channels"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/direct-conversations"},
+		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/direct-conversations"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/direct-conversations/{directConversationId}"},
+		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/direct-conversations/{directConversationId}/retry"},
+		{Method: http.MethodPost, Path: prefix + "/callbacks/tencent-im/state"},
+	}
+	return Route{
+		Name:                   "collaboration",
+		Prefix:                 prefix,
+		RewritePrefix:          "/v1",
+		Methods:                []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		Upstream:               config.Upstream,
+		UpstreamBearerTokenEnv: config.UpstreamBearerTokenEnv,
+		Access:                 AccessAuthenticated,
+		PathPolicy:             PathPolicyAllowlist,
+		PathAllow:              paths,
+		PublicAllow: []PublicRule{{
+			Method: http.MethodPost,
+			Path:   prefix + "/callbacks/tencent-im/state",
+		}},
+		ResponseHeaderTimeout: "30s",
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -694,7 +736,7 @@ func corsAllowedHeaders(r *http.Request) string {
 	if r.URL.Path == "/v1/passes/order-url" && requestedHeaders != "" {
 		return requestedHeaders
 	}
-	return "Authorization, Content-Type, X-Request-Id, X-Trace-Id, X-Requested-With"
+	return "Authorization, Content-Type, Idempotency-Key, X-Request-Id, X-Resource-Revision, X-Trace-Id, X-Requested-With"
 }
 
 type wildcardOrigin struct {

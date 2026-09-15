@@ -65,6 +65,7 @@ const (
 type serveConfig struct {
 	database                         config.Database
 	databaseAutoMigrate              bool
+	collaborationOnly                bool
 	listenAddress                    string
 	jwtKeyFile                       string
 	lightVelaGatewayTokenFile        string
@@ -198,6 +199,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		maxIdleConnections               int
 		connectionMaxLifetime            time.Duration
 		databaseAutoMigrate              bool
+		collaborationOnly                bool
 		address                          string
 		keyFile                          string
 		lightVelaGatewayTokenFile        string
@@ -229,6 +231,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	flags.IntVar(&maxIdleConnections, "database-max-idle-connections", 20, "MySQL 最大空闲连接数")
 	flags.DurationVar(&connectionMaxLifetime, "database-connection-max-lifetime", 3*time.Minute, "MySQL 连接最长生命周期")
 	flags.BoolVar(&databaseAutoMigrate, "database-auto-migrate", true, "服务启动时自动执行数据库迁移")
+	flags.BoolVar(&collaborationOnly, "collaboration-only", false, "只启用 Collaboration Human/Runtime 与腾讯云 IM，不启动旧 Computer/TAT/Task/Reminder surface")
 	flags.StringVar(&address, "listen", defaultListenAddress, "HTTP 监听地址")
 	flags.StringVar(&keyFile, "jwt-key-file", "", "JWT HMAC 密钥文件")
 	flags.StringVar(
@@ -411,6 +414,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	return serveConfig{
 		database:                         databaseConfig,
 		databaseAutoMigrate:              databaseAutoMigrate,
+		collaborationOnly:                collaborationOnly,
 		listenAddress:                    address,
 		jwtKeyFile:                       keyFile,
 		lightVelaGatewayTokenFile:        strings.TrimSpace(lightVelaGatewayTokenFile),
@@ -888,130 +892,143 @@ func serveHumanPlatform(
 			err,
 		)
 	}
+	workers := []interface {
+		Run(context.Context) error
+	}{
+		worker,
+		agentIdentityWorker,
+		communityWorker,
+		topicWorker,
+		directIMWorker,
+		membershipWorker,
+	}
 	var tatClient *tatadapter.Client
 	var terminalIssuer tencenttatport.TerminalSessionIssuer
-	if tencentCloudSecretID != "" {
-		tatClient, err = tatadapter.NewCredentialClient(
-			tencentCloudSecretID,
-			tencentCloudSecretKey,
-			productionTATRequestTimeout,
-		)
-		if err == nil {
-			terminalIssuer, err = tatadapter.NewCredentialCloudSessionIssuer(
+	if !cfg.collaborationOnly {
+		if tencentCloudSecretID != "" {
+			tatClient, err = tatadapter.NewCredentialClient(
 				tencentCloudSecretID,
 				tencentCloudSecretKey,
 				productionTATRequestTimeout,
 			)
+			if err == nil {
+				terminalIssuer, err = tatadapter.NewCredentialCloudSessionIssuer(
+					tencentCloudSecretID,
+					tencentCloudSecretKey,
+					productionTATRequestTimeout,
+				)
+			}
+		} else {
+			tatClient, err = tatadapter.NewDefaultClient(productionTATRequestTimeout)
+			if err == nil {
+				terminalIssuer, err = tatadapter.NewDefaultCloudSessionIssuer(
+					productionTATRequestTimeout,
+				)
+			}
 		}
-	} else {
-		tatClient, err = tatadapter.NewDefaultClient(productionTATRequestTimeout)
-		if err == nil {
-			terminalIssuer, err = tatadapter.NewDefaultCloudSessionIssuer(
-				productionTATRequestTimeout,
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装腾讯云 TAT/PTY Client", err)
+		}
+		tatRepository, err := tencentoperationadapter.NewEntRepository(handle)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 TAT Worker", err)
+		}
+		tatWorkerID, err := idport.UUIDv7{}.New()
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法创建 TAT Worker 身份", err)
+		}
+		tatService, err := apptencentoperation.NewComputerService(
+			tatRepository,
+			tatClient,
+			clock,
+			productionTATWorkerConfig(tatWorkerID),
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 TAT Worker", err)
+		}
+		tatWorker, err := imidentityworker.New(
+			tatService,
+			imidentityworker.Config{PollInterval: 500 * time.Millisecond},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 TAT Worker", err)
+		}
+		reminderRepository, err := reminderoccurrenceadapter.NewEntRepository(
+			handle,
+			idport.UUIDv7{},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Reminder Worker", err)
+		}
+		reminderNotificationSender, err := tencentimadapter.NewRESTAgentNotificationSender(
+			tencentimadapter.RESTConfig{
+				SDKAppID:        cfg.imSDKAppID,
+				AdminUserID:     cfg.imAdminUserID,
+				BaseURL:         cfg.imRESTBaseURL,
+				HTTPClient:      &http.Client{Timeout: 15 * time.Second},
+				Random:          rand.Reader,
+				AdminSignatures: userSigs,
+				AdminSigTTL:     10 * time.Minute,
+			},
+		)
+		if err != nil {
+			return apperror.New(
+				"CONFIG_INVALID",
+				"腾讯云 IM Reminder 通知配置无效",
+				err,
 			)
 		}
-	}
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装腾讯云 TAT/PTY Client", err)
-	}
-	tatRepository, err := tencentoperationadapter.NewEntRepository(handle)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 TAT Worker", err)
-	}
-	tatWorkerID, err := idport.UUIDv7{}.New()
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法创建 TAT Worker 身份", err)
-	}
-	tatService, err := apptencentoperation.NewComputerService(
-		tatRepository,
-		tatClient,
-		clock,
-		productionTATWorkerConfig(tatWorkerID),
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 TAT Worker", err)
-	}
-	tatWorker, err := imidentityworker.New(
-		tatService,
-		imidentityworker.Config{PollInterval: 500 * time.Millisecond},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 TAT Worker", err)
-	}
-	reminderRepository, err := reminderoccurrenceadapter.NewEntRepository(
-		handle,
-		idport.UUIDv7{},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Reminder Worker", err)
-	}
-	reminderNotificationSender, err := tencentimadapter.NewRESTAgentNotificationSender(
-		tencentimadapter.RESTConfig{
-			SDKAppID:        cfg.imSDKAppID,
-			AdminUserID:     cfg.imAdminUserID,
-			BaseURL:         cfg.imRESTBaseURL,
-			HTTPClient:      &http.Client{Timeout: 15 * time.Second},
-			Random:          rand.Reader,
-			AdminSignatures: userSigs,
-			AdminSigTTL:     10 * time.Minute,
-		},
-	)
-	if err != nil {
-		return apperror.New(
-			"CONFIG_INVALID",
-			"腾讯云 IM Reminder 通知配置无效",
-			err,
+		reminderWorkerID, err := idport.UUIDv7{}.New()
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法创建 Reminder Worker 身份", err)
+		}
+		reminderService, err := appreminderoccurrence.NewSchedulerService(
+			reminderRepository,
+			reminderNotificationSender,
+			clock,
+			appreminderoccurrence.SchedulerConfig{
+				WorkerID: reminderWorkerID, LeaseTTL: 30 * time.Second,
+				MaxAttempts: 8, BaseBackoff: time.Second, MaxBackoff: time.Minute,
+			},
 		)
-	}
-	reminderWorkerID, err := idport.UUIDv7{}.New()
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法创建 Reminder Worker 身份", err)
-	}
-	reminderService, err := appreminderoccurrence.NewSchedulerService(
-		reminderRepository,
-		reminderNotificationSender,
-		clock,
-		appreminderoccurrence.SchedulerConfig{
-			WorkerID: reminderWorkerID, LeaseTTL: 30 * time.Second,
-			MaxAttempts: 8, BaseBackoff: time.Second, MaxBackoff: time.Minute,
-		},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Reminder Worker", err)
-	}
-	reminderWorker, err := reminderworker.New(
-		reminderService,
-		reminderworker.Config{PollInterval: 500 * time.Millisecond},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Reminder Worker", err)
-	}
-	taskNotificationRepository, err := tasknotificationadapter.NewEntRepository(handle)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Task notification Worker", err)
-	}
-	taskNotificationWorkerID, err := idport.UUIDv7{}.New()
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法创建 Task notification Worker 身份", err)
-	}
-	taskNotificationProcessor, err := apptasknotification.NewProcessor(
-		taskNotificationRepository,
-		reminderNotificationSender,
-		clock,
-		apptasknotification.Config{
-			WorkerID: taskNotificationWorkerID, LeaseTTL: 30 * time.Second,
-			MaxAttempts: 8, BaseBackoff: time.Second, MaxBackoff: time.Minute,
-		},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Task notification Worker", err)
-	}
-	taskNotificationWorker, err := reminderworker.New(
-		taskNotificationProcessor,
-		reminderworker.Config{PollInterval: 500 * time.Millisecond},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Task notification Worker", err)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Reminder Worker", err)
+		}
+		reminderWorker, err := reminderworker.New(
+			reminderService,
+			reminderworker.Config{PollInterval: 500 * time.Millisecond},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Reminder Worker", err)
+		}
+		taskNotificationRepository, err := tasknotificationadapter.NewEntRepository(handle)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Task notification Worker", err)
+		}
+		taskNotificationWorkerID, err := idport.UUIDv7{}.New()
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法创建 Task notification Worker 身份", err)
+		}
+		taskNotificationProcessor, err := apptasknotification.NewProcessor(
+			taskNotificationRepository,
+			reminderNotificationSender,
+			clock,
+			apptasknotification.Config{
+				WorkerID: taskNotificationWorkerID, LeaseTTL: 30 * time.Second,
+				MaxAttempts: 8, BaseBackoff: time.Second, MaxBackoff: time.Minute,
+			},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Task notification Worker", err)
+		}
+		taskNotificationWorker, err := reminderworker.New(
+			taskNotificationProcessor,
+			reminderworker.Config{PollInterval: 500 * time.Millisecond},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Task notification Worker", err)
+		}
+		workers = append(workers, tatWorker, reminderWorker, taskNotificationWorker)
 	}
 	platformHandler, err := bootstrap.NewPlatformAPIHandler(bootstrap.PlatformAPIConfig{
 		Human: bootstrap.HumanAPIConfig{
@@ -1055,42 +1072,6 @@ func serveHumanPlatform(
 	if err != nil {
 		return apperror.New("CONFIG_INVALID", "无法组装 Runtime API", err)
 	}
-	computerHandler, err := bootstrap.NewComputerAPIHandler(
-		bootstrap.ComputerAPIConfig{
-			Database:       handle,
-			AccessTokenKey: accessTokenKey,
-			AccessTTL:      15 * time.Minute,
-			SDKAppID:       cfg.imSDKAppID,
-			UserSigTTL:     time.Hour,
-			UserSigIssuer:  userSigs,
-			RequestTimeout: 30 * time.Second,
-			MaxBodyBytes:   16 * 1024,
-		},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Computer 控制 API", err)
-	}
-	bootstrapEncryptionKey := sha256.Sum256(append(
-		[]byte("agent-network-computer-bootstrap-v1\x00"),
-		accessTokenKey...,
-	))
-	computerBootstrapAPI, err := bootstrap.NewComputerBootstrapAPI(
-		bootstrap.ComputerBootstrapAPIConfig{
-			Database: handle, Registrar: tatClient, Region: cfg.managedTATRegion,
-			EncryptionKey: bootstrapEncryptionKey[:], Random: rand.Reader,
-			RequestTimeout: 15 * time.Second, MaxBodyBytes: 4 * 1024,
-		},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Computer bootstrap API", err)
-	}
-	computerBootstrapWorker, err := imidentityworker.New(
-		computerBootstrapAPI.Processor,
-		imidentityworker.Config{PollInterval: 500 * time.Millisecond},
-	)
-	if err != nil {
-		return apperror.New("CONFIG_INVALID", "无法组装 Computer bootstrap Worker", err)
-	}
 	rootHandler := http.NewServeMux()
 	readinessHandler, err := httptransport.NewReadinessHandler(
 		func(requestContext context.Context) error {
@@ -1122,16 +1103,55 @@ func serveHumanPlatform(
 		rootHandler.Handle("/v1/callbacks/tencent-im/state", callbackHandler)
 	}
 	rootHandler.Handle("/v1/runtime/", runtimeHandler)
-	rootHandler.Handle("/v1/bootstrap/", computerBootstrapAPI.Handler)
-	// Enrollment claim and short-code redemption are public bootstrap operations.
-	// Keep their exact routes on the Platform handler so the broader authenticated
-	// Computer control prefix cannot shadow them.
-	rootHandler.Handle("/v1/computer/enrollments:claim", platformHandler)
-	rootHandler.Handle("/v1/computer/setup-codes:redeem", platformHandler)
-	rootHandler.Handle("/v1/computer/", computerHandler)
+	if !cfg.collaborationOnly {
+		computerHandler, err := bootstrap.NewComputerAPIHandler(
+			bootstrap.ComputerAPIConfig{
+				Database:       handle,
+				AccessTokenKey: accessTokenKey,
+				AccessTTL:      15 * time.Minute,
+				SDKAppID:       cfg.imSDKAppID,
+				UserSigTTL:     time.Hour,
+				UserSigIssuer:  userSigs,
+				RequestTimeout: 30 * time.Second,
+				MaxBodyBytes:   16 * 1024,
+			},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Computer 控制 API", err)
+		}
+		bootstrapEncryptionKey := sha256.Sum256(append(
+			[]byte("agent-network-computer-bootstrap-v1\x00"),
+			accessTokenKey...,
+		))
+		computerBootstrapAPI, err := bootstrap.NewComputerBootstrapAPI(
+			bootstrap.ComputerBootstrapAPIConfig{
+				Database: handle, Registrar: tatClient, Region: cfg.managedTATRegion,
+				EncryptionKey: bootstrapEncryptionKey[:], Random: rand.Reader,
+				RequestTimeout: 15 * time.Second, MaxBodyBytes: 4 * 1024,
+			},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Computer bootstrap API", err)
+		}
+		computerBootstrapWorker, err := imidentityworker.New(
+			computerBootstrapAPI.Processor,
+			imidentityworker.Config{PollInterval: 500 * time.Millisecond},
+		)
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Computer bootstrap Worker", err)
+		}
+		workers = append(workers, computerBootstrapWorker)
+		rootHandler.Handle("/v1/bootstrap/", computerBootstrapAPI.Handler)
+		// Enrollment claim and short-code redemption are public bootstrap operations.
+		// Keep their exact routes on the Platform handler so the broader authenticated
+		// Computer control prefix cannot shadow them.
+		rootHandler.Handle("/v1/computer/enrollments:claim", platformHandler)
+		rootHandler.Handle("/v1/computer/setup-codes:redeem", platformHandler)
+		rootHandler.Handle("/v1/computer/", computerHandler)
+	}
 	rootHandler.Handle("/v1", platformHandler)
 	rootHandler.Handle("/v1/", platformHandler)
-	if computerEnrollmentConfig != nil {
+	if !cfg.collaborationOnly && computerEnrollmentConfig != nil {
 		installHandler, err := httptransport.NewComputerInstallHandler(
 			httptransport.ComputerInstallHandlerConfig{
 				BaseURL:           cfg.computerInstallPublicURL,
@@ -1166,20 +1186,6 @@ func serveHumanPlatform(
 	go func() {
 		serveErrors <- server.HTTPServer().Serve(listener)
 	}()
-	workers := []interface {
-		Run(context.Context) error
-	}{
-		worker,
-		agentIdentityWorker,
-		communityWorker,
-		topicWorker,
-		directIMWorker,
-		membershipWorker,
-		tatWorker,
-		computerBootstrapWorker,
-		reminderWorker,
-		taskNotificationWorker,
-	}
 	workerErrors := make(chan error, len(workers))
 	for _, currentWorker := range workers {
 		go func(current interface {
@@ -1188,11 +1194,11 @@ func serveHumanPlatform(
 			workerErrors <- current.Run(runContext)
 		}(currentWorker)
 	}
-	fmt.Fprintf(
-		stdout,
-		"平台 API 与 IM Worker 已启动：http://%s\n",
-		listener.Addr().String(),
-	)
+	serviceLabel := "平台 API"
+	if cfg.collaborationOnly {
+		serviceLabel = "Collaboration API"
+	}
+	fmt.Fprintf(stdout, "%s 与 IM Worker 已启动：http://%s\n", serviceLabel, listener.Addr().String())
 
 	select {
 	case err := <-serveErrors:

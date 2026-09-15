@@ -760,6 +760,45 @@ func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 	}
 }
 
+func TestPlatformAPIWithoutTATBuildsCollaborationSurfaceOnly(t *testing.T) {
+	handle := openHumanAPIDatabase(t)
+	handler, err := NewPlatformAPIHandler(PlatformAPIConfig{
+		Human: HumanAPIConfig{
+			Auth: AuthAPIConfig{
+				Database:          handle,
+				AccessTokenKey:    bytes.Repeat([]byte{0x62}, 32),
+				GatewayHumanToken: []byte("service-gateway-internal-token"),
+				Password:          credentialsadapter.TestArgon2idConfig(),
+				AccessTTL:         15 * time.Minute,
+				RefreshTTL:        30 * 24 * time.Hour,
+				RequestTimeout:    5 * time.Second,
+				MaxBodyBytes:      16 * 1024,
+			},
+			SDKAppID:      1600000000,
+			UserSigTTL:    time.Hour,
+			UserSigIssuer: &recordingUserSigIssuer{},
+		},
+		IMResourceKey:      bytes.Repeat([]byte{0x63}, 32),
+		ServerCreationWait: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/servers/0199f95e-1900-7000-8000-000000000002/computers", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("legacy Computer route status = %d body=%s", rec.Code, rec.Body)
+	}
+	register := httptest.NewRequest(http.MethodPost, "/v1/auth/register", bytes.NewReader([]byte(`{}`)))
+	register.Header.Set("Content-Type", "application/json")
+	registerRec := httptest.NewRecorder()
+	handler.ServeHTTP(registerRec, register)
+	if registerRec.Code != http.StatusNotFound {
+		t.Fatalf("independent login route status = %d body=%s", registerRec.Code, registerRec.Body)
+	}
+}
+
 func platformJSON(
 	t *testing.T,
 	handler http.Handler,

@@ -707,6 +707,30 @@ func TestServeCLIParsesOptionalTencentIMCallbackTokenFile(t *testing.T) {
 	}
 }
 
+func TestServeCLIParsesCollaborationOnlyProfile(t *testing.T) {
+	root := t.TempDir()
+	cfg, err := parseServeConfig([]string{
+		"--database", filepath.Join(root, "data", "collaboration.db"),
+		"--listen", "127.0.0.1:0",
+		"--jwt-key-file", filepath.Join(root, "jwt.key"),
+		"--lightvela-gateway-token-file", filepath.Join(root, "gateway.token"),
+		"--im-sdk-app-id", "1600000000",
+		"--im-admin-user-id", "platform_admin",
+		"--im-secret-key-file", filepath.Join(root, "im-secret.key"),
+		"--im-identity-key-file", filepath.Join(root, "im-identity.key"),
+		"--collaboration-only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.collaborationOnly {
+		t.Fatal("collaboration-only profile was not retained")
+	}
+	if cfg.computerInstallPublicURL != "" || cfg.tencentCloudSecretIDFile != "" {
+		t.Fatalf("collaboration-only enabled legacy Computer config: %#v", cfg)
+	}
+}
+
 func TestServeCLI支持显式TDSQLDSN文件(t *testing.T) {
 	root := t.TempDir()
 	dsnFile := filepath.Join(root, "mysql.dsn")

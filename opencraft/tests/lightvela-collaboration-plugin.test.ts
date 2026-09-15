@@ -105,7 +105,7 @@ test("Collaboration client uses the shared LightVela account transport", async (
 
   const page = await client.listServers();
 
-  assert.deepEqual(requests, [{ path: "/v1/servers", method: "GET" }]);
+  assert.deepEqual(requests, [{ path: "/v1/collaboration/servers", method: "GET" }]);
   assert.equal(page.items[0]?.name, "Builders");
   assert.equal(page.nextCursor, null);
 });
@@ -126,7 +126,7 @@ test("Collaboration client obtains a short-lived Human IM session", async () => 
 
   const session = await client.createHumanImSession();
 
-  assert.deepEqual(requests, [{ path: "/v1/me/im/session", method: "POST" }]);
+  assert.deepEqual(requests, [{ path: "/v1/collaboration/me/im/session", method: "POST" }]);
   assert.equal(session.userId, "u_agent_collaborator");
   assert.equal(session.userSig, "short-lived-user-sig");
 });
@@ -149,7 +149,7 @@ test("Collaboration client resolves the JIT-mapped Human account", async () => {
 
   const account = await client.getMe();
 
-  assert.deepEqual(requests, ["/v1/me"]);
+  assert.deepEqual(requests, ["/v1/collaboration/me"]);
   assert.equal(account.imUserId, "human-1");
 });
 
@@ -181,10 +181,10 @@ test("Collaboration client loads the unified IM directory through stable Server 
   assert.deepEqual(members, [{ id: "member-1" }, { id: "member-2" }]);
   assert.deepEqual(direct, [{ id: "direct-1" }]);
   assert.deepEqual(requests.sort(), [
-    "/v1/servers/server-1/channels",
-    "/v1/servers/server-1/direct-conversations",
-    "/v1/servers/server-1/members",
-    "/v1/servers/server-1/members?cursor=members-2",
+    "/v1/collaboration/servers/server-1/channels",
+    "/v1/collaboration/servers/server-1/direct-conversations",
+    "/v1/collaboration/servers/server-1/members",
+    "/v1/collaboration/servers/server-1/members?cursor=members-2",
   ].sort());
 });
 
@@ -199,7 +199,7 @@ test("Collaboration client creates a private Group through the Server member con
 
   await client.createDirectConversation("server-1", "member-1", "request-1");
 
-  assert.equal(request?.path, "/v1/servers/server-1/direct-conversations");
+  assert.equal(request?.path, "/v1/collaboration/servers/server-1/direct-conversations");
   assert.equal(request?.init?.method, "POST");
   assert.equal(new Headers(request?.init?.headers).get("Idempotency-Key"), "request-1");
   assert.deepEqual(JSON.parse(String(request?.init?.body)), { peerMemberId: "member-1" });

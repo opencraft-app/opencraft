@@ -20,7 +20,7 @@ test("Computer client lists attached resources and only attaches an existing ins
 
   assert.equal(listed[0]?.id, "computer-1");
   assert.equal(created.instanceId, "instance-1");
-  assert.equal(calls[0]?.path, "/v1/servers/server%2Fone/computers-v2");
+  assert.equal(calls[0]?.path, "/v1/collaboration/servers/server%2Fone/computers-v2");
   assert.deepEqual(JSON.parse(String(calls[1]?.init?.body)), {
     kind: "lightvela_instance",
     instanceId: "instance-1",

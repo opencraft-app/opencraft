@@ -142,8 +142,8 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 	if config.Human.Auth.Database == nil ||
 		len(config.IMResourceKey) < 32 ||
 		config.ServerCreationWait <= 0 ||
-		config.TATRegistrar == nil ||
-		config.TerminalIssuer == nil {
+		(config.TATRegistrar == nil) != (config.TerminalIssuer == nil) ||
+		(config.ComputerEnrollment != nil && config.TATRegistrar == nil) {
 		return nil, errors.New("Platform API 配置无效")
 	}
 	humanRepository, err := humanaccountadapter.NewEntRepository(
@@ -226,22 +226,40 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	computerRepository, err := computeradapter.NewEntRepository(
-		config.Human.Auth.Database,
-	)
-	if err != nil {
-		return nil, err
-	}
-	computerService, err := appcomputer.NewService(
-		computerRepository,
-		config.TATRegistrar,
-		config.TerminalIssuer,
-		idport.UUIDv7{},
-		clockport.System{},
-		appcomputer.Config{ManagedTATRegion: managedTATRegion(config.ManagedTATRegion)},
-	)
-	if err != nil {
-		return nil, err
+	var computerRepository *computeradapter.EntRepository
+	var computerService *appcomputer.Service
+	var computerCredentialService *appcomputer.CredentialService
+	if config.TATRegistrar != nil {
+		computerRepository, err = computeradapter.NewEntRepository(
+			config.Human.Auth.Database,
+		)
+		if err != nil {
+			return nil, err
+		}
+		computerService, err = appcomputer.NewService(
+			computerRepository,
+			config.TATRegistrar,
+			config.TerminalIssuer,
+			idport.UUIDv7{},
+			clockport.System{},
+			appcomputer.Config{ManagedTATRegion: managedTATRegion(config.ManagedTATRegion)},
+		)
+		if err != nil {
+			return nil, err
+		}
+		computerCredentialService, err = appcomputer.NewCredentialService(
+			computerRepository,
+			idport.UUIDv7{},
+			clockport.System{},
+			appcomputer.CredentialConfig{
+				DerivationKey: config.Human.Auth.AccessTokenKey,
+				CredentialTTL: 365 * 24 * time.Hour,
+				HandoffTTL:    time.Hour,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 	var computerV2Service *appcomputerv2.Service
 	if config.ComputerV2Instances != nil {
@@ -258,19 +276,6 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-	computerCredentialService, err := appcomputer.NewCredentialService(
-		computerRepository,
-		idport.UUIDv7{},
-		clockport.System{},
-		appcomputer.CredentialConfig{
-			DerivationKey: config.Human.Auth.AccessTokenKey,
-			CredentialTTL: 365 * 24 * time.Hour,
-			HandoffTTL:    time.Hour,
-		},
-	)
-	if err != nil {
-		return nil, err
 	}
 	var computerEnrollmentService *appcomputer.EnrollmentService
 	var computerArtifactService *appcomputer.ArtifactService
