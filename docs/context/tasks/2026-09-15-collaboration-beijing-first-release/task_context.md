@@ -83,21 +83,26 @@ release-gitops、agent-gateway-runtime、service-collaboration；触及Gateway/W
 - 该机器default.credential的北京视角中，指定Collaboration及已有admin-gateway、CTL映射的DescribeSecret均ResourceNotFound；区域集群名称无法匹配目标环境。账号/控制面归属未证明，不能直接新建资源。
 - 已有HK配置未定位到预期北京根应用或对应端口服务，不将其当作目标北京集群。
 - 未调用可能首次生成长期客户端证书的DescribeClusterKubeconfig；未创建DB、Secret、密钥或激活GitOps。
+- !4036已合入master，merge commit为aaa1ab52acd9434b374e4913548b6b3524784aee；主干Collaboration构建#2成功并产出北京digest镜像。构建日志明确为build-only、skip GitOps auto-pin，不能视为后台已发布。
+- 本轮重新只读确认目标workload集群为tke-bj8（包含正式北京namespaces与general-bj8节点池），lightvela-collaboration namespace不存在；tke-bj82承载Playground，不混用。
+- 目标账号collaboration_rw@%和逻辑库lightvela_collaboration均不存在，Collaboration SSM仍不存在；共享cynosdb-bj8为running MySQL8.0，内部endpoint已登记进inventory但不包含凭据。
+- 用户明确要求发布能力沉淀而非手工运维。新分支feat/collaboration-beijing-bootstrap增加默认dry-run、显式apply、可重入的infractl bootstrap，Stream人工审批、SSM→SOPS、foundation/runtime GitOps MR及runtime前MySQL migration/verify编排；不自动合并。
+- bootstrap领域/config/SDK/CLI聚焦Go测试、GitOps投影命令测试、11项Collaboration交付契约、Shell语法与YAML解析当前通过。尚未执行云写入或真实pipeline；腾讯IM protected settings仍需从已确认的真实应用配置。
 
 ## risks
 错误账号写入、跨环境密钥复用、未验证迁移和暴露未就绪API。先确认目标账号/集群、分阶段门禁，保留原服务配置与镜像pin；不靠临时live修补取得表面成功。
 
 ## validation
-本地代码门禁已通过；docs-impact命中release-gitops并要求Owner复核。Context仍833条既有错误，本Task Pack为0；Context tests26项同样4项既有失败，Audit tests33项通过。真实MySQL闭环、Stream构建与发布门禁须在MR流程继续。DB门禁由受控Job执行，发布后观察Argo revision/镜像/健康及浏览器实际行为。
+MySQL兼容源码门禁和主干构建已通过。当前bootstrap自动化的聚焦Go/Python/契约/Shell/YAML测试通过，完整CI、docs-impact、Context和Audit仍待重跑。真实MySQL闭环只能由新流水线在foundation收敛后执行；发布后继续观察GitOps revision、Argo/live镜像与健康及浏览器实际行为。
 
 ## decisions
-用户已授权beijing-sandbox首次发布及普通MySQL兼容实现；凭据归属已通过既有SSM验证。代码和发布配置先经测试、MR与Owner审阅，再创建数据库资源；控制面与IM仍待核实。不通过新建TDSQL实例或修改历史迁移违背原定普通DB要求。
+用户已授权beijing-sandbox首次发布及普通MySQL兼容实现，并补充要求全部能力沉淀，禁止以DevCloud手工命令完成上线。数据库/SSM/foundation/runtime写入只允许由默认dry-run、人工审批后的正式CI/GitOps流程执行；不新建DB实例，不修改历史迁移，不自动合并GitOps MR。IM真实应用材料仍是foundation执行前置。
 
 ## scan_scope
 DevCloud已登记SSH入口、既有Argo context元数据、TC profile字段元数据、北京区域精确SSM名称和TKE集群元数据；不扫描或输出凭据值。
 
 ## scan_output
-隔离进展记录：.omx/plans/vela-checkout-repair/。只记录状态和错误码，无密钥值。
+隔离进展记录：.omx/plans/vela-checkout-repair/与.omx/plans/collaboration-beijing-release/。只记录状态、公开资源标识和错误码，无密钥值。
 
 ## handoff
-普通MySQL兼容源码与本地验证完成，未提交/推送。下一步提交MR并由Owner复核；合入和真实Linux镜像验证后才创建独立逻辑库/账号/SSM、运行真实MySQL闭环并推进foundation。云资源、默认profile、现有DB与Secret均未修改。
+普通MySQL兼容源码已合入并完成主干镜像构建。可沉淀的北京bootstrap自动化正在feat/collaboration-beijing-bootstrap实现，当前未提交/推送；下一步完成全量门禁并提交MR。自动化合入、protected IM设置核准后，先运行foundation dry-run/审批并创建GitOps MR；foundation收敛后再运行runtime MySQL门禁和runtime MR。云资源、默认profile、现有DB与Secret仍未修改。

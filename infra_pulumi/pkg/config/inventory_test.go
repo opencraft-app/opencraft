@@ -83,6 +83,59 @@ func TestLoadBeijingSandboxPulsarInventory(t *testing.T) {
 	}
 }
 
+func TestLoadBeijingSandboxCollaborationInventory(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "envs", "tencentcloud", "beijing-sandbox", "inventory.yaml")
+	inventory, err := LoadInventory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := inventory.Stacks.Collaboration
+	if !value.Enabled || value.ExistingClusterID != "cynosdbmysql-3dh7jyee" || value.Database != "lightvela_collaboration" || value.Account != "collaboration_rw" || value.AccountHost != "%" {
+		t.Fatalf("unexpected Collaboration database inventory: %+v", value)
+	}
+	if value.ExistingEndpoint != "10.15.224.4:3306" || value.SSMSecretName != "mono-beijing-sandbox-collaboration-runtime-secrets" {
+		t.Fatalf("unexpected Collaboration delivery inventory: %+v", value)
+	}
+	if value.Namespace != "lightvela-collaboration" || value.NodePool != "general-bj8" {
+		t.Fatalf("unexpected Collaboration workload inventory: %+v", value)
+	}
+}
+
+func TestValidateCollaborationInventoryRejectsIncompleteTarget(t *testing.T) {
+	valid := CollaborationInventory{
+		Enabled: true, ExistingClusterID: "cynosdbmysql-existing", ExistingEndpoint: "10.0.0.10:3306",
+		Database: "lightvela_collaboration", Account: "collaboration_rw", AccountHost: "%",
+		SSMSecretName: "collaboration-secret", Namespace: "lightvela-collaboration", NodePool: "general-bj8",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*CollaborationInventory)
+	}{
+		{name: "missing cluster", mutate: func(v *CollaborationInventory) { v.ExistingClusterID = "" }},
+		{name: "missing endpoint", mutate: func(v *CollaborationInventory) { v.ExistingEndpoint = "" }},
+		{name: "invalid endpoint", mutate: func(v *CollaborationInventory) { v.ExistingEndpoint = "10.0.0.10" }},
+		{name: "missing database", mutate: func(v *CollaborationInventory) { v.Database = "" }},
+		{name: "missing account", mutate: func(v *CollaborationInventory) { v.Account = "" }},
+		{name: "unsafe host", mutate: func(v *CollaborationInventory) { v.AccountHost = "0.0.0.0" }},
+		{name: "missing secret", mutate: func(v *CollaborationInventory) { v.SSMSecretName = "" }},
+		{name: "missing namespace", mutate: func(v *CollaborationInventory) { v.Namespace = "" }},
+		{name: "missing node pool", mutate: func(v *CollaborationInventory) { v.NodePool = "" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := valid
+			tt.mutate(&candidate)
+			if err := validateCollaborationInventory(candidate); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
 func TestValidatePulsarInventoryRejectsUnsafeValues(t *testing.T) {
 	valid := PulsarInventory{
 		Enabled:              true,

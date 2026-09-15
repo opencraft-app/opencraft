@@ -435,6 +435,23 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 - `sandbox` 的 default pools 属运营态数据，自动发布不 seed；缺 pools 时阻断并提示人工 `sync-default-pools`
 - `service-gateway` 只做轻量依赖发现；如果同批包含 `lightclaw-auth/payment/subscription` 变更，会阻断无序自动 sync
 
+### Collaboration 北京首次发布
+
+`.ci/collaboration-bootstrap.yml` 是北京 Collaboration 唯一首次发布编排入口，只有手动触发：
+
+1. `foundation`（默认）先 dry-run 核对 inventory、现有 CynosDB、目标账号/逻辑库和 SSM；
+   人工批准后运行 `infractl bootstrap-collaboration --apply`，从 SSM 生成加密 SOPS，并创建
+   只含 Namespace、ServiceAccount、Secret 的 GitOps MR。
+2. foundation 合入并在 `tke-bj8` 收敛后，手动以 `BOOTSTRAP_PHASE=runtime` 重跑。同一流程先
+   证明 bootstrap 幂等，再从 gitops desired state 执行 Collaboration MySQL migration Job 和
+   read-only verify Job；两者成功后才创建 runtime GitOps MR。
+
+流水线把公开 SDKAppID 作为可审阅启动变量（北京默认 `1600154578`），需要的 protected settings 为
+`COLLABORATION_IM_CREDENTIAL`（username 为 IM 管理员，password 为 IM SecretKey）、
+`DB_JOB_KUBECONFIG_B64`、`SOPS_AGE_KEY`/`SOPS_AGE_KEY_FILE` 和 Git WOA token。设置值不得输出。
+该流水线不会新建 DB 实例，不触及 shprod/sgprod/Playground，不自动合并 GitOps MR，也不会
+隐式使用密码或 IM Secret 轮换开关。
+
 ## Runtime Semantic Map
 
 当前 runtime 已按语义拆分到 `.ci/runtime/` 下的多个包。修改时按下面的边界定位，避免把发布契约、GitOps 自动化、DB gate 和工具自举继续混在一起。

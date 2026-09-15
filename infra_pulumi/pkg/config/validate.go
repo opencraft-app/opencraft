@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -68,6 +70,42 @@ func ValidateInventory(inv *Inventory) error {
 	}
 	if err := validatePulsarInventory(inv.Stacks.Pulsar); err != nil {
 		return err
+	}
+	if err := validateCollaborationInventory(inv.Stacks.Collaboration); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateCollaborationInventory(inv CollaborationInventory) error {
+	if !inv.Enabled {
+		return nil
+	}
+	required := map[string]string{
+		"existing_cluster_id": inv.ExistingClusterID,
+		"existing_endpoint":   inv.ExistingEndpoint,
+		"database":            inv.Database,
+		"account":             inv.Account,
+		"account_host":        inv.AccountHost,
+		"ssm_secret_name":     inv.SSMSecretName,
+		"namespace":           inv.Namespace,
+		"node_pool":           inv.NodePool,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("inventory missing stacks.collaboration.%s", field)
+		}
+	}
+	if inv.AccountHost != "%" {
+		return fmt.Errorf("inventory stacks.collaboration.account_host must be %% for dynamic TKE clients")
+	}
+	host, rawPort, err := net.SplitHostPort(inv.ExistingEndpoint)
+	if err != nil || strings.TrimSpace(host) == "" {
+		return fmt.Errorf("inventory stacks.collaboration.existing_endpoint must be host:port")
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port <= 0 || port > 65535 {
+		return fmt.Errorf("inventory stacks.collaboration.existing_endpoint has an invalid port")
 	}
 	return nil
 }

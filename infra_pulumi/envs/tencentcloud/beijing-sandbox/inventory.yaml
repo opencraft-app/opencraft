@@ -210,6 +210,17 @@ stacks:
     ctl_ssm_secret: mono-beijing-sandbox-ctl-runtime-secrets
     referral_ssm_secret: mono-beijing-sandbox-referral-runtime-secrets
 
+  collaboration:
+    enabled: true
+    existing_cluster_id: cynosdbmysql-3dh7jyee
+    existing_endpoint: 10.15.224.4:3306
+    database: lightvela_collaboration
+    account: collaboration_rw
+    account_host: "%"
+    ssm_secret_name: mono-beijing-sandbox-collaboration-runtime-secrets
+    namespace: lightvela-collaboration
+    node_pool: general-bj8
+
   tcr:
     instance_type: basic
     namespace_name: lightclaw

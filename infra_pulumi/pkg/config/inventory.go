@@ -115,6 +115,8 @@ type Inventory struct {
 
 		Pulsar PulsarInventory `yaml:"pulsar"`
 
+		Collaboration CollaborationInventory `yaml:"collaboration"`
+
 		TCR struct {
 			InstanceType                   string            `yaml:"instance_type"`
 			NamespaceName                  string            `yaml:"namespace_name"`
@@ -238,6 +240,18 @@ type PulsarInventory struct {
 	UserAuthSSMSecret    string `yaml:"user_auth_ssm_secret"`
 	CTLSSMSecret         string `yaml:"ctl_ssm_secret"`
 	ReferralSSMSecret    string `yaml:"referral_ssm_secret"`
+}
+
+type CollaborationInventory struct {
+	Enabled           bool   `yaml:"enabled"`
+	ExistingClusterID string `yaml:"existing_cluster_id"`
+	ExistingEndpoint  string `yaml:"existing_endpoint"`
+	Database          string `yaml:"database"`
+	Account           string `yaml:"account"`
+	AccountHost       string `yaml:"account_host"`
+	SSMSecretName     string `yaml:"ssm_secret_name"`
+	Namespace         string `yaml:"namespace"`
+	NodePool          string `yaml:"node_pool"`
 }
 
 type JumpserverInventory struct {
