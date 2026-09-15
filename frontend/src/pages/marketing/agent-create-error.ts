@@ -1,3 +1,5 @@
+import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
+
 type Translate = (message: string) => string;
 
 type ErrorWithCode = {
@@ -22,7 +24,8 @@ const _I18N_AGENT_CREATE_ERROR_MESSAGE_KEYS = (t: Translate) => [
   t("当前资源暂时售罄，请稍后再试。"),
   t("创建超时，请稍后重试。"),
   t("网络异常，请检查网络后重试。"),
-  t("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。"),
+  t("当前 Hermes 运行环境不可用，请先在诊断中心重置 Hermes 后重试。"),
+  t("当前环境暂未开放多 Bot。"),
   t("暂时无法创建 Bot，请稍后重试。"),
   t("暂时无法创建 Bot，请稍后重试。问题编号：{requestId}"),
   t("创建失败，请稍后重试。"),
@@ -43,11 +46,14 @@ export const getAgentCreateErrorMessage = (
         ? error
         : "";
 
-  if (code === "INSTANCE_BOT_UNSUPPORTED" || code === "INSTANCE_BOT_DISABLED") {
-    return translate("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。");
+  if (code === INSTANCE_BOT_ERROR_CODE.unsupported) {
+    return translate("当前 Hermes 运行环境不可用，请先在诊断中心重置 Hermes 后重试。");
+  }
+  if (code === INSTANCE_BOT_ERROR_CODE.disabled) {
+    return translate("当前环境暂未开放多 Bot。");
   }
 
-  if (code === "INSTANCE_BOT_PROFILE_FAILED" || /\bINSTANCE_BOT_PROFILE_FAILED\b/i.test(raw)) {
+  if (code === INSTANCE_BOT_ERROR_CODE.profileFailed || raw.toUpperCase().includes(INSTANCE_BOT_ERROR_CODE.profileFailed)) {
     const requestId = extractRequestId(raw);
     if (requestId) {
       return translate("暂时无法创建 Bot，请稍后重试。问题编号：{requestId}")
