@@ -177,7 +177,7 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("root log");
-    expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h");
+    expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h -n 50");
 
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
@@ -193,7 +193,7 @@ describe("multi-Bot diagnostics", () => {
     execDebugCommand.mockResolvedValue({status:"SUCCESS", exitCode:0, output:"sales log"});
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("sales log");
-    expect(execDebugCommand).toHaveBeenLastCalledWith("sales", "hermes -p 'sales' logs --since 1h");
+    expect(execDebugCommand).toHaveBeenLastCalledWith("sales", "hermes -p 'sales' logs --since 1h -n 50");
     expect(getRescueExportStatus.mock.calls.every(([id]) => id === "ins-1")).toBe(true);
   });
 
