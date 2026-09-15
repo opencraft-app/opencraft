@@ -464,9 +464,11 @@ test(`LightVela account (${authenticated ? "authenticated without Bots" : "anony
   await new Promise<void>(resolve => setImmediate(resolve));
 
   const views = supervisor.contributions.getSnapshot().views;
-  assert.equal(views.length, 14);
-  assert.ok(views.some(({ contribution }) => contribution.id === "lightvela.hermes.sign-in"));
-  assert.ok(views.some(({ contribution }) => contribution.id === "lightvela.hermes.account-view"));
+  assert.equal(views.length, 11);
+  assert.equal(
+    views.some(({ contribution }) => contribution.id === "lightvela.hermes.account-view"),
+    false,
+  );
   assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.models"));
   assert.ok(views.some(({ contribution }) => contribution.viewType === "lightvela.hermes.diagnostics"));
   assert.ok(supervisor.contributions.getSnapshot().settingsPages.some(({ contribution }) => contribution.viewId === "lightvela.hermes.settings-view"));
@@ -494,15 +496,7 @@ test(`LightVela account (${authenticated ? "authenticated without Bots" : "anony
   assert.equal(renderers.resolve("lightvela.hermes.empty-workbench") !== null, true);
   assert.equal(provider?.id, "lightvela.hermes");
   assert.equal(provider?.settingsPageId, "lightvela.hermes.settings");
-  assert.equal(platformAccount?.viewId, "lightvela.hermes.account-view");
-  assert.equal(platformAccount?.signInViewId, "lightvela.hermes.sign-in");
-  assert.equal(platformAccount?.authenticationProviderId, "lightvela.hermes.account");
-  assert.deepEqual(platformAccount?.signInOptions?.map(option => option.id), ["cn", "intl"]);
-  await assert.rejects(context.authentication.signIn("lightvela.hermes.account", "https://not-a-login-option.invalid"), /Invalid sign-in option/);
-  assert.equal(platformAccount?.environmentCreation?.label, "添加环境");
-  assert.equal(platformAccount?.environmentCreation?.viewId, "lightvela.hermes.environment-create");
-  assert.equal(platformAccount?.getSnapshot().applicationIntervention, null);
-  assert.equal(platformAccount?.getSnapshot().phase, authenticated ? "authenticated" : "anonymous");
+  assert.equal(platformAccount, null);
   assert.deepEqual(provider?.targets, ["web", "electron"]);
   assert.deepEqual(
     provider?.validate({ botId: " bot-1 " }, { platform: "web", hostId: LIGHTVELA_HERMES_HOST_ID, profileRevision: 1 }),

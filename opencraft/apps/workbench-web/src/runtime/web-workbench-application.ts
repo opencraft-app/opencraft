@@ -34,7 +34,7 @@ import type { WorkbenchTerminalSessionRegistry } from "@opencraft/plugin-termina
 import {
   bootstrapLightVelaOAuthCallback,
   bootstrapLightVelaWebLoginCallback,
-} from "@opencraft/plugin-lightvela-hermes";
+} from "@opencraft/plugin-lightvela-platform";
 
 export interface WebWorkbenchApplication {
   readonly cordis: Context;

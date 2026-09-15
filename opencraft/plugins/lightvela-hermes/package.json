@@ -20,6 +20,7 @@
     "@opencraft/extension-contract": "0.1.0",
     "@opencraft/extension-react": "0.1.0",
     "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/plugin-lightvela-platform": "0.1.0",
     "@opencraft/profile-skills-appserver": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
     "@radix-ui/react-dialog": "^1.1.23",

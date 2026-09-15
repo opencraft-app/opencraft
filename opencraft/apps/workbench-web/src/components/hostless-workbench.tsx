@@ -200,6 +200,20 @@ export function HostlessWorkbench({
     );
     setApplicationRoute({ kind: "extension-view", viewId, resourceUri });
   };
+  const pushExtensionViewResource = (viewId: string, resourceUri: string) => {
+    if (
+      applicationRoute.kind !== "extension-view" ||
+      applicationRoute.viewId !== viewId ||
+      applicationRoute.resourceUri === resourceUri
+    ) return;
+    const parameters = new URLSearchParams({ resource: resourceUri });
+    window.history.pushState(
+      hostlessApplicationHistoryState(window.history.state),
+      "",
+      `/views/${encodeURIComponent(viewId)}?${parameters}`,
+    );
+    setApplicationRoute({ kind: "extension-view", viewId, resourceUri });
+  };
   const extensionHost = useMemo<PlatformViewHost>(() => ({
     platform: (globalThis as typeof globalThis & { opencraftDesktop?: { readonly kind?: string } })
       .opencraftDesktop?.kind === "electron" ? "electron" : "web",
@@ -210,6 +224,7 @@ export function HostlessWorkbench({
     removeHost: supervisor.removeHost,
     openView: openExtensionView,
     openSettings: (section: string) => { setAccountOpen(false); openSettings(section); },
+    pushViewResource: pushExtensionViewResource,
     replaceViewResource: replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await supervisor.images.compress(blob)).blob,
   }), [applicationRoute, profileSnapshot.profiles, supervisor]);
@@ -310,6 +325,7 @@ export function HostlessWorkbench({
         extensionManager={supervisor.extensionManager}
         onProvisionHost={supervisor.provisionHost}
         onOpenView={openExtensionView}
+        onPushViewResource={pushExtensionViewResource}
         onReplaceViewResource={replaceExtensionViewResource}
         onRemove={supervisor.removeHost}
         onThemeChange={setAppearanceThemeId}

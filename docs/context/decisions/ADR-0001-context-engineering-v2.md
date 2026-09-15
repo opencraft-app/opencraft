@@ -8,9 +8,9 @@ authority: primary
 source_of_truth:
   - docs/context/decisions/ADR-0001-context-engineering-v2.md
 status: active
-reviewed_at: 2026-08-25
+reviewed_at: 2026-09-14
 review_due: 2026-11-23
-revision: 2.0.0
+revision: 2.1.0
 precedence: project
 derived: false
 ---
@@ -30,3 +30,11 @@ Task Pack 的元数据进入 `docs/context/.context/catalog.jsonl`；新增或�
 新增一级服务必须原子登记服务本地 catalog、中央 Service Catalog、派生 service Context Pack 和
 `service-<id>` 路由，并同步校验器的一级服务集合。服务数量由该集合派生，错误和报告不得再写死
 固定数量；这样新增 Credit 等服务时，入口覆盖检查会明确指出缺失项，而不是要求维护孤立的计数。
+
+## 2026-09-14 应用：Collaboration 与 Vela Computer
+
+Velachat 融入 mono2 时，`collaboration/` 与 `vela-computer/` 作为两个独立一级服务登记：前者是
+Server/Member/腾讯 IM 映射控制面，后者是下发到托管 Computer 的 Agent Chat Client。两者分别
+拥有本地 catalog、中央 Service Catalog 条目、派生 Service Context 和 `service-<id>` 路由；
+校验器的一级服务集合与测试同步增加对应入口。OpenCraft 仍是唯一 Human Web 呈现真源，新增服务
+路由不建立旧 Velachat 或 `mono2-clean4` 双写关系。

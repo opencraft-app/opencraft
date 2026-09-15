@@ -1,4 +1,5 @@
 export * from "./account/lightvela-account-service";
+export * from "./account/lightvela-runtime-command-port";
 export * from "./extension";
 export * from "./host/lightvela-hermes-host-provider";
 export * from "./lib/hermes-session-token-cache";

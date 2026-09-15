@@ -1,0 +1,325 @@
+[
+  {
+    "type": "agent:start",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "operationId": "operation_fixture",
+    "config": {
+      "runtime": "codex",
+      "model": "model_fixture",
+      "sessionId": "session_fixture"
+    }
+  },
+  {
+    "type": "agent:stop",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture"
+  },
+  {
+    "type": "agent:reset-workspace",
+    "agentId": "agent_fixture"
+  },
+  {
+    "type": "agent:inbox:purge",
+    "agentId": "agent_fixture",
+    "channelIds": ["channel_fixture"],
+    "reason": "server_purge"
+  },
+  {
+    "type": "agent:deliver",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "deliveryId": "delivery_fixture",
+    "seq": 1,
+    "message": {
+      "message_id": "message_fixture",
+      "seq": 1,
+      "target": "#fixture"
+    }
+  },
+  {
+    "type": "agent:runtime_profile:migration",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "migrationKey": "profile_migration_fixture"
+  },
+  {
+    "type": "agent:runtime_profile:daemon_release_notice",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "noticeKey": "notice_fixture",
+    "message": "Synthetic runtime notice"
+  },
+  {
+    "type": "agent:workspace:list",
+    "agentId": "agent_fixture",
+    "dirPath": "",
+    "includeHidden": false
+  },
+  {
+    "type": "agent:workspace:read",
+    "agentId": "agent_fixture",
+    "requestId": "request_fixture",
+    "path": "README.md"
+  },
+  {
+    "type": "agent:skills:list",
+    "agentId": "agent_fixture",
+    "runtime": "codex"
+  },
+  {
+    "type": "agent:diagnostic:session_transcript",
+    "agentId": "agent_fixture",
+    "requestId": "request_fixture"
+  },
+  {
+    "type": "agent:diagnostic:feedback_transcript",
+    "agentId": "agent_fixture",
+    "requestId": "request_fixture",
+    "feedbackReportId": "feedback_fixture"
+  },
+  {
+    "type": "agent:activity_probe",
+    "agentId": "agent_fixture",
+    "probeId": "probe_fixture",
+    "purpose": "fixture"
+  },
+  {
+    "type": "machine:workspace:scan"
+  },
+  {
+    "type": "machine:workspace:delete",
+    "directoryName": "agent_fixture"
+  },
+  {
+    "type": "machine:runtimes:rescan"
+  },
+  {
+    "type": "machine:runtime_models:detect",
+    "runtime": "codex",
+    "requestId": "request_fixture"
+  },
+  {
+    "type": "machine:migration_transport:lease",
+    "agentId": "agent_fixture",
+    "migrationId": "migration_fixture",
+    "migrationGeneration": "generation_fixture",
+    "sessionId": "session_fixture",
+    "provider": "object_store",
+    "leaseSource": "server",
+    "role": "source",
+    "transferKind": "upload",
+    "url": "https://objects.invalid/bundle",
+    "bearerToken": "fixture_transfer_token",
+    "expiresAt": "2099-01-01T00:00:00Z",
+    "maxBytes": 1048576
+  },
+  {
+    "type": "machine:shutdown",
+    "reason": "service_stop"
+  },
+  {
+    "type": "reminder.upsert",
+    "agentId": "agent_fixture",
+    "reminder": {
+      "reminderId": "reminder_fixture",
+      "ownerAgentId": "agent_fixture",
+      "version": 1,
+      "fireAt": "2099-01-01T00:00:00Z"
+    }
+  },
+  {
+    "type": "reminder.cancel",
+    "agentId": "agent_fixture",
+    "reminderId": "reminder_fixture",
+    "version": 2
+  },
+  {
+    "type": "reminder.snapshot",
+    "agentId": "agent_fixture",
+    "reminders": []
+  },
+  {
+    "type": "reminder.snapshot.request",
+    "agentId": "agent_fixture"
+  },
+  {
+    "type": "ping"
+  },
+  {
+    "type": "computer:restart",
+    "operationId": "operation_fixture",
+    "requestId": "request_fixture"
+  },
+  {
+    "type": "computer:upgrade",
+    "operationId": "operation_fixture",
+    "requestId": "request_fixture"
+  },
+  {
+    "type": "computer:lifecycle:receipt",
+    "operationId": "operation_fixture",
+    "phase": "ready"
+  },
+  {
+    "type": "ready",
+    "capabilities": ["agent:start", "agent:stop", "agent:deliver"],
+    "runtimes": ["codex"],
+    "runningAgents": [],
+    "hostname": "fixture-host",
+    "os": "darwin arm64",
+    "daemonVersion": "0.1.0-fixture",
+    "computerVersion": "0.1.0-fixture",
+    "migrationTransport": {
+      "provisioned": false,
+      "endpoint": null,
+      "leaseSource": null,
+      "observedAt": "2099-01-01T00:00:00Z"
+    },
+    "lifecycleAcks": []
+  },
+  {
+    "type": "pong"
+  },
+  {
+    "type": "agent:deliver:ack",
+    "agentId": "agent_fixture",
+    "deliveryId": "delivery_fixture",
+    "seq": 1
+  },
+  {
+    "type": "agent:status",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "status": "active"
+  },
+  {
+    "type": "agent:activity",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "activity": "Synthetic activity",
+    "activityKind": "working",
+    "detail": "Synthetic detail",
+    "detailKind": "other",
+    "clientSeq": 1,
+    "producerFactId": "fixture_producer_fact",
+    "observedAtMs": 4070908800000,
+    "isHeartbeat": false
+  },
+  {
+    "type": "agent:session",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "sessionId": "session_fixture"
+  },
+  {
+    "type": "agent:runtime_profile",
+    "agentId": "agent_fixture",
+    "launchId": "launch_fixture",
+    "facts": {
+      "runtime": "codex",
+      "executionMode": "byoc",
+      "workspacePathRef": {
+        "label": "workspace",
+        "path": "/fixture/workspace",
+        "reachable": true
+      },
+      "sessionRef": null
+    },
+    "source": "connect"
+  },
+  {
+    "type": "agent:runtime_profile:migration:ack",
+    "agentId": "agent_fixture",
+    "migrationKey": "profile_migration_fixture"
+  },
+  {
+    "type": "agent:runtime_profile:migration_done",
+    "agentId": "agent_fixture",
+    "migrationKey": "profile_migration_fixture"
+  },
+  {
+    "type": "agent:runtime_profile:daemon_release_notice:ack",
+    "agentId": "agent_fixture",
+    "noticeKey": "notice_fixture"
+  },
+  {
+    "type": "agent:workspace:file_tree",
+    "agentId": "agent_fixture",
+    "dirPath": "",
+    "includeHidden": false,
+    "files": []
+  },
+  {
+    "type": "agent:workspace:file_content",
+    "agentId": "agent_fixture",
+    "requestId": "request_fixture",
+    "content": "Synthetic content",
+    "binary": false,
+    "size": 17
+  },
+  {
+    "type": "agent:skills:list_result",
+    "agentId": "agent_fixture",
+    "global": [],
+    "workspace": []
+  },
+  {
+    "type": "agent:diagnostic:session_transcript_result",
+    "agentId": "agent_fixture",
+    "requestId": "request_fixture",
+    "runtime": "unknown",
+    "sessionId": "unknown",
+    "reachable": false,
+    "path": null,
+    "transcript": null,
+    "sizeBytes": 0,
+    "truncated": false,
+    "redacted": false,
+    "tier": "unknown"
+  },
+  {
+    "type": "agent:diagnostic:feedback_transcript_result",
+    "agentId": "agent_fixture",
+    "requestId": "request_fixture",
+    "feedbackReportId": "feedback_fixture",
+    "reachable": false
+  },
+  {
+    "type": "machine:workspace:scan_result",
+    "directories": []
+  },
+  {
+    "type": "machine:workspace:delete_result",
+    "directoryName": "agent_fixture",
+    "success": true
+  },
+  {
+    "type": "machine:runtime_models:result",
+    "requestId": "request_fixture",
+    "models": []
+  },
+  {
+    "type": "reminder.fire_attempt",
+    "agentId": "agent_fixture",
+    "reminderId": "reminder_fixture",
+    "version": 1,
+    "firedAtClient": "2099-01-01T00:00:00Z"
+  },
+  {
+    "type": "computer:restart:done",
+    "requestId": "request_fixture",
+    "ok": true
+  },
+  {
+    "type": "computer:upgrade:progress",
+    "requestId": "request_fixture",
+    "phase": "downloading"
+  },
+  {
+    "type": "computer:upgrade:done",
+    "requestId": "request_fixture",
+    "ok": false,
+    "error": "unsupported"
+  }
+]

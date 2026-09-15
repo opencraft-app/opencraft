@@ -1,0 +1,4684 @@
+openapi: 3.0.3
+info:
+  title: Chatserver Platform API
+  version: 5.0.0
+  license:
+    name: Proprietary
+  description: |
+    Human、Agent、Server、Computer、Task 和 Reminder 的产品控制面。
+
+    普通聊天由 Human/Agent 直接连接腾讯云 IM；Computer 通过 Vela Assignment
+    承载 Agent Runtime，并使用腾讯云 TAT 完成纳管与 PTY。本 API 不提供消息代理、
+    Computer WebSocket 或任意远程 Shell。
+servers:
+  - url: /v1
+tags:
+  - name: Auth
+    description: Human 账号注册、登录和会话轮换。
+  - name: Me
+    description: 当前 Human 账号与腾讯云 IM Session。
+  - name: Servers
+    description: Server 产品空间。
+  - name: Members
+    description: Human/Agent 成员与邀请。
+  - name: Channels
+    description: 腾讯云 Community/Topic 的平台映射。
+  - name: DirectMessages
+    description: Server 内双成员私信与腾讯云 Work 群映射；平台不保存消息正文。
+  - name: Threads
+    description: Thread 的腾讯消息引用索引；平台不保存消息正文。
+  - name: Agents
+    description: Agent 身份、配置和 Vela Assignment 生命周期。
+  - name: Runtime
+    description: Agent Runtime 的受限平台接口。
+  - name: Computers
+    description: TAT 原生实例、托管实例与 PTY。
+  - name: Tasks
+    description: Server 内 Task。
+  - name: Reminders
+    description: Reminder 与到期 occurrence。
+  - name: Inbox
+    description: 当前 Human Member 的待办工作投影。
+  - name: Activity
+    description: Server 内当前业务资源变化投影，不包含聊天或 Agent 运行轨迹。
+  - name: Operations
+    description: 脱敏的腾讯云异步操作状态。
+  - name: Callbacks
+    description: 腾讯云服务端回调；只由受信任的腾讯云控制面调用。
+security:
+  - HumanBearer: []
+x-database-modes:
+  sqlite:
+    role: 单进程、单写者的单机生产模式
+    implementationStatus: v1-first
+  tdsql:
+    role: 多实例水平扩展生产模式
+    engine: TDSQL MySQL InnoDB distributed
+    implementationStatus: v1-canary
+x-tdsql-routing:
+  appliesWhen: database mode is tdsql
+  engine: TDSQL MySQL InnoDB distributed
+  serverScopedPaths: serverId
+  accountScopedPaths: authenticated accountId
+  runtimeScopedPaths: serverId from verified Runtime Token
+  registries:
+    login: loginHash
+    serverSlug: slug
+    tatInstance: bindingHash
+    agentIM: imUserId
+    computerSetupCode: codeHash
+  rule: 缺失可验证 shardkey 时不得退化为在线全分片搜索。
+x-auth-domain-registry:
+  callback: [observeTencentIMState]
+  public: [register, login, refreshAuth, redeemComputerSetupCode]
+  runtime:
+    [getRuntimeMe, getRuntimeDirectory, getRuntimeDirectoryV2,
+     getRuntimeChannelMembers,
+     resolveRuntimeThread, registerRuntimeThreadReply, listRuntimeTasks,
+     getRuntimeTask, updateRuntimeTaskStatus, claimRuntimeTask,
+     listRuntimeReminders, createRuntimeReminder, updateRuntimeReminder,
+     cancelRuntimeReminder, snoozeRuntimeReminder, listRuntimeReminderLog,
+     listRuntimeReminderOccurrences, acknowledgeRuntimeReminderOccurrence]
+  computer-credential: [createComputerSession, createComputerSessionV2, preflightComputer]
+  computer-bearer:
+    [rotateComputerCredential, getComputerAssignments, getComputerAssignmentsV2,
+     getComputerAssignmentsV3, createComputerAgentLaunch, createComputerAgentLaunchV2,
+     refreshComputerAgentSession, refreshComputerAgentSessionV2, putComputerAgentObservation,
+     putComputerAgentProfileCapabilityResult,
+     putComputerAgentProfileCapabilityInvalidation, sendComputerHeartbeat]
+  enrollment: [claimComputerEnrollment, getComputerArtifact]
+  human:
+    [logout, getMe, createHumanImSession, listServers, createServer, getServer,
+     updateServer, resolveServerSlug, listInvites, createInvite, revokeInvite,
+     acceptInvite, acceptJoinLink, listMembers, getMember, updateMember, removeMember,
+     listChannels, createChannel, getChannel, updateChannel, listChannelMembers,
+     addChannelMember, removeChannelMember, ensureMessageThread, getMessageThread,
+     listDirectConversations, createDirectConversation, getDirectConversation,
+     retryDirectConversation,
+     listMessageThreadReplies, registerMessageThreadReply, markMessageThreadRead,
+     listAgents, createAgent, getAgent, updateAgent, deleteAgent,
+     listAgentsV2, createAgentV2, getAgentV2, updateAgentV2, deleteAgentV2, deployAgent,
+     startAgent, stopAgent, restartAgent, rotateAgentRuntimeCredential,
+     getAgentProfileCapabilities, refreshAgentProfileCapabilities,
+     listComputers, createComputer, getComputer, updateComputer, removeComputer,
+     listComputerRuntimeCapabilities,
+     getComputerInstallationOptions, getComputerInstallationTargets, createComputerSetupCommand,
+     createComputerRuntimeCredential, refreshComputer, createTerminalSession,
+     listTasks, createTask, getTask, updateTask, listReminders,
+     createReminder, getReminder, updateReminder, cancelReminder, listInbox,
+     listActivity, getOperation]
+x-error-code-registry:
+  unauthenticated: {status: 401}
+  account_already_exists: {status: 409}
+  token_expired: {status: 401}
+  session_revoked: {status: 401}
+  im_identity_not_ready: {status: 409}
+  im_session_unavailable: {status: 503}
+  direct_conversation_closing: {status: 409}
+  runtime_credential_invalid: {status: 401}
+  runtime_credential_revoked: {status: 401}
+  computer_credential_invalid: {status: 401}
+  computer_credential_revoked: {status: 401}
+  computer_credential_not_current: {status: 409}
+  computer_removed: {status: 410}
+  computer_provider_identity_gone: {status: 410}
+  computer_replacement_identity_mismatch: {status: 409}
+  replacement_release_mismatch: {status: 409}
+  computer_credential_exists: {status: 409}
+  enrollment_invalid: {status: 401}
+  setup_expired: {status: 401}
+  setup_code_invalid: {status: 401}
+  computer_install_target_unsupported: {status: 422}
+  setup_code_target_conflict: {status: 409}
+  computer_already_claimed: {status: 409}
+  enrollment_claim_conflict: {status: 409}
+  assignment_query_invalid: {status: 400}
+  assignment_revision_regressed: {status: 409}
+  assignment_stale: {status: 409}
+  computer_credential_not_active: {status: 403}
+  predecessor_mismatch: {status: 409}
+  launch_id_conflict: {status: 409}
+  stale_launch: {status: 409}
+  sequence_conflict: {status: 409}
+  session_temporarily_unavailable: {status: 503}
+  server_not_found: {status: 404}
+  server_not_ready: {status: 409}
+  member_not_found: {status: 404}
+  member_removed: {status: 403}
+  owner_immutable: {status: 409}
+  already_member: {status: 409}
+  permission_denied: {status: 403}
+  forbidden: {status: 403}
+  revision_conflict: {status: 409}
+  resource_not_found: {status: 404}
+  invite_invalid: {status: 404}
+  operation_not_found: {status: 404}
+  channel_not_found: {status: 404}
+  channel_not_ready: {status: 409}
+  channel_membership_required: {status: 403}
+  channel_membership_not_found: {status: 404}
+  implicit_membership: {status: 409}
+  system_channel_immutable: {status: 409}
+  agent_not_found: {status: 404}
+  agent_not_ready: {status: 409}
+  agent_must_be_stopped: {status: 409}
+  runtime_unavailable: {status: 503}
+  runtime_unsupported_by_computer: {status: 409}
+  profile_capabilities_unsupported: {status: 409}
+  profile_not_ready: {status: 409}
+  profile_capability_discovery_failed: {status: 503}
+  profile_capability_result_too_large: {status: 413}
+  profile_capability_result_conflict: {status: 409}
+  runtime_config_invalid: {status: 422}
+  runtime_directory_not_found: {status: 404}
+  runtime_channel_not_found: {status: 404}
+  runtime_directory_too_large: {status: 503}
+  computer_not_found: {status: 404}
+  computer_not_ready: {status: 409}
+  computer_offline: {status: 409}
+  computer_in_use: {status: 409}
+  computer_has_bound_agents: {status: 409}
+  computer_already_registered: {status: 409}
+  computer_bootstrap_not_allowed: {status: 409}
+  provider_registration_pending: {status: 503}
+  provider_registration_failed: {status: 503}
+  provider_registration_expired: {status: 409}
+  computer_os_unsupported: {status: 422}
+  registration_expired: {status: 409}
+  tat_operation_failed: {status: 503}
+  tat_operation_uncertain: {status: 503}
+  terminal_session_unavailable: {status: 503}
+  task_not_found: {status: 404}
+  task_assignment_stale: {status: 409}
+  thread_not_found: {status: 404}
+  reminder_not_found: {status: 404}
+  reminder_occurrence_not_found: {status: 404}
+  schedule_invalid: {status: 422}
+  rate_limited: {status: 429}
+  idempotency_conflict: {status: 409}
+  tencent_unavailable: {status: 503}
+  tencent_rate_limited: {status: 503}
+  tencent_operation_uncertain: {status: 503}
+  tencent_permission_denied: {status: 503}
+  routing_key_invalid: {status: 422}
+  cross_partition_operation_denied: {status: 409}
+  invalid_request: {status: 400}
+  invalid_cursor: {status: 400}
+  route_not_found: {status: 404}
+  method_not_allowed: {status: 405}
+  internal_error: {status: 500}
+
+paths:
+  /callbacks/tencent-im/state:
+    post:
+      tags: [Callbacks]
+      operationId: observeTencentIMState
+      summary: 接收腾讯云 IM 登录状态回调
+      description: |
+        仅在配置独立 Callback Token 后启用。Sign 是
+        sha256(Token + RequestTime)，回调不使用 Human 或 Runtime Bearer。
+      security: []
+      parameters:
+        - {name: SdkAppid, in: query, required: true, schema: {type: integer, format: int64}}
+        - {name: CallbackCommand, in: query, required: true, schema: {type: string, enum: [State.StateChange]}}
+        - {name: contenttype, in: query, required: true, schema: {type: string, enum: [json]}}
+        - {name: RequestTime, in: query, required: true, schema: {type: integer, format: int64}}
+        - {name: Sign, in: query, required: true, schema: {type: string, pattern: '^[0-9a-fA-F]{64}$'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TencentIMStateCallback'}
+      responses:
+        '200':
+          description: 已接收；重复或乱序事实仍返回成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TencentIMCallbackResult'}
+        '400': {description: 回调结构或命令无效}
+        '401': {description: 回调签名、时间窗或 SDKAppID 无效}
+        '500': {description: 在线事实暂时无法提交}
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: 注册账号
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201':
+          description: 注册成功
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: 登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200':
+          description: 登录成功
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshAuth
+      summary: 轮换访问令牌
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RefreshRequest'}
+      responses:
+        '200':
+          description: 轮换成功
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: 退出当前会话
+      responses:
+        '204': {description: 已退出}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: 获取当前账号
+      responses:
+        '200':
+          description: 当前账号
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/im/session:
+    post:
+      tags: [Me]
+      operationId: createHumanImSession
+      summary: 签发 Human 的短期腾讯云 IM Session
+      description: 不接受 serverId 或 userId；只为当前 Account.imUserId 签发。
+      responses:
+        '200':
+          description: 一次性短期 IM Session
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImSession'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers:
+    get:
+      tags: [Servers]
+      operationId: listServers
+      summary: 列出当前账号加入的 Server
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Server 列表
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServerPage'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Servers]
+      operationId: createServer
+      summary: 创建 Server 和腾讯云 IM Community
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateServerRequest'}
+      responses:
+        '201':
+          description: 腾讯云 Community 已创建
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Server'}
+        '202':
+          description: 已提交异步创建
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Servers]
+      operationId: getServer
+      summary: 获取 Server
+      responses:
+        '200':
+          description: Server
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Server'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Servers]
+      operationId: updateServer
+      summary: 修改 Server
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateServerRequest'}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Server'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /server-slugs/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{1,62}$'
+    get:
+      tags: [Servers]
+      operationId: resolveServerSlug
+      summary: 按全局 slug 解析 Server
+      description: 先点查 slug 分片 registry，再按 serverId 点查 Server。
+      responses:
+        '200':
+          description: Server
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Server'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/invites:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Members]
+      operationId: listInvites
+      summary: 列出邀请
+      responses:
+        '200':
+          description: 邀请列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Invite'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Members]
+      operationId: createInvite
+      summary: 创建邀请
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateInviteRequest'}
+      responses:
+        '201':
+          description: 邀请创建成功，token 只返回一次
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InviteSecret'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/invites/{inviteId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/InviteId'}
+    delete:
+      tags: [Members]
+      operationId: revokeInvite
+      summary: 撤销邀请
+      responses:
+        '204': {description: 已撤销}
+        default: {$ref: '#/components/responses/Error'}
+
+  /invites/accept:
+    post:
+      tags: [Members]
+      operationId: acceptInvite
+      summary: 接受邀请
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token: {type: string, minLength: 20}
+      responses:
+        '202':
+          description: 已接受并开始同步 IM membership
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /join-links/accept:
+    post:
+      tags: [Members]
+      operationId: acceptJoinLink
+      summary: 幂等接受加入链接并返回确定的 Server 落点
+      description: 已经是成员时仍返回当前 Member 与可访问的落地 Channel，不返回 already_member 错误。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcceptJoinLinkRequest'}
+      responses:
+        '200':
+          description: 已加入或正在同步腾讯 IM membership
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JoinResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/members:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Members]
+      operationId: listMembers
+      summary: 列出成员
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: 成员列表
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemberPage'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/members/{memberId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/MemberId'}
+    get:
+      tags: [Members]
+      operationId: getMember
+      summary: 获取成员
+      responses:
+        '200':
+          description: 成员
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Member'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Members]
+      operationId: updateMember
+      summary: 修改成员资料或角色
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateMemberRequest'}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Member'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Members]
+      operationId: removeMember
+      summary: 移除成员
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已进入移除流程
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/direct-conversations:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [DirectMessages]
+      operationId: listDirectConversations
+      summary: 列出当前 Human 在本 Server 可访问的私信
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Server 内私信映射
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DirectConversationPage'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [DirectMessages]
+      operationId: createDirectConversation
+      summary: 创建或取得 Server 内双成员私信
+      description: active/ready 返回 200；首次创建或仍在 provisioning 返回 202。创建 key 不负责恢复 error 资源。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateDirectConversationRequest'}
+      responses:
+        '200':
+          description: 已存在且可用
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DirectConversation'}
+        '202':
+          description: 已开始腾讯 Work 群投影
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/direct-conversations/{directConversationId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/DirectConversationId'}
+    get:
+      tags: [DirectMessages]
+      operationId: getDirectConversation
+      summary: 获取 Server 内私信映射
+      responses:
+        '200':
+          description: 私信映射
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DirectConversation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/direct-conversations/{directConversationId}/retry:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/DirectConversationId'}
+    post:
+      tags: [DirectMessages]
+      operationId: retryDirectConversation
+      summary: 人工恢复 error 或已关闭的 Server 内私信
+      description: 每次恢复尝试使用新的 Idempotency-Key；同一恢复 key 始终重放同一 Operation。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已开始新的恢复 Operation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Channels]
+      operationId: listChannels
+      summary: 列出 Channel
+      responses:
+        '200':
+          description: Channel 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Channel'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Channels]
+      operationId: createChannel
+      summary: 创建 Channel/Topic
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateChannelRequest'}
+      responses:
+        '202':
+          description: 已提交创建
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+    get:
+      tags: [Channels]
+      operationId: getChannel
+      summary: 获取 Channel
+      responses:
+        '200':
+          description: Channel
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Channel'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Channels]
+      operationId: updateChannel
+      summary: 修改 Channel 名称或描述
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateChannelRequest'}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Channel'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}/members:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+    get:
+      tags: [Channels]
+      operationId: listChannelMembers
+      summary: 列出 Channel 成员
+      description: 系统 #全员返回 Server 全体 active Member；普通 Channel 返回显式 active Member，仅 Server 管理员或该 Channel 成员可读取。
+      responses:
+        '200':
+          description: Channel 成员
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Member'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}/members/{memberId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+      - {$ref: '#/components/parameters/MemberId'}
+    put:
+      tags: [Channels]
+      operationId: addChannelMember
+      summary: 加入 Channel
+      description: Owner/Admin 可添加任意 Server Member；普通成员可把自己加入 Public Channel，也可重新同步自己已有的 active Private Channel membership。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交腾讯云 Topic membership
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Channels]
+      operationId: removeChannelMember
+      summary: 离开 Channel
+      description: Owner/Admin 可移出成员；普通成员只能退出自己。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交移除
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}/threads:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+    post:
+      tags: [Threads]
+      operationId: ensureMessageThread
+      summary: 为腾讯根消息建立或取得 Thread
+      description: 只保存可定位根消息的引用，不复制消息正文。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnsureMessageThreadRequest'}
+      responses:
+        '201':
+          description: Thread 已存在或已建立
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessageThread'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}/threads/{threadId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+      - {$ref: '#/components/parameters/ThreadId'}
+    get:
+      tags: [Threads]
+      operationId: getMessageThread
+      summary: 取得 Thread 引用与当前成员未读数
+      responses:
+        '200':
+          description: Thread
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessageThread'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}/threads/{threadId}/replies:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+      - {$ref: '#/components/parameters/ThreadId'}
+    get:
+      tags: [Threads]
+      operationId: listMessageThreadReplies
+      summary: 分页列出 Thread 回复的腾讯消息引用
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: 回复引用页
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThreadReplyReferencePage'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Threads]
+      operationId: registerMessageThreadReply
+      summary: 登记一条已经由腾讯 IM 发出的 Thread 回复
+      description: 调用顺序固定为先发送腾讯消息，再登记引用；本操作不会发送消息。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterMessageThreadReplyRequest'}
+      responses:
+        '201':
+          description: 回复引用已登记
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThreadReplyReference'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/channels/{channelId}/threads/{threadId}/read:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ChannelId'}
+      - {$ref: '#/components/parameters/ThreadId'}
+    put:
+      tags: [Threads]
+      operationId: markMessageThreadRead
+      summary: 推进当前成员的 Thread 已读位置
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MarkMessageThreadReadRequest'}
+      responses:
+        '204': {description: 已读位置已推进或本来更新}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Agents]
+      operationId: listAgents
+      summary: 列出 Agent
+      responses:
+        '200':
+          description: Agent 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Agent'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Agents]
+      operationId: createAgent
+      summary: 创建普通 IM Agent 身份
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAgentRequest'}
+      responses:
+        '202':
+          description: 已创建业务对象并开始同步 IM
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    get:
+      tags: [Agents]
+      operationId: getAgent
+      summary: 获取 Agent
+      responses:
+        '200':
+          description: Agent
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Agent'}
+        default: {$ref: '#/components/responses/Error'}
+
+    patch:
+      tags: [Agents]
+      operationId: updateAgent
+      summary: 修改 Agent
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAgentRequest'}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Agent'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Agents]
+      operationId: deleteAgent
+      summary: 墓碑 Agent、撤销 Runtime credential 并异步删除 IM 账号
+      description: |
+        删除只作用于目标 Agent。平台不会停止 Computer 级 TAT、Controller、PTY 或
+        同一 Computer 上的其他 Agent；目标 Runtime 由下一版 Assignment Snapshot
+        的集合差异退出。Agent workspace 与历史消息引用默认保留。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交删除
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents-v2:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Agents]
+      operationId: listAgentsV2
+      summary: 以可扩展 Runtime selector 列出 Agent
+      responses:
+        '200':
+          description: Agent v2 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AgentV2'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Agents]
+      operationId: createAgentV2
+      summary: 使用可扩展 Runtime selector 创建 Agent
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateAgentRequestV2'}
+      responses:
+        '202':
+          description: 已创建业务对象并开始同步 IM
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents-v2/{agentId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    get:
+      tags: [Agents]
+      operationId: getAgentV2
+      summary: 获取 Agent v2
+      responses:
+        '200':
+          description: Agent v2
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentV2'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Agents]
+      operationId: updateAgentV2
+      summary: 修改 Agent v2
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateAgentRequestV2'}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentV2'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Agents]
+      operationId: deleteAgentV2
+      summary: 删除 Agent v2
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交删除
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AcceptedResource'}
+        default: {$ref: '#/components/responses/Error'}
+  /servers/{serverId}/agents/{agentId}/deploy:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: deployAgent
+      summary: 将 Agent 部署目标写入 Vela Assignment
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已接受 Assignment 操作
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/start:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: startAgent
+      summary: 将 Agent 期望状态设为 running
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已接受 Assignment 操作
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/stop:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: stopAgent
+      summary: 将 Agent 期望状态设为 stopped
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已接受 Assignment 操作
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/restart:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: restartAgent
+      summary: 通过新配置代次重启 Agent
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已接受 Assignment 操作
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/credentials/rotate:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: rotateAgentRuntimeCredential
+      summary: 轮换 Agent Runtime credential generation
+      description: 新 generation 立即进入 Assignment；不通过 HTTP 返回长期明文凭证。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交轮换
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/profile-capabilities:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    get:
+      tags: [Agents]
+      operationId: getAgentProfileCapabilities
+      summary: 读取 Agent Profile 最近一次运行能力快照
+      description: 只允许 Server owner/admin；读取不会触发 Computer 探测或刷新。
+      responses:
+        '200':
+          description: Agent Profile 能力
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentProfileCapabilities'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/agents/{agentId}/profile-capabilities/refresh:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Agents]
+      operationId: refreshAgentProfileCapabilities
+      summary: 显式刷新 Agent Profile 运行能力
+      description: 只允许 Server owner/admin；创建异步 Operation，不等待 Computer 探测完成。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已创建或重放 Profile capability refresh Operation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/me:
+    get:
+      tags: [Runtime]
+      operationId: getRuntimeMe
+      summary: 获取当前 Runtime 身份与配置
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: 当前 Runtime
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeIdentity'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/directory:
+    get:
+      tags: [Runtime, Servers]
+      operationId: getRuntimeDirectory
+      summary: 获取当前 Agent 有权发现的 Server 协作目录
+      description: 返回 Server、当前 Agent、可见 Channel 与同 Server active 成员；不返回任何腾讯云凭据。
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: 当前 Runtime 的完整授权目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeDirectory'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/directory-v2:
+    get:
+      tags: [Runtime, Servers]
+      operationId: getRuntimeDirectoryV2
+      summary: 获取包含平台私信路由的当前 Agent 协作目录
+      description: |
+        返回 Server、当前 Agent、可见 Channel、同 Server active 成员，以及当前 Agent 参与的
+        Direct Conversation 授权路由；不返回腾讯云凭据或消息正文。
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: 当前 Runtime 的完整 V2 授权目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeDirectoryV2'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/channels/{channelId}/members:
+    parameters:
+      - {$ref: '#/components/parameters/ChannelId'}
+    get:
+      tags: [Runtime, Channels]
+      operationId: getRuntimeChannelMembers
+      summary: 获取当前 Agent 有权查看的 Channel 成员
+      description: |
+        系统 #全员返回 Server 全体 active Member；普通 public/private Channel 都只返回显式 active 成员。
+        public 只影响发现与自助加入，不隐式授予成员关系。调用者必须本身已加入该 Channel。
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: Channel 及其当前授权成员
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeChannelMembers'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/threads:resolve:
+    post:
+      tags: [Runtime, Threads]
+      operationId: resolveRuntimeThread
+      summary: 为当前 Agent 可访问的腾讯根消息建立或取得 Thread 引用
+      description: 只登记腾讯 IM 路由和消息坐标，不保存消息正文，也不发送消息。
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResolveRuntimeThreadRequest'}
+      responses:
+        '200':
+          description: 已存在或新建的稳定 Thread 引用
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MessageThread'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/threads/{threadId}/replies:
+    parameters:
+      - {$ref: '#/components/parameters/ThreadId'}
+    post:
+      tags: [Runtime, Threads]
+      operationId: registerRuntimeThreadReply
+      summary: 登记当前 Agent 已经通过腾讯 IM 发出的 Thread 回复
+      description: |
+        固定在腾讯 IM 发送成功后调用；本接口只登记消息引用，不发送或重试消息。
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRuntimeThreadReplyRequest'}
+      responses:
+        '201':
+          description: 回复引用已登记
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ThreadReplyReference'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/tasks:
+    get:
+      tags: [Runtime, Tasks]
+      operationId: listRuntimeTasks
+      summary: 列出当前 Agent 被指派的 Task
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - name: updatedAfter
+          in: query
+          schema: {type: string, format: date-time}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: 当前 Agent 的 Task 列表
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskPage'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/tasks/{taskId}:
+    parameters:
+      - {$ref: '#/components/parameters/TaskId'}
+    get:
+      tags: [Runtime, Tasks]
+      operationId: getRuntimeTask
+      summary: 获取当前 Agent 被指派的 Task
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: Task
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Runtime, Tasks]
+      operationId: updateRuntimeTaskStatus
+      summary: 当前 Agent 更新自己 Task 的执行状态
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RuntimeTaskStatusRequest'}
+      responses:
+        '200':
+          description: Task
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/tasks/{taskId}/claim:
+    parameters:
+      - {$ref: '#/components/parameters/TaskId'}
+    post:
+      tags: [Runtime, Tasks]
+      operationId: claimRuntimeTask
+      summary: 当前 Agent 领取已经指派给自己的 Task
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200':
+          description: Task；重复领取不增加 revision
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computers:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Computers]
+      operationId: listComputers
+      summary: 列出 Computer
+      responses:
+        '200':
+          description: Computer 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Computer'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Computers]
+      operationId: createComputer
+      summary: 创建待接入的 Computer
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateComputerRequest'}
+      responses:
+        '201':
+          description: Computer 已创建
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Computer'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computers/{computerId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ComputerId'}
+    get:
+      tags: [Computers]
+      operationId: getComputer
+      summary: 获取 Computer
+      responses:
+        '200':
+          description: Computer
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Computer'}
+        default: {$ref: '#/components/responses/Error'}
+
+    patch:
+      tags: [Computers]
+      operationId: updateComputer
+      summary: 修改 Computer 名称
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 100}
+      responses:
+        '200':
+          description: 已修改
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Computer'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Computers]
+      operationId: removeComputer
+      summary: 解除平台映射，不销毁真实实例
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '204': {description: 已解除}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computer-runtime-capabilities:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Computers]
+      operationId: listComputerRuntimeCapabilities
+      summary: 列出 Computer 已协商的 Runtime 协议能力
+      responses:
+        '200':
+          description: Computer Runtime 协议能力
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ComputerRuntimeCapability'}
+        default: {$ref: '#/components/responses/Error'}
+  /computer-installation-options:
+    get:
+      tags: [Computers]
+      operationId: getComputerInstallationOptions
+      summary: 获取当前可安装的 Computer 平台
+      description: 只返回后台固定且已经签名的发布版本，不暴露 COS 或 TAT。
+      responses:
+        '200':
+          description: 当前安装平台目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerInstallationOptions'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer-installation-targets:
+    get:
+      tags: [Computers]
+      operationId: getComputerInstallationTargets
+      summary: 获取当前完整的签名 Computer target 目录
+      description: 新版客户端使用；旧 computer-installation-options 保留 macOS 兼容投影。
+      responses:
+        '200':
+          description: 当前完整安装 target 目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerInstallationTargets'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computers/{computerId}/setup-commands:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ComputerId'}
+    post:
+      tags: [Computers]
+      operationId: createComputerSetupCommand
+      summary: 生成一条可复制的 Computer 安装命令
+      description: |
+        仅允许 Server owner/admin。每次成功都会使上一份尚未认领的命令失效；
+        Computer 完成认领后不能再次生成。响应不得进入缓存、日志或客户端持久层。
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+      responses:
+        '201':
+          description: 一次性安装命令
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerSetupCommand'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/enrollments:claim:
+    post:
+      tags: [Computers]
+      operationId: claimComputerEnrollment
+      summary: 使用安装令牌认领 Computer
+      description: |
+        客户端本地生成长期 secret，只提交 SHA-256。相同令牌和摘要可恢复同一
+        credential route/version；后台从不接收或返回长期 secret 明文。
+      security:
+        - EnrollmentAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerEnrollmentClaimRequest'}
+      responses:
+        '201':
+          description: Computer 已认领或已恢复
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerEnrollmentClaim'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/preflight:
+    post:
+      tags: [Computers]
+      operationId: preflightComputer
+      summary: 只读检查本机 Computer 身份和自动重新纳管资格
+      description: |
+        使用当前用户本地保存的长期 Computer credential。空请求只判断当前 Computer
+        是否 active 或已 removed；携带 replacement 时同时验证新 enrollment 和本机
+        TAT identity，成功时为已 removed Computer 签发短期 replacement grant。
+        本操作不签发 Session、不更新 last-seen，也不修改任何业务状态。
+      security:
+        - ComputerCredentialAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerPreflightRequest'}
+      responses:
+        '204':
+          description: Computer active 且 credential current
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+        '410':
+          description: Computer 已 removed，或原 provider identity 已明确销毁
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerPreflightRemoved'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/setup-codes:redeem:
+    post:
+      tags: [Computers]
+      operationId: redeemComputerSetupCode
+      summary: 将短安装码兑换为一次安装脚本
+      description: |
+        请求正文只包含 16 位短码；响应是经过固化 release 约束的 POSIX shell。
+        可在当前 enrollment 被认领、过期或重新签发前安全重试，响应不得缓存。
+      security: []
+      parameters:
+        - name: X-Vela-Computer-Target
+          in: header
+          required: false
+          description: |
+            第一阶段安装 shell 检测出的规范化 target。新版客户端始终发送；省略时仅为兼容
+            已发布的 macOS bootstrap，并按 darwin-arm64 处理。
+          schema:
+            type: string
+            enum: [darwin-arm64, linux-amd64]
+            default: darwin-arm64
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema: {type: string, minLength: 16, maxLength: 19}
+      responses:
+        '200':
+          description: 第二阶段安装脚本
+          headers:
+            Cache-Control:
+              required: true
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              required: true
+              schema: {type: string, enum: [no-cache]}
+          content:
+            text/plain:
+              schema: {type: string, minLength: 1}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer-artifacts/{version}/{target}/{file}:
+    parameters:
+      - name: version
+        in: path
+        required: true
+        schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'}
+      - name: target
+        in: path
+        required: true
+        schema: {type: string, enum: [darwin-arm64, linux-amd64]}
+      - name: file
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [manifest.json, manifest.sig, install.sh, vela-computer]
+    get:
+      tags: [Computers]
+      operationId: getComputerArtifact
+      summary: 获取当前安装批次固化的私有制品
+      description: |
+        校验 Enrollment token 与批次绑定后，返回最长五分钟且不超过 token
+        剩余有效期的私有 COS 下载地址。平台不代理对象内容。
+      security:
+        - EnrollmentAuth: []
+      responses:
+        '307':
+          description: 跳转到短期私有 COS 下载地址
+          headers:
+            Location:
+              required: true
+              schema: {type: string, format: uri, x-sensitive: true}
+            Cache-Control:
+              required: true
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              required: true
+              schema: {type: string, enum: [no-cache]}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computers/{computerId}/runtime-credentials:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ComputerId'}
+    post:
+      tags: [Computers]
+      operationId: createComputerRuntimeCredential
+      summary: 首次签发或人工恢复 Computer Runtime Credential
+      description: |
+        仅允许 Server owner/admin。响应只在 60 分钟 KMS 加密交接窗口内按
+        Idempotency-Key 重放，不保存可直接使用的明文 Secret。
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerRuntimeCredentialRequest'}
+      responses:
+        '201':
+          description: 只返回一次的 Computer Runtime Credential
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerRuntimeCredential'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computers/{computerId}/refresh:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ComputerId'}
+    post:
+      tags: [Computers]
+      operationId: refreshComputer
+      summary: 立即从 TAT 刷新 Computer 状态
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '202':
+          description: 已提交查询
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/computers/{computerId}/terminal-sessions:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ComputerId'}
+    post:
+      tags: [Computers]
+      operationId: createTerminalSession
+      summary: 调用 TAT StartSession 创建 PTY
+      description: 浏览器直接连接腾讯云 TAT；平台不代理或保存终端流。
+      responses:
+        '201':
+          description: 一次性短期 PTY Session
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TerminalSession'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/session:
+    post:
+      tags: [Computers]
+      operationId: createComputerSession
+      summary: 长期 Computer Credential 换取短期平台 Session
+      security:
+        - ComputerCredentialAuth: []
+      parameters:
+        - name: X-Vela-Assignment-Version
+          in: header
+          required: true
+          schema:
+            type: integer
+            enum: [1]
+            x-enum-varnames: [CreateComputerSessionParamsXVelaAssignmentVersionN1]
+      responses:
+        '201':
+          description: 15 分钟 Computer Session
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerSession'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/credential:rotate:
+    post:
+      tags: [Computers]
+      operationId: rotateComputerCredential
+      summary: 轮换当前 Computer Runtime Credential
+      security:
+        - ComputerBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201':
+          description: 新 Credential；旧版本进入固定 60 分钟 grace
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerRuntimeCredential'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/session-v2:
+    post:
+      tags: [Computers]
+      operationId: createComputerSessionV2
+      summary: 协商可扩展 Assignment 协议并签发 Computer Session
+      security:
+        - ComputerCredentialAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerSessionNegotiationRequest'}
+      responses:
+        '201':
+          description: 已选择双方支持的最高 Assignment 版本
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerSessionV2'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/assignments:
+    get:
+      tags: [Computers]
+      operationId: getComputerAssignments
+      summary: 拉取当前 Computer 的权威 Agent Assignment Snapshot
+      security:
+        - ComputerBearer: []
+      parameters:
+        - name: X-Vela-Assignment-Version
+          in: header
+          required: true
+          schema:
+            type: integer
+            enum: [1]
+            x-enum-varnames: [GetComputerAssignmentsParamsXVelaAssignmentVersionN1]
+        - name: sinceEpoch
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/Id'}
+        - name: sinceRevision
+          in: query
+          required: true
+          schema: {type: integer, format: int64, minimum: 0}
+        - name: waitSeconds
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, maximum: 25, default: 25}
+        - name: forceFull
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: 完整 Assignment Snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAssignmentSnapshot'}
+        '204':
+          description: 当前 epoch/revision 没有变化
+          headers:
+            X-Assignment-Revision:
+              required: true
+              schema: {type: integer, format: int64, minimum: 1}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/assignments-v2:
+    get:
+      tags: [Computers]
+      operationId: getComputerAssignmentsV2
+      summary: 拉取支持 Agent Profile capability command 的 Assignment v2 Snapshot
+      security:
+        - ComputerBearer: []
+      parameters:
+        - name: sinceEpoch
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/Id'}
+        - name: sinceRevision
+          in: query
+          required: true
+          schema: {type: integer, format: int64, minimum: 0}
+        - name: waitSeconds
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, maximum: 25, default: 25}
+        - name: forceFull
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: 完整 Assignment v2 Snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAssignmentSnapshotV2'}
+        '204':
+          description: 当前 epoch/revision 没有变化
+          headers:
+            X-Assignment-Revision:
+              required: true
+              schema: {type: integer, format: int64, minimum: 1}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/assignments-v3:
+    get:
+      tags: [Computers]
+      operationId: getComputerAssignmentsV3
+      summary: 拉取使用可扩展 Runtime selector 的 Assignment v3 Snapshot
+      security:
+        - ComputerBearer: []
+      parameters:
+        - name: sinceEpoch
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/Id'}
+        - name: sinceRevision
+          in: query
+          required: true
+          schema: {type: integer, format: int64, minimum: 0}
+        - name: waitSeconds
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, maximum: 25, default: 25}
+        - name: forceFull
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: 完整 Assignment v3 Snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAssignmentSnapshotV3'}
+        '204':
+          description: 当前 epoch/revision 没有变化
+          headers:
+            X-Assignment-Revision:
+              required: true
+              schema: {type: integer, format: int64, minimum: 1}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/launches:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Computers]
+      operationId: createComputerAgentLaunch
+      summary: 原子分配 Agent Launch Fence 并签发短期 Runtime 与 IM Session
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentLaunchRequest'}
+      responses:
+        '201':
+          description: 已分配新的 Launch Fence
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunch'}
+        '200':
+          description: 相同 launchId 的幂等重试
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunch'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/launches-v2:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+    post:
+      tags: [Computers]
+      operationId: createComputerAgentLaunchV2
+      summary: 为 Assignment v3 分配 Launch Fence 与可扩展 Runtime Session
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentLaunchRequest'}
+      responses:
+        '201':
+          description: 已分配新的 Launch Fence
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchV2'}
+        '200':
+          description: 相同 launchId 的幂等重试
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchV2'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/launches-v2/{launchId}/session:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - name: launchId
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/Id'}
+    post:
+      tags: [Computers]
+      operationId: refreshComputerAgentSessionV2
+      summary: 为 Assignment v3 的当前 Launch 刷新 Runtime 与 IM Session
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentSessionRefreshRequest'}
+      responses:
+        '201':
+          description: 已刷新短期 Session
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchSessionV2'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/launches/{launchId}/session:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - name: launchId
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/Id'}
+    post:
+      tags: [Computers]
+      operationId: refreshComputerAgentSession
+      summary: 为当前 Launch Fence 刷新短期 Runtime 与 IM Session
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentSessionRefreshRequest'}
+      responses:
+        '200':
+          description: 已刷新当前 Launch 的 Session
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerAgentLaunchSession'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/observations/{observationId}:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - name: observationId
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/Id'}
+    put:
+      tags: [Computers]
+      operationId: putComputerAgentObservation
+      summary: 幂等提交 Agent launch 的观测状态
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentObservation'}
+      responses:
+        '200':
+          description: 已处理；由 accepted 与 reason 明确表达是否推进当前投影
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerObservationResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/profile-capability-results/{operationId}:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - {$ref: '#/components/parameters/OperationId'}
+    put:
+      tags: [Computers]
+      operationId: putComputerAgentProfileCapabilityResult
+      summary: 幂等提交 Agent Profile capability refresh 终态结果
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentProfileCapabilityResult'}
+      responses:
+        '200':
+          description: 已处理；accepted/reason 表达是否推进快照
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerProfileCapabilitySubmissionResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /computer/agents/{agentId}/profile-capability-invalidations/{eventId}:
+    parameters:
+      - {$ref: '#/components/parameters/AgentId'}
+      - name: eventId
+        in: path
+        required: true
+        schema: {$ref: '#/components/schemas/Id'}
+    put:
+      tags: [Computers]
+      operationId: putComputerAgentProfileCapabilityInvalidation
+      summary: 幂等标记 Agent Profile 本机运行能力可能变化
+      description: 该操作只标记 stale，不创建 refresh Operation。
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerAgentProfileCapabilityInvalidation'}
+      responses:
+        '200':
+          description: 已处理；旧 authority context/event sequence 被幂等忽略
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerProfileCapabilitySubmissionResult'}
+        default: {$ref: '#/components/responses/Error'}
+
+
+  /computer/heartbeat:
+    post:
+      tags: [Computers]
+      operationId: sendComputerHeartbeat
+      summary: 更新 Computer 与当前 Agent Host 的在线投影
+      security:
+        - ComputerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ComputerHeartbeat'}
+      responses:
+        '204':
+          description: 已接受；旧 generation/attempt/launch 项被幂等忽略
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/tasks:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Tasks]
+      operationId: listTasks
+      summary: 列出 Task
+      security:
+        - HumanBearer: []
+      parameters:
+        - name: owner
+          in: query
+          schema: {type: string}
+          description: Human 可按 owner Member ID 过滤。
+        - name: updatedAfter
+          in: query
+          schema: {type: string, format: date-time}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Task 列表
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskPage'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Tasks]
+      operationId: createTask
+      summary: 创建 Task
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateTaskRequest'}
+      responses:
+        '201':
+          description: Task
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/tasks/{taskId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/TaskId'}
+    get:
+      tags: [Tasks]
+      operationId: getTask
+      summary: 获取 Task
+      security:
+        - HumanBearer: []
+      responses:
+        '200':
+          description: Task
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Tasks]
+      operationId: updateTask
+      summary: 修改 Task
+      security:
+        - HumanBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateTaskRequest'}
+      responses:
+        '200':
+          description: Task
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/reminders:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Reminders]
+      operationId: listReminders
+      summary: 列出 Reminder
+      responses:
+        '200':
+          description: Reminder 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Reminder'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Reminders]
+      operationId: createReminder
+      summary: 创建 Reminder
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateReminderRequest'}
+      responses:
+        '201':
+          description: Reminder
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reminder'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/reminders/{reminderId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/ReminderId'}
+    get:
+      tags: [Reminders]
+      operationId: getReminder
+      summary: 获取 Reminder
+      responses:
+        '200':
+          description: Reminder
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reminder'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Reminders]
+      operationId: updateReminder
+      summary: 修改 Reminder
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateReminderRequest'}
+      responses:
+        '200':
+          description: Reminder
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reminder'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Reminders]
+      operationId: cancelReminder
+      summary: 取消 Reminder
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '204': {description: 已取消}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/inbox:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Inbox]
+      operationId: listInbox
+      summary: 列出当前 Human Member 的待办工作
+      description: |
+        v1 只投影分配给当前 Human Member 且未终结的 Task；不复制腾讯云 IM
+        消息，也不恢复旧版 Agent Delivery Inbox。
+      responses:
+        '200':
+          description: 当前待办列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/InboxItem'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/activity:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+    get:
+      tags: [Activity]
+      operationId: listActivity
+      summary: 列出当前业务资源变化投影
+      description: |
+        v1 返回 Task 与 Reminder 的最新变化状态，不承诺不可变历史；聊天消息、
+        Agent thinking、工具轨迹和 token stream 均不进入本接口。
+      responses:
+        '200':
+          description: 当前业务变化列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ActivityItem'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/reminders:
+    get:
+      tags: [Runtime]
+      operationId: listRuntimeReminders
+      summary: 列出当前 Agent 的 Reminder
+      security:
+        - RuntimeBearer: []
+      responses:
+        '200':
+          description: 当前 Agent 的 Reminder 列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/RuntimeReminder'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Runtime]
+      operationId: createRuntimeReminder
+      summary: 为当前 Agent 创建 Reminder
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateRuntimeReminderRequest'}
+      responses:
+        '201':
+          description: 已创建的 Reminder
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeReminder'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/reminders/{reminderId}:
+    parameters:
+      - {$ref: '#/components/parameters/ReminderId'}
+    patch:
+      tags: [Runtime]
+      operationId: updateRuntimeReminder
+      summary: 修改当前 Agent 的 Reminder
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateRuntimeReminderRequest'}
+      responses:
+        '200':
+          description: 已更新的 Reminder
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeReminder'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Runtime]
+      operationId: cancelRuntimeReminder
+      summary: 取消当前 Agent 的 Reminder
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '204': {description: 已取消}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/reminders/{reminderId}/snooze:
+    parameters:
+      - {$ref: '#/components/parameters/ReminderId'}
+    post:
+      tags: [Runtime]
+      operationId: snoozeRuntimeReminder
+      summary: 延后当前 Agent 的 Reminder
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/ResourceRevision'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SnoozeRuntimeReminderRequest'}
+      responses:
+        '200':
+          description: 已延后的 Reminder
+          headers:
+            X-Resource-Revision: {$ref: '#/components/headers/ResourceRevision'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RuntimeReminder'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/reminders/{reminderId}/log:
+    parameters:
+      - {$ref: '#/components/parameters/ReminderId'}
+    get:
+      tags: [Runtime]
+      operationId: listRuntimeReminderLog
+      summary: 列出当前 Agent 的 Reminder 触发记录
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Reminder occurrence 列表
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReminderOccurrencePage'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/reminder-occurrences:
+    get:
+      tags: [Runtime]
+      operationId: listRuntimeReminderOccurrences
+      summary: 列出当前 Agent 未确认的 Reminder occurrence
+      description: |
+        只返回 Runtime Bearer 所属 Agent 的 due occurrence，按
+        (scheduledFireAt,id) 升序排列；cursor 是不透明 continuation token。
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: Occurrence 列表
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReminderOccurrencePage'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/reminder-occurrences/{occurrenceId}/ack:
+    parameters:
+      - {$ref: '#/components/parameters/OccurrenceId'}
+    post:
+      tags: [Runtime]
+      operationId: acknowledgeRuntimeReminderOccurrence
+      summary: 当前 Agent 确认 Reminder occurrence
+      description: |
+        ack 对 occurrence 本身幂等；相同 Agent 重放时返回首次确认后的结果，
+        不允许用重放覆盖 resultCode。
+      security:
+        - RuntimeBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                resultCode: {type: string, nullable: true, maxLength: 64}
+      responses:
+        '200':
+          description: 已确认
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReminderOccurrence'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /servers/{serverId}/operations/{operationId}:
+    parameters:
+      - {$ref: '#/components/parameters/ServerId'}
+      - {$ref: '#/components/parameters/OperationId'}
+    get:
+      tags: [Operations]
+      operationId: getOperation
+      summary: 查询腾讯云异步操作
+      responses:
+        '200':
+          description: 脱敏操作状态
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+components:
+  securitySchemes:
+    HumanBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    RuntimeBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Runtime JWT
+    ComputerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Computer JWT
+      description: 只接受 kind=computer_access 且已通过 credential currentness 校验的短期 Token。
+    ComputerCredentialAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 使用 `ComputerCredential <secret>`，不是 Human、Agent 或 Runtime Token。
+    EnrollmentAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 使用短期 `Enrollment <cen1...>` 安装令牌；只允许认领和读取固化制品。
+
+  headers:
+    ResourceRevision:
+      description: 成功写入后的业务资源 revision；不是 HTTP representation ETag。
+      schema: {type: integer, format: int64, minimum: 0}
+
+  parameters:
+    ServerId:
+      name: serverId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+      x-tdsql-shard-key: server_id
+    InviteId:
+      name: inviteId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    DirectConversationId:
+      name: directConversationId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    ThreadId:
+      name: threadId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    ComputerId:
+      name: computerId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    ReminderId:
+      name: reminderId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    OccurrenceId:
+      name: occurrenceId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    OperationId:
+      name: operationId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 8, maxLength: 128}
+    ResourceRevision:
+      name: X-Resource-Revision
+      in: header
+      required: true
+      schema: {type: integer, format: int64, minimum: 0}
+
+  responses:
+    Error:
+      description: 错误
+      headers:
+        Retry-After:
+          description: 建议客户端重试前等待的秒数或 HTTP 日期，仅在适用时返回。
+          schema: {type: string}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+
+  schemas:
+    Id:
+      type: string
+      format: uuid
+    NullableId:
+      type: string
+      format: uuid
+      nullable: true
+    NullableCursor:
+      type: string
+      nullable: true
+    Timestamp:
+      type: string
+      format: date-time
+    NullableTimestamp:
+      type: string
+      format: date-time
+      nullable: true
+    Revision:
+      type: integer
+      format: int64
+      minimum: 0
+
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            requestId: {type: string}
+            details: {type: object, nullable: true, additionalProperties: true}
+
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, displayName]
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, minLength: 8, maxLength: 200}
+        displayName: {type: string, minLength: 1, maxLength: 100}
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string}
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken: {type: string, minLength: 20}
+    AuthResult:
+      type: object
+      additionalProperties: false
+      required: [accessToken, refreshToken, expiresAt, account]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        refreshToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        account: {$ref: '#/components/schemas/Account'}
+    Account:
+      type: object
+      additionalProperties: false
+      required: [id, email, displayName, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        email: {type: string, format: email}
+        displayName: {type: string}
+        imUserId: {type: string, nullable: true}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        revision: {$ref: '#/components/schemas/Revision'}
+    ImSession:
+      type: object
+      additionalProperties: false
+      required: [sdkAppId, userId, userSig, expiresAt]
+      properties:
+        sdkAppId: {type: integer}
+        userId: {type: string}
+        userSig: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+
+    Server:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, ownerMemberId, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        slug: {type: string}
+        name: {type: string}
+        description: {type: string, nullable: true}
+        ownerMemberId: {$ref: '#/components/schemas/Id'}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateServerRequest:
+      type: object
+      additionalProperties: false
+      required: [slug, name]
+      properties:
+        slug: {type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$'}
+        name: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+    UpdateServerRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+    AcceptedResource:
+      type: object
+      additionalProperties: false
+      required: [resourceId, operations]
+      properties:
+        resourceId: {$ref: '#/components/schemas/Id'}
+        operations:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/Operation'}
+
+    Invite:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, role, maxUses, usedCount, expiresAt, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        role: {type: string, enum: [admin, member]}
+        maxUses: {type: integer, minimum: 1}
+        usedCount: {type: integer, minimum: 0}
+        landingChannelId: {$ref: '#/components/schemas/NullableId'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateInviteRequest:
+      type: object
+      additionalProperties: false
+      required: [role, maxUses, expiresAt]
+      properties:
+        role: {type: string, enum: [admin, member]}
+        maxUses: {type: integer, minimum: 1, maximum: 1000}
+        landingChannelId: {$ref: '#/components/schemas/NullableId'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    InviteSecret:
+      type: object
+      additionalProperties: false
+      required: [invite, token]
+      properties:
+        invite: {$ref: '#/components/schemas/Invite'}
+        token: {type: string, readOnly: true, x-sensitive: true}
+    AcceptJoinLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: {type: string, minLength: 20, writeOnly: true, x-sensitive: true}
+    JoinResult:
+      type: object
+      additionalProperties: false
+      required: [serverId, serverSlug, memberId, landingChannelId, operations]
+      properties:
+        serverId: {$ref: '#/components/schemas/Id'}
+        serverSlug: {type: string, minLength: 2, maxLength: 63}
+        memberId: {$ref: '#/components/schemas/Id'}
+        landingChannelId: {$ref: '#/components/schemas/Id'}
+        operations:
+          type: array
+          items: {$ref: '#/components/schemas/Operation'}
+    Member:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, kind, role, displayName, handle, status, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        kind: {type: string, enum: [human, agent]}
+        accountId: {$ref: '#/components/schemas/NullableId'}
+        role: {type: string, enum: [owner, admin, member]}
+        displayName: {type: string}
+        handle: {type: string}
+        status: {type: string, enum: [active, removing, removed]}
+        imUserId: {type: string, nullable: true}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        revision: {$ref: '#/components/schemas/Revision'}
+    UpdateMemberRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        role: {type: string, enum: [admin, member]}
+        displayName: {type: string, minLength: 1, maxLength: 100}
+
+    DirectConversationStatus:
+      type: string
+      enum: [active, closing, closed]
+    DirectConversationIMState:
+      type: string
+      enum: [provisioning, ready, error, deleted]
+    DirectConversation:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, memberA, memberB, status, imGroupId, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        memberA: {$ref: '#/components/schemas/Member'}
+        memberB: {$ref: '#/components/schemas/Member'}
+        status: {$ref: '#/components/schemas/DirectConversationStatus'}
+        imGroupId: {type: string, minLength: 1, maxLength: 255}
+        imState: {$ref: '#/components/schemas/DirectConversationIMState'}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateDirectConversationRequest:
+      type: object
+      additionalProperties: false
+      required: [peerMemberId]
+      properties:
+        peerMemberId: {$ref: '#/components/schemas/Id'}
+
+    Channel:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, name, visibility, joined, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        name: {type: string}
+        description: {type: string, nullable: true}
+        visibility: {type: string, enum: [public, private]}
+        joined:
+          type: boolean
+          description: 当前 Human 已完成腾讯云 IM 成员同步，可以打开该 Channel 会话。
+        systemKey: {type: string, nullable: true, enum: [all]}
+        imGroupId: {type: string}
+        imTopicId: {type: string, nullable: true}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateChannelRequest:
+      type: object
+      additionalProperties: false
+      required: [name, visibility]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+        visibility: {type: string, enum: [public, private]}
+    UpdateChannelRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+
+    RuntimeConfig:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+        model: {type: string, nullable: true, maxLength: 100}
+
+    RuntimeSelectorV2:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+          x-known-values: [codex, hermes-acp, hermes-gateway, openclaw]
+        model: {type: string, nullable: true, maxLength: 100}
+
+    ProfileCapabilityAuthorityContextKey:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+
+    ProfileCapabilityWarning:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [catalog_truncated, partial_discovery, dependencies_missing]
+          x-enum-varnames:
+            [ProfileCapabilityWarningCatalogTruncated,
+             ProfileCapabilityWarningPartialDiscovery,
+             ProfileCapabilityWarningDependenciesMissing]
+        message: {type: string, maxLength: 500}
+
+    AgentProfileCapabilitySubject:
+      type: object
+      additionalProperties: false
+      required:
+        [computerId, runtimeKind, profileKind, profileFingerprint,
+         workspacePath, contextGeneration, authorityContextKey,
+         runtimeContextGeneration, observedThroughSequence]
+      properties:
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtimeKind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+          x-enum-varnames:
+            [ProfileCapabilityRefreshRuntimeCodex,
+             ProfileCapabilityRefreshRuntimeHermesACP,
+             ProfileCapabilityRefreshRuntimeHermesGateway]
+        profileKind:
+          type: string
+          enum: [codex_home, hermes_managed]
+          x-enum-varnames:
+            [AgentProfileCapabilityProfileCodexHome,
+             AgentProfileCapabilityProfileHermesManaged]
+        profileFingerprint:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        workspacePath: {type: string, minLength: 1, maxLength: 4096}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeContextGeneration: {type: integer, format: int64, minimum: 1}
+        observedThroughSequence: {type: integer, format: int64, minimum: 0}
+
+    AgentProfileCapabilitySource:
+      type: object
+      additionalProperties: false
+      required: [protocol, runtimeVersion, discoveryMode, forceReload]
+      properties:
+        protocol:
+          type: string
+          enum: [codex_app_server, hermes_acp, hermes_gateway]
+          x-enum-varnames:
+            [AgentProfileCapabilityProtocolCodexAppServer,
+             AgentProfileCapabilityProtocolHermesACP,
+             AgentProfileCapabilityProtocolHermesGateway]
+        runtimeVersion: {type: string, minLength: 1, maxLength: 100}
+        discoveryMode:
+          type: string
+          enum: [active_session, short_lived_process]
+          x-enum-varnames:
+            [AgentProfileCapabilityDiscoveryActiveSession,
+             AgentProfileCapabilityDiscoveryShortLivedProcess]
+        forceReload: {type: boolean}
+
+    AgentProfileModelCapability:
+      type: object
+      additionalProperties: false
+      required:
+        [id, label, supportedReasoningEfforts, serviceTiers]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 200}
+        label: {type: string, minLength: 1, maxLength: 200}
+        provider: {type: string, nullable: true, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 500}
+        verified: {type: string, nullable: true, maxLength: 50}
+        supportedReasoningEfforts:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 50}
+        defaultReasoningEffort: {type: string, nullable: true, maxLength: 50}
+        serviceTiers:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 50}
+        defaultServiceTier: {type: string, nullable: true, maxLength: 50}
+
+    AgentProfileSkillCapability:
+      type: object
+      additionalProperties: false
+      required:
+        [id, name, description, enabled, availability, scope,
+         missingDependencyCount, missingDependencyTypes]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 200}
+        name: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 500}
+        displayName: {type: string, nullable: true, maxLength: 200}
+        shortDescription: {type: string, nullable: true, maxLength: 300}
+        enabled: {type: boolean}
+        availability:
+          type: string
+          enum: [available, unavailable]
+          x-enum-varnames:
+            [AgentProfileSkillAvailabilityAvailable,
+             AgentProfileSkillAvailabilityUnavailable]
+        scope:
+          type: string
+          enum: [project, user, admin, system, profile, external, unknown]
+          x-enum-varnames:
+            [AgentProfileSkillScopeProject, AgentProfileSkillScopeUser,
+             AgentProfileSkillScopeAdmin, AgentProfileSkillScopeSystem,
+             AgentProfileSkillScopeProfile, AgentProfileSkillScopeExternal,
+             AgentProfileSkillScopeUnknown]
+        missingDependencyCount: {type: integer, minimum: 0, maximum: 100}
+        missingDependencyTypes:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            enum: [env_var, executable, mcp, other]
+            x-enum-varnames:
+              [AgentProfileSkillDependencyEnvVar,
+               AgentProfileSkillDependencyExecutable,
+               AgentProfileSkillDependencyMCP,
+               AgentProfileSkillDependencyOther]
+
+    AgentProfileModelCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        [selectionMode, configuredModelId, effectiveDefaultModelId,
+         selectedAvailability, items, truncated, warnings]
+      properties:
+        selectionMode:
+          type: string
+          enum: [follow_runtime_default, fixed]
+          x-enum-varnames:
+            [AgentProfileModelSelectionFollowRuntimeDefault,
+             AgentProfileModelSelectionFixed]
+        configuredModelId: {type: string, nullable: true, maxLength: 200}
+        effectiveDefaultModelId: {type: string, nullable: true, maxLength: 200}
+        selectedAvailability:
+          type: string
+          enum: [available, unavailable, unknown]
+          x-enum-varnames:
+            [AgentProfileModelAvailabilityAvailable,
+             AgentProfileModelAvailabilityUnavailable,
+             AgentProfileModelAvailabilityUnknown]
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileModelCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+
+    AgentProfileSkillCapabilities:
+      type: object
+      additionalProperties: false
+      required: [items, truncated, warnings]
+      properties:
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileSkillCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+
+    AgentProfileCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, snapshotState, staleReasons, subject, source, models,
+         skills, observedAt, refreshOperation]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        snapshotState:
+          type: string
+          enum: [absent, current, stale]
+          x-enum-varnames:
+            [AgentProfileSnapshotAbsent, AgentProfileSnapshotCurrent,
+             AgentProfileSnapshotStale]
+        staleReasons:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [computer_changed, runtime_changed, profile_changed,
+               workspace_changed, runtime_reported_change]
+            x-enum-varnames:
+              [AgentProfileStaleComputerChanged,
+               AgentProfileStaleRuntimeChanged,
+               AgentProfileStaleProfileChanged,
+               AgentProfileStaleWorkspaceChanged,
+               AgentProfileStaleRuntimeReportedChange]
+        subject:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySubject'}
+        source:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySource'}
+        models:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileModelCapabilities'}
+        skills:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileSkillCapabilities'}
+        observedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        refreshOperation:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/Operation'}
+    Agent:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, displayName, handle, imUserId, imState, computerId, runtime,
+         replyPolicy, desiredState, observedState, availability, imPresence,
+         imTransportState, credentialVersion, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        displayName: {type: string}
+        handle: {type: string}
+        description: {type: string, nullable: true}
+        imUserId: {type: string}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        desiredState: {type: string, enum: [stopped, running]}
+        observedState:
+          type: string
+          enum: [unknown, deploying, stopped, starting, running, stopping, error]
+        availability: {type: string, enum: [unknown, online, offline]}
+        imPresence: {type: string, enum: [unknown, online, offline]}
+        imPresenceUpdatedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        imTransportState:
+          type: string
+          enum: [unknown, connecting, connected, disconnected, error]
+        imTransportUpdatedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        hostLastSeenAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        credentialVersion: {type: integer, minimum: 0}
+        lastObservedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        lastErrorCode: {type: string, nullable: true}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName, handle, computerId, runtime]
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        handle: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{1,31}$'}
+        description: {type: string, nullable: true, maxLength: 1000}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+          default: mention_and_dm
+
+    TencentIMStateCallback:
+      type: object
+      required: [CallbackCommand, EventTime, Info]
+      properties:
+        CallbackCommand: {type: string, enum: [State.StateChange]}
+        EventTime: {type: integer, format: int64, minimum: 1}
+        Info:
+          type: object
+          required: [Action, To_Account]
+          properties:
+            Action:
+              type: string
+              enum: [Login, Logout, Disconnect, CustomStatusChange]
+            To_Account: {type: string, minLength: 1, maxLength: 128}
+            Reason: {type: string, maxLength: 256}
+    TencentIMCallbackResult:
+      type: object
+      additionalProperties: false
+      required: [ActionStatus, ErrorCode, ErrorInfo]
+      properties:
+        ActionStatus: {type: string, enum: [OK]}
+        ErrorCode: {type: integer, enum: [0]}
+        ErrorInfo: {type: string, enum: ['']}
+    UpdateAgentRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+
+    AgentV2:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, displayName, handle, imUserId, imState, computerId, runtime,
+         replyPolicy, desiredState, observedState, availability, imPresence,
+         imTransportState, credentialVersion, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        displayName: {type: string}
+        handle: {type: string}
+        description: {type: string, nullable: true}
+        imUserId: {type: string}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        desiredState: {type: string, enum: [stopped, running]}
+        observedState:
+          type: string
+          enum: [unknown, deploying, stopped, starting, running, stopping, error]
+        availability: {type: string, enum: [unknown, online, offline]}
+        imPresence: {type: string, enum: [unknown, online, offline]}
+        imPresenceUpdatedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        imTransportState:
+          type: string
+          enum: [unknown, connecting, connected, disconnected, error]
+        imTransportUpdatedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        hostLastSeenAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        credentialVersion: {type: integer, minimum: 0}
+        lastObservedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        lastErrorCode: {type: string, nullable: true}
+        revision: {$ref: '#/components/schemas/Revision'}
+
+    CreateAgentRequestV2:
+      type: object
+      additionalProperties: false
+      required: [displayName, handle, computerId, runtime]
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        handle: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{1,31}$'}
+        description: {type: string, nullable: true, maxLength: 1000}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+          default: mention_and_dm
+
+    UpdateAgentRequestV2:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        description: {type: string, nullable: true, maxLength: 1000}
+        computerId: {$ref: '#/components/schemas/Id'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+
+    RuntimeIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, userId, capabilities, replyPolicy, runtime]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        userId: {type: string}
+        capabilities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [read, send, server, channels, threads, tasks, reactions,
+               attachments, reminders]
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+
+    RuntimeIdentityV2:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, userId, capabilities, replyPolicy, runtime]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        userId: {type: string}
+        capabilities:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              [read, send, server, channels, threads, tasks, reactions,
+               attachments, reminders]
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+    ComputerRuntimeCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [bootstrap, recover]
+
+    ComputerRuntimeCredential:
+      type: object
+      additionalProperties: false
+      required: [credentialId, version, secret, expiresAt]
+      properties:
+        credentialId: {$ref: '#/components/schemas/Id'}
+        version: {type: integer, format: int64, minimum: 1}
+        secret:
+          type: string
+          minLength: 64
+          maxLength: 256
+          readOnly: true
+          x-sensitive: true
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        graceExpiresAt: {$ref: '#/components/schemas/NullableTimestamp'}
+
+    ComputerSessionIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, credentialVersion, assignmentEpoch, assignmentRevision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        assignmentRevision: {type: integer, format: int64, minimum: 1}
+
+    ComputerSession:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, computer, assignmentVersions]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        computer: {$ref: '#/components/schemas/ComputerSessionIdentity'}
+        assignmentVersions:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            enum: [1]
+            x-enum-varnames: [ComputerSessionAssignmentVersionsN1]
+
+    ComputerSessionNegotiationRequest:
+      type: object
+      additionalProperties: false
+      required: [assignmentVersions]
+      properties:
+        assignmentVersions:
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items: {type: integer, minimum: 1}
+
+    ComputerSessionV2:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, computer, assignmentVersion]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        computer: {$ref: '#/components/schemas/ComputerSessionIdentity'}
+        assignmentVersion: {type: integer, minimum: 1}
+
+    ComputerAssignmentLaunchFence:
+      type: object
+      additionalProperties: false
+      required:
+        [launchId, assignmentEpoch, configGeneration, credentialVersion, attempt]
+      properties:
+        launchId: {$ref: '#/components/schemas/Id'}
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        attempt: {type: integer, format: int64, minimum: 1}
+
+    ComputerAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, serverId, desiredState, configGeneration,
+         credentialVersion, currentLaunch, runtime, replyPolicy]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        desiredState:
+          type: string
+          enum: [running, stopped]
+          x-enum-varnames:
+            [ComputerAssignmentV2DesiredRunning,
+             ComputerAssignmentV2DesiredStopped]
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 0}
+        currentLaunch:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerAssignmentLaunchFence'}
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+          x-enum-varnames:
+            [ComputerAssignmentV2ReplyMentionAndDM,
+             ComputerAssignmentV2ReplyAllChannelMessages,
+             ComputerAssignmentV2ReplyDMOnly]
+
+    ComputerAssignmentSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, computerId, epoch, revision, snapshotHash, agents]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+          x-enum-varnames: [ComputerAssignmentSnapshotSchemaVersionN1]
+        computerId: {$ref: '#/components/schemas/Id'}
+        epoch: {$ref: '#/components/schemas/Id'}
+        revision: {type: integer, format: int64, minimum: 1}
+        snapshotHash:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        agents:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ComputerAssignment'}
+
+    ComputerProfileCapabilityRefresh:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, refreshId, contextGeneration, authorityContextKey,
+         runtimeKind, invalidationWatermark, forceReload, requestedAt]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+          x-enum-varnames: [ComputerProfileCapabilityRefreshSchemaVersionN1]
+        refreshId: {$ref: '#/components/schemas/Id'}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeKind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+        invalidationWatermark: {type: integer, format: int64, minimum: 0}
+        forceReload: {type: boolean}
+        requestedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAssignmentV2:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, serverId, desiredState, configGeneration,
+         credentialVersion, currentLaunch, runtime, replyPolicy,
+         profileCapabilityRefresh]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        desiredState: {type: string, enum: [running, stopped]}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 0}
+        currentLaunch:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerAssignmentLaunchFence'}
+        runtime: {$ref: '#/components/schemas/RuntimeConfig'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        profileCapabilityRefresh:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerProfileCapabilityRefresh'}
+
+    ComputerAssignmentSnapshotV2:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, computerId, epoch, revision, snapshotHash, agents]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [2]
+          x-enum-varnames: [ComputerAssignmentSnapshotV2SchemaVersionN2]
+        computerId: {$ref: '#/components/schemas/Id'}
+        epoch: {$ref: '#/components/schemas/Id'}
+        revision: {type: integer, format: int64, minimum: 1}
+        snapshotHash:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        agents:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ComputerAssignmentV2'}
+
+    ComputerProfileCapabilityRefreshV2:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, refreshId, contextGeneration, authorityContextKey,
+         runtimeKind, invalidationWatermark, forceReload, requestedAt]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        refreshId: {$ref: '#/components/schemas/Id'}
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeKind:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9-]{0,63}$'
+        invalidationWatermark: {type: integer, format: int64, minimum: 0}
+        forceReload: {type: boolean}
+        requestedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAssignmentV3:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, serverId, desiredState, configGeneration,
+         credentialVersion, currentLaunch, runtime, replyPolicy,
+         profileCapabilityRefresh]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        desiredState: {type: string, enum: [running, stopped]}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 0}
+        currentLaunch:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerAssignmentLaunchFence'}
+        runtime: {$ref: '#/components/schemas/RuntimeSelectorV2'}
+        replyPolicy:
+          type: string
+          enum: [mention_and_dm, all_channel_messages, dm_only]
+        profileCapabilityRefresh:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/ComputerProfileCapabilityRefreshV2'}
+
+    ComputerAssignmentSnapshotV3:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, computerId, epoch, revision, snapshotHash, agents]
+      properties:
+        schemaVersion: {type: integer, enum: [3]}
+        computerId: {$ref: '#/components/schemas/Id'}
+        epoch: {$ref: '#/components/schemas/Id'}
+        revision: {type: integer, format: int64, minimum: 1}
+        snapshotHash:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        agents:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ComputerAssignmentV3'}
+
+    ComputerAgentLaunchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [launchId, predecessorLaunchId, assignmentEpoch, assignmentRevision,
+         configGeneration, credentialVersion]
+      properties:
+        launchId: {$ref: '#/components/schemas/Id'}
+        predecessorLaunchId: {$ref: '#/components/schemas/NullableId'}
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        assignmentRevision: {type: integer, format: int64, minimum: 1}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+
+    ComputerAgentLaunchFence:
+      type: object
+      additionalProperties: false
+      required:
+        [launchId, assignmentEpoch, configGeneration, credentialVersion,
+         attempt, issuedAt]
+      properties:
+        launchId: {$ref: '#/components/schemas/Id'}
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        attempt: {type: integer, format: int64, minimum: 1}
+        issuedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAgentLaunchSession:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, agent, im]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        agent: {$ref: '#/components/schemas/RuntimeIdentity'}
+        im: {$ref: '#/components/schemas/ImSession'}
+
+    ComputerAgentLaunch:
+      type: object
+      additionalProperties: false
+      required: [launch, session]
+      properties:
+        launch: {$ref: '#/components/schemas/ComputerAgentLaunchFence'}
+        session: {$ref: '#/components/schemas/ComputerAgentLaunchSession'}
+
+    ComputerAgentLaunchSessionV2:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, agent, im]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        agent: {$ref: '#/components/schemas/RuntimeIdentityV2'}
+        im: {$ref: '#/components/schemas/ImSession'}
+
+    ComputerAgentLaunchV2:
+      type: object
+      additionalProperties: false
+      required: [launch, session]
+      properties:
+        launch: {$ref: '#/components/schemas/ComputerAgentLaunchFence'}
+        session: {$ref: '#/components/schemas/ComputerAgentLaunchSessionV2'}
+
+    ComputerAgentSessionRefreshRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [assignmentEpoch, configGeneration, credentialVersion, attempt]
+      properties:
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        attempt: {type: integer, format: int64, minimum: 1}
+
+    ComputerProfileCapabilityModelSection:
+      type: object
+      additionalProperties: false
+      required:
+        [status, effectiveDefaultModelId, items, truncated, warnings, errorCode]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, failed]
+          x-enum-varnames:
+            [ComputerProfileModelSectionSucceeded,
+             ComputerProfileModelSectionFailed]
+        effectiveDefaultModelId: {type: string, nullable: true, maxLength: 200}
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileModelCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+        errorCode:
+          type: string
+          nullable: true
+          enum: [model_discovery_failed, runtime_unavailable]
+          x-enum-varnames:
+            [ComputerProfileModelDiscoveryFailed,
+             ComputerProfileModelRuntimeUnavailable]
+
+    ComputerProfileCapabilitySkillSection:
+      type: object
+      additionalProperties: false
+      required: [status, items, truncated, warnings, errorCode]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, failed]
+          x-enum-varnames:
+            [ComputerProfileSkillSectionSucceeded,
+             ComputerProfileSkillSectionFailed]
+        items:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/AgentProfileSkillCapability'}
+        truncated: {type: boolean}
+        warnings:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/ProfileCapabilityWarning'}
+        errorCode:
+          type: string
+          nullable: true
+          enum: [skill_discovery_failed, runtime_unavailable]
+          x-enum-varnames:
+            [ComputerProfileSkillDiscoveryFailed,
+             ComputerProfileSkillRuntimeUnavailable]
+
+    ComputerAgentProfileCapabilityResult:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, status, contextGeneration, authorityContextKey,
+         runtimeKind, runtimeContextGeneration, observedThroughSequence,
+         subject, source, models, skills, errorCode, observedAt]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+          x-enum-varnames: [ComputerAgentProfileCapabilityResultSchemaVersionN1]
+        status:
+          type: string
+          enum: [succeeded, failed]
+          x-enum-varnames:
+            [ComputerProfileCapabilityResultSucceeded,
+             ComputerProfileCapabilityResultFailed]
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeKind:
+          type: string
+          enum: [codex, hermes-acp, hermes-gateway]
+          x-enum-varnames:
+            [ComputerProfileCapabilityRuntimeCodex,
+             ComputerProfileCapabilityRuntimeHermesACP,
+             ComputerProfileCapabilityRuntimeHermesGateway]
+        runtimeContextGeneration: {type: integer, format: int64, minimum: 1}
+        observedThroughSequence: {type: integer, format: int64, minimum: 0}
+        subject:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySubject'}
+        source:
+          nullable: true
+          allOf:
+            - {$ref: '#/components/schemas/AgentProfileCapabilitySource'}
+        models: {$ref: '#/components/schemas/ComputerProfileCapabilityModelSection'}
+        skills: {$ref: '#/components/schemas/ComputerProfileCapabilitySkillSection'}
+        errorCode:
+          type: string
+          nullable: true
+          enum:
+            [runtime_busy, profile_not_ready, runtime_unavailable,
+             discovery_failed, result_too_large]
+          x-enum-varnames:
+            [ComputerProfileCapabilityRuntimeBusy,
+             ComputerProfileCapabilityProfileNotReady,
+             ComputerProfileCapabilityRuntimeUnavailable,
+             ComputerProfileCapabilityDiscoveryFailed,
+             ComputerProfileCapabilityResultTooLarge]
+        observedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerAgentProfileCapabilityInvalidation:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, contextGeneration, authorityContextKey,
+         runtimeContextGeneration, eventSequence, reason, observedAt]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+          x-enum-varnames: [ComputerAgentProfileCapabilityInvalidationSchemaVersionN1]
+        contextGeneration: {type: integer, format: int64, minimum: 1}
+        authorityContextKey: {$ref: '#/components/schemas/ProfileCapabilityAuthorityContextKey'}
+        runtimeContextGeneration: {type: integer, format: int64, minimum: 1}
+        eventSequence: {type: integer, format: int64, minimum: 1}
+        reason:
+          type: string
+          enum: [profile_changed, workspace_changed, runtime_reported_change]
+          x-enum-varnames:
+            [ComputerProfileInvalidationProfileChanged,
+             ComputerProfileInvalidationWorkspaceChanged,
+             ComputerProfileInvalidationRuntimeReportedChange]
+        observedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerProfileCapabilitySubmissionResult:
+      type: object
+      additionalProperties: false
+      required: [accepted, reason]
+      properties:
+        accepted: {type: boolean}
+        reason:
+          type: string
+          enum: [accepted, duplicate, superseded]
+          x-enum-varnames:
+            [ComputerProfileSubmissionAccepted,
+             ComputerProfileSubmissionDuplicate,
+             ComputerProfileSubmissionSuperseded]
+
+    ComputerAgentObservation:
+      type: object
+      additionalProperties: false
+      required:
+        [assignmentEpoch, configGeneration, credentialVersion, attempt,
+         sequence, launchId, state, imTransportState, observedAt]
+      properties:
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        assignmentRevision: {type: integer, format: int64, minimum: 1}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        attempt: {type: integer, format: int64, minimum: 1}
+        sequence: {type: integer, format: int64, minimum: 1}
+        launchId: {$ref: '#/components/schemas/Id'}
+        state:
+          type: string
+          enum: [starting, running, stopping, stopped, error]
+        imTransportState:
+          type: string
+          enum: [unknown, connecting, connected, disconnected, error]
+        errorCode: {type: string, nullable: true, maxLength: 100}
+        observedAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ComputerObservationCurrent:
+      type: object
+      additionalProperties: false
+      required: [launchId, attempt, sequence]
+      properties:
+        launchId: {$ref: '#/components/schemas/NullableId'}
+        attempt: {type: integer, format: int64, minimum: 0}
+        sequence: {type: integer, format: int64, minimum: 0}
+
+    ComputerObservationResult:
+      type: object
+      additionalProperties: false
+      required: [accepted, reason, current]
+      properties:
+        accepted: {type: boolean}
+        reason:
+          type: string
+          enum: [accepted, stale_launch, older_sequence]
+        current: {$ref: '#/components/schemas/ComputerObservationCurrent'}
+
+    ComputerHeartbeatReconcile:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: {type: string, enum: [healthy, error]}
+        errorCode: {type: string, nullable: true, maxLength: 100}
+
+    ComputerHeartbeatAgent:
+      type: object
+      additionalProperties: false
+      required:
+        [agentId, assignmentEpoch, configGeneration, credentialVersion,
+         attempt, launchId]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        configGeneration: {type: integer, format: int64, minimum: 1}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        attempt: {type: integer, format: int64, minimum: 1}
+        launchId: {$ref: '#/components/schemas/Id'}
+
+    ComputerHeartbeat:
+      type: object
+      additionalProperties: false
+      required:
+        [heartbeatId, daemonVersion, daemonBuildId, assignmentEpoch,
+         assignmentRevision, tatState, reconcile, agents]
+      properties:
+        heartbeatId: {$ref: '#/components/schemas/Id'}
+        daemonVersion: {type: string, minLength: 1, maxLength: 100}
+        daemonBuildId: {type: string, minLength: 1, maxLength: 200}
+        assignmentEpoch: {$ref: '#/components/schemas/Id'}
+        assignmentRevision: {type: integer, format: int64, minimum: 1}
+        assignmentVersion: {type: integer, enum: [1, 2, 3]}
+        profileCapabilityVersions:
+          type: array
+          uniqueItems: true
+          maxItems: 1
+          items: {type: integer, enum: [1]}
+        tatState: {type: string, enum: [online, offline, error]}
+        reconcile: {$ref: '#/components/schemas/ComputerHeartbeatReconcile'}
+        agents:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/ComputerHeartbeatAgent'}
+
+    Computer:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, name, osType, lifecycleState, connectionState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        name: {type: string}
+        osType: {type: string, enum: [linux, windows, macos]}
+        lifecycleState: {type: string, enum: [provisioning, active, removed]}
+        connectionState: {type: string, enum: [unknown, online, offline, error]}
+        lastObservedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        lastErrorCode: {type: string, nullable: true}
+        revision: {$ref: '#/components/schemas/Revision'}
+    ComputerRuntimeCapability:
+      type: object
+      additionalProperties: false
+      required: [computerId, assignmentVersion]
+      properties:
+        computerId: {$ref: '#/components/schemas/Id'}
+        assignmentVersion: {type: integer, minimum: 1}
+    ComputerInstallationOptions:
+      type: object
+      additionalProperties: false
+      required: [releaseVersion, platforms]
+      properties:
+        releaseVersion: {type: string, minLength: 1, maxLength: 64}
+        platforms:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [osType, architectures]
+            properties:
+              osType: {type: string, enum: [macos]}
+              architectures:
+                type: array
+                minItems: 1
+                uniqueItems: true
+                items: {type: string, enum: [arm64]}
+    ComputerInstallationTargets:
+      type: object
+      additionalProperties: false
+      required: [releaseVersion, targets]
+      properties:
+        releaseVersion: {type: string, minLength: 1, maxLength: 64}
+        targets:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [target, osType, architecture]
+            properties:
+              target: {type: string, enum: [darwin-arm64, linux-amd64]}
+              osType: {type: string, enum: [macos, linux]}
+              architecture: {type: string, enum: [arm64, amd64]}
+    ComputerSetupCommand:
+      type: object
+      additionalProperties: false
+      required: [computerId, command, expiresAt, revision]
+      properties:
+        computerId: {$ref: '#/components/schemas/Id'}
+        command:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          readOnly: true
+          x-sensitive: true
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        revision: {$ref: '#/components/schemas/Revision'}
+    ComputerEnrollmentClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [osType, architecture, credentialDigest, installerVersion]
+      properties:
+        osType: {type: string, enum: [macos, linux]}
+        architecture: {type: string, enum: [arm64, amd64]}
+        credentialDigest:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          writeOnly: true
+          x-sensitive: true
+        installerVersion: {type: string, minLength: 1, maxLength: 64}
+        replacementGrant:
+          type: string
+          minLength: 32
+          maxLength: 4096
+          writeOnly: true
+          x-sensitive: true
+    ComputerEnrollmentClaim:
+      type: object
+      additionalProperties: false
+      required: [serverId, computerId, credentialId, credentialVersion, expiresAt]
+      properties:
+        serverId: {$ref: '#/components/schemas/Id'}
+        computerId: {$ref: '#/components/schemas/Id'}
+        credentialId: {$ref: '#/components/schemas/Id'}
+        credentialVersion: {type: integer, format: int64, minimum: 1}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    ComputerPreflightRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        replacement:
+          type: object
+          additionalProperties: false
+          required: [enrollmentToken, tatRegion, tatInstanceId]
+          properties:
+            enrollmentToken:
+              type: string
+              minLength: 1
+              maxLength: 2048
+              writeOnly: true
+              x-sensitive: true
+            tatRegion: {type: string, minLength: 1, maxLength: 64}
+            tatInstanceId: {type: string, pattern: '^rins-[A-Za-z0-9_-]+$', maxLength: 128}
+    ComputerPreflightRemoved:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum: [computer_removed, computer_provider_identity_gone]
+            message: {type: string}
+            requestId: {$ref: '#/components/schemas/Id'}
+            replacementGrant:
+              type: string
+              minLength: 32
+              maxLength: 4096
+              readOnly: true
+              x-sensitive: true
+    CreateComputerRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        osType:
+          type: string
+          enum: [macos, linux]
+          description: |
+            provisioning 且安装 target 尚未绑定时是用户选择的提示；首次兑换后由实际检测平台
+            覆盖，Computer active 后表示不可变的实际 OS。省略仅兼容旧客户端并按 macOS 创建。
+    TerminalSession:
+      type: object
+      additionalProperties: false
+      required:
+        [protocol, sessionId, webSocketUrl, expiresAt, authentication, terminal]
+      properties:
+        protocol:
+          type: string
+          enum: [tencent-tat-pty-v1]
+        sessionId: {type: string}
+        webSocketUrl: {type: string, format: uri, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        authentication:
+          $ref: '#/components/schemas/TerminalSessionAuthentication'
+        terminal:
+          $ref: '#/components/schemas/TerminalGeometry'
+    TerminalSessionAuthentication:
+      type: object
+      additionalProperties: false
+      required: [uin, appId, instanceId]
+      properties:
+        uin: {type: string}
+        appId: {type: integer, format: int64, minimum: 1}
+        instanceId: {type: string}
+    TerminalGeometry:
+      type: object
+      additionalProperties: false
+      required: [cols, rows, maxIdleSeconds]
+      properties:
+        cols: {type: integer, minimum: 1, maximum: 1000}
+        rows: {type: integer, minimum: 1, maximum: 1000}
+        maxIdleSeconds: {type: integer, minimum: 1, maximum: 86400}
+
+    IMMessageRef:
+      type: object
+      additionalProperties: false
+      required: [kind, messageId]
+      properties:
+        kind: {type: string, enum: [c2c, group]}
+        messageId: {type: string}
+        groupId: {type: string, nullable: true}
+        topicId: {type: string, nullable: true}
+        senderUserId: {type: string, nullable: true}
+        sequence: {type: integer, format: int64, minimum: 1, nullable: true}
+        timestamp: {type: integer, format: int64, minimum: 1, nullable: true}
+    NullableIMMessageRef:
+      type: object
+      nullable: true
+      allOf:
+        - {$ref: '#/components/schemas/IMMessageRef'}
+    ThreadMessageRef:
+      type: object
+      additionalProperties: false
+      required: [kind, messageId, sequence, timestamp]
+      properties:
+        kind: {type: string, enum: [c2c, group]}
+        messageId: {type: string, minLength: 1, maxLength: 512}
+        groupId: {type: string, nullable: true}
+        topicId: {type: string, nullable: true}
+        senderUserId: {type: string, nullable: true}
+        sequence: {type: integer, format: int64, minimum: 1}
+        timestamp: {type: integer, format: int64, minimum: 1}
+    MessageThread:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, channelId, rootMessageRef, replyCount, unreadCount,
+         createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        channelId: {$ref: '#/components/schemas/Id'}
+        rootMessageRef: {$ref: '#/components/schemas/ThreadMessageRef'}
+        replyCount: {type: integer, format: int64, minimum: 0}
+        unreadCount: {type: integer, format: int64, minimum: 0}
+        lastReplyAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+    EnsureMessageThreadRequest:
+      type: object
+      additionalProperties: false
+      required: [rootMessageRef]
+      properties:
+        rootMessageRef: {$ref: '#/components/schemas/ThreadMessageRef'}
+    ThreadReplyReference:
+      type: object
+      additionalProperties: false
+      required: [id, threadId, messageRef, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        threadId: {$ref: '#/components/schemas/Id'}
+        messageRef: {$ref: '#/components/schemas/ThreadMessageRef'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+    ServerPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Server'}
+        nextCursor: {$ref: '#/components/schemas/NullableCursor'}
+    MemberPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Member'}
+        nextCursor: {$ref: '#/components/schemas/NullableCursor'}
+    DirectConversationPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DirectConversation'}
+        nextCursor: {$ref: '#/components/schemas/NullableCursor'}
+    TaskPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Task'}
+        nextCursor: {$ref: '#/components/schemas/NullableCursor'}
+    ReminderOccurrencePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ReminderOccurrence'}
+        nextCursor: {$ref: '#/components/schemas/NullableCursor'}
+    ThreadReplyReferencePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ThreadReplyReference'}
+        nextCursor: {$ref: '#/components/schemas/NullableCursor'}
+    RegisterMessageThreadReplyRequest:
+      type: object
+      additionalProperties: false
+      required: [messageRef]
+      properties:
+        messageRef: {$ref: '#/components/schemas/ThreadMessageRef'}
+    MarkMessageThreadReadRequest:
+      type: object
+      additionalProperties: false
+      required: [lastReadRefId]
+      properties:
+        lastReadRefId: {$ref: '#/components/schemas/Id'}
+    Task:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, number, title, status, assignmentRevision,
+         createdByMemberId, updatedByMemberId, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        number: {type: integer, minimum: 1}
+        title: {type: string}
+        description: {type: string, nullable: true}
+        status:
+          type: string
+          enum: [todo, in_progress, in_review, done, closed]
+        ownerMemberId: {$ref: '#/components/schemas/NullableId'}
+        assignmentRevision: {$ref: '#/components/schemas/Revision'}
+        createdByMemberId: {$ref: '#/components/schemas/Id'}
+        updatedByMemberId: {$ref: '#/components/schemas/Id'}
+        sourceMessageRef: {$ref: '#/components/schemas/NullableIMMessageRef'}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+        description: {type: string, nullable: true, maxLength: 20000}
+        ownerMemberId: {$ref: '#/components/schemas/NullableId'}
+        sourceMessageRef: {$ref: '#/components/schemas/NullableIMMessageRef'}
+    UpdateTaskRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+        description: {type: string, nullable: true, maxLength: 20000}
+        status:
+          type: string
+          enum: [todo, in_progress, in_review, done, closed]
+        ownerMemberId: {$ref: '#/components/schemas/NullableId'}
+    RuntimeTaskStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [in_progress, in_review, done]
+
+    RuntimeDirectoryServer:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        slug: {type: string, minLength: 1, maxLength: 100}
+        name: {type: string, minLength: 1, maxLength: 200}
+    RuntimeDirectorySelf:
+      type: object
+      additionalProperties: false
+      required: [agentId, memberId, handle, displayName, imUserId]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        memberId: {$ref: '#/components/schemas/Id'}
+        handle: {type: string, minLength: 1, maxLength: 100}
+        displayName: {type: string, minLength: 1, maxLength: 200}
+        imUserId: {type: string, minLength: 1, maxLength: 255}
+    RuntimeDirectoryChannel:
+      type: object
+      additionalProperties: false
+      required:
+        [id, name, visibility, joined, imGroupId, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        name: {type: string, minLength: 1, maxLength: 200}
+        visibility: {type: string, enum: [public, private]}
+        joined: {type: boolean}
+        imGroupId: {type: string, minLength: 1, maxLength: 255}
+        imTopicId: {type: string, nullable: true, maxLength: 255}
+        imState: {type: string, enum: [provisioning, ready, error, deleting]}
+        revision: {$ref: '#/components/schemas/Revision'}
+    RuntimeDirectoryMember:
+      type: object
+      additionalProperties: false
+      required: [memberId, kind, handle, displayName, imUserId]
+      properties:
+        memberId: {$ref: '#/components/schemas/Id'}
+        kind: {type: string, enum: [human, agent]}
+        humanId: {$ref: '#/components/schemas/NullableId'}
+        agentId: {$ref: '#/components/schemas/NullableId'}
+        handle: {type: string, minLength: 1, maxLength: 100}
+        displayName: {type: string, minLength: 1, maxLength: 200}
+        imUserId: {type: string, minLength: 1, maxLength: 255}
+    RuntimeDirectoryDirectConversation:
+      type: object
+      additionalProperties: false
+      required: [id, peerMemberId, imGroupId, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        peerMemberId: {$ref: '#/components/schemas/Id'}
+        imGroupId: {type: string, minLength: 1, maxLength: 255}
+        imState: {$ref: '#/components/schemas/DirectConversationIMState'}
+        revision: {$ref: '#/components/schemas/Revision'}
+    RuntimeDirectory:
+      type: object
+      additionalProperties: false
+      required: [server, self, channels, members, revision, expiresAt]
+      properties:
+        server: {$ref: '#/components/schemas/RuntimeDirectoryServer'}
+        self: {$ref: '#/components/schemas/RuntimeDirectorySelf'}
+        channels:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryChannel'}
+        members:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryMember'}
+        revision: {type: string, minLength: 1, maxLength: 512}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    RuntimeDirectoryV2:
+      type: object
+      additionalProperties: false
+      required:
+        [server, self, channels, members, directConversations, revision, expiresAt]
+      properties:
+        server: {$ref: '#/components/schemas/RuntimeDirectoryServer'}
+        self: {$ref: '#/components/schemas/RuntimeDirectorySelf'}
+        channels:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryChannel'}
+        members:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryMember'}
+        directConversations:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryDirectConversation'}
+        revision: {type: string, minLength: 1, maxLength: 512}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    RuntimeChannelMembers:
+      type: object
+      additionalProperties: false
+      required: [channel, members, revision, expiresAt]
+      properties:
+        channel: {$ref: '#/components/schemas/RuntimeDirectoryChannel'}
+        members:
+          type: array
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/RuntimeDirectoryMember'}
+        revision: {type: string, minLength: 1, maxLength: 512}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    ResolveRuntimeThreadRequest:
+      type: object
+      additionalProperties: false
+      required: [channelId, rootMessageRef]
+      properties:
+        channelId: {$ref: '#/components/schemas/Id'}
+        rootMessageRef: {$ref: '#/components/schemas/ThreadMessageRef'}
+    RegisterRuntimeThreadReplyRequest:
+      type: object
+      additionalProperties: false
+      required: [channelId, messageRef]
+      properties:
+        channelId: {$ref: '#/components/schemas/Id'}
+        messageRef: {$ref: '#/components/schemas/ThreadMessageRef'}
+
+    RuntimeReminderAnchor:
+      type: object
+      additionalProperties: false
+      required: [kind, channelId]
+      description: |
+        message 锚点必须提供 messageRef 且不得提供 threadId/rootMessageRef；
+        thread 锚点必须提供 threadId/rootMessageRef 且不得提供 messageRef。
+      properties:
+        kind: {type: string, enum: [message, thread]}
+        channelId: {$ref: '#/components/schemas/Id'}
+        threadId:
+          allOf: [{$ref: '#/components/schemas/Id'}]
+          nullable: true
+        messageRef:
+          allOf: [{$ref: '#/components/schemas/ThreadMessageRef'}]
+          nullable: true
+        rootMessageRef:
+          allOf: [{$ref: '#/components/schemas/ThreadMessageRef'}]
+          nullable: true
+    RuntimeReminder:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, agentId, scheduleKind, schedule, timezone, text,
+         status, revision, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        agentId: {$ref: '#/components/schemas/Id'}
+        scheduleKind: {type: string, enum: [once, cron]}
+        schedule: {type: string}
+        timezone: {type: string}
+        text: {type: string}
+        status: {type: string, enum: [active, paused, completed, canceled]}
+        nextFireAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        anchor:
+          allOf: [{$ref: '#/components/schemas/RuntimeReminderAnchor'}]
+          nullable: true
+        revision: {$ref: '#/components/schemas/Revision'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CreateRuntimeReminderRequest:
+      type: object
+      additionalProperties: false
+      required: [scheduleKind, schedule, timezone, text]
+      properties:
+        scheduleKind: {type: string, enum: [once, cron]}
+        schedule: {type: string, minLength: 1, maxLength: 200}
+        timezone: {type: string, minLength: 1, maxLength: 100}
+        text: {type: string, minLength: 1, maxLength: 5000}
+        anchor:
+          allOf: [{$ref: '#/components/schemas/RuntimeReminderAnchor'}]
+          nullable: true
+    UpdateRuntimeReminderRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        schedule: {type: string, minLength: 1, maxLength: 200}
+        timezone: {type: string, minLength: 1, maxLength: 100}
+        text: {type: string, minLength: 1, maxLength: 5000}
+        status: {type: string, enum: [active, paused]}
+        anchor:
+          allOf: [{$ref: '#/components/schemas/RuntimeReminderAnchor'}]
+          nullable: true
+    SnoozeRuntimeReminderRequest:
+      type: object
+      additionalProperties: false
+      required: [delaySeconds]
+      properties:
+        delaySeconds:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 31536000
+
+    Reminder:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, agentId, createdByMemberId, scheduleKind, schedule,
+         timezone, text, status, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        agentId: {$ref: '#/components/schemas/Id'}
+        createdByMemberId: {$ref: '#/components/schemas/Id'}
+        scheduleKind: {type: string, enum: [once, cron]}
+        schedule: {type: string}
+        timezone: {type: string}
+        text: {type: string}
+        status: {type: string, enum: [active, paused, completed, canceled]}
+        nextFireAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        revision: {$ref: '#/components/schemas/Revision'}
+    CreateReminderRequest:
+      type: object
+      additionalProperties: false
+      required: [agentId, scheduleKind, schedule, timezone, text]
+      properties:
+        agentId: {$ref: '#/components/schemas/Id'}
+        scheduleKind: {type: string, enum: [once, cron]}
+        schedule:
+          type: string
+          maxLength: 200
+          description: once 使用未来 RFC3339；cron 使用标准五字段表达式，不含秒字段
+        timezone: {type: string, maxLength: 100}
+        text: {type: string, minLength: 1, maxLength: 5000}
+    UpdateReminderRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        schedule: {type: string, maxLength: 200}
+        timezone: {type: string, maxLength: 100}
+        text: {type: string, minLength: 1, maxLength: 5000}
+        status: {type: string, enum: [active, paused, canceled]}
+    ReminderOccurrence:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, reminderId, agentId, scheduledFireAt, state, text]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        reminderId: {$ref: '#/components/schemas/Id'}
+        agentId: {$ref: '#/components/schemas/Id'}
+        scheduledFireAt: {$ref: '#/components/schemas/Timestamp'}
+        state: {type: string, enum: [due, acknowledged, canceled]}
+        text: {type: string}
+        acknowledgedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        resultCode: {type: string, nullable: true}
+
+    InboxItem:
+      type: object
+      additionalProperties: false
+      required: [id, serverId, kind, title, status, resourceId, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        kind: {type: string, enum: [task]}
+        title: {type: string}
+        status:
+          type: string
+          enum: [todo, in_progress, in_review]
+        resourceId: {$ref: '#/components/schemas/Id'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    ActivityItem:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serverId, kind, resourceType, resourceId, summary, occurredAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        serverId: {$ref: '#/components/schemas/Id'}
+        kind:
+          type: string
+          enum: [task.changed, reminder.changed]
+        resourceType:
+          type: string
+          enum: [task, reminder]
+        resourceId: {$ref: '#/components/schemas/Id'}
+        summary: {type: string}
+        occurredAt: {$ref: '#/components/schemas/Timestamp'}
+
+    Operation:
+      type: object
+      additionalProperties: false
+      required: [id, service, kind, state, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        service: {type: string, enum: [im, tat, platform]}
+        kind: {type: string}
+        state:
+          type: string
+          enum: [pending, running, retry_wait, succeeded, failed, uncertain, superseded]
+          x-enum-varnames:
+            [OperationStatePending, OperationStateRunning, OperationStateRetryWait,
+             OperationStateSucceeded, OperationStateFailed,
+             OperationStateUncertain, OperationStateSuperseded]
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        completedAt: {$ref: '#/components/schemas/NullableTimestamp'}
+        error:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}

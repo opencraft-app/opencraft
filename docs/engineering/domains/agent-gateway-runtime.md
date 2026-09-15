@@ -14,6 +14,8 @@
 | `workers` | Temporal workflow、运行时救援导出与恢复作业 |
 | `velalink` | 桌面/Chat UI、daemon 与本地观测 |
 | `opencraft` | Codex-faithful Chat Runtime、多端 Workbench、AppServer/Hermes 转译与扩展运行时 |
+| `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
+| `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
 ## 稳定不变量
 
