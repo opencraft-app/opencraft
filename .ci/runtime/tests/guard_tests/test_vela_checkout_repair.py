@@ -57,15 +57,44 @@ class VelaCheckoutRepairTests(unittest.TestCase):
             self.assertEqual(len(quarantines), 1)
             self.assertTrue((quarantines[0] / "git/HEAD").is_file())
             self.assertEqual(quarantines[0].stat().st_mode & 0o777, 0o700)
-            self.assertEqual((cached / "business-data").read_text(), "preserve me")
+            self.assertEqual((quarantines[0] / "worktree/business-data").read_text(), "preserve me")
             self.git(cached, "init", "-q")
             self.git(cached, "remote", "add", "origin", remote.as_uri())
             self.git(cached, "fetch", "origin", "master")
-            self.git(cached, "checkout", "--detach", "--force", "FETCH_HEAD")
+            self.git(cached, "checkout", "--detach", "FETCH_HEAD")
             self.git(cached, "rev-list", "--objects", "--all")
             self.assertEqual(self.git(cached, "rev-parse", "--is-shallow-repository").stdout.strip(), "false")
             self.git(cached, "rev-parse", "HEAD^")
-            self.assertEqual((cached / "business-data").read_text(), "preserve me")
+            self.assertEqual((quarantines[0] / "worktree/business-data").read_text(), "preserve me")
+
+    def test_sdk_baseline_checkout_then_merge_does_not_collide_with_old_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remote = self.repository(root / "remote")
+            baseline = self.git(remote, "rev-parse", "HEAD").stdout.strip()
+            (remote / "new-source.txt").write_text("target source")
+            self.git(remote, "add", "new-source.txt")
+            self.git(remote, "commit", "-qm", "feature")
+            target = self.git(remote, "rev-parse", "HEAD").stdout.strip()
+            cached = root / "cached"
+            subprocess.run(["git", "clone", remote.as_uri(), str(cached)],
+                           check=True, capture_output=True, text=True)
+            (cached / ".hidden-business-data").write_text("private marker")
+            result = self.repair(cached)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.git(cached, "init", "-q")
+            self.git(cached, "remote", "add", "origin", remote.as_uri())
+            self.git(cached, "fetch", "origin", "master")
+            # SDK can replace baseline files, but pull/merge still rejects
+            # leftover files introduced only by the target commit.
+            self.git(cached, "checkout", "--detach", "--force", baseline)
+            merged = self.git(cached, "merge", "--ff-only", target, check=False)
+            self.assertEqual(merged.returncode, 0, merged.stderr)
+            self.assertEqual(self.git(cached, "rev-parse", "HEAD").stdout.strip(), target)
+            self.assertEqual((cached / "new-source.txt").read_text(), "target source")
+            quarantine = next(cached.glob(".checkout-quarantine.*"))
+            self.assertEqual((quarantine / "worktree/new-source.txt").read_text(), "target source")
+            self.assertEqual((quarantine / "worktree/.hidden-business-data").read_text(), "private marker")
 
     def test_healthy_full_and_valid_shallow_metadata_is_also_isolated(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -85,7 +114,7 @@ class VelaCheckoutRepairTests(unittest.TestCase):
                     quarantines = list(repo.glob(".checkout-quarantine.*"))
                     self.assertEqual(len(quarantines), 1)
                     self.assertTrue((quarantines[0] / "git/HEAD").is_file())
-                    self.assertEqual((repo / "business-data").read_text(), "preserve me")
+                    self.assertEqual((quarantines[0] / "worktree/business-data").read_text(), "preserve me")
 
     def test_pipeline_disables_shallow_checkout(self):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/vela-computer.yml").read_text())
@@ -93,14 +122,38 @@ class VelaCheckoutRepairTests(unittest.TestCase):
         checkout = next(step for step in steps if "checkout" in step)
         self.assertEqual(checkout["with"]["fetchDepth"], 0)
 
-    def test_empty_checkout_preserves_existing_worktree_files(self):
+    def test_checkout_without_metadata_also_isolates_leftover_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "business-data").write_text("preserve me")
             result = self.repair(root)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual((root / "business-data").read_text(), "preserve me")
-            self.assertEqual(list(root.glob(".checkout-quarantine.*")), [])
+            quarantine = next(root.glob(".checkout-quarantine.*"))
+            self.assertEqual((quarantine / "worktree/business-data").read_text(), "preserve me")
+            self.assertFalse((root / "business-data").exists())
+
+    def test_completely_empty_checkout_needs_no_quarantine(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(self.repair(root).returncode, 0)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_old_quarantine_and_external_symlink_payload_are_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cached = self.repository(root / "cached")
+            external = root / "external-data"
+            external.write_text("do not change")
+            (cached / "external-link").symlink_to(external)
+            old = cached / ".checkout-quarantine.old"
+            old.mkdir(mode=0o700)
+            (old / "marker").write_text("old payload")
+            result = self.repair(cached)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            quarantine = next(path for path in cached.glob(".checkout-quarantine.*") if path != old)
+            self.assertTrue((quarantine / "worktree/external-link").is_symlink())
+            self.assertEqual(external.read_text(), "do not change")
+            self.assertEqual((old / "marker").read_text(), "old payload")
 
     def test_symlink_gitdir_and_shared_worktree_markers_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

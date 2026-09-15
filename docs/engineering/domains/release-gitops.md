@@ -27,11 +27,13 @@ master 源码
 
 ## 不变量
 
-- vela-computer候选流水线在checkout前独立内联隔离全部复用的普通`.git`元数据，关闭浅克隆
+- vela-computer候选流水线在checkout前独立内联隔离旧工作树和全部复用的普通`.git`元数据，关闭浅克隆
   （`fetchDepth=0`），让checkout从空对象库获取完整历史。连通性正常的浅缓存也不复用：
   SDK按SHA做depth1增量fetch时曾在预检通过后仍报缺失父对象，预检不能覆盖该协商失败路径。
-  元数据只移入当前CI目录的0700私有隔离目录，由checkout
-  插件重建，不删工作树/制品/业务数据；拒绝symlink、gitfile和共享commondir，隔离目录不归档。
+  仅隔离元数据会使旧源码成为未跟踪文件，SDK先checkout基线再merge目标提交时仍可能拒绝覆盖。
+  当前候选CI目录的旧内容移入0700私有隔离目录：元数据置于`git`，工作树/制品/业务文件置于
+  `worktree`，不删除，必要时可恢复；即使`.git`缺失也隔离遗留文件。旧隔离目录保留原位，
+  不跟随普通文件的外部symlink；拒绝symlink/gitfile类型的`.git`和共享commondir，隔离目录不归档。
   checkout后在执行源码脚本前核对完整目标SHA与HEAD连通性；干净对象库与全量拉取必须同时成立。
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用

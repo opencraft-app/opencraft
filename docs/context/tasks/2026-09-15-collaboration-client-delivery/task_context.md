@@ -64,6 +64,7 @@ release-gitops、service-ci、service-opencraft、service-collaboration、servic
 | docs/context/domains/agent-gateway-runtime.md@2.1.0、site-environment-routing.md@2.0.0 | 责任与地域 | 不把Web产物当Host/实例 |
 | docs/context/project/upstream-subtrees.md@2.1.0、opencraft/MONO2_MIGRATION.md | 真源 | mono2唯一写入，不恢复旧仓库CI |
 | .ci/AGENTS.md、opencraft/docs/build-matrix.md、config/build-matrix.json | 构建矩阵 | 独立产品产物与平台 |
+| docs/context/project/adjacency/argocd-ci-secrets.md、.ci/runtime/tests/contract_tests/test_vela_computer_artifact.py | checkout修复邻接 | 候选仍只归档精确SHA，不增加部署/凭据路径 |
 | opencraft/.agents/skills/opencraft-maintenance/SKILL.md、references/verification.md | 维护 | 聚焦测试与实机边界 |
 
 ## evidence
@@ -115,4 +116,13 @@ OpenCraft沿用现有Web本地发布契约，不恢复专用CI；明确产品产
 - 用户确认新策略：候选每次隔离全部复用普通.git元数据并fetchDepth=0，全量从空对象库拉取；正常浅缓存不再保留复用，不删除业务文件，仍拒绝链接/共享gitdir。
 - RED：旧策略在健康full/shallow fixture仍留.git，且depth仍为1；新回归按目标策略失败。
 - GREEN：5项Git回归通过，包括健康full/shallow也隔离、缺父对象后fresh full fetch与父提交可读、空checkout和共享gitdir边界；完整CI runtime531项、物化smoke、shell/YAML/文档通过。
+
+## 全量checkout的旧工作树冲突
+
+- 061ed8a0已推送!4028；候选#6于2026-09-15 17:06:17运行，准备成功2秒，拉取45秒后因`untracked working tree files would be overwritten by merge`失败；尚未执行源码校验/构建。
+- 新错误不同于缺父对象，不据此宣称完整checkout已恢复。仅移动.git留下本分支新增源码，基线checkout后merge目标提交会拒绝覆盖。
+- 本版取代之前“工作树/业务文件不动”的操作细节：仅候选CI工作目录内，旧工作树及元数据一起私有移动、不删除；业务文件和制品可从隔离目录worktree恢复。无.git遗留也处理，旧隔离目录原位保留，不跟随外部symlink；shared gitdir仍拒绝。
+- RED：真实Git基线checkout再ff-only merge复现相同untracked冲突；原强制目标checkout测试漏掉了这个路径。
+- GREEN：8项真实Git回归、完整CI runtime534项及物化smoke/shell/YAML通过；文档、docs-impact、限定范围凭证扫描、diff check通过。
+- Context仍833条错误（本Pack为0），Context tests26项中4项失败；Audit发现结果needs_agent_review/not_assessed，不称完整Context验收。未手动重跑、清理真实CI缓存、提交/推送新版本或部署；真实SDK新版本仍待CI验证。
 - 真实CI重跑/恢复尚未证明，待源码验证及推送确认；不合并、不部署。
