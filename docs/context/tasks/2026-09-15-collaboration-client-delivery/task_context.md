@@ -143,4 +143,11 @@ OpenCraft沿用现有Web本地发布契约，不恢复专用CI；明确产品产
 - 仅改service_test.go夹具：通用模拟release/launcher使用显式Darwin Platform；原独立Linux fixture和生产平台匹配校验保持不变。不skip测试，不删除安装/TAT逻辑，不恢复外部纳管产品路径。
 - RED本机显式注入Linux复现首次安装未到launcher（starts=0）；GREEN修正模拟平台后install包通过，新增首次失败必须到达launcher断言。该复现验证平台逻辑，不等于真实Linux进程执行。
 - 全量Go guard（test/vet/相关race）、限定范围凭证扫描、docs-impact、文档和diff check通过；Linux AMD64 install测试二进制交叉编译通过，但未执行该二进制。本机Docker default/orbstack均不可用，不启动或安装新环境，真实Linux执行仍待下一轮CI。未提交/推送、手动重跑、合并或部署。
+
+## Linux CLI默认目录断言
+
+- 0e385a28已推送；候选#12（2026-09-15 17:39:46）checkout、source确认和install包通过，剩CLI的TestHiddenInstallDefaultsToPrivateComputerSubdirectory在root_test.go:141期待Mac路径而失败，尚未构建/归档。
+- RED为真实Linux日志：实际InstallationRoot=/var/lib/vela/computer，测试期待HOME/.vela/computer。生产按build tag选择默认目录，实际Linux行为正确，不能为测试修改产品路径。
+- 仅修root_test.go：测试更名为平台默认目录测试；按runtime.GOOS显式期待Linux固定目录或Mac HOME子目录，不调用生产函数生成want值。保留state子目录断言，不skip；同目录其他Darwin/.vela测试均显式传installation-root，无须修改。
+- 本机CLI独立测试、完整Go guard（test/vet/相关race）、限定范围凭证扫描和diff check通过；Linux AMD64 CLI测试二进制交叉编译通过，未执行。真实Linux行为仍待下一轮CI验收，新代码未提交/推送，不重跑、合并或部署。
 - 真实CI重跑/恢复尚未证明，待源码验证及推送确认；不合并、不部署。
