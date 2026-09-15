@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import zhToKey from "../../../i18n/generated/zh-to-key.json";
 import { getAgentCreateErrorMessage } from "../agent-create-error";
 
@@ -26,9 +27,18 @@ describe("getAgentCreateErrorMessage", () => {
 
   it("将 Profile capability 错误转成升级提示", () => {
     const error = Object.assign(new Error("Hermes profile capability is unavailable"), {
-      code: "INSTANCE_BOT_UNSUPPORTED",
+      code: INSTANCE_BOT_ERROR_CODE.unsupported,
     });
-    expect(getAgentCreateErrorMessage(error)).toBe("当前实例版本暂不支持多 Bot，请升级 Agent 后重试。");
+    expect(getAgentCreateErrorMessage(error)).toBe(
+      "当前 Hermes 运行环境不可用，请先在诊断中心重置 Hermes 后重试。",
+    );
+  });
+
+  it("将服务端多 Bot 开关关闭转成环境提示", () => {
+    const error = Object.assign(new Error("multi bot is disabled"), {
+      code: INSTANCE_BOT_ERROR_CODE.disabled,
+    });
+    expect(getAgentCreateErrorMessage(error)).toBe("当前环境暂未开放多 Bot。");
   });
 
   it("将 Profile 操作失败转成友好提示并保留问题编号", () => {
@@ -36,7 +46,7 @@ describe("getAgentCreateErrorMessage", () => {
       new Error(
         "Hermes profile operation failed（INSTANCE_BOT_PROFILE_FAILED, request_id=f489b1da-e4b5-439e-8813-79b10a8dcc94）",
       ),
-      { code: "INSTANCE_BOT_PROFILE_FAILED" },
+      { code: INSTANCE_BOT_ERROR_CODE.profileFailed },
     );
 
     expect(getAgentCreateErrorMessage(error)).toBe(
@@ -46,7 +56,7 @@ describe("getAgentCreateErrorMessage", () => {
 
   it("Profile 操作失败没有问题编号时使用简短提示", () => {
     const error = Object.assign(new Error("Hermes profile operation failed"), {
-      code: "INSTANCE_BOT_PROFILE_FAILED",
+      code: INSTANCE_BOT_ERROR_CODE.profileFailed,
     });
 
     expect(getAgentCreateErrorMessage(error)).toBe("暂时无法创建 Bot，请稍后重试。");
@@ -64,7 +74,8 @@ describe("getAgentCreateErrorMessage", () => {
       "当前资源暂时售罄，请稍后再试。",
       "创建超时，请稍后重试。",
       "网络异常，请检查网络后重试。",
-      "当前实例版本暂不支持多 Bot，请升级 Agent 后重试。",
+      "当前 Hermes 运行环境不可用，请先在诊断中心重置 Hermes 后重试。",
+      "当前环境暂未开放多 Bot。",
       "暂时无法创建 Bot，请稍后重试。",
       "暂时无法创建 Bot，请稍后重试。问题编号：{requestId}",
       "创建失败，请稍后重试。",
