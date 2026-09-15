@@ -7,14 +7,41 @@ import yaml
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
 
 
+def stream_workflow(source: str) -> dict:
+    # Stream V2 ScriptYmlUtils.formatYamlCustom recognizes only a literal
+    # top-level on: line before mapping it to the internal triggerOn field.
+    # Parsing the original with PyYAML alone would accept the broken "on":
+    # spelling (and treats unquoted on as a YAML 1.1 boolean).
+    normalized = "\n".join(
+        "triggerOn:" if line.rstrip().startswith("on:") else line.rstrip()
+        for line in source.splitlines()
+    )
+    return yaml.safe_load(normalized)
+
+
 class VelaComputerArtifactContractTests(unittest.TestCase):
+    def test_trigger_configuration_survives_stream_preprocessing(self) -> None:
+        source = (REPO_ROOT / ".ci/vela-computer.yml").read_text()
+        workflow = stream_workflow(source)
+        self.assertIn("triggerOn", workflow, "Stream ignores quoted on and enables default wildcard triggers")
+        trigger = workflow["triggerOn"]
+        self.assertEqual(set(trigger), {"push", "manual"})
+        self.assertEqual(trigger["manual"], "enabled")
+        self.assertEqual(trigger["push"]["branches"], ["master"])
+        self.assertEqual(trigger["push"]["paths"], ["vela-computer/**"])
+        self.assertEqual(trigger["push"]["paths-ignore"], ["OWNERS", "**/OWNERS"])
+        # Guard the regression fixture: ordinary YAML parsing does not catch it.
+        quoted = source.replace("\non:", '\n"on":', 1)
+        self.assertIn("on", yaml.safe_load(quoted))
+        self.assertNotIn("triggerOn", stream_workflow(quoted))
+
     def test_pipeline_builds_only_candidates_and_archives_the_exact_revision(self) -> None:
         path = REPO_ROOT / ".ci/vela-computer.yml"
         self.assertTrue(path.is_file(), "missing vela-computer candidate artifact pipeline")
-        workflow = yaml.safe_load(path.read_text())
+        workflow = stream_workflow(path.read_text())
         self.assertEqual(workflow["concurrency"]["group"], "mono2-vela-computer-candidate")
-        self.assertEqual(workflow["on"]["push"]["branches"], ["master"])
-        self.assertEqual(workflow["on"]["push"]["paths"], ["vela-computer/**"])
+        self.assertEqual(workflow["triggerOn"]["push"]["branches"], ["master"])
+        self.assertEqual(workflow["triggerOn"]["push"]["paths"], ["vela-computer/**"])
         jobs = workflow["stages"][0]["jobs"]
         steps = jobs["candidate"]["steps"]
         build = next(step for step in steps if step.get("name") == "构建候选制品")
