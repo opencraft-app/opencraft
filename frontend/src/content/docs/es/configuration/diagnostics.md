@@ -49,13 +49,12 @@ Al reportar un problema, incluye:
 
 Si el Agent no puede usar el modelo configurado y el problema persiste después de verificar el proveedor, la selección de modelo y las credenciales, selecciona **Restablecer configuración de modelo** en Diagnóstico.
 
-Esto restaura la configuración del modelo del Hermes Agent para que puedas configurarlo de nuevo. Después de que termine:
+Esto restablece únicamente el perfil de Hermes del Bot actual. Restaura el modelo integrado del sistema y su credencial, y elimina los modelos, proveedores y modelos de respaldo añadidos por el usuario. Los demás Bots del mismo Agent no se ven afectados. Después de que termine:
 
-1. Vuelve a [Configurar Modelos](./model.md).
-2. Añade o selecciona el modelo que deseas usar.
-3. Envía un mensaje de prueba breve en [Chat](./agent-chat.md).
+1. Envía un mensaje de prueba breve en [Chat](./agent-chat.md) para confirmar que el modelo integrado funciona.
+2. Si aún necesitas un modelo personalizado, vuelve a [Configurar Modelos](./model.md) y añádelo o selecciónalo de nuevo.
 
-> **Precaución:** Restablece la configuración del modelo solo cuando estés listo para configurar de nuevo un modelo funcional. No es la primera respuesta ante un problema temporal de proveedor o de red.
+> **Precaución:** La configuración de modelos añadida por el usuario no se conserva. No debe ser la primera respuesta ante un problema temporal del proveedor o de la red.
 
 ## Reinstalar un Agent manteniendo los datos
 

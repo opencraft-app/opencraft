@@ -65,6 +65,10 @@ import {
   type IProductConfig,
 } from "@/pages/marketing/agent-config";
 import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import {
+  createHermesModelConfigClient,
+  HermesModelConfigResponseError,
+} from "@/pages/marketing/agent-model-config/model-config-client";
 import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
@@ -145,10 +149,7 @@ import {
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
-  hermesModelName,
-  hermesSwitchModelFullId,
   isExecCommandSucceeded,
-  isResetConfigRouteMissingError,
   truncateExecOutput,
   ACLI_RESET_COMMAND,
   RESET_BLOCK_REASON,
@@ -3353,13 +3354,7 @@ export const AgentSettingsPage = ({
     }
   };
 
-  /*
-   * 重置配置（轮换 API Key）相关
-   * ──────────────────────────────────────────────────────────────
-   * 服务端 reset 成功后旧 key 立即作废；前端必须把本次返回的新运行时
-   * config 立刻下发到实例。若后续 acli 命令失败，用户再次重置会重新
-   * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
-   */
+  /* 重置当前 Bot/Profile 的模型配置；不调用实例级 Key 轮换接口。 */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -3381,7 +3376,7 @@ export const AgentSettingsPage = ({
   }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
-    if (botsLoading || !isActiveBotDefault || maintenanceBusy || getResetBlockReason(activeBot, resetting, remainingInstanceBotCount)) return;
+    if (botsLoading || maintenanceBusy || getResetBlockReason(activeBot, resetting)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
@@ -3391,70 +3386,21 @@ export const AgentSettingsPage = ({
     });
     setResetting(true);
     try {
-      const result = await repositories.bots.resetInstanceConfig(targetBotId);
-
-      const resetBackendResult = await repositories.bots.execDebugCommand(
+      const modelConfigClient = createHermesModelConfigClient(
+        repositories.bots.execDebugCommand,
         targetBotId,
-        "acli backend reset-config",
+        activeBot.profileId,
       );
-      if (!isExecCommandSucceeded(resetBackendResult)) {
-        throw new Error(
-          t("初始化配置文件失败：{{detail}}", {
-            detail: truncateExecOutput(resetBackendResult.output, resetBackendResult.status),
-          }),
-        );
-      }
-
-      const hermesScriptCommands = await getHermesScriptCommands(activeBot?.profileId);
-      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
-        name: result.config.providerName,
-        baseUrl: result.config.baseUrl,
-        api: result.config.api,
-        apiKey: result.config.apiKey,
-        models: [{ id: result.config.modelId, name: hermesModelName(result.config.modelId) }],
-      });
-      const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
-      if (!isExecCommandSucceeded(providerSaveResult)) {
-        const sanitizedOutput = result.config.apiKey
-          ? providerSaveResult.output.replace(
-            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-            "sk-***",
-          )
-          : providerSaveResult.output;
-        throw new Error(
-          t("默认模型保存失败：{{detail}}", {
-            detail: truncateExecOutput(sanitizedOutput, providerSaveResult.status),
-          }),
-        );
-      }
-
-      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
-        hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
-      );
-      const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
-      if (!isExecCommandSucceeded(switchModelResult)) {
-        const sanitizedSwitchOutput = result.config.apiKey
-          ? switchModelResult.output.replace(
-            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-            "sk-***",
-          )
-          : switchModelResult.output;
-        throw new Error(
-          t("默认模型切换失败：{{detail}}", {
-            detail: truncateExecOutput(sanitizedSwitchOutput, switchModelResult.status),
-          }),
-        );
-      }
+      await modelConfigClient.resetToBuiltIn();
 
       setShowResetConfirm(false);
-      toast.success(t("重置成功"));
+      toast.success(t("已恢复当前 Bot 的系统内置模型"));
     } catch (err) {
       const fallbackMessage = t("重置失败，请重试");
-      const resetErrorCode = err && typeof err === "object" && "code" in err ? err.code : undefined;
-      const message = resetErrorCode === "INSTANCE_CONFIG_RESET_MULTI_BOT"
-        ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
-        : isResetConfigRouteMissingError(err)
-        ? t("当前后端服务暂不支持重置配置，请稍后再试。")
+      const message = err instanceof HermesModelConfigResponseError && err.code === "helper_error"
+        ? err.message === "built_in_unavailable"
+          ? t("当前 Bot 的系统内置模型配置不完整，未进行任何更改。")
+          : t("当前 Bot 的模型配置恢复失败，原配置已保留。")
         : err instanceof Error ? err.message : fallbackMessage;
       toast.error(message);
     } finally {
@@ -4763,9 +4709,9 @@ export const AgentSettingsPage = ({
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置模型配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将初始化 Hermes Agent 的模型配置，")}
+              {t("将把当前 Bot「{{name}}」恢复为系统内置模型，", { name: resolveAgentDisplayName(activeBot.name, t) })}
               <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
-                {t("模型相关配置不会保留。")}
+                {t("用户添加的模型、Provider 和备用模型不会保留。")}
               </span>
               {t("期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}
             </p>
@@ -5089,13 +5035,11 @@ export const AgentSettingsPage = ({
               const isRepairingBot = repairingBotIds.has(activeBot.id);
               const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
               const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
-              const resetBlockReason = getResetBlockReason(activeBot, resetting, remainingInstanceBotCount);
-              const resetDisabled = botsLoading || !isActiveBotDefault || maintenanceBusy || resetBlockReason !== null;
-              const resetTooltip = resetBlockReason === RESET_BLOCK_REASON.MULTI_BOT
-                ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
-                : maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
-                  ? t("请稍后")
-                  : t("重置模型配置");
+              const resetBlockReason = getResetBlockReason(activeBot, resetting);
+              const resetDisabled = botsLoading || maintenanceBusy || resetBlockReason !== null;
+              const resetTooltip = maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
+                ? t("请稍后")
+                : t("重置当前 Bot 模型配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
               const acliResetDisabled = !isActiveBotDefault || maintenanceBusy || acliResetBlockReason !== null;
               const acliResetTooltip =
