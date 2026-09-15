@@ -29,7 +29,10 @@ master 源码
 
 - 前端 MR guard 的隔离工作目录必须保持 `frontend/package.json` 中本地 `file:` 依赖的相对布局：
   当前复制 `frontend`、`velalink` 和 `shared/lightvela-agent-core`，排除依赖目录与构建缓存后执行
-  frozen install。回归测试应实际执行复制命令并逐个验证本地依赖源码存在，不能仅检查固定目录名。
+  frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。
+  MR runner 仍从可信 `origin/master` 提取注册入口；旧 guard 无法校验自身修复时，先通过独立
+  `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
+  回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸

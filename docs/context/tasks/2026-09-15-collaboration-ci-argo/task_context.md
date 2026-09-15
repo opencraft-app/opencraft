@@ -119,3 +119,13 @@ release-gitops、service-ci、site-environment-routing、service-collaboration�
 - 首次本地调用漏传GUARD_REPO_ROOT导致1项stash测试失败；按changed_guards.py注入仓库根目录后125项全通过，不改源码掩盖调用差异。
 - 文档与docs-impact通过；Context26项仍为4个既有失败，audit tests33项通过；audit发现为needs_agent_review/not_assessed，不作为完整审核。
 - !4021已合入master 1e20fd3b5；修复改用fix/frontend-guard-local-dependencies后续分支，不能追加到已合MR。下一步commit/push；新MR和Linux CI结果待确认，未合并、未发布。
+
+## 两步可信 guard 自修复
+
+- 用户追加授权：“mr 合入”，并确认两步方案后要求“继续”；仅源码合入，不部署。
+- !4022/#5623失败：runner从origin/master提取旧frontend guard，临时目录仍缺共享包，exit254；不绕过可信ref或fallback。
+- 第一步!4023：仅3个.CI文件新增修正的可信入口、registry和真实复制测试；522项runtime/smoke通过，远端必要检查与评审通过，已合入master。
+- 第二步!4022：frontend入口仅转发到.CI实现，复制回归集中到guard_tests，新增参数/环境/退出码转发测试并将新脚本纳入shell检查。
+- 阅读依据沿用CI/frontend/release/site Packs与两个服务AGENTS；邻接argocd-ci-secrets核对mr-placeholder.yml及changed_guards.py。
+- RED：转发测试期望新guard退出23，旧独立实现退出1；GREEN为3项guard测试、2项前端契约测试、523项runtime/smoke/shell/YAML、文档校验通过。
+- 下一步：推送!4022收敛变更，使用修正后的可信guard，等待必要检查后合入master；不部署。

@@ -1,9 +1,7 @@
 import json
-import os
 import re
 import subprocess
 import sys
-import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -2700,7 +2698,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         artifact_builder_text = (REPO_ROOT / "frontend/scripts/build-release-artifacts.mjs").read_text()
 
         frontend_scripts = package_json["scripts"]
@@ -2734,47 +2732,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
-    def test_frontend_mr_guard_copies_all_local_package_dependencies(self) -> None:
-        package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
-        local_dependencies = {
-            spec.removeprefix("file:")
-            for section in ("dependencies", "devDependencies", "optionalDependencies")
-            for spec in package_json.get(section, {}).values()
-            if spec.startswith("file:")
-        }
-        self.assertTrue(local_dependencies)
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
-        copy_command = guard_text.split("\ntar \\\n", 1)[1].split('\n\ncd "$FRONTEND_GUARD_DIR"', 1)[0]
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "source"
-            destination = Path(tmp) / "destination"
-            (source / "frontend").mkdir(parents=True)
-            destination.mkdir()
-            (source / "frontend/package.json").write_text(json.dumps(package_json))
-            for relative_path in local_dependencies:
-                package = (source / "frontend" / relative_path).resolve()
-                package.mkdir(parents=True, exist_ok=True)
-                (package / "package.json").write_text('{"name":"fixture","version":"0.0.0"}')
-                (package / "src").mkdir()
-                (package / "src/index.ts").write_text("export {};\n")
-                (package / "node_modules").mkdir()
-                (package / "node_modules/not-source").write_text("excluded")
-            subprocess.run(
-                ["bash", "-euo", "pipefail", "-c", "tar \\\n" + copy_command],
-                env={**os.environ, "REPO_ROOT": str(source), "FRONTEND_GUARD_ROOT": str(destination)},
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            for relative_path in local_dependencies:
-                package = destination / "frontend" / relative_path
-                with self.subTest(dependency=relative_path):
-                    self.assertTrue((package / "package.json").is_file(), f"missing local dependency: {relative_path}")
-                    self.assertTrue((package / "src/index.ts").is_file())
-                    self.assertFalse((package / "node_modules").exists())
 
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         next_config_text = (REPO_ROOT / "frontend/next.config.mjs").read_text()
 
         self.assertNotIn("turbopackFileSystemCacheForBuild", next_config_text)

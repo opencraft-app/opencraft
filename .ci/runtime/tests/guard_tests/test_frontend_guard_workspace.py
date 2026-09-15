@@ -13,6 +13,22 @@ GUARD_PATH = REPO_ROOT / ".ci/checks/frontend_guard.sh"
 
 
 class FrontendGuardWorkspaceTests(unittest.TestCase):
+    def test_legacy_frontend_entrypoint_delegates_and_preserves_exit_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            guard = root / ".ci/checks/frontend_guard.sh"
+            guard.parent.mkdir(parents=True)
+            guard.write_text('printf "%s\\n" "$GUARD_CHANGED_FILES_FILE" "$@"\nexit 23\n')
+            result = subprocess.run(
+                ["bash", str(REPO_ROOT / "frontend/checks/guard.sh"), "first", "second"],
+                cwd=root,
+                env={**os.environ, "GUARD_REPO_ROOT": str(root), "GUARD_CHANGED_FILES_FILE": "fixture.changed-files"},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 23)
+            self.assertEqual(result.stdout.splitlines(), ["fixture.changed-files", "first", "second"])
+
     def test_frontend_registry_uses_the_trusted_ci_entrypoint(self) -> None:
         manifest = yaml.safe_load((REPO_ROOT / ".ci/guards.manifest").read_text())
         frontend = next(guard for guard in manifest["guards"] if guard["name"] == "frontend")
