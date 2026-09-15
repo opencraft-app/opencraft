@@ -74,10 +74,13 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
 兼容，不能因此放开 `jifei-prod`。韩国完成签名版本发布后必须删除此临时例外。
 
-Credit 每日用量的 `sendResource` 出向请求必须经过 CloudLadder 的
-`qbilling-send-resource-test` 路由，使用 `caller=lightvela-trade` 的 HMAC 签名。该路由只允许
-POST，并固定转发到受信上游及 `Host: qbilling.itd.com`；Trade transport 与 CloudLadder 路由必须
-协同发布，避免客户端先上线后因路由不存在返回 404。
+Credit 每日用量的 `sendResource` 出向请求必须经过 CloudLadder，并使用
+`caller=lightvela-trade` 的 HMAC 签名。北京 sandbox 与上海使用国内正式路由
+`qbilling-send-resource-cn-prod`，固定转发到 `qbilling.billing.tencentyun.com`；东京与新加坡使用
+国际正式路由 `qbilling-send-resource-intl-prod`，固定转发到
+`intl.resource.qbilling.tencentyun.com`。仅北京 7 与首尔保留 `qbilling-send-resource-test` 和
+`Host: qbilling.itd.com`。所有路由只允许 POST；Trade transport 与 CloudLadder 路由必须协同发布，
+避免客户端先上线后因路由不存在返回 404。
 
 广州生产严格模式覆盖上海正式与北京测试的生产计费出向；两者必须先完成 Trade 签名发布和
 密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由

@@ -99,7 +99,9 @@ master 源码
   发布 Credit 不得改变存量 Pass 地域。
 - 东京、上海和新加坡接入 Credit 时，Credit、Trade 与 Service Gateway 的环境配置必须在同一候选
   revision 完成渲染和 contract 校验。上海、新加坡保持生产人工晋级，不因源码包含环境配置而自动发布。
-- Credit 每日用量的 `sendResource` 依赖 CloudLadder 的 `qbilling-send-resource-test` 签名路由；
+- Credit 每日用量的 `sendResource` 必须按环境使用 CloudLadder 签名路由：北京 sandbox 与上海使用
+  `qbilling-send-resource-cn-prod`，东京与新加坡使用 `qbilling-send-resource-intl-prod`，仅北京 7 与
+  首尔保留 `qbilling-send-resource-test`。正式路由必须使用计费文档指定的域名，不得写死上游 IP。
   `tkexgz` 与 `tkexsg` 的 CloudLadder 源码、Trade transport 和目标镜像必须协同构建/晋级，避免 Trade
   已切换签名路由而网关仍返回 404。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
