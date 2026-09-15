@@ -12,7 +12,9 @@ interface ProductReturnHomeHeaderProps {
   className?: string;
   reloadLanguageAfterSwitch?: boolean;
   renderLink?: RenderPublicSiteHeaderLink;
+  showAccountLanguageSwitcher?: boolean;
   showDesktopUserMenu?: boolean;
+  showLanguageSwitcher?: boolean;
 }
 
 const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
@@ -30,7 +32,9 @@ export function ProductReturnHomeHeader({
   className,
   reloadLanguageAfterSwitch = false,
   renderLink = renderAppHeaderLink,
+  showAccountLanguageSwitcher = false,
   showDesktopUserMenu = true,
+  showLanguageSwitcher = isGlobal,
 }: ProductReturnHomeHeaderProps) {
   const { authReady, isAuthenticated: isLoggedIn } = useSession();
 
@@ -44,7 +48,8 @@ export function ProductReturnHomeHeader({
       renderLanguageSwitcher={({ activeLocale, reloadAfterSwitch, variant }) => (
         <LanguageSwitcher activeLocale={activeLocale} reloadAfterSwitch={reloadAfterSwitch} variant={variant} />
       )}
-      showLanguageSwitcher={isGlobal}
+      showAccountLanguageSwitcher={showAccountLanguageSwitcher}
+      showLanguageSwitcher={showLanguageSwitcher}
       showDesktopUserMenu={showDesktopUserMenu}
       showNav={false}
       showUnauthenticatedActions={false}

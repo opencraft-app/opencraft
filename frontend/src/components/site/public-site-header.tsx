@@ -62,6 +62,7 @@ type PublicSiteHeaderProps = {
   renderLanguageSwitcher?: RenderLanguageSwitcher;
   reloadLanguageAfterSwitch?: boolean;
   showNav?: boolean;
+  showAccountLanguageSwitcher?: boolean;
   showDesktopUserMenu?: boolean;
   showLanguageSwitcher?: boolean;
   showUnauthenticatedActions?: boolean;
@@ -233,6 +234,7 @@ export function PublicSiteHeader({
   renderLanguageSwitcher,
   reloadLanguageAfterSwitch = false,
   showNav = true,
+  showAccountLanguageSwitcher = false,
   showDesktopUserMenu = true,
   showLanguageSwitcher = Boolean(onLoginClick),
   showUnauthenticatedActions = true,
@@ -420,7 +422,9 @@ export function PublicSiteHeader({
             && (
             <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
               {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
-              {(!isDesktop || showDesktopUserMenu) && <UserAvatarMenu />}
+              {(!isDesktop || showDesktopUserMenu) && (
+                <UserAvatarMenu showLanguageSwitcher={showAccountLanguageSwitcher} />
+              )}
             </div>
           )}
 

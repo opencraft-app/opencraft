@@ -89,7 +89,9 @@ export function AgentsRouteLoading() {
       <ProductReturnHomeHeader
         className="lv-agent-sidebar-header"
         reloadLanguageAfterSwitch
+        showAccountLanguageSwitcher
         showDesktopUserMenu={false}
+        showLanguageSwitcher={false}
       />
       <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
         <section className="lw-settings-shell lv-agent-settings-shell">
@@ -245,12 +247,12 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
         <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
           <h2 className="text-xl font-bold" style={{ color: '#333', marginBottom: 16 }}>{t('请先登录')}</h2>
           <p className="text-sm leading-relaxed" style={{ color: '#999', marginBottom: 48 }}>
-            {t('登录后即可创建和管理你的 Hermes Agent')}
+            {t('登录后即可创建和管理你的 Agent')}
           </p>
           <button
             type="button"
             onClick={() => setShowLogin(true)}
-            className="lw-btn-primary"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-black/90 bg-black/90 px-8 py-3.5 text-base font-bold text-white shadow-sm transition-colors duration-150 hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
           >
             {t('立即登录')}
           </button>

@@ -103,6 +103,39 @@ describe("LanguageSwitcher", () => {
     expect(screen.getByRole("option", { name: "International Site - 한국어" })).toBeInTheDocument();
   });
 
+  it("renders only international languages in the account menu", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_REGION", "global");
+    const { InternationalLanguageMenu: GlobalInternationalLanguageMenu } = await import(
+      "@/components/site/language-switcher"
+    );
+
+    render(
+      <GlobalInternationalLanguageMenu
+        activeLocale="ko-KR"
+        ariaLabel="Switch language"
+        id="account-language-menu"
+      />,
+    );
+
+    expect(screen.getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual([
+      "한국어",
+      "English",
+      "简体中文",
+      "繁體中文",
+      "Bahasa Indonesia",
+      "Español",
+      "日本語",
+    ]);
+    const selectedLanguage = screen.getByRole("radio", { name: "한국어" });
+    expect(selectedLanguage).toBeChecked();
+    expect(selectedLanguage).toHaveClass("peer");
+    expect(selectedLanguage.parentElement).not.toHaveClass("focus-within:ring-2");
+    expect(selectedLanguage.parentElement?.innerHTML).not.toContain("ring-");
+    expect(screen.getByText("한국어")).toHaveClass("peer-focus-visible:underline");
+    expect(screen.queryByRole("radio", { name: /中国站|China Site/ })).not.toBeInTheDocument();
+  });
+
   it("keeps both published East Asian locales in the development menu", async () => {
     vi.resetModules();
     vi.stubEnv("NODE_ENV", "development");
