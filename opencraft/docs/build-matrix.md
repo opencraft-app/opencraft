@@ -7,6 +7,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | Target | Renderer/runtime | Output | Build host |
 | --- | --- | --- | --- |
 | `web-browser` | Vite, HTTP origin, same-origin `/appserver` gateway | Hashed static release | Linux/macOS/Windows |
+| `lightvela-web` | LightVela/Hermes Vite product, no HyperNode plugin | `dist-lightvela-web` hashed static release | Linux/macOS/Windows |
 | `electron-renderer` | Vite, relative assets, Electron loopback origin | Relocatable renderer tree | Linux/macOS/Windows |
 | `electron-host` | Sandboxed Electron main/preload + static loopback origin + independent OpenCraft Daemon | Main/preload, daemon executable and pinned DSH runtime | Linux/macOS/Windows |
 | `electron-macos-arm64-zip` | Electron host + renderer | Apple Silicon `.app` ZIP | Linux/macOS |
@@ -32,11 +33,23 @@ Commands:
 npm run matrix:list
 npm run matrix:check
 npm run matrix:build -- web-browser electron-renderer electron-host
+npm run build:lightvela-web:release
+OPENCRAFT_WEB_RELEASE_ROOT=/explicit/static/root npm run publish:lightvela-web
 npm run matrix:build -- electron-linux-x64-appimage
 npm run matrix:build -- electron-linux-x64-rpm
 npm run matrix:build -- electron-linux-x64-deb
 npm run package:electron:mac:arm64:preview
 ```
+
+`deploy:lightvela-web` builds the LightVela product and publishes only
+`apps/workbench-web/dist-lightvela-web`, after its product boundary check.
+`publish:lightvela-web` explicitly selects that same input even when the generic
+`OPENCRAFT_WEB_BUILD_ROOT` is set. The target still belongs to the deployment:
+set `OPENCRAFT_WEB_RELEASE_ROOT` to the reviewed static root before publishing;
+the default is only the local `.runtime/workbench-web` tree. This command does
+not provision a domain, gateway, account, or Collaboration backend. Generic
+`deploy:web` is unchanged. OpenCraft does not regain a dedicated mono2 CI/MR
+guard through this product release entrypoint.
 
 Desktop packaging jobs are downstream targets. Linux AppImage, RPM, and DEB
 consume the same release-minified renderer and protected host. RPM is the native

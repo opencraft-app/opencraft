@@ -1,5 +1,25 @@
 # Vela 正式发布
 
+## mono2候选交付（不等于正式下发）
+
+`.ci/vela-computer.yml`只对`vela-computer/**`的master变更构建原生Linux AMD64候选，
+以源码SHA命名并归档到流水线制品库，不修改实例、后台artifact version或更新通道。
+归档插件可用性、真实Linux构建与Runtime/IM Canary须由实际流水线分别验证。
+
+本地可为当前宿主生成未资格化候选：
+
+```bash
+./scripts/build-vela-candidate.sh \
+  --source-sha FULL_CHECKED_OUT_SHA --out-dir /new/absolute/candidate/path
+```
+
+它检查完整SHA与checkout一致，拒绝已有目录；仅包含`vela-computer`、`VERSION`、
+`CANDIDATE.json`和`SHA256SUMS`。元数据标明`kind=candidate`、源码dirty状态与
+`deploymentQualified=false`；三个内容文件全部校验，运行version时使用隔离临时状态根。
+构建没有CGO/原生TAT桥、签名材料或内置更新通道，不能拿此候选声明正式机器纳管可用。
+
+下述旧正式/TAT流程是迁移保留基线，不作为LightVela托管聊天客户端的本轮下发入口。
+
 ## 唯一运行模式
 
 `vela-computer daemon run` 是 Chatserver Platform v1 的唯一 Computer daemon 入口。
