@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Pass for the requested change scope. Diagnostics now resets only the selected Bot/Profile and restores its preserved system built-in model. No instance reset, sibling Profile mutation, commit, push, MR, deployment, or production operation was performed.
+Pass for the requested change scope. Diagnostics now resets only the selected Bot/Profile and restores its preserved system built-in model. The implementation was delivered through Gongfeng MR !4044; no instance reset, sibling Profile mutation, merge, deployment, or production operation was performed.
 
 ## Verified behavior
 

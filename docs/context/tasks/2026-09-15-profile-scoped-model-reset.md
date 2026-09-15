@@ -98,5 +98,6 @@ Allow the diagnostics center to reset only the currently selected Bot's Hermes P
 
 ## handoff
 - Implementation and scoped verification are complete in `/Users/pablozhong/codex/lightvela-profile-model-reset` on `fix/profile-reset-0915-current-bot`.
-- No commit, push, MR, deployment, or production mutation was performed.
+- The branch was rebased onto current `origin/master` and delivered through Gongfeng MR !4044 targeting `master`.
+- No merge, deployment, release, or production mutation was performed.
 - FEAI native verify passed and is awaiting the user's explicit archive instruction.
