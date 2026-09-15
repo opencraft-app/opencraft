@@ -47,3 +47,22 @@ func TestVerifyTDSQL接受正式Baseline并发现索引漂移(t *testing.T) {
 		t.Fatalf("索引漂移错误 = %v", err)
 	}
 }
+
+func TestVerifyMySQL接受普通单实例结构(t *testing.T) {
+	dsnFile := os.Getenv("CHATSERVER_TEST_MYSQL_DSN_FILE")
+	if dsnFile == "" {
+		t.Skip("未设置 CHATSERVER_TEST_MYSQL_DSN_FILE")
+	}
+	cfg, err := config.NewMySQLDatabase(dsnFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := database.OpenReadOnly(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	if err := schemaaudit.VerifyMySQL(context.Background(), handle.SQLDB()); err != nil {
+		t.Fatal(err)
+	}
+}

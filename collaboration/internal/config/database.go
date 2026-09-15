@@ -23,6 +23,7 @@ type DatabaseDriver string
 const (
 	DatabaseDriverSQLite DatabaseDriver = "sqlite"
 	DatabaseDriverTDSQL  DatabaseDriver = "tdsql"
+	DatabaseDriverMySQL  DatabaseDriver = "mysql"
 )
 
 // Database 是 SQLite 或 MySQL/TDSQL 的连接配置。
@@ -58,8 +59,17 @@ func NewDatabase(path string) (Database, error) {
 // NewTDSQLDatabase 校验 DSN Secret 文件路径并填充保守的连接池默认值。
 // 文件内容只会在打开连接时读取，不进入配置错误和日志。
 func NewTDSQLDatabase(dsnFile string) (Database, error) {
+	return newMySQLDatabase(DatabaseDriverTDSQL, dsnFile)
+}
+
+// NewMySQLDatabase selects ordinary single-instance MySQL explicitly.
+func NewMySQLDatabase(dsnFile string) (Database, error) {
+	return newMySQLDatabase(DatabaseDriverMySQL, dsnFile)
+}
+
+func newMySQLDatabase(driver DatabaseDriver, dsnFile string) (Database, error) {
 	cfg := Database{
-		Driver:                DatabaseDriverTDSQL,
+		Driver:                driver,
 		DSNFile:               filepath.Clean(dsnFile),
 		MaxOpenConnections:    defaultMaxOpenConnections,
 		MaxIdleConnections:    defaultMaxIdleConnections,
@@ -79,7 +89,7 @@ func (c Database) Validate() error {
 	if c.Driver == "" {
 		return apperror.New("CONFIG_INVALID", "数据库方言不能为空", nil)
 	}
-	if c.Driver == DatabaseDriverTDSQL {
+	if c.Driver == DatabaseDriverTDSQL || c.Driver == DatabaseDriverMySQL {
 		return c.validateMySQL()
 	}
 	if c.Driver != DatabaseDriverSQLite {

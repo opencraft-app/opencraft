@@ -48,7 +48,7 @@ func applyDirFor(
 	if err := atlasmigrate.Validate(dir); err != nil {
 		return apperror.New("MIGRATION_CHECKSUM_MISMATCH", "数据库迁移校验和不一致", err)
 	}
-	if dialect == config.DatabaseDriverTDSQL {
+	if dialect == config.DatabaseDriverTDSQL || dialect == config.DatabaseDriverMySQL {
 		return applyTDSQLBaseline(ctx, db, dir)
 	}
 	driver, err := openDriver(db, dialect)
@@ -90,7 +90,7 @@ func executeFileFor(
 	file atlasmigrate.File,
 	dialect config.DatabaseDriver,
 ) error {
-	if dialect == config.DatabaseDriverTDSQL {
+	if dialect == config.DatabaseDriverTDSQL || dialect == config.DatabaseDriverMySQL {
 		driver, err := openDriver(db, dialect)
 		if err != nil {
 			return err
@@ -146,7 +146,7 @@ func embeddedDir() (*atlasmigrate.MemDir, error) {
 }
 
 func embeddedDirFor(dialect config.DatabaseDriver) (*atlasmigrate.MemDir, error) {
-	if dialect != config.DatabaseDriverSQLite && dialect != config.DatabaseDriverTDSQL {
+	if dialect != config.DatabaseDriverSQLite && dialect != config.DatabaseDriverTDSQL && dialect != config.DatabaseDriverMySQL {
 		return nil, fmt.Errorf("unsupported database dialect")
 	}
 	sub, err := fs.Sub(embedded.FS, string(dialect))
@@ -180,7 +180,7 @@ func openDriver(db atlasschema.ExecQuerier, dialect config.DatabaseDriver) (atla
 	switch dialect {
 	case config.DatabaseDriverSQLite:
 		return atlassqlite.Open(db)
-	case config.DatabaseDriverTDSQL:
+	case config.DatabaseDriverTDSQL, config.DatabaseDriverMySQL:
 		return atlasmysql.Open(db)
 	default:
 		return nil, fmt.Errorf("unsupported database dialect")

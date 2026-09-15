@@ -224,7 +224,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	}
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&databaseDriver, "database-driver", databaseDriver, "数据库方言：sqlite 或 tdsql")
+	flags.StringVar(&databaseDriver, "database-driver", databaseDriver, "数据库方言：sqlite、mysql 或 tdsql")
 	flags.StringVar(&path, "database", path, "SQLite 数据库绝对路径")
 	flags.StringVar(&databaseDSNFile, "database-dsn-file", databaseDSNFile, "TDSQL DSN Secret 文件")
 	flags.IntVar(&maxOpenConnections, "database-max-open-connections", 20, "MySQL 最大连接数")
@@ -329,13 +329,17 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		databaseConfig, err = config.NewDatabase(path)
 	case config.DatabaseDriverTDSQL:
 		databaseConfig, err = config.NewTDSQLDatabase(databaseDSNFile)
+	case config.DatabaseDriverMySQL:
+		databaseConfig, err = config.NewMySQLDatabase(databaseDSNFile)
+	}
+	if databaseConfig.Driver == config.DatabaseDriverTDSQL || databaseConfig.Driver == config.DatabaseDriverMySQL {
 		if err == nil {
 			databaseConfig.MaxOpenConnections = maxOpenConnections
 			databaseConfig.MaxIdleConnections = maxIdleConnections
 			databaseConfig.ConnectionMaxLifetime = connectionMaxLifetime
 			err = databaseConfig.Validate()
 		}
-	default:
+	} else if databaseConfig.Driver == "" && err == nil {
 		err = apperror.New("CONFIG_INVALID", "数据库方言不受支持", nil)
 	}
 	if err != nil {

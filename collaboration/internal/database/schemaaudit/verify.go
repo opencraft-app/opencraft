@@ -15,6 +15,8 @@ func Verify(ctx context.Context, db *sql.DB, dialect config.DatabaseDriver) erro
 		return VerifySQLite(ctx, db)
 	case config.DatabaseDriverTDSQL:
 		return VerifyTDSQL(ctx, db)
+	case config.DatabaseDriverMySQL:
+		return VerifyMySQL(ctx, db)
 	default:
 		return apperror.New("CONFIG_INVALID", "数据库方言不受支持", nil)
 	}

@@ -20,9 +20,10 @@
    将同一个 active 描述符切换为 `collaboration.yaml` 的 runtime sourcePath。
 5. 构建/选择 digest 镜像，再手动发起 Collaboration promote。配置门禁要求 active
    catalog 与 SOPS artifact 均存在，并校验完整 Kustomize closure、镜像 pin 与所有占位符。
-6. DB gate 先执行受控 `collaboration/migration` Job，再执行同一候选镜像的
+6. DB gate 以显式普通 `mysql` 方言先执行受控 `collaboration/migration` Job，再执行同一候选镜像的
    `database verify`；两者只挂 `database.dsn` 文件，不把 DSN 放入 argv/env 或日志。
-   每次晋级都跑幂等迁移和 verify，首次发布不会依赖当前 diff 恰好包含 SQL。
+   每次晋级都跑幂等迁移和 verify，首次发布不会依赖当前 diff 恰好包含 SQL；不得把普通
+   MySQL DSN 改标成 `tdsql` 来绕过平台差异。
 7. 门禁成功后才创建/合入 GitOps runtime MR，再确认 Argo revision、镜像、
    `Synced/Healthy` 与 API 健康。Migration 不在常驻 Kustomize 中。
 

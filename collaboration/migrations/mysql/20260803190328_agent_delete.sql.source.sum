@@ -1,0 +1,1 @@
+compiler=mysql-storage/v1 source=migrations/tdsql/20260803190328_agent_delete.sql source_sha256=563bc9585696c8768dfea9bb40b262aa4999c8ef9191e50c6807e24c2ae15bf9 output_sha256=4ba2205dabb08d10bf18c9c1fdc265e51d537eca80cf215d885a16e396d52ef8

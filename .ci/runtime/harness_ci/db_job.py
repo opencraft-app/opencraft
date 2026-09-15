@@ -48,7 +48,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "deployment": "collaboration",
         "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
         "image_env_key": "COLLABORATION_IMAGE",
-        "command": ["/usr/local/bin/chatserver", "database", "migrate", "--database-driver", "tdsql",
+        "command": ["/usr/local/bin/chatserver", "database", "migrate", "--database-driver", "mysql",
                     "--database-dsn-file", "/var/run/secrets/collaboration/database.dsn"],
         "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
         "volumes": [{"name": "database-secret", "secret": {

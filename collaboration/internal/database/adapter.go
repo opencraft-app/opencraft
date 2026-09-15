@@ -36,7 +36,7 @@ func (a staticAdapter) Open(
 		case platform.OpenModeReadOnly:
 			return openSQLiteReadOnly(ctx, cfg)
 		}
-	case config.DatabaseDriverTDSQL:
+	case config.DatabaseDriverTDSQL, config.DatabaseDriverMySQL:
 		switch mode {
 		case platform.OpenModeWriter:
 			return openTDSQL(ctx, cfg, true)
@@ -97,6 +97,8 @@ func (a staticAdapter) VerifySchema(ctx context.Context, db *sql.DB) error {
 // AdapterFor 返回正式数据库方言对应的高层适配器。
 func AdapterFor(driver config.DatabaseDriver) (platform.Adapter, error) {
 	switch driver {
+	case config.DatabaseDriverMySQL:
+		return staticAdapter{driver: driver}, nil
 	case config.DatabaseDriverSQLite:
 		return staticAdapter{
 			driver: driver,

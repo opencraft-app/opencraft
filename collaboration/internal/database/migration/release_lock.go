@@ -265,6 +265,8 @@ func dialectForPath(path string) string {
 		return "tdsql-source"
 	case strings.HasPrefix(path, "migrations/tdsql/"):
 		return "tdsql-runtime"
+	case strings.HasPrefix(path, "migrations/mysql/"):
+		return "mysql-runtime"
 	default:
 		return "sqlite"
 	}

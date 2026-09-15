@@ -13,10 +13,11 @@ import (
 	"strings"
 
 	atlasmigrate "ariga.io/atlas/sql/migrate"
-	"git.woa.com/wisp/mono2/collaboration/internal/database/tdsqlbaseline"
-	"git.woa.com/wisp/mono2/collaboration/internal/ent/migrate"
 	"entgo.io/ent/dialect"
 	entschema "entgo.io/ent/dialect/sql/schema"
+	"git.woa.com/wisp/mono2/collaboration/internal/database/mysqlmigrations"
+	"git.woa.com/wisp/mono2/collaboration/internal/database/tdsqlbaseline"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/migrate"
 	modernsqlite "modernc.org/sqlite"
 )
 
@@ -29,7 +30,7 @@ func init() {
 func main() {
 	flags := flag.NewFlagSet("migrationgen", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	dialectName := flags.String("dialect", "sqlite", "sqlite 或 tdsql")
+	dialectName := flags.String("dialect", "sqlite", "sqlite、mysql 或 tdsql")
 	hashOnly := flags.Bool("hash", false, "只重算 atlas.sum")
 	verifyOnly := flags.Bool("verify", false, "只验证 TDSQL source/output/checksum 绑定")
 	if err := flags.Parse(os.Args[1:]); err != nil {
@@ -37,13 +38,36 @@ func main() {
 	}
 	dialectValue, directory, err := parseDialect(*dialectName)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "方言只支持 sqlite 或 tdsql")
+		fmt.Fprintln(os.Stderr, "方言只支持 sqlite、mysql 或 tdsql")
 		os.Exit(2)
 	}
 	root, err := projectRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "无法定位项目根目录")
 		os.Exit(1)
+	}
+	if directory == "mysql" {
+		target := filepath.Join(root, "migrations", "mysql")
+		if *verifyOnly {
+			if flags.NArg() != 0 {
+				fmt.Fprintln(os.Stderr, "mysql --verify 不接受迁移名称")
+				os.Exit(2)
+			}
+			if err := mysqlmigrations.Verify(root, target); err != nil {
+				fmt.Fprintf(os.Stderr, "验证 MySQL migration 失败：%v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+		if flags.NArg() != 1 || flags.Arg(0) != "publish" || *hashOnly {
+			fmt.Fprintln(os.Stderr, "用法：go run ./cmd/migrationgen --dialect mysql publish")
+			os.Exit(2)
+		}
+		if err := mysqlmigrations.Publish(root, target); err != nil {
+			fmt.Fprintf(os.Stderr, "发布 MySQL migration 失败：%v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if directory == "tdsql" {
 		if *hashOnly {
@@ -146,6 +170,8 @@ func parseDialect(value string) (string, string, error) {
 		return dialect.SQLite, "sqlite", nil
 	case "tdsql":
 		return dialect.MySQL, "tdsql", nil
+	case "mysql":
+		return dialect.MySQL, "mysql", nil
 	default:
 		return "", "", fmt.Errorf("unsupported dialect")
 	}

@@ -38,6 +38,30 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 	}
 }
 
+func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testing.T) {
+	dir, err := embeddedDirFor("mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	runtime, err := tdsqlRuntimeExpectationFromDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.Migrations) != 9 || len(runtime.UserTables) != 28 {
+		t.Fatalf("runtime=%#v", runtime)
+	}
+	files, err := dir.Files()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if strings.Contains(strings.ToLower(string(file.Bytes())), "shardkey=") {
+			t.Fatalf("MySQL migration %s contains physical shard option", file.Name())
+		}
+	}
+}
+
 func TestClassifyTDSQLRuntime允许已完成Baseline后等待增量(t *testing.T) {
 	runtime := testTDSQLRuntimeExpectation(t)
 	baseline := runtime.Migrations[0]

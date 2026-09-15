@@ -47,7 +47,7 @@ bundles:
         - database
         - verify
         - --database-driver
-        - tdsql
+        - mysql
         - --database-dsn-file
         - /var/run/secrets/collaboration/database.dsn
         secret_file:

@@ -35,6 +35,16 @@ Collaboration 复用 mono2 现有的普通数据库服务，不申请或管理�
 同一 Collaboration DSN。本服务不得与 CTL、`user/auth` 混表或执行跨库 JOIN，也不得把聊天正文
 复制进平台数据库。
 
+普通 MySQL 8 使用显式 `mysql` 驱动；TDSQL Proxy 继续使用 `tdsql`，SQLite 使用 `sqlite`，
+不根据 DSN 猜测或退回其他方言。MySQL 是正式单实例模式：领域类别、全局业务 ID、逻辑
+ShardKey/显式路由、复合主键、索引和路由字符语义保持不变，不执行 Proxy topology/allsets
+或要求 MySQL 声明物理 `shardkey`。表集合、字段、默认值、主键和索引仍严格审计。
+
+MySQL 增加独立迁移发布线，固定来源为已发布 TDSQL SQL，只去除表级物理分片选项；生成器
+绑定来源/产物摘要并校验，禁止覆盖已发布产物。旧 SQLite/TDSQL SQL 与发布锁条目不改。
+DDL 隐式提交，复用 owner claim、逐语句进度 CAS 与 dirty/unsafe 拒绝机制；不能用
+upsert revision 或假事务掩盖失败。迁移、status、verify 与 serve 必须选择同一显式方言。
+
 ## 验证
 
 行为变更至少运行 `go test ./...` 与 `go vet ./...`。修改数据库模型或 OpenAPI 时，必须

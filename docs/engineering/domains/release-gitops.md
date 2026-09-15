@@ -27,6 +27,12 @@ master 源码
 
 ## 不变量
 
+- Collaboration 北京复用现有普通 MySQL 8 服务的独立逻辑库/账号/DSN，不新建 DB 实例。
+  Runtime 与 migration/verify Job 显式使用 `mysql`；`tdsql` 只用于真实 TDSQL Proxy。
+  MySQL 独立迁移线不修改已发布 SQLite/TDSQL 历史，保留业务 ID、逻辑路由键、主键/索引和
+  字符语义；不伪造物理分片审计，不削弱 owner claim、进度 CAS、失败状态拒绝及只读校验。
+  foundation、迁移/verify、Runtime、Gateway 和产品 Web 仍按既定分段门禁交付。
+
 - vela-computer候选流水线在checkout前独立内联隔离旧工作树和全部复用的普通`.git`元数据，关闭浅克隆
   （`fetchDepth=0`），让checkout从空对象库获取完整历史。连通性正常的浅缓存也不复用：
   SDK按SHA做depth1增量fetch时曾在预检通过后仍报缺失父对象，预检不能覆盖该协商失败路径。
