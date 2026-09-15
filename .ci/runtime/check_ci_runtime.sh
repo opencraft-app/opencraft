@@ -26,6 +26,8 @@ bash -n \
   .ci/checks/frontend_guard.sh \
   .ci/checks/service-gateway_guard.sh \
   .ci/checks/collaboration_guard.sh \
+  .ci/checks/vela_computer_guard.sh \
+  vela-computer/scripts/build-vela-candidate.sh \
   service-gateway/checks/guard.sh \
   admin-gateway/checks/guard.sh \
   frontend/checks/guard.sh

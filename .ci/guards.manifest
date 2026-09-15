@@ -65,6 +65,12 @@ guards:
       - user/auth/internal/service/referral_outbox.go
     command: .ci/checks/referral_guard.sh
 
+  - name: vela-computer
+    paths:
+      - vela-computer/**
+      - .ci/checks/vela_computer_guard.sh
+    command: .ci/checks/vela_computer_guard.sh
+
   - name: collaboration
     paths:
       - collaboration/**

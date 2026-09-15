@@ -27,6 +27,14 @@ master 源码
 
 ## 不变量
 
+- LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
+  产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
+  通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
+  实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
+  平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。
+  候选构建禁用CGO/个人Go配置/额外build tags，不引入旧TAT桥或升级签名参数。正式Linux
+  下发仍需独立的凭据注入、Runtime/IM Canary和目标实例审批；制品不是新的常驻后台组件。
 - 前端 MR guard 的隔离工作目录必须保持 `frontend/package.json` 中本地 `file:` 依赖的相对布局：
   当前复制 `frontend`、`velalink` 和 `shared/lightvela-agent-core`，排除依赖目录与构建缓存后执行
   frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。

@@ -1,0 +1,63 @@
+version: v2.0
+name: 构建 vela-computer 候选制品
+
+"on":
+  push:
+    branches: [ master ]
+    paths: [ vela-computer/** ]
+    paths-ignore: [ OWNERS, "**/OWNERS" ]
+  manual: enabled
+
+concurrency:
+  group: mono2-vela-computer-candidate
+  cancel-in-progress: false
+  queue-length: 3
+  queue-timeout-minutes: 120
+
+stages:
+  - name: 校验与构建候选
+    jobs:
+      candidate:
+        name: Linux AMD64 候选制品，不下发实例
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 校验源码
+            shell: bash
+            run: |
+              bash .ci/checks/vela_computer_guard.sh
+          - name: 构建候选制品
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_go
+              ci_require_commands git tar gzip sh
+              SOURCE_SHA='${{ ci.sha }}'
+              [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+              test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+              test "$(go env GOHOSTOS)-$(go env GOHOSTARCH)" = linux-amd64
+              CANDIDATE_BUILD_ROOT="$(mktemp -d)"
+              trap 'rm -rf "$CANDIDATE_BUILD_ROOT"' EXIT
+              bash vela-computer/scripts/build-vela-candidate.sh \
+                --source-sha "$SOURCE_SHA" --out-dir "$CANDIDATE_BUILD_ROOT/payload"
+              (
+                cd "$CANDIDATE_BUILD_ROOT/payload"
+                sha256sum -c SHA256SUMS
+              )
+              CANDIDATE_ARCHIVE_ROOT="$REPO_ROOT/vela-computer/.artifacts/candidates/$SOURCE_SHA"
+              mkdir -p "$CANDIDATE_ARCHIVE_ROOT"
+              tar --format=ustar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+                -C "$CANDIDATE_BUILD_ROOT/payload" -cf - . | gzip -n \
+                > "$CANDIDATE_ARCHIVE_ROOT/linux-amd64.tar.gz"
+          - name: 归档候选制品到流水线仓库
+            uses: UploadArtifactory@4.*
+            with:
+              filePath: vela-computer/.artifacts/candidates/${{ ci.sha }}/linux-amd64.tar.gz
+              repoName: pipeline
