@@ -8,9 +8,9 @@ authority: primary
 source_of_truth:
   - docs/context/tasks/2026-09-14-global-agents-account-language-switcher.md
 status: active
-reviewed_at: 2026-09-14
+reviewed_at: 2026-09-15
 review_due: 2026-10-14
-revision: 1.0.0
+revision: 1.0.1
 precedence: task
 derived: false
 ---
@@ -72,6 +72,9 @@ derived: false
 ## evidence
 - TDD RED：实现前新增 4 条断言失败，分别锁定国际站语言清单、账号菜单入口与 Agent 正常/加载态 header 边界。
 - 聚焦 GREEN：语言菜单与账号菜单 2 个测试文件、24 条用例通过；覆盖账号区 hover 打开/移出关闭、语言行 hover 展开、点击打开、当前语言置顶且仅显示对勾，以及进入右侧语言浮层后一级账号菜单不误关。
+- MR !4010 CR 修复：国际语言列表增加精确 locale code 顺序断言；国际站旧菜单预期补齐日语和韩语；header 账号菜单进入 Portal 语言浮层时不再被 `mouseLeave` 误关；账号触发器连续点击仍保持打开的产品意图已由测试锁定。
+- CR 后双区域聚焦验证：国内站 3 文件 29/29，国际站 3 文件 29/29。
+- CR 后 `pnpm check`：通过；i18n 提取 2874 条、0 error，TypeScript 相对基线 0 个新增诊断。
 - `pnpm check`：通过；i18n 提取 2866 条、0 error，TypeScript 相对基线 0 个新增诊断。
 - `pnpm build:cn`：通过，97 个静态页面。
 - `NEXT_PUBLIC_LOCAL_PREVIEW_AUTH=1 pnpm build:global`：通过，607 个静态页面。
@@ -106,5 +109,5 @@ derived: false
 - 已有界定位产品 header、账号菜单、语言切换器、Agent 加载壳及对应测试。
 
 ## handoff
-- 状态：本地实现与验证完成，尚未 commit、push 或更新 MR。
+- 状态：MR !4010 CR 修复已在本地实现并通过验证，尚未 commit、push 或更新 MR。
 - 阻塞项：无。

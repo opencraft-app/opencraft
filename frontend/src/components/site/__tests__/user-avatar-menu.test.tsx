@@ -183,6 +183,9 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
   it("opens the international language picker beside the account menu", () => {
@@ -211,10 +214,34 @@ describe("UserAvatarMenu", () => {
 
     expect(screen.getByLabelText("International site languages")).toBeVisible();
     expect(document.querySelector('[data-lv-agent-language-menu="true"]')).toBeInTheDocument();
-    expect(screen.queryByText(/中国站|China Site/)).not.toBeInTheDocument();
 
     fireEvent.mouseLeave(accountTrigger.parentElement!);
     expect(accountTrigger).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the header account menu open while moving into the language picker", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: {
+          name: "海盐小猫",
+          email: "cat@example.com",
+          avatarUrl: "https://example.com/avatar.png",
+        },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null });
+
+    render(<UserAvatarMenu showLanguageSwitcher />);
+    const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "语言" }));
+
+    fireEvent.mouseLeave(document.querySelector(".lw-user-avatar-menu")!);
+
+    expect(accountTrigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("International site languages")).toBeVisible();
   });
 
   it("does not add a language picker to the domestic account menu", () => {

@@ -200,7 +200,7 @@ export const UserAvatarMenu = ({
             )}
             style={menuStyle}
             onMouseLeave={() => {
-              if (!isSidebar) setOpen(false);
+              if (!isSidebar && !languageMenuOpen) setOpen(false);
             }}
           >
             {/* User info */}

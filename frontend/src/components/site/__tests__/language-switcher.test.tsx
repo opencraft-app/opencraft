@@ -30,17 +30,13 @@ describe("LanguageSwitcher", () => {
             "International Site - 繁體中文",
             "International Site - Bahasa Indonesia",
             "International Site - Español",
+            "International Site - 日本語",
+            "International Site - 한국어",
             "中国站",
           ]
         : ["中国站", "国际站 - 简体中文", "国际站 - English"],
     );
     expect(options[0]).toHaveAttribute("aria-selected", "true");
-    expect(options.map((option) => option.textContent)).not.toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("日本語"),
-        expect.stringContaining("한국어"),
-      ]),
-    );
 
     if (isGlobal) {
       cleanup();
@@ -127,6 +123,9 @@ describe("LanguageSwitcher", () => {
       "Español",
       "日本語",
     ]);
+    expect(
+      screen.getAllByRole("radio").map((option) => (option as HTMLInputElement).value),
+    ).toEqual(["ko-KR", "en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP"]);
     const selectedLanguage = screen.getByRole("radio", { name: "한국어" });
     expect(selectedLanguage).toBeChecked();
     expect(selectedLanguage).toHaveClass("peer");
