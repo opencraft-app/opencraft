@@ -187,7 +187,7 @@ describe("multi-Bot diagnostics", () => {
     expect(chatTab).not.toHaveAttribute("title");
     expect(chatTab).toHaveAccessibleDescription("对话功能目前仅支持主 Bot");
     expect(screen.getByRole("tooltip", { name: "对话功能目前仅支持主 Bot" })).toHaveClass("lv-agent-action-tooltip");
-    expect(screen.queryByText("重装 Agent（保留数据）")).not.toBeInTheDocument();
+    expect(screen.queryByText("重置 Hermes（保留数据）")).not.toBeInTheDocument();
     expect(screen.queryByText("root log")).not.toBeInTheDocument();
     expect(resetInstanceConfig).not.toHaveBeenCalled();
     execDebugCommand.mockResolvedValue({status:"SUCCESS", exitCode:0, output:"sales log"});
@@ -216,6 +216,7 @@ describe("multi-Bot diagnostics", () => {
     render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
     expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
+    expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 

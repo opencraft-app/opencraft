@@ -3488,11 +3488,11 @@ export const AgentSettingsPage = ({
         throw new Error(truncateExecOutput(result.output, result.status));
       }
       setAcliResetConsole([]);
-      toast.success(t("Agent 重置成功"));
+      toast.success(t("Hermes 重置成功"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : t("Agent 重置失败，请重试");
+      const message = err instanceof Error ? err.message : t("Hermes 重置失败，请重试");
       setAcliResetConsole((prev) => [...prev, `[error] ${message}`].slice(-80));
-      toast.error(t("Agent 重置失败，请重试"));
+      toast.error(t("Hermes 重置失败，请重试"));
     } finally {
       setResettingInstanceIds((prev) => {
         const next = new Set(prev);
@@ -4797,7 +4797,7 @@ export const AgentSettingsPage = ({
         document.body,
       )}
 
-      {/* Reset Agent Confirm Dialog */}
+      {/* Reset Hermes Confirm Dialog */}
       {showAcliResetConfirm && activeBot && createPortal(
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
@@ -4814,10 +4814,10 @@ export const AgentSettingsPage = ({
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <RepairToolsIcon className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重装 Agent（保留数据）")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes（保留数据）")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将重装整个 Agent，影响其中的所有 Bot。")}
+              {t("将重置 Hermes 运行环境，影响其中的所有 Bot。")}
               <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
                 {t("期间 Agent 会有数分钟不可用。")}
               </span>
@@ -4835,7 +4835,7 @@ export const AgentSettingsPage = ({
                 }}
               >
                 {resettingAcli && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resettingAcli ? t("重置中...") : t("确认重装")}
+                {resettingAcli ? t("重置中...") : t("确认重置")}
               </button>
               <button
                 onClick={() => setShowAcliResetConfirm(false)}
@@ -5101,7 +5101,7 @@ export const AgentSettingsPage = ({
               const acliResetTooltip =
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
-                  : t("重装 Agent（保留数据）");
+                  : t("重置 Hermes（保留数据）");
               const deleteRequiresOtherBotsRemoved = Boolean(activeBot.isDefault && remainingInstanceBotCount > 0);
               const deleteDisabled = resettingAcli || deleteRequiresOtherBotsRemoved;
               const deleteTooltip = deleteRequiresOtherBotsRemoved
