@@ -172,14 +172,16 @@ describe("multi-Bot diagnostics", () => {
   it("only shows instance maintenance on main and scopes logs after switching", async () => {
     const view = render(page("ins-1"));
     await screen.findByText("Agent 备份与恢复");
+    expect(screen.getByText("查看 Hermes Agent 日志，并集中执行相关维护操作")).toBeInTheDocument();
     await waitFor(() => expect(getRescueExportStatus).toHaveBeenCalledWith("ins-1"));
     expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("root log");
-    expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h");
+    expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h -n 50");
 
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
+    expect(screen.getByText("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
     const chatTab = screen.getByRole("tab", { name: "对话" });
     expect(chatTab).toBeDisabled();
     expect(chatTab).not.toHaveAttribute("title");
@@ -191,7 +193,7 @@ describe("multi-Bot diagnostics", () => {
     execDebugCommand.mockResolvedValue({status:"SUCCESS", exitCode:0, output:"sales log"});
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("sales log");
-    expect(execDebugCommand).toHaveBeenLastCalledWith("sales", "hermes -p 'sales' logs --since 1h");
+    expect(execDebugCommand).toHaveBeenLastCalledWith("sales", "hermes -p 'sales' logs --since 1h -n 50");
     expect(getRescueExportStatus.mock.calls.every(([id]) => id === "ins-1")).toBe(true);
   });
 

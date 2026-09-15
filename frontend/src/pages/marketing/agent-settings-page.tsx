@@ -5654,6 +5654,7 @@ export const AgentSettingsPage = ({
                               botName={activeBot.name}
                               isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}
+                              execDebugCommandStream={repositories.bots.execDebugCommandStream}
                               resetConfigAction={{
                                 disabled: resetDisabled,
                                 loading: resetting,
