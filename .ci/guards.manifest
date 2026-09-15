@@ -84,7 +84,8 @@ guards:
 
   - name: frontend
     paths:
+      - .ci/checks/frontend_guard.sh
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
-    command: frontend/checks/guard.sh
+    command: .ci/checks/frontend_guard.sh
