@@ -13,6 +13,6 @@
   "source_docs": ["collaboration/README.md", "collaboration/AGENTS.md", "collaboration/platform/v1/README.md", "collaboration/k8s/README.md"],
   "agent_entry": "collaboration/AGENTS.md",
   "service_docs": "collaboration/docs/README.md",
-  "deploy": ["collaboration/k8s/base"],
+  "deploy": [".ci/collaboration.yml", "collaboration/k8s/base", "argocd/services/collaboration", "argocd/catalogs/candidates/beijing-sandbox/collaboration.yaml"],
   "generated_paths": ["collaboration/internal/ent", "collaboration/internal/api/openapi"]
 }

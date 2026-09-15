@@ -1,0 +1,25 @@
+defaults:
+  region: ap-beijing
+  version_id: SSM_Current
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+items:
+  - id: collaboration-runtime-secrets
+    secret_name: mono-beijing-sandbox-collaboration-runtime-secrets
+    namespace: lightvela-collaboration
+    kubernetes_resource_name: collaboration-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    required_keys:
+      - database.dsn
+      - jwt.key
+      - gateway.token
+      - im-secret.key
+      - im-identity.key
+      - im-callback.token
+    labels:
+      app.kubernetes.io/name: collaboration
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py

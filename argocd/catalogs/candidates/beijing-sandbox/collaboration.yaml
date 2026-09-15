@@ -1,0 +1,7 @@
+# Not scanned by sandbox-family. Move to catalogs/sandbox only after activation inputs pass release gates.
+service: collaboration
+env: beijing-sandbox
+project: beijing-sandbox
+destinationName: beijing-sandbox
+namespace: lightvela-collaboration
+sourcePath: argocd/services/collaboration/beijing-sandbox
