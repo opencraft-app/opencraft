@@ -62,6 +62,14 @@ stages:
               set -euo pipefail
               SOURCE_SHA='${{ ci.sha }}'
               [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+              CHECKOUT_SHA="$(git rev-parse HEAD)"
+              echo "checkout HEAD=$CHECKOUT_SHA; candidate source=$SOURCE_SHA"
+              git rev-list --objects HEAD >/dev/null
+              git cat-file -e "$SOURCE_SHA^{commit}"
+              git merge-base --is-ancestor "$SOURCE_SHA" "$CHECKOUT_SHA"
+              # MR checkout can be a synthetic merge; candidate bytes belong
+              # to ci.sha, not the integration snapshot. Do not force overwrite.
+              git -c core.hooksPath=/dev/null checkout --detach "$SOURCE_SHA"
               test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
               git rev-list --objects HEAD >/dev/null
           - name: 校验源码

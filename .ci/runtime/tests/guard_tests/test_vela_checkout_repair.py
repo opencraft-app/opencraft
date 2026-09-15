@@ -39,6 +39,61 @@ class VelaCheckoutRepairTests(unittest.TestCase):
         return subprocess.run(["bash", "-euo", "pipefail", "-c", self.repair_script()],
                               cwd=root, env=os.environ.copy(), capture_output=True, text=True)
 
+    def select_source(self, root, source_sha):
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/vela-computer.yml").read_text())
+        steps = workflow["stages"][0]["jobs"]["candidate"]["steps"]
+        step = next(step for step in steps if step.get("name") == "确认候选 checkout 提交")
+        self.assertLess(steps.index(step), next(i for i, item in enumerate(steps)
+                                              if item.get("name") == "校验源码"))
+        script = step["run"].replace("${{ ci.sha }}", source_sha)
+        return subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                              cwd=root, capture_output=True, text=True)
+
+    def diverged_repository(self, root):
+        repo = self.repository(root)
+        self.git(repo, "checkout", "-qb", "feature")
+        (repo / "feature.txt").write_text("candidate source")
+        self.git(repo, "add", "feature.txt")
+        self.git(repo, "commit", "-qm", "feature")
+        source_sha = self.git(repo, "rev-parse", "HEAD").stdout.strip()
+        self.git(repo, "checkout", "-q", "master")
+        (repo / "master-only.txt").write_text("integration only")
+        self.git(repo, "add", "master-only.txt")
+        self.git(repo, "commit", "-qm", "master advance")
+        return repo, source_sha
+
+    def test_mr_merge_snapshot_selects_exact_source_before_candidate_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, source_sha = self.diverged_repository(Path(tmp) / "repo")
+            self.git(repo, "merge", "--no-ff", "-qm", "MR snapshot", source_sha)
+            merge_sha = self.git(repo, "rev-parse", "HEAD").stdout.strip()
+            self.assertNotEqual(merge_sha, source_sha)
+            result = self.select_source(repo, source_sha)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git(repo, "rev-parse", "HEAD").stdout.strip(), source_sha)
+            self.assertEqual((repo / "feature.txt").read_text(), "candidate source")
+            self.assertFalse((repo / "master-only.txt").exists())
+            self.assertNotEqual(self.git(repo, "symbolic-ref", "-q", "HEAD", check=False).returncode, 0)
+
+    def test_source_checkout_is_also_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.repository(Path(tmp) / "repo")
+            source_sha = self.git(repo, "rev-parse", "HEAD").stdout.strip()
+            result = self.select_source(repo, source_sha)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git(repo, "rev-parse", "HEAD").stdout.strip(), source_sha)
+
+    def test_invalid_missing_or_unrelated_source_is_rejected_without_switching_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, unrelated_sha = self.diverged_repository(Path(tmp) / "repo")
+            original_sha = self.git(repo, "rev-parse", "HEAD").stdout.strip()
+            for source_sha in ("not-a-sha", "f" * 40, unrelated_sha):
+                with self.subTest(source_sha=source_sha):
+                    result = self.select_source(repo, source_sha)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(self.git(repo, "rev-parse", "HEAD").stdout.strip(), original_sha)
+                    self.assertTrue((repo / "master-only.txt").exists())
+
     def test_missing_parent_is_quarantined_and_fresh_full_fetch_succeeds(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

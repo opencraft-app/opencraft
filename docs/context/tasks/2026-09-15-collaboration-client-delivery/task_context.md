@@ -64,6 +64,7 @@ release-gitops、service-ci、service-opencraft、service-collaboration、servic
 | docs/context/domains/agent-gateway-runtime.md@2.1.0、site-environment-routing.md@2.0.0 | 责任与地域 | 不把Web产物当Host/实例 |
 | docs/context/project/upstream-subtrees.md@2.1.0、opencraft/MONO2_MIGRATION.md | 真源 | mono2唯一写入，不恢复旧仓库CI |
 | .ci/AGENTS.md、opencraft/docs/build-matrix.md、config/build-matrix.json | 构建矩阵 | 独立产品产物与平台 |
+| docs/context/flows/tapd-gongfeng-delivery.md@2.0.0 | MR交付授权 | 本轮仅修源码，提交/推送另行确认 |
 | docs/context/project/adjacency/argocd-ci-secrets.md、.ci/runtime/tests/contract_tests/test_vela_computer_artifact.py | checkout修复邻接 | 候选仍只归档精确SHA，不增加部署/凭据路径 |
 | opencraft/.agents/skills/opencraft-maintenance/SKILL.md、references/verification.md | 维护 | 聚焦测试与实机边界 |
 
@@ -125,4 +126,13 @@ OpenCraft沿用现有Web本地发布契约，不恢复专用CI；明确产品产
 - RED：真实Git基线checkout再ff-only merge复现相同untracked冲突；原强制目标checkout测试漏掉了这个路径。
 - GREEN：8项真实Git回归、完整CI runtime534项及物化smoke/shell/YAML通过；文档、docs-impact、限定范围凭证扫描、diff check通过。
 - Context仍833条错误（本Pack为0），Context tests26项中4项失败；Audit发现结果needs_agent_review/not_assessed，不称完整Context验收。未手动重跑、清理真实CI缓存、提交/推送新版本或部署；真实SDK新版本仍待CI验证。
+
+## MR合并快照与候选源提交
+
+- 9dc9e09b已推送!4028；候选#8的准备与checkout已通过，但严格HEAD==ci.sha在后续核对中失败，尚未执行Go校验。
+- SDK输出实际HEAD=31743861c610a7a1184822a14c8825e8cace07ea，comment为MR merge；MR source HEAD=9dc9e09bcfdf488772b5b0aec2d77fec02c1e6e9，ci.sha正确展开。失败原因不是Git拉取，是候选校验没有处理SDK集成快照。
+- 用户继续授权源码修复：先验证完整SHA、checkout对象连通性和source提交可读且属于当前checkout，再无force、禁用checkout hooks地detach source；随后保留严格SHA核对、源码校验及候选构建。不修改独立可信MR guard或其信任边界。
+- RED：真实非快进MR合并提交导致原HEAD==ci.sha判断失败。GREEN：11项Git回归通过，确保source内容准确、master独有内容不进入候选，无效/缺失/不属于checkout的SHA被拒绝且HEAD不变。
+- 完整CI runtime537项与物化smoke/shell/YAML通过，文档、docs-impact、限定范围凭证扫描和diff check通过；新代码未提交/推送，不重跑、合并或部署，不把本地测试当真实SDK验收。
+- Context复验仍为833条错误（本Pack为0），26项测试的相同4项治理/中文/预算/全仓校验失败；Audit tests33项通过，发现结果needs_agent_review/not_assessed，无新增Assessment，不称完整Context验收。
 - 真实CI重跑/恢复尚未证明，待源码验证及推送确认；不合并、不部署。
