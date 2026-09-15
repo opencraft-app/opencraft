@@ -15,10 +15,14 @@ adds its own campaign, infrastructure, secrets, and release configuration.
 - Only an account created with referral context can be attributed.
 - Registration alone does not grant a reward.
 - The qualifying fact for the Beijing pilot is the invitee's first successfully
-  provisioned non-free Pass.
-  Both a new Pass activation and a free-Pass-to-paid transfer qualify.
+  provisioned Pass through a dianshi order, including zero-charge orders.
+  Both a new order-backed Pass activation and a free-Pass-to-order transfer qualify.
+  Cash payment is not required. Legacy free trials without an order do not qualify.
 - The inviter and invitee each receive 500 credits.
-- Rewards vest for seven days. A refund during vesting cancels the rewards.
+- The default campaign has no observation period (`vesting_days=0`). Rewards
+  become immediately eligible after attribution and order-backed activation are
+  both persisted; the worker delivers them asynchronously. Refunds cancel only
+  ungranted rewards and do not automatically claw back granted credits.
 - Granted credits follow the beneficiary's existing active Pass lifecycle and
   are cleaned up by the established `free-credit:*` entitlement path.
 - If the inviter has no active Pass, the reward remains pending for up to 90
@@ -121,6 +125,11 @@ The gateway supplies the authenticated user ID. Referral endpoints never accept
 an arbitrary owner ID from the browser.
 
 ## Rollout
+
+Migration 2 changes only the schema default for `vesting_days`. The campaign
+PostSync job updates the configured campaign to zero days. Existing rewards
+retain their persisted eligibility dates; this release does not bulk accelerate
+or replay them. Explicit nonzero campaign delays remain supported.
 
 1. Create Pulsar child resources without managing the existing cluster.
 2. Deploy the referral schema, API, and worker with processing disabled.

@@ -121,7 +121,7 @@ func (s *Service) Ingest(ctx context.Context, raw []byte) error {
 func (s *Service) me(campaign *domain.Campaign, code *domain.Code) *Me {
 	return &Me{
 		Code:         code.Code,
-		URL:          s.publicBaseURL + "/auth/sign-in?ref=" + code.Code,
+		URL:          s.publicBaseURL + "/?ref=" + code.Code,
 		CampaignID:   campaign.ID,
 		CampaignName: campaign.Name,
 		StartsAt:     campaign.StartsAt,

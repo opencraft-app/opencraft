@@ -146,6 +146,12 @@ function PublicHeaderAuthControls({
     }
   }, [oauthError]);
 
+  useEffect(() => {
+    if (authReady && !isAuthenticated && new URLSearchParams(window.location.search).has('ref')) {
+      setShowLogin(true);
+    }
+  }, [authReady, isAuthenticated]);
+
   const goToCreate = () => {
     const target = !isAuthenticated
       ? promoteFreeTrial
