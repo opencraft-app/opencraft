@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: credit-shprod
+  namespace: argocd
+spec:
+  project: shprod-credit
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/credit/shprod
+  destination:
+    namespace: credit
+    name: shprod

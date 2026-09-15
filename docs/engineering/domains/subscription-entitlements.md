@@ -33,7 +33,8 @@
 - 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
 - Trade 出向计费地域也按产品类型隔离：`LIGHTVELA_TRADE_REGION` 控制 Pass/default 链路，
   `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
-  继承前者。单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
+  继承前者。已接入环境分别使用北京 `ap-beijing`、东京 `ap-seoul`、上海 `ap-shanghai`、新加坡
+  `ap-singapore`；单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
 - 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
   `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有
@@ -72,6 +73,11 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 `jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。
 韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
 兼容，不能因此放开 `jifei-prod`。韩国完成签名版本发布后必须删除此临时例外。
+
+Credit 每日用量的 `sendResource` 出向请求必须经过 CloudLadder 的
+`qbilling-send-resource-test` 路由，使用 `caller=lightvela-trade` 的 HMAC 签名。该路由只允许
+POST，并固定转发到受信上游及 `Host: qbilling.itd.com`；Trade transport 与 CloudLadder 路由必须
+协同发布，避免客户端先上线后因路由不存在返回 404。
 
 广州生产严格模式覆盖上海正式与北京测试的生产计费出向；两者必须先完成 Trade 签名发布和
 密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由
