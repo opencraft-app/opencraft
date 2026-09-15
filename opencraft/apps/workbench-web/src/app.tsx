@@ -419,6 +419,7 @@ export function App() {
     removeHost: hostCatalog.removeHost,
     openView: workbenchNavigation.openExtensionView,
     openSettings: (section: string) => { setAccountOpen(false); workbenchNavigation.openSettings(section); },
+    pushViewResource: workbenchNavigation.pushExtensionViewResource,
     replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
   }), [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation]);
@@ -984,6 +985,7 @@ export function App() {
         onRemove={hostCatalog.removeHost}
         onProvisionHost={hostCatalog.provisionHost}
         onOpenView={workbenchNavigation.openExtensionView}
+        onPushViewResource={workbenchNavigation.pushExtensionViewResource}
         onReplaceViewResource={workbenchNavigation.replaceExtensionViewResource}
         extensionContributions={hostCatalog.extensionContributions}
         extensionManager={hostCatalog.extensionManager}

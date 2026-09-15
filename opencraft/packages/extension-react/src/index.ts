@@ -21,6 +21,8 @@ export interface PlatformViewHost {
   removeHost(hostId: string): Promise<boolean>;
   openView(viewId: string, resourceUri?: string | null): void;
   openSettings?(section: string): void;
+  /** Pushes a new deep-link entry for another resource owned by the active View. */
+  pushViewResource(viewId: string, resourceUri: string): void;
   replaceViewResource(viewId: string, resourceUri: string): void;
   /** Host-owned image pipeline shared by chat attachments and trusted Views. */
   prepareImageUpload?(blob: Blob): Promise<Blob>;

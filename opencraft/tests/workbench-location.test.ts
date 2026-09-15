@@ -238,3 +238,61 @@ test("Extension View resources round-trip and can be canonically replaced", () =
     resourceUri,
   });
 });
+
+test("an active Extension View can push a resource without replacing its previous deep link", () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const urls: string[] = [];
+  let pushedEntries = 0;
+  const history = {
+    state: null as unknown,
+    replaceState(next: unknown, _unused: string, url: string) {
+      this.state = next;
+      urls.push(url);
+    },
+    pushState(next: unknown, _unused: string, url: string) {
+      this.state = next;
+      pushedEntries += 1;
+      urls.push(url);
+    },
+    back() {},
+    forward() {},
+    go() {},
+  };
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      location: { href: "https://vela.test/local/thread-a?hostId=local" },
+      history,
+      addEventListener() {},
+      removeEventListener() {},
+    },
+  });
+  const navigation = createBrowserWorkbenchNavigation(
+    createWorkbenchThreadLocation("local", "thread-a"),
+  );
+  try {
+    const channel = "lightvela-collaboration://servers/server-1/chat/channels/channel-1";
+    const thread = `${channel}/im-threads/thread-1`;
+    navigation.openExtensionView("lightvela.collaboration.workspace", channel);
+    const channelIndex = navigation.getSnapshot().historyIndex;
+
+    navigation.pushExtensionViewResource("lightvela.collaboration.workspace", thread);
+
+    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
+      kind: "extension-view",
+      viewId: "lightvela.collaboration.workspace",
+      resourceUri: thread,
+    });
+    assert.equal(navigation.getSnapshot().historyIndex, channelIndex + 1);
+    assert.equal(pushedEntries, 2);
+    assert.equal(
+      urls.at(-1),
+      `/views/lightvela.collaboration.workspace?resource=${encodeURIComponent(thread)}`,
+    );
+  } finally {
+    navigation.dispose();
+    if (previousWindow === undefined)
+      delete (globalThis as { window?: unknown }).window;
+    else Object.defineProperty(globalThis, "window", previousWindow);
+  }
+});

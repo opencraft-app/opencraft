@@ -876,6 +876,16 @@ export async function createWebWorkbenchApplicationSupervisor(
     const platform = currentWorkbenchPlatform();
     const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
     if (electronAppHost !== null) startupRollback.push(() => electronAppHost.close());
+    const [lightVelaPlatform, lightVela] = await Promise.all([
+      import("@opencraft/plugin-lightvela-platform"),
+      import("@opencraft/plugin-lightvela-hermes"),
+    ]);
+    const lightVelaAccount = new lightVelaPlatform.LightVelaAccountService({
+      runtimeCommands: new lightVela.AppServerLightVelaRuntimeCommandPort(
+        appServerRegistry.clients,
+      ),
+    });
+    startupRollback.push(() => lightVelaAccount.dispose());
     const extensions = new ExtensionSupervisor({
       context: cordis,
       platform,
@@ -933,13 +943,21 @@ export async function createWebWorkbenchApplicationSupervisor(
       const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
       await extensions.activate(createHyperNodeExtension({ url: appServerUrl() }));
     }
-    const createLightVelaHermesExtension = (
-      await import("@opencraft/plugin-lightvela-hermes/runtime-entry")
-    ).default;
-    await extensions.activate(createLightVelaHermesExtension({
-      profileSkills: profileSkills.service,
-      appServerClients: appServerRegistry.clients,
+    await extensions.activate(lightVelaPlatform.createLightVelaPlatformExtension({
+      account: lightVelaAccount,
     }));
+    await extensions.activate(lightVela.createLightVelaHermesExtension({
+      account: lightVelaAccount,
+      profileSkills: profileSkills.service,
+    }));
+    if (platform === "web") {
+      const createLightVelaCollaborationExtension = (
+        await import("@opencraft/plugin-lightvela-collaboration/runtime-entry")
+      ).default;
+      await extensions.activate(createLightVelaCollaborationExtension({
+        account: lightVelaAccount,
+      }));
+    }
     const extensionInstallationPersistence = await IndexedDbExtensionInstallationPersistence.open({
       databaseName: currentProductDatabaseName("vela-extension-installations"),
     });
@@ -1019,6 +1037,7 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => extensions.dispose(),
           () => authenticationFiber.dispose(),
           () => environmentFiber.dispose(),
+          () => lightVelaAccount.dispose(),
           disconnectAppearanceThemes,
           () => botDirectory.dispose(),
           () => profileSkills.dispose(),
@@ -1268,6 +1287,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => extensions.dispose(),
         () => authenticationFiber.dispose(),
         () => environmentFiber.dispose(),
+        () => lightVelaAccount.dispose(),
         disconnectAppearanceThemes,
         () => botDirectory.dispose(),
         () => profileSkills.dispose(),

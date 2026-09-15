@@ -57,6 +57,7 @@ export interface SettingsContentProps {
   readonly onRemove: (hostId: string) => Promise<boolean>;
   readonly onProvisionHost: (input: ProvisionHostInput) => Promise<HostConnectionProfile>;
   readonly onOpenView: (viewId: string, resourceUri?: string | null) => void;
+  readonly onPushViewResource: (viewId: string, resourceUri: string) => void;
   readonly onReplaceViewResource: (viewId: string, resourceUri: string) => void;
   readonly extensionContributions: ExtensionContributionStore;
   readonly extensionManager: ExtensionManager;
@@ -316,6 +317,7 @@ export function SettingsContent({
   extensionManager,
   platformViewRenderers,
   onOpenView,
+  onPushViewResource,
   onReplaceViewResource,
 }: SettingsContentProps) {
   const [error, setError] = useState<string | null>(null);
@@ -354,8 +356,9 @@ export function SettingsContent({
     provisionHost: onProvisionHost,
     removeHost: onRemove,
     openView: onOpenView,
+    pushViewResource: onPushViewResource,
     replaceViewResource: onReplaceViewResource,
-  }), [activeHostId, onOpenView, onProvisionHost, onRemove, onReplaceViewResource, platform, profiles]);
+  }), [activeHostId, onOpenView, onProvisionHost, onPushViewResource, onRemove, onReplaceViewResource, platform, profiles]);
 
   return (
     <div className="settings-page__viewport" data-selection="chrome" data-layout={selectedExtensionPage?.layout ?? "document"}>

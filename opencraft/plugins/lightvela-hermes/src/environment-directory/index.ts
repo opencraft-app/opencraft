@@ -1,1 +1,1 @@
-export * from "./source";
+export { LightVelaEnvironmentSource } from "@opencraft/plugin-lightvela-platform";

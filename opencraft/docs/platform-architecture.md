@@ -116,6 +116,24 @@ A plain same-origin Web Worker is not advertised as a security boundary. Full
 rationale and the migration plan are defined in
 [`plugin-architecture.md`](./plugin-architecture.md).
 
+The Web application owns exactly one `LightVelaAccountService`, whose source,
+OAuth lifecycle, account View and `platformAccount` contribution belong to
+`lightvela.platform`. `lightvela.hermes` and `lightvela.collaboration` borrow
+that same account authority; deactivating either consumer must not sign out or
+dispose the account. Collaboration uses the account's authenticated raw-request
+port for its OpenAPI responses, while Hermes retains the envelope-aware request
+path. No consumer creates a second token store or interprets another extension's
+resource loading failure as logout.
+
+`lightvela.collaboration` owns one routed Collaboration Workspace and the Human
+Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.
+Its activation-scoped service obtains a short-lived
+session from `POST /v1/me/im/session`, logs in through `@tencentcloud/chat`, and
+owns SDK close. View mount/unmount only subscribes to the service snapshot; it
+cannot recreate or dispose the IM connection. This conversation state is
+separate from AppServer Agent conversations and does not register a
+`BotContribution`.
+
 `AgentCapabilityRuntime` is an optional AI-facing consumer of that platform. It exposes
 searchable capabilities rather than packages, progressively loads model
 context, issues Task/request-series-scoped leases, routes invocations to local/SSH/MCP
@@ -176,6 +194,12 @@ not a second source of product policy.
   The onboarding `bot-required` projection is retained for explicitly selected
   LightVela configuration, not as a global desktop prerequisite. Native Expo
   account onboarding is a separate adapter and is not changed by this desktop fix.
+- Product onboarding shares a renderer-neutral account-state projection. An
+  authenticated LightVela account with zero executable Bots can still enter
+  Collaboration; `bot-required` belongs only to the Hermes/Codex Host path, not
+  to the application account gate. Web and Expo still resolve the same
+  region-aware `/dashboard/create` target when a user explicitly enters that
+  Agent path, then refresh the account catalog after regaining focus.
 - Conversation and composer behavior: shared models/controllers; separate DOM
   and native views.
 - Workbench resource identity and durable routes: shared. AppShell geometry,

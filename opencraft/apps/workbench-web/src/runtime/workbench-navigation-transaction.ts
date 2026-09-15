@@ -30,6 +30,7 @@ export interface WorkbenchNavigationTransaction<
   openSettings(slug?: string): void;
   closeSettings(): void;
   openExtensionView(viewId: string, resourceUri?: string | null): void;
+  pushExtensionViewResource(viewId: string, resourceUri: string): void;
   replaceExtensionViewResource(viewId: string, resourceUri: string): void;
   closeExtensionView(): void;
   promoteDraft(
@@ -181,6 +182,17 @@ export function createWorkbenchNavigationTransaction<
       if (navigationBlocked()) return;
       navigation.openExtensionView(viewId, resourceUri);
       committedIndex = navigation.getSnapshot().historyIndex;
+      publish();
+    },
+    pushExtensionViewResource(viewId, resourceUri) {
+      if (disposed)
+        throw new Error("Workbench navigation transaction is disposed");
+      if (navigationBlocked()) return;
+      const previousRevision = navigation.getSnapshot().revision;
+      navigation.pushExtensionViewResource(viewId, resourceUri);
+      const next = navigation.getSnapshot();
+      if (next.revision === previousRevision) return;
+      committedIndex = next.historyIndex;
       publish();
     },
     replaceExtensionViewResource(viewId, resourceUri) {
