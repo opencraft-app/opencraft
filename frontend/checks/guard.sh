@@ -46,8 +46,10 @@ tar \
   --exclude="velalink/out" \
   --exclude="velalink/target" \
   --exclude="velalink/crates/*/target" \
+  --exclude="shared/lightvela-agent-core/node_modules" \
+  --exclude="shared/lightvela-agent-core/dist" \
   -C "$REPO_ROOT" \
-  -cf - frontend velalink | tar -C "$FRONTEND_GUARD_ROOT" -xf -
+  -cf - frontend velalink shared/lightvela-agent-core | tar -C "$FRONTEND_GUARD_ROOT" -xf -
 
 cd "$FRONTEND_GUARD_DIR"
 if [[ ! -f pnpm-lock.yaml ]]; then

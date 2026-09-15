@@ -68,6 +68,8 @@ release-gitops、service-ci、site-environment-routing、service-collaboration�
 | argocd/README.md、argocd/apps/beijing-sandbox/README.md | AppSet 规则 | 候选先不注册 active app，禁止手写 leaf |
 | docs/context/project/adjacency/argocd-ci-secrets.md@1.0.0 | 邻接 | 核对 referral.bundle、北京组合层与 DB runner |
 | docs/engineering/domains/release-gitops.md | 正式设计 | 回写 source/build/foundation/migration/runtime 边界 |
+| docs/context/project/services/frontend.md@2.1.0、frontend/AGENTS.md | MR !4021 后续 CI 修复 | 保持业务源码不变，仅修复隔离复制 |
+| docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0 | 前端邻接 | 核对相邻 release contract 测试 |
 
 ## evidence
 - source branch feat/collaboration-ci-argo 基于 master 5beee0cf，初始 worktree 干净。
@@ -105,3 +107,15 @@ release-gitops、service-ci、site-environment-routing、service-collaboration�
 - discard: 不用历史 Canary 镜像/IM 参数填补北京配置；不把 candidate 当 active app。
 - restore: feat/collaboration-ci-argo；所有修改属于本任务，master/gitops/live 未改变。
 - next_action: 提交并推送独立源码分支；后续先交付 foundation，再迁移/校验并激活 runtime。
+
+## MR !4021 后续：前端隔离依赖复制
+
+- 用户授权：“好的，搞起来”，修复并提交到同一 MR；不合并、不部署。
+- 受影响路径：frontend/checks/guard.sh、test_release_bundle_contracts.py、正式 release-gitops 设计。
+- RED：真实 tar fixture 明确失败于缺少 ../shared/lightvela-agent-core/package.json。
+- 实现：补齐共享包源码，排除 node_modules/dist；遍历所有 file: 依赖验证布局和源码。
+- GREEN：3项前端guard契约测试通过；完整CI runtime为521项，物化smoke/YAML/shell均通过。
+- 实际隔离验证：macOS Node26.7.0/pnpm10.32.1，frozen install成功、类型检查174 current/0 new、i18n通过，前端125项测试与CN/global构建/静态导出/SEO均通过。
+- 首次本地调用漏传GUARD_REPO_ROOT导致1项stash测试失败；按changed_guards.py注入仓库根目录后125项全通过，不改源码掩盖调用差异。
+- 文档与docs-impact通过；Context26项仍为4个既有失败，audit tests33项通过；audit发现为needs_agent_review/not_assessed，不作为完整审核。
+- !4021已合入master 1e20fd3b5；修复改用fix/frontend-guard-local-dependencies后续分支，不能追加到已合MR。下一步commit/push；新MR和Linux CI结果待确认，未合并、未发布。
