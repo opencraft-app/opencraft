@@ -1,3 +1,4 @@
+import { shellSpaceMetrics, type ShellSpaceProjection } from "./shell-space";
 /** Application chrome state. Deliberately independent of Host, Thread and React. */
 export type ShellNavigationSurface = "applications" | "account";
 export type ShellNavigationVisibleDetent = "expanded" | "compact";
@@ -95,6 +96,7 @@ export interface ShellNavigationMetrics {
   readonly compactWidth: number;
   readonly compactActionSize: number;
   readonly expandedMinimumWidth: number;
+  readonly expandedMaximumWidth: number;
   readonly footerMinimumWidth: number;
   readonly contentMinimumWidth: number;
   readonly hysteresis: number;
@@ -102,10 +104,11 @@ export interface ShellNavigationMetrics {
   readonly footerHeight: number;
 }
 export const shellNavigationMetrics: ShellNavigationMetrics = {
-  columnWidth: 182,
+  columnWidth: 137,
   compactWidth: 52,
   compactActionSize: 34,
-  expandedMinimumWidth: 168,
+  expandedMinimumWidth: 126,
+  expandedMaximumWidth: 137,
   footerMinimumWidth: 260,
   contentMinimumWidth: 420,
   hysteresis: 32,
@@ -113,10 +116,10 @@ export const shellNavigationMetrics: ShellNavigationMetrics = {
   footerHeight: 34,
 };
 
-export function resolveShellNavigationWidth(value: unknown): number {
+export function resolveShellNavigationWidth(value: unknown, metrics = shellNavigationMetrics): number {
   return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(shellNavigationMetrics.expandedMinimumWidth, Math.min(520, value))
-    : shellNavigationMetrics.columnWidth;
+    ? Math.max(metrics.expandedMinimumWidth, Math.min(metrics.expandedMaximumWidth, value))
+    : metrics.columnWidth;
 }
 
 /** Platform adapters supply available width; resizing never changes preferences. */
@@ -130,30 +133,38 @@ export function projectShellNavigation(input: {
   readonly allowDock?: boolean;
   readonly previouslyAvailable?: boolean;
   readonly metrics?: ShellNavigationMetrics;
+  readonly space?: ShellSpaceProjection;
 }) {
   const metrics = input.metrics ?? shellNavigationMetrics;
-  const contextOpen = input.sidecarOpen && input.contextAvailable;
+  const expandedWidth = resolveShellNavigationWidth(input.navigationWidth, metrics);
+  const contextOpen = input.space?.contextOpen ?? (input.sidecarOpen && input.contextAvailable);
+  const railDetent = input.space?.navigationDetent ?? input.state.railDetent;
   const visibleRailWidth = input.state.lastVisibleRailDetent === "compact"
     ? metrics.compactWidth
-    : input.navigationWidth ?? metrics.columnWidth;
-  const railVisible = input.state.railDetent !== "hidden";
+    : expandedWidth;
+  const railVisible = railDetent !== "hidden";
   const railWidth = railVisible
-    ? input.state.railDetent === "compact" ? metrics.compactWidth : input.navigationWidth ?? metrics.columnWidth
+    ? railDetent === "compact" ? metrics.compactWidth : expandedWidth
     : 0;
   // Without application context, navigation is the single primary sidebar,
   // not an extra pinned column. Its visibility follows the Sidecar toggle.
   const primaryNavigation = !input.contextAvailable && input.allowDock !== false;
   const required = visibleRailWidth + metrics.contentMinimumWidth
     + (contextOpen ? input.contextWidth : 0);
-  const dockAvailable = input.allowDock !== false && input.viewportWidth >= required
-    + (input.previouslyAvailable === false ? metrics.hysteresis : 0);
+  const dockAvailable = input.space !== undefined ? input.space.navigationOpen
+      || (input.allowDock !== false && (!input.state.pinned.applications || input.state.railDetent === "hidden")
+        && input.viewportWidth >= visibleRailWidth + (contextOpen ? input.contextWidth : 0)
+          + shellSpaceMetrics.mainMinimum + (input.space.rightOpen ? shellSpaceMetrics.rightMinimum : 0)
+          + shellSpaceMetrics.hysteresis)
+    : input.allowDock !== false && input.viewportWidth >= required
+      + (input.previouslyAvailable === false ? metrics.hysteresis : 0);
   const docked = {
     applications: railVisible && input.sidecarOpen && (primaryNavigation || dockAvailable && input.state.pinned.applications),
     account: railVisible && input.sidecarOpen && dockAvailable && input.state.pinned.account,
   };
   return {
     dockAvailable,
-    railDetent: input.state.railDetent,
+    railDetent,
     lastVisibleRailDetent: input.state.lastVisibleRailDetent,
     railVisible,
     railWidth,

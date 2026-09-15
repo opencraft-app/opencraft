@@ -88,6 +88,9 @@
 - 【CN 待补 | GLOBAL ✓】如何使用 Hermes Agent 创建每日摘要
 - 【CN 待补 | GLOBAL ✓】如何让 Hermes Agent 保持 24 小时在线
 - 【CN 待补 | GLOBAL ✓】如何使用 Agent 管理长期记忆和个人知识
+- 【CN ✓ | GLOBAL ✓】使用 LightVela 自动化 Agent 任务
+- 【CN ✓ | GLOBAL ✓】在 LightVela 中设置通知任务
+- 【CN ✓ | GLOBAL ✓】在 LightVela 中运行脚本任务
 
 # 产品对比与选型
 

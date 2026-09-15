@@ -263,6 +263,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
             (("ai-gateway", "migration"), "AI_GATEWAY_MIGRATE_DSN", "/usr/local/bin/ai-gateway-migrate"),
             (("subscription", "migration"), "SUBSCRIPTION_MYSQL_DSN", "/usr/local/bin/subscription-migrate"),
             (("credit", "migration"), "CREDIT_MYSQL_DSN", "/usr/local/bin/credit-migrate"),
+            (("referral", "migration"), "REFERRAL_MYSQL_DSN", "/usr/local/bin/referral-migrate"),
         )
 
         for key, dsn_env, binary in cases:

@@ -125,7 +125,7 @@ export class WorkbenchPanelService extends Service {
     const tab = definition.createTab(params);
     if (tab.kind !== kind) throw new Error(`Panel definition ${kind} created tab kind ${tab.kind}`);
     const current = this.ensureOwner(ownerId);
-    const existing = current[tab.region].tabs.find((candidate) => candidate.id === tab.id);
+    const existing = [...current.right.tabs, ...current.bottom.tabs].find((candidate) => candidate.id === tab.id);
     if (
       existing !== undefined
       && (
@@ -136,8 +136,9 @@ export class WorkbenchPanelService extends Service {
     ) {
       throw new Error(`Panel tab ${tab.id} cannot replace its logical resource identity`);
     }
-    this.dispatch(ownerId, { type: "open-tab", tab, activate: options.activate });
-    return tab;
+    const placed = existing ? { ...tab, region: existing.region } : tab;
+    this.dispatch(ownerId, { type: "open-tab", tab: placed, activate: options.activate });
+    return placed;
   }
 
   dispatch(ownerId: string, action: PanelAction): ConversationPanelState {

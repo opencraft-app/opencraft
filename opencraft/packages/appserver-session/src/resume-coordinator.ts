@@ -1,6 +1,6 @@
 import { Context, Service } from "@deepseek-ai/cordis";
 import type { AppServerClient } from "@opencraft/appserver-client";
-import { buildResumeHistoryRequest, type AppServerThread, type ThreadResumeParams, type ThreadResumeResponse } from "@opencraft/appserver-protocol";
+import { buildResumeHistoryRequest, type AppServerThread, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
 
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
 import { mergeTurns, reconcileHistoryWindow } from "./merge-turns";
@@ -155,6 +155,28 @@ export class ThreadResumeCoordinatorService extends Service {
     });
     this.inFlight.set(options.threadId, operation);
     return operation;
+  }
+
+  /** A successful fork already owns a live stream; an ephemeral fork has no rollout to Resume. */
+  adoptFork(response: ThreadForkResponse, generation: number): ThreadView {
+    this.ensureGeneration(generation);
+    const thread = requireThread(response.thread, "thread/fork");
+    const baseline = requireResumeResponse({ ...response, thread }, thread.id);
+    this.ctx.threadStreamOwnership.set(thread.id, { role: "owner" });
+    const view = this.ctx.threadViews.update(thread.id, current => ({
+      ...this.ctx.threadResumeProjectors.project(current, { metadata: thread, response: baseline }),
+      connectionGeneration: generation,
+      resumeState: "resumed",
+      streamRole: { role: "owner" },
+      turns: mergeTurns(thread.turns, current.turns),
+      historySource: "fork",
+      tailHydrationComplete: true,
+      turnsPagination: { olderCursor: null, oldestLoadedTurnId: thread.turns[0]?.id ?? null, isLoadingOlder: false, hasLoadedOldest: true },
+      resumeError: null,
+      historyError: null,
+    }));
+    this.ctx.resumeNotificationBuffer.release(thread.id);
+    return view;
   }
 
   setStreamRole(threadId: string, role: ThreadStreamRole | null): ThreadView {

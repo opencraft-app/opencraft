@@ -53,3 +53,79 @@ func TestLoadTokyoSandboxInventory(t *testing.T) {
 		t.Fatalf("unexpected Tokyo public API domain: %q", inventory.Domains.PublicAPI)
 	}
 }
+
+func TestLoadBeijingSandboxPulsarInventory(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "envs", "tencentcloud", "beijing-sandbox", "inventory.yaml")
+
+	inventory, err := LoadInventory(path)
+	if err != nil {
+		t.Fatalf("LoadInventory(beijing-sandbox): %v", err)
+	}
+	pulsar := inventory.Stacks.Pulsar
+	if !pulsar.Enabled || pulsar.ExistingClusterID != "pulsar-n57ovqb7r7gv" {
+		t.Fatalf("unexpected Pulsar identity: %+v", pulsar)
+	}
+	if pulsar.ExpectedProductName != "PULSAR.P2.MINI1" || len(pulsar.ExpectedZoneIDs) != 1 || pulsar.ExpectedZoneIDs[0] != 800008 {
+		t.Fatalf("unexpected Pulsar placement: %+v", pulsar)
+	}
+	if pulsar.ExpectedVPCID != "vpc-21gzr2dc" || pulsar.ExpectedSubnetID != "subnet-ieszm71b" {
+		t.Fatalf("unexpected Pulsar network: %+v", pulsar)
+	}
+	if pulsar.Topic != "lightvela.referral.events.v1" || pulsar.MessageTTLSeconds != 604800 || pulsar.RetentionMinutes != 1440 {
+		t.Fatalf("unexpected Pulsar messaging config: %+v", pulsar)
+	}
+	if pulsar.BrokerURL != "http://pulsar-n57ovqb7r7gv.eap-vle3kjgi.tdmq.ap-bj.qcloud.tencenttdmq.com:8080" {
+		t.Fatalf("unexpected Pulsar broker URL: %q", pulsar.BrokerURL)
+	}
+}
+
+func TestValidatePulsarInventoryRejectsUnsafeValues(t *testing.T) {
+	valid := PulsarInventory{
+		Enabled:              true,
+		ExistingClusterID:    "pulsar-existing",
+		BrokerURL:            "http://pulsar-existing.example.internal:8080",
+		ExpectedClusterName:  "lightvela-pulsar-bj",
+		ExpectedProductName:  "PULSAR.P2.MINI1",
+		ExpectedZoneIDs:      []int{800008},
+		ExpectedVPCID:        "vpc-existing",
+		ExpectedSubnetID:     "subnet-existing",
+		Namespace:            "lightvela-ref",
+		MessageTTLSeconds:    604800,
+		RetentionMinutes:     1440,
+		RetentionSizeMB:      10240,
+		Topic:                "lightvela.referral.events.v1",
+		DeadLetterTopic:      "lightvela.referral.events.v1-dlq",
+		UserAuthProducerRole: "auth-producer",
+		CTLProducerRole:      "ctl-producer",
+		ReferralConsumerRole: "referral-consumer",
+		UserAuthSSMSecret:    "auth-secret",
+		CTLSSMSecret:         "ctl-secret",
+		ReferralSSMSecret:    "referral-secret",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*PulsarInventory)
+	}{
+		{name: "missing cluster", mutate: func(v *PulsarInventory) { v.ExistingClusterID = "" }},
+		{name: "invalid zone", mutate: func(v *PulsarInventory) { v.ExpectedZoneIDs = []int{0} }},
+		{name: "invalid ttl", mutate: func(v *PulsarInventory) { v.MessageTTLSeconds = 0 }},
+		{name: "negative retention", mutate: func(v *PulsarInventory) { v.RetentionSizeMB = -1 }},
+		{name: "partial retention", mutate: func(v *PulsarInventory) { v.RetentionSizeMB = 0 }},
+		{name: "retention below minimum", mutate: func(v *PulsarInventory) { v.RetentionSizeMB = 10239 }},
+		{name: "namespace too long", mutate: func(v *PulsarInventory) { v.Namespace = "lightvela-platform" }},
+		{name: "invalid namespace characters", mutate: func(v *PulsarInventory) { v.Namespace = "lightvela.ref" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := valid
+			tt.mutate(&candidate)
+			if err := validatePulsarInventory(candidate); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}

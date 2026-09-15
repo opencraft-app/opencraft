@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: referral
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: referral
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: referral-config
+  namespace: referral
+data:
+  REFERRAL_ENABLED: "false"
+  REFERRAL_PROCESSING_ENABLED: "false"
+  REFERRAL_ADDR: ":8080"
+  MYSQL_HOST: "REPLACE_REFERRAL_MYSQL_HOST"
+  MYSQL_PORT: "REPLACE_REFERRAL_MYSQL_PORT"
+  REFERRAL_DB: "referral"
+  REFERRAL_DB_USER: "referral"
+  REFERRAL_PUBLIC_BASE_URL: "REPLACE_REFERRAL_PUBLIC_BASE_URL"
+  REFERRAL_PULSAR_URL: "REPLACE_REFERRAL_PULSAR_URL"
+  REFERRAL_PULSAR_TOPIC: "REPLACE_REFERRAL_PULSAR_TOPIC"
+  REFERRAL_PULSAR_DLQ_TOPIC: "REPLACE_REFERRAL_PULSAR_DLQ_TOPIC"
+  REFERRAL_PULSAR_SUBSCRIPTION: "lightvela-referral-worker"
+  CTL_INTERNAL_BASE_URL: "REPLACE_REFERRAL_CTL_INTERNAL_BASE_URL"
+  REFERRAL_WORKER_POLL_INTERVAL: "10s"
+  REFERRAL_WORKER_BATCH_SIZE: "50"
+  REFERRAL_REWARD_LEASE_DURATION: "30s"
+  REFERRAL_CAMPAIGN_ID: "REPLACE_REFERRAL_CAMPAIGN_ID"
+  REFERRAL_CAMPAIGN_NAME: "REPLACE_REFERRAL_CAMPAIGN_NAME"
+  REFERRAL_CAMPAIGN_STATUS: "active"
+  REFERRAL_CAMPAIGN_STARTS_AT: "REPLACE_REFERRAL_CAMPAIGN_STARTS_AT"
+  REFERRAL_CAMPAIGN_ENDS_AT: "REPLACE_REFERRAL_CAMPAIGN_ENDS_AT"
+  REFERRAL_INVITER_CREDIT: "500"
+  REFERRAL_INVITEE_CREDIT: "500"
+  REFERRAL_VESTING_DAYS: "7"
+  REFERRAL_PENDING_TTL_DAYS: "90"
+  REFERRAL_MAX_REWARDS_PER_INVITER: "50"
+  REFERRAL_BUDGET_CREDIT: "REPLACE_REFERRAL_BUDGET_CREDIT"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: referral
+  namespace: referral
+  labels:
+    app: referral
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: referral
+  template:
+    metadata:
+      labels:
+        app: referral
+    spec:
+      nodeSelector:
+        pool: REPLACE_REFERRAL_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: referral
+      containers:
+        - name: referral
+          image: REPLACE_REFERRAL_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: referral-config
+            - secretRef:
+                name: referral-runtime-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 48Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: referral-worker
+  namespace: referral
+  labels:
+    app: referral-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: referral-worker
+  template:
+    metadata:
+      labels:
+        app: referral-worker
+    spec:
+      nodeSelector:
+        pool: REPLACE_REFERRAL_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: referral-worker
+      containers:
+        - name: referral-worker
+          image: REPLACE_REFERRAL_IMAGE
+          imagePullPolicy: Always
+          command: ["/usr/local/bin/referral-worker"]
+          envFrom:
+            - configMapRef:
+                name: referral-config
+            - secretRef:
+                name: referral-runtime-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: referral
+  namespace: referral
+  labels:
+    app: referral
+spec:
+  selector:
+    app: referral
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

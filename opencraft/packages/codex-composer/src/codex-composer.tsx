@@ -25,6 +25,7 @@ import {
 } from "prosemirror-state";
 import { Decoration, DecorationSet, EditorView } from "prosemirror-view";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { reasoningCapability, resolveReasoningEffort } from "@opencraft/composer-core";
 import {
   ArrowUp,
   AtSign,
@@ -137,6 +138,8 @@ export interface ComposerSelectionCatalog {
   readonly isFetching?: boolean;
   readonly modelError?: string | null;
   readonly permissionProfileError?: string | null;
+  readonly onModelMenuOpen?: () => void;
+  readonly retryModels?: () => void;
 }
 
 export interface ComposerEffectiveSelections {
@@ -829,18 +832,15 @@ export const CodexComposer = forwardRef<
             model.value === selectedModelValue ||
             model.id === selectedModelValue,
         ) ?? null);
-  const selectedEffortValue =
-    composerSnapshot.draft.selections.effort ??
-    effectiveSelections?.effort ??
-    selectedModel?.defaultEffort ??
-    null;
-  const hasDraftPermissionSelection = Object.prototype.hasOwnProperty.call(
-    composerSnapshot.draft.selections,
-    "permissionProfile",
-  );
-  const selectedPermissionValue = hasDraftPermissionSelection
-    ? (composerSnapshot.draft.selections.permissionProfile ?? null)
-    : (effectiveSelections?.permissionProfile ?? null);
+  const selectedEffortValue = selectedModel ? resolveReasoningEffort(
+    reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),
+    composerSnapshot.draft.selections.effort ?? effectiveSelections?.effort,
+  ) ?? null : null;
+  // Null means inherit, including drafts saved by the former default option.
+  // Display the resolved policy without writing it back as an explicit choice.
+  const selectedPermissionValue =
+    composerSnapshot.draft.selections.permissionProfile ??
+    effectiveSelections?.permissionProfile ?? null;
   const selectedPermission =
     catalogPermissions.find(
       (permission) => permission.value === selectedPermissionValue,
@@ -1079,6 +1079,12 @@ export const CodexComposer = forwardRef<
       let intent: SubmitIntent;
       try {
         intent = controller.createSubmitIntent();
+        if (selectedModel && !isStreaming && editingQueuedSubmissionId === null) {
+          intent = { ...intent, selections: { ...intent.selections,
+            model: selectedModel.value,
+            effort: resolveReasoningEffort(reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),intent.selections.effort ?? effectiveSelections?.effort),
+          } };
+        }
       } catch {
         return;
       }
@@ -1177,6 +1183,8 @@ export const CodexComposer = forwardRef<
       onSubmit,
       onUpdateQueuedSubmission,
       editingQueuedSubmissionId,
+      selectedModel,
+      effectiveSelections?.effort,
     ],
   );
   const submitActionRef = useRef(submit);
@@ -1545,9 +1553,7 @@ export const CodexComposer = forwardRef<
       type: "set-selections",
       patch: {
         model: model.value,
-        effort: supportsCurrentEffort
-          ? selectedEffortValue
-          : (model.defaultEffort ?? model.efforts[0]?.value),
+        effort: resolveReasoningEffort(reasoningCapability(model.efforts.map(e=>e.value),model.defaultEffort),supportsCurrentEffort ? selectedEffortValue : undefined),
       },
     });
     refocusEditorAfterIntelligenceMenuRef.current = true;
@@ -1615,7 +1621,7 @@ export const CodexComposer = forwardRef<
   const permissionTriggerLabel =
     selectedPermission?.label ??
     (selectedPermissionValue === null
-      ? "Default permissions"
+      ? "Permissions"
       : permissionLabel(selectedPermissionValue));
   const modelPickerDisabled = disabled || catalogModels.length === 0;
 
@@ -1865,6 +1871,7 @@ export const CodexComposer = forwardRef<
                 modal={false}
                 open={openPicker === "intelligence"}
                 onOpenChange={(isOpen) => {
+                  if (isOpen) selectionCatalog?.onModelMenuOpen?.();
                   if (isOpen)
                     refocusEditorAfterIntelligenceMenuRef.current = false;
                   setOpenPicker((current) =>
@@ -1969,8 +1976,10 @@ export const CodexComposer = forwardRef<
                         {selectionCatalog?.modelError ? (
                           <div className="codex-composer-selection-menu__status is-error">
                             {selectionCatalog.modelError}
+                            {selectionCatalog.retryModels ? <DropdownMenu.Item className="codex-composer-selection-menu__item" onSelect={event => { event.preventDefault(); selectionCatalog.retryModels?.(); }}>重试</DropdownMenu.Item> : null}
                           </div>
                         ) : null}
+                        {!selectionCatalog?.isFetching && selectedModelValue !== null && selectedModel === null ? <div className="codex-composer-selection-menu__status is-error">当前选择的模型不可用，请重新选择。</div> : null}
                         {selectedModel?.efforts.length ? (
                           <>
                             <DropdownMenu.Separator className="codex-composer-selection-menu__separator" />
@@ -2042,23 +2051,6 @@ export const CodexComposer = forwardRef<
                       sideOffset={1}
                       collisionPadding={6}
                     >
-                      <DropdownMenu.Label className="codex-composer-selection-menu__heading">
-                        How should OpenCraft actions be approved?
-                      </DropdownMenu.Label>
-                      <DropdownMenu.Item
-                        className="codex-composer-selection-menu__item has-leading"
-                        data-selected={
-                          selectedPermissionValue === null ? "true" : undefined
-                        }
-                        onSelect={() => selectPermission(null)}
-                      >
-                        <SelectionMenuItemContent
-                          description="Use permissions resolved from AppServer configuration"
-                          label="AppServer default"
-                          leading={permissionMenuLeadingIcon(null)}
-                          selected={selectedPermissionValue === null}
-                        />
-                      </DropdownMenu.Item>
                       {catalogPermissions.map((permission) => {
                         const isSelected =
                           permission.value === selectedPermissionValue;
@@ -2103,7 +2095,7 @@ export const CodexComposer = forwardRef<
                       {selectionCatalog?.permissionProfileError ? (
                         <div className="codex-composer-selection-menu__status is-error">
                           Permission profiles are unavailable on this host.
-                          AppServer default remains active.
+                          Current permissions remain unchanged.
                         </div>
                       ) : null}
                     </DropdownMenu.Content>

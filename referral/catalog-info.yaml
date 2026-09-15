@@ -1,0 +1,18 @@
+{
+  "id": "referral",
+  "name": "邀请返利服务",
+  "kind": "service",
+  "path": "referral",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["subscription-entitlements", "release-gitops"],
+  "summary": "负责邀请返利活动、归因、观察期和积分奖励状态机。",
+  "runtime": "Go HTTP 服务、Pulsar worker 与 MySQL",
+  "interfaces": ["Referral user API", "Pulsar domain events", "CTL promotional credit"],
+  "dependencies": ["user-auth", "ctl", "velagw", "service-gateway", "tdmq-pulsar"],
+  "source_docs": ["referral/AGENTS.md", "docs/superpowers/specs/2026-09-14-referral-program-v2-design.md"],
+  "agent_entry": "referral/AGENTS.md",
+  "service_docs": "referral/README.md",
+  "deploy": ["referral/k8s"],
+  "generated_paths": []
+}

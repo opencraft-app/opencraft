@@ -22,8 +22,8 @@ import type {
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
 import {
-  isRightPanelResponsiveBlocked,
   type PanelAction,
+  type PanelTabDescriptor,
 } from "@opencraft/workbench-panels";
 import {
   createInteractionResponse,
@@ -65,6 +65,8 @@ import {
 } from "./components/conversation";
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { RightPanel } from "./components/right-panel";
+import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
+import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { InternalDeveloperModeGate } from "./components/internal-developer-mode-gate";
 import {
@@ -123,6 +125,7 @@ import { getWindowChromePolicy, useWindowChrome } from "./window-chrome";
 import { useTimelineViewportHost } from "./timeline-viewport";
 import { ComposerExtensionActions } from "./runtime/composer-action-renderers";
 import { useExtensionWorkbenchProjection } from "./runtime/extension-workbench-projection";
+import { useAuthenticationPresentation } from "./runtime/use-authentication-presentation";
 
 const SettingsContent = lazy(async () => {
   const module = await import("./components/settings-page");
@@ -213,6 +216,7 @@ function ConversationHydration({
 
 export function App() {
   const [accountOpen, setAccountOpen] = useState(false);
+  const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
   const appearanceTheme = useAppearanceTheme();
   const windowChrome = useWindowChrome();
   const chromePolicy = getWindowChromePolicy(windowChrome);
@@ -260,7 +264,7 @@ export function App() {
     hostCatalog.hosts[0]!;
   const composerHostOptions = useMemo(
     () =>
-      hostCatalog.hosts.map((host) => ({
+      hostCatalog.hosts.filter(host => hostCatalog.profiles.some(profile => profile.hostId === host.hostId && profile.enabled)).map((host) => ({
         id: host.hostId,
         label: host.label,
         kind: host.kind,
@@ -269,7 +273,7 @@ export function App() {
           host.executionLocation ?? hostKindDescription(host.kind),
         workspaceBrowseRoots: host.workspaceBrowseRoots,
       })),
-    [hostCatalog.hosts],
+    [hostCatalog.hosts, hostCatalog.profiles],
   );
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
@@ -310,7 +314,7 @@ export function App() {
       : SIDEBAR_DEFAULT_WIDTH;
     return Math.max(
       SIDEBAR_MINIMUM_WIDTH,
-      Math.min(initialWidth, getSidebarMaximumWidth(window.innerWidth)),
+      Math.min(initialWidth, getSidebarMaximumWidth(Number.POSITIVE_INFINITY)),
     );
   });
   // Codex projects the single persisted sidebar-width signal into a root
@@ -327,13 +331,6 @@ export function App() {
       );
     };
   }, [sidebarWidth]);
-  const [rightPanelResponsiveBlocked, setRightPanelResponsiveBlocked] =
-    useState(() =>
-      isRightPanelResponsiveBlocked({
-        viewportWidth: window.innerWidth,
-        sidebarOpen,
-      }),
-    );
   const timelineSurfaceCapabilities = useMemo<TimelineSurfaceCapabilities>(
     () => ({
       // These are renderer capabilities, not values inferred from AppServer data.
@@ -386,7 +383,7 @@ export function App() {
   const settingsSection =
     workbenchNavigationSnapshot.applicationRoute.kind === "settings"
       ? workbenchNavigationSnapshot.applicationRoute.slug
-      : "connections";
+      : "appearance";
   const settingsContributionSnapshot = useSyncExternalStore(
     hostCatalog.extensionContributions.subscribe,
     hostCatalog.extensionContributions.getSnapshot,
@@ -414,12 +411,14 @@ export function App() {
     workbenchNavigation.openSettings();
   }, [workbenchNavigation]);
   const extensionViewHost = useMemo<PlatformViewHost>(() => ({
+    authentication: hostCatalog.authenticationFlows,
     platform: extensionPlatform,
     activeHostId: snapshot.hostId,
     profiles: hostCatalog.profiles,
     provisionHost: hostCatalog.provisionHost,
     removeHost: hostCatalog.removeHost,
     openView: workbenchNavigation.openExtensionView,
+    openSettings: (section: string) => { setAccountOpen(false); workbenchNavigation.openSettings(section); },
     replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
   }), [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation]);
@@ -436,17 +435,19 @@ export function App() {
   useEffect(() => {
     if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
   }, [extensionProjection.account?.snapshot.phase]);
-  const applicationIntervention = extensionProjection.account?.snapshot.applicationIntervention ?? null;
+  const authenticationPresentation = useAuthenticationPresentation(hostCatalog.authenticationFlows, extensionProjection.account,
+    JSON.stringify([hostCatalog.currentLocation, workbenchNavigationSnapshot.applicationRoute]));
   const hostConnectionIntervention = findHostConnectionInterventionError(
     conversationViewActivation.error,
   );
   const activeHostProviderId = hostCatalog.profiles.find(
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
-  const connectionIntervention = applicationIntervention
-    ?? (hostConnectionIntervention?.providerId === activeHostProviderId
+  // Account/catalog availability never owns the working conversation surface.
+  // Only the selected Host's actual connection failure may request intervention.
+  const connectionIntervention = hostConnectionIntervention?.providerId === activeHostProviderId
       ? hostConnectionIntervention
-      : null);
+      : null;
   const connectionInterventionNode = connectionIntervention === null
     ? null
     : extensionProjection.connectionInterventions.find(
@@ -500,6 +501,11 @@ export function App() {
   const panelState = useConversationPanelState(panelOwnerId);
   const panelRenderers = usePanelRendererSnapshot();
   const panelToolbarActions = usePanelToolbarActions();
+  const requestClosePanel = (tab: PanelTabDescriptor) => {
+    if (tab.kind === "sidechat" && tab.resource && panelRuntime.context.sideChats?.hasContent(tab.resource)) {
+      setClosingSideChat({ ownerId: panelOwnerId, tab });
+    } else panelRuntime.panels.close(panelOwnerId, tab.region, tab.id);
+  };
   const dispatchPanel = useCallback(
     (action: PanelAction) => {
       panelRuntime.panels.dispatch(panelOwnerId, action);
@@ -817,29 +823,6 @@ export function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [composerController, createTask, toggleRightPanel]);
 
-  useEffect(() => {
-    const updateRightPanelLayout = () => {
-      setRightPanelResponsiveBlocked(
-        isRightPanelResponsiveBlocked({
-          viewportWidth: window.innerWidth,
-          sidebarOpen,
-        }),
-      );
-    };
-    updateRightPanelLayout();
-    window.addEventListener("resize", updateRightPanelLayout);
-    return () => window.removeEventListener("resize", updateRightPanelLayout);
-  }, [sidebarOpen]);
-
-  useEffect(() => {
-    const clampSidebarToViewport = () => {
-      setSidebarWidth((currentWidth) =>
-        Math.min(currentWidth, getSidebarMaximumWidth(window.innerWidth)),
-      );
-    };
-    window.addEventListener("resize", clampSidebarToViewport);
-    return () => window.removeEventListener("resize", clampSidebarToViewport);
-  }, []);
 
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
   const expandSidebar = useCallback(() => setSidebarOpen(true), []);
@@ -903,6 +886,8 @@ export function App() {
       })),
       isFetching: composerCatalog.isFetching,
       modelError: composerCatalog.modelError?.message ?? null,
+      onModelMenuOpen: composerCatalog.onModelMenuOpen,
+      retryModels: composerCatalog.retryModels,
       permissionProfileError:
         composerCatalog.permissionProfileError?.message ?? null,
     }),
@@ -910,6 +895,8 @@ export function App() {
       composerCatalog.isFetching,
       composerCatalog.agents,
       composerCatalog.modelError,
+      composerCatalog.onModelMenuOpen,
+      composerCatalog.retryModels,
       composerCatalog.models,
       composerCatalog.permissionProfileError,
       composerCatalog.permissionProfiles,
@@ -994,7 +981,6 @@ export function App() {
         onSectionChange={selectSettingsSection}
         profiles={hostCatalog.profiles}
         activeHostId={snapshot.hostId}
-        onAdd={hostCatalog.addWebSocketHost}
         onRemove={hostCatalog.removeHost}
         onProvisionHost={hostCatalog.provisionHost}
         onOpenView={workbenchNavigation.openExtensionView}
@@ -1019,6 +1005,18 @@ export function App() {
     </section>
   ) : null;
   const modalRequests: ModalRequest[] = [];
+  if (closingSideChat) modalRequests.push({
+    id: "close-side-chat", label: "Close side chat?", layer: "confirmation", size: "compact", appearance: "utility",
+    onDismiss: () => setClosingSideChat(null),
+    content: <div><p>This temporary conversation will be discarded. It cannot be recovered.</p>
+      <Button variant="secondary" onClick={() => setClosingSideChat(null)}>Keep chatting</Button>
+      <Button variant="destructive" onClick={() => {
+        const current = panelRuntime.panels.getOwnerSnapshot(closingSideChat.ownerId);
+        const tab = [...current.right.tabs, ...current.bottom.tabs].find(entry => entry.id === closingSideChat.tab.id);
+        if (tab) panelRuntime.panels.close(closingSideChat.ownerId, tab.region, tab.id);
+        setClosingSideChat(null);
+      }}>Close side chat</Button></div>,
+  });
   const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
   if (managementSettingsOpen) {
     modalRequests.push({
@@ -1039,8 +1037,9 @@ export function App() {
     modalRequests.push({
       id: "account",
       label: "Account Settings",
+      appearance: "utility",
+      returnFocus: () => [...document.querySelectorAll<HTMLButtonElement>('.shell-navigation__entrance[data-surface="account"]')].find(button => button.getClientRects().length > 0) ?? null,
       size: "wide",
-      className: "account-center-dialog",
       dismissOnOutsidePress: false,
       content: extensionProjection.account.content,
       onDismiss: () => setAccountOpen(false),
@@ -1048,11 +1047,12 @@ export function App() {
   }
   // Imperative announcements are appended last so a preview requested from a
   // Settings window becomes the top nested window instead of appearing under it.
+  if (authenticationPresentation.modal) modalRequests.push(authenticationPresentation.modal);
   modalRequests.push(...announcementModalRequests);
   const presentedRightPanelOpen =
-    panelState.right.open && !rightPanelResponsiveBlocked;
+    panelState.right.open;
   const presentedRightPanelFullWidth =
-    panelState.rightPanelFullWidth && !rightPanelResponsiveBlocked;
+    panelState.rightPanelFullWidth;
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
@@ -1100,9 +1100,10 @@ export function App() {
                 onInvoke: () => { if (settingsOpen) closeSettings(); else if (extensionViewOpen) workbenchNavigation.closeExtensionView(); } },
               ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
             ],
-            account: extensionProjection.account === null || extensionProjection.account.snapshot.phase === "anonymous" ? null : {
+            account: extensionProjection.account === null ? null : {
               snapshot: extensionProjection.account.snapshot,
-              onOpen: () => setAccountOpen(true),
+              signIn: authenticationPresentation.signIn,
+            onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" ? authenticationPresentation.open() : setAccountOpen(true),
               onRefresh: extensionProjection.account.provider.refresh,
               onSignOut: extensionProjection.account.provider.signOut,
             },
@@ -1124,6 +1125,7 @@ export function App() {
               region: "right",
               open,
               reason: "manual",
+              allowEmpty: true,
             })
           }
           header={header}
@@ -1158,7 +1160,7 @@ export function App() {
                 const settingsPageId = hostCatalog.connectionProviders.find(
                   (provider) => provider.id === providerId,
                 )?.settingsPageId;
-                workbenchNavigation.openSettings(settingsPageId ?? "connections");
+                workbenchNavigation.openSettings(settingsPageId ?? "appearance");
               }}
               showFooter={false}
               catalogs={extensionProjection.catalogs}
@@ -1222,9 +1224,7 @@ export function App() {
                   ?? null,
               }}
               onAction={dispatchPanel}
-              onCloseTab={(tab) => {
-                panelRuntime.panels.close(panelOwnerId, tab.region, tab.id);
-              }}
+              onCloseTab={requestClosePanel}
             />
           }
         >
@@ -1242,6 +1242,8 @@ export function App() {
         ) : draft !== null && draft.submission === null ? (
           <NewThreadDraftPage
             key={draft.id}
+            activeTabId={panelState.right.activeTabId}
+            composerPresentationEnabled={conversationRouteOpen}
             draft={draft}
             controller={composerController}
             selectionCatalog={composerSelectionCatalog}
@@ -1341,6 +1343,16 @@ export function App() {
                   }}
                   surfaceCapabilities={timelineSurfaceCapabilities}
                   footer={
+                    <ThreadComposerPresentation
+                      key={panelOwnerId}
+                      scopeId={panelOwnerId}
+                      forceExpanded={pendingInteraction !== null}
+                      controller={composerController}
+                      activeTabId={panelState.right.activeTabId}
+                      enabled={conversationRouteOpen}
+                      timeline={timeline}
+                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, theme: appearanceTheme.resolvedTheme }}
+                    >
                     <div
                       className="thread-composer-region"
                       data-thread-find-composer="true"
@@ -1394,6 +1406,7 @@ export function App() {
                       />
                     )}
                     </div>
+                    </ThreadComposerPresentation>
                   }
                 />
                 {!snapshot.conversation?.authoritative ? (

@@ -29,6 +29,10 @@ master 源码
 
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - Secret 值不进 Git、日志、渲染输出或文档。
+- EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
+  `*.edgeone.dev` URL 缺少 `eo_token` / `eo_time` 时，应根据同次部署的 project ID 和 deployment ID
+  通过 Makers SDK 获取签名 URL；不得依赖 runner 出口地域绕过 Preview 认证，也不得记录签名 query
+  或认证 Cookie。
 - DB migration/seed 不塞进应用启动；使用受控 GitOps job 与明确回滚。
 - migration version 一旦被任一长期环境记入 `schema_migrations` 即视为已占用；后续把该 SQL
   合并进较早版本或从源码删除，都不能再次复用这个编号。新 schema 变更使用未占用的新版本，
@@ -49,6 +53,10 @@ master 源码
   不把 chat origin 加入全局 `allowed_origins`。国内与国际生产配置必须成对审查，并分别验证
   OPTIONS 预检、凭据响应头和未声明相邻路径仍不返回 CORS 许可；配置变更仍按各环境独立
   promote、GitOps 合入和 Argo 收敛确认。
+- Sandbox Worker 必须使用 Kubernetes 默认 Pod 网络和集群 DNS，不得设置 `hostNetwork`、
+  `ClusterFirstWithHostNet`，也不得用 `hostAliases` 把腾讯云 CloudAPI 域名固定到链路本地地址。
+  发布前应在目标集群的普通 Pod 中验证 `cvm.internal.tencentcloudapi.com` 可解析且 HTTPS 可达；
+  该连通性证明不能用作共享宿主机网络命名空间的理由。
 
 ## 跨服务计费能力的发布门禁
 
@@ -88,6 +96,29 @@ master 源码
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
   `POST /v1/credit/packages/order-url`。首轮只更新 `sandbox-bj-7` 与 `beijing-sandbox`；不得因共享
   源码或策略测试把该路由自动扩散到上海、新加坡等尚未完成 Credit 接线的环境。
+
+### Referral 北京试点交付
+
+- 现有北京 P2 Pulsar 集群是外部依赖，Pulumi 只管理 namespace、主 topic、DLQ、三类角色和最小权限；
+  preview 必须先只读核对 cluster id、名称、规格、可用区、VPC、子网和 broker endpoint，不能把弹性存储
+  集群误导入固定 `storage_size` 资源。
+- 发布顺序固定为 Pulsar 子资源和角色 token、Referral/Auth/CTL Secret、Auth/CTL/Referral schema、
+  Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。邀请双方各 500 积分通过 CTL 送积分
+  接口按额度发放，VelaGW 自动准备内部权益模板，不要求运营预先导入 Plan。
+- Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
+  `ENABLE_MASTER_PROD_PROMOTE=false`。Pulsar、独立 DB/user 和 SSM/SOPS 前置条件完成后才加入 Argo catalog；
+  首次基础发布保持 worker processing、Gateway 路由和前端入口关闭，待 schema/API/campaign 健康后单独启用。
+- 基础阶段 `REFERRAL_PROCESSING_ENABLED=false` 时，`referral-worker` Deployment 必须同步缩容到 0；
+  正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
+- 北京正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
+  公共面只允许查询单个返利码与准备注册上下文，用户统计和返利码创建必须经过 session 鉴权。
+- 北京环境显式设置 `REFERRAL_ENABLED=true`；全局和上海/新加坡默认关闭。CTL migration 31 未执行时
+  严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
+- 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
+  bootstrap 证据；镜像构建、Pulsar 资源存在或 UI 可见均不能单独代表返利闭环。
+- Role Token 交付统一使用 `infractl bootstrap-referral-tokens --stack <env>`。命令从目标环境 inventory
+  读取集群、角色和 SSM 名称，默认只做全量预检，显式 `--apply` 后才幂等合并；默认拒绝覆盖不同 Token。上海首次上线复用
+  同一入口，必须先补齐并审查 `shprod` inventory，不能复制北京 Token 或在日常发布中重复执行。
 
 ## CloudLadder Gateway 回调环境
 
@@ -158,5 +189,9 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。
 - 跨服务运营 BFF Token 必须在同一环境内从服务端真源复制到消费方 SSM，并由 manifest 固定明确版本、声明 required key 后生成 SOPS；禁止跨地域复用或只在 live Secret 中临时补键。
+
+VelaGW subtree 更新时，北京 workload 的 `OTEL_SERVICE_VERSION` 以及 `shprod`、`sgprod` 的
+`VELAGW_OTEL_SERVICE_VERSION` 必须同步指向 subtree 源码短版本；这些字段只描述构建源码，
+不得借此修改镜像 pin 或触发生产 Argo sync。
 
 相关 Journey：[源码到生产](../journeys/source-to-production.md)。Agent 摘要：[release-gitops Context](../../context/domains/release-gitops.md)。

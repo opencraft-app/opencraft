@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ctl/pkg/model"
+	"ctl/pkg/model/eventoutbox"
 
 	quota "ctl/pkg/model/userresourcequota"
 
@@ -29,6 +30,7 @@ type Dao interface {
 	// CreatePassWithQuota 在同一事务中插入 pass 记录并替换更新配额
 	// agentQuota 为 Bundle 的 agent_quota 值（最大配额上限，替换语义）
 	CreatePassWithQuota(entity *Entity, userID string, agentQuota int64) error
+	CreatePassWithQuotaAndEvent(entity *Entity, userID string, agentQuota int64, event *eventoutbox.Event) error
 
 	// === jifei 反查接口三件套（billing-integration B11A 新增）===
 	// 设计稿：.tmp/trade-resource-query-design.md §4.1
@@ -62,6 +64,7 @@ type Dao interface {
 	//   - 父 task 被框架重试调用时，第二次调用拿不到锁，但子 task 已经派发，本次直接 finalize 即可
 	//   - 拍板依据：Q22-I-E（父 task 用 child_registry 防重复派发）+ Q35=a（max_execute_count=INT64_MAX 兜底）
 	TryAcquireSlotForIsolate(passID string) (acquired bool, err error)
+	TryAcquireSlotForIsolateWithEvent(passID string, event *eventoutbox.Event) (acquired bool, err error)
 
 	// UpdateStatus 将 pass.status 从 expectedStatus 推进到 newStatus（通用 CAS）
 	//   - 不再用于 isolating → isolated 推进（v1.7.30 后改用 MarkIsolated / MarkIsolatedWithExpiredTime —
@@ -372,6 +375,10 @@ func (d *dao) UpdateByPassID(passID string, updates map[string]interface{}) erro
 //     total = agentQuota, available = available + (agentQuota - total)
 //   - WHERE 条件保证并发场景下 available 不会变为负数
 func (d *dao) CreatePassWithQuota(entity *Entity, userID string, agentQuota int64) error {
+	return d.CreatePassWithQuotaAndEvent(entity, userID, agentQuota, nil)
+}
+
+func (d *dao) CreatePassWithQuotaAndEvent(entity *Entity, userID string, agentQuota int64, event *eventoutbox.Event) error {
 	return d.Transaction(func(tx *gorm.DB) error {
 		// 1. 插入 pass
 		if err := tx.Create(entity).Error; err != nil {
@@ -415,6 +422,11 @@ func (d *dao) CreatePassWithQuota(entity *Entity, userID string, agentQuota int6
 		}
 		if result.RowsAffected == 0 {
 			return fmt.Errorf("quota update rejected: consumed exceeds new agent_quota")
+		}
+		if event != nil {
+			if err := eventoutbox.Insert(tx, event); err != nil {
+				return fmt.Errorf("insert pass event outbox: %w", err)
+			}
 		}
 
 		return nil
@@ -509,14 +521,28 @@ func (d *dao) ListByAppIDAndPassIDs(appID int64, passIDs []string) ([]*Entity, e
 
 // TryAcquireSlotForIsolate 详见 Dao 接口注释
 func (d *dao) TryAcquireSlotForIsolate(passID string) (bool, error) {
-	result := d.DB().
-		Model(&Entity{}).
-		Where(fmt.Sprintf("%s = ? AND %s = ?", ColumnPassID, ColumnStatus), passID, StatusActive).
-		Update(ColumnStatus, StatusIsolating)
-	if result.Error != nil {
-		return false, fmt.Errorf("TryAcquireSlotForIsolate: %w", result.Error)
+	return d.TryAcquireSlotForIsolateWithEvent(passID, nil)
+}
+
+func (d *dao) TryAcquireSlotForIsolateWithEvent(passID string, event *eventoutbox.Event) (bool, error) {
+	acquired := false
+	err := d.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&Entity{}).
+			Where(fmt.Sprintf("%s = ? AND %s = ?", ColumnPassID, ColumnStatus), passID, StatusActive).
+			Update(ColumnStatus, StatusIsolating)
+		if result.Error != nil {
+			return result.Error
+		}
+		acquired = result.RowsAffected == 1
+		if acquired && event != nil {
+			return eventoutbox.Insert(tx, event)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("TryAcquireSlotForIsolateWithEvent: %w", err)
 	}
-	return result.RowsAffected == 1, nil
+	return acquired, nil
 }
 
 // TryAcquireSlotForDelete 详见 Dao 接口注释（trade-pass-destroy §4.1 / §4.5.1 / §11-A Q1 / Q2）

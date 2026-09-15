@@ -321,6 +321,7 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -336,6 +337,7 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 
 	logger.Info("wechat oauth callback succeeded", "user_id", session.User.ID)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	if h.avatarStore != nil && strings.TrimSpace(identity.AvatarURL) != "" && strings.TrimSpace(session.User.AvatarSource) != "upload" {
 		objectKey, syncErr := h.avatarStore.SyncRemoteAvatar(requestCtx, session.User.ID, identity.AvatarURL)
 		if syncErr != nil {

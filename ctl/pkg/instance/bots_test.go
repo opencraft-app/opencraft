@@ -169,6 +169,26 @@ func TestListHermesProfilesScriptUsesOfficialProfileAPI(t *testing.T) {
 	}
 }
 
+func TestListHermesProfilesScriptKeepsGatewayRunningTriState(t *testing.T) {
+	if !strings.Contains(listHermesProfilesScript, `bool(profile["gateway_running"]) if "gateway_running" in profile else None`) {
+		t.Fatal("gateway_running must stay tri-state; a missing field has to surface as null, not false")
+	}
+}
+
+func TestProjectHermesProfilesPropagatesUnknownGatewayState(t *testing.T) {
+	running := true
+	bots := projectHermesProfiles([]hermesProfileRecord{
+		{NativeID: defaultHermesProfileID, IsDefault: true},
+		{NativeID: "profile-sales", GatewayRunning: &running},
+	}, "ins-1", "")
+	if bots[0].GatewayRunning != nil {
+		t.Fatalf("unknown gateway state must stay nil, got %v", *bots[0].GatewayRunning)
+	}
+	if bots[1].GatewayRunning == nil || !*bots[1].GatewayRunning {
+		t.Fatalf("known gateway state must be preserved: %+v", bots[1].GatewayRunning)
+	}
+}
+
 func TestProjectHermesProfilesKeepsDefaultCompatibilityAndNamedProfileIdentity(t *testing.T) {
 	bots := projectHermesProfiles([]hermesProfileRecord{
 		{NativeID: defaultHermesProfileID, IsDefault: true},

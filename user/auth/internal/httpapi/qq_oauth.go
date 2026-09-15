@@ -226,6 +226,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	identity.RegistrationDisabled = h.qqOAuth.registrationDisabled
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
@@ -250,6 +251,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		"user_id", session.User.ID,
 	)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "qq", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
 	h.completeFederationSwitch(ctx, session.Token)

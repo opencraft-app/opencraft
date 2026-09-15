@@ -1,4 +1,7 @@
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
+import { ENVIRONMENT_SOURCE_CHANNEL, AUTHENTICATION_PROVIDER_CHANNEL, type AuthenticationProvider } from "@opencraft/workbench-runtime";
+import { createLightVelaSignInView } from "./account/lightvela-sign-in-view";
+import { LightVelaEnvironmentSource } from "./environment-directory";
 import type { PlatformAccountContribution } from "@opencraft/extension-react";
 import type { AppServerProfileSkillsService } from "@opencraft/profile-skills-appserver";
 import type { AppServerClientRegistryService } from "@opencraft/appserver-client";
@@ -20,6 +23,8 @@ import type { ConnectorRelease } from "./connectors/connector-client";
 import { connectorTestRelease } from "./connectors/test-release";
 import { AppServerLightVelaRuntimeCommandPort } from "./account/lightvela-runtime-command-port";
 import { createLightVelaAccountView } from "./account/lightvela-account-view";
+import { LightVelaEnvironmentService } from "./environments/lightvela-environment-service";
+import { createLightVelaEnvironmentView } from "./environments/lightvela-environment-view";
 
 export interface LightVelaHermesExtensionOptions extends LightVelaAccountServiceOptions {
   readonly sessionTokenCache?: HermesSessionTokenCache;
@@ -49,6 +54,15 @@ export function createLightVelaHermesExtension(
   const EmptyView = createLightVelaHermesEmptyView(account);
   const ConnectorsView = createConnectorsSettingsView(account, connectorRelease ?? connectorTestRelease);
   const AccountView = createLightVelaAccountView(account);
+  const SignInView = createLightVelaSignInView(account);
+  let environmentSource: LightVelaEnvironmentSource | null = null;
+  const environments = new LightVelaEnvironmentService(account, {onInstanceReady: async instanceId => {
+    const source = environmentSource;
+    if (!source) throw new Error("Environment source unavailable");
+    await source.refresh();
+    if (!source.getSnapshot().entries.some(entry => (entry.profile.providerConfig as Record<string, unknown>).instanceId === instanceId)) throw new Error("Environment discovery pending");
+  }});
+  const EnvironmentView = createLightVelaEnvironmentView(account, environments);
   const managementPages = [
     { key: "channels", title: "Channels", icon: "message-circle", scope: "agent", order: 301 },
     { key: "models", title: "Models", icon: "brain", scope: "agent", order: 302 },
@@ -78,6 +92,28 @@ export function createLightVelaHermesExtension(
       activationEvents: ["onStartupFinished"],
     },
     activate(api) {
+      api.internal.register(AUTHENTICATION_PROVIDER_CHANNEL, {
+        id: "lightvela.hermes.account",
+        getSession: () => account.getSnapshot().session,
+        subscribe: account.subscribe,
+        signIn: optionId => {
+          if (optionId !== undefined) {
+            if (optionId !== "cn" && optionId !== "intl") throw new Error("Invalid sign-in option");
+            account.selectRegion(optionId);
+          }
+          return account.signIn();
+        },
+        cancelSignIn: () => account.cancelSignIn(),
+      } satisfies AuthenticationProvider);
+      api.views.register({ id: "lightvela.hermes.sign-in", title: "Sign in", viewType: "lightvela.hermes.sign-in", platforms: ["web", "electron"] });
+      api.internal.register("platformViewRenderer", { viewType: "lightvela.hermes.sign-in", Component: SignInView });
+      environmentSource = new LightVelaEnvironmentSource(account);
+      const source = environmentSource;
+      api.subscriptions.add(() => { source.dispose(); if (environmentSource === source) environmentSource = null; });
+      api.internal.register(ENVIRONMENT_SOURCE_CHANNEL, source);
+      api.subscriptions.add(() => environments.dispose());
+      api.views.register({ id: "lightvela.hermes.environment-create", title: "添加环境", viewType: "lightvela.hermes.environment-create", platforms: ["web", "electron"] });
+      api.internal.register("platformViewRenderer", { viewType: "lightvela.hermes.environment-create", Component: EnvironmentView });
       let authGeneration = account.getSnapshot().authGeneration;
       api.subscriptions.add(account.subscribe(() => {
         const next = account.getSnapshot().authGeneration;
@@ -98,6 +134,12 @@ export function createLightVelaHermesExtension(
       if (account.hasStoredSession()) {
         void account.refreshBots().catch(() => undefined);
         void account.refreshAccountDetails().catch(() => undefined);
+      } else {
+        void account.restoreDesktopSession().then(restored => {
+          if (!restored) return;
+          void account.refreshBots().catch(() => undefined);
+          void account.refreshAccountDetails().catch(() => undefined);
+        }).catch(() => undefined);
       }
       // Some browser containers restore the Workbench document and deliver
       // the OAuth fragment as a same-document navigation. Extension activation
@@ -119,22 +161,40 @@ export function createLightVelaHermesExtension(
         Component: AccountView,
       });
       let accountSurfaceSourceRevision = -1;
+      let environmentSourceRevision = -1;
+      let accountSurfaceRevision = 0;
       let accountSurfaceSnapshot: ReturnType<PlatformAccountContribution["getSnapshot"]> | null = null;
       api.internal.register("platformAccount", {
         id: "lightvela.hermes.account",
         viewId: "lightvela.hermes.account-view",
+        authenticationProviderId: "lightvela.hermes.account",
+        signInViewId: "lightvela.hermes.sign-in",
+        signInOptions: [
+          { id: "cn", label: "国内账号登录", description: "lightvela.com" },
+          { id: "intl", label: "国际账号登录", description: "lightvela.ai" },
+        ],
+        environmentCreation: {
+          label: "添加环境",
+          viewId: "lightvela.hermes.environment-create",
+        },
         getSnapshot: () => {
           const snapshot = account.getSnapshot();
-          if (snapshot.revision === accountSurfaceSourceRevision && accountSurfaceSnapshot !== null) {
+          const environment = environments.getSnapshot();
+          if (snapshot.revision === accountSurfaceSourceRevision && environment.revision === environmentSourceRevision && accountSurfaceSnapshot !== null) {
             return accountSurfaceSnapshot;
           }
           const details = snapshot.details;
           const total = details.pass?.creditsTotal ?? 0;
           const available = details.pass?.creditsAvailable ?? 0;
           accountSurfaceSourceRevision = snapshot.revision;
+          environmentSourceRevision = environment.revision;
           accountSurfaceSnapshot = Object.freeze({
-            revision: snapshot.revision,
-            phase: snapshot.phase,
+            revision: ++accountSurfaceRevision,
+            environmentRequests: environment.request && environment.phase !== "complete" ? [{
+              id: environment.request.hostId, name: environment.request.name,
+              status: environment.phase === "submitting" ? "正在提交…" : environment.phase === "creating" ? "正在创建…" : "需要检查状态",
+            }] : [],
+            phase: snapshot.session.status,
             name: details.profile?.pendingName || details.profile?.name || null,
             avatarUrl: details.profile?.avatarUrl ?? null,
             planLabel: details.pass?.bundleName || details.subscription?.code || null,
@@ -142,21 +202,14 @@ export function createLightVelaHermesExtension(
               ? Math.max(0, Math.min(100, Math.round((available / total) * 100)))
               : null,
             error: details.error ?? snapshot.error,
-            applicationIntervention: snapshot.phase === "authenticated"
-              ? (snapshot.bots.length === 0
-                ? {
-                    providerId: "lightvela.hermes",
-                    code: "configuration-required" as const,
-                  }
-                : null)
-              : {
-                  providerId: "lightvela.hermes",
-                  code: "authentication-required" as const,
-                },
+            applicationIntervention: null,
           });
           return accountSurfaceSnapshot;
         },
-        subscribe: account.subscribe,
+        subscribe: listener => {
+          const a = account.subscribe(listener), b = environments.subscribe(listener);
+          return () => { a(); b(); };
+        },
         refresh: () => account.refreshAccountDetails(),
         signOut: () => account.signOut(),
       } satisfies PlatformAccountContribution);
@@ -218,13 +271,6 @@ export function createLightVelaHermesExtension(
           Component: createLightVelaHermesManagementView(account, page.key, profileSkills),
         });
       }
-      api.workbench.registerSurface({
-        id: "lightvela.hermes.empty-workbench",
-        viewId: "lightvela.hermes.empty-view",
-        surface: "empty-workbench",
-        order: 100,
-        platforms: ["web", "electron"],
-      });
       api.workbench.registerSurface({
         id: "lightvela.hermes.authentication-required",
         viewId: "lightvela.hermes.empty-view",

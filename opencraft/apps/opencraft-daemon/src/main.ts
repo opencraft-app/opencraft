@@ -40,6 +40,7 @@ export async function startOpenCraftDaemon(options: {
   readonly authToken: string;
   readonly dshExecutable: string;
   readonly dataDirectory: string;
+  readonly modelStorageDirectory?: string;
 }) {
   await removeStaleSocket(options.endpoint);
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
@@ -50,6 +51,7 @@ export async function startOpenCraftDaemon(options: {
       localAgent ??= await startLocalAgentHost({
         dshExecutable: options.dshExecutable,
         dataDirectory: options.dataDirectory,
+        modelStorageDirectory: options.modelStorageDirectory,
       });
       return new WebSocketTransport({
         url: localAgent.websocketUrl,

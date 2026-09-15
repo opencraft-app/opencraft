@@ -165,10 +165,14 @@ type ListUserPassesResponse struct {
 //
 // CTL 只负责业务命名和过期时间绑定；LLMGateway 只看到一条普通 named subscription。
 type GrantFreeCreditRequest struct {
-	UserID         string `json:"user_id"`
-	PlanID         string `json:"plan_id"`
-	Source         string `json:"source,omitempty"`
-	IdempotencyKey string `json:"idempotency_key"`
+	UserID string `json:"user_id"`
+	// PlanID 仅保留给已有内部调用方；新调用方应传 CreditAmount，由 CTL 自动准备底层权益模板。
+	PlanID           string `json:"plan_id,omitempty"`
+	CreditAmount     int64  `json:"credit_amount,omitempty"`
+	Source           string `json:"source,omitempty"`
+	IdempotencyKey   string `json:"idempotency_key"`
+	InviteeUserID    string `json:"invitee_user_id,omitempty"`
+	QualifyingPassID string `json:"qualifying_pass_id,omitempty"`
 }
 
 type GrantFreeCreditResponse struct {

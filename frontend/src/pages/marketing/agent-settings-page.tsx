@@ -40,6 +40,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { useIsDesktop } from "@/components/site/public-site-header";
+import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -51,6 +53,7 @@ import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerification
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
+import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
 // 治本（见该文件说明），barrel 顶层已无 SSR 危险依赖，页面层可安全静态导入。
@@ -111,11 +114,8 @@ import {
   isHermesMemoryOperationCurrent,
   saveHermesMemoryLimit as executeHermesMemoryLimitSave,
 } from "@/pages/marketing/agent-memory-save";
-import { BuddyPanel } from "@/pages/marketing/agent-buddy-panel";
-import { HermesAgentSkillsPanel } from "@/pages/marketing/agent-skills-panel";
-import { AchievementsPanel } from "@/pages/marketing/agent-achievements-panel";
-import { HermesAgentAutomationsPanel } from "@/pages/marketing/agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
+import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -184,6 +184,18 @@ const AgentWebsitePanel = lazy(() =>
 );
 const AgentCommonSettingsPanel = lazy(() =>
   import("@/pages/marketing/agent-common-settings-panel").then((module) => ({ default: module.AgentCommonSettingsPanel })),
+);
+const BuddyPanel = lazy(() =>
+  import("@/pages/marketing/agent-buddy-panel").then((module) => ({ default: module.BuddyPanel })),
+);
+const HermesAgentSkillsPanel = lazy(() =>
+  import("@/pages/marketing/agent-skills-panel").then((module) => ({ default: module.HermesAgentSkillsPanel })),
+);
+const AchievementsPanel = lazy(() =>
+  import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
+);
+const HermesAgentAutomationsPanel = lazy(() =>
+  import("@/pages/marketing/agent-automations-panel").then((module) => ({ default: module.HermesAgentAutomationsPanel })),
 );
 
 // ChannelPanel / ModelPanel 已本地化（agent-config），用 lazy 做代码分割，
@@ -257,6 +269,7 @@ function TeaSdkSettingsPanel({
   commandExecutor,
   execDebugCommand,
   useEnglish,
+  channelAfterDescription,
 }: {
   kind: "channel" | "model";
   instance: TeaSdkInstanceInfo;
@@ -265,6 +278,8 @@ function TeaSdkSettingsPanel({
   execDebugCommand?: Repositories["bots"]["execDebugCommand"];
   /** 是否取英文文案（语言维度），与 isI18n 是两个维度（国内站可切英文） */
   useEnglish: boolean;
+  /** 通道页标题说明后的上下文提示；模型页不会消费。 */
+  channelAfterDescription?: ReactNode;
 }) {
   const t = useT();
   const modelProviders = useModelProviders({ isI18n: isGlobal, useEnglish });
@@ -324,6 +339,7 @@ function TeaSdkSettingsPanel({
           featureFlags={featureFlags}
           productConfig={productConfig}
           commandExecutor={commandExecutor}
+          afterDescription={channelAfterDescription}
         />
       </Suspense>
     </StableTeaSdkPanelHost>
@@ -2570,37 +2586,7 @@ const formatWorkspaceImportFileSize = (bytes: number) => {
 };
 
 function AgentSettingsDataLoading() {
-  return (
-    <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]" aria-hidden="true">
-      <aside className="lg:sticky lg:top-[84px]">
-        <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-3 rounded-md px-2.5 py-2.5">
-            <span className="h-10 w-10 flex-shrink-0 animate-pulse rounded-md bg-black/[0.045]" />
-            <span className="min-w-0 flex-1 space-y-2">
-              <span className="block h-4 w-28 animate-pulse rounded bg-black/[0.045]" />
-              <span className="block h-3 w-16 animate-pulse rounded bg-black/[0.035]" />
-            </span>
-          </div>
-          <span className="mt-3 block h-9 w-full animate-pulse rounded-md bg-black/[0.035]" />
-        </div>
-        <nav className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <span key={index} className="flex items-center gap-2.5 rounded-md px-3 py-2.5">
-              <span className="h-5 w-5 animate-pulse rounded bg-black/[0.035]" />
-              <span className="h-4 w-16 animate-pulse rounded bg-black/[0.035]" />
-            </span>
-          ))}
-        </nav>
-      </aside>
-      <section className="min-w-0">
-        <div className="rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-          <span className="block h-5 w-36 animate-pulse rounded bg-black/[0.045]" />
-          <span className="mt-3 block h-4 w-64 max-w-full animate-pulse rounded bg-black/[0.035]" />
-          <span className="mt-8 block h-40 w-full animate-pulse rounded-md bg-black/[0.025]" />
-        </div>
-      </section>
-    </div>
-  );
+  return <AgentSettingsLoadingContent />;
 }
 
 const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
@@ -2618,6 +2604,7 @@ export const AgentSettingsPage = ({
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
+  const isDesktop = useIsDesktop();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
@@ -2626,7 +2613,6 @@ export const AgentSettingsPage = ({
   const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
   const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
-  useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const repositories = useRepositories();
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
@@ -2889,7 +2875,7 @@ export const AgentSettingsPage = ({
       setActiveTabId(visibleBots[0]!.id);
     }
   }, [visibleBots, activeTabId, isCreating, requestedBotId]);
-  const activeBot = isModifying || passesLoading ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
   const isFirstBotCreation = !activeBot;
@@ -2933,8 +2919,9 @@ export const AgentSettingsPage = ({
     setRenewPassModalOpen(false);
     await refreshPasses();
   }, [refreshPasses]);
-  const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
+  const shouldShowDataLoading = shouldShowAgentSettingsDataLoading({
     botsLoading,
+    passesLoading,
     isCreating,
     visibleBotCount: visibleBots.length,
   });
@@ -3557,6 +3544,9 @@ export const AgentSettingsPage = ({
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
         return;
       }
+      // 重新读取 Bot 列表：网关状态是重启后唯一会变的字段，不刷新的话
+      // 「网关未运行」提示条会一直挂着，直到用户整页刷新。
+      void refreshBots();
       // 命令已成功执行完毕，短暂保持视觉反馈后恢复
       setTimeout(() => {
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
@@ -4084,16 +4074,20 @@ export const AgentSettingsPage = ({
       setDirectCreateError(t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH }));
       return;
     }
-    const requestedCreateMode = isFirstBotCreation ? "blank" : createBotMode;
-    const sourceBot = requestedCreateMode === "clone-current" ? activeBot : defaultBot;
-    if (requestedCreateMode !== "blank" && !sourceBot) {
+    const cloneIntent = resolveBotCloneIntent({
+      isInitialCreation: isFirstBotCreation,
+      selection: createBotMode,
+      currentBotId: activeBot?.id,
+      mainBotId: defaultBot?.id,
+    });
+    if (!cloneIntent.ok) {
       setDirectCreateError(t("找不到可克隆的 Bot，请选择空白创建。"));
       return;
     }
     await createBotAndNavigate({
       name: normalizedName,
-      createMode: requestedCreateMode === "blank" ? "blank" : "clone",
-      sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id,
+      createMode: cloneIntent.intent.mode,
+      sourceBotId: cloneIntent.intent.mode === "clone" ? cloneIntent.intent.sourceBotId : undefined,
     });
   };
 
@@ -4409,7 +4403,13 @@ export const AgentSettingsPage = ({
 
   return (
     <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
-      {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
+      {showHeader && (
+        <ProductReturnHomeHeader
+          className="lv-agent-sidebar-header"
+          reloadLanguageAfterSwitch
+          showDesktopUserMenu={false}
+        />
+      )}
       {automationModelSwitchDialog}
 
       <Dialog
@@ -4576,6 +4576,17 @@ export const AgentSettingsPage = ({
                   : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
               </span>
             </p>
+            {activeBot.isDefault && activeBot.siblingsUnknown && (
+              <p
+                data-testid="delete-siblings-unknown-warning"
+                className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm leading-relaxed text-amber-800"
+                style={{ marginBottom: "6px" }}
+              >
+                {activeBot.siblingsUnknown === "instance_stopped"
+                  ? t("实例未运行，当前无法列出这个 Agent 下的其他 Bot。继续删除会一并销毁实例上的全部 Bot 及其数据。")
+                  : t("暂时无法获取这个 Agent 的 Bot 列表。继续删除会一并销毁实例上的全部 Bot 及其数据。")}
+              </p>
+            )}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
               <span className="block">
                 {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
@@ -4964,10 +4975,10 @@ export const AgentSettingsPage = ({
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-white pb-6">
-        <section className="lw-settings-shell">
+      <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
+        <section className="lw-settings-shell lv-agent-settings-shell">
           {/* ── Loading 状态 ── */}
-          {!isModifying && !(passesLoading && passesError) && (isInitialBotsLoading || passesLoading) && (
+          {!isModifying && !(passesLoading && passesError) && shouldShowDataLoading && (
             <AgentSettingsDataLoading />
           )}
 
@@ -5083,7 +5094,7 @@ export const AgentSettingsPage = ({
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
-                <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                <div className="grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <Popover
@@ -5563,19 +5574,30 @@ export const AgentSettingsPage = ({
                         <span>{t("有建议？提交反馈")}</span>
                       </a>
                     ) : null}
+
+                    {isDesktop ? (
+                      <div className="lv-agent-account-footer">
+                        <UserAvatarMenu variant="sidebar" />
+                      </div>
+                    ) : null}
                   </aside>
 
-                  <section className="min-w-0 lg:col-start-2">
+                  <section className="lv-agent-settings-content min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (
-                            <>
-                              {weixinOccupiedByOther && activeBot.weixinOwner && (
+                            <TeaSdkSettingsPanel
+                              kind="channel"
+                              instance={sdkInstance}
+                              featureFlags={sdkFeatureFlags}
+                              commandExecutor={teaSdkCommandExecutor}
+                              useEnglish={useEnglish}
+                              channelAfterDescription={weixinOccupiedByOther && activeBot.weixinOwner ? (
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                  <span>
+                                  <span className="text-pretty">
                                     {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
                                       name: activeBot.weixinOwner.botName || t("其他 Bot"),
                                     })}
@@ -5588,15 +5610,8 @@ export const AgentSettingsPage = ({
                                     {t("前往管理")}
                                   </button>
                                 </div>
-                              )}
-                              <TeaSdkSettingsPanel
-                                kind="channel"
-                                instance={sdkInstance}
-                                featureFlags={sdkFeatureFlags}
-                                commandExecutor={teaSdkCommandExecutor}
-                                useEnglish={useEnglish}
-                              />
-                            </>
+                              ) : undefined}
+                            />
                           )}
                           {activeSection === "model" && (
                             <TeaSdkSettingsPanel
@@ -5623,10 +5638,14 @@ export const AgentSettingsPage = ({
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
-                            <HermesAgentAutomationsPanel botId={{
-                              instanceId: activeBot.instanceId ?? activeBot.id,
-                              profileId: activeBot.profileId ?? "main",
-                            }} />
+                            <HermesAgentAutomationsPanel
+                              botId={{
+                                instanceId: activeBot.instanceId ?? activeBot.id,
+                                profileId: activeBot.profileId ?? "main",
+                              }}
+                              gatewayRunning={activeBot.gatewayRunning}
+                              onRestartGateway={restartOrRepairDisabled ? undefined : () => setShowRestartConfirm(true)}
+                            />
                           )}
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel

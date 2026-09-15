@@ -130,7 +130,7 @@ func (s *Service) reconcileSetGroupRatiosWithAuth(ctx context.Context, set Set, 
 			return nil
 		}
 
-		client := s.newAPIClient(set.BaseURL)
+		client := s.newAPIClient(set.ID, set.BaseURL)
 		var updateErr error
 		if auth != nil {
 			updateErr = client.UpdateOptionWithAuth(opCtx, *auth, newAPIGroupRatioOptionKey, string(payload))

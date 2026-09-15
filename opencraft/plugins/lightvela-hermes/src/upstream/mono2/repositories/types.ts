@@ -178,9 +178,28 @@ export interface PaymentMethodSignOrder {
   redirectUrl: string;
 }
 
+export interface ReferralOverview {
+  code: string;
+  url: string;
+  campaignId: string;
+  campaignName: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface ReferralStats {
+  successfulReferrals: number;
+  grantedCredits: number;
+  pendingRewards: number;
+  grantedRewards: number;
+}
+
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;
   prepareInviteCode(code: string): Promise<void>;
+  prepareReferralCode(code: string): Promise<void>;
+  issueReferralCode(): Promise<ReferralOverview>;
+  getReferralStats(): Promise<ReferralStats>;
   activateInviteCode(code: string): Promise<User>;
   signUpWithCode(input: {
     name: string;

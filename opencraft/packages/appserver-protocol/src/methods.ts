@@ -1,4 +1,5 @@
 import type { AppServerProcessMethodMap } from "./process";
+import type { ThreadUnsubscribeParams, ThreadUnsubscribeResponse } from "./generated/v2";
 import type {
   ThreadResumeHistoryRequest,
   ThreadResumeHistoryResponse,
@@ -88,6 +89,8 @@ import type {
   RuntimeModelsListResponse,
   RuntimeModelsDiscoverParams,
   RuntimeModelsDiscoverResponse,
+  RuntimeModelProbeParams,
+  RuntimeModelProbeResponse,
   RuntimeProvidersListResponse,
   RuntimeProviderApplyParams,
   RuntimeProviderApplyResponse,
@@ -185,7 +188,11 @@ export type ModelListParams = GeneratedModelListParams & {
    */
   threadId?: string | null;
 };
-export type ModelListResponse = GeneratedModelListResponse;
+/** OpenCraft can explicitly represent a model without configurable reasoning. */
+export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "defaultReasoningEffort"> & {
+  defaultReasoningEffort: GeneratedModelListResponse["data"][number]["defaultReasoningEffort"] | null;
+};
+export type ModelListResponse = Omit<GeneratedModelListResponse, "data"> & { data: CatalogModel[] };
 export type PermissionProfileListParams = GeneratedPermissionProfileListParams;
 export type PermissionProfileListResponse = GeneratedPermissionProfileListResponse;
 export type SkillsListParams = GeneratedSkillsListParams;
@@ -328,12 +335,20 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
     params: Record<string, never>;
     result: RuntimeProvidersListResponse;
   };
+  "runtime/providers/reapply": {
+    params: Record<string, never>;
+    result: RuntimeProvidersListResponse["application"] | null;
+  };
   "runtime/providers/apply": {
     params: RuntimeProviderApplyParams;
     result: RuntimeProviderApplyResponse;
   };
   "runtime/providers/setEnabled": {
     params: RuntimeProviderSetEnabledParams;
+    result: RuntimeProviderApplyResponse;
+  };
+  "runtime/providers/delete": {
+    params: Omit<RuntimeProviderSetEnabledParams, "enabled">;
     result: RuntimeProviderApplyResponse;
   };
   "runtime/models/list": {
@@ -351,6 +366,14 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
   "runtime/models/discover": {
     params: RuntimeModelsDiscoverParams;
     result: RuntimeModelsDiscoverResponse;
+  };
+  "runtime/models/probe": {
+    params: RuntimeModelProbeParams;
+    result: RuntimeModelProbeResponse;
+  };
+  "runtime/models/check": {
+    params: import("./runtime-settings").RuntimeSavedModelCheckParams;
+    result: import("./runtime-settings").RuntimeModelProbeResponse;
   };
   "agent/list": {
     params: AgentListParams;
@@ -380,6 +403,19 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
     params: ThreadItemsListRequest;
     result: ThreadItemsListResponse;
   };
+  "runtime/capabilities/register": {
+    params: { threadId: string; dynamicTools: readonly import("./generated/v2/DynamicToolSpec").DynamicToolSpec[] };
+    result: { registered: number };
+  };
+  "runtime/http/request": {
+    params: { requestId: string; url: string; method?: string; headers?: Record<string,string>; bodyBase64?: string };
+    result: { status: number; statusText: string; headers: Record<string,string>; bodyBase64: string };
+  };
+  "runtime/http/cancel": { params: { requestId: string }; result: { cancelled: boolean } };
+  "runtime/diagnostics/read": {
+    params: Record<string, never>;
+    result: { presentation: Record<string, unknown>; executions: Array<Record<string, unknown>> };
+  };
   "thread/start": {
     params: ThreadStartParams;
     result: ThreadStartResponse;
@@ -387,6 +423,10 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
   "thread/fork": {
     params: ThreadForkParams;
     result: ThreadForkResponse;
+  };
+  "thread/unsubscribe": {
+    params: ThreadUnsubscribeParams;
+    result: ThreadUnsubscribeResponse;
   };
   "turn/start": {
     params: TurnStartParams;

@@ -2,7 +2,9 @@
 
 本入口适用于 `opencraft/`。先读取仓库根 `AGENTS.md` 并路由任务，再按需读取：
 
+- 维护总纲：[opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)。维护 OpenCraft 的架构、交互、布局动画、平台适配或桌面预览时使用；其中的验证清单按本次边界加载，正式架构文档仍是事实真源。
 - 平台、AppServer、Chat Runtime、Workbench 或扩展架构：`opencraft/docs/platform-architecture.md` 与对应专题文档。
+- 任务工作区呈现、工具面板/浮动聊天/Side Chat：`opencraft/design/README.md`；实现变更同步维护 `design/invariants.md` 的责任与证据。
 - mono2 Agent Console 共享实现：`opencraft/MONO2_MIGRATION.md`、`frontend/AGENTS.md`；修改同步边界时同时读取 `docs/context/project/upstream-subtrees.md`。
 - Web、Expo、Electron 的构建与发布矩阵：`opencraft/docs/build-matrix.md`。
 

@@ -5,6 +5,7 @@ import type { HostConnectionProfile, ProvisionHostInput } from "@opencraft/workb
 
 export * from "./composer-actions";
 export * from "./settings-controls";
+export * from "./settings-panel";
 export * from "./adaptive-panel";
 export * from "./settings-search-select";
 
@@ -12,12 +13,14 @@ export type { ProvisionHostInput } from "@opencraft/workbench-runtime";
 
 /** Host-owned operations exposed to a trusted platform View. */
 export interface PlatformViewHost {
+  readonly authentication?: AuthenticationFlowPort;
   readonly platform: "web" | "electron" | "expo";
   readonly activeHostId: string;
   readonly profiles: readonly HostConnectionProfile[];
   provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
   removeHost(hostId: string): Promise<boolean>;
   openView(viewId: string, resourceUri?: string | null): void;
+  openSettings?(section: string): void;
   replaceViewResource(viewId: string, resourceUri: string): void;
   /** Host-owned image pipeline shared by chat attachments and trusted Views. */
   prepareImageUpload?(blob: Blob): Promise<Blob>;
@@ -27,6 +30,10 @@ export interface PlatformViewHost {
 export type ExtensionSettingsViewHost = PlatformViewHost;
 
 export interface ExtensionSettingsViewProps {
+  /** Only the dedicated sign-in presentation receives a pre-existing flow lease. */
+  readonly authenticationFlowId?: string;
+  /** Present only when this View is hosted in a dismissible utility window. */
+  readonly onDismiss?: () => void;
   readonly contribution: ViewContribution;
   readonly host: PlatformViewHost;
   readonly activation: {
@@ -48,10 +55,11 @@ export interface PlatformAccountSnapshot {
   readonly planLabel: string | null;
   readonly usageRemainingPercent: number | null;
   readonly error: string | null;
+  readonly environmentRequests?: readonly { readonly id: string; readonly name: string; readonly status: string }[];
   /**
-   * Optional application-entry gate owned by the account provider. The shell
-   * resolves it through a matching Workbench intervention surface before it
-   * exposes a Conversation Draft; it does not create or connect a Host.
+   * @deprecated Web/Electron ignore account-level gates. Only an actual
+   * selected-Host connection failure can request an intervention surface.
+   * Retained for source compatibility with older account contributions.
    */
   readonly applicationIntervention?: {
     readonly providerId: string;
@@ -65,8 +73,16 @@ export interface PlatformAccountSnapshot {
  * by the contributing product extension.
  */
 export interface PlatformAccountContribution {
+  readonly signInOptions?: readonly { readonly id: string; readonly label: string; readonly description: string }[];
+  readonly authenticationProviderId?: string;
+  readonly signInViewId?: string;
   readonly id: string;
   readonly viewId: string;
+  /** Optional, provider-owned environment creation View; Shell owns only presentation. */
+  readonly environmentCreation?: {
+    readonly label: string;
+    readonly viewId: string;
+  };
   getSnapshot(): PlatformAccountSnapshot;
   subscribe(listener: () => void): () => void;
   refresh(): Promise<unknown>;
@@ -121,3 +137,4 @@ export class PlatformViewRendererRegistry {
     for (const listener of this.listeners) listener();
   }
 }
+import type { AuthenticationFlowPort } from "@opencraft/workbench-runtime";

@@ -16,9 +16,9 @@ function extractText(node: ReactNode): string {
 
 function detectCalloutKind(text: string): CalloutKind | null {
   const head = text.trim().slice(0, 48);
-  if (/^⚠️|warning|警告|注意/i.test(head)) return 'warn';
-  if (/^💡|tip|提示|小技巧/i.test(head)) return 'tip';
-  if (/^ℹ️|info|note|注:/i.test(head)) return 'info';
+  if (/^(?:⚠️|\bwarning\b|警告|注意)/i.test(head)) return 'warn';
+  if (/^(?:💡|\btip\b|提示|小技巧)/i.test(head)) return 'tip';
+  if (/^(?:ℹ️|\binfo\b|\bnote\b|注:)/i.test(head)) return 'info';
   return null;
 }
 

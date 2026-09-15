@@ -1,11 +1,13 @@
 export function shouldShowAgentSettingsDataLoading({
   botsLoading,
+  passesLoading,
   isCreating,
   visibleBotCount,
 }: {
   botsLoading: boolean;
+  passesLoading: boolean;
   isCreating: boolean;
   visibleBotCount: number;
 }) {
-  return botsLoading && !isCreating && visibleBotCount === 0;
+  return (botsLoading || passesLoading) && !isCreating && visibleBotCount === 0;
 }

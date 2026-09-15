@@ -1661,7 +1661,8 @@ type SetPlanListOptions struct {
 type ApplySubscriptionRequest struct {
 	IdempotencyKey   string     `json:"idempotency_key"`
 	UserID           string     `json:"user_id"`
-	PlanID           string     `json:"plan_id"`
+	PlanID           string     `json:"plan_id,omitempty"`
+	TokenAmount      int64      `json:"token_amount,omitempty"`
 	SubscriptionName string     `json:"subscription_name,omitempty"`
 	Nickname         string     `json:"nickname,omitempty"`
 	Phone            string     `json:"phone,omitempty"`
@@ -2164,6 +2165,7 @@ type Options struct {
 	SetRuntimeRouteRequired     bool
 	TrafficTransportManager     *TransportManager
 	NewAPIClientTimeout         time.Duration
+	EnforceManagedSetURLs       bool
 	WorkerSetCapacityEnabled    bool
 	WorkerSetCapacityPolicy     SetCapacityPolicy
 	WorkerBYOKSyncBatchSize     int

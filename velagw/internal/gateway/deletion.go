@@ -254,12 +254,12 @@ func (s *Service) deleteTenantRemoteResources(ctx context.Context, externalUserI
 	if !ok {
 		return fmt.Errorf("set %q not found", binding.SetID)
 	}
-	adminClient := s.newAPIClient(set.BaseURL)
+	adminClient := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	if err := s.invalidateActiveSubscriptions(ctx, adminClient, auth, binding.UpstreamUserID); err != nil {
 		return err
 	}
-	userClient := s.newAPIClient(set.BaseURL)
+	userClient := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := userClient.Login(ctx, binding.Username, binding.Password)
 	if err != nil {
 		existingUser, findErr := adminClient.FindUser(ctx, auth, binding.Username)

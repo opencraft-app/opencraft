@@ -1,8 +1,16 @@
-import { basename, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { DesktopLightVelaLogin, forwardLoginCallback } from "./lightvela-login.js";
+import { createDesktopSessionStore } from "./lightvela-session-store.js";
+import { requestDesktopAccount, type DesktopAccountRequest } from "./lightvela-account-http.js";
 import { resolveDesktopProduct } from "./product-identity.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
+import { installBrowserGuests } from "./browser-guests.js";
+import { createFilePrivateStorage } from "./private-storage.js";
+import { BrowserPermissionPolicy } from "./browser-permissions.js";
 
 import {
   BrowserWindow,
@@ -45,11 +53,164 @@ app.setPath("userData", userDataDirectory);
 
 let mainWindow: BrowserWindow | null = null;
 let mainWebContents: WebContents | null = null;
+let browserGuests: ReturnType<typeof installBrowserGuests> | null = null;
+const browserPermissions = new BrowserPermissionPolicy({
+  read: () => {
+    const raw = createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).read("permissions");
+    return raw ? JSON.parse(raw) : {};
+  },
+  write: value => createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).write("permissions", JSON.stringify(value)),
+}, async (origin, permission) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { allow: false, remember: false };
+  const labels: Record<string, string> = { camera: "摄像头", microphone: "麦克风", geolocation: "位置", notifications: "通知" };
+  const result = await dialog.showMessageBox(mainWindow, { type: "question",
+    message: `${origin} 请求使用${labels[permission] ?? permission}`,
+    detail: "只授权给当前网站。可从浏览器的“网站权限”入口撤销。",
+    buttons: ["不允许", "允许"], defaultId: 0, cancelId: 0, checkboxLabel: "记住此网站的选择", checkboxChecked: false });
+  return { allow: result.response === 1, remember: result.checkboxChecked };
+});
 let tray: Tray | null = null;
 let loopbackHost: WorkbenchStaticServer | null = null;
 let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
+const desktopSessions = createDesktopSessionStore(userDataDirectory);
+const desktopLogin = new DesktopLightVelaLogin({
+  openExternal: url => shell.openExternal(url),
+  saveSession: (value, signal) => desktopSessions.save(value, signal),
+  onSuccess: () => { void ensureMainWindow().catch(() => {}); },
+});
+let startupCallbackFlight: Promise<boolean> | null = null;
+
+function receiveLoginCallback(url: string): void {
+  if (desktopLogin.receive(url)) return;
+  const forwarding = forwardLoginCallback(url);
+  if (mainWindow === null && daemonManager === null) startupCallbackFlight = forwarding;
+}
+// macOS may deliver an open-url before app.whenReady(). The live transaction
+// broker also routes callbacks delivered to a different preview/profile.
+app.on("open-url", (event, url) => { event.preventDefault(); receiveLoginCallback(url); });
+
+function trustedLoginCaller(event: Electron.IpcMainInvokeEvent): boolean {
+  return event.sender === mainWebContents && event.senderFrame === mainWebContents?.mainFrame
+    && rendererOrigin !== null && event.senderFrame?.url.startsWith(`${rendererOrigin}/`) === true;
+}
+
+ipcMain.handle("vela:lightvela-login", async (event, region: unknown) => {
+  if (!trustedLoginCaller(event)) return { ok: false, error: "Untrusted login caller" };
+  if (region !== "cn" && region !== "intl") return { ok: false, error: "Invalid login region" };
+  try {
+    if (process.platform === "darwin" && app.isPackaged) {
+      execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", [
+        "-f", dirname(dirname(dirname(process.execPath))),
+      ], { stdio: "ignore", timeout: 5000 });
+    }
+    const registered = app.isPackaged ? app.setAsDefaultProtocolClient("opencraft")
+      : app.setAsDefaultProtocolClient("opencraft", process.execPath, [app.getAppPath()]);
+    if (!registered) throw new Error("Could not register the desktop login callback. Please reopen the installed app.");
+    return { ok: true, session: await desktopLogin.start(region) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not start login" };
+  }
+});
+ipcMain.handle("vela:lightvela-login-cancel", event => { if (trustedLoginCaller(event)) desktopLogin.cancel(); });
+ipcMain.handle("vela:lightvela-session-read", event => trustedLoginCaller(event) ? desktopSessions.read() : null);
+const browserMetadataKeys = new Set(["vela.browser-pages.v1", "vela.browser-tabs.v1", "opencraft.browser-storage.v1", "vela.conversation-bindings.v1", "opencraft.browser-retired-storage.v1"]);
+const readBrowserMetadata = (): Record<string, string> => {
+  const raw = createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).read("state");
+  if (raw === null) return {};
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid browser metadata");
+  return Object.fromEntries(Object.entries(parsed).filter(([key, value]) => browserMetadataKeys.has(key) && typeof value === "string")) as Record<string, string>;
+};
+ipcMain.handle("opencraft:browser-state-read", event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted browser metadata caller");
+  return readBrowserMetadata();
+});
+ipcMain.handle("opencraft:browser-state-write", (event, key: unknown, value: unknown) => {
+  if (!trustedLoginCaller(event) || typeof key !== "string" || !browserMetadataKeys.has(key) || typeof value !== "string") throw new Error("Invalid browser metadata write");
+  JSON.parse(value);
+  createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).write("state", JSON.stringify({ ...readBrowserMetadata(), [key]: value }));
+});
+ipcMain.handle("opencraft:browser-track-pointer", (event, guestId: unknown, trackingId: unknown, enabled: unknown) => {
+  if (!trustedLoginCaller(event) || !Number.isSafeInteger(guestId) || typeof trackingId !== "string" || trackingId.length > 100 || typeof enabled !== "boolean") throw new Error("Invalid browser pointer tracking request");
+  browserGuests?.trackPointer(guestId as number, trackingId, enabled);
+});
+ipcMain.on("opencraft:window-focused", event => {
+  event.returnValue = trustedLoginCaller(event) && mainWindow?.isFocused() === true;
+});
+ipcMain.handle("opencraft:browser-site-settings", async (event, guestId: unknown, action: unknown) => {
+  if (!trustedLoginCaller(event) || typeof guestId !== "number" || !["permissions", "clear-data"].includes(String(action))) throw new Error("Invalid browser settings request");
+  const entry = browserGuests?.require(guestId);
+  if (!entry || !mainWindow) throw new Error("Browser page is unavailable");
+  const origin = new URL(entry.guest.getURL()).origin;
+  if (!origin.startsWith("http")) throw new Error("当前页面没有网站权限");
+  const permissions = ["camera", "microphone", "geolocation", "notifications"];
+  const decision = await dialog.showMessageBox(mainWindow, {
+    type: action === "clear-data" ? "warning" : "info",
+    message: action === "clear-data" ? `清除此浏览器标签的网站数据？` : `网站权限：${origin}`,
+    detail: action === "clear-data" ? "将清除此标签独立分区中的 Cookie、缓存及网站存储，网站可能退出登录。不会影响其他标签。"
+      : permissions.map(p => `${p}: ${browserPermissions.check(entry.partition, origin, p) ? "已允许" : "未允许"}`).join("\n") + "\n撤销后会重新加载页面，停止当前页面使用这些权限。",
+    buttons: ["取消", action === "clear-data" ? "清除数据" : "撤销权限并重新加载"], defaultId: 0, cancelId: 0,
+  });
+  if (decision.response !== 1) return { changed: false };
+  if (entry.guest.isDestroyed() || new URL(entry.guest.getURL()).origin !== origin) throw new Error("页面已改变，请重新操作");
+  browserPermissions.revoke(entry.partition, origin);
+  if (action === "clear-data") {
+    await entry.guest.session.clearStorageData();
+    await entry.guest.session.clearCache();
+  }
+  if (!entry.guest.isDestroyed()) entry.guest.reload();
+  return { changed: true };
+});
+ipcMain.handle("opencraft:browser-clear-closed-data", async event => {
+  if (!trustedLoginCaller(event) || !mainWindow) throw new Error("Untrusted browser settings caller");
+  const state = readBrowserMetadata();
+  const retired = JSON.parse(state["opencraft.browser-retired-storage.v1"] ?? "[]");
+  const active = new Set(Object.values(JSON.parse(state["opencraft.browser-storage.v1"] ?? "{}")));
+  if (!Array.isArray(retired)) throw new Error("Invalid retired browser storage");
+  const ids = retired.filter((id): id is string => typeof id === "string" && /^browser[:-][a-zA-Z0-9-]+$/.test(id) && !active.has(id));
+  const result = await dialog.showMessageBox(mainWindow, { type:"warning",message:`清理 ${ids.length} 个已关闭标签的网站数据？`,
+    detail:"将删除这些标签留下的 Cookie、缓存和网站存储，不影响当前打开的标签。",buttons:["取消","清理"],defaultId:0,cancelId:0 });
+  if (result.response !== 1) return {cleared:0};
+  let cleared=0;
+  for (const id of ids) {
+    const current = readBrowserMetadata();
+    if (Object.values(JSON.parse(current["opencraft.browser-storage.v1"] ?? "{}")).includes(id)) continue;
+    const partition = session.fromPartition(`persist:opencraft-browser:${id.replace("browser:","browser-")}`);
+    const storagePath = partition.getStoragePath();
+    if (storagePath) browserPermissions.clearPartition(storagePath);
+    await partition.clearStorageData(); await partition.clearCache(); cleared++;
+  }
+  const current = readBrowserMetadata();
+  const remaining = (JSON.parse(current["opencraft.browser-retired-storage.v1"] ?? "[]") as string[]).filter(id => !ids.includes(id));
+  createFilePrivateStorage(join(app.getPath("userData"),"browser-metadata")).write("state",JSON.stringify({...current,"opencraft.browser-retired-storage.v1":JSON.stringify(remaining)}));
+  return {cleared};
+});
+ipcMain.handle("vela:lightvela-session-clear", event => {
+  if (trustedLoginCaller(event)) { desktopLogin.cancel(); desktopSessions.clear(); }
+});
+ipcMain.handle("vela:lightvela-account-request", async (event, input: DesktopAccountRequest) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted account caller");
+  const account = await desktopSessions.read();
+  if (!account) return { status: 401, contentType: "application/json", body: new Uint8Array() };
+  try { return await requestDesktopAccount(input, account); }
+  catch { throw new Error("Account request failed. Please retry."); }
+});
+ipcMain.handle("vela:lightvela-sign-out", async event => {
+  if (!trustedLoginCaller(event)) return;
+  const account = await desktopSessions.read();
+  desktopLogin.cancel(); desktopSessions.clear();
+  if (!account) return;
+  try {
+    const base = account.region === "cn" ? "https://api.lightvela.com" : "https://api.lightvela.ai";
+    const response = await fetch(`${base}/auth/session`, {
+      method: "DELETE", headers: { Authorization: `Bearer ${account.token}` },
+      redirect: "error", signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok && response.status !== 401 && response.status !== 403) throw new Error();
+  } catch { throw new Error("Signed out locally; server revocation could not be confirmed."); }
+});
 
 function rejectAppHostPort(
   port: MessagePortMain,
@@ -297,10 +458,20 @@ async function createMainWindow(): Promise<void> {
       webSecurity: true,
       allowRunningInsecureContent: false,
       spellcheck: true,
+      webviewTag: true,
       scrollBounce: process.platform === "darwin",
     },
   });
+  browserGuests = installBrowserGuests(window.webContents, {
+    permissions: browserPermissions,
+    open: (guestId, url, background) => {
+      if (!window.isDestroyed()) window.webContents.send("opencraft:browser-new-window", { guestId, url, background });
+    },
+  });
   const webContents = window.webContents;
+  webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) desktopLogin.cancel();
+  });
   mainWindow = window;
   lifecycle.bindWindow(window);
   mainWebContents = webContents;
@@ -339,6 +510,7 @@ async function createMainWindow(): Promise<void> {
     if (!webContents.isDestroyed()) webContents.setZoomLevel(0);
   });
   window.once("closed", () => {
+    desktopLogin.cancel();
     window.off("focus", refreshWindowAppearance);
     window.off("blur", refreshWindowAppearance);
     window.off("show", refreshWindowAppearance);
@@ -363,6 +535,7 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    desktopLogin.cancel();
     const daemon = daemonManager;
     const loopback = loopbackHost;
     for (const bridge of [...daemonBridges]) bridge.close();
@@ -386,12 +559,23 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
-  app.on("second-instance", () => { void ensureMainWindow().catch(console.error); });
+  app.on("second-instance", (_event, argv) => {
+    const callback = argv.find(value => value.startsWith("opencraft://"));
+    if (callback) { receiveLoginCallback(callback); return; }
+    void ensureMainWindow().catch(console.error);
+  });
   app.on("activate", () => { void ensureMainWindow().catch(console.error); });
   app.on("before-quit", event => { event.preventDefault(); void lifecycle.quit(); });
   app.on("window-all-closed", () => { /* Resident host; only explicit Quit stops runtime. */ });
 
   await app.whenReady();
+  for (const value of process.argv) if (value.startsWith("opencraft://")) receiveLoginCallback(value);
+  if (startupCallbackFlight && await startupCallbackFlight) {
+    // A callback-only launch must not put an anonymous second window in front
+    // of the initiating profile, which is about to finish its login.
+    app.quit();
+    return;
+  }
   daemonManager = new OpenCraftDaemonClientManager({
     userDataDirectory: app.getPath("userData"),
     daemonEntry: app.isPackaged
@@ -401,6 +585,7 @@ async function bootstrap(): Promise<void> {
       ? join(process.resourcesPath, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
       : join(app.getAppPath(), "../../runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
     dataDirectory: join(app.getPath("userData"), "dsh"),
+    modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || join(homedir(), ".opencraft"),
     executable: process.execPath,
   });
   tray = createDesktopTray({ open: () => { void lifecycle.show().catch(console.error); }, quit: () => { void lifecycle.quit(); } });

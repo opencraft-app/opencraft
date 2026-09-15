@@ -48,5 +48,7 @@ export function projectLightVelaBotOnboarding(
 }
 
 export function lightVelaBotCreationUrl(region: LightVelaRegion): string {
-  return new URL("/dashboard/create", LIGHTVELA_REGIONS[region].frontendBase).toString();
+  // The website owns subscription eligibility and the first-instance confirmation.
+  // /dashboard/create is retired; ?creating=true only shows provisioning progress.
+  return new URL("/agents", LIGHTVELA_REGIONS[region].frontendBase).toString();
 }

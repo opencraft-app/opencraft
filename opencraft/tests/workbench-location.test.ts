@@ -141,7 +141,7 @@ test("Settings is a top-level application route that preserves return identity",
   const navigation = createBrowserWorkbenchNavigation(location);
   try {
     const conversationViewId = navigation.getSnapshot().routeScopeId;
-    navigation.openSettings();
+    navigation.openSettings("connections");
     assert.deepEqual(navigation.getSnapshot().applicationRoute, {
       kind: "settings",
       slug: "connections",

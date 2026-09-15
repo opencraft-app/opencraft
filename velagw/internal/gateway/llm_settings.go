@@ -222,7 +222,7 @@ func (s *Service) syncUserLLMSettings(ctx context.Context, externalUserID string
 		return UserLLMSettingsSyncResult{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
 
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	group := byokGroupForUser(externalUserID)
 	hasEnabledProvider := false

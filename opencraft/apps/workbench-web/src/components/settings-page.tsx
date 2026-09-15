@@ -4,7 +4,6 @@ import {
   Blocks,
   Bot,
   Brain,
-  Cable,
   CalendarClock,
   Cloud,
   Cpu,
@@ -20,7 +19,6 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import type { FormEvent } from "react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 
 import type { ThemePreference } from "@opencraft/design-system/theme";
@@ -43,7 +41,7 @@ import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import type { AppearanceThemeDescriptor } from "../appearance-theme";
 import { useInternalDeveloperMode } from "../internal-developer-mode";
 
-export type SettingsSection = "appearance" | "connections" | "laboratory" | "plugins" | string;
+export type SettingsSection = "appearance" | "laboratory" | "plugins" | string;
 
 export interface SettingsContentProps {
   readonly section: SettingsSection;
@@ -56,11 +54,6 @@ export interface SettingsContentProps {
   readonly onThemeChange: (themeId: string) => void;
   readonly onThemePreferenceChange: (preference: ThemePreference) => void;
   readonly onOpenAnnouncementLab: () => void;
-  readonly onAdd: (input: {
-    readonly displayName: string;
-    readonly url: string;
-    readonly workspaceBrowseRoots?: readonly string[];
-  }) => Promise<HostConnectionProfile>;
   readonly onRemove: (hostId: string) => Promise<boolean>;
   readonly onProvisionHost: (input: ProvisionHostInput) => Promise<HostConnectionProfile>;
   readonly onOpenView: (viewId: string, resourceUri?: string | null) => void;
@@ -80,17 +73,7 @@ export interface SettingsNavigationProps {
   readonly presentation?: "route" | "dialog" | "sidebar";
 }
 
-function providerUrl(profile: HostConnectionProfile): string {
-  if (
-    typeof profile.providerConfig !== "object"
-    || profile.providerConfig === null
-    || Array.isArray(profile.providerConfig)
-  ) return profile.transportEndpoint ?? "";
-  const url = (profile.providerConfig as Readonly<Record<string, unknown>>).url;
-  return typeof url === "string" ? url : (profile.transportEndpoint ?? "");
-}
-
-function useSettingsExtensionPages(
+export function useSettingsExtensionPages(
   extensionContributions: ExtensionContributionStore,
   platform: "web" | "electron",
 ) {
@@ -113,7 +96,7 @@ function useSettingsExtensionPages(
   );
 }
 
-function currentPlatform(): "web" | "electron" {
+export function currentPlatform(): "web" | "electron" {
   return (globalThis as typeof globalThis & { opencraftDesktop?: { readonly kind?: string } })
     .opencraftDesktop?.kind === "electron" ? "electron" : "web";
 }
@@ -230,14 +213,6 @@ export function SettingsNavigation({
           </button>
           <button
             type="button"
-            aria-current={section === "connections" ? "page" : undefined}
-            onClick={() => onSectionChange("connections")}
-          >
-            <Cable size={16} />
-            <span>Connections</span>
-          </button>
-          <button
-            type="button"
             aria-current={section === "plugins" ? "page" : undefined}
             onClick={() => onSectionChange("plugins")}
           >
@@ -335,7 +310,6 @@ export function SettingsContent({
   onThemeChange,
   onThemePreferenceChange,
   onOpenAnnouncementLab,
-  onAdd,
   onRemove,
   onProvisionHost,
   extensionContributions,
@@ -344,11 +318,6 @@ export function SettingsContent({
   onOpenView,
   onReplaceViewResource,
 }: SettingsContentProps) {
-  const [displayName, setDisplayName] = useState("");
-  const [url, setUrl] = useState("");
-  const [workspaceRoot, setWorkspaceRoot] = useState("/workspace/projects");
-  const [pending, setPending] = useState(false);
-  const [removingHostId, setRemovingHostId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [extensionUrl, setExtensionUrl] = useState("");
   const [extensionOperation, setExtensionOperation] = useState<string | null>(null);
@@ -387,26 +356,6 @@ export function SettingsContent({
     openView: onOpenView,
     replaceViewResource: onReplaceViewResource,
   }), [activeHostId, onOpenView, onProvisionHost, onRemove, onReplaceViewResource, platform, profiles]);
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    void onAdd({
-      displayName,
-      url,
-      workspaceBrowseRoots: workspaceRoot.trim().length === 0 ? [] : [workspaceRoot],
-    })
-      .then(() => {
-        setDisplayName("");
-        setUrl("");
-      })
-      .catch((cause) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      })
-      .finally(() => setPending(false));
-  };
 
   return (
     <div className="settings-page__viewport" data-selection="chrome" data-layout={selectedExtensionPage?.layout ?? "document"}>
@@ -626,96 +575,6 @@ export function SettingsContent({
                       <SettingsActions>
                         <SettingsButton type="submit" variant="primary" disabled={extensionOperation !== null}>
                           {extensionOperation === "install" ? "Installing…" : "Install and enable"}
-                        </SettingsButton>
-                      </SettingsActions>
-                    </form>
-                  </SettingsSection>
-                </>
-              ) : section === "connections" ? (
-                <>
-                  <SettingsPageHeader title="Connections" description="Manage the AppServer hosts available to this device." />
-
-                  <SettingsSection title="AppServer hosts" description="Each host owns an independent transport, history cursor, and replica namespace.">
-                    <SettingsGroup aria-label="Configured hosts">
-                      {profiles.map((profile) => {
-                        const active = profile.hostId === activeHostId;
-                        return (
-                          <SettingsListItem
-                            key={profile.hostId}
-                            icon={<Server size={16} />}
-                            label={profile.displayName}
-                            description={providerUrl(profile)}
-                            metadata={(
-                              <>
-                                {profile.providerId} · {profile.hostKind}
-                                {active ? " · Active" : ""}
-                              </>
-                            )}
-                            actions={(
-                              <button
-                                type="button"
-                                className="settings-control-list-item__danger-action"
-                                disabled={active || profiles.length <= 1 || removingHostId !== null}
-                                title={active
-                                  ? "Switch away from this Host before removing it"
-                                  : "Remove Host"}
-                                aria-label={`Remove ${profile.displayName}`}
-                                onClick={() => {
-                                  setRemovingHostId(profile.hostId);
-                                  setError(null);
-                                  void onRemove(profile.hostId)
-                                    .catch((cause) => {
-                                      setError(cause instanceof Error ? cause.message : String(cause));
-                                    })
-                                    .finally(() => setRemovingHostId(null));
-                                }}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          />
-                        );
-                      })}
-                    </SettingsGroup>
-                  </SettingsSection>
-
-                  <SettingsSection title="Add WebSocket host" icon={<Plus size={15} />} description="Connect another Codex-compatible AppServer endpoint.">
-                    <form onSubmit={submit}>
-                      <SettingsGroup>
-                        <SettingsRow label="Name" htmlFor="connection-display-name">
-                          <SettingsTextInput
-                          id="connection-display-name"
-                          required
-                          value={displayName}
-                          onChange={(event) => setDisplayName(event.target.value)}
-                          placeholder="Build server"
-                          />
-                        </SettingsRow>
-                        <SettingsRow label="AppServer WebSocket URL" htmlFor="connection-url">
-                          <SettingsTextInput
-                          id="connection-url"
-                          required
-                          inputMode="url"
-                          value={url}
-                          onChange={(event) => setUrl(event.target.value)}
-                          placeholder="wss://node.example/appserver"
-                          />
-                        </SettingsRow>
-                        <SettingsRow label="Initial workspace root" htmlFor="connection-workspace-root">
-                          <SettingsTextInput
-                          id="connection-workspace-root"
-                          value={workspaceRoot}
-                          onChange={(event) => setWorkspaceRoot(event.target.value)}
-                          placeholder="/workspace/projects"
-                          />
-                        </SettingsRow>
-                      </SettingsGroup>
-                      {error === null ? null : (
-                        <SettingsNotice tone="error">{error}</SettingsNotice>
-                      )}
-                      <SettingsActions>
-                        <SettingsButton type="submit" variant="primary" disabled={pending}>
-                          {pending ? "Verifying connection…" : "Verify and add host"}
                         </SettingsButton>
                       </SettingsActions>
                     </form>

@@ -549,7 +549,7 @@ func (s *Service) ensureSetUpgradeProbeQuota(ctx context.Context, set Set, userI
 	if !ok || binding.UpstreamUserID <= 0 {
 		return fmt.Errorf("upgrade probe user binding is not ready")
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	if err := client.ManageQuota(ctx, auth, binding.UpstreamUserID, "override", setUpgradeProbeQuota); err != nil {
 		return fmt.Errorf("grant upgrade probe quota: %w", err)

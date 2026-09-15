@@ -16,6 +16,7 @@ export type ModalDismissReason =
   | "system";
 
 export interface ModalDescriptor {
+  readonly appearance?: "default" | "utility";
   readonly label: string;
   readonly presentation?: ModalPresentation;
   readonly size?: ModalSize;
@@ -34,4 +35,3 @@ export const modalGeometry = {
     workspace: 1120,
   },
 } as const;
-

@@ -101,6 +101,14 @@ const CN_SIDEBAR: DocGroup[] = [
     ],
   },
   {
+    title: "场景方案",
+    items: [
+      { slug: "use-cases/scheduled-task-agent", title: "使用 LightVela 自动化 Agent 任务" },
+      { slug: "use-cases/scheduled-task-notifications", title: "在 LightVela 中设置通知任务" },
+      { slug: "use-cases/scheduled-task-script", title: "在 LightVela 中运行脚本任务" },
+    ],
+  },
+  {
     title: "Hermes Agent 解读",
     items: [
       { slug: "hermes-agent/hermes-vs-openclaw", title: "Hermes Agent 与 OpenClaw 有什么不同？" },
@@ -289,6 +297,21 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         titleEn: "Empower your Discord Event Bot with AI-Agentic Capabilities",
         indent: true,
       },
+      {
+        slug: "use-cases/scheduled-task-agent",
+        title: "使用 LightVela 自动化 Agent 任务",
+        titleEn: "Automating Agent Task with LightVela",
+      },
+      {
+        slug: "use-cases/scheduled-task-notifications",
+        title: "在 LightVela 中设置通知任务",
+        titleEn: "Setting Notification Task in LightVela",
+      },
+      {
+        slug: "use-cases/scheduled-task-script",
+        title: "在 LightVela 中运行脚本任务",
+        titleEn: "Running Script Task in LightVela",
+      },
     ],
   },
   {
@@ -369,6 +392,9 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/workbench": "configuration/workbench.md",
+  "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
+  "use-cases/scheduled-task-notifications": "use-cases/scheduled-task-notifications.md",
+  "use-cases/scheduled-task-script": "use-cases/scheduled-task-script.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
@@ -438,6 +464,9 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
   "use-cases/discord-community-agent": "use-cases/discord-community-agent.md",
   "use-cases/discord-event-agent": "use-cases/discord-event-agent.md",
+  "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
+  "use-cases/scheduled-task-notifications": "use-cases/scheduled-task-notifications.md",
+  "use-cases/scheduled-task-script": "use-cases/scheduled-task-script.md",
   "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
   "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
   "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",

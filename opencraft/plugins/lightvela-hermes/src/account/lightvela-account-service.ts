@@ -1,5 +1,6 @@
-import { HostConnectionInterventionError, throwIfSignalAborted } from "@opencraft/workbench-runtime";
+import { HostConnectionInterventionError, throwIfSignalAborted, type AuthenticationResult, type AuthenticationSession } from "@opencraft/workbench-runtime";
 import type { LightVelaRuntimeCommandPort } from "./lightvela-runtime-command-port";
+import { desktopAccountStorage, fetchDesktopAccount, getLightVelaDesktopAccount, type LightVelaDesktopAccountPort } from "./lightvela-desktop-login";
 import { Utf8StreamDecoder } from "../lib/utf8";
 import {
   consumeLightVelaWebLoginCallback,
@@ -27,6 +28,8 @@ const SIGNED_OUT_KEY = "vela.lightvela.signed-out.v1";
 const CACHE_SCOPE_KEY = "vela.lightvela.credential-scope.v1";
 const UPSTREAM_AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 export interface LightVelaAccountSnapshot {
+  /** Session authority is independent of the legacy Bot-catalog phase below. */
+  readonly session: AuthenticationSession;
   readonly region: LightVelaRegion;
   readonly authGeneration: number;
   readonly credentialScope: string;
@@ -124,6 +127,7 @@ interface PassListResponse {
 }
 
 export interface LightVelaAccountServiceOptions {
+  readonly desktopAccount?: LightVelaDesktopAccountPort;
   readonly apiBase?: string;
   readonly storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   /** Browser-navigation-scoped PKCE transaction state; never stores credentials. */
@@ -150,6 +154,7 @@ export interface LightVelaWebLoginCallbackOptions extends LightVelaAccountServic
  * route.
  */
 export function bootstrapLightVelaOAuthCallback(options: LightVelaOAuthCallbackOptions = {}): boolean {
+  if (getLightVelaDesktopAccount()) return false;
   const storage = options.storage ?? globalThis.localStorage;
   const location = options.location ?? globalThis.location;
   const history = options.history ?? globalThis.history;
@@ -169,7 +174,19 @@ export function bootstrapLightVelaOAuthCallback(options: LightVelaOAuthCallbackO
 }
 
 export async function bootstrapLightVelaWebLoginCallback(options: LightVelaWebLoginCallbackOptions = {}): Promise<boolean> {
-  const storage = options.storage ?? globalThis.localStorage;
+  const desktop = options.desktopAccount ?? getLightVelaDesktopAccount();
+  const storage = options.storage ?? (desktop ? desktopAccountStorage(globalThis.localStorage) : globalThis.localStorage);
+  if (desktop && storage) {
+    // Retire legacy origin-local credentials from the former Web-only path.
+    if (options.storage === undefined) globalThis.localStorage.removeItem(LIGHTVELA_TOKEN_KEY);
+    const session = await desktop.readSession();
+    storage.removeItem(LIGHTVELA_TOKEN_KEY);
+    if (session === null) return false;
+    storage.setItem(LIGHTVELA_TOKEN_KEY, session.token);
+    storage.setItem(LIGHTVELA_REGION_KEY, session.region);
+    storage.removeItem(SIGNED_OUT_KEY);
+    return true;
+  }
   const transactionStorage = options.transactionStorage ?? globalThis.sessionStorage;
   const location = options.location ?? globalThis.location;
   const history = options.history ?? globalThis.history;
@@ -268,7 +285,7 @@ function parseDebugExecSsePart(part: string): { eventType: string; data: string 
 }
 
 export class LightVelaApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
     this.name = "LightVelaApiError";
   }
@@ -300,7 +317,8 @@ export class LightVelaAccountService {
   private authGeneration = 0;
   private credentialScope: string = crypto.randomUUID();
   private authority = new AbortController();
-  private signInOperation: Promise<void> | null = null;
+  private signInOperation: Promise<AuthenticationResult> | null = null;
+  private signInGeneration = 0;
   private signOutOperation: Promise<void> | null = null;
   private readonly onStorage = (event: StorageEvent): void => {
     if (event.key !== SIGNED_OUT_KEY || event.newValue !== "true") return;
@@ -308,6 +326,7 @@ export class LightVelaAccountService {
     this.publish("anonymous", [], null, null);
   };
   private readonly onUpstreamUnauthorized = (): void => {
+    void this.desktopAccount?.clearSession().catch(() => {});
     this.storage?.removeItem(LIGHTVELA_TOKEN_KEY);
     this.storage?.setItem(SIGNED_OUT_KEY, "true");
     this.invalidateAuthority();
@@ -319,6 +338,7 @@ export class LightVelaAccountService {
   private readonly location: LightVelaAccountServiceOptions["location"];
   private readonly history: LightVelaAccountServiceOptions["history"];
   private readonly runtimeCommands: LightVelaRuntimeCommandPort | undefined;
+  private readonly desktopAccount: LightVelaDesktopAccountPort | undefined;
   private readonly listeners = new Set<() => void>();
   private revision = 0;
   private refreshGeneration = 0;
@@ -326,6 +346,7 @@ export class LightVelaAccountService {
   private detailsGeneration = 0;
   private detailsOperation: Promise<LightVelaAccountDetailsSnapshot> | null = null;
   private snapshot: LightVelaAccountSnapshot = Object.freeze({
+    session: Object.freeze({ status: "anonymous", epoch: 0 }),
     revision: 0,
     region: "intl",
     authGeneration: 0,
@@ -339,7 +360,9 @@ export class LightVelaAccountService {
 
   constructor(options: LightVelaAccountServiceOptions = {}) {
     this.apiBaseOverride = options.apiBase?.replace(/\/$/u, "");
-    this.storage = options.storage ?? globalThis.localStorage;
+    this.desktopAccount = options.desktopAccount ?? getLightVelaDesktopAccount();
+    if (this.desktopAccount && options.storage === undefined) globalThis.localStorage?.removeItem(LIGHTVELA_TOKEN_KEY);
+    this.storage = options.storage ?? (this.desktopAccount ? desktopAccountStorage(globalThis.localStorage) : globalThis.localStorage);
     this.transactionStorage = options.transactionStorage ?? globalThis.sessionStorage;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
     this.location = options.location ?? globalThis.location;
@@ -348,7 +371,8 @@ export class LightVelaAccountService {
     this.region = this.storage?.getItem(LIGHTVELA_REGION_KEY) === "cn" ? "cn" : "intl";
     this.credentialScope = this.storage?.getItem(CACHE_SCOPE_KEY) || this.credentialScope;
     this.storage?.setItem(CACHE_SCOPE_KEY, this.credentialScope);
-    this.snapshot = Object.freeze({ ...this.snapshot, region: this.region, credentialScope: this.credentialScope });
+    this.snapshot = Object.freeze({ ...this.snapshot, region: this.region, credentialScope: this.credentialScope,
+      session: Object.freeze({ status: this.hasStoredSession() ? "authenticated" : "anonymous", epoch: this.authGeneration }) });
     globalThis.addEventListener?.("storage", this.onStorage);
     globalThis.addEventListener?.(UPSTREAM_AUTH_UNAUTHORIZED_EVENT, this.onUpstreamUnauthorized);
   }
@@ -382,6 +406,21 @@ export class LightVelaAccountService {
     return (this.storage?.getItem(LIGHTVELA_TOKEN_KEY)?.trim().length ?? 0) > 0;
   }
 
+  async restoreDesktopSession(): Promise<boolean> {
+    if (!this.desktopAccount || this.signInOperation || this.signOutOperation) return false;
+    const generation = this.authGeneration;
+    const session = await this.desktopAccount.readSession();
+    if (!session || generation !== this.authGeneration || this.signInOperation || this.signOutOperation) return false;
+    this.region = session.region;
+    this.storage?.setItem(LIGHTVELA_REGION_KEY, session.region);
+    this.storage?.setItem(LIGHTVELA_TOKEN_KEY, session.token);
+    this.storage?.removeItem(SIGNED_OUT_KEY);
+    this.invalidateAuthority();
+    this.publishSession("authenticated");
+    this.publish("loading", [], null, null);
+    return true;
+  }
+
   bootstrapOAuthFragment(): boolean {
     if (this.signOutOperation) return false;
     const accepted = bootstrapLightVelaOAuthCallback({
@@ -391,12 +430,35 @@ export class LightVelaAccountService {
     });
     if (!accepted) return false;
     this.invalidateAuthority();
+    this.publishSession("authenticated");
     return true;
   }
 
-  async signIn(): Promise<void> {
+  async signIn(): Promise<AuthenticationResult> {
     if (this.signInOperation) return this.signInOperation;
     if (this.signOutOperation) throw new Error("Sign out is still in progress");
+    if (this.desktopAccount) {
+      const generation = this.authGeneration;
+      const attempt = ++this.signInGeneration;
+      const region = this.region;
+      const operation = (async (): Promise<AuthenticationResult> => {
+        const session = await this.desktopAccount!.signIn(region);
+        if (session === null || generation !== this.authGeneration || attempt !== this.signInGeneration) return { status: "cancelled" };
+        if (session.region !== region) throw new Error("Login returned for a different region");
+        this.storage?.setItem(LIGHTVELA_TOKEN_KEY, session.token);
+        this.storage?.setItem(LIGHTVELA_REGION_KEY, session.region);
+        this.storage?.removeItem(SIGNED_OUT_KEY);
+        this.invalidateAuthority();
+        this.publishSession("authenticated");
+        this.publish("authenticated", [], null, null);
+        // Session installation is the completion boundary. Resource failure is not login failure.
+        void this.refreshBots().catch(() => undefined);
+        void this.refreshAccountDetails().catch(() => undefined);
+        return { status: "authenticated", epoch: this.authGeneration };
+      })().finally(() => { if (this.signInOperation === operation) this.signInOperation = null; });
+      this.signInOperation = operation;
+      return operation;
+    }
     if (this.location === undefined) throw new Error("LightVela login requires a browser location");
     this.storage?.setItem(LIGHTVELA_REGION_KEY, this.region);
     if (this.transactionStorage === undefined) throw new Error("LightVela login requires browser session storage");
@@ -405,7 +467,7 @@ export class LightVelaAccountService {
       region: this.region,
       storage: this.transactionStorage,
       location: this.location,
-    }).catch((error: unknown) => {
+    }).then((): AuthenticationResult => ({ status: "redirecting" })).catch((error: unknown) => {
       if (this.signInOperation === operation) this.signInOperation = null;
       throw error;
     });
@@ -423,6 +485,15 @@ export class LightVelaAccountService {
     this.refreshOperation = null;
     this.detailsGeneration += 1;
     this.detailsOperation = null;
+    // Never retain A's profile/entitlements while B's identity is loading.
+    this.snapshot = Object.freeze({ ...this.snapshot,
+      details: Object.freeze({ phase: "idle", profile: null, subscription: null, pass: null, error: null }) });
+  }
+
+  cancelSignIn(): Promise<void> {
+    this.signInGeneration += 1;
+    this.signInOperation = null;
+    return this.desktopAccount?.cancel() ?? Promise.resolve();
   }
 
   signOut(): Promise<void> {
@@ -435,6 +506,8 @@ export class LightVelaAccountService {
     this.storage?.setItem(SIGNED_OUT_KEY, "true");
     this.publish("anonymous", [], null, null);
     const operation = (async () => {
+      if (this.desktopAccount?.signOut) { await this.desktopAccount.signOut(); return; }
+      await this.desktopAccount?.clearSession();
       const response = await this.fetchImpl(`${apiBase}/auth/session`, {
         method: "DELETE", credentials: "include", cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -461,7 +534,7 @@ export class LightVelaAccountService {
     const headers = new Headers(init.headers);
     const token = this.storage?.getItem(LIGHTVELA_TOKEN_KEY)?.trim();
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    const response = await this.fetchImpl(`${this.apiBase}${path}`, {
+    const requestInit: RequestInit = {
       credentials: "include",
       ...init,
       signal: init.signal ? AbortSignal.any([authority.signal, init.signal]) : authority.signal,
@@ -470,11 +543,29 @@ export class LightVelaAccountService {
       // underneath the stable velahermes0 Host identity.
       cache: "no-store",
       headers,
-    });
+    };
+    const response = this.desktopAccount?.request
+      ? await fetchDesktopAccount(this.desktopAccount, `${this.apiBase}${path}`, requestInit)
+      : await this.fetchImpl(`${this.apiBase}${path}`, requestInit);
     throwIfSignalAborted(authority.signal);
-    if (!response.ok) throw new LightVelaApiError(await errorMessage(response), response.status);
+    if (!response.ok) {
+      const payload = await response.clone().json().catch(() => null) as { code?: unknown } | null;
+      const message = await errorMessage(response);
+      throwIfSignalAborted(authority.signal);
+      if (response.status === 401) {
+        // Invalidate synchronously before any async clear can yield to another login.
+        this.storage?.removeItem(LIGHTVELA_TOKEN_KEY);
+        this.storage?.setItem(SIGNED_OUT_KEY, "true");
+        this.invalidateAuthority();
+        this.publish("anonymous", [], null, null);
+        void this.desktopAccount?.clearSession().catch(() => undefined);
+      }
+      throw new LightVelaApiError(message, response.status, typeof payload?.code === "string" ? payload.code : undefined);
+    }
     const result = await response.json() as T;
     throwIfSignalAborted(authority.signal);
+    // A protected API can confirm an existing Web cookie session, but its loading/error cannot log out.
+    if (this.snapshot.session.status !== "authenticated") this.publishSession("authenticated");
     return result;
   }
 
@@ -540,13 +631,6 @@ export class LightVelaAccountService {
       if (generation === this.detailsGeneration) this.publishDetails(details);
       return details;
     } catch (error) {
-      if (error instanceof LightVelaApiError && error.status === 401) {
-        this.storage?.removeItem(LIGHTVELA_TOKEN_KEY);
-        this.storage?.removeItem(LIGHTVELA_ACTIVE_BOT_KEY);
-        this.storage?.setItem(SIGNED_OUT_KEY, "true");
-        this.invalidateAuthority();
-        this.publish("anonymous", [], null, null);
-      }
       const details: LightVelaAccountDetailsSnapshot = Object.freeze({
         phase: "error",
         profile: null,
@@ -560,6 +644,7 @@ export class LightVelaAccountService {
   }
 
   async updateProfileName(name: string): Promise<LightVelaAccountProfile> {
+    const authority = this.authority;
     const normalized = name.trim();
     if (!normalized) throw new Error("Display name cannot be empty");
     const payload = await this.requestJson<AccountProfileResponse>("/auth/profile", {
@@ -567,6 +652,7 @@ export class LightVelaAccountService {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: normalized }),
     });
+    throwIfSignalAborted(authority.signal);
     const profile: LightVelaAccountProfile = Object.freeze({
       id: payload.user.id,
       name: payload.user.name?.trim() || normalized,
@@ -579,12 +665,14 @@ export class LightVelaAccountService {
   }
 
   async uploadProfileAvatar(file: File): Promise<LightVelaAccountProfile> {
+    const authority = this.authority;
     const form = new FormData();
     form.append("file", file);
     const payload = await this.requestJson<AccountProfileResponse>("/auth/profile/avatar", {
       method: "PUT",
       body: form,
     });
+    throwIfSignalAborted(authority.signal);
     const profile: LightVelaAccountProfile = Object.freeze({
       id: payload.user.id,
       name: payload.user.name?.trim() || "LightVela user",
@@ -900,7 +988,7 @@ export class LightVelaAccountService {
   }
 
   /** Resolves a fresh physical Bot binding for a new TAT connection. */
-  async resolveActiveBot(): Promise<LightVelaBotInstance> {
+  async resolveActiveBot(instanceId?: string): Promise<LightVelaBotInstance> {
     try {
       await this.refreshBots();
     } catch (cause) {
@@ -915,9 +1003,10 @@ export class LightVelaAccountService {
       throw cause;
     }
     const snapshot = this.snapshot;
-    const bot = snapshot.activeBotId === null
+    const requestedId = instanceId ?? snapshot.activeBotId;
+    const bot = requestedId === null
       ? undefined
-      : snapshot.bots.find((candidate) => candidate.instanceId === snapshot.activeBotId);
+      : snapshot.bots.find((candidate) => candidate.instanceId === requestedId);
     if (snapshot.phase === "anonymous") {
       throw new HostConnectionInterventionError({
         code: "authentication-required",
@@ -936,6 +1025,7 @@ export class LightVelaAccountService {
   }
 
   dispose(): void {
+    if (this.signInOperation) void this.desktopAccount?.cancel().catch(() => {});
     globalThis.removeEventListener?.("storage", this.onStorage);
     globalThis.removeEventListener?.(UPSTREAM_AUTH_UNAUTHORIZED_EVENT, this.onUpstreamUnauthorized);
     this.invalidateAuthority();
@@ -949,6 +1039,9 @@ export class LightVelaAccountService {
     activeBotId: string | null,
   ): void {
     this.snapshot = Object.freeze({
+      session: phase === "anonymous"
+        ? Object.freeze({ status: "anonymous", epoch: this.authGeneration })
+        : this.snapshot.session,
       revision: ++this.revision,
       region: this.region,
       authGeneration: this.authGeneration,
@@ -970,6 +1063,13 @@ export class LightVelaAccountService {
       revision: ++this.revision,
       details: Object.freeze(details),
     });
+    for (const listener of this.listeners) listener();
+  }
+
+  private publishSession(status: AuthenticationSession["status"]): void {
+    this.snapshot = Object.freeze({ ...this.snapshot, revision: ++this.revision,
+      region: this.region, authGeneration: this.authGeneration, credentialScope: this.credentialScope,
+      session: Object.freeze({ status, epoch: this.authGeneration }) });
     for (const listener of this.listeners) listener();
   }
 

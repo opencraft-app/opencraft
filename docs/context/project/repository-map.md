@@ -25,6 +25,7 @@ derived: true
 | `service-gateway/`, `site-gateway/`, other gateways | 公共入口、路由和上游策略 |
 | `subscription/`, `payment/`, `trade/`, `credit/` | 套餐、支付、结算、积分包和商业流程 |
 | `cloudagent/`, `ai-gateway/`, `velagw/`, `velalink/` | Agent 运行时、模型/provider 平面和聊天运行时 |
+| `shared/` | 跨 Web、OpenCraft 与移动端的 renderer-neutral 产品内核；每个包由最近的 `AGENTS.md` 约束 |
 | `ctl/`, `sandbox/` | 实例控制和沙箱编排 |
 | `infra_pulumi/`, `argocd/`, `.ci/` | 基础设施、GitOps 和交付自动化 |
 

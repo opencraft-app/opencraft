@@ -19,6 +19,7 @@ interface FloatingLeftPanelProps {
   readonly width: number;
   readonly widthPx: MotionValue<string>;
   getCurrentWidth(): number;
+  getMaximumWidth?(): number;
   onResize(width: number): void;
   onResizeEnd(width: number | null): void;
   onResizingChange(resizing: boolean): void;
@@ -32,6 +33,7 @@ export function FloatingLeftPanel({
   width,
   widthPx,
   getCurrentWidth,
+  getMaximumWidth,
   onResize,
   onResizeEnd,
   onResizingChange,
@@ -70,6 +72,7 @@ export function FloatingLeftPanel({
           <SidebarResizeHandle
             collapsible={false}
             getCurrentWidth={getCurrentWidth}
+            getMaximumWidth={getMaximumWidth}
             width={width}
             onCollapse={() => undefined}
             onExpand={() => undefined}

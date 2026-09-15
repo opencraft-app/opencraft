@@ -54,12 +54,16 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(noActiveBotBranch).not.toContain("createInitialBot");
 
     expect(page).toContain("const isFirstBotCreation = !activeBot");
-    expect(page).toContain("const requestedCreateMode = isFirstBotCreation ? \"blank\" : createBotMode");
+    expect(page).toContain("const cloneIntent = resolveBotCloneIntent({");
+    expect(page).toContain("isInitialCreation: isFirstBotCreation");
+    expect(page).toContain("currentBotId: activeBot?.id");
+    expect(page).toContain("mainBotId: defaultBot?.id");
+    expect(page).toContain("if (!cloneIntent.ok)");
     expect(page).not.toContain("createBotSoul");
     expect(page).not.toContain("initialSoul:");
     expect(page).toContain("{!isFirstBotCreation && (");
-    expect(page).toContain('createMode: requestedCreateMode === "blank" ? "blank" : "clone"');
-    expect(page).toContain('sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id');
+    expect(page).toContain("createMode: cloneIntent.intent.mode");
+    expect(page).toContain('sourceBotId: cloneIntent.intent.mode === "clone" ? cloneIntent.intent.sourceBotId : undefined');
   });
 
   it("refreshes the shared Bot list before leaving the creation page", () => {

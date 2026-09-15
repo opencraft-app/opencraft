@@ -10,7 +10,12 @@ import {
 } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
-import type { Bot, Pass } from "@/domain/types";
+import type { Bot, BotSiblingsUnknownReason, Pass } from "@/domain/types";
+import {
+  createBotIdentity,
+  normalizeBotLifecycle,
+  projectBotCatalog,
+} from "@lightvela/agent-core";
 import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_RECOVERY_TIMEOUT_MS, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
 import { isGlobal } from "@/lib/region";
 
@@ -21,6 +26,8 @@ export interface OpenClawBot {
   instanceId?: string;
   profileId?: string;
   isDefault?: boolean;
+  gatewayRunning?: boolean;
+  siblingsUnknown?: BotSiblingsUnknownReason;
   description?: string;
   createdFrom?: "blank" | "clone";
   sourceBotId?: string;
@@ -93,34 +100,34 @@ interface OpenClawContextValue {
 /* ─── Helpers ─── */
 
 /** Map a backend Bot to the frontend OpenClawBot shape */
-const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => ({
-  id: bot.id,
-  instanceId: bot.instanceId ?? bot.id,
-  profileId: bot.profileId ?? "main",
-  isDefault: bot.isDefault ?? true,
-  description: bot.description,
-  createdFrom: bot.createdFrom,
-  sourceBotId: bot.sourceBotId,
-  weixinOwner: bot.weixinOwner,
-  name: bot.name,
-  personality: bot.template || "默认设定",
-  personalityEmoji: "✨",
-  intro: bot.mission || "",
-  status: bot.status === "active"
-    ? "running"
-    : bot.status === "paused"
-      ? "paused"
-      : bot.status === "provisioning"
-        ? "provisioning"
-        : bot.status === "failed"
-          ? "failed"
-          : bot.status === "deleting"
-            ? "deleting"
-            : "draft",
-  createdAt: bot.createdAt,
-  connectedChannels: channels ?? [],
-  installedSkills: [],
-});
+const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => {
+  const identity = createBotIdentity({
+    botId: bot.id,
+    instanceId: bot.instanceId,
+    profileId: bot.profileId,
+    isDefault: bot.isDefault ?? true,
+  });
+  return {
+    id: identity.botId,
+    instanceId: identity.instanceId,
+    profileId: identity.profileId,
+    isDefault: identity.isDefault,
+    gatewayRunning: bot.gatewayRunning,
+    siblingsUnknown: bot.siblingsUnknown,
+    description: bot.description,
+    createdFrom: bot.createdFrom,
+    sourceBotId: bot.sourceBotId,
+    weixinOwner: bot.weixinOwner,
+    name: bot.name,
+    personality: bot.template || "默认设定",
+    personalityEmoji: "✨",
+    intro: bot.mission || "",
+    status: normalizeBotLifecycle(bot.status),
+    createdAt: bot.createdAt,
+    connectedChannels: channels ?? [],
+    installedSkills: [],
+  };
+};
 
 // NOTE: parseChannelsFromConfig 暂时注释，待通道探测功能恢复后启用
 // const parseChannelsFromConfig = (configOutput: string): ("wechat" | "qq")[] => {
@@ -496,7 +503,8 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     try {
       const snapshot = await repositories.bots.getDashboardSnapshot("live");
       if (generation !== botRefreshGeneration.current) return;
-      const mappedBots = snapshot.bots.map((bot) => mapBotToOpenClawBot(bot));
+      const mappedBots = projectBotCatalog(snapshot.bots)
+        .map(({ source }) => mapBotToOpenClawBot(source));
       setBots(mappedBots);
 
       /* 对每个 bot 尝试获取 openclaw 配置，恢复通道状态 */

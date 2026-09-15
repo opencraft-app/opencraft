@@ -40,6 +40,7 @@
     "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs"
   },
   "dependencies": {
+    "@lightvela/agent-core": "file:../shared/lightvela-agent-core",
     "@babel/runtime-corejs3": "7.29.7",
     "@orama/orama": "3.1.18",
     "@orama/tokenizers": "3.1.18",
@@ -91,6 +92,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@edgeone/makers-sdk": "0.1.0",
     "@rollup/rollup-darwin-x64": "^4.60.0",
     "@tailwindcss/postcss": "^4.3.1",
     "@testing-library/jest-dom": "^6.9.1",

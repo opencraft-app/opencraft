@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/eventoutbox"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/paymentmethod"
@@ -34,6 +36,25 @@ func main() {
 	contentAuditConfig := buildContentAuditConfig(logger)
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	stores := newStores(contentAuditConfig.Enabled)
+	var referralRelay *eventoutbox.Relay
+	if envOrDefault("REFERRAL_OUTBOX_RELAY_ENABLED", "false") == "true" {
+		mysqlStore, ok := stores.auth.(*service.MySQLStore)
+		if !ok {
+			logger.Error("referral outbox relay requires MySQL")
+			os.Exit(1)
+		}
+		var relayErr error
+		referralRelay, relayErr = eventoutbox.New(mysqlStore.DB(), eventoutbox.Config{
+			URL: envOrDefault("REFERRAL_PULSAR_URL", ""), Token: envOrDefault("REFERRAL_PULSAR_TOKEN", ""),
+			Topic: envOrDefault("REFERRAL_PULSAR_TOPIC", ""), PollInterval: time.Second, Lease: 30 * time.Second,
+		})
+		if relayErr != nil {
+			logger.Error("init referral outbox relay", "err", relayErr)
+			os.Exit(1)
+		}
+		defer referralRelay.Close()
+		referralRelay.Start(context.Background())
+	}
 	siteKind, err := shadowbinding.ParseSiteKind(envOrDefault("LIGHTVELA_SITE_KIND", shadowbinding.SiteKindCN))
 	if err != nil {
 		logger.Error("invalid site kind", "err", err)
@@ -122,6 +143,7 @@ func main() {
 		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
 		Federation:                 buildFederationConfig(logger),
 		OIDC:                       buildOIDCConfig(logger, stores.auth),
+		ReferralEnabled:            envOrDefault("REFERRAL_ENABLED", "false") == "true",
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")

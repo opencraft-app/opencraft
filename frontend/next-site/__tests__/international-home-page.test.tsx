@@ -747,7 +747,7 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);
     expect(Array.from(footer?.querySelectorAll(".foot__links-grid h3") ?? [], (heading) => heading.textContent)).toEqual([
       "Product",
-      "Analysis",
+      "Compare",
       "Community",
       "Company",
       "Related products",
@@ -771,7 +771,7 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.textContent).toBe("Blog");
     expect(footer?.querySelector(".foot__links-grid > div:nth-child(2) a")?.getAttribute("href")).toBe("/blog");
     expect(footer?.textContent).toContain("14-day free trial");
-    expect(footer?.textContent).toContain("Self-hosting analysis");
+    expect(footer?.textContent).toContain("Compare with self-hosting");
     expect(footer?.textContent).not.toContain("Comparison");
     expect(footer?.textContent).not.toContain("LightVela keeps your personal AI companion online in the cloud.");
     expect(footer?.textContent).not.toContain("Create it once, connect your channels, and let it keep learning how you work.");
@@ -796,14 +796,14 @@ describe("international v2 homepage artifact", () => {
       "zh-SG": {
         title: ["把想法交给 Hermes Agent，", "让它们在云端持续推进。"],
         cta: "我的智能体伙伴",
-        headings: ["产品", "分析", "社区", "公司", "相关产品"],
-        links: ["14 天免费试用", "定价", "接入 WhatsApp 指引", "本地部署分析", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
+        headings: ["产品", "对比", "社区", "公司", "相关产品"],
+        links: ["14 天免费试用", "定价", "接入 WhatsApp 指引", "与本地部署对比", "关于我们", "开源声明", "腾讯云开发 Tencent CloudBase"],
       },
       "zh-Hant": {
         title: ["把想法交給 Hermes Agent，", "讓它們在雲端持續推進。"],
         cta: "我的智能體夥伴",
-        headings: ["產品", "分析", "社群", "公司", "相關產品"],
-        links: ["14 天免費試用", "定價", "接入 WhatsApp 指引", "本地部署分析", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
+        headings: ["產品", "對比", "社群", "公司", "相關產品"],
+        links: ["14 天免費試用", "定價", "接入 WhatsApp 指引", "與本地部署對比", "關於我們", "開源聲明", "騰訊雲開發 Tencent CloudBase"],
       },
     } as const;
 

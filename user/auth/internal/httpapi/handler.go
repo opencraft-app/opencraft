@@ -22,6 +22,8 @@ const (
 	sessionCookieName      = "lc_session"
 	inviteTicketCookieName = "lc_invite_ticket"
 	inviteTicketCookiePath = "/auth"
+	referralCookieName     = "lc_referral_context"
+	referralCookiePath     = "/auth"
 )
 
 type Handler struct {
@@ -41,6 +43,7 @@ type Handler struct {
 	frontendBaseURL   string
 	federation        *FederationConfig
 	oidc              *OIDCConfig
+	referralEnabled   bool
 }
 
 type invitePrepareRequest struct {
@@ -159,6 +162,7 @@ func (h *Handler) SignInWithPassword(ctx context.Context, request api.SignInWith
 		h.setSessionCookie(gctx, session.Token)
 		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
+		h.clearReferralCookie(gctx)
 	}
 
 	return api.SignInWithPassword200JSONResponse(h.toSessionResponse(ctx, session)), nil
@@ -176,12 +180,13 @@ func (h *Handler) SignUpWithPassword(ctx context.Context, request api.SignUpWith
 		clientUA = gctx.Request.UserAgent()
 	}
 	session, err := h.service.SignUpWithPassword(ctx, service.PasswordSignUpInput{
-		Name:       request.Body.Name,
-		Email:      request.Body.Email,
-		Password:   request.Body.Password,
-		InviteCode: inviteCode,
-		ClientIP:   clientIP,
-		ClientUA:   clientUA,
+		Name:         request.Body.Name,
+		Email:        request.Body.Email,
+		Password:     request.Body.Password,
+		InviteCode:   inviteCode,
+		ReferralCode: h.referralCodeFromContext(ctx),
+		ClientIP:     clientIP,
+		ClientUA:     clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -200,6 +205,7 @@ func (h *Handler) SignUpWithPassword(ctx context.Context, request api.SignUpWith
 		h.setSessionCookie(gctx, session.Token)
 		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
+		h.clearReferralCookie(gctx)
 	}
 
 	return api.SignUpWithPassword200JSONResponse(h.toSessionResponse(ctx, session)), nil
@@ -210,6 +216,7 @@ func (h *Handler) SignOut(ctx context.Context, _ api.SignOutRequestObject) (api.
 	if gctx := ginContext(ctx); gctx != nil {
 		h.clearSessionCookie(gctx)
 		h.clearInviteTicketCookie(gctx)
+		h.clearReferralCookie(gctx)
 	}
 	return api.SignOut204Response{}, nil
 }
@@ -1017,12 +1024,13 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 	}
 	clientIP, clientUA := requestClientMetadata(ctx)
 	session, err := h.service.VerifySMS(ctx, service.VerifySMSInput{
-		Name:       optionalStringValue(request.Body.Name),
-		Phone:      request.Body.Phone,
-		Code:       request.Body.Code,
-		InviteCode: inviteCode,
-		ClientIP:   clientIP,
-		ClientUA:   clientUA,
+		Name:         optionalStringValue(request.Body.Name),
+		Phone:        request.Body.Phone,
+		Code:         request.Body.Code,
+		InviteCode:   inviteCode,
+		ReferralCode: h.referralCodeFromContext(ctx),
+		ClientIP:     clientIP,
+		ClientUA:     clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -1045,6 +1053,7 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		h.setSessionCookie(gctx, session.Token)
 		h.completeFederationSwitch(gctx, session.Token)
 		h.clearInviteTicketCookie(gctx)
+		h.clearReferralCookie(gctx)
 	}
 	return api.VerifySmsCode200JSONResponse(h.toSessionResponse(ctx, session)), nil
 }

@@ -58,6 +58,7 @@ vi.mock("@/i18n/t", () => ({
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/lib/region", () => ({

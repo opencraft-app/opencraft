@@ -112,6 +112,9 @@ const cnDocs = [
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: '功能与配置', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   { slug: 'configuration/deepseek-harness', title: 'DeepSeek Harness', file: 'configuration/deepseek-harness.md', group: '功能与配置', description: '在 LightVela 中安装和管理 DeepSeek Harness Labs 运行环境。', hideDescription: true },
   { slug: 'configuration/workbench', title: '工作台', file: 'configuration/workbench.md', group: '功能与配置', description: '在 LightVela 中使用 AI Agent 创建、部署和管理静态网站。', hideDescription: true },
+  { slug: 'use-cases/scheduled-task-agent', title: '使用 LightVela 自动化 Agent 任务', file: 'use-cases/scheduled-task-agent.md', group: '场景方案', description: '使用定时任务让 Agent 按计划整理信息并发送结果。', hideDescription: true },
+  { slug: 'use-cases/scheduled-task-notifications', title: '在 LightVela 中设置通知任务', file: 'use-cases/scheduled-task-notifications.md', group: '场景方案', description: '使用固定消息和计划时间发送日常提醒。', hideDescription: true },
+  { slug: 'use-cases/scheduled-task-script', title: '在 LightVela 中运行脚本任务', file: 'use-cases/scheduled-task-script.md', group: '场景方案', description: '使用 Bash 或 Python 脚本按计划执行可预测的系统检查。', hideDescription: true },
   // Hermes Agent 解读（长文科普，帮助用户理解 Hermes Agent 的设计与原理）
   { slug: 'hermes-agent/hermes-vs-openclaw', title: 'Hermes Agent vs OpenClaw：两个开源 Agent 的根本差别', file: 'hermes-agent/01-hermes-vs-openclaw.md', group: 'Hermes Agent 解读', description: '对比 Hermes Agent 与 OpenClaw 两个开源 Agent 在长期记忆、Skill 生态、多平台接入等维度的根本差别，帮你判断哪一个更贴近你的使用场景。', hideDescription: true },
   { slug: 'hermes-agent/why-hermes-remembers-you', title: 'Hermes Agent 是怎么"记住你"的？', file: 'hermes-agent/02-why-hermes-remembers-you.md', group: 'Hermes Agent 解读', description: '揭秘 Hermes Agent 长期记忆背后的四层分工系统：USER.md、MEMORY.md、SQLite+FTS5 会话档案与 Skills，以及写入/召回时机的工程实现。', hideDescription: true },
@@ -140,6 +143,7 @@ const CN_GROUP_ORDER = [
   '产品入门',
   '账号、套餐与开通',
   '功能与配置',
+  '场景方案',
   '对比与选型',
   'Hermes Agent 解读',
   '问题排查',
@@ -635,6 +639,30 @@ const globalDocs = [
     hideDescription: true,
   },
   {
+    slug: 'use-cases/scheduled-task-agent',
+    title: { 'en-US': 'Automating Agent Task with LightVela', 'zh-CN': '使用 LightVela 自动化 Agent 任务' },
+    file: 'use-cases/scheduled-task-agent.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'use-cases/scheduled-task-notifications',
+    title: { 'en-US': 'Setting Notification Task in LightVela', 'zh-CN': '在 LightVela 中设置通知任务' },
+    file: 'use-cases/scheduled-task-notifications.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
+    slug: 'use-cases/scheduled-task-script',
+    title: { 'en-US': 'Running Script Task in LightVela', 'zh-CN': '在 LightVela 中运行脚本任务' },
+    file: 'use-cases/scheduled-task-script.md',
+    group: { 'en-US': 'Use Cases', 'zh-CN': '场景方案' },
+    description: { 'en-US': '', 'zh-CN': '' },
+    hideDescription: true,
+  },
+  {
     slug: 'compare/lightvela-vs-localhost-ai-agent',
     title: { 'en-US': 'LightVela vs Selfhost Agent: Which is best?', 'zh-CN': 'LightVela vs 本地部署 Agent：哪个更好？' },
     file: 'compare/lightvela-vs-localhost-ai-agent.md',
@@ -1068,6 +1096,18 @@ const ES_DOC_METADATA = {
     title: 'Potencia tu bot de eventos de Discord con capacidades de Agent de IA',
     description: 'Usa un Agent de Discord para responder preguntas, enviar recordatorios y mantener coherentes las operaciones de un evento.',
   },
+  'use-cases/scheduled-task-agent': {
+    title: 'Automatizar tareas de Agent con LightVela',
+    description: 'Usa un Agent programado para convertir actualizaciones recurrentes en un resumen matinal o una revisión semanal del proyecto.',
+  },
+  'use-cases/scheduled-task-notifications': {
+    title: 'Configurar tareas de notificación en LightVela',
+    description: 'Envía recordatorios fijos a tiempo mediante el canal que elijas sin consumir tokens del modelo.',
+  },
+  'use-cases/scheduled-task-script': {
+    title: 'Ejecutar tareas de script en LightVela',
+    description: 'Ejecuta comprobaciones programadas de Bash o Python y envía la salida que requiere atención.',
+  },
   'compare/lightvela-vs-localhost-ai-agent': {
     title: 'LightVela frente a un Agent autoalojado: ¿cuál te conviene?',
     description: 'Compara LightVela con un Agent ejecutado en un dispositivo o servidor propio.',
@@ -1218,6 +1258,18 @@ const ID_DOC_METADATA = {
   'configuration/channel-slack': {
     title: 'Kanal Slack',
     description: 'Siapkan token Slack dan izin yang diperlukan agar Hermes Agent dapat terhubung ke workspace.',
+  },
+  'use-cases/scheduled-task-agent': {
+    title: 'Mengotomatiskan Tugas Agent dengan LightVela',
+    description: 'Gunakan Agent terjadwal untuk mengubah pembaruan berulang menjadi brief pagi atau ulasan proyek mingguan.',
+  },
+  'use-cases/scheduled-task-notifications': {
+    title: 'Mengatur Tugas Notifikasi di LightVela',
+    description: 'Kirim pengingat tetap tepat waktu melalui kanal yang Anda pilih tanpa memakai token model.',
+  },
+  'use-cases/scheduled-task-script': {
+    title: 'Menjalankan Tugas Skrip di LightVela',
+    description: 'Jalankan pemeriksaan Bash atau Python terjadwal dan kirim keluaran yang memerlukan perhatian.',
   },
   'configuration/channel-wechat': {
     title: 'Kanal WeChat',
@@ -1508,9 +1560,10 @@ for (const doc of globalDocs) {
   }
 
   const esMetadata = ES_DOC_METADATA[doc.slug];
-  if (!esMetadata) throw new Error(`missing Spanish docs metadata: ${doc.slug}`);
-  doc.title[LOCALES.ES] = esMetadata.title;
-  doc.description[LOCALES.ES] = esMetadata.description;
+  if (esMetadata) {
+    doc.title[LOCALES.ES] = esMetadata.title;
+    doc.description[LOCALES.ES] = esMetadata.description;
+  }
 
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
@@ -1519,9 +1572,11 @@ for (const doc of globalDocs) {
     doc.group[LOCALES.JA_JP] = jaGroup;
   }
 
-  const jaMetadata = japaneseDocMetadata(doc.file);
-  doc.title[LOCALES.JA_JP] = jaMetadata.title;
-  doc.description[LOCALES.JA_JP] = jaMetadata.description;
+  if (existsSync(join(sourceRoot, 'ja', doc.file))) {
+    const jaMetadata = japaneseDocMetadata(doc.file);
+    doc.title[LOCALES.JA_JP] = jaMetadata.title;
+    doc.description[LOCALES.JA_JP] = jaMetadata.description;
+  }
 
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
@@ -1530,9 +1585,11 @@ for (const doc of globalDocs) {
     doc.group[LOCALES.KO_KR] = koGroup;
   }
 
-  const koMetadata = koreanDocMetadata(doc.file);
-  doc.title[LOCALES.KO_KR] = koMetadata.title;
-  doc.description[LOCALES.KO_KR] = koMetadata.description;
+  if (existsSync(join(sourceRoot, 'ko', doc.file))) {
+    const koMetadata = koreanDocMetadata(doc.file);
+    doc.title[LOCALES.KO_KR] = koMetadata.title;
+    doc.description[LOCALES.KO_KR] = koMetadata.description;
+  }
 
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
