@@ -23,10 +23,39 @@ stages:
           self-hosted: true
           pool-name: cn-pool
         steps:
+          - name: 隔离损坏的复用 checkout 元数据
+            shell: bash
+            run: |
+              set -euo pipefail
+              if [[ ! -e .git && ! -L .git ]]; then
+                exit 0
+              fi
+              if [[ ! -d .git || -L .git || -e .git/commondir ]]; then
+                echo "refuse checkout repair for linked/shared gitdir" >&2
+                exit 1
+              fi
+              if git -c core.fsmonitor=false status --porcelain >/dev/null 2>&1 \
+                && git rev-list --objects --all >/dev/null 2>&1 \
+                && git fsck --connectivity-only --no-dangling >/dev/null 2>&1; then
+                echo "checkout metadata connectivity is valid"
+                exit 0
+              fi
+              CHECKOUT_QUARANTINE="$(mktemp -d .checkout-quarantine.XXXXXX)"
+              chmod 0700 "$CHECKOUT_QUARANTINE"
+              mv .git "$CHECKOUT_QUARANTINE/git"
+              echo "invalid checkout metadata privately quarantined; checkout will reinitialize"
           - checkout: self
             name: 拉取代码
             with:
               fetchDepth: 1
+          - name: 确认候选 checkout 提交
+            shell: bash
+            run: |
+              set -euo pipefail
+              SOURCE_SHA='${{ ci.sha }}'
+              [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+              test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+              git rev-list --objects HEAD >/dev/null
           - name: 校验源码
             shell: bash
             run: |

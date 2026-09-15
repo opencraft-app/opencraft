@@ -98,3 +98,13 @@ OpenCraft沿用现有Web本地发布契约，不恢复专用CI；明确产品产
 - verified: Web产品发布选择/完整gate，候选行为/原生构建/校验，Go guard，526项CI runtime。
 - unverified: Linux候选归档插件、Runtime/IM Canary、北京DB/SSM/IM真实值、Argo和用户可用。
 - next_action: 用户确认提交源码；补充北京只读运维通道后核对正式前置，不创建DB实例。
+
+## 候选checkout失败后续
+
+- 用户要求修复候选#2拉代码失败，尚未授权重跑/清理真实CI缓存或部署。
+- 缺父对象与浅克隆边界不一致为优先诊断，远端仓库损坏未被证明；修复聚焦复用checkout。
+- checkout前内联status/rev-list/fsck检查，健康full与合法shallow保留；仅普通.git私有隔离，拒绝链接/共享gitdir，工作树与业务文件不动。
+- checkout后执行任何源码脚本前核对ci.sha与HEAD连通性，不依赖未拉取仓库中的修复脚本。
+- RED：真实Git fixture确认缺父对象，因缺pre-checkout步骤而失败；GREEN为3项真实Git测试/6个case，重新depth1 fetch/checkout成功且业务文件保留，正常full/shallow与共享gitdir边界符合预期。
+- 完整CI runtime529项、物化smoke、shell/YAML与文档检查通过；真实CI重跑尚未执行，待提交确认。
+- Context receipt沿用本Pack，并追加argocd-ci-secrets邻接核对mr-placeholder既有index恢复与候选checkout。
