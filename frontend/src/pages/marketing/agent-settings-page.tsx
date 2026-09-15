@@ -5577,7 +5577,7 @@ export const AgentSettingsPage = ({
 
                     {isDesktop ? (
                       <div className="lv-agent-account-footer">
-                        <UserAvatarMenu variant="sidebar" />
+                        <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
                       </div>
                     ) : null}
                   </aside>

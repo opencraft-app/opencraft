@@ -33,6 +33,15 @@ vi.mock("@/lib/avatar-image", () => ({
   avatarImageUrl: () => "https://example.com/avatar.png",
 }));
 
+vi.mock("@/components/site/language-switcher", () => ({
+  InternationalLanguageMenu: ({ id }: { id: string }) => (
+    <div id={id} aria-label="International site languages">
+      <button type="button">English</button>
+      <button type="button">简体中文</button>
+    </div>
+  ),
+}));
+
 vi.mock("@/lib/region", () => ({
   get isGlobal() {
     return mockIsGlobal;
@@ -134,7 +143,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("renders a full-width account trigger and opens the menu upward in a sidebar", () => {
+  it("opens the sidebar account menu on hover and still supports click", () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -159,7 +168,7 @@ describe("UserAvatarMenu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("link", { name: "avatar" })).not.toBeInTheDocument();
 
-    fireEvent.click(trigger);
+    fireEvent.mouseEnter(trigger);
 
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(document.querySelector(".lw-user-avatar-menu")).toHaveClass(
@@ -168,6 +177,88 @@ describe("UserAvatarMenu", () => {
       "origin-bottom-left",
     );
     expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+
+    fireEvent.mouseLeave(trigger.parentElement!);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("opens the international language picker beside the account menu", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: {
+          name: "海盐小猫",
+          email: "cat@example.com",
+          avatarUrl: "https://example.com/avatar.png",
+        },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null });
+
+    render(<UserAvatarMenu showLanguageSwitcher variant="sidebar" />);
+    const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
+    fireEvent.mouseEnter(accountTrigger);
+
+    const languageTrigger = screen.getByRole("button", { name: "语言" });
+    expect(languageTrigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(screen.queryByLabelText("International site languages")).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(languageTrigger);
+
+    expect(screen.getByLabelText("International site languages")).toBeVisible();
+    expect(document.querySelector('[data-lv-agent-language-menu="true"]')).toBeInTheDocument();
+
+    fireEvent.mouseLeave(accountTrigger.parentElement!);
+    expect(accountTrigger).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the header account menu open while moving into the language picker", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: {
+          name: "海盐小猫",
+          email: "cat@example.com",
+          avatarUrl: "https://example.com/avatar.png",
+        },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null });
+
+    render(<UserAvatarMenu showLanguageSwitcher />);
+    const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "语言" }));
+
+    fireEvent.mouseLeave(document.querySelector(".lw-user-avatar-menu")!);
+
+    expect(accountTrigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("International site languages")).toBeVisible();
+  });
+
+  it("does not add a language picker to the domestic account menu", () => {
+    mockIsGlobal = false;
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null });
+
+    render(<UserAvatarMenu showLanguageSwitcher variant="sidebar" />);
+    fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.queryByRole("button", { name: "语言" })).not.toBeInTheDocument();
   });
 
   it("returns to the public home after signing out from the console menu", () => {
@@ -351,5 +442,14 @@ describe("UserAvatarMenu", () => {
     expect(accountKey).toBeDefined();
     expect(english[companionKey!]).toBe("My AI Companion");
     expect(english[accountKey!]).toBe("Account Settings");
+  });
+
+  it("uses a natural English label for the language entry", () => {
+    const keys = readGeneratedDictionary("zh-to-key");
+    const english = readGeneratedDictionary("en-US");
+    const languageKey = keys["语言"];
+
+    expect(languageKey).toBeDefined();
+    expect(english[languageKey!]).toBe("Language");
   });
 });
