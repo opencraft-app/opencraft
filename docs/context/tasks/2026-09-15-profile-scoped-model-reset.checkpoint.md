@@ -9,7 +9,7 @@
 - 主 Bot 和具名 Bot 均可在存在其他 Bot 时执行；其他 Profile、工作空间、记忆、通道、技能与实例级配置不变。
 - 聚焦回归 3 files / 127 tests passed；模型配置专项 7 files / 232 tests passed。
 - `pnpm check`、`pnpm build:cn`、文档门禁、changed-path impact 门禁和 `git diff --check` 通过。
-- 分支已 rebase 到当时最新 `origin/master` 并提交到 Gongfeng MR !4044；创建后回查为 opened、can_be_merged，commit check success。
+- 分支已 rebase 到当时最新 `origin/master` 并提交到 Gongfeng MR !4044；MR 的 source SHA、mergeability 与 commit check 属于实时状态，后续必须重新查询。
 
 ## unverified
 - 全量 `pnpm test` 存在与本改动无关的既有失败，并在开放句柄状态下未自行退出；本次已记录失败范围，不能声明全量测试通过。
