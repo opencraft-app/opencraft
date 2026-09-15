@@ -143,6 +143,21 @@ func TestVerifyTDSQLInspector接受完整物理Schema并拒绝Noshard(t *testing
 	if err := verifyTDSQLInspector(context.Background(), inspector, catalog); err != nil {
 		t.Fatalf("verifyTDSQLInspector() error = %v", err)
 	}
+	mysql := &fakeTDSQLInspector{
+		tables:  append([]string(nil), inspector.tables...),
+		create:  make(map[string]string, len(inspector.create)),
+		columns: inspector.columns,
+	}
+	for table, createSQL := range inspector.create {
+		mysql.create[table] = strings.Replace(createSQL, " shardkey=`"+catalogMustTable(t, catalog, table).ShardKey+"`", "", 1)
+	}
+	if err := verifyMySQLInspector(context.Background(), mysql, catalog); err != nil {
+		t.Fatalf("verifyMySQLInspector() error = %v", err)
+	}
+	mysql.create["members"] += " shardkey=`server_id`"
+	if err := verifyMySQLInspector(context.Background(), mysql, catalog); err == nil {
+		t.Fatal("ordinary MySQL audit accepted a physical shardkey option")
+	}
 
 	inspector.create["members"] = strings.Replace(
 		inspector.create["members"], " shardkey=`server_id`", "", 1,
@@ -150,6 +165,15 @@ func TestVerifyTDSQLInspector接受完整物理Schema并拒绝Noshard(t *testing
 	if err := verifyTDSQLInspector(context.Background(), inspector, catalog); err == nil {
 		t.Fatal("verifyTDSQLInspector() 应拒绝 noshard 表")
 	}
+}
+
+func catalogMustTable(t *testing.T, catalog *physicalschema.Catalog, name string) physicalschema.TableSpec {
+	t.Helper()
+	spec, ok := catalog.Table(name)
+	if !ok {
+		t.Fatalf("missing table %s", name)
+	}
+	return spec
 }
 
 func TestMySQLDefaultMatches覆盖LaunchFence所需默认值(t *testing.T) {

@@ -76,7 +76,7 @@ func parseDatabaseConfig(action string, args []string) (config.Database, error) 
 	var maxOpenConnections, maxIdleConnections int
 	flags := flag.NewFlagSet("database "+action, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&driver, "database-driver", driver, "数据库方言：sqlite 或 tdsql")
+	flags.StringVar(&driver, "database-driver", driver, "数据库方言：sqlite、mysql 或 tdsql")
 	flags.StringVar(&path, "database", path, "SQLite 数据库绝对路径")
 	flags.StringVar(&dsnFile, "database-dsn-file", dsnFile, "TDSQL DSN Secret 文件")
 	flags.DurationVar(&busyTimeout, "busy-timeout", 5*time.Second, "SQLite 忙等待时间")
@@ -97,12 +97,16 @@ func parseDatabaseConfig(action string, args []string) (config.Database, error) 
 		}
 	case config.DatabaseDriverTDSQL:
 		cfg, err = config.NewTDSQLDatabase(dsnFile)
+	case config.DatabaseDriverMySQL:
+		cfg, err = config.NewMySQLDatabase(dsnFile)
+	}
+	if cfg.Driver == config.DatabaseDriverTDSQL || cfg.Driver == config.DatabaseDriverMySQL {
 		if err == nil {
 			cfg.MaxOpenConnections = maxOpenConnections
 			cfg.MaxIdleConnections = maxIdleConnections
 			cfg.ConnectionMaxLifetime = connectionMaxLifetime
 		}
-	default:
+	} else if cfg.Driver == "" && err == nil {
 		return config.Database{}, apperror.New("CONFIG_INVALID", "数据库方言不受支持", nil)
 	}
 	if err != nil {
@@ -269,8 +273,8 @@ func maskedDatabasePath(path string) string {
 }
 
 func maskedDatabaseTarget(cfg config.Database) string {
-	if cfg.Driver == config.DatabaseDriverTDSQL {
-		return "TDSQL（DSN Secret）"
+	if cfg.Driver == config.DatabaseDriverTDSQL || cfg.Driver == config.DatabaseDriverMySQL {
+		return strings.ToUpper(string(cfg.Driver)) + "（DSN Secret）"
 	}
 	return maskedDatabasePath(cfg.Path)
 }
@@ -284,7 +288,7 @@ func displayVersion(version string) string {
 
 func writeUsage(output io.Writer) {
 	fmt.Fprintln(output, "用法：")
-	fmt.Fprintln(output, "  chatserver database <migrate|status|verify> [--database-driver sqlite|tdsql]")
+	fmt.Fprintln(output, "  chatserver database <migrate|status|verify> [--database-driver sqlite|mysql|tdsql]")
 	fmt.Fprintln(output, "  chatserver database check-consistency --scope server|account|registry --partition-key KEY [--registry-type TYPE]")
 	fmt.Fprintln(
 		output,

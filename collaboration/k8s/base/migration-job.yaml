@@ -29,7 +29,7 @@ spec:
             - database
             - migrate
             - --database-driver
-            - tdsql
+            - mysql
             - --database-dsn-file
             - /var/run/secrets/collaboration/database.dsn
           resources:
@@ -58,4 +58,3 @@ spec:
             defaultMode: 0440
         - name: tmp
           emptyDir: {}
-

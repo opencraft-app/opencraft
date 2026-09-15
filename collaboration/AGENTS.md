@@ -103,6 +103,7 @@ go test -race ./...
 ./scripts/check-migration-release.sh
 ./scripts/check-openapi-compatibility.sh
 go run ./cmd/migrationgen --dialect tdsql --verify
+go run ./cmd/migrationgen --dialect mysql --verify
 ./scripts/scan-secrets.sh .
 ```
 

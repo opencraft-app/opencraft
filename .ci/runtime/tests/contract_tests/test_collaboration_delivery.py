@@ -154,6 +154,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
                     contextlib.redirect_stdout(output):
                 self.assertEqual(db_contract_verifier.main(), 0)
             self.assertEqual(build.call_args.args[2]["image"], image)
+            self.assertEqual(build.call_args.args[2]["command"][4], "mysql")
             audit = json.loads(output.getvalue())
             self.assertEqual(audit["verification_mode"], "service-command")
             self.assertIsNone(audit["expected_schema_version"])
@@ -197,6 +198,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         pod = manifest["spec"]["template"]["spec"]
         container = pod["containers"][0]
         self.assertEqual(container["command"][:3], ["/usr/local/bin/chatserver", "database", "migrate"])
+        self.assertEqual(container["command"][4], "mysql")
         self.assertNotIn("envFrom", container)
         self.assertEqual(pod["volumes"][0]["secret"]["items"], [{"key": "database.dsn", "path": "database.dsn"}])
         self.assertTrue(pod["securityContext"]["runAsNonRoot"])
