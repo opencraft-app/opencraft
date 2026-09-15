@@ -1,13 +1,13 @@
 # 升级套餐交互
 
-最后核对：2026-09-12。范围：国内站与国际站的 `/subscribe`、`/account`、`/agents`；当前分支为 `frontsandbox/upgrade-interaction-clean`，MR3941 基础上补充异常恢复及防护测试，保留默认展示调整。本规格描述工作树实现，不表示已上线。
+最后核对：2026-09-15。范围：国内站与国际站的 `/subscribe`、`/account`、`/agents`；当前分支为 `frontsandbox/upgrade-interaction-clean`，MR3941 基础上补充异常恢复及防护测试，国际站升级入口临时恢复 console opt-in。本规格描述工作树实现，不表示已上线。
 
 ## 1. 升级入口与合法目标
 
-- 国内站、国际站均不依赖控制台 `show()` / `hide()` 或升级专用域名白名单。其他隐藏工具的 `show()` 行为不在本规格范围。
-- `usePassUpgrade` 仅在业务启用且存在登录用户 ID 时查询；订阅页额外要求会话已认证，账户页继续受计费启用条件约束。
+- 国内站升级入口保持默认可见；国际构建默认隐藏，浏览器控制台执行 `show()` 后开放，`hide()` 后再次隐藏。开关只存当前文档内存，在组件与 SPA 路由间共享，整页刷新恢复隐藏；不使用升级域名白名单或持久化开关，并保留其他隐藏工具的 console 回调。
+- `usePassUpgrade` 仅在入口可见、业务启用且存在登录用户 ID 时查询；隐藏时不发起升级资格查询，清空对外目标并使在途资格与询价选择失效。订阅页额外要求会话已认证，账户页继续受计费启用条件约束。
 - 来源 Pass 必须属于当前用户、为 `active`、未删除 / 隔离且未到期；`modifying` 等不可操作状态不提供再次升级入口。
-- URL `upgrade_pass_id` 指定来源 Pass。未指定时仅自动选择唯一有效 Pass，不任意选择多个有效 Pass 中的一个。
+- URL `upgrade_pass_id` 指定来源 Pass，不能绕过国际站 show 开关。未指定时仅自动选择唯一有效 Pass，不任意选择多个有效 Pass 中的一个。
 - 合法目标来自 `listModifyBundles(pass_id)`；响应的来源 bundle ID 必须匹配当前来源套餐，目标 ID 非空、不同于来源且与目标 bundle ID 一致。不按套餐名称、售价排序或 SP 命名推断升级关系。
 - `/subscribe` 内合法目标套餐卡片的操作文案为“升级至此套餐”；`/account` 在存在合法目标时显示“升级套餐”，链接携带 `upgrade_pass_id`。
 - 资格失败支持重试；账户、来源套餐状态变化或到期使旧资格失效。前端展示判断不替代后端所有权、实例状态、实名与支付校验。
@@ -120,7 +120,7 @@
 
 | 职责 | 实现 | 回归测试 |
 | --- | --- | --- |
-| 资格与默认展示 | `src/lib/use-pass-upgrade.ts` | `src/lib/__tests__/use-pass-upgrade.test.tsx` |
+| 资格与区域展示开关 | `src/lib/use-pass-upgrade.ts`、`src/lib/pass-upgrade-rollout.ts` | `src/lib/__tests__/use-pass-upgrade.test.tsx`、`src/lib/__tests__/use-pass-upgrade.global.test.tsx` |
 | 目标卡片与按钮询价 | `next-site/subscribe-page.tsx` | `next-site/__tests__/subscribe-page.test.tsx`、`subscribe-page.global.test.tsx` |
 | 确认与双站支付 | `src/pages/marketing/upgrade-pass-modal.tsx` | `src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx` |
 | 升级错误本地化 | `src/lib/billing-error.ts`、`src/pages/marketing/upgrade-pass-modal.tsx` | `src/lib/__tests__/billing-error.test.ts`、`src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx`；订阅页国际测试覆盖按钮询价 |
