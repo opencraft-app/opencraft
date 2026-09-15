@@ -72,6 +72,5 @@ bundles:
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/catalogs/candidates/beijing-sandbox/collaboration.yaml
       - argocd/catalogs/candidates/beijing-sandbox/collaboration-foundation.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml
       - argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml
       - scripts/ssm_manifest.collaboration.beijing-sandbox.yaml

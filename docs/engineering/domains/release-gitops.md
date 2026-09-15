@@ -50,6 +50,9 @@ master 源码
 - `.ci/runtime/bundles/*.bundle` 是 release bundle 的拆分真源，必须全部登记在
   `.ci/runtime/materialize-files.txt` 中。GitOps promotion 从物化后的 runtime snapshot 生成
   `release-bundles.manifest`；新增 bundle 却未登记会让发布候选在前置验收阶段失去对应路径契约。
+- 尚未激活、仅保存在 `argocd/catalogs/candidates/` 的服务，不得提前把不存在的 active catalog
+  写入 `publish_paths_by_env`。候选可以留在 `allowed_paths` 和流水线触发路径中；正式激活时再将
+  active catalog 文件与对应发布路径在同一变更中加入，避免阻塞其他服务的环境级 GitOps 静态校验。
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
