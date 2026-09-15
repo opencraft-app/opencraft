@@ -80,7 +80,15 @@ class CollaborationDeliveryTests(unittest.TestCase):
         candidate = yaml.safe_load((root / "collaboration.yaml").read_text())
         self.assertEqual(candidate["sourcePath"], "argocd/services/collaboration/beijing-sandbox")
         self.assertEqual(candidate["namespace"], "lightvela-collaboration")
-        self.assertFalse((REPO_ROOT / "argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml").exists())
+        active_catalog = "argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml"
+        self.assertFalse((REPO_ROOT / active_catalog).exists())
+        bundle_source = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/collaboration.bundle").read_text()
+        )
+        publish_paths = bundle_source["bundles"]["collaboration"]["publish_paths_by_env"][
+            "beijing-sandbox"
+        ]
+        self.assertNotIn(active_catalog, publish_paths)
         appset = (REPO_ROOT / "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml").read_text()
         self.assertNotIn("catalogs/candidates", appset)
         spec = yaml.safe_load((REPO_ROOT / "scripts/ssm_manifest.collaboration.beijing-sandbox.yaml").read_text())
