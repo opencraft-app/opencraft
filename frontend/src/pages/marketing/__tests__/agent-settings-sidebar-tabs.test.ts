@@ -358,6 +358,53 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(chatPanel).toContain("multiSession={multiSession}");
   });
 
+  it("fills the available desktop layout while preserving the compact panel height", () => {
+    const chatPanel = readChatPanelSource();
+
+    expect(chatPanel).toContain(
+      "h-[clamp(516px,calc(100vh-220px),960px)]",
+    );
+    expect(chatPanel).toContain("lg:h-full");
+    expect(chatPanel).not.toContain("lg:h-[calc(100dvh-68px)]");
+  });
+
+  it("keeps desktop chat scrolling inside the SDK instead of the page", () => {
+    const page = readPageSource();
+    const styles = readStylesSource();
+
+    expect(page).toContain('activeSection === "chat" && "lv-agent-chat-page"');
+    expect(page).toContain('"lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",');
+    expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
+    expect(page).toContain(
+      'className="lv-agent-settings-grid grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]"',
+    );
+    expect(styles).toContain(`.lv-agent-chat-page {
+    height: 100dvh;
+    overflow: hidden;
+  }`);
+    expect(styles).toContain(`.lv-agent-chat-page .lv-agent-settings-main {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }`);
+    expect(styles).toContain(`.lv-agent-chat-page .lv-agent-settings-shell {
+    min-height: 0;
+    flex: 1;
+  }`);
+    expect(styles).toContain(`.lv-agent-chat-page .lv-agent-settings-grid,
+  .lv-agent-chat-page .lv-agent-settings-content,
+  .lv-agent-chat-page ._lh-claw-bot-panel,
+  .lv-agent-chat-page ._lh-claw-bot-panel__cards {
+    height: 100%;
+    min-height: 0;
+  }`);
+    expect(styles).toContain(`.lv-agent-chat-page .lv-agents-sidebar {
+    height: 100%;
+  }`);
+    expect(styles).not.toContain(".lv-agent-chat-page > footer");
+  });
+
   it("exposes rename and delete in the session menu (delete needs confirmation)", () => {
     const page = readPageSource();
 

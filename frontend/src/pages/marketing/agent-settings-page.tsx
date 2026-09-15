@@ -39,7 +39,7 @@ import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useI
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
-import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useIsDesktop } from "@/components/site/public-site-header";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
@@ -4397,7 +4397,13 @@ export const AgentSettingsPage = ({
   ) : null;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
+    <div
+      className={cn(
+        "flex min-h-dvh flex-col bg-white",
+        activeSection === "chat" && "lv-agent-chat-page",
+      )}
+      style={{ color: "rgba(0,0,0,0.90)" }}
+    >
       {showHeader && (
         <ProductReturnHomeHeader
           className="lv-agent-sidebar-header"
@@ -4970,7 +4976,12 @@ export const AgentSettingsPage = ({
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
+      <main
+        className={cn(
+          "lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",
+          activeSection === "chat" && "lg:pb-0",
+        )}
+      >
         <section className="lw-settings-shell lv-agent-settings-shell">
           {/* ── Loading 状态 ── */}
           {!isModifying && !(passesLoading && passesError) && shouldShowDataLoading && (
@@ -5089,7 +5100,7 @@ export const AgentSettingsPage = ({
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
-                <div className="grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
+                <div className="lv-agent-settings-grid grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <Popover
@@ -5777,7 +5788,6 @@ export const AgentSettingsPage = ({
         </section>
       </main>
 
-      <ProductFooter />
     </div>
   );
 };

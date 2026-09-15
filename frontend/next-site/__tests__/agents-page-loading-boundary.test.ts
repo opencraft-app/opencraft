@@ -22,7 +22,9 @@ describe("Agents route loading boundary", () => {
     expect(source).toContain(
       "const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;",
     );
-    expect(source).toContain("<AppRouteShell loadingFallback={loadingFallback}>");
+    expect(source).toContain(
+      "<AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>",
+    );
     expect(source).toContain("<Suspense fallback={loadingFallback}>");
     expect(source).toContain("{productHeader}");
   });

@@ -45,7 +45,8 @@ describe("Agent settings navigation spacing", () => {
     const agentHeaderShell = getBlockBody(styles, "\n  header.lv-agent-sidebar-header {");
     const agentHeader = getBlockBody(styles, "\n  header.lv-agent-sidebar-header > div {");
 
-    expect(page).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
+    expect(page).toContain('"lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",');
+    expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
     expect(page).toContain('<section className="lw-settings-shell lv-agent-settings-shell">');
     expect(page).toContain('className="lv-agent-sidebar-header"');
     expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);

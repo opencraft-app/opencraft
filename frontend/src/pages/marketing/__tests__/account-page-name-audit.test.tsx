@@ -221,7 +221,7 @@ describe("AccountPage nickname audit state", () => {
     );
 
     expect(document.querySelectorAll("header")).toHaveLength(1);
-    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+    expect(screen.queryByText("legal footer")).not.toBeInTheDocument();
 
     sessionAuthReady = true;
     rerender(
@@ -231,7 +231,7 @@ describe("AccountPage nickname audit state", () => {
     );
 
     expect(document.querySelectorAll("header")).toHaveLength(1);
-    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+    expect(screen.queryByText("legal footer")).not.toBeInTheDocument();
 
     sessionIsAuthenticated = true;
     rerender(
@@ -241,7 +241,7 @@ describe("AccountPage nickname audit state", () => {
     );
 
     expect(document.querySelectorAll("header")).toHaveLength(1);
-    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+    expect(screen.queryByText("legal footer")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "退出登录" })).toHaveLength(1);
   });
 

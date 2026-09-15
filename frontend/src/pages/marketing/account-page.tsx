@@ -1992,7 +1992,7 @@ export const AccountPage = () => {
   }
 
   return (
-    <ProductPageShell afterFooter={pageOverlays}>
+    <ProductPageShell afterFooter={pageOverlays} footer={null}>
       {pageContent}
       {/* 本地 mock 预览专用：交互状态切换器（生产/真实后端环境自动隐藏，不影响线上） */}
       <AccountPreviewStateSwitcher />

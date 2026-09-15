@@ -32,7 +32,7 @@ export function AgentsPageClient({
   const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;
 
   return (
-    <AppRouteShell loadingFallback={loadingFallback}>
+    <AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>
       <Suspense fallback={loadingFallback}>
         {productHeader}
         {isWorkbench ? (

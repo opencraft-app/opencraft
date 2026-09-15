@@ -226,7 +226,15 @@ export function ProductSetupRouteLoading() {
   );
 }
 
-function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactNode; loadingFallback: ReactNode }) {
+function NextMarketingAuthGate({
+  children,
+  loadingFallback,
+  showFooter = true,
+}: {
+  children: ReactNode;
+  loadingFallback: ReactNode;
+  showFooter?: boolean;
+}) {
   const { authReady, isAuthenticated } = useSession();
   const [showLogin, setShowLogin] = useState(false);
   const t = useT();
@@ -259,7 +267,7 @@ function NextMarketingAuthGate({ children, loadingFallback }: { children: ReactN
           </a>
         </div>
       </main>
-      <LegalFooter />
+      {showFooter ? <LegalFooter /> : null}
       <LoginModal open={showLogin} onClose={() => setShowLogin(false)} />
     </div>
   );
@@ -269,6 +277,7 @@ export function AppRouteShell({
   children,
   loadingFallback = <ProductSetupRouteLoading />,
   requireAuth = true,
+  showAuthGateFooter = true,
 }: {
   children: ReactNode;
   loadingFallback?: ReactNode;
@@ -277,6 +286,8 @@ export function AppRouteShell({
    * 定价页（subscribe）传 false：未登录用户可直接浏览静态价格，登录引导下沉到点「订阅」按钮时。
    */
   requireAuth?: boolean;
+  /** 是否在未登录提示页展示 Footer。目标应用页可显式关闭，默认保持现有行为。 */
+  showAuthGateFooter?: boolean;
 }) {
   const fallback = loadingFallback;
 
@@ -287,7 +298,7 @@ export function AppRouteShell({
         <ThemeStyleInjector />
         <ProductRouteDocumentMetadata />
         {requireAuth ? (
-          <NextMarketingAuthGate loadingFallback={fallback}>
+          <NextMarketingAuthGate loadingFallback={fallback} showFooter={showAuthGateFooter}>
             {children}
           </NextMarketingAuthGate>
         ) : (
