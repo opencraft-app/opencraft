@@ -129,6 +129,24 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     auth_strategy: session
+  - name: credit
+    prefix: /v1/credit
+    methods: [GET, POST, OPTIONS]
+    upstream: http://credit.credit.svc.cluster.local
+    access: authenticated
+    require_realname: true
+    auth_strategy: session
+    optional_auth_allow:
+      - { method: POST, path: "/v1/credit/packages/order-url" }
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/credit/products" }
+      - { method: POST, path: "/v1/credit/inquiry" }
+      - { method: POST, path: "/v1/credit/packages/order" }
+      - { method: POST, path: "/v1/credit/packages/order-url" }
+      - { method: POST, path: "/v1/credit/packages/order-and-pay" }
+      - { method: GET, path: "/v1/credit/packages" }
+      - { method: POST, path: "/v1/credit/packages/{package_id}/refund" }
   - name: subscriptions
     prefix: /subscriptions
     methods: [GET, POST, OPTIONS]

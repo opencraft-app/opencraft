@@ -84,24 +84,27 @@ master 源码
 - 环境启用顺序为 Credit/Trade schema、LLMGateway plan 与 Trade 商品定义、服务和 worker、
   Service Gateway 用户路由，最后才开放真实购买流量。
 - `sandbox-bj-7` 是首个验证环境；北京验证通过后由 `master` 为 `beijing-sandbox` 构建并
-  auto-pin Credit。北京使用独立 `credit` 库/用户和 SSM Secret，不沿用 playground 敏感输入。
-- Credit API 的支付票据依赖 Redis：`sandbox-bj-7` 复用命名空间 Redis 和已有 playground Secret，
-  `beijing-sandbox` 从 Credit 自己的 SSM/SOPS runtime Secret 注入密码。发布 API 前必须验证 Redis
-  地址、凭据和连通性；每日用量与生命周期 worker 不依赖该连接。只有 API 与精确的 Service Gateway
-  `optional_auth_allow` 同时收敛后，才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与
-  ticket TTL 属于环境级 API 配置，必须留在各环境的 Deployment patch；不能提升到 Credit shared
-  base/common，否则未接入 Redis 的其他地域也会被共享 replacement 阻断发布。
-- `beijing-sandbox` 的 Pass/default 计费地域保持 `LIGHTVELA_TRADE_REGION=ap-guangzhou`；
-  Credit 通过环境 patch 单独设置 `LIGHTVELA_CREDIT_REGION=ap-beijing`。其他环境未声明 Credit
-  专用地域时继承 Trade 地域，避免仅引入新配置键就改变存量行为。
-- 上海 Credit 仍按生产晋级流程单独接线；在上海验证完成前，Credit 的地域计费回调统一指向
-  北京预发布，之后只把 `jifei-credit-callback-sh` 切到 `https://api.lightvela.com`。
+  auto-pin Credit。`master` 同时构建上海和新加坡 Credit 镜像，但两地仍须人工 promote 到 `gitops`；
+  东京由 `.ci/tokyo-credit.yml` 构建并更新 `sandbox-jp-1`，不得用北京 auto-pin 代替东京发布。
+- 每个已接入地域使用独立 `credit` 库/用户、Redis 和 SSM/SOPS runtime Secret，不跨地域复用敏感输入。
+  Credit API 的支付票据依赖 Redis，每日用量与生命周期 worker 不依赖该连接。发布 API 前必须验证
+  Redis 地址、凭据和连通性；只有 API 与精确的 Service Gateway `optional_auth_allow` 同时收敛后，
+  才允许无主站 session 的支付中转页流量进入。Redis 地址、DB 与 ticket TTL 属于环境级 API 配置，
+  必须留在各环境的 Deployment patch，不能提升到 Credit shared base/common。
+- 各环境通过 patch 独立设置 `LIGHTVELA_CREDIT_REGION`：北京 `ap-beijing`、东京 `ap-seoul`、上海
+  `ap-shanghai`、新加坡 `ap-singapore`。Pass/default 的 `LIGHTVELA_TRADE_REGION` 保持原值；单独
+  发布 Credit 不得改变存量 Pass 地域。
+- 东京、上海和新加坡接入 Credit 时，Credit、Trade 与 Service Gateway 的环境配置必须在同一候选
+  revision 完成渲染和 contract 校验。上海、新加坡保持生产人工晋级，不因源码包含环境配置而自动发布。
+- Credit 每日用量的 `sendResource` 依赖 CloudLadder 的 `qbilling-send-resource-test` 签名路由；
+  `tkexgz` 与 `tkexsg` 的 CloudLadder 源码、Trade transport 和目标镜像必须协同构建/晋级，避免 Trade
+  已切换签名路由而网关仍返回 404。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
 - 积分包控制台 checkout 新增用户路由时，先发布支持订单归属和资源类型校验的 Trade 与 Credit，
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
-  `POST /v1/credit/packages/order-url`。首轮只更新 `sandbox-bj-7` 与 `beijing-sandbox`；不得因共享
-  源码或策略测试把该路由自动扩散到上海、新加坡等尚未完成 Credit 接线的环境。
+  `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
+  接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
 
 ### Referral 北京试点交付
 

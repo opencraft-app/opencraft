@@ -79,6 +79,9 @@ func TestLoadCreditSendResourceSettings(t *testing.T) {
 	t.Setenv("CREDIT_SEND_RESOURCE_URL", "http://9.139.137.40/feev2/sendResource.php")
 	t.Setenv("CREDIT_SEND_RESOURCE_HOST", "qbilling.itd.com")
 	t.Setenv("CREDIT_SEND_RESOURCE_CID", "101433")
+	t.Setenv("CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL", "http://43.153.236.65")
+	t.Setenv("CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID", "qbilling-send-resource-test")
+	t.Setenv("TRADE_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
 
 	cfg, err := Load()
 	if err != nil {
@@ -87,6 +90,11 @@ func TestLoadCreditSendResourceSettings(t *testing.T) {
 	if cfg.CreditSendResourceURL != "http://9.139.137.40/feev2/sendResource.php" ||
 		cfg.CreditSendResourceHost != "qbilling.itd.com" || cfg.CreditSendResourceCID != "101433" {
 		t.Fatalf("unexpected sendResource config: %+v", cfg)
+	}
+	if cfg.CreditSendResourceCloudLadderGatewayURL != "http://43.153.236.65" ||
+		cfg.CreditSendResourceCloudLadderRouteID != "qbilling-send-resource-test" ||
+		cfg.CloudLadderHMACSecret != "trade-hmac" {
+		t.Fatalf("unexpected sendResource CloudLadder config: %+v", cfg)
 	}
 }
 

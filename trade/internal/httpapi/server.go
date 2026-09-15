@@ -296,7 +296,6 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	if cfg.CreditClient != nil {
 		creditresource.Install(dispatcher, creditresource.Deps{
 			FlowStore:             cfg.FlowStore,
-			OrderStore:            cfg.OrderStore,
 			CreditDefinitionStore: cfg.CreditDefinitionStore,
 			CreditClient:          cfg.CreditClient,
 			Builder:               builder,

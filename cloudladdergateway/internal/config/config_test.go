@@ -116,6 +116,7 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 	sensitiveOutbound := []string{
 		"jifei-test", "jifei-prod",
 		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
+		"qbilling-send-resource-test",
 		"dianshi-price", "dianshi-order",
 		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
 		"billing-query-via-polaris",
@@ -343,6 +344,56 @@ func TestExampleConfigGrantsTradeCallerProdBillingRoute(t *testing.T) {
 			return
 		}
 		t.Fatalf("lightvela-trade caller routes missing tcapi-billing-trade-intl-prod: %#v", caller.Routes)
+	}
+	t.Fatal("lightvela-trade caller is missing")
+}
+
+func TestExampleConfigRoutesCreditSendResourceThroughTestBilling(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, route := range cfg.Routes {
+		if route.ID != "qbilling-send-resource-test" {
+			continue
+		}
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Fatalf("route mode = %q", route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Fatalf("route callers = %#v", route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Fatalf("resolve Credit sendResource upstream: %v", err)
+		}
+		if got := upstream.BaseURL; got != "http://9.139.137.40" {
+			t.Fatalf("Credit sendResource base_url = %q", got)
+		}
+		if got := upstream.Headers["Host"]; got != "qbilling.itd.com" {
+			t.Fatalf("Credit sendResource Host = %q", got)
+		}
+		if !slices.Equal(upstream.AllowedMethods, []string{"POST"}) {
+			t.Fatalf("Credit sendResource allowed methods = %#v", upstream.AllowedMethods)
+		}
+		return
+	}
+	t.Fatal("qbilling-send-resource-test route is missing")
+}
+
+func TestExampleConfigGrantsTradeCallerCreditSendResourceRoute(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != "lightvela-trade" {
+			continue
+		}
+		if slices.Contains(caller.Routes, "qbilling-send-resource-test") {
+			return
+		}
+		t.Fatalf("lightvela-trade caller routes missing qbilling-send-resource-test: %#v", caller.Routes)
 	}
 	t.Fatal("lightvela-trade caller is missing")
 }

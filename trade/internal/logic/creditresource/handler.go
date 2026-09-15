@@ -28,7 +28,6 @@ const (
 type Deps struct {
 	FlowStore             store.FlowStore
 	CreditClient          creditclient.Client
-	OrderStore            store.OrderStore
 	CreditDefinitionStore store.CreditDefinitionStore
 	Builder               *jifei.FrameworkBuilder
 	SiteKind              string
@@ -40,6 +39,8 @@ type createPara struct {
 	BigOrderID  string                 `json:"bigDealId"`
 	AppID       int64                  `json:"appId"`
 	Uin         string                 `json:"uin"`
+	Region      int                    `json:"region"`
+	PayMode     int                    `json:"payMode"`
 	GoodsDetail map[string]interface{} `json:"goodsDetail"`
 }
 
@@ -446,25 +447,68 @@ func makeGetUsedAmountHandler(deps Deps) jifei.Handler {
 				(strings.TrimSpace(para.SubProductCode) != "" && para.SubProductCode != def.SubProductCode) {
 				return deps.Builder.NewError(610505, "credit product code does not match resource"), nil
 			}
-			order, err := deps.OrderStore.GetOrderByDealName(ctx, item.DealName)
-			if err != nil || order == nil || order.Period <= 0 || strings.TrimSpace(order.TimeUnit) == "" {
-				return deps.Builder.NewError(610506, fmt.Sprintf("get credit order period: %v", err)), nil
-			}
-			if order.BundleID != item.ProductID || order.Uin != strings.TrimSpace(para.Uin) ||
-				order.AppID != strconv.FormatInt(para.AppID, 10) || order.ResourceType != "credit_package" {
-				return deps.Builder.NewError(610506, "credit order does not match resource ownership"), nil
+			period, timeUnit, err := creditPeriodFromCreateFlow(ctx, deps.FlowStore, para, resourceID, item, def)
+			if err != nil {
+				return deps.Builder.NewError(610506, fmt.Sprintf("get credit billing period: %v", err)), nil
 			}
 			svKey, err := singleSVKey(def.SVList)
 			if err != nil {
 				return deps.Builder.NewError(610507, err.Error()), nil
 			}
 			data[resourceID] = map[string]any{
-				"pid": def.Pid, "timeUnit": order.TimeUnit, "timeSpan": order.Period,
+				"pid": def.Pid, "timeUnit": timeUnit, "timeSpan": period,
 				"payMode": 1, svKey: item.UsedRatio,
 			}
 		}
 		return deps.Builder.NewSuccess(data), nil
 	}
+}
+
+func creditPeriodFromCreateFlow(
+	ctx context.Context,
+	flowStore store.FlowStore,
+	query usedAmountPara,
+	resourceID string,
+	item creditclient.UsedAmountItem,
+	def *store.CreditDefinition,
+) (int, string, error) {
+	if flowStore == nil {
+		return 0, "", errors.New("flow store is not configured")
+	}
+	appID := strconv.FormatInt(query.AppID, 10)
+	flow, err := flowStore.GetFlow(ctx, item.DealName, store.FlowTypeCreateResource, appID)
+	if err != nil {
+		return 0, "", fmt.Errorf("get completed create flow: %w", err)
+	}
+	if flow == nil || flow.Status != store.FlowStatusCompleted || len(flow.RequestBody) == 0 {
+		return 0, "", errors.New("completed create flow with request body not found")
+	}
+	if flow.ResourceID == nil || strings.TrimSpace(*flow.ResourceID) != strings.TrimSpace(resourceID) ||
+		strings.TrimSpace(item.PackageID) != strings.TrimSpace(resourceID) {
+		return 0, "", errors.New("create flow does not match credit resource")
+	}
+
+	var created createPara
+	if err := json.Unmarshal(flow.RequestBody, &created); err != nil {
+		return 0, "", fmt.Errorf("decode create flow request: %w", err)
+	}
+	if created.DealName != item.DealName || created.AppID != query.AppID ||
+		strings.TrimSpace(created.Uin) != strings.TrimSpace(query.Uin) ||
+		created.Region != query.Region || created.PayMode != query.PayMode {
+		return 0, "", errors.New("create flow does not match resource ownership")
+	}
+	if goodsDetailString(created.GoodsDetail, "productId") != item.ProductID ||
+		goodsDetailString(created.GoodsDetail, "productCode") != def.ProductCode ||
+		goodsDetailString(created.GoodsDetail, "subProductCode") != def.SubProductCode {
+		return 0, "", errors.New("create flow does not match credit product")
+	}
+	if err := validateCreditGoodsDetail(created.GoodsDetail, def); err != nil {
+		return 0, "", err
+	}
+	if !validResourcePackagePeriod(created.GoodsDetail) {
+		return 0, "", errors.New("create flow contains invalid resource-package period")
+	}
+	return goodsDetailInt(created.GoodsDetail, "packageTimeSpan"), goodsDetailString(created.GoodsDetail, "packageTimeUnit"), nil
 }
 
 func singleSVKey(values map[string]int64) (string, error) {
