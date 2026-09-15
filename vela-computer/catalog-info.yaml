@@ -1,0 +1,18 @@
+{
+  "id": "vela-computer",
+  "name": "Vela Computer Agent Chat Client",
+  "kind": "runtime",
+  "path": "vela-computer",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "experimental",
+  "domains": ["agent-gateway-runtime"],
+  "summary": "运行在 LightVela 托管 Computer 上，为 Agent 提供腾讯 IM 与协作能力。",
+  "runtime": "Go binary with embedded Tencent LiteChat",
+  "interfaces": ["Tencent IM", "Collaboration Runtime API", "Agent loopback capability"],
+  "dependencies": ["collaboration", "ctl", "Tencent Cloud IM", "Codex/Hermes/OpenClaw"],
+  "source_docs": ["vela-computer/README.md", "vela-computer/docs/runtime-driver-guide.md"],
+  "agent_entry": "vela-computer/AGENTS.md",
+  "service_docs": "vela-computer/docs/README.md",
+  "deploy": ["vela-computer/deploy"],
+  "generated_paths": ["vela-computer/internal/vela/gojaim/assets"]
+}
