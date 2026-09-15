@@ -1,0 +1,75 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lightvela-collaboration
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: collaboration-platform-values
+    envs:
+      - collaboration-platform.env
+patches:
+  - target:
+      kind: Deployment
+      name: collaboration
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          pool: general-bj8
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          lightvela.dev/deployed-at: REPLACE_COLLABORATION_DEPLOYED_AT
+replacements:
+  - source:
+      kind: ConfigMap
+      name: collaboration-platform-values
+      fieldPath: data.COLLABORATION_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: collaboration
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: collaboration-platform-values
+      fieldPath: data.COLLABORATION_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: collaboration
+        fieldPaths:
+          - spec.template.metadata.annotations.[lightvela.dev/deployed-at]
+  - source:
+      kind: ConfigMap
+      name: collaboration-platform-values
+      fieldPath: data.COLLABORATION_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: collaboration
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: collaboration-platform-values
+      fieldPath: data.COLLABORATION_IM_SDK_APP_ID
+    targets:
+      - select:
+          kind: Deployment
+          name: collaboration
+        fieldPaths:
+          - spec.template.spec.containers.0.args.14
+  - source:
+      kind: ConfigMap
+      name: collaboration-platform-values
+      fieldPath: data.COLLABORATION_IM_ADMIN_USER_ID
+    targets:
+      - select:
+          kind: Deployment
+          name: collaboration
+        fieldPaths:
+          - spec.template.spec.containers.0.args.16

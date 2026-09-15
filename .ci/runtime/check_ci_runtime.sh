@@ -24,6 +24,7 @@ bash -n \
   .ci/runtime/smoke_materialized_runtime.sh \
   .ci/checks/guard.sh \
   .ci/checks/service-gateway_guard.sh \
+  .ci/checks/collaboration_guard.sh \
   service-gateway/checks/guard.sh \
   admin-gateway/checks/guard.sh \
   frontend/checks/guard.sh

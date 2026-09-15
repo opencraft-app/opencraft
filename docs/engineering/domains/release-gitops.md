@@ -181,6 +181,21 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 配置先回填 `master`，再通过正常晋级生成的 `gitops` MR 下发，禁止直接修改 `gitops` 或仅改 live。
 回滚至旧镜像前须移除 native client。发布验收同时覆盖 App 回跳/兑换和存量 Sites 登录。
 
+## Collaboration 北京候选交付
+
+- Collaboration 使用独立 `collaboration` release bundle 与 Stream 构建入口，仅构建北京镜像；
+  默认不 auto-pin、不创建生产 promote，不因源码合入就加入自动同步 AppSet。
+- Argo 描述符先保存在 `argocd/catalogs/candidates/beijing-sandbox/`，不在 AppSet 扫描范围。
+  SSM/SOPS 和独立逻辑 DB/user/DSN 就绪后，先用 foundation 描述符交付 Namespace/Secret，
+  再将同一个 active catalog 描述符切为 runtime 组合层；不新增手写 leaf Application。
+- Runtime promote 的配置门禁要求 active catalog 与真正的 SOPS artifact 已存在，并拒绝未替换
+  的 IM/镜像占位符。内部 Gateway token 由同环境两端 Secret 对齐后单独激活用户路由。
+- Collaboration 使用 Atlas/Ent 迁移历史。DB gate 每次先用候选镜像执行幂等 `database migrate`，
+  再由同一 digest 镜像执行 `database verify`；只以 Secret 文件挂载 DSN，不使用其他服务的
+  `schema_migrations` SQL 或 shell 拼接凭据。Migration/verify 都是受控一次性 Job，不进入应用启动。
+- 本轮只准备源码接线，不创建数据库实例、逻辑库、Secret 或 live workload。北京成功不能替代
+  上海/新加坡的独立接入；CI、GitOps、Argo 收敛和真实 IM 使用仍须分层验收。
+
 ## Secret 交付
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。

@@ -60,6 +60,7 @@
 .ci/runtime/bundles/channelgateway.bundle
 .ci/runtime/bundles/cloudagent-gateway.bundle
 .ci/runtime/bundles/cloudladdergateway.bundle
+.ci/runtime/bundles/collaboration.bundle
 .ci/runtime/bundles/credit.bundle
 .ci/runtime/bundles/referral.bundle
 .ci/runtime/bundles/ctl.bundle
