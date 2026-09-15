@@ -2698,7 +2698,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         artifact_builder_text = (REPO_ROOT / "frontend/scripts/build-release-artifacts.mjs").read_text()
 
         frontend_scripts = package_json["scripts"]
@@ -2722,7 +2722,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn('"$PNPM_BIN" check', guard_text)
         self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
-        self.assertIn('-cf - frontend velalink | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
+        self.assertIn('-cf - frontend velalink shared/lightvela-agent-core | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
         self.assertIn('--exclude="velalink/node_modules"', guard_text)
         self.assertIn('--exclude="velalink/target"', guard_text)
         self.assertIn('"$PNPM_BIN" build:cn', guard_text)
@@ -2732,8 +2732,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         next_config_text = (REPO_ROOT / "frontend/next.config.mjs").read_text()
 
         self.assertNotIn("turbopackFileSystemCacheForBuild", next_config_text)
