@@ -4196,10 +4196,11 @@ if (
   domesticChannels.join(",") !== "微信,QQ,企业微信,钉钉,飞书"
   || domesticBrandIcons.join(",") !== "wechat.png,qq.png,wecom.png,dingtalk.png,feishu.png"
   || domesticFragment.includes('href="/zh-cn')
+  || !domesticFragment.includes('<a href="/blog">博客</a>')
   || domesticFragment.includes("Copyright © 2026 LightVela 版权所有")
   || domesticFragment.includes("© 2026 LightVela 版权所有")
 ) {
-  throw new Error("Domestic homepage must retain its approved channels, brand icons, unprefixed routes, and concise copyright before international import");
+  throw new Error("Domestic homepage must retain its approved Blog link, channels, brand icons, unprefixed routes, and concise copyright before international import");
 }
 
 const preservedHarnessAssets = await Promise.all(

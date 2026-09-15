@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 // Share controls always use the production canonical URL so preview domains are never shared publicly.
 const BLOG_ORIGIN = "https://lightvela.ai";
@@ -76,18 +77,20 @@ export function BlogShareActions({ path, title }: BlogShareActionsProps) {
           >
             {copyStatus === "copied" ? t("已复制") : t("复制链接")}
           </button>
-          {shareLinks.map((shareLink) => (
-            <a
-              key={shareLink.label}
-              href={shareLink.href}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`${t("分享")} ${shareLink.label}`}
-              className="inline-flex size-9 items-center justify-center rounded-md bg-black/[0.04] text-black/60 hover:bg-black/[0.08] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
-            >
-              <PlatformIcon platform={shareLink.label} />
-            </a>
-          ))}
+          {isGlobal
+            ? shareLinks.map((shareLink) => (
+                <a
+                  key={shareLink.label}
+                  href={shareLink.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`${t("分享")} ${shareLink.label}`}
+                  className="inline-flex size-9 items-center justify-center rounded-md bg-black/[0.04] text-black/60 hover:bg-black/[0.08] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+                >
+                  <PlatformIcon platform={shareLink.label} />
+                </a>
+              ))
+            : null}
         </div>
       </div>
       {copyStatus === "error" ? <p className="mt-3 text-sm text-black/50">{t("复制链接失败")}</p> : null}

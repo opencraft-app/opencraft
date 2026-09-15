@@ -48,19 +48,34 @@ describe("BlogPage", () => {
       "href",
       "/blog/lightvela-workbench-ai-vibe-your-own-website",
     );
+    expect(screen.getByRole("link", { name: /Tencent's Cloud Agent Gave an Early Taste of Meta's Muse/ })).toHaveAttribute(
+      "href",
+      "/blog/tencent-cloud-agent-early-taste-of-meta-muse",
+    );
+    expect(screen.getByRole("link", { name: /Stop Letting Your Agent Work Alone/ })).toHaveAttribute(
+      "href",
+      "/blog/hermes-deepseek-harness-10x-efficiency",
+    );
+    expect(screen.getByRole("link", { name: /For Just \$0\.03, DSH Brought a Broken Hermes Agent Back to Life/ })).toHaveAttribute(
+      "href",
+      "/blog/dsh-revived-broken-hermes-agent",
+    );
     const workbenchCard = screen.getByRole("link", { name: /I Vibe-Coded My Own Basketball Shoe Storefront/ });
     expect(workbenchCard.querySelector("time")).toHaveTextContent("September 3, 2026");
     expect(within(workbenchCard).queryByText("Cassidy Shi")).not.toBeInTheDocument();
     expect(screen.queryAllByText("Cassidy Shi")).toHaveLength(0);
-    const latestCard = screen.getAllByRole("link", { name: /I Recreated Claude Tag with LightVela/ }).at(-1);
+    const latestCard = screen.getAllByRole("link", { name: /For Just \$0\.03, DSH Brought a Broken Hermes Agent Back to Life/ }).at(-1);
     if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
     expect(screen.queryByText(/I host my mega Discord server with over 600 users/)).not.toBeInTheDocument();
     expect(latestCard).toHaveClass("rounded-md", "border", "border-black/[0.08]", "bg-white", "p-3", "shadow-sm");
-    expect(latestCard.querySelector("img")).toHaveAttribute("src", "/assets/blog/lightvela-slack-digital-employee/cover-light.png");
+    expect(latestCard.querySelector("img")).toHaveAttribute(
+      "src",
+      "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+    );
     expect(latestCard.querySelector("img")).toHaveClass("rounded-md", "bg-white", "object-cover");
     expect(latestCard.querySelector("h2")).toHaveClass("line-clamp-2", "min-h-[2.5rem]", "px-1", "text-pretty");
     expect(latestCard.querySelector("div")).toHaveClass("px-1", "pb-1");
-    expect(latestCard.querySelector("time")).toHaveTextContent("September 1, 2026");
+    expect(latestCard.querySelector("time")).toHaveTextContent("September 15, 2026");
     expect(latestCard.parentElement).toHaveClass("lg:grid-cols-3");
 
     fireEvent.click(screen.getByRole("button", { name: "产品" }));
@@ -69,10 +84,14 @@ describe("BlogPage", () => {
     expect(screen.getByRole("button", { name: "全部" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("link", { name: /LightVela Introduces Workbench/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Tencent's Cloud Agent Gave an Early Taste of Meta's Muse/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "使用场景" }));
 
     expect(screen.getByRole("link", { name: /Using Hermes Agent as a Discord bot/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Tencent's Cloud Agent Gave an Early Taste of Meta's Muse/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Stop Letting Your Agent Work Alone/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /For Just \$0\.03, DSH Brought a Broken Hermes Agent Back to Life/ })).toBeInTheDocument();
   });
 
   it("formats listing dates for the active public locale in Beijing time", () => {
@@ -81,8 +100,8 @@ describe("BlogPage", () => {
     const expectedDate = new Intl.DateTimeFormat("zh-Hant", {
       dateStyle: "long",
       timeZone: "Asia/Shanghai",
-    }).format(new Date("2026-09-01T20:35:43+08:00"));
-    const latestCard = screen.getAllByRole("link", { name: /I Recreated Claude Tag with LightVela/ }).at(-1);
+    }).format(new Date("2026-09-15T16:34:36+08:00"));
+    const latestCard = screen.getAllByRole("link", { name: /只花 0\.03 美元，DSH 讓損壞的 Hermes Agent 重獲新生/ }).at(-1);
     if (!latestCard) throw new Error("Expected the localized latest Blog card to be rendered");
 
     expect(latestCard.querySelector("time")).toHaveTextContent(expectedDate);

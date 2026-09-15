@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { type PublicUrlLang } from '@next-site/public-locale';
 import { PublicBlogArticlePage } from '@next-site/public-pages';
 import {
-  buildGlobalEnglishContentAlternates,
+  buildGlobalPublicAlternates,
   createPublicMetadata,
   localizedPublicPath,
   prefixedPublicRouteLocale,
@@ -26,7 +26,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { lang, slug } = await params;
   const routeLocale = prefixedPublicRouteLocale(lang);
-  const post = getBlogPost(slug);
+  const post = routeLocale ? getBlogPost(slug, routeLocale.locale) : undefined;
   if (!isGlobal || !routeLocale || !post) notFound();
 
   return createPublicMetadata({
@@ -34,7 +34,7 @@ export async function generateMetadata({
     locale: routeLocale.locale,
     title: post.title,
     description: post.excerpt,
-    alternates: buildGlobalEnglishContentAlternates(`/blog/${slug}`),
+    alternates: buildGlobalPublicAlternates(`/blog/${slug}`),
   });
 }
 
@@ -45,7 +45,7 @@ export default async function LocalizedBlogArticleRoute({
 }) {
   const { lang, slug } = await params;
   const routeLocale = prefixedPublicRouteLocale(lang);
-  if (!isGlobal || !routeLocale || !getBlogPost(slug)) notFound();
+  if (!isGlobal || !routeLocale || !getBlogPost(slug, routeLocale.locale)) notFound();
 
   return <PublicBlogArticlePage {...routeLocale} slug={slug} />;
 }
