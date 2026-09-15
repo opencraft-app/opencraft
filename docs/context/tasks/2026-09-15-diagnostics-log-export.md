@@ -56,6 +56,7 @@
 - GREEN：诊断面板、多 Bot 边界与 HTTP repository 三个测试文件共 `85 passed / 1 skipped`，覆盖 Profile 命令、SSE transport callback 和超过 128 KiB 的导出收集。
 - `pnpm check` 通过：i18n/文档/Fumadocs 检查通过，TypeScript `0 new diagnostics`。
 - `validate_change_impact.py` 与 `validate_documentation.py` 通过；`git diff --check` 通过。
+- 代码提交 `402de530cfd668c78495e7a845e347074c0472fa` 已推送到 MR !4033；推送后工蜂提交检查重新进入 `pending / blocking`。
 
 ## risks
 - 导出数据可能大于同步执行结果上限：通过消费 SSE chunk 并优先使用已收集分片规避。
@@ -87,7 +88,7 @@
 - 有界源码和 Git 历史摘要记录于本 Task Pack；未生成独立扫描文件。
 
 ## handoff
-- 状态：实现和本地验证完成，准备追加提交至 MR !4033。
-- 下一步：提交并推送后重新查询 MR 源 SHA、状态和 CI。
+- 状态：实现、本地验证与 MR !4033 推送完成；工蜂提交检查运行中。
+- 下一步：等待 CI 完成并由评审人审阅；不得把 pending 状态描述为 CI 通过。
 - 阻塞项：无。
-- 所需权限：用户已授权本次 commit/push 到 MR !4033；合并和发布仍未授权。
+- 所需权限：本次 commit/push 授权已完成；合并和发布仍未授权。
