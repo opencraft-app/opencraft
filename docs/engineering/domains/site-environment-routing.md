@@ -88,6 +88,10 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 邀请返利环境边界
 
+- 新邀请链接使用当前环境前端首页 `/?ref=<code>`，由现有公共 Header 打开统一登录弹窗。
+  旧 `/auth/sign-in?ref=<code>` 保留兼容跳转，不再让被邀请用户进入旧版独立登录 UI。
+  统一登录弹窗必须先校验返利码并完成 Auth HttpOnly Cookie 写入，成功前不得展示 OAuth、手机号或
+  微信复制引导；失败仅提示错误并允许重试，不能静默丢弃邀请归因。账号切换不捕获邀请上下文。
 - 邀请返利首期只在 `beijing-sandbox` 配置。前端入口消费 CTL runtime flag，默认关闭；只有 Referral
   API/worker、Pulsar、数据库、VelaGW 直接送积分能力和 Gateway 全部就绪后才显式开启。上海和新加坡不继承北京路由。
 - 每个后续环境在自己的 inventory 中声明集群、namespace、角色和 SSM 目标，并通过参数化 bootstrap

@@ -39,6 +39,9 @@ patches:
         path: /data/REFERRAL_CAMPAIGN_NAME
         value: "邀请返利内测"
       - op: replace
+        path: /data/REFERRAL_VESTING_DAYS
+        value: "0"
+      - op: replace
         path: /data/REFERRAL_CAMPAIGN_STARTS_AT
         value: "2026-09-15T00:00:00+08:00"
       - op: replace
