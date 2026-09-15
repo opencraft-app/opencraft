@@ -80,6 +80,7 @@ import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/reposit
 import {
   AGENTS_HOME_PATH,
   AGENT_BOT_QUERY_KEY,
+  AGENT_CREATE_QUERY_KEY,
   AGENT_SECTION_PATH_BY_ID,
   getAgentBotSectionHref,
   getAgentSectionHref,
@@ -2610,6 +2611,8 @@ export const AgentSettingsPage = ({
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedBotId = searchParams.get(AGENT_BOT_QUERY_KEY)?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
+  /* 订阅成功后引导「为首个 Bot 命名」的意图（/agents?create=1），区别于 creating 的等待态。 */
+  const createBotIntentParam = searchParams.get(AGENT_CREATE_QUERY_KEY)?.trim() ?? "";
   const { bots, botsLoading, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
   const isModifying = Boolean(upgradingPass) || returningUpgrade || passUpgradePaused;
@@ -3815,6 +3818,27 @@ export const AgentSettingsPage = ({
       onShowHiddenTools: () => setShowHiddenAgentTools(true),
     });
   }, [activeBot]);
+
+  /*
+   * 订阅成功后的命名向导：subscribe-page 支付成功后不再写死默认名自动建 Bot，而是跳到
+   * /agents?create=1。这里在订阅态与列表就绪后，自动打开与「新建 Bot」一致的命名弹窗
+   * （首个创建 → 空白模式、只需输入名字），让首次订阅与删除后重建走同一条命名流程。
+   *
+   * 消费一次即清掉 create 参数（replace）：避免用户取消弹窗、或刷新时重复自动弹出。
+   * 边界：账号已有 Bot（重复回跳 / 已建过）不再引导命名，直接落到正常控制台；
+   *       未订阅（理论上不会跳来，或 pass 尚未同步）先等待，不误弹。
+   */
+  useEffect(() => {
+    if (!createBotIntentParam) return;
+    if (botsLoading || passesLoading) return;
+    if (!isSubscribed) return;
+    navigate(AGENTS_HOME_PATH, { replace: true });
+    if (bots.length > 0) return;
+    setDirectCreateError(null);
+    setCreateBotName("");
+    setCreateBotMode("blank");
+    setShowCreateConfirm(true);
+  }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
 
   useEffect(() => {
     if (!creatingParam) return;

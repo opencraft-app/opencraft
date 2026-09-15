@@ -18,7 +18,7 @@ import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } fr
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { isCN, isGlobal } from "@/lib/region";
+import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
   BillingDisplayError,
@@ -28,7 +28,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, getAgentCreateBotPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -36,6 +36,11 @@ import { QRCodeSVG } from "qrcode.react";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { UpgradePassModal } from "@/pages/marketing/upgrade-pass-modal";
 import { UPGRADE_RETURN_QUERY, validUpgradeQuote } from "@/lib/upgrade-checkout";
+import {
+  armPostLoginRedirect,
+  disarmPostLoginRedirect,
+  usePostLoginRedirect,
+} from "./use-post-login-redirect";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -2702,7 +2707,7 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
   void BUNDLE_TYPE_FALLBACK_KEY;
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
@@ -2711,6 +2716,9 @@ export const SubscribePage = ({
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
+  /* 登录成功后按订阅状态分流：已订阅 → /agents（不让其停在订阅页再次购买，issue #73 红线），
+     未订阅 → 留在 /subscribe 继续开通。等权益快照就绪再跳，2.5s 超时兜底按未订阅处理。 */
+  const redirectAfterLogin = usePostLoginRedirect({ locale: publicLocale ?? DEFAULT_LOCALE });
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
   const [selectedPlan, setSelectedPlan] = useState<PlanInfo | null>(null);
@@ -3060,8 +3068,9 @@ export const SubscribePage = ({
      用 ref 而非 state：轮询回调里必须同步读到最新值，state 异步更新拦不住并发。 */
   const finalizingRef = useRef(false);
 
-  /* 重复使用的收尾逻辑：addBot + subscribe + navigate 。
-     供多个链路（免费试用 / 付费下单后 / 支付回跳）复用 */
+  /* 重复使用的收尾逻辑：subscribe + navigate（订阅成功后收敛订阅态并跳转）。
+     供多个链路（免费试用 / 付费下单后 / 支付回跳）复用。
+     注意：已不在此处 addBot——首个 Bot 的创建改由控制台命名向导承接（见下方 navigate 注释）。 */
   const finalizeBot = useCallback(async (plan: PlanInfo) => {
     /* 幂等闸门①：拦并发。原窗口轮询与支付回跳页轮询可能同时命中同一个已发货 pass。
        注意闸门只覆盖单次执行窗口，finally 里必须复位：
@@ -3082,19 +3091,10 @@ export const SubscribePage = ({
         navigate(getAgentCreatingPath(existingBot.id));
         return;
       }
-      const createdBot = await addBot({
-        name: "我的Hermes",
-        personality: "默认设定",
-        personalityEmoji: "✨",
-        intro: "",
-        soulTemplateId: undefined,
-        status: "running",
-      });
-      captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
-        plan_id: plan.id,
-        plan_name: plan.name,
-        bot_status: createdBot.status,
-      });
+      /* 订阅成功但账号还没有 Bot：不再在这里写死默认名自动建 Bot，而是跳到控制台的
+         命名向导（/agents?create=1），让用户为首个 Bot 命名后再创建——与「删除后重建」
+         的命名流程完全一致，避免两条路径体验分叉（首次订阅无命名、重建有命名）。
+         真正的 addBot 由控制台 createBotAndNavigate 在用户确认命名后执行。 */
       trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
         pgid: DATONG_PAGE_IDS.SUBSCRIBE,
         params: {
@@ -3102,24 +3102,17 @@ export const SubscribePage = ({
           plan_name: plan.name,
         },
       });
-      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
-        pgid: DATONG_PAGE_IDS.SUBSCRIBE,
-        params: {
-          bot_id: createdBot.id,
-          plan: plan.id,
-        },
-      });
       subscribe();
       setModalStep("closed");
       setSelectedPlan(null);
       setPaymentContext(null);
-      navigate(getAgentCreatingPath(createdBot.id));
+      navigate(getAgentCreateBotPath());
     } finally {
       /* 无论成功失败都复位：失败时后续轮询要能重试，
          成功时用户可能返回本页再次购买（SPA 不重新挂载，ref 会保留）。 */
       finalizingRef.current = false;
     }
-  }, [addBot, subscribe, navigate]);
+  }, [subscribe, navigate]);
 
   /**
    * 免费试用链路 — 仅国际站 / 存在老 pass 的内测场景。
@@ -3522,16 +3515,23 @@ export const SubscribePage = ({
     /* 功能点2b：进页不再强制登录，未登录用户可浏览静态价；
        点「订阅」按钮时再引导登录，登录后回到本页继续操作。 */
     if (!isLoggedIn) {
-      /* 未登录：弹出登录弹窗引导登录（OAuth 整页跳转）。
-         登录回跳后进入已登录态定价页，用户再次点「订阅」即走下方实名判断链路。 */
+      /* 未登录：弹出登录弹窗引导登录。登录成功后按订阅状态分流（issue #73 红线：
+         已订阅不停在订阅页再次购买）。OAuth 是整页跳转，回跳后 LoginModal 已关闭、
+         onSuccess 不会触发，故先 arm 分流意图，由 usePostLoginRedirect 在回跳后消费；
+         手机验证码登录则在弹窗内成功、走 onSuccess。 */
+      armPostLoginRedirect();
       setShowLoginModal(true);
       return;
     }
 
-    /* UI disabled 之外的业务兜底：已有 pass / 订阅 / 实例时不允许进入确认订单。
-       refreshPasses 用来收敛可能陈旧的权益快照，后端仍保留 PASS_ALREADY_EXISTS 最终保护。 */
+    /* UI disabled 之外的业务兜底：已有 pass / 订阅 / 实例时不允许进入确认订单（不重复下单）。
+       refreshPasses 用来收敛可能陈旧的权益快照，后端仍保留 PASS_ALREADY_EXISTS 最终保护。
+       但不能只 refreshPasses 后静默 return——那样已订阅用户点「订阅」会卡在订阅页原地不动。
+       按 issue #73 红线「订阅后统一走 /agents、不让已订阅用户停在订阅页」，这里把用户导向控制台：
+       已有 Bot → /agents；已订阅但还没 Bot → 进 /agents 的创建流程（与首页 CTA、登录后分流落点一致）。 */
     if (isSubscribed || activePass || bots.length > 0) {
       void refreshPasses();
+      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
       return;
     }
 
@@ -3974,11 +3974,17 @@ export const SubscribePage = ({
         onSuccess={handleInviteSuccess}
       />
 
-      {/* Login Modal — 未登录点「订阅」时引导登录；登录成功仅关闭弹窗，
-          OAuth 整页跳转回跳后即为已登录态定价页。 */}
+      {/* Login Modal — 未登录点「订阅」时引导登录。
+          登录成功后按订阅状态分流：已订阅 → /agents（不停在订阅页再次购买，issue #73 红线），
+          未订阅 → 留在本页继续开通。OAuth 整页跳转回跳后由 onSuccess 触发权益快照刷新与分流。 */}
       <LoginModal
         open={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
+        onClose={() => {
+          // 用户主动关闭且未登录成功：清除分流意图，避免下次回跳误触发。
+          disarmPostLoginRedirect();
+          setShowLoginModal(false);
+        }}
+        onSuccess={() => redirectAfterLogin()}
       />
 
       {/* Responsive: collapse to single column on mobile */}

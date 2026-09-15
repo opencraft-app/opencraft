@@ -9,6 +9,8 @@ const runtimeMock = vi.hoisted(() => ({
   language: "es",
   authReady: true,
   isAuthenticated: false,
+  isSubscribed: false,
+  bots: [] as Array<{ id: string }>,
 }));
 const trackDatongClickMock = vi.hoisted(() => vi.fn());
 
@@ -19,7 +21,14 @@ vi.mock("react-i18next", () => ({
 vi.mock("@/components/site/login-modal", () => ({ LoginModal: () => <div data-testid="current-login-modal" /> }));
 vi.mock("@/components/site/user-avatar-menu", () => ({ UserAvatarMenu: () => null }));
 vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => ({ bots: [], isSubscribed: false }),
+  useOpenClaw: () => ({
+    bots: runtimeMock.bots,
+    isSubscribed: runtimeMock.isSubscribed,
+    hasResolvedPasses: true,
+    passesLoading: false,
+    passesError: false,
+    refreshPasses: vi.fn(),
+  }),
 }));
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
@@ -45,6 +54,8 @@ beforeEach(() => {
   runtimeMock.language = "es";
   runtimeMock.authReady = true;
   runtimeMock.isAuthenticated = false;
+  runtimeMock.isSubscribed = false;
+  runtimeMock.bots = [];
 });
 
 afterEach(() => {
@@ -171,5 +182,45 @@ describe("PublicHeaderAuthIsland", () => {
       expect(button).toHaveClass("bg-black/90", "text-white");
     }
     expect(screen.queryByRole("button", { name: "Sign In" })).not.toBeInTheDocument();
+  });
+
+  it("uses the shared Free trial copy on the international homepage CTA", () => {
+    (globalThis as { React?: typeof React }).React = React;
+    render(
+      <PublicHeaderAuthIsland
+        locale="en-US"
+        showLanguageSwitcher={false}
+        showProductEntry
+        promoteFreeTrial
+        loginOnly={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Free trial" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start free" })).not.toBeInTheDocument();
+  });
+
+  it("sends anonymous CTA clicks straight to the subscribe page (plan A)", () => {
+    (globalThis as { React?: typeof React }).React = React;
+    render(
+      <PublicHeaderAuthIsland
+        locale="en-US"
+        showLanguageSwitcher={false}
+        showProductEntry
+        promoteFreeTrial
+        loginOnly={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Free trial" }));
+
+    // 方案 A：未登录直接进订阅页看套餐（点“订阅”时才在订阅页引导登录）。
+    // 国际站会带语言前缀（如 /en-us/subscribe），故只断言落点是订阅页。
+    expect(routerMock.push).toHaveBeenCalledTimes(1);
+    expect(routerMock.push).toHaveBeenCalledWith(expect.stringMatching(/\/subscribe$/));
+    expect(trackDatongClickMock).toHaveBeenCalledWith("header_create_now_btn", {
+      pgid: "home",
+      params: { has_bots: false, target: "subscribe" },
+    });
   });
 });

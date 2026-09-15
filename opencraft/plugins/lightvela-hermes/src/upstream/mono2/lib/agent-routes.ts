@@ -110,6 +110,16 @@ export const getAgentCreatingPath = (creating: true | string) => {
   return `${AGENTS_HOME_PATH}?${AGENT_CREATING_QUERY_KEY}=${encodeURIComponent(creating)}`;
 };
 
+/**
+ * 「订阅成功后引导用户为首个 Bot 命名」的落点：`/agents?create=1`。
+ * 与 `creating`（等待 provisioning 的 Loading 态）语义不同：`create` 表示「还没建 Bot，
+ * 请打开命名向导让用户输入名字后再创建」。控制台据此自动弹出与「新建 Bot」一致的命名弹窗，
+ * 因此订阅链路不再写死默认名，与删除后重建的体验统一。
+ */
+export const AGENT_CREATE_QUERY_KEY = "create";
+export const getAgentCreateBotPath = () =>
+  `${AGENTS_HOME_PATH}?${AGENT_CREATE_QUERY_KEY}=1`;
+
 export const getAgentSectionHref = (pathname: string, params: URLSearchParams): string => {
   const next = new URLSearchParams();
   for (const key of AGENT_SECTION_PERSISTENT_QUERY_KEYS) {

@@ -77,6 +77,11 @@ interface OpenClawContextValue {
   passesLoading: boolean;
   /** 套餐查询失败或超时；不代表支付失败或套餐正在升级。 */
   passesError: boolean;
+  /**
+   * 权益快照是否已经解析完成（GET /v1/passes 至少成功返回过一次）。
+   * 登录成功后的分流必须等它就绪，避免把已订阅用户按未订阅带到订阅页。
+   */
+  hasResolvedPasses: boolean;
   /** 用户最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐 */
   latestPass: Pass | null;
   login: () => void;
@@ -711,6 +716,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       retryPassUpgrade,
       passesLoading,
       passesError,
+      hasResolvedPasses,
       latestPass,
       login,
       logout,
@@ -723,7 +729,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;
