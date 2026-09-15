@@ -214,10 +214,6 @@ html.lw-settings-scrollbar-stable {
     min-height: 0;
   }
 
-  .lv-agent-chat-page .lv-agents-sidebar {
-    height: 100%;
-  }
-
   .lv-agent-settings-content {
     width: 100%;
     max-width: 1280px;

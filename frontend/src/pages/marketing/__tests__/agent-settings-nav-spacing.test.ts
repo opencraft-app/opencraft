@@ -38,6 +38,22 @@ function getBlockBody(source: string, marker: string): string | undefined {
 }
 
 describe("Agent settings navigation spacing", () => {
+  it("keeps the scroll-locked desktop sidebar within the viewport", () => {
+    const lockedSidebar = getBlockBody(
+      styles,
+      "body[data-scroll-locked] .lv-agents-sidebar-scroll-isolated",
+    );
+    const chatSidebar = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agents-sidebar {",
+    );
+    const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
+
+    expect(lockedSidebar).toContain("position: fixed;");
+    expect(desktopSidebar).toContain("height: calc(100dvh - 68px);");
+    expect(chatSidebar ?? "").not.toContain("height: 100%;");
+  });
+
   it("keeps the desktop Agent shell close to the viewport edge without widening shared settings pages", () => {
     const agentShell = getBlockBody(styles, "\n  .lw-settings-shell.lv-agent-settings-shell {");
     const agentMain = getBlockBody(styles, "\n  .lw-app-top-pad.lv-agent-settings-main {");

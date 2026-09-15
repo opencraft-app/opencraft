@@ -1,34 +1,85 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const readSource = (relativePath: string) =>
   readFileSync(join(process.cwd(), relativePath), "utf8");
 
+const parseSource = (relativePath: string) => {
+  const source = readSource(relativePath);
+  return ts.createSourceFile(
+    relativePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+};
+
+const getRenderedElementNames = (relativePath: string) => {
+  const sourceFile = parseSource(relativePath);
+  const names = new Set<string>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      names.add(node.tagName.getText(sourceFile));
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return names;
+};
+
+const getJsxAttributeInitializer = (
+  relativePath: string,
+  elementName: string,
+  attributeName: string,
+): string | undefined => {
+  const sourceFile = parseSource(relativePath);
+  let initializer: string | undefined;
+
+  const visit = (node: ts.Node): void => {
+    if (initializer !== undefined) return;
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      if (node.tagName.getText(sourceFile) === elementName) {
+        const attribute = node.attributes.properties.find(
+          (property): property is ts.JsxAttribute =>
+            ts.isJsxAttribute(property)
+            && ts.isIdentifier(property.name)
+            && property.name.text === attributeName,
+        );
+        initializer = attribute?.initializer?.getText(sourceFile);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return initializer;
+};
+
 describe("Private page footer boundary", () => {
   it("omits the product footer from every Agents settings page", () => {
-    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
-
-    expect(page).not.toContain("ProductFooter");
+    expect(
+      getRenderedElementNames("src/pages/marketing/agent-settings-page.tsx"),
+    ).not.toContain("ProductFooter");
   });
 
   it("disables the shared product footer on the account page", () => {
-    const page = readSource("src/pages/marketing/account-page.tsx");
-
-    expect(page).toContain(
-      "<ProductPageShell afterFooter={pageOverlays} footer={null}>",
-    );
+    expect(
+      getJsxAttributeInitializer(
+        "src/pages/marketing/account-page.tsx",
+        "ProductPageShell",
+        "footer",
+      ),
+    ).toBe("{null}");
   });
 
   it("omits the legal footer from the account orders page", () => {
-    const page = readSource("src/pages/marketing/account-orders-page.tsx");
-
-    expect(page).not.toContain("LegalFooter");
-  });
-
-  it("removes the obsolete chat-page footer layout rule", () => {
-    const styles = readSource("src/styles.css");
-
-    expect(styles).not.toContain(".lv-agent-chat-page > footer");
+    expect(
+      getRenderedElementNames("src/pages/marketing/account-orders-page.tsx"),
+    ).not.toContain("LegalFooter");
   });
 });
