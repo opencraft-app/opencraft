@@ -15,6 +15,18 @@ import (
 	"git.woa.com/wisp/mono2/vela-computer/internal/vela/tat"
 )
 
+// The simulated releases and launchers below use Darwin fixtures, regardless
+// of the test host. Explicit Linux fixtures keep their supplied platform.
+func newTestInstallService(config ServiceConfig) (*Service, error) {
+	if config.Platform == nil {
+		config.Platform = &Platform{
+			OSType: "macos", Architecture: "arm64", Target: "darwin-arm64",
+			ServiceName: launchAgentLabel,
+		}
+	}
+	return NewService(config)
+}
+
 func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 	t.Parallel()
 
@@ -30,7 +42,7 @@ func TestServiceReusesStagedSecretAndCompletesFirstInstall(t *testing.T) {
 	client := &recordingInstallClient{failFirstClaim: true}
 	launcher := &recordingLauncher{}
 	native := &recordingTAT{}
-	service, err := NewService(ServiceConfig{
+	service, err := newTestInstallService(ServiceConfig{
 		Stdout:        &bytes.Buffer{},
 		Random:        bytes.NewReader(bytes.Repeat([]byte{0x5a}, 128)),
 		ClientFactory: func(ClientConfig) (InstallClient, error) { return client, nil },
@@ -190,7 +202,7 @@ func TestServiceUpgradesVerifiedReleaseWhileReplacingRemovedComputer(t *testing.
 	native := &recordingTAT{}
 	verifiedContent := append([]byte(nil), oldContent...)
 	verifiedVersion := "0.2.0"
-	service, err := NewService(ServiceConfig{
+	service, err := newTestInstallService(ServiceConfig{
 		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x2a}, 128)),
 		ClientFactory: func(ClientConfig) (InstallClient, error) { return client, nil },
 		Verify: func(VerifyConfig) (VerifiedRelease, error) {
@@ -276,7 +288,7 @@ func TestServiceResumesProviderRegistrationWithNewVerifiedRelease(t *testing.T) 
 	version := "0.2.0"
 	verifiedContent := append([]byte(nil), content...)
 	launcher := &recordingLauncher{failures: 1}
-	service, err := NewService(ServiceConfig{
+	service, err := newTestInstallService(ServiceConfig{
 		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x44}, 128)),
 		ClientFactory: func(ClientConfig) (InstallClient, error) {
 			return &recordingInstallClient{}, nil
@@ -303,6 +315,9 @@ func TestServiceResumesProviderRegistrationWithNewVerifiedRelease(t *testing.T) 
 	}
 	if err := service.Install(context.Background(), options); err == nil {
 		t.Fatal("first launcher failure was not returned")
+	}
+	if launcher.starts != 1 {
+		t.Fatalf("first install never reached the simulated launcher: starts=%d", launcher.starts)
 	}
 	verifiedContent = []byte("second-release")
 	version = "0.3.0"
@@ -337,7 +352,7 @@ func TestServiceReturnsClientFactoryErrorWithoutPanicking(t *testing.T) {
 	}
 	want := errors.New("client unavailable")
 	digest := sha256.Sum256(content)
-	service, err := NewService(ServiceConfig{
+	service, err := newTestInstallService(ServiceConfig{
 		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{1}, 64)),
 		ClientFactory: func(ClientConfig) (InstallClient, error) { return nil, want },
 		Verify: func(VerifyConfig) (VerifiedRelease, error) {
@@ -380,7 +395,7 @@ func TestServiceAutomaticallyReclaimsRetiredTATIdentityForRemovedComputer(t *tes
 	launcher := &recordingLauncher{}
 	native := &recordingTAT{}
 	digest := sha256.Sum256(content)
-	service, err := NewService(ServiceConfig{
+	service, err := newTestInstallService(ServiceConfig{
 		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x33}, 256)),
 		ClientFactory: func(ClientConfig) (InstallClient, error) { return client, nil },
 		Verify: func(VerifyConfig) (VerifiedRelease, error) {
@@ -524,7 +539,7 @@ func prepareCommittedReplacementResidue(
 	}
 	client := &recordingInstallClient{}
 	launcher := &recordingLauncher{}
-	service, err := NewService(ServiceConfig{
+	service, err := newTestInstallService(ServiceConfig{
 		Stdout: &bytes.Buffer{}, Random: bytes.NewReader(bytes.Repeat([]byte{0x55}, 256)),
 		ClientFactory: func(ClientConfig) (InstallClient, error) { return client, nil },
 		Verify: func(config VerifyConfig) (VerifiedRelease, error) {

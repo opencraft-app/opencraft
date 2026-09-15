@@ -135,4 +135,12 @@ OpenCraft沿用现有Web本地发布契约，不恢复专用CI；明确产品产
 - RED：真实非快进MR合并提交导致原HEAD==ci.sha判断失败。GREEN：11项Git回归通过，确保source内容准确、master独有内容不进入候选，无效/缺失/不属于checkout的SHA被拒绝且HEAD不变。
 - 完整CI runtime537项与物化smoke/shell/YAML通过，文档、docs-impact、限定范围凭证扫描和diff check通过；新代码未提交/推送，不重跑、合并或部署，不把本地测试当真实SDK验收。
 - Context复验仍为833条错误（本Pack为0），26项测试的相同4项治理/中文/预算/全仓校验失败；Audit tests33项通过，发现结果needs_agent_review/not_assessed，无新增Assessment，不称完整Context验收。
+
+## Linux CI install夹具失败
+
+- 候选#10（2026-09-15 17:25:13）的准备、checkout与准确source核对已通过；Go校验中8项install测试因Computer首次安装配置无效失败，未到构建/归档。
+- 通用测试写死Darwin release target，却没有注入模拟Platform，Service默认识别Linux宿主后在validOptions提前拒绝。首次预期launcher失败只判err非nil，掩盖了错误失败路径。
+- 仅改service_test.go夹具：通用模拟release/launcher使用显式Darwin Platform；原独立Linux fixture和生产平台匹配校验保持不变。不skip测试，不删除安装/TAT逻辑，不恢复外部纳管产品路径。
+- RED本机显式注入Linux复现首次安装未到launcher（starts=0）；GREEN修正模拟平台后install包通过，新增首次失败必须到达launcher断言。该复现验证平台逻辑，不等于真实Linux进程执行。
+- 全量Go guard（test/vet/相关race）、限定范围凭证扫描、docs-impact、文档和diff check通过；Linux AMD64 install测试二进制交叉编译通过，但未执行该二进制。本机Docker default/orbstack均不可用，不启动或安装新环境，真实Linux执行仍待下一轮CI。未提交/推送、手动重跑、合并或部署。
 - 真实CI重跑/恢复尚未证明，待源码验证及推送确认；不合并、不部署。
