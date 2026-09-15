@@ -19,6 +19,13 @@ const readStylesSource = () =>
 const readChatPanelSource = () =>
   readFileSync(join(process.cwd(), "src/pages/marketing/agent-chat-panel.tsx"), "utf8");
 
+/**
+ * 「正在创建」咖啡杯动效原先内联在 agent-settings-page.tsx，
+ * 因新手引导面板需复用已抽到独立文件，守卫随之指向新位置。
+ */
+const readCreatingLoadingSource = () =>
+  readFileSync(join(process.cwd(), "src/pages/marketing/agent-creating-loading.tsx"), "utf8");
+
 const readGeneratedDictionary = (locale: string): Record<string, string> =>
   JSON.parse(
     readFileSync(join(process.cwd(), `src/i18n/generated/${locale}.json`), "utf8"),
@@ -82,11 +89,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
   });
 
   it("uses the LightVela Bot loading copy while keeping the ellipsis dynamic", () => {
-    const page = readPageSource();
+    const loadingView = readCreatingLoadingSource();
     const enUS = readGeneratedDictionary("en-US");
 
     expect(enUS.k_831919bc).toBe("Getting your LightVela Bot ready");
-    expect(page).toContain("{dots}");
+    expect(loadingView).toContain("{dots}");
     expect(enUS.k_831919bc).not.toContain("...");
   });
 

@@ -7,6 +7,7 @@ import {
   Check,
   Copy,
   Globe2,
+  LayoutDashboard,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -115,6 +116,18 @@ import {
   isHermesMemoryOperationCurrent,
   saveHermesMemoryLimit as executeHermesMemoryLimitSave,
 } from "@/pages/marketing/agent-memory-save";
+import { AgentOnboardingPanel, useDemoOnboarding } from "@/pages/marketing/agent-onboarding-panel";
+import { useBuddyProfile } from "@/pages/marketing/agent-buddy-profile";
+import { useHeroStats } from "@/pages/marketing/agent-hero-stats";
+import {
+  clearPendingOnboarding,
+  hasAgentSidebarLayout,
+  isPendingOnboarding,
+  markPendingOnboarding,
+  shouldShowEarlyOnboarding,
+} from "@/pages/marketing/agent-onboarding-mark";
+import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
+import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
@@ -194,6 +207,9 @@ const HermesAgentSkillsPanel = lazy(() =>
 );
 const AchievementsPanel = lazy(() =>
   import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
+);
+const AgentOverviewPanel = lazy(() =>
+  import("@/pages/marketing/agent-overview-panel").then((module) => ({ default: module.AgentOverviewPanel })),
 );
 const HermesAgentAutomationsPanel = lazy(() =>
   import("@/pages/marketing/agent-automations-panel").then((module) => ({ default: module.HermesAgentAutomationsPanel })),
@@ -688,7 +704,7 @@ void _staggerContainer;
 
 /* ─── Navbar ─── */
 
-const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "channel";
+const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "overview";
 
 /**
  * 「前一个设置菜单」记忆（模块级）。
@@ -2466,70 +2482,6 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
 const CREATING_POLL_INTERVAL_MS = 3000;
 const CREATING_MAX_WAIT_MS = 15 * 60 * 1000;
 
-const CreatingLoadingView = ({ errorMessage }: { errorMessage?: string | null }) => {
-  const t = useT();
-  /* 动态 "..." 计数：0 -> 1 -> 2 -> 3 -> 0 ... 每 450ms 切换 */
-  const [dotCount, setDotCount] = useState(1);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDotCount((prev) => (prev % 3) + 1);
-    }, 450);
-    return () => clearInterval(interval);
-  }, []);
-
-  const dots = ".".repeat(dotCount);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="flex flex-col items-center justify-center py-20"
-    >
-      {/* Hermes 咖啡杯 —— 对应 Figma 231:4742 中心图（从 2x2 sprite 中裁剪左上角） */}
-      <motion.div
-        animate={{ y: [0, -6, 0] }}
-        transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-        className="mb-2"
-      >
-        <div
-          className="h-[78px] w-[78px] overflow-hidden"
-          style={{
-            backgroundImage: `url(${assetUrl("/hermes-loading.png")})`,
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "0 0",
-            backgroundSize: "156px 156px",
-          }}
-        />
-      </motion.div>
-
-      {/* 文案：单行 + 动态省略号 */}
-      <p
-        className="text-center"
-        style={{
-          fontFamily: "PingFang SC, -apple-system, BlinkMacSystemFont, sans-serif",
-          fontWeight: 500,
-          fontSize: 14,
-          lineHeight: "2em",
-          color: "rgba(0,0,0,0.9)",
-        }}
-      >
-        {errorMessage ? (
-          errorMessage
-        ) : (
-          <>
-            {t("正在给 LightVela Bot 喂咖啡，唤醒大脑中")}
-            <span className="inline-block" style={{ width: "1.5em", textAlign: "left" }}>
-              {dots}
-            </span>
-          </>
-        )}
-      </p>
-    </motion.div>
-  );
-};
-
 const getBotStatusColor = (status: OpenClawBot["status"]) => {
   if (status === "running") return "#34C759";
   if (status === "paused") return "#FF9500";
@@ -2695,6 +2647,10 @@ export const AgentSettingsPage = ({
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
+  /* ── 配置引导：未写过 SOUL.md 的新订阅用户，主区展示配置表单，
+     侧边栏只留「个性化你的智能伙伴」，其余入口置灰不可点。 ── */
+  const { needsOnboardingByQuery, completeOnboarding } = useDemoOnboarding();
+
   /* ── 侧边栏「探索/对话」双 tab 与多会话受控状态（SDK 1.4.0-beta.0 multiSession 桥接）── */
   /** tab 仅切侧边栏内容，右侧主区始终按当前路由渲染；初始值随路由推导，不做持久化。 */
   const [sidebarTab, setSidebarTab] = useState<"chat" | "settings">(activeSection === "chat" ? "chat" : "settings");
@@ -2739,6 +2695,8 @@ export const AgentSettingsPage = ({
 
   const handleSidebarChatTabClick = () => {
     if (!isActiveBotDefault) return;
+    // 新手引导未完成前不允许进入对话（按钮已置灰，此处兜底键盘/程序化触发）。
+    if (showBuddyOnboarding) return;
     setSidebarTab("chat");
     if (activeSection !== "chat") {
       navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
@@ -2881,6 +2839,118 @@ export const AgentSettingsPage = ({
   const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
+
+  /*
+   * 智能伙伴资料：统一从真实 SOUL.md 读，资料卡与侧边栏同源。
+   * 名字回落 activeBot.name，保证 SOUL 还没写时两处显示一致。
+   */
+  const buddyProfileState = useBuddyProfile({
+    botId: activeBot?.id,
+    profileId: activeBot?.profileId,
+    fallbackName: activeBot ? resolveAgentDisplayName(activeBot.name, t) : "",
+    exec: repositories.bots.execDebugCommand,
+  });
+
+  /** 总览横幅：套餐额度 + 定时任务数 + 站点数，全部真实读取 */
+  const heroStats = useHeroStats({
+    activePass,
+    botId: activeBot?.id,
+    profileId: activeBot?.profileId,
+  });
+
+  /*
+   * 配置引导只对「新订阅用户」生效。
+   *
+   * 判定 = 刚走完 ?creating= 流程（sessionStorage 标记）且 SOUL.md 尚未写过。
+   * 只看「SOUL 不存在」会把从没配过人设的老用户也拉进引导，所以必须叠加新用户标记。
+   * `?onboarding=1` 可强制进入，便于演示与回归。
+   */
+  /*
+   * 配置引导只对「新订阅用户」生效。
+   *
+   * 判定 = 刚走完 ?creating= 流程（sessionStorage 标记）+ 还没走过本引导。
+   *
+   * 「还没走过」不能用「SOUL.md 不存在」判断 —— 后端建 bot 时会写一个默认
+   * SOUL.md，那样判定永远不成立。改看 SOUL 里有没有 `LightVela-Avatar`
+   * 自定义字段，只有走过本引导才会写入。
+   * hasBuddyConfig 为 null（沙箱还没读到）时也放行：有新用户标记就该引导，
+   * 老用户没有标记，不受影响。
+   */
+  /*
+   * 引导完成后立刻收起表单。
+   *
+   * 不能只依赖 clearPendingOnboarding —— sessionStorage 的变更不会触发重渲染，
+   * hasBuddyConfig 的刷新又是异步的，中间这段时间引导会闪回。
+   */
+  const [onboardingJustFinished, setOnboardingJustFinished] = useState(false);
+
+  const isActiveBotPendingOnboarding = isPendingOnboarding(activeBot?.id)
+    || isPendingOnboarding(activeBot?.instanceId);
+
+  /*
+   * 创建期前置引导 —— 省掉「等实例」那次咖啡杯。
+   *
+   * 原流程：点创建 → 咖啡杯干等实例 provisioning → 实例就绪 → 才进引导表单。
+   * 现流程：点创建 → 直接进引导表单，填资料与实例创建并行。
+   *
+   * 安全性：表单阶段不碰沙箱；用户点「创建」后 AgentOnboardingPanel 会先
+   * waitForSandbox 轮询到实例可执行命令才写配置，不会写到半成品实例上。
+   *
+   * provisioning 的实例被 visibleBots 过滤掉了（activeBot 为空），所以 botId
+   * 只能从 URL 的 ?creating= 或 provisioningBot 取。
+   *
+   * 创建失败时不抢错误态 —— 必须让用户看到实例没建起来。
+   */
+  const earlyOnboardingBotId = requestedCreatingBotId || provisioningBot?.id || "";
+  const earlyOnboardingProfileId = provisioningBot?.profileId ?? "main";
+  const showEarlyOnboarding = shouldShowEarlyOnboarding({
+    isCreating,
+    isModifying,
+    hasCreationError: Boolean(creationError),
+    onboardingJustFinished,
+  });
+
+  /*
+   * 侧边栏这一帧到底存不存在。
+   *
+   * 侧边栏渲染在 `!isCreating && activeBot && sdkInstance` 分支里，而
+   * lv-agent-sidebar-header / -main / -shell 这三个 class 是给它让位用的。
+   * 两者必须同时成立，否则会出现「class 占了 264px 但侧边栏没渲染」的空白竖条。
+   *
+   * 不能只看 showEarlyOnboarding：从 hero 进来时 URL 不带 `?creating=`，
+   * isCreating 初值是 false，要等 bots 拉完发现 provisioningBot 才转 true。
+   * 这段窗口里 showEarlyOnboarding 仍是 false，但 activeBot 也还没有
+   * （provisioning 的实例被 visibleBots 过滤掉），侧边栏同样不存在 —— 
+   * 这正是「首次进入左侧空白、刷新后才正常」的原因。
+   *
+   * 所以直接按侧边栏自身的渲染条件判断，与加载时序无关。
+   * （sdkInstance 是 activeBot 的派生值，且定义在本行之后，这里只看 activeBot。）
+   */
+  const hasSidebarLayout = hasAgentSidebarLayout({ isCreating, hasActiveBot: Boolean(activeBot) });
+
+  const showBuddyOnboarding = Boolean(activeBot)
+    && !isModifying
+    && !isCreating
+    && !onboardingJustFinished
+    && (needsOnboardingByQuery
+      || (isActiveBotPendingOnboarding && buddyProfileState.hasBuddyConfig !== true));
+
+  /** 引导完成：立刻收起表单，再刷新资料与列表 */
+  const handleBuddyCreated = useCallback(() => {
+    setOnboardingJustFinished(true);
+    completeOnboarding();
+    if (activeBot) {
+      // 打标时可能用的是 instanceId，两个都清
+      clearPendingOnboarding(activeBot.id);
+      if (activeBot.instanceId) clearPendingOnboarding(activeBot.instanceId);
+    }
+    // 创建期引导走的是 URL 上的 botId，此时 activeBot 还不存在（实例仍
+    // provisioning），不清这个打标会导致实例就绪后又弹一次引导。
+    if (earlyOnboardingBotId) clearPendingOnboarding(earlyOnboardingBotId);
+    buddyProfileState.reload();
+    void refreshBots();
+  }, [completeOnboarding, activeBot, earlyOnboardingBotId, buddyProfileState, refreshBots]);
+
   const isFirstBotCreation = !activeBot;
   const remainingInstanceBotCount = activeBot
     ? bots.filter((bot) => (
@@ -2918,6 +2988,8 @@ export const AgentSettingsPage = ({
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
   const passExpiryTooltipId = useId();
   const chatAvailabilityTooltipId = useId();
+  /** 「对话」tab 禁用条件：非主 Bot（上游约束）或尚未创建个人助手（新手引导）。 */
+  const isChatTabDisabled = !isActiveBotDefault || showBuddyOnboarding;
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
     await refreshPasses();
@@ -3840,6 +3912,19 @@ export const AgentSettingsPage = ({
     setShowCreateConfirm(true);
   }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
 
+  /*
+   * 新订阅用户打标。
+   *
+   * 创建流程有多条退出路径（completedCreatingBot / 兜底退出 / polling 的
+   * active|failed|deleting 分支），逐条打标必然漏。所以只要 URL 出现过
+   * `?creating=`，就在这里统一打标 —— 时机早于任何退出分支，不会错过。
+   */
+  useEffect(() => {
+    if (!creatingParam) return;
+    const targetBotId = requestedCreatingBotId || provisioningBot?.id || completedCreatingBot?.id;
+    if (targetBotId) markPendingOnboarding(targetBotId);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot?.id, completedCreatingBot?.id]);
+
   useEffect(() => {
     if (!creatingParam) return;
     if (completedCreatingBot) {
@@ -4429,7 +4514,12 @@ export const AgentSettingsPage = ({
     <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
       {showHeader && (
         <ProductReturnHomeHeader
-          className="lv-agent-sidebar-header"
+          /*
+           * lv-agent-sidebar-header 会把 header 固定成 264px 宽的侧边栏表头
+           * （见 styles.css 的 @media min-width:1024px）。没有侧边栏时它会留下
+           * 一块孤立的空白竖条，所以按 hasSidebarLayout 决定是否套用。
+           */
+          className={hasSidebarLayout ? "lv-agent-sidebar-header" : undefined}
           reloadLanguageAfterSwitch
           showDesktopUserMenu={false}
         />
@@ -4999,8 +5089,29 @@ export const AgentSettingsPage = ({
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
       )}
 
-      <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
-        <section className="lw-settings-shell lv-agent-settings-shell">
+      <main
+        className={cn(
+          "lw-app-top-pad flex-grow bg-white pb-6",
+          /*
+           * lv-agent-settings-main 把顶部内边距压到 68px，配套的是
+           * lv-agent-sidebar-header 那个 264px 宽的侧边栏表头。没有侧边栏时
+           * 用的是普通全宽 header（高度按 lw-app-top-pad 的 96px 算）。
+           * header 是 position:fixed，所以内边距本身必须保留。
+           */
+          hasSidebarLayout && "lv-agent-settings-main",
+        )}
+      >
+        <section
+          className={cn(
+            "lw-settings-shell",
+            /*
+             * lv-agent-settings-shell 用 margin-left:16px + 超宽容器，是为了给
+             * 264px 侧边栏让位。没有侧边栏时沿用会让内容整体偏左，
+             * 所以退回 lw-settings-shell 的居中布局。
+             */
+            hasSidebarLayout && "lv-agent-settings-shell",
+          )}
+        >
           {/* ── Loading 状态 ── */}
           {!isModifying && !(passesLoading && passesError) && shouldShowDataLoading && (
             <AgentSettingsDataLoading />
@@ -5014,8 +5125,20 @@ export const AgentSettingsPage = ({
           )}
 
           {/* ── 创建 Loading 动画 ── */}
-          {!isModifying && !passesLoading && isCreating && (
+          {!isModifying && !passesLoading && isCreating && !showEarlyOnboarding && (
             <CreatingLoadingView errorMessage={creationError} />
+          )}
+
+          {/* ── 创建期前置引导：不干等实例，先让用户填资料 ── */}
+          {!isModifying && !passesLoading && showEarlyOnboarding && (
+            <div className="_lh-claw-bot-panel__cards min-w-0">
+              <AgentOnboardingPanel
+                botId={earlyOnboardingBotId}
+                profileId={earlyOnboardingProfileId}
+                onCreated={handleBuddyCreated}
+                execDebugCommand={repositories.bots.execDebugCommand}
+              />
+            </div>
           )}
 
           {isModifying && <AgentUpgradingView pass={upgradingPass} failed={passUpgradeFailed} paused={passUpgradePaused} refreshing={passUpgradeRefreshing} onRetry={retryPassUpgrade} />}
@@ -5116,6 +5239,12 @@ export const AgentSettingsPage = ({
                   </div>
                 );
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
+              /* 走过本引导（SOUL 里有自定义头像字段）才用几何体头像与 SOUL 名字，
+                 否则回落原有的 bot 头像与名称。 */
+              const demoProfileIsCustom = buddyProfileState.hasBuddyConfig === true;
+              const agentProfileDisplayName = demoProfileIsCustom
+                ? buddyProfileState.profile.name
+                : activeBotDisplayName;
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
@@ -5144,12 +5273,22 @@ export const AgentSettingsPage = ({
                             )}
                             aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                           >
+                            {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
+                                未设置过时回落到原有的 bot 头像与名称。 */}
                             <span className="lv-agent-avatar">
-                              <img src={avatarUrl} alt="" />
+                              {demoProfileIsCustom ? (
+                                <GeometricAvatar
+                                  shapeId={buddyProfileState.profile.shapeId}
+                                  color={buddyProfileState.profile.color}
+                                  size={32}
+                                />
+                              ) : (
+                                <img src={avatarUrl} alt="" />
+                              )}
                             </span>
                             <span className="lv-agent-profile-text">
-                              <span className="lv-agent-profile-name" title={activeBotDisplayName}>
-                                {truncateBotName(activeBotDisplayName)}
+                              <span className="lv-agent-profile-name" title={agentProfileDisplayName}>
+                                {truncateBotName(agentProfileDisplayName)}
                               </span>
                               <span className="lv-agent-status-row">
                                 <span className="lv-agent-status">
@@ -5345,16 +5484,21 @@ export const AgentSettingsPage = ({
                       >
                         {t("探索")}
                       </button>
+                      {/* 「对话」入口：非主 Bot（上游约束）或尚未创建个人助手（新手引导）时禁用，
+                          统一复用上游的 lv-agent-action-tooltip 做悬浮提示。 */}
                       <span
-                        className="lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30"
-                        tabIndex={isActiveBotDefault ? undefined : 0}
-                        aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
+                        className={cn(
+                          "lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30",
+                          showBuddyOnboarding && "cursor-not-allowed opacity-40",
+                        )}
+                        tabIndex={isChatTabDisabled ? 0 : undefined}
+                        aria-describedby={isChatTabDisabled ? chatAvailabilityTooltipId : undefined}
                       >
                         <button
                           type="button"
                           role="tab"
                           aria-selected={sidebarTab === "chat" && isActiveBotDefault}
-                          aria-disabled={!isActiveBotDefault}
+                          aria-disabled={isChatTabDisabled}
                           aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
                           disabled={!isActiveBotDefault}
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotDefault && "is-active")}
@@ -5362,9 +5506,9 @@ export const AgentSettingsPage = ({
                         >
                           {t("对话")}
                         </button>
-                        {!isActiveBotDefault && (
+                        {isChatTabDisabled && (
                           <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
-                            {t("对话功能目前仅支持主 Bot")}
+                            {showBuddyOnboarding ? t("请先创建你的个人助手") : t("对话功能目前仅支持主 Bot")}
                             <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
                           </span>
                         )}
@@ -5506,6 +5650,32 @@ export const AgentSettingsPage = ({
                         aria-label={t("实例配置导航")}
                         className="lv-agents-nav"
                       >
+                        {/* ── 「总览」：探索 tab 的置顶入口，新用户引导落地页（不参与下方任务分组）。
+                             未创建个人助手时改名为「创建你的个人助手」，是此刻唯一可点的入口。 ── */}
+                        <div className="lv-agents-nav-group">
+                          <ul className="lv-agents-nav-group-items">
+                            <li>
+                              <AppLink
+                                to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
+                                aria-current={activeSection === "overview" ? "page" : undefined}
+                                className={cn(
+                                  "lw-settings-nav-item lv-agents-nav-item",
+                                  activeSection === "overview" || showBuddyOnboarding
+                                    ? "is-active"
+                                    : "text-black/70 hover:bg-black/[0.025]",
+                                )}
+                              >
+                                {/* 引导态只有这一个入口，图标反而多余 */}
+                                {showBuddyOnboarding ? null : (
+                                  <span className="lv-agents-nav-icon"><LayoutDashboard className="h-4 w-4" /></span>
+                                )}
+                                <span className="min-w-0 flex-1 whitespace-nowrap text-left">
+                                  {showBuddyOnboarding ? t("个性化你的智能伙伴") : t("总览")}
+                                </span>
+                              </AppLink>
+                            </li>
+                          </ul>
+                        </div>
                         {showHiddenAgentTools ? (
                           <div className="lv-agents-nav-group">
                             <ul className="lv-agents-nav-group-items">
@@ -5555,6 +5725,33 @@ export const AgentSettingsPage = ({
                               <ul className="lv-agents-nav-group-items">
                                 {group.sections.map((section) => {
                                   const isActive = section.id === activeSection;
+
+                                  /* 未创建个人助手：渲染成不可点的 span（而非 AppLink），
+                                     避免键盘 Tab / 中键仍能打开被禁用的页面。 */
+                                  if (showBuddyOnboarding) {
+                                    return (
+                                      <li key={section.id}>
+                                        <span
+                                          aria-disabled="true"
+                                          title={t("请先创建你的个人助手")}
+                                          className={cn(
+                                            "lw-settings-nav-item lv-agents-nav-item",
+                                            section.badge && "has-badge",
+                                            "cursor-not-allowed opacity-40",
+                                          )}
+                                        >
+                                          <span className="lv-agents-nav-icon">{section.icon}</span>
+                                          <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
+                                          {section.badge && (
+                                            <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
+                                              {section.badge}
+                                            </span>
+                                          )}
+                                        </span>
+                                      </li>
+                                    );
+                                  }
+
                                   return (
                                     <li key={section.id}>
                                       <AppLink
@@ -5608,10 +5805,31 @@ export const AgentSettingsPage = ({
 
                   <section className="lv-agent-settings-content min-w-0 lg:col-start-2">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
+                      {/* 未配置人设：主区独占展示配置引导，屏蔽其余所有 section 面板 */}
+                      {showBuddyOnboarding ? (
+                        <div className="_lh-claw-bot-panel__cards min-w-0">
+                          <AgentOnboardingPanel
+                            botId={activeBot.id}
+                            profileId={activeBot.profileId ?? "main"}
+                            onCreated={handleBuddyCreated}
+                            execDebugCommand={repositories.bots.execDebugCommand}
+                          />
+                        </div>
+                      ) : (
                       <Suspense
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
+                          {activeSection === "overview" && (
+                            <AgentOverviewPanel
+                              botId={activeBot.id}
+                              profileId={activeBot.profileId ?? "main"}
+                              profile={buddyProfileState.profile}
+                              execDebugCommand={repositories.bots.execDebugCommand}
+                              onProfileChanged={buddyProfileState.reload}
+                              heroStats={heroStats}
+                            />
+                          )}
                           {activeSection === "channel" && (
                             <TeaSdkSettingsPanel
                               kind="channel"
@@ -5764,6 +5982,7 @@ export const AgentSettingsPage = ({
                           )}
                         </div>
                       </Suspense>
+                      )}
                     </div>
                   </section>
                 </div>
@@ -5771,7 +5990,7 @@ export const AgentSettingsPage = ({
             })()
           )}
 
-          {/* 空状态 */}
+          {/* 空状态：仅在不该走引导时出现（例如已有 bot 但都被过滤掉） */}
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">

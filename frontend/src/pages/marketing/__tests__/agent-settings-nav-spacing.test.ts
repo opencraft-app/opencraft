@@ -45,9 +45,16 @@ describe("Agent settings navigation spacing", () => {
     const agentHeaderShell = getBlockBody(styles, "\n  header.lv-agent-sidebar-header {");
     const agentHeader = getBlockBody(styles, "\n  header.lv-agent-sidebar-header > div {");
 
-    expect(page).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
-    expect(page).toContain('<section className="lw-settings-shell lv-agent-settings-shell">');
-    expect(page).toContain('className="lv-agent-sidebar-header"');
+    /*
+     * 这三个 class 在常规态必须生效，但创建期引导没有侧边栏，
+     * 沿用会留下一块 264px 的空白竖条，所以按 showEarlyOnboarding 条件化。
+     * 断言「基类 + 条件类 + 条件本身」三者都在，避免例外被悄悄扩大。
+     */
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('hasSidebarLayout && "lv-agent-settings-main"');
+    expect(page).toContain('"lw-settings-shell"');
+    expect(page).toContain('hasSidebarLayout && "lv-agent-settings-shell"');
+    expect(page).toContain('className={hasSidebarLayout ? "lv-agent-sidebar-header" : undefined}');
     expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
     expect(agentsPageClient).toContain(
       "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
