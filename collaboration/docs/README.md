@@ -48,6 +48,11 @@ upsert revision 或假事务掩盖失败。迁移、status、verify 与 serve �
 不得进入 revision `total/applied`、partial hash 或数据库执行。这一规则不改写已发布 SQL
 或摘要，状态分类与实际执行必须复用同一语句视图。
 
+`database recover-empty-baseline` 是显式 MySQL 首发恢复命令，默认只读输出计划，只有
+`--apply` 才写库。它不是通用 dirty repair：只接受已发布 MySQL baseline 的固定摘要、
+旧 50 语句账本、已执行首语句的 hash、空失败语句、单一 0 行首表。执行后必须回读为
+empty；任何业务数据、附加表、revision 偏差或未知中间状态都拒绝恢复。
+
 ## 验证
 
 行为变更至少运行 `go test ./...` 与 `go vet ./...`。修改数据库模型或 OpenAPI 时，必须

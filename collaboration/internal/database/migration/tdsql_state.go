@@ -41,6 +41,7 @@ type TDSQLRevision struct {
 	Applied       int
 	Total         int
 	Error         string
+	ErrorStmt     string
 	PartialHashes []string
 }
 

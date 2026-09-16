@@ -231,6 +231,13 @@ master 源码
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
+- `.ci/collaboration-recovery.yml` 是首发期间的独立受控例外流水线，只修复已知双分号缺陷
+  留下的精确空基线状态，不向 foundation/runtime bootstrap Job 扩大 kubeconfig 或其他权限面。
+  审批前的 `recovery-plan` Job 只读校验已发布 baseline hash、旧 `1/50` revision、
+  `statement_failed`/空 `error_stmt`、首语句 partial hash、单一
+  `account_login_identities` 表及 0 行。审批后 `recovery-apply` 必须再次执行全部校验，
+  按 `count → drop table → revision CAS delete → empty 回读` 收敛。任一字段、表集或行数不符即
+  fail closed；plan 不得写库，recovery 不导出 Secret、不生成 GitOps MR、不自动继续 runtime。
 - active catalog 在 foundation/runtime 两阶段均由 bootstrap 流水线独占写入，因此登记为普通
   release-bundle catalog 覆盖检查的显式豁免；普通服务发布不得覆盖或删除它。该豁免只能在 catalog
   所有权迁回标准 release bundle 后移除。
