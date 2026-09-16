@@ -7,7 +7,7 @@ import { useT } from "@/i18n/t";
 import { publicSiteHref, type PublicSiteLocale } from "@/lib/public-site-navigation";
 import { cn } from "@/lib/utils";
 
-import { BLOG_POSTS, formatBlogPublishedDate } from "./blog-content";
+import { formatBlogPublishedDate, getBlogPosts } from "./blog-content";
 
 const BLOG_CATEGORIES = ["all", "announcement", "product", "use-case"] as const;
 
@@ -49,7 +49,7 @@ export function BlogPage({
 }: BlogPageProps = {}) {
   const t = useT();
   const [activeCategory, setActiveCategory] = useState<BlogCategory>("all");
-  const visiblePosts = BLOG_POSTS.filter(
+  const visiblePosts = getBlogPosts(publicLocale ?? "en-US").filter(
     (post) => activeCategory === "all" || post.category === activeCategory,
   );
 
@@ -115,7 +115,7 @@ export function BlogPage({
                     className="aspect-[16/9] w-full rounded-md bg-white object-cover transition-opacity group-hover:opacity-80"
                   />
                   <h2
-                    lang="en"
+                    lang={publicLocale ?? "en-US"}
                     className="mt-4 min-h-[2.5rem] px-1 line-clamp-2 text-pretty text-base font-medium leading-5 text-black"
                   >
                     {post.title}

@@ -301,6 +301,7 @@ describe("international v2 homepage artifact", () => {
       {
         heading: "产品",
         links: [
+          "博客",
           "免费试用",
           "产品定价",
           "接入微信指引",
@@ -323,6 +324,9 @@ describe("international v2 homepage artifact", () => {
         links: ["关于我们", "帮助与反馈", "隐私政策", "服务条款"],
       },
     ]);
+    expect(
+      document.querySelector<HTMLAnchorElement>('.foot__links-grid a[href="/blog"]')?.textContent?.trim(),
+    ).toBe("博客");
     expect(
       document
         .querySelector<HTMLAnchorElement>('.foot__links-grid a[href="/docs/compare/lightvela-vs-ai-chatbot"]')
@@ -358,7 +362,7 @@ describe("international v2 homepage artifact", () => {
     expect(footerText).not.toContain("WhatsApp");
     expect(footerText).not.toContain("X / Twitter");
     expect(footerText).not.toContain("YouTube");
-    expect(footerText).not.toContain("博客");
+    expect(footerText).toContain("博客");
     expect(footerText).not.toContain("Hostinger");
     expect(footerText).not.toContain("Genspark");
     expect(footerText).not.toContain("开源声明");

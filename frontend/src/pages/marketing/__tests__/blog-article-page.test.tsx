@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { BlogArticlePage } from "@/pages/marketing/blog-article-page";
 
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/region")>()),
+  isGlobal: true,
+}));
+
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => {
     const translations: Record<string, string> = {
@@ -130,5 +135,49 @@ describe("BlogArticlePage", () => {
       "href",
       expect.stringContaining("https%3A%2F%2Flightvela.ai%2Fblog%2Fbasketball-shoe-storefront-with-lightvela-workbench"),
     );
+  });
+
+  it("renders the Meta Muse article with the temporary cover and ordered screenshots", () => {
+    render(<BlogArticlePage slug="tencent-cloud-agent-early-taste-of-meta-muse" />);
+
+    expect(
+      screen.getByRole("heading", { name: "Tencent's Cloud Agent Gave an Early Taste of Meta's Muse" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "A Discovery: Tencent LightVela" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "First Hands-On with LightVela" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Scheduled tasks" })).toBeInTheDocument();
+
+    const article = screen.getAllByRole("article").find((candidate) =>
+      candidate.textContent?.includes("Tencent's Cloud Agent Gave an Early Taste of Meta's Muse"),
+    );
+    if (!article) throw new Error("Expected the Meta Muse article to be rendered");
+
+    const images = within(article).getAllByRole("img");
+    expect(images).toHaveLength(19);
+    expect(images.map((image) => image.getAttribute("src"))).toEqual([
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.png",
+      "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.png",
+    ]);
+    expect(within(article).getByText("Cassidy Shi")).toBeInTheDocument();
+    expect(within(article).getByText(/With a free trial on offer/)).toBeInTheDocument();
+    expect(article.querySelector('a[href*="doc.weixin.qq.com"]')).toBeNull();
+    expect(within(article).getByRole("heading", { name: "Share" })).toBeInTheDocument();
   });
 });

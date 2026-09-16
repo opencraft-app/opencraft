@@ -1,9 +1,9 @@
 import { isGlobal } from '@/lib/region';
 import { getDocsPage } from '@next-site/docs-page';
-import { DEFAULT_PUBLIC_DOCS_LOCALE } from '@next-site/public-locale';
+import { DEFAULT_PUBLIC_DOCS_LOCALE, DEFAULT_PUBLIC_ROUTE_LOCALE } from '@next-site/public-locale';
 import { DOCS_ROUTE_SLUGS, docsLastUpdated, type DocsRouteLocale } from '@next-site/docs-route-manifest';
 import { absoluteUrl } from '@next-site/seo';
-import { BLOG_POSTS } from '@/pages/marketing/blog-content';
+import { getBlogPosts } from '@/pages/marketing/blog-content';
 
 export const dynamic = 'force-static';
 
@@ -37,6 +37,7 @@ const COPY = {
     entries: [
       { title: '首页', path: '/' },
       { title: '产品介绍', path: '/about' },
+      { title: '博客', path: '/blog' },
       { title: '更新日志', path: '/changelog' },
     ],
     /**
@@ -170,13 +171,12 @@ export function GET() {
   const region = isGlobal ? 'global' : 'cn';
   const copy = COPY[region];
   const docsLocale: DocsRouteLocale = DEFAULT_PUBLIC_DOCS_LOCALE;
+  const blogPosts = getBlogPosts(DEFAULT_PUBLIC_ROUTE_LOCALE.locale);
 
   // 官方入口
   const entryLinks: DocLink[] = [
     ...copy.entries,
-    ...(region === 'global'
-      ? BLOG_POSTS.map((post) => ({ title: post.title, path: `/blog/${post.slug}` }))
-      : []),
+    ...blogPosts.map((post) => ({ title: post.title, path: `/blog/${post.slug}` })),
   ].map((entry) => ({
     title: entry.title,
     url: absoluteUrl(entry.path),

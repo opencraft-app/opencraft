@@ -88,20 +88,14 @@ describe('sitemap.xml — 国内站（cn）', () => {
     expect(locs.filter((loc) => loc.includes('/zh-cn/'))).toEqual([]);
   });
 
-  it('收录全部公共页与文档页，且不含重复的 /docs/', async () => {
+  it('收录国内 Blog、全部公共页与文档页，且不含重复的 /docs/', async () => {
     const { locs } = await sitemapForRegion('cn');
 
-    expect(locs).toEqual([
-      'https://lightvela.com/',
-      'https://lightvela.com/about/',
-      'https://lightvela.com/changelog/',
-      'https://lightvela.com/privacy-policy/',
-      'https://lightvela.com/terms-of-service/',
-      'https://lightvela.com/cookie-policy/',
-      'https://lightvela.com/open-source-licenses/',
-      'https://lightvela.com/docs/overview/',
-      'https://lightvela.com/docs/plans/',
-    ]);
+    expect(locs).toContain('https://lightvela.com/blog/');
+    expect(locs).toContain('https://lightvela.com/blog/dsh-revived-broken-hermes-agent/');
+    expect(locs).toContain('https://lightvela.com/blog/using-hermes-agent-as-a-discord-bot/');
+    expect(locs).toContain('https://lightvela.com/docs/overview/');
+    expect(locs).toContain('https://lightvela.com/docs/plans/');
     expect(locs).not.toContain('https://lightvela.com/docs/');
   });
 
@@ -117,7 +111,7 @@ describe('sitemap.xml — 国内站（cn）', () => {
 
 describe('sitemap.xml — 国际站（global）', () => {
   it('输出 zh-sg / zh-hant / id-id 前缀条目，但 en-US 与 zh-CN 走裸路径', async () => {
-    const { locs, xml } = await sitemapForRegion('global');
+    const { locs } = await sitemapForRegion('global');
 
     expect(locs).toContain('https://lightvela.ai/');
     expect(locs).toContain('https://lightvela.ai/zh-sg/about/');
@@ -125,7 +119,7 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(locs).toContain('https://lightvela.ai/blog/using-hermes-agent-as-a-discord-bot/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/blog/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/blog/using-hermes-agent-as-a-discord-bot/');
-    expect(xml).not.toContain('https://lightvela.com/blog/');
+    expect(locs).not.toContain('https://lightvela.com/blog/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/docs/plans/');
     expect(locs).toContain('https://lightvela.ai/id-id/docs/overview/');
     // 默认语言不再有第二套前缀 URL
@@ -149,12 +143,21 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(zhCn.every((entry) => !entry.href.includes('/zh-cn/'))).toBe(true);
   });
 
-  it('英文正文 Blog 只声明英文与默认 hreflang，不互指未翻译语言', async () => {
+  it('已翻译 Blog 为每个已发布语言声明 hreflang', async () => {
     const { hreflangs } = await sitemapForRegion('global');
     const blogHreflangs = hreflangs.filter((entry) => entry.href.includes('/blog/'));
 
     expect(blogHreflangs.length).toBeGreaterThan(0);
-    expect(blogHreflangs.every((entry) => entry.hreflang === 'x-default' || entry.hreflang === 'en-US')).toBe(true);
+    expect(new Set(blogHreflangs.map((entry) => entry.hreflang))).toEqual(new Set([
+      'x-default',
+      'en-US',
+      'zh-SG',
+      'zh-Hant',
+      'id-ID',
+      'es',
+      'ja-JP',
+      'ko-KR',
+    ]));
   });
 });
 
