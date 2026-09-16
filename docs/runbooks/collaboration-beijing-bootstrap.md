@@ -51,6 +51,8 @@
 ## 失败恢复
 
 - 普通重跑不得携带 rotation 参数。
+- DB/SSM 或目标库权限已写入、但 SSM→SOPS 导出失败时，先修复流水线 Python 依赖，再运行只读
+  dry-run 核对云端状态；重新审批后幂等重入，不手工搬运 Secret 或直接修改 GitOps。
 - 账号已存在但 SSM 丢失时，审查后才允许 `--allow-database-password-reset`。
 - IM Secret 明确轮换时，审查后才允许 `--allow-im-secret-rotation`；JWT、IM identity、callback token
   不随之变化。

@@ -91,6 +91,14 @@ class CollaborationDeliveryTests(unittest.TestCase):
         text = workflow_path.read_text()
         self.assertEqual(text.count("ci_ensure_go"), 2)
         self.assertEqual(text.count("ci_ensure_tccli"), 1)
+        apply_script = workflow["stages"][2]["jobs"]["apply"]["steps"][-1]["run"]
+        self.assertIn("ci_ensure_pyyaml", apply_script)
+        self.assertLess(apply_script.index("ci_ensure_tccli"), apply_script.index("ci_ensure_pyyaml"))
+        self.assertLess(apply_script.index("ci_ensure_pyyaml"), apply_script.index("python3 scripts/export_ssm_to_sops.py"))
+        init_script = (REPO_ROOT / ".ci/init.sh").read_text()
+        self.assertIn("ci_ensure_pyyaml()", init_script)
+        self.assertIn('"PyYAML==${version}"', init_script)
+        self.assertIn('export PATH="${install_dir}/venv/bin:${PATH}"', init_script)
         for required in (
             "bootstrap-collaboration",
             "--apply",
