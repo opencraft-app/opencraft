@@ -1,8 +1,10 @@
-import { AudioLines, Mic } from "lucide-react";
+import { Mic } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ComposerActionHost } from "@opencraft/extension-react";
-import type { ComposerTransientTextInput } from "@opencraft/composer-core";
+import type { ComposerTransientTextInput, ComposerAudioLevels } from "@opencraft/composer-core";
+import { DictationCompletion } from "./dictation-completion";
+import { DictationPressGesture } from "./dictation-press-gesture";
 
 import type {
   SpeechInputError,
@@ -10,7 +12,7 @@ import type {
   SpeechInputSession,
 } from "./speech-input-provider";
 
-type VoiceInputPhase = "idle" | "listening" | "error";
+type VoiceInputPhase = "idle" | "starting" | "listening" | "transcribing" | "error";
 
 export function createVoiceInputAction(provider: SpeechInputProvider) {
   return function VoiceInputAction({
@@ -19,17 +21,41 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
   }: ComposerActionHost) {
     const sessionRef = useRef<SpeechInputSession | null>(null);
     const textInputRef = useRef<ComposerTransientTextInput | null>(null);
-    const committedTextRef = useRef("");
-    const visibleTextRef = useRef("");
+    const finalTextRef = useRef("");
     const generationRef = useRef(0);
     const recognitionEpochRef = useRef(0);
     const activeRef = useRef(false);
+    const completionRef = useRef<DictationCompletion | null>(null);
+    const startedAtRef = useRef<number | null>(null);
+    const holdFinishRef = useRef(false);
+    const finishRecognitionRef = useRef<(() => Promise<boolean>) | null>(null);
+    const pressGesture = useMemo(() => new DictationPressGesture(), []);
+    useEffect(() => {
+      // The trigger stays mounted but becomes inert when the voice Footer claims
+      // its region. Pointer release belongs to the gesture, not that DOM button.
+      const release = (event: PointerEvent) => pressGesture.release(event.pointerId);
+      const blur = () => pressGesture.release();
+      window.addEventListener("pointerup", release, true);
+      window.addEventListener("pointercancel", release, true);
+      window.addEventListener("blur", blur);
+      return () => {
+        pressGesture.reset(); window.removeEventListener("pointerup", release, true);
+        window.removeEventListener("pointercancel", release, true); window.removeEventListener("blur", blur);
+      };
+    }, [pressGesture]);
+    const audioLevels = useMemo(() => {
+      const listeners = new Set<(level: number) => void>();
+      return { subscribe: (listener: (level: number) => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+        publish: (level: number) => { for (const listener of listeners) listener(level); } } satisfies ComposerAudioLevels & { publish(level: number): void };
+    }, []);
     const [phase, setPhase] = useState<VoiceInputPhase>("idle");
-    const [interim, setInterim] = useState("");
     const [error, setError] = useState<SpeechInputError | null>(null);
     const available = useMemo(() => provider.isAvailable(), [provider]);
 
     const cancel = () => {
+      pressGesture.reset(); holdFinishRef.current = false;
+      finishRecognitionRef.current = null;
+      completionRef.current?.settle(false); completionRef.current = null;
       activeRef.current = false;
       generationRef.current += 1;
       recognitionEpochRef.current += 1;
@@ -37,9 +63,8 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
       sessionRef.current = null;
       textInputRef.current?.cancel();
       textInputRef.current = null;
-      committedTextRef.current = "";
-      visibleTextRef.current = "";
-      setInterim("");
+      finalTextRef.current = "";
+      startedAtRef.current = null;
       setPhase("idle");
     };
 
@@ -53,18 +78,10 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
       generationRef.current = generation;
       activeRef.current = true;
       setError(null);
-      setInterim("");
-      committedTextRef.current = "";
-      visibleTextRef.current = "";
-      const paint = (nextInterim: string) => {
-        const text = `${committedTextRef.current}${nextInterim}`;
-        visibleTextRef.current = text;
-        textInputRef.current?.update(text);
-      };
+      finalTextRef.current = "";
+      startedAtRef.current = null;
       const clearSegment = () => {
-        committedTextRef.current = "";
-        visibleTextRef.current = "";
-        setInterim("");
+        finalTextRef.current = "";
       };
       const ownsRecognitionEpoch = (epoch: number) =>
         activeRef.current &&
@@ -74,19 +91,11 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
       let startRecognitionEpoch: () => boolean;
       const openSegment = (): boolean => {
         const textInput = mutations.beginTransientTextInput({
-          finalized(result) {
+          finalized() {
             if (generationRef.current !== generation) return;
+            pressGesture.reset(); holdFinishRef.current = false; finishRecognitionRef.current = null;
+            completionRef.current?.settle(false); completionRef.current = null;
             textInputRef.current = null;
-            if (result.cause === "submission") {
-              // Web Speech results are cumulative within one native session.
-              // Rotate that physical epoch at the message boundary so its last
-              // interim hypothesis can never leak into the next Composer draft.
-              recognitionEpochRef.current += 1;
-              sessionRef.current?.cancel();
-              sessionRef.current = null;
-              clearSegment();
-              return;
-            }
             activeRef.current = false;
             generationRef.current += 1;
             recognitionEpochRef.current += 1;
@@ -95,58 +104,62 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
             clearSegment();
             setPhase("idle");
           },
-          readyForNextInput() {
-            if (
-              !activeRef.current ||
-              generationRef.current !== generation ||
-              sessionRef.current !== null
-            ) {
-              return;
-            }
-            if (openSegment()) startRecognitionEpoch();
-          },
         });
         if (textInput === null) return false;
         textInputRef.current = textInput;
-        if (visibleTextRef.current.length > 0) {
-          textInput.update(visibleTextRef.current);
-        }
         return true;
       };
 
       startRecognitionEpoch = () => {
         const epoch = recognitionEpochRef.current + 1;
         recognitionEpochRef.current = epoch;
+        const completion = new DictationCompletion(); completionRef.current = completion;
+        const finish = () => ownsRecognitionEpoch(epoch) ? completion.finish(() => { present("transcribing"); sessionRef.current?.stop(); }) : Promise.resolve(false);
+        finishRecognitionRef.current = finish;
+        const present = (nextPhase: "starting" | "listening" | "transcribing") => {
+          if (!ownsRecognitionEpoch(epoch)) return;
+          if (nextPhase === "listening" && startedAtRef.current === null) startedAtRef.current = Date.now();
+          setPhase(nextPhase);
+          textInputRef.current?.setInteraction?.({ kind: "dictation", phase: nextPhase, startedAt: startedAtRef.current, audioLevels,
+            cancel: () => { if (ownsRecognitionEpoch(epoch)) cancel(); },
+            finish,
+          });
+          if (nextPhase === "listening" && holdFinishRef.current) {
+            queueMicrotask(() => {
+              if (!ownsRecognitionEpoch(epoch) || !holdFinishRef.current) return;
+              holdFinishRef.current = false;
+              void finish();
+            });
+          }
+        };
         try {
           const session = provider.start({
-          interim(text) {
-            if (!ownsRecognitionEpoch(epoch)) return;
-            setInterim(text);
-            paint(text);
-          },
+          status: present,
+          level(level) { if (ownsRecognitionEpoch(epoch)) audioLevels.publish(level); },
           commit(text) {
             if (!ownsRecognitionEpoch(epoch)) return;
-            committedTextRef.current += text;
-            paint("");
+            finalTextRef.current += text;
           },
           end() {
             if (!ownsRecognitionEpoch(epoch)) return;
+            const hasRecognizedText = finalTextRef.current.trim().length > 0;
+            completionRef.current = null;
             activeRef.current = false;
             sessionRef.current = null;
-            textInputRef.current?.commit(visibleTextRef.current);
+            const applied = textInputRef.current?.commit(finalTextRef.current) === true;
             textInputRef.current = null;
             clearSegment();
-            setPhase("idle");
+            if (hasRecognizedText && !applied) {
+              setError({ code: "unknown", message: "输入目标已变化，听写文字未插入；未发送消息" }); setPhase("error");
+            } else setPhase("idle");
+            completion.settle(hasRecognizedText && applied);
           },
           error(nextError) {
             if (!ownsRecognitionEpoch(epoch)) return;
+            completion.settle(false); completionRef.current = null;
             activeRef.current = false;
             sessionRef.current = null;
-            if (visibleTextRef.current.length > 0) {
-              textInputRef.current?.commit(visibleTextRef.current);
-            } else {
-              textInputRef.current?.cancel();
-            }
+            textInputRef.current?.cancel();
             textInputRef.current = null;
             clearSegment();
             setError(nextError);
@@ -158,9 +171,10 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
             return false;
           }
           sessionRef.current = session;
-          setPhase("listening");
+          present(session.phase ?? "listening");
           return true;
         } catch (cause) {
+          completion.settle(false); completionRef.current = null;
           activeRef.current = false;
           textInputRef.current?.cancel();
           textInputRef.current = null;
@@ -181,24 +195,44 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     };
 
     const listening = phase === "listening";
+    const active = listening || phase === "starting" || phase === "transcribing";
     const label = !available
-      ? "Voice input is unavailable in this browser"
+      ? provider.unavailableMessage ?? "Voice input is unavailable in this browser"
+      : phase === "starting" ? "正在等待系统语音权限，点击取消"
+      : phase === "transcribing" ? "正在完成语音识别，点击取消"
       : listening
-        ? interim.length > 0
-          ? `Listening: ${interim}`
-          : "Stop voice input"
+        ? "Stop voice input"
         : error?.message ?? "Start voice input";
 
     return (
+      <>
       <button
         className="codex-composer-icon-button opencraft-voice-input-action"
         type="button"
         aria-label={label}
-        aria-pressed={listening}
+        aria-pressed={active}
         data-voice-input-state={phase}
         disabled={disabled || !available}
         title={label}
+        onPointerDown={event => {
+          if (event.button !== 0 || activeRef.current) return;
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          pressGesture.press(start, () => {
+            holdFinishRef.current = true;
+            if (sessionRef.current !== null && completionRef.current !== null) {
+              // Native permissions can still be pending. Status will finish that epoch after it starts.
+              if (startedAtRef.current !== null) {
+                holdFinishRef.current = false;
+                void finishRecognitionRef.current?.();
+              }
+            }
+          }, event.pointerId);
+        }}
+        onPointerUp={event => pressGesture.release(event.pointerId)}
+        onPointerCancel={event => pressGesture.release(event.pointerId)}
         onClick={() => {
+          if (pressGesture.consumeClick()) return;
+          if (phase === "starting" || phase === "transcribing") { cancel(); return; }
           if (listening) {
             if (sessionRef.current === null) cancel();
             else sessionRef.current.stop();
@@ -207,8 +241,10 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
           start();
         }}
       >
-        {listening ? <AudioLines size={16} /> : <Mic size={15} />}
+        <Mic size={15} aria-hidden="true" />
       </button>
+      {error && phase === "error" ? <span role="alert" title={error.message}>{error.code === "permission-denied" ? "需要系统权限" : error.code === "audio-capture" ? "麦克风不可用" : "语音识别失败"}<span className="sr-only">：{error.message}</span></span> : null}
+      </>
     );
   };
 }

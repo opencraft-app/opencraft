@@ -282,6 +282,8 @@ async function uriBytesBase64(uri: string): Promise<string> {
  */
 export class AppServerBotConversationSource implements BotConversationSource {
   private readonly states = new Map<string, MutableConversationState>();
+  private readonly deletedBots = new Set<string>();
+  private readonly deletedConversations = new Set<string>();
   private readonly stopEvents: () => void;
   private readonly initialPageSize: number;
   private readonly olderPageSize: number;
@@ -310,6 +312,7 @@ export class AppServerBotConversationSource implements BotConversationSource {
 
   load(key: ConversationKey): Promise<void> {
     const state = this.ensure(key);
+    if (this.deletedConversations.has(encodeConversationKey(key))) return Promise.reject(new BotConversationSourceError("BOT_DELETED", "此 Bot 已删除。", false));
     if (state.loadPromise !== null) return state.loadPromise;
     // A ready Conversation already owns its materialized transcript. Calling
     // load from send, remount, or another observer must only acquire that
@@ -507,6 +510,12 @@ export class AppServerBotConversationSource implements BotConversationSource {
         conversationId,
         initialMessagesPage: { limit: this.initialPageSize },
       });
+      if (this.disposed) return;
+      if (this.deletedConversations.has(encodeConversationKey(state.logicalKey)) || result.participants.some(person =>
+        person.kind === "bot" && this.deletedBots.has(JSON.stringify([state.logicalKey.hostId, person.participantId])))) {
+        this.markDeleted(state);
+        throw new BotConversationSourceError("BOT_DELETED", "此 Bot 已删除。", false);
+      }
       const participants = result.participants.map(participant);
       state.nextCursor = result.initialMessagesPage.nextCursor ?? null;
       state.liveEpoch = result.liveCursor.epoch;
@@ -542,13 +551,33 @@ export class AppServerBotConversationSource implements BotConversationSource {
 
   private receive(event: HostBotConversationEvent): void {
     if (this.disposed) return;
+    if (event.method === "bot/deleted") this.deletedBots.add(JSON.stringify([event.hostId, `bot:${event.params.botId}`]));
     for (const state of this.states.values()) {
       if (state.logicalKey.hostId !== event.hostId) continue;
+      if (event.method === "bot/deleted") {
+        if (state.snapshot.descriptor.participants.some(person => person.participantId === `bot:${event.params.botId}`)) this.markDeleted(state);
+        continue;
+      }
+      if (event.method === "bot/updated") {
+        const participants = state.snapshot.descriptor.participants.map(person => person.participantId === `bot:${event.params.bot.botId}`
+          ? Object.freeze({ ...person, displayName: event.params.bot.name }) : person);
+        replaceSnapshot(state, { descriptor: Object.freeze({ ...state.snapshot.descriptor, participants: Object.freeze(participants) }) });
+        continue;
+      }
       const params = event.params as { conversationId?: string };
       if (params.conversationId !== state.remoteConversationId) continue;
+      if (event.method === "bot/conversation/deleted") { this.markDeleted(state); continue; }
+      if (this.deletedConversations.has(encodeConversationKey(state.logicalKey))) continue;
       if (state.hydrating) state.bufferedEvents.push(event);
       else this.applyEvent(state, event);
     }
+  }
+
+  private markDeleted(state: MutableConversationState): void {
+    this.deletedConversations.add(encodeConversationKey(state.logicalKey));
+    state.resyncRequested = false;
+    state.bufferedEvents = [];
+    replaceSnapshot(state, { phase: "error", error: "此 Bot 已删除。", executions: [], presence: [], interactions: [] });
   }
 
   private applyEvent(

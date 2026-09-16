@@ -12,7 +12,7 @@ import type {
   ComposerSelections,
   SubmitIntent,
 } from "@opencraft/composer-core";
-import { resolveReasoningEffort, type ReasoningCapability } from "@opencraft/composer-core";
+import { resolveReasoningEffort, unsupportedModelInput, type ReasoningCapability } from "@opencraft/composer-core";
 
 export interface SubmitCompileDiagnostic {
   readonly code:
@@ -33,12 +33,15 @@ export interface CompiledSubmitIntent {
 }
 
 export interface SubmitCompilerOptions {
+  /** Concrete default resolved from the catalog for this immutable submission. */
+  readonly model?: string;
   readonly historyMode?: ThreadStartParams["historyMode"];
   readonly reasoning?: ReasoningCapability;
+  readonly inputModalities?: readonly string[];
 }
 
 export class SubmitCompileError extends Error {
-  readonly code: "ASSET_NOT_READY" | "INVALID_JSON" | "EMPTY_INPUT" | "CAPABILITY_UNAVAILABLE";
+  readonly code: "ASSET_NOT_READY" | "INVALID_JSON" | "EMPTY_INPUT" | "CAPABILITY_UNAVAILABLE" | "UNSUPPORTED_INPUT";
 
   constructor(code: SubmitCompileError["code"], message: string) {
     super(message);
@@ -269,11 +272,16 @@ export function compileSubmitIntent(
     appendBlock(input, block, diagnostics);
   });
   for (const attachment of intent.attachments) appendAttachment(input, attachment, diagnostics);
+  if (options.inputModalities) {
+    const unsupported = unsupportedModelInput(options.inputModalities, input);
+    if (unsupported) throw new SubmitCompileError("UNSUPPORTED_INPUT", `所选模型不支持 ${unsupported} 输入，请更换模型或移除附件`);
+  }
   if (input.length === 0 || input.every((entry) => entry.type === "text" && entry.text.length === 0)) {
     throw new SubmitCompileError("EMPTY_INPUT", "SubmitIntent contains no AppServer input");
   }
 
-  const turnOptions = selectionOptions(intent.selections, intent.options.outputSchema, diagnostics, options.reasoning);
+  const selections = options.model && intent.selections.model === undefined ? { ...intent.selections, model: options.model } : intent.selections;
+  const turnOptions = selectionOptions(selections, intent.options.outputSchema, diagnostics, options.reasoning);
   if ((intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up")
     && Object.keys(turnOptions).length > 0) {
     diagnostics.push({
@@ -300,7 +308,7 @@ export function compileSubmitIntent(
   }
   const threadOptions: ThreadStartParams = {
     ...(intent.selections.agentId === undefined ? {} : { agentId: intent.selections.agentId }),
-    ...(intent.selections.model === undefined ? {} : { model: intent.selections.model }),
+    ...(selections.model === undefined ? {} : { model: selections.model }),
     ...(intent.selections.permissionProfile === undefined ? {} : { permissions: intent.selections.permissionProfile }),
     ...(intent.selections.cwd === undefined ? {} : { cwd: intent.selections.cwd }),
     ...(intent.selections.serviceTier === undefined ? {} : { serviceTier: intent.selections.serviceTier }),

@@ -63,6 +63,7 @@ stages:
             with:
               fetchDepth: 50
               enableVirtualMergeBranch: false
+              enableSubmodule: false
           - name: 校验并修复 MR checkout
             shell: bash
             env:

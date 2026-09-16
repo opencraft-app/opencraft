@@ -49,6 +49,149 @@ Electron bridge               native/web adapters
 
 ## Package ownership
 
+### Client voice input ownership
+
+Voice input is a client input service, not an Agent Host tool or chat model.
+Following BB's capture/transcription/Composer separation does not imply reusing
+its Codex authentication or transcription endpoint. On Mac Electron, Main owns
+one physical capture through a bundled Speech/AVAudioEngine/CoreAudio helper.
+A trusted top-level preload port exposes semantic probe/start/stop/cancel events,
+never executable paths, audio buffers or credentials. Web retains its browser
+speech adapter; other Electron platforms explicitly report unsupported input.
+
+The voice extension owns platform selection and a dictation-session result ledger.
+Native recognition tasks supply stable utterance IDs, monotonic sequences and
+partial/final events. Final results replace only their own ledger entry; hypotheses
+never overwrite confirmed history. A task final rotates the native recognition
+request while the same AudioEngine keeps capturing; it does not end the user session.
+Only explicit stop drains the active request and ends capture. Request routing is
+atomic; canceled/stale task callbacks cannot act on a replacement. Recognition
+quality and native handoff latency still require real microphone acceptance.
+
+BB-style final-only delivery means recording presents waveform, not editable ASR
+hypotheses. Browser recognition uses actual result indices as ledger identities;
+it never publishes partial text through the Composer observer. The completed
+ordered ledger is delivered once after successful session end. Unexpected end,
+unfinished utterances, cancellation or error do not insert partial results.
+Draft ownership, session epochs and cancellation fence late results after submission,
+route replacement or unmount. Stop finalizes once; cancel invalidates renderer results
+immediately, asks the native task to release, and retains physical ownership
+until process close (with bounded termination fallback). Main also releases
+capture on navigation, renderer death and application shutdown.
+
+Dictation presentation belongs to that same transient input transaction, not an
+independent application-wide mode flag. The controller exposes a separate input
+interaction subscription; replacing a draft or physical View releases the reserved
+insertion transaction and presentation. The recording editor is read-only, retains
+its original document and is not fed provisional hypotheses.
+A released transaction cannot update a replacement Footer or insert late results.
+
+The recovered Codex path captures a concrete Composer controller, synchronously
+`appendText`s to its View, then sends that same controller's `getText`. Dictation
+therefore appends trimmed text at the document end, adding a separator only when
+the existing text has no trailing whitespace; it does not replace arbitrary old
+selection. OpenCraft adopts that policy for dictation while retaining selection
+replacement for generic transient producers.
+
+Because OpenCraft separates Store and physical View, its adaptation adds explicit
+write acknowledgement. The input record binds Draft ID, concrete View lease and
+content epoch. `replace-content`, target/reset and View replacement invalidate the
+old record; both before and after a synchronous write the same ownership must
+hold. The View acknowledges only an applied transaction whose physical document
+matches the expected result. Missing reservation, rejected dispatch or reentrant
+replacement yields `false`/`commit-rejected`; recognition text being nonempty is
+not sufficient to authorize sending. This boolean port is an OpenCraft adaptation,
+not a claimed Codex original interface.
+Composer owns the original Footer geometry and controls: its standard action
+children remain mounted but inert/aria-hidden while an in-place dictation Footer
+owns the region. Editors are not remounted to switch modes. The voice extension
+provides semantic status, cancellation and a single completion promise, not a
+React replacement toolbar or access to the root controller.
+
+Stop-and-insert completes recognition without submitting. Transcribe-and-send
+and Enter wait for final text and revalidate the same draft and physical View
+before invoking the existing submission compiler. The read-only editor's Enter
+is dispatched by the dictation keyboard owner; Enter on a control remains native
+button activation. Send availability while capturing does not depend on publishing
+provisional draft content. Cancel, error or owner loss
+resolve completion negatively, so late results cannot authorize a send. Repeated
+stop requests share one completion. Escape cancels; a Codex-style 150ms hold
+separates release-to-insert from the synthesized click. The gesture owns its
+pointer-ID release/cancel listener independently of the trigger's inert state;
+blur releases a held gesture, while cancellation/unmount removes its ownership.
+Native audio levels are
+bounded numeric samples at at most approximately 20Hz; they bypass draft snapshots
+and feed a View-owned, bounded waveform buffer. No raw audio or second capture
+crosses into the renderer; meters without actual samples show a quiet baseline.
+See [the dictation interaction plan](../design/dictation-interaction/task_plan.md)
+for the recovered-Codex/BB comparison and acceptance evidence.
+
+Input device UID and optional recognition language are client/profile preferences
+in Main's private JSON storage, independent of model configuration and DSH.
+Device enumeration/probe requests no recording permission. A missing selected
+device is an error, not permission to silently switch microphones. System
+authorization is requested only by explicit capture start.
+`supportsOnDeviceRecognition` is checked for the selected language at capture:
+when supported the request requires device recognition; otherwise Apple speech
+service may be used. No universal offline guarantee is made. The bundle/helper
+carry privacy descriptions and audio-input entitlements. A signed probe and
+synthetic desktop test do not prove real microphone permission or recognition;
+that acceptance is reported separately in [the native speech plan](../design/native-speech/task_plan.md).
+
+### Thread lifecycle ownership
+
+OpenCraft owns persisted Thread names, archive state and fork/subagent relation
+in `opencraft-threads.sqlite` under the Host product data directory. Engine
+history remains behind the native execution port; metadata discovery never
+overwrites a user name or revives an archived Thread. Temporary metadata,
+native event logs and application history indexes remain in memory and are
+expired on engine restart. Projection/checkpoint adapters must not persist
+temporary content, including late disposal writes.
+
+AppHost stamps a logical client identity at the trusted lease boundary and
+routes targeted replies/server requests back to that client. Physical transport
+sharing does not merge subscription or execution ownership. `thread/unsubscribe`
+detaches one logical subscriber; another subscriber is unaffected. Idle durable
+threads unload after a 30-minute no-subscriber activity grace; a temporary thread
+releases after its final subscriber. Unload and resume transitions serialize.
+
+Native Fork copies a complete, validated event/context prefix with opaque
+provider state, not the currently loaded UI turns. Turn boundaries use logical
+to-native generation coordinates. Fork gets a new logical identity; execution
+recovery keeps the existing identity. Side Chat adds a canonical inherited-history
+boundary before acquiring a view or accepting new work. It inherits the effective
+model, roots and permissions without continuing the parent task. Its close
+transaction retains cleanup ownership for retry and preserves primary failures.
+
+The SDK fences late unsubscribe responses, retains newly acquired views and
+actually reattaches them. Naming uses per-Host/Thread acknowledgement queues and
+optimistic-write generations; archive/unarchive modifies durable catalog state,
+never deletes a workspace. Catalog notifications invalidate shared queries.
+The sidebar offers only Host-declared operations, with an archived management
+dialog and restore/undo action. All menus/dialogs use the existing Radix and
+theme controls. Source and acceptance are tracked in
+[the lifecycle plan](../design/thread-lifecycle/task_plan.md).
+
+### Project selection and persistence
+
+OpenCraft owns the local Project catalog and stable IDs. The local Host serves
+`project/list` and `project/create` from `projects.json` in the product storage
+directory (desktop: `~/.opencraft/projects.json`), using locked atomic writes.
+Selecting the same normalized roots reuses the existing Project; the catalog
+does not come from DSH `workspace.list`. DSH only receives execution `cwd` and
+workspace roots, and can be replaced without losing the product catalog.
+
+Electron Main exposes a narrow, trusted-main-renderer `projects.pickDirectory`
+port. It opens a parented directory-only system dialog, validates the selected
+absolute directory, and returns a path or null on cancellation. It does not
+create a Project. The shared project menu consumes the port only for `local`;
+Web/remote Hosts retain their Host-scoped filesystem picker and advertised roots.
+Adding a Project requires the selected Host transport to be ready; the menu
+explains why it is unavailable while connecting.
+An interaction epoch invalidates picker/create results when the draft, Host,
+workspace, submission phase or visible route changes. Persisted additions remain
+in their original Host catalog, but never retarget a replacement draft.
+
 Task workspace presentation is specified in [the workspace design](../design/README.md).
 The product exposes right-side tools only; no bottom outlet or move/reveal controls.
 Legacy bottom tabs return to the right without disposing their resources.
@@ -169,6 +312,25 @@ frames through the same `DuplexTransport` contract. `RecordingTransport` is the
 only decorator; it can wrap any physical transport and produces Replay input.
 
 ## Deliberate reuse boundary
+
+### Bot management ownership
+
+Applications exposes a persistent Bots management View. It consumes the
+AppServer Bot directory and explicit Host connection command; selecting a
+management target does not change the active chat Host. Create/clone/rename/delete
+are gated by Host `botManagement` and per-Bot `management` operations. Dialogs
+own only user intent and draft text; Radix owns focus, Escape and delete confirmation.
+The same creation entry is used from the Bot sidebar and management page.
+
+Hermes transports own one control-plane mutation port per account/instance,
+surviving replaceable bridge generations. The port maps blank creation and
+template-based cloning to the existing instance Bot API; it never constructs a
+native profile from the display name. Root profile deletion is prohibited.
+Creation receipts retain success or failure for a command ID; uncertain writes
+are not retried automatically. Semantic revisions increase within the Host port;
+fresh-read revision checks and serialized writes are not a CTL cross-client CAS.
+Deleted Bot events invalidate open conversation snapshots and block later sends.
+Only current Host generations may publish mutation receipts into the directory.
 
 `@lightvela/agent-core` comes from the mono2-neutral
 `shared/lightvela-agent-core` package. mono2 Web validates each product behavior

@@ -17,9 +17,13 @@
 | Sidebar 几何/动画 | `npm run test:shell-space`；`npx tsx --test tests/workbench-sidebar-dock.test.ts` | `npx tsx scripts/smoke-shared-sidebar.ts`；已确认的独立桌面 CDP 上运行 `scripts/smoke-primary-visibility.mjs` |
 | 登录/账户 | `npm run test:desktop-login` | `scripts/smoke-sign-in-menu.ts`、`scripts/smoke-authentication-flows.ts`；控件改动再跑 `scripts/smoke-account-controls.ts` |
 | 环境目录/创建服务（无产品页面） | `npm run test:environments` | 验证服务与 Chat/Host 消费边界；不得重建已删除的 Environment 页面作为验收替身 |
-| 模型连接/默认模型 | `npx tsx --test tests/runtime-provider-service.test.ts tests/local-agent-reasoning-settings.test.ts tests/model-services.test.ts` | `npm run smoke:model-services` 验证新 LobeChat 风格页面；`npm run smoke:local-agent` 验证引擎与重启 |
+| 模型连接/默认模型 | `npx tsx --test tests/model-capability-consistency.test.ts tests/runtime-provider-service.test.ts tests/local-agent-reasoning-settings.test.ts tests/model-services.test.ts` | `npm run smoke:model-capabilities` 验证真实 DSH 输入能力、默认/清除/重启与已有模型绑定（隔离本地合成推理）；`npm run smoke:model-services` 验证页面 |
+| 本机项目目录选择 | `npm run test:projects` | `npm run smoke:project-picker`：显式提供已签名预览的 `OPENCRAFT_PROJECT_PICKER_EXECUTABLE`，使用隔离项目/profile；系统点击取消单独人工验收 |
+| Mac 语音输入 | `npm run test:native-speech`；构建native helper后运行 `npm run test:native-speech:lifecycle`；`npm run gate` | `npm run smoke:native-speech`、`npm run smoke:dictation-interaction`：显式设置 `OPENCRAFT_NATIVE_SPEECH_EXECUTABLE`，隔离profile的真实无录音probe与合成多片段helper验证原草稿/选区不变、final-only一次插入、取消/换草稿/设置持久化；真实权限、识别与task音频交接须另获授权，不能用合成结果冒充 |
 | 自适应面板 | `npm run test:adaptive-navigation` | 实际容器缩窄、内部 Back、重挂载后的草稿/滚动/焦点 |
+| 听写写入所有权 | `npm run test:native-speech` | `npm run smoke:dictation-ownership` 使用真实Core/CodexComposer/Voice组件，只替换ASR边界，验证旧选区不被替换、内容代次失效、reservation丢失/reentrant写入拒绝不发送；再以独立签名桌面跑正常链路 |
 | 协议/Host/会话 | `npm run check:boundaries`；按边界选择 `test:appserver`、`test:dsh-bridge`、`test:chat` | 相应运行时或回放路径；断线重连、晚到帧、宿主/会话切换 |
+| Hermes 多 Profile Bot | `npm run test:extensions`（含 `hermes-profile-bots`） | Web 构建后 `npm run smoke:hermes-profile-bots`：真实 Bridge/client/Cordis directory/resolver/source/Bot View，仅远端 Hermes 与控制面替身；切 Bot、发送、Host generation 替换与原历史恢复。真实账号、TAT 和推理需另获授权 |
 | 跨包或平台入口 | `npm run gate` | 对变更平台单独验收；Web 构建不能证明 Mac/Expo 实际交互 |
 | 仅文档/Skill | Skill frontmatter 与链接检查；根入口的文档/影响检查 | 人工走查典型任务，不用重打包证明文档正确 |
 

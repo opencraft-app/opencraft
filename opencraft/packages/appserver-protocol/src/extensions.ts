@@ -1,8 +1,3 @@
-/** Client opt-in for the OpenCraft Agent Catalog extension. */
-export const OPENCRAFT_AGENT_CATALOG_EXTENSION = "vela/agents";
-
-export const OPENCRAFT_AGENT_CATALOG_CAPABILITY = Object.freeze({ version: 1 });
-
 /** Host-owned queue behavior that cannot be inferred from queue contents. */
 export const OPENCRAFT_THREAD_QUEUE_EXTENSION = "opencraft/thread-queue";
 

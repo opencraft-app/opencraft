@@ -32,7 +32,7 @@ bundles:
         database_env: REFERRAL_DB
         user_env: REFERRAL_DB_USER
         password_env: REFERRAL_DB_PASSWORD
-    reason: Referral campaign API and Pulsar reward worker for Beijing, plus a disabled Shanghai foundation.
+    reason: Referral campaign API and Pulsar reward worker for Beijing and Shanghai.
     allowed_paths:
     - referral/k8s/base
     - referral/k8s/overlays/beijing-sandbox

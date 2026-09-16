@@ -135,6 +135,18 @@ class FakeBotService {
 const asService = (value: FakeBotService): AppServerBotConversationService =>
   value as unknown as AppServerBotConversationService;
 
+test("deleted Bot invalidates its open conversation and rejects further sends without a request", async () => {
+  const service = new FakeBotService();
+  const source = new AppServerBotConversationSource(asService(service));
+  const key = createConversationKey("host-a", CONVERSATION.conversationId);
+  await source.load(key);
+  service.emit({ hostId: "host-a", method: "bot/deleted", params: { botId: "fixture", revision: 2 } });
+  assert.equal(source.getSnapshot(key).phase, "error");
+  await assert.rejects(source.load(key), /已删除/);
+  assert.equal(service.sendCalls, 0);
+  source.dispose();
+});
+
 test("Bot AppServer Cordis service declares and resolves its client-registry dependency", async () => {
   const registry = await createCordisAppServerRegistry();
   try {

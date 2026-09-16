@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/app-host-protocol": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/composer-core": "^0.1.0",
     "node-pty": "1.1.0",

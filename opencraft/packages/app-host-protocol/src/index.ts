@@ -1,4 +1,18 @@
 export const APP_HOST_PROTOCOL_VERSION = 1 as const;
+export const LOGICAL_CLIENT_FIELD = "__opencraftClient";
+export function stampLogicalClientFrame(frame: string, clientId: string): string {
+  const value = JSON.parse(frame);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid logical RPC frame");
+  return JSON.stringify({ ...value, [LOGICAL_CLIENT_FIELD]: clientId });
+}
+export function routeLogicalClientFrame(frame: string, clientIds: readonly string[]): string | null {
+  const value = JSON.parse(frame);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid logical RPC frame");
+  const target = value[LOGICAL_CLIENT_FIELD];
+  if (target === undefined) return frame;
+  if (typeof target !== "string" || !clientIds.includes(target)) return null;
+  delete value[LOGICAL_CLIENT_FIELD]; return JSON.stringify(value);
+}
 export const CONNECT_APP_HOST_MESSAGE = "vela:connect-app-host" as const;
 
 export type AppHostTransportState =
@@ -101,3 +115,4 @@ export function isConnectAppHostMessage(value: unknown): value is ConnectAppHost
     && typeof record.rendererId === "string"
     && record.rendererId.length > 0;
 }
+export * from "./native-speech.js";

@@ -4,6 +4,8 @@ namespace: referral
 components:
   - ../common
   - ../../../../referral/k8s/overlays/shprod
+resources:
+  - referral-campaign.yaml
 generators:
   - ksops-secret-generator.yaml
 configMapGenerator:
@@ -24,5 +26,10 @@ replacements:
       - select:
           kind: Deployment
           name: referral-worker
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Job
+          name: referral-campaign
         fieldPaths:
           - spec.template.spec.containers.0.image

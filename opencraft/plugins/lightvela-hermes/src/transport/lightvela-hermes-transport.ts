@@ -33,6 +33,8 @@ import {
   type LightVelaBotInstance,
 } from "../account/lightvela-account-service";
 import { LIGHTVELA_HERMES_HOST_ID } from "../host/lightvela-hermes-host-identity";
+import { parseInstanceProfileBots } from "../hermes-appserver-bridge/instance-profile-bots";
+import { HermesInstanceBotManagement } from "../hermes-appserver-bridge/instance-bot-management";
 
 const HERMES_DASHBOARD_PORT = 9119;
 // The observed forwarding path retires a fully idle socket after roughly 75s.
@@ -127,6 +129,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
   private proxy: TencentTatSessionMultiplexer | null = null;
   private loopbackHttp: TatHttpVirtualClient | null = null;
   private boundBotId: string | null = null;
+  private botManagement: HermesInstanceBotManagement | null = null;
   private resolvingBinding = false;
   private disposed = false;
   private processes: HermesProcessService | null = null;
@@ -155,7 +158,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     const generation = ++this.generation;
     this.connectionStartedAt = Date.now();
     this.logConnection("connect:start", generation);
-    this.setStatus({ state: "connecting" });
+    this.setStatus({ state: "connecting", reason: "正在确认云端 Agent…" });
     this.connectPromise = this.open(generation, signal)
       .catch(async (error) => {
         const failure = classifyConnectFailure(error);
@@ -274,6 +277,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     this.setStatus({ state: "closing" });
     await this.releasePhysicalConnection();
     this.boundBotId = null;
+    this.botManagement = null;
     this.replayCheckpoint.reset();
     this.setStatus({ state: "closed" });
   }
@@ -295,7 +299,21 @@ export class LightVelaHermesTransport implements DuplexTransport {
     if (this.boundBotId !== botId) {
       this.replayCheckpoint.reset();
       this.boundBotId = botId;
+      this.botManagement = null;
     }
+    if (this.botManagement === null) {
+      const authority = this.accountGeneration;
+      const assertBinding = () => {
+        if (this.disposed || this.accountGeneration !== authority || this.boundBotId !== botId) throw abortError();
+      };
+      this.botManagement = new HermesInstanceBotManagement(botId, async <T>(path: string, init?: RequestInit): Promise<T> => {
+        assertBinding();
+        const result = await this.options.account.request<T>(path, init);
+        assertBinding();
+        return result;
+      });
+    }
+    this.setConnectingReason(generation, "正在创建 TAT 会话…");
     const createSession = () => this.options.account.request<BotTerminalSession>(
       `/v1/instances/${encodeURIComponent(botId)}/tat/session`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
@@ -347,6 +365,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       responseHeaderTimeoutMs: 30_000,
       responseBodyChunkTimeoutMs: 300_000,
     });
+    this.setConnectingReason(generation, "正在启动 Hermes Dashboard…");
     stageStartedAt = Date.now();
     let sessionToken: string | null = null;
     try {
@@ -392,6 +411,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       }
     }
     if (socket === null) {
+      this.setConnectingReason(generation, "正在建立 Hermes AppServer 连接…");
       socket = await this.openDashboardSocket(
         bootstrap,
         proxy,
@@ -456,6 +476,15 @@ export class LightVelaHermesTransport implements DuplexTransport {
       profileSkills,
       whatsappOnboarding,
       instanceId: botId,
+      botManagement: this.botManagement,
+      resolveProfileBots: async () => {
+        if (generation !== this.generation || signal?.aborted) throw abortError();
+        const catalog = await this.options.account.request<unknown>(
+          `/v1/instances/${encodeURIComponent(botId)}/bots`, { method: "GET", signal },
+        );
+        if (generation !== this.generation || signal?.aborted) throw abortError();
+        return parseInstanceProfileBots(catalog, botId);
+      },
     });
     bridge.onNotification((notification) => this.emit(JSON.stringify(notification)));
     this.bridge = bridge;
@@ -552,6 +581,11 @@ export class LightVelaHermesTransport implements DuplexTransport {
     for (const listener of this.statusListeners) listener(status);
   }
 
+  private setConnectingReason(generation: number, reason: string): void {
+    if (this.disposed || generation !== this.generation || this.currentStatus.state !== "connecting") return;
+    this.setStatus({ state: "connecting", reason });
+  }
+
   private logConnection(
     stage: string,
     generation: number,
@@ -576,6 +610,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       if (snapshot.activeBotId === this.boundBotId) return;
     }
     const retiredBotId = this.boundBotId;
+    this.botManagement = null;
     this.logConnection("binding:retire", this.generation, {
       activeBotId: snapshot.activeBotId,
       authorityChanged,

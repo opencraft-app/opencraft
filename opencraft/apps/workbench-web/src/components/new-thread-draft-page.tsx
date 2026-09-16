@@ -63,12 +63,13 @@ export interface NewThreadDraftPageProps {
   readonly effectiveSelections?: ComposerEffectiveSelections;
   readonly workspaceOptions: readonly DraftWorkspaceOption[];
   readonly workspaceOptionsLoading?: boolean;
+  readonly nativeWorkspacePicking?: boolean;
   readonly activeHostId: string;
   readonly hostOptions: readonly DraftHostOption[];
   readonly connectionPhase: string;
   readonly onSelectHost: (hostId: string) => void | Promise<void>;
   readonly onSelectWorkspace: (workspace: DraftWorkspaceOption) => void;
-  readonly onBrowseWorkspace: () => void;
+  readonly onBrowseWorkspace: () => void | Promise<void>;
   readonly onResolveAttachment?: (
     file: File,
     pending: ComposerAttachment,
@@ -175,12 +176,13 @@ interface ExecutionUtilityBarProps {
   readonly draft: NewThreadDraftSnapshot;
   readonly workspaceOptions: readonly DraftWorkspaceOption[];
   readonly workspaceOptionsLoading: boolean;
+  readonly nativeWorkspacePicking: boolean;
   readonly activeHostId: string;
   readonly hostOptions: readonly DraftHostOption[];
   readonly connectionPhase: string;
   readonly onSelectHost: (hostId: string) => void | Promise<void>;
   readonly onSelectWorkspace: (workspace: DraftWorkspaceOption) => void;
-  readonly onBrowseWorkspace: () => void;
+  readonly onBrowseWorkspace: () => void | Promise<void>;
   readonly onReturnFocus: () => void;
 }
 
@@ -188,6 +190,7 @@ function ExecutionUtilityBar({
   draft,
   workspaceOptions,
   workspaceOptionsLoading,
+  nativeWorkspacePicking,
   activeHostId,
   hostOptions,
   connectionPhase,
@@ -201,6 +204,8 @@ function ExecutionUtilityBar({
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [switchingHostId, setSwitchingHostId] = useState<string | null>(null);
   const [hostSelectionError, setHostSelectionError] = useState<string | null>(null);
+  const [pickingWorkspace, setPickingWorkspace] = useState(false);
+  const [workspaceSelectionError, setWorkspaceSelectionError] = useState<string | null>(null);
   const workspace = draft.target.execution.workspace;
   const executionLocked = draftSubmissionOwnsNavigation(draft.phase);
   const selectedWorkspace = useMemo(
@@ -213,7 +218,7 @@ function ExecutionUtilityBar({
     () => hostOptions.find((host) => host.id === activeHostId) ?? null,
     [activeHostId, hostOptions],
   );
-  const canBrowseWorkspace = (activeHost?.workspaceBrowseRoots.length ?? 0) > 0
+  const canBrowseWorkspace = nativeWorkspacePicking || (activeHost?.workspaceBrowseRoots.length ?? 0) > 0
     || workspace.runtimeWorkspaceRoots.length > 0;
   const filteredWorkspaces = useMemo(() => {
     return searchDraftWorkspaceOptions(workspaceOptions, projectQuery);
@@ -300,14 +305,20 @@ function ExecutionUtilityBar({
             <DropdownMenu.Separator className="new-thread-project-menu__separator" />
             <DropdownMenu.Item
               className="new-thread-project-menu__item"
-              disabled={executionLocked || !canBrowseWorkspace}
-              onSelect={onBrowseWorkspace}
+              disabled={executionLocked || pickingWorkspace || connectionPhase !== "ready" || !canBrowseWorkspace}
+              onSelect={() => {
+                setWorkspaceSelectionError(null);
+                setPickingWorkspace(true);
+                Promise.resolve().then(onBrowseWorkspace)
+                  .catch(error => setWorkspaceSelectionError(error instanceof Error ? error.message : String(error)))
+                  .finally(() => setPickingWorkspace(false));
+              }}
             >
               <FolderPlus size={15} />
               <span>
                 <strong>Add project</strong>
-                <small>{canBrowseWorkspace
-                  ? "Choose a folder from this node"
+                <small>{connectionPhase !== "ready" ? "Connect to this node before adding a project" : canBrowseWorkspace
+                  ? nativeWorkspacePicking ? "Choose a folder on this device" : "Choose a folder from this node"
                   : "This node does not advertise a browse root"}</small>
               </span>
             </DropdownMenu.Item>
@@ -381,6 +392,13 @@ function ExecutionUtilityBar({
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
 
+      {workspaceSelectionError === null ? null : (
+        <span className="new-thread-project-menu__state is-error" role="alert">
+          {workspaceSelectionError}
+        </span>
+      )}
+      {pickingWorkspace ? <span role="status">Choosing folder…</span> : null}
+
       {selectedWorkspace?.branch ? (
         <span className="new-thread-context-branch" title={`Git branch: ${selectedWorkspace.branch}`}>
           <GitBranch size={14} /><span>{selectedWorkspace.branch}</span>
@@ -400,6 +418,7 @@ export function NewThreadDraftPage({
   effectiveSelections,
   workspaceOptions,
   workspaceOptionsLoading = false,
+  nativeWorkspacePicking = false,
   activeHostId,
   hostOptions,
   connectionPhase,
@@ -446,6 +465,7 @@ export function NewThreadDraftPage({
                       draft={draft}
                       workspaceOptions={workspaceOptions}
                       workspaceOptionsLoading={workspaceOptionsLoading}
+                      nativeWorkspacePicking={nativeWorkspacePicking}
                       activeHostId={activeHostId}
                       hostOptions={hostOptions}
                       connectionPhase={connectionPhase}

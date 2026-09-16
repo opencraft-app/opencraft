@@ -107,11 +107,11 @@ spec:
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_NJ_BASE_URL
           value: https://lightclaw.tech
-        # Credit 资源包回调与 Pass 隔离；北京验证完成前所有地域统一回北京预发布。
+        # Credit 资源包回调与 Pass 隔离；上海走正式环境，其他地域保留北京预发布。
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_BJ_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_SH_BASE_URL
-          value: https://lightclaw.tech
+          value: https://api.lightvela.com
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_GZ_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CREDIT_CALLBACK_CD_BASE_URL

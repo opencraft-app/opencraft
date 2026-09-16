@@ -6,11 +6,10 @@ import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesCom
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return {promise,resolve}; };
 const model = (id:string) => ({id,supportedReasoningEfforts:[],defaultReasoningEffort:null});
 const reader = (ids: string[]): CapabilitiesReader => ({
-  listAgents: async () => ({data:[{id:'dsh',modelIds:ids}],nextCursor:null}),
   listModels: async () => ({data:ids.map(model),nextCursor:null}),
 } as CapabilitiesReader);
 
-test('agents and every model page publish together, including an empty replacement', async () => {
+test('every model page publishes together, including an empty replacement', async () => {
   const client=new QueryClient();
   const old= composerCapabilitiesOptions('local',null,reader(['old']));
   await client.fetchQuery(old);
@@ -20,17 +19,15 @@ test('agents and every model page publish together, including an empty replaceme
   const refresh=client.fetchQuery({...next,staleTime:0});
   await new Promise(r=>setTimeout(r,0));
   assert.equal(calls,2); assert.equal(client.getQueryData(old.queryKey)?.models[0]?.id,'old');
-  assert.deepEqual(client.getQueryData(old.queryKey)?.agents[0]?.modelIds,['old']);
   pending.resolve({data:[model('new-2')],nextCursor:null}); await refresh;
   assert.deepEqual(client.getQueryData(old.queryKey)?.models.map(m=>m.id),['new','new-2']);
-  await client.fetchQuery({...composerCapabilitiesOptions('local',null,{listAgents:async()=>({data:[]}),listModels:async()=>({data:[]})}),staleTime:0});
-  assert.deepEqual(client.getQueryData(old.queryKey),{agents:[],models:[]});client.clear();
+  await client.fetchQuery({...composerCapabilitiesOptions('local',null,{listModels:async()=>({data:[]})}),staleTime:0});
+  assert.deepEqual(client.getQueryData(old.queryKey),{models:[]});client.clear();
 });
 
-test('a failed half retains the previous complete result with an error', async () => {
+test('a failed refresh retains the previous complete result with an error', async () => {
   const client=new QueryClient();const options=composerCapabilitiesOptions('local',null,reader(['old']));await client.fetchQuery(options);
-  await assert.rejects(client.fetchQuery({...composerCapabilitiesOptions('local',null,{...reader(['new']),listAgents:async()=>{throw Error('unavailable')}}),staleTime:0}));
-  assert.deepEqual(client.getQueryData(options.queryKey)?.agents[0]?.modelIds,['old']);
+  await assert.rejects(client.fetchQuery({...composerCapabilitiesOptions('local',null,{listModels:async()=>{throw Error('unavailable')}}),staleTime:0}));
   assert.equal(client.getQueryData(options.queryKey)?.models[0]?.id,'old');
   assert.equal(client.getQueryState(options.queryKey)?.status,'error');client.clear();
 });
@@ -42,13 +39,12 @@ test('invalidation cancels an initial pending load and rejects late publication'
   await invalidateComposerCapabilities(client,'local');
   await client.fetchQuery(composerCapabilitiesOptions('local',null,reader(['new'])));
   pending.resolve({data:[model('old')],nextCursor:null}); await stale;await new Promise(r=>setTimeout(r,0));
-  assert.deepEqual(client.getQueryData(old.queryKey)?.agents[0]?.modelIds,['new']);
   assert.equal(client.getQueryData(old.queryKey)?.models[0]?.id,'new');client.clear();
 });
 
 test('host invalidation covers its thread scopes but not other hosts; fresh reads deduplicate', async () => {
   const client=new QueryClient();let calls=0;
-  const source={...reader(['x']),listAgents:async()=>{calls++;return reader(['x']).listAgents({cursor:null,limit:100})}};
+  const source={listModels:async()=>{calls++;return {data:[model('x')],nextCursor:null}}} as CapabilitiesReader;
   const host=composerCapabilitiesOptions('a',null,source),thread=composerCapabilitiesOptions('a','thread',source),other=composerCapabilitiesOptions('b',null,source);
   await client.fetchQuery(host);await client.fetchQuery(host);assert.equal(calls,1);
   await client.fetchQuery(thread);await client.fetchQuery(other);

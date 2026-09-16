@@ -32,6 +32,15 @@ export class DshSessionRouting {
     const row = this.db.prepare("SELECT * FROM dsh_session_generations WHERE logical_id=? ORDER BY generation DESC LIMIT 1").get(logicalId);
     return row ? this.decode(row) : { logicalId, nativeId: logicalId, generation: 0, seedThroughSeq: -1, seedThroughTurn: 0, previousLastSeq: -1, previousLastTurn: 0 };
   }
+  forkCoordinates(logicalId: string, lastTurn?: number, beforeTurn?: number): { nativeId: string; lastTurn: number | undefined; beforeTurn: number | undefined } {
+    const boundary = lastTurn ?? beforeTurn;
+    const generations = this.generations(logicalId);
+    const generation = boundary === undefined ? this.current(logicalId)
+      : [...generations].reverse().find(generation => generation.generation === 0 || boundary > generation.previousLastTurn) ?? generations[0]!;
+    const offset = generation.generation === 0 ? 0 : generation.previousLastTurn - generation.seedThroughTurn;
+    return { nativeId: generation.nativeId, lastTurn: lastTurn === undefined ? undefined : lastTurn - offset,
+      beforeTurn: beforeTurn === undefined ? undefined : beforeTurn - offset };
+  }
   generations(logicalId: string): DshSessionGeneration[] {
     const rows = this.db.prepare("SELECT * FROM dsh_session_generations WHERE logical_id=? ORDER BY generation").all(logicalId);
     return rows.length ? rows.map(row => this.decode(row)) : [this.current(logicalId)];

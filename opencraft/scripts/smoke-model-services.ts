@@ -55,7 +55,13 @@ try {
   const errors: string[] = []; page.on('pageerror', (error: Error) => errors.push(error.message));
   const openConnection = async () => { if (!await page.locator('#model-service-connection').isVisible()) await page.getByRole('button', {name:'编辑', exact:true}).click(); };
   const toggleProvider = async () => { await page.locator('.model-services__navigation .model-services__provider-row[data-selected="true"]').getByRole('switch').click(); await page.waitForFunction(() => !(window as any).controller.busy); };
-  const setDefault = async (id: string) => { await page.getByRole('button', {name:`模型操作：${id}`,exact:true}).click(); await page.getByRole('button', {name:`设为默认：${id}`,exact:true}).click(); };
+  const setProviderDefault = async (providerName: string, modelId?: string) => {
+    const row = page.locator('.model-services__navigation .model-services__provider-row').filter({ hasText: providerName }).first();
+    await row.click({ button: 'right' });
+    const action = page.getByRole('menuitem', { name: '设为默认', exact: true });
+    if (!modelId) await action.click();
+    else { await action.hover(); await page.getByRole('menuitem', { name: `设为默认：${modelId}`, exact: true }).click(); }
+  };
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port:number }).port}`);
   await page.getByRole('heading', { name: 'DeepSeek', exact: true }).waitFor();
   assert.equal(await page.locator('.model-services__provider-row button input').count(),0);
@@ -133,9 +139,12 @@ try {
   await page.getByText(/已收到文本响应/).waitFor();
   await page.getByText('未启用模型', { exact:true }).click();
   assert.equal(await page.getByRole('switch', {name:'启用 imported-model',exact:true}).getAttribute('aria-checked'),'false');
-  await page.getByRole('switch', {name:'启用 imported-model',exact:true}).click();
-  await setDefault('local-test-model');
+  await setProviderDefault('Test gateway');
   await page.getByText('默认模型已更新，已有会话保持原选择', {exact:true}).waitFor();
+  await page.locator('.model-services__navigation .model-services__provider-row').filter({hasText:'Test gateway'}).first().click({button:'right'});
+  assert.equal(await page.getByRole('menuitem',{name:'设为默认',exact:true}).getAttribute('data-disabled'),'');
+  await page.keyboard.press('Escape');
+  await page.getByRole('switch', {name:'启用 imported-model',exact:true}).click();
   await page.locator('.model-services__navigation .model-services__provider').filter({hasText:'DeepSeek'}).first().click();
   await toggleProvider();
   await openConnection();
@@ -143,7 +152,7 @@ try {
   await page.getByRole('button', {name:'保存并收起',exact:true}).click();
   await page.getByRole('status').getByText('配置已保存', {exact:true}).waitFor();
   await toggleProvider();
-  await setDefault('deepseek-v4-flash');
+  await setProviderDefault('DeepSeek', 'deepseek-v4-flash');
   await page.getByText('默认模型已更新，已有会话保持原选择', {exact:true}).waitFor();
   await page.locator('.model-services__navigation .model-services__provider').filter({hasText:'Test gateway'}).first().click();
   await page.getByRole('button', {name:'搜索模型',exact:true}).click();
@@ -176,7 +185,7 @@ try {
   const remaining=await page.evaluate(async()=>await (window as any).request('runtime/providers/list',{}));
   assert.equal(remaining.providers.some((p:any)=>p.displayName==='Renamed gateway'),false);
   assert.deepEqual(received,['/v1/models','/v1/chat/completions']); assert.deepEqual(errors,[]);
-  console.log('Model services: explicit save/cancel, advanced settings, context rename, delete cancellation/confirmation, default recovery, action popovers, text check, import, narrow/remount passed. DSH isolated; no external model request.');
+  console.log('Model services: explicit save/cancel, advanced settings, provider context default (direct and submenu), context rename, delete cancellation/confirmation, default recovery, action popovers, text check, import, narrow/remount passed. DSH isolated; no external model request.');
 } finally {
   await browser?.close(); await vite?.close(); await host?.close(); await new Promise<void>(resolve=>endpoint.close(()=>resolve())); await rm(dataDirectory,{recursive:true,force:true});
 }

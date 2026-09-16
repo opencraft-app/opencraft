@@ -65,6 +65,8 @@ export interface AppServerBotDescriptor {
   readonly avatar?: AppServerBotAvatar;
   readonly status: "available" | "unavailable" | "disabled";
   readonly capabilities: readonly string[];
+  /** Per-entity operations, constrained further by Host botManagement. */
+  readonly management?: { readonly rename: boolean; readonly clone: boolean; readonly delete: boolean };
 }
 
 export interface AppServerBotParticipantSnapshot {

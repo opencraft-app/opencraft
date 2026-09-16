@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	sdkcommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
@@ -16,7 +17,11 @@ import (
 	ssm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ssm/v20190923"
 )
 
-const secretVersionID = "SSM_Current"
+const (
+	secretVersionID         = "SSM_Current"
+	accountReadinessTimeout = 2 * time.Minute
+	accountReadinessDelay   = 2 * time.Second
+)
 
 type cynosDBClient interface {
 	DescribeAccountsWithContext(context.Context, *cynosdb.DescribeAccountsRequest) (*cynosdb.DescribeAccountsResponse, error)
@@ -29,7 +34,8 @@ type cynosDBClient interface {
 }
 
 type TencentDatabaseAdmin struct {
-	client cynosDBClient
+	client                 cynosDBClient
+	accountCreationPending bool
 }
 
 func NewTencentDatabaseAdmin(secretID, secretKey, region string) (*TencentDatabaseAdmin, error) {
@@ -139,6 +145,9 @@ func (a *TencentDatabaseAdmin) CreateAccount(ctx context.Context, config Config,
 		PasswordRotation: sdkcommon.Int64Ptr(0), MaxUserConnections: sdkcommon.Int64Ptr(200),
 	}}
 	_, err := a.client.CreateAccountsWithContext(ctx, request)
+	if err == nil {
+		a.accountCreationPending = true
+	}
 	return err
 }
 
@@ -172,8 +181,30 @@ func (a *TencentDatabaseAdmin) SetDatabasePrivileges(ctx context.Context, config
 	request.DatabasePrivileges = []*cynosdb.DatabasePrivileges{{
 		Db: sdkcommon.StringPtr(config.Database), Privileges: sdkcommon.StringPtrs(privileges),
 	}}
-	_, err := a.client.ModifyAccountPrivilegesWithContext(ctx, request)
-	return err
+	readinessCtx, cancel := context.WithTimeout(ctx, accountReadinessTimeout)
+	defer cancel()
+	for {
+		_, err := a.client.ModifyAccountPrivilegesWithContext(readinessCtx, request)
+		if err == nil {
+			a.accountCreationPending = false
+			return nil
+		}
+		if !a.accountCreationPending || !isAccountNotReady(err) {
+			return err
+		}
+		timer := time.NewTimer(accountReadinessDelay)
+		select {
+		case <-readinessCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("collaboration database account did not become ready: %w", errors.Join(err, readinessCtx.Err()))
+		case <-timer.C:
+		}
+	}
+}
+
+func isAccountNotReady(err error) bool {
+	var sdkErr *tcerr.TencentCloudSDKError
+	return errors.As(err, &sdkErr) && sdkErr.Code == "InvalidParameterValue.AccountNotExistError"
 }
 
 type ssmClient interface {

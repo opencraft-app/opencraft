@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>ai.lightvela.opencraft.speech</string>
+<key>CFBundleName</key><string>OpenCraft Speech</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>NSMicrophoneUsageDescription</key><string>将麦克风语音转换为 OpenCraft 输入文字。</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>将语音转换为输入文字；系统不支持端侧识别时可能使用 Apple 语音服务。</string>
+</dict></plist>

@@ -182,9 +182,10 @@ function previewBridgeAsset(): Plugin {
 }
 
 export default defineConfig({
-  // Electron loads the renderer from a loopback origin in production, but its
-  // assets must remain relocatable inside the signed application bundle.
-  base: isElectronRenderer ? "./" : "/",
+  // Both targets are served at their origin root. Root-relative assets also
+  // survive direct loading/reloading /views/:id and /settings/:id routes.
+  // The Electron static server maps that root to the relocatable signed bundle.
+  base: "/",
   plugins: [
     releaseMetadata(webRelease),
     previewBridgeAsset(),

@@ -31,6 +31,12 @@ export class DshCapabilityLink {
   async register(threadId: string) {
     return this.request("/register", { sessionId: this.routing?.native(threadId) ?? threadId, capabilities: this.broker.list(threadId) });
   }
+  async thread(operation: "create" | "resume" | "fork" | "inject" | "release", params: Record<string, unknown>): Promise<any> {
+    return this.request("/thread/" + operation, params);
+  }
+  async modelInfo(provider: string, model: string): Promise<any> {
+    return this.request("/model-info", { provider, model });
+  }
   async skills(threadId: string | undefined, cwd: string, forceReload = false) {
     return this.request("/skills", { ...(threadId ? { sessionId: this.routing?.native(threadId) ?? threadId } : {}), cwd, forceReload });
   }

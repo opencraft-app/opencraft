@@ -9,12 +9,15 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
+import { changesThreadCatalog } from "./thread-catalog-query";
 import {
   createCordisAppServerRegistry,
   type CordisAppServerRegistryRuntime,
 } from "@opencraft/appserver-client";
 import {
   AppServerBotDirectory,
+  AppServerBotConversationResolver,
+  AppServerBotConversationSource,
   createCordisBotConversationRuntime,
 } from "@opencraft/bot-conversation-appserver";
 import { createCordisProfileSkillsRuntime } from "@opencraft/profile-skills-appserver";
@@ -50,10 +53,7 @@ import type {
   Thread,
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
-  OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-  OPENCRAFT_AGENT_CATALOG_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
-  type AgentCatalogEntry,
   type CatalogModel as Model,
 } from "@opencraft/appserver-protocol";
 import {
@@ -155,6 +155,14 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly threadManagement: {
+    capabilities(hostId: string): { fork: boolean; rename: boolean; archive: boolean };
+    rename(hostId: string, threadId: string, name: string): Promise<void>;
+    fork(hostId: string, threadId: string): Promise<string>;
+    archive(hostId: string, threadId: string): Promise<void>;
+    unarchive(hostId: string, threadId: string): Promise<void>;
+    listArchived(hostId: string): Promise<Array<{ id: string; name?: string | null; preview?: string }>>;
+  };
   readonly authenticationFlows: AuthenticationFlowService;
   readonly environmentDirectory: EnvironmentDirectory;
   readonly selectedHostId: string;
@@ -958,6 +966,19 @@ export async function createWebWorkbenchApplicationSupervisor(
         account: lightVelaAccount,
       }));
     }
+    const botSource = new AppServerBotConversationSource(botConversations.service);
+    startupRollback.push(() => botSource.dispose());
+    const createBotChatExtension = (
+      await import("@opencraft/plugin-bot-chat/runtime-entry")
+    ).default;
+    await extensions.activate(createBotChatExtension({
+      source: botSource,
+      resolver: new AppServerBotConversationResolver(botConversations.service),
+      showNavigation: false,
+    }));
+    let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
+    const { createBotManagementExtension } = await import("./bot-management-extension");
+    await extensions.activate(createBotManagementExtension(botDirectory, botConversations.service, hostId => connectBotHost(hostId)));
     const extensionInstallationPersistence = await IndexedDbExtensionInstallationPersistence.open({
       databaseName: currentProductDatabaseName("vela-extension-installations"),
     });
@@ -1041,6 +1062,7 @@ export async function createWebWorkbenchApplicationSupervisor(
           disconnectAppearanceThemes,
           () => botDirectory.dispose(),
           () => profileSkills.dispose(),
+          () => botSource.dispose(),
           () => botConversations.dispose(),
           () => appServerRegistry.dispose(),
           () => electronAppHost?.close(),
@@ -1106,14 +1128,18 @@ export async function createWebWorkbenchApplicationSupervisor(
             experimentalApi: true,
             extensions: {
               [OPENCRAFT_BROWSER_EXTENSION]: OPENCRAFT_BROWSER_CAPABILITY,
-              [OPENCRAFT_AGENT_CATALOG_EXTENSION]: OPENCRAFT_AGENT_CATALOG_CAPABILITY,
             },
           },
         },
         dynamicTools: OPENCRAFT_BROWSER_DYNAMIC_TOOLS,
         clientRegistry: appServerRegistry.clients,
-        installClientHandlers: (client) =>
-          installBrowserDynamicToolHandler(client, browserToolHost, { hostId: profile.hostId }),
+        installClientHandlers: (client) => {
+          const browser = installBrowserDynamicToolHandler(client, browserToolHost, { hostId: profile.hostId });
+          const catalog = client.subscribeNotification(notification => {
+            if (changesThreadCatalog(notification.method)) void queryClient.invalidateQueries({ queryKey: ["appserver", profile.hostId, "threads"] });
+          });
+          return () => { catalog(); browser(); };
+        },
         });
       } catch (error) {
         providerLease.release();
@@ -1140,6 +1166,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   });
   const registrations = profiles.map(createHostRegistration);
   const registry = new HostRuntimeRegistry(registrations);
+  connectBotHost = async hostId => { await registry.ensureConnected(hostId); };
   startupRollback.push(() => registry.dispose());
   const stopEnvironmentRegistry = connectEnvironmentRuntimeRegistry(hostProfiles, registry, createHostRegistration);
   startupRollback.push(stopEnvironmentRegistry);
@@ -1291,6 +1318,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         disconnectAppearanceThemes,
         () => botDirectory.dispose(),
         () => profileSkills.dispose(),
+        () => botSource.dispose(),
         () => botConversations.dispose(),
         () => appServerRegistry.dispose(),
         () => connectionProviders.dispose(),
@@ -1378,7 +1406,36 @@ export function AppServerRuntimeProvider({
     throw new Error(`Conversation View ${activeConversationViewId} is unavailable`);
   }
   const composerController = conversationView.composer;
+  const threadManagement = useMemo<AppServerHostCatalog["threadManagement"]>(() => {
+    const manager = async (hostId: string, operation: "rename" | "archive" | "fork") => {
+      const host = await registry.ensureConnected(hostId);
+      if (!host.resources.threads.capabilities?.()[operation]) throw new Error("此宿主未接通该会话操作");
+      return host.resources.threads;
+    };
+    return {
+      capabilities: hostId => registry.peekRuntime(hostId)?.resources.threads.capabilities?.() ?? { rename: false, archive: false, fork: false },
+      rename: async (hostId, id, name) => { const port = await manager(hostId, "rename"); await port.rename!(id, name); },
+      archive: async (hostId, id) => { const port = await manager(hostId, "archive"); await port.archive!(id); },
+      unarchive: async (hostId, id) => { const port = await manager(hostId, "archive"); await port.unarchive!(id); },
+      fork: async (hostId, id) => { const port = await manager(hostId, "fork"); return (await port.fork!({ threadId: id })).id; },
+      listArchived: async hostId => {
+        const port = await manager(hostId, "archive");
+        const all: Array<{ id: string; name?: string | null; preview?: string }> = [];
+        let cursor: string | null = null;
+        do { const page = await port.list({ archived: true, cursor, limit: 100 });
+          for (const value of page.data) {
+            const thread = value as { id?: unknown; name?: string | null; preview?: string };
+            if (typeof thread.id !== "string") throw new Error("Invalid archived thread identity");
+            all.push({ id: thread.id, name: thread.name, preview: thread.preview });
+          }
+          cursor = page.nextCursor;
+        } while (cursor !== null);
+        return all;
+      },
+    };
+  }, [registry]);
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    threadManagement,
     environmentDirectory: supervisor.environmentDirectory,
     authenticationFlows: supervisor.authenticationFlows,
     blobs: supervisor.blobs,
@@ -1428,6 +1485,7 @@ export function AppServerRuntimeProvider({
     hostProfileSnapshot.profiles,
     connectionProviderSnapshot.providers,
     navigation,
+    threadManagement,
   ]);
   const viewContextValue = useMemo<ConversationViewRuntimeContextValue>(() => ({
     runtime,
@@ -1722,13 +1780,11 @@ export function useProjectCatalog(): ProjectCatalogSnapshot {
 }
 
 export interface ComposerCatalogSnapshot {
-  readonly agents: readonly AgentCatalogEntry[];
   readonly models: readonly Model[];
   readonly permissionProfiles: readonly PermissionProfileSummary[];
   readonly isFetching: boolean;
   readonly modelError: Error | null;
   readonly permissionProfileError: Error | null;
-  readonly agentError: Error | null;
   readonly onModelMenuOpen: () => void;
   readonly retryModels: () => void;
 }
@@ -1779,9 +1835,6 @@ export function useComposerCatalog(
     staleTime: 60_000,
   });
 
-  useEffect(() => runtime.resources.composerCatalog.subscribeAgentsChanged(() => {
-    void invalidateComposerCapabilities(queryClient, snapshot.hostId).catch(() => undefined);
-  }), [queryClient, snapshot.hostId, runtime]);
   useEffect(() => {
     if (permissionProfiles.hasNextPage && !permissionProfiles.isFetchingNextPage) {
       void permissionProfiles.fetchNextPage();
@@ -1798,11 +1851,9 @@ export function useComposerCatalog(
   );
 
   return {
-    agents: capabilities.data?.agents ?? [],
     models: capabilities.data?.models ?? [],
     permissionProfiles: permissionProfileData,
     isFetching: capabilities.isFetching || permissionProfiles.isFetching,
-    agentError: errorOrNull(capabilities.error),
     modelError: capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
     permissionProfileError: errorOrNull(permissionProfiles.error),
     ...catalogActions,

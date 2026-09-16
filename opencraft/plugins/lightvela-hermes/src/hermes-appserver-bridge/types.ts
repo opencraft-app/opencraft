@@ -86,6 +86,7 @@ export interface HermesModelCapabilities {
   fast?: boolean;
   reasoning?: boolean;
   can_disable_reasoning?: boolean;
+  supported_efforts?: string[];
 }
 
 export interface HermesModelProviderOption {
@@ -118,7 +119,7 @@ export interface AppServerModel {
     reasoningEffort: string;
     description: string;
   }>;
-  defaultReasoningEffort: string;
+  defaultReasoningEffort: string | null;
   inputModalities: Array<"text" | "image" | "audio">;
   supportsPersonality: boolean;
   multiAgentVersion: null;

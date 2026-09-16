@@ -32,3 +32,4 @@ export * from "./environment-directory";
 export * from "./authentication/contract";
 export * from "./authentication/authentication-service";
 export * from "./authentication/authentication-flow-service";
+export { ThreadTitleWriter, type ThreadIdentity, type ThreadTitlePort } from "./thread-title-writer";

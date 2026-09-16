@@ -65,8 +65,58 @@ function fixture() {
   const fork = new Promise<{ id: string }>(resolve => { resolveFork = resolve; });
   const lease = { threadId: "child", release: () => calls.push("release"), getSnapshot: () => ({ activeTurn: null, timeline: { frames: [] } }), submit: async (intent: unknown) => { calls.push(intent); return {}; } } as unknown as AppServerThreadRuntimeLease;
   const runtime = { resources: { threads: { fork: (params: unknown) => { calls.push(params); return fork; }, unsubscribe: async (id: string) => { calls.push(["unsubscribe", id]); } } }, acquireThread: async () => lease } as unknown as AppServerWorkbenchRuntime;
+  runtime.resources.threads.injectItems = async (id, items) => { calls.push(["inject", id, items]); };
   return { calls, runtime, resolveFork };
 }
+
+test("Side Chat retries failed cleanup without forgetting the owned child", async () => {
+  const f = fixture(); const ctx = new Context();
+  let attempts = 0;
+  f.runtime.resources.threads.unsubscribe = async () => {
+    if (++attempts === 1) throw new Error("cleanup unavailable");
+  };
+  const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
+  const pending = ctx.sideChats.open("retry-close", createConversationKey("local", "parent"), null);
+  f.resolveFork({ id: "child" }); await pending;
+  await assert.rejects(ctx.sideChats.close("retry-close"), /cleanup unavailable/);
+  await ctx.sideChats.close("retry-close");
+  assert.equal(attempts, 2);
+  await fiber.dispose();
+});
+
+test("Side Chat preserves hydration failure and retains cleanup for retry", async () => {
+  const f = fixture(); const ctx = new Context(); let attempts = 0;
+  const original = new Error("history hydration failed");
+  f.runtime.acquireThread = async () => { throw original; };
+  f.runtime.resources.threads.unsubscribe = async () => { if (++attempts === 1) throw new Error("cleanup unavailable"); };
+  const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
+  const pending = ctx.sideChats.open("hydrate-error", createConversationKey("local", "parent"), null);
+  f.resolveFork({ id: "child" });
+  await assert.rejects(pending, error => error === original);
+  await ctx.sideChats.close("hydrate-error");
+  assert.equal(attempts, 2);
+  await fiber.dispose();
+});
+test("Side Chat commits a canonical inherited-history boundary before acquiring its view", async () => {
+  const f = fixture(); const ctx = new Context();
+  const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
+  const pending = ctx.sideChats.open("boundary", createConversationKey("local", "parent"), null);
+  f.resolveFork({ id: "child" }); await pending;
+  const injected = f.calls.find(call => Array.isArray(call) && call[0] === "inject") as any[];
+  assert.equal(injected?.[1], "child");
+  assert.match(injected?.[2][0].content[0].text, /Side conversation boundary/);
+  await fiber.dispose();
+});
+test("Side Chat still unsubscribes when interrupt reports an already unavailable execution", async () => {
+  const f = fixture(), ctx = new Context();
+  f.runtime.acquireThread = async () => ({ getSnapshot: () => ({ activeTurn: { turnId: "gone" } }),
+    interrupt: async () => { throw new Error("execution disconnected"); }, release: () => f.calls.push("release") }) as unknown as AppServerThreadRuntimeLease;
+  const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
+  const pending = ctx.sideChats.open("disconnected-close", createConversationKey("local", "parent"), null); f.resolveFork({ id: "child" }); await pending;
+  await ctx.sideChats.close("disconnected-close");
+  assert.deepEqual(f.calls.at(-1), ["unsubscribe", "child"]);
+  assert.equal(ctx.sideChats.pendingCleanup().length, 0); await fiber.dispose();
+});
 
 test("WSP-07 side chat forks an ephemeral child on the parent's host and owns a separate draft", async () => {
   const f = fixture(); const ctx = new Context(); const hosts: string[] = [];

@@ -613,6 +613,15 @@ export function isHermesSessionNotFound(error: unknown): boolean {
     : /session not found/iu.test(error instanceof Error ? error.message : String(error));
 }
 
+export function isHermesHistoryNotMaterialized(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  // Hermes Dashboard versions disagree on transport status: some return 404,
+  // while others return HTTP 200 with a semantic error envelope. Desktop
+  // consumes the semantic failure, so the adapter must not key ownership to
+  // the incidental HTTP status.
+  return /(?:session|conversation) not found(?::|["'\s]|$)/iu.test(message);
+}
+
 export function hermesThreadMessageCount(thread: AppServerThread): number | null {
   const extra = record(thread.extra);
   const hermes = record(extra.hermes);
@@ -632,7 +641,8 @@ export function isUnmaterializedHermesHistory(
   thread: AppServerThread,
   error: unknown,
 ): boolean {
-  return hermesThreadMessageCount(thread) === 0 && isHermesSessionNotFound(error);
+  return hermesThreadMessageCount(thread) === 0
+    && (isHermesSessionNotFound(error) || isHermesHistoryNotMaterialized(error));
 }
 
 interface ThreadListParams {
@@ -651,6 +661,7 @@ interface ThreadStartOptions {
   title?: string;
   hidden?: boolean;
   followProfileConfig?: boolean;
+  reasoningEffort?: string;
 }
 
 interface HermesProjectionScheduler {
@@ -761,6 +772,8 @@ export class HermesAppServerAdapter {
   private readonly notificationListeners = new Set<(method: string, params: unknown) => void>();
   private readonly serverRequestListeners = new Set<(request: HermesAppServerInteractionRequest) => void>();
   private readonly pendingClarifyByRequest = new Map<string, PendingClarifyOwnership>();
+  /** Concurrent agent/list and model/list share one ephemeral model.options snapshot. */
+  private readonly modelCatalogReads = new Map<string, Promise<ReturnType<typeof mapHermesModelOptions>>>();
   /** `running=false` means waiting-for-input while this barrier exists, not Turn completion. */
   private readonly stopGatewayEvents: () => void;
   private readonly stopComposerQueue: () => void;
@@ -794,6 +807,7 @@ export class HermesAppServerAdapter {
     this.notificationListeners.clear();
     this.serverRequestListeners.clear();
     this.pendingClarifyByRequest.clear();
+    this.modelCatalogReads.clear();
     this.provisionalSummaryByStored.clear();
   }
 
@@ -928,9 +942,17 @@ export class HermesAppServerAdapter {
       historyPromise,
     ]);
     throwIfSignalAborted(signal);
-    const summary = list.sessions.find((row) => row.id === threadId) ?? {
+    const listedSummary = list.sessions.find((row) => row.id === threadId);
+    const summary = listedSummary === undefined ? {
       id: threadId, title: "New chat", preview: "", started_at: Date.now() / 1000,
       message_count: payload.message_count, source: "desktop", profile: profile ?? "default",
+    } : {
+      ...listedSummary,
+      // Resume is the existence and live-session authority. The catalog may
+      // expose the named session before its first Dashboard history row and
+      // can therefore omit/stale this projection. Preserve Resume's count so
+      // callers can distinguish a genuinely empty session from lost history.
+      message_count: payload.message_count,
     };
     this.profileByStored.set(threadId, summary.profile?.trim() || profile || "default");
     const turns = historyPage?.chronological ?? [];
@@ -1185,17 +1207,22 @@ export class HermesAppServerAdapter {
     const liveSessionId = threadId === null
       ? null
       : this.liveByStored.get(threadId) ?? threadId;
-    const payload = await this.gateway.call<HermesModelOptionsPayload>(
-      "model.options",
-      {
-        explicit_only: params.includeHidden !== true,
-        ...(liveSessionId === null ? {} : { session_id: liveSessionId }),
-        ...(profile === null ? {} : { profile }),
-      },
-    );
-    const all = mapHermesModelOptions(payload).filter(
-      (model) => params.includeHidden === true || !model.hidden,
-    );
+    const catalogKey = JSON.stringify([liveSessionId, profile, params.includeHidden === true]);
+    let catalogRead = this.modelCatalogReads.get(catalogKey);
+    if (catalogRead === undefined) {
+      catalogRead = this.gateway.call<HermesModelOptionsPayload>("model.options", {
+          explicit_only: params.includeHidden !== true,
+          ...(liveSessionId === null ? {} : { session_id: liveSessionId }),
+          ...(profile === null ? {} : { profile }),
+        }).then((payload) => mapHermesModelOptions(payload).filter(
+          (model) => params.includeHidden === true || !model.hidden,
+        ));
+      this.modelCatalogReads.set(catalogKey, catalogRead);
+      void catalogRead.finally(() => queueMicrotask(() => {
+        if (this.modelCatalogReads.get(catalogKey) === catalogRead) this.modelCatalogReads.delete(catalogKey);
+      })).catch(() => undefined);
+    }
+    const all = await catalogRead;
     const offset = typeof params.cursor === "string" && /^hermes-models:\d+$/u.test(params.cursor)
       ? Number(params.cursor.slice("hermes-models:".length))
       : 0;
@@ -1213,6 +1240,11 @@ export class HermesAppServerAdapter {
   executionModel(threadId: string): string {
     const info = this.payloadByStored.get(threadId)?.info;
     return modelSelectionFromExecution(info?.model, info?.provider);
+  }
+
+  executionReasoningEffort(threadId: string): string | null {
+    const value = this.payloadByStored.get(threadId)?.info?.reasoning_effort;
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
   }
 
   private cacheTurnItems(turn: AppServerTurn): void {
@@ -1243,7 +1275,12 @@ export class HermesAppServerAdapter {
       ...(options.followProfileConfig === undefined ? {} : { follow_profile_config: options.followProfileConfig }),
       ...(selection === null ? {} : { model: selection.model }),
       ...(selection?.provider == null ? {} : { provider: selection.provider }),
+      ...(options.reasoningEffort?.trim() ? { reasoning_effort: options.reasoningEffort.trim() } : {}),
     });
+    const requestedReasoningEffort = options.reasoningEffort?.trim();
+    if (requestedReasoningEffort && (typeof payload.info?.reasoning_effort !== "string" || payload.info.reasoning_effort.trim() === "")) {
+      payload.info = { ...payload.info, reasoning_effort: requestedReasoningEffort };
+    }
     const stored = payload.stored_session_id ?? payload.session_id;
     this.liveByStored.set(stored, payload.session_id);
     this.storedByLive.set(payload.session_id, stored);
@@ -1287,6 +1324,7 @@ export class HermesAppServerAdapter {
     requestedModel?: unknown,
     requestedProfile?: string | null,
     clientUserMessageId: string | null = null,
+    requestedEffort?: unknown,
   ): Promise<AppServerTurn> {
     const submission = await this.submitTurn(
       threadId,
@@ -1294,6 +1332,7 @@ export class HermesAppServerAdapter {
       requestedModel,
       requestedProfile,
       clientUserMessageId,
+      requestedEffort,
       false,
     );
     return submission.turn;
@@ -1317,6 +1356,7 @@ export class HermesAppServerAdapter {
       requestedModel,
       requestedProfile,
       clientUserMessageId,
+      undefined,
       true,
     );
   }
@@ -1327,6 +1367,7 @@ export class HermesAppServerAdapter {
     requestedModel: unknown,
     requestedProfile: string | null | undefined,
     clientUserMessageId: string | null,
+    requestedEffort: unknown,
     allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
     const parsed = await parseInput(input);
@@ -1339,6 +1380,7 @@ export class HermesAppServerAdapter {
         parsed,
         requestedModel,
         clientUserMessageId,
+        requestedEffort,
         allowWhileTurnUnsettled,
       );
     });
@@ -1350,6 +1392,7 @@ export class HermesAppServerAdapter {
     parsed: Awaited<ReturnType<typeof parseInput>>,
     requestedModel: unknown,
     clientUserMessageId: string | null,
+    requestedEffort: unknown,
     allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
     const previousOwner = this.activeByLive.get(live);
@@ -1362,7 +1405,7 @@ export class HermesAppServerAdapter {
     if (!allowWhileTurnUnsettled && hasUnsettledTurn) {
       throw new Error(`Hermes thread is already running: ${threadId}`);
     }
-    await this.applyModelSelection(threadId, live, requestedModel);
+    await this.applyModelSelection(threadId, live, requestedModel, requestedEffort);
     const turn: AppServerTurn = {
       id: `hermes-turn-${crypto.randomUUID()}`,
       items: [{
@@ -1574,6 +1617,7 @@ export class HermesAppServerAdapter {
         undefined,
         undefined,
         submission.clientUserMessageId,
+        undefined,
         true,
       )).turn;
       await this.composerQueue.remove(threadId, submission.id);
@@ -1698,15 +1742,27 @@ export class HermesAppServerAdapter {
       { include_sessions: true },
     );
     const profiles = Array.isArray(result.profiles) ? result.profiles : [];
+    const bindings = new Map<string, string>();
     for (const profile of profiles) {
       const name = profile.name.trim() || "default";
       for (const session of [profile.canonical_session, profile.last_session]) {
         if (typeof session?.id === "string" && session.id.trim() !== "") {
-          this.profileByStored.set(session.id, name);
+          const previous = bindings.get(session.id) ?? this.profileByStored.get(session.id);
+          if (previous !== undefined && previous !== name) throw new Error("Ambiguous Hermes session profile identity");
+          bindings.set(session.id, name);
         }
       }
     }
+    // Validate the complete index before publishing any hint. A shared stored
+    // ID cannot route cold recovery to whichever Profile happened to be last.
+    for (const [id, profile] of bindings) this.profileByStored.set(id, profile);
     return profiles;
+  }
+
+  /** Typed extension escape hatch for Hermes hosted-room RPCs. The Bot bridge
+   * owns the public AppServer projection; callers never receive this client. */
+  callHostedRoom<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    return this.gateway.call<T>(method, params);
   }
 
   createProfile(params: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1809,37 +1865,73 @@ export class HermesAppServerAdapter {
     storedId: string,
     liveId: string,
     requestedModel: unknown,
+    requestedEffort: unknown,
   ): Promise<void> {
     const selection = decodeHermesModelSelection(requestedModel);
-    if (selection === null) return;
     const current = this.payloadByStored.get(storedId)?.info;
     if (
-      current?.model === selection.model &&
-      (selection.provider === null || current.provider === selection.provider)
+      selection !== null &&
+      (current?.model !== selection.model ||
+        (selection.provider !== null && current.provider !== selection.provider))
     ) {
-      return;
+      const catalog = await this.listModels({
+        cursor: null,
+        limit: 200,
+        includeHidden: false,
+        threadId: storedId,
+      });
+      const requested = typeof requestedModel === "string" ? requestedModel.trim() : "";
+      const exact = catalog.data.some((model) => model.id === requested);
+      const modelMatches = catalog.data.filter(
+        (model) => decodeHermesModelSelection(model.id)?.model === selection.model,
+      );
+      if (!exact && modelMatches.length !== 1) {
+        // A stale foreign Host selection may be rebound only when one Hermes
+        // provider owns that model. Never forward the foreign provider id.
+        return;
+      }
+      const effectiveSelection = exact
+        ? selection
+        : decodeHermesModelSelection(modelMatches[0]!.id)!;
+      if (
+        current?.model !== effectiveSelection.model ||
+        (effectiveSelection.provider !== null && current.provider !== effectiveSelection.provider)
+      ) {
+        const result = await this.gateway.call<{
+          value?: string;
+          confirm_required?: boolean;
+          confirm_message?: string;
+        }>("config.set", {
+          session_id: liveId,
+          key: "model",
+          value: hermesModelSwitchArgument(effectiveSelection),
+          // Selecting a concrete row in OpenCraft is already explicit consent.
+          confirm_expensive_model: true,
+        });
+        if (result.confirm_required === true) {
+          throw new Error(result.confirm_message || "Hermes requires confirmation for this model");
+        }
+        const payload = this.payloadByStored.get(storedId);
+        if (payload !== undefined) {
+          payload.info = {
+            ...payload.info,
+            model: result.value?.trim() || effectiveSelection.model,
+            ...(effectiveSelection.provider === null ? {} : { provider: effectiveSelection.provider }),
+          };
+        }
+      }
     }
-    const result = await this.gateway.call<{
-      value?: string;
-      confirm_required?: boolean;
-      confirm_message?: string;
-    }>("config.set", {
+
+    const effort = typeof requestedEffort === "string" ? requestedEffort.trim() : "";
+    if (effort === "" || this.executionReasoningEffort(storedId) === effort) return;
+    const result = await this.gateway.call<{ value?: string }>("config.set", {
       session_id: liveId,
-      key: "model",
-      value: hermesModelSwitchArgument(selection),
-      // Selecting a concrete row in OpenCraft is already an explicit user action.
-      confirm_expensive_model: true,
+      key: "reasoning",
+      value: effort,
     });
-    if (result.confirm_required === true) {
-      throw new Error(result.confirm_message || "Hermes requires confirmation for this model");
-    }
     const payload = this.payloadByStored.get(storedId);
     if (payload !== undefined) {
-      payload.info = {
-        ...payload.info,
-        model: result.value?.trim() || selection.model,
-        ...(selection.provider === null ? {} : { provider: selection.provider }),
-      };
+      payload.info = { ...payload.info, reasoning_effort: result.value?.trim() || effort };
     }
   }
 
