@@ -314,4 +314,59 @@ describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
       expect(result.current.state.status).toBe("delivered");
     });
   });
+
+  it("checkDeliveryOnce 单查命中即切 delivered（对齐套餐手动刷新的单查语义）", async () => {
+    const onDelivered = vi.fn();
+    listCreditPackages.mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useCreditCheckout({ onDelivered }));
+    await result.current.start("credit_1000");
+
+    listCreditPackages.mockResolvedValue([pack(1000, "2026-10-10T00:00:00Z")]);
+    const delivered = await result.current.checkDeliveryOnce();
+
+    expect(delivered).toBe(true);
+    /* setState 在 await 之后提交，需 waitFor 等待 React 落定 */
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("delivered");
+    });
+    expect(onDelivered).toHaveBeenCalledTimes(1);
+  });
+
+  it("checkDeliveryOnce 未到账返回 false 且不改状态（自动轮询继续由调用方决定）", async () => {
+    const existing = pack(1000, "2026-10-10T00:00:00Z");
+    listCreditPackages.mockResolvedValueOnce([existing]);
+    const { result } = renderHook(() => useCreditCheckout());
+    await result.current.start("credit_1000");
+
+    listCreditPackages.mockResolvedValue([existing]);
+    const delivered = await result.current.checkDeliveryOnce();
+
+    expect(delivered).toBe(false);
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("payment_pending");
+    });
+  });
+
+  it("confirmDelivery 防重入：轮询进行中重复调用直接返回不并发", async () => {
+    listCreditPackages.mockResolvedValue([]);
+    const { result } = renderHook(() => useCreditCheckout({ pollIntervalMs: 10, pollTimeoutMs: 200 }));
+    await result.current.start("credit_1000");
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("payment_pending");
+    });
+
+    /* 第一次进入轮询循环（不 await，让它在后台跑） */
+    const first = result.current.confirmDelivery();
+    /* 立即重入：应被防重入挡住，不产生第二次查询请求 */
+    await result.current.confirmDelivery();
+
+    /* 第一次只发起了一轮查询（重入未叠加请求），且状态未变。
+       setState 在 await 之后提交，需 waitFor 等待 React 落定。 */
+    await waitFor(() => {
+      expect(listCreditPackages).toHaveBeenCalledTimes(2); /* start 快照 1 次 + 轮询首查 1 次 */
+    });
+    expect(result.current.state.status).toBe("payment_pending");
+
+    await first;
+  });
 });

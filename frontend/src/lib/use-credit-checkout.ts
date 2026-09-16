@@ -37,7 +37,9 @@ export type CheckoutStatus =
   | "delivered"
   /** 下单或获取支付链接失败 */
   | "failed"
-  /** 超过约定时间仍未到账 */
+  /** 到账轮询超时。注意：轮询只观察「积分包是否出现」，无法区分「用户未支付」
+      与「已支付但未到账」——这是中性等待态而非错误态，UI 不得按支付失败渲染
+      （对齐套餐续费 renew-pass-modal 的超时静默口径）。 */
   | "delivery_exception";
 
 export type CheckoutState = {
@@ -79,8 +81,17 @@ export type UseCreditCheckoutResult = {
    * 国际站：创建订单 → order-url 拿 pay_url 直跳（need_charge=0 时跳过跳转）。
    */
   start: (productId: string) => Promise<void>;
-  /** 从支付页返回后调用：开始轮询确认积分是否到账。 */
+  /**
+   * 从支付页返回后调用：开始轮询确认积分是否到账。
+   * 已有轮询在跑时直接返回（防重入，对齐套餐 renew-pass-modal 的
+   * paymentCheckInFlightRef）。
+   */
   confirmDelivery: () => Promise<void>;
+  /**
+   * 单次查询到账状态（对齐套餐手动「刷新」的语义：查一次立即返回，
+   * 不进入轮询循环）。返回是否已到账；未到账不改状态。
+   */
+  checkDeliveryOnce: () => Promise<boolean>;
   /** 重置状态，允许用户重新发起新订单。 */
   reset: () => void;
 };
@@ -111,6 +122,8 @@ export const useCreditCheckout = (options?: {
   const [payUrl, setPayUrl] = useState<string | null>(null);
   /** 购买前的积分包快照，用于到账对比 */
   const baselineRef = useRef<Set<string>>(new Set());
+  /** 轮询进行中标记：防止自动接棒与手动刷新并发（对齐套餐 paymentCheckInFlightRef） */
+  const confirmingRef = useRef(false);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
@@ -214,9 +227,31 @@ export const useCreditCheckout = (options?: {
     }
   }, []);
 
+  /* 单次到账判定：出现快照之外的新积分包即视为到账（近似判定，见文件头注释） */
+  const checkDeliveryOnce = useCallback(async (): Promise<boolean> => {
+    const credit = repositoriesRef.current?.credit;
+    if (!credit) return false;
+    try {
+      const items = await credit.listCreditPackages();
+      const appeared = items.some((item) => !baselineRef.current.has(creditPackageSourceId(item)));
+      if (appeared) {
+        setState((prev) => ({ ...prev, status: "delivered", error: null }));
+        optionsRef.current?.onDelivered?.();
+        return true;
+      }
+      return false;
+    } catch {
+      /* 查询失败不判定为交付异常（网络抖动），仅返回未到账 */
+      return false;
+    }
+  }, []);
+
   const confirmDelivery = useCallback(async () => {
     const credit = repositoriesRef.current?.credit;
     if (!credit) return;
+    /* 防重入：自动轮询接棒与手动刷新共用，已在跑则直接返回 */
+    if (confirmingRef.current) return;
+    confirmingRef.current = true;
 
     /* 启动时**不修改 status**：保持当前 payment_pending，让国内站二维码持续可见、
        国际站「已在新窗口打开」状态保持；轮询命中再切 delivered，超时切 delivery_exception。
@@ -225,33 +260,27 @@ export const useCreditCheckout = (options?: {
 
     const intervalMs = optionsRef.current?.pollIntervalMs ?? DELIVERY_POLL_INTERVAL_MS;
     const timeoutMs = optionsRef.current?.pollTimeoutMs ?? DELIVERY_POLL_TIMEOUT_MS;
-    const baseline = baselineRef.current;
     const startedAt = Date.now();
     /* 至少尝试一次；之后按耗时判断是否继续，避免依赖 Date.now 与假定时器的耦合 */
     let attempts = 0;
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
 
-    while (attempts < maxAttempts) {
-      attempts += 1;
-      try {
-        const items = await credit.listCreditPackages();
-        const appeared = items.some((item) => !baseline.has(creditPackageSourceId(item)));
-        if (appeared) {
-          setState((prev) => ({ ...prev, status: "delivered", error: null }));
-          optionsRef.current?.onDelivered?.();
-          return;
-        }
-      } catch {
-        /* 单次查询失败不终止轮询：网络抖动不应判定为交付异常 */
+    try {
+      while (attempts < maxAttempts) {
+        attempts += 1;
+        const appeared = await checkDeliveryOnce();
+        if (appeared) return;
+        if (attempts >= maxAttempts) break;
+        if (Date.now() - startedAt >= timeoutMs) break;
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
-      if (attempts >= maxAttempts) break;
-      if (Date.now() - startedAt >= timeoutMs) break;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+      /* 超时：保留订单号，提供刷新与联系客服入口，不自动重下单 */
+      setState((prev) => ({ ...prev, status: "delivery_exception", error: null }));
+    } finally {
+      confirmingRef.current = false;
     }
+  }, [checkDeliveryOnce]);
 
-    /* 超时：保留订单号，提供刷新与联系客服入口，不自动重下单 */
-    setState((prev) => ({ ...prev, status: "delivery_exception", error: null }));
-  }, []);
-
-  return { state, bridgePlan, payUrl, start, confirmDelivery, reset };
+  return { state, bridgePlan, payUrl, start, confirmDelivery, checkDeliveryOnce, reset };
 };

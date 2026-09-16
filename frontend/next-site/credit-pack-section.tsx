@@ -178,26 +178,6 @@ export const CreditPackSection = ({
     }
   }, [gate, t]);
 
-  const handlePrimary = useCallback(() => {
-    if (gate === 'not-logged-in') {
-      onRequireLogin();
-      return;
-    }
-    if (gate === 'no-active-plan') {
-      onRequirePlan();
-      return;
-    }
-    if (gate === 'quote-failed' && selectedProductId) {
-      void loadQuote(selectedProductId);
-      return;
-    }
-    if (gate === 'purchasable') {
-      /* 打开订单确认弹窗：勾选虚拟商品条款后才可支付（产品方案 7.1） */
-      setTermsAccepted(false);
-      setModalOpen(true);
-    }
-  }, [gate, loadQuote, onRequireLogin, onRequirePlan, selectedProductId]);
-
   const primaryDisabled = gate === 'unselected';
 
   /* 支付回跳标记：order-url 的 return_url 会带上它，返回后触发到账确认 */
@@ -217,6 +197,32 @@ export const CreditPackSection = ({
     /* 到账后不自动关弹窗：弹窗内展示「购买成功」态，用户点「完成」关闭
        （对齐 pass 的 PaymentPendingModal 成功态） */
   });
+
+  const handlePrimary = useCallback(() => {
+    if (gate === 'not-logged-in') {
+      onRequireLogin();
+      return;
+    }
+    if (gate === 'no-active-plan') {
+      onRequirePlan();
+      return;
+    }
+    if (gate === 'quote-failed' && selectedProductId) {
+      void loadQuote(selectedProductId);
+      return;
+    }
+    if (gate === 'purchasable') {
+      /* 重开弹窗一律从条款确认阶段开始（对齐套餐续费：每次「确认续费」都
+         创建新订单）：用户点「暂不处理」关闭弹窗即结束本轮，再点购买按钮
+         重新走确认支付生成新订单——不复用上一单的支付码与等待态。 */
+      if (checkout.state.status !== 'idle' && checkout.state.status !== 'creating') {
+        checkout.reset();
+      }
+      /* 打开订单确认弹窗：勾选虚拟商品条款后才可支付（产品方案 7.1） */
+      setTermsAccepted(false);
+      setModalOpen(true);
+    }
+  }, [checkout, gate, loadQuote, onRequireLogin, onRequirePlan, selectedProductId]);
 
   /* 到账轮询统一启动：payment_pending（扫码 / 新窗口支付）或 delivery_pending
      （need_charge=0 零元单）即开始，超时进 delivery_exception 后可手动重查，
@@ -239,6 +245,26 @@ export const CreditPackSection = ({
       window.open(checkout.payUrl, '_blank', 'noopener,noreferrer');
     }
   }, [checkout.payUrl]);
+
+  /* 手动刷新到账状态（对齐套餐 renew-pass-modal 的 checkRenewalStatus 单查语义）：
+     单次查询立即返回；未到账时弹窗内提示「暂未确认支付结果，请稍后刷新。」。
+     轮询超时后的刷新也走这里——checkDeliveryOnce 命中即切 delivered。 */
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [recheckPendingNotice, setRecheckPendingNotice] = useState(false);
+  const handleManualRecheck = useCallback(async () => {
+    if (checkingPayment) return;
+    setCheckingPayment(true);
+    setRecheckPendingNotice(false);
+    try {
+      const delivered = await checkout.checkDeliveryOnce();
+      if (!delivered) {
+        /* 未到账不改状态：payment_pending 保持（自动轮询继续），仅提示 */
+        setRecheckPendingNotice(true);
+      }
+    } finally {
+      setCheckingPayment(false);
+    }
+  }, [checkingPayment, checkout.checkDeliveryOnce]);
 
   /* 从支付页返回（credit_pay=return）时自动进入交付确认 */
   useEffect(() => {
@@ -271,15 +297,30 @@ export const CreditPackSection = ({
       case 'delivered':
         return t('购买成功，积分已到账。');
       case 'delivery_exception':
-        return t('支付已完成但积分尚未到账，请稍后刷新；如有疑问请联系客服并提供订单号：{{deal}}', {
-          deal: checkout.state.dealName ?? '',
-        });
+        /* 轮询超时无法区分「未支付」与「已支付未到账」，文案必须中性——
+           与套餐续费（renew-pass-modal）的字面口径一致，不预设用户已支付；
+           订单号由弹窗内的订单号行统一展示（客服排查入口）。 */
+        return t('暂未确认支付结果，请稍后刷新。');
       case 'failed':
         return t('下单失败：{{reason}}', { reason: checkout.state.error ?? '' });
       default:
         return null;
     }
   }, [checkout.state, t]);
+
+  /* 二维码过期校验：bridgePlan.expiresAt 由 buildPayPlan 写入（now + 9 分钟，
+     比后端 auth_code TTL 10 分钟短 1 分钟 buffer）。中转页（wechat-pay-page）
+     在扫码侧校验过期；PC 弹窗侧这里兜底——payment_pending 保留态下用户隔了
+     TTL 再开弹窗，不应继续渲染已失效的二维码（扫码只会得到过期提示）。
+     弹窗打开且有二维码期间每秒 tick 驱动过期翻转。 */
+  const [qrNow, setQrNow] = useState(() => Date.now());
+  const bridgePlanVisible = modalOpen && checkout.bridgePlan;
+  useEffect(() => {
+    if (!bridgePlanVisible) return;
+    const timer = window.setInterval(() => setQrNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [bridgePlanVisible]);
+  const qrExpired = checkout.bridgePlan != null && qrNow >= checkout.bridgePlan.expiresAt;
 
   /* 确认弹窗内点「确认支付」 */
   const handleConfirmPay = useCallback(() => {
@@ -359,18 +400,8 @@ export const CreditPackSection = ({
         >
           {primaryLabel}
         </button>
-        {/* 支付进度状态行：弹窗关闭后仍可见（二维码与操作按钮都在弹窗内，
-            对齐 pass 的 ConfirmOrderModal → PaymentPendingModal 流转） */}
-        {checkoutNotice ? (
-          <p
-            role="status"
-            data-testid="credit-pack-checkout-status"
-            className="text-sm"
-            style={{ color: checkout.state.status === 'delivered' ? '#15803d' : '#b45309' }}
-          >
-            {checkoutNotice}
-          </p>
-        ) : null}
+        {/* 支付进度只存在于弹窗内：页面按钮下方不挂任何状态提示行
+            （对齐套餐续费——关闭弹窗即回到干净页面，进度与操作都在弹窗里）。 */}
         {notice ? (
           <p role="status" className="text-sm" style={{ color: '#b45309' }}>
             {notice}
@@ -476,28 +507,72 @@ export const CreditPackSection = ({
                 </div>
               </>
             ) : (
-              /* ── 支付阶段：对齐 PaymentPendingModal 的形态 ── */
+              /* ── 支付阶段：对齐套餐 renew-pass-modal 的 PaymentPendingModal 形态 ── */
               <div className="flex flex-col items-center">
                 <h3 id="credit-pack-modal-title" className="text-lg font-semibold" style={{ color: '#333' }}>
                   {checkout.state.status === 'delivered'
                     ? t('购买成功')
-                    : checkout.state.status === 'failed' || checkout.state.status === 'delivery_exception'
+                    : checkout.state.status === 'failed'
                       ? t('支付遇到问题')
-                      : t('完成支付')}
+                      /* 进行中态标题常驻（对齐套餐：标题不随轮询状态切换，超时静默——
+                         只有成功/失败才切换标题，轮询超时不是错误） */
+                      : isGlobal
+                        ? t('信用卡支付')
+                        : t('微信扫码支付')}
                 </h3>
 
-                {/* 国内站：微信扫码二维码（对齐 PaymentPendingModal 的 QRCodeSVG 用法） */}
-                {checkout.bridgePlan && checkout.state.status === 'payment_pending' ? (
-                  <div data-testid="credit-pack-wx-qr" className="mt-4">
-                    <QRCodeSVG value={checkout.bridgePlan.bridgeUrl} size={180} level="M" includeMargin={false} />
+                {/* 支付载体区（对齐套餐 renew-pass-modal 的二维码区形态）：
+                    国内站：微信扫码二维码 + 固定双行文案，超时（delivery_exception）
+                    仍保留——轮询 2 分钟 < authCode TTL 9 分钟，二维码本身未失效，
+                    用户只是慢了仍可扫码，不应剥夺支付入口；
+                    国际站：固定双行提示（托管页已在新窗口打开）。 */}
+                {checkout.state.status === 'payment_pending' || checkout.state.status === 'delivery_exception' ? (
+                  <div className="mt-4 flex flex-col items-center gap-2">
+                    {!isGlobal && checkout.bridgePlan && !qrExpired ? (
+                      <>
+                        <div data-testid="credit-pack-wx-qr">
+                          <QRCodeSVG value={checkout.bridgePlan.bridgeUrl} size={180} level="M" includeMargin={false} />
+                        </div>
+                        <p className="m-0 text-sm" style={{ color: '#333' }}>
+                          {t('请使用微信扫描二维码完成支付')}
+                        </p>
+                        <p className="m-0 text-xs" style={{ color: '#999' }}>
+                          {t('支付完成后页面会自动刷新。')}
+                        </p>
+                      </>
+                    ) : null}
+                    {!isGlobal && checkout.bridgePlan && qrExpired ? (
+                      /* 二维码过期是中性提示而非错误（对齐超时态口径）：不渲染已
+                         失效的二维码（扫码只会得到中转页的过期提示），引导重新下单。 */
+                      <p data-testid="credit-pack-qr-expired" className="m-0 py-6 text-sm" style={{ color: '#999' }}>
+                        {t('二维码已过期，请重新下单。')}
+                      </p>
+                    ) : null}
+                    {isGlobal ? (
+                      <>
+                        <p className="m-0 text-sm" style={{ color: '#333' }}>
+                          {t('已在新窗口打开信用卡支付页')}
+                        </p>
+                        <p className="m-0 text-xs" style={{ color: '#999' }}>
+                          {t('完成支付后点击下方刷新，或支付完成后页面会自动刷新。')}
+                        </p>
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
 
+                {/* 状态文案：进行中态由支付载体区的固定文案覆盖（对齐套餐），
+                    这里只渲染到账处理中 / 成功 / 失败 / 超时；订单号统一在此展示。 */}
                 <p
                   className="mt-3 text-center text-sm leading-relaxed"
+                  data-testid="credit-pack-modal-checkout-status"
                   style={{ color: checkout.state.status === 'delivered' ? '#15803d' : '#666' }}
                 >
-                  {checkoutNotice}
+                  {checkout.state.status === 'payment_pending' ? null : checkoutNotice}
+                  {checkout.state.status === 'payment_pending' && recheckPendingNotice ? (
+                    /* 手动刷新未到账提示（对齐套餐 checkRenewalStatus 的 pending 提示） */
+                    t('暂未确认支付结果，请稍后刷新。')
+                  ) : null}
                   {checkout.state.dealName && checkout.state.status !== 'delivered' ? (
                     <span className="mt-1 block text-xs" style={{ color: '#999' }}>
                       {t('订单号：{{deal}}', { deal: checkout.state.dealName })}
@@ -518,22 +593,28 @@ export const CreditPackSection = ({
                       {t('重新打开支付页面')}
                     </button>
                   ) : null}
-                  {/* 交付超时：手动重查 */}
-                  {checkout.state.status === 'delivery_exception' ? (
+                  {/* 手动刷新（对齐套餐 renew-pass-modal 的常驻「刷新」按钮）：
+                      支付等待与轮询超时阶段都可单次查询到账状态，未到账时提示
+                      「暂未确认支付结果，请稍后刷新。」；hook 内部防重入，
+                      自动轮询运行中点击不会并发。 */}
+                  {checkout.state.status === 'payment_pending' || checkout.state.status === 'delivery_exception' ? (
                     <button
                       type="button"
-                      onClick={() => void checkout.confirmDelivery()}
-                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
+                      onClick={() => void handleManualRecheck()}
+                      disabled={checkingPayment}
+                      data-testid="credit-pack-recheck"
+                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
                       style={{ background: '#4f46e5' }}
                     >
-                      {t('重新查询到账状态')}
+                      {checkingPayment ? t('刷新中...') : t('刷新')}
                     </button>
                   ) : null}
-                  {/* 失败：重新下单（reset 回确认阶段） */}
-                  {checkout.state.status === 'failed' ? (
+                  {/* 失败 / 二维码过期：重新下单（reset 回确认阶段，生成新订单新码） */}
+                  {checkout.state.status === 'failed' || qrExpired ? (
                     <button
                       type="button"
                       onClick={checkout.reset}
+                      data-testid="credit-pack-reorder"
                       className="rounded-lg px-4 py-2 text-sm font-semibold text-white"
                       style={{ background: '#4f46e5' }}
                     >

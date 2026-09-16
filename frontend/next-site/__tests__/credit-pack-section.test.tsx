@@ -223,7 +223,8 @@ describe("CreditPackSection", () => {
       expect(screen.getByTestId("credit-pack-wx-qr")).toBeInTheDocument();
     });
     expect(createCreditOrderUrl).not.toHaveBeenCalled();
-    expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("请使用微信扫码完成支付");
+    /* 二维码下方固定文案（对齐套餐） */
+    expect(screen.getByText("请使用微信扫描二维码完成支付")).toBeInTheDocument();
   });
 
   it("need_charge=1 时经占位窗口打开支付页（国际站，对齐 pass 的 startIntlCardPay）", async () => {
@@ -251,12 +252,11 @@ describe("CreditPackSection", () => {
     await waitFor(() => {
       expect(payWindowStub.location.href).toBe("https://pay.example/checkout");
     });
-    await waitFor(() => {
-      expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("已在新窗口打开支付页面");
-    });
+    /* 国际站固定文案（对齐套餐） */
+    expect(screen.getByText("已在新窗口打开信用卡支付页")).toBeInTheDocument();
   });
 
-  it("下单失败时展示失败原因", async () => {
+  it("下单失败时弹窗内展示失败原因，弹窗外不挂警告行", async () => {
     createCreditOrder.mockRejectedValue(new Error("余额渠道不可用"));
 
     renderSection();
@@ -267,8 +267,12 @@ describe("CreditPackSection", () => {
     await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("credit-pack-checkout-status")).toHaveTextContent("下单失败");
+      expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
     });
+    /* 失败原因在弹窗内展示（failed 与用户「暂不处理」的搁置语义一致：不再往页面挂警告） */
+    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("下单失败");
+    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("余额渠道不可用");
+    expect(screen.queryByTestId("credit-pack-checkout-status")).not.toBeInTheDocument();
   });
 
   it("金额按分转元展示（联调文档 §5 最小货币单位）", async () => {
