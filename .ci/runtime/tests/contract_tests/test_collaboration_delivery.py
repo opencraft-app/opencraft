@@ -86,6 +86,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(len(workflow["stages"]), 3)
         self.assertIn("check-in", workflow["stages"][1])
         text = workflow_path.read_text()
+        self.assertEqual(text.count("ci_ensure_go"), 2)
         for required in (
             "bootstrap-collaboration",
             "--apply",
