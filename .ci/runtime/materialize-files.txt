@@ -130,6 +130,7 @@
 .ci/runtime/harness_ci/hermes_image_env.py
 .ci/runtime/harness_ci/hermes_image_resolver.py
 .ci/runtime/harness_ci/hermes_tat_regions.py
+.ci/runtime/harness_ci/kubernetes_namespace.py
 .ci/runtime/harness_ci/prod_envs.py
 .ci/runtime/harness_ci/prod_db_migration.py
 .ci/runtime/harness_ci/secrets.py

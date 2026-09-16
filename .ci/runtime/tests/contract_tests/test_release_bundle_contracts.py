@@ -1136,6 +1136,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(env=env):
                 require_build_metadata(load_bundle(manifest, "credit", env))
 
+    def test_credit_db_contract_is_self_contained_for_first_production_release(self) -> None:
+        manifest = load_manifest(REPO_ROOT / ".ci/runtime/release-bundles.manifest")
+        contract = load_bundle(manifest, "credit", "shprod").db_contract
+        verifier = contract["verifier"]
+
+        self.assertEqual(contract["db_job_secret_resolver"], "credit_db_password")
+        self.assertEqual(
+            contract["secret_resolvers"]["credit_db_password"]["yaml_path"],
+            "stringData.CREDIT_DB_PASSWORD",
+        )
+        self.assertEqual(
+            verifier["service_platform_env_file"],
+            "argocd/services/credit/{env}/credit-platform.env",
+        )
+        self.assertEqual(verifier["static_env"]["CREDIT_DB"], "credit")
+        self.assertEqual(verifier["static_env"]["CREDIT_DB_USER"], "credit")
+        self.assertEqual(verifier["env_from_service_platform"]["MYSQL_HOST"], "CREDIT_MYSQL_HOST")
+        self.assertEqual(verifier["env_from_secret_resolver"]["CREDIT_DB_PASSWORD"], "credit_db_password")
+        self.assertNotIn("configmap", verifier)
+        self.assertNotIn("secret", verifier)
+
     def test_credit_pipeline_builds_beijing_and_production_matrix(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/credit.yml").read_text()) or {}
 

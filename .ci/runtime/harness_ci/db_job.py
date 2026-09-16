@@ -29,6 +29,7 @@ from contracts.bundles import (
     load_manifest,
     playground_catalog_root,
 )
+from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -97,10 +98,9 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
     ("credit", "migration"): {
         "namespace": "credit",
         "deployment": "credit",
-        "configmap": "credit-config",
-        "secret": "credit-runtime-secrets",
         "platform_env_file": "argocd/services/credit/{env}/credit-platform.env",
         "image_env_key": "CREDIT_IMAGE",
+        "dynamic_builder": "credit",
         "command": [
             "/bin/sh",
             "-ec",
@@ -630,6 +630,56 @@ def build_ctl_dynamic_resources(
     return dynamic, [secret, migrations]
 
 
+def build_credit_dynamic_resources(
+    *,
+    job_name: str,
+    namespace: str,
+    env_name: str,
+    deploy_root: Path,
+    service_platform_env: dict[str, str],
+    db_contract: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    required_platform_keys = ("CREDIT_MYSQL_HOST", "CREDIT_MYSQL_PORT", "CREDIT_NODE_POOL")
+    missing = [key for key in required_platform_keys if not service_platform_env.get(key, "").strip()]
+    if missing:
+        raise ValueError(f"missing Credit DB job platform values: {', '.join(missing)}")
+
+    resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
+    if not resolver_name:
+        raise ValueError("credit db_contract.db_job_secret_resolver is required")
+    resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
+    password = resolved_secrets.get(resolver_name, "").strip()
+    if not password:
+        raise ValueError(f"missing Credit DB password from secret resolver {resolver_name}")
+
+    secret_name = f"{job_name}-secrets"
+    secret = build_secret_manifest(
+        namespace,
+        secret_name,
+        {"CREDIT_DB_PASSWORD": password},
+        labels={
+            "gitops.clawhub.dev/service": "credit",
+            "gitops.clawhub.dev/operation": "migration",
+            "gitops.clawhub.dev/managed-by": "run_gitops_db_job.py",
+        },
+    )
+    dynamic = {
+        "env": [
+            {"name": "MYSQL_HOST", "value": service_platform_env["CREDIT_MYSQL_HOST"].strip()},
+            {"name": "MYSQL_PORT", "value": service_platform_env["CREDIT_MYSQL_PORT"].strip()},
+            {"name": "CREDIT_DB", "value": "credit"},
+            {"name": "CREDIT_DB_USER", "value": "credit"},
+            {
+                "name": "CREDIT_DB_PASSWORD",
+                "valueFrom": secret_env_ref(secret_name, "CREDIT_DB_PASSWORD"),
+            },
+        ],
+        "nodeSelector": {"pool": service_platform_env["CREDIT_NODE_POOL"].strip()},
+        "secretValues": {"CREDIT_DB_PASSWORD": password},
+    }
+    return dynamic, [secret]
+
+
 def default_ctl_database(env_name: str) -> str:
     if re.fullmatch(r"sandbox-(bj|kr)-\d+", env_name):
         return f"ctl_{env_name.replace('-', '_')}"
@@ -854,6 +904,15 @@ def main() -> int:
                 db_contract,
                 kubeconfig,
             )
+        elif spec.get("dynamic_builder") == "credit":
+            dynamic, extra_resources = build_credit_dynamic_resources(
+                job_name=job_name,
+                namespace=spec["namespace"],
+                env_name=args.env,
+                deploy_root=deploy_root,
+                service_platform_env=service_platform_env,
+                db_contract=db_contract,
+            )
         manifest = build_job_manifest(
             args.service, args.operation, args.revision, requested_by, spec, image, job_name=job_name, dynamic=dynamic
         )
@@ -877,6 +936,15 @@ def main() -> int:
         }
 
         if args.apply:
+            apply_manifest(
+                kubeconfig,
+                build_bootstrap_namespace_manifest(
+                    str(spec["namespace"]),
+                    service=args.service,
+                    env=args.env,
+                ),
+                retries=args.kubectl_retries,
+            )
             apply_manifest(kubeconfig, apply_manifest_doc, retries=args.kubectl_retries)
             summary["status"] = "applied"
 

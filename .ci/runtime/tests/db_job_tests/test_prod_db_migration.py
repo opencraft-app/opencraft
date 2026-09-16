@@ -56,7 +56,7 @@ class ProdDbMigrationTests(unittest.TestCase):
             mock.patch.object(
                 prod_db_migration.db_contract_verifier,
                 "apply_manifest",
-            ),
+            ) as apply_manifest,
             mock.patch.object(
                 prod_db_migration.db_contract_verifier,
                 "wait_for_job",
@@ -88,6 +88,10 @@ class ProdDbMigrationTests(unittest.TestCase):
 
         expected_version.assert_called_once_with(source_dir, contract, "shprod")
         self.assertEqual(result["expected"], 27)
+        self.assertEqual(apply_manifest.call_count, 2)
+        namespace_manifest = apply_manifest.call_args_list[0].args[1]
+        self.assertEqual(namespace_manifest["kind"], "Namespace")
+        self.assertEqual(namespace_manifest["metadata"]["name"], "ctl")
 
     def test_maps_user_auth_bundle_to_lightclaw_auth_db_job_service(self) -> None:
         self.assertEqual(prod_db_migration.map_service("user-auth"), ("user-auth", "lightclaw-auth"))
@@ -96,6 +100,10 @@ class ProdDbMigrationTests(unittest.TestCase):
     def test_trade_uses_its_registered_migration_job_runner(self) -> None:
         self.assertIn("trade", prod_db_migration.SUPPORTED_SERVICES)
         self.assertEqual(prod_db_migration.map_service("trade"), ("trade", "trade"))
+
+    def test_credit_uses_its_registered_migration_job_runner(self) -> None:
+        self.assertIn("credit", prod_db_migration.SUPPORTED_SERVICES)
+        self.assertEqual(prod_db_migration.map_service("credit"), ("credit", "credit"))
 
     def test_rejects_unknown_service(self) -> None:
         with self.assertRaisesRegex(ValueError, "SERVICE must be one of"):
