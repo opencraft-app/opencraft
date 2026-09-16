@@ -2071,6 +2071,23 @@ describe("terminal cron card visibility", () => {
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
   });
 
+  it("shows task templates only on the current-tasks tab", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([]);
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    const templatesTitle = localizedText("任务模板", "Task templates");
+    expect(await screen.findByRole("heading", { name: templatesTitle })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("已结束任务", "Ended Tasks") }));
+    expect(screen.queryByRole("heading", { name: templatesTitle })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("最近执行", "Recent Runs") }));
+    expect(screen.queryByRole("heading", { name: templatesTitle })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: localizedText("当前任务", "Current Tasks") }));
+    expect(screen.getByRole("heading", { name: templatesTitle })).toBeTruthy();
+  });
+
   // 已结束任务的卡片只保留只读动作：测试运行会真的执行一次并往 IM 发消息，编辑/暂停/恢复
   // 都是改调度，对已经终态的任务都没有意义。这里把三个门控和两个保留项一次钉死，避免后续
   // 只改其中一个导致「能试跑却不能编辑」这种半截状态。
@@ -2128,7 +2145,7 @@ describe("terminal cron card visibility", () => {
     expect(screen.getByRole("button", { name: "当前任务" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("returns to active jobs after creating from a template on the ended-jobs tab", async () => {
+  it("returns to active jobs after creating from a template", async () => {
     const ended = makeCronJob({ id: "ended", name: "旧任务", state: "completed" });
     const created = makeCronJob({ id: "created", name: "模板新任务", state: "scheduled" });
     cronClientMocks.listCronJobs
@@ -2136,7 +2153,7 @@ describe("terminal cron card visibility", () => {
       .mockResolvedValue([created]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "已结束任务" }));
+    await screen.findByRole("heading", { name: localizedText("任务模板", "Task templates") });
     fireEvent.click(screen.getByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") }));
     const submitButton = within(screen.getByRole("dialog")).getByRole("button", { name: "新建" });
     await waitFor(() => {
@@ -2954,9 +2971,9 @@ describe("once execution time picker", () => {
     const runTime = localizedText("执行时间", "Run time");
     fireEvent.click(screen.getByRole("button", { name: localizedText("周期", "Recurring") }));
     const recurringPeriod = screen.getByRole("button", { name: localizedText("每天", "Daily") });
-    const recurringTime = screen.getByRole("button", { name: runTime });
+    const recurringTime = screen.getByRole("group", { name: `${runTime} 1` });
     expect(recurringPeriod).toHaveClass("h-9");
-    expect(recurringTime.parentElement).toHaveClass("h-9");
+    expect(recurringTime).toHaveClass("h-9");
 
     fireEvent.click(screen.getByRole("button", { name: localizedText("按间隔", "Interval") }));
     expect(screen.getByRole("spinbutton")).toHaveClass("h-9");
@@ -2964,6 +2981,29 @@ describe("once execution time picker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: localizedText("单次", "One-time") }));
     expect(screen.getByRole("group", { name: runTime })).toHaveClass("h-9");
+  });
+
+  it("matches the one-time control with typed recurring time segments and a clock picker", () => {
+    renderAutomationForm();
+
+    const runTime = localizedText("执行时间", "Run time");
+    fireEvent.click(screen.getByRole("button", { name: localizedText("周期", "Recurring") }));
+    const group = screen.getByRole("group", { name: `${runTime} 1` });
+    const hourInput = within(group).getByRole("textbox", { name: `${runTime} 1 HH` });
+    const minuteInput = within(group).getByRole("textbox", { name: `${runTime} 1 mm` });
+    fireEvent.change(hourInput, { target: { value: "14" } });
+    fireEvent.change(minuteInput, { target: { value: "45" } });
+    expect(hourInput).toHaveValue("14");
+    expect(minuteInput).toHaveValue("45");
+
+    fireEvent.click(within(group).getByRole("button", { name: `${localizedText("选择", "Select")} ${runTime} 1` }));
+    const picker = screen.getByRole("dialog", { name: `${runTime} 1` });
+    expect(picker).toHaveClass("w-[144px]");
+    expect(within(picker).queryByRole("button", { name: localizedText("取消", "Cancel") })).toBeNull();
+    const hourListbox = within(picker).getByRole("listbox", { name: localizedText("小时", "hours") });
+    const minuteListbox = within(picker).getByRole("listbox", { name: localizedText("分钟", "minutes") });
+    expect(within(hourListbox).getByRole("option", { selected: true })).toHaveTextContent("14");
+    expect(within(minuteListbox).getByRole("option", { selected: true })).toHaveTextContent("45");
   });
 
   it("edits and commits each date-time segment independently on group blur", async () => {
@@ -3067,8 +3107,10 @@ describe("once execution time picker", () => {
     const hourListbox = within(picker).getByRole("listbox", { name: hour });
     const originalHour = within(hourListbox).getByRole("option", { selected: true }).textContent ?? "";
     const changedHour = originalHour === "23" ? "22" : "23";
+    expect(within(picker).queryByRole("button", { name: localizedText("取消", "Cancel") })).toBeNull();
+    expect(hourListbox).toHaveClass("[scrollbar-width:none]", "[&::-webkit-scrollbar]:hidden");
     fireEvent.click(within(hourListbox).getByRole("option", { name: changedHour }));
-    fireEvent.click(within(picker).getByRole("button", { name: localizedText("取消", "Cancel") }));
+    fireEvent.keyDown(picker, { key: "Escape" });
 
     expect(hourInput).toHaveValue(originalValue);
 
@@ -3316,7 +3358,8 @@ describe("zero-token automation form", () => {
     });
     expect(agentTaskButton).toHaveClass("border-blue-300", "bg-blue-50");
     expect(agentTaskButton.parentElement).toHaveClass("items-stretch");
-    expect(agentTaskButton).toHaveClass("flex", "min-h-24", "flex-col", "justify-start");
+    expect(agentTaskButton).toHaveClass("flex", "flex-col", "justify-start");
+    expect(agentTaskButton).not.toHaveClass("min-h-24");
     expect(screen.getByText(localizedText(
       "由 AI 理解你的需求并自动完成任务",
       "AI understands your needs and completes tasks automatically",
@@ -3351,8 +3394,8 @@ describe("zero-token automation form", () => {
 
     if (!dialogContent) throw new Error("Expected create-task dialog content");
 
-    expect(notificationTaskButton).toHaveClass("min-h-24");
-    expect(scriptTaskButton).toHaveClass("min-h-24");
+    expect(notificationTaskButton).not.toHaveClass("min-h-24");
+    expect(scriptTaskButton).not.toHaveClass("min-h-24");
     expect(dialogContent).toHaveClass("flex", "flex-col");
     expect(dialogContent).toHaveClass("h-[720px]", "max-h-[calc(100dvh-32px)]");
     expect(dialogContent.parentElement).toHaveClass("items-center");
