@@ -187,7 +187,8 @@ master 源码
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
-- 腾讯 IM SDKAppID/管理员是普通平台值，SecretKey 只通过 protected credential 生成临时安全文件并
+- 北京 Collaboration 固定使用 `AgentNetwork` SDKAppID `1600137234`；SDKAppID/管理员是普通平台值，
+  SecretKey 只通过 protected credential 生成临时安全文件并
   写入 SSM/SOPS；不得从旧 Secret 手工复制到仓库或日志。Gateway 与产品 Web 仍是后续独立激活步骤。
 
 ## CloudLadder Gateway 回调环境
