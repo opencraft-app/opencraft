@@ -899,7 +899,7 @@ function createHermesHistoryHarness() {
           stored_session_id: "stored-1",
           message_count: 2,
           messages: [],
-          info: { cwd: "/workspace/projects/demo" },
+          info: { cwd: "/workspace/projects/demo", reasoning_effort: "high" },
         } as T;
       }
       if (method === "session.list") {
@@ -957,9 +957,11 @@ test("Hermes paginated resume exposes a cursor and hydrates stored history", asy
   }) as {
     thread: { turns: unknown[] };
     turnsBackwardsCursor: string | null;
+    reasoningEffort: string | null;
   };
   assert.deepEqual(resumed.thread.turns, []);
   assert.equal(resumed.turnsBackwardsCursor, "hermes-messages:0");
+  assert.equal(resumed.reasoningEffort, "high");
   assert.equal(harness.calls.some(({ method }) => method === "session.history"), false);
 
   const page = await dispatchAppServerRequest(harness.adapter, {
@@ -1456,6 +1458,37 @@ test("Hermes model.options is projected as a provider-safe AppServer catalog", a
   assert.deepEqual(calls, [{ method: "model.options", params: { explicit_only: true } }]);
 });
 
+test("Hermes reasoning capability distinguishes unsupported, optional, and mandatory thinking", async () => {
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "model.options") return {
+        model: "glm-5.3-flash", provider: "tokenhub", providers: [{
+          slug: "tokenhub", name: "TokenHub", authenticated: true,
+          models: ["plain", "optional", "glm-5.3-flash"],
+          capabilities: {
+            plain: { reasoning: false },
+            optional: { reasoning: true, can_disable_reasoning: true },
+            "glm-5.3-flash": { reasoning: true, can_disable_reasoning: false },
+          },
+        }],
+      } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const response = await dispatchAppServerRequest(adapter, { id: 1, method: "model/list", params: { includeHidden: false } }) as {
+    data: Array<{ displayName: string; supportedReasoningEfforts: Array<{ reasoningEffort: string }>; defaultReasoningEffort: string | null }>;
+  };
+  const byName = new Map(response.data.map((model) => [model.displayName, model]));
+  assert.deepEqual(byName.get("plain")?.supportedReasoningEfforts, []);
+  assert.equal(byName.get("plain")?.defaultReasoningEffort, null);
+  assert.deepEqual(byName.get("optional")?.supportedReasoningEfforts.map(({ reasoningEffort }) => reasoningEffort), ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+  assert.equal(byName.get("optional")?.defaultReasoningEffort, "medium");
+  assert.deepEqual(byName.get("glm-5.3-flash")?.supportedReasoningEfforts.map(({ reasoningEffort }) => reasoningEffort), ["low", "high", "max"]);
+  assert.equal(byName.get("glm-5.3-flash")?.defaultReasoningEffort, "high");
+});
+
 test("Hermes model catalog is scoped to the owning Thread profile and live session", async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const rpc: HermesRpcClient = {
@@ -1573,6 +1606,39 @@ test("Hermes model selection is decoded for session creation and live turn switc
   assert.equal(calls[2]?.method, "prompt.submit");
   assert.equal(calls[2]?.params.queued, true);
   assert.equal(adapter.executionModel(thread.id), next);
+});
+
+test("Hermes applies AppServer reasoning effort to new and existing sessions", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      const value = params as Record<string, unknown>;
+      calls.push({ method, params: value });
+      if (method === "session.create") return {
+        session_id: "live-reasoning", stored_session_id: "stored-reasoning", message_count: 0, messages: [],
+        info: { cwd: value.cwd, model: value.model, provider: value.provider },
+      } as T;
+      if (method === "config.set") return { value: value.value } as T;
+      if (method === "prompt.submit") return { status: "accepted" } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const model = encodeHermesModelSelection("tokenhub", "glm-5.3-flash");
+  const started = await dispatchAppServerRequest(adapter, { id: 1, method: "thread/start", params: { cwd: "/workspace", model, effort: "high" } }) as {
+    thread: { id: string }; reasoningEffort: string | null;
+  };
+  assert.equal(started.reasoningEffort, "high");
+  assert.deepEqual(calls[0], { method: "session.create", params: { cwd: "/workspace", source: "desktop", model: "glm-5.3-flash", provider: "tokenhub", reasoning_effort: "high" } });
+  await dispatchAppServerRequest(adapter, { id: 2, method: "turn/start", params: {
+    threadId: started.thread.id, input: [{ type: "text", text: "hello" }], model, effort: "low", clientUserMessageId: "reasoning-message",
+  } });
+  assert.deepEqual(calls.slice(1), [
+    { method: "config.set", params: { session_id: "live-reasoning", key: "reasoning", value: "low" } },
+    { method: "prompt.submit", params: { session_id: "live-reasoning", text: "hello", queued: true } },
+  ]);
+  assert.equal(adapter.executionReasoningEffort(started.thread.id), "low");
 });
 
 test("Hermes cold deep links recover their owning Profile before Resume", async () => {

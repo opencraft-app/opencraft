@@ -111,18 +111,6 @@ export interface ComposerModelOption {
   readonly efforts: readonly ComposerReasoningEffortOption[];
 }
 
-export interface ComposerAgentOption {
-  readonly id: string;
-  readonly label: string;
-  readonly description: string | null;
-  readonly engineKind: string;
-  readonly isDefault: boolean;
-  readonly defaultModel: string | null;
-  readonly modelIds: readonly string[];
-  readonly available: boolean;
-  readonly unavailableReason: string | null;
-}
-
 export interface ComposerPermissionOption {
   readonly id: string;
   readonly value: string;
@@ -132,7 +120,6 @@ export interface ComposerPermissionOption {
 }
 
 export interface ComposerSelectionCatalog {
-  readonly agents?: readonly ComposerAgentOption[];
   readonly models: readonly ComposerModelOption[];
   readonly permissionProfiles: readonly ComposerPermissionOption[];
   readonly isFetching?: boolean;
@@ -800,22 +787,7 @@ export const CodexComposer = forwardRef<
     controller.getSnapshot,
   );
   const attachments = composerSnapshot.draft.attachments;
-  const catalogAgents = selectionCatalog?.agents ?? [];
-  const catalogDefaultAgent =
-    catalogAgents.find((agent) => agent.isDefault) ?? catalogAgents[0] ?? null;
-  const selectedAgentId =
-    composerSnapshot.draft.selections.agentId ??
-    effectiveSelections?.agentId ??
-    catalogDefaultAgent?.id ??
-    null;
-  const selectedAgent = selectedAgentId === null
-    ? null
-    : (catalogAgents.find((agent) => agent.id === selectedAgentId) ?? null);
-  const allCatalogModels = selectionCatalog?.models ?? [];
-  const catalogModels = selectedAgent === null
-    ? allCatalogModels
-    : allCatalogModels.filter((model) =>
-        selectedAgent.modelIds.includes(model.id) || selectedAgent.modelIds.includes(model.value));
+  const catalogModels = selectionCatalog?.models ?? [];
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
   const catalogDefaultModel =
     catalogModels.find((model) => model.isDefault) ?? catalogModels[0] ?? null;
@@ -1560,20 +1532,6 @@ export const CodexComposer = forwardRef<
     setOpenPicker(null);
   };
 
-  const selectAgent = (agent: ComposerAgentOption) => {
-    if (!agent.available) return;
-    controller.dispatch({
-      type: "set-selections",
-      patch: {
-        agentId: agent.id,
-        model: agent.defaultModel ?? undefined,
-        effort: undefined,
-      },
-    });
-    refocusEditorAfterIntelligenceMenuRef.current = true;
-    setOpenPicker(null);
-  };
-
   const selectEffort = (effort: ComposerReasoningEffortOption) => {
     controller.dispatch({
       type: "set-selections",
@@ -1919,32 +1877,6 @@ export const CodexComposer = forwardRef<
                       onEscapeKeyDown={handleIntelligenceMenuEscape}
                     >
                       <div className="codex-composer-intelligence-view">
-                        {catalogAgents.length > 1 ? (
-                          <>
-                            <DropdownMenu.Label className="codex-composer-selection-menu__heading">
-                              Agent
-                            </DropdownMenu.Label>
-                            {catalogAgents.map((agent) => {
-                              const isSelected = agent.id === selectedAgentId;
-                              return (
-                                <DropdownMenu.Item
-                                  key={agent.id}
-                                  className="codex-composer-selection-menu__item"
-                                  data-selected={isSelected ? "true" : undefined}
-                                  disabled={!agent.available}
-                                  onSelect={() => selectAgent(agent)}
-                                >
-                                  <SelectionMenuItemContent
-                                    description={agent.unavailableReason ?? agent.description}
-                                    label={agent.label}
-                                    selected={isSelected}
-                                  />
-                                </DropdownMenu.Item>
-                              );
-                            })}
-                            <DropdownMenu.Separator className="codex-composer-selection-menu__separator" />
-                          </>
-                        ) : null}
                         <DropdownMenu.Label className="codex-composer-selection-menu__heading">
                           Model
                         </DropdownMenu.Label>

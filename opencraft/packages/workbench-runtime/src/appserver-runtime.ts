@@ -10,8 +10,6 @@ import type {
 import type {
   AppServerInitializeParams,
   AppServerInitializeResponse,
-  AgentListParams,
-  AgentListResponse,
   ModelListParams,
   ModelListResponse,
   PermissionProfileListParams,
@@ -32,11 +30,7 @@ import type {
   ThreadStartParams,
   ThreadForkParams,
 } from "@opencraft/appserver-protocol";
-import {
-  OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-  OPENCRAFT_AGENT_CATALOG_EXTENSION,
-  OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
-} from "@opencraft/appserver-protocol";
+import { OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability } from "@opencraft/composer-core";
 import type {
   DynamicToolSpec,
@@ -179,7 +173,6 @@ export interface AppServerThreadResourcePort {
 }
 
 export interface AppServerComposerCatalogResourcePort {
-  listAgents(params?: Partial<AgentListParams>): Promise<AgentListResponse>;
   listModels(params?: Partial<ModelListParams>): Promise<ModelListResponse>;
   listPermissionProfiles(
     params?: Partial<PermissionProfileListParams>,
@@ -189,7 +182,6 @@ export interface AppServerComposerCatalogResourcePort {
     options: FuzzyFileSearchSessionOptions,
   ): Promise<FuzzyFileSearchSession>;
   subscribeSkillsChanged(listener: () => void): () => void;
-  subscribeAgentsChanged(listener: () => void): () => void;
 }
 
 export interface AppServerProjectResourcePort {
@@ -319,9 +311,7 @@ const defaultInitialize: AppServerInitializeParams = {
   clientInfo: { name: "opencraft-workbench", version: "0.1.0" },
   capabilities: {
     experimentalApi: true,
-    extensions: {
-      [OPENCRAFT_AGENT_CATALOG_EXTENSION]: OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-    },
+    extensions: {},
   },
 };
 
@@ -1197,13 +1187,6 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       composerCatalog: {
-        async listAgents(params = {}) {
-          return requireClient().request("agent/list", {
-            cursor: null,
-            limit: 100,
-            ...params,
-          });
-        },
         async listModels(params = {}) {
           return requireClient().request("model/list", {
             cursor: null,
@@ -1237,11 +1220,6 @@ export function createAppServerWorkbenchRuntime(
         subscribeSkillsChanged(listener) {
           return requireClient().subscribeNotification((notification) => {
             if (notification.method === "skills/changed") listener();
-          });
-        },
-        subscribeAgentsChanged(listener) {
-          return requireClient().subscribeNotification((notification) => {
-            if (notification.method === "agent/catalog/updated") listener();
           });
         },
       },

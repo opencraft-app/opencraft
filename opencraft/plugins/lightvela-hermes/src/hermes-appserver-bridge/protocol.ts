@@ -229,7 +229,7 @@ export const dispatchAppServerRequest = async (
         model: adapter.executionModel(threadId),
         modelProvider: "hermes",
         serviceTier: null,
-        reasoningEffort: null,
+        reasoningEffort: adapter.executionReasoningEffort(threadId),
         approvalPolicy: "on-request",
         approvalsReviewer: "user",
         sandbox: {
@@ -285,6 +285,8 @@ export const dispatchAppServerRequest = async (
       const thread = await adapter.startThread(
         typeof value.cwd === "string" ? value.cwd : null,
         value.model,
+        undefined,
+        { reasoningEffort: typeof value.effort === "string" ? value.effort : undefined },
       );
       return {
         thread,
@@ -304,7 +306,7 @@ export const dispatchAppServerRequest = async (
           excludeSlashTmp: false,
         },
         activePermissionProfile: null,
-        reasoningEffort: null,
+        reasoningEffort: adapter.executionReasoningEffort(thread.id),
         multiAgentMode: "explicitRequestOnly",
       };
     }
@@ -318,6 +320,7 @@ export const dispatchAppServerRequest = async (
           typeof value.clientUserMessageId === "string"
             ? value.clientUserMessageId
             : null,
+          value.effort,
         ),
       };
     case "turn/steer":

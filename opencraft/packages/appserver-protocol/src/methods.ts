@@ -275,28 +275,6 @@ export type CommandExecResizeResponse = GeneratedCommandExecResizeResponse;
 export type CommandExecTerminateParams = GeneratedCommandExecTerminateParams;
 export type CommandExecTerminateResponse = GeneratedCommandExecTerminateResponse;
 
-export interface AgentCatalogEntry {
-  readonly id: string;
-  readonly displayName: string;
-  readonly description: string;
-  readonly engineKind: string;
-  readonly isDefault: boolean;
-  readonly defaultModel: string | null;
-  readonly modelIds: readonly string[];
-  readonly available: boolean;
-  readonly unavailableReason: string | null;
-}
-
-export interface AgentListParams {
-  readonly cursor?: string | null;
-  readonly limit?: number | null;
-}
-
-export interface AgentListResponse {
-  readonly data: readonly AgentCatalogEntry[];
-  readonly nextCursor: string | null;
-}
-
 export interface ThreadArchiveParams {
   threadId: string;
 }
@@ -374,10 +352,6 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
   "runtime/models/check": {
     params: import("./runtime-settings").RuntimeSavedModelCheckParams;
     result: import("./runtime-settings").RuntimeModelProbeResponse;
-  };
-  "agent/list": {
-    params: AgentListParams;
-    result: AgentListResponse;
   };
   initialize: {
     params: AppServerInitializeParams;

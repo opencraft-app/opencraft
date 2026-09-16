@@ -310,15 +310,7 @@ test("local Agent Host authenticates and projects DSH history into stable AppSer
       const models = await request(socket, 4, "model/list", { limit: 10 });
       assert.equal(models.data[0].displayName, "V4 Flash");
       assert.equal(models.data[0].isDefault, true);
-      const agents = await request(socket, 40, "agent/list", { limit: 10 });
-      assert.deepEqual(agents.data[0].modelIds, models.data.map((model: { id: string }) => model.id));
-      assert.equal(agents.data[0].modelIds.includes("dsh-model:custom%3Atest:hy4-preview"), true);
-      const selectable = models.data.filter((model: { id: string; model: string }) =>
-        agents.data[0].modelIds.includes(model.id) || agents.data[0].modelIds.includes(model.model));
-      assert.equal(selectable.length, 2, "Composer's agent filter must retain both providers");
-      assert.equal(selectable[1].displayName, "HY4 Preview");
       const firstPage = await request(socket, 41, "model/list", { limit: 1 });
-      assert.equal(agents.data[0].modelIds.length, 2, "agent capabilities must not be limited to a model page");
       assert.equal(firstPage.data.length, 1);
       const resumed = await request(socket, 3, "thread/resume", { threadId: "s1" });
       assert.equal(resumed.thread.turns.length, 1);

@@ -50,10 +50,7 @@ import type {
   Thread,
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
-  OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-  OPENCRAFT_AGENT_CATALOG_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
-  type AgentCatalogEntry,
   type CatalogModel as Model,
 } from "@opencraft/appserver-protocol";
 import {
@@ -1106,7 +1103,6 @@ export async function createWebWorkbenchApplicationSupervisor(
             experimentalApi: true,
             extensions: {
               [OPENCRAFT_BROWSER_EXTENSION]: OPENCRAFT_BROWSER_CAPABILITY,
-              [OPENCRAFT_AGENT_CATALOG_EXTENSION]: OPENCRAFT_AGENT_CATALOG_CAPABILITY,
             },
           },
         },
@@ -1722,13 +1718,11 @@ export function useProjectCatalog(): ProjectCatalogSnapshot {
 }
 
 export interface ComposerCatalogSnapshot {
-  readonly agents: readonly AgentCatalogEntry[];
   readonly models: readonly Model[];
   readonly permissionProfiles: readonly PermissionProfileSummary[];
   readonly isFetching: boolean;
   readonly modelError: Error | null;
   readonly permissionProfileError: Error | null;
-  readonly agentError: Error | null;
   readonly onModelMenuOpen: () => void;
   readonly retryModels: () => void;
 }
@@ -1779,9 +1773,6 @@ export function useComposerCatalog(
     staleTime: 60_000,
   });
 
-  useEffect(() => runtime.resources.composerCatalog.subscribeAgentsChanged(() => {
-    void invalidateComposerCapabilities(queryClient, snapshot.hostId).catch(() => undefined);
-  }), [queryClient, snapshot.hostId, runtime]);
   useEffect(() => {
     if (permissionProfiles.hasNextPage && !permissionProfiles.isFetchingNextPage) {
       void permissionProfiles.fetchNextPage();
@@ -1798,11 +1789,9 @@ export function useComposerCatalog(
   );
 
   return {
-    agents: capabilities.data?.agents ?? [],
     models: capabilities.data?.models ?? [],
     permissionProfiles: permissionProfileData,
     isFetching: capabilities.isFetching || permissionProfiles.isFetching,
-    agentError: errorOrNull(capabilities.error),
     modelError: capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
     permissionProfileError: errorOrNull(permissionProfiles.error),
     ...catalogActions,

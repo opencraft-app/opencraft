@@ -1050,11 +1050,6 @@ export class DshAppServerAdapter {
           },
         };
       }
-      case "agent/list": {
-        const catalog = await this.providers.models();
-        const modelIds = catalog.groups.flatMap(group => group.models.map(model => encodeModel(group.id, model.id)));
-        return page([{ id: "dsh", displayName: "DeepSeek Harness", description: "OpenCraft built-in coding agent", engineKind: "dsh", isDefault: true, defaultModel: null, modelIds, available: true }], value.cursor, value.limit);
-      }
       case "thread/list": {
         const all = (await this.summariesList()).filter((entry) => !entry.blank).map((entry) => makeThread(entry));
         const sorted = all.sort((left, right) => number(right.updatedAt) - number(left.updatedAt));

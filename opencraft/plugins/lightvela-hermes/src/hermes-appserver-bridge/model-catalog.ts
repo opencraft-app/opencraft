@@ -1,9 +1,55 @@
 import type {
   AppServerModel,
+  HermesModelCapabilities,
   HermesModelOptionsPayload,
 } from "./types";
 
 const MODEL_SELECTION_PREFIX = "hermes-model:";
+
+const HERMES_REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
+const HERMES_REASONING_VALUES = new Set<string>(["none", ...HERMES_REASONING_EFFORTS]);
+const HERMES_REASONING_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  none: "Disable reasoning for models that support it",
+  minimal: "Fastest responses with minimal reasoning",
+  low: "Faster responses with lighter reasoning",
+  medium: "Balanced reasoning and response time",
+  high: "More thorough reasoning for complex work",
+  xhigh: "Extra reasoning depth for difficult work",
+  max: "Maximum supported reasoning depth",
+  ultra: "Highest Hermes reasoning setting",
+};
+
+function modelReasoningEfforts(
+  model: string,
+  capabilities: { supported_efforts?: string[] } | undefined,
+): readonly string[] {
+  const declared = (capabilities?.supported_efforts ?? [])
+    .map((value) => value.trim().toLowerCase())
+    .filter((value, index, values) => HERMES_REASONING_VALUES.has(value) && values.indexOf(value) === index);
+  if (declared.length > 0) return declared;
+  const normalized = model.trim().toLowerCase().replace(/[^a-z0-9]+/gu, "-");
+  if (/(?:^|-)glm-5-3(?:-|$)/u.test(normalized)) return ["low", "high", "max"];
+  return HERMES_REASONING_EFFORTS;
+}
+
+function reasoningEfforts(
+  model: string,
+  capabilities: HermesModelCapabilities | undefined,
+): AppServerModel["supportedReasoningEfforts"] {
+  if (capabilities?.reasoning === false) return [];
+  const declared = modelReasoningEfforts(model, capabilities);
+  const enabled = capabilities?.can_disable_reasoning === false
+    ? declared.filter((value) => value !== "none")
+    : declared;
+  const values = [
+    ...(capabilities?.can_disable_reasoning === false || enabled.includes("none") ? [] : ["none"]),
+    ...enabled,
+  ];
+  return values.map((reasoningEffort) => ({
+    reasoningEffort,
+    description: HERMES_REASONING_DESCRIPTIONS[reasoningEffort] ?? "Hermes reasoning effort",
+  }));
+}
 
 export interface HermesModelSelection {
   readonly model: string;
@@ -82,6 +128,7 @@ export function mapHermesModelOptions(
       if (seen.has(selection)) continue;
       seen.add(selection);
       const capabilities = provider.capabilities?.[model];
+      const supportedReasoningEfforts = reasoningEfforts(model, capabilities);
       const duplicate = (occurrences.get(model) ?? 0) > 1;
       result.push({
         id: selection,
@@ -93,10 +140,13 @@ export function mapHermesModelOptions(
         description: provider.warning?.trim() || `Hermes via ${providerName}`,
         modelSpecialty: null,
         hidden: provider.authenticated === false,
-        // Hermes advertises whether reasoning exists, but deliberately does
-        // not publish a trustworthy effort enum. Do not fabricate one here.
-        supportedReasoningEfforts: [],
-        defaultReasoningEffort: capabilities?.reasoning === false ? "none" : "medium",
+        supportedReasoningEfforts,
+        defaultReasoningEffort: (() => {
+          const values = supportedReasoningEfforts.map(({ reasoningEffort }) => reasoningEffort);
+          if (values.length === 0) return null;
+          if (capabilities?.can_disable_reasoning === false) return values.includes("high") ? "high" : values[0]!;
+          return values.includes("medium") ? "medium" : values.find((value) => value !== "none") ?? values[0]!;
+        })(),
         inputModalities: ["text", "image"],
         supportsPersonality: false,
         multiAgentVersion: null,

@@ -651,6 +651,7 @@ interface ThreadStartOptions {
   title?: string;
   hidden?: boolean;
   followProfileConfig?: boolean;
+  reasoningEffort?: string;
 }
 
 interface HermesProjectionScheduler {
@@ -1215,6 +1216,11 @@ export class HermesAppServerAdapter {
     return modelSelectionFromExecution(info?.model, info?.provider);
   }
 
+  executionReasoningEffort(threadId: string): string | null {
+    const value = this.payloadByStored.get(threadId)?.info?.reasoning_effort;
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+  }
+
   private cacheTurnItems(turn: AppServerTurn): void {
     this.itemsByTurnId.set(turn.id, turn.items);
     const previous = this.itemCacheOrder.indexOf(turn.id);
@@ -1243,7 +1249,12 @@ export class HermesAppServerAdapter {
       ...(options.followProfileConfig === undefined ? {} : { follow_profile_config: options.followProfileConfig }),
       ...(selection === null ? {} : { model: selection.model }),
       ...(selection?.provider == null ? {} : { provider: selection.provider }),
+      ...(options.reasoningEffort?.trim() ? { reasoning_effort: options.reasoningEffort.trim() } : {}),
     });
+    const requestedReasoningEffort = options.reasoningEffort?.trim();
+    if (requestedReasoningEffort && (typeof payload.info?.reasoning_effort !== "string" || payload.info.reasoning_effort.trim() === "")) {
+      payload.info = { ...payload.info, reasoning_effort: requestedReasoningEffort };
+    }
     const stored = payload.stored_session_id ?? payload.session_id;
     this.liveByStored.set(stored, payload.session_id);
     this.storedByLive.set(payload.session_id, stored);
@@ -1287,6 +1298,7 @@ export class HermesAppServerAdapter {
     requestedModel?: unknown,
     requestedProfile?: string | null,
     clientUserMessageId: string | null = null,
+    requestedEffort?: unknown,
   ): Promise<AppServerTurn> {
     const submission = await this.submitTurn(
       threadId,
@@ -1294,6 +1306,7 @@ export class HermesAppServerAdapter {
       requestedModel,
       requestedProfile,
       clientUserMessageId,
+      requestedEffort,
       false,
     );
     return submission.turn;
@@ -1317,6 +1330,7 @@ export class HermesAppServerAdapter {
       requestedModel,
       requestedProfile,
       clientUserMessageId,
+      undefined,
       true,
     );
   }
@@ -1327,6 +1341,7 @@ export class HermesAppServerAdapter {
     requestedModel: unknown,
     requestedProfile: string | null | undefined,
     clientUserMessageId: string | null,
+    requestedEffort: unknown,
     allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
     const parsed = await parseInput(input);
@@ -1339,6 +1354,7 @@ export class HermesAppServerAdapter {
         parsed,
         requestedModel,
         clientUserMessageId,
+        requestedEffort,
         allowWhileTurnUnsettled,
       );
     });
@@ -1350,6 +1366,7 @@ export class HermesAppServerAdapter {
     parsed: Awaited<ReturnType<typeof parseInput>>,
     requestedModel: unknown,
     clientUserMessageId: string | null,
+    requestedEffort: unknown,
     allowWhileTurnUnsettled: boolean,
   ): Promise<HermesTurnSubmission> {
     const previousOwner = this.activeByLive.get(live);
@@ -1362,7 +1379,7 @@ export class HermesAppServerAdapter {
     if (!allowWhileTurnUnsettled && hasUnsettledTurn) {
       throw new Error(`Hermes thread is already running: ${threadId}`);
     }
-    await this.applyModelSelection(threadId, live, requestedModel);
+    await this.applyModelSelection(threadId, live, requestedModel, requestedEffort);
     const turn: AppServerTurn = {
       id: `hermes-turn-${crypto.randomUUID()}`,
       items: [{
@@ -1574,6 +1591,7 @@ export class HermesAppServerAdapter {
         undefined,
         undefined,
         submission.clientUserMessageId,
+        undefined,
         true,
       )).turn;
       await this.composerQueue.remove(threadId, submission.id);
@@ -1809,37 +1827,37 @@ export class HermesAppServerAdapter {
     storedId: string,
     liveId: string,
     requestedModel: unknown,
+    requestedEffort: unknown,
   ): Promise<void> {
     const selection = decodeHermesModelSelection(requestedModel);
-    if (selection === null) return;
     const current = this.payloadByStored.get(storedId)?.info;
-    if (
+    if (selection !== null && !(
       current?.model === selection.model &&
       (selection.provider === null || current.provider === selection.provider)
-    ) {
-      return;
+    )) {
+      const result = await this.gateway.call<{ value?: string; confirm_required?: boolean; confirm_message?: string }>("config.set", {
+        session_id: liveId,
+        key: "model",
+        value: hermesModelSwitchArgument(selection),
+        confirm_expensive_model: true,
+      });
+      if (result.confirm_required === true) throw new Error(result.confirm_message || "Hermes requires confirmation for this model");
+      const payload = this.payloadByStored.get(storedId);
+      if (payload !== undefined) {
+        payload.info = { ...payload.info, model: result.value?.trim() || selection.model, ...(selection.provider === null ? {} : { provider: selection.provider }) };
+      }
     }
-    const result = await this.gateway.call<{
-      value?: string;
-      confirm_required?: boolean;
-      confirm_message?: string;
-    }>("config.set", {
+
+    const effort = typeof requestedEffort === "string" ? requestedEffort.trim() : "";
+    if (effort === "" || this.executionReasoningEffort(storedId) === effort) return;
+    const result = await this.gateway.call<{ value?: string }>("config.set", {
       session_id: liveId,
-      key: "model",
-      value: hermesModelSwitchArgument(selection),
-      // Selecting a concrete row in OpenCraft is already an explicit user action.
-      confirm_expensive_model: true,
+      key: "reasoning",
+      value: effort,
     });
-    if (result.confirm_required === true) {
-      throw new Error(result.confirm_message || "Hermes requires confirmation for this model");
-    }
     const payload = this.payloadByStored.get(storedId);
     if (payload !== undefined) {
-      payload.info = {
-        ...payload.info,
-        model: result.value?.trim() || selection.model,
-        ...(selection.provider === null ? {} : { provider: selection.provider }),
-      };
+      payload.info = { ...payload.info, reasoning_effort: result.value?.trim() || effort };
     }
   }
 

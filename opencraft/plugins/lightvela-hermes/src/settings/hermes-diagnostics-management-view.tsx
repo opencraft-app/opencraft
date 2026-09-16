@@ -129,6 +129,9 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
           botName={botName}
           isMainBot
           execDebugCommand={(targetBotId, command) => account.execDebugCommand(targetBotId, command, { timeoutMs: 120_000 })}
+          execDebugCommandStream={(targetBotId, command, onChunk) =>
+            account.execDebugCommandStream(targetBotId, command, onChunk, { timeoutMs: 120_000 })
+          }
           resetConfigAction={{
             disabled: !runnable || resettingConfig || resettingAgent,
             loading: resettingConfig,

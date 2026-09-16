@@ -66,6 +66,13 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
 
 ## Package ownership
 
+Composer model discovery is a model-only catalog. Product Bot identity is
+owned by the Bot protocol and is not duplicated as a hidden Agent picker.
+Reasoning controls derive exclusively from each model's declared effort set:
+an empty set hides the control and `none` means disable only when explicitly
+declared. Hermes maps its Session-owned effort through the existing AppServer
+model/Turn fields; provider wire clamping remains inside Hermes Runtime.
+
 The Composer permissions menu contains only declared permission profiles, without
 an AppServer-default row or explanatory question. An absent or null draft choice
 inherits the runtime's effective profile for display only; rendering never writes

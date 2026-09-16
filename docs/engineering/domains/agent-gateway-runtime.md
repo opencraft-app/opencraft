@@ -35,7 +35,9 @@
 
 - OpenCraft 模型配置由产品自己的 models.json 仓库、校验与 revision/CAS 管理；引擎端口仅接收配置和凭据解析能力。DSH 私有设置是执行投影，不能反向覆盖产品文件；应用失败与保存成功分别报告。见 [模型配置所有权](../../../opencraft/design/model-configuration.md)。
 
-- Composer 的 agents/modelIds 与 models 由同一 TanStack 能力查询成组发布，按 Host/会话范围隔离。配置写入与 Agent 变更事件统一失效，菜单打开校验新鲜度；取消后的旧响应不可发布，刷新失败保留旧快照并标错。联合读取不是后端事务快照。
+- Composer 的模型目录由 TanStack Query 按 Host/会话范围发布完整分页快照；配置写入统一失效，菜单打开校验新鲜度，取消后的旧响应不可发布，刷新失败保留旧快照并标错。产品 Bot 身份只由 `bot/*` 目录拥有；已删除无实际消费者的 OpenCraft `agent/list` 目录，`turn/start.agentId` 仍是独立执行参数。
+
+- Hermes reasoning 适配复用既有 AppServer 模型与 Turn 字段，不扩 generated schema：effort 集合同时决定界面、默认值和请求编译；`none` 只在允许关闭时出现。强制思考的 GLM 5.3 系列只暴露 `low/high/max`，默认 `high`；创建、活动 Turn 切换与恢复都由 Hermes Session 的 `reasoning_effort` 拥有，Bridge 通过 `config.set key=reasoning` 更新，最终 provider wire clamp 仍归 Hermes Runtime。
 
 - 提供商启停由列表行的共享滑动开关承载，名称点击只负责选择；右键保留自定义项重命名和删除。窄屏无列表时保留详情启用入口，所有入口复用同一 Host 命令。
 

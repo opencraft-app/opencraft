@@ -866,17 +866,6 @@ export function App() {
   );
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
-      agents: composerCatalog.agents.map((agent) => ({
-        id: agent.id,
-        label: agent.displayName,
-        description: agent.description || null,
-        engineKind: agent.engineKind,
-        isDefault: agent.isDefault,
-        defaultModel: agent.defaultModel,
-        modelIds: agent.modelIds,
-        available: agent.available,
-        unavailableReason: agent.unavailableReason,
-      })),
       models: projectComposerModelChoices(composerCatalog.models),
       permissionProfiles: composerCatalog.permissionProfiles.map((profile) => ({
         id: profile.id,
@@ -894,7 +883,6 @@ export function App() {
     }),
     [
       composerCatalog.isFetching,
-      composerCatalog.agents,
       composerCatalog.modelError,
       composerCatalog.onModelMenuOpen,
       composerCatalog.retryModels,
