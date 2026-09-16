@@ -103,6 +103,10 @@ class ProdDbMigrationTests(unittest.TestCase):
         self.assertIn("credit", prod_db_migration.SUPPORTED_SERVICES)
         self.assertEqual(prod_db_migration.map_service("credit"), ("credit", "credit"))
 
+    def test_referral_uses_its_registered_migration_job_runner(self) -> None:
+        self.assertIn("referral", prod_db_migration.SUPPORTED_SERVICES)
+        self.assertEqual(prod_db_migration.map_service("referral"), ("referral", "referral"))
+
     def test_rejects_unknown_service(self) -> None:
         with self.assertRaisesRegex(ValueError, "SERVICE must be one of"):
             prod_db_migration.map_service("frontend")
