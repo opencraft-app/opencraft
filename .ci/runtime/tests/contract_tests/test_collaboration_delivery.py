@@ -132,6 +132,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
                 {"key": "database.dsn", "path": "database.dsn"},
             ])
             self.assertTrue(spec["containerSecurityContext"]["readOnlyRootFilesystem"])
+            self.assertTrue(spec["successLogMarkers"])
 
         workflow = yaml.safe_load((REPO_ROOT / ".ci/collaboration-recovery.yml").read_text())
         trigger = workflow.get("on", workflow.get(True))

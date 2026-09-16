@@ -1,3 +1,6 @@
+import contextlib
+import io
+import json
 import os
 import subprocess
 import sys
@@ -18,6 +21,40 @@ from harness_ci import db_job
 
 
 class RunGitopsDbJobTests(unittest.TestCase):
+    def test_recovery_success_includes_redacted_safe_plan_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deploy_root = Path(tmp)
+            env_file = deploy_root / "argocd/services/collaboration/beijing-sandbox/collaboration-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("COLLABORATION_IMAGE=example.com/collaboration@sha256:" + "a" * 64 + "\n")
+            argv = [
+                "run_gitops_db_job.py",
+                "--deploy-root", str(deploy_root),
+                "--service", "collaboration",
+                "--operation", "recovery-plan",
+                "--env", "beijing-sandbox",
+                "--revision", "abc123",
+                "--apply", "--wait",
+                "--image-override", "example.com/collaboration@sha256:" + "b" * 64,
+            ]
+            output = io.StringIO()
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)),
+                mock.patch.object(db_job, "apply_manifest"),
+                mock.patch.object(db_job, "wait_for_job", return_value="succeeded"),
+                mock.patch.object(db_job, "collect_job_logs", return_value="恢复计划：可执行\n残留业务表：1\n残留业务行：0") as logs,
+                mock.patch.object(db_job, "kubectl_delete"),
+                contextlib.redirect_stdout(output),
+            ):
+                exit_code = db_job.main()
+
+        self.assertEqual(exit_code, 0)
+        logs.assert_called_once()
+        audit = json.loads(output.getvalue())
+        self.assertEqual(audit["status"], "succeeded")
+        self.assertEqual(audit["logs"], "恢复计划：可执行\n残留业务表：1\n残留业务行：0")
+
     def test_missing_legacy_platform_env_falls_back_to_env_name(self) -> None:
         with mock.patch.object(db_job, "REPO_ROOT", Path("/tmp/nonexistent-lightclaw-repo")):
             self.assertEqual(

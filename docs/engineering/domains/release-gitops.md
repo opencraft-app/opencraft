@@ -238,6 +238,8 @@ master 源码
   `account_login_identities` 表及 0 行。审批后 `recovery-apply` 必须再次执行全部校验，
   按 `count → drop table → revision CAS delete → empty 回读` 收敛。任一字段、表集或行数不符即
   fail closed；plan 不得写库，recovery 不导出 Secret、不生成 GitOps MR、不自动继续 runtime。
+  两种 recovery Job 成功时必须在删除 Job 前收集并脱敏 CLI 摘要，校验预期成功标记后写入
+  流水线审计 JSON；无日志或标记不符必须按 `audit_failed` 阻断审批。
 - active catalog 在 foundation/runtime 两阶段均由 bootstrap 流水线独占写入，因此登记为普通
   release-bundle catalog 覆盖检查的显式豁免；普通服务发布不得覆盖或删除它。该豁免只能在 catalog
   所有权迁回标准 release bundle 后移除。
