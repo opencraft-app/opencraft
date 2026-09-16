@@ -133,8 +133,31 @@ func TestRunApplyWritesRecoverableOrderAndCompleteSecret(t *testing.T) {
 			t.Errorf("secret key %q is missing", key)
 		}
 	}
-	if got := secrets.payload["database.dsn"]; got != "collaboration_rw:database-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC" {
+	if got := secrets.payload["database.dsn"]; got != "collaboration_rw:Aa1_base-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC" {
 		t.Fatalf("database.dsn = %q", got)
+	}
+}
+
+func TestRunRepairsInvalidOrphanSecretPasswordBeforeCreatingAccount(t *testing.T) {
+	config := testConfig()
+	secrets := &fakeSecrets{exists: true, payload: map[string]string{
+		"database.dsn": "collaboration_rw:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
+		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
+		"im-identity.key": "identity", "im-callback.token": "callback",
+	}}
+	database := &fakeDatabase{}
+	result, err := Run(t.Context(), database, secrets, &fakeGenerator{values: []string{"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"}}, config, IMMaterial{SecretKey: "im-secret"}, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Secret.Updated || !result.Secret.Applied || !result.Account.Created || !result.Account.Applied {
+		t.Fatalf("recovery result = %+v", result)
+	}
+	if !reflect.DeepEqual(secrets.writes, []string{"update-secret"}) || !reflect.DeepEqual(database.writes, []string{"account", "database", "privileges"}) {
+		t.Fatalf("recovery writes: secrets=%v db=%v", secrets.writes, database.writes)
+	}
+	if got := secrets.payload["database.dsn"]; got != "collaboration_rw:Aa1_ba9876543210fedcba9876543210fedcba9876543210fedcba9876543210@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC" {
+		t.Fatalf("recovered database.dsn = %q", got)
 	}
 }
 
