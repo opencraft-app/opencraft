@@ -32,6 +32,9 @@ master 源码
   `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
   不为单一服务放宽 Argo 全局路径限制。foundation 活动目录只允许这两种资源和加密 Secret，
   Runtime、migration 要在 foundation live 收敛并独立验收后启用。
+- Collaboration 北京 Runtime 的 `DB_JOB_KUBECONFIG_B64` 在 Stream 中使用 `PASSWORD` 类型 protected
+  credential；流水线必须引用 `.password` 字段，不能把 credential 对象本身传给 Base64 解码器。
+  kubeconfig 来源保持在受控 DevCloud/Stream 边界，不写入仓库或普通日志。
 
 - Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
   带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。

@@ -95,6 +95,11 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertIn("ci_ensure_pyyaml", apply_script)
         self.assertLess(apply_script.index("ci_ensure_tccli"), apply_script.index("ci_ensure_pyyaml"))
         self.assertLess(apply_script.index("ci_ensure_pyyaml"), apply_script.index("python3 scripts/export_ssm_to_sops.py"))
+        apply_env = workflow["stages"][2]["jobs"]["apply"]["env"]
+        self.assertEqual(
+            apply_env["DB_JOB_KUBECONFIG_B64"],
+            "${{ settings.DB_JOB_KUBECONFIG_B64.password }}",
+        )
         init_script = (REPO_ROOT / ".ci/init.sh").read_text()
         self.assertIn("ci_ensure_pyyaml()", init_script)
         self.assertIn('"PyYAML==${version}"', init_script)
