@@ -205,7 +205,7 @@
   作为长度编码身份键，跨实例同名 Profile 不得合并；环境/账户作用域由上层目录
   添加。旧 Context/Repository 保留兼容门面直至消费者迁完。
 
-- 诊断中心日志查询和导出显式选择当前 Bot 的原生 Profile；切换 Bot 后不得复用旧日志。重置模型配置暂时只支持单一主 Bot 的实例，CTL 在签发或撤销密钥前重新读取完整 Profile 列表；列表失败或不满足单一根 Profile 条件时拒绝操作。
+- 诊断中心日志查询、导出和模型配置重置显式选择当前 Bot 的原生 Profile；切换 Bot 后不得复用旧日志或配置状态。LLMGateway 重置按用户级 `purpose=default` 幂等读取平台权威 Key 和最新默认模型，只重建目标 Profile，不修改同实例其他 Profile；Key 通过一次性加密 envelope 下发，配置、凭据清理和 read-back 校验失败时回滚。旧 ai-gateway 仍只允许单一根 Profile，CTL 在签发或撤销实例 Key 前重新读取完整 Profile 列表并 fail closed。
 - 重装、备份与恢复属于整个 Agent 的维护操作，仅在主 Bot 展示入口，并明确影响所有 Bot。前端进度、控制台与操作锁按实例隔离，同一实例内切换 Bot 不丢失状态。恢复显式使用 `/home/agentuser/.hermes` 与原生 `default`，不依赖运行时当前选中的 Profile；完整多 Profile 恢复仍需在隔离实例做兼容性验收。
 
 - 当前发布批次隐藏已有 Agent 的“新建 Bot”入口，保留已存在 Bot 的切换、配置和删除，以及无实例用户的首次 Agent 创建流程；后续开放须另行确认。

@@ -1,5 +1,6 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
 import { planCatalog } from "../domain/plan-catalog";
+import { INSTANCE_BOT_ERROR_CODE } from "../domain/instance-bot-errors";
 import { defaultHermesAgentName } from "../i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "../lib/auth-api-base";
 import { createDebugExecRequestBody } from "../lib/debug-exec-request";
@@ -286,7 +287,10 @@ const isNestedBotsUnavailable = (error: unknown) => {
 
 const isNestedBotsTemporarilyUnavailable = (error: unknown) => {
   return isNestedBotsUnavailable(error)
-    || (error instanceof RepositoryError && error.status === 403 && error.code === "PASS_MODIFYING");
+    || (error instanceof RepositoryError && (
+      error.status === 403 && error.code === "PASS_MODIFYING"
+      || error.status === 500 && error.code === INSTANCE_BOT_ERROR_CODE.profileFailed
+    ));
 };
 
 const authStorage = () => {
