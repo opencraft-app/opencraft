@@ -44,12 +44,14 @@ func main() {
 	}
 
 	svc := service.NewService(backend)
-	verify := func(_ context.Context, _ string) error { return fmt.Errorf("verifier unavailable") }
+	verify := func(_ context.Context, _ provider.CloudInstanceRef) error { return fmt.Errorf("verifier unavailable") }
 	cp, err := provider.ResolveFromEnv()
 	if err != nil {
 		// Keep API server running; block inventory refills until verifier is configured.
 		log.Printf("init provider failed; inventory refill will be rejected: %v", err)
-		verify = func(_ context.Context, _ string) error { return fmt.Errorf("verifier unavailable: %w", err) }
+		verify = func(_ context.Context, _ provider.CloudInstanceRef) error {
+			return fmt.Errorf("verifier unavailable: %w", err)
+		}
 	} else {
 		verify = cp.VerifyInstance
 	}

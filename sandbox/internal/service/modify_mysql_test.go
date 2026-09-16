@@ -84,19 +84,19 @@ type rebindOnlyProvider struct {
 	t *testing.T
 }
 
-func (p *rebindOnlyProvider) StopInstanceForResize(context.Context, string) error {
+func (p *rebindOnlyProvider) StopInstanceForResize(context.Context, provider.CloudInstanceRef) error {
 	p.t.Fatal("replayed stop")
 	return nil
 }
-func (p *rebindOnlyProvider) ResizeInstanceType(context.Context, string, string) error {
+func (p *rebindOnlyProvider) ResizeInstanceType(context.Context, provider.CloudInstanceRef, string) error {
 	p.t.Fatal("replayed compute resize")
 	return nil
 }
-func (p *rebindOnlyProvider) ResizeSystemDisk(context.Context, string, int) error {
+func (p *rebindOnlyProvider) ResizeSystemDisk(context.Context, provider.CloudInstanceRef, int) error {
 	p.t.Fatal("replayed disk resize")
 	return nil
 }
-func (p *rebindOnlyProvider) StartInstance(context.Context, string) error {
+func (p *rebindOnlyProvider) StartInstance(context.Context, provider.CloudInstanceRef) error {
 	p.t.Fatal("replayed start")
 	return nil
 }

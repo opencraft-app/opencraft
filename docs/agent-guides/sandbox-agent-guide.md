@@ -18,6 +18,9 @@
 - 请求路径只做分配与释放，不做创建或重装
 - 切 pool 镜像时，只允许把 `CLEAN` 标成 `DRY`，`ALLOCATED` 不应被强改
 - 测试环境切 pool 镜像的唯一标准入口是 `.codebuddy/skills/sandbox-ops` 的 SQL fallback；不要再尝试已删除的 pool API / `sandbox/scripts/update-image.sh`
+- Pool 创建后所属 region 不可变；允许在同一 region 内调整 zone、VPC 和 subnet，但不得把已有 pool 从 `ap-singapore-*` 改到 `ap-johorbahru-*` 等其他地域。
+- CVM、CBS、TAT 交付校验以及升配生命周期必须携带由 owning pool 的 zone 推导出的 region；`TENCENT_REGION` 只提供默认环境配置，不能覆盖已有实例的 pool 归属。
+- 同 SP 升配只能在同一 region 的 pool 之间重绑；跨 region 需要新建实例/迁移方案，不能把原 CVM 的 pool 元数据直接改到目标地域。
 
 ## 2. 目录入口
 
