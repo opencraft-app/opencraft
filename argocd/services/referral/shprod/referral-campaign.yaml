@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: referral-campaign
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: referral-campaign
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        pool: general-shprod
+      containers:
+        - name: campaign
+          image: REPLACE_REFERRAL_IMAGE
+          imagePullPolicy: Always
+          command: ["/usr/local/bin/referral-campaign"]
+          envFrom:
+            - configMapRef:
+                name: referral-config
+            - secretRef:
+                name: referral-runtime-secrets
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

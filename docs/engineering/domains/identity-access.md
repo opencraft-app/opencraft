@@ -23,6 +23,10 @@
 - 邀请返利上下文不是访问邀请码或登录凭据。浏览器只能先通过公开接口校验返利码，再由 Auth 写入
   30 分钟 HttpOnly Cookie；OAuth/手机号/密码注册仅在新用户事务中消费它并写 outbox。已有用户登录、
   自行构造 `X-User-Id` 或直接提交任意 owner ID 都不能建立归因。成功或退出后清除上下文。
+- Referral 的公共面只允许精确的返利码查询和 Auth `/auth/referral/prepare`；`/v1/referrals/me/**`
+  必须经过现有 LightVela session 内省。`service-gateway` 在转发前清除调用方提供的 `X-User-Id`
+  等身份头并注入会话中的权威用户 ID，Referral 只消费该集群内断言；不得把 Referral ClusterIP、
+  任意 owner 参数或宽泛路径暴露为公共身份入口。
 
 ## 机器契约与验证
 

@@ -14,6 +14,7 @@ patches:
   - path: patch-shadowbinding.yaml
   - path: patch-phone-auth.yaml
   - path: patch-oauth-registration.yaml
+  - path: patch-referral.yaml
 
 generators:
   - ksops-secret-generator.yaml

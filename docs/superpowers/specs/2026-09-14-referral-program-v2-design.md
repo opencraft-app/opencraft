@@ -149,8 +149,9 @@ or replay them. Explicit nonzero campaign delays remain supported.
    synchronization of any internal entitlement template required by the grant.
 6. Enable Beijing relays and worker processing.
 7. Activate the Beijing campaign and expose the minimal frontend.
+8. After the independent Shanghai foundation is healthy, enable Shanghai Auth/CTL relays,
+   worker processing, campaign, exact Gateway routes, and runtime flag as one reviewed activation.
 
-No production environment inherits the Beijing enablement. Shanghai may deploy
-the schema and two disabled API replicas as an isolated foundation, but keeps
-the worker at zero replicas and omits campaign bootstrap, event producers,
-Gateway routes, and frontend exposure until a separate activation review.
+Shanghai owns an independent campaign, database, Pulsar roles, tokens, and
+budget. It may use the same 500/500 immediate-reward policy, but never inherits
+the Beijing campaign identity or credentials. Singapore remains disabled.

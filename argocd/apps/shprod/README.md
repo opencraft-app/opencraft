@@ -33,7 +33,7 @@
 - `vibebase`
 - `nextgen-dashboard`
 - `payment`
-- `referral`（禁用态 foundation；worker、campaign 和产品入口未启用）
+- `referral`（独立 Campaign、Pulsar worker 与精确 Gateway 路由）
 - `sandbox`
 - `service-gateway`
 - `subscription`

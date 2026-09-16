@@ -197,7 +197,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 30, "sgprod": 30},
+                    {"shprod": 31, "sgprod": 30},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -1434,8 +1434,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("path: /data/REFERRAL_ENABLED", shprod_config_patch)
         self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", shprod_config_patch)
-        self.assertGreaterEqual(shprod_config_patch.count('value: "false"'), 2)
-        self.assertIn('value: "paused"', shprod_config_patch)
+        self.assertGreaterEqual(shprod_config_patch.count('value: "true"'), 2)
+        self.assertIn('value: "active"', shprod_config_patch)
+        self.assertIn('value: "shanghai-launch-2026-09"', shprod_config_patch)
 
         shprod_worker_patch = next(
             item["patch"]
@@ -1443,13 +1444,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
             if (item.get("target") or {}).get("name") == "referral-worker"
         )
         self.assertIn("path: /spec/replicas", shprod_worker_patch)
-        self.assertIn("value: 0", shprod_worker_patch)
+        self.assertIn("value: 2", shprod_worker_patch)
 
         shprod_service = yaml.safe_load(
             (REPO_ROOT / "argocd/services/referral/shprod/kustomization.yaml").read_text()
         )
-        self.assertNotIn("resources", shprod_service)
-        self.assertFalse((REPO_ROOT / "argocd/services/referral/shprod/referral-campaign.yaml").exists())
+        self.assertIn("referral-campaign.yaml", shprod_service["resources"])
+        self.assertTrue((REPO_ROOT / "argocd/services/referral/shprod/referral-campaign.yaml").exists())
+
+        shprod_auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/shprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', shprod_auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', shprod_auth_patch)
+
+        shprod_ctl_patch = (
+            REPO_ROOT / "argocd/services/ctl/shprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn("name: REFERRAL_ENABLED", shprod_ctl_patch)
+        self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", shprod_ctl_patch)
 
         shprod_app = yaml.safe_load(
             (REPO_ROOT / "argocd/apps/shprod/referral.yaml").read_text()
@@ -1491,6 +1504,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertNotIn("configmap", verifier)
         self.assertNotIn("secret", verifier)
+
+        auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.shprod.yaml").read_text()
+        )["items"][0]
+        self.assertEqual(auth_ssm["version_id"], "referral-sh-20260916-auth")
+        self.assertIn("REFERRAL_PULSAR_TOKEN", auth_ssm["required_keys"])
+
+        ctl_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.shprod.yaml").read_text()
+        )
+        ctl_runtime = next(item for item in ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets")
+        self.assertEqual(ctl_runtime["version_id"], "referral-sh-20260916-ctl")
+        self.assertIn("REFERRAL_PULSAR_TOKEN", ctl_runtime["required_keys"])
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
