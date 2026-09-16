@@ -10,3 +10,6 @@
 [submodule "ref/hermes-desktop"]
 	path = ref/hermes-desktop
 	url = https://github.com/fathah/hermes-desktop.git
+[submodule "shadow/tencentcloud-sdk-go"]
+	path = shadow/tencentcloud-sdk-go
+	url = git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git
