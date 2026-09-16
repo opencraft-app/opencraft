@@ -190,6 +190,8 @@ master 源码
   `.ci/db-migration-apply.yml` 的固定 dry-run、人工审核、apply 序列；旧入口遇到此决策时 fail closed。
   dry-run 和 apply 都按相同的不可变 SOURCE_SHA、目标环境及实际 schema 版本重新校验；脚本阶段成功
   不代表迁移 Job 已执行或数据库已升级。
+- 标准 service-release 与生产 GitOps promote 只使用主仓库的服务源码、发布脚本和 manifests；其 checkout
+  不应拉取无关子模块。需要子模块的独立构建入口须自行显式启用，不能让通用发布链依赖外部仓库可用性。
 
 ### Collaboration 北京两阶段 bootstrap
 

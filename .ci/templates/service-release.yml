@@ -107,6 +107,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
+              enableSubmodule: false
           - name: 打印 ${{ parameters.DISPLAY_NAME }} 构建上下文
             shell: bash
             run: |
@@ -395,6 +396,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - id: plan
             name: 判断 shprod 是否会产生实际 DB 变更
             shell: bash
@@ -494,6 +496,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - id: plan
             name: 判断 sgprod 是否会产生实际 DB 变更
             shell: bash
@@ -622,6 +625,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
+              enableSubmodule: false
           - name: 创建 shprod/sgprod promote
             shell: bash
             run: |
