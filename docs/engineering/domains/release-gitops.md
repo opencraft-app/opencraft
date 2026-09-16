@@ -234,7 +234,11 @@ StatefulSetPlus manifest 中的
 
 Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与 Pass 的
 `jifei-callback-<region>` 共用目标配置。`tkexgz` 与 `tkexsg` 生产 workload 必须显式声明
-全部 Credit 地域回调目标；北京联调阶段统一为 `https://lightclaw.tech`，避免依赖镜像内默认值。
+全部 Credit 地域回调目标，避免依赖镜像内默认值。生产切流后的映射为：`tkexgz` 仅上海
+`SH` 指向 `https://api.lightvela.com`，其他地域保留北京预发布 `https://lightclaw.tech`；
+`tkexsg` 仅新加坡 `SG` 指向 `https://api.lightvela.ai`，其他地域统一指向东京 sandbox
+`https://api-sandbox-jp-1.lightclaw.tech`。映射变更必须同步更新逐地域 GitOps 契约测试，不能通过
+修改共享路由默认值或 Pass 回调配置实现。
 
 ## CloudLadder HMAC 分阶段发布
 
