@@ -149,6 +149,14 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "beijing-sandbox"
         ]
         self.assertNotIn(active_catalog, publish_paths)
+        catalog_policy = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/_catalogs.bundle").read_text()
+        )
+        exemption = catalog_policy["catalog_publish_exemptions_by_env"]["beijing-sandbox"][
+            active_catalog
+        ]
+        self.assertIn("two-phase bootstrap", exemption)
+        self.assertIn("must not overwrite", exemption)
         appset = (REPO_ROOT / "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml").read_text()
         self.assertNotIn("catalogs/candidates", appset)
         spec = yaml.safe_load((REPO_ROOT / "scripts/ssm_manifest.collaboration.beijing-sandbox.yaml").read_text())
