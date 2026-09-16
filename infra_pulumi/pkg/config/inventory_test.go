@@ -95,8 +95,11 @@ func TestLoadShprodManagedPulsarInventory(t *testing.T) {
 		t.Fatalf("LoadInventory(shprod): %v", err)
 	}
 	pulsar := inventory.Stacks.Pulsar
-	if !pulsar.Enabled || !pulsar.ManageCluster || pulsar.ExistingClusterID != "" || pulsar.BrokerURL != "" {
+	if !pulsar.Enabled || !pulsar.ManageCluster || pulsar.ExistingClusterID != "pulsar-vje938a9pgq4" {
 		t.Fatalf("unexpected managed Pulsar identity: %+v", pulsar)
+	}
+	if pulsar.BrokerURL != "http://pulsar-vje938a9pgq4.eap-tiu5h8jq.tdmq-pulsar.ap-sh.qcloud.tencenttdmq.com:8080" {
+		t.Fatalf("unexpected managed Pulsar broker URL: %q", pulsar.BrokerURL)
 	}
 	if pulsar.ExpectedClusterName != "lightvela-pulsar-sh" || pulsar.ExpectedProductName != "PULSAR.P2.MINI1" {
 		t.Fatalf("unexpected managed Pulsar cluster: %+v", pulsar)
