@@ -5,9 +5,10 @@
 Referral rewards are a new domain capability. They do not reuse the existing
 one-time access invite codes, `users.invite_required`, or `/auth/invite/*`.
 
-The first release is a Beijing sandbox pilot. The Beijing environment enables
-the capability explicitly; every other environment remains disabled unless it
-adds its own campaign, infrastructure, secrets, and release configuration.
+The first release is a Beijing sandbox pilot. Shanghai may prepare an isolated
+Pulsar foundation without enabling producers, consumers, routes, campaign, or
+frontend. Every environment remains disabled unless it adds its own campaign,
+infrastructure, secrets, and release configuration.
 
 ## Product Rules
 
@@ -51,11 +52,19 @@ the Beijing pilot.
 
 ## Pulsar Boundary
 
-The existing `pulsar-n57ovqb7r7gv` P2 elastic-storage cluster is an external
-dependency. Pulumi must not register it as a managed
+The existing Beijing `pulsar-n57ovqb7r7gv` P2 elastic-storage cluster is an
+external dependency. Pulumi must not register it as a managed
 `tdmq.ProfessionalCluster`: the pinned provider requires a fixed
 `storage_size`, which does not safely represent the existing elastic-storage
 purchase.
+
+An environment with no existing cluster may explicitly set
+`manage_cluster=true`. Pulumi then creates and protects a dedicated professional
+cluster with an inventory-pinned product, placement, network, purchase term,
+renewal policy, and tags. A P2 elastic-storage creation uses the API's
+`storage_size=0` representation and ignores that field after creation. The
+created cluster ID and broker endpoint must be written back to inventory before
+Role Token bootstrap or application configuration.
 
 Pulumi manages only child resources:
 

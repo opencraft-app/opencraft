@@ -214,30 +214,36 @@ type NotifyInventory struct {
 	ExistingWorkerTriggerID   string `yaml:"existing_worker_trigger_id"`
 }
 
-// PulsarInventory describes an existing TDMQ Pulsar cluster and the child
-// resources managed by this stack. The cluster purchase lifecycle remains
-// external because the pinned provider cannot safely model P2 elastic storage.
+// PulsarInventory describes a TDMQ Pulsar cluster and the Referral child
+// resources managed by this stack. Existing clusters remain external; a new
+// environment may explicitly opt into a Pulumi-managed purchase.
 type PulsarInventory struct {
-	Enabled              bool   `yaml:"enabled"`
-	ExistingClusterID    string `yaml:"existing_cluster_id"`
-	BrokerURL            string `yaml:"broker_url"`
-	ExpectedClusterName  string `yaml:"expected_cluster_name"`
-	ExpectedProductName  string `yaml:"expected_product_name"`
-	ExpectedZoneIDs      []int  `yaml:"expected_zone_ids"`
-	ExpectedVPCID        string `yaml:"expected_vpc_id"`
-	ExpectedSubnetID     string `yaml:"expected_subnet_id"`
-	Namespace            string `yaml:"namespace"`
-	MessageTTLSeconds    int    `yaml:"message_ttl_seconds"`
-	RetentionMinutes     int    `yaml:"retention_minutes"`
-	RetentionSizeMB      int    `yaml:"retention_size_mb"`
-	Topic                string `yaml:"topic"`
-	DeadLetterTopic      string `yaml:"dead_letter_topic"`
-	UserAuthProducerRole string `yaml:"user_auth_producer_role"`
-	CTLProducerRole      string `yaml:"ctl_producer_role"`
-	ReferralConsumerRole string `yaml:"referral_consumer_role"`
-	UserAuthSSMSecret    string `yaml:"user_auth_ssm_secret"`
-	CTLSSMSecret         string `yaml:"ctl_ssm_secret"`
-	ReferralSSMSecret    string `yaml:"referral_ssm_secret"`
+	Enabled              bool              `yaml:"enabled"`
+	ManageCluster        bool              `yaml:"manage_cluster"`
+	ExistingClusterID    string            `yaml:"existing_cluster_id"`
+	BrokerURL            string            `yaml:"broker_url"`
+	ExpectedClusterName  string            `yaml:"expected_cluster_name"`
+	ExpectedProductName  string            `yaml:"expected_product_name"`
+	ExpectedZoneIDs      []int             `yaml:"expected_zone_ids"`
+	ExpectedVPCID        string            `yaml:"expected_vpc_id"`
+	ExpectedSubnetID     string            `yaml:"expected_subnet_id"`
+	StorageSizeGB        int               `yaml:"storage_size_gb"`
+	PurchaseMonths       int               `yaml:"purchase_months"`
+	AutoRenewFlag        int               `yaml:"auto_renew_flag"`
+	AutoVoucher          int               `yaml:"auto_voucher"`
+	Tags                 map[string]string `yaml:"tags"`
+	Namespace            string            `yaml:"namespace"`
+	MessageTTLSeconds    int               `yaml:"message_ttl_seconds"`
+	RetentionMinutes     int               `yaml:"retention_minutes"`
+	RetentionSizeMB      int               `yaml:"retention_size_mb"`
+	Topic                string            `yaml:"topic"`
+	DeadLetterTopic      string            `yaml:"dead_letter_topic"`
+	UserAuthProducerRole string            `yaml:"user_auth_producer_role"`
+	CTLProducerRole      string            `yaml:"ctl_producer_role"`
+	ReferralConsumerRole string            `yaml:"referral_consumer_role"`
+	UserAuthSSMSecret    string            `yaml:"user_auth_ssm_secret"`
+	CTLSSMSecret         string            `yaml:"ctl_ssm_secret"`
+	ReferralSSMSecret    string            `yaml:"referral_ssm_secret"`
 }
 
 type JumpserverInventory struct {
