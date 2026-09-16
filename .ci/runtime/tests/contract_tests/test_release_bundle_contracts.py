@@ -3089,6 +3089,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
         self.assertIn("description", explicit_reviews)
         self.assertNotIn("description", explicit_stages[1]["check-in"])
+        for stage_index, job_name in ((0, "dry_run"), (2, "apply")):
+            steps = explicit_stages[stage_index]["jobs"][job_name]["steps"]
+            checkout = next(step for step in steps if step.get("checkout") == "self")
+            self.assertIs(checkout["with"]["enableSubmodule"], False)
         self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
         self.assertIn("--apply", explicit_text)
         self.assertIn('if [[ "$MIGRATION_DECISION" == "run_migration" ]]', template_text)
