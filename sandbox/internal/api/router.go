@@ -293,7 +293,7 @@ func (a *API) handleInstanceSubroutes(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeError(w http.ResponseWriter, err error) {
-	if errors.Is(err, core.ErrInvalidPoolSKUBinding) {
+	if errors.Is(err, core.ErrInvalidPoolSKUBinding) || errors.Is(err, core.ErrPoolRegionChange) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

@@ -286,6 +286,10 @@ func (i *Injector) cleanupPoolInstances(ctx context.Context, poolIDs ...string) 
 			continue
 		}
 		seenPools[poolID] = struct{}{}
+		pool, err := i.svc.GetPool(ctx, poolID)
+		if err != nil {
+			return err
+		}
 		insts, err := i.svc.ListInstances(ctx, poolID)
 		if err != nil {
 			return err
@@ -296,7 +300,11 @@ func (i *Injector) cleanupPoolInstances(ctx context.Context, poolIDs ...string) 
 			}
 			seenInstances[inst.ID] = struct{}{}
 			if strings.TrimSpace(inst.CloudID) != "" {
-				if err := i.cp.TerminateInstance(ctx, inst.CloudID); err != nil {
+				instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+				if err != nil {
+					return err
+				}
+				if err := i.cp.TerminateInstance(ctx, instance); err != nil {
 					return err
 				}
 			}

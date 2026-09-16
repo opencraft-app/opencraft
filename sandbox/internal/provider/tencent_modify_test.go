@@ -14,6 +14,8 @@ import (
 	cvm "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 )
 
+var resizeTestInstance = CloudInstanceRef{CloudID: "ins-test", Region: "ap-seoul"}
+
 // Run the real SDK/provider against a CVM-shaped endpoint, including billing
 // mode transitions. No real cloud credentials or network mutations are used.
 func resizeTestProvider(t *testing.T, state, mode, instanceType string, settleStates ...string) (*TencentCloudProvider, *[]string) {
@@ -65,19 +67,19 @@ func resizeTestProvider(t *testing.T, state, mode, instanceType string, settleSt
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &TencentCloudProvider{client: client}, &mutations
+	return &TencentCloudProvider{client: client, cfg: TencentConfig{Region: "ap-seoul"}}, &mutations
 }
 
 func TestResizeInstanceTypeRecoversStoppedBillingMode(t *testing.T) {
 	p, calls := resizeTestProvider(t, "STOPPED", "STOP_CHARGING", "SA5.MEDIUM4")
-	if err := p.ResizeInstanceType(context.Background(), "ins-test", "SA5.LARGE8"); err != nil {
+	if err := p.ResizeInstanceType(context.Background(), resizeTestInstance, "SA5.LARGE8"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"StartInstances", "StopInstances:KEEP_CHARGING", "ResetInstancesType"}
 	if !reflect.DeepEqual(*calls, want) {
 		t.Fatalf("mutations=%v want=%v", *calls, want)
 	}
-	if err := p.ResizeInstanceType(context.Background(), "ins-test", "SA5.LARGE8"); err != nil {
+	if err := p.ResizeInstanceType(context.Background(), resizeTestInstance, "SA5.LARGE8"); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(*calls, want) {
@@ -87,7 +89,7 @@ func TestResizeInstanceTypeRecoversStoppedBillingMode(t *testing.T) {
 
 func TestResizeInstanceTypeRecoversRestartedAttempt(t *testing.T) {
 	p, calls := resizeTestProvider(t, "RUNNING", "NOT_APPLICABLE", "SA5.MEDIUM4")
-	if err := p.ResizeInstanceType(context.Background(), "ins-test", "SA5.LARGE8"); err != nil {
+	if err := p.ResizeInstanceType(context.Background(), resizeTestInstance, "SA5.LARGE8"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"StopInstances:KEEP_CHARGING", "ResetInstancesType"}
@@ -98,7 +100,7 @@ func TestResizeInstanceTypeRecoversRestartedAttempt(t *testing.T) {
 
 func TestOrdinaryPauseStillStopsCharging(t *testing.T) {
 	p, calls := resizeTestProvider(t, "RUNNING", "NOT_APPLICABLE", "SA5.MEDIUM4")
-	if err := p.StopInstance(context.Background(), "ins-test"); err != nil {
+	if err := p.StopInstance(context.Background(), resizeTestInstance); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(*calls, []string{"StopInstances:STOP_CHARGING"}) {
@@ -110,7 +112,7 @@ func TestResizeStoppedUnknownBillingModeDoesNotMutateCloud(t *testing.T) {
 	for _, mode := range []string{"", "FUTURE_UNKNOWN_MODE"} {
 		t.Run(mode, func(t *testing.T) {
 			p, calls := resizeTestProvider(t, "STOPPED", mode, "SA5.MEDIUM4")
-			if err := p.ResizeInstanceType(context.Background(), "ins-test", "SA5.LARGE8"); err == nil {
+			if err := p.ResizeInstanceType(context.Background(), resizeTestInstance, "SA5.LARGE8"); err == nil {
 				t.Fatal("unknown stopped billing mode was accepted")
 			}
 			if len(*calls) != 0 {
@@ -131,7 +133,7 @@ func TestResizeStopResumesTransientState(t *testing.T) {
 	} {
 		t.Run(tc.state+tc.mode, func(t *testing.T) {
 			p, calls := resizeTestProvider(t, tc.state, tc.mode, "SA5.MEDIUM4", tc.settled)
-			if err := p.StopInstanceForResize(context.Background(), "ins-test"); err != nil {
+			if err := p.StopInstanceForResize(context.Background(), resizeTestInstance); err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(*calls, tc.want) {
@@ -148,7 +150,7 @@ func TestResizeTargetAlreadyReachedNeverRestartsInstance(t *testing.T) {
 	} {
 		t.Run(tc.state+tc.mode, func(t *testing.T) {
 			p, calls := resizeTestProvider(t, tc.state, tc.mode, "SA5.LARGE8")
-			if err := p.ResizeInstanceType(context.Background(), "ins-test", "SA5.LARGE8"); err != nil {
+			if err := p.ResizeInstanceType(context.Background(), resizeTestInstance, "SA5.LARGE8"); err != nil {
 				t.Fatal(err)
 			}
 			if len(*calls) != 0 {

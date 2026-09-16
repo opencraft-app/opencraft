@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
@@ -103,6 +104,10 @@ type TencentCloudProvider struct {
 	cbsClient *cbs.Client
 	cred      *common.Credential
 	cfg       TencentConfig
+
+	clientMu   sync.Mutex
+	cvmClients map[string]*cvm.Client
+	cbsClients map[string]*cbs.Client
 
 	startTerminalSessionFunc func(context.Context, string, string) (TerminalSession, error)
 	tatForwardURLFunc        func(string) string
@@ -232,7 +237,78 @@ func NewTencentCloudProvider(cfg TencentConfig) (*TencentCloudProvider, error) {
 		return nil, fmt.Errorf("init cbs client: %w", err)
 	}
 
-	return &TencentCloudProvider{client: client, cbsClient: cbsCli, cred: cred, cfg: cfg}, nil
+	return &TencentCloudProvider{
+		client:     client,
+		cbsClient:  cbsCli,
+		cred:       cred,
+		cfg:        cfg,
+		cvmClients: map[string]*cvm.Client{strings.TrimSpace(cfg.Region): client},
+		cbsClients: map[string]*cbs.Client{strings.TrimSpace(cfg.Region): cbsCli},
+	}, nil
+}
+
+func (p *TencentCloudProvider) cvmClientForRegion(region string) (*cvm.Client, error) {
+	region = strings.TrimSpace(region)
+	if region == "" {
+		return nil, errors.New("missing Tencent Cloud region")
+	}
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
+	if p.cvmClients == nil {
+		p.cvmClients = make(map[string]*cvm.Client)
+		if p.client != nil && (strings.TrimSpace(p.cfg.Region) == "" || strings.TrimSpace(p.cfg.Region) == region) {
+			p.cvmClients[region] = p.client
+		}
+	}
+	if client := p.cvmClients[region]; client != nil {
+		return client, nil
+	}
+	httpProfile := profile.NewHttpProfile()
+	if p.cfg.Endpoint != "" {
+		httpProfile.Endpoint = p.cfg.Endpoint
+	} else {
+		httpProfile.Endpoint = "cvm.tencentcloudapi.com"
+	}
+	clientProfile := profile.NewClientProfile()
+	clientProfile.HttpProfile = httpProfile
+	client, err := cvm.NewClient(p.cred, region, clientProfile)
+	if err != nil {
+		return nil, err
+	}
+	p.cvmClients[region] = client
+	return client, nil
+}
+
+func (p *TencentCloudProvider) cbsClientForRegion(region string) (*cbs.Client, error) {
+	region = strings.TrimSpace(region)
+	if region == "" {
+		return nil, errors.New("missing Tencent Cloud region")
+	}
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
+	if p.cbsClients == nil {
+		p.cbsClients = make(map[string]*cbs.Client)
+		if p.cbsClient != nil && (strings.TrimSpace(p.cfg.Region) == "" || strings.TrimSpace(p.cfg.Region) == region) {
+			p.cbsClients[region] = p.cbsClient
+		}
+	}
+	if client := p.cbsClients[region]; client != nil {
+		return client, nil
+	}
+	httpProfile := profile.NewHttpProfile()
+	if p.cfg.CBSEndpoint != "" {
+		httpProfile.Endpoint = p.cfg.CBSEndpoint
+	} else {
+		httpProfile.Endpoint = "cbs.tencentcloudapi.com"
+	}
+	clientProfile := profile.NewClientProfile()
+	clientProfile.HttpProfile = httpProfile
+	client, err := cbs.NewClient(p.cred, region, clientProfile)
+	if err != nil {
+		return nil, err
+	}
+	p.cbsClients[region] = client
+	return client, nil
 }
 
 func (p *TencentCloudProvider) CreateInstance(ctx context.Context, pool core.Pool) (string, string, error) {
@@ -242,6 +318,14 @@ func (p *TencentCloudProvider) CreateInstance(ctx context.Context, pool core.Poo
 	}
 	if strings.TrimSpace(pool.VpcID) == "" || strings.TrimSpace(pool.SubnetID) == "" || strings.TrimSpace(pool.Zone) == "" {
 		return "", "", errors.New("missing pool network config: need vpc_id, subnet_id, zone")
+	}
+	region, err := core.RegionFromZone(pool.Zone)
+	if err != nil {
+		return "", "", err
+	}
+	client, err := p.cvmClientForRegion(region)
+	if err != nil {
+		return "", "", err
 	}
 	req := cvm.NewRunInstancesRequest()
 	req.InstanceChargeType = common.StringPtr("POSTPAID_BY_HOUR")
@@ -312,7 +396,7 @@ func (p *TencentCloudProvider) CreateInstance(ctx context.Context, pool core.Poo
 
 	var resp *cvm.RunInstancesResponse
 	if err := retryRateLimit(ctx, "RunInstances", func() error {
-		r, e := p.client.RunInstances(req)
+		r, e := client.RunInstances(req)
 		if e != nil {
 			return e
 		}
@@ -325,7 +409,7 @@ func (p *TencentCloudProvider) CreateInstance(ctx context.Context, pool core.Poo
 		return "", "", errors.New("no instance id returned from RunInstances")
 	}
 	cloudID := *resp.Response.InstanceIdSet[0]
-	addr, err := p.waitForAddress(ctx, cloudID, 180*time.Second)
+	addr, err := p.waitForAddress(ctx, client, cloudID, 180*time.Second)
 	if err != nil {
 		return cloudID, "", err
 	}
@@ -347,10 +431,18 @@ func poolSecurityGroups(pool core.Pool) ([]string, error) {
 	return securityGroups, nil
 }
 
-func (p *TencentCloudProvider) ReinstallInstance(ctx context.Context, cloudID string, imageID string) error {
+func (p *TencentCloudProvider) ReinstallInstance(ctx context.Context, instance CloudInstanceRef, imageID string) error {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return err
+	}
 	// 使用 ResetInstance 触发系统盘重装，镜像 ID 可由调用方传入覆盖池配置。
 	req := cvm.NewResetInstanceRequest()
-	req.InstanceId = common.StringPtr(cloudID)
+	req.InstanceId = common.StringPtr(instance.CloudID)
 	targetImage := imageID
 	if targetImage == "" || !strings.HasPrefix(targetImage, "img-") {
 		return errors.New("missing image id for reinstall")
@@ -360,7 +452,7 @@ func (p *TencentCloudProvider) ReinstallInstance(ctx context.Context, cloudID st
 	deadline := time.Now().Add(120 * time.Second)
 	for {
 		err := retryRateLimit(ctx, "ResetInstance", func() error {
-			_, e := p.client.ResetInstance(req)
+			_, e := client.ResetInstance(req)
 			return e
 		})
 		if err == nil {
@@ -368,7 +460,7 @@ func (p *TencentCloudProvider) ReinstallInstance(ctx context.Context, cloudID st
 		}
 		if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok && sdk.Code == "OperationDenied.InstanceOperationInProgress" {
 			if time.Now().After(deadline) {
-				return fmt.Errorf("reinstall %s timeout while waiting for pending operation: %w", cloudID, err)
+				return fmt.Errorf("reinstall %s timeout while waiting for pending operation: %w", instance.CloudID, err)
 			}
 			select {
 			case <-ctx.Done():
@@ -381,13 +473,21 @@ func (p *TencentCloudProvider) ReinstallInstance(ctx context.Context, cloudID st
 	}
 }
 
-func (p *TencentCloudProvider) DescribeInstance(ctx context.Context, cloudID string) (string, error) {
+func (p *TencentCloudProvider) DescribeInstance(ctx context.Context, instance CloudInstanceRef) (string, error) {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return "", err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return "", err
+	}
 	req := cvm.NewDescribeInstancesStatusRequest()
-	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	req.SetContext(ctx)
 	var resp *cvm.DescribeInstancesStatusResponse
 	if err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
-		r, e := p.client.DescribeInstancesStatus(req)
+		r, e := client.DescribeInstancesStatus(req)
 		if e != nil {
 			return e
 		}
@@ -402,14 +502,22 @@ func (p *TencentCloudProvider) DescribeInstance(ctx context.Context, cloudID str
 	return *resp.Response.InstanceStatusSet[0].InstanceState, nil
 }
 
-func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID string) error {
+func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, instance CloudInstanceRef) error {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return err
+	}
 	req := cvm.NewTerminateInstancesRequest()
-	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	req.SetContext(ctx)
 	deadline := time.Now().Add(120 * time.Second)
 	for {
 		err := retryRateLimit(ctx, "TerminateInstances", func() error {
-			_, e := p.client.TerminateInstances(req)
+			_, e := client.TerminateInstances(req)
 			return e
 		})
 		if err == nil {
@@ -421,7 +529,7 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID st
 			}
 			if sdk.Code == "OperationDenied.InstanceOperationInProgress" {
 				if time.Now().After(deadline) {
-					return fmt.Errorf("terminate %s timeout while waiting for pending operation: %w", cloudID, err)
+					return fmt.Errorf("terminate %s timeout while waiting for pending operation: %w", instance.CloudID, err)
 				}
 				select {
 				case <-ctx.Done():
@@ -435,13 +543,13 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID st
 	}
 	// Confirm termination by polling status until not found or terminated.
 	statusReq := cvm.NewDescribeInstancesStatusRequest()
-	statusReq.InstanceIds = []*string{common.StringPtr(cloudID)}
+	statusReq.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	statusReq.SetContext(ctx)
 	pollDeadline := time.Now().Add(60 * time.Second)
 	for {
 		var resp *cvm.DescribeInstancesStatusResponse
 		err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
-			r, e := p.client.DescribeInstancesStatus(statusReq)
+			r, e := client.DescribeInstancesStatus(statusReq)
 			if e != nil {
 				return e
 			}
@@ -462,7 +570,7 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID st
 			return nil
 		}
 		if time.Now().After(pollDeadline) {
-			return fmt.Errorf("terminate %s timeout; last state=%s", cloudID, state)
+			return fmt.Errorf("terminate %s timeout; last state=%s", instance.CloudID, state)
 		}
 		select {
 		case <-ctx.Done():
@@ -475,19 +583,27 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID st
 // StopInstance shuts down the instance with StoppedMode=STOP_CHARGING so that
 // CPU/memory billing is released while system disk and data remain intact.
 // Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
-func (p *TencentCloudProvider) StopInstance(ctx context.Context, cloudID string) error {
-	return p.stopInstanceWithMode(ctx, cloudID, "STOP_CHARGING")
+func (p *TencentCloudProvider) StopInstance(ctx context.Context, instance CloudInstanceRef) error {
+	return p.stopInstanceWithMode(ctx, instance, "STOP_CHARGING")
 }
 
-func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID, stoppedMode string) error {
+func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, instance CloudInstanceRef, stoppedMode string) error {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return err
+	}
 	req := cvm.NewStopInstancesRequest()
-	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	req.StoppedMode = common.StringPtr(stoppedMode)
 	req.SetContext(ctx)
 	deadline := time.Now().Add(120 * time.Second)
 	for {
 		err := retryRateLimit(ctx, "StopInstances", func() error {
-			_, e := p.client.StopInstances(req)
+			_, e := client.StopInstances(req)
 			return e
 		})
 		if err == nil {
@@ -495,7 +611,7 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID
 		}
 		if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok {
 			if sdk.Code == "InvalidInstanceId.NotFound" {
-				return fmt.Errorf("stop %s: instance not found: %w", cloudID, err)
+				return fmt.Errorf("stop %s: instance not found: %w", instance.CloudID, err)
 			}
 			// Already stopped is success-equivalent.
 			if sdk.Code == "UnsupportedOperation.InstanceStateStopped" ||
@@ -504,7 +620,7 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID
 			}
 			if sdk.Code == "OperationDenied.InstanceOperationInProgress" {
 				if time.Now().After(deadline) {
-					return fmt.Errorf("stop %s timeout while waiting for pending operation: %w", cloudID, err)
+					return fmt.Errorf("stop %s timeout while waiting for pending operation: %w", instance.CloudID, err)
 				}
 				select {
 				case <-ctx.Done():
@@ -518,13 +634,13 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID
 	}
 	// Confirm by polling status until STOPPED.
 	statusReq := cvm.NewDescribeInstancesStatusRequest()
-	statusReq.InstanceIds = []*string{common.StringPtr(cloudID)}
+	statusReq.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	statusReq.SetContext(ctx)
 	pollDeadline := time.Now().Add(180 * time.Second)
 	for {
 		var resp *cvm.DescribeInstancesStatusResponse
 		err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
-			r, e := p.client.DescribeInstancesStatus(statusReq)
+			r, e := client.DescribeInstancesStatus(statusReq)
 			if e != nil {
 				return e
 			}
@@ -535,14 +651,14 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID
 			return err
 		}
 		if len(resp.Response.InstanceStatusSet) == 0 {
-			return fmt.Errorf("stop %s: instance disappeared during stop polling", cloudID)
+			return fmt.Errorf("stop %s: instance disappeared during stop polling", instance.CloudID)
 		}
 		state := *resp.Response.InstanceStatusSet[0].InstanceState
 		if strings.EqualFold(state, "STOPPED") {
 			return nil
 		}
 		if time.Now().After(pollDeadline) {
-			return fmt.Errorf("stop %s timeout; last state=%s", cloudID, state)
+			return fmt.Errorf("stop %s timeout; last state=%s", instance.CloudID, state)
 		}
 		select {
 		case <-ctx.Done():
@@ -554,14 +670,22 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, cloudID
 
 // StartInstance boots a previously stopped instance back to RUNNING.
 // Reserved for renewal/restore flows that follow trade pass isolation.
-func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string) error {
+func (p *TencentCloudProvider) StartInstance(ctx context.Context, instance CloudInstanceRef) error {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return err
+	}
 	req := cvm.NewStartInstancesRequest()
-	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	req.SetContext(ctx)
 	deadline := time.Now().Add(120 * time.Second)
 	for {
 		err := retryRateLimit(ctx, "StartInstances", func() error {
-			_, e := p.client.StartInstances(req)
+			_, e := client.StartInstances(req)
 			return e
 		})
 		if err == nil {
@@ -569,7 +693,7 @@ func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string
 		}
 		if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok {
 			if sdk.Code == "InvalidInstanceId.NotFound" {
-				return fmt.Errorf("start %s: instance not found: %w", cloudID, err)
+				return fmt.Errorf("start %s: instance not found: %w", instance.CloudID, err)
 			}
 			// Already running is success-equivalent.
 			if sdk.Code == "UnsupportedOperation.InstanceStateRunning" ||
@@ -578,7 +702,7 @@ func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string
 			}
 			if sdk.Code == "OperationDenied.InstanceOperationInProgress" {
 				if time.Now().After(deadline) {
-					return fmt.Errorf("start %s timeout while waiting for pending operation: %w", cloudID, err)
+					return fmt.Errorf("start %s timeout while waiting for pending operation: %w", instance.CloudID, err)
 				}
 				select {
 				case <-ctx.Done():
@@ -592,13 +716,13 @@ func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string
 	}
 	// Confirm by polling status until RUNNING.
 	statusReq := cvm.NewDescribeInstancesStatusRequest()
-	statusReq.InstanceIds = []*string{common.StringPtr(cloudID)}
+	statusReq.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
 	statusReq.SetContext(ctx)
 	pollDeadline := time.Now().Add(180 * time.Second)
 	for {
 		var resp *cvm.DescribeInstancesStatusResponse
 		err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
-			r, e := p.client.DescribeInstancesStatus(statusReq)
+			r, e := client.DescribeInstancesStatus(statusReq)
 			if e != nil {
 				return e
 			}
@@ -609,14 +733,14 @@ func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string
 			return err
 		}
 		if len(resp.Response.InstanceStatusSet) == 0 {
-			return fmt.Errorf("start %s: instance disappeared during start polling", cloudID)
+			return fmt.Errorf("start %s: instance disappeared during start polling", instance.CloudID)
 		}
 		state := *resp.Response.InstanceStatusSet[0].InstanceState
 		if strings.EqualFold(state, "RUNNING") {
 			return nil
 		}
 		if time.Now().After(pollDeadline) {
-			return fmt.Errorf("start %s timeout; last state=%s", cloudID, state)
+			return fmt.Errorf("start %s timeout; last state=%s", instance.CloudID, state)
 		}
 		select {
 		case <-ctx.Done():
@@ -637,21 +761,22 @@ func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string
 // retryRateLimit reuses the cvm-side rate-limit/backoff wrapper; cbs SDK shares
 // the tcerrors model so 429-class codes propagate identically.
 func (p *TencentCloudProvider) CreateInstanceSnapshot(ctx context.Context, req CreateInstanceSnapshotRequest) (string, error) {
-	cloudID := strings.TrimSpace(req.CloudID)
-	if cloudID == "" {
-		return "", errors.New("CreateInstanceSnapshot: CloudID is required")
+	instance, err := normalizeCloudInstanceRef(req.Instance)
+	if err != nil {
+		return "", fmt.Errorf("CreateInstanceSnapshot: %w", err)
 	}
 	if req.Deadline.IsZero() {
 		return "", errors.New("CreateInstanceSnapshot: Deadline is required")
 	}
-	if p.cbsClient == nil {
-		return "", errors.New("CreateInstanceSnapshot: cbs client not initialized")
+	client, err := p.cbsClientForRegion(instance.Region)
+	if err != nil {
+		return "", fmt.Errorf("CreateInstanceSnapshot: %w", err)
 	}
 
 	// Step 1: cbs.DescribeDisks 反查系统盘 ID.
 	descReq := cbs.NewDescribeDisksRequest()
 	descReq.Filters = []*cbs.Filter{
-		{Name: common.StringPtr("instance-id"), Values: []*string{common.StringPtr(cloudID)}},
+		{Name: common.StringPtr("instance-id"), Values: []*string{common.StringPtr(instance.CloudID)}},
 		{Name: common.StringPtr("disk-usage"), Values: []*string{common.StringPtr("SYSTEM_DISK")}},
 	}
 	descReq.Limit = common.Uint64Ptr(1)
@@ -659,14 +784,14 @@ func (p *TencentCloudProvider) CreateInstanceSnapshot(ctx context.Context, req C
 
 	var descResp *cbs.DescribeDisksResponse
 	if err := retryRateLimit(ctx, "cbs:DescribeDisks", func() error {
-		r, e := p.cbsClient.DescribeDisksWithContext(ctx, descReq)
+		r, e := client.DescribeDisksWithContext(ctx, descReq)
 		if e != nil {
 			return e
 		}
 		descResp = r
 		return nil
 	}); err != nil {
-		return "", fmt.Errorf("cbs DescribeDisks for instance %s: %w", cloudID, err)
+		return "", fmt.Errorf("cbs DescribeDisks for instance %s: %w", instance.CloudID, err)
 	}
 
 	if descResp == nil || descResp.Response == nil || len(descResp.Response.DiskSet) == 0 {
@@ -675,7 +800,7 @@ func (p *TencentCloudProvider) CreateInstanceSnapshot(ctx context.Context, req C
 	}
 	disk := descResp.Response.DiskSet[0]
 	if disk == nil || disk.DiskId == nil || strings.TrimSpace(*disk.DiskId) == "" {
-		return "", fmt.Errorf("cbs DescribeDisks for instance %s: returned disk has empty DiskId", cloudID)
+		return "", fmt.Errorf("cbs DescribeDisks for instance %s: returned disk has empty DiskId", instance.CloudID)
 	}
 	diskID := *disk.DiskId
 
@@ -705,7 +830,7 @@ func (p *TencentCloudProvider) CreateInstanceSnapshot(ctx context.Context, req C
 
 	var createResp *cbs.CreateSnapshotResponse
 	if err := retryRateLimit(ctx, "cbs:CreateSnapshot", func() error {
-		r, e := p.cbsClient.CreateSnapshotWithContext(ctx, createReq)
+		r, e := client.CreateSnapshotWithContext(ctx, createReq)
 		if e != nil {
 			return e
 		}
@@ -730,13 +855,14 @@ func (p *TencentCloudProvider) CreateInstanceSnapshot(ctx context.Context, req C
 //   - CREATING                                            → SnapshotStatusInProgress
 //   - ERROR / ROLLBACKING_FAILED / TORECYCLE / anything else terminal → SnapshotStatusFailed
 //   - empty result set                                    → ErrSnapshotNotFound
-func (p *TencentCloudProvider) DescribeInstanceSnapshot(ctx context.Context, snapshotID string) (SnapshotStatus, string, error) {
+func (p *TencentCloudProvider) DescribeInstanceSnapshot(ctx context.Context, region, snapshotID string) (SnapshotStatus, string, error) {
 	id := strings.TrimSpace(snapshotID)
 	if id == "" {
 		return "", "", errors.New("DescribeInstanceSnapshot: snapshotID is required")
 	}
-	if p.cbsClient == nil {
-		return "", "", errors.New("DescribeInstanceSnapshot: cbs client not initialized")
+	client, err := p.cbsClientForRegion(region)
+	if err != nil {
+		return "", "", fmt.Errorf("DescribeInstanceSnapshot: %w", err)
 	}
 
 	req := cbs.NewDescribeSnapshotsRequest()
@@ -745,7 +871,7 @@ func (p *TencentCloudProvider) DescribeInstanceSnapshot(ctx context.Context, sna
 
 	var resp *cbs.DescribeSnapshotsResponse
 	if err := retryRateLimit(ctx, "cbs:DescribeSnapshots", func() error {
-		r, e := p.cbsClient.DescribeSnapshotsWithContext(ctx, req)
+		r, e := client.DescribeSnapshotsWithContext(ctx, req)
 		if e != nil {
 			return e
 		}
@@ -819,7 +945,7 @@ func sanitizeChars(in string) string {
 	return string(b)
 }
 
-func (p *TencentCloudProvider) waitForAddress(ctx context.Context, instanceID string, timeout time.Duration) (string, error) {
+func (p *TencentCloudProvider) waitForAddress(ctx context.Context, client *cvm.Client, instanceID string, timeout time.Duration) (string, error) {
 	req := cvm.NewDescribeInstancesRequest()
 	req.InstanceIds = []*string{common.StringPtr(instanceID)}
 	req.SetContext(ctx)
@@ -828,7 +954,7 @@ func (p *TencentCloudProvider) waitForAddress(ctx context.Context, instanceID st
 	for time.Now().Before(deadline) {
 		var resp *cvm.DescribeInstancesResponse
 		if err := retryRateLimit(ctx, "DescribeInstances", func() error {
-			r, e := p.client.DescribeInstances(req)
+			r, e := client.DescribeInstances(req)
 			if e != nil {
 				return e
 			}
@@ -858,32 +984,34 @@ func (p *TencentCloudProvider) waitForAddress(ctx context.Context, instanceID st
 	return "", fmt.Errorf("timeout waiting for %s IP", p.cfg.AddressType)
 }
 
-func (p *TencentCloudProvider) VerifyInstance(ctx context.Context, cloudID string) error {
-	return p.VerifyInstanceDelivery(ctx, cloudID, time.Time{})
+func (p *TencentCloudProvider) VerifyInstance(ctx context.Context, instance CloudInstanceRef) error {
+	return p.VerifyInstanceDelivery(ctx, instance, time.Time{})
 }
 
-func (p *TencentCloudProvider) VerifyInstanceDelivery(ctx context.Context, cloudID string, notBefore time.Time) error {
-	cloudID = strings.TrimSpace(cloudID)
-	if cloudID == "" {
-		return errors.New("missing cloud instance id for delivery verification")
+func (p *TencentCloudProvider) VerifyInstanceDelivery(ctx context.Context, instance CloudInstanceRef, notBefore time.Time) error {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, deliveryProbeTimeout)
 	defer cancel()
 	ops := deliveryProbeOps{
-		describeInstance: p.DescribeInstance,
+		describeInstance: func(ctx context.Context, _ string) (string, error) {
+			return p.DescribeInstance(ctx, instance)
+		},
 		describeAgent: func(ctx context.Context, cloudID string) (tatAgentStatus, error) {
-			return p.describeTATAgentStatus(ctx, p.cfg.Region, cloudID)
+			return p.describeTATAgentStatus(ctx, instance.Region, cloudID)
 		},
 		runCommand: func(ctx context.Context, cloudID, script string) (CommandInvocation, error) {
-			return p.RunCommand(ctx, p.cfg.Region, cloudID, script)
+			return p.RunCommand(ctx, instance.Region, cloudID, script)
 		},
 		getCommandInvocation: func(ctx context.Context, invocationID, cloudID string) (CommandResult, error) {
-			return p.GetCommandInvocation(ctx, p.cfg.Region, invocationID, cloudID)
+			return p.GetCommandInvocation(ctx, instance.Region, invocationID, cloudID)
 		},
 		now: time.Now,
 	}
-	if err := verifyInstanceDeliveryWithOps(probeCtx, cloudID, notBefore, ops); err != nil {
-		return fmt.Errorf("verify instance delivery cloud_id=%s: %w", cloudID, err)
+	if err := verifyInstanceDeliveryWithOps(probeCtx, instance.CloudID, notBefore, ops); err != nil {
+		return fmt.Errorf("verify instance delivery region=%s cloud_id=%s: %w", instance.Region, instance.CloudID, err)
 	}
 	return nil
 }

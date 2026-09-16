@@ -227,7 +227,7 @@ func newAuthIntrospectionServer(t *testing.T) *httptest.Server {
 func createAllocatedSandbox(t *testing.T, svc *service.Service) (core.Pool, core.Instance, core.Sandbox) {
 	t.Helper()
 	ctx := context.Background()
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	pool, err := svc.CreatePool(ctx, "target", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -366,7 +366,7 @@ func TestPostSandboxesWithoutTemplateIDAllocatesFromAnyPool(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.CreatePool(ctx, "empty", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups); err != nil {
 		t.Fatalf("create empty pool: %v", err)
@@ -405,7 +405,7 @@ func TestPostSandboxesWithTemplateIDDoesNotFallback(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	emptyPool, err := svc.CreatePool(ctx, "empty", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -437,7 +437,7 @@ func TestPostSandboxesWithTemplateClassIDUsesSandboxBindings(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	boundPool, err := svc.CreatePool(ctx, "bound", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -494,7 +494,7 @@ func TestPostSandboxesAcceptsSnakeCaseTemplateClassID(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	legacyPool, err := svc.CreatePool(ctx, "legacy", "", "img-legacy", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -552,7 +552,7 @@ func TestPostSandboxesWithSKUIDRestrictsAllocationToRequestedSKU(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
 		ID:             "hermes",
@@ -663,7 +663,7 @@ func TestPostSandboxesShadowModeReturnsResolutionDivergence(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	legacyPool, err := svc.CreatePool(ctx, "legacy", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -723,7 +723,7 @@ func TestPatchPoolInternalRouteUpdatesBaseImageAndMarksCleanDry(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	pool, err := svc.CreatePool(ctx, "target", "", "img-old", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -779,7 +779,7 @@ func TestPatchPoolInternalRouteUpdatesInstanceTypeAndMarksCleanDry(t *testing.T)
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	pool, err := svc.CreatePool(ctx, "target", "", "img-old", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -1706,7 +1706,7 @@ func TestPostSandboxTATSessionRequiresSandboxRegion(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	pool, err := svc.CreatePool(ctx, "target", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
 	if err != nil {
@@ -1808,38 +1808,42 @@ func TestInternalTemplateClassResolveRouteReturnsActivePools(t *testing.T) {
 // CloudProvider interface for use as handler.cloud in pause-path tests.
 type stubPauseProvider struct {
 	stopCalls  int
-	stopWith   []string
+	stopWith   []provider.CloudInstanceRef
 	stopErr    error
 	startCalls int
-	startWith  []string
+	startWith  []provider.CloudInstanceRef
 	startErr   error
 }
 
 func (p *stubPauseProvider) CreateInstance(context.Context, core.Pool) (string, string, error) {
 	return "", "", nil
 }
-func (p *stubPauseProvider) ReinstallInstance(context.Context, string, string) error {
+func (p *stubPauseProvider) ReinstallInstance(context.Context, provider.CloudInstanceRef, string) error {
 	return nil
 }
-func (p *stubPauseProvider) DescribeInstance(context.Context, string) (string, error) {
+func (p *stubPauseProvider) DescribeInstance(context.Context, provider.CloudInstanceRef) (string, error) {
 	return "", nil
 }
-func (p *stubPauseProvider) TerminateInstance(context.Context, string) error { return nil }
-func (p *stubPauseProvider) VerifyInstance(context.Context, string) error    { return nil }
-func (p *stubPauseProvider) StopInstance(_ context.Context, cloudID string) error {
+func (p *stubPauseProvider) TerminateInstance(context.Context, provider.CloudInstanceRef) error {
+	return nil
+}
+func (p *stubPauseProvider) VerifyInstance(context.Context, provider.CloudInstanceRef) error {
+	return nil
+}
+func (p *stubPauseProvider) StopInstance(_ context.Context, instance provider.CloudInstanceRef) error {
 	p.stopCalls++
-	p.stopWith = append(p.stopWith, cloudID)
+	p.stopWith = append(p.stopWith, instance)
 	return p.stopErr
 }
-func (p *stubPauseProvider) StartInstance(_ context.Context, cloudID string) error {
+func (p *stubPauseProvider) StartInstance(_ context.Context, instance provider.CloudInstanceRef) error {
 	p.startCalls++
-	p.startWith = append(p.startWith, cloudID)
+	p.startWith = append(p.startWith, instance)
 	return p.startErr
 }
 func (p *stubPauseProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
 	return "", errors.New("stubPauseProvider: CreateInstanceSnapshot not configured")
 }
-func (p *stubPauseProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+func (p *stubPauseProvider) DescribeInstanceSnapshot(context.Context, string, string) (provider.SnapshotStatus, string, error) {
 	return "", "", errors.New("stubPauseProvider: DescribeInstanceSnapshot not configured")
 }
 
@@ -1918,7 +1922,7 @@ func TestPostSandboxesSandboxIDPauseHappyPath(t *testing.T) {
 	if cp.stopCalls != 1 {
 		t.Fatalf("expected exactly 1 StopInstance call, got %d", cp.stopCalls)
 	}
-	if len(cp.stopWith) != 1 || cp.stopWith[0] != inst.CloudID {
+	if len(cp.stopWith) != 1 || cp.stopWith[0].CloudID != inst.CloudID || cp.stopWith[0].Region != "ap-beijing" {
 		t.Fatalf("expected StopInstance(%q), got %v", inst.CloudID, cp.stopWith)
 	}
 	got, err := svc.GetInstance(context.Background(), inst.ID)
@@ -2037,7 +2041,7 @@ func TestPostSandboxesSandboxIDResumeHappyPath(t *testing.T) {
 	if cp.startCalls != 1 {
 		t.Fatalf("expected exactly 1 StartInstance call, got %d", cp.startCalls)
 	}
-	if len(cp.startWith) != 1 || cp.startWith[0] != inst.CloudID {
+	if len(cp.startWith) != 1 || cp.startWith[0].CloudID != inst.CloudID || cp.startWith[0].Region != "ap-beijing" {
 		t.Fatalf("expected StartInstance(%q), got %v", inst.CloudID, cp.startWith)
 	}
 	got, err := svc.GetInstance(context.Background(), inst.ID)

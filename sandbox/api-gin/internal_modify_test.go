@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"cvm-mock-e2b/internal/core"
+	"cvm-mock-e2b/internal/provider"
 	"cvm-mock-e2b/internal/service"
 	"cvm-mock-e2b/internal/store"
 )
@@ -51,7 +52,7 @@ func newModifyTestHandler(t *testing.T) (*handler, string, core.Pool) {
 	targetPool := newPool("spec-4c8g80g", "SA9.LARGE8", 80)
 
 	if _, err := svc.RefillVerified(ctx, sourcePool.ID, 1, []string{"10.0.0.5"}, []string{"ins-modify-1"},
-		func(context.Context, string) error { return nil }); err != nil {
+		func(context.Context, provider.CloudInstanceRef) error { return nil }); err != nil {
 		t.Fatalf("refill: %v", err)
 	}
 	inst, err := svc.Allocate(ctx, sourcePool.ID)
