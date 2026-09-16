@@ -9,10 +9,12 @@ source_of_truth:
   - collaboration/migrations/mysql/
   - collaboration/internal/database/migration/tdsql_state.go
   - collaboration/internal/database/migration/tdsql_apply.go
+  - collaboration/internal/database/migration/mysql_recovery.go
+  - .ci/collaboration-recovery.yml
 status: active
-reviewed_at: 2026-09-16
+reviewed_at: 2026-09-17
 review_due: 2026-12-15
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -46,6 +48,8 @@ derived: false
 - 状态分类与实际执行都不接收仅含空白/分号的片段。
 - 发布迁移和 lock 字节不变，生成物和 migration release 门禁通过。
 - 新镜像发布前，对 0 行单表和失败 revision 的清理须再次精确核对并显式授权。
+- `recovery-plan` 默认零 DB 写入；`recovery-apply` 只在所有精确特征和 0 行校验通过后可执行。
+- recovery phase 经独立人工审批，不导出 Secret、不生成 GitOps MR、不自动运行 runtime。
 
 ## affected_paths
 
@@ -54,6 +58,10 @@ derived: false
 - `collaboration/internal/database/migration/tdsql_state_test.go`
 - `collaboration/docs/README.md`
 - `docs/engineering/domains/release-gitops.md`
+- `docs/runbooks/collaboration-beijing-bootstrap.md`
+- `.ci/collaboration-recovery.yml`
+- `.ci/runtime/commands/run_collaboration_baseline_recovery.sh`
+- `.ci/runtime/harness_ci/db_job.py`
 
 ## evidence
 
@@ -80,6 +88,13 @@ derived: false
   未知路径。夹具现在校验 Group/Topic/所有者字段并返回对应 TopicId，不改生产并发语义。
 - 修复后目标用例连续 50 次通过，race 连续 10 次通过；与 CI 相同的
   `.ci/checks/collaboration_guard.sh` 和 docs-impact 通过。
+- MR !4108 已合入，主干构建 #5 产出可验证的北京新镜像；构建为 build-only，Runtime 未发布。
+- Recovery 新切片 RED：缺少精确恢复分类器、CLI 和 DB Job 操作时，Go/Python 聚焦测试如期失败。
+- GREEN：精确签名/动作分类 3 项、CLI 解析、聚焦 Go 70 项、Collaboration delivery 13 项、
+  DB Job 30 项与 YAML 解析通过。
+- 最终完整 `go test -p 2 ./...` 和 `go test -race -p 2 ./...` 均通过 1131 项，`go vet ./...`、
+  Collaboration guard、generated/migration/OpenAPI/双方言 verify/密钥扫描通过。CI runtime 556 项、
+  materialized smoke、Stream YAML/guard 解析、docs-impact 与聚焦 recovery delivery/DB Job 43 项通过。
 
 ## decisions
 
@@ -88,5 +103,5 @@ derived: false
 
 ## handoff
 
-迁移空语句修复已在 MR !4108；当前追加收敛可信 guard 命中的 IM 端到端测试夹具竞态。
-恢复操作未执行，Runtime 未发布。
+MR !4108 已合入并产出新镜像。受控 recovery 源码、独立最小权限流水线与 runbook
+已通过完整门禁，待提交和 MR；真实恢复操作未执行，Runtime 未发布。

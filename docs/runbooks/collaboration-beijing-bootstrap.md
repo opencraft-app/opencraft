@@ -5,6 +5,8 @@
 - 只处理 `beijing-sandbox`，复用既有 `cynosdb-bj8`，不创建 DB 实例。
 - 只通过 `.ci/collaboration-bootstrap.yml` 写入；DevCloud 仅用于只读诊断。
 - GitOps MR 不自动合并；foundation 与 runtime 必须分两次运行和审查。
+- “恢复 Collaboration 北京空基线”是只针对已知残留的独立受控流水线，不代替
+  foundation/runtime，也不获取 IM、云账号、SOPS 或 Git token。
 - 不开放 Computer、Tasks、Reminders；Gateway 与 LightVela Web 在后台验活后另行激活。
 
 ## 前置
@@ -41,6 +43,23 @@
    不保留 migration Job。
 4. 合入后分别记录 Argo revision、Deployment imageID、`Synced/Healthy`、Pod Ready、Service endpoint
    与 `/healthz`/`/readyz` 结果。
+
+## 空基线 Recovery
+
+1. 仅当 migration 因已知连续分号缺陷留下精确 `20260801000000 applied=1/50`
+   状态时，使用包含 `recover-empty-baseline` 的新镜像手动运行“恢复 Collaboration 北京空基线”。
+   `SOURCE_SHA` 与 `COLLABORATION_IMAGE` 必须是同一主干构建的可验证来源。
+2. Dry-run 会创建一次性 `recovery-plan` Job；它只读核对 baseline hash、claim、
+   `statement_failed`、空 `error_stmt`、partial hash、表集与行数。审批页必须明确显示只有
+   `account_login_identities` 一张表且为 0 行。
+3. 人工审批后，`recovery-apply` Job 再次执行同一组前置校验，然后删除 0 行表并以
+   完整 revision 身份做 CAS delete。随后再运行 `recovery-plan`，只有回读“数据库已为空”
+   才算完成。
+4. Recovery 流水线只注入 DB Job kubeconfig，不调用 cloud bootstrap、不导出 SSM/SOPS、
+   不生成 GitOps MR，也不自动执行
+   runtime。恢复成功后仍需另起一次 `BOOTSTRAP_PHASE=runtime` 流水线。
+5. 任何表非空、多表、未知 revision/hash/claim、非 MySQL 方言或回读非 empty 都必须停止；
+   不得改用手工 SQL 绕过。
 
 ## 后续验收
 
