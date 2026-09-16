@@ -8,6 +8,7 @@ on:
       - playground/sandbox-bj-*
       - playground/sandbox-kr-*
     paths:
+      - ci-triggers/trade
       - trade/**
       - argocd/services/trade/**
       - argocd/apps/shprod/trade.yaml

@@ -3034,6 +3034,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         sgprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "sgprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
+        tokyo_workflow = yaml.safe_load((REPO_ROOT / ".ci/tokyo-trade.yml").read_text())
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn("argocd/services/trade/beijing-sandbox/**", bundle.publish_paths)
@@ -3081,6 +3082,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
         )
+        self.assertIn("ci-triggers/trade", self.push_paths(workflow))
+        self.assertIn("ci-triggers/trade", self.push_paths(tokyo_workflow))
+        self.assertTrue((REPO_ROOT / "ci-triggers/trade").is_file())
 
     def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
         env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
