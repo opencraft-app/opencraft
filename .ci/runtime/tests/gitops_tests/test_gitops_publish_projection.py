@@ -375,6 +375,9 @@ class SandboxCatalogTests(unittest.TestCase):
         beijing_files = sorted(service_root.glob("*/beijing-sandbox*/kustomization.yaml"))
         self.assertGreaterEqual(len(beijing_files), 1)
         for beijing_file in beijing_files:
+            if beijing_file == service_root / "collaboration/beijing-sandbox-foundation/kustomization.yaml":
+                # Foundation is deliberately self-contained for Argo's default load restriction.
+                continue
             content = beijing_file.read_text()
             self.assertIn("- ../common", content, msg=str(beijing_file))
             self.assertNotIn("resources:\n- ../common", content, msg=str(beijing_file))
