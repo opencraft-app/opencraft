@@ -29,7 +29,7 @@ from contracts.bundles import (
     load_manifest,
     playground_catalog_root,
 )
-from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest
+from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest, namespace_bootstrap_enabled
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -358,6 +358,12 @@ def run_command(
     return CommandResult(safe_command, completed.returncode, completed.stdout, completed.stderr)
 
 
+def decode_timeout_output(output: str | bytes | None) -> str:
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
+
+
 def git_output(args: list[str]) -> str:
     result = run_command(["git", *args], cwd=REPO_ROOT)
     if result.returncode != 0:
@@ -457,8 +463,8 @@ def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int =
             result = CommandResult(
                 kubectl_cmd,
                 124,
-                stdout=exc.stdout or "",
-                stderr=(exc.stderr or "") + "\nkubectl command timed out after 75s",
+                stdout=decode_timeout_output(exc.stdout),
+                stderr=decode_timeout_output(exc.stderr) + "\nkubectl command timed out after 75s",
             )
         if result.returncode == 0:
             return result
@@ -936,15 +942,16 @@ def main() -> int:
         }
 
         if args.apply:
-            apply_manifest(
-                kubeconfig,
-                build_bootstrap_namespace_manifest(
-                    str(spec["namespace"]),
-                    service=args.service,
-                    env=args.env,
-                ),
-                retries=args.kubectl_retries,
-            )
+            if namespace_bootstrap_enabled(db_contract):
+                apply_manifest(
+                    kubeconfig,
+                    build_bootstrap_namespace_manifest(
+                        str(spec["namespace"]),
+                        service=args.service,
+                        env=args.env,
+                    ),
+                    retries=args.kubectl_retries,
+                )
             apply_manifest(kubeconfig, apply_manifest_doc, retries=args.kubectl_retries)
             summary["status"] = "applied"
 

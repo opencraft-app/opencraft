@@ -24,7 +24,7 @@ from typing import Any
 from contracts.bundles import load_bundle, load_manifest
 from contracts.release_plan import plan_release_gates
 from gates import db_contract_verifier
-from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest
+from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest, namespace_bootstrap_enabled
 from harness_ci.secrets import build_secret_manifest, secret_env_ref
 
 
@@ -424,14 +424,15 @@ def probe_db_version(*, source_dir: Path, deploy_root: Path, bundle_service: str
     manifest = {"apiVersion": "v1", "kind": "List", "items": [secret_manifest, job]} if secret_manifest else job
     kubeconfig, temp_path = db_contract_verifier.resolve_kubeconfig(deploy_root, env, "DB_JOB_KUBECONFIG_B64")
     try:
-        db_contract_verifier.apply_manifest(
-            kubeconfig,
-            build_bootstrap_namespace_manifest(
-                str(verifier["namespace"]),
-                service=bundle_service,
-                env=env,
-            ),
-        )
+        if namespace_bootstrap_enabled(contract):
+            db_contract_verifier.apply_manifest(
+                kubeconfig,
+                build_bootstrap_namespace_manifest(
+                    str(verifier["namespace"]),
+                    service=bundle_service,
+                    env=env,
+                ),
+            )
         db_contract_verifier.apply_manifest(kubeconfig, manifest)
         status = db_contract_verifier.wait_for_job(kubeconfig, verifier["namespace"], job["metadata"]["name"], timeout_seconds)
         logs = db_contract_verifier.collect_job_logs(

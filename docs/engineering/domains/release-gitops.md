@@ -139,6 +139,9 @@ master 源码
   contract 声明的最小 `credit` Namespace，并打上 CI bootstrap 标签供后续 Argo 接管；该动作不得提前
   创建 Deployment、Service、常驻 ConfigMap 或 runtime Secret，也不得在一次性 Job 清理时删除 Namespace。
   Namespace 创建失败必须 fail closed，不能以“首次发布”为由跳过 DB 版本探测或 readiness。
+  Namespace bootstrap 必须由 `db_contract.bootstrap_namespace: true` 显式启用；Trade、CTL 等 namespace
+  已有的服务不得在每次 DB Job 前重复申请 cluster-scope Namespace。kubectl 超时输出可能是 bytes，runner
+  必须先安全解码再进入既定重试，不能让日志格式异常绕过重试或遮蔽原始集群错误。
 - 首次发布阶段的 Credit migration、版本探测和 readiness Job 必须自包含：非敏感连接参数与 node pool
   从候选 revision 投影后的 `credit-platform.env` 读取，数据库密码从同一投影中的 SOPS Secret 解析后只注入
   一次性 Kubernetes Secret。Job 不依赖 live `credit-config` 或 `credit-runtime-secrets`；临时 Secret 与 Job

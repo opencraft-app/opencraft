@@ -88,10 +88,8 @@ class ProdDbMigrationTests(unittest.TestCase):
 
         expected_version.assert_called_once_with(source_dir, contract, "shprod")
         self.assertEqual(result["expected"], 27)
-        self.assertEqual(apply_manifest.call_count, 2)
-        namespace_manifest = apply_manifest.call_args_list[0].args[1]
-        self.assertEqual(namespace_manifest["kind"], "Namespace")
-        self.assertEqual(namespace_manifest["metadata"]["name"], "ctl")
+        apply_manifest.assert_called_once()
+        self.assertEqual(apply_manifest.call_args.args[1]["metadata"]["name"], "db-version-ctl-shprod")
 
     def test_maps_user_auth_bundle_to_lightclaw_auth_db_job_service(self) -> None:
         self.assertEqual(prod_db_migration.map_service("user-auth"), ("user-auth", "lightclaw-auth"))
