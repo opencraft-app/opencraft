@@ -87,6 +87,7 @@ stages:
               )
 
   - name: 人工确认 Collaboration 北京 bootstrap
+    if: "${{ ci.branch }} == master"
     check-in:
       reviews:
         flows:
@@ -111,6 +112,7 @@ stages:
             run: echo "Collaboration Beijing bootstrap approved."
 
   - name: 执行 Collaboration 北京 bootstrap
+    if: "${{ ci.branch }} == master"
     jobs:
       apply:
         name: 幂等写入并创建 GitOps MR
