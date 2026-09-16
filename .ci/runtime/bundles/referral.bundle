@@ -4,6 +4,7 @@ bundles:
     source: referral
     db_contract:
       mode: migration
+      bootstrap_namespace: true
       db_job_service: referral
       migration_operation: migration
       migration_paths:

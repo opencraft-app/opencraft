@@ -1474,6 +1474,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         contract = shprod.db_contract
         verifier = contract["verifier"]
+        self.assertIs(contract["bootstrap_namespace"], True)
         self.assertEqual(contract["db_job_secret_resolver"], "referral_db_password")
         self.assertEqual(
             contract["secret_resolvers"]["referral_db_password"]["yaml_path"],
