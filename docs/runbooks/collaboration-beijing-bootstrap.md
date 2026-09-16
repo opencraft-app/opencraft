@@ -51,7 +51,8 @@
    `SOURCE_SHA` 与 `COLLABORATION_IMAGE` 必须是同一主干构建的可验证来源。
 2. Dry-run 会创建一次性 `recovery-plan` Job；它只读核对 baseline hash、claim、
    `statement_failed`、空 `error_stmt`、partial hash、表集与行数。审批页必须明确显示只有
-   `account_login_identities` 一张表且为 0 行。
+   `account_login_identities` 一张表且为 0 行；成功 Job 的脱敏 CLI 摘要必须在清理前写入
+   流水线审计 JSON，不能只凭 `status=succeeded` 批准。
 3. 人工审批后，`recovery-apply` Job 再次执行同一组前置校验，然后删除 0 行表并以
    完整 revision 身份做 CAS delete。随后再运行 `recovery-plan`，只有回读“数据库已为空”
    才算完成。

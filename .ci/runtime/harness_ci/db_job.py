@@ -76,6 +76,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
         "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
                                      "capabilities": {"drop": ["ALL"]}},
+        "successLogMarkers": ["恢复计划：可执行", "恢复状态：无需操作"],
     },
     ("collaboration", "recovery-apply"): {
         "namespace": "lightvela-collaboration",
@@ -93,6 +94,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
         "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
                                      "capabilities": {"drop": ["ALL"]}},
+        "successLogMarkers": ["恢复完成", "恢复状态：无需操作"],
     },
     ("payment", "migration"): {
         "namespace": "user-auth",
@@ -1077,6 +1079,21 @@ def main() -> int:
                 write_summary(args.output_json, summary)
                 print(json.dumps(summary, ensure_ascii=False, indent=2))
                 return 1
+            success_markers = list(spec.get("successLogMarkers") or [])
+            if success_markers:
+                logs = collect_job_logs(
+                    kubeconfig,
+                    spec["namespace"],
+                    manifest["metadata"]["name"],
+                    dynamic.get("secretValues") or {},
+                    retries=args.kubectl_retries,
+                )
+                summary["logs"] = logs
+                if not any(marker in logs for marker in success_markers):
+                    summary["status"] = "audit_failed"
+                    write_summary(args.output_json, summary)
+                    print(json.dumps(summary, ensure_ascii=False, indent=2))
+                    return 1
 
         write_summary(args.output_json, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))

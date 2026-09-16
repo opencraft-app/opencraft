@@ -95,6 +95,9 @@ derived: false
 - 最终完整 `go test -p 2 ./...` 和 `go test -race -p 2 ./...` 均通过 1131 项，`go vet ./...`、
   Collaboration guard、generated/migration/OpenAPI/双方言 verify/密钥扫描通过。CI runtime 556 项、
   materialized smoke、Stream YAML/guard 解析、docs-impact 与聚焦 recovery delivery/DB Job 43 项通过。
+- 主干构建 #6 产出 recovery 镜像。Recovery #1 使用旧启动默认镜像并按预期在 CLI usage 失败，
+  没有 DB 写入；#2 使用正确 source/digest 完成只读 plan，但成功 Job 日志未进入审计 JSON。
+  后续修复仅对 recovery plan/apply 在成功时收集脱敏日志并校验标记，无标记则 fail closed。
 
 ## decisions
 
