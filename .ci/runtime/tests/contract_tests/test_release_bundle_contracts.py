@@ -1193,9 +1193,38 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         trade_patch = (
             REPO_ROOT / "argocd/services/trade/beijing-sandbox/patch-credit.yaml"
-        ).read_text()
-        self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
-        self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
+        )
+        trade_data = yaml.safe_load(trade_patch.read_text())["data"]
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_URL"],
+            "http://qbilling.billing.tencentyun.com/feev2/sendResource.php",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_HOST"],
+            "qbilling.billing.tencentyun.com",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL"],
+            "http://81.71.196.13",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"],
+            "qbilling-send-resource-cn-prod",
+        )
+
+        beijing_7_data = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/sandbox-bj-7/patch-playground-db.yaml"
+            ).read_text()
+        )["data"]
+        self.assertEqual(
+            beijing_7_data["CREDIT_SEND_RESOURCE_URL"],
+            "http://9.139.137.40/feev2/sendResource.php",
+        )
+        self.assertEqual(
+            beijing_7_data["CREDIT_SEND_RESOURCE_HOST"], "qbilling.itd.com"
+        )
 
     def test_credit_regional_release_materials_are_complete(self) -> None:
         expected = {
@@ -1207,6 +1236,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "trade_patch": "argocd/services/trade/sandbox-jp-1/patch-playground-db.yaml",
                 "gateway": "argocd/services/service-gateway/sandbox-jp-1/config.yaml",
                 "ssm": "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml",
+                "send_resource_url": "http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "intl.resource.qbilling.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-intl-prod",
+                "send_resource_gateway": "http://43.153.236.65",
             },
             "shprod": {
                 "region": "ap-shanghai",
@@ -1217,6 +1250,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "trade_patch": "argocd/services/trade/shprod/patch-credit.yaml",
                 "gateway": "argocd/services/service-gateway/shprod/config.yaml",
                 "ssm": "scripts/ssm_manifest.credit.shprod.yaml",
+                "send_resource_url": "http://qbilling.billing.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "qbilling.billing.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-cn-prod",
+                "send_resource_gateway": "http://81.71.196.13",
             },
             "sgprod": {
                 "region": "ap-singapore",
@@ -1227,6 +1264,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "trade_patch": "argocd/services/trade/sgprod/patch-credit.yaml",
                 "gateway": "argocd/services/service-gateway/sgprod/config.yaml",
                 "ssm": "scripts/ssm_manifest.credit.sgprod.yaml",
+                "send_resource_url": "http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "intl.resource.qbilling.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-intl-prod",
+                "send_resource_gateway": "http://43.153.236.65",
             },
         }
         required_secret_keys = {
@@ -1258,11 +1299,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     if path := contract.get(key):
                         self.assertTrue((REPO_ROOT / path).is_file(), path)
 
-                trade_patch = (REPO_ROOT / contract["trade_patch"]).read_text()
-                self.assertIn(f"LIGHTVELA_CREDIT_REGION: {contract['region']}", trade_patch)
-                self.assertIn(
-                    "CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID: qbilling-send-resource-test",
-                    trade_patch,
+                trade_data = yaml.safe_load(
+                    (REPO_ROOT / contract["trade_patch"]).read_text()
+                )["data"]
+                self.assertEqual(trade_data["LIGHTVELA_CREDIT_REGION"], contract["region"])
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_URL"], contract["send_resource_url"]
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_HOST"], contract["send_resource_host"]
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"],
+                    contract["send_resource_route"],
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL"],
+                    contract["send_resource_gateway"],
                 )
 
                 gateway = yaml.safe_load((REPO_ROOT / contract["gateway"]).read_text())
