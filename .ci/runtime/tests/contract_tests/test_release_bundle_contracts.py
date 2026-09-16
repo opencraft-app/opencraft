@@ -161,6 +161,23 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_production_release_checkouts_do_not_fetch_unneeded_submodules(self) -> None:
+        for path, expected_count in (
+            (".ci/templates/service-release.yml", 4),
+            (".ci/templates/gitops-promotion-prod.yml", 3),
+        ):
+            with self.subTest(template=path):
+                workflow = yaml.safe_load((REPO_ROOT / path).read_text())
+                checkouts = [
+                    step
+                    for stage in workflow["stages"]
+                    for job in (stage.get("jobs") or {}).values()
+                    for step in job.get("steps", [])
+                    if step.get("checkout") == "self"
+                ]
+                self.assertEqual(len(checkouts), expected_count)
+                self.assertTrue(all(step["with"]["enableSubmodule"] is False for step in checkouts))
+
     def test_sandbox_workers_use_isolated_pod_networking(self) -> None:
         documents = [
             document
