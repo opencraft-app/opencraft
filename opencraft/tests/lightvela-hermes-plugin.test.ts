@@ -1638,10 +1638,19 @@ test("Hermes applies AppServer reasoning effort to new and existing sessions", a
     async call<T>(method: string, params?: unknown): Promise<T> {
       const value = params as Record<string, unknown>;
       calls.push({ method, params: value });
-      if (method === "session.create") return {
-        session_id: "live-reasoning", stored_session_id: "stored-reasoning", message_count: 0, messages: [],
-        info: { cwd: value.cwd, model: value.model, provider: value.provider },
-      } as T;
+      if (method === "session.create") {
+        return {
+          session_id: "live-reasoning",
+          stored_session_id: "stored-reasoning",
+          message_count: 0,
+          messages: [],
+          info: {
+            cwd: value.cwd,
+            model: value.model,
+            provider: value.provider,
+          },
+        } as T;
+      }
       if (method === "config.set") return { value: value.value } as T;
       if (method === "prompt.submit") return { status: "accepted" } as T;
       throw new Error(`Unexpected ${method}`);
@@ -1650,17 +1659,53 @@ test("Hermes applies AppServer reasoning effort to new and existing sessions", a
   };
   const adapter = new HermesAppServerAdapter(rpc, "/workspace");
   const model = encodeHermesModelSelection("tokenhub", "glm-5.3-flash");
-  const started = await dispatchAppServerRequest(adapter, { id: 1, method: "thread/start", params: { cwd: "/workspace", model, effort: "high" } }) as {
-    thread: { id: string }; reasoningEffort: string | null;
-  };
+  const started = await dispatchAppServerRequest(adapter, {
+    id: 1,
+    method: "thread/start",
+    params: { cwd: "/workspace", model, effort: "high" },
+  }) as { thread: { id: string }; reasoningEffort: string | null };
+
   assert.equal(started.reasoningEffort, "high");
-  assert.deepEqual(calls[0], { method: "session.create", params: { cwd: "/workspace", source: "desktop", model: "glm-5.3-flash", provider: "tokenhub", reasoning_effort: "high" } });
-  await dispatchAppServerRequest(adapter, { id: 2, method: "turn/start", params: {
-    threadId: started.thread.id, input: [{ type: "text", text: "hello" }], model, effort: "low", clientUserMessageId: "reasoning-message",
-  } });
+  assert.deepEqual(calls[0], {
+    method: "session.create",
+    params: {
+      cwd: "/workspace",
+      source: "desktop",
+      model: "glm-5.3-flash",
+      provider: "tokenhub",
+      reasoning_effort: "high",
+    },
+  });
+
+  await dispatchAppServerRequest(adapter, {
+    id: 2,
+    method: "turn/start",
+    params: {
+      threadId: started.thread.id,
+      input: [{ type: "text", text: "hello" }],
+      model,
+      effort: "low",
+      clientUserMessageId: "reasoning-message",
+    },
+  });
+
   assert.deepEqual(calls.slice(1), [
-    { method: "config.set", params: { session_id: "live-reasoning", key: "reasoning", value: "low" } },
-    { method: "prompt.submit", params: { session_id: "live-reasoning", text: "hello", queued: true } },
+    {
+      method: "config.set",
+      params: {
+        session_id: "live-reasoning",
+        key: "reasoning",
+        value: "low",
+      },
+    },
+    {
+      method: "prompt.submit",
+      params: {
+        session_id: "live-reasoning",
+        text: "hello",
+        queued: true,
+      },
+    },
   ]);
   assert.equal(adapter.executionReasoningEffort(started.thread.id), "low");
 });

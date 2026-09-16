@@ -1905,6 +1905,7 @@ export class HermesAppServerAdapter {
           session_id: liveId,
           key: "model",
           value: hermesModelSwitchArgument(effectiveSelection),
+          // Selecting a concrete row in OpenCraft is already explicit consent.
           confirm_expensive_model: true,
         });
         if (result.confirm_required === true) {

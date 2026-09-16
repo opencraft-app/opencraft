@@ -27,6 +27,7 @@ function modelReasoningEfforts(
     .map((value) => value.trim().toLowerCase())
     .filter((value, index, values) => HERMES_REASONING_VALUES.has(value) && values.indexOf(value) === index);
   if (declared.length > 0) return declared;
+  // Provider-prefixed GLM 5.3 aliases share the mandatory low/high/max route.
   const normalized = model.trim().toLowerCase().replace(/[^a-z0-9]+/gu, "-");
   if (/(?:^|-)glm-5-3(?:-|$)/u.test(normalized)) return ["low", "high", "max"];
   return HERMES_REASONING_EFFORTS;
@@ -140,6 +141,10 @@ export function mapHermesModelOptions(
         description: provider.warning?.trim() || `Hermes via ${providerName}`,
         modelSpecialty: null,
         hidden: provider.authenticated === false,
+        // Official Hermes Desktop presents the canonical Hermes ladder and
+        // lets the provider transport clamp it to the wire vocabulary. A
+        // mandatory route omits `none`; high is the conservative provider
+        // default used when an old session was previously set to `none`.
         supportedReasoningEfforts,
         defaultReasoningEffort: (() => {
           const values = supportedReasoningEfforts.map(({ reasoningEffort }) => reasoningEffort);

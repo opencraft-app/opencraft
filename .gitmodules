@@ -7,3 +7,6 @@
 [submodule "ref/grokbotani"]
 	path = ref/grokbotani
 	url = https://github.com/iduu/grokbot-animation.git
+[submodule "ref/hermes-desktop"]
+	path = ref/hermes-desktop
+	url = https://github.com/fathah/hermes-desktop.git
