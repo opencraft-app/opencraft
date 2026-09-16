@@ -148,6 +148,7 @@ stages:
               ci_ensure_go
               ci_load_tencentcloud_credentials
               ci_ensure_db_job_tools
+              ci_ensure_tccli
               ci_require_commands go sops tccli
               im_file="$(mktemp)"
               deploy_root=""
