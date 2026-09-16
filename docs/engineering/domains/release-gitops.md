@@ -207,6 +207,9 @@ master 源码
   超时后保留已完成的 SSM、账号和逻辑库，由下一次只读预检重新判断，不盲目重复创建。
 - `foundation` GitOps MR 只包含 Namespace、ServiceAccount 与由 SSM 导出的加密 Secret，不能出现
   Deployment、Service 或 migration Job。只有 foundation 在目标集群收敛后，才能进入 runtime 阶段。
+- SSM→SOPS 导出和后续 GitOps 投影需要相同的受控 Python `yaml` 依赖，apply 必须在读取 SSM 前
+  准备并验证固定版本的隔离环境。若 DB/SSM 已幂等写入而导出失败，保留云端事实，修复工具链后
+  重新只读预检并经人工审批重入；不得手工复制明文 Secret 或跳过加密投影。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
