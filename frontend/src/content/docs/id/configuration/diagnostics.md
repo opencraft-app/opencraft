@@ -49,13 +49,12 @@ Saat melaporkan masalah, sertakan:
 
 Jika Agent tidak dapat menggunakan model yang dikonfigurasi dan masalahnya tetap ada setelah Anda memeriksa penyedia, pilihan model, dan kredensial, pilih **Reset model configuration** di Diagnostik.
 
-Tindakan ini memulihkan konfigurasi model Hermes Agent sehingga Anda dapat mengaturnya kembali. Setelah selesai:
+Tindakan ini hanya mereset Profil Hermes untuk Bot saat ini. Model bawaan sistem dan kredensialnya dipulihkan, sedangkan model, penyedia, dan model cadangan yang ditambahkan pengguna dihapus. Bot lain dalam Agent yang sama tidak terpengaruh. Setelah selesai:
 
-1. Kembali ke [Konfigurasi Model](./model.md).
-2. Tambahkan atau pilih model yang ingin Anda gunakan.
-3. Kirim pesan uji singkat di [Chat Agent](./agent-chat.md).
+1. Kirim pesan uji singkat di [Chat Agent](./agent-chat.md) untuk memastikan model bawaan berfungsi.
+2. Jika masih memerlukan model khusus, kembali ke [Konfigurasi Model](./model.md) dan tambahkan atau pilih kembali.
 
-> **Perhatian:** Reset konfigurasi model hanya ketika Anda siap mengonfigurasi model yang berfungsi lagi. Ini bukan langkah pertama untuk masalah penyedia atau jaringan yang bersifat sementara.
+> **Perhatian:** Konfigurasi model yang ditambahkan pengguna tidak dipertahankan. Ini bukan langkah pertama untuk masalah penyedia atau jaringan yang bersifat sementara.
 
 ## Memasang ulang Agent tanpa menghapus data
 

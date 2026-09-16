@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "17f1a03bb53e53d4f94f1d919e7824617bf6dfd1",
+  "sourceRevision": "123ea67f3c2ecec6d050d06f21eab8454003822a",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -64,6 +64,10 @@
       "sourceSha256": "86179ead543c660f84a03e3e48067e9b84b7792a3a31da33a1a947f17d5a57a8"
     },
     {
+      "file": "domain/instance-bot-errors.ts",
+      "sourceSha256": "e5a50bce3dd5334fa04d61a80baa9c9bad88e0692d7af9d07c0de0c9509ec942"
+    },
+    {
       "file": "domain/plan-catalog.ts",
       "sourceSha256": "799c0965ad55396509098bb09434c503c6d6431ff8bdc329e3e592728064cac0"
     },
@@ -77,35 +81,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "2b06393ebfd26ff1c6175a27cc44785271061cb784b62c48769c0cb88e279261"
+      "sourceSha256": "3dc2d75b2cb4d6197aa0ef7feeaa1b777cb03181f09dc2275f3cee736aef8045"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "af9960eca1b0602ef642a6b6cd02c2e8fb1f592a9d193714f303f7afad1a8f9d"
+      "sourceSha256": "77549c41fc7fe3ed833222fdc019d7f439245870dfa5498fcc49742c4bb3d059"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "ea00f66fdd6c73103d041f2a1af088097f6cee420d91905e57907183a7238047"
+      "sourceSha256": "617bfd4665bb59bd9533afe736645f26f2411c1067358517a01b339b0b7ccb2c"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "a5b525ccdf1393dde50bf127080f716b5957846e9ab3b973a54b5d7afdc0fd09"
+      "sourceSha256": "15494a6883042cb43884f61d88c5dd839c9fc682e73de8272f92a4298880b256"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "f6681ec0b1bb73794670db9a67aaaab5cfb736c734a13f6d5729b53d553d4808"
+      "sourceSha256": "451b5008298eb644480c232bc49fef37f0279ae047d275d32f29dcec61ef36d8"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "5c984af156f08c0f571602a9abf6474caa3376d44e61d41b05c993831eb99a9b"
+      "sourceSha256": "da2e6d8a1a42a9676f18d212d39da8078f5b84de287548b2cff6359ca06dd2a8"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "b0fe1d8f444de30ca823494a6820047768e3459e04361cc6bb4067f739a78707"
+      "sourceSha256": "5054bb26180ecc9cc6c642a7522b0907247335c5cc555b6a23329062920dfa28"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "a2c644700e55c5e579ad0143017ab64f183acc3efd214231cdb54445ba7d3807"
+      "sourceSha256": "6a31f2f8ac68ccfaf455764d7a5684e271a36b8eb243180cd82234d605755aef"
     },
     {
       "file": "i18n/index.ts",
@@ -213,7 +217,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "46575ce900c08e58fb1bff55a0286b9d3360242f9a274b5a86fa804b758413e2"
+      "sourceSha256": "f6d305f01fd217a0bfb6d15067cf5570805560cf452e4beeb290e960123dd127"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -333,7 +337,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "565c90a1939aee2e7b17c8bac8f36e72f6ccca2f98095b84fdb0c7c800ac567c"
+      "sourceSha256": "63c0ab82a336ad01887a3d9c4eeb5c2a986e33bc85fa86c90409d5c6e806dfab"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",
@@ -357,7 +361,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "55c244fd14aa937f52aec3e742f7818f5def0cddf1548f03c6c6183ac091381b"
+      "sourceSha256": "611fe016ba4d65b326725bd99de6abaaa5514321cbce71efabc3fd1e2cb325e0"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
@@ -365,7 +369,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
-      "sourceSha256": "5965471734a9ac1a82b75840ad471e7e15c4034dc5e32dc44ba66b9124c213c1"
+      "sourceSha256": "1b7dc26d51f88093c9260034bfd09a46d2a36201c0b8d9bd9325a1523bf98b1d"
     },
     {
       "file": "pages/marketing/agent-model-config/model-form-controls.tsx",
@@ -385,7 +389,7 @@
     },
     {
       "file": "pages/marketing/agent-reset-config.ts",
-      "sourceSha256": "348653400c6e0ff223d1d2bfa6c47346fa66769f1c720c124845596ad348947a"
+      "sourceSha256": "6995478e79a819a414f8c06ef4115ff7e90e3b85b097ef0c3aae8edb5ca03f75"
     },
     {
       "file": "pages/marketing/agent-skills-panel.tsx",
@@ -501,7 +505,7 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "9f4ef75c2a1cd9470b915204566a14faa44fcfaf0313b4e956b61225565d0bbc"
+      "sourceSha256": "200456777b19f2fe00ff3375b028016f2046b0ef6075db91f0a31972a7a63728"
     },
     {
       "file": "repositories/types.ts",

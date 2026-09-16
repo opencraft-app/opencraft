@@ -5,9 +5,11 @@ import { HermesAgentConsoleHost } from "./hermes-agent-console-host";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../upstream/mono2/components/ui/dialog";
 import { getHermesScriptCommands } from "../upstream/mono2/pages/marketing/agent-config/scripts-runtime";
 import {
+  createHermesModelConfigClient,
+  HermesModelConfigResponseError,
+} from "../upstream/mono2/pages/marketing/agent-model-config/model-config-client";
+import {
   ACLI_RESET_COMMAND,
-  hermesModelName,
-  hermesSwitchModelFullId,
   isExecCommandSucceeded,
   truncateExecOutput,
 } from "../upstream/mono2/pages/marketing/agent-reset-config";
@@ -20,10 +22,6 @@ const AgentDiagnosticsPanel = lazy(async () => {
 });
 
 type ConfirmAction = "reset-config" | "reset-agent" | null;
-
-function redact(value: string, secret: string): string {
-  return secret ? value.replaceAll(secret, "sk-***") : value;
-}
 
 export function HermesDiagnosticsManagementView({ account, botId, botName, botStatus }: {
   readonly account: LightVelaAccountService;
@@ -55,40 +53,39 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
     setResettingConfig(true);
     try {
       const reset = await account.resetInstanceConfig(botId);
-      const backend = await account.execDebugCommand(botId, "acli backend reset-config", { timeoutMs: 120_000 });
-      if (!isExecCommandSucceeded(backend)) {
-        throw new Error(t("初始化配置文件失败：{{detail}}", {
-          detail: truncateExecOutput(backend.output, backend.status),
-        }));
-      }
-
-      const commands = getHermesScriptCommands();
-      const save = await account.execDebugCommand(botId, commands.getProviderSaveCommand({
-        name: reset.config.providerName,
-        baseUrl: reset.config.baseUrl,
-        api: reset.config.api,
-        apiKey: reset.config.apiKey,
-        models: [{ id: reset.config.modelId, name: hermesModelName(reset.config.modelId) }],
-      }), { timeoutMs: 120_000 });
-      if (!isExecCommandSucceeded(save)) {
-        throw new Error(t("默认模型保存失败：{{detail}}", {
-          detail: truncateExecOutput(redact(save.output, reset.config.apiKey), save.status),
-        }));
-      }
-
-      const switched = await account.execDebugCommand(
+      const modelConfigClient = createHermesModelConfigClient(
+        (targetBotId, command) => account.execDebugCommand(targetBotId, command, { timeoutMs: 120_000 }),
         botId,
-        commands.getModelSwitchCommand(hermesSwitchModelFullId(reset.config.providerName, reset.config.modelId)),
+        "main",
+      );
+      await modelConfigClient.resetToPlatformDefault({
+        apiKey: reset.config.apiKey,
+        model: {
+          id: reset.config.modelId,
+          providerKey: reset.config.providerName,
+          providerName: reset.config.providerName,
+          baseUrl: reset.config.baseUrl,
+          routeBaseUrl: reset.config.baseUrl,
+          apiMode: reset.config.api,
+          keyEnv: "",
+        },
+      });
+
+      const restarted = await account.execDebugCommand(
+        botId,
+        getHermesScriptCommands("main").getGatewayRestartCommand(),
         { timeoutMs: 120_000 },
       );
-      if (!isExecCommandSucceeded(switched)) {
-        throw new Error(t("默认模型切换失败：{{detail}}", {
-          detail: truncateExecOutput(redact(switched.output, reset.config.apiKey), switched.status),
+      if (!isExecCommandSucceeded(restarted)) {
+        throw new Error(t("模型配置已恢复，但 Gateway 重启失败：{{detail}}", {
+          detail: truncateExecOutput(restarted.output, restarted.status),
         }));
       }
       toast.success(t("重置成功"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("重置失败，请重试"));
+      toast.error(error instanceof HermesModelConfigResponseError
+        ? t("当前 Bot 的模型配置恢复失败，原配置已保留。")
+        : error instanceof Error ? error.message : t("重置失败，请重试"));
     } finally {
       setResettingConfig(false);
     }
@@ -158,7 +155,7 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
             <DialogDescription className="leading-6 text-black/55">
               {confirmAction === "reset-agent"
                 ? t("将重新安装 Agent 运行环境，并保留已有数据。运行期间请勿重复操作。")
-                : t("将轮换模型凭据并重新写入默认模型配置。")}
+                : t("将恢复平台默认模型和凭据，并移除用户添加的模型、Provider 与备用模型。")}
             </DialogDescription>
           </DialogHeader>
           <div className="mt-5 flex justify-end gap-2">
