@@ -167,6 +167,9 @@ master 源码
   正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
 - 北京或上海正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
   公共面只允许查询单个返利码与准备注册上下文，用户统计和返利码创建必须经过 session 鉴权。
+- 上海 CTL 的 Referral patch 必须按容器名 `api` 合并到原容器，不能把 Deployment 名 `ctl-api`
+  当作容器名。GitOps 候选需在 Kustomize 中保留原容器并成功应用既有 volumeMount/volume 删除补丁，
+  否则不得创建或合并发布 MR。
 - 北京与上海环境显式设置 `REFERRAL_ENABLED=true`；全局和新加坡默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
