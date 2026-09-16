@@ -20,9 +20,11 @@ export GOWORK=off
 )
 
 if [[ -n "${SOPS_AGE_KEY_FILE:-}" && -r "${SOPS_AGE_KEY_FILE}" ]]; then
-  kustomize build argocd/services/referral/beijing-sandbox \
-    --enable-alpha-plugins \
-    --enable-exec >/dev/null
+  for env in beijing-sandbox shprod; do
+    kustomize build "argocd/services/referral/${env}" \
+      --enable-alpha-plugins \
+      --enable-exec >/dev/null
+  done
 else
   # The MR guard can validate source manifests without decrypting runtime
   # credentials. Full KSOPS rendering remains part of the GitOps release gate.

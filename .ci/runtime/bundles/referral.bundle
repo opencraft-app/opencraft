@@ -9,22 +9,39 @@ bundles:
       migration_paths:
       - referral/migrations/**
       expected_migration_source: referral/migrations
+      db_job_secret_resolver: referral_db_password
+      secret_resolvers:
+        referral_db_password:
+          type: sops_yaml
+          file: argocd/secrets/{env}/referral-runtime-secrets.sops.yaml
+          yaml_path: stringData.REFERRAL_DB_PASSWORD
       verifier:
         namespace: referral
-        configmap: referral-config
-        secret: referral-runtime-secrets
+        image: mysql:8.0
+        service_platform_env_file: argocd/services/referral/{env}/referral-platform.env
+        env_from_service_platform:
+          MYSQL_HOST: REFERRAL_MYSQL_HOST
+          MYSQL_PORT: REFERRAL_MYSQL_PORT
+          REFERRAL_DB: REFERRAL_DB
+          REFERRAL_DB_USER: REFERRAL_DB_USER
+        env_from_secret_resolver:
+          REFERRAL_DB_PASSWORD: referral_db_password
+        node_selector_from_service_platform:
+          pool: REFERRAL_NODE_POOL
         database_env: REFERRAL_DB
         user_env: REFERRAL_DB_USER
         password_env: REFERRAL_DB_PASSWORD
-    reason: Referral campaign API and Pulsar reward worker for the Beijing pilot.
+    reason: Referral campaign API and Pulsar reward worker for Beijing, plus a disabled Shanghai foundation.
     allowed_paths:
     - referral/k8s/base
     - referral/k8s/overlays/beijing-sandbox
+    - referral/k8s/overlays/shprod
     - referral/Dockerfile
     - referral/migrations
     - argocd/catalogs/sandbox/beijing-sandbox/referral.yaml
     - argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml
     - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+    - scripts/ssm_manifest.referral.shprod.yaml
     exit_condition: Can be removed only after referral ownership moves into another entitlement service.
     publish_paths:
     - argocd/services/referral/{env}/**
@@ -33,7 +50,7 @@ bundles:
     - referral/k8s/overlays/{env}/**
     - argocd/catalogs/sandbox/{env}/referral.yaml
     - argocd/secrets/{env}/referral-runtime-secrets.sops.yaml
-    - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+    - scripts/ssm_manifest.referral.{env}.yaml
     publish_paths_by_env:
       beijing-sandbox:
       - argocd/services/referral/beijing-sandbox/**
@@ -44,10 +61,20 @@ bundles:
       - argocd/catalogs/sandbox/beijing-sandbox/referral.yaml
       - argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml
       - scripts/ssm_manifest.referral.beijing-sandbox.yaml
+      shprod:
+      - argocd/services/referral/shprod/**
+      - argocd/services/referral/common/**
+      - argocd/apps/shprod/referral.yaml
+      - argocd/projects/shprod-referral.yaml
+      - referral/k8s/base/**
+      - referral/k8s/overlays/shprod/**
+      - argocd/secrets/shprod/referral-runtime-secrets.sops.yaml
+      - scripts/ssm_manifest.referral.shprod.yaml
     dockerfile: referral/Dockerfile
     build_context: referral
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/referral
       sandbox-bj-*: lightclaw-bj8.tencentcloudcr.com/lightclaw/referral
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/referral
       sandbox-kr-*: null
       sandbox-jp-*: null

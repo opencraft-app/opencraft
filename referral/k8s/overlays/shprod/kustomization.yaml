@@ -1,0 +1,68 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: ConfigMap
+      name: referral-config
+    patch: |-
+      - op: replace
+        path: /data/REFERRAL_ENABLED
+        value: "false"
+      - op: replace
+        path: /data/REFERRAL_PROCESSING_ENABLED
+        value: "false"
+      - op: replace
+        path: /data/MYSQL_HOST
+        value: "10.15.192.13"
+      - op: replace
+        path: /data/MYSQL_PORT
+        value: "3306"
+      - op: replace
+        path: /data/REFERRAL_DB
+        value: "lightvela_referral"
+      - op: replace
+        path: /data/REFERRAL_PUBLIC_BASE_URL
+        value: "https://lightvela.com"
+      - op: replace
+        path: /data/REFERRAL_PULSAR_URL
+        value: "http://pulsar-vje938a9pgq4.eap-tiu5h8jq.tdmq-pulsar.ap-sh.qcloud.tencenttdmq.com:8080"
+      - op: replace
+        path: /data/REFERRAL_PULSAR_TOPIC
+        value: "persistent://pulsar-vje938a9pgq4/lightvela-ref/lightvela.referral.events.v1"
+      - op: replace
+        path: /data/REFERRAL_PULSAR_DLQ_TOPIC
+        value: "persistent://pulsar-vje938a9pgq4/lightvela-ref/lightvela.referral.events.v1-dlq"
+      - op: replace
+        path: /data/CTL_INTERNAL_BASE_URL
+        value: "http://ctl-api.ctl.svc.cluster.local"
+      - op: replace
+        path: /data/REFERRAL_CAMPAIGN_ID
+        value: "shprod-foundation-disabled"
+      - op: replace
+        path: /data/REFERRAL_CAMPAIGN_NAME
+        value: "上海邀请返利（未启用）"
+      - op: replace
+        path: /data/REFERRAL_CAMPAIGN_STATUS
+        value: "paused"
+      - op: replace
+        path: /data/REFERRAL_CAMPAIGN_STARTS_AT
+        value: "2099-01-01T00:00:00+08:00"
+      - op: replace
+        path: /data/REFERRAL_CAMPAIGN_ENDS_AT
+        value: "2099-02-01T00:00:00+08:00"
+      - op: replace
+        path: /data/REFERRAL_BUDGET_CREDIT
+        value: "0"
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/nodeSelector/pool
+        value: "general-shprod"
+  - target:
+      kind: Deployment
+      name: referral-worker
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0

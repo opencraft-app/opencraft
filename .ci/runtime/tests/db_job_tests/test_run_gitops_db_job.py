@@ -349,6 +349,47 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertNotIn("configmap", db_job.SERVICE_SPECS[("credit", "migration")])
         self.assertNotIn("secret", db_job.SERVICE_SPECS[("credit", "migration")])
 
+    def test_referral_migration_builds_self_contained_runtime_resources(self) -> None:
+        with mock.patch.object(
+            db_job,
+            "resolve_contract_secret_values",
+            return_value={"referral_db_password": "referral-password"},
+        ):
+            dynamic, resources = db_job.build_referral_dynamic_resources(
+                job_name="gitops-referral-migration-test",
+                namespace="referral",
+                env_name="shprod",
+                deploy_root=Path("/tmp/gitops"),
+                service_platform_env={
+                    "REFERRAL_MYSQL_HOST": "10.15.192.13",
+                    "REFERRAL_MYSQL_PORT": "3306",
+                    "REFERRAL_DB": "lightvela_referral",
+                    "REFERRAL_DB_USER": "referral",
+                    "REFERRAL_NODE_POOL": "general-shprod",
+                },
+                db_contract={"db_job_secret_resolver": "referral_db_password"},
+            )
+
+        self.assertEqual(dynamic["nodeSelector"], {"pool": "general-shprod"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "10.15.192.13"}, dynamic["env"])
+        self.assertIn({"name": "REFERRAL_DB", "value": "lightvela_referral"}, dynamic["env"])
+        self.assertIn(
+            {
+                "name": "REFERRAL_DB_PASSWORD",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": "gitops-referral-migration-test-secrets",
+                        "key": "REFERRAL_DB_PASSWORD",
+                    }
+                },
+            },
+            dynamic["env"],
+        )
+        self.assertEqual(resources[0]["kind"], "Secret")
+        self.assertEqual(resources[0]["stringData"]["REFERRAL_DB_PASSWORD"], "referral-password")
+        self.assertNotIn("configmap", db_job.SERVICE_SPECS[("referral", "migration")])
+        self.assertNotIn("secret", db_job.SERVICE_SPECS[("referral", "migration")])
+
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
 

@@ -110,10 +110,9 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
     ("referral", "migration"): {
         "namespace": "referral",
         "deployment": "referral",
-        "configmap": "referral-config",
-        "secret": "referral-runtime-secrets",
         "platform_env_file": "argocd/services/referral/{env}/referral-platform.env",
         "image_env_key": "REFERRAL_IMAGE",
+        "dynamic_builder": "referral",
         "command": [
             "/bin/sh",
             "-ec",
@@ -686,6 +685,62 @@ def build_credit_dynamic_resources(
     return dynamic, [secret]
 
 
+def build_referral_dynamic_resources(
+    *,
+    job_name: str,
+    namespace: str,
+    env_name: str,
+    deploy_root: Path,
+    service_platform_env: dict[str, str],
+    db_contract: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    required_platform_keys = (
+        "REFERRAL_MYSQL_HOST",
+        "REFERRAL_MYSQL_PORT",
+        "REFERRAL_DB",
+        "REFERRAL_DB_USER",
+        "REFERRAL_NODE_POOL",
+    )
+    missing = [key for key in required_platform_keys if not service_platform_env.get(key, "").strip()]
+    if missing:
+        raise ValueError(f"missing Referral DB job platform values: {', '.join(missing)}")
+
+    resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
+    if not resolver_name:
+        raise ValueError("referral db_contract.db_job_secret_resolver is required")
+    resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
+    password = resolved_secrets.get(resolver_name, "").strip()
+    if not password:
+        raise ValueError(f"missing Referral DB password from secret resolver {resolver_name}")
+
+    secret_name = f"{job_name}-secrets"
+    secret = build_secret_manifest(
+        namespace,
+        secret_name,
+        {"REFERRAL_DB_PASSWORD": password},
+        labels={
+            "gitops.clawhub.dev/service": "referral",
+            "gitops.clawhub.dev/operation": "migration",
+            "gitops.clawhub.dev/managed-by": "run_gitops_db_job.py",
+        },
+    )
+    dynamic = {
+        "env": [
+            {"name": "MYSQL_HOST", "value": service_platform_env["REFERRAL_MYSQL_HOST"].strip()},
+            {"name": "MYSQL_PORT", "value": service_platform_env["REFERRAL_MYSQL_PORT"].strip()},
+            {"name": "REFERRAL_DB", "value": service_platform_env["REFERRAL_DB"].strip()},
+            {"name": "REFERRAL_DB_USER", "value": service_platform_env["REFERRAL_DB_USER"].strip()},
+            {
+                "name": "REFERRAL_DB_PASSWORD",
+                "valueFrom": secret_env_ref(secret_name, "REFERRAL_DB_PASSWORD"),
+            },
+        ],
+        "nodeSelector": {"pool": service_platform_env["REFERRAL_NODE_POOL"].strip()},
+        "secretValues": {"REFERRAL_DB_PASSWORD": password},
+    }
+    return dynamic, [secret]
+
+
 def default_ctl_database(env_name: str) -> str:
     if re.fullmatch(r"sandbox-(bj|kr)-\d+", env_name):
         return f"ctl_{env_name.replace('-', '_')}"
@@ -912,6 +967,15 @@ def main() -> int:
             )
         elif spec.get("dynamic_builder") == "credit":
             dynamic, extra_resources = build_credit_dynamic_resources(
+                job_name=job_name,
+                namespace=spec["namespace"],
+                env_name=args.env,
+                deploy_root=deploy_root,
+                service_platform_env=service_platform_env,
+                db_contract=db_contract,
+            )
+        elif spec.get("dynamic_builder") == "referral":
+            dynamic, extra_resources = build_referral_dynamic_resources(
                 job_name=job_name,
                 namespace=spec["namespace"],
                 env_name=args.env,
