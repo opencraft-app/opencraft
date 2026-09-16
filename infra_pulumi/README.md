@@ -141,6 +141,9 @@ GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
 权限完全匹配时不写入。账号存在但 SSM 丢失时默认拒绝；仅故障恢复可显式追加
 `--allow-database-password-reset`。IM Secret 不一致时默认拒绝；仅明确轮换时追加
 `--allow-im-secret-rotation`。日常镜像发布不得使用这两个恢复开关。
+首次创建账号使用满足 CynosDB 密码复杂度、且可放入受管 DSN 的生成密码。若 SSM 已存在、
+账号尚未创建，且旧 DSN 密码不合规，重入时只更新 DSN 中的密码并保留其他 Secret 字段；
+已有账号不会通过这条路径隐式轮换密码。
 
 ### 5. 只同步部署输出
 
