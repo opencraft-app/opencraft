@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { prepareDshRuntime } from "../scripts/prepare-dsh-runtime.mjs";
 import checkDesktopTarget from "../scripts/check-desktop-target.cjs";
-import { providerLifecycleEdits, patchDshProviderLifecycle } from "../scripts/patch-dsh-provider-lifecycle.mjs";
+import { providerLifecycleEdits, nativeProviderLifecycleEdits, patchDshProviderLifecycle } from "../scripts/patch-dsh-provider-lifecycle.mjs";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "opencraft-dsh-test-"));
@@ -30,6 +30,9 @@ async function fixture(t) {
     const pi = join(runtime, "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib");
     await mkdir(pi, { recursive: true });
     await writeFile(join(pi, "index.js"), providerLifecycleEdits.map(([before]) => before).join("\n"));
+    const native = join(runtime, "node_modules/@deepseek-ai/dsh-llm-deepseek/lib");
+    await mkdir(native, { recursive: true });
+    await writeFile(join(native, "index.js"), nativeProviderLifecycleEdits.map(([before]) => before).join("\n"));
   }
   return { root, runtime, install, installs: () => installs };
 }
@@ -40,8 +43,11 @@ test("provider lifecycle patch is idempotent and rejects upstream drift", async 
   await patchDshProviderLifecycle(f.runtime);
   const path = join(f.runtime, "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js");
   const once = await readFile(path, "utf8");
+  const nativePath = join(f.runtime, "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js");
+  const nativeOnce = await readFile(nativePath, "utf8");
   await patchDshProviderLifecycle(f.runtime);
   assert.equal(await readFile(path, "utf8"), once);
+  assert.equal(await readFile(nativePath, "utf8"), nativeOnce);
   await writeFile(path, "// unsupported upstream revision");
   await assert.rejects(patchDshProviderLifecycle(f.runtime), /no longer matches/);
   assert.equal(await readFile(path, "utf8"), "// unsupported upstream revision");
@@ -53,6 +59,16 @@ test("missing manifest fails before npm can fall back to the root project", asyn
   await assert.rejects(prepareDshRuntime(f), /ENOENT/);
   assert.equal(f.installs(), 0);
   assert.equal(await readFile(join(f.root, "root-dev-dependency"), "utf8"), "untouched");
+});
+
+test("native adapter drift is rejected before either adapter is rewritten", async t => {
+  const f = await fixture(t);
+  await f.install(f.runtime);
+  const pi = join(f.runtime, "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js");
+  const before = await readFile(pi, "utf8");
+  await writeFile(join(f.runtime, "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js"), "// unknown native version");
+  await assert.rejects(patchDshProviderLifecycle(f.runtime), /no longer matches/);
+  assert.equal(await readFile(pi, "utf8"), before);
 });
 
 test("inconsistent lockfile fails before installation", async t => {

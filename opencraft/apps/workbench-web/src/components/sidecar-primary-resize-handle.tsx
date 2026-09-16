@@ -5,9 +5,10 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import type {
-  ShellNavigationRailDetent,
-  ShellNavigationVisibleDetent,
+import {
+  shellNavigationMetrics,
+  type ShellNavigationRailDetent,
+  type ShellNavigationVisibleDetent,
 } from "@opencraft/workbench-runtime";
 import {
   beginSidecarPrimaryResize,
@@ -16,10 +17,6 @@ import {
   type SidecarPrimaryResizePreview,
   type SidecarPrimaryResizeTransaction,
 } from "./sidecar-primary-resize";
-import {
-  SIDEBAR_MAXIMUM_WIDTH,
-  SIDEBAR_MINIMUM_WIDTH,
-} from "./sidebar-resize-handle";
 
 interface SidecarPrimaryResizeHandleProps {
   readonly compactWidth: number;
@@ -27,6 +24,7 @@ interface SidecarPrimaryResizeHandleProps {
   readonly detent: ShellNavigationVisibleDetent;
   readonly expandedWidth: number;
   readonly getMaximumWidth: () => number;
+  readonly getCurrentWidth?: () => number;
   readonly label: string;
   readonly onCancel: () => void;
   readonly onCommit: (result: SidecarPrimaryResizeCommit) => void;
@@ -50,6 +48,7 @@ export function SidecarPrimaryResizeHandle({
   detent,
   expandedWidth,
   getMaximumWidth,
+  getCurrentWidth,
   label,
   onCancel,
   onCommit,
@@ -66,7 +65,7 @@ export function SidecarPrimaryResizeHandle({
     const preview = previewSidecarPrimaryResize({
       clientX,
       compactWidth,
-      expandedMinimumWidth: SIDEBAR_MINIMUM_WIDTH,
+      expandedMinimumWidth: shellNavigationMetrics.expandedMinimumWidth,
       maximumWidth: getMaximumWidth(),
       transaction: active.transaction,
     });
@@ -104,14 +103,18 @@ export function SidecarPrimaryResizeHandle({
   ) => onCommit({ detent: nextDetent, expandedWidth: nextExpandedWidth, originDetent: detent });
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || activeRef.current !== null) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    // Stopping a running animation can flush its final value. Retire that
+    // writer before reading the physical origin for the new pointer owner.
+    onResizingChange?.(true);
     const transaction = beginSidecarPrimaryResize({
       clientX: event.clientX,
       compactWidth,
       detent,
       expandedWidth,
+      currentWidth: getCurrentWidth?.(),
     });
     activeRef.current = {
       didMove: false,
@@ -124,7 +127,6 @@ export function SidecarPrimaryResizeHandle({
       transaction,
     };
     setIsResizing(true);
-    onResizingChange?.(true);
   };
 
   const handleDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -136,20 +138,20 @@ export function SidecarPrimaryResizeHandle({
     let nextDetent: ShellNavigationRailDetent | null = null;
     let nextWidth: number | null = null;
     if (event.key === "ArrowLeft" || event.key === "Home") {
-      if (detent === "expanded" && expandedWidth > SIDEBAR_MINIMUM_WIDTH && event.key !== "Home") {
+      if (detent === "expanded" && expandedWidth > shellNavigationMetrics.expandedMinimumWidth && event.key !== "Home") {
         nextDetent = "expanded";
-        nextWidth = Math.max(SIDEBAR_MINIMUM_WIDTH, expandedWidth - keyboardResizeStep);
+        nextWidth = Math.max(shellNavigationMetrics.expandedMinimumWidth, expandedWidth - keyboardResizeStep);
       } else nextDetent = detent === "expanded" ? "compact" : "hidden";
     }
     if (event.key === "ArrowRight") {
       nextDetent = "expanded";
       nextWidth = detent === "compact"
-        ? SIDEBAR_MINIMUM_WIDTH
+        ? shellNavigationMetrics.expandedMinimumWidth
         : Math.min(getMaximumWidth(), expandedWidth + keyboardResizeStep);
     }
     if (event.key === "End") {
       nextDetent = "expanded";
-      nextWidth = Math.min(SIDEBAR_MAXIMUM_WIDTH, getMaximumWidth());
+      nextWidth = getMaximumWidth();
     }
     if (nextDetent === null) return;
     event.preventDefault();
@@ -172,9 +174,10 @@ export function SidecarPrimaryResizeHandle({
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       onPointerCancel={(event) => finish(event, true)}
+      onLostPointerCapture={(event) => finish(event, true)}
       onPointerDown={handlePointerDown}
       onPointerMove={(event) => {
-        if (activeRef.current !== null) {
+        if (activeRef.current?.pointerId === event.pointerId) {
           event.preventDefault();
           resolve(event.clientX);
         }

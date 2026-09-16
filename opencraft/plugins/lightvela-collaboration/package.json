@@ -1,0 +1,26 @@
+{
+  "name": "@opencraft/plugin-lightvela-collaboration",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime-entry": "./src/runtime-entry.ts"
+  },
+  "dependencies": {
+    "@lightvela/vela-chat-client-core": "file:../../../shared/vela-chat-client-core",
+    "@opencraft/extension-react": "0.1.0",
+    "@opencraft/extension-runtime": "0.1.0",
+    "@tencentcloud/chat": "3.6.6",
+    "tim-upload-plugin": "1.4.3",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  }
+}

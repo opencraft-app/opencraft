@@ -25,6 +25,17 @@ vi.mock("@/components/site/maintenance-announcement-banner", async () => {
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionMock,
 }));
+const openClawMock = vi.hoisted(() => ({
+  bots: [] as Array<{ id: string }>,
+  isSubscribed: false,
+  hasResolvedPasses: true,
+  passesLoading: false,
+  passesError: false,
+  refreshPasses: vi.fn(),
+}));
+vi.mock("@/contexts/agent-context", () => ({
+  useOpenClaw: () => openClawMock,
+}));
 vi.mock("@/lib/region", () => ({
   DEFAULT_LOCALE: "en-US",
   REGION: "global",
@@ -230,6 +241,9 @@ describe("international v2 homepage rendering", () => {
     regionMock.isGlobal = false;
     sessionMock.authReady = true;
     sessionMock.isAuthenticated = false;
+    openClawMock.bots = [];
+    openClawMock.isSubscribed = false;
+    openClawMock.refreshPasses.mockClear();
     headerAuthMock.mockClear();
 
     render(
@@ -254,11 +268,35 @@ describe("international v2 homepage rendering", () => {
     expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
   });
 
-  it("switches the domestic hero action to the signed-in product entry", async () => {
+  it("keeps the signed-in but unsubscribed hero CTA on the subscribe journey", async () => {
     (globalThis as { React?: typeof React }).React = React;
     regionMock.isGlobal = false;
     sessionMock.authReady = true;
     sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = false;
+    openClawMock.bots = [];
+
+    render(
+      <InternationalHomeRuntime
+        locale="zh-CN"
+        markup={domesticHeroMarkup}
+      />,
+    );
+
+    // 登录成功后未订阅 → 仍走 /subscribe，文案保持「免费试用」（issue #73 红线）
+    await waitFor(() => {
+      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("免费试用");
+    });
+    expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
+  });
+
+  it("sends subscribed visitors from the hero CTA straight to the console", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
+    openClawMock.bots = [{ id: "bot-1" }];
 
     render(
       <InternationalHomeRuntime
@@ -268,9 +306,73 @@ describe("international v2 homepage rendering", () => {
     );
 
     await waitFor(() => {
-      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("开始使用");
+      expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("我的智能体伙伴");
     });
     expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/agents");
+  });
+
+  it("sends anonymous CTA clicks straight to the subscribe page (plan A)", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = false;
+
+    render(
+      <InternationalHomeRuntime
+        locale="zh-CN"
+        markup={domesticHeroMarkup}
+      />,
+    );
+
+    const heroAction = await waitFor(() => {
+      const anchor = document.querySelector<HTMLAnchorElement>("[data-domestic-home-hero-cta]");
+      expect(anchor).not.toBeNull();
+      return anchor as HTMLAnchorElement;
+    });
+    const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true });
+    heroAction.dispatchEvent(clickEvent);
+
+    // 方案 A：未登录点 CTA 不再拦截、直接按 href 进 /subscribe 看套餐（点“订阅”才在订阅页引导登录）
+    expect(clickEvent.defaultPrevented).toBe(false);
+    expect(heroAction).toHaveAttribute("href", "/subscribe");
+  });
+
+  // 片段里的官方译文优先于兜底文案表：新增语种 / 官方改译文都不需要改代码（issue #73 多语言红线）
+  const localizedHomeMarkup = '<main id="lightvela-intl-home" data-locale="es"><div class="hero__cta"><a class="btn-dark" href="/agents">Mi amigo IA <span class="btn-dark__icon-bubble"><svg class="icon"></svg></span></a></div><div class="cta__acts"><a class="btn-dark" href="/subscribe">Probar gratis <svg class="icon"></svg></a></div></main>';
+
+  it("takes the unsubscribed CTA copy from the localized fragment, not a hardcoded table", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = false;
+    openClawMock.isSubscribed = false;
+    openClawMock.bots = [];
+
+    render(<InternationalHomeRuntime locale="es" markup={localizedHomeMarkup} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".hero__cta a")).toHaveTextContent("Probar gratis");
+    });
+    expect(document.querySelector(".hero__cta a")).toHaveAttribute("href", "/subscribe");
+    // 兜底表里的 "Empieza gratis" 不应出现，证明用的是片段译文
+    expect(document.body.textContent).not.toContain("Empieza gratis");
+  });
+
+  it("takes the subscribed CTA copy from the localized fragment as well", async () => {
+    (globalThis as { React?: typeof React }).React = React;
+    regionMock.isGlobal = false;
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = true;
+    openClawMock.bots = [{ id: "bot-1" }];
+
+    render(<InternationalHomeRuntime locale="es" markup={localizedHomeMarkup} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".hero__cta a")).toHaveTextContent("Mi amigo IA");
+    });
+    expect(document.querySelector(".hero__cta a")).toHaveAttribute("href", "/agents");
+    expect(document.body.textContent).not.toContain("Mi compañero de IA");
   });
 
   it("keeps the global zh-CN runtime on the international login-only treatment", () => {

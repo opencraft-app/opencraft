@@ -33,10 +33,20 @@ const openClawState = {
   beginPassUpgrade: vi.fn(),
   activePass: null as unknown,
   latestPass: null as unknown,
+  /* usePostLoginRedirect（订阅页 LoginModal onSuccess 分流）所需的权益快照字段。 */
+  hasResolvedPasses: true,
+  passesLoading: false,
+  passesError: false,
 };
 
 vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => openClawState,
+}));
+
+/* usePostLoginRedirect 使用 next/navigation 的 useRouter；测试环境需 mock 掉。 */
+const routerPushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock }),
 }));
 
 const sessionState = {
@@ -144,10 +154,12 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
+const upgradeConsole = window as Window & { show?: () => unknown; hide?: () => unknown };
+const cleanupPage = () => { act(() => upgradeConsole.hide?.()); cleanup(); };
 
 describe("international upgrade return", () => {
   beforeEach(() => resetState());
-  afterEach(cleanup);
+  afterEach(cleanupPage);
   it.each([
     [buildBillingError("FORBIDDEN", "服务端拒绝详情"), "This action was denied. Please refresh the page or contact support."],
     [new Error("网络中断"), "Could not retrieve the upgrade quote. Please try again later."],
@@ -167,6 +179,7 @@ describe("international upgrade return", () => {
     listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] });
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<LocaleOverrideProvider locale="en-US"><SubscribePage /></LocaleOverrideProvider>);
+    act(() => upgradeConsole.show?.());
     const button = await screen.findByRole("button", { name: "Upgrade to this plan" });
     listModifyBundlesMock.mockRejectedValueOnce(error);
     await userEvent.click(button);
@@ -192,6 +205,7 @@ describe("international upgrade return", () => {
     listModifyBundlesMock.mockResolvedValue(quote);
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
+    act(() => upgradeConsole.show?.());
     const button = await screen.findByRole("button", { name: "升级至此套餐" });
     let resolveQuote!: (value: typeof quote) => void;
     listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
@@ -202,6 +216,35 @@ describe("international upgrade return", () => {
     await userEvent.click(await screen.findByRole("button", { name: "模拟支付完成" }));
     expect(openClawState.beginPassUpgrade).toHaveBeenCalledWith(pass, { dealName: "paid-upgrade", targetBundleId: "target" });
     expect(navigateMock).toHaveBeenCalledWith("/agents?upgrade_return=paid-upgrade");
+  });
+
+  it("hides upgrade cards for a direct pass URL until show, and closes selection on hide", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] });
+    window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    await act(async () => {});
+    expect(listBundlesMock).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
+    expect(listModifyBundlesMock).not.toHaveBeenCalled();
+    act(() => upgradeConsole.show?.());
+    await userEvent.click(await screen.findByRole("button", { name: "升级至此套餐" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    act(() => upgradeConsole.hide?.());
+    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(createPassOrderMock).not.toHaveBeenCalled();
   });
 });
 
@@ -225,6 +268,7 @@ const buildNestedBundle = () => ({
 });
 
 const resetState = () => {
+  upgradeConsole.hide?.();
   translationState.real = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
@@ -258,7 +302,7 @@ const resetState = () => {
 
 describe("SubscribePage paid billing visibility", () => {
   beforeEach(resetState);
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   it("shows the paid plans immediately without a reveal gate", async () => {
     (globalThis as { React?: typeof React }).React = React;
@@ -301,7 +345,7 @@ describe("SubscribePage paid billing visibility", () => {
  */
 describe("SubscribePage intl AI promo tags", () => {
   beforeEach(resetState);
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   const getCreditTab = (credit: string) => {
     const tab = screen
@@ -691,7 +735,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
 describe("SubscribePage confirm order amounts", () => {
   beforeEach(resetState);
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   /**
    * 卡片价口径（价签模式：卡片标税前实付，付款实付含税）：
@@ -792,7 +836,7 @@ describe("SubscribePage payment return", () => {
   beforeEach(resetState);
   /* 必须显式卸载：上一个用例的 paying 弹窗若残留在 document 里，
      后续用例的「不应出现开通提示」断言会误判。 */
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   /**
    * 弹窗被拦截时支付走 window.location.assign，付款后 return_url 回到全新页面，

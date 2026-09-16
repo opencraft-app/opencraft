@@ -1,6 +1,6 @@
 # OpenCraft 跨平台浏览器工作台实施设计
 
-> 状态：Web Vertical Slice + PreviewBridgeAdapter Implemented；Electron/Playwright/Expo Adapter Proposed  
+> 状态：Web iframe 与标准 Electron webview 已接入并通过桌面主链路验收；Playwright/Expo Adapter Proposed
 > 目标平台：Vite Web、Electron Desktop、Expo iOS/iPadOS、Expo Web  
 > 架构修订：R6（Codex 生命周期、多 Host 与 AI Capability 边界复审）  
 > 当前已实现 `browser-core`、Web iframe Runtime、应用级 Presentation Root、右侧多
@@ -9,6 +9,59 @@
 > WebContents 与 Expo Adapter 仍按本文设计继续演进。
 
 ## 1. 结论
+
+Shell 几何（2026-09-14，Codex 26.908.40834 Wba/Xba/Vba）：Viewport 用 flex
+表达可见范围并裁切，Frame 独立消费 F=max(0,W-min(R,A))，且 min-width:100%；
+聊天容器查询归 Frame，而不是动画 aperture。显隐和全宽是两个 MotionValue，
+同一个 Shell 事务 owner 停止旧写入者并提交新目标，模式切换先消除半关闭状态，
+scope/reduced-motion 使用端点。退出期间保存同 scope 的布局描述；普通窗口/分隔线
+resize 不冻结内容。原生 guest 上方的临时 resize 捕获层只在拖动事务存续期间存在，
+松手/取消/失焦结束，避免 guest 吞掉主页面 pointermove。
+
+2026-09-14 源实现迁移：ApplicationSupervisor 创建的 BrowserPresentationCoordinator
+直接实例化迁入的 BrowserSidebarStateManager 与 PagePresentationTransition。
+源管理器拥有 backing host、存储身份和挂载代次；ElectronBrowserSurfaceHost 仅提供
+独立 body root、标准 guest、导航及持久化端口。面板仅申领挂载并提交几何，park/unmount 不销毁页面，
+显式 close 才销毁。逻辑 Page、持久化 browserStorageId、rendererInstanceId、
+host generation 与 mount generation 分离。存储分区采用标准 Electron partition；
+不实现 Codex 的 Owl WebContents adoption。
+
+原生导航事件是桌面 URL、title、Back/Forward 的真源。主进程校验 guest URL/partition，
+强制 sandbox/contextIsolation、禁用 Node/任意 preload 与嵌套 webview。
+
+桌面宿主补齐（2026-09-14）：window.open/target=_blank 经 Main 验证后发送
+guest identity，由原页面所属 Scope 创建受管理的新标签，不能改写原页面。后台创建
+使用 visible=false，不挂载面板；DOM 操作及截图取得互斥 browser-use claim，
+结束/失败均释放并恢复用户交互。页面内容仍为不可信输入，语义输入不是 trusted input。
+截图仅桌面支持，动态工具用 inputImage 返回，不通过文本伪装图片。
+
+权限决定保存在 Main 私有存储，按分区、顶层网站 origin、权限类型隔离。仅通知、
+位置、摄像头、麦克风可请求用户许可；未知权限默认拒绝，跨来源 iframe 不继承顶层授权。
+导航或撤销期间的迟到确认不能持久化授权。网站权限入口可撤销并重载；清除网站数据
+为独立确认操作，作用于当前标签的隔离分区，不影响其他标签。普通 close 只删除逻辑
+标签/页面/索引与 backing，不隐式清除 Cookie。
+边界：受管新标签不是原生 popup WindowProxy，不模拟 window.opener/postMessage
+弹窗登录协议，也不接管已有 WebContents；依赖这类协议的网站流程应使用系统浏览器。
+权限设备能力仅验证主进程策略与隔离/撤销链路，测试没有调用真实摄像头、麦克风或位置服务。
+关闭后的分区 ID 移入 retired inventory；“清理已关闭标签数据”再次确认后清除其
+Cookie/缓存/网站数据及权限记录，并跳过重新成为 active 的分区。截图和权限请求
+分别检查文档代次；Agent claim 的释放不能解除源 handoff 尚未释放的交互锁。
+
+标签恢复遇到尚未恢复的 Scope 保留为 dormant，不当成关闭命令。桌面 Scope 绑定、
+标签、页面及 storage ID 元数据通过主进程存储，不能依赖启动时变化的 localhost origin。
+空白 backing 交由源管理器 prewarm 所有权管理；首次加载前已设置分区与 sandbox。
+崩溃恢复通过标准 guest reload 重建 renderer，保持 logical page 和 partition。
+设备预设与拖动计算直接来自 Codex，尺寸变化消费源 manager toolbar 投影，持久化到标签偏好。
+
+设备工具栏呈现（2026-09-14）：按源 DeviceToolbar/数字输入的布局和编辑语义迁移，
+地址栏只保留设备模式开关；设备模式显示 34px 单行工具栏（预设、宽 × 高、旋转、
+缩放、关闭）。数字输入 72×24、浅主题背景/透明边框，焦点态可见；小于600px隐藏
+缩放，小于460px隐藏 Dimensions 标签。宽高输入保留编辑草稿，合法数值即时应用，
+失焦/Enter 时规范化。拖动来自左右/底边/两个底角的真实视口边界，而非文字按钮；
+pointer capture、取消与键盘操作属于控件，页面尺寸仍由共享 viewport layout 计算。
+浏览器内的 PreviewBridge 复用现有敏感字段策略与语义输入，不声称 trusted input/CDP。
+挂载代次与焦点转移规则对照 ref/codex/browser-sidebar-webview-manager 和
+get-or-create-browser-sidebar-webview-root；其余尚未验证的 Codex 细节不能按架构接入成功推定完成。
 
 OpenCraft 共享的是浏览器的身份、行为、能力和恢复语义，不共享物理渲染控件，也不把
 Thread 所属 Host、浏览器执行位置和 UI 呈现位置压成一个 `hostId`。

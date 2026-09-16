@@ -1,5 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Blocks } from "lucide-react";
+import { AccountSignInMenu } from "./account-sign-in-menu";
+import { SidebarToggleIcon } from "../../chrome-actions/sidebar-toggle-icon";
 import {
   motion,
   useTransform,
@@ -13,16 +14,21 @@ import {
   useReducer,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
   createShellNavigationState, projectShellNavigation, reduceShellNavigation,
   resolveShellNavigationWidth, shellNavigationMetrics,
+  resolveShellSpace,
   type ShellNavigationRailDetent,
 } from "@opencraft/workbench-runtime";
-import { AccountAvatar, NavigationContent, type ShellNavigationConfig } from "./navigation-content";
-import { NavigationIcon } from "./navigation-action";
+import {
+  AccountAvatar,
+  isAnonymousShellAccount,
+  NavigationContent,
+  shellAccountEntranceLabel,
+  type ShellNavigationConfig,
+} from "./navigation-content";
 
 export type { ShellNavigationConfig } from "./navigation-content";
 const preferenceKey = "opencraft.shell-navigation.v2";
@@ -45,6 +51,9 @@ export function useShellNavigation(input: {
   sidecarOpen: boolean;
   enabled: boolean;
   allowDock?: boolean;
+  rightPanelOpen?: boolean;
+  rightPanelFullWidth?: boolean;
+  accountAvailable?: boolean;
 }) {
   const [state, dispatch] = useReducer(reduceShellNavigation, undefined, readPreferences);
   const [width, setWidth] = useState(() => {
@@ -57,7 +66,18 @@ export function useShellNavigation(input: {
     try { localStorage.setItem(widthPreferenceKey, JSON.stringify(resolved)); } catch { /* Storage denied. */ }
   }, []);
   const [previouslyAvailable, setPreviouslyAvailable] = useState<boolean>();
-  const projection = projectShellNavigation({ ...input, state, previouslyAvailable, navigationWidth: width,
+  const [previousLevel, setPreviousLevel] = useState<number>();
+  const space = input.rightPanelOpen === undefined ? undefined : resolveShellSpace({
+    width: input.viewportWidth,
+    navigationOpen: input.enabled && input.allowDock !== false && input.sidecarOpen
+      && (!input.contextAvailable || state.pinned.applications || (input.accountAvailable !== false && state.pinned.account)),
+    navigationDetent: state.railDetent, navigationWidth: width,
+    contextOpen: input.sidecarOpen && input.contextAvailable, contextWidth: input.contextWidth,
+    rightOpen: input.rightPanelOpen, rightFullWidth: input.rightPanelFullWidth === true,
+    previousLevel,
+  });
+  useLayoutEffect(() => setPreviousLevel(space?.level), [space?.level]);
+  const projection = projectShellNavigation({ ...input, state, space, previouslyAvailable, navigationWidth: width,
     allowDock: input.enabled && input.allowDock !== false });
   useLayoutEffect(() => setPreviouslyAvailable(projection.dockAvailable), [projection.dockAvailable]);
   useEffect(() => {
@@ -76,7 +96,7 @@ export function useShellNavigation(input: {
   const commitRailDetent = useCallback((detent: ShellNavigationRailDetent) => {
     dispatch({ type: "set-rail-detent", detent });
   }, []);
-  return { state, projection, dispatch, width, commitWidth, commitRailDetent };
+  return { state, projection, space, dispatch, width, commitWidth, commitRailDetent };
 }
 export type ShellNavigationController = ReturnType<typeof useShellNavigation>;
 
@@ -141,7 +161,13 @@ export function ShellNavigationDock({ config, controller, expandedWidth, frameWi
   expandedWidth?: MotionValue<number>; frameWidth?: MotionValue<number>; transient?: boolean;
 }) {
   const compact = !transient && controller.projection.railDetent === "compact";
-  const content = surfaces.filter(surface => transient ? surface === "applications" : controller.projection.docked[surface]).map(surface => <section key={surface}>
+  const anonymousAccount = isAnonymousShellAccount(config.account);
+  const content = surfaces.filter((surface) => {
+    if (surface === "account") {
+      return !transient && config.account !== null && !anonymousAccount && controller.projection.docked.account;
+    }
+    return transient || controller.projection.docked.applications;
+  }).map(surface => <section key={surface}>
       <div className="shell-navigation__heading"><strong>{labels[surface]}</strong></div>
       <NavigationContent compact={compact} config={config} surface={surface} onInvoke={action => action()} />
     </section>);
@@ -165,12 +191,24 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
     if (wasVisible.current && !visible && state.peek) dispatch({ type: "dismiss", surface: state.peek });
     wasVisible.current = visible;
   }, [visible, state.peek, dispatch]);
-  const style: CSSProperties = { ...projection.footer };
-  return <div ref={root} className="shell-navigation__footer" style={style} aria-label="Application entrances">
-    {surfaces.map(surface => <Dialog.Root key={surface} modal={false}
+  const anonymousAccount = isAnonymousShellAccount(config.account);
+  const accountLabel = shellAccountEntranceLabel(config.account);
+  const availableSurfaces = surfaces.filter((surface) => surface !== "account" || accountLabel !== null);
+  return <div ref={root} className="shell-navigation__footer" aria-label="Application entrances">
+    {availableSurfaces.map(surface => {
+      const surfaceLabel = surface === "account" ? accountLabel! : labels.applications;
+      const directSignIn = surface === "account" && anonymousAccount;
+      if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
+        account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
+        visible={visible} container={root.current} />;
+      return <Dialog.Root key={surface} modal={false}
       open={visible && projection.peek === surface}
       onOpenChange={open => {
-        if (open && surface === "applications" && projection.primaryNavigation && onTogglePrimaryNavigation) onTogglePrimaryNavigation();
+        if (open && directSignIn) {
+          dispatch({ type: "dismiss", surface });
+          config.account?.onOpen();
+        }
+        else if (open && surface === "applications" && projection.primaryNavigation && onTogglePrimaryNavigation) onTogglePrimaryNavigation();
         else if (open && surface === "applications" && projection.dockAvailable && !projection.footerVisible && onPin) {
           dispatch({ type: "pin", surface, pinned: true });
           onPin();
@@ -180,17 +218,14 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
       }}>
       <Dialog.Trigger asChild>
         <button id={`${entranceId}-${surface}`} type="button"
-          className="shell-navigation__entrance" aria-label={labels[surface]}
+          className="shell-navigation__entrance" aria-label={surfaceLabel}
           data-surface={surface}
-          aria-pressed={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : state.pinned[surface]}
+          aria-pressed={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : directSignIn ? false : state.pinned[surface]}
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
-          data-pinned={surface === "applications" && projection.primaryNavigation ? visible : state.pinned[surface]}
-          title={surface === "applications" && projection.primaryNavigation ? "Applications" : `${labels[surface]}${state.pinned[surface] ? " · Pinned" : ""}`}>
-          {surface === "applications" ? <span className="shell-navigation__icons" aria-hidden="true">
-            {config.actions.length ? config.actions.slice(0, 2).map(action => <span key={action.id}>
-              <NavigationIcon name={action.icon} size={16} />
-            </span>) : <span><Blocks size={16} /></span>}
-          </span> : <><AccountAvatar account={config.account} /><span className="shell-navigation__name">{config.account?.snapshot.name || "Account"}</span></>}
+          data-pinned={surface === "applications" && projection.primaryNavigation ? visible : directSignIn ? false : state.pinned[surface]}
+          title={surface === "applications" && projection.primaryNavigation ? "Applications" : `${surfaceLabel}${!directSignIn && state.pinned[surface] ? " · Pinned" : ""}`}>
+          {surface === "applications" ? <SidebarToggleIcon sidebarOpen={projection.docked.applications || projection.peek === "applications"} />
+            : <><AccountAvatar account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span></>}
         </button>
       </Dialog.Trigger>
       <Dialog.Portal container={root.current}>
@@ -212,6 +247,6 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
           </div>
         </Dialog.Content>
       </Dialog.Portal>
-    </Dialog.Root>)}
+    </Dialog.Root>})}
   </div>;
 }

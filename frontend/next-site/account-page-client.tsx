@@ -6,7 +6,7 @@ import { AccountRouteLoading, AppRouteShell } from './app-route-shell';
 
 export function AccountPageClient() {
   return (
-    <AppRouteShell loadingFallback={<AccountRouteLoading />}>
+    <AppRouteShell loadingFallback={<AccountRouteLoading />} showAuthGateFooter={false}>
       <AccountPage />
     </AppRouteShell>
   );

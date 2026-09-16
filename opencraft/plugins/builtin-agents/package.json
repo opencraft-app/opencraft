@@ -7,14 +7,18 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lobehub/icons-static-svg": "1.95.0",
+    "@lobehub/icons-static-svg": "^1.95.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/extension-react": "0.1.0",
     "@opencraft/extension-runtime": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
+    "@radix-ui/react-alert-dialog": "^1.1.23",
+    "@radix-ui/react-context-menu": "^2.3.7",
+    "@radix-ui/react-popover": "1.1.23",
     "lucide-react": "^1.35.0",
-    "react": "19.2.3"
+    "react": "19.2.3",
+    "react-dom": "^19.2.3"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

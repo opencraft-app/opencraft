@@ -13,7 +13,7 @@ function fixture() {
     if (method === "runtime/settings/mutate") { writes.push(params); return {}; }
     return {};
   }) as HostProtocolRequest;
-  return { service: new LocalAgentSettingsService(request), writes };
+  return { service: new LocalAgentSettingsService(request, "local"), writes };
 }
 
 test("model default unsets a previously stored effort in the same model mutation", async () => {

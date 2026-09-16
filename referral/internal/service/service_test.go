@@ -94,7 +94,7 @@ func TestIssueCodeIsStableAndUsesUnambiguousAlphabet(t *testing.T) {
 			t.Fatalf("code contains unsupported character %q", char)
 		}
 	}
-	if first.URL != "https://lightvela.com/auth/sign-in?ref="+first.Code {
+	if first.URL != "https://lightvela.com/?ref="+first.Code {
 		t.Fatalf("unexpected referral URL %q", first.URL)
 	}
 }

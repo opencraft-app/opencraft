@@ -47,6 +47,19 @@
 .modal-surface[data-size="wide"] { width: min(680px, calc(100vw - 36px)); }
 .modal-surface[data-size="workspace"] { width: min(1120px, calc(100vw - 48px)); }
 
+.modal-surface__scrim[data-appearance="utility"] {
+  background: var(--color-dialog-scrim);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.modal-surface[data-appearance="utility"] {
+  display: flex;
+  max-height: min(720px, calc(100dvh - 48px));
+  border-radius: 12px;
+  box-shadow: var(--elevation-dialog-utility);
+  .modal-surface__close { top: 12px; right: 16px; width: 28px; height: 28px; border-radius: 6px; }
+}
+
 .modal-surface[data-presentation="sheet"] {
   top: auto;
   bottom: 0;

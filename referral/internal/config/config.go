@@ -64,7 +64,7 @@ func Load() (Config, error) {
 			ID: strings.TrimSpace(os.Getenv("REFERRAL_CAMPAIGN_ID")), Name: strings.TrimSpace(os.Getenv("REFERRAL_CAMPAIGN_NAME")),
 			Status:        envOrDefault("REFERRAL_CAMPAIGN_STATUS", "active"),
 			InviterCredit: int64Env("REFERRAL_INVITER_CREDIT", 500), InviteeCredit: int64Env("REFERRAL_INVITEE_CREDIT", 500),
-			VestingDays:    intEnv("REFERRAL_VESTING_DAYS", 7),
+			VestingDays:    intEnv("REFERRAL_VESTING_DAYS", 0),
 			PendingTTLDays: intEnv("REFERRAL_PENDING_TTL_DAYS", 90), MaxRewardsPerInviter: intEnv("REFERRAL_MAX_REWARDS_PER_INVITER", 50),
 			BudgetCredit: int64Env("REFERRAL_BUDGET_CREDIT", 0),
 		},

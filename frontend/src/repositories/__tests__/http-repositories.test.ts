@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import i18n from "@/i18n";
 import { isGlobal } from "@/lib/region";
 import {
@@ -686,6 +687,7 @@ describe("http repositories auth token bootstrap", () => {
   it.skipIf(isGlobal)("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: Array<{ url: string; method: string }> = [];
+    let createBody: Record<string, unknown> | undefined;
     const jsonResponse = (data: unknown, status = 200) => new Response(
       JSON.stringify({ code: "OK", message: "success", data }),
       { status, headers: { "Content-Type": "application/json" } },
@@ -719,6 +721,7 @@ describe("http repositories auth token bootstrap", () => {
         }] });
       }
       if (url.endsWith("/v1/instances/ins_running/bots") && method === "POST") {
+        createBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return jsonResponse({
           bot_id: "profile_new",
           instance_id: "ins_running",
@@ -726,7 +729,8 @@ describe("http repositories auth token bootstrap", () => {
           name: "新 Bot",
           is_default: false,
           status: "ready",
-          created_from: "blank",
+          created_from: "clone",
+          source_bot_id: "bot_main",
           created_at: "2026-09-11T00:02:00Z",
           updated_at: "2026-09-11T00:02:00Z",
         }, 201);
@@ -737,7 +741,13 @@ describe("http repositories auth token bootstrap", () => {
 
     const repositories = createHttpRepositories("https://lightclaw.tech");
     await repositories.bots.getDashboardSnapshot("live");
-    const created = await repositories.bots.createBot({ name: "新 Bot", createMode: "blank" });
+    const created = await repositories.bots.createBot({
+      name: "新 Bot",
+      description: "  额外 Bot  ",
+      createMode: "clone",
+      sourceBotId: "bot_main",
+      initialSoul: "  克隆后的设定  ",
+    });
 
     expect(created).toEqual(expect.objectContaining({
       id: "profile_new",
@@ -748,6 +758,13 @@ describe("http repositories auth token bootstrap", () => {
       method: "POST",
     });
     expect(calls.some(({ url }) => url.includes("ins_deleted/bots"))).toBe(false);
+    expect(createBody).toEqual({
+      name: "新 Bot",
+      description: "额外 Bot",
+      create_mode: "clone",
+      source_bot_id: "bot_main",
+      initial_soul: "克隆后的设定",
+    });
   });
 
   it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
@@ -826,7 +843,10 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("marks siblings as unavailable rather than stopped when a running instance cannot list Bots", async () => {
+  it.skipIf(isGlobal).each([
+    { status: 404, code: "NOT_FOUND", message: "not found" },
+    { status: 500, code: INSTANCE_BOT_ERROR_CODE.profileFailed, message: "Hermes profile operation failed" },
+  ])("marks siblings as unavailable rather than stopped when a running instance cannot list Bots: $code", async ({ status, code, message }) => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -850,10 +870,8 @@ describe("http repositories auth token bootstrap", () => {
         });
       }
       if (url.endsWith("/v1/instances/ins_running/bots")) {
-        // Older backends answer 404 here; the instance itself is healthy, so the UI
-        // must not tell the user to start it.
-        return new Response(JSON.stringify({ code: "NOT_FOUND", message: "not found" }), {
-          status: 404,
+        return new Response(JSON.stringify({ code, message }), {
+          status,
           headers: { "Content-Type": "application/json" },
         });
       }
@@ -867,6 +885,50 @@ describe("http repositories auth token bootstrap", () => {
     expect(snapshot.bots).toEqual([
       expect.objectContaining({ id: "ins_running", siblingsUnknown: "bot_list_unavailable" }),
     ]);
+  });
+
+  it.skipIf(isGlobal)("does not hide an unrelated Bot list server failure", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        return new Response(JSON.stringify({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "database unavailable",
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.bots.getDashboardSnapshot("live")).rejects.toMatchObject({
+      status: 500,
+      code: "INTERNAL_SERVER_ERROR",
+    });
   });
 
   it.skipIf(isGlobal)("does not mark siblings as unknown when the Bot list came from /bots", async () => {

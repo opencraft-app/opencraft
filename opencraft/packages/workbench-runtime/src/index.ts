@@ -17,6 +17,8 @@ export * from "./submission-pipeline";
 export * from "./composer-model-catalog";
 export * from "./adaptive-navigation";
 export * from "./shell-navigation";
+export * from "./shell-space";
+export * from "./side-chat/service";
 export * from "./adaptive-panel";
 export * from "./abort-signal";
 export { getActiveTimeline } from "./models";
@@ -26,3 +28,7 @@ export type {
   WorkbenchSnapshot,
   WorkbenchThread,
 } from "./models";
+export * from "./environment-directory";
+export * from "./authentication/contract";
+export * from "./authentication/authentication-service";
+export * from "./authentication/authentication-flow-service";

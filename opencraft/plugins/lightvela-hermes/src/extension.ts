@@ -1,9 +1,11 @@
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
-import type { PlatformAccountContribution } from "@opencraft/extension-react";
 import type { AppServerProfileSkillsService } from "@opencraft/profile-skills-appserver";
 import type { AppServerClientRegistryService } from "@opencraft/appserver-client";
 
-import { LightVelaAccountService, type LightVelaAccountServiceOptions } from "./account/lightvela-account-service";
+import {
+  LightVelaAccountService,
+  type LightVelaAccountServiceOptions,
+} from "@opencraft/plugin-lightvela-platform";
 import { createLightVelaHermesHostProvider } from "./host/lightvela-hermes-host-provider";
 import {
   IndexedDbHermesSessionTokenCache,
@@ -19,9 +21,10 @@ import { createConnectorsSettingsView } from "./connectors/connectors-settings-v
 import type { ConnectorRelease } from "./connectors/connector-client";
 import { connectorTestRelease } from "./connectors/test-release";
 import { AppServerLightVelaRuntimeCommandPort } from "./account/lightvela-runtime-command-port";
-import { createLightVelaAccountView } from "./account/lightvela-account-view";
 
 export interface LightVelaHermesExtensionOptions extends LightVelaAccountServiceOptions {
+  /** Application-owned account shared with other first-party LightVela extensions. */
+  readonly account?: LightVelaAccountService;
   readonly sessionTokenCache?: HermesSessionTokenCache;
   readonly connectorRelease?: ConnectorRelease;
   readonly profileSkills?: AppServerProfileSkillsService;
@@ -31,15 +34,17 @@ export interface LightVelaHermesExtensionOptions extends LightVelaAccountService
 export function createLightVelaHermesExtension(
   options: LightVelaHermesExtensionOptions = {},
 ): TrustedExtensionDefinition {
+  const ownsAccount = options.account === undefined;
   const ownsSessionTokenCache = options.sessionTokenCache === undefined;
   const {
+    account: injectedAccount,
     sessionTokenCache = new IndexedDbHermesSessionTokenCache(),
     connectorRelease,
     profileSkills,
     appServerClients,
     ...accountOptions
   } = options;
-  const account = new LightVelaAccountService({
+  const account = injectedAccount ?? new LightVelaAccountService({
     ...accountOptions,
     ...(appServerClients === undefined ? {} : {
       runtimeCommands: new AppServerLightVelaRuntimeCommandPort(appServerClients),
@@ -48,7 +53,6 @@ export function createLightVelaHermesExtension(
   const SettingsView = createLightVelaHermesSettingsView(account);
   const EmptyView = createLightVelaHermesEmptyView(account);
   const ConnectorsView = createConnectorsSettingsView(account, connectorRelease ?? connectorTestRelease);
-  const AccountView = createLightVelaAccountView(account);
   const managementPages = [
     { key: "channels", title: "Channels", icon: "message-circle", scope: "agent", order: 301 },
     { key: "models", title: "Models", icon: "brain", scope: "agent", order: 302 },
@@ -85,81 +89,6 @@ export function createLightVelaHermesExtension(
         authGeneration = next;
         void sessionTokenCache.clear?.().catch(() => undefined);
       }));
-      // OAuth returns to whichever Workbench route initiated sign-in. Callback
-      // ownership therefore belongs to the extension activation lifetime, not
-      // to an optional Settings or empty-state View that may never mount on
-      // that route.
-      const refreshAuthenticatedAccount = (): void => {
-        if (!account.bootstrapOAuthFragment()) return;
-        void account.refreshBots().catch(() => undefined);
-        void account.refreshAccountDetails().catch(() => undefined);
-      };
-      refreshAuthenticatedAccount();
-      if (account.hasStoredSession()) {
-        void account.refreshBots().catch(() => undefined);
-        void account.refreshAccountDetails().catch(() => undefined);
-      }
-      // Some browser containers restore the Workbench document and deliver
-      // the OAuth fragment as a same-document navigation. Extension activation
-      // has already happened in that case, so retain an explicit callback
-      // owner for the whole extension lifetime.
-      globalThis.addEventListener?.("hashchange", refreshAuthenticatedAccount);
-      api.subscriptions.add(() => {
-        globalThis.removeEventListener?.("hashchange", refreshAuthenticatedAccount);
-      });
-      api.views.register({
-        id: "lightvela.hermes.account-view",
-        title: "Account Settings",
-        viewType: "lightvela.hermes.account",
-        icon: "user",
-        platforms: ["web", "electron"],
-      });
-      api.internal.register("platformViewRenderer", {
-        viewType: "lightvela.hermes.account",
-        Component: AccountView,
-      });
-      let accountSurfaceSourceRevision = -1;
-      let accountSurfaceSnapshot: ReturnType<PlatformAccountContribution["getSnapshot"]> | null = null;
-      api.internal.register("platformAccount", {
-        id: "lightvela.hermes.account",
-        viewId: "lightvela.hermes.account-view",
-        getSnapshot: () => {
-          const snapshot = account.getSnapshot();
-          if (snapshot.revision === accountSurfaceSourceRevision && accountSurfaceSnapshot !== null) {
-            return accountSurfaceSnapshot;
-          }
-          const details = snapshot.details;
-          const total = details.pass?.creditsTotal ?? 0;
-          const available = details.pass?.creditsAvailable ?? 0;
-          accountSurfaceSourceRevision = snapshot.revision;
-          accountSurfaceSnapshot = Object.freeze({
-            revision: snapshot.revision,
-            phase: snapshot.phase,
-            name: details.profile?.pendingName || details.profile?.name || null,
-            avatarUrl: details.profile?.avatarUrl ?? null,
-            planLabel: details.pass?.bundleName || details.subscription?.code || null,
-            usageRemainingPercent: total > 0
-              ? Math.max(0, Math.min(100, Math.round((available / total) * 100)))
-              : null,
-            error: details.error ?? snapshot.error,
-            applicationIntervention: snapshot.phase === "authenticated"
-              ? (snapshot.bots.length === 0
-                ? {
-                    providerId: "lightvela.hermes",
-                    code: "configuration-required" as const,
-                  }
-                : null)
-              : {
-                  providerId: "lightvela.hermes",
-                  code: "authentication-required" as const,
-                },
-          });
-          return accountSurfaceSnapshot;
-        },
-        subscribe: account.subscribe,
-        refresh: () => account.refreshAccountDetails(),
-        signOut: () => account.signOut(),
-      } satisfies PlatformAccountContribution);
       api.views.register({ id: "lightvela.hermes.connectors-view", title: "连接器", viewType: "lightvela.hermes.connectors", icon: "server", platforms: ["web", "electron"] });
       api.settings.registerPage({
         id: "lightvela.hermes.connectors",
@@ -219,13 +148,6 @@ export function createLightVelaHermesExtension(
         });
       }
       api.workbench.registerSurface({
-        id: "lightvela.hermes.empty-workbench",
-        viewId: "lightvela.hermes.empty-view",
-        surface: "empty-workbench",
-        order: 100,
-        platforms: ["web", "electron"],
-      });
-      api.workbench.registerSurface({
         id: "lightvela.hermes.authentication-required",
         viewId: "lightvela.hermes.empty-view",
         surface: "host-connection-intervention",
@@ -255,7 +177,7 @@ export function createLightVelaHermesExtension(
         "hostConnectionProvider",
         createLightVelaHermesHostProvider(account, sessionTokenCache),
       );
-      api.subscriptions.add(() => account.dispose());
+      if (ownsAccount) api.subscriptions.add(() => account.dispose());
       if (ownsSessionTokenCache) {
         api.subscriptions.add(() => sessionTokenCache.close?.());
       }

@@ -30,17 +30,13 @@ describe("LanguageSwitcher", () => {
             "International Site - 繁體中文",
             "International Site - Bahasa Indonesia",
             "International Site - Español",
+            "International Site - 日本語",
+            "International Site - 한국어",
             "中国站",
           ]
         : ["中国站", "国际站 - 简体中文", "国际站 - English"],
     );
     expect(options[0]).toHaveAttribute("aria-selected", "true");
-    expect(options.map((option) => option.textContent)).not.toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("日本語"),
-        expect.stringContaining("한국어"),
-      ]),
-    );
 
     if (isGlobal) {
       cleanup();
@@ -101,6 +97,42 @@ describe("LanguageSwitcher", () => {
     expect(screen.getByRole("option", { name: "International Site - Español" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "International Site - 日本語" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "International Site - 한국어" })).toBeInTheDocument();
+  });
+
+  it("renders only international languages in the account menu", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_REGION", "global");
+    const { InternationalLanguageMenu: GlobalInternationalLanguageMenu } = await import(
+      "@/components/site/language-switcher"
+    );
+
+    render(
+      <GlobalInternationalLanguageMenu
+        activeLocale="ko-KR"
+        ariaLabel="Switch language"
+        id="account-language-menu"
+      />,
+    );
+
+    expect(screen.getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual([
+      "한국어",
+      "English",
+      "简体中文",
+      "繁體中文",
+      "Bahasa Indonesia",
+      "Español",
+      "日本語",
+    ]);
+    expect(
+      screen.getAllByRole("radio").map((option) => (option as HTMLInputElement).value),
+    ).toEqual(["ko-KR", "en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP"]);
+    const selectedLanguage = screen.getByRole("radio", { name: "한국어" });
+    expect(selectedLanguage).toBeChecked();
+    expect(selectedLanguage).toHaveClass("peer");
+    expect(selectedLanguage.parentElement).not.toHaveClass("focus-within:ring-2");
+    expect(selectedLanguage.parentElement?.innerHTML).not.toContain("ring-");
+    expect(screen.getByText("한국어")).toHaveClass("peer-focus-visible:underline");
+    expect(screen.queryByRole("radio", { name: /中国站|China Site/ })).not.toBeInTheDocument();
   });
 
   it("keeps both published East Asian locales in the development menu", async () => {

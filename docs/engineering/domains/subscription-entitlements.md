@@ -23,6 +23,9 @@
   回调采用相同的同步销毁语义。
 - 积分包用量使用定点小数存储，并通过带 CAS 租约的每日 outbox 调用 `sendResource`；普通零用量
   也要上报，到期或已归档资源不再推量。
+- 计费通过 `getUsedAmount` 查询积分包用量时，购买周期以已完成的 `create_resource` Flow 原始请求
+  为审计真源，并核对资源 ID、UIN、AppID、地域、付费模式和商品定义。该查询不能依赖
+  `trade_order`，因为计费后台直接下单并支付的合法链路可能只有完整 Flow 而没有本地订单记录。
 - Trade migration 版本号必须唯一；积分包定义表使用独立版本，不能与既有 Pass/变配 migration
   共用版本号。北京测试首次初始化时必须先完成 Trade/Credit schema migration，再分别用对应库账号
   幂等执行 `scripts/seed_trade_beijing_sandbox_credit_definitions.sql` 和
@@ -30,7 +33,8 @@
 - 外部计费入向回调按产品类型隔离地域 route：Pass 使用 `jifei-callback-{region}`，Credit 使用 `jifei-credit-callback-{region}`；调整 Credit 的环境落点不能改变 Pass 路由。
 - Trade 出向计费地域也按产品类型隔离：`LIGHTVELA_TRADE_REGION` 控制 Pass/default 链路，
   `LIGHTVELA_CREDIT_REGION` 仅控制 Credit 询价、下单、退款、资源回调和用量上报；后者未配置时
-  继承前者。单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
+  继承前者。已接入环境分别使用北京 `ap-beijing`、东京 `ap-seoul`、上海 `ap-shanghai`、新加坡
+  `ap-singapore`；单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
 - 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
   `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有
@@ -40,7 +44,10 @@
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
 - 邀请返利不复用访问邀请码。Auth 与 CTL 分别在新用户创建、首个非免费 Pass 开通和退款隔离
   事务中写 versioned outbox；Referral 通过 Pulsar inbox 去重并允许注册、首付、退款事实乱序到达。
-- 返利奖励在 7 天观察期内不得发放；退款只取消其资格 Pass 对应的未发奖励。发放前 CTL 还要
+- 返利资格的用户口径是“首次开通成功”：dianshi 订单完成发货并开通 Pass 即符合，0 元订单也算，
+  不检查现金实付金额。历史 `pass.first_paid.v1` 事件名保持兼容，不代表必须现金付费；无订单的旧免费试用不算。
+- 默认返利奖励没有观察期（`vesting_days=0`），首次订单开通成功且归因齐备后进入待发，Worker 异步发放。
+  退款只取消其资格 Pass 对应的未发奖励，不自动追回已发积分。发放前 CTL 还要
   重新校验资格 Pass 的 owner、active 状态和有效期，避免退款事件延迟造成竞态。
 - 邀请人无 active Pass 时保留最多 90 天重试。两侧奖励使用独立幂等键；活动持有单邀请人上限、
   全局积分预算和 30 天奖励 Plan，前端常量不能替代这些服务端约束。
@@ -69,6 +76,14 @@ jifei、Credit 和腾讯云账号入站回调不携带 CloudLadder HMAC。它们
 `jifei-prod`、点石和 Billing CloudAPI 必须验签；计费/账号回调继续使用上述明确豁免。
 韩国测试 Trade 仍经新加坡生产 CLB 访问 `jifei-test` 时，只允许为该测试路由追加临时匿名
 兼容，不能因此放开 `jifei-prod`。韩国完成签名版本发布后必须删除此临时例外。
+
+Credit 每日用量的 `sendResource` 出向请求必须经过 CloudLadder，并使用
+`caller=lightvela-trade` 的 HMAC 签名。北京 sandbox 与上海使用国内正式路由
+`qbilling-send-resource-cn-prod`，固定转发到 `qbilling.billing.tencentyun.com`；东京与新加坡使用
+国际正式路由 `qbilling-send-resource-intl-prod`，固定转发到
+`intl.resource.qbilling.tencentyun.com`。仅北京 7 与首尔保留 `qbilling-send-resource-test` 和
+`Host: qbilling.itd.com`。所有路由只允许 POST；Trade transport 与 CloudLadder 路由必须协同发布，
+避免客户端先上线后因路由不存在返回 404。
 
 广州生产严格模式覆盖上海正式与北京测试的生产计费出向；两者必须先完成 Trade 签名发布和
 密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由

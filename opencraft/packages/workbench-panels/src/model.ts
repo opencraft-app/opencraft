@@ -53,6 +53,14 @@ export interface ConversationPanelState {
 
 export type PanelAction =
   | {
+      /** Placement transfer, never a logical resource close. */
+      readonly type: "transfer-tab";
+      readonly region: PanelRegionId;
+      readonly targetRegion: PanelRegionId;
+      readonly tabId: string;
+      readonly beforeTabId?: string | null;
+    }
+  | {
       readonly type: "open-tab";
       readonly tab: PanelTabDescriptor;
       readonly activate?: boolean;
@@ -162,7 +170,7 @@ export function createConversationPanelState(input: {
 
 function reduceRegionAction(
   region: PanelRegionState,
-  action: Extract<PanelAction, { readonly region: PanelRegionId }>,
+  action: Exclude<Extract<PanelAction, { readonly region: PanelRegionId }>, { readonly type: "transfer-tab" }>,
 ): PanelRegionState {
   switch (action.type) {
     case "activate-tab": {
@@ -261,6 +269,33 @@ export function reduceConversationPanelState(
 ): ConversationPanelState {
   let next = state;
   switch (action.type) {
+    case "transfer-tab": {
+      if (action.region === action.targetRegion) return state;
+      const source = state[action.region];
+      const target = state[action.targetRegion];
+      const tab = source.tabs.find((entry) => entry.id === action.tabId);
+      if (!tab || target.tabs.some((entry) => entry.id === tab.id)) return state;
+      const insertion = action.beforeTabId == null ? target.tabs.length
+        : target.tabs.findIndex((entry) => entry.id === action.beforeTabId);
+      if (insertion < 0) return state;
+      const remaining = source.tabs.filter((entry) => entry.id !== tab.id);
+      const recent = source.recentTabIds.filter((id) => id !== tab.id);
+      next = {
+        ...state,
+        [action.region]: {
+          ...source, tabs: remaining, recentTabIds: recent,
+          open: remaining.length > 0 && source.open,
+          activeTabId: source.activeTabId === tab.id ? recent[0] ?? remaining[0]?.id ?? null : source.activeTabId,
+        },
+        [action.targetRegion]: {
+          ...target, open: true, activeTabId: tab.id,
+          recentTabIds: promoteRecentTab(target.recentTabIds, tab.id),
+          tabs: [...target.tabs.slice(0, insertion), { ...tab, region: action.targetRegion }, ...target.tabs.slice(insertion)],
+        },
+        rightPanelFullWidth: action.region === "right" && remaining.length === 0 ? false : state.rightPanelFullWidth,
+      };
+      break;
+    }
     case "open-tab": {
       const region = state[action.tab.region];
       const sameId = region.tabs.find((tab) => tab.id === action.tab.id);
@@ -347,6 +382,7 @@ export function isRightPanelResponsiveBlocked(input: {
 export function getRightPanelWidthBounds(
   mainContentWidth: number,
   mode: "regular" | "full" = "regular",
+  mainContentReserve = RIGHT_PANEL_MAIN_CONTENT_RESERVE,
 ): RightPanelWidthBounds {
   const availableWidth = Math.max(0, mainContentWidth);
   const maximum =
@@ -354,7 +390,7 @@ export function getRightPanelWidthBounds(
       ? availableWidth
       : Math.max(
           Math.min(RIGHT_PANEL_MINIMUM_WIDTH, availableWidth),
-          availableWidth - RIGHT_PANEL_MAIN_CONTENT_RESERVE,
+          availableWidth - mainContentReserve,
         );
   return {
     minimum: Math.min(RIGHT_PANEL_MINIMUM_WIDTH, maximum),
@@ -365,8 +401,9 @@ export function getRightPanelWidthBounds(
 export function computeRightPanelDefaultWidth(input: {
   readonly mainContentWidth: number;
   readonly shellHeight: number;
+  readonly mainContentReserve?: number;
 }) {
-  const bounds = getRightPanelWidthBounds(input.mainContentWidth);
+  const bounds = getRightPanelWidthBounds(input.mainContentWidth, "regular", input.mainContentReserve);
   const recoveredDefault = Math.max(
     RIGHT_PANEL_MINIMUM_WIDTH,
     Math.min(
@@ -384,8 +421,9 @@ export function computeRightPanelDefaultWidth(input: {
 export function normalizeRightPanelWidth(
   width: number,
   mainContentWidth: number,
+  mainContentReserve?: number,
 ) {
-  const bounds = getRightPanelWidthBounds(mainContentWidth);
+  const bounds = getRightPanelWidthBounds(mainContentWidth, "regular", mainContentReserve);
   const span = bounds.maximum - bounds.minimum;
   if (span <= 0) return 0;
   return (clamp(width, bounds.minimum, bounds.maximum) - bounds.minimum) / span;
@@ -394,8 +432,9 @@ export function normalizeRightPanelWidth(
 export function interpolateRightPanelWidth(
   ratio: number,
   mainContentWidth: number,
+  mainContentReserve?: number,
 ) {
-  const bounds = getRightPanelWidthBounds(mainContentWidth);
+  const bounds = getRightPanelWidthBounds(mainContentWidth, "regular", mainContentReserve);
   return (
     bounds.minimum + clamp(ratio, 0, 1) * (bounds.maximum - bounds.minimum)
   );

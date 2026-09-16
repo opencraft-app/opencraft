@@ -40,5 +40,10 @@ remains open because the local runner does not currently have the `pulumi` CLI.
 - [ ] Publish schema before workloads.
 - [ ] Verify out-of-order and duplicate event delivery.
 - [ ] Verify first paid creation and free-to-paid transfer.
-- [ ] Verify seven-day vesting and refund cancellation.
+- [ ] Verify default zero-day reward eligibility and cancellation before grant.
+
+The default campaign delay is now zero. Unit tests cover immediate 500/500
+reward creation and explicitly configured delayed campaigns. Deployment still
+requires migration 2 and the campaign PostSync update; existing rewards are not
+bulk accelerated.
 - [ ] Enable Beijing only and confirm other environments remain disabled.

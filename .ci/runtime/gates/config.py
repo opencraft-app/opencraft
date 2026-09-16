@@ -2,13 +2,67 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
+from contracts.bundles import load_manifest
 from support.logging import print_section
 from support.process import run_logged, validate_command
+
+
+def validate_activation_inputs(repo_root: Path, bundle_manifest: Path, pin_targets: str, env: str) -> None:
+    if not bundle_manifest.is_file() and not (bundle_manifest.parent / "bundles").is_dir():
+        return
+    bundles = load_manifest(bundle_manifest).get("bundles") or {}
+    for service in (item.strip() for item in pin_targets.split(",") if item.strip()):
+        contract = (bundles.get(service) or {}).get("config_contract") or {}
+        if not isinstance(contract, dict):
+            continue
+        required_files = contract.get("required_files") or []
+        if not isinstance(required_files, list) or not all(isinstance(path, str) for path in required_files):
+            raise ValueError("config_contract.required_files must be a list of repository paths")
+        platform = contract.get("platform_env") or {}
+        if not isinstance(platform, dict):
+            raise ValueError("config_contract.platform_env must be a mapping")
+        platform_path = str(platform.get("path") or "")
+        catalog = contract.get("active_catalog") or {}
+        if not isinstance(catalog, dict):
+            raise ValueError("config_contract.active_catalog must be a mapping")
+        catalog_path = str(catalog.get("path") or "")
+        for template in [*required_files, *([platform_path] if platform_path else []),
+                         *([catalog_path] if catalog_path else [])]:
+            path = Path(template.format(env=env))
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError("activation inputs must stay within the repository")
+            if not (repo_root / path).is_file():
+                raise FileNotFoundError(f"missing required activation input: {path}")
+        if catalog_path:
+            descriptor = yaml.safe_load((repo_root / catalog_path.format(env=env)).read_text()) or {}
+            expected_source = str(catalog.get("source_path") or "").format(env=env)
+            if not expected_source or not isinstance(descriptor, dict) or descriptor.get("sourcePath") != expected_source:
+                raise ValueError("runtime catalog sourcePath does not match the release target")
+        if not platform_path:
+            continue
+        values = {}
+        for raw in (repo_root / platform_path.format(env=env)).read_text().splitlines():
+            if raw.strip() and not raw.lstrip().startswith("#") and "=" in raw:
+                key, value = raw.split("=", 1)
+                values[key.strip()] = value.strip()
+        for rule in ("required_keys", "positive_int_keys"):
+            keys = platform.get(rule) or []
+            if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+                raise ValueError(f"config_contract.platform_env.{rule} must be a list of keys")
+            for key in keys:
+                value = values.get(key, "")
+                if not value or "REPLACE_" in value or (rule == "positive_int_keys" and (
+                    not re.fullmatch(r"[0-9]+", value) or int(value) <= 0
+                )):
+                    raise ValueError(f"invalid platform input: {key}")
 
 
 def run_config_gate(
@@ -154,6 +208,7 @@ def validate_config(
     pin_targets: str,
     env: str,
 ) -> None:
+    validate_activation_inputs(repo_root, bundle_manifest, pin_targets, env)
     print_section(
         "GitOps 发布门禁：校验配置契约",
         [

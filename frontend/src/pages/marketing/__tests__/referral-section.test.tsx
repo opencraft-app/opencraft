@@ -40,6 +40,7 @@ describe("ReferralSection", () => {
   it("shows the real code and aggregate reward state", async () => {
     render(<ReferralSection />);
     expect(await screen.findByText("https://lightvela.com/auth/sign-in?ref=ABC234XYZ5")).toBeInTheDocument();
+    expect(screen.getByText("好友首次开通成功，双方获得积分。")).toBeInTheDocument();
     expect(screen.getByText("1000")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "复制邀请链接" }));
     await waitFor(() => {

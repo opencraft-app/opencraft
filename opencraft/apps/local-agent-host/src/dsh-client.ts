@@ -38,7 +38,7 @@ export class DshClientError extends Error {
 }
 
 export class DshClient {
-  constructor(readonly baseUrl: string) {}
+  constructor(public baseUrl: string, private readonly requestTimeoutMs = 30_000) {}
 
   async respond(rpcId: string, result: unknown): Promise<{ accepted: boolean; reason?: string }> {
     const response = await fetch(new URL("/api/respond", this.baseUrl), {
@@ -65,7 +65,7 @@ export class DshClient {
         method,
         payload,
       }),
-      signal,
+      signal: signal ?? AbortSignal.timeout(this.requestTimeoutMs),
     });
     if (!response.ok) {
       throw new DshClientError("DSH_HTTP_ERROR", `${method} failed with HTTP ${response.status}`, response.status >= 500);

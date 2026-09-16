@@ -19,6 +19,41 @@ class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem
   removeItem(key: string): void { this.values.delete(key); }
 }
 
+test("LightVela instance directory returns existing instances without creating or filtering them", async () => {
+  const storage = new MemoryStorage();
+  storage.setItem(LIGHTVELA_TOKEN_KEY, "directory-token");
+  const requests: string[] = [];
+  const service = new LightVelaAccountService({
+    storage,
+    apiBase: "https://api.example",
+    fetchImpl: async (input) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify({
+        code: "OK",
+        message: "ok",
+        data: {
+          total: 2,
+          page: 1,
+          page_size: 100,
+          items: [
+            { instance_id: "instance-running", name: "Running", status: "Running", created_at: "2026-09-01T00:00:00Z" },
+            { instance_id: "instance-paused", name: "Paused", status: "Paused", created_at: "2026-09-02T00:00:00Z" },
+          ],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+
+  const instances = await service.listInstances();
+
+  assert.deepEqual(requests, ["https://api.example/v1/instances?page=1&page_size=100"]);
+  assert.deepEqual(instances, [
+    { instanceId: "instance-running", name: "Running", status: "running", createdAt: "2026-09-01T00:00:00Z" },
+    { instanceId: "instance-paused", name: "Paused", status: "paused", createdAt: "2026-09-02T00:00:00Z" },
+  ]);
+  service.dispose();
+});
+
 test("LightVela debug execution preserves mono2 request and business-failure semantics", async () => {
   const storage = new MemoryStorage();
   storage.setItem(LIGHTVELA_TOKEN_KEY, "test-token");

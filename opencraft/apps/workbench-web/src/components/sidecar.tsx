@@ -29,8 +29,8 @@ export function Sidecar({
   );
 }
 /**
- * A Sidecar pane has two intentionally different geometries: Frame contributes
- * live width to layout; Viewport remains stable inside a dedicated Clip.
+ * Layout width follows resize gestures. The visible Frame may differ only for
+ * an explicit visibility/detent transition, whose Clip never owns layout width.
  */
 export function SidecarPane({
   animatedSize,
@@ -54,8 +54,11 @@ export function SidecarPane({
   readonly viewportSize: SidecarSize;
 }) {
   const frameStyle: MotionStyle = { flex: "0 0 auto", width: animatedSize };
+  // Do not subscribe one MotionValue through both minWidth and width. React
+  // motion can retain the initial minimum while the width shrinks.
   const viewportStyle: MotionStyle = {
-    minWidth: viewportSize,
+    minWidth: 0,
+    flexShrink: 0,
     opacity: contentOpacity,
     width: viewportSize,
   };

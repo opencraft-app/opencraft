@@ -593,6 +593,7 @@ function Frame({
 }
 
 function Turn({
+  startAfterTurnIntro = false,
   activityCollapsedById,
   onActivityCollapsedChange,
   onRetry,
@@ -600,6 +601,7 @@ function Turn({
   threadDetailLevel,
   turn,
 }: {
+  startAfterTurnIntro?: boolean;
   activityCollapsedById: Readonly<Record<string, boolean>>;
   onActivityCollapsedChange: (id: string, collapsed: boolean) => void;
   onRetry?: () => void;
@@ -623,7 +625,7 @@ function Turn({
   const virtualizeSingleSlot = presentation.topLevelSlotCount === 1;
   return (
     <section className="thread-turn" data-selection="text" data-turn-key={turn.turnKey} data-turn-status={turn.status}>
-      {presentation.userFrames.map((frame) => (
+      {(startAfterTurnIntro ? [] : presentation.userFrames).map((frame) => (
         <Frame
           allowSingleSlotVirtualization={virtualizeSingleSlot}
           activityCollapsedById={activityCollapsedById}

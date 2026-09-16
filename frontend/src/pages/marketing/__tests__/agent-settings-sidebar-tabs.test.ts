@@ -54,12 +54,16 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(noActiveBotBranch).not.toContain("createInitialBot");
 
     expect(page).toContain("const isFirstBotCreation = !activeBot");
-    expect(page).toContain("const requestedCreateMode = isFirstBotCreation ? \"blank\" : createBotMode");
+    expect(page).toContain("const cloneIntent = resolveBotCloneIntent({");
+    expect(page).toContain("isInitialCreation: isFirstBotCreation");
+    expect(page).toContain("currentBotId: activeBot?.id");
+    expect(page).toContain("mainBotId: defaultBot?.id");
+    expect(page).toContain("if (!cloneIntent.ok)");
     expect(page).not.toContain("createBotSoul");
     expect(page).not.toContain("initialSoul:");
     expect(page).toContain("{!isFirstBotCreation && (");
-    expect(page).toContain('createMode: requestedCreateMode === "blank" ? "blank" : "clone"');
-    expect(page).toContain('sourceBotId: requestedCreateMode === "blank" ? undefined : sourceBot?.id');
+    expect(page).toContain("createMode: cloneIntent.intent.mode");
+    expect(page).toContain('sourceBotId: cloneIntent.intent.mode === "clone" ? cloneIntent.intent.sourceBotId : undefined');
   });
 
   it("refreshes the shared Bot list before leaving the creation page", () => {
@@ -285,6 +289,10 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
+    const handleCreateNew = page.slice(
+      page.indexOf("const handleCreateNew"),
+      page.indexOf("const handleConfirmCreate"),
+    );
 
     expect(page).toContain("if (!activeBot)");
     expect(page).toContain("setShowCreateConfirm(true)");
@@ -302,7 +310,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
     expect(page).toContain("const MAX_BOT_NAME_LENGTH = 60");
-    expect(page.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
+    expect(handleCreateNew.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
     expect(page).not.toContain('setCreateBotName(t("新 Bot"))');
     expect(page).toContain('placeholder={t("请输入 Bot 名称")}');
     expect(page).toContain("maxLength={MAX_BOT_NAME_LENGTH}");
@@ -356,6 +364,26 @@ describe("agent settings sidebar chat/settings tabs", () => {
     // AgentChatPanel 透传给 LightVelaPanel。
     expect(chatPanel).toContain("multiSession?: LightVelaMultiSessionOptions");
     expect(chatPanel).toContain("multiSession={multiSession}");
+  });
+
+  it("fills the available desktop layout while preserving the compact panel height", () => {
+    const chatPanel = readChatPanelSource();
+
+    expect(chatPanel).toContain(
+      "h-[clamp(516px,calc(100vh-220px),960px)]",
+    );
+    expect(chatPanel).toContain("lg:h-full");
+  });
+
+  it("marks the active chat route and removes its desktop page padding", () => {
+    const page = readPageSource();
+
+    expect(page).toContain('activeSection === "chat" && "lv-agent-chat-page"');
+    expect(page).toContain('"lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",');
+    expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
+    expect(page).toContain(
+      'className="lv-agent-settings-grid grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]"',
+    );
   });
 
   it("exposes rename and delete in the session menu (delete needs confirmation)", () => {

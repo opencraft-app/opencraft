@@ -44,6 +44,15 @@ export type LanguageSwitcherOption = {
   label: string;
 };
 
+type InternationalLanguageMenuProps = {
+  activeLocale?: PublicSiteLocale;
+  ariaLabel: string;
+  id: string;
+  navigateTo?: LanguageSwitcherNavigate;
+  onSelect?: () => void;
+  reloadAfterSwitch?: boolean;
+};
+
 const CHINA_SITE_URL = "https://lightvela.com";
 const INTL_SITE_URL = "https://lightvela.ai";
 
@@ -174,6 +183,68 @@ function applyIntlChoice(
 
   if (typeof window === "undefined") return;
   window.open(intlSiteUrlForLocale(value), "_blank", "noopener,noreferrer");
+}
+
+/**
+ * 国际站账号菜单内的纯语言列表。
+ *
+ * 与页面头部的站点切换器共用 locale 注册表和切换逻辑，但刻意不提供
+ * 中国站入口：Agent 控制台的账号菜单只负责当前站点内的语言切换。
+ */
+export function InternationalLanguageMenu({
+  activeLocale,
+  ariaLabel,
+  id,
+  navigateTo,
+  onSelect,
+  reloadAfterSwitch = false,
+}: InternationalLanguageMenuProps) {
+  const { i18n } = useTranslation();
+  const active = currentOption(activeLocale ?? i18n.language);
+  const internationalLocales = SWITCHER_VISIBLE_LOCALES.filter(
+    (locale) => locale !== PUBLIC_SITE_LOCALES.ZH_CN,
+  );
+  const orderedLocales = internationalLocales.some((locale) => locale === active.value)
+    ? [active.value, ...internationalLocales.filter((locale) => locale !== active.value)]
+    : internationalLocales;
+  const options = orderedLocales.map((locale) => ({
+    value: locale,
+    label: localeDefinition(locale).displayName,
+  }));
+
+  return (
+    <fieldset
+      id={id}
+      aria-label={ariaLabel}
+      className="py-1"
+    >
+      {options.map((option) => {
+        const selected = option.value === active.value;
+        return (
+          <label
+            key={option.value}
+            className="relative flex cursor-pointer items-center justify-between gap-2 px-4 py-2 text-left text-[13px] text-[var(--lw-user-menu-text)] hover:bg-[var(--lw-user-menu-hover-bg)] hover:text-[var(--lw-user-menu-text-hover)]"
+          >
+            <input
+              type="radio"
+              name={`${id}-locale`}
+              value={option.value}
+              checked={selected}
+              className="peer sr-only"
+              onChange={() => {
+                onSelect?.();
+                applyIntlChoice(option.value, reloadAfterSwitch, navigateTo);
+              }}
+            />
+            <span className="peer-focus-visible:underline peer-focus-visible:underline-offset-4">
+              {option.label}
+            </span>
+            {selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+          </label>
+        );
+      })}
+    </fieldset>
+  );
 }
 
 /**

@@ -48,3 +48,11 @@ path. Generated files are not edited by hand.
 Long term, move stable UI primitives, domain contracts, and repository
 interfaces into explicit workspace packages. Delete each vendored slice only
 after all OpenCraft targets consume the package and the full gate passes.
+
+`shared/lightvela-agent-core` is the first extracted product-core slice. mono2
+Web is its first behavioral consumer. OpenCraft currently declares it only so
+the generated HTTP repository compatibility file can resolve shared identity
+and lifecycle functions; this does not make OpenCraft the policy owner or
+authorize deleting the generated Agent Console closure. Promote additional
+behavior only after frontend characterization tests pass, then validate the
+OpenCraft adapter independently.

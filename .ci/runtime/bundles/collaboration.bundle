@@ -1,0 +1,76 @@
+bundles:
+  collaboration:
+    owner: collaboration
+    source: collaboration
+    reason: LightVela Collaboration Human/Runtime API and Tencent IM workers, Beijing foundation only.
+    exit_condition: Remove only after Collaboration ownership moves to another service.
+    dockerfile: collaboration/Dockerfile
+    build_context: collaboration
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/collaboration
+      sandbox-bj-*: null
+      sandbox-kr-*: null
+      sandbox-jp-*: null
+      shprod: null
+      sgprod: null
+    config_contract:
+      active_catalog:
+        path: argocd/catalogs/sandbox/{env}/collaboration.yaml
+        source_path: argocd/services/collaboration/{env}
+      required_files:
+      - argocd/catalogs/sandbox/{env}/collaboration.yaml
+      - argocd/secrets/{env}/collaboration-runtime-secrets.sops.yaml
+      platform_env:
+        path: argocd/services/collaboration/{env}/collaboration-platform.env
+        required_keys:
+        - COLLABORATION_IM_ADMIN_USER_ID
+        - COLLABORATION_NODE_POOL
+        positive_int_keys:
+        - COLLABORATION_IM_SDK_APP_ID
+    db_contract:
+      mode: migration
+      db_job_service: collaboration
+      migration_operation: migration
+      always_run_migration: true
+      migration_paths:
+      - collaboration/migrations/**
+      - collaboration/internal/database/migrationsource/**
+      verifier:
+        mode: service-command
+        namespace: lightvela-collaboration
+        service_platform_env_file: argocd/services/collaboration/{env}/collaboration-platform.env
+        image_from_service_platform: COLLABORATION_IMAGE
+        node_selector_from_service_platform:
+          pool: COLLABORATION_NODE_POOL
+        command:
+        - /usr/local/bin/chatserver
+        - database
+        - verify
+        - --database-driver
+        - mysql
+        - --database-dsn-file
+        - /var/run/secrets/collaboration/database.dsn
+        secret_file:
+          name: collaboration-runtime-secrets
+          key: database.dsn
+          mount_path: /var/run/secrets/collaboration
+    allowed_paths:
+    - collaboration/k8s/base
+    - collaboration/Dockerfile
+    - argocd/services/collaboration
+    - argocd/catalogs/candidates/beijing-sandbox/collaboration.yaml
+    - argocd/catalogs/candidates/beijing-sandbox/collaboration-foundation.yaml
+    - argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml
+    - argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml
+    - scripts/ssm_manifest.collaboration.beijing-sandbox.yaml
+    publish_paths_by_env:
+      beijing-sandbox:
+      - collaboration/k8s/base/**
+      - argocd/services/collaboration/common/**
+      - argocd/services/collaboration/beijing-sandbox/**
+      - argocd/services/collaboration/beijing-sandbox-foundation/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/candidates/beijing-sandbox/collaboration.yaml
+      - argocd/catalogs/candidates/beijing-sandbox/collaboration-foundation.yaml
+      - argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml
+      - scripts/ssm_manifest.collaboration.beijing-sandbox.yaml

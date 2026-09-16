@@ -1,0 +1,6 @@
+/bin/
+/build/
+/dist/
+/vela-computer
+/native/tat-agent/target/
+/.artifacts/

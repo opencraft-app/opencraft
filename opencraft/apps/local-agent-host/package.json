@@ -11,11 +11,15 @@
   },
   "dependencies": {
     "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/composer-core": "^0.1.0",
     "node-pty": "1.1.0",
-    "ws": "^8.21.0"
+    "proper-lockfile": "^4.1.2",
+    "ws": "^8.21.0",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "@types/proper-lockfile": "^4.1.4",
     "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   }

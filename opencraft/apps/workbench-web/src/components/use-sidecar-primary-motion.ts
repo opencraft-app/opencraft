@@ -2,12 +2,14 @@ import {
   animate,
   useMotionValue,
   useReducedMotion,
+  useTransform,
   type MotionValue,
 } from "motion/react";
 import { useCallback, useLayoutEffect, useRef } from "react";
 
 import {
   resolveSidecarPrimarySettleTarget,
+  primaryViewportWidth,
   type SidecarPrimaryResizeCommit,
   type SidecarPrimaryResizePreview,
 } from "./sidecar-primary-resize";
@@ -19,7 +21,6 @@ interface Playback {
 }
 
 interface SidecarPrimaryMotion {
-  readonly footerWidth: MotionValue<number>;
   readonly frameWidth: MotionValue<number>;
   readonly viewportWidth: MotionValue<number>;
   beginResize(): void;
@@ -37,23 +38,22 @@ type InteractionPhase = "idle" | "dragging" | "settling";
  * Sole motion owner for the Primary Sidecar.
  *
  * Pointer frames remain continuous, semantic detents change at transaction
- * boundaries, and the Footer follows only committed expanded width. The
- * viewport expands with a rightward pointer so painted rows never trail the
- * frame, but remains stable while contracting so content is clipped instead
- * of reflowing. Content opacity is deliberately absent from this model.
+ * boundaries. Footer sizing belongs to the complete Sidecar, not this pane. The
+ * viewport follows the frame in both directions in the normal resize range.
+ * Only a transition into compact/hidden retains a minimum layout viewport;
+ * visibility clipping and content opacity are not drag-width policies.
  */
 export function useSidecarPrimaryMotion(input: {
+  readonly isVisible: boolean;
   readonly committedExpandedWidth: number;
   readonly committedFrameWidth: number;
   readonly compactWidth: number;
   readonly expandedMinimumWidth: number;
-  readonly footerMinimumWidth: number;
   readonly getMaximumWidth: () => number;
 }): SidecarPrimaryMotion {
   const shouldReduceMotion = useReducedMotion();
   const frameWidth = useMotionValue(input.committedFrameWidth);
-  const viewportWidth = useMotionValue(input.committedExpandedWidth);
-  const footerWidth = useMotionValue(Math.max(input.footerMinimumWidth, input.committedExpandedWidth));
+  const viewportWidth = useTransform(frameWidth, width => primaryViewportWidth(width, input.expandedMinimumWidth));
   const phaseRef = useRef<InteractionPhase>("idle");
   const generationRef = useRef(0);
   const playbacksRef = useRef<Playback[]>([]);
@@ -72,12 +72,10 @@ export function useSidecarPrimaryMotion(input: {
   const previewResize = useCallback((preview: SidecarPrimaryResizePreview) => {
     if (phaseRef.current !== "dragging") return;
     frameWidth.set(preview.frameWidth);
-    viewportWidth.set(Math.max(input.committedExpandedWidth, preview.frameWidth));
-  }, [frameWidth, input.committedExpandedWidth, viewportWidth]);
+  }, [frameWidth]);
 
   const settle = useCallback((
     targetFrameWidth: number,
-    targetExpandedWidth: number | null,
     complete: () => void,
   ) => {
     stopPlaybacks();
@@ -86,10 +84,6 @@ export function useSidecarPrimaryMotion(input: {
 
     if (shouldReduceMotion === true) {
       frameWidth.set(targetFrameWidth);
-      if (targetExpandedWidth !== null) {
-        viewportWidth.set(targetExpandedWidth);
-        footerWidth.set(Math.max(input.footerMinimumWidth, targetExpandedWidth));
-      }
       phaseRef.current = "idle";
       complete();
       return;
@@ -99,15 +93,6 @@ export function useSidecarPrimaryMotion(input: {
     if (Math.abs(frameWidth.get() - targetFrameWidth) > 0.01) {
       playbacks.push(animate(frameWidth, targetFrameWidth, PANEL_SPRING_TRANSITION));
     } else frameWidth.set(targetFrameWidth);
-    if (targetExpandedWidth !== null) {
-      if (Math.abs(viewportWidth.get() - targetExpandedWidth) > 0.01) {
-        playbacks.push(animate(viewportWidth, targetExpandedWidth, PANEL_SPRING_TRANSITION));
-      } else viewportWidth.set(targetExpandedWidth);
-      const targetFooterWidth = Math.max(input.footerMinimumWidth, targetExpandedWidth);
-      if (Math.abs(footerWidth.get() - targetFooterWidth) > 0.01) {
-        playbacks.push(animate(footerWidth, targetFooterWidth, PANEL_SPRING_TRANSITION));
-      } else footerWidth.set(targetFooterWidth);
-    }
     playbacksRef.current = playbacks;
     if (playbacks.length === 0) {
       phaseRef.current = "idle";
@@ -122,11 +107,11 @@ export function useSidecarPrimaryMotion(input: {
     }).catch(() => {
       // A new pointer transaction intentionally stops the previous settle.
     });
-  }, [footerWidth, frameWidth, input.footerMinimumWidth, shouldReduceMotion, stopPlaybacks, viewportWidth]);
+  }, [frameWidth, shouldReduceMotion, stopPlaybacks]);
 
   const cancelResize = useCallback(() => {
-    settle(input.committedFrameWidth, input.committedExpandedWidth, () => {});
-  }, [input.committedExpandedWidth, input.committedFrameWidth, settle]);
+    settle(input.committedFrameWidth, () => {});
+  }, [input.committedFrameWidth, settle]);
 
   const settleResize = useCallback((
     result: SidecarPrimaryResizeCommit,
@@ -153,22 +138,23 @@ export function useSidecarPrimaryMotion(input: {
     }
     settle(
       targetFrameWidth,
-      result.detent === "expanded" ? targetFrameWidth : null,
       commitAfterSettle ? () => commit(settledResult) : () => {},
     );
   }, [input.compactWidth, input.expandedMinimumWidth, input.getMaximumWidth, settle, stopPlaybacks]);
 
   useLayoutEffect(() => {
-    if (phaseRef.current !== "idle") return;
+    // Visibility has its own progress owner. A hidden projection reports zero
+    // width, but copying that into the base frame would erase the entire exit
+    // animation (progress * 0). Retain the last geometry while exiting/hidden;
+    // reopening synchronizes the destination before visibility animates in.
+    // A drag-to-hidden already settled its physical frame to zero and stays there.
+    if (!input.isVisible || phaseRef.current !== "idle") return;
     frameWidth.set(input.committedFrameWidth);
-    viewportWidth.set(input.committedExpandedWidth);
-    footerWidth.set(Math.max(input.footerMinimumWidth, input.committedExpandedWidth));
-  }, [footerWidth, frameWidth, input.committedExpandedWidth, input.committedFrameWidth, input.footerMinimumWidth, viewportWidth]);
+  }, [frameWidth, input.isVisible, input.committedFrameWidth]);
 
   useLayoutEffect(() => () => stopPlaybacks(), [stopPlaybacks]);
 
   return {
-    footerWidth,
     frameWidth,
     viewportWidth,
     beginResize,

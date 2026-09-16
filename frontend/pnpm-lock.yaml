@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      '@lightvela/agent-core':
+        specifier: file:../shared/lightvela-agent-core
+        version: file:../shared/lightvela-agent-core
       '@babel/runtime-corejs3':
         specifier: 7.29.7
         version: 7.29.7
@@ -209,6 +212,9 @@ importers:
         version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(jsdom@28.1.0)(vite@7.3.1(@types/node@24.12.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0))
 
 packages:
+
+  '@lightvela/agent-core@file:../shared/lightvela-agent-core':
+    resolution: {directory: ../shared/lightvela-agent-core, type: directory}
 
   '@acemir/cssom@0.9.31':
     resolution: {integrity: sha512-ZnR3GSaH+/vJ0YlHau21FjfLYjMpYVIzTD8M8vIEQvIGxeOXyXdzCI140rrCY862p/C/BbzWsjc1dgnM9mkoTA==}
@@ -8422,6 +8428,8 @@ packages:
     resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
 
 snapshots:
+
+  '@lightvela/agent-core@file:../shared/lightvela-agent-core': {}
 
   '@acemir/cssom@0.9.31': {}
 
@@ -18496,4 +18504,3 @@ snapshots:
       pend: 1.2.0
 
   pend@1.2.0: {}
-

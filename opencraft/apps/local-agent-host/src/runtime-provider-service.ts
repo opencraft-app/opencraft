@@ -6,26 +6,55 @@ import type {
   RuntimeModelsDiscoverParams, RuntimeModelsDiscoverResponse,
   RuntimeProviderSetEnabledParams,
   RuntimeModelsListResponse, RuntimeModelMutationParams,
+  RuntimeModelProbeParams,
 } from "@opencraft/appserver-protocol";
+import { probeRuntimeModel } from "./runtime-model-probe.js";
+import { modelBaseUrlError } from "@opencraft/appserver-protocol";
 import { DshClientError, type DshClient } from "./dsh-client.js";
 
 const CUSTOM_NS = "llm-pi-ai";
+const supportsProviderLifecycle = (ns: string) => ns === CUSTOM_NS || ns === "llm-deepseek";
 const APIS = ["openai-completions", "openai-responses"] as const;
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const at = (value: unknown, path: readonly string[]): unknown => path.reduce((node, key) => object(node)[key], value);
 
-function endpoint(value: string): string {
+function endpoint(value: string, validateOperation = true): string {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error("Endpoint must be an HTTP(S) base URL without credentials, query or fragment");
   }
+  const issue = validateOperation ? modelBaseUrlError(value) : null; if (issue) throw new Error(issue);
   return url.toString().replace(/\/+$/, "");
 }
 
 /** Application coordinator, not a second config store. DSH owns settings, CAS and credentials. */
 export class RuntimeProviderService {
   constructor(private readonly client: Pick<DshClient, "call">) {}
+
+  probe(input: RuntimeModelProbeParams) { return probeRuntimeModel(input); }
+
+  async remove(input: Omit<RuntimeProviderSetEnabledParams, "enabled">): Promise<RuntimeProviderApplyResponse> {
+    if (!input || typeof input.provider !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(input.provider)
+      || ["__proto__", "constructor", "prototype"].includes(input.provider) || !Number.isInteger(input.expectedRevision)) throw new Error("Invalid provider command");
+    const [directory, settings] = await Promise.all([
+      this.client.call<RuntimeProvidersListResponse>("llm.providers"),
+      this.client.call<RuntimeSettingsDescribeResponse>("settings.describe"),
+    ]);
+    const provider = directory.providers.find(entry => entry.provider === input.provider);
+    if (!provider?.declared || provider.settingsNs !== CUSTOM_NS
+      || !isDeepStrictEqual(provider.settingsPath, ["providers", input.provider])) throw new Error("Only custom providers can be deleted");
+    const namespace = settings.namespaces.find(entry => entry.ns === CUSTOM_NS);
+    if (!settings.writable || !namespace) throw new Error("Runtime settings are read-only");
+    if (namespace.revision !== input.expectedRevision) throw new DshClientError("settings-conflict", "Provider settings changed; refresh before deleting");
+    const defaults = object(settings.namespaces.find(entry => entry.ns === "agent-default-model")?.value);
+    if (defaults.provider === input.provider) throw new Error("请先选择其他提供商的默认模型");
+    const ops: RuntimeSettingsPathOperation[] = [{ op: "unset", path: ["providers", input.provider] }];
+    if (Object.hasOwn(object(object(namespace.value).modelSelection), input.provider)) ops.push({ op: "unset", path: ["modelSelection", input.provider] });
+    const saved = await this.client.call<RuntimeSettingsNamespaceView>("settings.mutate", { ns: CUSTOM_NS, expectedRevision: input.expectedRevision, ops });
+    // Credentials may be shared by other connections; never remove them here.
+    return { provider: input.provider, revision: saved.revision, saved: true };
+  }
 
   async models(includeDisabled = false): Promise<RuntimeModelsListResponse> {
     const [catalog, settings, directory] = await Promise.all([
@@ -38,10 +67,16 @@ export class RuntimeProviderService {
     let groups = [...catalog.groups];
     if (includeDisabled) {
       for (const provider of directory.providers) {
-        if (provider.settingsNs !== CUSTOM_NS || groups.some(group => group.id === provider.provider)) continue;
-        const declared = object(object(config.providers)[provider.provider]).models;
+        if (!supportsProviderLifecycle(provider.settingsNs) || groups.some(group => group.id === provider.provider)) continue;
+        const section = settings.namespaces.find(entry => entry.ns === provider.settingsNs);
+        const declared = provider.settingsNs === CUSTOM_NS ? object(object(config.providers)[provider.provider]).models
+          : object(at(section?.value, provider.settingsPath)).models;
         if (Array.isArray(declared)) groups = [...groups, { id: provider.provider, name: provider.displayName,
-          models: declared.map(entry => { const model = object(entry); return { id: String(model.id), name: String(model.name ?? model.id) }; }),
+          models: declared.map(entry => { const model = object(entry); return { id: String(model.id), name: String(model.name ?? model.id),
+            ...(typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
+            ...(typeof model.maxTokens === "number" ? { maxTokens: model.maxTokens } : {}),
+            ...(Array.isArray(model.input ?? model.inputModalities) ? { input: (model.input ?? model.inputModalities) as ("text" | "image")[] } : {}),
+          }; }),
         }];
       }
     }
@@ -101,10 +136,15 @@ export class RuntimeProviderService {
       const value = at(section?.value, provider.settingsPath);
       const configured = value !== undefined;
       return { ...provider, configured, enabled: configured && object(value).enabled !== false,
-        ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: APIS, canToggle: true } } : {}),
+        ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: APIS, canToggle: true, canProbe: true } } : {}),
+        // The pinned native DeepSeek adapter speaks Chat Completions. These are
+        // public draft-probe defaults, never a readback of credentials or env overrides.
+        ...(provider.settingsNs === "llm-deepseek" && provider.provider === "deepseek-official" ? { configuration: {
+          modelDeclarations: false, apis: [], canToggle: true, canProbe: true, defaultBaseURL: "https://api.deepseek.com", defaultApi: "openai-completions" as const,
+        } } : {}),
       };
     }), ...(settings.writable && namespace ? {
-      creation: { kind: "openai-compatible" as const, revision: namespace.revision, apis: APIS },
+      creation: { kind: "openai-compatible" as const, revision: namespace.revision, apis: APIS, canProbe: true, canEnableOnCreate: true },
     } : {}) };
   }
 
@@ -144,6 +184,9 @@ export class RuntimeProviderService {
         if (!model || typeof model.id !== "string" || !model.id.trim() || model.id !== model.id.trim() || seen.has(model.id)) throw new Error("Model IDs must be nonempty and unique");
         seen.add(model.id);
         for (const n of [model.contextWindow, model.maxTokens]) if (n !== undefined && (!Number.isInteger(n) || n <= 0)) throw new Error("Model limits must be positive integers");
+        if (model.name !== undefined && (typeof model.name !== "string" || !model.name.trim())) throw new Error("Model display names must be nonempty");
+        if (model.contextWindow !== undefined && model.maxTokens !== undefined && model.maxTokens > model.contextWindow) throw new Error("Output limit cannot exceed the context window");
+        if (model.input !== undefined && (!Array.isArray(model.input) || !model.input.includes("text") || new Set(model.input).size !== model.input.length || model.input.some((value: unknown) => value !== "text" && value !== "image"))) throw new Error("Model input must include text and optionally image");
       }
       const defaults = object(settings.namespaces.find((entry) => entry.ns === "agent-default-model")?.value);
       if (defaults.provider === id && Array.isArray(current.models)
@@ -154,10 +197,28 @@ export class RuntimeProviderService {
     }
     const ops: RuntimeSettingsPathOperation[] = [];
     const set = (key: string, value: unknown) => ops.push({ op: "set", path: [...path, key], value });
-    // New connections are persisted drafts, never implicit live routes.
-    if (create) set("enabled", false);
+    if (input.disableNewModels !== undefined) {
+      if (typeof input.disableNewModels !== "boolean" || ns !== CUSTOM_NS || !input.models) throw new Error("Invalid model import policy");
+      if (input.disableNewModels) {
+        const catalog = await this.client.call<RuntimeModelsListResponse>("llm.models");
+        const existingIds = new Set([
+          ...(Array.isArray(current.models) ? current.models.map(model => object(model).id) : []),
+          ...((catalog.groups ?? []).find(group => group.id === id)?.models.map(model => model.id) ?? []),
+        ]);
+        const previous = object(namespace.value).modelSelection;
+        const disabled = new Set(Array.isArray(object(previous)[id]) ? object(previous)[id] as string[] : []);
+        for (const model of input.models) if (!existingIds.has(model.id)) disabled.add(model.id);
+        ops.push({ op: "set", path: ["modelSelection", id], value: [...disabled] });
+      }
+    }
+    // Legacy callers still create disabled drafts; activation must be explicit.
+    if (create) {
+      if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("Invalid enabled state");
+      if (input.enabled === true && (!baseURL || !input.api || !input.models?.length)) throw new Error("Enabling a new connection requires an endpoint, protocol and at least one model");
+      set("enabled", input.enabled === true);
+    }
     else if (input.enabled !== undefined) {
-      if (typeof input.enabled !== "boolean" || ns !== CUSTOM_NS) throw new Error("This adapter does not support changing enabled state");
+      if (typeof input.enabled !== "boolean" || !supportsProviderLifecycle(ns)) throw new Error("This adapter does not support changing enabled state");
       await this.assertEnabledChange(id, input.enabled);
       set("enabled", input.enabled);
     }
@@ -173,7 +234,7 @@ export class RuntimeProviderService {
     let stagedRef: string | null = null;
     switch (input.credential?.kind) {
       case "keep": {
-        const oldEndpoint = typeof current.baseURL === "string" ? endpoint(current.baseURL) : "";
+        const oldEndpoint = typeof current.baseURL === "string" ? endpoint(current.baseURL, false) : "";
         if (!create && baseURL !== oldEndpoint && !input.credential.allowEndpointChange) throw new Error("Changing the endpoint requires confirmation before reusing its credential");
         if (create) set("apiKeyEnv", `OPENCRAFT_UNBOUND_${randomUUID().replaceAll("-", "_")}`);
         break;
@@ -194,7 +255,7 @@ export class RuntimeProviderService {
       default: throw new Error("Choose how this provider authenticates");
     }
     // Every enabling command uses the same validation, including direct apply.
-    if (!create && input.enabled === true && input.credential.kind !== "replace") {
+    if (input.enabled === true && input.credential.kind !== "replace") {
       const ref = input.credential.kind === "reference" ? input.credential.ref : current.apiKeyEnv;
       if (input.credential.kind === "none" || typeof ref !== "string") throw new Error("Configure authentication before enabling this provider");
       const credentials = await this.client.call<{ credentials: Record<string, { configured: boolean }> }>("credentials.describe", { refs: [ref] });

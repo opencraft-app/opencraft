@@ -14,9 +14,10 @@ import {
 } from "../plugins/lightvela-hermes/src/account/lightvela-account-service";
 import { selectLightVelaLoginRegion } from "../plugins/lightvela-hermes/src/settings/lightvela-region-selection";
 import { WEB_LOGIN_PENDING_KEY } from "../plugins/lightvela-hermes/src/account/lightvela-web-login";
+import { desktopAccountStorage, type LightVelaDesktopAccountPort } from "../plugins/lightvela-hermes/src/account/lightvela-desktop-login";
 import { findHostConnectionInterventionError } from "@opencraft/workbench-runtime";
 
-function fixture(fetchImpl: typeof fetch) {
+function fixture(fetchImpl: typeof fetch, desktopAccount?: LightVelaDesktopAccountPort) {
   const values = new Map<string, string>();
   const transactions = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null,
@@ -30,9 +31,140 @@ function fixture(fetchImpl: typeof fetch) {
     assign: (url: string) => { redirects.push(url); } };
   const replacements: string[] = [];
   const history = { state: {}, replaceState: (_state: unknown, _unused: string, url?: string | URL | null) => { replacements.push(String(url)); } };
-  const service = new LightVelaAccountService({ storage, transactionStorage, location, history, fetchImpl });
+  const service = new LightVelaAccountService({ storage, transactionStorage, location, history, fetchImpl, desktopAccount });
   return { service, storage, transactionStorage, location, redirects, replacements };
 }
+
+test("desktop sign-in completes independently of failing profile and instance services", async () => {
+  const desktop: LightVelaDesktopAccountPort = {
+    signIn: async region => ({ region, token: "test-session" }),
+    cancel: async () => {}, readSession: async () => null, clearSession: async () => {},
+  };
+  const f = fixture(async () => Response.json({ message: "unavailable" }, { status: 503 }), desktop);
+  const result = await f.service.signIn();
+  assert.equal(result.status, "authenticated");
+  await assert.rejects(f.service.refreshBots());
+  await assert.rejects(f.service.refreshAccountDetails());
+  assert.equal(f.service.getSnapshot().session.status, "authenticated");
+  assert.equal(f.service.getSnapshot().phase, "error", "legacy catalog error stays separate");
+  assert.equal(f.service.getSnapshot().details.phase, "error");
+  f.service.dispose();
+});
+
+test("cancellation fences a native result even if its provider returns it late", async () => {
+  let resolve!: (value: { region: "intl"; token: string }) => void;
+  const f = fixture(async () => { throw new Error("must not load resources"); }, {
+    signIn: () => new Promise(yes => { resolve = yes; }),
+    cancel: async () => {}, readSession: async () => null, clearSession: async () => {},
+  });
+  const pending = f.service.signIn(); await f.service.cancelSignIn();
+  resolve({ region: "intl", token: "late-test-session" });
+  assert.equal((await pending).status, "cancelled");
+  assert.equal(f.service.hasStoredSession(), false);
+  f.service.dispose();
+});
+
+test("a late 401 cannot clear the replacement session", async () => {
+  let resolve!: (value: Response) => void;
+  const f = fixture(async url => String(url).includes("late-request")
+    ? new Promise(yes => { resolve = yes; })
+    : Response.json({ data: { items: [] } }), {
+    signIn: async region => ({ region, token: "test-session" }),
+    cancel: async () => {}, readSession: async () => null, clearSession: async () => {},
+  });
+  await f.service.signIn();
+  const stale = f.service.request("/late-request");
+  await f.service.signIn();
+  resolve(Response.json({ message: "expired" }, { status: 401 }));
+  await assert.rejects(stale);
+  assert.equal(f.service.getSnapshot().session.status, "authenticated");
+  assert.equal(f.service.hasStoredSession(), true); f.service.dispose();
+});
+
+test("desktop native login updates the account without navigating and permits cancellation/retry", async () => {
+  let attempt = 0;
+  const desktop: LightVelaDesktopAccountPort = {
+    signIn: async region => ++attempt === 1 ? null : { region, token: "desktop-test-session" },
+    cancel: async () => {}, readSession: async () => null, clearSession: async () => {},
+  };
+  const f = fixture(async (_url, init) => {
+    assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer desktop-test-session");
+    return Response.json({ data: { items: [] } });
+  }, desktop);
+  f.service.selectRegion("cn");
+  await f.service.signIn();
+  assert.equal(f.service.getSnapshot().phase, "anonymous");
+  assert.equal((await f.service.signIn()).status, "authenticated");
+  assert.equal(f.service.getSnapshot().session.status, "authenticated");
+  assert.equal(f.service.getSnapshot().region, "cn");
+  assert.deepEqual(f.redirects, []);
+  assert.equal(f.transactionStorage.getItem(WEB_LOGIN_PENDING_KEY), null);
+  f.service.dispose();
+});
+
+test("desktop bootstrap restores the private session into memory and logout clears its owner", async () => {
+  let cleared = 0;
+  const desktop: LightVelaDesktopAccountPort = {
+    signIn: async () => null, cancel: async () => {},
+    readSession: async () => ({ region: "intl", token: "restored-test-session" }),
+    clearSession: async () => { cleared++; },
+  };
+  const f = fixture(async () => new Response(null, { status: 204 }), desktop);
+  assert.equal(await bootstrapLightVelaWebLoginCallback({ desktopAccount: desktop, storage: f.storage }), true);
+  assert.equal(f.storage.getItem(LIGHTVELA_TOKEN_KEY), "restored-test-session");
+  await f.service.signOut();
+  assert.equal(cleared, 1);
+  assert.equal(f.storage.getItem(LIGHTVELA_TOKEN_KEY), null);
+  const memory = desktopAccountStorage(f.storage);
+  memory.setItem(LIGHTVELA_TOKEN_KEY, "memory-test-session");
+  assert.equal(f.storage.getItem(LIGHTVELA_TOKEN_KEY), null);
+  assert.equal(memory.getItem(LIGHTVELA_TOKEN_KEY), "memory-test-session");
+  memory.removeItem(LIGHTVELA_TOKEN_KEY);
+  f.service.dispose();
+});
+
+test("desktop account refresh uses the native request port rather than browser CORS", async () => {
+  const nativeRequests: string[] = [];
+  const desktop: LightVelaDesktopAccountPort = {
+    signIn: async region => ({ region, token: "desktop-request-test" }), cancel: async () => {},
+    readSession: async () => null, clearSession: async () => {},
+    request: async input => {
+      nativeRequests.push(input.url);
+      assert.ok(input.url.startsWith("https://api.lightvela.ai/"));
+      assert.equal(input.method, "GET");
+      assert.equal("Authorization" in input, false);
+      const body = input.url.endsWith("/auth/profile") ? { user: { id: "test", name: "Test" } } : { data: { items: [] } };
+      return { status: 200, contentType: "application/json", body: new TextEncoder().encode(JSON.stringify(body)) };
+    },
+  };
+  const f = fixture(async () => { throw new Error("browser fetch must not be used"); }, desktop);
+  await f.service.signIn();
+  await Promise.all([f.service.refreshBots(), f.service.refreshAccountDetails()]);
+  assert.ok(nativeRequests.includes("https://api.lightvela.ai/v1/instances?page=1&page_size=100"));
+  assert.ok(nativeRequests.includes("https://api.lightvela.ai/auth/profile"));
+  assert.equal(f.service.getSnapshot().phase, "authenticated");
+  f.service.dispose();
+});
+
+test("deferred desktop account restoration does not block local setup and cannot undo sign-out", async () => {
+  let release!: (value: { region: "intl"; token: string }) => void;
+  const desktop: LightVelaDesktopAccountPort = {
+    signIn: async () => null, cancel: async () => {}, clearSession: async () => {}, signOut: async () => {},
+    readSession: () => new Promise(resolve => { release = resolve; }),
+  };
+  const f = fixture(async () => { throw new Error("No browser request expected"); }, desktop);
+  const restoring = f.service.restoreDesktopSession();
+  assert.equal(f.service.getSnapshot().phase, "anonymous");
+  await f.service.signOut();
+  release({ region: "intl", token: "late-restore-fixture" });
+  assert.equal(await restoring, false);
+  assert.equal(f.service.hasStoredSession(), false);
+  const next = f.service.restoreDesktopSession();
+  release({ region: "intl", token: "valid-restore-fixture" });
+  assert.equal(await next, true);
+  assert.equal(f.service.hasStoredSession(), true);
+  f.service.dispose();
+});
 
 test("OAuth callback is consumed independently of extension and View startup", () => {
   const values = new Map<string, string>([["vela.lightvela.signed-out.v1", "true"]]);

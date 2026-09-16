@@ -163,7 +163,7 @@ export const AgentChatPanel = ({
   };
 
   return (
-    <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
+    <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white lg:h-full [&>*]:h-full">
       {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
         <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
           {t("正在获取 AgentChat 启动 token…")}

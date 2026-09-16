@@ -1,4 +1,5 @@
 import { planCatalog } from "@/domain/plan-catalog";
+import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import { defaultHermesAgentName } from "@/i18n/default-agent-name";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
@@ -34,6 +35,12 @@ import type {
   WorkspaceMessage,
 } from "@/domain/types";
 import { createFakeRepositories } from "@/repositories/fake-repositories";
+import {
+  createBotIdentity,
+  normalizeBotLifecycle,
+  planBotCreation,
+  type BotIdentity,
+} from "@lightvela/agent-core";
 import type {
   AuthRepository,
   BotRepository,
@@ -279,7 +286,10 @@ const isNestedBotsUnavailable = (error: unknown) => {
 
 const isNestedBotsTemporarilyUnavailable = (error: unknown) => {
   return isNestedBotsUnavailable(error)
-    || (error instanceof RepositoryError && error.status === 403 && error.code === "PASS_MODIFYING");
+    || (error instanceof RepositoryError && (
+      error.status === 403 && error.code === "PASS_MODIFYING"
+      || error.status === 500 && error.code === INSTANCE_BOT_ERROR_CODE.profileFailed
+    ));
 };
 
 const authStorage = () => {
@@ -717,30 +727,8 @@ const writeBotDrafts = (drafts: Record<string, BotDraft>) => {
 };
 
 const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
-  switch (status.trim().toLowerCase()) {
-    case "creating":
-    case "resuming":
-    case "provisioning":
-    case "pending":
-    case "queued":
-      return "provisioning";
-    case "paused":
-      return "paused";
-    case "running":
-    case "active":
-    case "ready":
-    case "succeeded":
-    case "success":
-      return "active";
-    case "failed":
-    case "error":
-      return "failed";
-    case "deleting":
-    case "deleted":
-      return "deleting";
-    default:
-      return "draft";
-  }
+  const lifecycle = normalizeBotLifecycle(status);
+  return lifecycle === "running" ? "active" : lifecycle;
 };
 
 const legacyDefaultHermesAgentNames = new Set(["Hermes宝宝", "Hermes寶寶", "Baby Hermes", "Bebé Hermes"]);
@@ -826,12 +814,7 @@ export const fetchUsage = async (baseUrl: string): Promise<{ usedCredits: number
 
 const createHttpBotRepository = (baseUrl: string): BotRepository => {
   const messageStore = new Map<string, WorkspaceMessage[]>();
-  const botScopeCache = new Map<string, {
-    instanceId: string;
-    profileId: string;
-    isDefault: boolean;
-    legacy?: boolean;
-  }>();
+  const botScopeCache = new Map<string, BotIdentity>();
   const instanceCache = new Map<string, CtlInstancePayload>();
 
   const seedMessagesFor = (botId: string) => {
@@ -899,10 +882,14 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     bots.forEach((bot) => {
       const instanceId = bot.instanceId ?? bot.id;
       const projectedReason = projectedInstanceReasons.get(instanceId);
-      botScopeCache.set(bot.id, {
+      const identity = createBotIdentity({
+        botId: bot.id,
         instanceId,
-        profileId: bot.profileId ?? "main",
-        isDefault: bot.isDefault ?? true,
+        profileId: bot.profileId,
+        isDefault: bot.isDefault,
+      });
+      botScopeCache.set(bot.id, {
+        ...identity,
         legacy: isGlobal || projectedReason !== undefined,
       });
       // Surface the incomplete-list signal to the UI. Global builds are single-Bot
@@ -924,7 +911,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const cached = botScopeCache.get(botId);
     if (cached) return cached;
     // Direct legacy callers still pass the instance ID before dashboard hydration.
-    return { instanceId: botId, profileId: "main", isDefault: true, legacy: true };
+    return createBotIdentity({ botId, instanceId: botId });
   };
 
   const mapChannelConfigResult = (payload: CtlConfigureChannelPayload): BotChannelConfigResult => ({
@@ -958,11 +945,24 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
 
     async createBot(input) {
       const displayName = input?.name?.trim() || defaultHermesAgentName();
+      const creationPlan = planBotCreation({
+        supportsNestedBots: !isGlobal,
+        instances: Array.from(instanceCache.values()).map((instance) => ({
+          instanceId: instance.instance_id,
+          status: instance.status,
+        })),
+        intent: {
+          name: displayName,
+          description: input?.description,
+          soulTemplateId: input?.soulTemplateId,
+          mode: input?.createMode,
+          sourceBotId: input?.sourceBotId,
+          initialSoul: input?.initialSoul,
+        },
+      });
 
-      if (!isGlobal) {
-        const instance = Array.from(instanceCache.values()).find(
-          (candidate) => mapInstanceStatusToBotStatus(candidate.status) === "active",
-        );
+      if (creationPlan.kind === "create-nested-bot") {
+        const instance = instanceCache.get(creationPlan.instanceId);
         if (instance) {
           const created = await requestEnvelope<CtlInstanceBotPayload>(
             baseUrl,
@@ -970,31 +970,31 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
             {
               method: "POST",
               body: {
-                name: displayName,
-                description: input?.description?.trim() || undefined,
-                create_mode: input?.createMode ?? "blank",
-                source_bot_id: input?.sourceBotId || undefined,
-                initial_soul: input?.initialSoul?.trim() || undefined,
+                name: creationPlan.name,
+                description: creationPlan.description,
+                create_mode: creationPlan.mode,
+                source_bot_id: creationPlan.sourceBotId,
+                initial_soul: creationPlan.initialSoul,
               },
             },
           );
           const bot = projectInstanceBotToBot(instance, created, readBotDrafts()[created.bot_id]);
-          botScopeCache.set(bot.id, {
+          botScopeCache.set(bot.id, createBotIdentity({
+            botId: bot.id,
             instanceId: created.instance_id,
             profileId: created.profile_id,
             isDefault: created.is_default,
-            legacy: false,
-          });
+          }));
           return bot;
         }
       }
 
       const body: Record<string, unknown> = {
         timeout: DEFAULT_INSTANCE_TIMEOUT_SECONDS,
-        name: displayName,
+        name: creationPlan.name,
       };
-      if (input?.soulTemplateId) {
-        body.soul_template_id = input.soulTemplateId;
+      if (creationPlan.kind === "create-instance" && creationPlan.soulTemplateId) {
+        body.soul_template_id = creationPlan.soulTemplateId;
       }
 
       const created = await requestEnvelope<CtlInstancePayload>(baseUrl, "/v1/instances", {
@@ -1005,12 +1005,12 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       if (!isGlobal) {
         if (mapInstanceStatusToBotStatus(created.status) !== "active") {
           const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
-          botScopeCache.set(bot.id, {
+          botScopeCache.set(bot.id, createBotIdentity({
+            botId: bot.id,
             instanceId: created.instance_id,
             profileId: "main",
             isDefault: true,
-            legacy: true,
-          });
+          }));
           instanceCache.set(created.instance_id, created);
           return bot;
         }
@@ -1024,12 +1024,12 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           const main = items.find((item) => item.is_default) ?? items[0];
           if (main?.bot_id) {
             const bot = projectInstanceBotToBot(created, main, readBotDrafts()[main.bot_id]);
-            botScopeCache.set(bot.id, {
+            botScopeCache.set(bot.id, createBotIdentity({
+              botId: bot.id,
               instanceId: main.instance_id,
               profileId: main.profile_id,
               isDefault: main.is_default,
-              legacy: false,
-            });
+            }));
             instanceCache.set(created.instance_id, created);
             return bot;
           }
@@ -1040,12 +1040,12 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           // The root instance remains the compatibility Bot until the nested API is available.
         }
         const bot = projectInstanceToBot(created, readBotDrafts()[created.instance_id]);
-        botScopeCache.set(bot.id, {
+        botScopeCache.set(bot.id, createBotIdentity({
+          botId: bot.id,
           instanceId: created.instance_id,
           profileId: "main",
           isDefault: true,
-          legacy: true,
-        });
+        }));
         instanceCache.set(created.instance_id, created);
         return bot;
       }
@@ -1328,12 +1328,12 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         created_at: retried.created_at,
       };
       const bot = projectInstanceBotToBot(instance, retried, readBotDrafts()[retried.bot_id]);
-      botScopeCache.set(bot.id, {
+      botScopeCache.set(bot.id, createBotIdentity({
+        botId: bot.id,
         instanceId: retried.instance_id,
         profileId: retried.profile_id,
         isDefault: retried.is_default,
-        legacy: false,
-      });
+      }));
       return bot;
     },
 

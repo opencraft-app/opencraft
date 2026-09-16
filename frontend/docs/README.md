@@ -12,6 +12,11 @@
 
 不新增 `any`，不绕过生成的 API/Domain 类型。当鉴权、计费或实名规则由后端/网关拥有时，前端只负责表达状态，不能成为唯一门禁。产品文档保留 cn/global/en/id 真源，不直接编辑 `.fumadocs-content`。
 
+Agent 管理的 renderer-neutral 身份、生命周期与应用策略逐步提炼到
+`../../shared/lightvela-agent-core`。`frontend` 是首个行为消费者；页面、Context 与
+Repository 通过兼容门面渐进迁移。共享 core 不得依赖 React、路由、i18n、网络、
+浏览器存储或埋点；CTL 继续拥有最终鉴权、权益和资源变更执行权。
+
 ## 验证
 
 ```bash

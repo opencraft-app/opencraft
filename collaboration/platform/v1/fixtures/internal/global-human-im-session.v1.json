@@ -1,0 +1,30 @@
+{
+  "schema": "chatserver.global-human-im-session-test/v1",
+  "account": {
+    "id": "0198f4c2-7a30-7b21-9f61-30ac8b0a1570",
+    "imUserId": "u_GCDFPN36Q4CQ6OOUZNOY2BZU5T65O"
+  },
+  "imSession": {
+    "sdkAppId": 1600000000,
+    "userId": "u_GCDFPN36Q4CQ6OOUZNOY2BZU5T65O",
+    "userSig": "TEST-ONLY-NOT-A-REAL-USERSIG",
+    "expiresAt": "2026-07-29T09:00:00Z"
+  },
+  "memberships": [
+    {
+      "serverId": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38",
+      "memberId": "0198f4c2-7a37-7aa6-981b-c1838dd42b29",
+      "imGroupId": "@TGS#_C_ALPHA"
+    },
+    {
+      "serverId": "0198f4c2-7a38-7207-894d-5a5cd71a2033",
+      "memberId": "0198f4c2-7a39-7828-9a0c-c05c3a731f44",
+      "imGroupId": "@TGS#_C_BETA"
+    }
+  ],
+  "invariants": [
+    "切换 Server 不重新签发 UserID",
+    "两个 Server 复用同一个 Human UserID",
+    "客户端只登录一次部署级 SDKAppID"
+  ]
+}

@@ -181,7 +181,8 @@ create/isolate 使用 `trade_flow` 的 `create_resource/isolate_resource` 做幂
 
 source-facing 位于 `credit/k8s/base/`，deploy-facing 位于 `argocd/services/credit/<env>/`。北京 7
 用于回归验证；`master` 为 `beijing-sandbox` 构建镜像并自动创建 GitOps pin，API、
-`credit-usage-worker` 和 `credit-lifecycle-worker` 一并发布。上海环境仍需独立准备并人工晋级。
+`credit-usage-worker` 和 `credit-lifecycle-worker` 一并发布。东京由专用 CI 构建并自动 pin 到
+`sandbox-jp-1`；上海和新加坡随 master 构建镜像，但都必须人工 promote 后才能发布。
 
 `beijing-sandbox` 使用共享 CynosDB 中独立的 `credit` 库/用户；运行时 Secret 长期真源为
 SSM `mono-beijing-sandbox-credit-runtime-secrets`，通过

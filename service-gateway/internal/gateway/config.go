@@ -56,11 +56,19 @@ type Route struct {
 }
 
 type Config struct {
-	AuthServiceURL    string              `yaml:"auth_service_url"`
-	AllowedOrigins    []string            `yaml:"allowed_origins"`
-	TrustedProxyCIDRs []string            `yaml:"trusted_proxy_cidrs"`
-	Routes            []Route             `yaml:"routes"`
-	WorkerActions     WorkerActionsConfig `yaml:"worker_actions"`
+	AuthServiceURL    string                    `yaml:"auth_service_url"`
+	AllowedOrigins    []string                  `yaml:"allowed_origins"`
+	TrustedProxyCIDRs []string                  `yaml:"trusted_proxy_cidrs"`
+	Collaboration     *CollaborationRouteConfig `yaml:"collaboration"`
+	Routes            []Route                   `yaml:"routes"`
+	WorkerActions     WorkerActionsConfig       `yaml:"worker_actions"`
+}
+
+// CollaborationRouteConfig enables the single Collaboration upstream without
+// duplicating its security-sensitive allowlist in every environment file.
+type CollaborationRouteConfig struct {
+	Upstream               string `yaml:"upstream"`
+	UpstreamBearerTokenEnv string `yaml:"upstream_bearer_token_env"`
 }
 
 type WorkerActionsConfig struct {

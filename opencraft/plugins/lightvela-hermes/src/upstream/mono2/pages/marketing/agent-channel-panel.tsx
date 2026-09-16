@@ -9,7 +9,7 @@
  *  - QQ：弹出表单 Modal（App ID + App Secret）
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import './agent-config/styles-index.css';
 import { t } from "../../i18n/t";
@@ -121,8 +121,12 @@ function getTokenChannelMeta(kind: 'telegram' | 'discord' | 'slack' | 'dingtalk'
   }
 }
 
-export function ChannelPanel(props: ChannelPanelProps) {
-  const { className, ...baseProps } = props;
+type LightVelaChannelPanelProps = ChannelPanelProps & {
+  afterDescription?: ReactNode;
+};
+
+export function ChannelPanel(props: LightVelaChannelPanelProps) {
+  const { className, afterDescription, ...baseProps } = props;
   const { i18n } = useTranslation();
 
   const ops = useChannelOperations(baseProps);
@@ -311,6 +315,8 @@ export function ChannelPanel(props: ChannelPanelProps) {
         </span>
         <span>{t('配置通道后，即可在聊天软件中与你的云端智能体伙伴对话')}</span>
       </div>
+
+      {afterDescription}
 
       {/* 通道卡片网格 */}
       <div className={`${CLS}__grid`}>

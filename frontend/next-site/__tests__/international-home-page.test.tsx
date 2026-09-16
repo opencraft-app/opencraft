@@ -741,7 +741,8 @@ describe("international v2 homepage artifact", () => {
     expect(footer?.querySelector(".foot__title em.foot__signature")?.textContent).toBe("Hermes Agent");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("Hand your ideas to Hermes Agent,");
     expect(footer?.querySelector(".foot__title")?.textContent).toContain("keep them moving in the cloud.");
-    expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("My AI companion");
+    // 英文文案大小写统一为 `My AI Companion`（issue #73 红线）
+    expect(footer?.querySelector(".foot__cta a")?.textContent).toContain("My AI Companion");
     expect(footer?.querySelector(".foot__cta a span")).not.toBeNull();
     expect(footer?.querySelectorAll(".foot__links-grid > div")).toHaveLength(6);
     expect(footer?.querySelectorAll(".foot__brand-copy")).toHaveLength(0);

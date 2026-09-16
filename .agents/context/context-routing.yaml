@@ -220,6 +220,15 @@
       "deferred_paths": ["ctl/docs/README.md", "ctl/AGENTS.md"]
     },
     {
+      "id": "service-collaboration",
+      "scope": "LightVela Server、Member、Channel、Task、Reminder、腾讯云 IM 映射与托管 Computer 业务绑定入口。",
+      "triggers": ["collaboration", "collaboration service", "协作控制面", "tencent im", "腾讯云 im"],
+      "symbols": ["collaboration/platform/v1/openapi.yaml", "GatewayHumanCandidate"],
+      "path_prefixes": ["collaboration/"],
+      "must_read": ["docs/context/project/services/collaboration.md"],
+      "deferred_paths": ["collaboration/docs/README.md", "collaboration/AGENTS.md"]
+    },
+    {
       "id": "service-frontend",
       "scope": "LightVela Web、双站 UI 与产品文档服务入口。",
       "triggers": ["frontend service", "lightvela web", "前端服务"],
@@ -344,6 +353,15 @@
       "path_prefixes": ["velagw/"],
       "must_read": ["docs/context/project/services/velagw.md"],
       "deferred_paths": ["velagw/docs/README.md", "velagw/AGENTS.md"]
+    },
+    {
+      "id": "service-vela-computer",
+      "scope": "托管 Computer 上 Agent Chat Client、腾讯云 IM 接入与 Runtime driver 服务入口。",
+      "triggers": ["vela-computer", "agent chat client", "runtime driver"],
+      "symbols": ["vela-computer/internal", "vela-computer/cmd"],
+      "path_prefixes": ["vela-computer/"],
+      "must_read": ["docs/context/project/services/vela-computer.md"],
+      "deferred_paths": ["vela-computer/docs/README.md", "vela-computer/AGENTS.md"]
     },
     {
       "id": "service-velalink",

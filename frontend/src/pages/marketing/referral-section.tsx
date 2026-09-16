@@ -56,7 +56,7 @@ export const ReferralSection = () => {
         <Gift className="h-5 w-5" aria-hidden="true" style={{ color: "var(--lw-accent)" }} />
         <div>
           <h3 className="m-0 text-base font-semibold" style={{ color: "rgba(0,0,0,0.9)" }}>{t("邀请返利")}</h3>
-          <p className="m-0 mt-1 text-xs" style={{ color: "rgba(0,0,0,0.5)" }}>{t("好友首次付费并经过观察期后，双方获得积分。")}</p>
+          <p className="m-0 mt-1 text-xs" style={{ color: "rgba(0,0,0,0.5)" }}>{t("好友首次开通成功，双方获得积分。")}</p>
         </div>
       </div>
       <div className="px-5 py-5 md:px-8">

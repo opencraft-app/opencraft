@@ -4,9 +4,8 @@ import type {
   RuntimeProvidersListResponse, RuntimeSettingsDescribeResponse, RuntimeSettingsNamespaceView,
   RuntimeStatusResponse,
   RuntimeProviderApplyParams, RuntimeOpenAIProtocol,
+  RuntimeModelProbeResponse,
 } from "@opencraft/appserver-protocol";
-import { AdaptivePanel } from "@opencraft/workbench-runtime";
-
 export type HostProtocolRequest = <TMethod extends AppServerMethod>(hostId: string, method: TMethod,
   params: AppServerMethodParams<TMethod>) => Promise<AppServerMethodResult<TMethod>>;
 
@@ -25,35 +24,13 @@ export interface RuntimeProviderConfiguration {
   readonly models: readonly RuntimeDiscoveredModelView[];
 }
 export interface SaveRuntimeProviderInput {
+  readonly disableNewModels?: boolean;
   readonly enabled?: boolean;
   readonly baseURL: string;
   readonly credential: RuntimeProviderApplyParams["credential"];
   readonly api?: RuntimeOpenAIProtocol;
   readonly displayName?: string;
   readonly models?: readonly RuntimeDiscoveredModelView[];
-}
-
-export interface ProviderEditState {
-  readonly draft: RuntimeProviderConfiguration;
-  readonly baseRevision: number;
-  readonly dirty: boolean;
-  readonly auth: "keep" | "replace" | "reference";
-  readonly apiKey: string;
-  readonly allowEndpointChange: boolean;
-}
-
-/** Ephemeral editing session. Never persisted, and never a runtime config store. */
-export class ProviderEditSession {
-  private listeners = new Set<() => void>();
-  constructor(private state: ProviderEditState) {}
-  getSnapshot = () => this.state;
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  set<K extends keyof ProviderEditState>(key: K, update: ProviderEditState[K] | ((value: ProviderEditState[K]) => ProviderEditState[K])) {
-    const value = typeof update === "function" ? (update as (value: ProviderEditState[K]) => ProviderEditState[K])(this.state[key]) : update;
-    if (Object.is(value, this.state[key])) return;
-    this.state = { ...this.state, [key]: value };
-    this.listeners.forEach(listener => listener());
-  }
 }
 
 const EMPTY_SNAPSHOT: LocalAgentSettingsSnapshot = Object.freeze({
@@ -74,24 +51,13 @@ function defaultCredentialRef(provider: string): string {
 }
 
 export class LocalAgentSettingsService {
-  readonly panel = new AdaptivePanel();
-  private readonly edits = new Map<string, ProviderEditSession>();
-  editor(provider: RuntimeProviderView): ProviderEditSession {
-    let editor = this.edits.get(provider.provider);
-    if (!editor) {
-      editor = new ProviderEditSession({ draft: this.providerConfiguration(provider),
-        baseRevision: this.snapshot.settings?.namespaces.find(entry => entry.ns === provider.settingsNs)?.revision ?? -1,
-        dirty: false, auth: "keep", apiKey: "", allowEndpointChange: false });
-      this.edits.set(provider.provider, editor);
-    }
-    return editor;
-  }
-  discardEditor(provider: string): void { this.edits.delete(provider); }
   private snapshot: LocalAgentSettingsSnapshot = EMPTY_SNAPSHOT;
   private readonly listeners = new Set<() => void>();
   private refreshGeneration = 0;
   private disposed = false;
-  constructor(private readonly requestHost: HostProtocolRequest) {}
+  constructor(private readonly requestHost: HostProtocolRequest, readonly hostId: string) {
+    if (typeof hostId !== "string" || !hostId.trim()) throw new Error("Model settings require an explicit environment");
+  }
 
   getSnapshot = (): LocalAgentSettingsSnapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
@@ -103,10 +69,10 @@ export class LocalAgentSettingsService {
     this.publish({ ...this.snapshot, phase: "loading", error: null });
     try {
       const [status, settings, providers, models] = await Promise.all([
-        this.requestHost("local", "runtime/status/read", {}),
-        this.requestHost("local", "runtime/settings/describe", {}),
-        this.requestHost("local", "runtime/providers/list", {}),
-        this.requestHost("local", "runtime/models/list", { includeDisabled: true }),
+        this.requestHost(this.hostId, "runtime/status/read", {}),
+        this.requestHost(this.hostId, "runtime/settings/describe", {}),
+        this.requestHost(this.hostId, "runtime/providers/list", {}),
+        this.requestHost(this.hostId, "runtime/models/list", { includeDisabled: true }),
       ]);
       if (this.disposed || generation !== this.refreshGeneration) return;
       this.publish({ phase: "ready", status, settings, providers, models, error: null });
@@ -123,7 +89,11 @@ export class LocalAgentSettingsService {
       baseURL: typeof profile.baseURL === "string" ? profile.baseURL : "",
       displayName: typeof profile.displayName === "string" ? profile.displayName : provider.displayName,
       api: profile.api === "openai-completions" || profile.api === "openai-responses" ? profile.api : undefined,
-      models: Array.isArray(profile.models) ? profile.models as RuntimeDiscoveredModelView[] : [],
+      // DSH materializes an omitted optional modality array as []. The public
+      // command uses omission for inherited capabilities and rejects explicit
+      // empty declarations. Normalize the read projection, not the stored data.
+      models: Array.isArray(profile.models) ? (profile.models as RuntimeDiscoveredModelView[]).map(model =>
+        Array.isArray(model.input) && model.input.length === 0 ? { ...model, input: undefined } : model) : [],
       credentialRef: typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.trim() !== ""
         ? profile.apiKeyEnv.trim() : defaultCredentialRef(provider.provider),
     };
@@ -131,12 +101,12 @@ export class LocalAgentSettingsService {
 
   async describeCredential(ref: string): Promise<RuntimeCredentialView | null> {
     if (ref.trim() === "") return null;
-    const result = await this.requestHost("local", "runtime/credentials/describe", { refs: [ref.trim()] });
+    const result = await this.requestHost(this.hostId, "runtime/credentials/describe", { refs: [ref.trim()] });
     return result.credentials[ref.trim()] ?? null;
   }
 
   async discoverModels(provider: RuntimeProviderView | null, input: SaveRuntimeProviderInput, source: "catalog" | "endpoint"): Promise<readonly RuntimeDiscoveredModelView[]> {
-    const result = await this.requestHost("local", "runtime/models/discover", {
+    const result = await this.requestHost(this.hostId, "runtime/models/discover", {
       source,
       settingsNs: provider?.settingsNs ?? "",
       ...(provider ? { provider: provider.provider } : {}),
@@ -147,6 +117,19 @@ export class LocalAgentSettingsService {
     return result.models;
   }
 
+  async probeModel(input: SaveRuntimeProviderInput, model: string): Promise<RuntimeModelProbeResponse> {
+    if (!input.api || !input.baseURL.trim()) throw new Error("Specify the draft endpoint and protocol before testing");
+    if (input.credential.kind === "replace" && !input.credential.value.trim()) throw new Error("Enter the test key before testing");
+    if (input.credential.kind !== "replace" && input.credential.kind !== "none") throw new Error("Enter a test key explicitly. Saved credentials are not used for draft endpoint tests.");
+    return this.requestHost(this.hostId, "runtime/models/probe", {
+      baseURL: input.baseURL, api: input.api, model,
+      ...(input.credential.kind === "replace" ? { apiKey: input.credential.value } : {}),
+    });
+  }
+  async checkSavedModel(provider:string,model:string,expectedRevision:number):Promise<RuntimeModelProbeResponse>{
+    return this.requestHost(this.hostId,"runtime/models/check",{provider,model,expectedRevision});
+  }
+
   async saveDefaultModel(provider: string, model: string, reasoningEffort: string | undefined, expectedRevision: number): Promise<void> {
     const namespace = this.namespace("agent-default-model");
     const selected = this.snapshot.models?.groups.find(group => group.id === provider)?.models.find(entry => entry.id === model);
@@ -154,7 +137,7 @@ export class LocalAgentSettingsService {
     if (reasoningEffort !== undefined && !selected.reasoning?.efforts.some(entry => entry.id === reasoningEffort)) {
       throw new Error(`Selected model does not support reasoning effort "${reasoningEffort}"`);
     }
-    await this.requestHost("local", "runtime/settings/mutate", { ns: namespace.ns, expectedRevision, ops: [
+    await this.requestHost(this.hostId, "runtime/settings/mutate", { ns: namespace.ns, expectedRevision, ops: [
       { op: "set", path: ["provider"], value: provider }, { op: "set", path: ["model"], value: model },
       reasoningEffort === undefined
         ? { op: "unset", path: ["reasoningEffort"] }
@@ -164,34 +147,40 @@ export class LocalAgentSettingsService {
   }
 
   async saveProvider(provider: RuntimeProviderView, input: SaveRuntimeProviderInput, expectedRevision: number): Promise<void> {
-    await this.requestHost("local", "runtime/providers/apply", {
+    await this.requestHost(this.hostId, "runtime/providers/apply", {
       ...input, target: { kind: "update", id: provider.provider }, expectedRevision,
     });
     await this.refresh();
   }
 
-  async createProvider(id: string, input: SaveRuntimeProviderInput): Promise<void> {
+  async createProvider(id: string, input: SaveRuntimeProviderInput, expectedRevision?: number): Promise<void> {
     const creation = this.snapshot.providers?.creation;
     if (!creation) throw new Error("This runtime does not support creating providers");
-    await this.requestHost("local", "runtime/providers/apply", {
-      ...input, target: { kind: "create", id }, expectedRevision: creation.revision,
+    await this.requestHost(this.hostId, "runtime/providers/apply", {
+      ...input, target: { kind: "create", id }, expectedRevision: expectedRevision ?? creation.revision,
     });
     await this.refresh();
   }
 
   async setEnabled(provider: RuntimeProviderView, enabled: boolean, expectedRevision: number): Promise<void> {
-    await this.requestHost("local", "runtime/providers/setEnabled", { provider: provider.provider, enabled, expectedRevision });
+    await this.requestHost(this.hostId, "runtime/providers/setEnabled", { provider: provider.provider, enabled, expectedRevision });
     await this.refresh();
   }
+
+  async deleteProvider(provider: RuntimeProviderView, expectedRevision: number): Promise<void> {
+    await this.requestHost(this.hostId, "runtime/providers/delete", { provider: provider.provider, expectedRevision });
+    await this.refresh();
+  }
+  async reapply():Promise<void>{await this.requestHost(this.hostId,"runtime/providers/reapply",{});await this.refresh();}
 
   async changeModel(provider: string, model: string, enabled?: boolean): Promise<void> {
     const expectedRevision = this.namespace("llm-pi-ai").revision;
-    if (enabled === undefined) await this.requestHost("local", "runtime/models/delete", { provider, model, expectedRevision });
-    else await this.requestHost("local", "runtime/models/setEnabled", { provider, model, expectedRevision, enabled });
+    if (enabled === undefined) await this.requestHost(this.hostId, "runtime/models/delete", { provider, model, expectedRevision });
+    else await this.requestHost(this.hostId, "runtime/models/setEnabled", { provider, model, expectedRevision, enabled });
     await this.refresh();
   }
 
-  dispose(): void { this.disposed = true; this.refreshGeneration += 1; this.listeners.clear(); this.edits.clear(); }
+  dispose(): void { this.disposed = true; this.refreshGeneration += 1; this.listeners.clear(); }
   private namespace(ns: string): RuntimeSettingsNamespaceView {
     const namespace = this.snapshot.settings?.namespaces.find((candidate) => candidate.ns === ns);
     if (!namespace) throw new Error(`Local Agent does not expose the ${ns} settings namespace`);

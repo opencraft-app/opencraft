@@ -41,6 +41,7 @@
   "build": {
     "appId": "ai.lightvela.vela",
     "productName": "OpenCraft",
+    "protocols": [{ "name": "OpenCraft login", "schemes": ["opencraft"] }],
     "asar": true,
     "afterPack": "../../scripts/prepare-packaged-pty.cjs",
     "npmRebuild": false,
@@ -53,6 +54,11 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": "../local-agent-host/src/dsh-capability-plugin.mjs", "to": "runtime/dsh/opencraft-capability-plugin.mjs" },
+      { "from": "../local-agent-host/src/dsh-checkpoint-store.mjs", "to": "runtime/dsh/dsh-checkpoint-store.mjs" },
+      { "from": "../local-agent-host/src/dsh-generation-recovery.mjs", "to": "runtime/dsh/dsh-generation-recovery.mjs" },
+      { "from": "../local-agent-host/src/dsh-capability-output.mjs", "to": "runtime/dsh/dsh-capability-output.mjs" },
+      { "from": "../local-agent-host/src/hypernode/surface-checkpoint.mjs", "to": "runtime/dsh/hypernode/surface-checkpoint.mjs" },
       { "from": "build/tray", "to": "tray", "filter": ["*.png"] },
       {
         "from": "../../node_modules/node-pty",

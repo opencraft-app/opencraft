@@ -40,7 +40,7 @@ const localProxyRewrites = isLocalProxy
 const config = {
   reactStrictMode: true,
   devIndicators: false,
-  transpilePackages: ['velachat'],
+  transpilePackages: ['velachat', '@lightvela/agent-core'],
   output: isDevelopment ? undefined : 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,

@@ -18,6 +18,7 @@ import {
   previewSidecarPrimaryResize,
   resolveSidecarPrimarySettleTarget,
 } from "../apps/workbench-web/src/components/sidecar-primary-resize";
+import { shellNavigationMetrics } from "../packages/workbench-runtime/src/shell-navigation";
 import {
   ChromeActionFocusRegistry,
   type ChromeActionFocusHost,
@@ -43,6 +44,27 @@ const workbenchStyles = readFileSync(
   new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
   "utf8",
 );
+
+test("Applications has a content cap during held drag as well as release", () => {
+  const { compactWidth, expandedMinimumWidth, expandedMaximumWidth } = shellNavigationMetrics;
+  const transaction = beginSidecarPrimaryResize({clientX: 200, detent: "expanded", expandedWidth: 137, compactWidth});
+  const preview = (clientX: number) => previewSidecarPrimaryResize({clientX, compactWidth, expandedMinimumWidth, maximumWidth: expandedMaximumWidth, transaction});
+  for (const x of [200, 210, 400, 900]) {
+    assert.equal(preview(x).frameWidth, 137);
+    assert.equal(preview(x).candidateDetent, "expanded");
+  }
+  assert.equal(preview(190).frameWidth, 127, "dragging back inside the cap remains continuous");
+  assert.equal(resolveSidecarPrimarySettleTarget({compactWidth, expandedMinimumWidth, maximumWidth: expandedMaximumWidth, detent: "expanded", expandedWidth: 520}), 137);
+  assert.equal(preview(100).candidateDetent, "compact", "the cap does not remove collapse detents");
+});
+
+test("visibility owns the primary exit; hidden projection cannot zero its base geometry", () => {
+  const motion = readFileSync(new URL("../apps/workbench-web/src/components/use-sidecar-primary-motion.ts", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../apps/workbench-web/src/components/app-shell.tsx", import.meta.url), "utf8");
+  assert.match(motion, /if \(!input\.isVisible \|\| phaseRef\.current !== "idle"\) return;\s*frameWidth\.set\(input\.committedFrameWidth\)/);
+  assert.match(shell, /useSidecarPrimaryMotion\(\{\s*isVisible: navigationOpen,/);
+  assert.match(shell, /navigationOpen \? navigationController : lastDockController\.current/);
+});
 
 test("one Sidecar owns two platform panes with independent frame, clip, and viewport geometry", () => {
   const appShellSource = readFileSync(
@@ -80,6 +102,13 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     ),
     "utf8",
   );
+  const navigationContentSource = readFileSync(
+    new URL(
+      "../apps/workbench-web/src/components/shell-navigation/navigation-content.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
 
   assert.equal(
     appShellSource.match(/<SidecarPane\b/gu)?.length,
@@ -94,7 +123,7 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
   assert.match(sidecarSource, /<motion\.section[\s\S]*?sidecar-pane__clip[\s\S]*?<motion\.div/u);
   assert.match(
     sidecarSource,
-    /const viewportStyle:[\s\S]*?minWidth:\s*viewportSize[\s\S]*?opacity:\s*contentOpacity[\s\S]*?width:\s*viewportSize/u,
+    /const viewportStyle:[\s\S]*?minWidth:\s*0[\s\S]*?opacity:\s*contentOpacity[\s\S]*?width:\s*viewportSize/u,
   );
   assert.match(
     sidecarStyles,
@@ -107,6 +136,9 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     "feature content stretches through its pane instead of choosing intrinsic geometry",
   );
   assert.match(navigationSource, /data-shell-navigation-motion="geometry"/u);
+  assert.match(navigationSource, /isAnonymousShellAccount\(config\.account\)/u);
+  assert.match(navigationSource, /config\.account\?\.onOpen\(\)/u);
+  assert.match(navigationContentSource, /return "Sign in"/u);
   assert.match(navigationSource, /useTransform\(\s*\[progress, expandedWidth\]/u);
   assert.match(navigationSource, /data-surface=\{surface\}/u);
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);

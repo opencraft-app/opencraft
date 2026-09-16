@@ -34,6 +34,7 @@ PLAYGROUND_BUILDABLE_BUNDLES = {
     "admin-gateway",
     "ai-gateway",
     "ctl",
+    "credit",
     "frontend",
     "gateway-dashboard",
     "nextgen-dashboard",
@@ -51,6 +52,7 @@ AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod,sgprod", "admin-gateway"),
     "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod,sgprod", "ai-gateway"),
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod,sgprod", "ctl"),
+    "credit": (".ci/credit.yml", "beijing-sandbox,shprod,sgprod", "credit"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
     "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
@@ -64,6 +66,7 @@ TOKYO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/tokyo-admin-gateway.yml", ".ci/admin-gateway.yml", "admin-gateway", "env"),
     "ai-gateway": (".ci/tokyo-ai-gateway.yml", ".ci/ai-gateway.yml", "ai-gateway", "env"),
     "ctl": (".ci/tokyo-ctl.yml", ".ci/ctl.yml", "ctl", "env"),
+    "credit": (".ci/tokyo-credit.yml", ".ci/credit.yml", "credit", "env"),
     "frontend": (".ci/tokyo-frontend.yml", ".ci/frontend.yml", "frontend", "cn-pool"),
     "gateway-dashboard": (
         ".ci/tokyo-gateway-dashboard.yml",
@@ -97,6 +100,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/cloudagent-gateway.yml",
     ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
+    ".ci/credit.yml",
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",
     ".ci/lightclaw-auth.yml",
@@ -113,6 +117,7 @@ BUSINESS_WORKFLOWS = {
 PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/ai-gateway.yml",
     ".ci/ctl.yml",
+    ".ci/credit.yml",
     ".ci/lightclaw-auth.yml",
     ".ci/payment.yml",
     ".ci/sandbox.yml",
@@ -1117,32 +1122,38 @@ class ReleaseBundleContractTests(unittest.TestCase):
             with self.subTest(env=malformed):
                 self.assertFalse(is_playground_env(malformed))
 
-    def test_credit_build_metadata_is_limited_to_beijing(self) -> None:
+    def test_credit_build_metadata_covers_all_release_regions(self) -> None:
         manifest = load_manifest()
 
-        require_build_metadata(load_bundle(manifest, "credit", "beijing-sandbox"))
-        require_build_metadata(load_bundle(manifest, "credit", PLAYGROUND_ENV))
-        for env in (KOREA_PLAYGROUND_ENV, JAPAN_PLAYGROUND_ENV):
+        for env in (
+            "beijing-sandbox",
+            PLAYGROUND_ENV,
+            KOREA_PLAYGROUND_ENV,
+            JAPAN_PLAYGROUND_ENV,
+            "shprod",
+            "sgprod",
+        ):
             with self.subTest(env=env):
-                with self.assertRaisesRegex(ValueError, "does not define docker build inputs"):
-                    require_build_metadata(load_bundle(manifest, "credit", env))
+                require_build_metadata(load_bundle(manifest, "credit", env))
 
-    def test_credit_pipeline_builds_from_master_and_beijing_playground(self) -> None:
+    def test_credit_pipeline_builds_beijing_and_production_matrix(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/credit.yml").read_text()) or {}
 
         self.assertEqual(
             self.push_config(workflow).get("branches"),
-            ["master", "playground/sandbox-bj-*"],
+            ["master", "playground/sandbox-bj-*", "playground/sandbox-kr-*"],
         )
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-sandbox")
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
         watched_paths = self.push_config(workflow).get("paths") or []
         self.assertIn(
             "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
             watched_paths,
         )
+        self.assertIn("argocd/apps/*/credit.yaml", watched_paths)
 
     def test_credit_beijing_release_materials_are_complete(self) -> None:
         expected_paths = [
@@ -1182,9 +1193,147 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         trade_patch = (
             REPO_ROOT / "argocd/services/trade/beijing-sandbox/patch-credit.yaml"
-        ).read_text()
-        self.assertIn("CREDIT_INTERNAL_BASE_URL", trade_patch)
-        self.assertIn("CREDIT_SEND_RESOURCE_URL", trade_patch)
+        )
+        trade_data = yaml.safe_load(trade_patch.read_text())["data"]
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_URL"],
+            "http://qbilling.billing.tencentyun.com/feev2/sendResource.php",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_HOST"],
+            "qbilling.billing.tencentyun.com",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL"],
+            "http://81.71.196.13",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"],
+            "qbilling-send-resource-cn-prod",
+        )
+
+        beijing_7_data = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/sandbox-bj-7/patch-playground-db.yaml"
+            ).read_text()
+        )["data"]
+        self.assertEqual(
+            beijing_7_data["CREDIT_SEND_RESOURCE_URL"],
+            "http://9.139.137.40/feev2/sendResource.php",
+        )
+        self.assertEqual(
+            beijing_7_data["CREDIT_SEND_RESOURCE_HOST"], "qbilling.itd.com"
+        )
+
+    def test_credit_regional_release_materials_are_complete(self) -> None:
+        expected = {
+            "sandbox-jp-1": {
+                "region": "ap-seoul",
+                "suffix": "sandbox_jp_1",
+                "image": "lightclaw-jp1.tencentcloudcr.com/lightclaw/credit",
+                "catalog": "argocd/catalogs/playground/tokyo-playground/sandbox-jp-1/credit.yaml",
+                "trade_patch": "argocd/services/trade/sandbox-jp-1/patch-playground-db.yaml",
+                "gateway": "argocd/services/service-gateway/sandbox-jp-1/config.yaml",
+                "ssm": "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml",
+                "send_resource_url": "http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "intl.resource.qbilling.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-intl-prod",
+                "send_resource_gateway": "http://43.153.236.65",
+            },
+            "shprod": {
+                "region": "ap-shanghai",
+                "suffix": "test_env",
+                "image": "lightclaw-shprod.tencentcloudcr.com/lightclaw/credit",
+                "app": "argocd/apps/shprod/credit.yaml",
+                "project": "argocd/projects/shprod-credit.yaml",
+                "trade_patch": "argocd/services/trade/shprod/patch-credit.yaml",
+                "gateway": "argocd/services/service-gateway/shprod/config.yaml",
+                "ssm": "scripts/ssm_manifest.credit.shprod.yaml",
+                "send_resource_url": "http://qbilling.billing.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "qbilling.billing.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-cn-prod",
+                "send_resource_gateway": "http://81.71.196.13",
+            },
+            "sgprod": {
+                "region": "ap-singapore",
+                "suffix": "test_env",
+                "image": "lightclaw-sgprod.tencentcloudcr.com/lightclaw/credit",
+                "app": "argocd/apps/sgprod/credit.yaml",
+                "project": "argocd/projects/sgprod-credit.yaml",
+                "trade_patch": "argocd/services/trade/sgprod/patch-credit.yaml",
+                "gateway": "argocd/services/service-gateway/sgprod/config.yaml",
+                "ssm": "scripts/ssm_manifest.credit.sgprod.yaml",
+                "send_resource_url": "http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "intl.resource.qbilling.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-intl-prod",
+                "send_resource_gateway": "http://43.153.236.65",
+            },
+        }
+        required_secret_keys = {
+            "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            "CREDIT_DB_PASSWORD",
+            "CREDIT_REDIS_PASSWORD",
+            "LLMGATEWAY_INTERNAL_SERVICE_TOKEN",
+        }
+
+        for env, contract in expected.items():
+            with self.subTest(env=env):
+                service_root = REPO_ROOT / "argocd/services/credit" / env
+                for name in (
+                    "kustomization.yaml",
+                    "credit-platform.env",
+                    "credit-usage-worker.yaml",
+                    "credit-lifecycle-worker.yaml",
+                    "ksops-secret-generator.yaml",
+                    "patch-credit-redis.yaml",
+                ):
+                    self.assertTrue((service_root / name).is_file(), f"{env}/{name}")
+
+                platform = (service_root / "credit-platform.env").read_text()
+                self.assertIn(f"CREDIT_REGION={contract['region']}", platform)
+                self.assertIn(f"CREDIT_OBJECT_ID_PASSWORD_SUFFIX={contract['suffix']}", platform)
+                self.assertIn(f"CREDIT_IMAGE={contract['image']}:", platform)
+
+                for key in ("catalog", "app", "project", "trade_patch", "gateway", "ssm"):
+                    if path := contract.get(key):
+                        self.assertTrue((REPO_ROOT / path).is_file(), path)
+
+                trade_data = yaml.safe_load(
+                    (REPO_ROOT / contract["trade_patch"]).read_text()
+                )["data"]
+                self.assertEqual(trade_data["LIGHTVELA_CREDIT_REGION"], contract["region"])
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_URL"], contract["send_resource_url"]
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_HOST"], contract["send_resource_host"]
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"],
+                    contract["send_resource_route"],
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL"],
+                    contract["send_resource_gateway"],
+                )
+
+                gateway = yaml.safe_load((REPO_ROOT / contract["gateway"]).read_text())
+                credit_route = next(route for route in gateway["routes"] if route["name"] == "credit")
+                self.assertEqual(credit_route["prefix"], "/v1/credit")
+                self.assertIn(
+                    {"method": "POST", "path": "/v1/credit/packages/order-url"},
+                    credit_route["optional_auth_allow"],
+                )
+
+                secret = yaml.safe_load(
+                    (REPO_ROOT / "argocd/secrets" / env / "credit-runtime-secrets.sops.yaml").read_text()
+                )
+                self.assertEqual(set(secret["stringData"]), required_secret_keys)
+
+                ssm = yaml.safe_load((REPO_ROOT / contract["ssm"]).read_text())
+                item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
+                self.assertEqual(set(item["required_keys"]), required_secret_keys)
 
     def test_referral_pipeline_keeps_manual_release_and_complete_beijing_closure(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
@@ -2698,7 +2847,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         artifact_builder_text = (REPO_ROOT / "frontend/scripts/build-release-artifacts.mjs").read_text()
 
         frontend_scripts = package_json["scripts"]
@@ -2722,7 +2871,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn('"$PNPM_BIN" check', guard_text)
         self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
-        self.assertIn('-cf - frontend velalink | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
+        self.assertIn('-cf - frontend velalink shared/lightvela-agent-core | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
         self.assertIn('--exclude="velalink/node_modules"', guard_text)
         self.assertIn('--exclude="velalink/target"', guard_text)
         self.assertIn('"$PNPM_BIN" build:cn', guard_text)
@@ -2732,8 +2881,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         next_config_text = (REPO_ROOT / "frontend/next.config.mjs").read_text()
 
         self.assertNotIn("turbopackFileSystemCacheForBuild", next_config_text)

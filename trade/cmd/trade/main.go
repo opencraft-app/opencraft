@@ -193,17 +193,35 @@ func main() {
 	})
 	var creditUsageSvc *creditusage.Service
 	if cfg.CreditSendResourceURL != "" {
+		var sendResourceHTTPClient *http.Client
+		if cfg.CreditSendResourceCloudLadderGatewayURL != "" {
+			transport, transportErr := cloudbillingclient.NewCloudLadderTransport(
+				cloudbillingclient.CloudLadderConfig{
+					GatewayBaseURL: cfg.CreditSendResourceCloudLadderGatewayURL,
+					RouteID:        cfg.CreditSendResourceCloudLadderRouteID,
+					Secret:         cfg.CloudLadderHMACSecret,
+				},
+				nil,
+			)
+			if transportErr != nil {
+				log.Fatalf("init credit sendResource CloudLadder transport: %v", transportErr)
+			}
+			sendResourceHTTPClient = &http.Client{Transport: transport, Timeout: 3 * time.Second}
+		}
 		creditUsageSvc = creditusage.New(creditusage.Deps{
 			DefinitionStore: mysqlStore,
 			BillingClient: resourcebillingclient.New(
 				cfg.CreditSendResourceURL,
 				cfg.CreditSendResourceHost,
-				nil,
+				sendResourceHTTPClient,
 			),
 			CID:            cfg.CreditSendResourceCID,
 			SiteKind:       cfg.SiteKind,
 			RegionOverride: cfg.CreditRegionOverride,
 		})
+		if cfg.CreditSendResourceCloudLadderGatewayURL != "" {
+			log.Printf("[credit-send-resource] activated via CloudLadder: routeID=%s", cfg.CreditSendResourceCloudLadderRouteID)
+		}
 	}
 
 	// v1.7.32：订单状态反查业务 service（设计稿 .tmp/ctl-order-status-query-design.md §5.2）。

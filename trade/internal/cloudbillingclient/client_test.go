@@ -31,6 +31,48 @@ func TestNewTencentCloudClientRequiresCloudLadderRouting(t *testing.T) {
 	}
 }
 
+func TestNewCloudLadderTransportRewritesAndSignsSendResource(t *testing.T) {
+	var captured *http.Request
+	transport, err := NewCloudLadderTransport(CloudLadderConfig{
+		GatewayBaseURL: "http://43.153.236.65",
+		RouteID:        "qbilling-send-resource-test",
+		Secret:         "trade-hmac",
+	}, roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		captured = req.Clone(req.Context())
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+			Request:    req,
+		}, nil
+	}))
+	if err != nil {
+		t.Fatalf("NewCloudLadderTransport: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://qbilling.itd.com/feev2/sendResource.php", strings.NewReader(`{"cid":"101433"}`))
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Host = "qbilling.itd.com"
+	if _, err := transport.RoundTrip(req); err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if captured == nil {
+		t.Fatal("expected transport to capture request")
+	}
+	if got := captured.URL.String(); got != "http://43.153.236.65/v1/proxy/qbilling-send-resource-test/feev2/sendResource.php" {
+		t.Fatalf("URL = %q", got)
+	}
+	if got := captured.Header.Get(headerCloudLadderSignedHost); got != "qbilling.itd.com" {
+		t.Fatalf("signed host = %q", got)
+	}
+	for _, header := range []string{headerCloudLadderCaller, headerCloudLadderTimestamp, headerCloudLadderSignature} {
+		if got := captured.Header.Get(header); got == "" {
+			t.Fatalf("%s is empty", header)
+		}
+	}
+}
+
 func TestCreatePayURLSignsWithTemporaryCredentials(t *testing.T) {
 	var captured *http.Request
 	client, err := NewTencentCloudClient(Config{

@@ -5,6 +5,7 @@ export * from "./methods";
 export * from "./replica";
 export * from "./resume-history";
 export * from "./runtime-settings";
+export * from "./model-base-url";
 export * from "./server-requests";
 export * from "./transport";
 export * from "./process";

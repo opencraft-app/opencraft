@@ -116,6 +116,8 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 	sensitiveOutbound := []string{
 		"jifei-test", "jifei-prod",
 		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
+		"qbilling-send-resource-test",
+		"qbilling-send-resource-cn-prod", "qbilling-send-resource-intl-prod",
 		"dianshi-price", "dianshi-order",
 		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
 		"billing-query-via-polaris",
@@ -343,6 +345,86 @@ func TestExampleConfigGrantsTradeCallerProdBillingRoute(t *testing.T) {
 			return
 		}
 		t.Fatalf("lightvela-trade caller routes missing tcapi-billing-trade-intl-prod: %#v", caller.Routes)
+	}
+	t.Fatal("lightvela-trade caller is missing")
+}
+
+func TestExampleConfigRoutesCreditSendResourceThroughExpectedBillingEndpoints(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	expected := map[string]struct {
+		baseURL string
+		host    string
+	}{
+		"qbilling-send-resource-test": {
+			baseURL: "http://9.139.137.40",
+			host:    "qbilling.itd.com",
+		},
+		"qbilling-send-resource-cn-prod": {
+			baseURL: "http://qbilling.billing.tencentyun.com",
+			host:    "qbilling.billing.tencentyun.com",
+		},
+		"qbilling-send-resource-intl-prod": {
+			baseURL: "http://intl.resource.qbilling.tencentyun.com",
+			host:    "intl.resource.qbilling.tencentyun.com",
+		},
+	}
+	found := make(map[string]bool, len(expected))
+	for _, route := range cfg.Routes {
+		want, ok := expected[route.ID]
+		if !ok {
+			continue
+		}
+		found[route.ID] = true
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Errorf("route %s mode = %q", route.ID, route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Errorf("route %s callers = %#v", route.ID, route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Errorf("resolve Credit sendResource upstream %s: %v", route.ID, err)
+			continue
+		}
+		if got := upstream.BaseURL; got != want.baseURL {
+			t.Errorf("route %s base_url = %q, want %q", route.ID, got, want.baseURL)
+		}
+		if got := upstream.Headers["Host"]; got != want.host {
+			t.Errorf("route %s Host = %q, want %q", route.ID, got, want.host)
+		}
+		if !slices.Equal(upstream.AllowedMethods, []string{"POST"}) {
+			t.Errorf("route %s allowed methods = %#v", route.ID, upstream.AllowedMethods)
+		}
+	}
+	for routeID := range expected {
+		if !found[routeID] {
+			t.Errorf("%s route is missing", routeID)
+		}
+	}
+}
+
+func TestExampleConfigGrantsTradeCallerCreditSendResourceRoute(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != "lightvela-trade" {
+			continue
+		}
+		for _, routeID := range []string{
+			"qbilling-send-resource-test",
+			"qbilling-send-resource-cn-prod",
+			"qbilling-send-resource-intl-prod",
+		} {
+			if !slices.Contains(caller.Routes, routeID) {
+				t.Errorf("lightvela-trade caller routes missing %s: %#v", routeID, caller.Routes)
+			}
+		}
+		return
 	}
 	t.Fatal("lightvela-trade caller is missing")
 }

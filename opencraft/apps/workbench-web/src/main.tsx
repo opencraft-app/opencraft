@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { initializeAppearanceTheme } from "./appearance-theme";
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { reportRuntimeError } from "./runtime-error-reporting";
+import { bindPageLifecycle } from "./runtime/page-lifecycle";
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/inter/wght-italic.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
@@ -103,7 +104,7 @@ function ApplicationBootstrap() {
       });
     return () => {
       disposed = true;
-      if (application !== null) void application.dispose();
+      if (application !== null) void application.dispose().catch(error => reportRuntimeError(error, "application-disposal"));
     };
   }, []);
 
@@ -114,6 +115,7 @@ function ApplicationBootstrap() {
 }
 
 const reactRoot = ReactDOM.createRoot(rootElement);
+const retirePage = bindPageLifecycle(window, () => reactRoot.unmount());
 reactRoot.render(
   <RuntimeErrorBoundary>
     <ApplicationBootstrap />
@@ -126,6 +128,6 @@ window.requestAnimationFrame(() => {
 if (import.meta.hot !== undefined) {
   import.meta.hot.dispose(() => disposeDesktopFullscreenSubscription?.());
   import.meta.hot.dispose(() => {
-    reactRoot.unmount();
+    retirePage();
   });
 }

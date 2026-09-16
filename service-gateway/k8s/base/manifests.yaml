@@ -224,6 +224,12 @@ spec:
                   name: service-gateway-runtime-secrets
                   key: TEMPORAL_BEARER_TOKEN
                   optional: true
+            - name: COLLABORATION_GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: service-gateway-runtime-secrets
+                  key: COLLABORATION_GATEWAY_TOKEN
+                  optional: true
             - name: TENCENTCLOUD_SECRET_ID
               valueFrom:
                 secretKeyRef:

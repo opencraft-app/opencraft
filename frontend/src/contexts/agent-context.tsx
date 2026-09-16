@@ -11,6 +11,11 @@ import {
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { Bot, BotSiblingsUnknownReason, Pass } from "@/domain/types";
+import {
+  createBotIdentity,
+  normalizeBotLifecycle,
+  projectBotCatalog,
+} from "@lightvela/agent-core";
 import { isUpgradeDelivered, readUpgradeReturn, upgradeReturnKey, UPGRADE_RETURN_QUERY, UPGRADE_POLL_INTERVAL_MS, UPGRADE_RECOVERY_TIMEOUT_MS, type PaidUpgradeCheckout } from "@/lib/upgrade-checkout";
 import { isGlobal } from "@/lib/region";
 
@@ -72,6 +77,11 @@ interface OpenClawContextValue {
   passesLoading: boolean;
   /** 套餐查询失败或超时；不代表支付失败或套餐正在升级。 */
   passesError: boolean;
+  /**
+   * 权益快照是否已经解析完成（GET /v1/passes 至少成功返回过一次）。
+   * 登录成功后的分流必须等它就绪，避免把已订阅用户按未订阅带到订阅页。
+   */
+  hasResolvedPasses: boolean;
   /** 用户最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐 */
   latestPass: Pass | null;
   login: () => void;
@@ -95,36 +105,34 @@ interface OpenClawContextValue {
 /* ─── Helpers ─── */
 
 /** Map a backend Bot to the frontend OpenClawBot shape */
-const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => ({
-  id: bot.id,
-  instanceId: bot.instanceId ?? bot.id,
-  profileId: bot.profileId ?? "main",
-  isDefault: bot.isDefault ?? true,
-  gatewayRunning: bot.gatewayRunning,
-  siblingsUnknown: bot.siblingsUnknown,
-  description: bot.description,
-  createdFrom: bot.createdFrom,
-  sourceBotId: bot.sourceBotId,
-  weixinOwner: bot.weixinOwner,
-  name: bot.name,
-  personality: bot.template || "默认设定",
-  personalityEmoji: "✨",
-  intro: bot.mission || "",
-  status: bot.status === "active"
-    ? "running"
-    : bot.status === "paused"
-      ? "paused"
-      : bot.status === "provisioning"
-        ? "provisioning"
-        : bot.status === "failed"
-          ? "failed"
-          : bot.status === "deleting"
-            ? "deleting"
-            : "draft",
-  createdAt: bot.createdAt,
-  connectedChannels: channels ?? [],
-  installedSkills: [],
-});
+const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClawBot => {
+  const identity = createBotIdentity({
+    botId: bot.id,
+    instanceId: bot.instanceId,
+    profileId: bot.profileId,
+    isDefault: bot.isDefault ?? true,
+  });
+  return {
+    id: identity.botId,
+    instanceId: identity.instanceId,
+    profileId: identity.profileId,
+    isDefault: identity.isDefault,
+    gatewayRunning: bot.gatewayRunning,
+    siblingsUnknown: bot.siblingsUnknown,
+    description: bot.description,
+    createdFrom: bot.createdFrom,
+    sourceBotId: bot.sourceBotId,
+    weixinOwner: bot.weixinOwner,
+    name: bot.name,
+    personality: bot.template || "默认设定",
+    personalityEmoji: "✨",
+    intro: bot.mission || "",
+    status: normalizeBotLifecycle(bot.status),
+    createdAt: bot.createdAt,
+    connectedChannels: channels ?? [],
+    installedSkills: [],
+  };
+};
 
 // NOTE: parseChannelsFromConfig 暂时注释，待通道探测功能恢复后启用
 // const parseChannelsFromConfig = (configOutput: string): ("wechat" | "qq")[] => {
@@ -500,7 +508,8 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     try {
       const snapshot = await repositories.bots.getDashboardSnapshot("live");
       if (generation !== botRefreshGeneration.current) return;
-      const mappedBots = snapshot.bots.map((bot) => mapBotToOpenClawBot(bot));
+      const mappedBots = projectBotCatalog(snapshot.bots)
+        .map(({ source }) => mapBotToOpenClawBot(source));
       setBots(mappedBots);
 
       /* 对每个 bot 尝试获取 openclaw 配置，恢复通道状态 */
@@ -707,6 +716,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       retryPassUpgrade,
       passesLoading,
       passesError,
+      hasResolvedPasses,
       latestPass,
       login,
       logout,
@@ -719,7 +729,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [effectiveIsAuthenticated, isSubscribed, user, bots, botsLoading, activePass, modifyingPass, passUpgradeFailed, passUpgradePaused, passUpgradeRefreshing, returningUpgrade, retryPassUpgrade, passesLoading, passesError, hasResolvedPasses, latestPass, login, logout, subscribe, refreshPasses, beginPassUpgrade, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

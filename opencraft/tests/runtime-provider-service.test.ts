@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { RuntimeProviderService } from "../apps/local-agent-host/src/runtime-provider-service.js";
 import { DshClientError } from "../apps/local-agent-host/src/dsh-client.js";
 import { LocalAgentSettingsService, type HostProtocolRequest } from "../plugins/builtin-agents/src/local-agent-settings-service.js";
+import { modelBaseUrlError } from "@opencraft/appserver-protocol";
 import type { RuntimeProviderApplyParams, RuntimeSettingsNamespaceView } from "@opencraft/appserver-protocol";
 
 function fixture() {
@@ -47,6 +48,128 @@ const createInput = (): RuntimeProviderApplyParams => ({
   target: { kind: "create", id: "custom-test" }, expectedRevision: 7,
   displayName: "Test Gateway", baseURL: "https://example.test/deployment/v1/",
   api: "openai-responses", models: [{ id: "test-model" }], credential: { kind: "replace", value: "new-secret" },
+});
+
+test("base URL validation preserves prefixes and rejects operation URLs before secret or network writes",async()=>{
+  for(const path of ['/v1/chat/completions','/v1/chat/completions/','/v1/responses','/v1/models']){
+    const baseURL=`https://example.test${path}`;
+    assert.match(modelBaseUrlError(baseURL)??'',/基础地址/);
+    const f=fixture();await assert.rejects(f.service.apply({...createInput(),baseURL}),/基础地址/);
+    await assert.rejects(f.service.probe({baseURL,api:'openai-completions',model:'test'}),/基础地址/);
+    await assert.rejects(f.service.discover({source:'endpoint',settingsNs:'',baseURL,api:'openai-completions'}),/基础地址/);
+    assert.equal(f.calls.some(c=>c.method==='credentials.set'||c.method==='settings.mutate'),false);
+  }
+  for(const value of ['','https://example.test','https://example.test/v1/','https://example.test/gateway/openai/deployments/custom'])assert.equal(modelBaseUrlError(value),null);
+});
+
+test("deleting custom providers checks identity, revision and defaults without touching credentials", async () => {
+  for (const scenario of ['allowed','builtin','default','stale','readonly','invalid-path']) {
+    const calls: {method:string;payload:any}[] = [];
+    const client = {call: async <T>(method:string,payload:any={}) => {
+      calls.push({method,payload});
+      if (method==='llm.providers') return {providers:[{provider:'custom-demo',declared:scenario!=='builtin',settingsNs:'llm-pi-ai',settingsPath:scenario==='invalid-path'?['providers','other']:['providers','custom-demo']}]} as T;
+      if (method==='settings.describe') return {writable:scenario!=='readonly',namespaces:[
+        {ns:'llm-pi-ai',revision:7,value:{providers:{'custom-demo':{apiKeyEnv:'SHARED_KEY'}},modelSelection:{'custom-demo':['m'],'other':['kept']}}},
+        {ns:'agent-default-model',value:{provider:scenario==='default'?'custom-demo':'other',model:'m'}},
+      ]} as T;
+      return {revision:8} as T;
+    }};
+    const removal=new RuntimeProviderService(client).remove({provider:'custom-demo',expectedRevision:scenario==='stale'?6:7});
+    if(scenario==='allowed') {
+      await removal;
+      assert.deepEqual(calls.find(call=>call.method==='settings.mutate')?.payload,{ns:'llm-pi-ai',expectedRevision:7,ops:[{op:'unset',path:['providers','custom-demo']},{op:'unset',path:['modelSelection','custom-demo']}]});
+    } else {await assert.rejects(removal);assert.equal(calls.some(call=>call.method==='settings.mutate'),false);}
+    assert.equal(calls.some(call=>call.method.startsWith('credentials.')),false);
+  }
+});
+
+test("explicit complete creation enables in one CAS write, legacy creation stays disabled", async () => {
+  const f = fixture();
+  await f.service.apply({ ...createInput(), enabled: true });
+  assert.equal((f.section().user as any).providers["custom-test"].enabled, true);
+  assert.equal(f.calls.filter(call => call.method === "settings.mutate").length, 1);
+  const legacy = fixture();
+  await legacy.service.apply(createInput());
+  assert.equal((legacy.section().user as any).providers["custom-test"].enabled, false);
+  for (const patch of [{ models: [] }, { baseURL: "" }, { api: undefined }, { credential: { kind: "keep" } }, { enabled: "true" }]) {
+    const invalid = fixture();
+    await assert.rejects(invalid.service.apply({ ...createInput(), enabled: true, ...patch } as RuntimeProviderApplyParams));
+    assert.equal(invalid.calls.some(call => call.method === "credentials.set" || call.method === "settings.mutate"), false);
+  }
+});
+
+test("discovery imports new model declarations disabled in the same CAS command", async () => {
+  const f = fixture();
+  await f.service.apply({ ...createInput(), models: [{ id: "discovered" }], disableNewModels: true });
+  assert.deepEqual((f.section().user as any).modelSelection["custom-test"], ["discovered"]);
+  assert.equal(f.calls.filter(call => call.method === "settings.mutate").length, 1);
+});
+
+test("model declarations preserve supported metadata and reject inconsistent capabilities before writes", async () => {
+  const f = fixture();
+  await f.service.apply({ ...createInput(), models: [{ id: "shared-model", name: "My model", contextWindow: 32768, maxTokens: 4096, input: ["text", "image"] }] });
+  assert.deepEqual((f.section().user as any).providers["custom-test"].models[0],
+    { id: "shared-model", name: "My model", contextWindow: 32768, maxTokens: 4096, input: ["text", "image"] });
+  for (const models of [[{ id: "bad", contextWindow: 100, maxTokens: 200 }], [{ id: "bad", input: ["audio"] }], [{ id: "bad", name: " " }]]) {
+    const invalid = fixture();
+    await assert.rejects(invalid.service.apply({ ...createInput(), models: models as any }));
+    assert.equal(invalid.calls.some(call => call.method === "credentials.set" || call.method === "settings.mutate"), false);
+  }
+});
+
+
+test("environment model settings never fall back to the active or local Host", async () => {
+  const hosts: string[] = [];
+  const request = (async (host: string, method: string) => {
+    hosts.push(host);
+    if (method === "runtime/credentials/describe") return { credentials: {} };
+    if (method === "runtime/models/probe") return { ok: true, model: "same", elapsedMs: 1 };
+    if (method === "runtime/models/discover") return { models: [] };
+    return { providers: [], groups: [], namespaces: [], writable: true };
+  }) as HostProtocolRequest;
+  const remote = new LocalAgentSettingsService(request, "remote-test");
+  await remote.refresh(); await remote.describeCredential("TEST_REF");
+  await remote.discoverModels(null, { baseURL: "http://127.0.0.1/v1", api: "openai-completions", credential: { kind: "none" } }, "endpoint");
+  await remote.probeModel({ baseURL: "http://127.0.0.1/v1", api: "openai-completions", credential: { kind: "none" } }, "same");
+  assert.ok(hosts.length >= 7); assert.ok(hosts.every(host => host === "remote-test"));
+  await assert.rejects(remote.probeModel({ baseURL: "https://example.invalid", api: "openai-completions", credential: { kind: "keep" } }, "same"), /test key/);
+  assert.throws(() => new LocalAgentSettingsService(request, ""), /environment/);
+  remote.dispose();
+});
+
+
+test("draft inference probes use the selected wire format without reading persisted credentials or changing settings", async () => {
+  const requests: { path?: string; body: any; authenticated: boolean }[] = [];
+  const endpoint = createServer((request, response) => {
+    let body = ""; request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      requests.push({ path: request.url, body: JSON.parse(body), authenticated: request.headers.authorization === "Bearer synthetic-probe-key" });
+      response.setHeader("content-type", "application/json");
+      if (request.url?.startsWith("/failure")) { response.statusCode = 401; response.end("synthetic-probe-key must never be echoed"); return; }
+      if (request.url?.startsWith("/redirect")) { response.statusCode = 302; response.setHeader("location", "/unexpected"); response.end(); return; }
+      if (request.url?.startsWith("/invalid")) { response.end(JSON.stringify({ data: [] })); return; }
+      response.end(JSON.stringify(request.url?.endsWith("/responses")
+        ? { output: [{ type: "message", content: [{ type: "output_text", text: "OK" }] }] }
+        : { choices: [{ message: { role: "assistant", content: "OK" } }] }));
+    });
+  });
+  await new Promise<void>(resolve => endpoint.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${(endpoint.address() as { port: number }).port}`;
+  const service = new RuntimeProviderService({ call: async () => { throw new Error("Probe must not access DSH settings or credentials"); } });
+  try {
+    for (const api of ["openai-completions", "openai-responses"] as const) {
+      const result = await service.probe({ baseURL: `${origin}/deployment/v1`, api, model: "test-model", apiKey: "synthetic-probe-key" });
+      assert.equal(result.ok, true); assert.equal(JSON.stringify(result).includes("synthetic-probe-key"), false);
+    }
+    assert.deepEqual(requests.map(row => row.path), ["/deployment/v1/chat/completions", "/deployment/v1/responses"]);
+    assert.ok(requests.every(row => row.authenticated && row.body.model === "test-model" && row.body.stream === false));
+    for (const path of ["failure", "redirect", "invalid"]) {
+      const result = await service.probe({ baseURL: `${origin}/${path}`, api: "openai-completions", model: "test", apiKey: "synthetic-probe-key" });
+      assert.equal(result.ok, false); assert.equal(JSON.stringify(result).includes("synthetic-probe-key"), false);
+    }
+    assert.equal(requests.some(row => row.path === "/unexpected"), false);
+    await assert.rejects(service.probe({ baseURL: "https://user:password@example.invalid", api: "openai-completions", model: "test" }), /without credentials/);
+  } finally { await new Promise<void>(resolve => endpoint.close(() => resolve())); }
 });
 
 test("model selection is durable, revision guarded, independent of catalog and credentials", async () => {
@@ -226,18 +349,8 @@ test("settings frontend saves through a single application command, never writes
     if (method === "runtime/providers/apply") return f.service.apply(params);
     throw new Error(`Unexpected frontend call: ${method}`);
   }) as HostProtocolRequest;
-  const service = new LocalAgentSettingsService(request);
+  const service = new LocalAgentSettingsService(request, "local");
   await service.refresh();
-  const provider = (await f.service.list()).providers[0];
-  const editor = service.editor(provider);
-  editor.set("draft", value => ({ ...value, baseURL: "https://unsaved.test/v1" }));
-  editor.set("dirty", true);
-  await service.refresh();
-  assert.equal(service.editor(provider), editor, "editor identity survives view reattachment and refresh");
-  assert.equal(editor.getSnapshot().draft.baseURL, "https://unsaved.test/v1");
-  assert.equal(editor.getSnapshot().baseRevision, 7);
-  service.discardEditor(provider.provider);
-  assert.equal(service.editor(provider).getSnapshot().dirty, false);
   const input = createInput();
   await service.createProvider(input.target.id, input);
   assert.equal(methods.filter((method) => method === "runtime/providers/apply").length, 1);

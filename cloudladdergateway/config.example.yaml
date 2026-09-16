@@ -53,6 +53,35 @@ backends:
       headers:
         Host: "trade.itd.com"
 
+  # Credit usage reporting test endpoint. Beijing 7 and Seoul keep this route.
+  # Keep the routable IP and trusted Host here so callers cannot select an
+  # arbitrary signed-tunnel destination.
+  - alias: qbilling-send-resource-test
+    upstream:
+      base_url: "http://9.139.137.40"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "qbilling.itd.com"
+
+  # Credit usage reporting production endpoints. Billing requires domain-based
+  # access in production, so these backends must not be replaced with fixed IPs.
+  - alias: qbilling-send-resource-cn-prod
+    upstream:
+      base_url: "http://qbilling.billing.tencentyun.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "qbilling.billing.tencentyun.com"
+
+  - alias: qbilling-send-resource-intl-prod
+    upstream:
+      base_url: "http://intl.resource.qbilling.tencentyun.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "intl.resource.qbilling.tencentyun.com"
+
   # ===========================================================================
   # jifei-prod backend：lightvela trade → jifei CGW 现网出向
   # （v1.7.31 新增，2026-06-12 北京 2 预发布 trade 接入现网计费 + 未来 shprod 共用）
@@ -445,6 +474,9 @@ auth:
         - jifei-prod
         - jifei-billing-apigw-test
         - jifei-billing-apigw-prod
+        - qbilling-send-resource-test
+        - qbilling-send-resource-cn-prod
+        - qbilling-send-resource-intl-prod
         - dianshi-price
         - dianshi-order
         - tcapi-billing-trade-intl-test
@@ -566,6 +598,30 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: jifei-test
+
+  - id: qbilling-send-resource-test
+    description: "LightVela trade Credit usage sendResource test egress."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: qbilling-send-resource-test
+
+  - id: qbilling-send-resource-cn-prod
+    description: "LightVela trade Credit usage sendResource China production egress."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: qbilling-send-resource-cn-prod
+
+  - id: qbilling-send-resource-intl-prod
+    description: "LightVela trade Credit usage sendResource international production egress."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: qbilling-send-resource-intl-prod
 
   # ===========================================================================
   # lightvela trade → jifei 计费网关（apigateway.billing.*）销毁链路出向路由

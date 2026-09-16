@@ -1,0 +1,16 @@
+.git
+.github
+.DS_Store
+.codex
+build
+dist
+internal/webui/dist
+bridge
+computer/tat-agent/target
+**/node_modules
+**/*.db
+**/*.db-*
+task_plan.md
+findings.md
+progress.md
+docs

@@ -279,7 +279,7 @@ const rightPanelTabsSource = readFileSync(
 
 test("panel creation picker is outlet-owned and shares its actions with the empty state", () => {
   assert.doesNotMatch(rightPanelTabsSource, /action\.tabKind|emptyPanelActions|emptyPanelLabel/);
-  assert.match(rightPanelTabsSource, /state\.right\.tabs\.length > 0 \?\s*\(\s*<PanelCreationMenu/);
+  assert.match(rightPanelTabsSource, /regionState\.tabs\.length > 0 \?\s*\(\s*<PanelCreationMenu/);
   assert.match(rightPanelTabsSource, /actions=\{creationActions\}/);
   assert.match(rightPanelTabsSource, /creationActions\.map\(\(?action\)?\s*=>/);
   assert.match(rightPanelTabsSource, /aria-label="New tab"/);
@@ -748,7 +748,8 @@ test("Composer menus live in the root overlay plane with Codex viewport constrai
     composerSource,
     /codex-composer-selection-menu__trailing[\s\S]*?<Check size=\{16\}/u,
   );
-  assert.match(composerSource, /How should OpenCraft actions be approved\?/u);
+  assert.match(composerSource, /aria-label="Permissions"/u);
+  assert.doesNotMatch(composerSource, /How should OpenCraft actions be approved\?/u);
   assert.match(
     workbenchStyles,
     /grid-template-columns:\s*auto minmax\(0, 1fr\) auto/u,
@@ -963,7 +964,7 @@ test("the collapsing sidebar divider stays below the fixed toolbar", () => {
   );
 });
 
-test("Web owns one desktop sidebar topology with animated narrow-window collapse", () => {
+test("Web owns one desktop topology and keeps responsive projection separate from sidebar intent", () => {
   assert.match(
     appShellSource,
     /usePanelAnimation\(\{[\s\S]*?animation:\s*sidebarAnimation,[\s\S]*?isVisible:\s*sidebarOpen/u,
@@ -972,14 +973,8 @@ test("Web owns one desktop sidebar topology with animated narrow-window collapse
     appShellSource,
     /compactOverlay|sidebarLayout|sidebarAnimation\.set\(sidebarOpen \? 1 : 0\)/u,
   );
-  assert.match(
-    responsiveSidebarDockSource,
-    /SIDEBAR_AUTO_COLLAPSE_MEDIA_QUERY\s*=\s*"\(max-width: 720px\)"/u,
-  );
-  assert.match(
-    responsiveSidebarDockSource,
-    /if \(event\.matches\) setSidebarOpen\(false\)/u,
-  );
+  assert.doesNotMatch(responsiveSidebarDockSource, /matchMedia|setSidebarOpen\(false\)/u);
+  assert.match(appShellSource, /const sidebarOpen = space\.contextOpen/u);
   assert.doesNotMatch(
     workbenchStyles,
     /data-sidebar-layout|sidebar-panel__mobile-toolbar/u,
@@ -1054,14 +1049,16 @@ test("a full-width right panel exclusively owns the center toolbar", () => {
   );
   assert.match(
     workbenchStyles,
-    /\.main-content-viewport\[data-app-shell-right-panel-full-width="true"\]\s*\{[\s\S]*?width:\s*0;[\s\S]*?flex:\s*none;[\s\S]*?overflow:\s*hidden;/u,
+    /\.main-content-viewport\[data-app-shell-right-panel-full-width="true"\]\s*\{\s*overflow:\s*hidden;/u,
   );
+  assert.match(appShellSource,/className="main-content-frame"\s*style=\{\{ width: mainFrameWidth \}\}/u);
+  assert.match(workbenchStyles,/\.main-content-frame\s*\{[^}]*min-width:\s*100%;[^}]*container:\s*app-shell-main-content/u);
 });
 
 test("right-panel maximize is one semantic-to-motion geometry transaction", () => {
   assert.match(
     appShellSource,
-    /const rightPanelWidth = useTransform\(\s*\[mainContentWidth, regularRightPanelWidth, fullWidthProgress\][\s\S]{0,240}?Number\(regular\)[\s\S]{0,160}?Number\(progress\)/u,
+    /const paneGeometry = useTransform\([\s\S]*?workspacePaneGeometry\([\s\S]*?const rightPanelWidth = useTransform\(paneGeometry, geometry => geometry.contentWidth\)/u,
   );
   assert.doesNotMatch(
     appShellSource,
@@ -1112,11 +1109,11 @@ test("right-panel visibility and geometry remain AppShell-owned signals", () => 
   );
   assert.match(
     appShellSource,
-    /usePanelVisibilityAnimation\(rightPanelOpen, rightPanelAnimation\)/u,
+    /useWorkspacePaneAnimation\(fullWidthProgress, rightPanelAnimation, rightPanelFullWidth, layoutScope, rightPanelOpen\)/u,
   );
   assert.match(
     appShellSource,
-    /const regularRightPanelAnimatedWidth = useTransform\([\s\S]*?rightPanelAnimation[\s\S]*?regularRightPanelWidth/u,
+    /const regularRightPanelAnimatedWidth = useTransform\(paneGeometry, geometry => geometry.occupiedWidth\)/u,
   );
   assert.match(appShellSource, /const regularMainContentTargetWidth = useTransform/u);
   assert.match(rightPanelSource, /readonly animation: MotionValue<number>/u);
@@ -1300,7 +1297,7 @@ test("browser portal commits one dual-coordinate viewport transaction", () => {
   );
   assert.match(
     browserPresentationSource,
-    /intersectBrowserPresentationBounds\([\s\S]*?this\.surfaces\.commit/u,
+    /intersectBrowserPresentationBounds\([\s\S]*?this\.manager\.syncElectronWebview/u,
   );
   assert.doesNotMatch(webBrowserRuntimeSource, /HTMLIFrameElement|HTMLElement|ResizeObserver/u);
   assert.doesNotMatch(browserSurfaceHostSource, /PanelTab|\bviewId\b|BrowserTabId/u);
@@ -1400,7 +1397,7 @@ test("thread edge-scroll is one measured AppShell state", () => {
   );
   assert.match(
     appShellSource,
-    /data-app-shell-main-content-layout=\{mainContentLayout\}/u,
+    /data-app-shell-main-content-layout=\{presentedMainContentLayout\}/u,
   );
   assert.match(
     workbenchApp,

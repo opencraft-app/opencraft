@@ -9,6 +9,19 @@ import WebSocket, { WebSocketServer } from "ws";
 import { publishWorkbenchWeb } from "../scripts/publish-workbench-web.mjs";
 import { createWorkbenchWebServer } from "../scripts/serve-workbench-web.mjs";
 
+test("LightVela Web release publishes its own checked product artifact", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(
+    manifest.scripts["publish:lightvela-web"],
+    "npm run check:lightvela-web-product && node scripts/publish-workbench-web.mjs --source apps/workbench-web/dist-lightvela-web",
+  );
+  assert.equal(
+    manifest.scripts["deploy:lightvela-web"],
+    "npm run build:lightvela-web:release && npm run publish:lightvela-web",
+  );
+  assert.equal(manifest.scripts["deploy:web"], "npm run build:web:release && npm run publish:web");
+});
+
 test("browser release builds use Rolldown minification without a second obfuscation pass", async () => {
   const packageSource = await readFile(new URL("../package.json", import.meta.url), "utf8");
   const packageManifest = JSON.parse(packageSource);

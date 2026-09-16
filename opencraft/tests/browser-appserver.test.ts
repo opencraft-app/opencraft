@@ -55,7 +55,7 @@ test("OpenCraft browser tools are stable namespaced DynamicTool specs", () => {
     }
     : null;
   const actions = browserSchema?.properties?.action?.enum ?? [];
-  assert.equal(actions.includes("screenshot"), false);
+  assert.equal(actions.includes("screenshot"), true);
   assert.equal(actions.includes("set_viewport"), false);
   assert.equal(actions.includes("claim"), false);
   assert.equal(actions.includes("release"), false);

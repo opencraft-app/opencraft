@@ -6,6 +6,7 @@ require (
 	github.com/pulumi/pulumi/sdk/v3 v3.210.0
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cam v1.3.42
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.65
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cynosdb v1.3.65
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/redis v1.3.65
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/ssm v1.3.33
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tcr v1.3.65

@@ -6,6 +6,21 @@ const readSource = (relativePath: string) =>
   readFileSync(join(process.cwd(), relativePath), "utf8");
 
 describe("Agents route loading boundary", () => {
+  it("uses the standard black primary treatment for the login gate action", () => {
+    const source = readSource("next-site/app-route-shell.tsx");
+    const loginGate = source.slice(
+      source.indexOf("{t('请先登录')}"),
+      source.indexOf("<LegalFooter />"),
+    );
+
+    expect(loginGate).toContain("bg-black/90");
+    expect(loginGate).toContain("hover:bg-black/80");
+    expect(loginGate).toContain("focus-visible:ring-black/30");
+    expect(loginGate).not.toContain('className="lw-btn-primary"');
+    expect(loginGate).toContain("{t('登录后即可创建和管理你的 Agent')}");
+    expect(loginGate).not.toContain("Hermes Agent");
+  });
+
   it("defers authenticated Agent surfaces until the auth gate renders them", () => {
     const source = readSource("next-site/agents-page-client.tsx");
 
@@ -22,9 +37,19 @@ describe("Agents route loading boundary", () => {
     expect(source).toContain(
       "const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;",
     );
-    expect(source).toContain("<AppRouteShell loadingFallback={loadingFallback}>");
+    expect(source).toContain(
+      "<AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>",
+    );
     expect(source).toContain("<Suspense fallback={loadingFallback}>");
     expect(source).toContain("{productHeader}");
+    expect(source).toContain("showLanguageSwitcher={false}");
+
+    const loadingShell = readSource("next-site/app-route-shell.tsx");
+    const agentsLoading = loadingShell.slice(
+      loadingShell.indexOf("export function AgentsRouteLoading"),
+      loadingShell.indexOf("export function AccountRouteLoading"),
+    );
+    expect(agentsLoading).toContain("showLanguageSwitcher={false}");
   });
 
   it("loads only the selected settings panel instead of bundling every panel upfront", () => {

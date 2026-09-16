@@ -30,6 +30,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
+  useMultiBotEnabled: () => true,
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
@@ -82,7 +83,6 @@ vi.mock("@/contexts/repository-context", () => ({
 }));
 
 vi.mock("@/components/site/product-chrome", () => ({
-  ProductFooter: () => null,
   ProductReturnHomeHeader: () => null,
 }));
 
@@ -162,7 +162,7 @@ describe("AgentSettingsPage 实验室导航", () => {
 
     await screen.findByText("Hermes Lab");
     expect(screen.getByRole("button", { name: "重启" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除 Bot" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
   });
 });

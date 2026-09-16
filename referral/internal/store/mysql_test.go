@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -68,4 +69,48 @@ func TestUpsertCampaignRejectsUnboundedConfiguration(t *testing.T) {
 
 func nowForTest() time.Time {
 	return time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
+}
+
+func TestCreateRewardsUsesCampaignDelayAndIndependentAmounts(t *testing.T) {
+	for _, delay := range []int{0, 7} {
+		t.Run(fmt.Sprintf("delay_%d", delay), func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			now := nowForTest()
+			eligible := now.AddDate(0, 0, delay)
+			status := domain.RewardStatusPending
+			if delay > 0 {
+				status = domain.RewardStatusVesting
+			}
+			mock.ExpectBegin()
+			mock.ExpectQuery("SELECT referral_campaign.campaign_id").WithArgs("campaign", "invitee").
+				WillReturnRows(sqlmock.NewRows([]string{"id", "name", "status", "starts", "ends", "inviter_credit", "invitee_credit", "delay", "ttl", "limit", "budget", "inviter", "event", "registered", "paid", "pass"}).
+					AddRow("campaign", "test", "active", now.Add(-time.Hour), now.AddDate(0, 1, 0), 500, 500, delay, 90, 50, 100000, "inviter", "registration", now, now, "pass"))
+			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM referral_reward").WithArgs("campaign", "invitee").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+			mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM referral_reward").WithArgs("campaign", "inviter", domain.RewardSideInviter, domain.RewardStatusCancelled).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+			mock.ExpectQuery("SELECT COALESCE").WithArgs("campaign", domain.RewardStatusCancelled).WillReturnRows(sqlmock.NewRows([]string{"sum"}).AddRow(0))
+			for _, side := range []string{"inviter", "invitee"} {
+				mock.ExpectExec("INSERT INTO referral_reward").WithArgs(sqlmock.AnyArg(), "campaign", "invitee", "pass", side, side, 500,
+					"referral:campaign:invitee:"+side, status, eligible, now.AddDate(0, 0, 90), eligible, sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+			}
+			mock.ExpectCommit()
+			tx, err := db.BeginTx(t.Context(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			if err := createRewardsIfQualified(t.Context(), tx, "campaign", "invitee"); err != nil {
+				t.Fatal(err)
+			}
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }

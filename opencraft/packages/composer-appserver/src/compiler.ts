@@ -12,6 +12,7 @@ import type {
   ComposerSelections,
   SubmitIntent,
 } from "@opencraft/composer-core";
+import { resolveReasoningEffort, type ReasoningCapability } from "@opencraft/composer-core";
 
 export interface SubmitCompileDiagnostic {
   readonly code:
@@ -33,10 +34,11 @@ export interface CompiledSubmitIntent {
 
 export interface SubmitCompilerOptions {
   readonly historyMode?: ThreadStartParams["historyMode"];
+  readonly reasoning?: ReasoningCapability;
 }
 
 export class SubmitCompileError extends Error {
-  readonly code: "ASSET_NOT_READY" | "INVALID_JSON" | "EMPTY_INPUT";
+  readonly code: "ASSET_NOT_READY" | "INVALID_JSON" | "EMPTY_INPUT" | "CAPABILITY_UNAVAILABLE";
 
   constructor(code: SubmitCompileError["code"], message: string) {
     super(message);
@@ -236,15 +238,18 @@ function selectionOptions(
   selections: ComposerSelections,
   outputSchema: Readonly<Record<string, unknown>> | undefined,
   diagnostics: SubmitCompileDiagnostic[],
+  reasoning?: ReasoningCapability,
 ): CompiledSubmitIntent["turnOptions"] {
   if (selections.mode !== undefined) diagnostics.push({
     code: "UNSUPPORTED_SELECTION",
     message: "Composer mode requires a resolved CollaborationMode catalog entry; the raw label was not sent",
     sourceId: null,
   });
+  const effort = reasoning === undefined ? selections.effort : resolveReasoningEffort(reasoning, selections.effort);
+  if (reasoning !== undefined && selections.effort !== undefined && effort !== selections.effort) diagnostics.push({code:"UNSUPPORTED_SELECTION",message:"Stored reasoning selection was resolved against the current model capability",sourceId:null});
   return {
     ...(selections.model === undefined ? {} : { model: selections.model }),
-    ...(selections.effort === undefined ? {} : { effort: selections.effort }),
+    ...(effort === undefined ? {} : { effort }),
     ...(selections.permissionProfile === undefined ? {} : { permissions: selections.permissionProfile }),
     ...(selections.cwd === undefined ? {} : { cwd: selections.cwd }),
     ...(selections.serviceTier === undefined ? {} : { serviceTier: selections.serviceTier }),
@@ -268,7 +273,7 @@ export function compileSubmitIntent(
     throw new SubmitCompileError("EMPTY_INPUT", "SubmitIntent contains no AppServer input");
   }
 
-  const turnOptions = selectionOptions(intent.selections, intent.options.outputSchema, diagnostics);
+  const turnOptions = selectionOptions(intent.selections, intent.options.outputSchema, diagnostics, options.reasoning);
   if ((intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up")
     && Object.keys(turnOptions).length > 0) {
     diagnostics.push({

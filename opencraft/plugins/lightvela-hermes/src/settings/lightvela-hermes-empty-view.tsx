@@ -4,16 +4,13 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
-import {
-  LightVelaBotCreationGuide,
-  projectLightVelaBotOnboarding,
-} from "../onboarding";
+import { projectLightVelaBotOnboarding } from "../onboarding";
 import { LIGHTVELA_HERMES_HOST_ID } from "./lightvela-hermes-settings-view";
 import { LightVelaLoginOptions } from "./lightvela-login-options";
 
 /**
- * LightVela owns its zero-Host experience. The Workbench core supplies only
- * the empty-workbench slot and generic Host provisioning capability.
+ * Intervention for an explicitly selected LightVela Host. Account state alone
+ * never mounts this view or owns the application's workspace entrance.
  */
 export function createLightVelaHermesEmptyView(account: LightVelaAccountService) {
   return function LightVelaHermesEmptyView({ host }: ExtensionSettingsViewProps) {
@@ -67,13 +64,13 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
 
     if (onboarding.kind === "bot-required") {
       return (
-        <LightVelaBotCreationGuide
-          createUrl={onboarding.createUrl}
-          onRefresh={async () => {
-            await account.refreshBots();
-            if (account.getSnapshot().bots.length > 0) window.location.reload();
-          }}
-        />
+        <section className="hostless-empty-view">
+          <h1>当前环境不可用</h1>
+          <p>此账号暂无可连接的云端实例。你可以选择本机或其他已有环境。</p>
+          <div className="hostless-empty-view__actions">
+            {host.openSettings ? <button type="button" onClick={() => host.openSettings?.("connections")}>选择运行环境</button> : null}
+          </div>
+        </section>
       );
     }
 
@@ -97,7 +94,7 @@ export function createLightVelaHermesEmptyView(account: LightVelaAccountService)
                 <RefreshCw size={15} /> Refresh
               </button>
             ) : (
-              <LightVelaLoginOptions account={account} snapshot={snapshot} />
+              <LightVelaLoginOptions account={account} snapshot={snapshot} authentication={host.authentication} />
             )}
           </div>
         ) : <i className="hostless-empty-view__spinner" aria-hidden="true" />}

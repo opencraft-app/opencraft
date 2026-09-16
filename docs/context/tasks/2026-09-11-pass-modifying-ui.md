@@ -1,5 +1,19 @@
 # 升级套餐等待状态
 
+## 国际站入口临时收起（2026-09-15）
+
+- goal / requirement_excerpt：用户要求“先把国际站的升级入口隐藏掉吧，需要show才能看到”；国内站不变。入口只按现有区域常量和内存 show/hide 开关控制，服务端资格仍为准。
+- non_goals：不修后端 500 或未知订单恢复、不修改现有订单/支付回跳/升级交付、不合并 MR 或发布、不修改架构或检查器。
+- delivery_approval（2026-09-15）：用户确认当前8文件提交、合并最新master并复测、必要的sourceRevision-only标准生成同步、正常推送并新建MR；标题“国际站升级入口改为手动显示 / fix(frontend): gate intl plan upgrade behind show”。旧MR3941已合并；不重写历史，其他生成漂移或文档门禁扩大范围时停止报告。下方实现阶段证据不替代合并后复测，最终交付以Git/MR读回为准。
+- history_context：当前本地 HEAD d73ec622f，原工作树干净；此前 bf6dabc5f 的 show/hide 方案用域名白名单，本轮仅恢复 console opt-in 且限国际构建。当前设计见 `frontend/openspec/specs/pass-upgrade.md`，计划见 `frontend/openspec/plan.md` 顶部 H1。
+- interface_refs / affected_paths：`use-pass-upgrade.ts`、同职责 `pass-upgrade-rollout.ts`；消费者为 `next-site/subscribe-page.tsx`、`src/pages/marketing/account-page.tsx`，不改变 hook 对外入参/返回字段。隐藏时资格为空，revisionKey 变化使旧选择和迟到询价失效。
+- decisions：统一资格入口控制可见性，避免各页面分散布尔判断；不恢复旧域名白名单，不用持久化开关，不新增权限或支付逻辑。
+- acceptance：国际默认无入口和升级资格请求；show 后合法入口可见，hide 后立即失效；跨组件/SPA 共享、整页刷新不持久化；显式 Pass URL 无法绕过；国内默认资格与国际新购/续费不变。
+- context_receipt：已读 clean 根/frontend AGENTS、subscription-entitlements、frontend-runtime-openspec-i18n 邻接、Task/Checkpoint 模板、当前 plan/spec、区域真源与 Vitest 配置；FE-AI global/quick 门禁使用主工作区可用技能与规则，clean 缺失文件未补造。Graphify 无索引，按已定位源代码有界检索，未构图。
+- evidence：修改前3文件60条通过；新增开关回归先RED再GREEN，最终9文件179条通过，覆盖国内默认入口、国际show/hide、页面资格与新购/续费/支付回跳/升级等待。pnpm check 174 current/276 baseline/0 new；49条既有翻译告警。国际构建exit0，607静态页和42公开路由检查通过；文档与8文件影响检查通过，未命中架构文档映射。
+- risks / validation：内存开关只用于展示，不能作为权限限制；不清理未知订单记录。运行相关 hook、页面、支付回跳/Agent 相邻测试、pnpm check、国际构建和文档/差异检查。
+- handoff：本地完成，等待用户验收；保留原主工作区与原5176预览，测试均为模拟接口，无生产操作。独立复核无阻断项；记录一个非阻断Minor：多个资格消费者同序卸载可能留下旧console wrapper，当前残留只更新共享store，未证明实际功能损坏，本轮不扩展注册框架。缺少lint脚本如实记录；未修原下单500，未提交推送发布。
+
 ## 全量复核收敛（2026-09-12）
 
 - local_submission（提交前记录）：用户查看37文件范围、提交信息和验证结果后明确回复“确认”，授权“完善升级异常恢复与提示 / fix(frontend): refine upgrade checkout recovery”的本地提交，包含上轮32文件增量及本轮优化；不推送、更新MR、合并或发布。下方等待验收状态为实现阶段记录，最终提交状态以Git为准；本次仅更新提交状态文档，不修改业务实现。

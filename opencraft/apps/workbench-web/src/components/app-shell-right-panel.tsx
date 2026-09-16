@@ -17,6 +17,7 @@ import {
 } from "@opencraft/workbench-panels";
 import { usePanelAnimation } from "./use-panel-animation";
 import { RightPanelResizeHandle } from "./right-panel-resize-handle";
+import { shellSpaceMetrics } from "@opencraft/workbench-runtime";
 
 interface AppShellRightPanelProps {
   /** Route/AppShell-scoped visibility progress; the panel never owns it. */
@@ -97,11 +98,12 @@ export function AppShellRightPanel({
       computeRightPanelDefaultWidth({
         mainContentWidth: mainContentWidth.get(),
         shellHeight: shellHeight.get(),
+        mainContentReserve: shellSpaceMetrics.mainMinimum,
       }),
     [mainContentWidth, shellHeight],
   );
   const getWidthBounds = useCallback(
-    () => getRightPanelWidthBounds(mainContentWidth.get()),
+    () => getRightPanelWidthBounds(mainContentWidth.get(), "regular", shellSpaceMetrics.mainMinimum),
     [mainContentWidth],
   );
   const getCurrentSize = useCallback(
@@ -123,7 +125,7 @@ export function AppShellRightPanel({
       if (shouldOpen !== open) onOpenChange(shouldOpen);
       if (shouldOpen) {
         rightPanelWidthRatio.set(
-          normalizeRightPanelWidth(size, mainContentWidth.get()),
+          normalizeRightPanelWidth(size, mainContentWidth.get(), shellSpaceMetrics.mainMinimum),
         );
       }
     },
@@ -134,7 +136,7 @@ export function AppShellRightPanel({
     (size: number) => {
       if (size >= RIGHT_PANEL_COLLAPSE_SHELF) {
         rightPanelWidthRatio.set(
-          normalizeRightPanelWidth(size, mainContentWidth.get()),
+          normalizeRightPanelWidth(size, mainContentWidth.get(), shellSpaceMetrics.mainMinimum),
         );
       }
     },

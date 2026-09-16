@@ -9,14 +9,35 @@ import {
   installPreviewBridgeRuntime,
   type PreviewBridgeChildMessage,
 } from "@opencraft/browser-preview-bridge";
+import type { PresentationHostPort } from "./codex-presentation-host";
 
 export interface BrowserSurfaceEvents {
+  onNewWindow?(url: string, background: boolean): void;
+  onNavigation?(state: { url: string; title: string; canGoBack: boolean; canGoForward: boolean; isLoading: boolean }): void;
   onLoaded(title: string | null): void;
   onError(message: string): void;
   onAutomationEvent(event: PreviewBridgeChildMessage): void;
 }
 
 export interface BrowserSurfaceHost {
+  trackPointerNearBottom?(pageId: BrowserPageId, height: number, listener: (near: boolean) => void): () => void;
+  setZoom?(pageId: BrowserPageId, percent: number): void;
+  capture?(pageId: BrowserPageId): Promise<string>;
+  setUseFactory?(factory: ((pageId: BrowserPageId) => () => void) | null): void;
+  waitUntilReady?(pageId: BrowserPageId): Promise<void>;
+  siteSettings?(pageId: BrowserPageId, action: "permissions" | "clear-data"): Promise<void>;
+  clearClosedData?(): Promise<void>;
+  forget?(pageId: BrowserPageId): void;
+  acquireUse?(pageId: BrowserPageId): () => void;
+  setBackingFactory?(factory: ((pageId: BrowserPageId) => void) | null): void;
+  bindHostIdentity?(pageId: BrowserPageId, identity: { rendererInstanceId: string; hostGeneration: number }): void;
+  existingStorageId?(pageId: BrowserPageId): string | null;
+  bindStorageId?(pageId: BrowserPageId, storageId: string): void;
+  presentationPort?(pageId: BrowserPageId): PresentationHostPort;
+  onClose?(listener: (pageId: BrowserPageId) => void): () => void;
+  readonly nativeNavigation?: boolean;
+  goBack?(pageId: BrowserPageId): void;
+  goForward?(pageId: BrowserPageId): void;
   setRoot(root: HTMLElement | null): void;
   navigate(pageId: BrowserPageId, title: string, url: BrowserUrl | null, events: BrowserSurfaceEvents, force?: boolean, trustedHostProxy?: boolean): boolean;
   stop(pageId: BrowserPageId): void;
@@ -105,6 +126,41 @@ function configureSandbox(iframe: HTMLIFrameElement, trustedHostProxy: boolean):
 
 /** Web physical-page owner. It knows iframe mechanics, never Tabs or panel Views. */
 export class WebIframeSurfaceHost implements BrowserSurfaceHost {
+  trackPointerNearBottom(pageId: BrowserPageId, height: number, listener: (near: boolean) => void) {
+    const record = this.surfaces.get(pageId);
+    if (!record) return () => {};
+    let detach = () => {};
+    const attach = () => {
+      detach();
+      try {
+        const child = record.iframe.contentWindow;
+        if (!child) return;
+        const move = (event: PointerEvent) => listener(event.clientY >= child.innerHeight - height);
+        const leave = () => listener(false);
+        child.addEventListener("pointermove", move);
+        child.addEventListener("pointerleave", leave);
+        detach = () => {
+          try { child.removeEventListener("pointermove", move); child.removeEventListener("pointerleave", leave); }
+          catch { /* Navigation may have replaced this same-origin document. */ }
+        };
+      } catch {
+        // Cross-origin Web cannot inspect guest pointer events. Keyboard and
+        // the browser toolbar remain available; desktop uses its native port.
+        detach = () => {};
+      }
+    };
+    attach(); record.iframe.addEventListener("load", attach);
+    return () => { record.iframe.removeEventListener("load", attach); detach(); };
+  }
+  private readonly closeListeners = new Set<(pageId: BrowserPageId) => void>();
+  onClose(listener: (pageId: BrowserPageId) => void) { this.closeListeners.add(listener); return () => this.closeListeners.delete(listener); }
+  presentationPort(pageId: BrowserPageId): PresentationHostPort {
+    const record = this.require(pageId);
+    return { container: record.container, guest: record.iframe, ready: Promise.resolve(),
+      commit: (layout, visible) => this.commit(pageId, layout, visible ? "visible" : "staged"),
+      park: () => this.park(pageId), close: () => this.close(pageId),
+      cover: () => {}, clearCover: () => {} };
+  }
   private readonly surfaces = new Map<BrowserPageId, SurfaceRecord>();
   private root: HTMLElement | null = null;
 
@@ -194,6 +250,7 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     record.disposeInjectedRuntime?.();
     record.container.remove();
     this.surfaces.delete(pageId);
+    for (const listener of this.closeListeners) listener(pageId);
   }
 
   dispose(): void {
@@ -270,6 +327,9 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
     } else {
       try {
         targetOrigin = frameWindow.location.origin;
+        // The initial about:blank load can race the requested navigation. It
+        // has no serializable postMessage origin and owns no automation bridge.
+        if (targetOrigin === "null") return;
         record.disposeInjectedRuntime = installPreviewBridgeRuntime({
           window: frameWindow,
           parentOrigin: window.location.origin,
@@ -277,6 +337,7 @@ export class WebIframeSurfaceHost implements BrowserSurfaceHost {
       } catch {
         if (record.loadedUrl === null) return;
         targetOrigin = new URL(record.loadedUrl).origin;
+        if (targetOrigin === "null") return;
       }
     }
     record.automation = new PreviewBridgeAdapter({

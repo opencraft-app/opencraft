@@ -6,6 +6,7 @@
     {"id": "ai-gateway", "path": "ai-gateway", "catalog": "ai-gateway/catalog-info.yaml"},
     {"id": "cloudagent", "path": "cloudagent", "catalog": "cloudagent/catalog-info.yaml"},
     {"id": "cloudladdergateway", "path": "cloudladdergateway", "catalog": "cloudladdergateway/catalog-info.yaml"},
+    {"id": "collaboration", "path": "collaboration", "catalog": "collaboration/catalog-info.yaml"},
     {"id": "codesign", "path": "codesign", "catalog": "codesign/catalog-info.yaml"},
     {"id": "credit", "path": "credit", "catalog": "credit/catalog-info.yaml"},
     {"id": "ctl", "path": "ctl", "catalog": "ctl/catalog-info.yaml"},
@@ -24,6 +25,7 @@
     {"id": "trade", "path": "trade", "catalog": "trade/catalog-info.yaml"},
     {"id": "user-auth", "path": "user/auth", "catalog": "user/auth/catalog-info.yaml"},
     {"id": "velagw", "path": "velagw", "catalog": "velagw/catalog-info.yaml"},
+    {"id": "vela-computer", "path": "vela-computer", "catalog": "vela-computer/catalog-info.yaml"},
     {"id": "velalink", "path": "velalink", "catalog": "velalink/catalog-info.yaml"},
     {"id": "workers", "path": "workers", "catalog": "workers/catalog-info.yaml"}
   ]

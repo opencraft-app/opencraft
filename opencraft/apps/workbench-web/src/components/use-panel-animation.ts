@@ -6,20 +6,31 @@ import {
   type MotionValue,
 } from "motion/react";
 import { useLayoutEffect, useReducer, useRef } from "react";
+import { paneTransitionIntent } from "./workspace-pane-geometry";
 
-/** Shell-owned full-width progress. Route changes are placement, not gestures. */
-export function usePanelFullWidthAnimation(fullWidth: boolean, scope: string, open: boolean): MotionValue<number> {
-  const progress = useMotionValue(fullWidth ? 1 : 0);
-  const previous = useRef({ scope, open });
+/** Single Shell transaction owner; visibility and full-width remain distinct
+ * MotionValues. Source nSi settles visibility before changing width mode.
+ */
+export function useWorkspacePaneAnimation(progress: MotionValue<number>, visibility: MotionValue<number>, fullWidth: boolean, scope: string, open: boolean): void {
+  const previous = useRef({ scope, open, fullWidth });
   const reducedMotion = useReducedMotion();
+  const [, settle] = useReducer((revision:number)=>revision+1,0);
   useLayoutEffect(() => {
-    const snap = previous.current.scope !== scope || !previous.current.open || !open || reducedMotion;
-    previous.current = { scope, open };
-    if (snap) { progress.jump(fullWidth ? 1 : 0); return; }
-    const playback = animate(progress, fullWidth ? 1 : 0, PANEL_SPRING_TRANSITION);
-    return () => playback.stop();
-  }, [fullWidth, scope, open, reducedMotion, progress]);
-  return progress;
+    const intent = paneTransitionIntent(previous.current, {scope,open,fullWidth},reducedMotion===true);
+    previous.current = { scope, open, fullWidth };
+    progress.stop(); visibility.stop();
+    if (intent.snap) {
+      progress.jump(intent.fullWidthTarget); visibility.jump(intent.visibilityTarget);
+      settle(); return;
+    }
+    if(intent.forceVisibility)visibility.set(1);
+    let current=true;
+    const visibilityPlayback=animate(visibility,intent.visibilityTarget,PANEL_SPRING_TRANSITION);
+    const fullPlayback=animate(progress,intent.fullWidthTarget,{
+      ...PANEL_SPRING_TRANSITION,onComplete:()=>{if(current)settle();},
+    });
+    return ()=>{current=false;visibilityPlayback.stop();fullPlayback.stop();};
+  }, [fullWidth, scope, open, reducedMotion, progress, visibility]);
 }
 
 // Source-identical motion contract from the latest recovered Codex lineage:
