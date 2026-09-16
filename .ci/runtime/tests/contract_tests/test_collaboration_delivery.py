@@ -155,9 +155,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(foundation["sourcePath"], "argocd/services/collaboration/beijing-sandbox-foundation")
         source = REPO_ROOT / foundation["sourcePath"]
         composition = yaml.safe_load((source / "kustomization.yaml").read_text())
-        self.assertEqual(composition["resources"], [
-            "../../../../collaboration/k8s/base/namespace.yaml", "../common/serviceaccount.yaml",
-        ])
+        self.assertEqual(composition["resources"], ["namespace.yaml", "serviceaccount.yaml"])
         self.assertNotIn("components", composition)
 
     def test_runtime_overlay_resolves_values_without_adding_a_migration_workload(self):
@@ -194,6 +192,37 @@ class CollaborationDeliveryTests(unittest.TestCase):
             self.assertEqual(args[args.index("--im-sdk-app-id") + 1], "1600000000")
             self.assertEqual(args[args.index("--im-admin-user-id") + 1], "test-admin")
             self.assertIn("--collaboration-only", args)
+
+    def test_foundation_overlay_renders_with_argocd_default_load_restriction(self):
+        binary = shutil.which("kustomize")
+        if not binary:
+            self.skipTest("kustomize is required for offline source rendering")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            overlay = root / "argocd/services/collaboration/beijing-sandbox-foundation"
+            shutil.copytree(REPO_ROOT / "argocd/services/collaboration/beijing-sandbox-foundation", overlay)
+            namespace = root / "collaboration/k8s/base/namespace.yaml"
+            namespace.parent.mkdir(parents=True)
+            shutil.copyfile(REPO_ROOT / "collaboration/k8s/base/namespace.yaml", namespace)
+            service_account_path = root / "argocd/services/collaboration/common/serviceaccount.yaml"
+            service_account_path.parent.mkdir(parents=True)
+            shutil.copyfile(REPO_ROOT / "argocd/services/collaboration/common/serviceaccount.yaml", service_account_path)
+            # Replace only the external KSOPS input; no credential or runtime workload is read.
+            spec = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+            spec.pop("generators")
+            (overlay / "kustomization.yaml").write_text(yaml.safe_dump(spec, sort_keys=False))
+            result = subprocess.run([binary, "build", str(overlay)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            resources = [item for item in yaml.safe_load_all(result.stdout) if item]
+            self.assertEqual({(item["kind"], item["metadata"]["name"]) for item in resources}, {
+                ("Namespace", "lightvela-collaboration"), ("ServiceAccount", "default"),
+            })
+            rendered_service_account = next(item for item in resources if item["kind"] == "ServiceAccount")
+            self.assertEqual(rendered_service_account["metadata"]["namespace"], "lightvela-collaboration")
+            self.assertEqual(yaml.safe_load((overlay / "namespace.yaml").read_text()),
+                             yaml.safe_load(namespace.read_text()))
+            self.assertEqual(yaml.safe_load((overlay / "serviceaccount.yaml").read_text()),
+                             yaml.safe_load(service_account_path.read_text()))
 
     def test_native_readiness_resolves_candidate_image_from_deploy_platform(self):
         with tempfile.TemporaryDirectory() as tmp:

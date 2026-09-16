@@ -388,19 +388,53 @@ func TestUserOrderAndPayUsesTrustedHeaderIdentity(t *testing.T) {
 	}
 }
 
-func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
+func TestUserOrderURLAuthCodePrecedesTrustedHeader(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{}
+	authCodes := &httpFakeAuthCodeStore{
+		consumeTicket: &authcode.Ticket{UserID: "usr-ticket-owner", DealName: "deal-credit-1"},
+	}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"deal-credit-1",
+		"auth_code":"auth-code-1",
+		"external_user_id":"usr_spoofed",
+		"platform":"pc",
+		"wx_open_id":"openid-1",
+		"wx_app_id":"spoofed-app-id",
+		"return_url":"https://lightvela.com/credit?paid=1"
+	}`))
+	req.Header.Set("X-User-Id", "usr-scanner")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.payURLDealName != "deal-credit-1" || trade.payURLRequest.ExternalUserID != "usr-ticket-owner" {
+		t.Fatalf("deal_name=%q request=%+v", trade.payURLDealName, trade.payURLRequest)
+	}
+	if authCodes.consumeCalls != 1 || authCodes.consumeCode != "auth-code-1" {
+		t.Fatalf("consume calls=%d code=%q", authCodes.consumeCalls, authCodes.consumeCode)
+	}
+	if trade.payURLRequest.WxAppID != wechatPaymentAppID {
+		t.Fatalf("wx_app_id=%q", trade.payURLRequest.WxAppID)
+	}
+	if !strings.Contains(rec.Body.String(), `"pay_url":"https://buy.cloud.tencent.com/credit"`) ||
+		!strings.Contains(rec.Body.String(), `"need_charge":1`) {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestUserOrderURLUsesTrustedHeaderWithoutAuthCode(t *testing.T) {
 	st := newHTTPFakeStore()
 	trade := &httpFakeTrade{}
 	authCodes := &httpFakeAuthCodeStore{consumeError: errors.New("must not consume")}
 	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
 		"deal_name":"deal-credit-1",
-		"auth_code":"unused-code",
-		"external_user_id":"usr_spoofed",
-		"platform":"pc",
-		"wx_open_id":"openid-1",
-		"wx_app_id":"spoofed-app-id",
-		"return_url":"https://lightvela.com/credit?paid=1"
+		"platform":"pc"
 	}`))
 	req.Header.Set("X-User-Id", "usr_trusted")
 	rec := httptest.NewRecorder()
@@ -410,18 +444,11 @@ func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if trade.payURLDealName != "deal-credit-1" || trade.payURLRequest.ExternalUserID != "usr_trusted" {
-		t.Fatalf("deal_name=%q request=%+v", trade.payURLDealName, trade.payURLRequest)
+	if trade.payURLRequest.ExternalUserID != "usr_trusted" {
+		t.Fatalf("pay URL user = %q", trade.payURLRequest.ExternalUserID)
 	}
 	if authCodes.consumeCalls != 0 {
-		t.Fatalf("authenticated request consumed ticket %d times", authCodes.consumeCalls)
-	}
-	if trade.payURLRequest.WxAppID != wechatPaymentAppID {
-		t.Fatalf("wx_app_id=%q", trade.payURLRequest.WxAppID)
-	}
-	if !strings.Contains(rec.Body.String(), `"pay_url":"https://buy.cloud.tencent.com/credit"`) ||
-		!strings.Contains(rec.Body.String(), `"need_charge":1`) {
-		t.Fatalf("body=%s", rec.Body.String())
+		t.Fatalf("header fallback consumed ticket %d times", authCodes.consumeCalls)
 	}
 }
 
@@ -480,8 +507,10 @@ func TestUserOrderURLRejectsInvalidOrReplayedAuthCode(t *testing.T) {
 	if first.Code != http.StatusOK {
 		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
 	}
+	replayReq := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(body))
+	replayReq.Header.Set("X-User-Id", "usr-scanner")
 	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(body)))
+	router.ServeHTTP(second, replayReq)
 	if second.Code != http.StatusUnauthorized {
 		t.Fatalf("replay status=%d body=%s", second.Code, second.Body.String())
 	}

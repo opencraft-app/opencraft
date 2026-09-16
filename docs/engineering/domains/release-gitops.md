@@ -27,6 +27,12 @@ master 源码
 
 ## 不变量
 
+- Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
+  Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
+  `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
+  不为单一服务放宽 Argo 全局路径限制。foundation 活动目录只允许这两种资源和加密 Secret，
+  Runtime、migration 要在 foundation live 收敛并独立验收后启用。
+
 - Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
   带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。
 
