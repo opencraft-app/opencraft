@@ -1010,7 +1010,7 @@ ci_install_tccli() {
 ci_ensure_go() {
   ci_require_commands curl tar
 
-  local version="${GO_VERSION_OVERRIDE:-1.25.4}"
+  local version="${GO_VERSION_OVERRIDE:-1.26.0}"
   local os arch archive cache_root install_dir bin url
 
   os="$(ci_os_name)"
