@@ -43,6 +43,9 @@ master 源码
   Runtime 与 migration/verify Job 显式使用 `mysql`；`tdsql` 只用于真实 TDSQL Proxy。
   MySQL 独立迁移线不修改已发布 SQLite/TDSQL 历史，保留业务 ID、逻辑路由键、主键/索引和
   字符语义；不伪造物理分片审计，不削弱 owner claim、进度 CAS、失败状态拒绝及只读校验。
+  Atlas 对连续 SQL 分隔符产生的空片段不是可执行 migration 语句，不计入
+  revision `total/applied` 也不下发数据库；状态预期和执行路径必须复用同一过滤结果。
+  修复这类解析差异时不改写已发布 SQL、摘要或发布锁。
   foundation、迁移/verify、Runtime、Gateway 和产品 Web 仍按既定分段门禁交付。
 
 - vela-computer候选流水线在checkout前独立内联隔离旧工作树和全部复用的普通`.git`元数据，关闭浅克隆
