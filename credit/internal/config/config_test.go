@@ -33,6 +33,22 @@ func TestLoadRequiresSeparateLLMGatewayInternalToken(t *testing.T) {
 	}
 }
 
+func TestLoadMigrationRequiresOnlyDatabaseConfig(t *testing.T) {
+	t.Setenv("CREDIT_MYSQL_DSN", "credit:password@tcp(mysql.local:3306)/credit")
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "")
+	t.Setenv("TRADE_INTERNAL_BASE_URL", "")
+	t.Setenv("LLMGATEWAY_INTERNAL_BASE_URL", "")
+	t.Setenv("LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "")
+
+	cfg, err := LoadMigration()
+	if err != nil {
+		t.Fatalf("LoadMigration(): %v", err)
+	}
+	if !strings.Contains(cfg.MySQLDSN, "parseTime=true") {
+		t.Fatalf("MySQLDSN = %q, want normalized migration DSN", cfg.MySQLDSN)
+	}
+}
+
 func TestLoadUsageWorkerSettings(t *testing.T) {
 	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "credit-internal")
 	t.Setenv("TRADE_INTERNAL_BASE_URL", "http://trade.local")
