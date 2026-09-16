@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	atlasmigrate "ariga.io/atlas/sql/migrate"
 	"git.woa.com/wisp/mono2/collaboration/internal/database/physicalschema"
 )
 
@@ -51,6 +52,9 @@ func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testi
 	if len(runtime.Migrations) != 9 || len(runtime.UserTables) != 28 {
 		t.Fatalf("runtime=%#v", runtime)
 	}
+	if runtime.Migrations[0].Total != 25 {
+		t.Fatalf("baseline statement total = %d，期望忽略双分号产生的空语句后为 25", runtime.Migrations[0].Total)
+	}
 	files, err := dir.Files()
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +62,25 @@ func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testi
 	for _, file := range files {
 		if strings.Contains(strings.ToLower(string(file.Bytes())), "shardkey=") {
 			t.Fatalf("MySQL migration %s contains physical shard option", file.Name())
+		}
+	}
+}
+
+func TestTDSQLMigrationStatements忽略连续分隔符产生的空语句(t *testing.T) {
+	file := atlasmigrate.NewLocalFile(
+		"20260801000000_fixture.sql",
+		[]byte("CREATE TABLE `a` (`id` bigint);;\n;\nCREATE TABLE `b` (`id` bigint);;\n"),
+	)
+	statements, err := tdsqlMigrationStatements(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statements) != 2 {
+		t.Fatalf("statements = %#v，期望只保留 2 条可执行 DDL", statements)
+	}
+	for _, statement := range statements {
+		if strings.Trim(statement, " \t\r\n;") == "" {
+			t.Fatalf("返回了空 SQL 语句：%q", statement)
 		}
 	}
 }

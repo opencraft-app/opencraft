@@ -132,7 +132,7 @@ func tdsqlRuntimeExpectationFromDir(dir atlasmigrate.Dir) (tdsqlRuntimeExpectati
 		Migrations: make([]tdsqlMigrationExpectation, 0, len(files)),
 	}
 	for _, file := range files {
-		statements, err := file.Stmts()
+		statements, err := tdsqlMigrationStatements(file)
 		if err != nil {
 			return tdsqlRuntimeExpectation{}, err
 		}
@@ -156,6 +156,23 @@ func tdsqlRuntimeExpectationFromDir(dir atlasmigrate.Dir) (tdsqlRuntimeExpectati
 		runtime.UserTables = append(runtime.UserTables, spec.Name)
 	}
 	return runtime, nil
+}
+
+// tdsqlMigrationStatements returns only executable statements. Atlas preserves
+// empty fragments produced by consecutive statement delimiters, but those
+// fragments are neither migration progress nor SQL that should be executed.
+func tdsqlMigrationStatements(file atlasmigrate.File) ([]string, error) {
+	statements, err := file.Stmts()
+	if err != nil {
+		return nil, err
+	}
+	executable := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		if strings.Trim(statement, " \t\r\n;") != "" {
+			executable = append(executable, statement)
+		}
+	}
+	return executable, nil
 }
 
 func classifyTDSQLRuntime(snapshot TDSQLSnapshot, expected tdsqlRuntimeExpectation) State {

@@ -44,6 +44,9 @@ MySQL 增加独立迁移发布线，固定来源为已发布 TDSQL SQL，只去�
 绑定来源/产物摘要并校验，禁止覆盖已发布产物。旧 SQLite/TDSQL SQL 与发布锁条目不改。
 DDL 隐式提交，复用 owner claim、逐语句进度 CAS 与 dirty/unsafe 拒绝机制；不能用
 upsert revision 或假事务掩盖失败。迁移、status、verify 与 serve 必须选择同一显式方言。
+运行时对 Atlas 解析结果只计数和执行含有 SQL token 的语句；连续分号产生的空片段
+不得进入 revision `total/applied`、partial hash 或数据库执行。这一规则不改写已发布 SQL
+或摘要，状态分类与实际执行必须复用同一语句视图。
 
 ## 验证
 
