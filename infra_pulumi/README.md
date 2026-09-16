@@ -89,7 +89,7 @@ INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl preview --stack be
 INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl up --stack beijing-sandbox
 ```
 
-北京 Referral 使用现有 TDMQ Pulsar P2 集群。集群购买生命周期保持在 Pulumi 之外，
+北京 Referral 使用现有 TDMQ Pulsar P2 集群。该集群的购买生命周期保持在 Pulumi 之外，
 `pulsar` scope 只管理 namespace、主 topic、DLQ、三个隔离角色及权限：
 
 ```bash
@@ -111,9 +111,15 @@ GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack beijing-sandb
 Pulumi state 或本地文件。Referral SSM 不存在时可创建仅含 consumer Token 的初始版本；
 Auth/CTL SSM 必须预先存在，以避免命令误建不完整的核心服务 Secret。
 
-上海首次启用时，在 `shprod` inventory 增加独立集群或经批准共享集群的完整 Pulsar 配置、
-角色和三个 SSM 名称，先运行 `preview/up`，再预检并以 `--stack shprod --apply` 执行。普通上海
-镜像发布不执行该 bootstrap。
+新环境没有现成集群时，可显式设置 `stacks.pulsar.manage_cluster=true`，由同一 scope 先购买并
+保护独立专业集群，再创建子资源。inventory 必须固定规格、可用区、VPC/子网、购买时长、续费策略
+和 tags。P2 弹性存储按 CreateProCluster 契约使用 `storage_size_gb=0`，创建后忽略 `storageSize`
+漂移，避免把弹性容量建模为固定磁盘。首次 apply 后，必须把返回的 cluster ID 和 broker endpoint
+回填同一 inventory，再交付 Role Token。
+
+上海首次启用时，先用 `shprod` inventory 的受管集群配置运行 `preview/up`，再回填实际集群 ID 与
+broker endpoint，最后预检并以 `bootstrap-referral-tokens --stack shprod --apply` 交付三个 Role Token。
+普通上海镜像发布不执行集群购买或 Token bootstrap。
 
 北京 Collaboration 首次发布复用 inventory 中登记的现有 CynosDB 集群，使用独立逻辑库、
 账号和 SSM。IM material 必须是权限不超过 `0640` 的 JSON 文件，只包含 `sdkAppId`、

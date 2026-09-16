@@ -79,10 +79,15 @@ func testInventory(enabled bool) *config.Inventory {
 
 func runEnsure(t *testing.T, enabled bool) []recordedResource {
 	t.Helper()
+	return runEnsureInventory(t, testInventory(enabled))
+}
+
+func runEnsureInventory(t *testing.T, inventory *config.Inventory) []recordedResource {
+	t.Helper()
 	m := &mocks{}
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
 		provider, err := tencentcloud.NewProvider(ctx, "tencentcloud", &tencentcloud.ProviderArgs{
-			Region: pulumi.StringPtr("ap-beijing"),
+			Region: pulumi.StringPtr(inventory.Region),
 		})
 		if err != nil {
 			return err
@@ -90,7 +95,7 @@ func runEnsure(t *testing.T, enabled bool) []recordedResource {
 		return Ensure(&stackctx.Context{
 			Pulumi:    ctx,
 			Runtime:   &config.RuntimeConfig{},
-			Inventory: testInventory(enabled),
+			Inventory: inventory,
 			Provider:  provider,
 		})
 	}, pulumi.WithMocks("project", "stack", m))
@@ -98,6 +103,47 @@ func runEnsure(t *testing.T, enabled bool) []recordedResource {
 		t.Fatal(err)
 	}
 	return m.resources
+}
+
+func TestEnsureCreatesManagedPulsarClusterBeforeChildResources(t *testing.T) {
+	inventory := testInventory(true)
+	inventory.EnvName = "shprod"
+	inventory.Region = "ap-shanghai"
+	pulsar := &inventory.Stacks.Pulsar
+	pulsar.ManageCluster = true
+	pulsar.ExistingClusterID = ""
+	pulsar.BrokerURL = ""
+	pulsar.ExpectedClusterName = "lightvela-pulsar-sh"
+	pulsar.ExpectedZoneIDs = []int{200005}
+	pulsar.ExpectedVPCID = "vpc-shprod"
+	pulsar.ExpectedSubnetID = "subnet-shprod-support"
+	pulsar.StorageSizeGB = 0
+	pulsar.PurchaseMonths = 1
+	pulsar.AutoRenewFlag = 0
+	pulsar.AutoVoucher = 0
+	pulsar.Tags = map[string]string{"env": "shprod", "component": "referral"}
+
+	resources := runEnsureInventory(t, inventory)
+	cluster := findResource(t, resources, "tencentcloud:Tdmq/professionalCluster:ProfessionalCluster", "referral-pulsar-cluster")
+	if got := cluster.inputs["clusterName"].StringValue(); got != "lightvela-pulsar-sh" {
+		t.Fatalf("clusterName = %q", got)
+	}
+	if got := cluster.inputs["productName"].StringValue(); got != "PULSAR.P2.MINI1" {
+		t.Fatalf("productName = %q", got)
+	}
+	if got := cluster.inputs["storageSize"].NumberValue(); got != 0 {
+		t.Fatalf("storageSize = %v", got)
+	}
+	if got := cluster.inputs["timeSpan"].NumberValue(); got != 1 {
+		t.Fatalf("timeSpan = %v", got)
+	}
+	if got := cluster.inputs["zoneIds"].ArrayValue(); len(got) != 1 || got[0].NumberValue() != 200005 {
+		t.Fatalf("zoneIds = %v", got)
+	}
+	namespace := findResource(t, resources, "tencentcloud:Tdmq/namespace:Namespace", "referral-pulsar-namespace")
+	if got := namespace.inputs["clusterId"].StringValue(); got != "referral-pulsar-cluster-id" {
+		t.Fatalf("namespace clusterId = %q", got)
+	}
 }
 
 func findResource(t *testing.T, resources []recordedResource, typ, name string) recordedResource {

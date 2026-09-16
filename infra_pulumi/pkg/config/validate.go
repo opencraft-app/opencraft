@@ -115,8 +115,6 @@ func validatePulsarInventory(inv PulsarInventory) error {
 		return nil
 	}
 	required := map[string]string{
-		"existing_cluster_id":     inv.ExistingClusterID,
-		"broker_url":              inv.BrokerURL,
 		"expected_cluster_name":   inv.ExpectedClusterName,
 		"expected_product_name":   inv.ExpectedProductName,
 		"expected_vpc_id":         inv.ExpectedVPCID,
@@ -130,6 +128,10 @@ func validatePulsarInventory(inv PulsarInventory) error {
 		"user_auth_ssm_secret":    inv.UserAuthSSMSecret,
 		"ctl_ssm_secret":          inv.CTLSSMSecret,
 		"referral_ssm_secret":     inv.ReferralSSMSecret,
+	}
+	if !inv.ManageCluster {
+		required["existing_cluster_id"] = inv.ExistingClusterID
+		required["broker_url"] = inv.BrokerURL
 	}
 	for field, value := range required {
 		if strings.TrimSpace(value) == "" {
@@ -145,6 +147,23 @@ func validatePulsarInventory(inv PulsarInventory) error {
 	for _, zoneID := range inv.ExpectedZoneIDs {
 		if zoneID <= 0 {
 			return fmt.Errorf("inventory stacks.pulsar.expected_zone_ids must contain positive values")
+		}
+	}
+	if inv.ManageCluster {
+		if (inv.ExistingClusterID == "") != (inv.BrokerURL == "") {
+			return fmt.Errorf("managed Pulsar existing_cluster_id and broker_url must both be empty before creation or both record the created cluster")
+		}
+		if inv.PurchaseMonths < 1 || inv.PurchaseMonths > 50 {
+			return fmt.Errorf("managed Pulsar purchase_months must be between 1 and 50")
+		}
+		if inv.StorageSizeGB < 0 {
+			return fmt.Errorf("managed Pulsar storage_size_gb must not be negative")
+		}
+		if inv.AutoRenewFlag != 0 && inv.AutoRenewFlag != 1 {
+			return fmt.Errorf("managed Pulsar auto_renew_flag must be 0 or 1")
+		}
+		if inv.AutoVoucher != 0 && inv.AutoVoucher != 1 {
+			return fmt.Errorf("managed Pulsar auto_voucher must be 0 or 1")
 		}
 	}
 	if inv.MessageTTLSeconds <= 0 {

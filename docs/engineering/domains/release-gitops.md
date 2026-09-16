@@ -170,6 +170,9 @@ master 源码
 - Role Token 交付统一使用 `infractl bootstrap-referral-tokens --stack <env>`。命令从目标环境 inventory
   读取集群、角色和 SSM 名称，默认只做全量预检，显式 `--apply` 后才幂等合并；默认拒绝覆盖不同 Token。上海首次上线复用
   同一入口，必须先补齐并审查 `shprod` inventory，不能复制北京 Token 或在日常发布中重复执行。
+- 上海没有可复用 Pulsar 集群时，`shprod` 可显式使用 `manage_cluster=true` 由 `pulsar` scope 购买受保护的
+  P2 专业集群。首次 apply 只建立独立消息基础设施，不得同步开启 Auth/CTL relay、Referral worker、Gateway
+  路由或前端入口；创建后必须把真实 cluster ID 与 broker endpoint 回填 inventory，再执行 Role Token bootstrap。
 
 ### Collaboration 北京两阶段 bootstrap
 

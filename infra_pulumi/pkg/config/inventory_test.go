@@ -83,6 +83,32 @@ func TestLoadBeijingSandboxPulsarInventory(t *testing.T) {
 	}
 }
 
+func TestLoadShprodManagedPulsarInventory(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "envs", "tencentcloud", "shprod", "inventory.yaml")
+
+	inventory, err := LoadInventory(path)
+	if err != nil {
+		t.Fatalf("LoadInventory(shprod): %v", err)
+	}
+	pulsar := inventory.Stacks.Pulsar
+	if !pulsar.Enabled || !pulsar.ManageCluster || pulsar.ExistingClusterID != "" || pulsar.BrokerURL != "" {
+		t.Fatalf("unexpected managed Pulsar identity: %+v", pulsar)
+	}
+	if pulsar.ExpectedClusterName != "lightvela-pulsar-sh" || pulsar.ExpectedProductName != "PULSAR.P2.MINI1" {
+		t.Fatalf("unexpected managed Pulsar cluster: %+v", pulsar)
+	}
+	if pulsar.PurchaseMonths != 1 || pulsar.AutoRenewFlag != 0 || pulsar.StorageSizeGB != 0 {
+		t.Fatalf("unexpected managed Pulsar purchase: %+v", pulsar)
+	}
+	if pulsar.ExpectedVPCID != "vpc-2y7p1lk6" || pulsar.ExpectedSubnetID != "subnet-38xcw327" {
+		t.Fatalf("unexpected managed Pulsar network: %+v", pulsar)
+	}
+}
+
 func TestLoadBeijingSandboxCollaborationInventory(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -180,5 +206,35 @@ func TestValidatePulsarInventoryRejectsUnsafeValues(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateManagedPulsarInventory(t *testing.T) {
+	managed := PulsarInventory{
+		Enabled: true, ManageCluster: true,
+		ExpectedClusterName: "lightvela-pulsar-sh", ExpectedProductName: "PULSAR.P2.MINI1",
+		ExpectedZoneIDs: []int{200005}, ExpectedVPCID: "vpc-shprod", ExpectedSubnetID: "subnet-shprod",
+		PurchaseMonths: 1,
+		Namespace:      "lightvela-ref", MessageTTLSeconds: 604800,
+		RetentionMinutes: 1440, RetentionSizeMB: 10240,
+		Topic: "lightvela.referral.events.v1", DeadLetterTopic: "lightvela.referral.events.v1-dlq",
+		UserAuthProducerRole: "auth-producer", CTLProducerRole: "ctl-producer", ReferralConsumerRole: "referral-consumer",
+		UserAuthSSMSecret: "auth-secret", CTLSSMSecret: "ctl-secret", ReferralSSMSecret: "referral-secret",
+	}
+	if err := validatePulsarInventory(managed); err != nil {
+		t.Fatalf("valid managed Pulsar inventory rejected: %v", err)
+	}
+	for _, mutate := range []func(*PulsarInventory){
+		func(v *PulsarInventory) { v.ExistingClusterID = "pulsar-existing" },
+		func(v *PulsarInventory) { v.BrokerURL = "http://existing" },
+		func(v *PulsarInventory) { v.PurchaseMonths = 0 },
+		func(v *PulsarInventory) { v.AutoRenewFlag = 2 },
+		func(v *PulsarInventory) { v.StorageSizeGB = -1 },
+	} {
+		candidate := managed
+		mutate(&candidate)
+		if err := validatePulsarInventory(candidate); err == nil {
+			t.Fatal("expected managed Pulsar validation error")
+		}
 	}
 }
