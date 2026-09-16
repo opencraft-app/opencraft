@@ -135,6 +135,14 @@ master 源码
   已切换签名路由而网关仍返回 404。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
+- Credit 首次进入上海或新加坡生产时，DB migration/readiness 门禁允许在 GitOps MR 创建前幂等创建
+  contract 声明的最小 `credit` Namespace，并打上 CI bootstrap 标签供后续 Argo 接管；该动作不得提前
+  创建 Deployment、Service、常驻 ConfigMap 或 runtime Secret，也不得在一次性 Job 清理时删除 Namespace。
+  Namespace 创建失败必须 fail closed，不能以“首次发布”为由跳过 DB 版本探测或 readiness。
+- 首次发布阶段的 Credit migration、版本探测和 readiness Job 必须自包含：非敏感连接参数与 node pool
+  从候选 revision 投影后的 `credit-platform.env` 读取，数据库密码从同一投影中的 SOPS Secret 解析后只注入
+  一次性 Kubernetes Secret。Job 不依赖 live `credit-config` 或 `credit-runtime-secrets`；临时 Secret 与 Job
+  执行后清理，因此尚未存在 Credit workload 时也能先完成 DB 门禁，再生成可审阅的 GitOps MR。
 - 积分包控制台 checkout 新增用户路由时，先发布支持订单归属和资源类型校验的 Trade 与 Credit，
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
   `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成

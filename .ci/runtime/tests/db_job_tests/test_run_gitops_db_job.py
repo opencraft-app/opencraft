@@ -198,13 +198,17 @@ class RunGitopsDbJobTests(unittest.TestCase):
             with (
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)) as resolver,
-                mock.patch.object(db_job, "apply_manifest"),
+                mock.patch.object(db_job, "apply_manifest") as apply_manifest,
                 mock.patch.object(db_job, "kubectl_delete"),
             ):
                 exit_code = db_job.main()
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(resolver.call_args.args[2], "beijing-playground")
+        self.assertEqual(apply_manifest.call_count, 2)
+        namespace_manifest = apply_manifest.call_args_list[0].args[1]
+        self.assertEqual(namespace_manifest["kind"], "Namespace")
+        self.assertEqual(namespace_manifest["metadata"]["name"], "lightvela-playground-sandbox-bj-7")
 
     def test_ctl_migration_uses_fixed_migrate_image_even_with_release_image_override(self) -> None:
         image = db_job.resolve_job_image(
@@ -272,6 +276,45 @@ class RunGitopsDbJobTests(unittest.TestCase):
                 self.assertIn(f"export {dsn_env}=", command)
                 self.assertIn("multiStatements=true", command)
                 self.assertIn(binary, command)
+
+    def test_credit_migration_builds_self_contained_runtime_resources(self) -> None:
+        with mock.patch.object(
+            db_job,
+            "resolve_contract_secret_values",
+            return_value={"credit_db_password": "credit-password"},
+        ):
+            dynamic, resources = db_job.build_credit_dynamic_resources(
+                job_name="gitops-credit-migration-test",
+                namespace="credit",
+                env_name="shprod",
+                deploy_root=Path("/tmp/gitops"),
+                service_platform_env={
+                    "CREDIT_MYSQL_HOST": "10.15.192.13",
+                    "CREDIT_MYSQL_PORT": "3306",
+                    "CREDIT_NODE_POOL": "general-shprod",
+                },
+                db_contract={"db_job_secret_resolver": "credit_db_password"},
+            )
+
+        self.assertEqual(dynamic["nodeSelector"], {"pool": "general-shprod"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "10.15.192.13"}, dynamic["env"])
+        self.assertIn({"name": "CREDIT_DB", "value": "credit"}, dynamic["env"])
+        self.assertIn(
+            {
+                "name": "CREDIT_DB_PASSWORD",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": "gitops-credit-migration-test-secrets",
+                        "key": "CREDIT_DB_PASSWORD",
+                    }
+                },
+            },
+            dynamic["env"],
+        )
+        self.assertEqual(resources[0]["kind"], "Secret")
+        self.assertEqual(resources[0]["stringData"]["CREDIT_DB_PASSWORD"], "credit-password")
+        self.assertNotIn("configmap", db_job.SERVICE_SPECS[("credit", "migration")])
+        self.assertNotIn("secret", db_job.SERVICE_SPECS[("credit", "migration")])
 
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
