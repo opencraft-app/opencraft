@@ -28,7 +28,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   COLLABORATION_IM_SDK_APP_ID:
-    value: "1600154578"
+    value: "1600137234"
     readonly: false
     allow-modify-at-startup: true
 

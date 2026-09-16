@@ -446,7 +446,7 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
    证明 bootstrap 幂等，再从 gitops desired state 执行 Collaboration MySQL migration Job 和
    read-only verify Job；两者成功后才创建 runtime GitOps MR。
 
-流水线把公开 SDKAppID 作为可审阅启动变量（北京默认 `1600154578`），需要的 protected settings 为
+流水线把公开 SDKAppID 作为可审阅启动变量（北京 `AgentNetwork` 默认 `1600137234`），需要的 protected settings 为
 `COLLABORATION_IM_CREDENTIAL`（username 为 IM 管理员，password 为 IM SecretKey）、
 `DB_JOB_KUBECONFIG_B64`、`SOPS_AGE_KEY`/`SOPS_AGE_KEY_FILE` 和 Git WOA token。设置值不得输出。
 该流水线不会新建 DB 实例，不触及 shprod/sgprod/Playground，不自动合并 GitOps MR，也不会

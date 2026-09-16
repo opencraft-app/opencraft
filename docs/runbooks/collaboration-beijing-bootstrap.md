@@ -13,7 +13,7 @@
 2. `infra_pulumi/envs/tencentcloud/beijing-sandbox/inventory.yaml` 中的 cluster、endpoint、DB、账号、
    SSM、namespace 和 node pool 已通过只读 API/集群探针复核。
 3. Stream protected settings 已配置：
-   - 启动变量 `COLLABORATION_IM_SDK_APP_ID`：北京默认使用经 live 部署核对的 `1600154578`
+   - 启动变量 `COLLABORATION_IM_SDK_APP_ID`：北京 `AgentNetwork` 默认使用 `1600137234`
    - protected `COLLABORATION_IM_CREDENTIAL`：username 为 IM 管理员，password 为 IM SecretKey
    - `DB_JOB_KUBECONFIG_B64`
    - `SOPS_AGE_KEY` 或 `SOPS_AGE_KEY_FILE`

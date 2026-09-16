@@ -81,6 +81,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         trigger = workflow.get("on", workflow.get(True))
         self.assertEqual(trigger, {"manual": "enabled"})
         self.assertEqual(workflow["variables"]["BOOTSTRAP_PHASE"]["value"], "foundation")
+        self.assertEqual(workflow["variables"]["COLLABORATION_IM_SDK_APP_ID"]["value"], "1600137234")
         self.assertIn("@sha256:", workflow["variables"]["COLLABORATION_IMAGE"]["value"])
         self.assertEqual(len(workflow["stages"]), 3)
         self.assertIn("check-in", workflow["stages"][1])

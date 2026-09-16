@@ -87,7 +87,7 @@ release-gitops、agent-gateway-runtime、service-collaboration；触及Gateway/W
 - 本轮重新只读确认目标workload集群为tke-bj8（包含正式北京namespaces与general-bj8节点池），lightvela-collaboration namespace不存在；tke-bj82承载Playground，不混用。
 - 目标账号collaboration_rw@%和逻辑库lightvela_collaboration均不存在，Collaboration SSM仍不存在；共享cynosdb-bj8为running MySQL8.0，内部endpoint已登记进inventory但不包含凭据。
 - 用户明确要求发布能力沉淀而非手工运维。新分支feat/collaboration-beijing-bootstrap增加默认dry-run、显式apply、可重入的infractl bootstrap，Stream人工审批、SSM→SOPS、foundation/runtime GitOps MR及runtime前MySQL migration/verify编排；不自动合并。
-- bootstrap领域/config/SDK/CLI聚焦Go测试、GitOps投影命令测试、11项Collaboration交付契约、Shell语法与YAML解析当前通过。尚未执行云写入或真实pipeline；腾讯IM protected settings仍需从已确认的真实应用配置。
+- bootstrap领域/config/SDK/CLI聚焦Go测试、GitOps投影命令测试、11项Collaboration交付契约、Shell语法与YAML解析当前通过。尚未执行云写入或真实pipeline。用户已指定腾讯IM `AgentNetwork`应用，公开SDKAppID为`1600137234`；Stream protected credential已创建且SecretKey未进入源码、日志或本地文件。
 
 ## risks
 错误账号写入、跨环境密钥复用、未验证迁移和暴露未就绪API。先确认目标账号/集群、分阶段门禁，保留原服务配置与镜像pin；不靠临时live修补取得表面成功。
@@ -105,4 +105,4 @@ DevCloud已登记SSH入口、既有Argo context元数据、TC profile字段元�
 隔离进展记录：.omx/plans/vela-checkout-repair/与.omx/plans/collaboration-beijing-release/。只记录状态、公开资源标识和错误码，无密钥值。
 
 ## handoff
-普通MySQL兼容源码已合入并完成主干镜像构建。可沉淀的北京bootstrap自动化正在feat/collaboration-beijing-bootstrap实现，当前未提交/推送；下一步完成全量门禁并提交MR。自动化合入、protected IM设置核准后，先运行foundation dry-run/审批并创建GitOps MR；foundation收敛后再运行runtime MySQL门禁和runtime MR。云资源、默认profile、现有DB与Secret仍未修改。
+普通MySQL兼容和北京bootstrap自动化均已合入并完成主干镜像构建。当前正在把北京bootstrap的公开SDKAppID收敛到`AgentNetwork`；protected IM SecretKey已更新但foundation尚未启动。SDKAppID修复合入后先运行foundation dry-run/审批并创建GitOps MR；foundation收敛后再运行runtime MySQL门禁和runtime MR。DB、SSM、GitOps和live workload仍未修改。
