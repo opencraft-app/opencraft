@@ -2445,3 +2445,30 @@ input.lh-std-input::placeholder {
 .lh-std-spin {
   animation: lh-std-spin 1s linear infinite;
 }
+
+/* Agents-only overrides share this unlayered entry with the legacy rules.
+   Putting them in styles.css (the app layer) would leave legacy radii in control. */
+.agents-ui.lh-std-channel-panel .lh-std-channel-panel__card {
+  min-width: 0;
+  border-radius: 6px;
+  border-color: var(--border-subtle);
+  background: white;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  transition: none;
+}
+
+.agents-ui.lh-std-channel-panel :is(.lh-std-channel-panel__guide-btn, .lh-std-channel-panel__card-unbind, .lh-std-channel-panel__connect-btn) {
+  min-height: 36px;
+  height: auto;
+  border-radius: 6px;
+  padding: 8px 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-shadow: none;
+  transition: none;
+  transform: none;
+}
+
+.agents-ui.lh-std-channel-panel .lh-std-channel-panel__grid {
+  gap: 16px;
+}

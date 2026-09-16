@@ -8,9 +8,7 @@ import {
   Copy,
   Globe2,
   MessageCircle,
-  MessageSquare,
   Loader2,
-  MoreVertical,
   Calendar,
   Mail,
   Database,
@@ -30,29 +28,29 @@ import {
   UploadCloud,
   UserRound,
   Wand2,
-  Wrench,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useLayoutEffect, type ChangeEvent, type ReactNode } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useIsDesktop } from "@/components/site/public-site-header";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
-import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AgentState, agentButtonClassName, agentFieldClassName } from "@/components/agents";
+import { AgentConsoleShell, ConsoleBotProfile, ConsoleSidebarTabs, ConsoleNavigation, ConsoleSessionList, ConsoleConfirmDialog, ConsoleEditDialog, ConsoleTooltip as WorkspaceActionTooltip } from "./agents-console";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
-import { isCN, isGlobal } from "@/lib/region";
+import { isGlobal } from "@/lib/region";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
 // 注：scripts SDK 的 window 副作用已在 useAgentInternals 内以运行时动态 import
@@ -117,6 +115,7 @@ import {
 } from "@/pages/marketing/agent-memory-save";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
+import { MemoryLimitCardView, MemoryPanelView } from "@/pages/marketing/agent-memory-views";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -349,150 +348,6 @@ function TeaSdkSettingsPanel({
 
 /* ─── Types ─── */
 
-const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 1024 1024" aria-hidden="true" fill="none" {...props}>
-    <path
-      d="M258.56 76.8c-28.16 0-53.76 5.12-79.36 17.92-15.36 7.68-20.48 28.16-7.68 40.96l87.04 87.04-30.72 30.72-87.04-87.04c-5.12-5.12-10.24-7.68-17.92-7.68-10.24 0-17.92 5.12-23.04 15.36-33.28 66.56-23.04 151.04 33.28 207.36 35.84 35.84 79.36 51.2 125.44 51.2 20.48 0 40.96-2.56 58.88-10.24l284.16 284.16c-23.04 64-7.68 135.68 40.96 186.88 35.84 35.84 79.36 51.2 125.44 51.2 28.16 0 53.76-5.12 79.36-17.92 15.36-7.68 20.48-28.16 7.68-40.96l-87.04-87.04 30.72-30.72 87.04 87.04c5.12 5.12 10.24 7.68 17.92 7.68 10.24 0 17.92-5.12 23.04-15.36 33.28-66.56 23.04-151.04-33.28-207.36-35.84-35.84-79.36-51.2-125.44-51.2-20.48 0-40.96 2.56-61.44 10.24l-284.16-284.16c23.04-64 7.68-135.68-40.96-186.88-33.28-33.28-76.8-51.2-122.88-51.2z m-33.28 230.4c12.8 0 25.6-5.12 35.84-15.36l30.72-30.72c20.48-20.48 20.48-51.2 0-71.68l-58.88-58.88c7.68 0 15.36-2.56 23.04-2.56 33.28 0 66.56 12.8 89.6 38.4 35.84 35.84 46.08 87.04 30.72 133.12-7.68 17.92-2.56 38.4 12.8 53.76l284.16 284.16c10.24 10.24 23.04 15.36 35.84 15.36 5.12 0 12.8 0 17.92-2.56 12.8-5.12 28.16-7.68 43.52-7.68 33.28 0 66.56 12.8 89.6 38.4 30.72 30.72 43.52 71.68 35.84 112.64l-58.88-58.88c-10.24-10.24-23.04-15.36-35.84-15.36-12.8 0-25.6 5.12-35.84 15.36l-30.72 30.72c-10.24 10.24-15.36 23.04-15.36 35.84s5.12 25.6 15.36 35.84l58.88 58.88c-7.68 0-15.36 2.56-23.04 2.56-33.28 0-66.56-12.8-89.6-38.4-35.84-35.84-46.08-87.04-30.72-133.12 7.68-17.92 2.56-38.4-12.8-53.76l-284.16-284.16c-10.24-10.24-23.04-15.36-35.84-15.36-5.12 0-10.24 0-17.92 2.56-12.8 5.12-28.16 7.68-43.52 7.68-33.28 0-66.56-12.8-89.6-38.4-30.72-30.72-43.52-71.68-35.84-112.64l58.88 58.88c10.24 10.24 23.04 15.36 35.84 15.36z"
-      fill="currentColor"
-    />
-    <path
-      d="M337.92 563.2c-12.8 0-25.6 5.12-35.84 15.36l-184.32 184.32c-20.48 20.48-20.48 51.2 0 71.68l71.68 71.68c10.24 10.24 23.04 15.36 35.84 15.36 12.8 0 25.6-5.12 35.84-15.36l184.32-184.32c20.48-20.48 20.48-51.2 0-71.68l-71.68-71.68c-7.68-10.24-20.48-15.36-35.84-15.36z m-110.08 307.2l-71.68-71.68 184.32-184.32 71.68 71.68-184.32 184.32zM849.92 138.24l35.84 35.84-89.6 89.6-17.92-17.92-17.92-17.92 89.6-89.6m0-61.44c-7.68 0-12.8 2.56-17.92 7.68l-125.44 125.44c-10.24 10.24-10.24 25.6 0 35.84l17.92 17.92-125.44 125.44c-10.24 10.24-10.24 25.6 0 35.84 5.12 5.12 12.8 7.68 17.92 7.68s12.8-2.56 17.92-7.68l125.44-125.44 17.92 17.92c5.12 5.12 12.8 7.68 17.92 7.68s12.8-2.56 17.92-7.68l125.44-125.44c10.24-10.24 10.24-25.6 0-35.84l-71.68-71.68c-2.56-5.12-10.24-7.68-17.92-7.68z"
-      fill="currentColor"
-    />
-  </svg>
-);
-
-type WorkspaceActionTooltipSide = "top" | "bottom";
-
-const WORKSPACE_ACTION_TOOLTIP_GAP = 8;
-const WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN = 16;
-
-function WorkspaceActionTooltip({
-  children,
-  content,
-  side = "top",
-}: {
-  children: ReactNode;
-  content?: ReactNode;
-  side?: WorkspaceActionTooltipSide;
-}) {
-  const tooltipId = useId();
-  const triggerRef = useRef<HTMLSpanElement>(null);
-  const tooltipRef = useRef<HTMLSpanElement>(null);
-  const closeTimerRef = useRef<number | null>(null);
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current === null) return;
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = null;
-  }, []);
-
-  const showTooltip = useCallback(() => {
-    clearCloseTimer();
-    setOpen(true);
-  }, [clearCloseTimer]);
-
-  const scheduleClose = useCallback(() => {
-    clearCloseTimer();
-    closeTimerRef.current = window.setTimeout(() => {
-      setOpen(false);
-      closeTimerRef.current = null;
-    }, 120);
-  }, [clearCloseTimer]);
-
-  const updatePosition = useCallback(() => {
-    const triggerRect = triggerRef.current?.getBoundingClientRect();
-    const tooltipRect = tooltipRef.current?.getBoundingClientRect();
-    if (!triggerRect || !tooltipRect) return;
-
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-    const halfWidth = tooltipRect.width / 2;
-    const centeredLeft = triggerRect.left + triggerRect.width / 2;
-    const minLeft = WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN + halfWidth;
-    const maxLeft = Math.max(minLeft, viewportWidth - WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN - halfWidth);
-
-    setPosition({
-      left: Math.min(Math.max(centeredLeft, minLeft), maxLeft),
-      top: side === "bottom"
-        ? triggerRect.bottom + WORKSPACE_ACTION_TOOLTIP_GAP
-        : triggerRect.top - WORKSPACE_ACTION_TOOLTIP_GAP,
-    });
-  }, [side]);
-
-  useLayoutEffect(() => {
-    if (open) updatePosition();
-  }, [content, open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open, updatePosition]);
-
-  useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
-
-  useEffect(() => {
-    if (content) return;
-    clearCloseTimer();
-    setOpen(false);
-  }, [clearCloseTimer, content]);
-
-  if (!content) return <>{children}</>;
-
-  return (
-    <span
-      ref={triggerRef}
-      className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
-      tabIndex={0}
-      aria-describedby={open ? tooltipId : undefined}
-      onMouseEnter={showTooltip}
-      onMouseLeave={scheduleClose}
-      onFocus={showTooltip}
-      onBlur={scheduleClose}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        clearCloseTimer();
-        setOpen(false);
-      }}
-    >
-      {children}
-      {open && typeof document !== "undefined"
-        ? createPortal(
-            <span
-              ref={tooltipRef}
-              id={tooltipId}
-              role="tooltip"
-              className={cn(
-                "pointer-events-auto fixed z-50 w-72 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
-                side === "top" && "-translate-y-full",
-              )}
-              style={{ left: position.left, top: position.top }}
-              onMouseEnter={showTooltip}
-              onMouseLeave={scheduleClose}
-            >
-              {content}
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "absolute left-1/2 size-2 -translate-x-1/2 rotate-45 border-[var(--border-subtle)] bg-white",
-                  side === "bottom"
-                    ? "bottom-full translate-y-1/2 border-l border-t"
-                    : "top-full -translate-y-1/2 border-b border-r",
-                )}
-              />
-            </span>,
-            document.body,
-          )
-        : null}
-    </span>
-  );
-}
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
 type PersonaId = "jarvis" | "luna" | "spark";
@@ -809,131 +664,16 @@ const MemoryLimitCard = ({
     }
   };
 
-  return (
-    <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-black/85">{title}</p>
-          <p className="mt-1 max-w-lg text-pretty text-xs leading-relaxed text-black/45">{description}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
-          {percent}%
-        </span>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-2">
-        <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
-        <span className="text-sm tabular-nums text-black/45">/</span>
-        {isEditing ? (
-          <input
-            type="number"
-            min={bounds.min}
-            max={bounds.max}
-            step={1}
-            value={draftLimit}
-            onBlur={() => setTouched(true)}
-            onWheel={(event) => event.currentTarget.blur()}
-            onChange={(event) => {
-              setDraftLimit(event.target.value);
-              setTouched(true);
-              onDraftChange(target);
-            }}
-            disabled={isDisabled}
-            className="h-9 w-28 rounded-md border border-black/[0.10] bg-white px-3 text-sm tabular-nums text-black/85 outline-none transition-colors focus:border-black/30 disabled:cursor-not-allowed disabled:opacity-60"
-          />
-        ) : (
-          <span className="text-sm tabular-nums text-black/45">{limit}</span>
-        )}
-        <span className="text-sm text-black/45">{t("字符")}</span>
-        {!isEditing && <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>}
-        {!isEditing ? (
-          <button
-            type="button"
-            onClick={() => {
-              setDraftLimit(String(limit));
-              setTouched(false);
-              setIsEditing(true);
-            }}
-            disabled={isDisabled}
-            className={cn(
-              "ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80",
-              isDisabled && "cursor-not-allowed opacity-45",
-            )}
-          >
-            {t("调整限额")}
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isDisabled || !validation.ok}
-              className={cn(
-                "ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white transition-colors hover:bg-black/85",
-                (isDisabled || !validation.ok) && "cursor-not-allowed opacity-45",
-              )}
-            >
-              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isSaving ? t("保存中...") : t("保存")}
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={isDisabled}
-              className={cn(
-                "inline-flex h-8 items-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.04] hover:text-black/75",
-                isDisabled && "cursor-not-allowed opacity-45",
-              )}
-            >
-              {t("取消")}
-            </button>
-          </>
-        )}
-      </div>
-      {isEditing && (
-        <p className={cn("mt-3 text-xs leading-relaxed", helperTone)}>
-          {helperMessage}
-        </p>
-      )}
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
-        <div
-          className="h-full rounded-full bg-black/80 transition-[width]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-    </div>
-  );
+  return <MemoryLimitCardView title={title} description={description} used={used} limit={limit} percent={percent}
+    editing={isEditing} draft={draftLimit} min={bounds.min} max={bounds.max} saving={isSaving}
+    disabled={isDisabled} valid={validation.ok} helperMessage={helperMessage} helperTone={helperTone} hasError={!!displayError}
+    labels={{ chars: t("字符"), usage: t("当前占用 / 字符限额"), edit: t("调整限额"), save: t("保存"), saving: t("保存中..."), cancel: t("取消") }}
+    onEdit={() => { setDraftLimit(String(limit)); setTouched(false); setIsEditing(true); }}
+    onDraftChange={(value) => { setDraftLimit(value); setTouched(true); onDraftChange(target); }}
+    onBlur={() => setTouched(true)} onSave={handleSave} onCancel={handleCancel} />;
 };
 
-const MemoryEntries = ({
-  entries,
-  emptyText,
-}: {
-  entries: string[];
-  emptyText: string;
-}) => {
-  if (entries.length === 0) {
-    return (
-      <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-black/[0.10] bg-black/[0.015] px-6 text-center text-sm text-black/45">
-        {emptyText}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {entries.map((entry, index) => (
-        <div
-          key={`${index}-${entry.slice(0, 24)}`}
-          className="min-h-11 rounded-md border border-black/[0.06] bg-white px-3 py-3 text-sm leading-relaxed text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
-        >
-          <p className="whitespace-pre-wrap break-words text-pretty">{entry}</p>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const MemoryPanel = ({
+export const MemoryPanel = ({
   status,
   snapshot,
   error,
@@ -960,109 +700,30 @@ const MemoryPanel = ({
 }) => {
   const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
   const userEntries = splitHermesMemoryEntries(snapshot?.userText ?? "");
-  const visibleEntries = activeTab === "memory" ? memoryEntries : userEntries;
   const isLoading = status === "loading";
-
-  return (
-    <div className="space-y-4">
-      <AgentSectionHeader
-        title={t("持久记忆")}
-        description={t("查看当前 Hermes Agent 的持久记忆和用户画像文件")}
-        actions={(
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
-            aria-label={t("刷新")}
-            title={t("刷新")}
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-          </button>
-        )}
-      />
-
-      {status === "error" && (
-        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">
-          {error || t("记忆读取失败，请稍后重试。")}
-        </div>
-      )}
-
-      {isLoading && !snapshot && (
-        <div className="flex min-h-64 items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/50">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          {t("正在读取记忆...")}
-        </div>
-      )}
-
-      {snapshot && (
-        <>
-          <div className="grid gap-3 md:grid-cols-2">
-            <MemoryLimitCard
-              target="memory"
-              title={t("记忆统计")}
-              description={t("MEMORY.md：跨会话长期记忆文件，主要保存项目环境事实、工作约定和经验教训等。")}
-              used={snapshot.memoryChars}
-              limit={snapshot.memoryCharLimit}
-              isSaving={savingLimitTarget === "memory"}
-              isDisabled={savingLimitTarget !== null}
-              saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
-              onSaveLimit={onSaveLimit}
-              onDraftChange={onDraftChange}
-              t={t}
-            />
-            <MemoryLimitCard
-              target="user"
-              title={t("用户画像统计")}
-              description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
-              used={snapshot.userChars}
-              limit={snapshot.userCharLimit}
-              isSaving={savingLimitTarget === "user"}
-              isDisabled={savingLimitTarget !== null}
-              saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
-              onSaveLimit={onSaveLimit}
-              onDraftChange={onDraftChange}
-              t={t}
-            />
-          </div>
-
-          {snapshot.usedFallbackLimits && (
-            <p className="text-xs text-black/40">
-              {t("未读取到完整限额配置，当前展示默认值。")}
-            </p>
-          )}
-
-          <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-            <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
-              {([
-                ["memory", t("记忆")],
-                ["user", t("用户画像")],
-              ] as const).map(([tab, label]) => {
-                const isActive = activeTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => onTabChange(tab)}
-                    className={cn(
-                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                      isActive ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80",
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <MemoryEntries
-              entries={visibleEntries}
-              emptyText={activeTab === "memory" ? t("MEMORY.md 文件为空") : t("USER.md 文件为空")}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
+  return <MemoryPanelView
+    title={t("持久记忆")} description={t("查看当前 Hermes Agent 的持久记忆和用户画像文件")}
+    refreshLabel={t("刷新")} loadingLabel={t("正在读取记忆...")} loading={isLoading} hasSnapshot={!!snapshot}
+    error={status === "error" ? error || t("记忆读取失败，请稍后重试。") : null}
+    fallbackMessage={snapshot?.usedFallbackLimits ? t("未读取到完整限额配置，当前展示默认值。") : undefined}
+    activeTab={activeTab} onTabChange={onTabChange} onRefresh={onRefresh}
+    tabs={[
+      { value: "memory", label: t("记忆"), entries: memoryEntries, emptyText: t("MEMORY.md 文件为空") },
+      { value: "user", label: t("用户画像"), entries: userEntries, emptyText: t("USER.md 文件为空") },
+    ]}
+    cards={snapshot && <>
+      <MemoryLimitCard target="memory" title={t("记忆统计")}
+        description={t("MEMORY.md：跨会话长期记忆文件，主要保存项目环境事实、工作约定和经验教训等。")}
+        used={snapshot.memoryChars} limit={snapshot.memoryCharLimit} isSaving={savingLimitTarget === "memory"}
+        isDisabled={savingLimitTarget !== null} saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
+        onSaveLimit={onSaveLimit} onDraftChange={onDraftChange} t={t} />
+      <MemoryLimitCard target="user" title={t("用户画像统计")}
+        description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
+        used={snapshot.userChars} limit={snapshot.userCharLimit} isSaving={savingLimitTarget === "user"}
+        isDisabled={savingLimitTarget !== null} saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
+        onSaveLimit={onSaveLimit} onDraftChange={onDraftChange} t={t} />
+    </>}
+  />;
 };
 
 /* ─── Delete Confirm Dialog ─── */
@@ -1849,13 +1510,6 @@ const SkillSection = () => {
 void SkillSection;
 
 /* ─── Bot Card for multi-bot display ─── */
-
-// 实例名称展示最多 20 个 Unicode 码点，超出截断并拼接省略号，由调用方配合 title 属性展示全名
-const BOT_NAME_DISPLAY_MAX = 20;
-const truncateBotName = (name: string) => {
-  const chars = Array.from(name);
-  return chars.length > BOT_NAME_DISPLAY_MAX ? chars.slice(0, BOT_NAME_DISPLAY_MAX).join("") + "…" : name;
-};
 
 // 随机头像列表
 const LIGHTCLAW_AVATARS = [assetUrl('/hermes_logo.png')];
@@ -2711,7 +2365,7 @@ export const AgentSettingsPage = ({
   const [openSessionMenuChatId, setOpenSessionMenuChatId] = useState<string | null>(null);
   /** 待删除会话（非空表示弹出删除二次确认）。 */
   const [sessionToDelete, setSessionToDelete] = useState<LightVelaSession | null>(null);
-  const sessionMenuRef = useRef<HTMLDivElement>(null);
+  const sessionActionTriggerRef = useRef<HTMLElement | null>(null);
 
   /**
    * 记录「前一个点击的设置菜单」：切到「对话」再回「设置」时，主区回到该菜单而非固定通道。
@@ -2845,28 +2499,6 @@ export const AgentSettingsPage = ({
     setSessionToDelete(null);
   };
 
-  useEffect(() => {
-    // chatId === "" 是合法默认会话，判定只能用 == null（SDK 对接注意事项 1）。
-    // 用 truthiness 会让默认会话的菜单打开后无法通过点击外部 / Esc 关闭。
-    if (openSessionMenuChatId == null) return undefined;
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!sessionMenuRef.current?.contains(event.target as Node)) {
-        setOpenSessionMenuChatId(null);
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenSessionMenuChatId(null);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [openSessionMenuChatId]);
-
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
@@ -2908,6 +2540,10 @@ export const AgentSettingsPage = ({
     if (nextSection !== activeSection) setSidebarTab("settings");
     navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[nextSection], nextParams), { replace: true });
   };
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  useEffect(() => {
+    setMobileNavigationOpen(false);
+  }, [isDesktop, activeSection, activeTabId]);
   const activeBotStatus = activeBot?.status;
   const activeBotId = activeBot?.id;
   const activeRuntimeInstanceId = activeBot?.instanceId ?? activeBotId;
@@ -2916,8 +2552,6 @@ export const AgentSettingsPage = ({
     [activePass, paidBillingActive],
   );
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
-  const passExpiryTooltipId = useId();
-  const chatAvailabilityTooltipId = useId();
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
     await refreshPasses();
@@ -4426,9 +4060,10 @@ export const AgentSettingsPage = ({
   ) : null;
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div
       className={cn(
-        "flex min-h-dvh flex-col bg-white",
+        "agents-ui flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
@@ -4442,25 +4077,18 @@ export const AgentSettingsPage = ({
       )}
       {automationModelSwitchDialog}
 
-      <Dialog
-        open={shouldExposeWorkspaceRecoveryPanel && Boolean(workspaceConfirm)}
-        onOpenChange={(open) => {
-          if (!open) setWorkspaceConfirm(null);
-        }}
-      >
-        <DialogContent className="rounded-md border border-black/[0.08] bg-white p-5 shadow-xl md:w-[30rem]">
-          {workspaceConfirm && (
-            <>
-              <DialogHeader className="pr-8">
-                <DialogTitle>
-                  {workspaceConfirm.kind === "export" ? t("备份 Hermes Agent") : t("从备份恢复 Agent")}
-                </DialogTitle>
-                <DialogDescription className="leading-relaxed">
-                  {workspaceConfirm.kind === "export"
-                    ? t("将打包 Hermes Agent 数据目录，并把备份下载链接发送到当前账号绑定邮箱。")
-                    : t("选择 Hermes Agent 备份包恢复数据，恢复前请确认目标 Agent 和备份文件。")}
-                </DialogDescription>
-              </DialogHeader>
+      <ConsoleConfirmDialog open={shouldExposeWorkspaceRecoveryPanel && Boolean(workspaceConfirm)} onOpenChange={(open) => { if (!open) setWorkspaceConfirm(null); }}
+        title={workspaceConfirm?.kind === "export" ? t("备份 Hermes Agent") : t("从备份恢复 Agent")}
+        description={workspaceConfirm?.kind === "export" ? t("将打包 Hermes Agent 数据目录，并把备份下载链接发送到当前账号绑定邮箱。") : t("选择 Hermes Agent 备份包恢复数据，恢复前请确认目标 Agent 和备份文件。")}
+        confirmLabel={workspaceConfirm?.kind === "export" ? t("确认备份") : t("确认恢复")} cancelLabel={t("取消")}
+        confirmDisabled={!canStartWorkspaceAction || (workspaceConfirm?.kind === "import" && !workspaceConfirm.file)}
+        onConfirm={() => {
+          if (!workspaceConfirm) return;
+          if (workspaceConfirm.kind === "export") { void handleExportWorkspace(); return; }
+          if (!workspaceConfirm.file) return;
+          void handleImportWorkspace(workspaceConfirm.file);
+        }}>
+        {workspaceConfirm && (
               <div className="mt-4 space-y-3">
                 <div className="rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3 text-sm">
                   <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-2">
@@ -4540,342 +4168,51 @@ export const AgentSettingsPage = ({
                   </>
                 )}
               </div>
-              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() => setWorkspaceConfirm(null)}
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/65 transition-colors hover:bg-black/[0.035]"
-                >
-                  {t("取消")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (workspaceConfirm.kind === "export") {
-                      void handleExportWorkspace();
-                      return;
-                    }
-                    if (!workspaceConfirm.file) return;
-                    void handleImportWorkspace(workspaceConfirm.file);
-                  }}
-                  disabled={!canStartWorkspaceAction || (workspaceConfirm.kind === "import" && !workspaceConfirm.file)}
-                  aria-describedby={workspaceConfirm.kind === "import" && !workspaceConfirm.file ? "workspace-import-file-helper" : undefined}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-black/90 px-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
-                >
-                  {isActiveBotExporting || isActiveBotImporting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : workspaceConfirm.kind === "export" ? (
-                    <Download className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <UploadCloud className="h-4 w-4" aria-hidden="true" />
-                  )}
-                  {workspaceConfirm.kind === "export" ? t("确认备份") : t("确认恢复")}
-                </button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+        )}
+      </ConsoleConfirmDialog>
 
-      {/* Delete Confirm Dialog */}
-      {showDeleteConfirm && activeBot && createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-[28rem] rounded-2xl border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "rgba(238,238,238,0.4)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
-                <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
-              </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>
-                {activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")}
-              </h3>
-            </div>
-            <p className="rounded-xl border border-red-100 bg-red-50/70 px-3.5 py-3 text-sm leading-relaxed text-red-700" style={{ marginBottom: "6px" }}>
-              <span className="block font-semibold">{t("风险提示：")}</span>
-              <span className="mt-1 block">
-                {activeBot.isDefault
-                  ? t("删除后，整个 Agent 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")
-                  : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
-              </span>
-            </p>
-            {activeBot.isDefault && activeBot.siblingsUnknown && (
-              <p
-                data-testid="delete-siblings-unknown-warning"
-                className="rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm leading-relaxed text-amber-800"
-                style={{ marginBottom: "6px" }}
-              >
-                {activeBot.siblingsUnknown === "instance_stopped"
-                  ? t("实例未运行，当前无法列出这个 Agent 下的其他 Bot。继续删除会一并销毁实例上的全部 Bot 及其数据。")
-                  : t("暂时无法获取这个 Agent 的 Bot 列表。继续删除会一并销毁实例上的全部 Bot 及其数据。")}
-              </p>
-            )}
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              <span className="block">
-                {activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")}{" "}
-                <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
-                  {activeBot.name}
-                </span>
-                。
-              </span>
-            </p>
-            <input
-              type="text"
-              placeholder={t("请输入 {{name}}", { name: activeBot.name })}
-              value={deleteInput}
-              onChange={(e) => setDeleteInput(e.target.value)}
-              className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]"
-              style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }}
-            />
-            {deleteError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteError}</p>}
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => void handleDelete()}
-                disabled={deleteInput !== activeBot.name}
-                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
-                style={{
-                  backgroundColor: deleteInput === activeBot.name ? "#DC2626" : "#E5E7EB",
-                  cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
-                  fontSize: "16px",
-                }}
-              >
-                {activeBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")}
-              </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
-                {t("取消")}
-              </button>
-            </div>
-          </motion.div>
-        </div>,
-        document.body,
-      )}
+      {activeBot && <ConsoleConfirmDialog
+        open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}
+        title={activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")}
+        description={<div className="space-y-3">
+          <p className="rounded-md border border-red-100 bg-red-50 px-3 py-3 text-sm text-red-700">
+            <span className="block font-semibold">{t("风险提示：")}</span>
+            {activeBot.isDefault ? t("删除后，整个 Agent 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！") : t("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")}
+          </p>
+          {activeBot.isDefault && activeBot.siblingsUnknown && <p data-testid="delete-siblings-unknown-warning" className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+            {activeBot.siblingsUnknown === "instance_stopped" ? t("实例未运行，当前无法列出这个 Agent 下的其他 Bot。继续删除会一并销毁实例上的全部 Bot 及其数据。") : t("暂时无法获取这个 Agent 的 Bot 列表。继续删除会一并销毁实例上的全部 Bot 及其数据。")}
+          </p>}
+        </div>}
+        confirmLabel={activeBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")} cancelLabel={t("取消")}
+        confirmDisabled={deleteInput !== activeBot.name} onConfirm={() => void handleDelete()}
+      >
+        <label className="block space-y-2 text-sm">
+          <span>{activeBot.isDefault ? t("如确认删除整个 Agent，请输入主 Bot 名称") : t("如确认删除 Bot，请输入 Bot 名称")} <span className="select-all break-words font-semibold text-red-600">{activeBot.name}</span>。</span>
+          <Input placeholder={t("请输入 {{name}}", { name: activeBot.name })} value={deleteInput} onChange={(event) => setDeleteInput(event.target.value)} className={agentFieldClassName} />
+        </label>
+        {deleteError && <p role="alert" className="text-pretty text-xs text-red-600">{deleteError}</p>}
+      </ConsoleConfirmDialog>}
 
-      {/* Session Delete Confirm Dialog */}
-      {sessionToDelete && createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={cancelSessionDelete}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "rgba(238,238,238,0.4)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
-                <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
-              </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除会话")}</h3>
-            </div>
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("确定要删除会话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete.title || t("默认会话") })}
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={confirmSessionDelete}
-                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
-                style={{ backgroundColor: "#DC2626", cursor: "pointer", fontSize: "16px" }}
-              >
-                {t("确认删除")}
-              </button>
-              <button onClick={cancelSessionDelete} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
-                {t("取消")}
-              </button>
-            </div>
-          </motion.div>
-        </div>,
-        document.body,
-      )}
+      <ConsoleConfirmDialog open={sessionToDelete !== null} onOpenChange={(open) => { if (!open) cancelSessionDelete(); }}
+        title={t("删除会话")} description={t("确定要删除会话「{{name}}」吗？此操作不可撤销。", { name: sessionToDelete?.title || t("默认会话") })}
+        confirmLabel={t("确认删除")} cancelLabel={t("取消")} onConfirm={confirmSessionDelete} returnFocusRef={sessionActionTriggerRef} />
 
-      {/* Restart Gateway Confirm Dialog */}
-      {showRestartConfirm && activeBot && createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => { if (!isActiveBotRestarting) setShowRestartConfirm(false); }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-md rounded-lg border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(0,0,0,0.04)" }}>
-                <RefreshCw className="h-5 w-5" style={{ color: "rgba(0,0,0,0.62)" }} />
-              </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重启 Hermes Agent 网关")}</h3>
-            </div>
-            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("重启期间 Agent 可能会短暂不可用，对话会短暂断开，确认重启？")}
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => {
-                  if (isActiveBotRestarting) return;
-                  setShowRestartConfirm(false);
-                  void handleRestartGateway();
-                }}
-                disabled={isActiveBotRestarting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-black/90 px-4 py-2.5 text-[16px] font-semibold text-white transition-all hover:opacity-90"
-                style={{
-                  cursor: isActiveBotRestarting ? "not-allowed" : "pointer",
-                  fontSize: "16px",
-                }}
-              >
-                {isActiveBotRestarting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isActiveBotRestarting ? t("重启中...") : t("确认重启")}
-              </button>
-              <button
-                onClick={() => setShowRestartConfirm(false)}
-                disabled={isActiveBotRestarting}
-                className="py-2 text-[16px] transition-colors hover:opacity-70"
-                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: isActiveBotRestarting ? "not-allowed" : "pointer", fontSize: "16px" }}
-              >
-                {t("取消")}
-              </button>
-            </div>
-          </motion.div>
-        </div>,
-        document.body,
-      )}
+      <ConsoleConfirmDialog open={showRestartConfirm && Boolean(activeBot)} onOpenChange={setShowRestartConfirm}
+        title={t("重启 Hermes Agent 网关")} description={t("重启期间 Agent 可能会短暂不可用，对话会短暂断开，确认重启？")}
+        confirmLabel={isActiveBotRestarting ? t("重启中...") : t("确认重启")} cancelLabel={t("取消")} pending={isActiveBotRestarting}
+        onConfirm={() => { if (isActiveBotRestarting) return; setShowRestartConfirm(false); void handleRestartGateway(); }} />
 
-      {/* Reset Config Confirm Dialog */}
-      {showResetConfirm && activeBot && createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => { if (!resetting) setShowResetConfirm(false); }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
-                <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
-              </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置模型配置")}</h3>
-            </div>
-            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将初始化 Hermes Agent 的模型配置，")}
-              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
-                {t("模型相关配置不会保留。")}
-              </span>
-              {t("期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => void handleResetConfig()}
-                disabled={resetting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
-                style={{
-                  backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
-                  cursor: resetting ? "not-allowed" : "pointer",
-                  fontSize: "16px",
-                }}
-              >
-                {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resetting ? t("恢复中...") : t("确认重置")}
-              </button>
-              <button
-                onClick={() => setShowResetConfirm(false)}
-                disabled={resetting}
-                className="py-2 text-[16px] transition-colors hover:opacity-70"
-                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer", fontSize: "16px" }}
-              >
-                {t("取消")}
-              </button>
-            </div>
-          </motion.div>
-        </div>,
-        document.body,
-      )}
+      <ConsoleConfirmDialog open={showResetConfirm && Boolean(activeBot)} onOpenChange={setShowResetConfirm}
+        title={t("重置模型配置")}
+        description={<>{t("将初始化 Hermes Agent 的模型配置，")}<strong>{t("模型相关配置不会保留。")}</strong>{t("期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}</>}
+        confirmLabel={resetting ? t("恢复中...") : t("确认重置")} cancelLabel={t("取消")} pending={resetting} onConfirm={() => void handleResetConfig()} />
 
-      {/* Reset Hermes Confirm Dialog */}
-      {showAcliResetConfirm && activeBot && createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => { if (!resettingAcli) setShowAcliResetConfirm(false); }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
-                <RepairToolsIcon className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
-              </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes（保留数据）")}</h3>
-            </div>
-            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将重置 Hermes 运行环境，影响其中的所有 Bot。")}
-              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
-                {t("期间 Agent 会有数分钟不可用。")}
-              </span>
-              {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => void handleResetAcli()}
-                disabled={resettingAcli}
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
-                style={{
-                  backgroundColor: resettingAcli ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
-                  cursor: resettingAcli ? "not-allowed" : "pointer",
-                  fontSize: "16px",
-                }}
-              >
-                {resettingAcli && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resettingAcli ? t("重置中...") : t("确认重置")}
-              </button>
-              <button
-                onClick={() => setShowAcliResetConfirm(false)}
-                disabled={resettingAcli}
-                className="py-2 text-[16px] transition-colors hover:opacity-70"
-                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resettingAcli ? "not-allowed" : "pointer", fontSize: "16px" }}
-              >
-                {t("取消")}
-              </button>
-            </div>
-          </motion.div>
-        </div>,
-        document.body,
-      )}
+      <ConsoleConfirmDialog open={showAcliResetConfirm && Boolean(activeBot)} onOpenChange={setShowAcliResetConfirm}
+        title={t("重置 Hermes（保留数据）")}
+        description={<>{t("将重置 Hermes 运行环境，影响其中的所有 Bot。")}<strong>{t("期间 Agent 会有数分钟不可用。")}</strong>{t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}</>}
+        confirmLabel={resettingAcli ? t("重置中...") : t("确认重置")} cancelLabel={t("取消")} pending={resettingAcli} onConfirm={() => void handleResetAcli()} />
 
-      {/* Create Confirm Dialog */}
-      {showCreateConfirm && createPortal(
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => { if (!directCreating) setShowCreateConfirm(false); }}
-        >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 max-h-[calc(100dvh-2rem)] w-full max-w-[42rem] overflow-y-auto rounded-lg border bg-white p-6 shadow-2xl"
-            style={{ borderColor: "rgba(238,238,238,0.4)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
-                <Plus className="h-5 w-5" style={{ color: "#07C160" }} />
-              </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建 Bot")}</h3>
-            </div>
+      <ConsoleEditDialog open={showCreateConfirm} onOpenChange={setShowCreateConfirm} title={t("创建 Bot")} closeLabel={t("关闭")} pending={directCreating} className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-md border border-[var(--border-subtle)] bg-white p-5 shadow-xl md:w-[42rem]">
             <div className="space-y-4">
               <label className="block space-y-2 text-sm font-medium text-black/70">
                 <span className="flex items-center justify-between gap-3">
@@ -4884,52 +4221,43 @@ export const AgentSettingsPage = ({
                     {Array.from(createBotName).length}/{MAX_BOT_NAME_LENGTH}
                   </span>
                 </span>
-                <input
+                <Input
                   value={createBotName}
                   onChange={(event) => setCreateBotName(event.target.value)}
                   placeholder={t("请输入 Bot 名称")}
                   maxLength={MAX_BOT_NAME_LENGTH}
                   disabled={directCreating}
-                  className="h-10 w-full rounded-md border border-black/10 px-3 text-sm text-black/85 outline-none focus:border-[#2F6BFF] focus:ring-2 focus:ring-[#2F6BFF]/15"
+                  className={agentFieldClassName}
                 />
               </label>
               {!isFirstBotCreation && (
                 <>
                   <fieldset className="space-y-2">
                     <legend className="text-sm font-medium text-black/70">{t("创建方式")}</legend>
-                    <div
-                      className={cn(
-                        "grid overflow-hidden rounded-md border border-black/10",
-                        isActiveBotDefault ? "grid-cols-2" : "grid-cols-3",
-                      )}
-                      role="radiogroup"
-                    >
+                    <Select value={createBotMode} disabled={directCreating} onValueChange={(mode) => {
+                      if (mode === "blank" || mode === "clone-current" || mode === "clone-main") setCreateBotMode(mode);
+                    }}>
+                      <SelectTrigger aria-label={t("创建方式")} className={cn(agentFieldClassName, "w-full")}><SelectValue /></SelectTrigger>
+                      <SelectContent position="popper" className="agents-ui max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)] rounded-md bg-white">
                       {([
                         ["clone-current", isActiveBotDefault ? t("复制当前（主 Bot）") : t("复制当前")],
                         ...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : []),
                         ["blank", t("空白创建")],
                       ] as const).map(([mode, label]) => {
-                        const selected = createBotMode === mode;
                         const unavailable = mode !== "blank" && (mode === "clone-current" ? !activeBot : !defaultBot);
                         return (
-                          <button
+                          <SelectItem
                             key={mode}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
+                            value={mode}
                             disabled={directCreating || unavailable}
-                            onClick={() => setCreateBotMode(mode)}
-                            className={cn(
-                              "min-h-10 border-r border-black/10 px-2 text-xs font-medium last:border-r-0",
-                              selected ? "bg-black text-white" : "bg-white text-black/55 hover:bg-black/[0.03]",
-                              unavailable && "cursor-not-allowed opacity-40",
-                            )}
+                            className="rounded-sm"
                           >
                             {label}
-                          </button>
+                          </SelectItem>
                         );
                       })}
-                    </div>
+                      </SelectContent>
+                    </Select>
                   </fieldset>
                   {createBotMode === "blank" ? (
                     <dl className="space-y-1 rounded-md bg-black/[0.035] px-3 py-2 text-xs leading-5 text-black/55">
@@ -4959,34 +4287,26 @@ export const AgentSettingsPage = ({
             </div>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
             <div className="mt-5 flex justify-end gap-2">
-              <button
+              <Button
                 type="button"
                 onClick={() => setShowCreateConfirm(false)}
                 disabled={directCreating}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-medium text-black/60 transition-colors hover:bg-black/[0.035] hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-50"
+                variant="outline"
+                className={agentButtonClassName}
               >
                 {t("取消")}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={() => void handleConfirmCreate()}
                 disabled={directCreating}
-                className="inline-flex h-9 min-w-24 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed"
-                style={{
-                  backgroundColor: directCreating ? "#9CA3AF" : "var(--lw-fg)",
-                  cursor: directCreating ? "not-allowed" : "pointer",
-                  fontSize: "14px",
-                  lineHeight: "20px",
-                }}
+                className={cn(agentButtonClassName, "min-w-24")}
               >
                 {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
                 {directCreating ? t("创建中...") : directCreateError ? t("重试") : t("确认创建")}
-              </button>
+              </Button>
             </div>
-          </motion.div>
-        </div>,
-        document.body,
-      )}
+      </ConsoleEditDialog>
 
       <AnimatePresence>
         {renewPassModalOpen && renewalAvailable && activePass && (
@@ -5121,503 +4441,89 @@ export const AgentSettingsPage = ({
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
-                  <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {t("正在加载页面…")}
-                  </div>
+                  <AgentState kind="loading" title={t("正在加载页面…")} className="min-h-64" />
                 );
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
               return (
-                <div className="lv-agent-settings-grid grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
-                  <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
-                    <div className="lv-agent-profile-wrap">
-                      <Popover
-                        open={visibleBots.length > 1 && isAgentMenuOpen}
-                        onOpenChange={(open) => {
-                          if (visibleBots.length > 1) setIsAgentMenuOpen(open);
-                        }}
-                      >
-                        <PopoverTrigger asChild>
-                          <div
-                            role={visibleBots.length > 1 ? "button" : undefined}
-                            tabIndex={visibleBots.length > 1 ? 0 : undefined}
-                            onKeyDown={(event) => {
-                              if (visibleBots.length <= 1) return;
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                setIsAgentMenuOpen((open) => !open);
-                              }
-                            }}
-                            className={cn(
-                              "lv-agent-profile",
-                              visibleBots.length <= 1 && "cursor-default",
-                            )}
-                            aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
-                          >
-                            <span className="lv-agent-avatar">
-                              <img src={avatarUrl} alt="" />
-                            </span>
-                            <span className="lv-agent-profile-text">
-                              <span className="lv-agent-profile-name" title={activeBotDisplayName}>
-                                {truncateBotName(activeBotDisplayName)}
-                              </span>
-                              <span className="lv-agent-status-row">
-                                <span className="lv-agent-status">
-                                  {isActiveBotRestarting ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <span
-                                      className="inline-block h-1.5 w-1.5 rounded-full"
-                                      style={{ background: getBotStatusColor(activeBot.status) }}
-                                    />
-                                  )}
-                                  {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                </span>
-                                {passExpiryReminder && passExpiryReminderCopy && activePass && (
-                                  renewalAvailable ? (
-                                    <span className="group relative inline-flex">
-                                      <button
-                                        type="button"
-                                        className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
-                                        aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminderCopy.tooltip })}
-                                        aria-describedby={passExpiryTooltipId}
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setRenewPassModalOpen(true);
-                                        }}
-                                        onKeyDown={(event) => {
-                                          if (event.key === "Enter" || event.key === " ") {
-                                            event.stopPropagation();
-                                          }
-                                        }}
-                                      >
-                                        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                                        {passExpiryReminderCopy.label}
-                                      </button>
-                                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                                        <span
-                                          id={passExpiryTooltipId}
-                                          role="tooltip"
-                                          className="pointer-events-auto relative whitespace-nowrap rounded-[6px] border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
-                                        >
-                                          {passExpiryReminderCopy.tooltip}
-                                          <button
-                                            type="button"
-                                            className="ml-2 cursor-pointer font-semibold text-[#A86108] underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#A86108]/30"
-                                            onClick={(event) => {
-                                              event.stopPropagation();
-                                              setRenewPassModalOpen(true);
-                                            }}
-                                          >
-                                            {t("立即续费")}
-                                          </button>
-                                          <span
-                                            aria-hidden="true"
-                                            className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
-                                          />
-                                        </span>
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span
-                                      className={cn(
-                                        "lv-agent-renewal-badge is-disabled",
-                                        `is-${passExpiryReminder.level}`,
-                                      )}
-                                    >
-                                      {passExpiryReminderCopy.label}
-                                      <span className="sr-only"> {passExpiryReminderCopy.tooltip}</span>
-                                    </span>
-                                  )
-                                )}
-                              </span>
-                            </span>
-                            <div
-                              className="lv-agent-actions"
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.stopPropagation();
-                                }
-                              }}
-                            >
-                              <span className="lv-agent-action-item">
-                                <button
-                                  type="button"
-                                  aria-label={restartTooltip}
-                                  disabled={restartOrRepairDisabled}
-                                  className="lv-agent-action-button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    if (restartOrRepairDisabled) return;
-                                    if (activeBot.status === "failed") {
-                                      void handleRetryBot();
-                                      return;
-                                    }
-                                    setShowRestartConfirm(true);
-                                  }}
-                                >
-                                  <RefreshCw className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" />
-                                </button>
-                                <span className="lv-agent-action-tooltip">
-                                  {restartTooltip}
-                                  <span className="lv-agent-action-tooltip-arrow" />
-                                </span>
-                              </span>
-                              <span className="lv-agent-action-item">
-                                <button
-                                  type="button"
-                                  aria-label={deleteTooltip}
-                                  disabled={deleteDisabled}
-                                  className="lv-agent-action-button is-danger"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    if (deleteDisabled) return;
-                                    setDeleteInput("");
-                                    setShowDeleteConfirm(true);
-                                  }}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                </button>
-                                <span className="lv-agent-action-tooltip">
-                                  {deleteTooltip}
-                                  <span className="lv-agent-action-tooltip-arrow" />
-                                </span>
-                              </span>
-                            </div>
-                            {visibleBots.length > 1 && (
-                              <ChevronDown
-                                className={cn("-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
-                              />
-                            )}
-                          </div>
-                        </PopoverTrigger>
-                        {visibleBots.length > 1 && (
-                          <PopoverContent
-                            align="start"
-                            side="bottom"
-                            sideOffset={8}
-                            className="max-h-80 w-[var(--radix-popover-trigger-width)] overflow-y-auto !rounded-[8px] border-black/10 bg-white p-1.5 shadow-xl"
-                          >
-                            {visibleBots.map((bot) => {
-                              const isActive = bot.id === activeTabId;
-                              const botDisplayName = resolveAgentDisplayName(bot.name, t);
-                              return (
-                                <button
-                                  key={bot.id}
-                                  type="button"
-                                  onClick={() => {
-                                    handleSelectBot(bot.id);
-                                  }}
-                                  className={cn(
-                                    "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15",
-                                    isActive ? "text-black/90" : "text-black/60 hover:bg-black/[0.04] hover:text-black/80",
-                                  )}
-                                  aria-current={isActive ? "true" : undefined}
-                                >
-                                  <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
-                                    {truncateBotName(botDisplayName)}
-                                  </span>
-                                  {isActive && <Check className="size-3.5 text-black/55" />}
-                                </button>
-                              );
-                            })}
-                          </PopoverContent>
-                        )}
-                      </Popover>
-
-                      {activeBotRestartError && (
-                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
-                      )}
-
-                      {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
-                          <button
-                            type="button"
-                            onClick={handleCreateNew}
-                            disabled={!canCreateAdditionalBot}
-                            className="lv-agent-create-button"
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                            {t("新建 Bot")}
+                <AgentConsoleShell
+                  desktop={isDesktop}
+                  navigationOpen={mobileNavigationOpen}
+                  onNavigationOpenChange={setMobileNavigationOpen}
+                  title={activeSection === "chat" ? t("对话") : settingsGroups.flatMap((group) => group.sections).find((item) => item.id === activeSection)?.label ?? t("探索")}
+                  navigationLabel={t("实例配置导航")}
+                  closeLabel={t("关闭")}
+                  profile={<ConsoleBotProfile
+                    name={activeBotDisplayName}
+                    avatarUrl={avatarUrl}
+                    selectedId={activeTabId}
+                    options={visibleBots.map((bot) => ({ id: bot.id, label: resolveAgentDisplayName(bot.name, t) }))}
+                    open={visibleBots.length > 1 && isAgentMenuOpen}
+                    onOpenChange={setIsAgentMenuOpen}
+                    onSelect={handleSelectBot}
+                    status={<span className="lv-agent-status">
+                      {isActiveBotRestarting ? <Loader2 className="size-3 animate-spin" aria-hidden="true" /> : <span className="inline-block size-1.5 rounded-full" style={{ background: getBotStatusColor(activeBot.status) }} />}
+                      {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                    </span>}
+                    renewal={passExpiryReminder && passExpiryReminderCopy && activePass && (
+                      renewalAvailable ? (
+                        <WorkspaceActionTooltip content={passExpiryReminderCopy.tooltip}>
+                          <button type="button" className={cn("lv-agent-renewal-badge cursor-pointer", `is-${passExpiryReminder.level}`)}
+                            aria-label={t("套餐{{time}}，点击续费", { time: passExpiryReminderCopy.tooltip })}
+                            onClick={() => setRenewPassModalOpen(true)}>
+                            <AlertTriangle className="size-3" aria-hidden="true" />{passExpiryReminderCopy.label}
                           </button>
                         </WorkspaceActionTooltip>
-                      )}
-                    </div>
-
-                    {/* ── 侧边栏顶层「探索/对话」双 tab：切侧边栏内容 + 联动主区导航 ── */}
-                    <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={sidebarTab === "settings"}
-                        className={cn("lv-agents-sidebar-tab", sidebarTab === "settings" && "is-active")}
-                        onClick={handleSidebarSettingsTabClick}
-                      >
-                        {t("探索")}
-                      </button>
-                      <span
-                        className="lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30"
-                        tabIndex={isActiveBotDefault ? undefined : 0}
-                        aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
-                      >
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={sidebarTab === "chat" && isActiveBotDefault}
-                          aria-disabled={!isActiveBotDefault}
-                          aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
-                          disabled={!isActiveBotDefault}
-                          className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotDefault && "is-active")}
-                          onClick={handleSidebarChatTabClick}
-                        >
-                          {t("对话")}
-                        </button>
-                        {!isActiveBotDefault && (
-                          <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
-                            {t("对话功能目前仅支持主 Bot")}
-                            <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
-                          </span>
-                        )}
-                      </span>
-                    </div>
-
-                    {sidebarTab === "chat" && isActiveBotDefault ? (
-                      <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
-                        <div className="lv-agents-nav-group" role="group">
-                          <span className="lv-agents-nav-group-label">{t("最近会话")}</span>
-                          <ul className="lv-agents-nav-group-items">
-                            {chatSessionsLoading && chatSessions.length === 0 ? (
-                              <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
-                            ) : chatSessions.length === 0 ? (
-                              /*
-                               * 列表为空是正常状态，不做异常处理，只给默认对话入口。
-                               * 成因有三，对用户而言表现一致（都只有一个会话可进）：
-                               *   - 桥接还没建立：sidebarTab 与 activeSection 是独立状态，
-                               *     且 AgentChatPanel 需 activeSection === "chat" 且
-                               *     launchToken ready 才挂载，切换过程中会短暂走到这里；
-                               *   - 实例不支持会话协议（SDK 5s 超时，见对接注意事项 6），
-                               *     即单会话形态，老实例/特定镜像版本的合法状态；
-                               *   - 确实还没有任何会话。
-                               * 三者都不该阻断用户进聊天页——消息收发不依赖会话协议。
-                               * 要区分需看 WebSocket 有无 chat:response，不是 UI 的职责。
-                               */
-                              <li>
-                                <AppLink
-                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
-                                  aria-current={activeSection === "chat" ? "page" : undefined}
-                                  className={cn(
-                                    "lv-agents-session-item lv-agents-nav-item",
-                                    activeSection === "chat" && "is-active",
-                                  )}
-                                >
-                                  <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
-                                  <span className="lv-agents-session-title" title={t("默认对话")}>
-                                    {t("默认对话")}
-                                  </span>
-                                </AppLink>
-                              </li>
-                            ) : (
-                              chatSessions.map((session) => {
-                                const isSelected = selectedChatId === session.chatId;
-                                const isRenaming = renamingChatId === session.chatId;
-                                const isMenuOpen = openSessionMenuChatId === session.chatId;
-                                const isDeletable = canDeleteSession(session);
-                                const sessionDisplayTitle = resolveAgentSessionTitle(
-                                  session.title,
-                                  i18n.language,
-                                  t("默认会话"),
-                                );
-                                return (
-                                  <li key={session.chatId} className="lv-agents-session-item-wrap">
-                                    {isRenaming ? (
-                                      <input
-                                        className="lv-agents-session-rename-input"
-                                        value={renamingDraft}
-                                        autoFocus
-                                        aria-label={t("会话名称")}
-                                        title={t("回车确认，Esc 取消")}
-                                        onChange={(event) => setRenamingDraft(event.target.value)}
-                                        onBlur={() => commitSessionRename()}
-                                        onKeyDown={(event) => {
-                                          if (event.key === "Enter") {
-                                            event.preventDefault();
-                                            commitSessionRename();
-                                          } else if (event.key === "Escape") {
-                                            event.preventDefault();
-                                            cancelSessionRename();
-                                          }
-                                        }}
-                                      />
-                                    ) : (
-                                      <>
-                                        <AppLink
-                                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
-                                          aria-current={isSelected ? "page" : undefined}
-                                          onClick={() => setSelectedChatId(session.chatId)}
-                                          className={cn(
-                                            "lv-agents-session-item lv-agents-nav-item",
-                                            isSelected && "is-active",
-                                          )}
-                                        >
-                                          <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
-                                          <span className="lv-agents-session-title" title={sessionDisplayTitle}>
-                                            {sessionDisplayTitle}
-                                          </span>
-                                        </AppLink>
-                                        <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">
-                                          <button
-                                            type="button"
-                                            className="lv-agents-session-menu-btn"
-                                            aria-label={t("会话操作")}
-                                            aria-expanded={isMenuOpen}
-                                            onClick={(event) => {
-                                              event.preventDefault();
-                                              event.stopPropagation();
-                                              setOpenSessionMenuChatId(isMenuOpen ? null : session.chatId);
-                                            }}
-                                          >
-                                            <MoreVertical className="h-3.5 w-3.5" />
-                                          </button>
-                                          {isMenuOpen ? (
-                                            <div className="lv-agents-session-menu" role="menu">
-                                              <button
-                                                type="button"
-                                                role="menuitem"
-                                                className="lv-agents-session-menu-item"
-                                                disabled={!chatSessionActions}
-                                                onClick={() => startSessionRename(session)}
-                                              >
-                                                {t("重命名")}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                role="menuitem"
-                                                className="lv-agents-session-menu-item lv-agents-session-menu-item--danger"
-                                                disabled={!chatSessionActions || !isDeletable}
-                                                title={isDeletable ? undefined : t("默认会话不支持删除")}
-                                                onClick={() => openSessionDeleteConfirm(session)}
-                                              >
-                                                {t("删除")}
-                                              </button>
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      </>
-                                    )}
-                                  </li>
-                                );
-                              })
-                            )}
-                          </ul>
-                        </div>
-                      </nav>
-                    ) : (
-                      <nav
-                        aria-label={t("实例配置导航")}
-                        className="lv-agents-nav"
-                      >
-                        {showHiddenAgentTools ? (
-                          <div className="lv-agents-nav-group">
-                            <ul className="lv-agents-nav-group-items">
-                              <li>
-                                <AppLink
-                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
-                                  aria-current={activeSection === "terminal" ? "page" : undefined}
-                                  className={cn(
-                                    "lw-settings-nav-item lv-agents-nav-item",
-                                    activeSection === "terminal"
-                                      ? "is-active"
-                                      : "text-black/70 hover:bg-black/[0.025]",
-                                  )}
-                                >
-                                  <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
-                                  <span className="flex-1 text-left">{t("终端")}</span>
-                                </AppLink>
-                              </li>
-                              <li>
-                                <AppLink
-                                  to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
-                                  aria-current={activeSection === "browser" ? "page" : undefined}
-                                  className={cn(
-                                    "lw-settings-nav-item lv-agents-nav-item",
-                                    activeSection === "browser"
-                                      ? "is-active"
-                                      : "text-black/70 hover:bg-black/[0.025]",
-                                  )}
-                                >
-                                  <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
-                                  <span className="flex-1 text-left">{t("浏览器")}</span>
-                                </AppLink>
-                              </li>
-                            </ul>
-                          </div>
-                        ) : null}
-                        {settingsGroups.map((group) => {
-                          const groupLabelId = `agent-settings-nav-group-${group.id}`;
-                          return (
-                            <div
-                              key={group.id}
-                              className="lv-agents-nav-group"
-                              role="group"
-                              aria-labelledby={groupLabelId}
-                            >
-                              <span id={groupLabelId} className="lv-agents-nav-group-label">{group.label}</span>
-                              <ul className="lv-agents-nav-group-items">
-                                {group.sections.map((section) => {
-                                  const isActive = section.id === activeSection;
-                                  return (
-                                    <li key={section.id}>
-                                      <AppLink
-                                        to={getAgentSectionHref(section.path, searchParams)}
-                                        aria-label={section.badge ? section.label : undefined}
-                                        aria-current={isActive ? "page" : undefined}
-                                        className={cn(
-                                          "lw-settings-nav-item lv-agents-nav-item",
-                                          section.badge && "has-badge",
-                                          isActive
-                                            ? "is-active"
-                                            : "text-black/70 hover:bg-black/[0.025]",
-                                        )}
-                                      >
-                                        <span className="lv-agents-nav-icon">{section.icon}</span>
-                                        <span className="min-w-0 flex-1 whitespace-nowrap text-left">{section.label}</span>
-                                        {section.badge && (
-                                          <span className="rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">
-                                            {section.badge}
-                                          </span>
-                                        )}
-                                      </AppLink>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
-                          );
-                        })}
-                      </nav>
+                      ) : <span className={cn("lv-agent-renewal-badge is-disabled", `is-${passExpiryReminder.level}`)}>{passExpiryReminderCopy.label}<span className="sr-only"> {passExpiryReminderCopy.tooltip}</span></span>
                     )}
-
-                    {sidebarTab === "settings" && isCN ? (
-                      <a
-                        href={PRODUCT_FEEDBACK_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="lv-agent-feedback-link"
-                      >
-                        <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>{t("有建议？提交反馈")}</span>
-                      </a>
-                    ) : null}
-
-                    {isDesktop ? (
-                      <div className="lv-agent-account-footer">
-                        <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
-                      </div>
-                    ) : null}
-                  </aside>
-
-                  <section className="lv-agent-settings-content min-w-0 lg:col-start-2">
+                    actions={<>
+                      <WorkspaceActionTooltip content={restartTooltip}>
+                        <Button type="button" variant="ghost" className={cn(agentButtonClassName, "size-8 px-0")} aria-label={restartTooltip} disabled={restartOrRepairDisabled}
+                          onClick={() => {
+                            if (restartOrRepairDisabled) return;
+                            if (activeBot.status === "failed") { void handleRetryBot(); return; }
+                            setShowRestartConfirm(true);
+                          }}><RefreshCw className={cn("size-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" /></Button>
+                      </WorkspaceActionTooltip>
+                      <WorkspaceActionTooltip content={deleteTooltip}>
+                        <Button type="button" variant="ghost" className={cn(agentButtonClassName, "size-8 px-0 text-red-600")} aria-label={deleteTooltip} disabled={deleteDisabled}
+                          onClick={() => { if (deleteDisabled) return; setDeleteInput(""); setShowDeleteConfirm(true); }}><Trash2 className="size-3.5" aria-hidden="true" /></Button>
+                      </WorkspaceActionTooltip>
+                    </>}
+                    error={activeBotRestartError}
+                    createAction={showCreateBotEntry && multiBotEnabled && (
+                      <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
+                        <Button type="button" variant="outline" className={cn(agentButtonClassName, "lv-agent-create-button w-full")} onClick={handleCreateNew} disabled={!canCreateAdditionalBot}>
+                          <Plus className="size-4" aria-hidden="true" />{t("新建 Bot")}
+                        </Button>
+                      </WorkspaceActionTooltip>
+                    )}
+                  />}
+                  navigation={<ConsoleSidebarTabs value={sidebarTab === "chat" && isActiveBotDefault ? "chat" : "settings"} canChat={isActiveBotDefault}
+                    label={t("侧边栏视图切换")} settingsLabel={t("探索")} chatLabel={t("对话")} unavailableLabel={t("对话功能目前仅支持主 Bot")}
+                    onSettings={handleSidebarSettingsTabClick} onChat={handleSidebarChatTabClick}>
+                    {sidebarTab === "chat" && isActiveBotDefault ? <ConsoleSessionList
+                      sessions={chatSessions.map((session) => ({ id: session.chatId, title: resolveAgentSessionTitle(session.title, i18n.language, t("默认会话")), canDelete: canDeleteSession(session) }))}
+                      loading={chatSessionsLoading} selectedId={selectedChatId} href={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)} active={activeSection === "chat"}
+                      actionsAvailable={Boolean(chatSessionActions)} menuId={openSessionMenuChatId} renameId={renamingChatId} renameDraft={renamingDraft}
+                      confirmationOpen={sessionToDelete !== null} actionTriggerRef={sessionActionTriggerRef} onMenuChange={setOpenSessionMenuChatId}
+                      onSelect={setSelectedChatId} onRename={(id) => { const selected = chatSessions.find((item) => item.chatId === id); if (selected) startSessionRename(selected); }}
+                      onDelete={(id) => { const selected = chatSessions.find((item) => item.chatId === id); if (selected) openSessionDeleteConfirm(selected); }}
+                      onRenameDraftChange={setRenamingDraft} onRenameCommit={commitSessionRename} onRenameCancel={cancelSessionRename}
+                      onNavigate={() => setMobileNavigationOpen(false)}
+                      labels={{ navigation: t("会话列表导航"), recent: t("最近会话"), loading: t("正在加载会话…"), defaultChat: t("默认对话"), actions: t("会话操作"), rename: t("重命名"), delete: t("删除"), name: t("会话名称"), cancel: t("取消"), confirm: t("确认"), protectedSession: t("默认会话不支持删除") }}
+                    /> : <ConsoleNavigation label={t("实例配置导航")} activeId={activeSection} onNavigate={() => setMobileNavigationOpen(false)}
+                      groups={settingsGroups.map((group) => ({ ...group, sections: group.sections.map((item) => ({ ...item, href: getAgentSectionHref(item.path, searchParams) })) }))}
+                      extraItems={showHiddenAgentTools ? [
+                        { id: "terminal", label: t("终端"), href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams), icon: <TerminalSquare className="size-4" /> },
+                        { id: "browser", label: t("浏览器"), href: getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams), icon: <Globe2 className="size-4" /> },
+                      ] : []}
+                    />}
+                  </ConsoleSidebarTabs>}
+                  footer={<>
+                    {isDesktop ? <div className="lv-agent-account-footer"><UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" /></div> : null}
+                  </>}
+                >
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
                         fallback={sectionFallback}
@@ -5776,8 +4682,7 @@ export const AgentSettingsPage = ({
                         </div>
                       </Suspense>
                     </div>
-                  </section>
-                </div>
+                </AgentConsoleShell>
               );
             })()
           )}
@@ -5785,33 +4690,14 @@ export const AgentSettingsPage = ({
           {/* 空状态 */}
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
-                {createLimitMessage && (
-                  <p className="mt-3 max-w-sm text-xs leading-relaxed" style={{ color: "rgba(0,0,0,0.48)" }}>
-                    {createLimitMessage}
-                  </p>
-                )}
-                {directCreateError && (
-                  <p className="mt-3 max-w-sm text-xs leading-relaxed text-red-500">
-                    {directCreateError}
-                  </p>
-                )}
-                <button
-                  onClick={handleCreateNew}
-                  disabled={!canCreateInitialAgent || directCreating}
-                  className={cn(
-                    "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 font-semibold text-white transition-all",
-                    canCreateInitialAgent && !directCreating
-                      ? "bg-black/90 hover:opacity-90"
-                      : "cursor-not-allowed bg-black/30",
-                  )}
-                  style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
-                >
-                  {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
+              <AgentState kind={directCreateError ? "error" : "empty"} title={t("即刻创建你的云端智能体伙伴")}
+                description={<>{createLimitMessage && <p>{createLimitMessage}</p>}{directCreateError && <p>{directCreateError}</p>}</>}
+                className="py-12"
+                action={<Button onClick={handleCreateNew} disabled={!canCreateInitialAgent || directCreating} className={agentButtonClassName}>
+                  {directCreating && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                   {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
-                </button>
-              </div>
+                </Button>}
+              />
             )
           }
 
@@ -5819,5 +4705,6 @@ export const AgentSettingsPage = ({
       </main>
 
     </div>
+    </TooltipProvider>
   );
 };

@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -20,6 +21,7 @@ let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
 let maxBots = 1;
 let multiBotEnabled = true;
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
 
 vi.mock("@/i18n/t", () => ({
   t: (text: string) => (
@@ -151,6 +153,9 @@ const revealHiddenTools = () => {
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    // jsdom has no layout scrolling; Radix Select uses the browser API while focusing options.
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     maxBots = 1;
     multiBotEnabled = true;
     testRegion.isCN = true;
@@ -166,7 +171,11 @@ describe("multi-Bot diagnostics", () => {
     execDebugCommand.mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "root log" });
     addBot.mockResolvedValue({ ...buildBot(), id: "created", profileId: "created", isDefault: false });
   });
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup(); vi.unstubAllGlobals();
+    if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScrollIntoView);
+    else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  });
 
   it("only shows instance maintenance on main and scopes logs after switching", async () => {
     const view = render(page("ins-1"));
@@ -185,7 +194,9 @@ describe("multi-Bot diagnostics", () => {
     expect(chatTab).toBeDisabled();
     expect(chatTab).not.toHaveAttribute("title");
     expect(chatTab).toHaveAccessibleDescription("对话功能目前仅支持主 Bot");
-    expect(screen.getByRole("tooltip", { name: "对话功能目前仅支持主 Bot" })).toHaveClass("lv-agent-action-tooltip");
+    await userEvent.hover(chatTab.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("对话功能目前仅支持主 Bot");
+    expect(screen.getByRole("tooltip").closest("[data-slot='tooltip-content']")).toHaveClass("agents-ui");
     expect(screen.queryByText("重置 Hermes（保留数据）")).not.toBeInTheDocument();
     expect(screen.queryByText("root log")).not.toBeInTheDocument();
     expect(resetInstanceConfig).not.toHaveBeenCalled();
@@ -224,9 +235,13 @@ describe("multi-Bot diagnostics", () => {
     const view = render(page("ins-1"));
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
     revealHiddenTools();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
+    await userEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
+    await waitFor(() => expect(screen.getByPlaceholderText("请输入 Bot 名称")).toHaveFocus());
+    act(() => screen.getByRole("combobox", { name: "创建方式" }).focus());
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("option", { name: "空白创建" });
+    await userEvent.keyboard("{End}{Enter}");
     expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
     expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
@@ -248,36 +263,19 @@ describe("multi-Bot diagnostics", () => {
 
     const tooltipTrigger = createButton.parentElement;
     expect(tooltipTrigger).not.toBeNull();
-    Object.defineProperty(tooltipTrigger, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        left: 84,
-        right: 304,
-        top: 275,
-        bottom: 311,
-        width: 220,
-        height: 36,
-        x: 84,
-        y: 275,
-        toJSON: () => ({}),
-      }),
-    });
-    fireEvent.mouseEnter(tooltipTrigger!);
-
+    const user = userEvent.setup();
+    await user.hover(tooltipTrigger!);
     const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip).toHaveTextContent(
-      "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
-    );
-    expect(tooltip.parentElement).toBe(document.body);
-    expect(tooltip).toHaveClass("fixed");
-    expect(tooltip).toHaveStyle({ left: "194px", top: "319px" });
+    expect(tooltip).toHaveTextContent("当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。");
+    const surface = tooltip.closest("[data-slot='tooltip-content']");
+    expect(surface).toHaveAttribute("data-side", "bottom");
+    expect(surface).toHaveClass("agents-ui", "select-text");
+    expect(surface?.closest(".lv-agents-sidebar")).toBeNull();
     expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(tooltip.querySelector("[aria-hidden='true']")).toHaveClass("bottom-full");
-
-    fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
-    fireEvent.focus(tooltipTrigger!);
+    await user.unhover(tooltipTrigger!);
+    act(() => tooltipTrigger!.focus());
     expect(await screen.findByRole("tooltip")).toBeInTheDocument();
   });
 

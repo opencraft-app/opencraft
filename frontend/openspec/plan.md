@@ -1,3 +1,79 @@
+# Agents 侧栏与账户快捷菜单增量实施（2026-09-16）
+
+**Status:** S1–S7本地实现与验证完成，等待用户验收；S7已将反馈入口统一至头像菜单。S6演示额度与升级链接保留。真实200%浏览器缩放及真实账务尚未实测。尚未提交、推送、归档或发布。
+**Goal:** 完成Town参考的导航/账户菜单和积分升级快捷入口，保留现有业务逻辑及account页内容。
+**Architecture:** AgentConsoleShell管理桌面固定布局和唯一中间滚动区；sidebar账户菜单使用现有Radix Portal原语，独立于公开页header；复用账户套餐选择、积分和升级资格适配，纯视图消费DTO/动作。选中态问题先由源码和浏览器复现确认CSS原因，再在最窄的共用展示边界修复。
+**Tech Stack:** Next 16 / React 19 / TypeScript / Tailwind 4 / 已锁定Radix-shadcn原语；不新增依赖。
+**Size / Execution:** M增量，沿用原L任务的developer→reviewer串行交接；Leader仅规划、证据和审核。按用户指定feai-workflow以本计划执行；Native原change仍archive/revision8，保存旧验证历史，不手改、伪造回退或擅自归档，旧通过不代表本增量通过。
+
+## Global Constraints
+
+- 保留当前隔离工作树与未提交的原重构成果，不改原mono2工作区。
+- Agent信息保持顶部；桌面完整左栏覆盖100dvh，头像常驻底部；中间内容可滚动但不显示滚动条。右侧独立滚动；移动Sheet、聊天SDK挂载/资源生命周期不变。
+- 参考Town的紧凑行、底部头像和向上弹层；S5按用户最新反馈改为白底细边框与更明确的灰色选中块，替代此前浅灰侧栏/轻选中态。保留滚动阴影，不搬入团队、邀请、积分包购买等新业务。
+- 菜单显示用户/当前套餐、积分（与account同一pass同一口径）、符合资格时升级入口及原账号/语言/反馈/退出入口；account内容保留。loading/error/无套餐/升级中/过期/隔离不伪装正常额度或可升级。
+- 升级沿用usePassUpgrade与account外层条件，跳转原本地化subscribe的upgrade_pass_id入口；不改订单、付款、实名、权限与灰度规则。
+- 修复用户截图中的Tabs选中样式；保留role/aria-selected、键盘和切换次数，选中项必须有完整形状与清晰底色/文字区分。
+- 成就、browser、terminal、workbench/session仍排除；不改SDK/core/Repository/Context实现，不改公开header视觉行为、不更换依赖/锁、不写真实云端账户或支付。
+- S2集成回归确认：header、升级hook、sidebar多层`window.show`包装在全卸载后残留旧回调（真实global hook测试RED）。允许新增仅负责可注销命令包装的共享lib及测试，窄接header/controller/pass-upgrade-rollout的安装清理；保留receiver、参数、原返回值与外部后来owner，不改升级资格、revealed策略、请求和支付逻辑。该修复属于新增入口的生命周期兼容，不扩展全站命令框架。
+- 生成副本/字典/字体只能通过已验证标准脚本；任何范围外改动先说明需要。所有完成结论需本增量真实验证。
+
+## 执行任务与验收
+
+- [x] **S7 / 反馈入口收敛（局部 quick，Developer→Reviewer）。** 删除 Agent 侧栏独立“有建议？提交反馈”链接和专属CSS；国内站桌面/sidebar及手机/header头像菜单默认显示“建议反馈”，沿用原问卷、安全新窗口和关闭行为，国际站仍不显示，工作台reveal与账务/SDK/Context不变。4生产+3测试，RED4fail/39pass后双站各6文件69pass，check170current/0new/47既有警告；独立审查双站各3文件43pass，无P1/P2。标准i18n提取/翻译/繁体生成增加单词条并清除4孤儿，既有翻译不变；Root标准sync/check154及完整OpenCraft gate exit0（1273执行全pass/0skip，边界/类型/Web/ExpoWeb/iOSJS）。实际桌面默认入口/原URL与安全属性/点击新建问卷tab并关闭回焦、Esc通过，390手机header可见；移动无hover点击由组件测试覆盖，不称触屏实机验证。临时viewport已reset，问卷测试tab已关闭无提交，tab10预览保留。正式README/domain/TaskPack及文档/impact/diff检查通过；报告sidebar-s7-report.md和sidebar-s7-review.md。等待用户验收，未提交。
+
+- [x] **S6 / 账户菜单可见性核验与本地有套餐演示。** Root实际确认此前5188菜单和account均无套餐，现有生产积分/升级接线存在。仅fake repository新增显式`passState=sidebar-demo`，名称标注演示、1000总/750余、active同owner与匹配升级目标；去参数恢复旧数据，不持久化，未知Pass无升级目标、订单继续拒绝。生产controller/资格/归属/rollout/Context不改。精确源码与两测试先RED6失败/21通过，再GREEN27；最终双站各5文件56通过、check170current/0new/47既有i18n警告。Reviewer独立双站各2文件27通过，无P1/P2。Root实际菜单/account同250/1000、25%与同升级href，向上弹出/Esc回焦/去参数恢复原态通过，最终带参数tab10菜单展开供验收。标准sync/check154及完整OpenCraft gate exit0（1273测试执行0fail/skip，类型/边界/Web/ExpoWeb/iOSJS）；未作实机或真实账务验证。正式README/domain/TaskPack与文档/impact检查已同步。证据`../../.workflow/runtime/sidebar-s6-report.md`、`sidebar-s6-review.md`。等待用户验收，未提交。
+
+S5相邻测试窄补充：`src/components/ui/__tests__/tabs-selected-geometry.test.tsx`末尾两项仍固定旧灰轨道/白active/stone100 header；允许更新这两项颜色期望并保持真实Tailwind编译/作用域/优先级检查，前四项几何/键盘与共享UI源码不改。
+
+- [x] **S5 / 白底导航与明确选中态（Developer→Reviewer，局部quick）。** 桌面左栏含顶部品牌栏恢复白底+连续1px框线，手机导航白底；导航/会话与Agents局部Tabs选中为`#dedede`背景、`#171717`文字/图标、600字重，inactive hover为`#f5f5f5`。仅修改`frontend/src/styles.css`及nav-spacing、上述tabs-selected-geometry相邻颜色契约；不改共享UI原语、JS/handlers/SDK/account/依赖/生成/布局高度/滚动阴影。先RED再GREEN；最终双站各5文件67通过，check exit0/170current/0new/47既有i18n警告；独立审查双站各3文件24通过、无P1/P2。Root实际验证两类Tabs/导航选中和hover/键盘、白底连续边线、固定区域和上下阴影、390px手机Sheet及Esc回焦；1280×720默认viewport已恢复，当前任务/探索与滚动首端预览保留。正式边界文档和Task Pack已同步，文档/impact/diff检查通过；正式Owner审查仍属后续MR门禁。按纯CSS局部quick不跑无关build/下游gate，不以S3旧结果声明本批新构建。证据`../../.workflow/runtime/sidebar-s5-report.md`、`sidebar-s5-review.md`、`sidebar-s5-browser.md`；等待用户验收，未提交。
+- [x] **S4 / 滚动边界阴影（Developer→Reviewer，局部quick）。** 在既有桌面中间滚动区上方/下方仍有隐藏内容时，分别在Agent下沿/头像上沿显示轻微阴影；首端仅下阴影、末端仅上阴影、居中两端、无溢出无阴影。保持固定布局、唯一滚动所有者、隐藏滚动条、手机Sheet及内容挂载，不添加动画/依赖/业务请求。代码文件仅`agents-console/console-shell.tsx`、`src/styles.css`及相邻`__tests__/sidebar-scroll-shadows.test.tsx`。观察容器和内容尺寸，动态导航/会话长度、桌面切换和卸载清理纳入测试；1px容差避免亚像素边界残影。TDD新增8项RED→GREEN；双站各5文件61通过、check170current/0new/47既有i18n警告，Root独立2文件16通过，Reviewer双站各3文件18通过、无P1/P2。Root实际1280×720首/中/末、1280×1000无溢出、1024×400矮窗口、390×844手机Sheet/回焦验证通过，默认viewport已恢复。未触及共享生成闭包，按局部quick不重跑无关build/下游全量门禁；不以旧S3结果冒称本批新构建。正式边界说明及Task Pack已同步，未提交。证据见`../../.workflow/runtime/sidebar-s4-report.md`、`sidebar-s4-review.md`和`sidebar-s4-browser.md`。
+- [x] **S1 / Developer→Reviewer：侧栏与选中态。** 固定header68px与剩余sidebar连续覆盖100dvh，顶部/底部不收缩，中间独立滚动隐藏条，loading/mobile保留。修复共享Tabs内部高度与Agents局部对比色；独立审查发现的h-auto压缩P2经真实原语fixture复现并保留py-2窄修后关闭。CN/global各7文件130通过，check170current/0new，reviewer独立14/14通过，无剩余P1/P2。Root实测1440/1024/390、400px低高度、40条合成会话与键盘可达；三类Tabs均上下5px内缩。临时fixture已删除，未触及account/SDK/暂缓模块。真实200%浏览器缩放因原生应用控制不可用留人工验收，未冒称通过。
+- [x] **S2 / Developer→Reviewer：账户菜单与复用摘要。** 修改`components/site/user-avatar-menu.tsx`（sidebar分流，header保留）并新增`sidebar-user-menu.tsx`纯视图及相邻测试；在`src/lib/`新增明确职责的账户套餐摘要hook/selector及测试，`pages/marketing/account-page.tsx`仅接入共享摘要以保留原行为。套餐选择顺序modifyingPass→activePass→未销毁fallback；积分复用credit_total/credit_available，升级复用原资格与本地化URL。以Popover或DropdownMenu原语支持点击/键盘、Portal防裁切、向上优先且碰撞适配、Esc与回焦，保留global语言和hidden-entry/signOut语义。先测同pass额度、账号/套餐切换迟到响应、无套餐/失败/升级中/过期/隔离/无升级选项，再实现。使用既有翻译文案优先；新增文案按原i18n生成方式补齐。验收：菜单和account金额/额度一致，点击升级到原路径，header测试不变。 最终CN12文件161、global11文件141通过，check0新增；summary/view/integration均独立批准。ABA旧清理、命令链卸载、legacy订阅名称与未知额度文案P2均关闭，临时fixture已移除；S3总验收另记。
+- [x] **S3 / Reviewer + Leader：增量总验收。** 独立复核S1/S2功能与代码质量，检查DTO/Controller依赖方向；运行相关CN/global测试、`pnpm check`、双站build及标准OpenCraft sync/check（若无共享漂移不扩改消费者）；受影响消费者需追加聚焦测试。浏览器验证1440/1024/390、矮窗口与200%缩放、长导航/会话、菜单上下文与焦点、两类Tabs全部选中态。更新本计划、Task Pack、命中的正式设计与验证记录；停在用户验收点。 OpenCraft子项目AGENTS要求共享前端变更运行完整`npm run gate`，因此同步后除定向控件测试外重跑完整本地门禁（不发布或改变暂缓页面）。 实测汇总：CN22文件322/global21文件302通过，check170current/0new；双站build103/649页，标准sync/check154，OpenCraft定向24和完整gate1273/0skip及全部类型/边界/Web/Expo Web/iOS JS通过。Root最终默认视口菜单与Tabs上下5px复验，文档/236文件影响与diff通过；真实200%缩放留人工验收，未执行真实账务。预览已恢复，未提交/归档。
+
+**Commands:** `cd frontend && pnpm exec vitest run src/pages/marketing/agents-console/__tests__/console.test.tsx src/components/site/__tests__/user-avatar-menu.test.tsx src/pages/marketing/__tests__/agent-settings-nav-spacing.test.ts src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts --maxWorkers=1`；追加S2新增测试、account相邻测试和`src/lib/__tests__/use-pass-upgrade*.test.tsx`，以`NEXT_PUBLIC_REGION=global VITE_REGION=global`复跑区域相关集。`pnpm check`、`pnpm build:cn`、`pnpm build:global`串行；构建前由Root协调停止当前5188 dev，完成后恢复。无lint脚本按事实记录，不修改检查器或类型基线。
+**Planning gate:** 通过；用户审批、三项任务/文件所有权、既有接口可用、空错加载/身份边界、双站与浏览器验收已明确。方案比较见runtime调查：用户选择中间滚动隐藏条，未采用整栏不滚动/折叠更多。
+
+---
+
+# Agents Radix UI / shadcn 整体重构（2026-09-16）
+
+**Status:** 本轮范围实现、本地验证和独立审查完成，等待用户验收。双站合并回归/check/build与完整OpenCraft gate均通过；仅修复本地依赖安装环境后重验，没有跳过原失败用例。5188国内站mock预览已恢复。未提交、推送、创建MR或归档。
+**Branch / Base:** `frontsandbox/agents-radix-refactor` / `08b9cf568`。
+**Size:** L；按模块分批，每批最多 3 个任务，实施前明确实现/审查角色及文件归属。
+**Goal:** 覆盖 `/agents/*` 本次在用能力分区及路由别名，采用 Radix/shadcn 统一交互并收敛模块依赖，保留业务逻辑。用户在实施中明确排除已移除的成就页，并暂缓浏览器、终端与 Workbench；不修改或恢复成就页，不改三个暂缓模块。
+**Scope contract:** `../../.workflow/native/changes/agents-radix-refactor/brief.md`。
+**Boundaries / module matrix:** `changes/2026-09-16-agents-radix-boundaries.md`。
+**Acceptance:** 全路由有覆盖记录；请求/命令/身份与 async 行为保持；明确公开接口和资源所有者；无新增循环/反向依赖；双站和命中的共享消费者通过；视觉/键盘/多尺寸验证有实际证据。
+**Non-goals:** 后端/运行时与 SDK 内部重写、权限/计费/调度变更、发布和远端写入。
+
+- [x] **P0 / 规划：** 核对项目和共享 core 规范、路由与功能模块，补齐分层依赖矩阵、下游生成边界及验证口径。只读扫描 231 文件 / 752 依赖边，限定范围未发现循环/反向依赖；core/模型 hook 3 文件 15 测试通过。
+- [x] **B1 / 实现 + 依赖审查：** 已建立 Agents 纯展示组件与 6 类 Radix 原语，保持原锁文件 resolution；18 项公共/控制台组件测试通过，Tooltip 双轮 P2 修复经独立复审关闭。Portal 显式作用域已提供，消费迁移后的 OpenCraft 解析与生成验证归 B6 总门禁。
+- [x] **B2 / 实现 + 身份审查：** 提取 `agents-console` 公开展示接口，统一 Bot 选择、会话菜单、移动 Sheet、维护确认/编辑界面；独立复跑 23 files / 167 tests passed、`pnpm check` exit 0，reviewer 无阻断项。真实浏览器验证移动导航、焦点返回及 Tooltip 原生选文；SDK 实际远端会话不在此批验证声明内。
+- [x] **B3 / 实现 + 契约审查：** 已拆分模型、通道、诊断、高级设置与本地 QR 展示层，保留各 controller 的身份、请求和关闭策略；Leader 独立复跑 29 files passed / 1 skipped、380 tests passed / 13 skipped，`pnpm check` exit 0、0 new diagnostics。独立复审无阻断；真实浏览器验证 QQ 方式/凭据焦点、诊断 Select 键盘及 1024×768 通道卡片/按钮 6px 圆角，侧栏导航无重叠。
+- [x] **B4 / 实现 + 跨模块审查：** Skills/Experts/Packages、人设、记忆页面迁移完成；Leader CN/global 各29文件462项通过，`pnpm check` exit0、170 current / 276 baseline / 0 new / 106 resolved；独立审查通过，限定导入图266文件892边无新增循环/指定反向依赖。成就按用户最新要求排除。
+  - [x] Skills/Experts/Packages：独立审查通过；长详情可见初始焦点 P2 已关闭，global 六文件187项通过。
+  - [x] 人设：copied-SOUL 派生显示清理与删除成功焦点两项 P2 已关闭；独立五文件68项和额外时序/切Bot用例通过。语言fixture显式区分UI locale/数据集，CN/global各5项通过，命令和操作顺序保持。
+  - [x] 记忆 / Common 数值焦点：Leader 六文件100项通过；独立审查五文件96项与额外焦点用例通过；移动/桌面生产视图样例已检查。
+- [x] **B5 / 实现 + 资源审查：** 定时任务、文件、网站、DSH 与 chat 外围迁移完成；各片独立审查放行，保留 SDK/transport、调度、上传/下载、订阅/轮询清理和挂载语义。浏览器、终端与 Workbench 按用户补充要求暂缓。
+  - [x] 定时任务与选择器：命名弹窗、键盘/嵌套Portal、草稿与提交/删除生命周期完成；Leader CN17文件559项、专用global4文件20项及真实global交互14+header1项均通过，check/typecheck0新增；独立业务审查通过。390/1440真实表单6px、可见焦点/操作区、时间草稿取消、首尾Tab循环与实际控制台Esc返回新建均已验证。旧主文件全global有75个HEAD同名失败，另有整集单例差异未复现，不据此声明全global历史测试通过。
+    - 依赖窄例外：B5-A最小原语测试及真实浏览器已确认既有Popover1.1.17与Dialog/Select的focus-scope、dismissable-layer版本分裂。仅将Popover精确对齐到1.1.15（与现有Dialog/Select同闭包），不升级其他包或对传递依赖强制override；补无alias嵌套焦点/Esc与账户菜单回归，审核锁文件最小差异。DropdownMenu可兼容新增标准CheckboxItem导出，用于周/月原有多选。
+  - [x] 文件与网站：Leader CN/global各7文件70项通过，check exit0、170 current/0 new；独立审查网站24项与文件44项及3个额外用例通过。390/1024/1440文件行内编辑/取消焦点、单选/隐藏文件、Portal无横溢出及选中反馈已验证；网站Dialog/Select键盘、pending与账户级删除轮询保持。复制fallback经HEAD浏览器对照发现选区回归，已通过显式Dialog DOM ref窄修并独立关闭P2，未更改请求/访问码流程或执行真实剪贴板写入。
+  - [x] DSH与聊天宿主：Leader两站各DSH4文件56项、Chat3文件14项通过；developer两站7文件70项、check170current/0new，独立审查均放行。DSH长选中值375→572横溢出P2经直接flex子项限宽修复，390实测375/375；修复/删除Tab/Esc回焦、1024/1440与手机布局已验证。Chat真实宿主1440/1024无外层纵向溢出，合成SDK更新仍同挂载/同首API对象；SDK/CSS lazy保持，browser/terminal/workbench均未实施。
+- [x] **B6 / 验证 + 总审查：** 完成本次范围行为、边界审计、`pnpm check`、相关测试、双站构建、桌面/窄屏/移动端与键盘验证；标准同步OpenCraft和完整消费者gate通过，历史基线失败与未授权远端操作均记录。
+  - [x] 共享消费实现：按实际154文件生成闭包补OpenCraft原语作用域/主题、7个直接依赖与3个新增包，保留原锁已有包记录；诊断仅转发既有account stream。标准sync/check、干净安装、7文件104项及独立审查通过；生产/生成已冻结，不扩展到暂缓页面。
+  - [x] 最终工程与界面验证：CN60文件992项、global59文件781项+定时任务新增/旧header15项；check0新增；双站build103/649静态页；OpenCraft完整gate exit0，各组累计1273通过/0跳过及Web/Expo Web/iOS JS构建完成。共享控件真实嵌套焦点/深浅主题/390布局通过；原语依赖实际解析一致。
+  - [x] 独立总审查：B1至B6均放行，B6独立27/27、154生成文件/manifest/资产一致，无未关闭P1/P2；最终报告区分本地模拟、实际组件与未授权远端操作，完成后停在用户确认点。
+- [ ] **用户验收：** 等待用户检查效果；不自动提交、推送、创建MR或归档。
+
+**Baseline / current verification:** 初始OpenCraft副本缺少`domain/instance-bot-errors.ts`，现已由标准生成修复并通过154文件check。最终结果见`../../.workflow/native/changes/agents-radix-refactor/report.md`。global旧定时任务主集75个HEAD同名失败不扩修；本地结果不证明真实云端写操作或原生客户端实机验收。
+**Workflow:** 用户显式指定 `feai-workflow` 后，本段为本次实施任务入口；Native brief 保留整体方案批准门禁，runtime 仅作当前批次缓存；旧任务保留在下方，不代归档。
+**Scope amendment:** 2026-09-16 用户明确“成就不用管，页面已经去掉了”。该项从 B4 和 B6 验收范围排除；原批准 brief 保留历史内容与 hash，本段和模块矩阵记录后续范围收缩。
+**Scope amendment 2:** 2026-09-16 用户进一步明确“浏览器、终端、workbench可以先不用管”。`/agents/browser`、`/agents/terminal`、`/agents/workbench` 及其 `/agents/session` 别名从实施和页面验收范围移出，保留现状；此前基线仅保留为历史证据，不修其旧断言以扩大范围。DSH、chat及已迁移模块继续；OpenCraft 对已修改共享组件的必要生成与消费检查保持。
+
+---
+
 # Agents/账号页 Footer 移除与 AgentChat 高度优化（2026-09-15）
 
 **Status:** Mono2 宿主侧实现完成；本地功能提交为 `4b86ab6de`，滚动锁加固提交为 `b94619205`。当前已将 `origin/master@554355180` 合入暂存区并完成合并后验证，等待确认创建合并提交；未推送、创建 MR 或发布。

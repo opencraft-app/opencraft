@@ -3,6 +3,7 @@ import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, Chevron
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
+import { SidebarUserMenuController } from "@/components/site/sidebar-user-menu-controller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
@@ -12,21 +13,20 @@ import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
-import { cn } from "@/lib/utils";
-
-type RevealWorkbenchHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
+import { registerWindowCommand } from "@/lib/window-command-chain";
 
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
   variant?: "header" | "sidebar";
 };
 
-export const UserAvatarMenu = ({
+export const UserAvatarMenu = ({ showLanguageSwitcher = false, variant = "header" }: UserAvatarMenuProps) => variant === "sidebar"
+  ? <SidebarUserMenuController showLanguageSwitcher={showLanguageSwitcher} />
+  : <HeaderUserAvatarMenu showLanguageSwitcher={showLanguageSwitcher} />;
+
+const HeaderUserAvatarMenu = ({
   showLanguageSwitcher = false,
-  variant = "header",
-}: UserAvatarMenuProps) => {
+}: Pick<UserAvatarMenuProps, "showLanguageSwitcher">) => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
@@ -37,7 +37,6 @@ export const UserAvatarMenu = ({
   const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
   const [workbenchHostname, setWorkbenchHostname] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const accountHoveredRef = useRef(false);
   const languageMenuOpenedByHoverRef = useRef(false);
   const languageMenuId = useId();
 
@@ -61,33 +60,11 @@ export const UserAvatarMenu = ({
     setWorkbenchHostname(window.location.hostname);
   }, []);
 
-  useEffect(() => {
-    const host = window as RevealWorkbenchHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealWorkbench = (...args: unknown[]) => {
-      if (mounted) {
-        setHiddenEntriesRevealed(true);
-      }
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealWorkbench;
-
-    return () => {
-      mounted = false;
-      if (host.show !== revealWorkbench) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
+  useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
+    setHiddenEntriesRevealed(true);
+    const result = next(...args);
+    return result === undefined ? true : result;
+  }), []);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
   const subscriptionName = activePass?.bundle_name ?? session.currentSubscription?.code ?? null;
@@ -109,53 +86,13 @@ export const UserAvatarMenu = ({
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
-  const isSidebar = variant === "sidebar";
 
   return (
     <div
       ref={containerRef}
-      className={cn("relative", isSidebar && "lv-agent-account-menu")}
-      onMouseEnter={() => {
-        if (!isSidebar) return;
-        accountHoveredRef.current = true;
-        setOpen(true);
-      }}
-      onMouseLeave={() => {
-        if (!isSidebar) return;
-        accountHoveredRef.current = false;
-        if (!languageMenuOpen) setOpen(false);
-      }}
+      className="relative"
     >
       {/* Avatar trigger */}
-      {isSidebar ? (
-        <button
-          type="button"
-          className="lv-agent-account-trigger"
-          aria-label={t("打开用户菜单")}
-          aria-expanded={open}
-          aria-haspopup="true"
-          onClick={() => setOpen(true)}
-        >
-          <img
-            src={avatarSrc}
-            alt=""
-            className="h-9 w-9 shrink-0 object-cover"
-            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
-          />
-          <span className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-sm font-semibold text-black/80">
-              {user?.name || t("用户")}
-            </span>
-            <span className="block truncate text-xs text-black/40">
-              {user?.email || subscriptionLabel}
-            </span>
-          </span>
-          <ChevronDown
-            className="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
-            style={{ color: "#aaa", transform: open ? "rotate(0deg)" : "rotate(180deg)" }}
-          />
-        </button>
-      ) : (
         <div
           onMouseEnter={() => setOpen(true)}
           className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
@@ -182,7 +119,6 @@ export const UserAvatarMenu = ({
             />
           </button>
         </div>
-      )}
 
       {/* Dropdown */}
       <AnimatePresence>
@@ -192,15 +128,10 @@ export const UserAvatarMenu = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
-            className={cn(
-              "lw-user-avatar-menu absolute z-50 overflow-hidden border border-black/[0.05] bg-white/95",
-              isSidebar
-                ? "bottom-full left-0 mb-2 w-[var(--lv-agents-nav-width)] origin-bottom-left"
-                : "right-0 top-full mt-2 w-52 origin-top-right",
-            )}
+            className="lw-user-avatar-menu absolute z-50 overflow-hidden border border-black/[0.05] bg-white/95 right-0 top-full mt-2 w-52 origin-top-right"
             style={menuStyle}
             onMouseLeave={() => {
-              if (!isSidebar && !languageMenuOpen) setOpen(false);
+              if (!languageMenuOpen) setOpen(false);
             }}
           >
             {/* User info */}
@@ -251,7 +182,7 @@ export const UserAvatarMenu = ({
                   {t("工作台")}
                 </a>
               ) : null}
-              {hiddenEntriesRevealed && !isGlobal ? (
+              {!isGlobal ? (
                 <a
                   href={PRODUCT_FEEDBACK_URL}
                   target="_blank"
@@ -260,7 +191,7 @@ export const UserAvatarMenu = ({
                   className={menuItemClass}
                 >
                   <MessageSquare className={menuIconClass} />
-                  {t("产品反馈")}
+                  {t("建议反馈")}
                 </a>
               ) : null}
               {isGlobal && showLanguageSwitcher ? (
@@ -268,7 +199,7 @@ export const UserAvatarMenu = ({
                   open={languageMenuOpen}
                   onOpenChange={(value) => {
                     setLanguageMenuOpen(value);
-                    if (!value && !accountHoveredRef.current) setOpen(false);
+                    if (!value) setOpen(false);
                   }}
                 >
                   <PopoverTrigger asChild>
@@ -304,7 +235,7 @@ export const UserAvatarMenu = ({
                     onMouseLeave={() => {
                       languageMenuOpenedByHoverRef.current = false;
                       setLanguageMenuOpen(false);
-                      if (!accountHoveredRef.current) setOpen(false);
+                      setOpen(false);
                     }}
                   >
                     <InternationalLanguageMenu

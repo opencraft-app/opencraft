@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
@@ -15,6 +16,7 @@ vi.mock("framer-motion", () => ({
 
 const useSession = vi.fn();
 const useOpenClaw = vi.fn();
+const sidebarPlans = { listMyPasses: () => Promise.resolve([]) };
 let mockIsGlobal = true;
 
 vi.mock("@/contexts/session-context", () => ({
@@ -43,10 +45,16 @@ vi.mock("@/components/site/language-switcher", () => ({
 }));
 
 vi.mock("@/lib/region", () => ({
+  DEFAULT_LOCALE: "en-US",
+  get isCN() { return !mockIsGlobal; },
   get isGlobal() {
     return mockIsGlobal;
   },
 }));
+
+// Existing header tests stay provider-free; these stubs serve only the sidebar child.
+vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => false }));
+vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => ({ plans: sidebarPlans }) }));
 
 const stubLocation = (hostname: string) => {
   Object.defineProperty(window, "location", {
@@ -143,7 +151,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("opens the sidebar account menu on hover and still supports click", () => {
+  it("opens the sidebar account menu by click in a Portal and keeps identity and account navigation", async () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -164,31 +172,28 @@ describe("UserAvatarMenu", () => {
     const trigger = screen.getByRole("button", { name: "打开用户菜单" });
     expect(trigger).toHaveClass("lv-agent-account-trigger");
     expect(trigger).toHaveTextContent("海盐小猫");
-    expect(trigger).toHaveTextContent("cat@example.com");
+    expect(trigger).toHaveTextContent("套餐：launch");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("link", { name: "avatar" })).not.toBeInTheDocument();
 
     fireEvent.mouseEnter(trigger);
-
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(trigger);
+    const menu = screen.getByRole("dialog", { name: "账号管理" });
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(document.querySelector(".lw-user-avatar-menu")).toHaveClass(
-      "bottom-full",
-      "left-0",
-      "origin-bottom-left",
-    );
+    expect(trigger.parentElement).not.toContainElement(menu);
+    expect(menu).toHaveTextContent("cat@example.com");
     expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
 
     fireEvent.mouseLeave(trigger.parentElement!);
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-
-    fireEvent.click(trigger);
+    await userEvent.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("opens the international language picker beside the account menu", () => {
+  it("opens the international language picker from the click-based account menu", async () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -204,13 +209,13 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu showLanguageSwitcher variant="sidebar" />);
     const accountTrigger = screen.getByRole("button", { name: "打开用户菜单" });
-    fireEvent.mouseEnter(accountTrigger);
+    await userEvent.click(accountTrigger);
 
     const languageTrigger = screen.getByRole("button", { name: "语言" });
     expect(languageTrigger).toHaveAttribute("aria-haspopup", "dialog");
     expect(screen.queryByLabelText("International site languages")).not.toBeInTheDocument();
 
-    fireEvent.mouseEnter(languageTrigger);
+    await userEvent.click(languageTrigger);
 
     expect(screen.getByLabelText("International site languages")).toBeVisible();
     expect(document.querySelector('[data-lv-agent-language-menu="true"]')).toBeInTheDocument();
@@ -354,8 +359,9 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
   });
 
-  it("keeps the product feedback menu item hidden until show() reveals it", () => {
+  it("shows domestic feedback from the header click trigger without revealing other hidden entries", async () => {
     mockIsGlobal = false;
+    stubLocation("lightclaw.tech");
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -369,18 +375,25 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu />);
 
-    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    const trigger = screen.getByRole("button", { name: "打开用户菜单" });
+    // Mobile activation has no preceding mouseenter. Desktop hover opening
+    // remains covered separately and is unchanged by the feedback item.
+    fireEvent.click(trigger);
     expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
-
-    act(() => {
-      (window as Window & { show?: () => boolean }).show?.();
-    });
-
-    const feedbackLink = screen.getByRole("link", { name: "产品反馈" });
+    expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
+    const feedbackLink = screen.getByRole("link", { name: "建议反馈" });
     expect(feedbackLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(feedbackLink).toHaveAttribute("target", "_blank");
     expect(feedbackLink).toHaveAttribute("rel", "noopener noreferrer");
+    await userEvent.click(feedbackLink);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+    expect(screen.getAllByRole("link", { name: "建议反馈" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "工作台" })).toBeInTheDocument();
   });
 
   it("removes the product feedback menu item on the international site", () => {
@@ -398,11 +411,12 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.queryByRole("link", { name: "建议反馈" })).not.toBeInTheDocument();
     act(() => {
       (window as Window & { show?: () => boolean }).show?.();
     });
 
-    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "建议反馈" })).not.toBeInTheDocument();
   });
 
   it("keeps the companion and account entries first while removing My Workbench", () => {

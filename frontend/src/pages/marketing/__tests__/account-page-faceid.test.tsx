@@ -13,6 +13,7 @@ const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const refreshPasses = vi.fn().mockResolvedValue(undefined);
+const listMyPasses = vi.fn().mockResolvedValue([]);
 const retryRealnameSync = vi.fn();
 const startRealnameFaceIdAttempt = vi.fn();
 const getRealnameFaceIdAttempt = vi.fn();
@@ -111,7 +112,7 @@ vi.mock("@/contexts/repository-context", () => ({
       retryRealnameSync,
     },
     plans: {
-      listMyPasses: vi.fn().mockResolvedValue([]),
+      listMyPasses,
     },
   }),
 }));

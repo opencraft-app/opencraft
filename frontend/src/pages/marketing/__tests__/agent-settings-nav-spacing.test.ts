@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { compile } from "tailwindcss";
+import { segmentedTriggerClass } from "@/components/ui/control-shell";
 
 const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
+const consoleShell = readFileSync(join(process.cwd(), "src/pages/marketing/agents-console/console-shell.tsx"), "utf8");
 const page = readFileSync(
   join(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"),
   "utf8",
@@ -38,6 +41,71 @@ function getBlockBody(source: string, marker: string): string | undefined {
 }
 
 describe("Agent settings navigation spacing", () => {
+  it("joins the 68px header to a fixed remaining-height sidebar with only its middle scrolling", () => {
+    const sidebar = getBlockBody(styles, "\n  .lv-agents-sidebar-scroll-isolated {");
+    const middle = getBlockBody(styles, "\n  .lv-agents-sidebar-middle {");
+    const fixedSlots = getBlockBody(styles, "\n  .lv-agents-sidebar-profile,");
+    const scrollbar = getBlockBody(styles, "\n  .lv-agents-sidebar-middle::-webkit-scrollbar {");
+    expect(sidebar).toContain("position: fixed;");
+    expect(sidebar).toContain("left: 0;");
+    expect(sidebar).toContain("top: 68px;");
+    expect(sidebar).toContain("max-height: calc(100dvh - 68px);");
+    expect(sidebar).toContain("overflow: hidden;");
+    expect(sidebar).not.toContain("overflow-y: auto;");
+    expect(middle).toContain("flex: 1 1 auto;");
+    expect(middle).toContain("min-height: 0;");
+    expect(middle).toContain("overflow-y: auto;");
+    expect(middle).toContain("scrollbar-width: none;");
+    expect(scrollbar).toContain("display: none;");
+    expect(fixedSlots).toContain("flex-shrink: 0;");
+    const header = getBlockBody(styles, "\n  header.lv-agent-sidebar-header {");
+    expect(header).toContain("background: #fff !important;");
+    expect(sidebar).toContain("background: #fff;");
+    expect(header).toContain("border-right: 1px solid #e9ecf1;");
+    expect(header).toContain("border-right-color: #e9ecf1 !important;");
+    expect(getBlockBody(styles, "\n.lv-agents-sidebar {")).toContain("border-right: 1px solid #e9ecf1;");
+  });
+
+  it("gives navigation and session links a clear selected color without weakening their text or icons", () => {
+    const item = getBlockBody(styles, "\n\n.agents-ui .lv-agents-nav-item {");
+    const active = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item.is-active {");
+    const hover = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item:not(.is-active):hover {");
+    const icon = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item .lv-agents-nav-icon {");
+    expect(item).toContain("color: var(--text-secondary) !important;");
+    expect(item).toContain("background: #fff;");
+    expect(active).toContain("background: #dedede !important;");
+    expect(active).toContain("color: #171717 !important;");
+    expect(active).toContain("font-weight: 600;");
+    expect(active).not.toContain("opacity:");
+    expect(hover).toContain("background: #f5f5f5 !important;");
+    expect(icon).toContain("color: inherit;");
+    // Desktop-specific overrides must not recolor the same links/icons.
+    expect(styles).not.toContain(".lv-agents-sidebar-middle .lv-agents-nav-item.is-active {");
+    expect(styles).not.toContain(".lv-agents-sidebar-middle .lv-agents-nav-icon {");
+  });
+
+  it("keeps Agents Tabs white with a grey selection that wins over shared active utilities", async () => {
+    const track = getBlockBody(styles, '\n.agents-ui [role="tablist"] {');
+    const active = getBlockBody(styles, '\n.agents-ui [role="tab"][data-state="active"] {');
+    const hover = getBlockBody(styles, '\n.agents-ui [role="tab"][data-state="inactive"]:not(:disabled):hover {');
+    expect(track).toContain("--surface-muted: #fff;");
+    expect(track).toContain("--border-subtle: #e9ecf1;");
+    expect(active).toContain("background: #dedede !important;");
+    expect(active).toContain("color: #171717 !important;");
+    expect(active).toContain("font-weight: 600 !important;");
+    expect(active).not.toMatch(/(?:height|padding|outline|opacity|box-shadow):/);
+    expect(hover).toContain("background: #f5f5f5 !important;");
+    // Compile actual shared utility classes and the scoped app rule. The
+    // important color declarations survive compilation and outrank ordinary
+    // utilities; real layout/computed colors are separately browser-verified.
+    const generated = (await compile(`@layer app, utilities; @theme { --color-white: #fff; --font-weight-medium: 500; } @layer app { .agents-ui [role="tab"][data-state="active"] { ${active ?? ""} } } @layer utilities { @tailwind utilities; }`)).build(segmentedTriggerClass.split(" "));
+    expect(generated).toContain("background: #dedede !important;");
+    expect(generated).toContain("color: #171717 !important;");
+    expect(generated).toContain("font-weight: 600 !important;");
+    expect(generated).toContain("background-color: var(--color-white);");
+    expect(generated).not.toContain("background-color: var(--color-white) !important;");
+  });
+
   it("keeps the desktop chat height chain within the viewport", () => {
     const chatPage = getBlockBody(styles, "\n  .lv-agent-chat-page {");
     const chatMain = getBlockBody(
@@ -108,7 +176,8 @@ describe("Agent settings navigation spacing", () => {
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
     expect(page).toContain('<section className="lw-settings-shell lv-agent-settings-shell">');
     expect(page).toContain('className="lv-agent-sidebar-header"');
-    expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
+    expect(consoleShell.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
+    expect(page).toContain("<AgentConsoleShell");
     expect(agentsPageClient).toContain(
       "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
     );
@@ -130,7 +199,7 @@ describe("Agent settings navigation spacing", () => {
     expect(agentContent).toContain("margin-top: -24px;");
     expect(agentContent).toContain("margin-left: auto;");
     expect(agentContent).toContain("margin-right: auto;");
-    expect(page).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
+    expect(consoleShell).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
     expect(loadingView).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
     expect(styles).toContain("width: min(1440px, calc(100vw - 160px));");
   });
@@ -138,20 +207,17 @@ describe("Agent settings navigation spacing", () => {
   it("uses compact desktop spacing and preserves mobile hit areas", () => {
     const desktopSidebar = getBlockBody(styles, "\n.lv-agents-sidebar {");
     const desktopNavigation = getBlockBody(styles, "\n.lv-agents-nav {");
-    const desktopItem = getBlockBody(styles, "\n.lv-agents-nav-item {");
-    const profileName = getBlockBody(styles, "\n.lv-agent-profile-name {");
-    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
-    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {");
-    const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
+    const desktopItem = getBlockBody(styles, "\n\n.agents-ui .lv-agents-nav-item {");
+    const mobileNavigation = getBlockBody(styles, ".agents-ui.lv-agents-navigation-sheet .lv-agents-nav-group-items {");
+    const mobileItem = getBlockBody(styles, ".agents-ui.lv-agents-navigation-sheet .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
     expect(desktopSidebar).toContain("padding-right: 12px;");
     expect(desktopNavigation).toContain("gap: 8px;");
-    expect(desktopItem).toContain("height: 32px;");
-    expect(profileName).toContain("font-size: 14px;");
-    expect(profileName).toContain("line-height: 20px;");
-    expect(mobileNavigation).toContain("gap: 12px;");
-    expect(mobileItem).toContain("height: 36px;");
+    expect(desktopItem).toContain("min-height: 36px;");
+    expect(desktopItem).toContain("overflow-wrap: anywhere;");
+    expect(mobileNavigation).toContain("flex-direction: column;");
+    expect(mobileItem).toContain("min-height: 40px;");
   });
 
   it("moves the desktop account menu to the bottom of the Agent sidebar", () => {
@@ -165,7 +231,8 @@ describe("Agent settings navigation spacing", () => {
     expect(accountFooter).toContain("padding-top: 8px;");
     expect(accountFooter).toContain("border-top: 1px solid #e9ecf1;");
     expect(styles).toContain("height: calc(100dvh - 68px);");
-    expect(desktopSidebar).toContain("padding-top: 20px;");
+    expect(desktopSidebar).toContain("padding-top: 12px;");
+    expect(desktopSidebar).toContain("padding-bottom: max(12px, env(safe-area-inset-bottom));");
   });
 
   it("keeps auth and data loading states on the final Agent shell geometry", () => {
@@ -178,16 +245,13 @@ describe("Agent settings navigation spacing", () => {
     expect(loadingView).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
     expect(loadingView).toContain('className="lv-agent-account-footer hidden lg:flex"');
     expect(loadingView).not.toContain('lg:top-[84px]');
+    expect(loadingView).toContain('className="lv-agent-profile-wrap lv-agents-sidebar-profile"');
+    expect(loadingView).toContain('className="lv-agents-sidebar-middle"');
+    expect(loadingView).toContain('className="lv-agents-sidebar-footer"');
   });
 
-  it("keeps the requested desktop sidebar separators and bottom actions aligned", () => {
+  it("removes the standalone feedback link while retaining desktop account alignment and separators", () => {
     const profileSeparator = getBlockBody(styles, "\n.lv-agent-profile-wrap {");
-    const feedbackLink = getBlockBody(styles, "\n.lv-agent-feedback-link {");
-    const desktopFeedbackLink = getBlockBody(styles, "\n  .lv-agent-feedback-link {");
-    const adjacentAccountFooter = getBlockBody(
-      styles,
-      "\n  .lv-agent-feedback-link + .lv-agent-account-footer {",
-    );
     const accountSeparator = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopScrollContainer = getBlockBody(
       styles,
@@ -197,18 +261,20 @@ describe("Agent settings navigation spacing", () => {
     expect(profileSeparator).toContain("width: calc(100% + 12px);");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
-    expect(feedbackLink).toContain("width: calc(100% + 12px);");
-    expect(feedbackLink).not.toContain("border-top:");
-    expect(desktopFeedbackLink).toContain("margin-top: auto;");
-    expect(adjacentAccountFooter).toContain("margin-top: 8px;");
+    expect(page).not.toContain("lv-agent-feedback-link");
+    expect(page).not.toContain("有建议？提交反馈");
+    expect(page).not.toContain("PRODUCT_FEEDBACK_URL");
+    expect(styles).not.toContain("lv-agent-feedback-link");
+    expect(page).toContain('<UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />');
     expect(accountSeparator).toContain("width: calc(100% + 12px + 16px);");
     expect(accountSeparator).toContain("margin-left: -16px;");
     expect(accountSeparator).toContain("padding-left: 16px;");
     expect(accountSeparator).toContain("border-top: 1px solid #e9ecf1;");
     expect(desktopScrollContainer).toContain("width: 264px;");
-    expect(desktopScrollContainer).toContain("margin-left: -16px;");
+    expect(desktopScrollContainer).toContain("left: 0;");
+    expect(desktopScrollContainer).toContain("margin-left: 0;");
     expect(desktopScrollContainer).toContain("padding-left: 16px;");
-    expect(desktopScrollContainer).toContain("overflow-x: hidden;");
+    expect(desktopScrollContainer).toContain("overflow: hidden;");
   });
 
 });

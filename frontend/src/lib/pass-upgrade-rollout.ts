@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { isGlobal } from "@/lib/region";
+import { registerWindowCommand } from "@/lib/window-command-chain";
 
 // UI rollout only: server eligibility and payment checks remain authoritative.
 // Keep opt-in within this document, including SPA navigation; never persist it.
@@ -13,31 +14,17 @@ const setVisible = (value: boolean) => {
 
 function installConsoleCommands() {
   if (!isGlobal) return;
-  const host = window as Window & {
-    show?: (...args: unknown[]) => unknown;
-    hide?: (...args: unknown[]) => unknown;
-  };
-  const originalShow = host.show;
-  const originalHide = host.hide;
-  const show = (...args: unknown[]) => {
+  const removeShow = registerWindowCommand(window, "show", (next, ...args) => {
     setVisible(true);
-    return originalShow?.apply(host, args) ?? true;
-  };
-  const hide = (...args: unknown[]) => {
+    return next(...args) ?? true;
+  });
+  const removeHide = registerWindowCommand(window, "hide", (next, ...args) => {
     setVisible(false);
-    return originalHide?.apply(host, args) ?? true;
-  };
-  host.show = show;
-  host.hide = hide;
+    return next(...args) ?? true;
+  });
   return () => {
-    if (host.show === show) {
-      if (originalShow === undefined) delete host.show;
-      else host.show = originalShow;
-    }
-    if (host.hide === hide) {
-      if (originalHide === undefined) delete host.hide;
-      else host.hide = originalHide;
-    }
+    removeShow();
+    removeHide();
   };
 }
 

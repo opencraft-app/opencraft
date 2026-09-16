@@ -27,7 +27,6 @@ import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import {
   canDeletePass,
-  canRenewPass,
   getPassStatus,
   isPaidBillingEnabled,
 } from "@/lib/billing-flow";
@@ -46,6 +45,8 @@ import { SavedCardsSection } from "./saved-cards-section";
 import { ReferralSection } from "./referral-section";
 import { VerifyIdentityModal, type RealnameSyncStatus } from "@/pages/marketing/verify-identity-modal";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
+import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
+import { accountPassCanRenew, accountPassDisplayName } from "@/lib/account-pass-summary";
 
 /* ─── animation variants ─── */
 
@@ -773,60 +774,33 @@ const SubscriptionSection = ({
   const plan = user.plan;
   const renewalRealnameVerified = isRenewalRealnameVerified(session.user, realnamePhoneVerificationEnabled);
 
-  /**
-   * 只读 fallback pass：activePass 为空时仍需展示 expired/isolated pass 的续费状态。
-   * 国内站仅在付费开关开启时拉取；国际站关闭时也要展示 Coming Soon。
-   */
-  const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
+  const { pass: operablePass, credits, clearFallback } = useAccountPassSummary({
+    userId: session.user?.id, activePass: pass, modifyingPass, paidBillingActive,
+    global: isGlobal, listMyPasses: plans.listMyPasses,
+  });
 
   /** 续费 / 销毁弹窗状态 */
   const [renewModalOpen, setRenewModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
-  useEffect(() => {
-    if (!isGlobal && !paidBillingActive) return;
-    if (pass) {
-      setFallbackPass(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const list = await plans.listMyPasses();
-        if (cancelled) return;
-        /* 取首个未销毁的 pass；isolated/expired 都会在这里被包含。
-           互斥占用规则保证不会同时出现多个未销毁 pass。 */
-        const first = list.find((p) => !p.deleted_time) ?? null;
-        setFallbackPass(first);
-      } catch (err) {
-        console.warn("[account] fetch fallback pass failed", err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [paidBillingActive, pass, plans]);
-
-  /** 可操作的 pass：优先 active，其次 fallback */
-  const operablePass = modifyingPass ?? pass ?? fallbackPass;
   const isModifying = operablePass?.status === "modifying";
   const passStatus = operablePass ? getPassStatus(operablePass) : null;
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
-  const canRenew = !isModifying && (isGlobal || paidBillingActive) && operablePass != null && canRenewPass(operablePass);
+  const canRenew = accountPassCanRenew(operablePass, isGlobal, paidBillingActive);
   const canDelete = !isModifying && paidBillingActive && operablePass != null && canDeletePass(operablePass);
   const upgrade = usePassUpgrade({ userId: session.user?.id, passId: operablePass?.pass_id, currentPass: operablePass, enabled: paidBillingActive });
 
   const handleRenewSuccess = useCallback(async () => {
     setRenewModalOpen(false);
     await refreshPasses();
-    setFallbackPass(null);
-  }, [refreshPasses]);
+    clearFallback();
+  }, [refreshPasses, clearFallback]);
 
   const handleDeleteSuccess = useCallback(async () => {
     setDeleteModalOpen(false);
     await refreshPasses();
-    setFallbackPass(null);
-  }, [refreshPasses]);
+    clearFallback();
+  }, [refreshPasses, clearFallback]);
 
   /**
    * 活跃权益的认定：
@@ -877,9 +851,9 @@ const SubscriptionSection = ({
   }, [operablePass, subscription, plan.trialDays]);
 
   // 积分：统一从 operablePass 取（credit_total / credit_available），没有 pass 时为 0
-  const creditsTotal = operablePass ? operablePass.credit_total : 0;
-  const creditsUsed = operablePass ? Math.max(0, operablePass.credit_total - operablePass.credit_available) : 0;
-  const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
+  const creditsTotal = credits?.total ?? 0;
+  const creditsUsed = credits?.used ?? 0;
+  const usedPercent = credits?.usedPercent ?? 0;
   const creditsExhausted = Boolean(operablePass && creditsTotal > 0 && operablePass.credit_available <= 0);
   const showCreditPrompt = creditsExhausted || usedPercent > 95;
   const creditUsageColor = usedPercent > 95
@@ -891,7 +865,7 @@ const SubscriptionSection = ({
         : "var(--lw-accent)";
 
   // 展示用的套餐名称
-  const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
+  const displayName = accountPassDisplayName(operablePass, subscription?.code, plan.name);
 
   /* ── 未订阅：缺省引导状态 ── */
   if (!hasActive) {

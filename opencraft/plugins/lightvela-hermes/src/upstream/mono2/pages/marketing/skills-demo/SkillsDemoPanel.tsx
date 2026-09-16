@@ -48,7 +48,9 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { useTranslation } from "react-i18next";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
+import { AgentConfirmDialog, AgentTooltip } from "../../../components/agents/index";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { CuratedSkillDetailsView } from "./skills-dialog-views";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "../../../components/ui/select";
@@ -913,38 +915,16 @@ function SkillIcon({
   );
 }
 
-function BatchSelectButton({
-  skill,
-  selected,
-  disabled,
-  onToggle,
-}: {
+function BatchSelectButton({ skill, selected, disabled, onToggle }: {
   skill: Skill;
   selected: boolean;
   disabled: boolean;
   onToggle: (skill: Skill) => void;
 }) {
   const t = useT();
-  return (
-    <button
-      type="button"
-      onClick={() => onToggle(skill)}
-      disabled={disabled}
-      aria-pressed={selected}
-      aria-label={selected
-        ? t("取消批量安装 {{name}}", { name: skill.name })
-        : t("选择批量安装 {{name}}", { name: skill.name })}
-      title={selected ? t("取消选择") : t("选择")}
-      className={cn(
-        "inline-flex size-5 items-center justify-center rounded-[4px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:opacity-55",
-        selected
-          ? "border-black bg-black text-white"
-          : "border-black/20 bg-white text-transparent hover:border-black/40",
-      )}
-    >
-      <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
-    </button>
-  );
+  return <Checkbox checked={selected} disabled={disabled}
+    aria-label={selected ? t("取消批量安装 {{name}}", { name: skill.name }) : t("选择批量安装 {{name}}", { name: skill.name })}
+    onCheckedChange={() => onToggle(skill)} />;
 }
 
 function SkillCard({
@@ -988,7 +968,7 @@ function SkillCard({
         <div className="mt-1 flex items-center gap-2 text-[11px] text-black/55">
           <RegistryBadge registry={skill.registry} />
           {popularityTier ? (
-            <span className="inline-flex items-center gap-1 text-[#C66A1A]" aria-label={t("热门")} title={t("热门")}>
+            <span className="inline-flex items-center gap-1 text-[#C66A1A]" aria-label={t("热门")}>
               <Flame className="size-3.5" aria-hidden="true" />
               <span>{t("热门")}</span>
             </span>
@@ -1014,7 +994,6 @@ function SkillCard({
           <span
             className="inline-flex size-9 items-center justify-center text-[#82BDAE]"
             aria-label={t("已安装")}
-            title={t("已安装")}
           >
             <Check className="size-5" aria-hidden="true" />
           </span>
@@ -1028,16 +1007,15 @@ function SkillCard({
                 onToggle={onToggleSelected}
               />
             ) : null}
-            <button
+            <AgentTooltip content={t("安装")} triggerMode="control"><button
               type="button"
               onClick={() => onInstall(skill)}
               disabled={disabled || installing}
               aria-label={t("安装")}
-              title={t("安装")}
               className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
             >
               {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />}
-            </button>
+            </button></AgentTooltip>
           </>
         )}
       </div>
@@ -1122,12 +1100,12 @@ function SearchSkillRow({
       </div>
       <div className="flex min-h-9 shrink-0 self-center items-center justify-center">
         {installed ? (
-          <span className="inline-flex size-9 items-center justify-center text-[#82BDAE]" aria-label={t("已安装")} title={t("已安装")}>
+          <span className="inline-flex size-9 items-center justify-center text-[#82BDAE]" aria-label={t("已安装")}>
             <Check className="size-5" aria-hidden="true" />
           </span>
         ) : rowStatus ? (
           <div className="flex shrink-0 items-center gap-2">
-            <span
+            <AgentTooltip content={rowStatus.message}><span
               aria-label={statusLabel ?? undefined}
               className={cn(
                 "inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-xs font-medium",
@@ -1139,11 +1117,10 @@ function SearchSkillRow({
                       ? "bg-blue-50 text-blue-600"
                       : "bg-black/[0.04] text-black/50",
               )}
-              title={rowStatus.message}
             >
               {statusInProgress ? <Loader2 className="size-3 animate-spin" aria-hidden="true" /> : null}
               {statusLabel}
-            </span>
+            </span></AgentTooltip>
             {statusRetryable ? (
               <button
                 type="button"
@@ -1156,155 +1133,21 @@ function SearchSkillRow({
             ) : null}
           </div>
         ) : (
-          <button
+          <AgentTooltip content={t("安装")} triggerMode="control"><button
             type="button"
             onClick={() => onInstall(skill)}
             disabled={disabled || installing}
             aria-label={t("安装")}
-            title={t("安装")}
             className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
           >
             {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />}
-          </button>
+          </button></AgentTooltip>
         )}
       </div>
     </li>
   );
 }
 
-function CuratedSkillDetailsDialog({
-  entry,
-  installed,
-  installing,
-  onInstall,
-  onClose,
-}: {
-  entry: SkillDetailsEntry | null;
-  installed: boolean;
-  installing: boolean;
-  onInstall: (skill: Skill) => void;
-  onClose: () => void;
-}) {
-  const t = useT();
-  if (!entry) return null;
-  const { overview } = entry;
-  const sourceUrl = getSkillSourceUrl(entry.skill);
-
-  return (
-    <div className="fixed inset-0 z-[100] flex overscroll-contain items-center justify-center p-3 sm:p-6">
-      <button
-        type="button"
-        aria-label={t("关闭")}
-        className="absolute inset-0 bg-black/35"
-        onClick={onClose}
-      />
-      <div className="relative z-10 max-h-[calc(100dvh-24px)] w-full max-w-[820px] overflow-hidden rounded-lg border border-black/[0.08] bg-white shadow-xl sm:max-h-[calc(100dvh-48px)]">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="curated-skill-dialog-title"
-        className="lv-curated-skill-dialog-scroll relative max-h-[calc(100dvh-24px)] overflow-y-auto p-5 sm:max-h-[calc(100dvh-48px)] sm:p-6"
-      >
-        <button
-          type="button"
-          aria-label={t("关闭")}
-          title={t("关闭")}
-          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-md text-black/45 transition-colors hover:bg-black/[0.05] hover:text-black/75"
-          onClick={onClose}
-        >
-          <X className="size-4" aria-hidden="true" />
-        </button>
-
-        <div className="pr-8">
-          <h2 id="curated-skill-dialog-title" className="text-lg font-semibold text-black/90">{entry.skill.name}</h2>
-          <p className="mt-1 break-all font-mono text-xs leading-5 text-black/45">{entry.skill.rawId}</p>
-          {sourceUrl ? (
-            <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-black/45">
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="truncate text-[#2563EB] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              >
-                {t("来源")}
-              </a>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mt-5 space-y-6 border-t border-black/[0.07] pt-5">
-          <section>
-            <h3 className="text-base font-semibold text-black/90">{t("这是什么？")}</h3>
-            <h4 className="mt-3 text-sm font-semibold text-black/75">{t("概览")}</h4>
-            <p className="mt-2 text-sm leading-6 text-black/65">{overview.overview[0]}</p>
-            <p className="mt-3 text-sm leading-6 text-black/65">{overview.overview[1]}</p>
-          </section>
-
-          <SkillOverviewBullets heading={t("谁适合使用")} bullets={overview.whoShouldUse} />
-
-          <section>
-            <h3 className="text-base font-semibold text-black/90">{t("为什么使用它？")}</h3>
-            <SkillOverviewBullets heading={t("它解决什么问题")} bullets={overview.problemsItSolves} nested />
-            <SkillOverviewBullets heading={t("核心能力")} bullets={overview.keyCapabilities} nested />
-          </section>
-
-          <section>
-            <h3 className="text-base font-semibold text-black/90">{t("如何使用它？")}</h3>
-            <h4 className="mt-3 text-sm font-semibold text-black/75">{t("基本用法")}</h4>
-            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-black/65">{overview.basicUsage}</p>
-            <pre className="mt-3 overflow-x-auto rounded-md bg-black/[0.04] px-3 py-3 font-mono text-xs leading-5 text-black/75">
-              <code>{overview.examplePrompt}</code>
-            </pre>
-          </section>
-        </div>
-
-        <div className="mt-5 flex justify-end">
-          {installed ? (
-            <span className="inline-flex h-10 items-center justify-center gap-2 rounded-md text-sm font-semibold text-[#5C9A8B]">
-              <Check className="size-4" aria-hidden="true" />
-              {t("已安装")}
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onInstall(entry.skill)}
-              disabled={installing}
-              className="inline-flex h-10 min-w-[112px] items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition-colors hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-55"
-            >
-              {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-4" aria-hidden="true" />}
-              {t("安装")}
-            </button>
-          )}
-        </div>
-      </section>
-      </div>
-    </div>
-  );
-}
-
-function SkillOverviewBullets({
-  heading,
-  bullets,
-  nested = false,
-}: {
-  heading: string;
-  bullets: readonly CuratedSkillBullet[];
-  nested?: boolean;
-}) {
-  return (
-    <section className={nested ? "mt-5" : undefined}>
-      <h3 className={nested ? "text-sm font-semibold text-black/75" : "text-base font-semibold text-black/90"}>{heading}</h3>
-      <ul className="mt-3 space-y-2.5">
-        {bullets.map((bullet) => (
-          <li key={bullet.title} className="text-sm leading-6 text-black/65">
-            <strong className="font-semibold text-black/80">{bullet.title}:</strong>{" "}
-            {bullet.description}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 function FeaturedSkillCard({
   entry,
@@ -1372,18 +1215,16 @@ function FeaturedSkillCard({
           <span
             className="inline-flex size-8 shrink-0 items-center justify-center text-[#82BDAE]"
             aria-label={t("已安装")}
-            title={t("已安装")}
           >
             <Check className="size-5" aria-hidden="true" />
           </span>
         ) : (
           <div className="pointer-events-auto flex shrink-0 items-center gap-1">
-            <button
+            <AgentTooltip content={t("安装")} triggerMode="control"><button
               type="button"
               onClick={() => onInstall(entry.skill)}
               disabled={disabled || installing}
               aria-label={t("安装")}
-              title={t("安装")}
               className="inline-flex size-8 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:opacity-55"
             >
               {installing ? (
@@ -1391,7 +1232,7 @@ function FeaturedSkillCard({
               ) : (
                 <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />
               )}
-            </button>
+            </button></AgentTooltip>
           </div>
         )}
       </div>
@@ -1444,12 +1285,11 @@ function InstalledSkillRow({
       </div>
       <div className="col-start-2 row-span-4 row-start-1 shrink-0 self-center md:col-start-5 md:row-span-1 md:row-start-1">
         {canUninstall ? (
-          <button
+          <AgentTooltip content={t("删除")} triggerMode="control"><button
             type="button"
             onClick={() => onUninstall(skill)}
             disabled={disabled}
             aria-label={t("删除技能 {{name}}", { name: skill.name })}
-            title={t("删除")}
             className="inline-flex size-9 items-center justify-center rounded-md text-black/40 transition-colors hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
           >
             {uninstalling ? (
@@ -1457,14 +1297,9 @@ function InstalledSkillRow({
             ) : (
               <Trash2 className="size-4" aria-hidden="true" />
             )}
-          </button>
+          </button></AgentTooltip>
         ) : (
-          <span
-            className="inline-flex size-9 items-center justify-center text-xs text-black/30"
-            title={skill.sourceUncertain ? t("来源确认后才能删除") : t("系统预置技能不可删除")}
-          >
-            —
-          </span>
+          <AgentTooltip content={skill.sourceUncertain ? t("来源确认后才能删除") : t("系统预置技能不可删除")}><span className="inline-flex size-9 items-center justify-center text-xs text-black/30">—</span></AgentTooltip>
         )}
       </div>
     </li>
@@ -1488,7 +1323,8 @@ function SectionTitle({
   );
 }
 
-function CreateSkillPanel({
+/** Preserved creation view; the current route intentionally does not expose it. */
+export function CreateSkillPanel({
   learnSkillTrigger,
   learnSkillPanel,
   learnSkillTriggerFactory,
@@ -1928,6 +1764,8 @@ export function SkillsDemoPanel({
   const [searchInstallRowStatuses, setSearchInstallRowStatuses] = useState<Map<string, SearchInstallRowStatus>>(() => new Map());
   const [uninstallingKey, setUninstallingKey] = useState<string | null>(null);
   const [pendingUninstall, setPendingUninstall] = useState<InstalledSkill | null>(null);
+  const uninstallTriggerRef = useRef<HTMLElement | null>(null);
+  const installedTabRef = useRef<HTMLButtonElement>(null);
   const [knownInstalledIds, setKnownInstalledIds] = useState<Set<string>>(() => readKnownInstalledIds(botId));
   const [featuredBatch, setFeaturedBatch] = useState(0);
   const [selectedSkillDetails, setSelectedSkillDetails] = useState<SkillDetailsEntry | null>(null);
@@ -1935,15 +1773,6 @@ export function SkillsDemoPanel({
   const installedRequestIdRef = useRef(0);
   const activeBotIdRef = useRef(botId);
   activeBotIdRef.current = botId;
-
-  useEffect(() => {
-    if (!selectedSkillDetails) return;
-
-    document.documentElement.classList.add("lv-curated-skill-dialog-open");
-    return () => {
-      document.documentElement.classList.remove("lv-curated-skill-dialog-open");
-    };
-  }, [selectedSkillDetails]);
 
   useEffect(() => {
     setActiveTab(initialTab === "create" ? "discover" : initialTab);
@@ -2391,7 +2220,7 @@ export function SkillsDemoPanel({
   const uninstallBusy = Boolean(uninstallingKey);
 
   return (
-    <div className={`${CLS} pb-12`}>
+    <div className={`${CLS} agents-ui min-w-0 pb-12`}>
       {/* 数据通道提示（仅 demo 期） */}
       {!SKILLS_DEMO_LIVE ? (
         <div className="mb-3 rounded-md border border-[#FFE7BA] bg-[#FFF7E6] px-3 py-2 text-[11px] leading-5 text-[#8A5A00]">
@@ -2399,57 +2228,32 @@ export function SkillsDemoPanel({
         </div>
       ) : null}
 
-      <CuratedSkillDetailsDialog
-        entry={selectedSkillDetails}
-        installed={selectedSkillDetails ? isInstalled(selectedSkillDetails.skill) : false}
-        installing={selectedSkillDetails ? installingId === skillIdentity(selectedSkillDetails.skill) : false}
-        onInstall={handleInstall}
+      {selectedSkillDetails && <CuratedSkillDetailsView
+        open name={selectedSkillDetails.skill.name} rawId={selectedSkillDetails.skill.rawId}
+        sourceUrl={getSkillSourceUrl(selectedSkillDetails.skill)} overview={selectedSkillDetails.overview}
+        installed={isInstalled(selectedSkillDetails.skill)}
+        installing={installingId === skillIdentity(selectedSkillDetails.skill)}
+        labels={{ close: t("关闭"), source: t("来源"), what: t("这是什么？"), overview: t("概览"), who: t("谁适合使用"), why: t("为什么使用它？"), problems: t("它解决什么问题"), capabilities: t("核心能力"), how: t("如何使用它？"), usage: t("基本用法"), installed: t("已安装"), install: t("安装") }}
+        onInstall={() => { void handleInstall(selectedSkillDetails.skill); }}
         onClose={() => setSelectedSkillDetails(null)}
-      />
+      />}
 
-      <Dialog
-        open={pendingUninstall !== null}
-        onOpenChange={(open) => {
-          if (!open && !uninstallBusy) setPendingUninstall(null);
+      <AgentConfirmDialog open={pendingUninstall !== null}
+        onOpenChange={(open) => { if (!open && !uninstallBusy) setPendingUninstall(null); }}
+        title={t("删除技能？")}
+        description={pendingUninstall ? t("这会从智能体中永久删除 {{name}}。", { name: pendingUninstall.name }) : ""}
+        confirmLabel={pendingUninstall ? t("确认删除 {{name}}", { name: pendingUninstall.name }) : t("确认删除")}
+        cancelLabel={t("取消")} cancelDisabled={uninstallBusy}
+        confirmDisabled={uninstallBusy || pendingUninstall === null}
+        onCloseAutoFocus={(event) => {
+          const target = uninstallTriggerRef.current?.isConnected ? uninstallTriggerRef.current : installedTabRef.current;
+          if (target) { event.preventDefault(); target.focus(); }
         }}
-      >
-        <DialogContent className="!rounded-md md:w-[28rem]">
-          <DialogHeader className="mb-5">
-            <DialogTitle>{t("删除技能？")}</DialogTitle>
-            <DialogDescription>
-              {pendingUninstall
-                ? t("这会从智能体中永久删除 {{name}}。", { name: pendingUninstall.name })
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <DialogClose asChild>
-              <button
-                type="button"
-                disabled={uninstallBusy}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-semibold text-black/65 hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
-              >
-                {t("取消")}
-              </button>
-            </DialogClose>
-            <button
-              type="button"
-              disabled={uninstallBusy || pendingUninstall === null}
-              aria-label={pendingUninstall
-                ? t("确认删除 {{name}}", { name: pendingUninstall.name })
-                : t("确认删除")}
-              onClick={() => {
-                if (!pendingUninstall) return;
-                void handleUninstall(pendingUninstall).finally(() => setPendingUninstall(null));
-              }}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:opacity-55"
-            >
-              {uninstallBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
-              {t("删除")}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        onConfirm={() => {
+          if (!pendingUninstall) return;
+          void handleUninstall(pendingUninstall).finally(() => setPendingUninstall(null));
+        }}
+      />
 
       <Tabs
         value={activeTab}
@@ -2486,6 +2290,7 @@ export function SkillsDemoPanel({
             ) : null}
             <TabsTrigger
               value="installed"
+              ref={installedTabRef}
               disabled={operationBusy}
               className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
             >
@@ -2544,7 +2349,7 @@ export function SkillsDemoPanel({
                   >
                     <SelectTrigger
                       aria-label={t("来源")}
-                      className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !justify-center gap-1 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
+                      className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !justify-center gap-1 !rounded-md !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -2552,7 +2357,7 @@ export function SkillsDemoPanel({
                       position="popper"
                       align="end"
                       sideOffset={4}
-                      className="!min-w-[var(--radix-select-trigger-width)] !rounded-md !border-black/10 bg-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.32),0_3px_8px_rgba(0,0,0,0.06)]"
+                      className="agents-ui !min-w-[var(--radix-select-trigger-width)] !rounded-md !border-black/10 bg-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.32),0_3px_8px_rgba(0,0,0,0.06)]"
                     >
                       <SelectItem value="all" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
                         {t("所有来源")}
@@ -2578,7 +2383,7 @@ export function SkillsDemoPanel({
                   </SectionTitle>
                   <div className="flex min-h-9 min-w-0 flex-wrap items-center justify-end gap-3">
                     {!searching && visibleResults.length > 0 ? (
-                      <div className="lv-skills-sort-control flex h-9 shrink-0 items-center gap-1 rounded-[12px] bg-black/[0.04] p-0.5">
+                      <div className="lv-skills-sort-control flex h-9 shrink-0 items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
                       <button
                         type="button"
                         disabled={operationBusy}
@@ -2587,7 +2392,7 @@ export function SkillsDemoPanel({
                           setSortMode("popular");
                         }}
                         className={cn(
-                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-45",
+                          "h-8 rounded-md px-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-45",
                           sortMode === "popular"
                             ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
                             : "text-black/45 hover:text-black/70",
@@ -2603,7 +2408,7 @@ export function SkillsDemoPanel({
                           setSortMode("name");
                         }}
                         className={cn(
-                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-45",
+                          "h-8 rounded-md px-2 text-[11px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-45",
                           sortMode === "name"
                             ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
                             : "text-black/45 hover:text-black/70",
@@ -2615,20 +2420,19 @@ export function SkillsDemoPanel({
                     ) : null}
                     {!searching && selectableSkillsByIdentity.size > 0 ? (
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className="whitespace-nowrap text-xs text-black/45">
+                        <AgentTooltip content={selectedSkills.length === 0 ? t("请先选择要安装的技能") : undefined}><span className="whitespace-nowrap text-xs text-black/45">
                           {t("已选 {{n}} / {{m}}", {
                             n: selectedSkills.length,
                             m: selectableSkillsByIdentity.size,
                           })}
-                        </span>
+                        </span></AgentTooltip>
                         <button
                           type="button"
                           onClick={() => void handleBatchInstall()}
                           disabled={selectedSkills.length === 0 || operationBusy || searchQueryPending}
                           aria-busy={batchInstalling}
                           aria-label={t("安装已选技能")}
-                          title={selectedSkills.length === 0 ? t("请先选择要安装的技能") : t("安装已选技能")}
-                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-black px-6 text-sm font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
+                          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-black px-6 text-sm font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
                         >
                           {batchInstalling ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
                           <span>{t("安装")}</span>
@@ -2779,16 +2583,15 @@ export function SkillsDemoPanel({
             <section>
               <SectionTitle className="mb-2 text-base">{t("精选")}</SectionTitle>
               <div className="flex items-center gap-2">
-                <button
+                <AgentTooltip content={t("上一批")} triggerMode="control"><button
                   type="button"
                   onClick={() => setFeaturedBatch((current) => Math.max(current - 1, 0))}
                   disabled={featuredBatchIndex === 0}
                   aria-label={t("上一批")}
-                  title={t("上一批")}
                   className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
                 >
                   <ChevronLeft className="size-4" aria-hidden="true" />
-                </button>
+                </button></AgentTooltip>
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <motion.div
                     animate={{ x: `${-(featuredBatchIndex * 100) / featuredBatchCount}%` }}
@@ -2831,16 +2634,15 @@ export function SkillsDemoPanel({
                     ))}
                   </motion.div>
                 </div>
-                <button
+                <AgentTooltip content={t("下一批")} triggerMode="control"><button
                   type="button"
                   onClick={() => setFeaturedBatch((current) => Math.min(current + 1, featuredBatchCount - 1))}
                   disabled={featuredBatchIndex >= featuredBatchCount - 1}
                   aria-label={t("下一批")}
-                  title={t("下一批")}
                   className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20"
                 >
                   <ChevronRight className="size-4" aria-hidden="true" />
-                </button>
+                </button></AgentTooltip>
               </div>
             </section>
 
@@ -2927,11 +2729,11 @@ export function SkillsDemoPanel({
                 >
                   <SelectTrigger
                     aria-label={t("筛选技能分类")}
-                    className="h-9 w-full rounded-[12px] border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
+                    className="h-9 w-full rounded-md border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent align="end" className="rounded-md border-black/10 bg-white p-1 shadow-xl">
+                  <SelectContent align="end" className="agents-ui rounded-md border-black/10 bg-white p-1 shadow-xl">
                     <SelectItem value="all" className="rounded-sm py-2 text-xs">
                       {t("全部分类")} ({installed.length})
                     </SelectItem>
@@ -2948,11 +2750,11 @@ export function SkillsDemoPanel({
                 >
                   <SelectTrigger
                     aria-label={t("筛选技能来源")}
-                    className="h-9 w-full rounded-[12px] border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
+                    className="h-9 w-full rounded-md border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent align="end" className="rounded-md border-black/10 bg-white p-1 shadow-xl">
+                  <SelectContent align="end" className="agents-ui rounded-md border-black/10 bg-white p-1 shadow-xl">
                     <SelectItem value="all" className="rounded-sm py-2 text-xs">
                       {t("全部来源")} ({installed.length})
                     </SelectItem>
@@ -3034,7 +2836,10 @@ export function SkillsDemoPanel({
                     skill={skill}
                     disabled={uninstallBusy}
                     uninstalling={uninstallingKey === skillIdentity(skill)}
-                    onUninstall={setPendingUninstall}
+                    onUninstall={(skill) => {
+                      uninstallTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                      setPendingUninstall(skill);
+                    }}
                   />
                 ))}
               </ul>

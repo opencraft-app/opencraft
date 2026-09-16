@@ -1,11 +1,13 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ModelActionTooltip } from "../model-action-tooltip";
 
 describe("ModelActionTooltip", () => {
   afterEach(() => cleanup());
+  beforeAll(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
+  afterAll(() => vi.unstubAllGlobals());
 
   it("clears its open state when the disabled reason is removed", async () => {
     const view = render(
@@ -14,7 +16,8 @@ describe("ModelActionTooltip", () => {
       </ModelActionTooltip>,
     );
     await userEvent.hover(screen.getByRole("group", { name: "当前模型已经是主模型" }));
-    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.closest("[data-slot=tooltip-content]")).toHaveClass("agents-ui");
 
     view.rerender(
       <ModelActionTooltip>

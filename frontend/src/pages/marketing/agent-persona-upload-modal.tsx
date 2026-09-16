@@ -7,6 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PersonaOverwriteConfirmView } from "./agent-persona-upload-views";
+import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import { DATONG_PAGE_IDS } from "@/observability/datong";
@@ -56,7 +58,10 @@ export function PersonaUploadModal({
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const readRequestIdRef = useRef(0);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   const [view, setView] = useState<"upload" | "edit" | "confirm">("upload");
   const [fileName, setFileName] = useState("");
   const [markdown, setMarkdown] = useState("");
@@ -156,7 +161,9 @@ export function PersonaUploadModal({
         aria-label={t("选择 Markdown 人设文件")}
         onChange={(event) => void handleFileChange(event.target.files?.[0])}
       />
-      <button
+      <Button
+        ref={triggerRef}
+        variant="outline"
         type="button"
         disabled={disabled || reading || injecting}
         onClick={() => {
@@ -165,18 +172,21 @@ export function PersonaUploadModal({
           });
           setOpen(true);
         }}
-        className="inline-flex items-center gap-2 rounded-full border border-black/5 bg-black/[0.04] px-5 py-2 text-sm font-medium text-black/85 transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded-md border border-black/5 bg-black/[0.04] px-5 py-2 text-sm font-medium text-black/85 transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
       >
         <Upload className="size-4" aria-hidden="true" />
         {t("上传人设文件")}
-      </button>
+      </Button>
       <Dialog
-        open={open}
+        open={open && view !== "confirm"}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) close();
         }}
       >
         <DialogContent
+          portalClassName="agents-ui"
+          closeLabel={t("关闭")}
+          onCloseAutoFocus={(event) => { event.preventDefault(); if (!openRef.current) triggerRef.current?.focus(); }}
           className="max-h-[calc(100dvh-2rem)] overflow-y-auto md:w-[42rem]"
           onEscapeKeyDown={(event) => {
             if (injecting) event.preventDefault();
@@ -187,23 +197,13 @@ export function PersonaUploadModal({
         >
           <DialogHeader>
             <DialogTitle className="text-balance">
-              {view === "confirm"
-                ? t("覆盖当前人设？")
-                : view === "edit"
+              {view === "edit"
                   ? t("编辑人设文件")
                   : t("上传人设文件")}
             </DialogTitle>
-            {view === "confirm" ? (
-              <DialogDescription className="text-pretty">
-                {t("旧人设会自动备份，然后注入新人设。")}
-              </DialogDescription>
-            ) : (
-              <DialogDescription className="sr-only">
-                {view === "upload"
-                  ? `${t("上传人设文件")}。${t("选择 Markdown 人设文件")}`
-                  : `${t("编辑人设文件")}。${t("人设内容")}`}
-              </DialogDescription>
-            )}
+            <DialogDescription className="sr-only">
+              {view === "upload" ? `${t("上传人设文件")}。${t("选择 Markdown 人设文件")}` : `${t("编辑人设文件")}。${t("人设内容")}`}
+            </DialogDescription>
           </DialogHeader>
 
           {reading ? (
@@ -212,7 +212,7 @@ export function PersonaUploadModal({
               {t("正在读取人设文件…")}
             </div>
           ) : view === "upload" ? (
-            <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-black/10 bg-black/[0.02] px-6 py-10 text-center">
+            <div className="flex min-h-56 flex-col items-center justify-center rounded-md border border-dashed border-black/10 bg-black/[0.02] px-6 py-10 text-center">
               <Upload className="size-8 text-[var(--text-tertiary)]" aria-hidden="true" />
               <p className="mt-3 text-sm font-medium text-[var(--text-primary)]">
                 {t("选择 Markdown 人设文件，将其内容填入 SOUL.md")}
@@ -221,48 +221,18 @@ export function PersonaUploadModal({
                 {t("仅支持 Markdown 文件，文件名不限，扩展名须为 .md，大小不超过 20 KB。")}
               </p>
               {selectionError && (
-                <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <div role="alert" className="mt-4 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   <span>{errorMessage(t, selectionError)}</span>
                 </div>
               )}
-              <button
+              <Button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="mt-4 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+                className="mt-4 rounded-md bg-black px-4 py-2 text-sm font-medium text-white h-9 shadow-none transition-none hover:translate-y-0"
               >
                 {selectionError ? t("重新上传文件") : t("选择文件")}
-              </button>
-            </div>
-          ) : view === "confirm" ? (
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                disabled={injecting}
-                onClick={() => {
-                  trackDatongClick("persona_upload_cover_cancel_btn", {
-                    pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
-                  });
-                  setView("edit");
-                }}
-                className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50"
-              >
-                {t("返回编辑")}
-              </button>
-              <button
-                type="button"
-                disabled={injecting}
-                onClick={() => {
-                  trackDatongClick("persona_upload_cover_confirm_btn", {
-                    pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
-                  });
-                  void runInject();
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {injecting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-                {injecting ? t("注入中…") : t("覆盖并注入")}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="space-y-4">
@@ -304,20 +274,20 @@ export function PersonaUploadModal({
               ) : null}
               <div id="persona-markdown-feedback" aria-live="polite">
                 {!validation.valid && (
-                  <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     <span>{errorMessage(t, validation.code)}</span>
                   </div>
                 )}
                 {injectError && (
-                  <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <div role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     <span>{t("注入失败，请检查网络后重试")}</span>
                   </div>
                 )}
               </div>
               {warnings.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
                   <p className="mb-1 text-sm font-medium text-amber-900">{t("人设内容建议")}</p>
                   <ul className="space-y-1 text-sm text-amber-900">
                     {warnings.map((warning) => (
@@ -327,15 +297,16 @@ export function PersonaUploadModal({
                 </div>
               )}
               <div className="flex items-center justify-end gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   disabled={injecting}
                   onClick={() => inputRef.current?.click()}
-                  className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50"
+                  className="rounded-md border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
                 >
                   {t("重新上传文件")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   disabled={!validation.valid || injecting}
                   onClick={() => {
@@ -344,7 +315,7 @@ export function PersonaUploadModal({
                     });
                     handlePrimaryAction();
                   }}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
                 >
                   {injecting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                   {injecting
@@ -352,12 +323,20 @@ export function PersonaUploadModal({
                     : injectError
                       ? t("重试注入")
                       : t("注入人设")}
-                </button>
+                </Button>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+      <PersonaOverwriteConfirmView open={open && view === "confirm"} pending={injecting}
+        title={t("覆盖当前人设？")} description={t("旧人设会自动备份，然后注入新人设。")}
+        backLabel={t("返回编辑")} confirmLabel={injecting ? t("注入中…") : t("覆盖并注入")}
+        onBack={() => { trackDatongClick("persona_upload_cover_cancel_btn", { pgid: DATONG_PAGE_IDS.AGENT_PERSONA }); setView("edit"); }}
+        onClose={close}
+        onConfirm={() => { trackDatongClick("persona_upload_cover_confirm_btn", { pgid: DATONG_PAGE_IDS.AGENT_PERSONA }); void runInject(); }}
+        onCloseAutoFocus={(event) => { event.preventDefault(); if (!openRef.current) triggerRef.current?.focus(); }}
+      />
     </>
   );
 }

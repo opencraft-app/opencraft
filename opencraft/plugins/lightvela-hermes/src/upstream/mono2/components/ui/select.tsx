@@ -14,7 +14,7 @@ const SelectSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Separator
     ref={ref}
-    className={cn("my-1 h-px bg-black/[0.08]", className)}
+    className={cn("lv-select-separator my-1 h-px bg-black/[0.08]", className)}
     {...props}
   />
 ));
@@ -27,6 +27,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
+      "lv-select-trigger",
       controlFieldClass,
       "flex h-11 items-center justify-between px-3.5 py-2 text-sm",
       className,
@@ -49,13 +50,13 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "lightvela-agent-console-portal z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
+        "lightvela-agent-console-portal lv-floating-control lv-select-content z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
         floatingPanelClass,
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className="p-1.5">{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className="lv-select-viewport p-1.5">{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
@@ -68,12 +69,12 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-[0.85rem] py-2.5 pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none data-[highlighted]:bg-[var(--surface-muted)]",
+      "lv-select-item relative flex w-full cursor-default select-none items-center rounded-[0.85rem] py-2.5 pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none data-[highlighted]:bg-[var(--surface-muted)]",
       className,
     )}
     {...props}
   >
-    <span className="absolute left-2 flex size-4 items-center justify-center">
+    <span className="lv-select-item__indicator absolute left-2 flex size-4 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
         <Check className="size-3.5" />
       </SelectPrimitive.ItemIndicator>

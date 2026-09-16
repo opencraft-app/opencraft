@@ -31,7 +31,7 @@ describe("LightVela Slack channel integration", () => {
       "slack: 'https://lightvela.ai/docs/configuration/channel-slack'",
     );
     expect(channelPanelSource).toContain(
-      "if (channelType === 'slack') return t('通过 Bot Token 和 App Token 绑定');",
+      "if (channelType === 'slack') return t('通过 Bot Token 和 App Token 连接');",
     );
     expect(channelPanelSource).toContain("case 'slack':");
   });

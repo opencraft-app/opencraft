@@ -1,6 +1,7 @@
 import { Check, ChevronDown, Search, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useT } from "@/i18n/t";
 import type { CronContextCapability, CronJob } from "@/lib/hermes-cron-client";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,6 @@ export function AutomationUpstreamPicker({
 }: AutomationUpstreamPickerProps) {
   const t = useT();
   const listboxId = useId();
-  const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -60,19 +60,6 @@ export function AutomationUpstreamPicker({
     setOpen(true);
     setActiveIndex(-1);
   };
-
-  useEffect(() => {
-    if (!open) return;
-    searchRef.current?.focus();
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (pickerRef.current?.contains(event.target as Node)) return;
-      close();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
 
   if (state === "loading") {
     return <PickerStatus>{t("正在检测上游任务能力...")}</PickerStatus>;
@@ -110,7 +97,9 @@ export function AutomationUpstreamPicker({
         </div>
       )}
 
-      <div ref={pickerRef} className="relative">
+      <Popover open={open} onOpenChange={(next) => { if (next) openPicker(); else close(); }}>
+      <div className="relative">
+        <PopoverTrigger asChild>
         <button
           ref={triggerRef}
           type="button"
@@ -119,15 +108,10 @@ export function AutomationUpstreamPicker({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={open ? listboxId : undefined}
-          onClick={() => (open ? close() : openPicker())}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
               event.preventDefault();
               if (!open) openPicker();
-            }
-            if (event.key === "Escape" && open) {
-              event.preventDefault();
-              close(true);
             }
           }}
           className="flex w-full items-center justify-between gap-3 rounded-md border border-black/10 bg-white py-2 pl-3 pr-11 text-left text-sm text-black/85 hover:border-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
@@ -136,6 +120,7 @@ export function AutomationUpstreamPicker({
             {selectedJob?.name ?? (value ? t("上游任务已不可用") : t("本任务执行时，将使用上游任务最近的输出作为上下文"))}
           </span>
         </button>
+        </PopoverTrigger>
 
         {value ? (
           <button
@@ -156,8 +141,9 @@ export function AutomationUpstreamPicker({
           </span>
         )}
 
-        {open && (
-          <div className="absolute z-40 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 bg-white p-1.5 shadow-xl">
+      </div>
+      <PopoverContent align="start" aria-label={t("上游任务")} className="agents-ui z-[250] w-[var(--radix-popover-trigger-width)] max-w-[calc(100vw-32px)] overflow-hidden rounded-md p-1.5"
+        onOpenAutoFocus={(event) => { event.preventDefault(); searchRef.current?.focus(); }}>
             <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
               <Search className="size-4 shrink-0 text-black/35" aria-hidden="true" />
               <input
@@ -186,9 +172,6 @@ export function AutomationUpstreamPicker({
                   } else if (event.key === "Enter" && activeIndex >= 0) {
                     event.preventDefault();
                     choose(filteredOptions[activeIndex]!.id);
-                  } else if (event.key === "Escape") {
-                    event.preventDefault();
-                    close(true);
                   }
                 }}
                 placeholder={t("搜索上游任务")}
@@ -227,9 +210,8 @@ export function AutomationUpstreamPicker({
                 </p>
               )}
             </div>
-          </div>
-        )}
-      </div>
+      </PopoverContent>
+      </Popover>
     </div>
   );
 }

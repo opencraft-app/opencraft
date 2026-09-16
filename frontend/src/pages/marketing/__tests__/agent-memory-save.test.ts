@@ -30,6 +30,21 @@ const succeeded = (output = "") => ({ status: "Succeeded", exitCode: 0, output }
 const failed = (output: string) => ({ status: "Failed", exitCode: 1, output });
 
 describe("saveHermesMemoryLimit", () => {
+  it("uses the same explicit profile for config, the supplied restart and reread", async () => {
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded())
+      .mockResolvedValueOnce(succeeded(snapshotOutput()));
+    const result = await saveHermesMemoryLimit({
+      bots: { execDebugCommand } as Pick<BotRepository, "execDebugCommand"> as BotRepository,
+      botId: "instance-a", profileId: "research", target: "memory", value: 2400, existingChars: 1200,
+      getGatewayRestartCommand: async () => "hermes -p 'research' gateway restart",
+    });
+    expect(result.status).toBe("success");
+    expect(execDebugCommand.mock.calls[0]?.[1]).toBe("hermes -p 'research' config set memory.memory_char_limit 2400");
+    expect(execDebugCommand.mock.calls[1]?.[1]).toBe("hermes -p 'research' gateway restart");
+    expect(execDebugCommand.mock.calls[2]?.[1]).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'research\'');
+  });
   it("returns success after config, restart, and verified reread all succeed", async () => {
     const execDebugCommand = vi.fn()
       .mockResolvedValueOnce(succeeded())
@@ -50,7 +65,7 @@ describe("saveHermesMemoryLimit", () => {
     expect(execDebugCommand).toHaveBeenNthCalledWith(
       1,
       "bot-a",
-      "hermes config set memory.memory_char_limit 2400",
+      "hermes -p 'default' config set memory.memory_char_limit 2400",
       { timeoutMs: HERMES_MEMORY_COMMAND_TIMEOUT_MS },
     );
     expect(execDebugCommand).toHaveBeenNthCalledWith(

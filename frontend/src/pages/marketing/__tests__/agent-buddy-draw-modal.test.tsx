@@ -1,5 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import userEvent from "@testing-library/user-event";
 
 import { DrawSoulModal } from "@/pages/marketing/agent-buddy-draw-modal";
 
@@ -40,10 +42,29 @@ async function revealSoul(): Promise<void> {
 }
 
 describe("DrawSoulModal", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  });
+  it("opens as a named dialog and returns focus on Escape", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return <><button onClick={() => setOpen(true)}>Draw</button><DrawSoulModal open={open} souls={[soul]} onClose={() => setOpen(false)} onPick={vi.fn()} onInject={vi.fn()} /></>;
+    }
+    render(<Harness />);
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Draw" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "抽取人设" });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("offers both actions and locks the modal while direct injection is pending", async () => {
@@ -81,6 +102,7 @@ describe("DrawSoulModal", () => {
     fireEvent.click(addButton);
     fireEvent.click(closeButton);
     fireEvent.click(backdrop);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
 
     expect(onInject).toHaveBeenCalledTimes(1);
     expect(onInject).toHaveBeenCalledWith(soul);

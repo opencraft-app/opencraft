@@ -1,15 +1,11 @@
 "use client";
 
-import { Loader2, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import type { HermesConfiguredModel, HermesConnectionProbeResult } from "./model-config-client";
 import type { useModelConfig } from "./use-model-config";
-import { MODEL_SELECT_CONTENT_CLASS, ModelCompoundActionContent, modelCompoundClasses } from "./model-form-controls";
+import { ConfiguredProviderModelFormView } from "./configured-provider-model-form-view";
 
 export function ConfiguredProviderModelForm({ anchor, savedModels, controller, isGlobalRegion, onCancel, onSaved, onDirtyChange, onSelectInteraction, onConnectionResult }: {
   anchor: HermesConfiguredModel;
@@ -24,7 +20,6 @@ export function ConfiguredProviderModelForm({ anchor, savedModels, controller, i
 }) {
   const t = useT();
   const id = useId();
-  const compound = modelCompoundClasses(isGlobalRegion);
   // 父组件按 Agent 与连接身份设置 key，草稿期间固定原始连接用于实例端校验。
   const [savedAnchor] = useState(anchor);
   const [modelId, setModelId] = useState("");
@@ -135,44 +130,11 @@ export function ConfiguredProviderModelForm({ anchor, savedModels, controller, i
     onSaved();
   };
 
-  return (
-    <div className="flex min-w-0 flex-wrap items-start gap-3" role="group" aria-label={t("添加模型")}>
-      <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
-        <label htmlFor={id} className="sr-only">{t("模型")}</label>
-        <div className={compound.control}>
-          <Select value={modelId} onValueChange={changeModel} disabled={busy || !options.length}>
-            <SelectTrigger id={id} className={`${compound.field} w-full flex-1`} onPointerDownCapture={onSelectInteraction} onKeyDownCapture={onSelectInteraction}><SelectValue placeholder={loading ? t("获取中") : options.length ? t("请选择模型") : t("暂无可用模型")} /></SelectTrigger>
-            <SelectContent position="popper" className={MODEL_SELECT_CONTENT_CLASS}>
-              {options.map((option) => {
-                const saved = savedModels.some((model) => model.id.trim() === option.id.trim());
-                return (
-                  <SelectItem key={option.id} value={option.id} textValue={option.name} disabled={saved} className="data-[disabled]:cursor-not-allowed data-[disabled]:text-[var(--text-tertiary)] [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1">
-                    <span className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                      <span className="min-w-0 break-all">{option.name}</span>
-                      {saved ? <Badge variant="neutral" className="shrink-0 border border-[var(--border-subtle)]">{t("已添加")}</Badge> : null}
-                    </span>
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" type="button" disabled={busy || !selectionAvailable} onClick={() => void check()} className={compound.action}>
-            <ModelCompoundActionContent idleLabel={t("检测模型状态")} loadingLabel={t("检测中...")} loading={checking} />
-          </Button>
-        </div>
-        {!loading && !options.length ? (
-          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void probe()} className="mt-2 rounded-md text-xs font-normal">
-            <RotateCw className="size-3.5" aria-hidden="true" />{t("获取可用模型")}
-          </Button>
-        ) : null}
-        {duplicate ? <p className="mt-2 text-sm text-red-600" role="status">{t("该模型已添加")}</p> : null}
-      </div>
-        <div className="flex h-12 shrink-0 items-center gap-2">
-          <Button type="button" size="sm" disabled={busy || !selectionAvailable || duplicate} onClick={() => void save()} className="rounded-md text-xs font-normal">
-            {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}{t("保存")}
-          </Button>
-          <Button type="button" size="sm" variant="outline" disabled={saving} onClick={onCancel} className="rounded-md text-xs font-normal">{t("取消")}</Button>
-        </div>
-    </div>
-  );
+  return <ConfiguredProviderModelFormView
+    id={id} isGlobalRegion={isGlobalRegion} modelId={modelId}
+    options={options.map((option) => ({ ...option, saved: savedModels.some((model) => model.id.trim() === option.id.trim()) }))}
+    busy={busy} loading={loading} saving={saving} checking={checking} duplicate={duplicate} selectionAvailable={selectionAvailable}
+    labels={{ addModel: t("添加模型"), model: t("模型"), loading: t("获取中"), chooseModel: t("请选择模型"), noModels: t("暂无可用模型"), added: t("已添加"), testModel: t("检测模型状态"), testing: t("检测中..."), getModels: t("获取可用模型"), duplicate: t("该模型已添加"), save: t("保存"), cancel: t("取消") }}
+    onModelChange={changeModel} onCheck={() => void check()} onProbe={() => void probe()} onSave={() => void save()}
+    onCancel={onCancel} onSelectInteraction={onSelectInteraction} />;
 }

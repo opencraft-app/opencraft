@@ -77,6 +77,14 @@
 - OpenCraft 迁入后由 mono2 单一所有；旧仓库仅保留历史。它与 `frontend` 通过显式生成闭包过渡共享 Agent Console，生成层不得成为第二真源，后续稳定边界应收敛为 workspace package。
 - Agent Console 生成命令必须在 Git 工作树中记录真实源 revision；任何命中生成闭包的 `frontend` 源码变更都必须运行 `npm --prefix opencraft run sync:mono2-agent-console`，并在同一 MR 提交机械生成副本与 `UPSTREAM.json`。只读漂移检查可在不包含 `.git` 的 CI 隔离目录中复用已提交清单的 revision，但仍须逐文件校验源内容与 SHA，不能因此跳过 vendored 一致性检查。
 - 共享范围包含 Dialog 原语、i18n 字典 / 映射和 HTTP Repository，不能只按被修改的业务页面判断同步范围。Dialog 的关闭文案、遮罩样式等可选 prop 与键盘焦点样式随来源同步，同时保留 OpenCraft 的 portal / import 适配。Repository 在升配期间遇到嵌套 Bot 查询 `403 PASS_MODIFYING` 时保留实例根 Bot 数据；其他鉴权错误仍抛出，该数据降级不放宽服务端权限，也不表示升配已交付。
+- Agents 的共享 UI 原语与纯展示组件不拥有账户、实例、Bot/Profile、Repository 或命令执行能力；功能 controller 与宿主继续拥有请求、草稿和可中断资源。弹窗关闭、交互禁用与远端取消是不同操作，视图迁移不得改写成功/失败后的关闭时机或销毁业务资源。具体模块输入、动作与资源归属见 [Agents 模块边界](../../../frontend/openspec/changes/2026-09-16-agents-radix-boundaries.md)。
+- Agents 桌面左栏由既有顶部 header 和固定 sidebar 连续覆盖视口；Agent 信息与账户入口不收缩，中间导航/会话区单独滚动并隐藏滚动条。布局层不拥有 SDK 会话，不能通过切换桌面/移动布局重建主内容；浮层须通过 Portal 避免被左栏裁切，加载态沿用相同槽位。
+- 滚动上下边界阴影归 AgentConsoleShell 展示层所有：仅在对应方向还有隐藏内容时显示，抵达边界或无溢出时隐藏。容器与内容尺寸变化触发重新测量，桌面退出或卸载时清理观察器/监听；不写滚动位置、不读取账户或 SDK 数据。装饰性阴影占用已有间距，不改变布局或拦截点击，手机导航保持原 Sheet。
+- Agents 白底导航、连续细边框与灰色选中块由宿主局部 CSS 所有；导航/会话及 Tabs 的选中底色、深色文字与图标一致，hover 不覆盖选中反馈。样式覆盖限制在 Agents opt-in 与专属 header，不改变共享原语默认值、布局、焦点或业务行为。
+- 侧栏账户快捷菜单与 account 页共享只读套餐摘要：先校验当前用户归属，再按 modifying、active、未销毁 fallback 选择；额度只由所选 Pass 推导。异步结果与清理回调绑定不可复用代次，换号或再次进入同一账号不能复用旧请求权限。菜单 controller 拥有上下文与导航，纯视图只接收 DTO；账户页保留刷新、续费及删除流程，升级快捷入口复用原资格与订购路由，不创建订单。接口边界见 [侧栏账户菜单](../../../frontend/src/components/site/sidebar-user-menu.README.md)。
+- 本地账户菜单验收应区分无套餐与有套餐合成数据：无套餐不伪造积分或可升级资格；显式mock预设仅用于展示既有组件，不持久化或改变真实HTTP接口与资格门禁。演示名称须可辨识，不能从合成额度/链接推断真实账务或支付已验证。
+- 国内站反馈入口集中到桌面 sidebar / 手机 header 的头像菜单，默认显示“建议反馈”，统一消费 `PRODUCT_FEEDBACK_URL` 并保留安全新窗口属性；Agent 侧栏不再单列反馈链接。国际站保持不展示此问卷，工作台等其他隐藏入口仍沿用原 reveal 规则，反馈显隐不改变账户权限或计费资格。
+- 新增 Portal 原语必须显式携带消费宿主的样式作用域；frontend 的 Agents token 不自动等同 OpenCraft 的 Portal token。生成脚本集中完成必要适配，两个 workspace 分别声明实际导入的 Radix 依赖并验证锁文件，不以源码可导入或单端构建替代生成一致性及消费检查。
 - 前端升级错误文案按当前页面 locale 解析，生成字典通过同一闭包同步到 OpenCraft；字典可用不代表宿主已经接入升级 checkout。后端未知错误使用本地化兜底，错误文案翻译不改变支付、Pass 权限或交付判定；实现与测试入口见[升级套餐交互](../../../frontend/openspec/specs/pass-upgrade.md)。
 - 前端 Agents 首次套餐读取未确认时隐藏 Bot；请求卡住后允许显式重试，失败不能被解释为已完成套餐确认。升级订单已确认本地失败终态后停止自动读取，保留同单手动刷新与支持；正常可查询的 `modifying` 不设前端交付期限。支付准备失效后，旧状态 / URL / 授权响应不得重新触发旧单支付。这些界面恢复规则不改变后端扣款和交付判定。
 - OpenCraft 不注册 mono2 MR 占位检查或专用 CI 流水线，避免共享 `frontend` 路径触发隔离 workspace 的重复安装；完整验证能力由 `opencraft/` 内的 `npm run gate` 保留，并按变更风险由开发者或发布流程显式执行。

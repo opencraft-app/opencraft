@@ -528,10 +528,40 @@
   z-index: var(--layer-floating-control, 250);
 }
 
+/* Radix content and overlay are siblings in body, not descendants of the
+ * outer Workbench modal. Confirmation content must also clear its own scrim. */
+.lightvela-agent-console-portal.lv-dialog-surface--confirmation {
+  z-index: calc(var(--layer-confirmation-modal, 245) + 1);
+}
+
+.lightvela-agent-console-portal:is(.lv-popover-content, .lv-dropdown-content, .lv-tooltip-content) {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
+}
+
+.lightvela-agent-console-portal .lv-tooltip-arrow {
+  fill: var(--surface-raised);
+}
+
+.lightvela-agent-console-portal .lv-dropdown-item {
+  border-radius: var(--menu-item-radius, var(--radius-md));
+}
+
+.lightvela-agent-console-portal .lv-dropdown-item[data-highlighted] {
+  background: var(--lv-option-background-highlighted);
+}
+
+.lightvela-agent-console-portal .lv-dropdown-item[data-disabled] {
+  opacity: var(--lv-option-disabled-opacity);
+}
+
 /* Select and Option are stateful control primitives. Feature pages provide
  * values and policy only; every visual state resolves through this token
  * boundary so portals and inline choices stay compatible with any host theme. */
-.lightvela-agent-console .lv-select-trigger {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-select-trigger {
   border-color: var(--lv-control-border);
   border-radius: var(--radius-md);
   background: var(--lv-control-background);
@@ -539,17 +569,17 @@
   box-shadow: none;
 }
 
-.lightvela-agent-console .lv-select-trigger:hover:not([data-disabled]) {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-select-trigger:hover:not([data-disabled]) {
   border-color: var(--lv-option-border-hover);
 }
 
-.lightvela-agent-console .lv-select-trigger:focus-visible,
-.lightvela-agent-console .lv-select-trigger[data-state="open"] {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-select-trigger:focus-visible,
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-select-trigger[data-state="open"] {
   border-color: var(--lv-control-focus);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--lv-control-focus) 18%, transparent);
 }
 
-.lightvela-agent-console .lv-select-trigger[data-disabled] {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-select-trigger[data-disabled] {
   background: var(--lv-control-disabled-background);
   color: var(--lv-control-muted-foreground);
   opacity: var(--lv-option-disabled-opacity);
@@ -761,7 +791,9 @@
 }
 
 .lightvela-agent-console .lv-segmented-control__item[aria-pressed="true"],
-.lightvela-agent-console-portal .lv-segmented-control__item[aria-pressed="true"] {
+.lightvela-agent-console-portal .lv-segmented-control__item[aria-pressed="true"],
+.lightvela-agent-console .lv-segmented-control__item[data-state="active"],
+.lightvela-agent-console-portal .lv-segmented-control__item[data-state="active"] {
   color: var(--text-primary);
   background: var(--surface-raised);
   box-shadow:
@@ -796,7 +828,7 @@
   box-shadow: var(--elevation-stroke);
 }
 
-.lightvela-agent-console-portal .lv-switch {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-switch {
   box-sizing: border-box;
   width: 36px;
   height: 20px;
@@ -807,16 +839,16 @@
   box-shadow: inset 0 0 0 0.5px var(--color-border);
 }
 
-.lightvela-agent-console-portal .lv-switch[aria-checked="true"] {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-switch[data-state="checked"] {
   background: var(--color-accent-blue);
 }
 
-.lightvela-agent-console-portal .lv-switch:focus-visible {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-switch:focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
 
-.lightvela-agent-console-portal .lv-switch__thumb {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-switch__thumb {
   display: block;
   width: 16px;
   height: 16px;
@@ -826,11 +858,11 @@
   transform: translateX(0);
 }
 
-.lightvela-agent-console-portal .lv-switch[aria-checked="true"] .lv-switch__thumb {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-switch[data-state="checked"] .lv-switch__thumb {
   transform: translateX(16px);
 }
 
-.lightvela-agent-console-portal .lv-checkbox {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-checkbox {
   appearance: none;
   width: 16px;
   height: 16px;
@@ -844,18 +876,21 @@
   box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.05);
 }
 
-.lightvela-agent-console-portal .lv-checkbox:checked {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-checkbox[data-state="checked"],
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-checkbox[data-state="indeterminate"] {
   border-color: var(--color-accent-blue);
   background-color: var(--color-accent-blue);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.4 8.2 2.7 2.7 6.5-6.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  color: var(--color-text-on-accent);
+  /* The Radix Indicator renders the check/minus. Do not paint a second glyph. */
+  background-image: none;
 }
 
-.lightvela-agent-console-portal .lv-checkbox:focus-visible {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-checkbox:focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
 
-.lightvela-agent-console-portal .lv-checkbox:disabled {
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-checkbox:disabled {
   opacity: 0.42;
 }
 

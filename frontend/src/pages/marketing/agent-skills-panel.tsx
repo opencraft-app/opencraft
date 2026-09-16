@@ -1231,7 +1231,7 @@ function LearnSkillDialog({
           {triggerLabel ?? t("学习技能")}
         </Button>
       </DialogTrigger>
-      <DialogContent className="overflow-hidden rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[42rem]">
+      <DialogContent portalClassName="agents-ui" closeLabel={t("关闭")} className="overflow-hidden rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[42rem]">
         {learnBody}
       </DialogContent>
     </Dialog>

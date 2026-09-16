@@ -99,6 +99,7 @@ export function SoulFaceCard({
       className="relative overflow-hidden rounded-[10px]"
       style={{
         width: isSlot ? "100%" : isLarge ? 240 : 156,
+        maxWidth: "100%",
         aspectRatio: isLarge ? "240 / 338" : "112 / 157",
         containerType: isSlot ? "inline-size" : undefined,
         background: visuals.bgUrl
@@ -136,19 +137,11 @@ export function SoulFaceCard({
         </p>
         {/* 「人设解读」link：slot/small 尺寸用 SkillHub 同款迷你内联样式 */}
         {!isLarge && onInterpret && (
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onInterpret();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                onInterpret();
-              }
             }}
             className="mt-1 flex cursor-pointer items-center justify-end gap-[3px] text-black/55 transition-colors duration-200 hover:text-[#3957FF]"
           >
@@ -156,7 +149,7 @@ export function SoulFaceCard({
             <span className="text-[9px] leading-[1.4em] underline">
               {t("人设解读")}
             </span>
-          </div>
+          </button>
         )}
         {isLarge && onInterpret && (
           <div className="mt-2 flex justify-end">

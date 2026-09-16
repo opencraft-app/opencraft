@@ -167,6 +167,7 @@ describe("AgentSettingsPage renewal reminder", () => {
       disconnect() {}
     });
     delete (window as Window & { show?: unknown }).show;
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.setSystemTime(new Date("2026-07-27T00:00:00.000Z"));
     currentSessionUser = {
       id: "usr_agent_renewal",
@@ -306,28 +307,13 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(reminder).not.toHaveAttribute("title");
     expect(reminder).toHaveClass("is-warning", "cursor-pointer");
 
-    const tooltip = screen.getByRole("tooltip");
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.hover(reminder);
+    const tooltip = await screen.findByRole("tooltip");
     expect(reminder).toHaveAttribute("aria-describedby", tooltip.id);
     expect(tooltip).toHaveTextContent("剩余 3 天到期");
-    expect(tooltip).toHaveClass(
-      "rounded-[6px]",
-      "border",
-      "border-[var(--border-subtle)]",
-      "bg-white",
-      "px-3",
-      "py-1.5",
-      "text-[11px]",
-      "font-medium",
-      "pointer-events-auto",
-      "select-text",
-      "shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
-    );
-
-    const renewAction = within(tooltip).getByRole("button", { name: "立即续费" });
-    expect(renewAction).toHaveAttribute("type", "button");
-    expect(renewAction).toHaveClass("cursor-pointer");
-
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(renewAction);
+    expect(tooltip.closest("[data-slot='tooltip-content']")).toHaveClass("agents-ui", "rounded-md", "select-text");
+    await user.click(reminder);
 
     expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();

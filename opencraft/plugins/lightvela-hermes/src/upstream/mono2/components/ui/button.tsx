@@ -34,12 +34,12 @@ const buttonVariants = cva(
 );
 
 const buttonColorStyles: Record<NonNullable<ButtonProps["variant"]>, React.CSSProperties> = {
-  default: { color: "white" },
-  secondary: { color: "var(--text-primary)" },
+  default: { color: "var(--color-text-button-primary)" },
+  secondary: { color: "var(--color-text-button-secondary)" },
   outline: { color: "var(--text-primary)" },
-  hero: { color: "white" },
-  ghost: { color: "var(--text-secondary)" },
-  destructive: { color: "white" },
+  hero: { color: "var(--color-text-on-accent)" },
+  ghost: { color: "var(--color-text-button-tertiary)" },
+  destructive: { color: "var(--color-text-on-accent)" },
 };
 
 export interface ButtonProps
@@ -55,7 +55,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     return (
       <Comp
-        className={cn(buttonVariants({ variant: resolvedVariant, size, className }))}
+        className={cn("lv-button", `lv-button--${resolvedVariant === "default" ? "primary" : resolvedVariant}`, buttonVariants({ variant: resolvedVariant, size, className }))}
         ref={ref}
         style={{ ...buttonColorStyles[resolvedVariant], ...style }}
         {...props}

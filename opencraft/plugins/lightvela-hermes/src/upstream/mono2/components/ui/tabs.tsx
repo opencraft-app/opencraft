@@ -13,6 +13,7 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
+      "lv-segmented-control",
       segmentedListClass,
       className,
     )}
@@ -28,6 +29,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
+      "lv-segmented-control__item",
       segmentedTriggerClass,
       className,
     )}

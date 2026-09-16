@@ -12,7 +12,7 @@ export function AgentSettingsLoadingContent() {
       aria-hidden="true"
     >
       <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
-        <div className="lv-agent-profile-wrap">
+        <div className="lv-agent-profile-wrap lv-agents-sidebar-profile">
           <div className="lv-agent-profile">
             <AgentSettingsSkeletonBlock className="size-8 shrink-0 rounded-full" />
             <span className="min-w-0 flex-1 space-y-1">
@@ -29,43 +29,47 @@ export function AgentSettingsLoadingContent() {
           </div>
         </div>
 
-        <div className="lv-agents-sidebar-tabs">
-          <span className="h-8 flex-1 rounded-full bg-white shadow-sm" />
-          <AgentSettingsSkeletonBlock className="h-8 flex-1 rounded-full" />
+        <div className="lv-agents-sidebar-middle">
+          <div className="lv-agents-sidebar-tabs">
+            <span className="h-8 flex-1 rounded-full bg-white shadow-sm" />
+            <AgentSettingsSkeletonBlock className="h-8 flex-1 rounded-full" />
+          </div>
+
+          <nav className="lv-agents-nav">
+            {sidebarGroups.map((itemCount, groupIndex) => (
+              <div key={groupIndex} className="lv-agents-nav-group">
+                <AgentSettingsSkeletonBlock className="ml-3 h-3 w-10 rounded" />
+                <ul className="lv-agents-nav-group-items">
+                  {Array.from({ length: itemCount }).map((_, itemIndex) => (
+                    <li key={itemIndex} className="lv-agents-nav-item">
+                      <AgentSettingsSkeletonBlock className="size-3.5 shrink-0 rounded" />
+                      <AgentSettingsSkeletonBlock
+                        className={`h-3.5 rounded ${groupIndex === 4 && itemIndex === 1 ? "w-28" : "w-16"}`}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
         </div>
 
-        <nav className="lv-agents-nav">
-          {sidebarGroups.map((itemCount, groupIndex) => (
-            <div key={groupIndex} className="lv-agents-nav-group">
-              <AgentSettingsSkeletonBlock className="ml-3 h-3 w-10 rounded" />
-              <ul className="lv-agents-nav-group-items">
-                {Array.from({ length: itemCount }).map((_, itemIndex) => (
-                  <li key={itemIndex} className="lv-agents-nav-item">
-                    <AgentSettingsSkeletonBlock className="size-3.5 shrink-0 rounded" />
-                    <AgentSettingsSkeletonBlock
-                      className={`h-3.5 rounded ${groupIndex === 4 && itemIndex === 1 ? "w-28" : "w-16"}`}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </nav>
+        <div className="lv-agents-sidebar-footer">
+          <div className="lv-agent-feedback-link">
+            <AgentSettingsSkeletonBlock className="size-3.5 rounded" />
+            <AgentSettingsSkeletonBlock className="h-3 w-24 rounded" />
+          </div>
 
-        <div className="lv-agent-feedback-link">
-          <AgentSettingsSkeletonBlock className="size-3.5 rounded" />
-          <AgentSettingsSkeletonBlock className="h-3 w-24 rounded" />
-        </div>
-
-        <div className="lv-agent-account-footer hidden lg:flex">
-          <div className="lv-agent-account-menu">
-            <div className="lv-agent-account-trigger">
-              <AgentSettingsSkeletonBlock className="size-9 shrink-0 rounded-full" />
-              <span className="min-w-0 flex-1 space-y-1.5">
-                <AgentSettingsSkeletonBlock className="h-3.5 w-20 rounded" />
-                <AgentSettingsSkeletonBlock className="h-3 w-28 rounded" />
-              </span>
-              <AgentSettingsSkeletonBlock className="size-3.5 shrink-0 rounded" />
+          <div className="lv-agent-account-footer hidden lg:flex">
+            <div className="lv-agent-account-menu">
+              <div className="lv-agent-account-trigger">
+                <AgentSettingsSkeletonBlock className="size-9 shrink-0 rounded-full" />
+                <span className="min-w-0 flex-1 space-y-1.5">
+                  <AgentSettingsSkeletonBlock className="h-3.5 w-20 rounded" />
+                  <AgentSettingsSkeletonBlock className="h-3 w-28 rounded" />
+                </span>
+                <AgentSettingsSkeletonBlock className="size-3.5 shrink-0 rounded" />
+              </div>
             </div>
           </div>
         </div>

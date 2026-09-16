@@ -15,9 +15,19 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Droplets, EllipsisVertical, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
-import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pill, Plus, RefreshCw, Sunrise, TrendingUp, Wallet, X } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AgentConfirmDialog, AgentState, AgentTooltip } from "../../components/agents/index";
+import { Button } from "../../components/ui/button";
+import { AutomationFormActionsView } from "./automation-form-actions-view";
+import { AutomationDialogView } from "./automation-dialog-view";
+import { AutomationCardActionsView } from "./automation-card-actions-view";
+import { AutomationDaysPickerView } from "./automation-days-picker-view";
+import { Checkbox } from "../../components/ui/checkbox";
+import { Switch } from "../../components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "../../components/domain/agent-section-header";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
@@ -102,12 +112,11 @@ import { DATONG_EVENTS, DATONG_PAGE_IDS } from "../../observability/datong";
 import { trackDatongClick, trackDatongEvent } from "../../observability/datong-tracker";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.06)",
-  background: "#ffffff",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
+  border: "1px solid var(--border-subtle)",
+  background: "var(--surface-raised)",
+  boxShadow: "none",
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
-const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
 const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "20px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
@@ -311,11 +320,11 @@ function ScenarioReminderBanner({
           <BellRing className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <h3 className="truncate font-semibold text-black/88" title={notice.draft.generatedName}>
+          <AgentTooltip content={notice.draft.generatedName} triggerMode="control"><h3 tabIndex={0} className="truncate font-semibold text-black/88">
             {isPreview
               ? t("已开始试跑：{{name}}", { name: notice.draft.generatedName })
               : t("已新建定时任务：{{name}}", { name: notice.draft.generatedName })}
-          </h3>
+          </h3></AgentTooltip>
           <p className="mt-1 text-xs leading-5 text-black/55">
             {isPreview
               ? t("Hermes Agent 已开始处理，结果会稍后推送到{{deliver}}，也会出现在最近执行。", { deliver: notice.draft.generatedDeliverLabel })
@@ -643,172 +652,18 @@ async function sendScenarioStartNotice(
   }
 }
 
-function useHoverTooltipPosition<T extends HTMLElement>() {
-  const tooltipId = useId();
-  const triggerRef = useRef<T | null>(null);
-  const closeTimerRef = useRef<number | null>(null);
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-
-  const cancelClose = useCallback(() => {
-    if (closeTimerRef.current == null) return;
-    window.clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = null;
-  }, []);
-
-  const showTooltip = useCallback(() => {
-    cancelClose();
-    setOpen(true);
-  }, [cancelClose]);
-
-  const scheduleClose = useCallback(() => {
-    cancelClose();
-    closeTimerRef.current = window.setTimeout(() => {
-      setOpen(false);
-      closeTimerRef.current = null;
-    }, 120);
-  }, [cancelClose]);
-
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setPosition({
-      left: rect.left + rect.width / 2,
-      top: rect.top - 8,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    return () => cancelClose();
-  }, [cancelClose]);
-
-  return {
-    tooltipId,
-    triggerRef,
-    open,
-    position,
-    showTooltip,
-    scheduleClose,
-  };
-}
-
-function FloatingTooltip({
-  id,
-  position,
-  children,
-  className = "",
-  onMouseEnter,
-  onMouseLeave,
-}: {
-  id: string;
-  position: { left: number; top: number };
-  children: ReactNode;
-  className?: string;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
-}) {
-  return createPortal(
-    <span
-      id={id}
-      className={`lightvela-agent-console-portal pointer-events-auto fixed z-[260] max-w-[min(360px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] ${className}`}
-      style={{ left: position.left, top: position.top }}
-      role="tooltip"
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-    >
-      {children}
-      <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-    </span>,
-    document.body,
-  );
-}
-
 function EffectiveWindowBadge({ label, messages }: { label: string; messages: string[] }) {
-  const { tooltipId, triggerRef, open, position, showTooltip, scheduleClose } = useHoverTooltipPosition<HTMLButtonElement>();
-
-  return (
-    <span className="relative inline-flex shrink-0">
-      <button
-        ref={triggerRef}
-        type="button"
-        className="inline-flex h-[18px] w-[18px] cursor-default items-center justify-center rounded-full bg-black/[0.06] text-black/45 transition hover:bg-black/[0.08] hover:text-black/65 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
-        aria-label={label}
-        aria-describedby={open ? tooltipId : undefined}
-        onMouseEnter={showTooltip}
-        onMouseLeave={scheduleClose}
-        onFocus={showTooltip}
-        onBlur={scheduleClose}
-      >
-        <CalendarRange className="h-3 w-3" aria-hidden="true" />
-      </button>
-      {open && (
-        <FloatingTooltip
-          id={tooltipId}
-          position={position}
-          className="whitespace-normal text-left"
-          onMouseEnter={showTooltip}
-          onMouseLeave={scheduleClose}
-        >
-          <span className="block space-y-0.5">
-            {messages.map((line, index) => (
-              <span key={`${line}-${index}`} className="block">
-                {line}
-              </span>
-            ))}
-          </span>
-        </FloatingTooltip>
-      )}
-    </span>
-  );
+  return <AgentTooltip triggerMode="control" content={messages.join("\n")}>
+    <button type="button" aria-label={label} className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-black/[0.06] text-black/45 focus-visible:ring-2">
+      <CalendarRange className="size-3" aria-hidden="true" />
+    </button>
+  </AgentTooltip>;
 }
 
 function ImmediateTooltipText({ label, message }: { label: string; message: string }) {
-  const { tooltipId, triggerRef, open, position, showTooltip, scheduleClose } = useHoverTooltipPosition<HTMLSpanElement>();
-
-  return (
-    <span className="relative inline-flex min-w-0">
-      <span
-        ref={triggerRef}
-        className="min-w-0 truncate text-xs text-black/55"
-        aria-label={label}
-        aria-describedby={open ? tooltipId : undefined}
-        tabIndex={0}
-        onMouseEnter={showTooltip}
-        onMouseLeave={scheduleClose}
-        onFocus={showTooltip}
-        onBlur={scheduleClose}
-      >
-        {label}
-      </span>
-      {open && (
-        <FloatingTooltip
-          id={tooltipId}
-          position={position}
-        className="w-[calc(100vw-32px)] max-w-[360px] whitespace-normal break-words text-left"
-          onMouseEnter={showTooltip}
-          onMouseLeave={scheduleClose}
-        >
-          {message}
-        </FloatingTooltip>
-      )}
-    </span>
-  );
+  return <AgentTooltip triggerMode="control" content={message}>
+    <span tabIndex={0} aria-label={label} className="min-w-0 truncate text-xs text-black/55 focus-visible:ring-2">{label}</span>
+  </AgentTooltip>;
 }
 
 export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, onRestartGateway }: {
@@ -850,6 +705,8 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   const [activeView, setActiveView] = useState<"created" | "ended" | "recent">("created");
   const [activeTaskFilter, setActiveTaskFilter] = useState<ActiveTaskFilter>("all");
   const [creating, setCreating] = useState(false);
+  const createButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogReturnFocusRef = useRef<HTMLElement | null>(null);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
   const [scenarioInstallPack, setScenarioInstallPack] = useState<ScenarioTaskPack | null>(null);
   const [scenarioDraft, setScenarioDraft] = useState<ScenarioTaskDraft | null>(null);
@@ -995,6 +852,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   }, [botId, profileId, runtimeBotId]);
 
   const requestCreate = useCallback(() => {
+    dialogReturnFocusRef.current = createButtonRef.current;
     if (jobLimitReached) {
       setPendingCreateMode("blank");
       setPendingCreateTemplate(null);
@@ -1005,6 +863,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   }, [jobLimitReached]);
 
   const requestTemplateCreate = useCallback((template: AutomationTemplate) => {
+    dialogReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     trackDatongClick("automation_template_card", {
       pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
       params: {
@@ -1391,14 +1250,12 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
 
   if (!botId) {
     return (
-      <div className="rounded-xl p-8 text-center text-sm text-black/60" style={PANEL_CARD_STYLE}>
-        {t("请先选中一个智能体实例")}
-      </div>
+      <AgentState className="agents-ui" kind="empty" title={t("请先选中一个智能体实例")} />
     );
   }
 
   return (
-    <div className="space-y-4">
+    <Tabs value={activeView} onValueChange={(value) => setActiveView(value as typeof activeView)} className="agents-ui space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
       {notice && <ErrorToast message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
 
@@ -1407,14 +1264,14 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
         description={t("让你的智能体伙伴按计划自动执行任务")}
         actions={(
           <div className="inline-flex items-center gap-2.5">
-            <button
-              type="button"
+            <Button
               onClick={requestCreate}
-              className="lv-button lv-button--primary inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
+              ref={createButtonRef}
+              className="h-9 min-w-[88px] rounded-md"
             >
-              <Plus className="h-5 w-5" />
-              <span className="text-base font-semibold leading-none">{t("新建")}</span>
-            </button>
+              <Plus className="size-4" />
+              {t("新建")}
+            </Button>
           </div>
         )}
       />
@@ -1455,32 +1312,11 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg bg-black/[0.04] p-1">
-          <button
-            type="button"
-            onClick={() => setActiveView("created")}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "created" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
-            aria-pressed={activeView === "created"}
-          >
-            {t("当前任务")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView("ended")}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "ended" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
-            aria-pressed={activeView === "ended"}
-          >
-            {t("已结束任务")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView("recent")}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${activeView === "recent" ? "bg-white text-black shadow-sm" : "text-black/55 hover:text-black/80"}`}
-            aria-pressed={activeView === "recent"}
-          >
-            {t("最近执行")}
-          </button>
-        </div>
+          <TabsList aria-label={t("定时任务")} className="h-9 rounded-md">
+            <TabsTrigger className="rounded-md" value="created">{t("当前任务")}</TabsTrigger>
+            <TabsTrigger className="rounded-md" value="ended">{t("已结束任务")}</TabsTrigger>
+            <TabsTrigger className="rounded-md" value="recent">{t("最近执行")}</TabsTrigger>
+          </TabsList>
         <div className="flex items-center gap-2">
           {activeView === "created" && (
             <Select
@@ -1497,7 +1333,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
                 position="popper"
                 sideOffset={6}
                 align="end"
-                className="min-w-[120px] rounded-md border-black/10 bg-white shadow-lg"
+                className="agents-ui min-w-[120px] rounded-md border-black/10 bg-white shadow-lg"
               >
                 <SelectItem value="all" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("全部")}</SelectItem>
                 <SelectItem value="agent" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("智能任务")}</SelectItem>
@@ -1506,43 +1342,26 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
               </SelectContent>
             </Select>
           )}
-          <button
-            type="button"
+          <AgentTooltip content={t("刷新")} triggerMode="control"><Button
             onClick={() => void handleManualRefresh()}
             disabled={loadingJobs || loadingRecentRuns || manualRefreshing}
             className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
             aria-label={t("刷新")}
-            title={t("刷新")}
+            variant="ghost" size="sm"
           >
             <RefreshCw className={`size-4 ${manualRefreshing ? "animate-spin" : ""}`} />
-          </button>
+          </Button></AgentTooltip>
         </div>
       </div>
 
-      <div className={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-xl p-4" : ""} style={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
+      <TabsContent value={activeView} className={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? "rounded-md p-4" : ""} style={(activeView !== "recent" && (loadingJobs || listError || displayedJobs.length === 0)) || (activeView === "recent" && loadingRecentRuns) ? PANEL_CARD_STYLE : undefined}>
         {activeView !== "recent" && loadingJobs ? (
-          <div className="flex items-center justify-center py-8 text-sm text-black/50">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {t("加载中…")}
-          </div>
+          <AgentState kind="loading" title={t("加载中…")} className="border-0" />
         ) : activeView !== "recent" && listError ? (
-          <div className="flex flex-col items-center justify-center py-10 text-sm">
-            <AlertTriangle className="mb-2 h-6 w-6 text-[#B91C1C] opacity-80" />
-            <p className="text-black/70">{t("加载定时任务失败")}</p>
-            <p className="mt-1 max-w-md break-all px-4 text-center text-xs text-black/40">{listError}</p>
-            <button
-              type="button"
-              onClick={() => void refreshCreatedJobs()}
-              className="mt-3 rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-black/70 transition hover:bg-black/[0.04]"
-            >
-              {t("重试")}
-            </button>
-          </div>
+          <AgentState kind="error" title={t("加载定时任务失败")} description={<span className="break-words">{listError}</span>}
+            action={<Button variant="outline" size="sm" onClick={() => void refreshCreatedJobs()}>{t("重试")}</Button>} />
         ) : activeView === "recent" && loadingRecentRuns ? (
-          <div className="flex items-center justify-center py-8 text-sm text-black/50">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {t("加载中…")}
-          </div>
+          <AgentState kind="loading" title={t("加载中…")} className="border-0" />
         ) : activeView === "recent" ? (
           <RecentCronRunsPanel
             runs={recentRuns}
@@ -1550,18 +1369,8 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
             skillLoadState={installedSkillLoadState}
           />
         ) : displayedJobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
-            {activeView === "ended" ? (
-              <p>{t("暂无已结束任务")}</p>
-            ) : activeTaskFilter !== "all" ? (
-              <p>{t("暂无符合条件的任务")}</p>
-            ) : (
-              <p>
-                {t("暂无定时任务，")}
-                <span>{t("可从下方任务模板快速启用")}</span>
-              </p>
-            )}
-          </div>
+          <AgentState kind="empty" className="border-0" title={activeView === "ended" ? t("暂无已结束任务") : activeTaskFilter !== "all" ? t("暂无符合条件的任务") : t("暂无定时任务，")}
+            description={activeView === "created" && activeTaskFilter === "all" ? t("可从下方任务模板快速启用") : undefined} />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {[...displayedJobs]
@@ -1580,9 +1389,9 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
                   busy={busyId === job.id}
                   testState={testState[job.id] ?? "idle"}
                   onTestRun={() => handleTestRun(job)}
-                  onView={() => setViewingJob(job)}
-                  onCopy={() => requestDuplicate(job)}
-                  onEdit={() => setEditingJob(job)}
+                  onView={(trigger) => { dialogReturnFocusRef.current = trigger; setViewingJob(job); }}
+                  onCopy={(trigger) => { dialogReturnFocusRef.current = trigger; requestDuplicate(job); }}
+                  onEdit={() => { dialogReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setEditingJob(job); }}
                   onPause={() => handleAction(job, "pause")}
                   onResume={() => handleAction(job, "resume")}
                   onRemove={() => {
@@ -1593,16 +1402,19 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
               ))}
           </div>
         )}
-      </div>
+      </TabsContent>
 
-      <AutomationScenarioTemplatesSection
-        templates={templates}
-        onEnable={requestTemplateCreate}
-        loading={loadingBlueprints}
-      />
+      {activeView === "created" && (
+        <AutomationScenarioTemplatesSection
+          templates={templates}
+          onEnable={requestTemplateCreate}
+          loading={loadingBlueprints}
+        />
+      )}
 
       {creating && (
         <AutomationFormModal
+          returnFocusRef={dialogReturnFocusRef}
           botId={botId}
           mode="create"
           jobs={jobs}
@@ -1657,6 +1469,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
 
       {creatingFromTemplate && (
         <AutomationFormModal
+          returnFocusRef={dialogReturnFocusRef}
           botId={botId}
           mode="create"
           template={creatingFromTemplate}
@@ -1714,6 +1527,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
 
       {duplicatingJob && (
         <AutomationFormModal
+          returnFocusRef={dialogReturnFocusRef}
           botId={botId}
           mode="create"
           initialJob={duplicatingJob}
@@ -1743,6 +1557,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
 
       {editingJob && (
         <AutomationFormModal
+          returnFocusRef={dialogReturnFocusRef}
           botId={botId}
           mode="edit"
           initialJob={editingJob}
@@ -1767,6 +1582,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
 
       {viewingJob && (
         <CronJobDetailModal
+          returnFocusRef={dialogReturnFocusRef}
           job={viewingJob}
           jobsById={jobsById}
           lastAgentRun={getLastAgentRunForJob(viewingJob, recentRuns)}
@@ -1777,6 +1593,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
 
       {confirmDeleteJob && (
         <ConfirmDeleteModal
+          returnFocusRef={createButtonRef}
           jobName={confirmDeleteJob.name}
           dependents={confirmDeleteDependents}
           error={deleteError}
@@ -1790,7 +1607,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
           }}
         />
       )}
-    </div>
+    </Tabs>
   );
 }
 
@@ -1844,23 +1661,22 @@ export function RecentCronRunsPanel({
                 <div key={run.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-sm font-medium text-black/85" title={presentation.name}>
+                      <AgentTooltip content={presentation.name} triggerMode="control"><span tabIndex={0} className="truncate text-sm font-medium text-black/85">
                         {presentation.name}
-                      </span>
-                      <button
+                      </span></AgentTooltip>
+                      <AgentTooltip content={t("查看任务详情")} triggerMode="control"><button
                         type="button"
                         onClick={() => setViewingRun(run)}
                         className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-black/45 transition hover:bg-black/[0.04] hover:text-black/75"
                         aria-label={t("查看任务详情")}
-                        title={t("查看任务详情")}
                       >
                         <Eye className="h-3.5 w-3.5" />
-                      </button>
+                      </button></AgentTooltip>
                     </div>
                     {summary && (
-                      <p className="mt-1 line-clamp-2 text-pretty text-xs leading-relaxed text-black/55" title={summary}>
+                      <AgentTooltip content={summary} triggerMode="control"><p tabIndex={0} className="mt-1 line-clamp-2 text-pretty text-xs leading-relaxed text-black/55">
                         {summary}
-                      </p>
+                      </p></AgentTooltip>
                     )}
                     {run.skip_reason === "model_changed" && (
                       <p className="mt-1 text-xs leading-relaxed text-black/45">
@@ -1875,15 +1691,14 @@ export function RecentCronRunsPanel({
                     >
                       {taskTypeLabel}
                     </span>
-                    <button
+                    <AgentTooltip content={t("查看任务详情")} triggerMode="control"><button
                       type="button"
                       onClick={() => setViewingRun(run)}
-                      className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
+                      className="rounded-md bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
                       aria-label={t("查看任务详情")}
-                      title={t("查看任务详情")}
                     >
                       {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-                    </button>
+                    </button></AgentTooltip>
                     <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
                       {formatTime(run.run_at)}
                     </time>
@@ -1954,32 +1769,11 @@ function RecentCronRunDetailModal({
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
   const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
-  return createPortal(
-    <div
-      className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="lv-icon-button absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <div className="flex items-center gap-2 pr-8">
-          <h2 className="truncate text-balance text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
-          <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
+  return (
+    <AutomationDialogView title={presentation.name || t("未命名任务")} closeLabel={t("关闭")} onClose={onClose}
+      badge={<span className="shrink-0 rounded-md bg-black/[0.06] px-2 py-0.5 text-xs text-black/55">
             {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-          </span>
-        </div>
+          </span>}>
 
         <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow
@@ -2023,9 +1817,7 @@ function RecentCronRunDetailModal({
           <DeliverDetailRow deliver={run.deliver} />
           <DetailRow label={t("任务 ID")} value={run.job_id} />
         </dl>
-      </div>
-    </div>,
-    document.body,
+    </AutomationDialogView>
   );
 }
 
@@ -2049,8 +1841,8 @@ function CronJobCard({
   busy: boolean;
   testState: "idle" | "running" | "ok" | "fail";
   onTestRun: () => void;
-  onView: () => void;
-  onCopy: () => void;
+  onView: (trigger: HTMLButtonElement | null) => void;
+  onCopy: (trigger: HTMLButtonElement | null) => void;
   onEdit: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -2082,19 +1874,17 @@ function CronJobCard({
     : visiblePrompt;
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
-  const [actionRolloutRetained, setActionRolloutRetained] = useState(false);
-  const retainedActionRolloutClass = actionRolloutRetained ? "!opacity-100 !delay-0" : "";
   return (
     <div
-      className="flex flex-col rounded-md bg-white p-4 transition hover:shadow-md"
+      className="flex min-w-0 flex-col rounded-md bg-white p-4"
       style={{ ...PANEL_CARD_STYLE, minHeight: 178 }}
     >
       <div className="flex items-start justify-between gap-2 pb-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Clock className="h-4 w-4 shrink-0 text-black/40" />
-          <span className="min-w-0 truncate text-sm font-medium text-black/90" title={fullName}>
+          <AgentTooltip content={fullName} triggerMode="control"><span tabIndex={0} className="min-w-0 truncate text-sm font-medium text-black/90">
             {fullName}
-          </span>
+          </span></AgentTooltip>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
             {running && (
@@ -2157,165 +1947,11 @@ function CronJobCard({
             />
           )}
         </div>
-        <div
-          className="ml-auto flex shrink-0 items-center"
-          onMouseLeave={() => setActionRolloutRetained(false)}
-        >
-          {!terminal && (
-            <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
-              <Pencil className="h-3 w-3" />
-            </CronActionButton>
-          )}
-          {!terminal && (paused ? (
-            <CronActionButton label={t("恢复")} onClick={onResume} disabled={busy}>
-              <Play className="h-3 w-3" />
-            </CronActionButton>
-          ) : (
-            <CronActionButton label={t("暂停")} onClick={onPause} disabled={busy}>
-              <Pause className="h-3 w-3" />
-            </CronActionButton>
-          ))}
-          {terminal && (
-            <CronActionButton label={t("删除")} onClick={onRemove} disabled={busy}>
-              <Trash2 className="h-3 w-3" />
-            </CronActionButton>
-          )}
-          <div
-            className="group/actions relative inline-flex items-center"
-            onMouseLeave={(event) => {
-              const relatedTarget = event.relatedTarget;
-              if (
-                relatedTarget instanceof Node
-                && event.currentTarget.parentElement?.contains(relatedTarget)
-                && !event.currentTarget.contains(relatedTarget)
-              ) {
-                setActionRolloutRetained(true);
-              }
-            }}
-          >
-            <button
-              type="button"
-              aria-label={t("操作")}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={(event) => event.preventDefault()}
-              className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-black/50 transition hover:bg-black/[0.04] hover:text-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
-            >
-              <EllipsisVertical className="size-4" />
-            </button>
-            <div className={cn(
-              "pointer-events-none absolute top-1/2 z-10 flex -translate-y-1/2 items-center group-hover/actions:pointer-events-auto group-focus-within/actions:pointer-events-auto",
-              actionRolloutRetained && "pointer-events-auto",
-              terminal ? "right-[48px]" : "right-[72px]",
-            )}>
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute inset-0 bg-white opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-0 group-focus-within/actions:opacity-100 group-focus-within/actions:delay-0",
-                  retainedActionRolloutClass,
-                  terminal ? "delay-[40ms]" : "delay-[60ms]",
-                )}
-              />
-              <div className="relative flex items-center">
-                {!terminal && (
-                  <CronActionButton
-                    label={t("测试运行")}
-                    onClick={onTestRun}
-                    disabled={busy || testState === "running"}
-                    className={cn(
-                      "opacity-0 transition-opacity duration-100 ease-out delay-0 motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-[60ms] group-focus-within/actions:opacity-100 group-focus-within/actions:delay-[60ms]",
-                      retainedActionRolloutClass,
-                    )}
-                  >
-                    {testState === "running" ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : testState === "ok" ? (
-                      <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
-                    ) : testState === "fail" ? (
-                      <X className="h-3 w-3 text-[#B91C1C]" />
-                    ) : (
-                      <Zap className="h-3 w-3" />
-                    )}
-                  </CronActionButton>
-                )}
-                <CronActionButton
-                  label={t("查看")}
-                  onClick={onView}
-                  className={cn(
-                    "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
-                    retainedActionRolloutClass,
-                    terminal
-                      ? "delay-0 group-hover/actions:delay-[40ms] group-focus-within/actions:delay-[40ms]"
-                      : "delay-[20ms] group-hover/actions:delay-[40ms] group-focus-within/actions:delay-[40ms]",
-                  )}
-                >
-                  <Eye className="h-3 w-3" />
-                </CronActionButton>
-                <CronActionButton
-                  label={t("复制")}
-                  onClick={onCopy}
-                  disabled={busy}
-                  className={cn(
-                    "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
-                    retainedActionRolloutClass,
-                    terminal
-                      ? "delay-[20ms] group-hover/actions:delay-[20ms] group-focus-within/actions:delay-[20ms]"
-                      : "delay-[40ms] group-hover/actions:delay-[20ms] group-focus-within/actions:delay-[20ms]",
-                  )}
-                >
-                  <Copy className="h-3 w-3" />
-                </CronActionButton>
-                {!terminal && (
-                  <CronActionButton
-                    label={t("删除")}
-                    onClick={onRemove}
-                    disabled={busy}
-                    className={cn(
-                      "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-0 group-focus-within/actions:opacity-100 group-focus-within/actions:delay-0",
-                      retainedActionRolloutClass,
-                      "delay-[60ms]",
-                    )}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </CronActionButton>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <AutomationCardActionsView terminal={terminal} paused={paused} busy={busy} testState={testState}
+          labels={{ edit: t("编辑"), pause: t("暂停"), resume: t("恢复"), remove: t("删除"), menu: t("操作"), test: t("测试运行"), view: t("查看"), copy: t("复制") }}
+          actions={{ edit: onEdit, pause: onPause, resume: onResume, remove: onRemove, test: onTestRun, view: onView, copy: onCopy }} />
       </div>
     </div>
-  );
-}
-
-function CronActionButton({
-  label,
-  onClick,
-  disabled = false,
-  children,
-  className,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <span className={cn("group relative inline-flex", className)}>
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-black/50 transition hover:bg-black/[0.04] hover:text-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label={label}
-      >
-        {children}
-      </button>
-      <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium leading-4 text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
-        {label}
-        <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-      </span>
-    </span>
   );
 }
 
@@ -2551,12 +2187,14 @@ function CronJobDetailModal({
   lastAgentRun,
   skillLoadState,
   onClose,
+  returnFocusRef,
 }: {
   job: CronJob;
   jobsById: ReadonlyMap<string, CronJob>;
   lastAgentRun: CronRunRecord | null;
   skillLoadState: InstalledSkillLoadState;
   onClose: () => void;
+  returnFocusRef: React.RefObject<HTMLElement | null>;
 }) {
   const t = useT();
   const { i18n } = useTranslation();
@@ -2570,38 +2208,13 @@ function CronJobDetailModal({
   const nextRunLabel = isOnceJob ? "—" : nextRunAt ? formatTime(nextRunAt) : "—";
   const upstreamIds = job.context_from ?? [];
   const upstreamJobs = upstreamIds.map((id) => jobsById.get(id) ?? null);
-  return createPortal(
-    <div
-      className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-h-[90vh] w-full max-w-[560px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="lv-icon-button absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <div className="mb-4 pr-10">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("定时任务详情")}</h2>
-            {paused && (
-              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+  return (
+    <AutomationDialogView title={t("定时任务详情")} closeLabel={t("关闭")} onClose={onClose} returnFocusRef={returnFocusRef}
+      badge={paused && <span className="rounded-md bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已暂停")}
-              </span>
-            )}
-          </div>
-        </div>
+              </span>}>
 
-        <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+        <dl className="mt-4 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
           <DetailRow
             label={t("任务类型")}
@@ -2666,9 +2279,7 @@ function CronJobDetailModal({
           )}
           <DeliverDetailRow deliver={job.deliver} />
         </dl>
-      </div>
-    </div>,
-    document.body,
+    </AutomationDialogView>
   );
 }
 
@@ -2832,12 +2443,7 @@ function formatCronDependentRemovalError(
 }
 
 function ConfirmDeleteModal({
-  jobName,
-  dependents,
-  error,
-  busy,
-  onCancel,
-  onConfirm,
+  jobName, dependents, error, busy, onCancel, onConfirm, returnFocusRef,
 }: {
   jobName: string;
   dependents: readonly CronDependentBinding[];
@@ -2845,109 +2451,41 @@ function ConfirmDeleteModal({
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  returnFocusRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   const t = useT();
-  return createPortal(
-    <div
-      className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-8"
-      role="dialog"
-      aria-modal="true"
-      onClick={busy ? undefined : onCancel}
-    >
-      <div
-        className="relative w-full max-w-[400px] rounded-2xl bg-white p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-balance text-base font-semibold text-black/90">{t("删除定时任务")}</h3>
-        <p className="mt-2 text-pretty text-sm text-black/65">
-          {t("确定要删除「{{name}}」吗？此操作无法恢复。", { name: jobName || t("未命名任务") })}
-        </p>
-        {dependents.length > 0 && (
-          <div className="mt-4 rounded-md border border-black/[0.08] bg-black/[0.02] p-3">
-            <p className="text-pretty text-xs font-medium text-black/65">{t("受影响的直接下游任务")}</p>
-            <ul className="mt-2 space-y-1 text-sm text-black/80">
-              {dependents.map((dependent) => <li key={dependent.id}>{dependent.name || t("未命名任务")}</li>)}
-            </ul>
-            <p className="mt-2 text-pretty text-xs leading-5 text-black/55">
-              {t("删除后将解除上游绑定并继续独立执行")}
-            </p>
-          </div>
-        )}
-        {error && (
-          <p className="mt-3 text-pretty text-xs leading-5 text-[#B91C1C]" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="rounded-lg border border-black/10 px-4 py-1.5 font-medium text-black/70 transition hover:bg-black/[0.04] disabled:opacity-40"
-            style={MODAL_CONTROL_TEXT_STYLE}
-          >
-            {t("取消")}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#B91C1C] px-4 py-1.5 font-medium text-white transition hover:bg-[#991B1B] disabled:opacity-40"
-            style={MODAL_CONTROL_TEXT_STYLE}
-          >
-            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {t("删除")}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
+  const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  return <AgentConfirmDialog open onOpenChange={(open) => { if (!open) onCancel(); }}
+    title={t("删除定时任务")}
+    description={t("确定要删除「{{name}}」吗？此操作无法恢复。", { name: jobName || t("未命名任务") })}
+    confirmLabel={t("删除")} cancelLabel={t("取消")} confirmDisabled={busy} cancelDisabled={busy}
+    onConfirm={onConfirm}
+    onCloseAutoFocus={(event) => {
+      if (!openerRef.current?.isConnected) {
+        event.preventDefault();
+        returnFocusRef.current?.focus();
+      }
+    }}>
+    {dependents.length > 0 && <div className="mb-4 rounded-md border border-black/[0.08] bg-black/[0.02] p-3">
+      <p className="text-pretty text-xs font-medium text-black/65">{t("受影响的直接下游任务")}</p>
+      <ul className="mt-2 space-y-1 text-sm text-black/80">
+        {dependents.map((dependent) => <li key={dependent.id}>{dependent.name || t("未命名任务")}</li>)}
+      </ul>
+      <p className="mt-2 text-pretty text-xs leading-5 text-black/55">{t("删除后将解除上游绑定并继续独立执行")}</p>
+    </div>}
+    {error && <p className="mb-4 text-pretty text-xs leading-5 text-[#B91C1C]" role="alert">{error}</p>}
+  </AgentConfirmDialog>;
 }
 
-function ConfirmCreateOverLimitModal({
-  onCancel,
-  onConfirm,
-}: {
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
+function ConfirmCreateOverLimitModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
   const t = useT();
-  return createPortal(
-    <div
-      className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-8"
-      role="dialog"
-      aria-modal="true"
-      onClick={onCancel}
-    >
-      <div
-        className="relative w-full max-w-[420px] rounded-2xl bg-white p-6 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-base font-semibold text-black/90">{t("定时任务数量提醒")}</h3>
-        <p className="mt-2 text-sm leading-relaxed text-black/65">
-          {t("当前生效中的定时任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
-        </p>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg border border-black/10 px-4 py-1.5 text-sm font-medium text-black/70 transition hover:bg-black/[0.04]"
-          >
-            {t("取消")}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white transition hover:bg-black/85"
-          >
-            {t("继续新建")}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
+  return <AgentConfirmDialog open onOpenChange={(open) => { if (!open) onCancel(); }}
+    title={t("定时任务数量提醒")}
+    description={t("当前生效中的定时任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
+    confirmLabel={t("继续新建")} cancelLabel={t("取消")} confirmVariant="default" onConfirm={onConfirm}
+    onCloseAutoFocus={(event) => {
+      if (document.activeElement instanceof HTMLElement && document.activeElement.closest('[role="dialog"]')) event.preventDefault();
+    }} />;
 }
 
 function formatTime(iso: string): string {
@@ -3801,6 +3339,7 @@ export function AutomationFormModal({
   onClose,
   onSaved,
   onError,
+  returnFocusRef,
 }: {
   botId: HermesCronTarget;
   mode: "create" | "edit";
@@ -3819,12 +3358,12 @@ export function AutomationFormModal({
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 }) {
   const t = useT();
   const runtimeBotId = typeof botId === "string" ? botId : botId.instanceId;
   const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
-  const testRunHintId = useId();
-  const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
+  const formId = useId();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const initialPromptParts = splitAutomationExecutionPrompt(initialJob?.prompt ?? template?.prompt ?? "");
   const executionRules = template?.executionRules ?? initialPromptParts.executionRules;
@@ -4470,8 +4009,11 @@ export function AutomationFormModal({
     }
   }, [botId, runtimeBotId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, executionRules, selectedSkills, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
 
-  return createPortal(
-    <div className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 ${shouldKeepFormHeight ? "py-4" : "py-3"}`} role="dialog" aria-modal="true">
+  return (
+    <AutomationDialogView title={mode === "create" ? t("新建定时任务") : t("编辑定时任务")}
+      closeLabel={t("关闭")} onClose={onClose} returnFocusRef={returnFocusRef}
+      className={cn("max-w-[760px]", shouldKeepFormHeight && "flex h-[720px] max-h-[calc(100dvh-32px)] flex-col overflow-hidden")}
+      style={{ boxSizing: "border-box", width: "min(760px, calc(100vw - 32px))", ...(shouldKeepFormHeight ? {} : { maxHeight: "min(860px, calc(100dvh - 32px))" }) }}>
       {testSendToast && (
         <ErrorToast
           message={testSendToast.message}
@@ -4479,27 +4021,6 @@ export function AutomationFormModal({
           onClose={() => setTestSendToast(null)}
         />
       )}
-      <div
-        className={`lv-dialog-surface relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? "flex h-[720px] max-h-[calc(100dvh-32px)] flex-col" : "overflow-y-auto"}`}
-        style={{
-          boxSizing: "border-box",
-          width: "min(760px, calc(100vw - 32px))",
-          ...(shouldKeepFormHeight ? {} : { maxHeight: "min(860px, calc(100dvh - 32px))" }),
-        }}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="lv-icon-button absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <h2 className="text-balance text-lg font-semibold text-black/90">
-          {mode === "create" ? t("新建定时任务") : t("编辑定时任务")}
-        </h2>
-
         <div className={shouldKeepFormHeight
           ? "min-h-0 flex-1 overscroll-contain overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           : undefined}
@@ -4527,7 +4048,7 @@ export function AutomationFormModal({
                     setZeroTokenKind(value);
                     setScriptSafetyConfirmed(false);
                   }}
-                  className={`flex min-h-24 flex-col justify-start rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
+                  className={`flex flex-col justify-start rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
                     ? "border-blue-300 bg-blue-50"
                     : "border-black/10 hover:border-black/20"}`}
                 >
@@ -4564,8 +4085,9 @@ export function AutomationFormModal({
 
         {/* 名称 */}
         <div className={canSelectZeroToken || executionMode === "zero_token" ? "mt-3" : "mt-4"}>
-          <label className="block text-sm font-medium text-black/80">{t("名称")}</label>
+          <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-black/80">{t("名称")}</label>
           <input
+            id={`${formId}-name`}
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value.slice(0, 60))}
@@ -4579,24 +4101,22 @@ export function AutomationFormModal({
         {/* 执行时间 */}
         <div className="mt-3">
           <label className="block text-sm font-medium text-black/80">{t("执行时间")}</label>
-          <div className="lv-segmented-control mt-1.5 inline-flex rounded-md bg-black/[0.04] p-1">
+          <Tabs value={kind} onValueChange={(value) => { if (!scheduleUneditable) setKind(value as FrequencyKind); }} className="mt-1.5">
+          <TabsList aria-label={t("执行时间")} className="h-9 rounded-md">
             {(["once", "recurring", "interval"] as FrequencyKind[]).map((k) => (
-              <button
+              <TabsTrigger
                 key={k}
-                type="button"
-                onClick={() => {
-                  if (!scheduleUneditable) setKind(k);
-                }}
+                value={k}
                 disabled={scheduleUneditable}
                 style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                className={`lv-segmented-control__item rounded-md px-3 py-1 text-sm font-medium transition ${kind === k ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80"
+                className={`rounded-md px-3 py-1 text-sm font-medium transition ${kind === k ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80"
                   } ${scheduleUneditable ? "cursor-not-allowed opacity-60" : ""}`}
               >
                 {k === "recurring" ? t("周期") : k === "interval" ? t("按间隔") : t("单次")}
-              </button>
+              </TabsTrigger>
             ))}
-          </div>
-          <div className="mt-2">
+          </TabsList>
+          <TabsContent value={kind} className="mt-2">
             {scheduleUneditable ? (
               <div className="rounded-md bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
                 {t("当前调度表达式 {{expr}} 暂不支持在 UI 编辑，如需修改请使用 hermes CLI", { expr: initialScheduleSource })}
@@ -4634,7 +4154,8 @@ export function AutomationFormModal({
               />
             )}
             {!scheduleUneditable && kind === "once" && <OncePicker value={onceDate} onChange={setOnceDate} />}
-          </div>
+          </TabsContent>
+          </Tabs>
         </div>
 
         {executionMode === "agent" ? (
@@ -4642,10 +4163,11 @@ export function AutomationFormModal({
           {/* 任务说明 */}
           <div className="mt-3">
           <div className="flex items-baseline justify-between">
-            <label className="block text-sm font-medium text-black/80">{t("任务说明")}</label>
+            <label htmlFor={`${formId}-prompt`} className="block text-sm font-medium text-black/80">{t("任务说明")}</label>
             <span className="text-[11px] text-black/40">{prompt.length}/{promptMaxLength}</span>
           </div>
           <textarea
+            id={`${formId}-prompt`}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value.slice(0, promptMaxLength))}
             rows={3}
@@ -4666,7 +4188,7 @@ export function AutomationFormModal({
         ) : (
           <div className="mt-3">
             <div className="flex items-baseline justify-between">
-              <label className="block text-sm font-medium text-black/80">
+              <label htmlFor={`${formId}-content`} className="block text-sm font-medium text-black/80">
                 {zeroTokenKind === "fixed_notification" ? t("通知内容") : t("脚本内容")}
               </label>
               {zeroTokenScriptEditable && zeroTokenKind === "fixed_notification" ? (
@@ -4699,6 +4221,7 @@ export function AutomationFormModal({
             ) : null}
             {zeroTokenScriptEditable ? (
               <textarea
+                id={`${formId}-content`}
                 value={zeroTokenContent}
                 onChange={(event) => setZeroTokenContent(event.target.value.slice(
                   0,
@@ -4730,11 +4253,10 @@ export function AutomationFormModal({
               </p>
             ) : zeroTokenScriptEditable ? (
               <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={scriptSafetyConfirmed}
-                  onChange={(event) => setScriptSafetyConfirmed(event.target.checked)}
-                  className="lv-checkbox mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/30 accent-black"
+                  onCheckedChange={(checked) => setScriptSafetyConfirmed(checked === true)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-700/30 accent-black"
                 />
                 <span>{t("我已了解风险：脚本会直接在云端 Agent 环境中运行，并非独立安全沙箱；请仅运行你信任的脚本。")}</span>
               </label>
@@ -4747,25 +4269,16 @@ export function AutomationFormModal({
           <div className="mt-3">
             <div className="flex flex-wrap items-center gap-2">
               <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={effectiveWindowEnabled}
+              <Switch
+                checked={effectiveWindowEnabled}
                 disabled={!canEditEffectiveWindow}
-                onClick={() => {
+                onCheckedChange={(checked) => {
                   if (!canEditEffectiveWindow) return;
-                  setEffectiveWindowEnabled((enabled) => !enabled);
+                  setEffectiveWindowEnabled(checked);
                 }}
                 style={{ marginLeft: 10 }}
-                className={`lv-switch relative inline-flex h-5 w-9 items-center rounded-full transition ${effectiveWindowEnabled ? "bg-black" : "bg-black/15"
-                  } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
                 aria-label={t("生效时间段")}
-              >
-                <span
-                  className={`lv-switch__thumb inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                />
-              </button>
+              />
               {!effectiveWindowEnabled && (
                 <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
               )}
@@ -4794,7 +4307,7 @@ export function AutomationFormModal({
                   className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
                   aria-label={t("生效结束时间")}
                 />
-                <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+                <AgentTooltip content={t("清空")} triggerMode="control">
                   <button
                     type="button"
                     onClick={() => {
@@ -4807,11 +4320,7 @@ export function AutomationFormModal({
                   >
                     <Eraser className="h-4 w-4" />
                   </button>
-                  <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                    {t("清空")}
-                    <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-                  </span>
-                </span>
+                </AgentTooltip>
               </div>
             )}
           </div>
@@ -4826,34 +4335,13 @@ export function AutomationFormModal({
         <div className="mt-3">
           <div className="flex items-center gap-1 text-sm font-medium text-black/80">
             <span>{t("通知方式")}</span>
-            <span className="relative inline-flex">
-              <button
-                ref={notificationHelpTooltip.triggerRef}
-                type="button"
-                aria-label={t("通知方式")}
-                aria-describedby={notificationHelpTooltip.open ? notificationHelpTooltip.tooltipId : undefined}
-                onMouseEnter={notificationHelpTooltip.showTooltip}
-                onMouseLeave={notificationHelpTooltip.scheduleClose}
-                onFocus={notificationHelpTooltip.showTooltip}
-                onBlur={notificationHelpTooltip.scheduleClose}
-                className="inline-flex size-4 items-center justify-center rounded-full text-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
-              >
+            <AgentTooltip triggerMode="control" content={executionMode === "zero_token"
+              ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
+              : t("如不选，智能体只会在后台执行任务，不发通知。")}>
+              <button type="button" aria-label={t("通知方式")} className="inline-flex size-6 items-center justify-center rounded-md text-black/40 focus-visible:ring-2">
                 <CircleHelp className="size-3.5" aria-hidden="true" />
               </button>
-              {notificationHelpTooltip.open && (
-                <FloatingTooltip
-                  id={notificationHelpTooltip.tooltipId}
-                  position={notificationHelpTooltip.position}
-                  className="w-72 whitespace-normal text-pretty text-left"
-                  onMouseEnter={notificationHelpTooltip.showTooltip}
-                  onMouseLeave={notificationHelpTooltip.scheduleClose}
-                >
-                  {executionMode === "zero_token"
-                    ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
-                    : t("如不选，智能体只会在后台执行任务，不发通知。")}
-                </FloatingTooltip>
-              )}
-            </span>
+            </AgentTooltip>
             <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
           </div>
           {channelStatus === "loading" ? (
@@ -4889,11 +4377,10 @@ export function AutomationFormModal({
                         (!checkboxDisabled ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
                       }
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selected}
                         disabled={checkboxDisabled}
-                        onChange={() => {
+                        onCheckedChange={() => {
                           setDeliverPlatforms((prev) => {
                             if (!prev.includes(key)) return [...prev, key];
                             setDeliverChatIds((ids) => {
@@ -4911,7 +4398,7 @@ export function AutomationFormModal({
                             return prev.filter((p) => p !== key);
                           });
                         }}
-                        className="lv-checkbox h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
+                        className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
                       />
                       <span className="text-sm leading-5">
                         {label}
@@ -5084,50 +4571,11 @@ export function AutomationFormModal({
         </div>
 
         {/* 操作 */}
-        <div className={`${shouldKeepFormHeight ? "mt-auto pt-4" : "mt-4"} flex items-center justify-end gap-2`}>
-          <span className="inline-flex" title={testRunDisabledReason ?? undefined}>
-            <button
-              type="button"
-              disabled={!canTestRun}
-              onClick={handleTestRun}
-              aria-describedby={testRunDisabledReason ? testRunHintId : undefined}
-              className="inline-flex min-w-[104px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {testState === "running" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : testState === "ok" ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-[#0F8A4B]" />
-              ) : testState === "fail" ? (
-                <X className="h-3.5 w-3.5 text-[#B91C1C]" />
-              ) : (
-                <Zap className="h-3.5 w-3.5" />
-              )}
-              {t("测试运行")}
-            </button>
-            {testRunDisabledReason ? (
-              <span id={testRunHintId} className="sr-only">{testRunDisabledReason}</span>
-            ) : null}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04]"
-          >
-            {t("取消")}
-          </button>
-          <button
-            type="button"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {mode === "create" ? t("新建") : t("保存")}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+        <AutomationFormActionsView fixedHeight={shouldKeepFormHeight} canTestRun={canTestRun}
+          testRunDisabledReason={testRunDisabledReason} testState={testState} canSubmit={canSubmit} submitting={submitting}
+          labels={{ test: t("测试运行"), cancel: t("取消"), submit: mode === "create" ? t("新建") : t("保存") }}
+          onTestRun={handleTestRun} onClose={onClose} onSubmit={() => void handleSubmit()} />
+    </AutomationDialogView>
   );
 }
 
@@ -5155,59 +4603,16 @@ function RecurringPicker({
   onMonthdays: (v: number[]) => void;
 }) {
   const t = useT();
-  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
-  const [weekdayPickerOpen, setWeekdayPickerOpen] = useState(false);
-  const [monthdayPickerOpen, setMonthdayPickerOpen] = useState(false);
-  const [activeDailyTimePickerIndex, setActiveDailyTimePickerIndex] = useState<number | null>(null);
-  const periodPickerRef = useRef<HTMLDivElement | null>(null);
-  const weekdayPickerRef = useRef<HTMLDivElement | null>(null);
-  const monthdayPickerRef = useRef<HTMLDivElement | null>(null);
-  const dailyTimePickerRef = useRef<HTMLSpanElement | null>(null);
   const periodOptions: Array<{ value: RecurringPeriod; label: string }> = [
     { value: "daily", label: t("每天") },
     { value: "weekly", label: t("每周") },
     { value: "monthly", label: t("每月") },
   ];
-  const periodLabel = periodOptions.find((option) => option.value === period)?.label ?? t("每天");
   const weekdayLabels = getWeekdayLabels(t);
   const editingDailyTimes = normalizeDailyTimesForEditing(dailyTimes, time);
   const normalizedDailyTimes = normalizeDailyTimesForForm(editingDailyTimes, time);
   const selectedWeekdays = normalizeWeekdays(weekdays);
   const selectedMonthdays = normalizeMonthdays(monthdays);
-  const addDailyTimeTooltip = useHoverTooltipPosition<HTMLSpanElement>();
-  useEffect(() => {
-    if (!periodPickerOpen && !weekdayPickerOpen && !monthdayPickerOpen && activeDailyTimePickerIndex == null) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (periodPickerRef.current?.contains(target)) return;
-      if (weekdayPickerRef.current?.contains(target)) return;
-      if (monthdayPickerRef.current?.contains(target)) return;
-      if (dailyTimePickerRef.current?.contains(target)) return;
-      setPeriodPickerOpen(false);
-      setWeekdayPickerOpen(false);
-      setMonthdayPickerOpen(false);
-      setActiveDailyTimePickerIndex(null);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [activeDailyTimePickerIndex, monthdayPickerOpen, periodPickerOpen, weekdayPickerOpen]);
-  useEffect(() => {
-    if (period !== "daily") setActiveDailyTimePickerIndex(null);
-  }, [period]);
-  useLayoutEffect(() => {
-    if (activeDailyTimePickerIndex == null) return;
-    const picker = dailyTimePickerRef.current;
-    if (!picker) return;
-    const scrollSelected = (part: "hour" | "minute") => {
-      const selected = picker.querySelector<HTMLElement>(`[data-clock-part="${part}"][data-clock-selected="true"]`);
-      const scrollParent = selected?.parentElement;
-      if (!selected || !scrollParent) return;
-      scrollParent.scrollTop = selected.offsetTop - (scrollParent.clientHeight - selected.offsetHeight) / 2;
-    };
-    scrollSelected("hour");
-    scrollSelected("minute");
-  }, [activeDailyTimePickerIndex, editingDailyTimes, time]);
   const toggleWeekday = useCallback((day: number) => {
     // 至少保留 1 天：取消最后一个选中项时直接忽略，避免 normalizeWeekdays 静默兜底为周一
     if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
@@ -5224,24 +4629,16 @@ function RecurringPicker({
       : [...selectedMonthdays, day];
     onMonthdays(normalizeMonthdays(next));
   }, [onMonthdays, selectedMonthdays]);
-  const selectDailyTimePart = useCallback((index: number, part: "hour" | "minute", value: string) => {
-    const current = editingDailyTimes[index] ?? time;
-    const { hour, minute } = splitClockTimeDraft(current, time);
-    const nextTime = part === "hour" ? `${value}:${minute}` : `${hour}:${value}`;
+  const updateDailyTime = useCallback((index: number, nextTime: string) => {
     const next = editingDailyTimes.map((item, itemIndex) => itemIndex === index ? nextTime : item);
     onDailyTimes(next);
     if (index === 0) onTime(nextTime);
-  }, [editingDailyTimes, onDailyTimes, onTime, time]);
+  }, [editingDailyTimes, onDailyTimes, onTime]);
   const removeDailyTime = useCallback((index: number) => {
     const next = editingDailyTimes.filter((_, itemIndex) => itemIndex !== index);
     const normalized = normalizeDailyTimesForForm(next, time);
     onDailyTimes(normalized);
     onTime(normalized[0] ?? time);
-    setActiveDailyTimePickerIndex((current) => {
-      if (current == null) return null;
-      if (current === index) return null;
-      return current > index ? current - 1 : current;
-    });
   }, [editingDailyTimes, onDailyTimes, onTime, time]);
   const addDailyTime = useCallback(() => {
     const existing = new Set(normalizedDailyTimes);
@@ -5261,389 +4658,31 @@ function RecurringPicker({
     onTime(normalized[0] ?? time);
   }, [normalizedDailyTimes, onDailyTimes, onTime, time]);
   const isDailyTimeLimitReached = editingDailyTimes.length >= MAX_DAILY_TIME_POINTS;
-  const addDailyTimeButton = (
-    <span
-      ref={addDailyTimeTooltip.triggerRef}
-      className={`inline-flex ${isDailyTimeLimitReached ? "cursor-not-allowed" : ""}`}
-      aria-describedby={isDailyTimeLimitReached && addDailyTimeTooltip.open ? addDailyTimeTooltip.tooltipId : undefined}
-      tabIndex={isDailyTimeLimitReached ? 0 : -1}
-      onMouseEnter={isDailyTimeLimitReached ? addDailyTimeTooltip.showTooltip : undefined}
-      onMouseLeave={isDailyTimeLimitReached ? addDailyTimeTooltip.scheduleClose : undefined}
-      onFocus={isDailyTimeLimitReached ? addDailyTimeTooltip.showTooltip : undefined}
-      onBlur={isDailyTimeLimitReached ? addDailyTimeTooltip.scheduleClose : undefined}
-    >
-      <button
-        type="button"
-        onClick={() => {
-          if (isDailyTimeLimitReached) return;
-          addDailyTime();
-        }}
-        aria-disabled={isDailyTimeLimitReached}
-        className={
-          "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition " +
-          (isDailyTimeLimitReached
-            ? "cursor-not-allowed border-black/5 bg-black/[0.03] text-black/25"
-            : "border-black/10 bg-white text-black/65 hover:bg-black/[0.04] hover:text-black/85")
-        }
-        aria-label={isDailyTimeLimitReached ? t("最多支持18个时间点") : t("添加时间")}
-      >
-        <Plus className="h-3 w-3" />
-      </button>
-      {isDailyTimeLimitReached && addDailyTimeTooltip.open && (
-        <FloatingTooltip
-          id={addDailyTimeTooltip.tooltipId}
-          position={addDailyTimeTooltip.position}
-          className="whitespace-nowrap"
-          onMouseEnter={addDailyTimeTooltip.showTooltip}
-          onMouseLeave={addDailyTimeTooltip.scheduleClose}
-        >
-          {t("最多支持18个时间点")}
-        </FloatingTooltip>
-      )}
-    </span>
-  );
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div ref={periodPickerRef} className="relative w-[100px]">
-        <button
-          type="button"
-          onClick={() => setPeriodPickerOpen((open) => !open)}
-          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
-          aria-haspopup="listbox"
-          aria-expanded={periodPickerOpen}
-        >
-          <span>{periodLabel}</span>
-          <ChevronDown className="h-4 w-4 text-black/80" />
+  return <div className="flex flex-wrap items-center gap-2">
+    <Select value={period} onValueChange={(value) => onPeriod(value as RecurringPeriod)}>
+      <SelectTrigger aria-label={t("周期")} className="h-9 w-[100px] rounded-md text-sm"><SelectValue /></SelectTrigger>
+      <SelectContent className="agents-ui z-[250]" position="popper">
+        {periodOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+    {period === "daily" && <div className="flex w-[588px] max-w-full flex-wrap items-center gap-1">
+      {editingDailyTimes.map((dailyTime, index) => <RecurringTimePicker key={index} value={dailyTime} fallback={time}
+        index={index} removable={editingDailyTimes.length > 1} onChange={(nextTime) => updateDailyTime(index, nextTime)} onRemove={() => removeDailyTime(index)} />)}
+      <AgentTooltip triggerMode="control" content={isDailyTimeLimitReached ? t("最多支持18个时间点") : t("添加时间")}>
+        <button type="button" onClick={() => { if (!isDailyTimeLimitReached) addDailyTime(); }}
+          aria-disabled={isDailyTimeLimitReached} aria-label={isDailyTimeLimitReached ? t("最多支持18个时间点") : t("添加时间")}
+          className="inline-flex size-7 items-center justify-center rounded-md border border-black/10 bg-white text-black/65 focus-visible:ring-2 aria-disabled:opacity-40">
+          <Plus className="size-3.5" />
         </button>
-        {periodPickerOpen && (
-          <div
-            className="absolute left-0 top-[calc(100%+6px)] z-10 w-[132px] rounded-xl border border-black/10 bg-white p-1.5 shadow-xl"
-            role="listbox"
-          >
-            {periodOptions.map((option) => {
-              const checked = option.value === period;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    onPeriod(option.value);
-                    setPeriodPickerOpen(false);
-                  }}
-                  style={{ fontSize: "14px", lineHeight: "22px" }}
-                  className={
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 transition " +
-                    (checked
-                      ? "bg-black text-white"
-                      : "text-black/70 hover:bg-black/[0.04] hover:text-black")
-                  }
-                  role="option"
-                  aria-selected={checked}
-                >
-                  <span>{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      {period === "daily" && (
-        <div className="relative flex w-[588px] max-w-full flex-wrap items-center gap-1">
-          {editingDailyTimes.map((dailyTime, index) => (
-            <Fragment key={index}>
-              <span
-                className="relative inline-flex h-9 w-[90px] shrink-0 items-center rounded-lg border border-black/10 bg-white focus-within:border-black/25"
-                ref={activeDailyTimePickerIndex === index ? dailyTimePickerRef : undefined}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveDailyTimePickerIndex((current) => current === index ? null : index)}
-                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="flex h-full min-w-0 flex-1 items-center px-2 text-left text-sm focus:outline-none"
-                  aria-haspopup="listbox"
-                  aria-expanded={activeDailyTimePickerIndex === index}
-                  aria-label={t("执行时间")}
-                >
-                  <span className="truncate">{dailyTime}</span>
-                </button>
-                {editingDailyTimes.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeDailyTime(index);
-                    }}
-                    className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65"
-                    aria-label={t("移除时间点")}
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                )}
-                {activeDailyTimePickerIndex === index && (() => {
-                  const selected = splitClockTimeDraft(dailyTime, time);
-                  return (
-                    <div className="absolute left-0 top-[calc(100%+6px)] z-30 grid w-[112px] grid-cols-2 gap-0.5 rounded-md border border-black/10 bg-white p-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]">
-                      <div className="max-h-[224px] overflow-y-auto pr-0.5" role="listbox" aria-label="hour">
-                        {CLOCK_HOUR_OPTIONS.map((hour) => {
-                          const selectedHour = hour === selected.hour;
-                          return (
-                            <button
-                              key={hour}
-                              type="button"
-                              data-clock-part="hour"
-                              data-clock-selected={selectedHour ? "true" : undefined}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => selectDailyTimePart(index, "hour", hour)}
-                              className={
-                                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition " +
-                                (selectedHour
-                                  ? "bg-[#2F7BFF] text-white"
-                                  : "text-black/85 hover:bg-black/[0.04]")
-                              }
-                              aria-pressed={selectedHour}
-                              role="option"
-                              aria-selected={selectedHour}
-                            >
-                              {hour}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="max-h-[224px] overflow-y-auto pl-0.5" role="listbox" aria-label="minute">
-                        {CLOCK_MINUTE_OPTIONS.map((minute) => {
-                          const selectedMinute = minute === selected.minute;
-                          return (
-                            <button
-                              key={minute}
-                              type="button"
-                              data-clock-part="minute"
-                              data-clock-selected={selectedMinute ? "true" : undefined}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => selectDailyTimePart(index, "minute", minute)}
-                              className={
-                                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition " +
-                                (selectedMinute
-                                  ? "bg-[#2F7BFF] text-white"
-                                  : "text-black/85 hover:bg-black/[0.04]")
-                              }
-                              aria-pressed={selectedMinute}
-                              role="option"
-                              aria-selected={selectedMinute}
-                            >
-                              {minute}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </span>
-            </Fragment>
-          ))}
-          {addDailyTimeButton}
-        </div>
-      )}
-      {period === "weekly" && (
-        <div ref={weekdayPickerRef} className="relative w-[360px] max-w-full">
-          <div
-            onClick={() => setWeekdayPickerOpen((open) => !open)}
-            className="flex min-h-9 w-full items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1 pr-9 text-left text-sm focus-within:border-black/30"
-            style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          >
-            <div
-              role="button"
-              tabIndex={0}
-              className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left focus:outline-none"
-              aria-haspopup="listbox"
-              aria-expanded={weekdayPickerOpen}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                setWeekdayPickerOpen((open) => !open);
-              }}
-            >
-              {selectedWeekdays.map((day) => (
-                <span
-                  key={day}
-                  className="inline-flex h-6 items-center gap-1 rounded-full bg-black px-2.5 text-xs font-medium leading-none text-white"
-                >
-                  {weekdayLabels[day]}
-                  {selectedWeekdays.length > 1 && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="-mr-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white/80 hover:bg-white/15 hover:text-white"
-                      aria-label={`${weekdayLabels[day]} ×`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleWeekday(day);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleWeekday(day);
-                      }}
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
-          {weekdayPickerOpen && (
-            <div
-              className="absolute left-0 top-[calc(100%+6px)] z-10 w-[260px] rounded-xl border border-black/10 bg-white p-2 shadow-xl"
-              role="listbox"
-              aria-multiselectable="true"
-            >
-              {WEEKDAY_VALUES.map((day) => {
-                const checked = selectedWeekdays.includes(day);
-                // 唯一选中项不允许取消，按钮置灰提示「至少保留 1 天」
-                const isLastSelected = checked && selectedWeekdays.length === 1;
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggleWeekday(day)}
-                    disabled={isLastSelected}
-                    className={
-                      "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition " +
-                      (isLastSelected
-                        ? "cursor-not-allowed text-black/40"
-                        : "text-black/80 hover:bg-black/[0.04]")
-                    }
-                    role="option"
-                    aria-selected={checked}
-                    title={isLastSelected ? t("至少保留 1 天") : undefined}
-                  >
-                    <span>{weekdayLabels[day]}</span>
-                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-black bg-black" : "border-black/20 bg-white"
-                      }`}>
-                      {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-      {period === "monthly" && (
-        <div ref={monthdayPickerRef} className="relative w-[360px] max-w-full">
-          <div
-            onClick={() => setMonthdayPickerOpen((open) => !open)}
-            className="flex min-h-9 w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1 pr-9 text-left text-sm focus-within:border-black/30"
-            style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          >
-            <div
-              role="button"
-              tabIndex={0}
-              className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left focus:outline-none"
-              aria-haspopup="listbox"
-              aria-expanded={monthdayPickerOpen}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                setMonthdayPickerOpen((open) => !open);
-              }}
-            >
-              {selectedMonthdays.map((day) => (
-                <span
-                  key={day}
-                  className="inline-flex h-6 items-center gap-1 rounded-full bg-black px-2.5 text-xs font-medium leading-none text-white"
-                >
-                  {t("{{n}}日", { n: day })}
-                  {selectedMonthdays.length > 1 && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="-mr-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white/80 hover:bg-white/15 hover:text-white"
-                      aria-label={t("移除 {{n}} 日", { n: day })}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleMonthday(day);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleMonthday(day);
-                      }}
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
-            {selectedMonthdays.length > 1 && (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onMonthdays([selectedMonthdays[0] ?? 1]);
-                }}
-                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-black/45 transition hover:bg-black/[0.04] hover:text-black/70"
-                aria-label={t("清空")}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
-          {monthdayPickerOpen && (
-            <div
-              className="absolute left-0 top-[calc(100%+6px)] z-10 max-h-[204px] w-[276px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl border border-black/10 bg-white p-2 shadow-xl"
-              role="listbox"
-              aria-multiselectable="true"
-            >
-              <div className="grid grid-cols-4 gap-1.5">
-                {MONTHDAY_VALUES.map((day) => {
-                  const checked = selectedMonthdays.includes(day);
-                  const isLastSelected = checked && selectedMonthdays.length === 1;
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => toggleMonthday(day)}
-                      disabled={isLastSelected}
-                      className={
-                        "flex h-8 items-center justify-center rounded-md border text-xs font-medium transition " +
-                        (checked
-                          ? "border-black bg-black text-white"
-                          : isLastSelected
-                            ? "cursor-not-allowed border-black/10 bg-black/[0.02] text-black/35"
-                            : "border-black/10 bg-white text-black/60 hover:border-black/20 hover:bg-black/[0.03] hover:text-black/80")
-                      }
-                      role="option"
-                      aria-selected={checked}
-                      title={isLastSelected ? t("至少保留 1 天") : undefined}
-                    >
-                      {t("{{n}}日", { n: day })}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {period !== "daily" && (
-        <input
-          type="time"
-          value={time}
-          onChange={(e) => onTime(e.target.value)}
-          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="h-9 w-[100px] rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
-        />
-      )}
-    </div>
-  );
+      </AgentTooltip>
+    </div>}
+    {period === "weekly" && <AutomationDaysPickerView label={t("每周")} options={WEEKDAY_VALUES.map((value) => ({ value, label: weekdayLabels[value]! }))}
+      selected={selectedWeekdays} onToggle={toggleWeekday} removeLabel={(day) => `${weekdayLabels[day]} ×`} lastRemainingLabel={t("至少保留 1 天")} />}
+    {period === "monthly" && <AutomationDaysPickerView label={t("每月")} options={MONTHDAY_VALUES.map((value) => ({ value, label: t("{{n}}日", { n: value }) }))}
+      selected={selectedMonthdays} onToggle={toggleMonthday} removeLabel={(day) => t("移除 {{n}} 日", { n: day })} lastRemainingLabel={t("至少保留 1 天")}
+      clearLabel={t("清空")} onClear={() => onMonthdays([selectedMonthdays[0] ?? 1])} />}
+    {period !== "daily" && <RecurringTimePicker value={time} fallback={time} index={0} removable={false} onChange={onTime} onRemove={() => {}} />}
+  </div>;
 }
 
 function IntervalPicker({
@@ -5666,27 +4705,13 @@ function IntervalPicker({
   const t = useT();
   const weekdayLabels = getWeekdayLabels(t);
   const selectedWeekdays = normalizeIntervalWeekdays(weekdays);
-  const [unitPickerOpen, setUnitPickerOpen] = useState(false);
   const [hoveredInactiveTooltipDay, setHoveredInactiveTooltipDay] = useState<number | null>(null);
   const [suppressedInactiveTooltipDay, setSuppressedInactiveTooltipDay] = useState<number | null>(null);
-  const unitPickerRef = useRef<HTMLDivElement | null>(null);
   const unitOptions: Array<{ value: IntervalUnit; label: string }> = [
     { value: "m", label: t("分钟") },
     { value: "h", label: t("小时") },
     { value: "d", label: t("天") },
   ];
-  const unitLabel = unitOptions.find((option) => option.value === unit)?.label ?? t("小时");
-  useEffect(() => {
-    if (!unitPickerOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (unitPickerRef.current?.contains(target)) return;
-      setUnitPickerOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [unitPickerOpen]);
   const toggleWeekday = useCallback((day: number) => {
     if (weekdaysDisabled) return;
     if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
@@ -5698,122 +4723,34 @@ function IntervalPicker({
     setHoveredInactiveTooltipDay(null);
     onWeekdays(normalizeIntervalWeekdays(next));
   }, [onWeekdays, selectedWeekdays, weekdaysDisabled]);
-  const weekdayButtons = (
-    <div
-      className={`ml-1 flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left text-sm ${weekdaysDisabled ? "opacity-50" : ""
-        }`}
-      style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-    >
+  return <div className="flex flex-wrap items-center gap-2">
+    <span className="text-sm text-black/60">{t("每")}</span>
+    <input type="number" aria-label={t("按间隔")} min={1} value={num} onChange={(event) => onNum(Math.max(1, Number(event.target.value) || 1))}
+      className="h-9 w-16 rounded-md border border-black/10 bg-white px-3 text-sm focus-visible:ring-2" />
+    <Select value={unit} onValueChange={(value) => onUnit(value as IntervalUnit)}>
+      <SelectTrigger aria-label={t("按间隔")} className="h-9 w-[90px] rounded-md text-sm"><SelectValue /></SelectTrigger>
+      <SelectContent className="agents-ui z-[250]" position="popper">
+        {unitOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+    <TooltipProvider delayDuration={0}><div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
       {WEEKDAY_VALUES.map((day) => {
         const checked = selectedWeekdays.includes(day);
         const isLastSelected = checked && selectedWeekdays.length === 1;
-        const suppressInactiveTooltip = suppressedInactiveTooltipDay === day;
-        const showInactiveTooltip = !checked && !weekdaysDisabled && !suppressInactiveTooltip && hoveredInactiveTooltipDay === day;
-        const inactiveTooltip = t("{{weekday}}不执行", { weekday: weekdayLabels[day] });
-        return (
-          <span
-            key={day}
-            className="group relative inline-flex"
-            onMouseEnter={() => {
-              if (!checked && !weekdaysDisabled && !suppressInactiveTooltip) setHoveredInactiveTooltipDay(day);
-            }}
-            onMouseLeave={() => {
-              if (hoveredInactiveTooltipDay === day) setHoveredInactiveTooltipDay(null);
-              if (suppressedInactiveTooltipDay === day) setSuppressedInactiveTooltipDay(null);
-            }}
-          >
-            <button
-              type="button"
-              disabled={weekdaysDisabled || isLastSelected}
-              onClick={() => toggleWeekday(day)}
-              style={{ fontSize: "13px", lineHeight: "17px" }}
-              className={
-                "group inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs font-normal leading-none transition " +
-                (checked
-                  ? "bg-black text-white"
-                  : "border border-black/10 bg-black/[0.04] text-black/45 hover:bg-black/[0.08] hover:text-black/65") +
-                (isLastSelected ? " cursor-not-allowed" : "")
-              }
-              title={isLastSelected ? t("至少保留 1 天") : undefined}
-            >
-              {weekdayLabels[day]}
-              {checked && selectedWeekdays.length > 1 && !weekdaysDisabled && (
-                <X className="h-2.5 w-0 overflow-hidden text-white/80 opacity-0 transition-all group-hover:-mr-1 group-hover:w-2.5 group-hover:opacity-100 group-focus-visible:-mr-1 group-focus-visible:w-2.5 group-focus-visible:opacity-100" />
-              )}
-            </button>
-            {showInactiveTooltip && (
-              <span
-                className="pointer-events-auto absolute left-1/2 top-[calc(100%+6px)] z-[30] inline-flex -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-2 py-1 text-[11px] font-medium leading-none text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
-                role="tooltip"
-              >
-                {inactiveTooltip}
-              </span>
-            )}
-          </span>
-        );
+        const suppressed = suppressedInactiveTooltipDay === day;
+        const message = isLastSelected ? t("至少保留 1 天") : t("{{weekday}}不执行", { weekday: weekdayLabels[day] });
+        return <Tooltip key={day} open={hoveredInactiveTooltipDay === day && !weekdaysDisabled && (!checked || isLastSelected) && !suppressed}
+          onOpenChange={(open) => setHoveredInactiveTooltipDay(open ? day : null)}>
+          <TooltipTrigger asChild><button type="button" aria-pressed={checked} aria-disabled={weekdaysDisabled || isLastSelected}
+            onClick={() => toggleWeekday(day)} onPointerLeave={() => { if (suppressedInactiveTooltipDay === day) setSuppressedInactiveTooltipDay(null); }}
+            className={cn("inline-flex h-8 items-center rounded-md border px-2 text-xs focus-visible:ring-2 aria-disabled:opacity-50", checked ? "border-black bg-black text-white" : "border-black/10 bg-white text-black/60")}>
+            {weekdayLabels[day]}
+          </button></TooltipTrigger>
+          <TooltipContent portalClassName="agents-ui">{message}</TooltipContent>
+        </Tooltip>;
       })}
-    </div>
-  );
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-black/60" style={MODAL_COMPACT_CONTROL_TEXT_STYLE}>{t("每")}</span>
-        <input
-          type="number"
-          min={1}
-          value={num}
-          onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
-          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="h-9 w-16 rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
-        />
-        <div ref={unitPickerRef} className="relative w-[76px]">
-          <button
-            type="button"
-            onClick={() => setUnitPickerOpen((open) => !open)}
-            style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-            className="flex h-9 w-full items-center justify-between rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
-            aria-haspopup="listbox"
-            aria-expanded={unitPickerOpen}
-          >
-            <span>{unitLabel}</span>
-            <ChevronDown className="h-3.5 w-3.5 text-black/80" />
-          </button>
-          {unitPickerOpen && (
-            <div
-              className="absolute left-0 top-[calc(100%+6px)] z-10 w-[92px] rounded-xl border border-black/10 bg-white p-1.5 shadow-xl"
-              role="listbox"
-            >
-              {unitOptions.map((option) => {
-                const checked = option.value === unit;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => {
-                      onUnit(option.value);
-                      setUnitPickerOpen(false);
-                    }}
-                    style={{ fontSize: "14px", lineHeight: "22px" }}
-                    className={
-                      "flex w-full items-center justify-between rounded-lg px-3 py-2 transition " +
-                      (checked
-                        ? "bg-black text-white"
-                        : "text-black/70 hover:bg-black/[0.04] hover:text-black")
-                    }
-                    role="option"
-                    aria-selected={checked}
-                  >
-                    <span>{option.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {weekdayButtons}
-      </div>
-    </div>
-  );
+    </div></TooltipProvider>
+  </div>;
 }
 
 type OncePickerDraft = {
@@ -5911,7 +4848,28 @@ function parseOncePickerInputSegments(segments: OncePickerInputSegments): string
   return `${formatLocalDateInputValue(candidate)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function OncePickerInputSegment({
+type RecurringTimeInputSegments = Pick<OncePickerInputSegments, "hour" | "minute">;
+
+function getRecurringTimeInputSegments(value: string, fallback: string): RecurringTimeInputSegments {
+  const { hour, minute } = splitClockTimeDraft(value, fallback);
+  return { hour, minute };
+}
+
+function parseRecurringTimeInputSegments(segments: RecurringTimeInputSegments): string | null {
+  const hour = Number(segments.hour);
+  const minute = Number(segments.minute);
+  if (
+    !/^\d{1,2}$/.test(segments.hour)
+    || !/^\d{1,2}$/.test(segments.minute)
+    || hour < 0
+    || hour > 23
+    || minute < 0
+    || minute > 59
+  ) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function TimePickerInputSegment({
   label,
   value,
   maxLength,
@@ -6005,7 +4963,7 @@ function OncePickerTimeColumn({
         ref={listRef}
         role="listbox"
         aria-label={label}
-        className="h-52 overscroll-contain overflow-y-auto rounded-lg pr-1"
+        className="h-52 overscroll-contain overflow-y-auto rounded-md pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {options.map((option, index) => {
           const isSelected = option === value;
@@ -6047,6 +5005,145 @@ function OncePickerTimeColumn({
         })}
       </div>
     </div>
+  );
+}
+
+function RecurringTimePicker({
+  value,
+  fallback,
+  index,
+  removable,
+  onChange,
+  onRemove,
+}: {
+  value: string;
+  fallback: string;
+  index: number;
+  removable: boolean;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  const inputLabel = `${t("执行时间")} ${index + 1}`;
+  const [inputSegments, setInputSegments] = useState(() => getRecurringTimeInputSegments(value, fallback));
+  const [open, setOpen] = useState(false);
+  const initialTime = getRecurringTimeInputSegments(value, fallback);
+  const [draftHour, setDraftHour] = useState(initialTime.hour);
+  const [draftMinute, setDraftMinute] = useState(initialTime.minute);
+
+  useEffect(() => {
+    const next = getRecurringTimeInputSegments(value, fallback);
+    setInputSegments(next);
+    setDraftHour(next.hour);
+    setDraftMinute(next.minute);
+  }, [fallback, value]);
+
+  const commitInputSegments = useCallback(() => {
+    const nextValue = parseRecurringTimeInputSegments(inputSegments);
+    if (!nextValue) {
+      setInputSegments(getRecurringTimeInputSegments(value, fallback));
+      return value;
+    }
+    setInputSegments(getRecurringTimeInputSegments(nextValue, fallback));
+    if (nextValue !== value) onChange(nextValue);
+    return nextValue;
+  }, [fallback, inputSegments, onChange, value]);
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) {
+      const nextTime = commitInputSegments();
+      const next = getRecurringTimeInputSegments(nextTime, fallback);
+      setDraftHour(next.hour);
+      setDraftMinute(next.minute);
+    }
+    setOpen(nextOpen);
+  }, [commitInputSegments, fallback]);
+
+  const updateInputSegment = useCallback((segment: keyof RecurringTimeInputSegments, nextValue: string) => {
+    setInputSegments((current) => ({ ...current, [segment]: nextValue }));
+  }, []);
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverAnchor asChild>
+        <div
+          role="group"
+          aria-label={inputLabel}
+          onBlur={(event) => {
+            const inputGroup = event.currentTarget;
+            window.setTimeout(() => {
+              if (!inputGroup.contains(document.activeElement)) commitInputSegments();
+            }, 0);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.target.blur();
+          }}
+          tabIndex={-1}
+          className={`flex h-9 shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20 ${removable ? "w-[140px]" : "w-[116px]"}`}
+        >
+          <div className="flex min-w-0 flex-1 items-center px-2">
+            <TimePickerInputSegment
+              label={`${inputLabel} HH`}
+              value={inputSegments.hour}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("hour", nextValue)}
+            />
+            <span aria-hidden="true" className="text-sm text-black/55">:</span>
+            <TimePickerInputSegment
+              label={`${inputLabel} mm`}
+              value={inputSegments.minute}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("minute", nextValue)}
+            />
+          </div>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${t("选择")} ${inputLabel}`}
+              className="mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-black/75 transition hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <Clock className="size-4" aria-hidden="true" />
+            </button>
+          </PopoverTrigger>
+          {removable && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+              aria-label={t("移除时间点")}
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        role="dialog"
+        aria-label={inputLabel}
+        className="agents-ui z-[250] w-[176px] max-w-[calc(100vw-32px)] p-0"
+      >
+        <div className="grid grid-cols-2 gap-1.5 p-2">
+          <OncePickerTimeColumn label={t("小时")} options={CLOCK_HOUR_OPTIONS} value={draftHour} onChange={setDraftHour} />
+          <OncePickerTimeColumn label={t("分钟")} options={CLOCK_MINUTE_OPTIONS} value={draftMinute} onChange={setDraftMinute} />
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-black/[0.06] p-2">
+          <button type="button" onClick={() => setOpen(false)} className="h-8 rounded-md border border-black/10 px-2 text-sm focus-visible:ring-2">{t("取消")}</button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(`${draftHour}:${draftMinute}`);
+              setOpen(false);
+            }}
+            className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+          >
+            {t("确认")}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -6137,7 +5234,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
           className="flex h-9 w-[220px] max-w-full items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20"
         >
           <div className="flex min-w-0 flex-1 items-center px-2">
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} YYYY`}
               value={inputSegments.year}
               maxLength={4}
@@ -6145,7 +5242,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("year", nextValue)}
             />
             <span aria-hidden="true" className="text-sm text-black/55">/</span>
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} MM`}
               value={inputSegments.month}
               maxLength={2}
@@ -6153,7 +5250,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("month", nextValue)}
             />
             <span aria-hidden="true" className="text-sm text-black/55">/</span>
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} DD`}
               value={inputSegments.day}
               maxLength={2}
@@ -6161,7 +5258,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("day", nextValue)}
             />
             <span aria-hidden="true" className="w-2" />
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} HH`}
               value={inputSegments.hour}
               maxLength={2}
@@ -6169,7 +5266,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("hour", nextValue)}
             />
             <span aria-hidden="true" className="text-sm text-black/55">:</span>
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} mm`}
               value={inputSegments.minute}
               maxLength={2}
@@ -6192,7 +5289,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
         align="start"
         role="dialog"
         aria-label={t("执行时间")}
-        className="z-[210] max-h-[var(--radix-popover-content-available-height)] w-[420px] max-w-[calc(100vw-32px)] overscroll-contain overflow-y-auto p-0"
+        className="agents-ui z-[250] max-h-[var(--radix-popover-content-available-height)] w-[420px] max-w-[calc(100vw-32px)] overscroll-contain overflow-y-auto p-0"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           selectedDayRef.current?.focus();
@@ -6272,13 +5369,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-black/[0.06] p-2">
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-black/10 bg-white px-3 text-sm font-medium text-black/75 transition hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
-          >
-            {t("取消")}
-          </button>
+          <button type="button" onClick={() => setOpen(false)} className="h-8 rounded-md border border-black/10 px-2 text-sm focus-visible:ring-2">{t("取消")}</button>
           <button
             type="button"
             onClick={() => {

@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
@@ -53,6 +54,7 @@ export function CustomPersonaFileModal({
   const [saveError, setSaveError] = useState(false);
   const [showNameWarning, setShowNameWarning] = useState(false);
   const saveRequestIdRef = useRef(0);
+  const triggerRef = useRef<HTMLElement | null>(null);
   const validation = useMemo(
     () => validateCustomSoulMarkdown(markdown, "SOUL.md", t("自定义人设")),
     [markdown, t],
@@ -109,6 +111,10 @@ export function CustomPersonaFileModal({
       }}
     >
       <DialogContent
+        portalClassName="agents-ui"
+        closeLabel={t("关闭")}
+        onOpenAutoFocus={() => { triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
+        onCloseAutoFocus={(event) => { if (triggerRef.current?.isConnected) { event.preventDefault(); triggerRef.current.focus(); } }}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto md:w-[42rem]"
         onEscapeKeyDown={(event) => {
           if (saving) event.preventDefault();
@@ -161,19 +167,19 @@ export function CustomPersonaFileModal({
 
           <div id="custom-persona-markdown-feedback" aria-live="polite">
             {!validation.valid && (
-              <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{validationMessage(t, validation.code)}</span>
               </div>
             )}
             {showNameWarning && (
-              <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <div role="alert" className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{t("请补充顶部 Name 字段，页面将用它展示人设名称")}</span>
               </div>
             )}
             {saveError && (
-              <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{t("保存失败，请检查网络后重试")}</span>
               </div>
@@ -181,23 +187,24 @@ export function CustomPersonaFileModal({
           </div>
 
           <div className="flex items-center justify-end gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
               disabled={saving}
               onClick={close}
-              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50"
+              className="rounded-md border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
             >
               {t("取消")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               disabled={!validation.valid || unchanged || saving}
               onClick={() => void save()}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
             >
               {saving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {saving ? t("保存中…") : t("保存修改")}
-            </button>
+            </Button>
           </div>
         </div>
       </DialogContent>

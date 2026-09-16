@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import {
   buildDeepSeekHarnessWebUiUrl,
   DEEPSEEK_HARNESS_LOGO_URL,
 } from "@/pages/marketing/agent-deepseek-harness-panel";
+import { isCN } from "@/lib/region";
 import type { DeepSeekHarnessCommandClient } from "@/lib/deepseek-harness-command";
 
 const { api, execDebugCommand, translate } = vi.hoisted(() => ({
@@ -87,6 +88,52 @@ describe("AgentDeepSeekHarnessPanel", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it("restores repair cancellation focus and closes confirmation before the repair request settles", async () => {
+    const user = userEvent.setup();
+    api.getStatus.mockResolvedValue(INSTALLED);
+    api.startInstall.mockReturnValue(new Promise(() => undefined));
+    render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+    const trigger = await screen.findByRole("button", { name: "修复" });
+    await user.click(trigger);
+    expect(within(screen.getByRole("alertdialog")).getByRole("button", { name: "取消" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(api.startInstall).not.toHaveBeenCalled();
+    await user.click(trigger);
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "修复" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(api.startInstall).toHaveBeenCalledExactlyOnceWith("repair");
+    await waitFor(() => expect(screen.getByRole("group", { name: "DeepSeek Harness 修复状态" })).toHaveFocus());
+    expect(api.getInstallation).not.toHaveBeenCalled();
+  });
+
+  it("stops only local polling on unmount and resumes each Bot's stored task without installing again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    localStorage.setItem("lightvela:dsh:install-task:ins-1", "repair-one");
+    localStorage.setItem("lightvela:dsh:install-task-operation:ins-1", "repair");
+    localStorage.setItem("lightvela:dsh:install-task:ins-2", "install-two");
+    api.getInstallation.mockImplementation(async (taskId: string) => ({
+      task_id: taskId, status: "running", stage: "runtime_install", progress: 48,
+      message: "Working", updated_at: "2026-08-27T10:00:00Z",
+    }));
+    const first = render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+    await screen.findByRole("progressbar", { name: "DeepSeek Harness 修复进度" });
+    first.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(api.getInstallation).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem("lightvela:dsh:install-task:ins-1")).toBe("repair-one");
+    const second = render(<AgentDeepSeekHarnessPanel botId="ins-2" clientFactory={clientFactory} />);
+    await screen.findByRole("progressbar", { name: "DeepSeek Harness 安装进度" });
+    expect(api.getInstallation).toHaveBeenLastCalledWith("install-two");
+    second.unmount();
+    render(<AgentDeepSeekHarnessPanel botId="ins-1" clientFactory={clientFactory} />);
+    await screen.findByRole("progressbar", { name: "DeepSeek Harness 修复进度" });
+    expect(api.getInstallation).toHaveBeenLastCalledWith("repair-one");
+    expect(api.getInstallation).toHaveBeenCalledTimes(3);
+    expect(api.startInstall).not.toHaveBeenCalled();
+    expect(api.getStatus).not.toHaveBeenCalled();
   });
 
   it("loads the real uninstalled state and keeps the notice above the card", async () => {
@@ -281,7 +328,7 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(progress).toHaveAttribute("aria-valuenow", "52");
   });
 
-  it("renders the installed state with domestic WebUI access, restart, and model configuration", async () => {
+  it("renders the installed state with region-specific WebUI access, restart, and model configuration", async () => {
     const user = userEvent.setup();
     let resolveRestart: (value: typeof INSTALLED) => void = () => undefined;
     api.restart.mockReturnValue(new Promise((resolve) => {
@@ -295,9 +342,9 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(within(runtime).getByText("运行中")).toBeInTheDocument();
     expect(screen.queryByText(INTRO)).not.toBeInTheDocument();
     const webUi = within(runtime).getByRole("link", { name: "访问 WebUI" });
-    expect(webUi).toHaveAttribute("href", "https://ins-1.dsh.lightvela.tech");
+    expect(webUi).toHaveAttribute("href", isCN ? "https://ins-1.dsh.lightvela.tech" : "https://ins-1.dsh.lightvela.site");
     expect(webUi).toHaveAttribute("target", "_blank");
-    expect(screen.getByRole("region", { name: "模型配置" })).toHaveAttribute("data-region", "cn");
+    expect(screen.getByRole("region", { name: "模型配置" })).toHaveAttribute("data-region", isCN ? "cn" : "global");
 
     await user.click(within(runtime).getByRole("button", { name: "重启" }));
     expect(within(runtime).getByRole("button", { name: "重启中..." })).toBeDisabled();
@@ -389,7 +436,7 @@ describe("AgentDeepSeekHarnessPanel", () => {
     expect(within(runtime).getByText("运行异常")).toBeInTheDocument();
     expect(within(runtime).getByRole("link", { name: "访问 WebUI" })).toHaveAttribute(
       "href",
-      "https://ins-1.dsh.lightvela.tech",
+      isCN ? "https://ins-1.dsh.lightvela.tech" : "https://ins-1.dsh.lightvela.site",
     );
     expect(within(runtime).getByRole("button", { name: "重启" })).toBeEnabled();
   });

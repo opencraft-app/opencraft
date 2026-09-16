@@ -1,4 +1,5 @@
 import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Registry, SkillsDataLayer } from "./skill-registries";
@@ -39,6 +40,8 @@ vi.mock("./skill-registries", async (importOriginal) => {
 });
 
 afterEach(() => cleanup());
+beforeEach(() => { vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }); });
+afterEach(() => { vi.unstubAllGlobals(); });
 
 function makeDataLayer(mode: "global" | "domestic"): SkillsDataLayer {
   const registry = mode === "domestic" ? "skillhub" as const : "clawhub" as const;
@@ -109,6 +112,36 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     Element.prototype.scrollIntoView = vi.fn();
   });
 
+  it("uses a controlled checkbox for keyboard batch selection", async () => {
+    renderPanel(mode);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox", { name: "搜索技能" }), "tools");
+    const checkbox = await screen.findByRole("checkbox", { name: "选择批量安装 First" });
+    expect(checkbox).not.toBeChecked();
+    checkbox.focus();
+    await user.keyboard(" ");
+    expect(checkbox).toBeChecked();
+    expect(screen.getByText("已选 1 / 13")).toBeInTheDocument();
+  });
+
+  it("keeps uninstall confirmation open and traps Escape until the operation settles", async () => {
+    const dataLayer = renderPanel(mode, "installed");
+    let finish!: (result: { ok: boolean }) => void;
+    vi.mocked(dataLayer.uninstall).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const user = userEvent.setup();
+    const trigger = await screen.findByRole("button", { name: "删除技能 Finance News" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("alertdialog", { name: "删除技能？" });
+    await user.click(within(dialog).getByRole("button", { name: "确认删除 Finance News" }));
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "取消" })).toBeDisabled();
+    finish({ ok: false });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(dataLayer.uninstall).toHaveBeenCalledWith(expect.objectContaining({ registry: "hermes", rawId: "finance-news" }));
+  });
+
   it("renders Installed as a structured list with real sources and offers single deletion", async () => {
     const dataLayer = renderPanel(mode, "installed");
     await screen.findByText("finance-news");
@@ -146,6 +179,18 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
       registry: "hermes",
       rawId: "finance-news",
     })));
+  });
+
+  it("returns focus to the Installed tab after a successful deletion removes its trigger", async () => {
+    const dataLayer = renderPanel(mode, "installed");
+    const user = userEvent.setup();
+    const trigger = await screen.findByRole("button", { name: "删除技能 Finance News" });
+    vi.mocked(dataLayer.listInstalled).mockResolvedValue({ skills: [], failedSources: [] });
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "确认删除 Finance News" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(trigger).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /已安装/ })).toHaveFocus();
   });
 
   it("always renders both name and slug rows even when their text is identical", async () => {
@@ -481,12 +526,12 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     )).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText(/搜索 .*技能/), { target: { value: "tools" } });
-    const firstSelector = await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 });
-    const secondSelector = screen.getByRole("button", { name: "选择批量安装 Second" });
+    const firstSelector = await screen.findByRole("checkbox", { name: "选择批量安装 First" }, { timeout: 3_000 });
+    const secondSelector = screen.getByRole("checkbox", { name: "选择批量安装 Second" });
     const batchButton = screen.getByRole("button", { name: "安装已选技能" });
     expect(screen.getByText("已选 0 / 13")).toBeInTheDocument();
     expect(batchButton).toBeDisabled();
-    expect(batchButton).toHaveClass("h-9", "px-6", "rounded-[12px]", "text-sm");
+    expect(batchButton).toHaveClass("h-9", "px-6", "rounded-md", "text-sm");
     expect(batchButton).not.toHaveClass("text-xs");
     expect(batchButton).not.toHaveClass("min-w-32");
     fireEvent.click(firstSelector);
@@ -537,7 +582,7 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
 
     fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "tools" } });
 
-    expect(await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 })).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: "选择批量安装 First" }, { timeout: 3_000 })).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem("lightvela-skills-demo-known-installed:bot-1") ?? "[]")).toEqual([]);
   });
 
@@ -554,9 +599,9 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
       }));
 
     fireEvent.change(screen.getByPlaceholderText(/搜索 .*技能/), { target: { value: "tools" } });
-    const firstSelector = await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 });
-    const secondSelector = screen.getByRole("button", { name: "选择批量安装 Second" });
-    const thirdSelector = screen.getByRole("button", { name: "选择批量安装 Skill 3" });
+    const firstSelector = await screen.findByRole("checkbox", { name: "选择批量安装 First" }, { timeout: 3_000 });
+    const secondSelector = screen.getByRole("checkbox", { name: "选择批量安装 Second" });
+    const thirdSelector = screen.getByRole("checkbox", { name: "选择批量安装 Skill 3" });
     fireEvent.click(firstSelector);
     fireEvent.click(secondSelector);
     fireEvent.click(screen.getByRole("button", { name: "安装已选技能" }));
@@ -597,8 +642,8 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     }));
 
     fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "tools" } });
-    fireEvent.click(await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 }));
-    fireEvent.click(screen.getByRole("button", { name: "选择批量安装 Second" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择批量安装 First" }, { timeout: 3_000 }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择批量安装 Second" }));
     fireEvent.click(screen.getByRole("button", { name: "安装已选技能" }));
 
     const cancelButton = await screen.findByRole("button", { name: "取消剩余任务" });
@@ -657,7 +702,7 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
 
     fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "retry-lock" } });
     const alert = await screen.findByRole("alert", {}, { timeout: 3_000 });
-    fireEvent.click(screen.getByRole("button", { name: "选择批量安装 Retry Lock" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择批量安装 Retry Lock" }));
     fireEvent.click(screen.getByRole("button", { name: "安装已选技能" }));
 
     await waitFor(() => expect(dataLayer.install).toHaveBeenCalledTimes(1));
@@ -743,14 +788,14 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
 
     expect(featuredViewport).toHaveClass("min-w-0", "flex-1", "overflow-hidden");
     expect(featuredViewport.nextElementSibling).toBe(nextFeaturedButton);
-    expect(within(featuredSection).queryByRole("button", { name: /选择批量安装/ })).not.toBeInTheDocument();
-    expect(within(categorySection).queryByRole("button", { name: /选择批量安装/ })).not.toBeInTheDocument();
+    expect(within(featuredSection).queryByRole("checkbox", { name: /选择批量安装/ })).not.toBeInTheDocument();
+    expect(within(categorySection).queryByRole("checkbox", { name: /选择批量安装/ })).not.toBeInTheDocument();
     expect(within(featuredSection).getAllByRole("button", { name: "安装" }).length).toBeGreaterThan(0);
     expect(within(categorySection).getAllByRole("button", { name: "安装" }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "安装已选技能" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "tools" } });
-    const searchSelector = await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 });
+    const searchSelector = await screen.findByRole("checkbox", { name: "选择批量安装 First" }, { timeout: 3_000 });
     expect(screen.getByRole("button", { name: "按热度" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "按名称" })).toBeInTheDocument();
     const firstSearchRow = searchSelector.closest("li") as HTMLElement;
@@ -864,6 +909,20 @@ it("shows the international source link in a curated skill details dialog", asyn
   expect(sourceLink).not.toHaveClass("h-8", "border", "bg-[#F5F9FF]");
 });
 
+it("focuses curated details, closes with Escape and restores the clicked trigger", async () => {
+  renderPanel("global");
+  const user = userEvent.setup();
+  const trigger = screen.getByRole("button", { name: "查看Stock Analysis详情" });
+  await user.click(trigger);
+  const dialog = screen.getByRole("dialog", { name: "Stock Analysis" });
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  expect(within(dialog).getByRole("heading", { name: "Stock Analysis", level: 2 })).toHaveFocus();
+  expect(dialog).toHaveClass("agents-ui");
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
+
 it("uses Spanish category and overview copy when the international locale is es", async () => {
   mocks.language = "es";
   renderPanel("global");
@@ -955,7 +1014,7 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     await waitFor(() => expect(dataLayer.listInstalled).toHaveBeenCalled());
     fireEvent.change(screen.getByRole("textbox", { name: "搜索技能" }), { target: { value: "tools" } });
 
-    expect(await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 })).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: "选择批量安装 First" }, { timeout: 3_000 })).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem("lightvela-skills-demo-known-installed:bot-1") ?? "[]")).toEqual([]);
   });
 });

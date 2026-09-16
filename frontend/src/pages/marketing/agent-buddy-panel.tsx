@@ -2,7 +2,7 @@
  * AI 搭子面板（v0.8）
  *
  * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）目录，
- * 渲染成 9 张抽卡槽（3×3 网格）：默认全部为空白卡背，每抽到一张人设填入下一格。
+ * 渲染成 8 张抽卡槽（宽屏 4×2 网格）：默认全部为空白卡背，每抽到一张人设填入下一格。
  * 视觉对齐 SkillHub `/hermes/edit-soul` —— 抽到的卡用 SoulFaceCard（bgUrl 全卡面），
  * 没抽到的用 CardBack（灰底 + 拼图 icon）。
  *
@@ -15,10 +15,12 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, Trash2, X, Zap } from "lucide-react";
+import { AlertCircle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AgentConfirmDialog, AgentState, AgentTooltip } from "@/components/agents";
+import { Button } from "@/components/ui/button";
+import { EmptySoulSlotView, PersonaDialogView as PreviewModal, PersonaInfoView as InfoDialog, SoulSlotCardView } from "./agent-buddy-views";
+import { AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { useT } from "@/i18n/t";
 import { useRepositories } from "@/contexts/repository-context";
@@ -28,8 +30,6 @@ import { toCanonicalSlug, toEnglishSlug } from "@/lib/soul-slug-mapping";
 import { DrawSoulModal } from "@/pages/marketing/agent-buddy-draw-modal";
 import { SoulTestModal } from "@/pages/marketing/agent-buddy-soul-test-modal";
 import {
-  CardBack,
-  SoulFaceCard,
   SoulSpecRenderer,
 } from "@/pages/marketing/agent-buddy-cards";
 import {
@@ -77,14 +77,11 @@ import {
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
   background: "#ffffff",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
+  boxShadow: "none",
 };
 
-const ACTION_TOOLTIP_CLASS = "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
 
-const ACTION_TOOLTIP_ARROW_CLASS = "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
 
-const UNAPPLIED_TOOLTIP_CLASS = "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within/unapplied:opacity-100 group-hover/unapplied:opacity-100";
 
 /** 抽卡槽位数上限（4 列 × 2 行 = 8 张） */
 const MAX_DRAWS = 8;
@@ -127,32 +124,6 @@ function canonicalizeSoulSlug(soul: SkillHubSoul): SkillHubSoul {
   return canonical === soul.slug ? soul : { ...soul, slug: canonical };
 }
 
-function UnappliedSoulIcon({ className = "h-3 w-3" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      className={className}
-      aria-hidden
-    >
-      <circle
-        cx="8"
-        cy="8"
-        r="5"
-        stroke="currentColor"
-        strokeWidth="1.45"
-        opacity="0.62"
-      />
-      <path
-        d="M4.55 11.45 11.45 4.55"
-        stroke="currentColor"
-        strokeWidth="1.55"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 export function BuddyPanel({
   botId,
   profileId,
@@ -171,6 +142,9 @@ export function BuddyPanel({
   const mountedRef = useRef(false);
   const saveReqIdRef = useRef(0);
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
+  const currentPersonaEditRef = useRef<HTMLButtonElement>(null);
+  const cardAreaRef = useRef<HTMLDivElement>(null);
+  const restoreCardAreaFocus = useCallback(() => cardAreaRef.current?.focus({ preventScroll: true }), []);
   const soulDataLocale = resolveBuddySoulLocale(isGlobal, i18n.language);
 
   // 持久化：状态走 Vibebase（用户级 KV，跨设备一致）。
@@ -520,14 +494,18 @@ export function BuddyPanel({
     }
   }, [drawnSouls, selectedSlug]);
 
-  // 当已注入卡被重抽掉，"已注入"徽章应一并清空（避免错位到其它卡）
-  // 注意：被覆盖的旧 SOUL.md 已经备份在 sandbox，前端只是失去本地 UI 状态。
+  // Only clear a local applied card when that same Bot's existing card is removed.
+  // A copied SOUL may legitimately have no matching card in this local collection.
+  const previousDrawnCardsRef = useRef({ botId, slugs: new Set<string>() });
   useEffect(() => {
-    if (appliedSlug && !drawnSouls.some((s) => s.slug === appliedSlug)) {
+    const previous = previousDrawnCardsRef.current;
+    const slugs = new Set(drawnSouls.map((soul) => soul.slug));
+    previousDrawnCardsRef.current = { botId, slugs };
+    if (previous.botId === botId && appliedSlug && previous.slugs.has(appliedSlug) && !slugs.has(appliedSlug)) {
       setAppliedSlug(null);
       setAppliedPersonaFileName(null);
     }
-  }, [drawnSouls, appliedSlug]);
+  }, [botId, drawnSouls, appliedSlug]);
 
   /** 注入人设：
    *  - 有 botId → 走 `debug/exec` 一把梭：备份旧 SOUL.md（若存在）→ 写入新 SOUL.md
@@ -1034,22 +1012,13 @@ export function BuddyPanel({
         </p>
       </header>
 
-      <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
+      <div className="agents-ui lv-buddy-panel relative overflow-hidden rounded-md" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
       <div className="lv-buddy-panel__toolbar px-6 pt-5 pb-3">
         <div className="lv-buddy-panel__toolbar-inner relative mx-auto flex w-full items-center justify-center">
           <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
             <h3
               className="text-balance text-lg font-semibold"
-              style={{
-                letterSpacing: "-0.2px",
-                backgroundImage:
-                  "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                color: "transparent",
-                WebkitTextFillColor: "transparent",
-              }}
             >
               {t("人设卡片")}
             </h3>
@@ -1073,7 +1042,7 @@ export function BuddyPanel({
       </div>
 
       {/* 内容区：人设抽卡槽 */}
-      <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
+      <div ref={cardAreaRef} role="group" aria-label={t("人设卡片")} tabIndex={-1} className="lv-buddy-panel__body rounded-md px-6 pt-2 pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
         {loadStatus === "unauthorized" ? (
           <UnauthorizedState />
         ) : loadStatus === "error" ? (
@@ -1117,6 +1086,7 @@ export function BuddyPanel({
             appliedSlug={appliedSlug ? (isGlobal ? toEnglishSlug(appliedSlug) : appliedSlug) : null}
             appliedPersonaName={appliedPersonaName}
             onPreview={(slug) => setPreviewSoulSlug(slug)}
+            onFocusedRemoval={restoreCardAreaFocus}
           />
         )}
       </div>
@@ -1134,45 +1104,36 @@ export function BuddyPanel({
             </span>
           </div>
           <div className="inline-flex items-center gap-0">
-            <div className="group relative inline-flex">
+            <AgentTooltip content={editPersonaLabel} triggerMode="control">
               <button
+                ref={currentPersonaEditRef}
                 type="button"
                 aria-label={editPersonaLabel}
                 disabled={customPersonaFileAction !== "idle"}
                 onClick={() => void handleEditCurrentPersona()}
-                className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {customPersonaFileAction === "editing" ? (
                   <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                 ) : (
                   <Pencil className="size-3.5" aria-hidden="true" />
                 )}
-              </button>
-              <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                {editPersonaLabel}
-                <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
-              </div>
-            </div>
+              </button></AgentTooltip>
             {customPersonaName && (
-              <div className="group relative inline-flex">
+              <AgentTooltip content={t("下载自定义人设")} triggerMode="control">
                 <button
                   type="button"
                   aria-label={t("下载自定义人设")}
                   disabled={customPersonaFileAction !== "idle"}
                   onClick={() => void handleDownloadCustomPersona()}
-                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {customPersonaFileAction === "downloading" ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : (
                     <Download className="size-3.5" aria-hidden="true" />
                   )}
-                </button>
-                <div className={ACTION_TOOLTIP_CLASS} role="tooltip">
-                  {t("下载自定义人设")}
-                  <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
-                </div>
-              </div>
+                </button></AgentTooltip>
             )}
           </div>
         </div>
@@ -1181,12 +1142,12 @@ export function BuddyPanel({
       {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent */}
       <div className="lv-buddy-panel__actions relative mx-auto flex max-w-[816px] items-center justify-center gap-3 px-0 py-5">
         <div className="lv-buddy-panel__action-buttons flex flex-wrap items-center justify-center gap-3">
-          <div className="group relative inline-flex">
+          <AgentTooltip content={isAtMax ? t("已抽满 8 张") : undefined}>
             <button
               type="button"
               onClick={handleOpenDraw}
               disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
-              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              className="inline-flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
               style={{
                 background: "rgba(0,0,0,0.04)",
                 color: "rgba(0,0,0,0.85)",
@@ -1195,48 +1156,22 @@ export function BuddyPanel({
             >
               <Dice5 className="h-4 w-4" />
               {t("抽取人设")}
-            </button>
-            {isAtMax && (
-              <div
-                className={ACTION_TOOLTIP_CLASS}
-                role="tooltip"
-              >
-                {t("已抽满 8 张")}
-                <span
-                  className={ACTION_TOOLTIP_ARROW_CLASS}
-                  aria-hidden
-                />
-              </div>
-            )}
-          </div>
-          <div className="group relative inline-flex">
+            </button></AgentTooltip>
+          <AgentTooltip content={isAtMax ? t("已抽满 8 张") : undefined}>
             <button
               type="button"
               onClick={() => setSoulTestOpen(true)}
               disabled={!canOpenSoulTest}
-              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              className="inline-flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
               style={{
-                background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
+                background: "rgba(0,0,0,0.04)",
                 color: "rgba(0,0,0,0.85)",
                 border: "1px solid rgba(0,0,0,0.06)",
               }}
             >
               <ClipboardCheck className="h-4 w-4" />
               {t("测试人设")}
-            </button>
-            {isAtMax && (
-              <div
-                className={ACTION_TOOLTIP_CLASS}
-                role="tooltip"
-              >
-                {t("已抽满 8 张")}
-                <span
-                  className={ACTION_TOOLTIP_ARROW_CLASS}
-                  aria-hidden
-                />
-              </div>
-            )}
-          </div>
+            </button></AgentTooltip>
           <PersonaUploadModal
             key={botId ?? "no-agent"}
             disabled={
@@ -1253,7 +1188,7 @@ export function BuddyPanel({
                 type="button"
                 onClick={handleApply}
                 disabled={isApplyDisabled}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
                 style={
                   isApplyDisabled
                     ? {
@@ -1264,7 +1199,7 @@ export function BuddyPanel({
                     : {
                         background: "rgba(0,0,0,0.90)",
                         color: "#ffffff",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                        boxShadow: "none",
                       }
                 }
               >
@@ -1338,6 +1273,7 @@ export function BuddyPanel({
         {confirmState.kind === "deleteOne" && (
           <ConfirmDialog
             key="confirm-delete-one"
+            fallbackFocusRef={cardAreaRef}
             title={t("确认删除人设")}
             message={
               confirmState.isApplied
@@ -1352,7 +1288,8 @@ export function BuddyPanel({
           />
         )}
         {confirmState.kind === "applySuccess" && (
-          <InfoDialog
+          <InfoDialog closeLabel={t("关闭")}
+            returnFocusRef={currentPersonaEditRef}
             key="info-apply-success"
             title={t("人设已注入")}
             message={t("请在与 Hermes Agent 的对话中输入 /new 开启新会话，让新的人设生效。")}
@@ -1361,7 +1298,8 @@ export function BuddyPanel({
           />
         )}
         {confirmState.kind === "customSaveSuccess" && (
-          <InfoDialog
+          <InfoDialog closeLabel={t("关闭")}
+            returnFocusRef={currentPersonaEditRef}
             key="info-custom-save-success"
             title={t("人设已更新")}
             message={t("人设已更新，请发送 /new 开始新会话以生效")}
@@ -1419,7 +1357,7 @@ function InjectToast({
       aria-live="polite"
     >
       <div
-        className="pointer-events-auto inline-flex max-w-[90%] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium shadow-lg"
+        className="pointer-events-auto inline-flex max-w-[90%] items-center gap-2 rounded-md px-4 py-2 text-sm font-medium shadow-sm"
         style={{
           background: bg,
           color: fg,
@@ -1431,7 +1369,7 @@ function InjectToast({
         <button
           type="button"
           onClick={onClose}
-          className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full transition hover:bg-white/15"
+          className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md transition hover:bg-white/15"
           aria-label={t("关闭")}
         >
           <X className="h-3.5 w-3.5" />
@@ -1447,7 +1385,7 @@ function ProgressChip({ drawn, max }: { drawn: number; max: number }) {
   const t = useT();
   return (
     <div
-      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium"
       style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.65)" }}
     >
       <span style={{ color: "rgba(0,0,0,0.45)" }}>{t("已抽")}</span>
@@ -1474,6 +1412,7 @@ function SoulSlotGrid({
   appliedSlug,
   appliedPersonaName,
   onPreview,
+  onFocusedRemoval,
 }: {
   drawnSouls: SkillHubSoul[];
   loading: boolean;
@@ -1488,6 +1427,7 @@ function SoulSlotGrid({
   appliedSlug: string | null;
   appliedPersonaName: string | null;
   onPreview: (slug: string) => void;
+  onFocusedRemoval: () => void;
 }) {
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
@@ -1512,6 +1452,7 @@ function SoulSlotGrid({
               onDelete={() => onDelete(soul.slug)}
               canReroll={canReroll}
               onPreview={() => onPreview(soul.slug)}
+              onFocusedRemoval={onFocusedRemoval}
             />
           );
         }
@@ -1530,6 +1471,7 @@ function FilledSlot({
   onDelete,
   canReroll,
   onPreview,
+  onFocusedRemoval,
 }: {
   soul: SkillHubSoul;
   selected: boolean;
@@ -1539,180 +1481,17 @@ function FilledSlot({
   onDelete: () => void;
   canReroll: boolean;
   onPreview: () => void;
+  onFocusedRemoval: () => void;
 }) {
   const t = useT();
-  return (
-    <div
-      className="group relative transition-transform duration-200 hover:-translate-y-1"
-      style={{
-        // 选中态：黑色 2px 描边 + 强阴影（对齐 SkillHub）
-        // 已注入但未选中：不加描边，仅靠左上角胶囊徽章标识
-        boxShadow: selected
-          ? "0 0 0 2px #000000, 0 20px 48px rgba(0,0,0,0.08)"
-          : "none",
-        borderRadius: 12,
-      }}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        aria-pressed={selected}
-        aria-label={selected ? t("取消选中此人设") : t("选中此人设")}
-        className="block w-full cursor-pointer"
-      >
-        <SoulFaceCard soul={soul} size="slot" onInterpret={onPreview} />
-      </button>
-
-      {/* 左上角：注入状态标签。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
-      {applied ? (
-        <div
-          className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium"
-          style={{
-            backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
-            color: "#ffffff",
-            boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
-          }}
-          title={t("已注入")}
-          aria-label={t("当前已注入到 Agent")}
-        >
-          {t("已注入")}
-        </div>
-      ) : (
-        <div
-          className="group/unapplied absolute left-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs font-medium"
-          style={{
-            background: "rgba(255,255,255,0.86)",
-            borderColor: "rgba(0,0,0,0.08)",
-            color: "rgba(0,0,0,0.54)",
-            boxShadow: "0 3px 10px rgba(0,0,0,0.06)",
-          }}
-          aria-label={t("当前未注入人设到 Agent")}
-        >
-          <UnappliedSoulIcon className="h-3.5 w-3.5" />
-          <div className={UNAPPLIED_TOOLTIP_CLASS} role="tooltip">
-            {t("未注入人设")}
-            <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
-          </div>
-        </div>
-      )}
-
-      {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「删除 + 重抽」（hover 浮现） */}
-      {selected ? (
-        <div
-          className="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full"
-          style={{
-            background: "#000000",
-            color: "#ffffff",
-          }}
-          aria-hidden
-        >
-          <Check className="h-2.5 w-2.5" strokeWidth={3} />
-        </div>
-      ) : (
-        <div className="absolute right-2 top-2 flex items-center gap-1.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (canReroll) onReroll();
-            }}
-            disabled={!canReroll}
-            aria-label={t("重新抽取这张人设")}
-            title={t("重新抽取")}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              background: "rgba(255,255,255,0.92)",
-              color: "rgba(0,0,0,0.65)",
-              border: "1px solid rgba(0,0,0,0.06)",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            <RotateCcw className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            aria-label={t("删除这张人设")}
-            title={t("删除")}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full"
-            style={{
-              background: "rgba(255,255,255,0.92)",
-              color: "rgba(220,38,38,0.88)",
-              border: "1px solid rgba(220,38,38,0.18)",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        </div>
-      )}
-    </div>
-  );
+  return <SoulSlotCardView soul={soul} selected={selected} applied={applied} canReroll={canReroll}
+    onSelect={onClick} onReroll={onReroll} onDelete={onDelete} onPreview={onPreview} onFocusedRemoval={onFocusedRemoval}
+    labels={{ select: selected ? t("取消选中此人设") : t("选中此人设"), applied: t("已注入"), appliedDescription: t("当前已注入到 Agent"), unapplied: t("未注入人设"), reroll: t("重新抽取这张人设"), delete: t("删除这张人设"), preview: t("人设解读") }} />;
 }
-
 function EmptySlot({ onClick }: { onClick: () => void }) {
   const t = useT();
-  return (
-    // group + group-hover 让卡片在 hover 时浮出顶部 tooltip 提示
-    <div className="group relative">
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={t("点击空卡抽取人设")}
-        className="block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
-      >
-        <CardBack iconClassName="h-9 w-9" />
-      </button>
-      {/* 悬浮提示：仅当 hover 时浮出，定位在卡片正中（浅色系） */}
-      <div
-        className="pointer-events-auto absolute left-1/2 top-[35%] -translate-x-1/2 -translate-y-1/2 select-text whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-        style={{
-          background: "rgba(255,255,255,0.95)",
-          color: "rgba(0,0,0,0.75)",
-          border: "1px solid rgba(0,0,0,0.06)",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-          backdropFilter: "blur(4px)",
-        }}
-        role="tooltip"
-      >
-        {t("点击抽取人设")}
-        {/* 底部居中三角箭头：双层 border 法实现 1px 浅边描边 */}
-        <span
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{
-            top: "100%",
-            width: 0,
-            height: 0,
-            borderLeft: "6px solid transparent",
-            borderRight: "6px solid transparent",
-            borderTop: "6px solid rgba(0,0,0,0.06)",
-          }}
-          aria-hidden
-        />
-        <span
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{
-            top: "100%",
-            marginTop: -1,
-            width: 0,
-            height: 0,
-            borderLeft: "5px solid transparent",
-            borderRight: "5px solid transparent",
-            borderTop: "5px solid rgba(255,255,255,0.95)",
-          }}
-          aria-hidden
-        />
-      </div>
-    </div>
-  );
+  return <EmptySoulSlotView label={t("点击空卡抽取人设")} tooltip={t("点击抽取人设")} onClick={onClick} />;
 }
-
-// ─── 详情弹窗 ───────────────────────────────────────────────────────────────
 
 function SoulPreviewModal({
   slug,
@@ -1723,6 +1502,7 @@ function SoulPreviewModal({
   soulDataLocale: BuddySoulLocale;
   onClose: () => void;
 }) {
+  const t = useT();
   const fetcher = useCallback(() => {
     if (soulDataLocale !== "domestic-zh") {
       const detail = getBuddySoulDetail(soulDataLocale, slug);
@@ -1737,7 +1517,7 @@ function SoulPreviewModal({
   );
   const spec = getBuddySoulSpec(soulDataLocale, slug);
   return (
-    <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
+    <PreviewModal title={data?.displayName ?? t("人设解读")} closeLabel={t("关闭")} onClose={onClose}>
       {loading && <CenterLoader />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && (spec
@@ -1755,268 +1535,33 @@ function SoulPreviewModal({
   );
 }
 
-function PreviewModal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const t = useT();
-  // 用 Portal 挂到 body，避开外层 framer-motion `filter: blur(...)`
-  // 创建的 containing block —— 否则 fixed 会相对该祖先定位，导致弹窗被裁。
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white"
-        style={PANEL_CARD_STYLE}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="flex items-center gap-3 px-6 py-4"
-          style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-        >
-          <h4
-            className="flex-1 truncate text-base font-semibold"
-            style={{ color: "rgba(0,0,0,0.90)" }}
-          >
-            {title}
-          </h4>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("关闭")}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-black/55 transition-colors hover:bg-black/[0.05] hover:text-black/85"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 // ─── 通用状态组件 ───────────────────────────────────────────────────────────
 
 function CenterLoader() {
-  return (
-    <div className="flex items-center justify-center py-12" style={{ color: "rgba(0,0,0,0.4)" }}>
-      <Loader2 className="h-5 w-5 animate-spin" />
-    </div>
-  );
+  const t = useT();
+  return <AgentState kind="loading" title={t("加载中…")} className="mx-auto max-w-lg" />;
 }
-
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   const t = useT();
-  return (
-    <div className="flex flex-col items-center gap-3 py-10 text-center">
-      <p className="text-sm" style={{ color: "rgba(0,0,0,0.55)" }}>
-        {t("加载失败")}：{message}
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-full px-4 py-1.5 text-xs font-medium transition-colors"
-        style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.85)" }}
-      >
-        {t("重试")}
-      </button>
-    </div>
-  );
+  return <AgentState kind="error" title={`${t("加载失败")}：${message}`} action={<Button onClick={onRetry} variant="outline" className="h-9 rounded-md shadow-none transition-none hover:translate-y-0">{t("重试")}</Button>} />;
 }
-
-// 未登录态：Vibebase 返回 401 时整面板替换为这个空状态。
-// 不弹 toast、不嵌套在 grid 里，让用户视觉上一目了然"需要先登录"。
 function UnauthorizedState() {
   const t = useT();
-  return (
-    <div className="flex flex-col items-center gap-3 py-12 text-center">
-      <AlertCircle
-        className="h-6 w-6"
-        style={{ color: "rgba(0,0,0,0.45)" }}
-      />
-      <p className="text-sm" style={{ color: "rgba(0,0,0,0.65)" }}>
-        {t("登录后即可保存你的搭子人设")}
-      </p>
-      <p className="text-xs" style={{ color: "rgba(0,0,0,0.4)" }}>
-        {t("AI 搭子状态会同步到你的账号，跨设备可见")}
-      </p>
-    </div>
-  );
+  return <AgentState kind="empty" title={t("登录后即可保存你的搭子人设")} description={t("AI 搭子状态会同步到你的账号，跨设备可见")} />;
 }
 
-// ─── 删除确认弹窗 ─────────────────────────────────────────────────────────────
-// 视觉对齐 `agent-settings-page.tsx` 的 `_DeleteConfirmDialog`：
-//   - 半透明遮罩 + 8px 模糊
-//   - 圆角白色卡片 + AlertTriangle 红色图标 + 标题 + 说明 + 取消/确认按钮
-// 通过 `createPortal` 挂到 document.body，避免 panel 内嵌套定位影响
-//
-// onConfirm / onCancel 由调用方控制；本组件不持有状态，仅展示 + 转发事件。
-
-function ConfirmDialog({
-  title,
-  message,
-  confirmLabel,
-  onConfirm,
-  onCancel,
-}: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  onConfirm: () => void;
-  onCancel: () => void;
+function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel, fallbackFocusRef }: {
+  title: string; message: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void;
+  fallbackFocusRef: React.RefObject<HTMLElement | null>;
 }) {
   const t = useT();
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.6)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-      }}
-      onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
-        style={{
-          background: "rgba(255,255,255,0.98)",
-          borderColor: "rgba(0,0,0,0.06)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl"
-          style={{ background: "rgba(207,61,76,0.08)" }}
-        >
-          <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
-        </div>
-        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "rgba(0,0,0,0.92)" }}>
-          {title}
-        </h3>
-        <p
-          className="mb-6 text-center text-sm leading-relaxed"
-          style={{ color: "rgba(0,0,0,0.65)" }}
-        >
-          {message}
-        </p>
-        <div className="flex w-full gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 rounded-full border px-4 py-2.5 font-medium transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666", fontSize: "16px" }}
-          >
-            {t("取消")}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="flex-1 rounded-full px-4 py-2.5 font-bold text-white transition-colors hover:opacity-90"
-            style={{ background: "#cf3d4c", fontSize: "16px" }}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
-  );
-}
-
-// ─── 信息对话框 ──────────────────────────────────────────────────────────────
-// 视觉对齐 ConfirmDialog，但单按钮 + 蓝色 Info 图标，用于"成功 + 后续指引"场景。
-// onClose 由调用方控制；点遮罩或确认按钮都触发 onClose。
-
-function InfoDialog({
-  title,
-  message,
-  buttonLabel,
-  onClose,
-}: {
-  title: string;
-  message: string;
-  buttonLabel: string;
-  onClose: () => void;
-}) {
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.6)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-      }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 20, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full max-w-sm flex-col rounded-[1.5rem] border p-6 shadow-2xl"
-        style={{
-          background: "rgba(255,255,255,0.98)",
-          borderColor: "rgba(0,0,0,0.06)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3
-          className="mb-2.5 inline-flex items-center gap-1.5 text-base font-semibold"
-          style={{ color: "rgba(0,0,0,0.92)" }}
-        >
-          <Check className="h-4 w-4" style={{ color: "rgba(0,0,0,0.55)" }} aria-hidden />
-          {title}
-        </h3>
-        <p
-          className="text-left text-[13px] leading-relaxed"
-          style={{ color: "rgba(0,0,0,0.55)", paddingTop: 10, paddingBottom: 10 }}
-        >
-          {/* 把 message 里的命令高亮成蓝色加粗，便于用户一眼识别要输入的内容 */}
-          {message.split(/(\/new|\/approve)/g).map((part, i) =>
-            part === "/new" || part === "/approve" ? (
-              <strong key={i} style={{ color: "#2563EB", fontWeight: 600 }}>{part}</strong>
-            ) : (
-              <span key={i}>{part}</span>
-            ),
-          )}
-        </p>
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
-            style={{ background: "rgba(0,0,0,0.90)" }}
-          >
-            {buttonLabel}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
-  );
+  const trigger = useRef(document.activeElement);
+  return <AgentConfirmDialog open title={title} description={message} confirmLabel={confirmLabel} cancelLabel={t("取消")}
+    onConfirm={onConfirm} onOpenChange={(open) => { if (!open) onCancel(); }}
+    onCloseAutoFocus={(event) => {
+      if (!trigger.current?.isConnected && document.activeElement === document.body && fallbackFocusRef.current?.isConnected) {
+        event.preventDefault();
+        fallbackFocusRef.current.focus({ preventScroll: true });
+      }
+    }} />;
 }

@@ -389,6 +389,8 @@ const FAKE_BUNDLES: Bundle[] = [
 
 const FAKE_PASSES_STORAGE_KEY = "lightclaw-fake-passes-v1";
 const ACCOUNT_PREVIEW_PASS_STATE_QUERY_KEY = "passState";
+const SIDEBAR_DEMO_PASS_ID = "pass-preview-sidebar-demo";
+const SIDEBAR_DEMO_BUNDLE_ID = "bundle-preview-sidebar-demo";
 
 const readAccountPreviewPassStateKey = (): string | null => {
   if (typeof window === "undefined") return null;
@@ -419,12 +421,34 @@ const buildExpiringAccountPreviewPass = (): Pass => {
   };
 };
 
+// Explicit, read-only preview: no catalog or stored-pass changes. Stable dates
+// keep repeated reads from appearing to be a new billing revision.
+const buildSidebarDemoPass = (): Pass => ({
+  pass_id: SIDEBAR_DEMO_PASS_ID,
+  user_id: readStoredAuthSession()?.user.id ?? ACCOUNT_PREVIEW_BASE_USER.id,
+  status: "active",
+  bundle_id: SIDEBAR_DEMO_BUNDLE_ID,
+  bundle_name: "账户积分演示套餐",
+  created_time: "2026-01-01T00:00:00Z",
+  expired_time: "2099-01-01T00:00:00Z",
+  updated_time: "2026-01-01T00:00:00Z",
+  isolated_time: null,
+  deleted_time: null,
+  agent_quota_total: 1,
+  agent_quota_available: 0,
+  credit_total: 1000,
+  credit_available: 750,
+});
+
 const readStoredPasses = (): Pass[] => {
   if (typeof window === "undefined") {
     return [];
   }
   if (readAccountPreviewPassStateKey() === "expiring") {
     return [buildExpiringAccountPreviewPass()];
+  }
+  if (readAccountPreviewPassStateKey() === "sidebar-demo") {
+    return [buildSidebarDemoPass()];
   }
   try {
     const raw = window.localStorage.getItem(FAKE_PASSES_STORAGE_KEY);
@@ -985,6 +1009,16 @@ export const createFakeRepositories = (): Repositories => {
     plans: {
       async listModifyBundles(passId) {
         const pass = readStoredPasses().find(item => item.pass_id === passId);
+        if (readAccountPreviewPassStateKey() === "sidebar-demo" && pass?.pass_id === SIDEBAR_DEMO_PASS_ID) {
+          return {
+            source_bundle_id: pass.bundle_id,
+            modify_bundle_set: [{
+              target_bundle_id: "bundle-preview-sidebar-demo-upgrade",
+              bundle: { bundle_id: "bundle-preview-sidebar-demo-upgrade", bundle_name: "账户升级演示套餐", cpu: 4, memory: 8, system_disk_size: 80, credit: 2000 },
+              modify_price: buildFakePrice(49),
+            }],
+          };
+        }
         return { source_bundle_id: pass?.bundle_id ?? '', modify_bundle_set: [] };
       },
       async createModifyOrder() { throw new Error('Upgrade checkout requires a connected billing service'); },

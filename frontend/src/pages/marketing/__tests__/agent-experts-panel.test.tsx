@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
@@ -50,7 +51,7 @@ describe("hermes agent experts panel", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
-    document.body.innerHTML = "";
+    cleanup();
     window.localStorage.clear();
   });
 
@@ -384,7 +385,7 @@ describe("hermes agent experts panel", () => {
       displayName: "Backend Market Data",
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: /量化回测/ }));
 
@@ -393,6 +394,8 @@ describe("hermes agent experts panel", () => {
     });
     expect(await screen.findByText("完整技能详情")).toBeInTheDocument();
     expect(await screen.findByText("Backend Market Data")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Backend Market Data" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("完整技能详情");
     const sourceLink = await screen.findByRole("link", { name: "源自 SkillHub" });
     expect(sourceLink).toHaveAttribute("href", "https://skillhub.cn/skillspackage");
     expect(sourceLink).toHaveAttribute("target", "_blank");
@@ -474,7 +477,7 @@ metadata:
     vi.mocked(fetchSkillFiles).mockResolvedValue([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
     vi.mocked(fetchSkillFile).mockResolvedValue("# Test Case Generator\n\n测试生成详情");
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: /自动化测试/ }));
 
@@ -505,12 +508,31 @@ metadata:
         : [],
     }));
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
     expect(fetchSkillSetDetail).not.toHaveBeenCalled();
     expect(fetchSkillDetail).not.toHaveBeenCalled();
     expect(screen.queryByText(/个技能/)).not.toBeInTheDocument();
+  });
+
+  it("shows the English view tooltip in a portal on keyboard focus without refetching packages", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    vi.mocked(fetchSkillSets).mockReset().mockResolvedValue({ skillSets: [] });
+    vi.mocked(fetchSkillSetDetail).mockReset().mockRejectedValue(new Error("missing package"));
+    render(<LocaleOverrideProvider locale="en-US"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} lang="en" /></LocaleOverrideProvider>);
+    await screen.findByText("No matching skill packages found");
+    const requests = vi.mocked(fetchSkillSets).mock.calls.length;
+    const user = userEvent.setup();
+    const cards = screen.getByRole("button", { name: "Cards" });
+    cards.focus();
+    const tooltip = await screen.findByRole("tooltip", { name: "Cards" });
+    expect(tooltip.closest('[data-slot="tooltip-content"]')).toHaveClass("agents-ui");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await user.keyboard(" ");
+    expect(cards).toHaveAttribute("aria-pressed", "true");
+    expect(fetchSkillSets).toHaveBeenCalledTimes(requests);
   });
 
   it("persists the selected package list or card view", async () => {
@@ -529,17 +551,20 @@ metadata:
       }],
     });
 
-    const firstRender = render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    const firstRender = render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByTestId("skill-package-list-view")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "列表" })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "卡片" }));
     expect(await screen.findByTestId("skill-package-card-view")).toBeInTheDocument();
+    const cardTrigger = screen.getByRole("button", { name: /代码审查/ });
+    expect(cardTrigger.tagName).toBe("BUTTON");
+    expect(cardTrigger.querySelector("button")).toBeNull();
     expect(window.localStorage.getItem("lightvela-experts-view")).toBe("grid");
 
     firstRender.unmount();
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByTestId("skill-package-card-view")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "卡片" })).toHaveAttribute("aria-pressed", "true");
@@ -563,7 +588,7 @@ metadata:
         : [],
     }));
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByTestId("skill-package-profile-icon")).toBeInTheDocument();
     expect(screen.getByTestId("skill-package-profile-image")).toHaveAttribute(
@@ -589,7 +614,7 @@ metadata:
       }],
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByTestId("skill-package-profile-image")).toHaveAttribute(
       "src",
@@ -614,7 +639,7 @@ metadata:
       }],
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
 
@@ -641,7 +666,7 @@ metadata:
         : [],
     }));
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
 
@@ -670,7 +695,7 @@ metadata:
         : [],
     }));
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
     fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
@@ -683,7 +708,7 @@ metadata:
       skillSets: [],
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(screen.getByPlaceholderText("搜索技能包")).toHaveClass("lv-skills-search-input", "lv-agent-search-box-input");
     expect(screen.queryByRole("heading", { name: "技能包" })).not.toBeInTheDocument();
@@ -695,7 +720,7 @@ metadata:
       resolveSkillSets = resolve;
     }));
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(screen.getByPlaceholderText("搜索技能包")).toBeInTheDocument();
     expect(screen.getByText("正在加载技能包")).toBeInTheDocument();
@@ -897,7 +922,7 @@ metadata:
           }],
     }));
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /分析师/ })).not.toBeInTheDocument();
@@ -957,7 +982,7 @@ metadata:
       });
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} /></LocaleOverrideProvider>);
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /量化回测/ })).toBeInTheDocument();
@@ -1004,7 +1029,7 @@ metadata:
       return { status: "success", exitCode: 0, output: "" };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1061,7 +1086,7 @@ metadata:
       };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1114,7 +1139,7 @@ metadata:
       return { status: "success", exitCode: 0, output: "" };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1168,7 +1193,7 @@ metadata:
       return installResults.shift() ?? { status: "success", exitCode: 0, output: "" };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1342,7 +1367,7 @@ metadata:
       return { status: "success", exitCode: 0, output: "" };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1404,7 +1429,7 @@ metadata:
       return installResults.shift() ?? { status: "success", exitCode: 0, output: "" };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1452,7 +1477,7 @@ metadata:
       };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
@@ -1504,7 +1529,7 @@ metadata:
       return { status: "success", exitCode: 0, output: "" };
     });
 
-    const firstRender = render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    const firstRender = render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
     await waitFor(() => {
@@ -1512,7 +1537,7 @@ metadata:
     });
 
     firstRender.unmount();
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     expect(await screen.findByRole("button", { name: "已安装" })).toBeDisabled();
   });
@@ -1548,7 +1573,7 @@ metadata:
       return { status: "success", exitCode: 0, output: "" };
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     expect(await screen.findByRole("button", { name: "已安装" })).toBeDisabled();
     expect(loadExpertPackagesState).toHaveBeenCalledWith("bot-1");
@@ -1588,7 +1613,7 @@ metadata:
       output: JSON.stringify({ success: true, data: { skills: [{ name: "market-data" }, { name: "backtest-engine" }] } }),
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     const installedButton = await screen.findByRole("button", { name: "已安装" });
     expect(installedButton).toBeDisabled();
@@ -1637,7 +1662,7 @@ metadata:
       output: JSON.stringify({ success: true, data: { skills: [] } }),
     });
 
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+    render(<LocaleOverrideProvider locale="zh-CN"><ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} /></LocaleOverrideProvider>);
 
     expect(await screen.findByRole("button", { name: "安装" })).toBeEnabled();
     await waitFor(() => {

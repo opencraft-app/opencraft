@@ -13,9 +13,9 @@
  */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { PersonaDialogView, PersonaDrawStageView } from "./agent-buddy-views";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
@@ -227,28 +227,9 @@ export function DrawSoulModal({
   const isRevealed = phase === "revealed" && winnerSoul !== null;
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
-      onClick={handleClose}
-    >
-      {/* 弹窗主体：reveal 阶段切换为 soul.color 全屏渐变背景 */}
-      <motion.div
-        className="relative w-full max-w-[412px] overflow-hidden rounded-2xl"
-        animate={{
-          background: isRevealed && winnerSoul
-            ? getSoulColor(winnerSoul)
-            : "#ffffff",
-        }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <CloseButton
-          onClick={handleClose}
-          disabled={isInjecting}
-          variant={isRevealed ? "light" : "default"}
-        />
-
+    <PersonaDialogView open={open} title={t("抽取人设")} closeLabel={t("关闭")} onClose={handleClose}
+      closeDisabled={isInjecting} hideHeader className="p-0 md:w-[min(412px,calc(100vw-32px))]"
+      style={{ background: isRevealed && winnerSoul ? getSoulColor(winnerSoul) : "#ffffff" }}>
         <AnimatePresence mode="wait">
           {!isRevealed ? (
             <motion.div
@@ -269,10 +250,7 @@ export function DrawSoulModal({
               </h3>
 
               {/* 6 张卡牌 3×2 网格（绝对坐标，方便中奖卡 framer-motion 移动到中心 + 放大 + 翻转） */}
-              <div
-                className="relative"
-                style={{ width: GRID_W, height: GRID_H }}
-              >
+              <PersonaDrawStageView width={GRID_W} height={GRID_H}>
                 {CARD_POSITIONS.map((pos, i) => (
                   <DrawCard
                     key={i}
@@ -285,14 +263,14 @@ export function DrawSoulModal({
                     onStart={phase === "idle" && drawablePool.length > 0 ? handleStart : undefined}
                   />
                 ))}
-              </div>
+              </PersonaDrawStageView>
 
               {phase === "idle" && (
                 <button
                   type="button"
                   onClick={handleStart}
                   disabled={drawablePool.length === 0}
-                  className="rounded-full px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
                     background: "rgba(0,0,0,0.90)",
                     color: "#ffffff",
@@ -323,36 +301,7 @@ export function DrawSoulModal({
             />
           )}
         </AnimatePresence>
-      </motion.div>
-    </div>
-  );
-}
-
-// ─── 关闭按钮 ───────────────────────────────────────────────────────────────
-
-function CloseButton({
-  onClick,
-  disabled = false,
-  variant = "default",
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  variant?: "default" | "light";
-}) {
-  const t = useT();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={t("关闭")}
-      className="absolute right-4 top-4 z-20 transition-opacity hover:opacity-60 disabled:cursor-not-allowed disabled:opacity-50"
-      style={{
-        color: variant === "light" ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.55)",
-      }}
-    >
-      <X className="h-5 w-5" />
-    </button>
+    </PersonaDialogView>
   );
 }
 
@@ -377,6 +326,7 @@ function DrawCard({
   soul: SkillHubSoul | null;
   onStart?: () => void;
 }) {
+  const t = useT();
   const isFlipping = phase === "flipping";
   const isRevealed = phase === "revealed";
 
@@ -423,6 +373,7 @@ function DrawCard({
       <button
         type="button"
         onClick={onStart}
+        aria-label={t("点击空卡抽取人设")}
         className="absolute cursor-pointer transition-transform duration-200 hover:-translate-y-1"
         style={{ left: x, top: y, width: CARD_W, height: CARD_H }}
       >
@@ -524,11 +475,11 @@ function RevealPanel({
             type="button"
             onClick={onInject}
             disabled={isInjecting}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full font-semibold transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md font-semibold transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
             style={{
               background: "#202020",
               color: "#ffffff",
-              boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
+              boxShadow: "none",
               fontSize: "14px",
             }}
           >
@@ -539,7 +490,7 @@ function RevealPanel({
             type="button"
             onClick={onConfirm}
             disabled={isInjecting}
-            className="h-12 w-full rounded-full border border-black/15 bg-white font-semibold text-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-12 w-full rounded-md border border-black/15 bg-white font-semibold text-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
             style={{ fontSize: "14px" }}
           >
             {t("添加，暂不注入")}
@@ -580,41 +531,7 @@ function SoulInterpretModal({
   }, [soul.slug, soulDataLocale]);
   const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, soulDataLocale]);
 
-  // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
-  // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
-  return createPortal(
-    <motion.div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 py-6"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-    >
-      <motion.div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-        initial={{ y: 18, scale: 0.98 }}
-        animate={{ y: 0, scale: 1 }}
-        exit={{ y: 12, scale: 0.98 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-3 border-b border-black/10 px-6 py-4">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Eye className="h-4 w-4 text-black/70" />
-            <h3 className="truncate text-base font-semibold text-black/90">
-              {t("人设解读")} · {soul.displayName}
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("关闭")}
-            className="text-black/55 transition-opacity hover:opacity-70"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+  return <PersonaDialogView title={`${t("人设解读")} · ${soul.displayName}`} closeLabel={t("关闭")} onClose={onClose}>
           {loading && (
             <div className="flex items-center justify-center py-12 text-black/40">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -636,11 +553,7 @@ function SoulInterpretModal({
               </div>
             );
           })()}
-        </div>
-      </motion.div>
-    </motion.div>,
-    document.body,
-  );
+  </PersonaDialogView>;
 }
 
 function resolveLegacySoulLocale(

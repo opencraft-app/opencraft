@@ -181,6 +181,7 @@ describe("HermesAgentSkillsPanel", () => {
       resolve(process.cwd(), "src/pages/marketing/agent-skills-panel.tsx"),
       "utf8",
     );
+    expect(skillsPanelSource).toContain('portalClassName="agents-ui" closeLabel={t("关闭")}');
     const stableHostSource = readFileSync(
       resolve(process.cwd(), "src/pages/marketing/agent-settings-sdk-stable-host.tsx"),
       "utf8",

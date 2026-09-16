@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import type { TsshFileInfo } from "@/lib/tencent-tssh-file-client";
@@ -136,8 +137,19 @@ const storageCapacityCommandCalls = () =>
 const renameCommandCalls = () =>
   execCommandMock.mock.calls.filter(([command]) => typeof command === "string" && command.includes("\nmv -- "));
 
+const expectDisabledReason = async (buttonName: string, reason: string) => {
+  const button = screen.getByRole("button", { name: buttonName });
+  expect(button).toBeDisabled();
+  const trigger = button.closest('[role="group"]') as HTMLElement;
+  expect(trigger).not.toBeNull();
+  act(() => trigger.focus());
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(reason);
+  await userEvent.setup().keyboard("{Escape}");
+};
+
 describe("TatFileManagerPanel upload limits", () => {
   beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     uploadFileMock.mockReset();
     uploadFileMock.mockResolvedValue(undefined);
     deleteFileMock.mockReset();
@@ -357,7 +369,7 @@ describe("TatFileManagerPanel upload limits", () => {
     await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser"));
     await waitFor(() => expect(pathInput).toHaveValue("/home/agentuser"));
     expect(screen.getByRole("button", { name: "上级" })).toBeDisabled();
-    expect(screen.getByText("不支持返回上一级目录")).toBeInTheDocument();
+    await expectDisabledReason("上级", "不支持返回上一级目录");
     listPathMock.mockClear();
 
     fireEvent.change(pathInput, { target: { value: "/home" } });
@@ -373,13 +385,13 @@ describe("TatFileManagerPanel upload limits", () => {
     const pathInput = await screen.findByDisplayValue("/home/agentuser/.hermes");
 
     expect(screen.getByRole("button", { name: "编辑文件路径" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "显示隐藏文件" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "显示隐藏文件" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新" })).toBeInTheDocument();
 
     fireEvent.focus(pathInput);
 
     expect(screen.getByRole("button", { name: "进入" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "显示隐藏文件" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "显示隐藏文件" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
 
     fireEvent.change(pathInput, { target: { value: "/home/agentuser/workspace" } });
@@ -387,18 +399,19 @@ describe("TatFileManagerPanel upload limits", () => {
 
     await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser/workspace"));
     expect(screen.queryByRole("button", { name: "进入" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "显示隐藏文件" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "显示隐藏文件" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新" })).toBeInTheDocument();
   });
 
   it("enters path editing mode from the edit path button", async () => {
+    const user = userEvent.setup();
     render(<TatFileManagerPanel botId="bot-path-edit-button" />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "编辑文件路径" }));
+    await screen.findByText("当前目录为空。");
+    await user.click(screen.getByRole("button", { name: "编辑文件路径" }));
 
     expect(screen.getByRole("button", { name: "进入" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑文件路径" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "显示隐藏文件" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "显示隐藏文件" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
   });
 
@@ -415,7 +428,7 @@ describe("TatFileManagerPanel upload limits", () => {
     fireEvent.pointerDown(await screen.findByText("当前目录为空。"));
 
     expect(screen.queryByRole("button", { name: "进入" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "显示隐藏文件" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "显示隐藏文件" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新" })).toBeInTheDocument();
     expect(pathInput).toHaveValue("/home/agentuser/.hermes");
   });
@@ -518,14 +531,15 @@ describe("TatFileManagerPanel upload limits", () => {
     const deleteButton = screen.getByRole("button", { name: "删除" });
     expect(downloadButton).toBeDisabled();
     expect(deleteButton).toBeDisabled();
-    expect(screen.getAllByText("未选择文件").length).toBeGreaterThanOrEqual(2);
+    await expectDisabledReason("下载", "未选择文件");
+    await expectDisabledReason("删除", "未选择文件");
 
     fireEvent.click(await screen.findByText("app.log"));
 
-    expect(downloadButton).toBeEnabled();
-    expect(deleteButton).toBeEnabled();
+    expect(screen.getByRole("button", { name: "下载" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "删除" })).toBeEnabled();
 
-    fireEvent.click(deleteButton);
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("/home/agentuser/.hermes/app.log", false));
   });
@@ -558,9 +572,9 @@ describe("TatFileManagerPanel upload limits", () => {
     expect(renameButton).toBeDisabled();
 
     fireEvent.click(await screen.findByText("app.log"));
-    expect(renameButton).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重命名" })).toBeEnabled();
 
-    fireEvent.click(renameButton);
+    fireEvent.click(screen.getByRole("button", { name: "重命名" }));
     const renameInput = screen.getByDisplayValue("app.log");
     fireEvent.change(renameInput, { target: { value: "server.log" } });
     fireEvent.click(screen.getByRole("button", { name: "确认重命名" }));
@@ -614,7 +628,7 @@ describe("TatFileManagerPanel upload limits", () => {
 
     fireEvent.click(await screen.findByText("app.log"));
 
-    expect(downloadButton).toBeEnabled();
+    expect(screen.getByRole("button", { name: "下载" })).toBeEnabled();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
@@ -632,11 +646,11 @@ describe("TatFileManagerPanel upload limits", () => {
     ]);
 
     const { unmount } = render(<TatFileManagerPanel botId="bot-download-iframe-cleanup" />);
-    const downloadButton = await screen.findByRole("button", { name: "下载" });
+    await screen.findByRole("button", { name: "下载" });
 
     fireEvent.click(await screen.findByText("app.log"));
-    await waitFor(() => expect(downloadButton).toBeEnabled());
-    fireEvent.click(downloadButton);
+    await waitFor(() => expect(screen.getByRole("button", { name: "下载" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
 
     await waitFor(() => expect(document.body.querySelectorAll("iframe")).toHaveLength(1));
 
@@ -658,14 +672,13 @@ describe("TatFileManagerPanel upload limits", () => {
     ]);
 
     render(<TatFileManagerPanel botId="bot-folder-download-disabled" />);
-    const downloadButton = await screen.findByRole("button", { name: "下载" });
-    const deleteButton = screen.getByRole("button", { name: "删除" });
+    await screen.findByRole("button", { name: "下载" });
 
     fireEvent.click(await screen.findByText("logs"));
 
-    expect(downloadButton).toBeDisabled();
-    expect(deleteButton).toBeEnabled();
-    expect(screen.getByText("不支持下载文件夹")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "删除" })).toBeEnabled();
+    await expectDisabledReason("下载", "不支持下载文件夹");
   });
 
   it("disables downloading a file larger than 1 GB", async () => {
@@ -681,14 +694,13 @@ describe("TatFileManagerPanel upload limits", () => {
     ]);
 
     render(<TatFileManagerPanel botId="bot-download-limit" />);
-    const downloadButton = await screen.findByRole("button", { name: "下载" });
-    const deleteButton = screen.getByRole("button", { name: "删除" });
+    await screen.findByRole("button", { name: "下载" });
 
     fireEvent.click(await screen.findByText("large.tar"));
 
-    expect(downloadButton).toBeDisabled();
-    expect(deleteButton).toBeEnabled();
-    expect(screen.getByText("单个文件最大支持下载 1 GB。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "删除" })).toBeEnabled();
+    await expectDisabledReason("下载", "单个文件最大支持下载 1 GB。");
   });
 
   it("toggles hidden files from the path controls", async () => {
@@ -716,10 +728,115 @@ describe("TatFileManagerPanel upload limits", () => {
     await screen.findByText("app.log");
     expect(screen.queryByText(".env")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "显示隐藏文件" }));
+    fireEvent.click(screen.getByRole("switch", { name: "显示隐藏文件" }));
 
     expect(screen.getByText(".env")).toBeInTheDocument();
     expect(screen.getByText("app.log")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "不显示隐藏文件" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "显示隐藏文件" })).toBeChecked();
+  });
+
+  it.each(["Escape", "cancel"])("restores the new-folder trigger on %s without creating anything", async (method) => {
+    const user = userEvent.setup(); render(<TatFileManagerPanel botId="bot-create-focus" />);
+    await screen.findByText("当前目录为空。");
+    await user.click(screen.getByRole("button", { name: "新建文件夹" }));
+    const input = screen.getByPlaceholderText("请输入文件夹名");
+    await waitFor(() => expect(input).toHaveFocus());
+    await user.type(input, "draft-folder");
+    if (method === "Escape") await user.keyboard("{Escape}");
+    else await user.click(screen.getByRole("button", { name: "取消新建文件夹" }));
+    expect(screen.queryByPlaceholderText("请输入文件夹名")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "新建文件夹" })).toHaveFocus());
+    expect(createFileMock).not.toHaveBeenCalled();
+    expect(listPathMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["Escape", "cancel"])("restores the rename trigger on %s without executing mv", async (method) => {
+    listPathMock.mockResolvedValue([{ type: "-", name: "original.txt", size: 42, modifyTime: 0, accessTime: 0, rights: "-rw-r--r--" }]);
+    const user = userEvent.setup(); render(<TatFileManagerPanel botId="bot-rename-focus" />);
+    await user.click(await screen.findByText("original.txt"));
+    await user.click(screen.getByRole("button", { name: "重命名" }));
+    const input = screen.getByPlaceholderText("请输入文件名"); await waitFor(() => expect(input).toHaveFocus());
+    await user.clear(input); await user.type(input, "draft.txt");
+    if (method === "Escape") await user.keyboard("{Escape}");
+    else await user.click(screen.getByRole("button", { name: "取消重命名" }));
+    expect(screen.getByText("original.txt")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "重命名" })).toHaveFocus());
+    expect(renameCommandCalls()).toHaveLength(0); expect(listPathMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Escape in the path input and discards its draft without navigation", async () => {
+    const user = userEvent.setup(); render(<TatFileManagerPanel botId="bot-path-focus" />);
+    await screen.findByText("当前目录为空。");
+    const input = screen.getByPlaceholderText("当前目录路径");
+    await user.click(input); await user.clear(input); await user.type(input, "/home/agentuser/draft");
+    await user.keyboard("{Escape}");
+    expect(input).toHaveFocus(); expect(input).toHaveValue("/home/agentuser/.hermes");
+    expect(listPathMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("portals a keyboard-readable disabled reason without adding a second tab stop to enabled controls", async () => {
+    const user = userEvent.setup(); const view = render(<TatFileManagerPanel botId="bot-tooltip-focus" />);
+    await screen.findByText("当前目录为空。");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    const download = screen.getByRole("button", { name: "下载" });
+    const explanation = download.closest('[role="group"]') as HTMLElement;
+    expect(explanation).not.toBeNull(); act(() => explanation.focus());
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("未选择文件"); expect(view.container).not.toContainElement(tooltip);
+    await user.keyboard("{Escape}"); expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    act(() => screen.getByRole("button", { name: "新建文件夹" }).focus()); await user.tab();
+    expect(screen.getByRole("button", { name: "上传文件" })).toHaveFocus();
+    await user.tab(); expect(screen.getByRole("button", { name: "上级" })).toHaveFocus();
+  });
+
+  it("uses a controlled hidden-file switch and clears a hidden selection when switched off", async () => {
+    listPathMock.mockResolvedValue([".env", "visible.txt"].map((name) => ({ type: "-", name, size: 42, modifyTime: 0, accessTime: 0, rights: "-rw-r--r--" })));
+    const user = userEvent.setup(); render(<TatFileManagerPanel botId="bot-hidden-switch" />);
+    await screen.findByText("visible.txt"); const toggle = screen.getByRole("switch", { name: "显示隐藏文件" });
+    expect(toggle).not.toBeChecked(); act(() => toggle.focus()); await user.keyboard(" ");
+    expect(toggle).toBeChecked(); await user.click(screen.getByText(".env"));
+    expect(screen.getByRole("button", { name: "删除" })).toBeEnabled();
+    await user.click(toggle); expect(toggle).not.toBeChecked();
+    expect(screen.queryByText(".env")).not.toBeInTheDocument(); expect(screen.getByText("visible.txt")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除" })).toBeDisabled();
+    expect(listPathMock).toHaveBeenCalledTimes(1); expect(deleteFileMock).not.toHaveBeenCalled();
+  });
+
+  it("selects exactly one native file row from the keyboard without nesting interactive controls", async () => {
+    listPathMock.mockResolvedValue(["first.txt", "second.txt"].map((name) => ({ type: "-", name, size: 42, modifyTime: 0, accessTime: 0, rights: "-rw-r--r--" })));
+    const user = userEvent.setup(); render(<TatFileManagerPanel botId="bot-keyboard-row" />);
+    const first = await screen.findByRole("button", { name: "first.txt" });
+    const second = screen.getByRole("button", { name: "second.txt" });
+    act(() => first.focus()); await user.keyboard(" "); expect(first).toHaveAttribute("aria-pressed", "true");
+    expect(first).toHaveClass("bg-[var(--surface-muted)]", "ring-[var(--border-strong)]");
+    act(() => second.focus()); await user.keyboard(" ");
+    expect(first).toHaveAttribute("aria-pressed", "false"); expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(first).not.toHaveClass("bg-[var(--surface-muted)]");
+    expect(second.querySelector("button,input")).toBeNull(); expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(deleteFileMock).toHaveBeenCalledExactlyOnceWith("/home/agentuser/.hermes/second.txt", false));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("selects a directory with Space and opens its managed path once with Enter", async () => {
+    listPathMock.mockResolvedValue([{ type: "d", name: "reports", size: 0, modifyTime: 0, accessTime: 0, rights: "drwxr-xr-x" }]);
+    const user = userEvent.setup(); render(<TatFileManagerPanel botId="bot-keyboard-directory" />);
+    const entry = await screen.findByRole("button", { name: "reports" });
+    act(() => entry.focus()); await user.keyboard(" ");
+    expect(entry).toHaveAttribute("aria-pressed", "true"); expect(listPathMock).toHaveBeenCalledTimes(1);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledTimes(2));
+    expect(listPathMock).toHaveBeenLastCalledWith("/home/agentuser/.hermes/reports");
+  });
+
+  it("announces loading instead of an empty directory while its first listing is pending", async () => {
+    let resolve!: (files: TsshFileInfo[]) => void;
+    listPathMock.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    render(<TatFileManagerPanel botId="bot-loading-state" />);
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("当前目录为空。")).not.toBeInTheDocument();
+    expect(screen.getByText("加载中...").closest('[role="status"]')).toHaveAttribute("aria-busy", "true");
+    await act(async () => { resolve([]); });
+    expect(await screen.findByText("当前目录为空。")).toBeInTheDocument();
   });
 });

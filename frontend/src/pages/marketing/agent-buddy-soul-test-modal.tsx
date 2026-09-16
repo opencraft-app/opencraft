@@ -1,7 +1,6 @@
-import { ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { PersonaDialogView } from "./agent-buddy-views";
 import { useT } from "@/i18n/t";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { cn } from "@/lib/utils";
@@ -97,10 +96,7 @@ export function SoulTestModal({
 
   useEffect(() => {
     if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previousOverflow;
       if (autoAdvanceTimer.current) window.clearTimeout(autoAdvanceTimer.current);
     };
   }, [open]);
@@ -191,43 +187,8 @@ export function SoulTestModal({
 
   if (!open) return null;
 
-  return createPortal(
-    <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 px-4 py-6 backdrop-blur-[2px]"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-      >
-        <motion.div
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("Soul人格测试")}
-          className="relative flex max-h-[88vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_28px_80px_rgba(0,0,0,0.22)]"
-          initial={{ y: 18, scale: 0.98, opacity: 0 }}
-          animate={{ y: 0, scale: 1, opacity: 1 }}
-          exit={{ y: 18, scale: 0.98, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 260, damping: 24 }}
-        >
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-32"
-            style={{
-              background:
-                "linear-gradient(180deg, rgba(255,166,0,0.30) 0%, rgba(255,214,116,0.18) 42%, rgba(255,255,255,0) 100%)",
-            }}
-          />
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t("关闭 Soul人格测试")}
-            className="absolute right-5 top-5 z-10 rounded-full p-2 text-black/45 transition-colors hover:bg-black/5 hover:text-black"
-          >
-            <X className="h-5 w-5" />
-          </button>
-
+  return <PersonaDialogView open={open} title={t("Soul人格测试")} closeLabel={t("关闭 Soul人格测试")} onClose={onClose}
+    hideHeader className="p-0 md:w-[min(760px,calc(100vw-32px))]">
           {phase === "testing" && currentQuestion ? (
             <QuestionStep
               question={currentQuestion}
@@ -253,11 +214,7 @@ export function SoulTestModal({
               soulDataLocale={activeSoulLocale}
             />
           )}
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>,
-    document.body,
-  );
+  </PersonaDialogView>;
 }
 
 function QuestionStep({
@@ -290,7 +247,7 @@ function QuestionStep({
           <Sparkles className="h-3.5 w-3.5 text-[#FFA600]" />
           {t("Soul人格测试")}
         </div>
-        <h3 className="text-2xl font-semibold tracking-normal text-black/90">
+        <h3 className="text-2xl font-semibold text-black/90">
           {isPersonality
             ? t("第一部分：了解你的灵魂画像")
             : t("第二部分：选择你对智能体伙伴的偏好")}
@@ -326,7 +283,7 @@ function QuestionStep({
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 rounded-2xl border border-black/8 bg-white p-6 shadow-[0_16px_40px_rgba(0,0,0,0.04)] sm:p-8">
+        <div className="flex flex-col gap-4 rounded-md border border-black/8 bg-white p-6 sm:p-8">
           <h4 className="text-lg font-medium leading-relaxed text-black/90">
             {formatSoulTestText(question.text, t, useEnglishSoulData)}
           </h4>
@@ -338,11 +295,12 @@ function QuestionStep({
                   key={option.key}
                   type="button"
                   onClick={() => onSelect(option.key)}
+                  aria-pressed={isSelected}
                   style={{ fontSize: "14px" }}
                   className={cn(
-                    "w-full rounded-[10px] border px-5 py-4 text-left text-lg leading-relaxed transition-all duration-200",
+                    "w-full rounded-md border px-5 py-4 text-left text-lg leading-relaxed transition-all duration-200",
                     isSelected
-                      ? "border-black bg-black text-white shadow-[0_10px_26px_rgba(0,0,0,0.16)]"
+                      ? "border-black bg-black text-white"
                       : "border-black/8 bg-white text-black/70 hover:border-black/18 hover:bg-black/[0.03]",
                   )}
                 >
@@ -391,7 +349,7 @@ function ResultStep({
   return (
     <div className="relative max-h-[88vh] overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
       <div className="mb-6 text-center">
-        <h3 className="text-2xl font-semibold tracking-normal text-black/90">
+        <h3 className="text-2xl font-semibold text-black/90">
           {t("为你推荐的智能体伙伴 Soul 是")}
         </h3>
       </div>
@@ -403,7 +361,7 @@ function ResultStep({
           </div>
           <div className="mx-auto w-full max-w-[680px] space-y-4">
             {spec && (
-              <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
+              <section className="rounded-md border border-black/8 bg-white p-5">
                 <h4 className="text-sm font-semibold text-black/85">{t("Soul 设定解读")}</h4>
                 <div aria-hidden="true" style={{ height: "12px" }} />
                 {soulInfoOpen ? (
@@ -423,13 +381,13 @@ function ResultStep({
               </section>
             )}
 
-            <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)] sm:p-6">
+            <section className="rounded-md border border-black/8 bg-white p-5 sm:p-6">
               <h4 className="text-xl font-semibold text-black/90">{t("推荐原因")}</h4>
               {profileText && (
                 <div className="mt-7">
                   <h5 className="text-base font-semibold text-black/85">{t("你的灵魂画像")}</h5>
                   <div aria-hidden="true" style={{ height: "12px" }} />
-                  <p className="rounded-2xl bg-black/[0.03] px-5 py-4 text-sm leading-relaxed text-black/62">
+                  <p className="rounded-md bg-black/[0.03] px-5 py-4 text-sm leading-relaxed text-black/62">
                     {formatSoulTestText(profileText, t, useEnglishSoulData)}
                   </p>
                 </div>
@@ -437,13 +395,13 @@ function ResultStep({
               <div className="mt-4">
                 <h5 className="text-base font-semibold text-black/85">{t("你对 Soul 的偏好")}</h5>
                 <div aria-hidden="true" style={{ height: "12px" }} />
-                <div className="flex flex-wrap gap-2 rounded-2xl bg-black/[0.03] px-5 py-4">
+                <div className="flex flex-wrap gap-2 rounded-md bg-black/[0.03] px-5 py-4">
                   {PREF_TAGS.map((tag) => {
                     const category = prefCategories[tag];
                     return (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-sm font-medium text-black/68 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                        className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-sm font-medium text-black/68"
                       >
                         {soulDataLocale === "domestic-zh" || soulDataLocale === "global-zh"
                           ? t(tag)
@@ -488,7 +446,7 @@ function ResultStep({
           }}
           disabled={!soul}
           style={{ fontSize: "16px" }}
-          className="inline-flex h-12 min-w-40 items-center justify-center rounded-full bg-black px-7 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+          className="inline-flex h-12 min-w-40 items-center justify-center rounded-md bg-black px-7 font-semibold leading-none text-white transition-all  hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
           {t("添加该人设")}
         </button>
@@ -496,7 +454,7 @@ function ResultStep({
           type="button"
           onClick={onRetry}
           style={{ fontSize: "16px" }}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-black/8 bg-white px-7 font-semibold leading-none text-black/70 transition-all hover:-translate-y-0.5 hover:bg-black/[0.03]"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-black/8 bg-white px-7 font-semibold leading-none text-black/70 transition-all  hover:bg-black/[0.03]"
         >
           <RotateCcw className="h-[18px] w-[18px]" />
           {t("重新测试")}

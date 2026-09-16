@@ -19,6 +19,7 @@ const toastMocks = vi.hoisted(() => ({
 vi.mock("@/lib/toast", () => ({ toast: toastMocks }));
 
 beforeAll(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => false },
     releasePointerCapture: { configurable: true, value: () => undefined },
@@ -126,7 +127,10 @@ describe("AgentCommonSettingsPanel", () => {
 
     const refreshButton = await screen.findByRole("button", { name: "刷新" });
     expect(loadSettings).toHaveBeenNthCalledWith(1, bots, "bot-a", "profile-2");
-    expect(refreshButton).toHaveAttribute("title", "刷新");
+    expect(refreshButton).not.toHaveAttribute("title");
+    await waitFor(() => expect(refreshButton).toBeEnabled());
+    await user.hover(refreshButton);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("刷新");
     expect(refreshButton).toHaveClass("h-8", "w-8", "shrink-0", "text-black/35", "hover:text-black/80");
     expect(within(refreshButton).queryByText("刷新")).toBeNull();
     await user.click(refreshButton);
@@ -163,6 +167,8 @@ describe("AgentCommonSettingsPanel", () => {
     await user.click(memorySwitch);
 
     expect(saveSetting).not.toHaveBeenCalled();
+    expect(memorySwitch).toHaveAttribute("data-state", "checked");
+    expect(screen.getByRole("alertdialog", { name: "确认关闭「长期记忆」？" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "确认关闭「长期记忆」？" })).toBeTruthy();
     expect(screen.getByText("关闭后，Agent 将停止读取和更新 MEMORY.md，已有内容不会删除。")).toBeTruthy();
     const confirmButton = screen.getByRole("button", { name: "确认关闭" });
@@ -170,7 +176,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(confirmButton.className).not.toContain("bg-[#0052D9]");
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(saveSetting).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
     await user.click(memorySwitch);
     await user.click(screen.getByRole("button", { name: "确认关闭" }));
@@ -321,7 +327,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     await user.click(await screen.findByRole("switch", { name: "会话操作确认" }));
     expect(screen.getByText("关闭后，新建会话，或清空、撤销、删除会话内容时将直接执行。")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-red-600");
+    expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-[var(--danger)]");
   });
 
   it("uses neutral reread feedback when session operation confirmation save is partial", async () => {
@@ -372,7 +378,7 @@ describe("AgentCommonSettingsPanel", () => {
       key: "approvalMode",
       value: "manual",
     })));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it("uses neutral reread feedback when an approval mode save is partial", async () => {
@@ -422,7 +428,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(saveSetting).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "确认关闭命令审批？" })).toBeTruthy();
     expect(screen.getByText("关闭后，Agent 执行高风险操作时将不再请求你的批准。请仅在可信环境中使用。")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-red-600");
+    expect(screen.getByRole("button", { name: "确认关闭" })).toHaveClass("bg-[var(--danger)]");
 
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(saveSetting).not.toHaveBeenCalled();
@@ -451,7 +457,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(await screen.findByRole("combobox", { name: "审批模式" })).toHaveTextContent("关闭审批");
     expect(screen.queryByText("当前高风险操作无需审批")).toBeNull();
     expect(screen.queryByText("当前不会请求危险命令审批")).toBeNull();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it.each([
@@ -683,7 +689,8 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     const memorySwitch = await screen.findByRole("switch", { name: "长期记忆" });
-    expect(memorySwitch).toHaveClass("bg-[var(--lw-accent)]");
+    expect(memorySwitch).toBeChecked();
+    expect(memorySwitch).toHaveClass("data-[state=checked]:bg-[var(--text-primary)]");
 
     const memoryLink = screen.getAllByRole("link", { name: "查看内容" })[0]!;
     expect(memoryLink).toHaveClass("text-[var(--lw-accent)]", "focus-visible:ring-[var(--ring)]");
@@ -729,12 +736,13 @@ describe("AgentCommonSettingsPanel", () => {
     expect(within(contextGroup!).getByText("压缩后保留多少近期对话原文；数值越大，保留越多，可填写 0.1 到 0.8。")).toBeTruthy();
     expect(screen.queryByText("压缩时为近期原文保留的 Token 比例，可填写 0.1 到 0.8。")).toBeNull();
 
-    expect(securityGroup!).not.toHaveClass("border-t");
-    expect(memoryGroup!).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
-    expect(contextGroup!).toHaveClass("border-t", "border-black/[0.08]", "pt-10");
+    expect(securityGroup!).toHaveAccessibleName("安全");
+    expect(memoryGroup!).toHaveAccessibleName("记忆");
+    expect(contextGroup!).toHaveAccessibleName("上下文管理");
 
     for (const group of groups) {
-      expect(group).not.toHaveClass("border", "divide-y", "rounded-md", "shadow");
+      expect(group).toHaveClass("border", "rounded-md");
+      expect(group).not.toHaveClass("divide-y");
     }
   });
 
@@ -768,14 +776,10 @@ describe("AgentCommonSettingsPanel", () => {
       expect(resetButton).toHaveClass(
         "rounded-md",
         "border",
-        "border-black/10",
-        "px-2",
-        "py-1",
-        "text-[12px]",
-        "font-medium",
-        "text-black/70",
-        "transition",
-        "hover:bg-black/[0.04]",
+        "border-[var(--border-strong)]",
+        "h-9",
+        "shadow-none",
+        "transition-none",
       );
       expect(resetButton).not.toHaveClass(
         "h-7",
@@ -785,9 +789,9 @@ describe("AgentCommonSettingsPanel", () => {
         "hover:bg-black/[0.03]",
       );
     }
-    expect(within(securityGroup!).getByRole("heading", { name: "安全" }).parentElement).toContainElement(securityReset);
-    expect(within(memoryGroup!).getByRole("heading", { name: "记忆" }).parentElement).toContainElement(memoryReset);
-    expect(within(contextGroup!).getByRole("heading", { name: "上下文管理" }).parentElement).toContainElement(contextReset);
+    expect(within(securityGroup!).getByRole("heading", { name: "安全" }).closest("header")).toContainElement(securityReset);
+    expect(within(memoryGroup!).getByRole("heading", { name: "记忆" }).closest("header")).toContainElement(memoryReset);
+    expect(within(contextGroup!).getByRole("heading", { name: "上下文管理" }).closest("header")).toContainElement(contextReset);
   });
 
   it("confirms and restores only the selected group with a red destructive action", async () => {
@@ -827,7 +831,7 @@ describe("AgentCommonSettingsPanel", () => {
     expect(screen.getByText("将重置「记忆」分组下的自定义配置，重新恢复为 Hermes Agent 默认值。")).toBeTruthy();
     expect(screen.queryByText("将移除该分组的自定义配置，重新使用 Hermes 默认值。")).toBeNull();
     const confirmButton = screen.getByRole("button", { name: "确认恢复" });
-    expect(confirmButton).toHaveClass("bg-red-600", "hover:bg-red-700");
+    expect(confirmButton).toHaveClass("bg-[var(--danger)]", "hover:brightness-95");
     await user.click(screen.getByRole("button", { name: "取消" }));
     expect(resetSettings).not.toHaveBeenCalled();
 
@@ -910,6 +914,7 @@ describe("AgentCommonSettingsPanel", () => {
     await user.click(within(memoryGroup!).getByRole("button", { name: "恢复默认" }));
     await user.click(screen.getByRole("button", { name: "确认恢复" }));
     await waitFor(() => expect(resetSettings).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     for (const button of screen.getAllByRole("button", { name: "恢复默认" })) expect(button).toBeDisabled();
     for (const control of screen.getAllByRole("switch")) expect(control).toBeDisabled();
     expect(screen.getByRole("combobox", { name: "审批模式" })).toBeDisabled();
@@ -948,8 +953,7 @@ describe("AgentCommonSettingsPanel", () => {
       "right-2",
       "top-0",
       "opacity-100",
-      "sm:opacity-0",
-      "sm:group-hover/value:opacity-100",
+      "transition-none",
     );
     expect(editButton).not.toHaveClass("-translate-y-1/2");
 
@@ -991,17 +995,21 @@ describe("AgentCommonSettingsPanel", () => {
 
     await user.click(await screen.findByRole("button", { name: "编辑压缩保留比例" }));
     const input = screen.getByRole("spinbutton", { name: "压缩保留比例" });
+    expect(input).toHaveFocus();
     await user.clear(input);
     await user.type(input, "0.3");
     await user.click(screen.getByRole("button", { name: "取消编辑压缩保留比例" }));
     expect(saveSetting).not.toHaveBeenCalled();
     expect(screen.queryByRole("spinbutton", { name: "压缩保留比例" })).toBeNull();
+    expect(screen.getByRole("button", { name: "编辑压缩保留比例" })).toHaveFocus();
 
     await user.click(screen.getByRole("button", { name: "编辑压缩保留比例" }));
     const escapeInput = screen.getByRole("spinbutton", { name: "压缩保留比例" });
+    expect(escapeInput).toHaveFocus();
     await user.clear(escapeInput);
     await user.type(escapeInput, "0.3{Escape}");
     expect(screen.queryByRole("spinbutton", { name: "压缩保留比例" })).toBeNull();
+    expect(screen.getByRole("button", { name: "编辑压缩保留比例" })).toHaveFocus();
     expect(saveSetting).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "编辑压缩保留比例" }));
@@ -1157,6 +1165,8 @@ describe("AgentCommonSettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "确认关闭" }));
 
     expect(memorySwitch).toBeDisabled();
+    expect(memorySwitch).toBeChecked();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(profileSwitch).toBeDisabled();
     expect(screen.getByRole("combobox", { name: "审批模式" })).toBeDisabled();
     fireEvent.click(profileSwitch);
