@@ -30,6 +30,11 @@ class SubmoduleMappingTests(unittest.TestCase):
             modules['submodule "shadow/tencentcloud-sdk-go"']["url"],
             "git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git",
         )
+        self.assertEqual(
+            modules['submodule "shadow/tencentcloud-sdk-go"'].get("update"),
+            "none",
+            "ordinary CI checkouts must not fetch the unused private Shadow SDK",
+        )
 
 
 if __name__ == "__main__":

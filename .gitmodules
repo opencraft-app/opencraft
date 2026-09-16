@@ -13,3 +13,4 @@
 [submodule "shadow/tencentcloud-sdk-go"]
 	path = shadow/tencentcloud-sdk-go
 	url = git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git
+	update = none

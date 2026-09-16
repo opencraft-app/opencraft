@@ -17,10 +17,10 @@ derived: false
 ---
 
 ## goal
-让每个跟踪中的 gitlink 在 `.gitmodules` 有路径及仓库地址映射，恢复 Stream checkout。
+让每个跟踪中的 gitlink 在 `.gitmodules` 有路径及仓库地址映射，同时让普通 checkout 跳过与 Collaboration 无关的 Shadow 私有 SDK。
 
 ## non_goals
-- 不改变任何 gitlink commit、子模块内容或私有仓库权限。
+- 不删除 Shadow 服务，不改变任何 gitlink commit、子模块内容或私有仓库权限。
 - 不启动、审批或重跑 Collaboration bootstrap，不改 DB/SSM/GitOps。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -28,6 +28,7 @@ derived: false
 
 ## interface_refs / data_structure_refs
 - 根 `.gitmodules` 的 `submodule.*.path/url` 与 `git ls-files --stage` 的 `160000` 路径一一对应。
+- `shadow/tencentcloud-sdk-go` 的默认 update procedure 为 `none`；需要构建 Shadow 时仍由其专用本地构建脚本显式准备 SDK。
 - `deploy/localstack/localstack.sh` 的 `SHADOW_TENCENT_SDK_REPO` 默认值是 Shadow SDK 的现有仓库来源。
 
 ## history_context
@@ -37,6 +38,7 @@ derived: false
 
 ## acceptance
 - 回归测试先因缺失映射失败，补映射后通过；所有 gitlink 均有且只有一个配置，Shadow URL 与既有脚本一致。
+- Shadow 子模块 `update=none`，本地 `git submodule update --init -- shadow/tencentcloud-sdk-go` 不访问私有 SDK；Stream checkout 行为需合入后实测，不能由本机测试代替。
 - 本地 `git submodule status`、CI runtime 测试与 diff 检查通过；不把本地远端访问等同于 CI runner 的认证证明。
 
 ## affected_paths
@@ -63,16 +65,20 @@ derived: false
 - 本机只读 `ls-remote` 可访问 `deploy/localstack/localstack.sh` 所指向的内部 SDK 仓库；CI runner 访问仍未验证。
 - 映射测试先 RED（缺 `shadow/tencentcloud-sdk-go`），补唯一映射后 GREEN；`git submodule status` 可解析 5 个 gitlink，实际内容仍未检出。
 - 完整 CI runtime 553 项测试、物化运行时 smoke、YAML 解析通过；docs-impact、文档、改动文件密钥与 diff 检查通过。
+- `update=none` 的回归先 RED 后 GREEN；本地 `git submodule update --init -- shadow/tencentcloud-sdk-go` 明确报告 `Skipping submodule`，SDK 仍未检出。
+- 追加规避后完整 CI runtime 553 项测试、物化 runtime smoke、文档门禁、docs-impact、改动文件密钥扫描和 diff 检查再次通过。
 
 ## risks
 - 根映射影响所有执行子模块 checkout 的流水线；新增私有仓库映射可能暴露独立的 CI 凭据缺口。
+- Git 命令行可以用显式 `--checkout` 覆盖 update=none；若 Stream checkout 强制覆盖该设置，仍需流水线级规避。
 - 只补已有仓库的缺失映射，不更换 URL、不更新 gitlink commit。
 
 ## validation
 - 聚焦映射测试、`bash .ci/runtime/check_ci_runtime.sh`、`git submodule status`、文档和 diff 检查。
 
 ## decisions
-- 先恢复 Git 的路径配置完整性，不凭未经验证的 YAML 参数猜测 Stream 的子模块禁用开关。
+- 保留未使用的 Shadow 服务和 gitlink；普通 Git 子模块初始化默认跳过私有 SDK，Shadow 专用构建按需显式准备。
+- 不凭未经验证的 Stream YAML 参数猜测子模块禁用开关。
 
 ## scan_scope
 - 根 `.gitmodules`、gitlink 索引、`deploy/localstack/localstack.sh`、CI checkout 相邻测试。
@@ -81,4 +87,4 @@ derived: false
 - 精确路径与模式扫描，无持久化敏感输出。
 
 ## handoff
-- 本地验证通过，待提交、推送并创建 MR；不合并或触发流水线。CI runner 对私有 SDK 的读取权限仍待合入后的 checkout 实证。
+- MR !4089 已创建；本轮在同一分支追加 `update=none` 规避，待 MR 检查和评审。未合并或触发 Collaboration bootstrap。Stream checkout 是否尊重该设置仍待合入后实证。
