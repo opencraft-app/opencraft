@@ -41,7 +41,8 @@
   `order-and-pay` 仅供内部联调和自动化测试，不能作为真实用户入口。
 - 支付中转页没有主站会话时，通过 service-gateway 对该精确路由的匿名放行，把 `auth_code` 交给
   Credit 原子消费并恢复用户身份；票据使用 Redis Lua `GET + DEL` 保证多 Pod 下只能消费一次，
-  且必须绑定请求中的 `deal_name`。存在可信 `X-User-Id` 时优先使用登录用户且不消费票据。
+  且必须绑定请求中的 `deal_name`。请求携带 `auth_code` 时优先使用票据用户，即使网关同时注入
+  `X-User-Id` 也不能覆盖；只有未携带票据时才使用登录用户。无效、过期或重放票据不得回退登录态。
 - Credit 调用 Trade 获取支付链接时同时绑定用户和 `resource_type=credit_package`。订单不存在、订单
   不属于当前用户或不是积分包订单时统一返回不存在，不能暴露其他用户或其他资源类型的支付链接缓存。
 - `need_charge=1` 时前端跳转 `pay_url`；`need_charge=0` 时直接进入支付完成后的刷新流程。支付完成
