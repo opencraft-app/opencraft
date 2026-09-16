@@ -497,8 +497,14 @@ const OpenIdBlock = ({ value }: { value: string }) => (
 /**
  * 识别 fetchOrderUrl 抛出的「auth_code 已过期 / 已被消费 / 不存在」错误。
  *
- * 后端 errcode.ErrAuthCodeInvalid 的 HTTP 形态：
- *   status=401, code="AUTH_CODE_INVALID", message="auth_code invalid or expired"
+ * 后端 errcode.ErrAuthCodeInvalid 的 HTTP 形态实测有两种：
+ *   status=400, code="AUTH_CODE_INVALID", message="auth_code 已过期"（线上过期场景，见 e2e 复现）
+ *   status=401, code="AUTH_CODE_INVALID"（早期联调形态）
+ *
+ * 判定以 code 为准、status 只需是客户端错误（4xx）：用户长时间未支付导致 auth_code
+ * 过期时，必须走 `expired` 温和态（「二维码已失效，请返回 PC 端重新扫码」），
+ * 而不是通用 `error` 态的「支付遇到问题」弹框——对已过期 ticket 原地重试必然再失败。
+ * 这与套餐续费（renew-pass-modal）的超时处理口径一致：超时不是错误，不弹错误框。
  *
  * RepositoryError 类没有从 http-repositories 导出，这里用 duck-typing 判断
  * （name + status + code）避免侵入 repositories 层；命中后中转页直接进入 `expired`
@@ -508,7 +514,8 @@ function isAuthCodeInvalidError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { name?: unknown; status?: unknown; code?: unknown };
   if (e.name !== "RepositoryError") return false;
-  if (e.status !== 401) return false;
+  const status = typeof e.status === "number" ? e.status : 0;
+  if (status < 400 || status >= 500) return false;
   return e.code === "AUTH_CODE_INVALID";
 }
 

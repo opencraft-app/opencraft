@@ -296,17 +296,45 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     });
   });
 
-  it("order-url 接口失败 → error 态展示后端报错", async () => {
+  it("order-url 返回 400 + AUTH_CODE_INVALID（长时间未支付导致 auth_code 过期）→ expired 温和态而非错误框", async () => {
     setUserAgent(WECHAT_UA);
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: "auth_code 已过期", code: "AUTH_CODE_INVALID" }, 400));
+    renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail" })}`);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "二维码已失效" })).toBeInTheDocument();
+    });
+    expect(screen.getByText("请返回 PC 端重新扫码。")).toBeInTheDocument();
+    /* 过期是温和引导态：不弹「支付遇到问题」错误框，也没有注定失败的重试按钮 */
+    expect(screen.queryByRole("heading", { name: "支付遇到问题" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+    expect(wxSignSpy).not.toHaveBeenCalled();
+  });
+
+  it("order-url 返回 401 + AUTH_CODE_INVALID（早期联调形态）→ 同样进 expired 态", async () => {
+    setUserAgent(WECHAT_UA);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: "auth_code invalid or expired", code: "AUTH_CODE_INVALID" }, 401),
+    );
+    renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail-401" })}`);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "二维码已失效" })).toBeInTheDocument();
+    });
+    expect(wxSignSpy).not.toHaveBeenCalled();
+  });
+
+  it("order-url 接口其他业务失败（非 AUTH_CODE_INVALID）→ error 态展示后端报错", async () => {
+    setUserAgent(WECHAT_UA);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "订单状态异常", code: "ORDER_STATE_ERROR" }, 400));
     /* 屏蔽 console.error 噪音 */
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail" })}`);
+    renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail-other" })}`);
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
     });
-    expect(screen.getByText(/auth_code 已过期/)).toBeInTheDocument();
+    expect(screen.getByText(/订单状态异常/)).toBeInTheDocument();
     expect(wxSignSpy).not.toHaveBeenCalled();
   });
 
