@@ -64,6 +64,14 @@ routes:
     methods: [GET, OPTIONS]
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: public
+  - name: frontend-runtime-config
+    prefix: /v1/frontend/runtime-config
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/frontend/runtime-config" }
   - name: ctl-agentchat-introspect
     prefix: /v1/integrations/agentchat
     methods: [POST, OPTIONS]
