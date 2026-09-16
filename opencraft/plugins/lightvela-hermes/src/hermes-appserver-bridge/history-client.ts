@@ -17,6 +17,19 @@ export interface HermesHistoryClient {
 
 type JsonHttpClient = Pick<TatHttpVirtualClient, "fetchJson" | "close">;
 
+function record(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function dashboardHistoryError(payload: Record<string, unknown>): string {
+  for (const candidate of [payload.detail, payload.error, payload.message]) {
+    if (typeof candidate === "string" && candidate.trim() !== "") return candidate.trim();
+  }
+  return "Hermes Dashboard returned an invalid message history response";
+}
+
 /** Durable transcript port backed by Hermes Dashboard's authenticated REST API. */
 export class HermesDashboardHistoryClient implements HermesHistoryClient {
   constructor(
@@ -33,10 +46,16 @@ export class HermesDashboardHistoryClient implements HermesHistoryClient {
       include_compacted: String(request.includeCompacted),
     });
     if (request.profile) query.set("profile", request.profile);
-    return this.client.fetchJson<HermesMessagesPage>(
+    const payload = await this.client.fetchJson<unknown>(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages?${query.toString()}`,
       { headers: { "x-hermes-session-token": this.sessionToken }, signal },
     );
+    const value = record(payload);
+    // Some Dashboard builds encode a failed conversation lookup in an HTTP
+    // 200 JSON envelope. Validate the semantic contract here so callers see a
+    // stable history error instead of a later TypeError from page.messages.
+    if (!Array.isArray(value.messages)) throw new Error(dashboardHistoryError(value));
+    return payload as HermesMessagesPage;
   }
 
   dispose(): void {

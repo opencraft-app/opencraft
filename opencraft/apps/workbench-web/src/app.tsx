@@ -21,6 +21,10 @@ import type {
   TimelineSurfaceCapabilities,
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
+import { nativeProjectPicker } from "./runtime/project-folder-picker";
+import { ThreadTitleWriter } from "@opencraft/workbench-runtime";
+import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
+import { ArchivedThreadsDialog, type ThreadActionTarget } from "./components/thread-management";
 import {
   type PanelAction,
   type PanelTabDescriptor,
@@ -480,7 +484,7 @@ export function App() {
     }) => {
       lastDraftWorkspaceRef.current = workspace;
       window.localStorage.setItem(
-        selectedProjectStorageKey(snapshot.hostId),
+        selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId),
         workspace.projectId,
       );
       if (draft === null) throw new Error("No active Draft can be retargeted");
@@ -489,7 +493,7 @@ export function App() {
         workspace,
       });
     },
-    [draft, hostCatalog],
+    [draft, hostCatalog, snapshot.hostId],
   );
 
   const conversationResourceOwnerId = conversationViewIdentity.scopeId;
@@ -894,6 +898,31 @@ export function App() {
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
+  const [archivedHostId, setArchivedHostId] = useState<string | null>(null);
+  const [lastArchived, setLastArchived] = useState<ThreadActionTarget | null>(null);
+  const [threadActionError, setThreadActionError] = useState<string | null>(null);
+  const threadTitleWriter = useMemo(() => new ThreadTitleWriter({
+    read: key => readCachedThreadName(queryClient, key),
+    write: (key, value) => writeCachedThreadName(queryClient, key, value),
+    persist: async (key, value) => {
+      await hostCatalog.threadManagement.rename(key.hostId, key.threadId, value);
+      await queryClient.invalidateQueries({ queryKey: ["appserver", key.hostId, "threads"] });
+    },
+  }), [hostCatalog.threadManagement, queryClient]);
+  useSyncExternalStore(threadTitleWriter.subscribe, threadTitleWriter.getSnapshot, threadTitleWriter.getSnapshot);
+  const restoreArchivedThread = useCallback(async (hostId: string, threadId: string) => {
+    await hostCatalog.threadManagement.unarchive(hostId, threadId);
+    await queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
+  }, [hostCatalog.threadManagement, queryClient]);
+  const loadArchivedThreads = useCallback(async (hostId: string) => {
+    return hostCatalog.threadManagement.listArchived(hostId);
+  }, [hostCatalog.threadManagement]);
+  const workspaceSelectionEpoch = useRef(0);
+  useLayoutEffect(() => {
+    workspaceSelectionEpoch.current++;
+    return () => { workspaceSelectionEpoch.current++; };
+  }, [draft?.id, draft?.phase, draft?.target.execution.hostId,
+    draft?.target.execution.workspace.cwd, runtime, snapshot.hostId, conversationRouteOpen, settingsOpen]);
   const readWorkspaceDirectory = useCallback(
     async (path: string) =>
       (await runtime.resources.fileSystem.readDirectory(path)).entries,
@@ -901,11 +930,13 @@ export function App() {
   );
   const chooseWorkspaceDirectory = useCallback(
     async (path: string) => {
+      if (draft === null || draftSubmissionOwnsNavigation(draft.phase) || !conversationRouteOpen || settingsOpen) return;
+      const epoch = workspaceSelectionEpoch.current;
       let project = projectCatalog.projects.find((candidate) =>
         candidate.roots.some((root) => root.path === path),
       );
       if (project === undefined) {
-        const name = path.split("/").filter(Boolean).at(-1) ?? "Project";
+        const name = path.split(/[\\/]+/u).filter(Boolean).at(-1) ?? "Project";
         const created = await runtime.resources.projects.create({
           name,
           roots: [{ path }],
@@ -917,6 +948,7 @@ export function App() {
           queryKey: ["appserver", snapshot.hostId, "projects"],
         });
       }
+      if (epoch !== workspaceSelectionEpoch.current) return;
       const projectRoots = project.roots.map((root) => root.path);
       const cwd = resolveProjectCwd(project, path);
       selectDraftWorkspace({
@@ -932,12 +964,29 @@ export function App() {
       runtime,
       selectDraftWorkspace,
       snapshot.hostId,
+      draft,
+      conversationRouteOpen,
+      settingsOpen,
     ],
   );
   const workspaceBrowseRoot =
     activeHost.workspaceBrowseRoots[0] ??
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
+  const localProjectPicker = nativeProjectPicker(snapshot.hostId);
+  const browseWorkspace = useCallback(async () => {
+    if (localProjectPicker === null) {
+      if (workspaceBrowseRoot !== null) setWorkspacePickerOpen(true);
+      return;
+    }
+    const epoch = workspaceSelectionEpoch.current;
+    try {
+      const path = await localProjectPicker.pickDirectory();
+      if (path !== null && epoch === workspaceSelectionEpoch.current) await chooseWorkspaceDirectory(path);
+    } catch (error) {
+      if (epoch === workspaceSelectionEpoch.current) throw error;
+    }
+  }, [localProjectPicker, workspaceBrowseRoot, chooseWorkspaceDirectory]);
   const closeSettings = useCallback(() => {
     workbenchNavigation.closeSettings();
   }, [workbenchNavigation]);
@@ -1153,6 +1202,28 @@ export function App() {
                 workbenchNavigation.openSettings(settingsPageId ?? "appearance");
               }}
               showFooter={false}
+              threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
+              pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
+              onManageArchived={runtime.resources.threads.capabilities?.().archive ? () => setArchivedHostId(snapshot.hostId) : undefined}
+              archiveUndo={lastArchived ? { title: lastArchived.title, restore: () => {
+                const target = lastArchived;
+                void restoreArchivedThread(target.hostId, target.threadId).then(() => setLastArchived(previous => previous === target ? null : previous))
+                  .catch(error => setThreadActionError(error.message));
+              } } : null}
+              threadActions={{
+                onRename: (target, title) => threadTitleWriter.rename(target, title),
+                onFork: async target => {
+                  const origin = workbenchNavigation.getSnapshot().routeScopeId;
+                  const childId = await hostCatalog.threadManagement.fork(target.hostId, target.threadId);
+                  await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
+                  if (workbenchNavigation.getSnapshot().routeScopeId === origin) await hostCatalog.navigate(createWorkbenchThreadLocation(target.hostId, childId));
+                },
+                onArchive: async target => {
+                  await hostCatalog.threadManagement.archive(target.hostId, target.threadId);
+                  setLastArchived(target);
+                  await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
+                },
+              }}
               catalogs={extensionProjection.catalogs}
               bots={extensionProjection.bots}
               sidebarLayout={hostCatalog.sidebarLayout}
@@ -1240,6 +1311,7 @@ export function App() {
             catalog={composerSuggestionCatalog}
             workspaceOptions={draftWorkspaceOptions}
             workspaceOptionsLoading={projectCatalog.isFetching}
+            nativeWorkspacePicking={localProjectPicker !== null}
             activeHostId={snapshot.hostId}
             hostOptions={composerHostOptions}
             connectionPhase={snapshot.phase}
@@ -1254,9 +1326,7 @@ export function App() {
                 projectId: workspace.projectId,
               });
             }}
-            onBrowseWorkspace={() => {
-              if (workspaceBrowseRoot !== null) setWorkspacePickerOpen(true);
-            }}
+            onBrowseWorkspace={browseWorkspace}
             onResolveAttachment={resolveActiveHostAttachment}
             composerEndActions={composerEndActions}
             onSubmit={sendMessage}
@@ -1423,7 +1493,9 @@ export function App() {
         </div>
         </AppShell>
         <ModalHost requests={modalRequests} />
-        <WorkspaceDirectoryPicker
+      {archivedHostId !== null ? <ArchivedThreadsDialog key={archivedHostId} hostId={archivedHostId} load={loadArchivedThreads} restore={restoreArchivedThread} onDismiss={() => setArchivedHostId(null)} /> : null}
+      {threadActionError ? <div role="alert" className="settings-control-notice">{threadActionError}<button type="button" onClick={() => setThreadActionError(null)}>关闭提示</button></div> : null}
+      <WorkspaceDirectoryPicker
           open={
             !settingsOpen &&
             workspacePickerOpen &&

@@ -1,11 +1,47 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import WebSocket from "ws";
 import { WebSocketServer } from "ws";
 
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.js";
+import { ThreadCatalog } from "../apps/local-agent-host/src/thread-catalog.js";
+
+test("Host bind failure closes its thread catalog", async t => {
+  const occupied = createServer();
+  await new Promise<void>(resolve => occupied.listen(0, "127.0.0.1", resolve));
+  const address = occupied.address();
+  assert.ok(address && typeof address !== "string");
+  const close = t.mock.method(ThreadCatalog.prototype, "close");
+  try {
+    await assert.rejects(startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", port: address.port }), { code: "EADDRINUSE" });
+    assert.equal(close.mock.callCount(), 1);
+  } finally {
+    close.mock.restore();
+    await new Promise<void>(resolve => occupied.close(() => resolve()));
+  }
+});
+
+test("local product project RPC persists across Host restart without a reachable engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-project-rpc-test-"));
+  let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined;
+  let socket: WebSocket | undefined;
+  try {
+    const root = join(directory, "workspace"); await mkdir(root);
+    const options = { dshUrl: "http://127.0.0.1:1", projectStorageDirectory: directory };
+    host = await startLocalAgentHost(options); socket = await connect(host.websocketUrl);
+    assert.deepEqual(await request(socket, 1, "project/list", {}), { data: [], nextCursor: null });
+    const created = await request(socket, 2, "project/create", { name: "Workspace", roots: [{ path: root }], idempotencyKey: "test-project" });
+    socket.close(); socket = undefined; await host.close();
+    host = await startLocalAgentHost(options); socket = await connect(host.websocketUrl);
+    assert.deepEqual((await request(socket, 3, "project/list", {})).data, [created.project]);
+    assert.equal((await request(socket, 4, "project/create", { name: "Workspace", roots: [{ path: root }], idempotencyKey: "test-project" })).project.id, created.project.id);
+  } finally { socket?.close(); await host?.close(); await rm(directory, { recursive: true, force: true }); }
+});
 
 async function fakeDsh() {
   const responses: Array<Record<string, any>> = [];
@@ -104,7 +140,7 @@ async function fakeDsh() {
       current: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "high" },
       routable: true,
       groups: [
-        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] },
+        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash", reasoning: { efforts: [{ id: "high", name: "High" }], defaultEffort: "high" } }] },
         { id: "custom:test", name: "Custom", models: [{ id: "hy4-preview", name: "HY4 Preview" }] },
       ],
       failures: [],
@@ -157,7 +193,7 @@ async function fakeDsh() {
     }
     if (envelope.method === "llm.models") value = {
       groups: [
-        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] },
+        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash", reasoning: { efforts: [{ id: "high", name: "High" }], defaultEffort: "high" } }] },
         { id: "custom:test", name: "Custom", models: [{ id: "hy4-preview", name: "HY4 Preview" }] },
       ],
       failures: [],

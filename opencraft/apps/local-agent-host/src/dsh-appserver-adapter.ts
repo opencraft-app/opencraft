@@ -4,10 +4,10 @@ import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 
 import { DshClient, type DshEvent, type DshHistoryEntry } from "./dsh-client.js";
-import { RuntimeProviderService } from "./runtime-provider-service.js";
+import { RuntimeProviderService, type RuntimeModelInfoReader } from "./runtime-provider-service.js";
 import { checkSavedModel } from "./saved-model-check.js";
-import { reasoningCapability } from "@opencraft/composer-core";
-import type { RuntimeModelProbeParams } from "@opencraft/appserver-protocol";
+import { reasoningCapability, modelInputModalities, unsupportedModelInput } from "@opencraft/composer-core";
+import type { RuntimeModelProbeParams, RuntimeSettingsDescribeResponse } from "@opencraft/appserver-protocol";
 import { DshInteractions } from "./dsh-interactions.js";
 import { DshTurnProjection } from "./dsh-turn-projection.js";
 import { userContent } from "./dsh-content.js";
@@ -20,6 +20,13 @@ import { OPENCRAFT_THREAD_QUEUE_EXTENSION } from "@opencraft/appserver-protocol"
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
 type RecordValue = Record<string, unknown>;
+export interface DshThreadEnginePort {
+  create(params: RecordValue): Promise<any>;
+  resume(params: RecordValue): Promise<any>;
+  fork(params: RecordValue): Promise<any>;
+  inject(params: RecordValue): Promise<any>;
+  release(params: RecordValue): Promise<any>;
+}
 
 interface DshSessionSummary {
   sessionId: string;
@@ -29,6 +36,8 @@ interface DshSessionSummary {
   cwd?: string;
   agentPreset?: string;
   parentSessionId?: string;
+  origin?: string;
+  ephemeral?: boolean;
   projections?: { asOfSeq: number; values: Record<string, unknown> };
 }
 
@@ -180,10 +189,10 @@ function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): 
     id: summary.sessionId,
     sessionId: summary.sessionId,
     extra: { dsh: { agentPreset: summary.agentPreset ?? null, blank: summary.blank } },
-    forkedFromId: summary.parentSessionId ?? null,
-    parentThreadId: summary.parentSessionId ?? null,
+    forkedFromId: summary.origin !== "subagent" ? summary.parentSessionId ?? null : null,
+    parentThreadId: summary.origin === "subagent" ? summary.parentSessionId ?? null : null,
     preview: title,
-    ephemeral: false,
+    ephemeral: summary.ephemeral === true,
     section: null,
     sectionEnteredAt: null,
     projectId: null,
@@ -219,7 +228,7 @@ function encodeModel(provider: string, model: string): string {
   return `${DSH_MODEL_PREFIX}${encodeURIComponent(provider)}:${encodeURIComponent(model)}`;
 }
 
-function decodeModel(value: unknown): { provider: string; model: string } | null {
+export function decodeModel(value: unknown): { provider: string; model: string } | null {
   if (typeof value !== "string" || !value.startsWith(DSH_MODEL_PREFIX)) return null;
   const encoded = value.slice(DSH_MODEL_PREFIX.length);
   const separator = encoded.indexOf(":");
@@ -231,9 +240,8 @@ function decodeModel(value: unknown): { provider: string; model: string } | null
 }
 
 function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: string; model: string }): RecordValue[] {
-  const first = catalog.groups[0]?.models[0];
-  const defaultProvider = current?.provider ?? catalog.groups[0]?.id;
-  const defaultModel = current?.model ?? first?.id;
+  const defaultProvider = current?.provider;
+  const defaultModel = current?.model;
   return catalog.groups.flatMap((group) => group.models.map((model) => ({
     id: encodeModel(group.id, model.id),
     model: encodeModel(group.id, model.id),
@@ -249,7 +257,7 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
       description: effort.description ?? effort.name,
     })),
     defaultReasoningEffort: reasoningCapability((model.reasoning?.efforts ?? []).map(e=>e.id),model.reasoning?.defaultEffort).defaultEffort,
-    inputModalities: ["text", "image"],
+    inputModalities: modelInputModalities(model.input),
     supportsPersonality: false,
     multiAgentVersion: null,
     additionalSpeedTiers: [],
@@ -262,6 +270,10 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  private modelInfoReader?: RuntimeModelInfoReader;
+  setModelInfoReader(reader: RuntimeModelInfoReader): void { this.modelInfoReader = reader; this.providers.setModelInfoReader(reader); }
+  private threadEngine: DshThreadEnginePort | null = null;
+  setThreadEngine(port: DshThreadEnginePort): void { this.threadEngine = port; }
   private readonly summaries = new Map<string, DshSessionSummary>();
   private readonly abort = new AbortController();
   private readonly sinks = new Set<NotificationSink>();
@@ -735,6 +747,23 @@ export class DshAppServerAdapter {
     return this.client.call<DshSessionModels>("session.models", { sessionId });
   }
 
+  private async defaultModel(): Promise<{ provider: string; model: string } | null> {
+    const settings = await (this.modelConfiguration ?? this.client).call<RuntimeSettingsDescribeResponse>("settings.describe");
+    const value = object(settings.namespaces.find(entry => entry.ns === "agent-default-model")?.value);
+    return typeof value.provider === "string" && value.provider !== "" && typeof value.model === "string" && value.model !== ""
+      ? { provider: value.provider, model: value.model } : null;
+  }
+
+  private async assertInput(sessionId: string, input: unknown): Promise<void> {
+    if (!Array.isArray(input)) throw new Error("Input must be an array");
+    const current = (await this.sessionModels(sessionId)).current;
+    if (!current) throw new Error("请先选择模型");
+    const info = this.modelInfoReader ? await this.modelInfoReader(current.provider, current.model)
+      : (await this.providers.models(true)).groups.find(group => group.id === current.provider)?.models.find(model => model.id === current.model);
+    const unsupported = unsupportedModelInput(modelInputModalities(info?.input), input);
+    if (unsupported) throw new Error(`所选模型不支持 ${unsupported} 输入，请更换模型或移除附件`);
+  }
+
   private async selectModel(sessionId: string, requested: unknown, effort?: unknown): Promise<DshSessionModels> {
     const selection = decodeModel(requested);
     if (selection !== null) {
@@ -758,8 +787,9 @@ export class DshAppServerAdapter {
 
   private async summariesList(): Promise<DshSessionSummary[]> {
     const value = await this.client.call<{ items: DshSessionSummary[] }>("session.list");
-    for (const summary of value.items) this.summaries.set(summary.sessionId, summary);
-    return value.items;
+    const items = value.items.map(summary => ({ ...summary, ephemeral: this.summaries.get(summary.sessionId)?.ephemeral ?? summary.ephemeral }));
+    for (const summary of items) this.summaries.set(summary.sessionId, summary);
+    return items;
   }
 
   private async summary(sessionId: string): Promise<DshSessionSummary> {
@@ -981,7 +1011,7 @@ export class DshAppServerAdapter {
       case "runtime/settings/mutate":
         if (value.ns === "llm-pi-ai") throw new Error("Use runtime provider/model commands to change model configuration");
         if (value.ns === "agent-default-model") {
-          const settings = await this.client.call<{ namespaces: Array<{ ns: string; value: unknown }> }>("settings.describe");
+          const settings = await (this.modelConfiguration ?? this.client).call<RuntimeSettingsDescribeResponse>("settings.describe");
           const next = { ...object(settings.namespaces.find(entry => entry.ns === value.ns)?.value) };
           if (!Array.isArray(value.ops)) throw new Error("Invalid default model settings");
           for (const operation of value.ops) {
@@ -990,8 +1020,14 @@ export class DshAppServerAdapter {
             if (op.op === "unset") delete next[op.path[0]];
             else next[op.path[0]] = op.value;
           }
-          const catalog = await this.providers.models();
-          if (!catalog.groups.some(group => group.id === next.provider && group.models.some(model => model.id === next.model))) throw new Error("Default model must be enabled and available");
+          const cleared = this.modelConfiguration && !Object.hasOwn(next, "provider") && !Object.hasOwn(next, "model") && !Object.hasOwn(next, "reasoningEffort");
+          if (!cleared) {
+            const catalog = await this.providers.models();
+            const model = catalog.groups.find(group => group.id === next.provider)?.models.find(model => model.id === next.model);
+            if (!model) throw new Error("Default model must be enabled and available");
+            if (Object.hasOwn(next, "reasoningEffort") && !model.reasoning?.efforts.some(effort => effort.id === next.reasoningEffort))
+              throw new Error(`Model does not support reasoning effort ${String(next.reasoningEffort)}`);
+          }
         }
         return (this.modelConfiguration ?? this.client).call("settings.mutate", value);
       case "runtime/credentials/describe":
@@ -1038,6 +1074,7 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
+              "opencraft/thread-lifecycle": { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
               ...(this.hostCapabilities ? { "opencraft/host-capabilities": { version: 1 } } : {}),
               "opencraft/loopback-http": { version: 1 },
               [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
@@ -1063,6 +1100,8 @@ export class DshAppServerAdapter {
       }
       case "thread/resume": {
         const sessionId = string(value.threadId);
+        if (this.threadEngine) await this.threadEngine.resume({ sessionId });
+        if (value.model !== undefined) await this.selectModel(sessionId, value.model);
         const [summary, history, models] = await Promise.all([
           this.summary(sessionId),
           this.history(sessionId, null, 20),
@@ -1099,6 +1138,7 @@ export class DshAppServerAdapter {
         const sessionId = string(value.threadId);
         const clientUserMessageId = string(value.clientUserMessageId);
         if (clientUserMessageId === "") throw new Error("Queued submissions require clientUserMessageId");
+        await this.assertInput(sessionId, value.input);
         const pending = this.waitForQueueItem(sessionId, clientUserMessageId);
         try {
           await this.client.call(
@@ -1123,6 +1163,7 @@ export class DshAppServerAdapter {
         const queuedSubmissionId = string(value.queuedSubmissionId);
         const previous = this.queue(sessionId).find((item) => item.id === queuedSubmissionId);
         if (previous === undefined) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is no longer pending`));
+        await this.assertInput(sessionId, value.input);
         const content = await promptContent(value.input);
         const input = userContent(content);
         await this.client.call("session.updateQueue", {
@@ -1222,14 +1263,61 @@ export class DshAppServerAdapter {
           return { turnId: actualTurnId };
         });
       }
+      case "thread/fork": {
+        if (!this.threadEngine) throw new Error("This engine does not expose native thread forks");
+        if (value.path) throw new Error("Use a thread identity, not a backend-owned rollout path");
+        const sourceId = string(value.threadId);
+        await this.threadEngine.resume({ sessionId: sourceId });
+        const source = await this.summary(sourceId);
+        const sourceModel = (await this.sessionModels(sourceId)).current;
+        const selection = decodeModel(value.model) ?? sourceModel;
+        const boundary = (id: unknown): number | undefined => {
+          if (id == null) return undefined;
+          const prefix = `dsh-turn-${sourceId}-`;
+          if (typeof id !== "string" || !id.startsWith(prefix) || !/^\d+$/.test(id.slice(prefix.length))) throw new Error("Fork turn belongs to another thread");
+          return Number(id.slice(prefix.length));
+        };
+        const created = await this.threadEngine.fork({ sourceSessionId: sourceId,
+          cwd: typeof value.cwd === "string" ? value.cwd : source.cwd ?? homedir(),
+          ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions,
+          provider: selection?.provider, model: selection?.model,
+          lastTurn: boundary(value.lastTurnId), beforeTurn: boundary(value.beforeTurnId),
+          permissionPreset: value.permissions,
+        });
+        this.summaries.set(created.sessionId, { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: false,
+          cwd: created.cwd, agentPreset: created.agentPreset, parentSessionId: sourceId, ephemeral: created.ephemeral === true });
+        try {
+          const effort = object(value.config).model_reasoning_effort
+            ?? (selection?.provider === sourceModel?.provider && selection?.model === sourceModel?.model ? sourceModel?.reasoningEffort : undefined);
+          if (selection) await this.selectModel(created.sessionId, encodeModel(selection.provider, selection.model), effort);
+          return await this.dispatchCommand("thread/resume", { threadId: created.sessionId, excludeTurns: value.excludeTurns === true });
+        } catch (error) {
+          try { await this.threadEngine.release({ sessionId: created.sessionId }); } catch { /* Native owner still owns the failed child's teardown. */ }
+          throw error;
+        }
+      }
+      case "thread/inject_items": {
+        if (!this.threadEngine) throw new Error("This engine does not expose canonical history injection");
+        if (!Array.isArray(value.items)) throw new Error("History items must be an array");
+        return this.threadEngine.inject({ sessionId: string(value.threadId), items: value.items });
+      }
       case "thread/start": {
-        const created = await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", {
+        const selection = value.model == null || value.model === "" ? await this.defaultModel() : decodeModel(value.model);
+        if (!selection) throw new Error("请先选择模型或在设置中指定默认模型");
+        const selectedModel = encodeModel(selection.provider, selection.model);
+        const catalog = await this.providers.models();
+        if (!catalog.groups.some(group => group.id === selection.provider && group.models.some(model => model.id === selection.model)))
+          throw new Error("所选模型已停用或不可用，请重新选择");
+        const creation = {
           ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
           ...(typeof value.agentId === "string" && value.agentId !== "dsh" ? { agentPreset: value.agentId } : {}),
-        });
-        const models = await this.selectModel(created.sessionId, value.model);
+          ...(this.threadEngine ? { ...selection, ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions } : {}),
+        };
+        const created = this.threadEngine ? await this.threadEngine.create(creation)
+          : await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", creation);
+        const models = await this.selectModel(created.sessionId, selectedModel);
         const currentModel = models.current ? encodeModel(models.current.provider, models.current.model) : "dsh";
-        const summary: DshSessionSummary = { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: true, cwd: string(value.cwd, homedir()), agentPreset: created.agentPreset };
+        const summary: DshSessionSummary = { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: true, cwd: created.cwd ?? string(value.cwd, homedir()), agentPreset: created.agentPreset, ephemeral: created.ephemeral === true };
         this.summaries.set(summary.sessionId, summary);
         const thread = makeThread(summary);
         const permissionState = await this.effectivePermissions(summary.sessionId);
@@ -1245,8 +1333,9 @@ export class DshAppServerAdapter {
           if (this.modelConfiguration.config.application.state !== "applied") throw new Error("模型配置尚未应用，请检查配置后重试");
         }
         const sessionId = string(value.threadId);
-        const content = await promptContent(value.input);
         await this.selectModel(sessionId, value.model, value.effort);
+        await this.assertInput(sessionId, value.input);
+        const content = await promptContent(value.input);
         const nextTurn = this.waitForNextTurn(sessionId);
         try {
           await this.client.call(
@@ -1271,6 +1360,7 @@ export class DshAppServerAdapter {
           throw new Error(`Active DSH turn changed; expected ${expectedTurnId}`);
         }
         const clientUserMessageId = string(value.clientUserMessageId);
+        await this.assertInput(sessionId, value.input);
         await this.client.call(
           "session.prompt",
           {
@@ -1303,8 +1393,8 @@ export class DshAppServerAdapter {
         return {};
       }
       case "model/list": {
-        const catalog = await this.providers.models();
-        return page(mapModels(catalog), value.cursor, value.limit);
+        const [catalog, selection] = await Promise.all([this.providers.models(), this.defaultModel()]);
+        return page(mapModels(catalog, selection ?? undefined), value.cursor, value.limit);
       }
       case "permissionProfile/list": {
         if (!this.permissions) return { data: [], nextCursor: null };
@@ -1312,10 +1402,6 @@ export class DshAppServerAdapter {
         return { data: value.presets.map((preset: any) => ({ id: preset.id, label: preset.name, description: preset.description ?? "", allowed: true })), nextCursor: null };
       }
       case "skills/list": throw new Error("Scoped skills require the connected host capability metadata service");
-      case "project/list": {
-        const result = await this.client.call<{ items: Array<{ workspaceId: string; path: string }> }>("workspace.list");
-        return { data: result.items.map((entry) => ({ id: entry.workspaceId, name: basename(entry.path), roots: [{ path: entry.path }], metadata: { engine: "dsh" } })), nextCursor: null };
-      }
       default: throw new Error(`Method not supported by OpenCraft DSH host: ${method}`);
     }
   }

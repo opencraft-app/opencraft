@@ -14,6 +14,7 @@ import type {
 } from "@opencraft/sidebar-layout";
 import type { ReactNode } from "react";
 import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
+import { ThreadRowMenu, type ThreadActionCallbacks, type ThreadActionCapabilities } from "./thread-management";
 import { groupThreadsByTarget } from "../sidebar-target-groups";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
@@ -51,6 +52,11 @@ interface SidebarProps {
   renderTargetStatus?(hostId: string): ReactNode;
   onOpenSettings(): void;
   showFooter?: boolean;
+  threadActions?: ThreadActionCallbacks;
+  threadCapabilities?(hostId: string): ThreadActionCapabilities;
+  pendingTitle?(hostId: string, threadId: string): string | null;
+  onManageArchived?(): void;
+  archiveUndo?: { title: string; restore(): void } | null;
 }
 
 
@@ -116,6 +122,11 @@ export function Sidebar({
   renderTargetStatus,
   onOpenSettings,
   showFooter = true,
+  threadActions,
+  threadCapabilities,
+  pendingTitle,
+  onManageArchived,
+  archiveUndo,
 }: SidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [collapsedTargets, setCollapsedTargets] = useState<ReadonlySet<string>>(new Set());
@@ -224,6 +235,20 @@ export function Sidebar({
             const pending =
               thread.hostId === pendingHostId && thread.id === pendingThreadId;
             const selected = threadKey === selectedThreadKey;
+            const title = pendingTitle?.(thread.hostId, thread.id) ?? thread.title;
+            const button = (
+              <button
+                type="button"
+                className={["sidebar-thread", selected ? "is-selected" : "", active ? "is-active" : "", pending ? "is-pending" : ""].filter(Boolean).join(" ")}
+                onClick={() => onSelectThread(thread.hostId, thread.id)} aria-current={selected ? "page" : undefined} aria-busy={pending || undefined}
+                title={`${title} · ${thread.hostLabel} · ${thread.id}`}>
+                <ThreadActivity status={thread.status} />
+                <span className="sidebar-thread__copy"><span className="sidebar-thread__label">{title}</span></span>
+                {thread.unread ? <span className="sidebar-thread__unread" /> : null}
+              </button>
+            );
+            if (threadActions && threadCapabilities) return <ThreadRowMenu key={threadKey} target={{ hostId: thread.hostId, threadId: thread.id, title }}
+              capabilities={threadCapabilities(thread.hostId)} {...threadActions}>{button}</ThreadRowMenu>;
             return (
               <button
                 type="button"
@@ -261,6 +286,8 @@ export function Sidebar({
           </section>;
           })}
         </section>
+        {onManageArchived ? <button type="button" className="sidebar-action" onClick={onManageArchived}>已归档会话</button> : null}
+        {archiveUndo ? <div className="sidebar-target-empty" role="status">已归档 {archiveUndo.title} <button type="button" onClick={archiveUndo.restore}>撤销</button></div> : null}
       </div>
 
       {showFooter ? <div className="sidebar-panel__footer">

@@ -1,6 +1,8 @@
 // Semantically adapted from the recovered Codex Composer/editor, queue tray,
 // and responsive footer boundaries. AppServer state remains externally owned.
 import { baseKeymap, newlineInCode, splitBlock } from "prosemirror-commands";
+import { DictationFooter } from "./dictation-footer";
+import { resolveDictationKeyAction } from "./dictation-keyboard";
 import { history, redo, undo } from "prosemirror-history";
 import {
   InputRule,
@@ -25,7 +27,7 @@ import {
 } from "prosemirror-state";
 import { Decoration, DecorationSet, EditorView } from "prosemirror-view";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { reasoningCapability, resolveReasoningEffort } from "@opencraft/composer-core";
+import { reasoningCapability, resolveReasoningEffort, resolveModelSelection, composerDocumentToPlainText } from "@opencraft/composer-core";
 import {
   ArrowUp,
   AtSign,
@@ -774,6 +776,26 @@ export const CodexComposer = forwardRef<
     string | null
   >(null);
   const footerLayout = useMeasuredComposerFooterLayout();
+  const inputInteraction = useSyncExternalStore(controller.subscribeInputInteraction, controller.getInputInteractionSnapshot, controller.getInputInteractionSnapshot);
+  const voiceActive = inputInteraction !== null;
+  const voiceActiveRef = useRef(voiceActive);
+  voiceActiveRef.current = voiceActive;
+  useLayoutEffect(() => { if (voiceActive) setOpenPicker(null); }, [voiceActive]);
+  useEffect(() => {
+    if (inputInteraction === null) return;
+    const handleDictationKey = (event: KeyboardEvent) => {
+      const editor = editorViewRef.current;
+      const fromEditor = editor !== null && event.target instanceof Node && editor.dom.contains(event.target);
+      const action = resolveDictationKeyAction(event, fromEditor);
+      if (action === null) return;
+      event.preventDefault(); event.stopPropagation();
+      if (action === "cancel") { inputInteraction.cancel(); controller.focus(); }
+      else { void submitActionRef.current(isStreamingRef.current && (event.metaKey || event.ctrlKey)
+        ? invertComposerFollowUpAction(defaultFollowUpActionRef.current) : undefined); }
+    };
+    window.addEventListener("keydown", handleDictationKey, true);
+    return () => window.removeEventListener("keydown", handleDictationKey, true);
+  }, [controller, inputInteraction]);
 
   useEffect(() => {
     if (openPicker === null) return;
@@ -789,21 +811,13 @@ export const CodexComposer = forwardRef<
   const attachments = composerSnapshot.draft.attachments;
   const catalogModels = selectionCatalog?.models ?? [];
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
-  const catalogDefaultModel =
-    catalogModels.find((model) => model.isDefault) ?? catalogModels[0] ?? null;
+  const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
   const selectedModelValue =
     composerSnapshot.draft.selections.model ??
     effectiveSelections?.model ??
     catalogDefaultModel?.value ??
     null;
-  const selectedModel =
-    selectedModelValue === null
-      ? catalogDefaultModel
-      : (catalogModels.find(
-          (model) =>
-            model.value === selectedModelValue ||
-            model.id === selectedModelValue,
-        ) ?? null);
+  const selectedModel = resolveModelSelection(catalogModels, selectedModelValue);
   const selectedEffortValue = selectedModel ? resolveReasoningEffort(
     reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),
     composerSnapshot.draft.selections.effort ?? effectiveSelections?.effort,
@@ -1032,15 +1046,26 @@ export const CodexComposer = forwardRef<
   }, [controller, finishQueueEdit]);
 
   const submit = useCallback(
-    async (followUpActionOverride?: ComposerFollowUpAction) => {
+    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false) => {
       const view = editorViewRef.current;
+      const dictation = controller.getInputInteractionSnapshot();
+      if (!dictationFinished && dictation !== null) {
+        if (dictation.phase !== "listening" || disabled || submissionDisabled || selectedModelValue === null || composerSnapshot.hasProcessingAssets) return;
+        const draftId = controller.getSnapshot().draft.id;
+        const committed = await dictation.finish();
+        if (committed && editorViewRef.current === view && editorControllerRef.current === controller
+          && controller.getSnapshot().draft.id === draftId && controller.getInputInteractionSnapshot() === null) {
+          await submitActionRef.current(followUpActionOverride, true);
+        }
+        return;
+      }
       if (
         view == null ||
         view.isDestroyed ||
         editorControllerRef.current !== controller ||
         disabled ||
         submissionDisabled ||
-        !composerSnapshot.canSubmit ||
+        !controller.getSnapshot().canSubmit ||
         pendingSubmissionRef.current?.controller === controller
       )
         return;
@@ -1130,7 +1155,7 @@ export const CodexComposer = forwardRef<
           editorControllerRef.current === controller &&
           !view.isDestroyed
         ) {
-          view.setProps({ editable: () => !disabledRef.current });
+          view.setProps({ editable: () => !disabledRef.current && !voiceActiveRef.current });
         }
         if (stillOwnsSubmission) {
           // Submission focus is presentation state owned by this Conversation
@@ -1156,6 +1181,7 @@ export const CodexComposer = forwardRef<
       onUpdateQueuedSubmission,
       editingQueuedSubmissionId,
       selectedModel,
+      selectedModelValue,
       effectiveSelections?.effort,
     ],
   );
@@ -1332,7 +1358,7 @@ export const CodexComposer = forwardRef<
     const view = new EditorView(mount, {
       state: editorState,
       editable: () =>
-        !disabledRef.current &&
+        !disabledRef.current && !voiceActiveRef.current &&
         pendingSubmissionRef.current?.controller !== controller,
       attributes: {
         "aria-label": placeholder,
@@ -1377,10 +1403,12 @@ export const CodexComposer = forwardRef<
       return;
     view.setProps({
       editable: () =>
-        !disabledRef.current &&
+        !disabledRef.current && !voiceActiveRef.current &&
         pendingSubmissionRef.current?.controller !== controller,
     });
-  }, [controller, disabled]);
+    view.dom.setAttribute("aria-readonly", String(voiceActive || disabled));
+    view.dom.tabIndex = voiceActive ? -1 : 0;
+  }, [controller, disabled, voiceActive]);
 
   useLayoutEffect(() => {
     const view = editorViewRef.current;
@@ -1465,16 +1493,24 @@ export const CodexComposer = forwardRef<
                 } satisfies TransientTextTransaction),
               );
             },
-            commit(text: string) {
-              if (!ownsSession()) return;
+            commit(text: string, policy: "selection" | "append" = "selection") {
+              if (!ownsSession()) return false;
               const transient = transientTextPluginKey.getState(view.state);
-              if (!clear() || transient == null || text.length === 0) return;
-              view.dispatch(
-                view.state.tr
-                  .insertText(text, transient.from, transient.to)
-                  .scrollIntoView(),
-              );
+              if (transient == null || text.length === 0 || !clear()) return false;
+              const transaction = view.state.tr;
+              if (policy === "append") {
+                const normalized = text.trim();
+                if (normalized.length === 0) return false;
+                const previous = composerDocumentToPlainText(proseMirrorToComposerDocument(view.state.doc));
+                transaction.setSelection(TextSelection.atEnd(transaction.doc));
+                transaction.insertText(previous.length > 0 && !/\s$/.test(previous) ? ` ${normalized}` : normalized);
+                transaction.setSelection(TextSelection.atEnd(transaction.doc));
+              } else transaction.insertText(text, transient.from, transient.to);
+              view.dispatch(transaction.scrollIntoView());
+              const applied = editorViewRef.current === view && !view.isDestroyed && transientGeneration === generation && view.state.doc.eq(transaction.doc);
+              if (!applied) return false;
               view.focus();
+              return true;
             },
             cancel() {
               clear();
@@ -1661,7 +1697,7 @@ export const CodexComposer = forwardRef<
           </div>
         )}
         {attachments.length > 0 && (
-          <div className="codex-composer-attachments" aria-label="Attachments">
+          <div className="codex-composer-attachments" aria-label="Attachments" inert={voiceActive ? true : undefined}>
             {attachments.map((attachment) => (
               <div className="codex-composer-attachment" key={attachment.id}>
                 <span className="codex-composer-attachment__icon">
@@ -1690,7 +1726,7 @@ export const CodexComposer = forwardRef<
           </div>
         )}
 
-        {suggestionQuery != null &&
+        {!voiceActive && suggestionQuery != null &&
           (filteredSuggestions.length > 0 ||
             suggestionQuery.kind === "mention" ||
             (suggestionQuery.kind === "skill" &&
@@ -1784,10 +1820,15 @@ export const CodexComposer = forwardRef<
           ref={footerLayout.footerRef}
           className="codex-composer-footer"
           data-footer-density={footerLayout.density}
+          data-input-mode={voiceActive ? "dictation" : "standard"}
         >
+          {inputInteraction === null ? null : <DictationFooter interaction={inputInteraction}
+            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasProcessingAssets && selectedModelValue !== null}
+            onSend={() => { void submit(); }} onCancel={() => { inputInteraction.cancel(); controller.focus(); }} />}
           <div
             ref={footerLayout.attachmentRef}
             className="codex-composer-footer__attachment"
+            inert={voiceActive ? true : undefined} aria-hidden={voiceActive ? true : undefined}
           >
             <button
               className="codex-composer-icon-button"
@@ -1815,6 +1856,7 @@ export const CodexComposer = forwardRef<
           <div
             ref={footerLayout.controlsRef}
             className="codex-composer-footer__controls"
+            inert={voiceActive ? true : undefined} aria-hidden={voiceActive ? true : undefined}
           >
             {executionTarget === undefined ? null : (
               <span
@@ -2036,7 +2078,7 @@ export const CodexComposer = forwardRef<
               </DropdownMenu.Root>
             </div>
           </div>
-          <div ref={footerLayout.endRef} className="codex-composer-footer__end">
+          <div ref={footerLayout.endRef} className="codex-composer-footer__end" inert={voiceActive ? true : undefined} aria-hidden={voiceActive ? true : undefined}>
             {endActions}
             {mentionSuggestionsEnabled ? (
               <button

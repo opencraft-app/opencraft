@@ -85,12 +85,17 @@ export class AppServerBotDirectory {
     hostId: string,
     params: AppServerBotMethodParams<"bot/create">,
   ): Promise<AppServerBotDescriptor> {
+    const client = this.clients.get(hostId);
+    const generation = client?.connectionGeneration;
     const capability = await this.bots.waitForCapability(hostId);
     if (!capability.features.botManagement) {
       throw new Error(`Host ${hostId} does not support Bot management`);
     }
+    this.assertMutationOwner(hostId, client, generation);
     const receipt = await this.bots.createBot(hostId, params);
+    this.assertMutationOwner(hostId, client, generation);
     this.upsert(hostId, receipt.bot);
+    await this.refreshHost(hostId);
     return receipt.bot;
   }
 
@@ -98,8 +103,11 @@ export class AppServerBotDirectory {
     hostId: string,
     params: AppServerBotMethodParams<"bot/update">,
   ): Promise<AppServerBotDescriptor> {
+    const client = this.clients.get(hostId), generation = client?.connectionGeneration;
     const bot = await this.bots.updateBot(hostId, params);
+    this.assertMutationOwner(hostId, client, generation);
     this.upsert(hostId, bot);
+    await this.refreshHost(hostId);
     return bot;
   }
 
@@ -107,8 +115,11 @@ export class AppServerBotDirectory {
     hostId: string,
     params: AppServerBotMethodParams<"bot/delete">,
   ): Promise<void> {
+    const client = this.clients.get(hostId), generation = client?.connectionGeneration;
     await this.bots.deleteBot(hostId, params);
+    this.assertMutationOwner(hostId, client, generation);
     this.removeBot(hostId, params.botId);
+    await this.refreshHost(hostId);
   }
 
   dispose(): void {
@@ -119,6 +130,12 @@ export class AppServerBotDirectory {
     for (const stop of this.statusSubscriptions.values()) stop();
     this.statusSubscriptions.clear();
     this.listeners.clear();
+  }
+
+  private assertMutationOwner(hostId: string, client: AppServerClient | null, generation: number | undefined): void {
+    if (this.disposed || client === null || this.clients.get(hostId) !== client || client.connectionGeneration !== generation) {
+      throw new Error("Bot 操作完成时连接已改变，请刷新当前实例核对结果。");
+    }
   }
 
   private observeClient(client: AppServerClient): void {
@@ -203,12 +220,14 @@ export class AppServerBotDirectory {
     const entries = this.entriesByHost.get(hostId) ?? new Map<string, AppServerBotDescriptor>();
     const current = entries.get(bot.botId);
     if (current !== undefined && current.revision > bot.revision) return;
+    this.refreshGeneration.set(hostId, (this.refreshGeneration.get(hostId) ?? 0) + 1);
     entries.set(bot.botId, bot);
     this.entriesByHost.set(hostId, entries);
     this.publish();
   }
 
   private removeBot(hostId: string, botId: string): void {
+    this.refreshGeneration.set(hostId, (this.refreshGeneration.get(hostId) ?? 0) + 1);
     const entries = this.entriesByHost.get(hostId);
     if (entries?.delete(botId)) this.publish();
   }

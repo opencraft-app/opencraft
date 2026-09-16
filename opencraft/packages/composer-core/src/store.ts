@@ -3,6 +3,7 @@ import {
   isComposerDocumentEmpty,
   type ComposerDocument,
 } from "./document";
+import type { ComposerDictationInteraction } from "./input-interaction";
 import {
   encodeComposerTarget,
   type ComposerAttachment,
@@ -77,8 +78,10 @@ export interface ComposerViewHandle {
  */
 export interface ComposerTransientTextInput {
   update(text: string): void;
-  commit(text: string): void;
+  commit(text: string, policy?: "selection" | "append"): boolean;
   cancel(): void;
+  /** The controller wrapper owns presentation; a physical View need not implement it. */
+  setInteraction?(interaction: ComposerDictationInteraction): void;
 }
 
 export interface ComposerTransientTextInputObserver {
@@ -100,12 +103,15 @@ export interface ComposerTransientTextInputFinalization {
     | "target-change"
     | "view-detach"
     | "superseded"
-    | "dispose";
+    | "dispose"
+    | "commit-rejected";
 }
 
 export interface ComposerController {
   getSnapshot(): ComposerStoreSnapshot;
   subscribe(listener: () => void): () => void;
+  getInputInteractionSnapshot(): ComposerDictationInteraction | null;
+  subscribeInputInteraction(listener: () => void): () => void;
   dispatch(action: ComposerAction): void;
   createSubmitIntent(): SubmitIntent;
   registerView(handle: ComposerViewHandle): () => void;
@@ -259,15 +265,22 @@ export function createComposerController(
   services: ComposerStoreServices,
 ): ComposerController {
   let revision = 0;
+  let contentEpoch = 0;
   let draft = createDraft(target, services);
   let currentSnapshot = snapshot(revision, draft);
   const draftCache = new Map<string, ComposerDraft>();
   const listeners = new Set<() => void>();
+  const interactionListeners = new Set<() => void>();
+  const notifyInteraction = () => { for (const listener of interactionListeners) listener(); };
   let view: ComposerViewHandle | null = null;
   let transient: {
     readonly input: ComposerTransientTextInput;
     readonly observer?: ComposerTransientTextInputObserver;
     text: string;
+    interaction?: ComposerDictationInteraction;
+    readonly draftId: string;
+    readonly view: ComposerViewHandle | null;
+    readonly contentEpoch: number;
   } | null = null;
   let submissionContinuation: ComposerTransientTextInputObserver | null = null;
   let disposed = false;
@@ -306,19 +319,26 @@ export function createComposerController(
     record: NonNullable<typeof transient>,
     mode: "commit" | "cancel",
     cause: ComposerTransientTextInputFinalization["cause"],
-  ) => {
-    if (transient !== record) return;
+  ): boolean => {
+    if (transient !== record) return false;
     transient = null;
-    if (mode === "commit") record.input.commit(record.text);
-    else record.input.cancel();
-    if (cause === "submission") {
+    if (record.interaction !== undefined) notifyInteraction();
+    let committed = false;
+    const ownsContent = () => record.draftId === draft.id && record.view === view && record.contentEpoch === contentEpoch;
+    if (mode === "commit" && ownsContent()) {
+      try { committed = record.input.commit(record.text, record.interaction?.kind === "dictation" ? "append" : "selection") === true && ownsContent(); }
+      catch { committed = false; }
+    }
+    if (!committed) record.input.cancel();
+    if (cause === "submission" && committed) {
       submissionContinuation = record.observer ?? null;
     }
-    record.observer?.finalized({ mode, cause });
+    record.observer?.finalized({ mode: committed ? "commit" : "cancel", cause: mode === "commit" && !committed ? "commit-rejected" : cause });
     // A real editor commit synchronously publishes its durable document; a
     // cancel or detached test View still needs to publish loss of provisional
     // sendability itself.
     if (currentSnapshot.hasTransientText) publishSnapshot();
+    return committed;
   };
 
   const resumeSubmissionContinuation = () => {
@@ -329,6 +349,11 @@ export function createComposerController(
 
   return {
     getSnapshot: () => currentSnapshot,
+    getInputInteractionSnapshot: () => transient?.interaction ?? null,
+    subscribeInputInteraction(listener) {
+      ensureOpen(); interactionListeners.add(listener);
+      return () => interactionListeners.delete(listener);
+    },
     subscribe(listener) {
       ensureOpen();
       listeners.add(listener);
@@ -336,7 +361,8 @@ export function createComposerController(
     },
     dispatch(action) {
       ensureOpen();
-      if (action.type === "switch-target" || action.type === "clear") {
+      if (action.type === "switch-target" || action.type === "clear" || action.type === "replace-content") {
+        contentEpoch++;
         const active = transient;
         if (active !== null) {
           finalizeTransient(
@@ -346,6 +372,7 @@ export function createComposerController(
           );
         }
       }
+      if (action.type === "replace-content") submissionContinuation = null;
       if (action.type === "switch-target") {
         submissionContinuation = null;
         const currentKey = encodeComposerTarget(draft.target);
@@ -369,11 +396,12 @@ export function createComposerController(
       ensureOpen();
       const active = transient;
       if (active !== null) {
-        finalizeTransient(
+        const committed = finalizeTransient(
           active,
           active.text.length > 0 ? "commit" : "cancel",
           "submission",
         );
+        if (active.text.length > 0 && !committed) throw new Error("Composer input could not be inserted into its owning View");
       }
       if (!currentSnapshot.canSubmit)
         throw new Error(
@@ -393,9 +421,12 @@ export function createComposerController(
     },
     registerView(handle) {
       ensureOpen();
+      if (view !== handle) contentEpoch++;
+      if (view !== null && view !== handle && transient !== null) finalizeTransient(transient, "cancel", "view-detach");
       view = handle;
       return () => {
         if (view !== handle) return;
+        contentEpoch++;
         const active = transient;
         if (active !== null) finalizeTransient(active, "cancel", "view-detach");
         submissionContinuation = null;
@@ -414,9 +445,13 @@ export function createComposerController(
       submissionContinuation = null;
       const input = view?.beginTransientTextInput() ?? null;
       if (input === null) return null;
-      const record = { input, observer, text: "" };
+      const record: NonNullable<typeof transient> = { input, observer, text: "", draftId: draft.id, view, contentEpoch };
       transient = record;
       return {
+        setInteraction(interaction) {
+          if (transient !== record || record.interaction === interaction) return;
+          record.interaction = interaction; notifyInteraction();
+        },
         update(text) {
           if (transient !== record) return;
           const hadText = record.text.length > 0;
@@ -425,9 +460,9 @@ export function createComposerController(
           if (hadText !== (text.length > 0)) publishSnapshot();
         },
         commit(text) {
-          if (transient !== record) return;
+          if (transient !== record) return false;
           record.text = text;
-          finalizeTransient(record, "commit", "producer");
+          return finalizeTransient(record, "commit", "producer");
         },
         cancel() {
           finalizeTransient(record, "cancel", "producer");
@@ -447,6 +482,7 @@ export function createComposerController(
       if (active !== null) finalizeTransient(active, "cancel", "dispose");
       submissionContinuation = null;
       disposed = true;
+      interactionListeners.clear();
       listeners.clear();
       draftCache.clear();
       view = null;

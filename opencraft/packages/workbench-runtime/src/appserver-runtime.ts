@@ -31,7 +31,7 @@ import type {
   ThreadForkParams,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
-import { reasoningCapability } from "@opencraft/composer-core";
+import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
 import type {
   DynamicToolSpec,
   FsChangedNotification,
@@ -40,6 +40,7 @@ import type {
   FsWriteFileResponse,
   ThreadQueueChangedNotification,
   Thread as ProtocolThread,
+  ThreadInjectItemsParams,
   UserInput,
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
@@ -166,6 +167,12 @@ export interface StartThreadOptions {
 }
 
 export interface AppServerThreadResourcePort {
+  capabilities?(): { fork: boolean; rename: boolean; archive: boolean };
+  rename?(threadId: string, name: string): Promise<void>;
+  archive?(threadId: string): Promise<void>;
+  unarchive?(threadId: string): Promise<ProtocolThread>;
+  injectItems?(threadId: string, items: ThreadInjectItemsParams["items"]): Promise<void>;
+  supportsSideChat?(): boolean;
   list(params?: Partial<ThreadListParams>): Promise<ThreadListResponse>;
   start(options: StartThreadOptions): Promise<ProtocolThread>;
   fork?(params: ThreadForkParams): Promise<ProtocolThread>;
@@ -985,24 +992,22 @@ export function createAppServerWorkbenchRuntime(
         interactions,
         compiler: { historyMode: "paginated" },
         resolveCompilerOptions: async (intent) => {
-          if (intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up") return {};
+          const followUp = intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up";
           const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
           const modelId = intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
-          if (!modelId) {
-            if (intent.selections.effort !== undefined) throw new Error("请先选择模型，再设置推理档位");
-            return {};
-          }
           const scope = client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
           let cursor: string | null = null;
           const seen = new Set<string>();
           do {
             const page: ModelListResponse = await client!.request("model/list", {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})});
-            const model = page.data.find(model => model.id === modelId || model.model === modelId);
-            if (model) return {reasoning:reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort)};
+            const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
+            if (model) return { inputModalities: modelInputModalities(model.inputModalities),
+              ...(!followUp ? { ...(!modelId ? { model: model.model } : {}),
+                reasoning:reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort) } : {}) };
             cursor = page.nextCursor;
             if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
           } while (cursor);
-          throw new Error("所选模型已不可用，请重新选择");
+          throw new Error(modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
         },
         dynamicTools: config.dynamicTools,
       });
@@ -1079,6 +1084,20 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       threads: {
+        capabilities() {
+          const capability = client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; rename?: boolean; archive?: boolean } | undefined;
+          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true };
+        },
+        async rename(threadId, name) { await requireClient().request("thread/name/set", { threadId, name }); },
+        async archive(threadId) { await requireClient().request("thread/archive", { threadId }); },
+        async unarchive(threadId) { return (await requireClient().request("thread/unarchive", { threadId })).thread as ProtocolThread; },
+        supportsSideChat() {
+          const capability = requireClient().initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; ephemeral?: boolean; injectItems?: boolean } | undefined;
+          return capability?.fork !== false && capability?.ephemeral !== false && capability?.injectItems !== false;
+        },
+        async injectItems(threadId, items) {
+          await requireClient().request("thread/inject_items", { threadId, items: [...items] });
+        },
         async fork(params) {
           const generation = requireClient().connectionGeneration;
           const response = await requireClient().request("thread/fork", params);
@@ -1091,8 +1110,19 @@ export function createAppServerWorkbenchRuntime(
         async unsubscribe(threadId) {
           const binding = bindings.get(threadId);
           if (binding && binding.retainCount > 0) throw new Error("Cannot unsubscribe a thread with active consumers");
-          await requireClient().request("thread/unsubscribe", { threadId });
-          if (binding && binding.retainCount === 0) disposeBinding(binding);
+          const currentClient = requireClient(), generation = lifecycleGeneration, connectionGeneration = currentClient.connectionGeneration;
+          await currentClient.request("thread/unsubscribe", { threadId });
+          if (disposed || generation !== lifecycleGeneration || client !== currentClient || currentClient.connectionGeneration !== connectionGeneration) return;
+          const current = bindings.get(threadId);
+          if (current && (current !== binding || hasHardResidencyReason(current))) {
+            // The unsubscribe won on the wire; the new consumer must actually
+            // reattach, not merely retain a stale local projection.
+            requireSession().resume.markNeedsResume(threadId);
+            await requireSession().resume.resume({ threadId, force: true });
+            await hydrateBinding(current, false);
+            return;
+          }
+          if (current) disposeBinding(current);
           ephemeralThreadIds.delete(threadId);
           requireSession().views.remove(threadId);
         },

@@ -25,6 +25,7 @@ interface DraftHarness {
   readonly transport: MemoryTransport;
   releaseTurn(): void;
   releaseResume(): void;
+  releaseUnsubscribe(): void;
   notifySkillsChanged(): void;
   notifyFsChanged(watchId: string, changedPaths: readonly string[]): void;
 }
@@ -46,10 +47,13 @@ function createHarness(
   delayTurn = false,
   delayResume = false,
   historyTurns: readonly unknown[] = [],
+  delayUnsubscribe = false,
+  models: readonly Record<string, unknown>[] = [{ id: "codex", model: "codex", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [{reasoningEffort:"medium",description:"Medium"}], defaultReasoningEffort:"medium" }],
 ): DraftHarness {
   const requests: JsonRpcRequest[] = [];
   let releaseTurn = () => undefined;
   let releaseResume = () => undefined;
+  let releaseUnsubscribe = () => undefined;
   let activePeer: InMemoryAppServerPeer | null = null;
   const server: InMemoryAppServer = {
     connected(peer) {
@@ -66,7 +70,7 @@ function createHarness(
       if (message.method === "initialize") {
         send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "draft-test" });
       } else if (message.method === "model/list") {
-        send({ data: [{ id: "codex", model: "codex", supportedReasoningEfforts: [{reasoningEffort:"medium",description:"Medium"}], defaultReasoningEffort:"medium" }], nextCursor:null });
+        send({ data: models, nextCursor:null });
       } else if (message.method === "thread/read" && historyTurns.length > 0) {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
         send({ thread: protocolThread(threadId) });
@@ -97,6 +101,9 @@ function createHarness(
         });
         if (delayResume) releaseResume = respond;
         else respond();
+      } else if (message.method === "thread/unsubscribe") {
+        const respond = () => send({ status: "unsubscribed" });
+        if (delayUnsubscribe) releaseUnsubscribe = respond; else respond();
       } else if (message.method === "thread/turns/list") {
         send({ data: historyTurns, nextCursor: null });
       } else if (message.method === "thread/items/list") {
@@ -190,6 +197,7 @@ function createHarness(
     transport: new MemoryTransport(server),
     releaseTurn: () => releaseTurn(),
     releaseResume: () => releaseResume(),
+    releaseUnsubscribe: () => releaseUnsubscribe(),
     notifySkillsChanged: () => activePeer?.send(encodeJsonRpcMessage({
       method: "skills/changed",
       params: {},
@@ -235,6 +243,36 @@ async function waitForAuthoritative(
   }
   throw new Error(`Timed out waiting for authoritative Thread ${lease.threadId}`);
 }
+
+test("a consumer acquired during unsubscribe keeps its view and reestablishes server attachment", async () => {
+  const harness = createHarness(false, false, [], true);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const old = await runtime.acquireThread("thread-created"); await waitForAuthoritative(old); old.release();
+    const unsubscribing = runtime.resources.threads.unsubscribe!("thread-created");
+    await waitForRequest(harness, "thread/unsubscribe");
+    const current = await runtime.acquireThread("thread-created");
+    harness.releaseUnsubscribe(); await unsubscribing;
+    assert.equal(harness.requests.filter(request => request.method === "thread/resume").length, 2);
+    assert.equal(current.getSnapshot().authoritative, true);
+    current.release();
+  } finally { await runtime.dispose(); }
+});
+
+test("Draft creation resolves only a declared default and checks its input before RPC", async () => {
+  for (const models of [[], [{ id: "text", model: "text", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [], defaultReasoningEffort: null }]]) {
+    const harness = createHarness(false, false, [], false, models);
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+    try {
+      await runtime.connect();
+      const request = intent({ type: "new-thread", draftId: "input-check", execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } });
+      const submission = models.length ? { ...request, attachments: [{ id: "image", name: "Image", mimeType: "image/png", size: 1, lifecycle: "ready", uri: "file:///tmp/never-read.png" } as any] } : request;
+      await assert.rejects(runtime.createThread(submission), models.length ? /不支持 image 输入/ : /请先选择模型/);
+      assert.equal(harness.requests.some(message => message.method === "thread/start"), false);
+    } finally { await runtime.dispose(); }
+  }
+});
 
 test("failed baseline remains an error and retries on the same lease without reconnect", async () => {
   const harness = createHarness(false, true);

@@ -1,6 +1,6 @@
 const { access, chmod, readdir, rm, stat } = require("node:fs/promises");
 const { constants } = require("node:fs");
-const { join } = require("node:path");
+const { join, resolve } = require("node:path");
 const { Arch } = require("builder-util");
 
 // Runs on the assembled package before signing. npm's prebuilt spawn-helper
@@ -47,7 +47,10 @@ async function preparePackagedPty(context) {
   if (context.electronPlatformName === "darwin" && process.env.OPENCRAFT_MAC_PREVIEW === "1") {
     const { signMacosPreview } = await import("./sign-macos-preview.mjs");
     const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
-    const entitlementsPath = join(__dirname, "../node_modules/app-builder-lib/templates/entitlements.mac.plist");
+    const configuredEntitlements = context.packager.config?.mac?.entitlements;
+    const entitlementsPath = configuredEntitlements
+      ? resolve(context.packager.projectDir, configuredEntitlements)
+      : join(__dirname, "../node_modules/app-builder-lib/templates/entitlements.mac.plist");
     await signMacosPreview({ appPath, entitlementsPath });
   }
 }

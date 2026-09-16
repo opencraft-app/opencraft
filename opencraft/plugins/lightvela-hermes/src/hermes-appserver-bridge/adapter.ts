@@ -613,6 +613,15 @@ export function isHermesSessionNotFound(error: unknown): boolean {
     : /session not found/iu.test(error instanceof Error ? error.message : String(error));
 }
 
+export function isHermesHistoryNotMaterialized(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  // Hermes Dashboard versions disagree on transport status: some return 404,
+  // while others return HTTP 200 with a semantic error envelope. Desktop
+  // consumes the semantic failure, so the adapter must not key ownership to
+  // the incidental HTTP status.
+  return /(?:session|conversation) not found(?::|["'\s]|$)/iu.test(message);
+}
+
 export function hermesThreadMessageCount(thread: AppServerThread): number | null {
   const extra = record(thread.extra);
   const hermes = record(extra.hermes);
@@ -632,7 +641,8 @@ export function isUnmaterializedHermesHistory(
   thread: AppServerThread,
   error: unknown,
 ): boolean {
-  return hermesThreadMessageCount(thread) === 0 && isHermesSessionNotFound(error);
+  return hermesThreadMessageCount(thread) === 0
+    && (isHermesSessionNotFound(error) || isHermesHistoryNotMaterialized(error));
 }
 
 interface ThreadListParams {
@@ -762,6 +772,8 @@ export class HermesAppServerAdapter {
   private readonly notificationListeners = new Set<(method: string, params: unknown) => void>();
   private readonly serverRequestListeners = new Set<(request: HermesAppServerInteractionRequest) => void>();
   private readonly pendingClarifyByRequest = new Map<string, PendingClarifyOwnership>();
+  /** Concurrent agent/list and model/list share one ephemeral model.options snapshot. */
+  private readonly modelCatalogReads = new Map<string, Promise<ReturnType<typeof mapHermesModelOptions>>>();
   /** `running=false` means waiting-for-input while this barrier exists, not Turn completion. */
   private readonly stopGatewayEvents: () => void;
   private readonly stopComposerQueue: () => void;
@@ -795,6 +807,7 @@ export class HermesAppServerAdapter {
     this.notificationListeners.clear();
     this.serverRequestListeners.clear();
     this.pendingClarifyByRequest.clear();
+    this.modelCatalogReads.clear();
     this.provisionalSummaryByStored.clear();
   }
 
@@ -929,9 +942,17 @@ export class HermesAppServerAdapter {
       historyPromise,
     ]);
     throwIfSignalAborted(signal);
-    const summary = list.sessions.find((row) => row.id === threadId) ?? {
+    const listedSummary = list.sessions.find((row) => row.id === threadId);
+    const summary = listedSummary === undefined ? {
       id: threadId, title: "New chat", preview: "", started_at: Date.now() / 1000,
       message_count: payload.message_count, source: "desktop", profile: profile ?? "default",
+    } : {
+      ...listedSummary,
+      // Resume is the existence and live-session authority. The catalog may
+      // expose the named session before its first Dashboard history row and
+      // can therefore omit/stale this projection. Preserve Resume's count so
+      // callers can distinguish a genuinely empty session from lost history.
+      message_count: payload.message_count,
     };
     this.profileByStored.set(threadId, summary.profile?.trim() || profile || "default");
     const turns = historyPage?.chronological ?? [];
@@ -1186,17 +1207,22 @@ export class HermesAppServerAdapter {
     const liveSessionId = threadId === null
       ? null
       : this.liveByStored.get(threadId) ?? threadId;
-    const payload = await this.gateway.call<HermesModelOptionsPayload>(
-      "model.options",
-      {
-        explicit_only: params.includeHidden !== true,
-        ...(liveSessionId === null ? {} : { session_id: liveSessionId }),
-        ...(profile === null ? {} : { profile }),
-      },
-    );
-    const all = mapHermesModelOptions(payload).filter(
-      (model) => params.includeHidden === true || !model.hidden,
-    );
+    const catalogKey = JSON.stringify([liveSessionId, profile, params.includeHidden === true]);
+    let catalogRead = this.modelCatalogReads.get(catalogKey);
+    if (catalogRead === undefined) {
+      catalogRead = this.gateway.call<HermesModelOptionsPayload>("model.options", {
+          explicit_only: params.includeHidden !== true,
+          ...(liveSessionId === null ? {} : { session_id: liveSessionId }),
+          ...(profile === null ? {} : { profile }),
+        }).then((payload) => mapHermesModelOptions(payload).filter(
+          (model) => params.includeHidden === true || !model.hidden,
+        ));
+      this.modelCatalogReads.set(catalogKey, catalogRead);
+      void catalogRead.finally(() => queueMicrotask(() => {
+        if (this.modelCatalogReads.get(catalogKey) === catalogRead) this.modelCatalogReads.delete(catalogKey);
+      })).catch(() => undefined);
+    }
+    const all = await catalogRead;
     const offset = typeof params.cursor === "string" && /^hermes-models:\d+$/u.test(params.cursor)
       ? Number(params.cursor.slice("hermes-models:".length))
       : 0;
@@ -1716,15 +1742,27 @@ export class HermesAppServerAdapter {
       { include_sessions: true },
     );
     const profiles = Array.isArray(result.profiles) ? result.profiles : [];
+    const bindings = new Map<string, string>();
     for (const profile of profiles) {
       const name = profile.name.trim() || "default";
       for (const session of [profile.canonical_session, profile.last_session]) {
         if (typeof session?.id === "string" && session.id.trim() !== "") {
-          this.profileByStored.set(session.id, name);
+          const previous = bindings.get(session.id) ?? this.profileByStored.get(session.id);
+          if (previous !== undefined && previous !== name) throw new Error("Ambiguous Hermes session profile identity");
+          bindings.set(session.id, name);
         }
       }
     }
+    // Validate the complete index before publishing any hint. A shared stored
+    // ID cannot route cold recovery to whichever Profile happened to be last.
+    for (const [id, profile] of bindings) this.profileByStored.set(id, profile);
     return profiles;
+  }
+
+  /** Typed extension escape hatch for Hermes hosted-room RPCs. The Bot bridge
+   * owns the public AppServer projection; callers never receive this client. */
+  callHostedRoom<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    return this.gateway.call<T>(method, params);
   }
 
   createProfile(params: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1831,20 +1869,55 @@ export class HermesAppServerAdapter {
   ): Promise<void> {
     const selection = decodeHermesModelSelection(requestedModel);
     const current = this.payloadByStored.get(storedId)?.info;
-    if (selection !== null && !(
-      current?.model === selection.model &&
-      (selection.provider === null || current.provider === selection.provider)
-    )) {
-      const result = await this.gateway.call<{ value?: string; confirm_required?: boolean; confirm_message?: string }>("config.set", {
-        session_id: liveId,
-        key: "model",
-        value: hermesModelSwitchArgument(selection),
-        confirm_expensive_model: true,
+    if (
+      selection !== null &&
+      (current?.model !== selection.model ||
+        (selection.provider !== null && current.provider !== selection.provider))
+    ) {
+      const catalog = await this.listModels({
+        cursor: null,
+        limit: 200,
+        includeHidden: false,
+        threadId: storedId,
       });
-      if (result.confirm_required === true) throw new Error(result.confirm_message || "Hermes requires confirmation for this model");
-      const payload = this.payloadByStored.get(storedId);
-      if (payload !== undefined) {
-        payload.info = { ...payload.info, model: result.value?.trim() || selection.model, ...(selection.provider === null ? {} : { provider: selection.provider }) };
+      const requested = typeof requestedModel === "string" ? requestedModel.trim() : "";
+      const exact = catalog.data.some((model) => model.id === requested);
+      const modelMatches = catalog.data.filter(
+        (model) => decodeHermesModelSelection(model.id)?.model === selection.model,
+      );
+      if (!exact && modelMatches.length !== 1) {
+        // A stale foreign Host selection may be rebound only when one Hermes
+        // provider owns that model. Never forward the foreign provider id.
+        return;
+      }
+      const effectiveSelection = exact
+        ? selection
+        : decodeHermesModelSelection(modelMatches[0]!.id)!;
+      if (
+        current?.model !== effectiveSelection.model ||
+        (effectiveSelection.provider !== null && current.provider !== effectiveSelection.provider)
+      ) {
+        const result = await this.gateway.call<{
+          value?: string;
+          confirm_required?: boolean;
+          confirm_message?: string;
+        }>("config.set", {
+          session_id: liveId,
+          key: "model",
+          value: hermesModelSwitchArgument(effectiveSelection),
+          confirm_expensive_model: true,
+        });
+        if (result.confirm_required === true) {
+          throw new Error(result.confirm_message || "Hermes requires confirmation for this model");
+        }
+        const payload = this.payloadByStored.get(storedId);
+        if (payload !== undefined) {
+          payload.info = {
+            ...payload.info,
+            model: result.value?.trim() || effectiveSelection.model,
+            ...(effectiveSelection.provider === null ? {} : { provider: effectiveSelection.provider }),
+          };
+        }
       }
     }
 

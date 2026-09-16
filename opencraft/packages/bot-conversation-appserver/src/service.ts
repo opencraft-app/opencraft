@@ -204,7 +204,11 @@ export class AppServerBotConversationService extends Service {
         { hostId, retryable: false },
       ));
     }
-    return client.request(method, params).catch((error: unknown) => {
+    const management = method === "bot/create" || method === "bot/update" || method === "bot/delete";
+    if (management && this.capability(hostId)?.features.botManagement !== true) {
+      return Promise.reject(new BotConversationServiceError("BOT_CAPABILITY_UNAVAILABLE", "此实例不支持 Bot 管理。", { hostId, retryable: false }));
+    }
+    return client.request(method, params, management ? { timeoutMs: 120_000 } : undefined).catch((error: unknown) => {
       throw domainError(error, hostId);
     });
   }

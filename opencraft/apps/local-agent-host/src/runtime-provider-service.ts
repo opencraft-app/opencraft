@@ -11,10 +11,15 @@ import type {
 import { probeRuntimeModel } from "./runtime-model-probe.js";
 import { modelBaseUrlError } from "@opencraft/appserver-protocol";
 import { DshClientError, type DshClient } from "./dsh-client.js";
+import { modelInputModalities } from "@opencraft/composer-core";
 
 const CUSTOM_NS = "llm-pi-ai";
 const supportsProviderLifecycle = (ns: string) => ns === CUSTOM_NS || ns === "llm-deepseek";
 const APIS = ["openai-completions", "openai-responses"] as const;
+export type RuntimeModelInfoReader = (provider: string, model: string) => Promise<{
+  input?: readonly ("text" | "image")[] | null;
+  reasoning?: import("@opencraft/appserver-protocol").RuntimeModelView["reasoning"] | null;
+}>;
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const at = (value: unknown, path: readonly string[]): unknown => path.reduce((node, key) => object(node)[key], value);
@@ -28,8 +33,10 @@ function endpoint(value: string, validateOperation = true): string {
   return url.toString().replace(/\/+$/, "");
 }
 
-/** Application coordinator, not a second config store. DSH owns settings, CAS and credentials. */
+/** Runtime protocol coordinator; product persistence is owned by the injected configuration bridge. */
 export class RuntimeProviderService {
+  private modelInfoReader?: RuntimeModelInfoReader;
+  setModelInfoReader(reader: RuntimeModelInfoReader) { this.modelInfoReader = reader; }
   constructor(private readonly client: Pick<DshClient, "call">) {}
 
   probe(input: RuntimeModelProbeParams) { return probeRuntimeModel(input); }
@@ -64,6 +71,7 @@ export class RuntimeProviderService {
     ]);
     const config = object(settings.namespaces.find(entry => entry.ns === CUSTOM_NS)?.value);
     const policy = object(config.modelSelection);
+    const liveModels = new Set(catalog.groups.flatMap(group => group.models.map(model => JSON.stringify([group.id, model.id]))));
     let groups = [...catalog.groups];
     if (includeDisabled) {
       for (const provider of directory.providers) {
@@ -87,10 +95,16 @@ export class RuntimeProviderService {
         ? provider.declared ? new Set<string>() : new Set((await this.client.call<RuntimeModelsDiscoverResponse>("llm.discoverModels", { settingsNs: CUSTOM_NS, provider: group.id })).models.map(model => model.id))
         : null;
       const disabled = new Set(Array.isArray(policy[group.id]) ? policy[group.id] as string[] : []);
-      return { ...group, models: group.models.map(model => ({ ...model,
+      return { ...group, models: (await Promise.all(group.models.map(async model => {
+        const info = this.modelInfoReader && liveModels.has(JSON.stringify([group.id, model.id]))
+          ? await this.modelInfoReader(group.id, model.id) : null;
+        return { ...model,
+        ...(info ? { reasoning: info.reasoning ?? undefined } : {}),
+        input: modelInputModalities(info ? info.input : model.input ?? (model as { inputModalities?: readonly string[] }).inputModalities)
+          .filter((modality): modality is "text" | "image" => modality !== "audio"),
         enabled: !disabled.has(model.id),
         source: builtin && !builtin.has(model.id) ? "custom" as const : "builtin" as const,
-      })).filter(model => includeDisabled || model.enabled) };
+      }; }))).filter(model => includeDisabled || model.enabled) };
     })) };
   }
 

@@ -587,8 +587,13 @@ export class LightVelaAccountService {
       : await this.fetchImpl(`${this.apiBase}${path}`, requestInit);
     throwIfSignalAborted(authority.signal);
     if (!response.ok) {
-      const payload = await response.clone().json().catch(() => null) as { code?: unknown } | null;
-      const message = await errorMessage(response);
+      const payload = await response.clone().json().catch(() => null) as { code?: unknown; error?: unknown } | null;
+      const code = typeof payload?.code === "string"
+        ? payload.code
+        : typeof payload?.error === "string" ? payload.error : undefined;
+      const message = code === "route_not_allowed" && /^\/v1\/instances\/[^/]+\/bots(?:\/|$)/u.test(path)
+        ? "内部错误，请稍后重试。"
+        : await errorMessage(response);
       throwIfSignalAborted(authority.signal);
       if (response.status === 401) {
         // Invalidate synchronously before any async clear can yield to another login.
@@ -598,7 +603,7 @@ export class LightVelaAccountService {
         this.publish("anonymous", [], null, null);
         void this.desktopAccount?.clearSession().catch(() => undefined);
       }
-      throw new LightVelaApiError(message, response.status, typeof payload?.code === "string" ? payload.code : undefined);
+      throw new LightVelaApiError(message, response.status, code);
     }
     const result = await response.json() as T;
     throwIfSignalAborted(authority.signal);

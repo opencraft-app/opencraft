@@ -113,6 +113,8 @@ export interface SidebarEntityCreationReceipt {
 /** Presentation invokes one semantic command; it never talks to a repository. */
 export interface SidebarEntityCreationCommand {
   readonly noun: string;
+  /** Optional application-owned creation surface shared with management. */
+  readonly open?: () => void;
   readonly targets: readonly SidebarEntityCreationTarget[];
   create(targetId: string, name: string): Promise<SidebarEntityCreationReceipt>;
 }

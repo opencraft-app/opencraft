@@ -108,7 +108,8 @@ export const dispatchAppServerRequest = async (
     return services.whatsappOnboarding.handle(request.method, value);
   }
   switch (request.method) {
-    case "initialize":
+    case "initialize": {
+      const botsAvailable = await services.bots?.prepareCapability() ?? false;
       return {
         codexHome: services.fileSystem?.codexHome ?? "/hermes",
         platformFamily: "unix",
@@ -135,17 +136,19 @@ export const dispatchAppServerRequest = async (
             ...(services.profileSkills === undefined ? {} : {
               [OPENCRAFT_PROFILE_SKILLS_EXTENSION]: OPENCRAFT_PROFILE_SKILLS_CAPABILITY,
             }),
-            ...(services.bots === undefined ? {} : {
+            ...(!botsAvailable ? {} : {
               "vela/bot-conversations": {
                 version: 1,
-                topologies: ["direct"],
+                topologies: services.bots!.groupConversations ? ["direct", "group"] : ["direct"],
                 features: {
                   messageStreaming: true,
                   executionCancellation: true,
                   attachments: true,
-                  interactions: false,
-                  botManagement: true,
+                  interactions: services.bots!.groupConversations,
+                  botManagement: services.bots!.botManagement,
                   botAssets: false,
+                  // Hosted-room rosters are frozen in Hermes protocol v1.
+                  // Creation supports groups; membership mutation does not.
                   groupMembership: false,
                   configuration: false,
                   routines: false,
@@ -153,13 +156,38 @@ export const dispatchAppServerRequest = async (
                 limits: {
                   maxPageSize: 100,
                   maxInlineAttachmentBytes: 10485760,
-                  maxParticipants: 2,
+                  maxParticipants: services.bots!.groupConversations ? 7 : 2,
                 },
               },
             }),
           },
         },
       };
+    }
+    case "agent/list": {
+      // Composer publishes agent/model capability pages atomically. Older
+      // Hermes gateways have no agent catalog; that is an empty optional
+      // projection, not a failure that may erase a successful model/list.
+      try {
+        const models = await adapter.listModels({ cursor: null, limit: 200, includeHidden: false });
+        const entry = {
+          id: "hermes",
+          displayName: "Hermes Agent",
+          description: "Hermes Agent Server",
+          engineKind: "hermes",
+          isDefault: true,
+          defaultModel: null,
+          modelIds: models.data.map((model) => model.id),
+          available: models.data.length > 0,
+          unavailableReason: models.data.length > 0 ? null : "Hermes has no available models",
+        };
+        const offset = typeof value.cursor === "string" && value.cursor === "hermes-agents:1" ? 1 : 0;
+        const limit = typeof value.limit === "number" ? Math.max(0, Math.floor(value.limit)) : 100;
+        return { data: offset === 0 && limit > 0 ? [entry] : [], nextCursor: null };
+      } catch {
+        return { data: [], nextCursor: null };
+      }
+    }
     case "thread/list":
       return adapter.listThreads(value);
     case "thread/read": {

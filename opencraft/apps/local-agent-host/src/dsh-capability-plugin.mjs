@@ -8,9 +8,12 @@ import { join, isAbsolute } from "node:path";
 import { createSurfaceCheckpoint } from "./hypernode/surface-checkpoint.mjs";
 import { DshCheckpointStore } from "./dsh-checkpoint-store.mjs";
 import { admitCapabilityOutput } from "./dsh-capability-output.mjs";
+import { createThreadEngine } from "./dsh-thread-engine.mjs";
+import { volatileSessions } from "./dsh-thread-storage.mjs";
 
-export const inject = ["tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments"];
+export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments"];
 export async function apply(ctx, config) {
+  const threadEngine = await createThreadEngine(ctx, config.toolsModuleUrl);
   // Resolve against the bundled engine, not the application's dependency tree.
   const { assertObjectJsonSchema } = await import(config.toolsModuleUrl);
   const { createScope } = await import(new URL("../../dsh-scope/lib/index.js", config.toolsModuleUrl).href);
@@ -37,7 +40,7 @@ export async function apply(ctx, config) {
     generations.set(checkpoint.sourceSessionId, { logicalSessionId: checkpoint.logicalSessionId, generation: checkpoint.generation });
   }
   ctx.on("session/event", (session, event) => {
-    if (!checkpoints || event.type !== "turn/end") return;
+    if (!checkpoints || event.type !== "turn/end" || volatileSessions.has(session.id ?? session.header.id)) return;
     const id = String(session.id ?? session.header.id);
     const generation = generations.get(id) ?? { logicalSessionId: id, generation: 0 };
     void checkpoints.capture(generation.logicalSessionId, session, generation.generation, session => ctx.sessions.flush(session))
@@ -140,6 +143,17 @@ export async function apply(ctx, config) {
       for await (const chunk of req) { size += chunk.length; if (size > 1024 * 1024) throw new Error("Request too large"); chunks.push(chunk); }
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
       const route = req.url;
+      if (req.method === "POST" && route === "/model-info") {
+        if (typeof body.provider !== "string" || !body.provider || typeof body.model !== "string" || !body.model)
+          throw new Error("Invalid model identity");
+        const info = await ctx.llm.resolveModelInfo(body.provider, body.model);
+        res.end(JSON.stringify({ input: info.inputModalities ?? null, reasoning: info.reasoning ?? null })); return;
+      }
+      if (req.method === "POST" && route.startsWith("/thread/")) {
+        const operation = route.slice("/thread/".length);
+        if (!Object.hasOwn(threadEngine, operation)) throw new Error("Unknown thread operation");
+        res.end(JSON.stringify(await threadEngine[operation](body))); return;
+      }
       if (req.method === "POST" && route === "/permissions") {
         const agent = body.sessionId ? ctx.agents.get(body.sessionId) : null;
         if (body.sessionId && !agent) throw new Error("Permission lookup requires an existing agent");

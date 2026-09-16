@@ -70,6 +70,7 @@ export function createAppServerBotCreationCommand(
   if (targets.length === 0) return null;
   return Object.freeze({
     noun: "Bot",
+    open: () => openView("vela.bot-management.view", `create:${createClientRequestId()}`),
     targets: Object.freeze(targets),
     async create(hostId: string, name: string) {
       const bot = await directory.create(hostId, {

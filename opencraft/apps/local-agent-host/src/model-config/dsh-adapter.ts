@@ -47,10 +47,10 @@ export class DshModelEngineAdapter implements ModelEnginePort {
     for(const [ref,value]of wanted)await this.client.call('credentials.set',{ref,value});
     const projected=sections(execution,raw);
     for(const ns of ['llm-deepseek','llm-pi-ai','agent-default-model'] as const){
-      if(ns==='agent-default-model'&&!doc.defaultModel)continue;
       const prior=raw.namespaces.find(n=>n.ns===ns);if(!prior)continue;
       const value=projected[ns];
       const ops:RuntimeSettingsPathOperation[] = Object.entries(value).map(([key,v])=>({op:'set',path:[key],value:v}));
+      if(ns==='agent-default-model'&&!doc.defaultModel)ops.push({op:'unset',path:['provider']},{op:'unset',path:['model']});
       if(ns==='llm-deepseek'&&!Object.hasOwn(value,'baseURL'))ops.push({op:'unset',path:['baseURL']});
       if(ns==='agent-default-model'&&!Object.hasOwn(value,'reasoningEffort'))ops.push({op:'unset',path:['reasoningEffort']});
       await this.client.call('settings.mutate',{ns,expectedRevision:prior.revision,ops});

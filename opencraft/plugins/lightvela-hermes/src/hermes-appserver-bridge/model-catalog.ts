@@ -161,18 +161,22 @@ export function mapHermesModelOptions(
   return result;
 }
 
-function quoteHermesArgument(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
+function hermesModelSwitchToken(value: string): string {
+  const token = value.trim();
+  if (token === "" || /\s/u.test(token) || token.startsWith("-")) {
+    throw new Error("Hermes model selection contains an invalid RPC token");
+  }
+  return token;
 }
 
 export function hermesModelSwitchArgument(
   selection: HermesModelSelection,
 ): string {
   return [
-    quoteHermesArgument(selection.model),
+    hermesModelSwitchToken(selection.model),
     ...(selection.provider === null
       ? []
-      : ["--provider", quoteHermesArgument(selection.provider)]),
+      : ["--provider", hermesModelSwitchToken(selection.provider)]),
     "--session",
   ].join(" ");
 }

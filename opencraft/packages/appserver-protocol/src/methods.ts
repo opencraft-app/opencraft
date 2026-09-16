@@ -402,6 +402,14 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
     params: ThreadUnsubscribeParams;
     result: ThreadUnsubscribeResponse;
   };
+  "thread/inject_items": {
+    params: import("./generated/v2").ThreadInjectItemsParams;
+    result: import("./generated/v2").ThreadInjectItemsResponse;
+  };
+  "thread/name/set": {
+    params: { threadId: string; name: string };
+    result: Record<string, never>;
+  };
   "turn/start": {
     params: TurnStartParams;
     result: TurnStartResponse;
@@ -444,11 +452,11 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerProc
   };
   "thread/archive": {
     params: ThreadArchiveParams;
-    result: unknown;
+    result: Record<string, never>;
   };
   "thread/unarchive": {
     params: ThreadArchiveParams;
-    result: unknown;
+    result: import("./generated/v2").ThreadUnarchiveResponse;
   };
   "model/list": {
     params: ModelListParams;
