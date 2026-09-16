@@ -4,10 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawBot } from "@/contexts/agent-context";
 import type { User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
-import {
-  HERMES_MODEL_CONFIG_JSON_END,
-  HERMES_MODEL_CONFIG_JSON_START,
-} from "@/pages/marketing/agent-model-config/hermes-model-config-command";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 
 const execDebugCommand = vi.fn();
@@ -26,21 +22,15 @@ let maxBots = 1;
 let multiBotEnabled = true;
 
 vi.mock("@/i18n/t", () => ({
-  t: (text: string, options?: Record<string, unknown>) => (
+  t: (text: string) => (
     testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
       ? "A Bot is being deleted. Refresh the page in a moment before creating another."
-      : text.replace(/\{\{\s*([\w$]+)\s*\}\}/g, (raw, name: string) => {
-          const value = options?.[name];
-          return value === undefined || value === null ? raw : String(value);
-        })
+      : text
   ),
-  useT: () => (text: string, options?: Record<string, unknown>) => (
+  useT: () => (text: string) => (
     testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
       ? "A Bot is being deleted. Refresh the page in a moment before creating another."
-      : text.replace(/\{\{\s*([\w$]+)\s*\}\}/g, (raw, name: string) => {
-          const value = options?.[name];
-          return value === undefined || value === null ? raw : String(value);
-        })
+      : text
   ),
 }));
 
@@ -183,14 +173,14 @@ describe("multi-Bot diagnostics", () => {
     await screen.findByText("Agent 备份与恢复");
     expect(screen.getByText("查看 Hermes Agent 日志，并集中执行相关维护操作")).toBeInTheDocument();
     await waitFor(() => expect(getRescueExportStatus).toHaveBeenCalledWith("ins-1"));
-    expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("root log");
     expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h -n 50");
 
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
-    expect(screen.getByText("查看当前 Bot 的日志和模型配置；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
+    expect(screen.getByText("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
     const chatTab = screen.getByRole("tab", { name: "对话" });
     expect(chatTab).toBeDisabled();
     expect(chatTab).not.toHaveAttribute("title");
@@ -204,48 +194,6 @@ describe("multi-Bot diagnostics", () => {
     await screen.findByText("sales log");
     expect(execDebugCommand).toHaveBeenLastCalledWith("sales", "hermes -p 'sales' logs --since 1h -n 50");
     expect(getRescueExportStatus.mock.calls.every(([id]) => id === "ins-1")).toBe(true);
-  });
-
-  it("resets only the selected named Profile without rotating the instance key", async () => {
-    render(page("sales"));
-    const resetButton = (await screen.findAllByRole("button", { name: "执行" }))[0]!;
-    expect(resetButton).toBeEnabled();
-    expect(screen.getByText("将当前 Bot 的模型配置恢复为系统内置模型")).toBeInTheDocument();
-
-    fireEvent.click(resetButton);
-    expect(await screen.findByText(/将把当前 Bot「Sales」恢复为系统内置模型/)).toBeInTheDocument();
-    execDebugCommand.mockResolvedValueOnce({
-      status: "SUCCESS",
-      exitCode: 0,
-      output: [
-        HERMES_MODEL_CONFIG_JSON_START,
-        JSON.stringify({
-          ok: true,
-          snapshot: {
-            primary: {
-              id: "auto",
-              providerKey: "custom",
-              providerName: "custom",
-              baseUrl: "https://gateway.example.com/v1",
-              apiMode: "chat_completions",
-              keyEnv: "KEY_custom",
-            },
-            fallbacks: [],
-            configuredModels: [],
-          },
-        }),
-        HERMES_MODEL_CONFIG_JSON_END,
-      ].join("\n"),
-    });
-    fireEvent.click(screen.getByRole("button", { name: "确认重置" }));
-
-    await waitFor(() => expect(execDebugCommand).toHaveBeenCalledOnce());
-    expect(execDebugCommand.mock.calls[0]?.[0]).toBe("sales");
-    const command = execDebugCommand.mock.calls[0]?.[1] as string;
-    expect(command).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'sales\'');
-    const encoded = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
-    expect(JSON.parse(Buffer.from(encoded!, "base64").toString("utf8"))).toEqual({ type: "resetToBuiltIn" });
-    expect(resetInstanceConfig).not.toHaveBeenCalled();
   });
 
   it("retains instance backup progress and disables maintenance when returning from a sibling", async () => {

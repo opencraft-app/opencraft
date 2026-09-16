@@ -258,7 +258,7 @@ export function AgentDiagnosticsPanel({
         description={
           isMainBot
             ? t("查看 Hermes Agent 日志，并集中执行相关维护操作")
-            : t("查看当前 Bot 的日志和模型配置；Agent 级维护请在主 Bot 中操作")
+            : t("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")
         }
       />
 
@@ -267,7 +267,7 @@ export function AgentDiagnosticsPanel({
           <MaintenanceActionCard
             icon={<Wrench className="h-3 w-3" />}
             title={t("重置模型配置")}
-            description={t("将当前 Bot 的模型配置恢复为系统内置模型")}
+            description={t("初始化 Hermes Agent 的模型配置，适合修复模型配置")}
             action={resetConfigAction}
             loadingLabel={t("恢复中...")}
           />

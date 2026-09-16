@@ -278,7 +278,6 @@ export function createHermesModelConfigClient(
 
   return {
     read: () => execute({ type: "read" }),
-    resetToBuiltIn: () => execute({ type: "resetToBuiltIn" }),
     probeConfigured: async (anchor: HermesConfiguredModel) => {
       const snapshot = await execute({ type: "probeConfiguredProvider", anchor });
       return { models: snapshot.probedModels ?? [], succeeded: snapshot.probeSucceeded ?? false };
