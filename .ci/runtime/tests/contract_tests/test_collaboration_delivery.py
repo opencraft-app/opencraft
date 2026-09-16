@@ -85,6 +85,9 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertIn("@sha256:", workflow["variables"]["COLLABORATION_IMAGE"]["value"])
         self.assertEqual(len(workflow["stages"]), 3)
         self.assertIn("check-in", workflow["stages"][1])
+        branch_guard = "${{ ci.branch }} == master"
+        self.assertEqual(workflow["stages"][1].get("if"), branch_guard)
+        self.assertEqual(workflow["stages"][2].get("if"), branch_guard)
         text = workflow_path.read_text()
         self.assertEqual(text.count("ci_ensure_go"), 2)
         for required in (
