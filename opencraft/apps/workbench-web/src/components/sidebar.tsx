@@ -41,6 +41,7 @@ interface SidebarProps {
   pendingThreadId?: string | null;
   primaryActions?: readonly SidebarActionItem[];
   footerActions?: readonly SidebarActionItem[];
+  managementNavigation?: ReactNode;
   catalogs?: readonly SidebarCatalogItem[];
   bots?: readonly SidebarEntity[];
   sidebarLayout: SidebarLayoutStore;
@@ -111,6 +112,7 @@ export function Sidebar({
   pendingThreadId = null,
   primaryActions = [],
   footerActions = [],
+  managementNavigation = null,
   catalogs = [],
   bots = [],
   sidebarLayout,
@@ -177,6 +179,8 @@ export function Sidebar({
           </button>
         ))}
       </nav>
+
+      {managementNavigation}
 
       <div className="sidebar-content-scroll" ref={scrollContainerRef}>
         <SidebarBots

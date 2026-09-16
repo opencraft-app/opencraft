@@ -23,6 +23,8 @@ import { parseApplicationRouteUrl, type ApplicationRoute } from "../runtime/work
 import { getWindowChromePolicy, useWindowChrome } from "../window-chrome";
 import { AppShell } from "./app-shell";
 import { InternalDeveloperModeGate } from "./internal-developer-mode-gate";
+import { isLightVelaStandaloneManagementSection } from "./lightvela-management-route";
+import { LightVelaWorkNavigation } from "./lightvela-work-navigation";
 import {
   ManagementSettingsContent,
   ModalHost,
@@ -108,6 +110,9 @@ export function HostlessWorkbench({
   )?.contribution ?? null;
   const managementSettingsOpen = settingsOpen
     && selectedSettingsContribution?.management !== undefined;
+  const standaloneManagementOpen = managementSettingsOpen
+    && settingsSection !== null
+    && isLightVelaStandaloneManagementSection(settingsSection);
   const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
   const applicationReturnsToPreviousEntry = useRef(
     applicationRoute.kind !== "conversation" && hasHostlessApplicationReturn(window.history.state),
@@ -298,6 +303,13 @@ export function HostlessWorkbench({
     <Sidebar
       activeHostId=""
       activeThreadId=""
+      managementNavigation={applicationRoute.kind === "conversation" || standaloneManagementOpen ? (
+        <LightVelaWorkNavigation
+          section={standaloneManagementOpen ? settingsSection : null}
+          extensionContributions={supervisor.extensions.contributions}
+          onSectionChange={selectSettingsSection}
+        />
+      ) : null}
       showFooter={false}
       catalogs={extensionProjection.catalogs}
       bots={extensionProjection.bots}
@@ -343,7 +355,7 @@ export function HostlessWorkbench({
   ) : null;
   const modalRequests: ModalRequest[] = [];
   const announcementModalRequests = useAnnouncementModalRequests(supervisor.extensions.announcements);
-  if (managementSettingsOpen) {
+  if (managementSettingsOpen && !standaloneManagementOpen) {
     modalRequests.push({
       id: "management-settings",
       label: "Hermes settings",
@@ -396,11 +408,12 @@ export function HostlessWorkbench({
         }}
         layoutScope="hostless"
         mainContentLayout={
-          applicationRoute.kind === "conversation" || managementSettingsOpen
+          applicationRoute.kind === "conversation"
+          || (managementSettingsOpen && !standaloneManagementOpen)
             ? "thread-edge-scroll"
             : "default"
         }
-        header={header}
+        header={standaloneManagementOpen ? null : header}
         floatingSidebarHeader={(onDock) => (
           <AppShellNavigationControls
             hostRole="transient"
@@ -435,6 +448,10 @@ export function HostlessWorkbench({
         >
             {routeSettingsOpen ? (
               <section className="settings-page" aria-label="Settings">
+                {settingsContent}
+              </section>
+            ) : standaloneManagementOpen ? (
+              <section className="lightvela-management-route" aria-label="LightVela management">
                 {settingsContent}
               </section>
             ) : applicationRoute.kind === "extension-view" ? (

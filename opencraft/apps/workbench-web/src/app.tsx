@@ -72,6 +72,8 @@ import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
 import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
+import { isLightVelaStandaloneManagementSection } from "./components/lightvela-management-route";
+import { LightVelaWorkNavigation } from "./components/lightvela-work-navigation";
 import { InternalDeveloperModeGate } from "./components/internal-developer-mode-gate";
 import {
   ManagementSettingsContent,
@@ -398,11 +400,14 @@ export function App() {
   )?.contribution ?? null;
   const managementSettingsOpen = settingsOpen
     && selectedSettingsContribution?.management !== undefined;
+  const standaloneManagementOpen = managementSettingsOpen
+    && isLightVelaStandaloneManagementSection(settingsSection);
   const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
   // A target-management route is a modal semantic surface. The underlying
   // conversation keeps its physical shell and geometry, but is inert while
   // the dialog owns interaction and focus.
-  const conversationSurfaceVisible = conversationRouteOpen || managementSettingsOpen;
+  const conversationSurfaceVisible = conversationRouteOpen
+    || (managementSettingsOpen && !standaloneManagementOpen);
   const shellSidebarOpen = sidebarOpen;
   const openSettingsFromConversation = useCallback(() => {
     const focusedElement = document.activeElement;
@@ -1057,7 +1062,7 @@ export function App() {
       }}>Close side chat</Button></div>,
   });
   const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
-  if (managementSettingsOpen) {
+  if (managementSettingsOpen && !standaloneManagementOpen) {
     modalRequests.push({
       id: "management-settings",
       label: `${hostCatalog.profiles.find((profile) => profile.hostId === snapshot.hostId)?.displayName ?? "Hermes"} settings`,
@@ -1167,7 +1172,7 @@ export function App() {
               allowEmpty: true,
             })
           }
-          header={header}
+          header={standaloneManagementOpen ? null : header}
           floatingSidebarHeader={(onDock) => (
             <AppShellNavigationControls
               hostRole="transient"
@@ -1182,7 +1187,7 @@ export function App() {
             />
           )}
           leftPanel={
-            routeSettingsOpen ? settingsNavigation : conversationSurfaceVisible ? <Sidebar
+            routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
               renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
               onNewTaskForTarget={(hostId) => hostCatalog.openDraft({
@@ -1201,6 +1206,13 @@ export function App() {
                 )?.settingsPageId;
                 workbenchNavigation.openSettings(settingsPageId ?? "appearance");
               }}
+              managementNavigation={conversationRouteOpen || standaloneManagementOpen ? (
+                <LightVelaWorkNavigation
+                  section={standaloneManagementOpen ? settingsSection : null}
+                  extensionContributions={hostCatalog.extensionContributions}
+                  onSectionChange={selectSettingsSection}
+                />
+              ) : null}
               showFooter={false}
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
@@ -1484,6 +1496,11 @@ export function App() {
           </div>
         )}
           </div>
+          {standaloneManagementOpen ? (
+            <section className="lightvela-management-route" aria-label="LightVela management">
+              {settingsContent}
+            </section>
+          ) : null}
           {settingsRoute}
           {extensionViewOpen ? (
             <section className="extension-view-route" aria-label={extensionProjection.activeView?.title}>
