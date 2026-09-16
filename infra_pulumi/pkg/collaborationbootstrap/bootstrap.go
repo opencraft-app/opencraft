@@ -20,6 +20,8 @@ const (
 
 var resourceNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,28}[A-Za-z0-9]$`)
 
+const cynosDBPasswordSpecials = "~!#$%^*_-+=|\\(){}[];'<>.,"
+
 type Config struct {
 	ClusterID    string
 	Database     string
@@ -129,6 +131,14 @@ func Run(
 		password, err = validateExistingSecret(config, payload, im, options)
 		if err != nil {
 			return Result{}, err
+		}
+		if !databaseState.AccountExists && !validCynosDBPassword(password) {
+			password, err = newDatabasePassword(generator)
+			if err != nil {
+				return Result{}, err
+			}
+			payload[databaseDSNKey] = managedDSN(config, password)
+			result.Secret.Updated = true
 		}
 		if strings.TrimSpace(im.SecretKey) != "" && payload[imSecretKey] != im.SecretKey {
 			payload[imSecretKey] = im.SecretKey
@@ -240,7 +250,11 @@ func validateExistingSecret(config Config, payload map[string]string, im IMMater
 }
 
 func newSecretPayload(generator TokenGenerator, config Config, im IMMaterial) (map[string]string, string, error) {
-	values := make([]string, 5)
+	password, err := newDatabasePassword(generator)
+	if err != nil {
+		return nil, "", err
+	}
+	values := make([]string, 4)
 	for index := range values {
 		value, err := generator.Token(32)
 		if err != nil {
@@ -251,12 +265,55 @@ func newSecretPayload(generator TokenGenerator, config Config, im IMMaterial) (m
 		}
 		values[index] = value
 	}
-	password := values[0]
 	return map[string]string{
 		databaseDSNKey: managedDSN(config, password),
-		jwtKey:         values[1], gatewayKey: values[2], imSecretKey: im.SecretKey,
-		imIdentityKey: values[3], imCallbackKey: values[4],
+		jwtKey:         values[0], gatewayKey: values[1], imSecretKey: im.SecretKey,
+		imIdentityKey: values[2], imCallbackKey: values[3],
 	}, password, nil
+}
+
+func newDatabasePassword(generator TokenGenerator) (string, error) {
+	value, err := generator.Token(32)
+	if err != nil {
+		return "", fmt.Errorf("generate collaboration database password: %w", err)
+	}
+	if len(value) < 8 || len(value) > 64 {
+		return "", fmt.Errorf("generate collaboration database password: token length must be between 8 and 64 characters")
+	}
+	password := []byte(value)
+	copy(password[:4], "Aa1_")
+	if !validCynosDBPassword(string(password)) {
+		return "", fmt.Errorf("generate collaboration database password: token contains unsupported characters")
+	}
+	return string(password), nil
+}
+
+func validCynosDBPassword(value string) bool {
+	if len(value) < 8 || len(value) > 64 {
+		return false
+	}
+	lower, upper, digit, special := false, false, false, false
+	for _, char := range value {
+		switch {
+		case char >= 'a' && char <= 'z':
+			lower = true
+		case char >= 'A' && char <= 'Z':
+			upper = true
+		case char >= '0' && char <= '9':
+			digit = true
+		case strings.ContainsRune(cynosDBPasswordSpecials, char):
+			special = true
+		default:
+			return false
+		}
+	}
+	categories := 0
+	for _, present := range []bool{lower, upper, digit, special} {
+		if present {
+			categories++
+		}
+	}
+	return categories >= 3
 }
 
 func managedDSN(config Config, password string) string {
