@@ -7,6 +7,9 @@ resources:
   - ../../base
   - generated/ctl-migrations-configmap.yaml
 
+patches:
+  - path: patch-referral.yaml
+
 generatorOptions:
   disableNameSuffixHash: true
 

@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctl-api
+  namespace: ctl
+spec:
+  template:
+    spec:
+      containers:
+        - name: ctl-api
+          env:
+            - name: REFERRAL_ENABLED
+              value: "true"
+            - name: REFERRAL_OUTBOX_RELAY_ENABLED
+              value: "true"
+            - name: REFERRAL_PULSAR_URL
+              value: "http://pulsar-vje938a9pgq4.eap-tiu5h8jq.tdmq-pulsar.ap-sh.qcloud.tencenttdmq.com:8080"
+            - name: REFERRAL_PULSAR_TOPIC
+              value: "persistent://pulsar-vje938a9pgq4/lightvela-ref/lightvela.referral.events.v1"

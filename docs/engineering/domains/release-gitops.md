@@ -151,7 +151,7 @@ master 源码
   `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
   接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
 
-### Referral 北京试点交付
+### Referral 北京与上海交付
 
 - 现有北京 P2 Pulsar 集群是外部依赖，Pulumi 只管理 namespace、主 topic、DLQ、三类角色和最小权限；
   preview 必须先只读核对 cluster id、名称、规格、可用区、VPC、子网和 broker endpoint，不能把弹性存储
@@ -165,9 +165,9 @@ master 源码
   processing、campaign Job、Auth/CTL relay、Gateway 路由和前端入口关闭，待 schema/API 健康后单独启用。
 - 基础阶段 `REFERRAL_PROCESSING_ENABLED=false` 时，`referral-worker` Deployment 必须同步缩容到 0；
   正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
-- 北京正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
+- 北京或上海正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
   公共面只允许查询单个返利码与准备注册上下文，用户统计和返利码创建必须经过 session 鉴权。
-- 北京环境显式设置 `REFERRAL_ENABLED=true`；全局和上海/新加坡默认关闭。CTL migration 31 未执行时
+- 北京与上海环境显式设置 `REFERRAL_ENABLED=true`；全局和新加坡默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
   bootstrap 证据；镜像构建、Pulsar 资源存在或 UI 可见均不能单独代表返利闭环。
@@ -180,9 +180,9 @@ master 源码
 - TDMQ P2 会把非分区 Topic 的 `partitions=0` 创建参数规范化为读取值 `1`。Pulumi 必须忽略该只读字段的
   回读漂移，并继续以 `pulsar_topic_type=2` 作为“持久化非分区 Topic”的语义真源；不得因伪漂移反复更新
   生产 Topic。首次 apply 后的 scoped preview 必须达到全部 unchanged。
-- 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户，仅部署 2 个禁用态 API 副本；
-  `referral-worker` 必须为 0 副本，且 deploy-facing 目录不得包含 campaign PostSync Job。这个阶段不导出或注入
-  Auth/CTL producer token，不增加 Service Gateway 路由，也不打开前端 Referral 标记。
+- 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户。激活时必须使用上海独立 Campaign、
+  Pulsar producer/consumer Token 和精确 Gateway 路由，同时把 worker 恢复到 2 副本；不得复用北京 campaign ID、
+  Token 或 endpoint。上海 Campaign 双方各 500 积分、`vesting_days=0`，资格仍是首次成功开通且 0 元 dianshi 订单也算。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。

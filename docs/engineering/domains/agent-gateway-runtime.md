@@ -128,6 +128,10 @@
   的幂等送积分包装。调用方只传积分额度和资格标识，不传 Plan ID；CTL 将积分换算成 token，
   VelaGW 自动确保 `never` reset 的内部权益模板，并在其同步到全部 active Set 后发放。包装在调用 VelaGW 前
   同时校验受益人有 active Pass，以及返利资格 Pass 仍归属被邀请人、active 且未过期；资格参数必须成对提供。
+- 北京和上海 Referral 分别使用独立 campaign、Pulsar topic token、预算和运行开关；启用上海 worker
+  只消费上海 Auth/CTL outbox 事件，并通过上述 CTL 包装发放 named subscription。该链路不修改用户的
+  `ctl.user_subscription_gateway` 归属，不切换 Bot provider、模型或 Agent 请求路径，也不为旧 AI-Gateway
+  增加等价的定向积分能力；失败由 Referral 状态机保持可重试，不得绕过 CTL 直接写 VelaGW。
 - 运行中实例从 `ai_gateway` 迁移到 VelaGW 必须同时完成权益补发、固定用途 Key 签发、Hermes Provider 切换、实例 Key ID 持久化和旧 Key 撤销。该操作只通过强鉴权内部接口按 `user_id + instance_id` 执行，默认先 dry-run；用户存在多个非终态 Bot 时拒绝迁移，避免用户级网关路由产生半迁移。
 - 迁移采用可重入、最终一致语义：用户、订阅和固定用途 Key 均幂等复用，Hermes 配置可重复收敛，路由和实例 Key ID 可重复写入；任一步失败后允许从头重试，不引入跨服务伪事务。
 - VelaGW 人工额度重置只能调用用户加 Plan 维度的接口，并固定保留自然重置时间；禁止用 Plan 全量重置接口代替单用户操作。CTL 对该能力提供用户级包装，隐藏 Set、上游用户和 new-api Plan ID。
