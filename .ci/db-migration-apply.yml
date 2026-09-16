@@ -1,0 +1,128 @@
+version: v2.0
+name: 生产 DB migration 显式执行
+
+# Stream evaluates stage conditions from template defaults for manual runs.
+# Keep the approval and apply stages unconditional so a successful dry-run cannot skip them.
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-prod-db-migration
+  cancel-in-progress: false
+  queue-length: 2
+  queue-timeout-minutes: 480
+
+variables:
+  SERVICE:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  TARGET_ENV:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  TIMEOUT_SECONDS:
+    value: "1800"
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: Dry-run 生产 DB migration
+    jobs:
+      dry_run:
+        name: 校验版本并打印唯一待执行 SQL
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          SERVICE: ${{ variables.SERVICE }}
+          TARGET_ENV: ${{ variables.TARGET_ENV }}
+          SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+          TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: Dry-run 并要求实际需要 migration
+            shell: bash
+            run: |
+              set -euo pipefail
+              case "$TARGET_ENV" in shprod|sgprod) ;; *) echo "TARGET_ENV must be shprod or sgprod" >&2; exit 1 ;; esac
+              [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "SOURCE_SHA must be a full commit SHA" >&2; exit 1; }
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "$SERVICE" \
+                --env "$TARGET_ENV" \
+                --source-sha "$SOURCE_SHA" \
+                --timeout-seconds "$TIMEOUT_SECONDS" \
+                --skip-if-no-migration-change \
+                --expect-decision run_migration
+
+  - name: 人工确认生产 DB migration
+    check-in:
+      reviews:
+        flows:
+          - name: 确认执行生产 DB migration
+            reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]
+      description: |
+        仅在上一阶段 dry-run 成功后继续。先核对 SERVICE、TARGET_ENV、SOURCE_SHA、
+        镜像、current/latest/dirty，以及 pending SQL 路径和完整正文。
+        通过后将创建一次性生产 migration Job，再执行 DB readiness Job。
+      timeout-hours: 24
+    jobs:
+      approved:
+        name: 记录人工确认
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - name: 人工确认已通过
+            shell: bash
+            run: |
+              echo "production DB migration execution approved"
+
+  - name: 执行生产 DB migration
+    jobs:
+      apply:
+        name: 创建并等待 migration/readiness Job
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          SERVICE: ${{ variables.SERVICE }}
+          TARGET_ENV: ${{ variables.TARGET_ENV }}
+          SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+          TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 执行生产 DB migration 并验证 readiness
+            shell: bash
+            run: |
+              set -euo pipefail
+              case "$TARGET_ENV" in shprod|sgprod) ;; *) echo "TARGET_ENV must be shprod or sgprod" >&2; exit 1 ;; esac
+              [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "SOURCE_SHA must be a full commit SHA" >&2; exit 1; }
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "$SERVICE" \
+                --env "$TARGET_ENV" \
+                --source-sha "$SOURCE_SHA" \
+                --timeout-seconds "$TIMEOUT_SECONDS" \
+                --skip-if-no-migration-change \
+                --expect-decision run_migration \
+                --apply

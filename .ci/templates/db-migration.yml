@@ -75,6 +75,11 @@ stages:
               if [[ "${SKIP_IF_NO_MIGRATION_CHANGE:-false}" == "true" ]]; then
                 EXTRA_ARGS+=(--skip-if-no-migration-change)
               fi
+              if [[ "$MIGRATION_DECISION" == "run_migration" ]]; then
+                echo "This pipeline cannot safely execute run_migration: Stream skips runtime-conditional stages." >&2
+                echo "Use .ci/db-migration-apply.yml for explicit dry-run, approval, and apply." >&2
+                exit 1
+              fi
               python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
                 --service "$SERVICE" \
                 --env "$TARGET_ENV" \

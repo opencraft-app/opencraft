@@ -186,6 +186,10 @@ master 源码
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
   只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
+- Stream 手动启动变量不能作为生产 DB migration 的条件 stage 真源。`run_migration` 必须使用
+  `.ci/db-migration-apply.yml` 的固定 dry-run、人工审核、apply 序列；旧入口遇到此决策时 fail closed。
+  dry-run 和 apply 都按相同的不可变 SOURCE_SHA、目标环境及实际 schema 版本重新校验；脚本阶段成功
+  不代表迁移 Job 已执行或数据库已升级。
 
 ### Collaboration 北京两阶段 bootstrap
 

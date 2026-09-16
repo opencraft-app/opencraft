@@ -3074,6 +3074,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("创建并等待 migration/readiness Job", template_text)
         self.assertIn("--apply", template_text)
 
+        explicit_path = REPO_ROOT / ".ci/db-migration-apply.yml"
+        explicit_text = explicit_path.read_text()
+        explicit = yaml.safe_load(explicit_text)
+        explicit_on = explicit.get(True) or explicit.get("on") or {}
+        explicit_stages = explicit.get("stages") or []
+        self.assertEqual(explicit_on.get("manual"), "enabled")
+        self.assertEqual(
+            [stage.get("name") for stage in explicit_stages],
+            ["Dry-run 生产 DB migration", "人工确认生产 DB migration", "执行生产 DB migration"],
+        )
+        self.assertTrue(all("if" not in stage for stage in explicit_stages))
+        self.assertIn("check-in", explicit_stages[1])
+        self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
+        self.assertIn("--apply", explicit_text)
+        self.assertIn('if [[ "$MIGRATION_DECISION" == "run_migration" ]]', template_text)
+        self.assertIn("Use .ci/db-migration-apply.yml", template_text)
+
     def test_lightclaw_auth_prod_replaces_oauth_return_hosts(self) -> None:
         for env in ["shprod", "sgprod"]:
             with self.subTest(env=env):
