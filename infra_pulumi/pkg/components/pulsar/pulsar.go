@@ -45,7 +45,7 @@ func Ensure(ctx *stackctx.Context) error {
 		Partitions:      pulumi.Int(0),
 		PulsarTopicType: pulumi.IntPtr(2),
 		Remark:          pulumi.String("Dead-letter events for LightVela referral processing"),
-	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}))...)
+	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}), pulumi.IgnoreChanges([]string{"partitions"}))...)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func Ensure(ctx *stackctx.Context) error {
 		Partitions:      pulumi.Int(0),
 		PulsarTopicType: pulumi.IntPtr(2),
 		Remark:          pulumi.String("Versioned LightVela referral events"),
-	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}))...)
+	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}), pulumi.IgnoreChanges([]string{"partitions"}))...)
 	if err != nil {
 		return err
 	}
