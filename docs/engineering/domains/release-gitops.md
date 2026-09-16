@@ -185,7 +185,7 @@ master 源码
   Auth/CTL producer token，不增加 Service Gateway 路由，也不打开前端 Referral 标记。
 - Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
   尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
-  只用于 DB 门禁，随后由 Argo 接管正式资源。
+  只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
 
 ### Collaboration 北京两阶段 bootstrap
 
