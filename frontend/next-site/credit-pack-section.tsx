@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
 import { CREDIT_PACK_DENOMINATIONS, type CreditProduct, type CreditQuote } from '@/domain/credit-pack';
@@ -302,7 +302,10 @@ export const CreditPackSection = ({
            订单号由弹窗内的订单号行统一展示（客服排查入口）。 */
         return t('暂未确认支付结果，请稍后刷新。');
       case 'failed':
-        return t('下单失败：{{reason}}', { reason: checkout.state.error ?? '' });
+        /* 文案必须中性：failed 不等于「下单失败」——订单可能已创建成功
+           （如支付票据未下发、pay_url 为空），说「下单失败」会诱导用户
+           重复下单产生双订单。与 delivery_exception 的中性口径一致。 */
+        return t('支付未完成：{{reason}}', { reason: checkout.state.error ?? '' });
       default:
         return null;
     }

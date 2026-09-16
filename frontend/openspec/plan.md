@@ -1,3 +1,20 @@
+# 积分包微信中转支付空票据前置判定（2026-09-16）
+
+**Status:** 已实现并通过定向验证（hook 测试 22/22、tsc 零错误、`git diff --check` 待提交时确认）；未 commit、未推送、未创建 MR。全量 `pnpm check` 因本机 Node 20 与 pnpm 11（要求 Node 22.13+）不兼容未执行，需在 Node 22 环境补跑。
+**Size / Mode:** S / 单 Agent inline quick。
+**Goal:** !3910 起 credit order-url 强制校验 auth_code；后端票据发放失败时静默返回空串（HTTP 200 + `auth_code: ""`），前端按旧灰度设计仍打开中转页 → 微信内必然显示「二维码已失效」，误导用户反复重新生成。本变更在 PC 端下单后即判定票据缺失并给出准确失败态。
+**Design:** `useCreditCheckout` 国内站分支在 `buildPayPlan` 前校验 `authCode`（空串/undefined 均拦截）：进入 `failed` 态并保留 `dealName`（订单已创建成功，供客服排查），不生成中转页 URL；`console.error("[credit] order issued without auth_code", { dealName })` 留痕（对齐 renew-pass-modal 惯例）。UI 层 `failed` 文案由「下单失败」改为中性「支付未完成」——failed 不等于下单失败，避免诱导重复下单产生双订单；与 `delivery_exception` 的中性口径一致。i18n 生成物随文案同步重提取。
+**Non-goals:** 不修后端票据发放根因（需按 order 响应 → credit 日志 `issue auth_code failed` → authcode Redis 接线的路径另行排查）；不改 order-url 校验逻辑与 wx-pay.ts；不动国际站链路。
+
+**Files:**
+- Modify: `src/lib/use-credit-checkout.ts`
+- Modify: `src/domain/credit-pack.ts`
+- Modify: `next-site/credit-pack-section.tsx`
+- Test: `src/lib/__tests__/use-credit-checkout.test.ts`
+- Generated: `src/i18n/generated/*.json`
+
+---
+
 # Agents/账号页 Footer 移除与 AgentChat 高度优化（2026-09-15）
 
 **Status:** Mono2 宿主侧实现完成；本地功能提交为 `4b86ab6de`，滚动锁加固提交为 `b94619205`。当前已将 `origin/master@554355180` 合入暂存区并完成合并后验证，等待确认创建合并提交；未推送、创建 MR 或发布。
