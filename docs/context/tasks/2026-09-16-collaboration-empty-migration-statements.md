@@ -75,6 +75,11 @@ derived: false
   MySQL/TDSQL migration verify 和密钥扫描均通过。
 - 默认并行完整 test/race 均只命中既有 IM 请求顺序测试的随机失败；该用例独立
   20 次也可复现 1 次，本变更不修改 IM 路径。
+- MR !4108 可信 guard 复现同一失败。调用链确认 Community 成功后会合法地立即派生
+  `#全员` Topic；端到端测试夹具原先未实现 `create_topic` 响应，竞态时将合法请求误判为
+  未知路径。夹具现在校验 Group/Topic/所有者字段并返回对应 TopicId，不改生产并发语义。
+- 修复后目标用例连续 50 次通过，race 连续 10 次通过；与 CI 相同的
+  `.ci/checks/collaboration_guard.sh` 和 docs-impact 通过。
 
 ## decisions
 
@@ -83,4 +88,5 @@ derived: false
 
 ## handoff
 
-源码修复已通过完整门禁，待提交和 MR；恢复操作未执行，Runtime 未发布。
+迁移空语句修复已在 MR !4108；当前追加收敛可信 guard 命中的 IM 端到端测试夹具竞态。
+恢复操作未执行，Runtime 未发布。
