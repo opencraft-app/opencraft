@@ -140,7 +140,7 @@ describe("useCreditSources", () => {
       expect(result.current.sources).toHaveLength(1);
     });
 
-    expect(result.current.sources[0].credit_available).toBe(0);
+    expect(result.current.sources[0]?.credit_available).toBe(0);
     expect(result.current.summary.used).toBe(1000);
   });
 

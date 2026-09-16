@@ -2695,7 +2695,7 @@ describe("http repositories auth token bootstrap", () => {
       const products = await repositories.credit.listCreditProducts();
 
       expect(products).toHaveLength(1);
-      expect(products[0].product_id).toBe("credit_1000");
+      expect(products[0]?.product_id).toBe("credit_1000");
     });
 
     it("createCreditOrder parses the camelCase bare response", async () => {
