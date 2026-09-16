@@ -5,7 +5,10 @@ import {
   getAcliResetBlockReason,
   getAcliResetClickAction,
   getResetBlockReason,
+  hermesModelName,
+  hermesSwitchModelFullId,
   isExecCommandSucceeded,
+  isResetConfigRouteMissingError,
   truncateExecOutput,
   type ResettableBot,
 } from "../agent-reset-config";
@@ -13,9 +16,11 @@ import {
 const bot = (id: string, status: ResettableBot["status"] = "running"): ResettableBot => ({ id, status });
 
 describe("getResetBlockReason", () => {
-  it("allows both main and named Bots regardless of sibling count", () => {
-    expect(getResetBlockReason(bot("main"), false)).toBeNull();
-    expect(getResetBlockReason(bot("sales"), false)).toBeNull();
+  it("blocks both main and named Bots when the instance has siblings", () => {
+    expect(getResetBlockReason({ ...bot("main"), isDefault: true }, false, 1)).toBe("multi_bot");
+    expect(getResetBlockReason({ ...bot("sales"), isDefault: false }, false, 1)).toBe("multi_bot");
+    expect(getResetBlockReason({ ...bot("sales"), isDefault: false }, false, 0)).toBe("multi_bot");
+    expect(getResetBlockReason({ ...bot("main"), isDefault: true }, false, 0)).toBeNull();
   });
   it("allows reset when running and not already resetting", () => {
     expect(getResetBlockReason(bot("a"), false)).toBeNull();
@@ -83,6 +88,58 @@ describe("ACLI_RESET_COMMAND", () => {
   });
 });
 
+describe("hermesModelName", () => {
+  it("returns the segment after the last slash for prefixed model ids", () => {
+    expect(hermesModelName("openai/gpt-4o")).toBe("gpt-4o");
+    expect(hermesModelName("anthropic/claude-3-5-sonnet")).toBe("claude-3-5-sonnet");
+  });
+
+  it("uses the last slash so multi-level ids still resolve", () => {
+    /* 与 ctl 后端 hermesModelName 等价：strings.LastIndex(modelID, "/") */
+    expect(hermesModelName("provider/group/model-x")).toBe("model-x");
+  });
+
+  it("returns the original string when there is no slash", () => {
+    expect(hermesModelName("gpt-4o")).toBe("gpt-4o");
+  });
+
+  it("trims surrounding whitespace before processing", () => {
+    expect(hermesModelName("  openai/gpt-4o  ")).toBe("gpt-4o");
+  });
+
+  it("returns empty string for blank or empty input", () => {
+    expect(hermesModelName("")).toBe("");
+    expect(hermesModelName("   ")).toBe("");
+  });
+
+  it("returns the original (trimmed) value when the slash is at the end", () => {
+    /* 边界：`openai/` 取不到合法 suffix 时回退到原值，避免返回空串误导调用方 */
+    expect(hermesModelName("openai/")).toBe("openai/");
+  });
+});
+
+describe("hermesSwitchModelFullId", () => {
+  it("uses modelId as-is when it already contains a slash", () => {
+    expect(hermesSwitchModelFullId("custom", "openai/gpt-4o")).toBe("openai/gpt-4o");
+  });
+
+  it("joins providerName and modelId when modelId is not prefixed", () => {
+    expect(hermesSwitchModelFullId("openai", "gpt-4o")).toBe("openai/gpt-4o");
+  });
+
+  it("trims whitespace from both sides before joining", () => {
+    expect(hermesSwitchModelFullId("  openai  ", "  gpt-4o  ")).toBe("openai/gpt-4o");
+  });
+
+  it("preserves the slash convention used by the backend python parser", () => {
+    /* 与 ctl 后端 renderHermesModelSetCommand 里的 python 解析器一致：
+     *   if "/" in model: print(model)
+     *   elif provider and model: print(provider + "/" + model)
+     */
+    expect(hermesSwitchModelFullId("custom", "anthropic/claude")).toBe("anthropic/claude");
+  });
+});
+
 describe("isExecCommandSucceeded", () => {
   it("returns true when status is SUCCESS and exitCode is 0", () => {
     expect(isExecCommandSucceeded({ status: "SUCCESS", exitCode: 0 })).toBe(true);
@@ -144,5 +201,34 @@ describe("truncateExecOutput", () => {
   it("preserves multi-line output verbatim (caller renders with whitespace-pre-wrap)", () => {
     const multiline = "error: top\n  at frame1\n  at frame2";
     expect(truncateExecOutput(multiline, "FAILED")).toBe(multiline);
+  });
+});
+
+describe("isResetConfigRouteMissingError", () => {
+  it("detects old CTL route-missing NOT_FOUND errors", () => {
+    const err = Object.assign(
+      new Error("resource not found（NOT_FOUND, request_id=abc）"),
+      { status: 404, code: "NOT_FOUND" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(true);
+  });
+
+  it("does not treat other 404 errors as old CTL route misses", () => {
+    const err = Object.assign(
+      new Error("instance not found（NOT_FOUND, request_id=abc）"),
+      { status: 404, code: "NOT_FOUND" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(false);
+  });
+
+  it("requires the NOT_FOUND code", () => {
+    const err = Object.assign(
+      new Error("resource not found"),
+      { status: 404, code: "SOME_OTHER_CODE" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(false);
   });
 });

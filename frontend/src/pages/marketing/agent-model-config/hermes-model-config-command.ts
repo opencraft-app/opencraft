@@ -72,7 +72,6 @@ export interface ModelProviderOption {
 export type HermesModelConfigAction =
   | { type: "prepareCredentialEnvelope" }
   | { type: "read" }
-  | { type: "resetToBuiltIn" }
   | { type: "probeConfiguredProvider"; anchor: HermesConfiguredModel }
   | { type: "probeConfiguredModel"; anchor: HermesConfiguredModel; modelId: string }
   | { type: "appendProviderModel"; anchor: HermesConfiguredModel; modelId: string }
@@ -1125,109 +1124,6 @@ def credential_key_referenced(value, target):
         return any(credential_key_referenced(item, target) for item in value)
     return False
 
-def configured_credential_keys(config):
-    keys = set()
-    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
-    custom_providers = config.get("custom_providers") if isinstance(config.get("custom_providers"), list) else []
-    for provider in list(providers.values()) + custom_providers:
-        if not isinstance(provider, dict): continue
-        key = text(provider.get("key_env") or provider.get("api_key_env"), "provider.key_env", required=False)
-        if key: keys.add(key)
-    for model in configured_models(config):
-        key = text(model.get("keyEnv"), "model.keyEnv", required=False)
-        if key: keys.add(key)
-    return keys
-
-def provider_has_credential(provider_key, provider):
-    if text(provider.get("api_key"), "provider.api_key", required=False): return True
-    if text(provider.get("key_cmd"), "provider.key_cmd", required=False): return True
-    if provider_credential_pool_state(provider_key, provider) is True: return True
-    key = text(provider.get("key_env") or provider.get("api_key_env"), "provider.key_env", required=False)
-    if not key: return False
-    values = load_env()
-    if not isinstance(values, dict): raise ProviderOperationError("built_in_unavailable")
-    return bool(str(values.get(key) or os.environ.get(key) or "").strip())
-
-def built_in_provider(config):
-    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
-    provider = providers.get("custom")
-    if isinstance(provider, dict):
-        model = model_from_provider("custom", provider)
-        if model and provider_has_credential("custom", provider): return model, "providers", copy.deepcopy(provider)
-        raise ProviderOperationError("built_in_unavailable")
-    custom_providers = config.get("custom_providers") if isinstance(config.get("custom_providers"), list) else []
-    candidates = []
-    for entry in custom_providers:
-        if not isinstance(entry, dict): continue
-        try:
-            if custom_provider_key(entry).strip().lower() == "custom": candidates.append(entry)
-        except (TypeError, ValueError): continue
-    if len(candidates) != 1: raise ProviderOperationError("built_in_unavailable")
-    model = model_from_custom_provider(candidates[0])
-    if not model or not provider_has_credential("custom", candidates[0]):
-        raise ProviderOperationError("built_in_unavailable")
-    return model, "custom_providers", copy.deepcopy(candidates[0])
-
-def reset_to_built_in(config):
-    original_config = copy.deepcopy(config)
-    model, source, provider = built_in_provider(config)
-    credential_keys = configured_credential_keys(config)
-
-    if source == "providers":
-        config["providers"] = {"custom": provider}
-        config.pop("custom_providers", None)
-    else:
-        config.pop("providers", None)
-        config["custom_providers"] = [provider]
-    apply_primary(config, model)
-    write_fallback_routes(config, [])
-    lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else None
-    if lightvela is not None:
-        lightvela.pop("model_config", None)
-        if not lightvela: config.pop("lightvela", None)
-
-    def validate(saved):
-        snapshot = read_snapshot(saved)
-        if not same_route(snapshot["primary"], model): raise ValueError("built-in primary was not restored")
-        if snapshot["fallbacks"]: raise ValueError("fallbacks were not removed")
-        if any(item["providerKey"].strip().lower() != "custom" for item in snapshot["configuredModels"]):
-            raise ValueError("user providers were not removed")
-        return snapshot
-
-    try:
-        saved = save_and_reload(config)
-        expect_fallback_config_saved(saved, config)
-        snapshot = validate(saved)
-    except Exception:
-        try: save_config(original_config)
-        except Exception as rollback_error:
-            raise ConfigurationRollbackError("configuration rollback failed") from rollback_error
-        raise ProviderOperationError("save_failed")
-
-    keys_to_remove = [key for key in credential_keys if not credential_key_referenced(saved, key)]
-    env_values = load_env()
-    if not isinstance(env_values, dict):
-        try: save_config(original_config)
-        except Exception as rollback_error:
-            raise ConfigurationRollbackError("configuration rollback failed") from rollback_error
-        raise ProviderOperationError("credential_cleanup_failed")
-    credentials = {key: value for key in keys_to_remove if isinstance((value := env_values.get(key)), str)}
-    try:
-        for key in keys_to_remove: remove_provider_env_credential(key)
-        remaining = load_env()
-        if not isinstance(remaining, dict) or any(str(remaining.get(key) or "").strip() for key in keys_to_remove):
-            raise RuntimeError("credential cleanup did not persist")
-        return {"snapshot": snapshot}
-    except Exception:
-        rollback_failed = False
-        for key, value in credentials.items():
-            try: save_provider_env_credential(key, value)
-            except Exception: rollback_failed = True
-        try: save_config(original_config)
-        except Exception: rollback_failed = True
-        if rollback_failed: raise ConfigurationRollbackError("configuration rollback failed")
-        raise ProviderOperationError("credential_cleanup_failed")
-
 def apply_primary(config, model):
     current = config.get("model") if isinstance(config.get("model"), dict) else {}
     current.pop("api_key", None)
@@ -1316,7 +1212,6 @@ def execute_unlocked(action):
     config = load_config() or {}
     if not isinstance(config, dict): raise ValueError("Hermes config must be an object")
     if kind == "read": return {"snapshot": read_snapshot(config)}
-    if kind == "resetToBuiltIn": return reset_to_built_in(config)
     if kind == "appendProviderModel": return append_saved_provider_model(config, action)
     if kind == "probeConfiguredProvider": return probe_saved_provider(config, action)
     if kind == "probeConfiguredModel": return probe_saved_model(config, action)
@@ -1442,7 +1337,7 @@ def execute_unlocked(action):
     raise ValueError("unsupported action")
 
 def execute(action):
-    if action.get("type") not in ("add", "assign", "removeFallback", "remove", "appendProviderModel", "resetToBuiltIn"):
+    if action.get("type") not in ("add", "assign", "removeFallback", "remove", "appendProviderModel"):
         return execute_unlocked(action)
     root = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
     os.makedirs(root, exist_ok=True)
