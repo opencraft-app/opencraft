@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
+	cfg, err := config.LoadMigration()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
