@@ -22,7 +22,7 @@ from contracts.bundles import (
     load_manifest,
     playground_catalog_root,
 )
-from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest
+from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest, namespace_bootstrap_enabled
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 
@@ -699,14 +699,15 @@ def main() -> int:
                         "expected_schema_version": None})
     try:
         if args.apply:
-            apply_manifest(
-                kubeconfig,
-                build_bootstrap_namespace_manifest(
-                    str(verifier["namespace"]),
-                    service=args.service,
-                    env=args.env,
-                ),
-            )
+            if namespace_bootstrap_enabled(contract):
+                apply_manifest(
+                    kubeconfig,
+                    build_bootstrap_namespace_manifest(
+                        str(verifier["namespace"]),
+                        service=args.service,
+                        env=args.env,
+                    ),
+                )
             apply_manifest(kubeconfig, apply_manifest_doc)
             summary["status"] = "applied"
             if args.wait:

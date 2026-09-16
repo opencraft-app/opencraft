@@ -1141,6 +1141,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         contract = load_bundle(manifest, "credit", "shprod").db_contract
         verifier = contract["verifier"]
 
+        self.assertIs(contract["bootstrap_namespace"], True)
         self.assertEqual(contract["db_job_secret_resolver"], "credit_db_password")
         self.assertEqual(
             contract["secret_resolvers"]["credit_db_password"]["yaml_path"],
@@ -1156,6 +1157,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(verifier["env_from_secret_resolver"]["CREDIT_DB_PASSWORD"], "credit_db_password")
         self.assertNotIn("configmap", verifier)
         self.assertNotIn("secret", verifier)
+
+        for service in ("ctl", "trade"):
+            with self.subTest(service=service):
+                self.assertNotIn("bootstrap_namespace", load_bundle(manifest, service, "shprod").db_contract)
 
     def test_credit_pipeline_builds_beijing_and_production_matrix(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/credit.yml").read_text()) or {}

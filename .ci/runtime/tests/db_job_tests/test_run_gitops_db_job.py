@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -205,10 +206,42 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(resolver.call_args.args[2], "beijing-playground")
+        apply_manifest.assert_called_once()
+        self.assertEqual(apply_manifest.call_args.args[1]["kind"], "Job")
+        self.assertEqual(
+            apply_manifest.call_args.args[1]["metadata"]["namespace"],
+            "lightvela-playground-sandbox-bj-7",
+        )
+
+    def test_main_bootstraps_namespace_only_when_db_contract_requests_it(self) -> None:
+        argv = [
+            "run_gitops_db_job.py",
+            "--service",
+            "payment",
+            "--operation",
+            "migration",
+            "--env",
+            "sgprod",
+            "--revision",
+            "abc123",
+            "--apply",
+            "--image-override",
+            "example.com/payment:override",
+        ]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(db_job, "load_job_db_contract", return_value={"bootstrap_namespace": True}),
+            mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)),
+            mock.patch.object(db_job, "apply_manifest") as apply_manifest,
+            mock.patch.object(db_job, "kubectl_delete"),
+        ):
+            exit_code = db_job.main()
+
+        self.assertEqual(exit_code, 0)
         self.assertEqual(apply_manifest.call_count, 2)
         namespace_manifest = apply_manifest.call_args_list[0].args[1]
         self.assertEqual(namespace_manifest["kind"], "Namespace")
-        self.assertEqual(namespace_manifest["metadata"]["name"], "lightvela-playground-sandbox-bj-7")
+        self.assertEqual(namespace_manifest["metadata"]["name"], "user-auth")
 
     def test_ctl_migration_uses_fixed_migrate_image_even_with_release_image_override(self) -> None:
         image = db_job.resolve_job_image(
@@ -348,6 +381,25 @@ class RunGitopsDbJobTests(unittest.TestCase):
     def test_run_command_rejects_empty_command_parts(self) -> None:
         with self.assertRaisesRegex(ValueError, "non-empty strings"):
             db_job.run_command(["kubectl", ""])
+
+    def test_kubectl_run_retries_timeout_with_bytes_output(self) -> None:
+        timeout = subprocess.TimeoutExpired(
+            cmd=["kubectl", "get", "pods"],
+            timeout=75,
+            output=b"partial stdout",
+            stderr=b"i/o timeout",
+        )
+        success = db_job.CommandResult(["kubectl", "get", "pods"], 0, "ok", "")
+
+        with (
+            mock.patch.object(db_job, "run_command", side_effect=[timeout, success]) as run,
+            mock.patch.object(db_job.time, "sleep") as sleep,
+        ):
+            result = db_job.kubectl_run(["kubectl", "get", "pods"], retries=2)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(2)
 
     def test_wait_for_job_retries_transient_get_eof_until_success(self) -> None:
         with (

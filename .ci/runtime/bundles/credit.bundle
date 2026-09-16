@@ -4,6 +4,7 @@ bundles:
     source: credit
     db_contract:
       mode: migration
+      bootstrap_namespace: true
       db_job_service: credit
       migration_operation: migration
       migration_paths:

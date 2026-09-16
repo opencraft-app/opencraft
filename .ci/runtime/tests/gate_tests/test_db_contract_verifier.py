@@ -443,14 +443,8 @@ class DbContractVerifierTests(unittest.TestCase):
             ):
                 self.assertEqual(main(), 0)
 
-        self.assertEqual(apply.call_count, 2)
-        namespace_manifest = apply.call_args_list[0].args[1]
-        self.assertEqual(namespace_manifest["kind"], "Namespace")
-        self.assertEqual(namespace_manifest["metadata"]["name"], "lightvela-playground-sandbox-kr-1")
-        self.assertEqual(
-            apply.call_args_list[1].args[1]["metadata"]["namespace"],
-            "lightvela-playground-sandbox-kr-1",
-        )
+        apply.assert_called_once()
+        self.assertEqual(apply.call_args.args[1]["metadata"]["namespace"], "lightvela-playground-sandbox-kr-1")
 
     def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:
         verifier = {
