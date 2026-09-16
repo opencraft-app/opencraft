@@ -73,10 +73,10 @@ stages:
         flows:
           - name: 确认执行生产 DB migration
             reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]
-      description: |
-        仅在上一阶段 dry-run 成功后继续。先核对 SERVICE、TARGET_ENV、SOURCE_SHA、
-        镜像、current/latest/dirty，以及 pending SQL 路径和完整正文。
-        通过后将创建一次性生产 migration Job，再执行 DB readiness Job。
+        description: |
+          仅在上一阶段 dry-run 成功后继续。先核对 SERVICE、TARGET_ENV、SOURCE_SHA、
+          镜像、current/latest/dirty，以及 pending SQL 路径和完整正文。
+          通过后将创建一次性生产 migration Job，再执行 DB readiness Job。
       timeout-hours: 24
     jobs:
       approved:

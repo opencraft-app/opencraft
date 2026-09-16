@@ -3086,6 +3086,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertTrue(all("if" not in stage for stage in explicit_stages))
         self.assertIn("check-in", explicit_stages[1])
+        explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
+        self.assertIn("description", explicit_reviews)
+        self.assertNotIn("description", explicit_stages[1]["check-in"])
         self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
         self.assertIn("--apply", explicit_text)
         self.assertIn('if [[ "$MIGRATION_DECISION" == "run_migration" ]]', template_text)
