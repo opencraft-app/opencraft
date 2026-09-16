@@ -59,6 +59,8 @@ stages:
               esac
               source .ci/init.sh
               ci_init_repo_root
+              ci_ensure_go
+              ci_require_command go
               ci_load_tencentcloud_credentials
               im_file="$(mktemp)"
               chmod 600 "$im_file"
@@ -141,9 +143,10 @@ stages:
               esac
               source .ci/init.sh
               ci_init_repo_root
+              ci_ensure_go
               ci_load_tencentcloud_credentials
               ci_ensure_db_job_tools
-              ci_require_commands sops tccli
+              ci_require_commands go sops tccli
               im_file="$(mktemp)"
               deploy_root=""
               chmod 600 "$im_file"
