@@ -1480,6 +1480,24 @@ class ReleaseBundleContractTests(unittest.TestCase):
         ).read_text()
         self.assertIn("name: REFERRAL_ENABLED", shprod_ctl_patch)
         self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", shprod_ctl_patch)
+        ctl_base = next(
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if isinstance(document, dict)
+            and document.get("kind") == "Deployment"
+            and document.get("metadata", {}).get("name") == "ctl-api"
+        )
+        container_name = ctl_base["spec"]["template"]["spec"]["containers"][0]["name"]
+        for patch_path in (
+            "ctl/k8s/overlays/shprod/patch-referral.yaml",
+            "argocd/services/ctl/shprod/patch-referral.yaml",
+        ):
+            with self.subTest(patch=patch_path):
+                patch = yaml.safe_load((REPO_ROOT / patch_path).read_text())
+                self.assertEqual(
+                    [container["name"] for container in patch["spec"]["template"]["spec"]["containers"]],
+                    [container_name],
+                )
 
         shprod_app = yaml.safe_load(
             (REPO_ROOT / "argocd/apps/shprod/referral.yaml").read_text()
