@@ -150,4 +150,7 @@ or replay them. Explicit nonzero campaign delays remain supported.
 6. Enable Beijing relays and worker processing.
 7. Activate the Beijing campaign and expose the minimal frontend.
 
-No production environment inherits the Beijing enablement.
+No production environment inherits the Beijing enablement. Shanghai may deploy
+the schema and two disabled API replicas as an isolated foundation, but keeps
+the worker at zero replicas and omits campaign bootstrap, event producers,
+Gateway routes, and frontend exposure until a separate activation review.

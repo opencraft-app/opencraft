@@ -156,9 +156,10 @@ master 源码
 - 发布顺序固定为 Pulsar 子资源和角色 token、Referral/Auth/CTL Secret、Auth/CTL/Referral schema、
   Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。邀请双方各 500 积分通过 CTL 送积分
   接口按额度发放，VelaGW 自动准备内部权益模板，不要求运营预先导入 Plan。
-- Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
-  `ENABLE_MASTER_PROD_PROMOTE=false`。Pulsar、独立 DB/user 和 SSM/SOPS 前置条件完成后才加入 Argo catalog；
-  首次基础发布保持 worker processing、Gateway 路由和前端入口关闭，待 schema/API/campaign 健康后单独启用。
+- Referral 流水线构建北京与上海镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
+  `ENABLE_MASTER_PROD_PROMOTE=false`。上海只能通过人工 promote、人工合并 GitOps MR 和人工 Argo sync 发布。
+  Pulsar、独立 DB/user 和 SSM/SOPS 前置条件完成后才加入 Argo；首次基础发布保持 Referral 总开关、worker
+  processing、campaign Job、Auth/CTL relay、Gateway 路由和前端入口关闭，待 schema/API 健康后单独启用。
 - 基础阶段 `REFERRAL_PROCESSING_ENABLED=false` 时，`referral-worker` Deployment 必须同步缩容到 0；
   正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
 - 北京正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
@@ -176,6 +177,11 @@ master 源码
 - TDMQ P2 会把非分区 Topic 的 `partitions=0` 创建参数规范化为读取值 `1`。Pulumi 必须忽略该只读字段的
   回读漂移，并继续以 `pulsar_topic_type=2` 作为“持久化非分区 Topic”的语义真源；不得因伪漂移反复更新
   生产 Topic。首次 apply 后的 scoped preview 必须达到全部 unchanged。
+- 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户，仅部署 2 个禁用态 API 副本；
+  `referral-worker` 必须为 0 副本，且 deploy-facing 目录不得包含 campaign PostSync Job。这个阶段不导出或注入
+  Auth/CTL producer token，不增加 Service Gateway 路由，也不打开前端 Referral 标记。
+- Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
+  尚未部署的 live ConfigMap 或 runtime Secret；临时 Namespace 只用于 DB 门禁，随后由 Argo 接管正式资源。
 
 ### Collaboration 北京两阶段 bootstrap
 

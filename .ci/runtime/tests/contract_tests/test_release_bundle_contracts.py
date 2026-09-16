@@ -1356,12 +1356,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
                 self.assertEqual(set(item["required_keys"]), required_secret_keys)
 
-    def test_referral_pipeline_keeps_manual_release_and_complete_beijing_closure(self) -> None:
+    def test_referral_pipeline_keeps_manual_release_and_environment_boundaries(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
         self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
@@ -1405,6 +1405,86 @@ class ReleaseBundleContractTests(unittest.TestCase):
         ).read_text()
         self.assertIn("name: REFERRAL_ENABLED", ctl_overlay)
         self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", ctl_overlay)
+
+        shprod = load_bundle(manifest, "referral", "shprod")
+        self.assertEqual(len(shprod.publish_paths), 8)
+        self.assertIn("argocd/services/referral/shprod/**", shprod.publish_paths)
+        self.assertIn("argocd/services/referral/common/**", shprod.publish_paths)
+        self.assertIn("argocd/apps/shprod/referral.yaml", shprod.publish_paths)
+        self.assertIn("argocd/projects/shprod-referral.yaml", shprod.publish_paths)
+        self.assertIn("argocd/secrets/shprod/referral-runtime-secrets.sops.yaml", shprod.publish_paths)
+        self.assertEqual(
+            shprod.image_repo,
+            "lightclaw-shprod.tencentcloudcr.com/lightclaw/referral",
+        )
+
+        shprod_overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/shprod/kustomization.yaml").read_text()
+        )
+        shprod_patches = shprod_overlay.get("patches") or []
+        shprod_config_patch = next(
+            item["patch"]
+            for item in shprod_patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn("path: /data/REFERRAL_ENABLED", shprod_config_patch)
+        self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", shprod_config_patch)
+        self.assertGreaterEqual(shprod_config_patch.count('value: "false"'), 2)
+        self.assertIn('value: "paused"', shprod_config_patch)
+
+        shprod_worker_patch = next(
+            item["patch"]
+            for item in shprod_patches
+            if (item.get("target") or {}).get("name") == "referral-worker"
+        )
+        self.assertIn("path: /spec/replicas", shprod_worker_patch)
+        self.assertIn("value: 0", shprod_worker_patch)
+
+        shprod_service = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/referral/shprod/kustomization.yaml").read_text()
+        )
+        self.assertNotIn("resources", shprod_service)
+        self.assertFalse((REPO_ROOT / "argocd/services/referral/shprod/referral-campaign.yaml").exists())
+
+        shprod_app = yaml.safe_load(
+            (REPO_ROOT / "argocd/apps/shprod/referral.yaml").read_text()
+        )
+        self.assertNotIn("syncPolicy", shprod_app["spec"])
+        self.assertEqual(shprod_app["spec"]["source"]["targetRevision"], "gitops")
+
+        shprod_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.referral.shprod.yaml").read_text()
+        )
+        shprod_ssm_item = next(
+            item for item in shprod_ssm["items"] if item["id"] == "referral-runtime-secrets"
+        )
+        self.assertEqual(
+            set(shprod_ssm_item["required_keys"]),
+            {
+                "REFERRAL_DB_PASSWORD",
+                "REFERRAL_PULSAR_TOKEN",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
+        )
+
+        contract = shprod.db_contract
+        verifier = contract["verifier"]
+        self.assertEqual(contract["db_job_secret_resolver"], "referral_db_password")
+        self.assertEqual(
+            contract["secret_resolvers"]["referral_db_password"]["yaml_path"],
+            "stringData.REFERRAL_DB_PASSWORD",
+        )
+        self.assertEqual(
+            verifier["service_platform_env_file"],
+            "argocd/services/referral/{env}/referral-platform.env",
+        )
+        self.assertEqual(verifier["env_from_service_platform"]["MYSQL_HOST"], "REFERRAL_MYSQL_HOST")
+        self.assertEqual(
+            verifier["env_from_secret_resolver"]["REFERRAL_DB_PASSWORD"],
+            "referral_db_password",
+        )
+        self.assertNotIn("configmap", verifier)
+        self.assertNotIn("secret", verifier)
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()

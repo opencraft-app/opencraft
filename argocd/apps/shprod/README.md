@@ -33,6 +33,7 @@
 - `vibebase`
 - `nextgen-dashboard`
 - `payment`
+- `referral`（禁用态 foundation；worker、campaign 和产品入口未启用）
 - `sandbox`
 - `service-gateway`
 - `subscription`
@@ -55,6 +56,7 @@
   - `shprod-lightclaw-auth`
   - `shprod-vibebase`
   - `shprod-payment`
+  - `shprod-referral`
   - `shprod-sandbox`
   - `shprod-service-gateway`
   - `shprod-subscription`
