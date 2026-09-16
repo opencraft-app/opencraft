@@ -47,7 +47,13 @@ beforeEach(() => {
   createCreditOrderUrl.mockReset();
   listCreditPackages.mockReset();
 
-  createCreditOrder.mockResolvedValue({ dealName: "deal-1", bigOrderId: "big-1" });
+  /* 后端 !3910 起正常形态应带 auth_code（票据发放失败时为空串，
+     见「auth_code 为空」专项用例） */
+  createCreditOrder.mockResolvedValue({
+    dealName: "deal-1",
+    bigOrderId: "big-1",
+    auth_code: "ticket-default",
+  });
   createCreditOrderUrl.mockResolvedValue({
     deal_name: "deal-1",
     pay_url: "https://pay.example/checkout",
@@ -108,6 +114,54 @@ describe("useCreditCheckout 国内站（中转页 + wxSign 模式）", () => {
     });
     const url = new URL(result.current.bridgePlan!.bridgeUrl);
     expect(url.searchParams.get("ac")).toBe("ticket-abc");
+  });
+
+  it("auth_code 为空时直接判失败，不生成必然失效的中转页（!3910 校验上线后）", async () => {
+    /* 后端票据发放失败静默降级：下单成功但 auth_code 为空串。
+       order-url 已强制校验票据，此时中转页必然显示「二维码已失效」，
+       必须在 PC 端就明确失败并保留订单号供排查。 */
+    createCreditOrder.mockResolvedValue({
+      dealName: "deal-1",
+      bigOrderId: "big-1",
+      auth_code: "",
+    });
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("failed");
+    });
+    expect(result.current.state.error).toContain("支付票据未下发");
+    /* 订单号保留：下单已成功，供用户联系客服排查票据问题 */
+    expect(result.current.state.dealName).toBe("deal-1");
+    /* 不生成中转页支付计划（不渲染二维码） */
+    expect(result.current.bridgePlan).toBeNull();
+    expect(createCreditOrderUrl).not.toHaveBeenCalled();
+  });
+
+  it("auth_code 字段缺失（旧后端镜像）同样判失败，不进入中转页", async () => {
+    /* !3910 之前的后端镜像响应无 auth_code 字段 → undefined。
+       与空串同一分支处理：!authCode 拦截。 */
+    createCreditOrder.mockResolvedValue({
+      dealName: "deal-1",
+      bigOrderId: "big-1",
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { result } = renderHook(() => useCreditCheckout());
+
+    await result.current.start("credit_1000");
+
+    await waitFor(() => {
+      expect(result.current.state.status).toBe("failed");
+    });
+    expect(result.current.bridgePlan).toBeNull();
+    /* 失败必须有前端痕迹（对齐 renew-pass-modal 的 console.error 惯例） */
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[credit] order issued without auth_code",
+      expect.objectContaining({ dealName: "deal-1" }),
+    );
+    errorSpy.mockRestore();
   });
 
   it("国内站不发生页面跳转（等待扫码而非直跳）", async () => {

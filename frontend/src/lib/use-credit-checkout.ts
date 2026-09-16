@@ -168,9 +168,22 @@ export const useCreditCheckout = (options?: {
     /* 国内站：中转页 + wxSign 模式（对齐 pass 链路）。
        PC 端不调 order-url——jifei pay_url 生成时绑定 wx_open_id，
        PC 端调只能拿到 H5 商品页兜底 URL。中转页在手机端带 openid 调。
-       authCode 为 undefined 时 buildPayPlan 仍生成中转页 URL（灰度兼容，
-       见 CreditOrderResult.auth_code 注释——后端补齐 auth_code 后即通）。 */
+       order-url 已强制校验 auth_code（!3910 起后端返回 AUTH_CODE_INVALID）：
+       票据未下发时直接判定失败并保留订单号，不打开必然显示
+       「二维码已失效」的中转页误导用户反复重新生成。 */
     if (!isGlobal) {
+      if (!authCode) {
+        /* 可观测性：对齐 renew-pass-modal 的 console.error 惯例。
+           后端发放失败是静默降级（HTTP 200 + 空串），前端不打日志
+           这类故障就只能靠后端日志倒查，用户侧零痕迹。 */
+        console.error("[credit] order issued without auth_code", { dealName });
+        setState({
+          status: "failed",
+          dealName,
+          error: "支付通道暂不可用（支付票据未下发），请稍后重试或联系客服",
+        });
+        return;
+      }
       const plan = buildPayPlan({
         dealName,
         authCode,

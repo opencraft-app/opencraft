@@ -50,7 +50,7 @@ export interface CreditPackageItem {
   expired_time: string;
 }
 
-/** 创建订单响应（注意后端此接口用 camelCase，与其他接口的 snake_case 不同）。 */
+/** 创建订单响应。注意字段命名不统一：dealName/bigOrderId 为 camelCase，auth_code 为 snake_case。 */
 export interface CreditOrderResult {
   /** jifei 订单号，获取支付链接的必填参数 */
   dealName: string;
@@ -61,8 +61,10 @@ export interface CreditOrderResult {
    * 国内站走「中转页 + wxSign」模式：中转页在微信浏览器内无主站登录态，
    * 靠 auth_code 反查 user_id 调 order-url（见 wx-pay.ts 安全模型）。
    *
-   * ⚠️ 后端尚未实现该字段（credit order 当前只返回 dealName/bigOrderId），
-   * 为 undefined 时 buildPayPlan 仍生成中转页 URL，等后端补齐即通。
+   * 后端已实现下发（!3910），但发放失败时静默返回空串（服务日志打
+   * "issue auth_code failed"）。order-url 已强制校验：空票据会被
+   * AUTH_CODE_INVALID 拒绝，因此 useCreditCheckout 对空票据直接判失败，
+   * 不再生成中转页 URL（避免必然显示「二维码已失效」误导用户）。
    */
   auth_code?: string;
 }
