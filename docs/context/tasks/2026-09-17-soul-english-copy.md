@@ -2,12 +2,13 @@
 Unify the English copy in the Agent Soul page and its draw, quiz, upload, and edit flows around the product term “Soul”.
 
 ## non_goals
-- Do not change Chinese source strings, other locales, runtime behavior, or historical changelog copy.
-- Do not rename internal persona identifiers, analytics events, routes, or the downloaded `soul.md` filename.
+- Do not change unrelated Chinese strings, other locale wording, runtime behavior beyond the browser download filename, or historical changelog copy.
+- Do not rename internal persona identifiers, analytics events, or routes.
 - Do not merge or release. Commit, push, and MR creation were authorized in a follow-up user message.
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - User request in this conversation (2026-09-17): review Soul terminology elsewhere, then “改吧”. No external PRD or issue ID provided.
+- Follow-up CR on MR !4154 identified 11 active lower-case Soul strings, the unsynced OpenCraft closure, and a downloaded filename mismatch; user authorized the correction.
 - Acceptance scope: replace inconsistent `persona` wording in the active English Soul experience; keep `personality` when it describes a person's traits.
 
 ## interface_refs / data_structure_refs
@@ -17,7 +18,7 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 
 ## history_context
 - `current_design_refs`: `frontend/openspec/specs/buddy.md`, `docs/context/project/services/frontend.md`, `docs/context/domains/site-environment-routing.md`.
-- `relevant_evolution`: The fetched `origin/master` contains the screenshot's subtitle and Soul page strings; the dirty primary checkout is hundreds of commits behind it. This worktree was created from `44a58071d`, then master advanced to `3165aca5a` before delivery.
+- `relevant_evolution`: The fetched `origin/master` contains the screenshot's subtitle and Soul page strings; the dirty primary checkout is hundreds of commits behind it. This worktree was created from `44a58071d`, then advanced through `3165aca5a` and merged current `origin/master` (`1782bebc1`) before the CR correction.
 - `superseded_refs`: none needed.
 
 ## acceptance
@@ -25,10 +26,14 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 - All English user-facing `persona` wording in the active Soul draw, quiz, upload, edit, and status flows is reviewed and changed where it denotes the Agent's Soul.
 - Quiz descriptions of the user's own traits retain appropriate `personality` wording.
 - Upload copy does not imply the selected file must be named `SOUL.md`.
+- Browser downloads are named `SOUL.md`, and both fallback notices accurately name that file in every locale.
+- `npm --prefix opencraft run check:mono2-agent-console` passes after generation from the final source commit.
 - Focused tests and frontend check/build gates pass, or any unrelated baseline failure is reported precisely.
 
 ## affected_paths
 - `frontend/src/i18n/generated/en-US.json`
+- `frontend/src/pages/marketing/agent-buddy-panel.tsx` and its focused test; generated locale dictionaries for the two filename-source strings.
+- `frontend/openspec/specs/buddy.md` and the mechanically generated OpenCraft console closure.
 - Focused English-copy regression test under `frontend/src/i18n/__tests__/` if needed.
 - This Task Pack and checkpoint.
 
@@ -54,6 +59,8 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 - The focused Vitest set passed 7 files / 79 tests; `pnpm check` passed with 0 new TypeScript diagnostics; `pnpm build:global` passed and generated 649 static pages.
 - The full `pnpm test` was attempted. It showed failures in unrelated model-config, pricing, automation, docs, and other suites, then stopped producing output; the run was interrupted rather than reported as passing.
 - `git diff --check` passed. Generated `next-env.d.ts` and font-subset build noise was removed after confirming both files were clean before the build.
+- CR correction: 11 active English Soul terms and two fallback notices are covered by focused regression tests; the two browser download paths and all locale notices now use `SOUL.md`.
+- The corrected focused Vitest set passed 4 files / 73 tests. `pnpm check` passed with 0 new TypeScript diagnostics; both `pnpm build:global` (649 pages) and `pnpm build:cn` (103 pages) passed. OpenCraft sync/check follows the final source commit so its revision does not immediately drift.
 
 ## risks
 - A blanket replacement would corrupt unrelated terms such as operator impersonation or the quiz's user personality profile; use an explicit translation batch.
@@ -61,11 +68,11 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 - i18n extraction may regenerate unrelated entries; inspect the diff before handoff.
 
 ## validation
-- Passed: `pnpm check` (includes i18n extract/validate, zh-Hant check, and typecheck), focused Vitest 79/79, `pnpm build:global`, and `git diff --check`.
+- Passed: `pnpm check` (includes i18n extract/validate, zh-Hant check, and typecheck), original focused Vitest 79/79, CR-focused Vitest 73/73, `pnpm build:global`, `pnpm build:cn`, and `git diff --check`.
 - Not passed: full `pnpm test` (unrelated failures and an eventual stall; stopped after recording the failures).
 
 ## decisions
-- Product object uses “Soul”; file references use `SOUL.md` when referring to Agent state and `soul.md` when reporting the actual downloaded filename.
+- Product object uses “Soul”; the browser-downloaded file is now also named `SOUL.md` to match Agent state and the cross-locale notices.
 - Keep internal `persona` identifiers and historical changelog wording unchanged.
 
 ## scan_scope
@@ -75,4 +82,4 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 - Bounded `t(...)` to English-dictionary mapping was inspected in terminal; no bulk scan artifact saved.
 
 ## handoff
-- Local changes are ready for commit and MR delivery in `/Users/pablozhong/codex/lightvela-soul-copy-consistency` on `codex/soul-copy-consistency`. The user authorized commit, push, and MR creation in a follow-up message; merge and release remain out of scope.
+- CR corrections target existing MR !4154 from `/Users/pablozhong/codex/lightvela-soul-copy-consistency` on `codex/soul-copy-consistency`. The user authorized commit, push, and MR updates; merge and release remain out of scope. MR !4166 should synchronize its OpenCraft closure after !4154 has merged, to avoid divergent generated manifests.
