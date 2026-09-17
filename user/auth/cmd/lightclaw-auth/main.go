@@ -126,33 +126,42 @@ func main() {
 		logger.Error("invalid personal DevCloud route control config", "err", err)
 		os.Exit(1)
 	}
+	developerRouteRegistry, developerRouteRegistrySecret, err := buildDeveloperRouteRegistry(publicBaseURL, stores.auth)
+	if err != nil {
+		logger.Error("invalid personal DevCloud route registry config", "err", err)
+		os.Exit(1)
+	}
 
 	router := httpapi.NewRouter(authService, httpapi.ServerConfig{
-		CookieSecure:               envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
-		CookieSameSite:             parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
-		SessionTTL:                 sessionTTL,
-		OAuthReturnToAllowedHosts:  parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
-		QQOAuth:                    buildQQOAuthConfig(),
-		GoogleOAuth:                buildGoogleOAuthConfig(),
-		GitHubOAuth:                buildGitHubOAuthConfig(),
-		WeChatOAuth:                buildWeChatOAuthConfig(),
-		AvatarStore:                avatarStore,
-		TATRegisterIssuer:          buildTATRegisterIssuer(logger),
-		DeviceBindTokenSecret:      envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
-		DeviceBindTokenTTL:         time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
-		Logger:                     logger,
-		PublicBaseURL:              publicBaseURL,
-		FrontendBaseURL:            frontendBaseURL,
-		AdminToken:                 envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
-		E2EAuthEnabled:             envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
-		E2EAuthToken:               envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
-		ShadowBindingInternalToken: envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
-		ShadowTencentCallbackToken: envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
-		DeveloperRouteClient:       developerRouteClient,
-		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
-		Federation:                 buildFederationConfig(logger),
-		OIDC:                       buildOIDCConfig(logger, stores.auth),
-		ReferralEnabled:            envOrDefault("REFERRAL_ENABLED", "false") == "true",
+		CookieSecure:                  envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
+		CookieSameSite:                parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
+		SessionTTL:                    sessionTTL,
+		OAuthReturnToAllowedHosts:     parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
+		QQOAuth:                       buildQQOAuthConfig(),
+		GoogleOAuth:                   buildGoogleOAuthConfig(),
+		GitHubOAuth:                   buildGitHubOAuthConfig(),
+		WeChatOAuth:                   buildWeChatOAuthConfig(),
+		AvatarStore:                   avatarStore,
+		TATRegisterIssuer:             buildTATRegisterIssuer(logger),
+		DeviceBindTokenSecret:         envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
+		DeviceBindTokenTTL:            time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		Logger:                        logger,
+		PublicBaseURL:                 publicBaseURL,
+		FrontendBaseURL:               frontendBaseURL,
+		AdminToken:                    envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		E2EAuthEnabled:                envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
+		E2EAuthToken:                  envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
+		ShadowBindingInternalToken:    envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
+		ShadowTencentCallbackToken:    envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
+		DeveloperRouteClient:          developerRouteClient,
+		DeveloperRouteRegistry:        developerRouteRegistry,
+		DeveloperRouteRegistrySecret:  developerRouteRegistrySecret,
+		DeveloperRouteRegistryCaller:  envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_CALLER", "cloudladdergateway"),
+		DeveloperRouteRegistryRouteID: envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_ROUTE_ID", "developer-route-registry"),
+		TrustedProxyCIDRs:             parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
+		Federation:                    buildFederationConfig(logger),
+		OIDC:                          buildOIDCConfig(logger, stores.auth),
+		ReferralEnabled:               envOrDefault("REFERRAL_ENABLED", "false") == "true",
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -188,6 +197,28 @@ func buildDeveloperRouteClient(publicBaseURL string) (*devroute.Client, error) {
 		Secret:         envOrDefault("PERSONAL_DEV_ROUTE_CLOUDLADDER_HMAC_SECRET", envOrDefault("CLOUDLADDER_SHADOW_HMAC_SECRET", "")),
 		Timeout:        parseDurationEnv("PERSONAL_DEV_ROUTE_CLOUDLADDER_TIMEOUT", 10*time.Second),
 	})
+}
+
+func buildDeveloperRouteRegistry(publicBaseURL string, authStore service.Store) (devroute.Registry, string, error) {
+	if envOrDefault("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false") != "true" {
+		return nil, "", nil
+	}
+	environment := strings.TrimSpace(os.Getenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT"))
+	if !strings.HasPrefix(environment, "sandbox-") {
+		return nil, "", errors.New("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT must name a sandbox environment")
+	}
+	publicURL, err := url.Parse(strings.TrimSpace(publicBaseURL))
+	if err != nil || publicURL.Scheme != "https" || publicURL.Hostname() != "api-"+environment+".lightclaw.tech" {
+		return nil, "", errors.New("personal DevCloud route registry requires the matching sandbox HTTPS public base URL")
+	}
+	secret := envFirst("PERSONAL_DEV_ROUTE_CLOUDLADDER_HMAC_SECRET", "CLOUDLADDER_SHADOW_HMAC_SECRET")
+	if secret == "" {
+		return nil, "", errors.New("personal DevCloud route registry requires CloudLadder HMAC secret")
+	}
+	if mysqlStore, ok := authStore.(*service.MySQLStore); ok {
+		return devroute.NewMySQLRegistry(mysqlStore.DB()), secret, nil
+	}
+	return devroute.NewMemoryRegistry(), secret, nil
 }
 
 func envInt64OrDefault(key string, fallback int64) int64 {

@@ -100,7 +100,7 @@ Gateway 和前端的当前 checkout 代码；Account 与 Billing 继续访问真
 
 国内动态目标只接受 Auth 从可信代理链派生的 DevCloud `9.x` 地址和 callback-only 端口 `18084`；
 客户端不能提交 UIN、IP 或任意端口。国际站复用韩国 testing devtunnel，短期 capability 必须绑定
-UIN、TunnelHost 与 TTL；Kubernetes Lease 只持久化 capability 的 SHA-256 摘要，DevCloud 不获得
+UIN、TunnelHost 与 TTL；Auth testing MySQL registry 只持久化 capability 的 SHA-256 摘要，DevCloud 不获得
 共享 CloudLadder HMAC、SOPS 或 `DEVTUNNEL_TOKEN`。动态、静态和共享路径的优先级、注销、过期及
 跨 UIN 拒绝都必须有测试证据。
 

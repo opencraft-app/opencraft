@@ -62,3 +62,22 @@ func TestBuildDeveloperRouteRuntimeWiresSignedRegistrationAPI(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestBuildDeveloperRouteRuntimeHTTPStoreRequiresSecret(t *testing.T) {
+	t.Setenv("MISSING_REGISTRY_SECRET", "")
+	cfg := config.Config{DeveloperRoutes: config.DeveloperRoutesConfig{
+		Enabled: true, RouteID: "jifei-callback", Store: "http",
+		RegistryBaseURL: "https://api-sandbox-bj-7.lightclaw.tech",
+		RegistryRouteID: "developer-route-registry", RegistryCaller: "cloudladdergateway",
+		RegistrySecretEnv: "MISSING_REGISTRY_SECRET", RegistryTimeout: "1s",
+		RegistrationRoute: "developer-route-registration", RegistrationCaller: "lightclaw-auth",
+		DeliveryMode: DeliveryModeDirectForTest, AllowedCIDRs: []string{"9.0.0.0/8"},
+		AllowedPorts: []int{18084}, DefaultTTL: "8h", MaxTTL: "24h",
+		ProbePath: "/healthz", ProbeTimeout: "1s",
+	}}
+	if _, _, err := buildDeveloperRouteRuntime(cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "secret env") {
+		t.Fatalf("buildDeveloperRouteRuntime() error = %v", err)
+	}
+}
+
+const DeliveryModeDirectForTest = "direct"

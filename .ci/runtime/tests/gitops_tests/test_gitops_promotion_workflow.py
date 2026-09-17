@@ -644,6 +644,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn("wait_config_gate", script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py"', script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py"', script)
+        self.assertIn('image_pin_args+=(--variant "$GITOPS_IMAGE_PIN_VARIANT")', script)
         self.assertIn("GitOps 发布意图：准备把镜像推进到", script)
         self.assertIn("Release-gate-image-status:", script)
         self.assertIn("Release-gate-config-status:", script)

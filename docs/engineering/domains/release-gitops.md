@@ -285,10 +285,16 @@ Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与
 
 个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
 `sandbox-kr-1` Auth 配置、广州/新加坡 testing CloudLadder 运行态。只允许启用北京和韩国 sandbox
-Auth、`lightvela-proxy-testing`、`devtunnel-testing`、韩国 sandbox Service Gateway 及其专用 Lease
-前缀、ServiceAccount 与最小 RBAC；Lease 必须保存在 TKEx App 已授权的 workload namespace，不能由
-namespaced-mode Argo App 创建或跨 namespace 管理资源。production 与 staging manifests 必须保持零
-diff，运行态也不得发生变更。
+Auth、`lightvela-proxy-testing`、`devtunnel-testing` 和韩国 sandbox Service Gateway。动态注册状态
+保存在各自 Auth testing MySQL 的 `developer_route_registrations`，CloudLadder 与 devtunnel 只用既有
+Shadow HMAC 调用 registry；不得为该能力新增 TKEx ServiceAccount、Role、RoleBinding 或 Lease。production
+与 staging manifests 必须保持零 diff，运行态也不得发生变更。
+
+CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
+环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
+`cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
+变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
+依赖“暂不执行 Argo Sync”作为长期隔离措施。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
@@ -296,7 +302,7 @@ Secret 或生产 Service 就立即停止。发布时只同步本变更新增或�
 namespace、name、目标 revision 与镜像。
 
 完成证据必须分层记录：源码合并 revision、Argo 目标 revision、精确资源 `Synced/Healthy`、运行镜像、
-国内/国际 registration、Lease/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared
+国内/国际 registration、registry/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared
 优先级和 fail-closed 结果。源码合入、HTTP 200、Pod Ready 或页面可打开都不能单独作为个人环境闭环。
 
 ## CloudLadder HMAC 分阶段发布

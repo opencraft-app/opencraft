@@ -64,7 +64,7 @@ On the international site's no-Bot `/agents/persona/` view, remove the outline a
 ## risks
 - The shared header appears on several routes: require both persona route and loaded no-Bot state before the CSS override.
 - Local authentication may prevent a live no-Bot screenshot; do not fabricate a session or claim visual verification if blocked.
-- MR !4154 independently changes the same generated dictionary and remains open; whichever MR integrates second must regenerate from the latest combined source before merge.
+- MR !4154 independently changed the same generated dictionary and merged as `5fb403d0a` after the first !4166 CR push. The !4166 branch must therefore combine both sources and regenerate the closure before it can be merged.
 
 ## validation
 - Passed: focused Vitest (27/27), `pnpm check` (0 new TypeScript diagnostics), `pnpm build:global` (649 pages), documentation validation, `git diff --check`, and live route HTTP 200 / Chrome login-gate smoke check.
@@ -82,4 +82,4 @@ On the international site's no-Bot `/agents/persona/` view, remove the outline a
 - Bounded `rg` identified the route, prompt, header CSS, and tests; no scan artifact saved.
 
 ## handoff
-- The user subsequently approved the Chrome/Whistle local preview on 5174 and authorized initial MR delivery. The MR excludes the separate Soul copy overlay, which belongs to MR !4154. The user separately authorized committing and pushing this CR correction to !4166; no merge or release is authorized.
+- The user subsequently approved the Chrome/Whistle local preview on 5174 and authorized initial MR delivery. The user separately authorized committing and pushing this CR correction to !4166. !4154 has since merged into master; !4166 must pick up that already-merged Soul copy to resolve the generated-file conflict, without independently reimplementing it. No MR merge or release is authorized.

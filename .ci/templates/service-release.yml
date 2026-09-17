@@ -16,6 +16,9 @@ parameters:
   - name: MASTER_AUTO_PIN_ENVS
     type: string
     default: beijing-sandbox
+  - name: IMAGE_PIN_VARIANT
+    type: string
+    default: all
   - name: ENABLE_MASTER_PROD_PROMOTE
     type: boolean
     default: true
@@ -121,6 +124,7 @@ stages:
               echo "DEFAULT_TARGET_ENV=${{ parameters.DEFAULT_TARGET_ENV }}"
               echo "MASTER_BUILD_ENVS=${{ parameters.MASTER_BUILD_ENVS }}"
               echo "MASTER_AUTO_PIN_ENVS=${{ parameters.MASTER_AUTO_PIN_ENVS }}"
+              echo "IMAGE_PIN_VARIANT=${{ parameters.IMAGE_PIN_VARIANT }}"
               echo "PLAYGROUND_BUILD_ENVS=${{ parameters.PLAYGROUND_BUILD_ENVS }}"
               echo "PLAYGROUND_AUTO_PIN_ENVS=${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}"
               echo "RUNNER_POOL_NAME=${{ parameters.RUNNER_POOL_NAME }}"
@@ -222,6 +226,7 @@ stages:
               esac
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
               PRINT_RUNNER_DIAGNOSTICS="${{ parameters.PRINT_RUNNER_DIAGNOSTICS }}" BUILD_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 北京测试 DB 变更检查与 GitOps auto-pin
             shell: bash
@@ -294,6 +299,7 @@ stages:
               esac
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
               AUTO_PIN_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 手动发布 ${{ parameters.DISPLAY_NAME }} 到 GitOps
             shell: bash
@@ -314,6 +320,7 @@ stages:
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
+              export GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash "$REPO_ROOT/.ci/runtime/promote_bundle_image_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
@@ -672,7 +679,8 @@ stages:
 
               REMOTE_URL="$(ci_gitops_remote_url)"
               GITOPS_BRANCH=gitops
-              export REMOTE_URL GITOPS_BRANCH
+              GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"
+              export REMOTE_URL GITOPS_BRANCH GITOPS_IMAGE_PIN_VARIANT
               RUNTIME_SNAPSHOT="$(ci_create_runtime_snapshot "$REPO_ROOT/.ci")"
               cleanup_runtime_snapshot() {
                 rm -rf "$RUNTIME_SNAPSHOT"

@@ -3520,6 +3520,7 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
+        self.assertEqual(parameters.get("IMAGE_PIN_VARIANT"), "testing")
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
@@ -3680,6 +3681,7 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
         self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
+        self.assertEqual(template_parameters.get("IMAGE_PIN_VARIANT", {}).get("default"), "all")
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
@@ -3689,6 +3691,10 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertNotIn("resolve_prod_promote_envs()", template_text)
         self.assertNotIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
+        self.assertEqual(
+            template_text.count('GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"'),
+            4,
+        )
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
 
