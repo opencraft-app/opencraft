@@ -595,23 +595,43 @@ wait_rollouts() {
   "$KUBECTL" rollout status -n localstack-frontend deployment/frontend --timeout=300s
 }
 
-randomize_trade_internal_token() {
-  local token encoded patch_file
+internal_service_token_patch_plan() {
+  cat <<'EOF'
+trade|trade-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+ctl|ctl-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,CTL_INTERNAL_TOKEN,CTL_SHADOW_TOKEN,CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN
+shadow|shadow-runtime-secrets|SHADOW_INTERNAL_SERVICE_TOKEN
+ai-gateway|ai-gateway-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+EOF
+}
+
+randomize_shared_internal_tokens() {
+  local token encoded namespace secret keys patch_file
   mkdir -p "$STATE_DIR"
   chmod 700 "$STATE_DIR"
   token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
   encoded="$(printf '%s' "$token" | base64 | tr -d '\n')"
-  patch_file="$(mktemp "$STATE_DIR/trade-secret-patch.XXXXXX")"
-  chmod 600 "$patch_file"
-  printf '{"data":{"LIGHTCLAW_INTERNAL_SERVICE_TOKEN":"%s"}}\n' "$encoded" >"$patch_file"
-  if ! "$KUBECTL" patch secret trade-runtime-secrets -n trade --type merge --patch-file "$patch_file" >/dev/null; then
+  while IFS='|' read -r namespace secret keys; do
+    patch_file="$(mktemp "$STATE_DIR/internal-token-patch.XXXXXX")"
+    chmod 600 "$patch_file"
+    python3 - "$patch_file" "$encoded" "$keys" <<'PY'
+import json
+import sys
+
+path, encoded, keys = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"data": {key: encoded for key in keys.split(",")}}, output, separators=(",", ":"))
+    output.write("\n")
+PY
+    if "$KUBECTL" patch secret "$secret" -n "$namespace" --type merge --patch-file "$patch_file" >/dev/null; then
+      rm -f "$patch_file"
+      continue
+    fi
     rm -f "$patch_file"
     unset token encoded
-    die "failed to install the per-run Trade internal service token"
-  fi
-  rm -f "$patch_file"
+    die "failed to install the per-run shared internal service token for $namespace/$secret"
+  done < <(internal_service_token_patch_plan)
   unset token encoded
-  log "generated a per-run Trade internal service token"
+  log "generated a per-run shared internal service token"
 }
 
 seed_site_data() {
@@ -673,7 +693,7 @@ up() {
     esac
   done
 
-  randomize_trade_internal_token
+  randomize_shared_internal_tokens
 
   wait_job ctl ctl-migrate
 
@@ -792,6 +812,7 @@ case "$command" in
   up) up ;;
   expose) require_local_context; start_exposure ;;
   exposure-plan) print_exposure_plan ;;
+  internal-token-patch-plan) internal_service_token_patch_plan ;;
   stop-expose) stop_exposure ;;
   status) status ;;
   logs) logs ;;

@@ -311,8 +311,10 @@ if rg -n 'service/trade\|18084:' "$LOCALSTACK_ROOT/localstack.sh"; then
   echo "full Trade listener must not be exposed on callback port 18084" >&2
   exit 1
 fi
-rg -q '^randomize_trade_internal_token\(\)' "$LOCALSTACK_ROOT/localstack.sh"
-rg -q 'patch secret trade-runtime-secrets' "$LOCALSTACK_ROOT/localstack.sh"
+internal_token_patch_plan="$(bash "$LOCALSTACK_ROOT/localstack.sh" internal-token-patch-plan)"
+test "$internal_token_patch_plan" = $'trade|trade-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN\nctl|ctl-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,CTL_INTERNAL_TOKEN,CTL_SHADOW_TOKEN,CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN\nshadow|shadow-runtime-secrets|SHADOW_INTERNAL_SERVICE_TOKEN\nai-gateway|ai-gateway-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN'
+rg -q '^randomize_shared_internal_tokens\(\)' "$LOCALSTACK_ROOT/localstack.sh"
+rg -q 'randomize_shared_internal_tokens' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'start_exposure_linux' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'load_images_into_local_cluster' "$LOCALSTACK_ROOT/localstack.sh"
 rg -Fq 'frontend|localstack-frontend|service/frontend|5173:8080|$PUBLIC_BIND_ADDRESS' \
