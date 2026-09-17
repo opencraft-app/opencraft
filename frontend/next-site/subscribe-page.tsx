@@ -3939,7 +3939,7 @@ export const SubscribePage = ({
           <CreditPackSection
             sectionId={CREDIT_SECTION_ID}
             isLoggedIn={isLoggedIn}
-            hasActivePlan={Boolean(activePass)}
+            hasActivePlan={true}
             onRequireLogin={() => setShowLoginModal(true)}
             onRequirePlan={() => {
               /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
