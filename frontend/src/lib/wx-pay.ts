@@ -89,6 +89,11 @@ export interface BuildPayPlanInput {
    * 新购场景留空。
    */
   passId?: string;
+  /**
+   * 订单类型：积分包传 "cp"（BRIDGE_KIND_CREDIT_PACK）。
+   * 中转页会改调 /v1/credit/packages/order-url；与 passId 互斥。
+   */
+  kind?: string;
 }
 
 /* ─── 编码协议（中转页 query 字段）─── */
@@ -110,7 +115,17 @@ export const BRIDGE_QUERY_KEYS = {
   passId: "pid",    // 续费场景的 pass_id；新购场景为空
   sandbox: "sb",    // "1" 表示沙箱
   bundleName: "n",  // 套餐/产品名，用于中转页主标题展示（仅 UI，无鉴权语义）
+  /**
+   * 订单类型："cp" = 积分包（credit pack）。
+   * 中转页据此把阶段二请求改发 /v1/credit/packages/order-url（积分包的
+   * order-url 为直出 JSON、无 envelope，与 pass 链路不同）。
+   * 为空 → pass 套餐链路（新购/续费按 pid 区分）。
+   */
+  kind: "k",
 } as const;
+
+/** 订单类型标识（写入中转页 query 的 k 字段值）。 */
+export const BRIDGE_KIND_CREDIT_PACK = "cp";
 
 /**
  * 默认二维码 TTL：9 分钟。
@@ -158,6 +173,7 @@ function buildBridgeUrl(input: BuildPayPlanInput & { expiresAt: number }): strin
   if (input.authCode) params.set(BRIDGE_QUERY_KEYS.authCode, input.authCode);
   if (input.passId) params.set(BRIDGE_QUERY_KEYS.passId, input.passId);
   if (input.operation) params.set(BRIDGE_QUERY_KEYS.operation, input.operation);
+  if (input.kind) params.set(BRIDGE_QUERY_KEYS.kind, input.kind);
   if (sandbox) params.set(BRIDGE_QUERY_KEYS.sandbox, "1");
   if (input.bundleName) params.set(BRIDGE_QUERY_KEYS.bundleName, input.bundleName);
   return `${baseUrl}?${params.toString()}`;
