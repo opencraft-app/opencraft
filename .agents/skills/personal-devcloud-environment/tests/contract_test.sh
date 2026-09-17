@@ -111,6 +111,24 @@ test_auth_failure_removes_temp_credentials() (
   [[ ! -e "$body_path" ]] || fail "credential request body survived auth failure"
 )
 
+test_session_only_generates_local_credentials() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/session-only" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_SESSION_TOKEN='short-lived-testing-session' # pragma: allowlist secret
+  unset PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  curl_with_token() { return 0; }
+
+  assert_eq 'short-lived-testing-session' "$(central_session)" "central session reuse"
+  prepare_local_credentials
+  [[ "$LOCAL_IDENTITY_EMAIL" == lv-local-*@example.com ]] \
+    || fail "session-only flow did not generate a local email"
+  [[ -n "$LOCAL_IDENTITY_PASSWORD" ]] \
+    || fail "session-only flow did not generate a local password"
+  assert_eq "$LOCAL_IDENTITY_EMAIL" "$(state_get email)" "local email state"
+  assert_eq "$LOCAL_IDENTITY_PASSWORD" "$(state_get password)" "local password state"
+)
+
 test_personal_kubeconfig_guard() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/kube-guard" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -194,6 +212,7 @@ test_intl_registration_starts_tunnel() (
   central_session() { printf 'session-token\n'; }
   curl() { return 0; }
   curl_with_token() {
+    printf '%s\n' "$*" >"$TEST_ROOT/intl-registration-request"
     printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"short-lived-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/intl-tunnel-assignment"; }
@@ -201,6 +220,7 @@ test_intl_registration_starts_tunnel() (
   assert_eq 'uin-450860000013.sg.tunnel.internal|short-lived-registration-token' \
     "$(<"$TEST_ROOT/intl-tunnel-assignment")" "tunnel assignment passed to agent"
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
+  ! grep -q 'targetIp' "$TEST_ROOT/intl-registration-request"
   ! rg -q 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
 )
 
@@ -256,7 +276,7 @@ test_intl_registration_without_capability_fails_closed() (
   [[ -s "$TEST_ROOT/intl-missing-token-delete" ]] || fail "unsafe active registration was not disabled"
 )
 
-test_cn_registration_uses_server_derived_target() (
+test_cn_registration_sends_explicit_devcloud_target() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/cn-register" PERSONAL_DEV_SITE=cn
   export PERSONAL_DEV_IP='9.134.214.121'
   source "$SCRIPT"
@@ -266,10 +286,13 @@ test_cn_registration_uses_server_derived_target() (
   central_session() { printf 'session-token\n'; }
   curl() { return 0; }
   curl_with_token() {
+    printf '%s\n' "$*" >"$TEST_ROOT/cn-registration-request"
     printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { fail "CN must not start devtunnel-agent"; }
   register_route
+  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/cn-registration-request"
+  ! grep -q '"uin"' "$TEST_ROOT/cn-registration-request"
   assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
 )
@@ -490,13 +513,14 @@ run_test 'saved kind cluster is restored for follow-up commands' test_saved_kind
 run_test 'active site blocks cross-site activation' test_active_site_blocks_switch
 run_test 'state updates are atomic' test_state_updates_are_atomic
 run_test 'auth failure removes credential temp files' test_auth_failure_removes_temp_credentials
+run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout
 run_test 'Intl registration without a capability fails closed' test_intl_registration_without_capability_fails_closed
-run_test 'CN registration validates the server-derived target' test_cn_registration_uses_server_derived_target
+run_test 'CN registration sends the discovered DevCloud target without a UIN' test_cn_registration_sends_explicit_devcloud_target
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail

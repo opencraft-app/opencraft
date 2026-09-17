@@ -40,6 +40,7 @@ type Handler struct {
 	tatRegisterIssuer tat.RegisterCodeIssuer
 	deviceBindTokens  *deviceBindTokenCodec
 	developerRoutes   DeveloperRouteClient
+	allowExplicitIP   bool
 	publicBaseURL     string
 	frontendBaseURL   string
 	federation        *FederationConfig

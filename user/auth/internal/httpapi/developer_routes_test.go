@@ -105,6 +105,72 @@ func TestPersonalDeveloperRouteDerivesUINAndIPServerSide(t *testing.T) {
 	}
 }
 
+func TestPersonalDeveloperRouteRejectsExplicitTargetIPByDefault(t *testing.T) {
+	client := &recordingDeveloperRouteClient{}
+	router, svc, _ := newShadowBindingHTTPTestRouterWithClients(httpTestShadowClient{}, client)
+	sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)
+
+	response := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/registration", map[string]any{
+		"targetIp": "9.208.245.238", "port": 18084, "ttlSeconds": 28800,
+	}, sessionCookie)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "explicit_target_ip_disabled") {
+		t.Fatalf("expected explicit target rejection, got %d: %s", response.Code, response.Body.String())
+	}
+	if client.registerInput.Uin != 0 {
+		t.Fatalf("disabled explicit target reached control client: %+v", client.registerInput)
+	}
+}
+
+func TestPersonalDeveloperRouteAcceptsSandboxDevCloudTargetAndDerivesUIN(t *testing.T) {
+	client := &recordingDeveloperRouteClient{}
+	router, svc, _ := newShadowBindingHTTPTestRouterWithDeveloperRouteConfig(httpTestShadowClient{}, client, true)
+	sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)
+
+	response := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/registration", map[string]any{
+		"uin": 999999999999, "targetIp": "9.208.245.238", "port": 18084, "ttlSeconds": 28800,
+	}, sessionCookie)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if client.registerInput.Uin != 300000000053 || client.registerInput.TargetIP != "9.208.245.238" || client.registerInput.Port != 18084 {
+		t.Fatalf("unexpected explicit target registration: %+v", client.registerInput)
+	}
+}
+
+func TestPersonalDeveloperRouteRejectsUnsafeExplicitTargets(t *testing.T) {
+	for _, targetIP := range []string{"10.0.0.8", "170.106.101.170", "2001:db8::1", "not-an-ip", ""} {
+		t.Run(targetIP, func(t *testing.T) {
+			client := &recordingDeveloperRouteClient{}
+			router, svc, _ := newShadowBindingHTTPTestRouterWithDeveloperRouteConfig(httpTestShadowClient{}, client, true)
+			sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)
+			response := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/registration", map[string]any{
+				"targetIp": targetIP, "port": 18084, "ttlSeconds": 28800,
+			}, sessionCookie)
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_target_ip") {
+				t.Fatalf("target %q accepted: %d %s", targetIP, response.Code, response.Body.String())
+			}
+			if client.registerInput.Uin != 0 {
+				t.Fatalf("unsafe target reached control client: %+v", client.registerInput)
+			}
+		})
+	}
+}
+
+func TestPersonalDeveloperRouteRequiresCallbackPort(t *testing.T) {
+	client := &recordingDeveloperRouteClient{}
+	router, svc, _ := newShadowBindingHTTPTestRouterWithDeveloperRouteConfig(httpTestShadowClient{}, client, true)
+	sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)
+	response := performJSONRequest(t, router, http.MethodPost, "/auth/dev-environments/registration", map[string]any{
+		"targetIp": "9.208.245.238", "port": 18085, "ttlSeconds": 28800,
+	}, sessionCookie)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_request") {
+		t.Fatalf("expected port rejection, got %d: %s", response.Code, response.Body.String())
+	}
+	if client.registerInput.Uin != 0 {
+		t.Fatalf("unsafe port reached control client: %+v", client.registerInput)
+	}
+}
+
 func TestPersonalDeveloperRouteIsUnavailableWhenSandboxControlIsDisabled(t *testing.T) {
 	router, svc, _ := newShadowBindingHTTPTestRouter()
 	sessionCookie, _ := completePhone3FAHTTPFlow(t, router, svc)

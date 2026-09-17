@@ -290,6 +290,11 @@ Auth、`lightvela-proxy-testing`、`devtunnel-testing` 和韩国 sandbox Service
 Shadow HMAC 调用 registry；不得为该能力新增 TKEx ServiceAccount、Role、RoleBinding 或 Lease。production
 与 staging manifests 必须保持零 diff，运行态也不得发生变更。
 
+北京 `sandbox-bj-7` 可单独开启 `PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED`，用于接收 Skill 自动
+探测的 DevCloud `9.0.0.0/8:18084` 直连地址；韩国 `sandbox-kr-1` 不得开启，继续使用可信代理来源与
+devtunnel。该开关只有在 sandbox route control client 成功构造时才生效，不能进入 production、staging
+或其他环境的 Auth 配置。
+
 CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
 环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
 `cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部

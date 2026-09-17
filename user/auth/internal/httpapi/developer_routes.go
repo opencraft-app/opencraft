@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -21,9 +22,14 @@ type DeveloperRouteClient interface {
 }
 
 type developerRouteRequest struct {
-	Port       int `json:"port"`
-	TTLSeconds int `json:"ttlSeconds"`
+	TargetIP   *string `json:"targetIp"`
+	Port       int     `json:"port"`
+	TTLSeconds int     `json:"ttlSeconds"`
 }
+
+const personalDeveloperRouteCallbackPort = 18084
+
+var personalDeveloperRouteTargetPrefix = netip.MustParsePrefix("9.0.0.0/8")
 
 func registerDeveloperRouteRoutes(router gin.IRoutes, handler *Handler) {
 	router.POST("/auth/dev-environments/registration", handler.registerPersonalDevEnvironment)
@@ -34,14 +40,22 @@ func registerDeveloperRouteRoutes(router gin.IRoutes, handler *Handler) {
 func (h *Handler) registerPersonalDevEnvironment(ctx *gin.Context) {
 	setDeveloperRouteNoStore(ctx)
 	var request developerRouteRequest
-	if err := ctx.ShouldBindJSON(&request); err != nil || request.Port <= 0 || request.Port > 65535 || request.TTLSeconds < 60 || request.TTLSeconds > 86400 {
+	if err := ctx.ShouldBindJSON(&request); err != nil || request.Port != personalDeveloperRouteCallbackPort || request.TTLSeconds < 60 || request.TTLSeconds > 86400 {
 		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "port or ttlSeconds is invalid"})
+		return
+	}
+	explicitTargetIP, body, status := h.personalDeveloperRouteExplicitTargetIP(request.TargetIP)
+	if body != nil {
+		ctx.JSON(status, body)
 		return
 	}
 	uin, targetIP, body, status := h.personalDeveloperRouteIdentity(ctx, true, true)
 	if body != nil {
 		ctx.JSON(status, body)
 		return
+	}
+	if explicitTargetIP != "" {
+		targetIP = explicitTargetIP
 	}
 	registration, err := h.developerRoutes.Register(ctx, devroute.RegisterInput{
 		Uin: uin, TargetIP: targetIP, Port: request.Port, TTLSeconds: request.TTLSeconds,
@@ -56,6 +70,20 @@ func (h *Handler) registerPersonalDevEnvironment(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, registration)
+}
+
+func (h *Handler) personalDeveloperRouteExplicitTargetIP(requested *string) (string, *api.ErrorResponse, int) {
+	if requested == nil {
+		return "", nil, 0
+	}
+	if h == nil || !h.allowExplicitIP {
+		return "", &api.ErrorResponse{Code: "explicit_target_ip_disabled", Message: "explicit targetIp is unavailable in this environment"}, http.StatusBadRequest
+	}
+	address, err := netip.ParseAddr(strings.TrimSpace(*requested))
+	if err != nil || !address.Is4() || !personalDeveloperRouteTargetPrefix.Contains(address) {
+		return "", &api.ErrorResponse{Code: "invalid_target_ip", Message: "targetIp must be an IPv4 address in the DevCloud 9.0.0.0/8 network"}, http.StatusBadRequest
+	}
+	return address.String(), nil, 0
 }
 
 func (h *Handler) getPersonalDevEnvironment(ctx *gin.Context) {

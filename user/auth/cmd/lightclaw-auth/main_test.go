@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/devroute"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
@@ -181,6 +182,23 @@ func TestBuildDeveloperRouteClientDisabledByDefault(t *testing.T) {
 	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
 	if err != nil || client != nil {
 		t.Fatalf("disabled client=%v err=%v", client, err)
+	}
+}
+
+func TestDeveloperRouteExplicitTargetIPRequiresSandboxControlClient(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "true")
+	if developerRouteExplicitTargetIPEnabled(nil) {
+		t.Fatal("explicit targetIp enabled without sandbox route control")
+	}
+
+	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "false")
+	if developerRouteExplicitTargetIPEnabled(&devroute.Client{}) {
+		t.Fatal("explicit targetIp enabled by default")
+	}
+
+	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "true")
+	if !developerRouteExplicitTargetIPEnabled(&devroute.Client{}) {
+		t.Fatal("explicit targetIp remained disabled for an explicitly enabled sandbox route control client")
 	}
 }
 

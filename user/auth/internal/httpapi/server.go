@@ -43,6 +43,7 @@ type ServerConfig struct {
 	ShadowBindingInternalToken    string
 	ShadowTencentCallbackToken    string
 	DeveloperRouteClient          DeveloperRouteClient
+	DeveloperRouteExplicitIP      bool
 	DeveloperRouteRegistry        devroute.Registry
 	DeveloperRouteRegistrySecret  string
 	DeveloperRouteRegistryCaller  string
@@ -93,6 +94,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.oidc = config.OIDC
 	handler.referralEnabled = config.ReferralEnabled
 	handler.developerRoutes = config.DeveloperRouteClient
+	handler.allowExplicitIP = config.DeveloperRouteExplicitIP
 	router.POST("/auth/session/exchange", handler.ExchangeFirstPartySession)
 	// Compatibility alias for already released native clients. New first-party
 	// clients use the neutral session adapter above.
