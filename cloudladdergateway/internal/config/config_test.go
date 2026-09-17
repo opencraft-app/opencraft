@@ -29,6 +29,23 @@ func TestApplyDeveloperRouteEnvOverridesRejectsInvalidAllowedPort(t *testing.T) 
 	}
 }
 
+func TestApplyDeveloperRouteEnvOverridesLoadsHTTPRegistry(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE", "http")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_ROUTE_ID", "developer-route-registry")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_CALLER", "cloudladdergateway")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_SECRET_ENV", "CLOUDLADDER_SHADOW_HMAC_SECRET")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_TIMEOUT", "11s")
+	cfg := Config{}
+	if err := applyDeveloperRouteEnvOverrides(&cfg); err != nil {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v", err)
+	}
+	d := cfg.DeveloperRoutes
+	if d.Store != "http" || d.RegistryBaseURL != "https://api-sandbox-bj-7.lightclaw.tech" || d.RegistryRouteID != "developer-route-registry" || d.RegistryCaller != "cloudladdergateway" || d.RegistrySecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" || d.RegistryTimeout != "11s" {
+		t.Fatalf("unexpected developer route registry config: %+v", d)
+	}
+}
+
 func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")

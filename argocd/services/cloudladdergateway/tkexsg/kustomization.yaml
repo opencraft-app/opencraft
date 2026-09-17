@@ -9,7 +9,6 @@ resources:
 - statefulsetplus-testing.yaml
 # devtunnel 反向回调隧道，只有 testing 一份（开发者联调用，生产没有对应工作负载）。
 - devtunnel-testing.yaml
-- developer-route-rbac-testing.yaml
 # Keep this overlay in cloudladdergateway CI path to refresh GitOps secret closure.
 generators:
 - ksops-secret-generator.yaml

@@ -120,6 +120,26 @@ func buildDeveloperRouteRuntime(cfg config.Config, authenticator *auth.Authentic
 			return server.DeveloperRoutes{}, nil, err
 		}
 		store = leaseStore
+	case "http":
+		registryTimeout, err := config.ParseDuration(cfg.DeveloperRoutes.RegistryTimeout, 10*time.Second)
+		if err != nil {
+			return server.DeveloperRoutes{}, nil, err
+		}
+		registrySecret := strings.TrimSpace(os.Getenv(cfg.DeveloperRoutes.RegistrySecretEnv))
+		if registrySecret == "" {
+			return server.DeveloperRoutes{}, nil, fmt.Errorf("developer route registry secret env %s is empty", cfg.DeveloperRoutes.RegistrySecretEnv)
+		}
+		httpStore, err := devroute.NewHTTPStore(devroute.HTTPStoreOptions{
+			BaseURL: cfg.DeveloperRoutes.RegistryBaseURL, Secret: registrySecret,
+			Caller: cfg.DeveloperRoutes.RegistryCaller, RouteID: cfg.DeveloperRoutes.RegistryRouteID,
+			Client: &http.Client{Timeout: registryTimeout}, AllowedCIDRs: cfg.DeveloperRoutes.AllowedCIDRs,
+			AllowedPorts: cfg.DeveloperRoutes.AllowedPorts, DeliveryMode: cfg.DeveloperRoutes.DeliveryMode,
+			TunnelBaseURL: cfg.DeveloperRoutes.TunnelBaseURL, TunnelHostSuffix: cfg.DeveloperRoutes.TunnelHostSuffix,
+		})
+		if err != nil {
+			return server.DeveloperRoutes{}, nil, err
+		}
+		store = httpStore
 	default:
 		return server.DeveloperRoutes{}, nil, fmt.Errorf("unsupported developer route store %q", cfg.DeveloperRoutes.Store)
 	}
