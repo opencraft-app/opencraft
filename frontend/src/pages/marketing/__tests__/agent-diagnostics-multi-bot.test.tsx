@@ -151,12 +151,6 @@ const page = (botId: string) => (
   </AppNavigationProvider>
 );
 
-const revealHiddenTools = () => {
-  const show = (window as Window & { show?: unknown }).show;
-  if (typeof show !== "function") throw new Error("show() helper is not installed");
-  act(() => { show(); });
-};
-
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -257,23 +251,26 @@ describe("multi-Bot diagnostics", () => {
     expect(startRescueExport).not.toHaveBeenCalled();
   });
 
-  it("keeps single-Bot maintenance available and new-Bot creation hidden", async () => {
+  it("keeps single-Bot maintenance available and shows quota-disabled creation", async () => {
     bots = [buildBot()];
     const view = render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
-    expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"新建 Bot"})).toBeDisabled();
     expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).not.toBeInTheDocument();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("reveals Bot creation with show() and resets visibility on page remount", async () => {
+  it("shows Bot creation without show() and preserves visibility on page remount", async () => {
     maxBots = 5;
     const view = render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
-    revealHiddenTools();
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeEnabled();
+    expect(screen.queryByRole("link", { name: "终端" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+    expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
     expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
       "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
     ]);
@@ -288,13 +285,12 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
     view.unmount();
     render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
   });
 
   it("explains a disabled create icon in a portaled tooltip", async () => {
     maxBots = 1;
     render(page("ins-1"));
-    revealHiddenTools();
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
     const tooltipTrigger = createButton.parentElement;
@@ -313,7 +309,6 @@ describe("multi-Bot diagnostics", () => {
     bots = [buildBot()];
     maxBots = 2;
     const view = render(page("ins-1"));
-    revealHiddenTools();
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
 
@@ -341,11 +336,10 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByText("已有 Bot 正在删除中，请稍后刷新页面后再创建。")).not.toBeInTheDocument();
   });
 
-  it("does not bypass the feature flag with show()", () => {
+  it("does not bypass the multi-Bot feature flag", () => {
     maxBots = 5;
     multiBotEnabled = false;
     render(page("ins-1"));
-    revealHiddenTools();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });

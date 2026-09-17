@@ -2685,7 +2685,6 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const showCreateBotEntry = showHiddenAgentTools;
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -4039,7 +4038,6 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -5227,7 +5225,7 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
-                              {showCreateBotEntry && multiBotEnabled && (
+                              {multiBotEnabled && (
                                 <WorkspaceActionTooltip
                                   content={createLimitMessage || t("新建 Bot")}
                                   side="bottom"
