@@ -21,6 +21,7 @@ class ReferralConfigRolloutTest(unittest.TestCase):
         expected_campaigns = {
             "beijing-sandbox": "beijing-pilot-2026-09",
             "shprod": "shanghai-launch-2026-09",
+            "sgprod": "singapore-launch-2026-09",
         }
         for env, expected_campaign in expected_campaigns.items():
             with self.subTest(env=env), tempfile.TemporaryDirectory() as tmp:

@@ -194,7 +194,7 @@ master 源码
 - 上海 CTL 的 Referral patch 必须按容器名 `api` 合并到原容器，不能把 Deployment 名 `ctl-api`
   当作容器名。GitOps 候选需在 Kustomize 中保留原容器并成功应用既有 volumeMount/volume 删除补丁，
   否则不得创建或合并发布 MR。
-- 北京与上海环境显式设置 `REFERRAL_ENABLED=true`；全局和新加坡默认关闭。CTL migration 31 未执行时
+- 北京、上海和新加坡环境显式设置 `REFERRAL_ENABLED=true`；其他环境默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
   bootstrap 证据；镜像构建、Pulsar 资源存在或 UI 可见均不能单独代表返利闭环。
@@ -210,6 +210,9 @@ master 源码
   cluster ID/broker endpoint，再依次执行 `bootstrap-referral-database`、`bootstrap-referral-tokens` 和 SOPS 导出。
   在这些前置条件、schema migration 和 API/worker 健康证据完成前，不创建 `referral-sgprod` Application，
   不开启 Auth/CTL relay，也不向 Service Gateway 添加 Referral 路由。
+- 新加坡 activation 使用独立 campaign `singapore-launch-2026-09`、双方各 500 积分且 `vesting_days=0`；
+  CTL schema 必须先升级到 31，Auth schema 必须包含 referral outbox，VelaGW 必须先具备按 `token_amount`
+  自动创建促销 Plan 的能力。Gateway 只暴露单码查询、已登录用户统计/发码和 referral prepare 精确路径。
 - TDMQ P2 会把非分区 Topic 的 `partitions=0` 创建参数规范化为读取值 `1`。Pulumi 必须忽略该只读字段的
   回读漂移，并继续以 `pulsar_topic_type=2` 作为“持久化非分区 Topic”的语义真源；不得因伪漂移反复更新
   生产 Topic。首次 apply 后的 scoped preview 必须达到全部 unchanged。
