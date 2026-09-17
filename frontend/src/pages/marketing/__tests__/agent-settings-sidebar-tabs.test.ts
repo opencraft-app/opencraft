@@ -30,7 +30,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
     expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
     expect(page).toContain("{showCreateBotEntry && multiBotEnabled && (");
-    expect(page).toContain("content={createLimitMessage}");
+    expect(page).toContain("{createLimitMessage && (");
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
     expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
@@ -130,25 +130,14 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(tabs).not.toContain('t("设置")');
   });
 
-  it("uses pill rounding for the create button and segmented tabs", () => {
+  it("removes the legacy full-width create button while retaining pill-shaped tabs", () => {
     const styles = readStylesSource();
-    const createButtonStyles = styles.slice(
-      styles.indexOf(".lv-agent-create-button {"),
-      styles.indexOf(".lv-agent-create-button:hover"),
-    );
-    const disabledCreateButtonStyles = styles.slice(
-      styles.indexOf(".lv-agent-create-button:disabled,"),
-      styles.indexOf(".lv-agents-nav {"),
-    );
     const sidebarTabsStyles = styles.slice(
       styles.indexOf(".lv-agents-sidebar-tabs {"),
       styles.indexOf(".lv-agents-sidebar-tab:hover"),
     );
 
-    expect(createButtonStyles).toContain("border-radius: 999px;");
-    expect(disabledCreateButtonStyles).toContain("cursor: not-allowed;");
-    expect(disabledCreateButtonStyles).toContain("color: rgb(0 0 0 / 30%);");
-    expect(disabledCreateButtonStyles).toContain("background: #f7f8fb;");
+    expect(styles).not.toContain(".lv-agent-create-button");
     expect(sidebarTabsStyles.match(/border-radius: 999px;/g)).toHaveLength(2);
   });
 
@@ -233,7 +222,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('lv-agents-session-item');
   });
 
-  it("shows restart and delete as top-level agent icon actions", () => {
+  it("places the create overflow after restart and delete in the Bot header", () => {
     const page = readPageSource();
     const profile = page.slice(
       page.indexOf('className="lv-agent-actions"'),
@@ -244,8 +233,12 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(profile).toContain("setShowDeleteConfirm(true)");
     expect(profile).toContain("<RefreshCw");
     expect(profile).toContain("<Trash2");
-    expect(profile).not.toContain("lv-agent-action-menu");
-    expect(profile).not.toContain('t("更多操作")');
+    expect(profile).toContain("<MoreHorizontal");
+    expect(profile).toContain('aria-label={t("更多设置")}');
+    expect(profile).toContain("onPointerEnter");
+    expect(profile).toContain("<PopoverContent");
+    expect(profile).toContain('t("新建 Bot")');
+    expect(profile.indexOf("<Trash2")).toBeLessThan(profile.indexOf("<MoreHorizontal"));
   });
 
   it("renders the Bot switcher as an overlay popover instead of in sidebar flow", () => {
@@ -255,7 +248,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("<PopoverTrigger asChild>");
     expect(page).toContain("<PopoverContent");
     expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
-    const menu = page.slice(page.indexOf("<PopoverContent"), page.indexOf("</PopoverContent>"));
+    const switcherStart = page.indexOf("<PopoverContent", page.indexOf("</PopoverContent>") + 1);
+    const menu = page.slice(switcherStart, page.indexOf("</PopoverContent>", switcherStart));
     expect(menu).toContain("border-black/10 bg-white p-1.5 shadow-xl");
     expect(menu).not.toContain("backdrop-");
     expect(menu).not.toContain("<img");
@@ -319,8 +313,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH");
     expect(page).toContain('t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH })');
     expect(page.match(/t\("新建 Bot"\)/g)).toHaveLength(2);
-    expect(page).toContain('className="lv-agent-create-button"');
-    expect(page).toContain("onClick={handleCreateNew}");
+    expect(page).not.toContain('className="lv-agent-create-button"');
+    expect(page).toContain("handleCreateNew();");
     expect(page).not.toContain('t("立即创建")');
     expect(page).not.toContain('t("创建智能体")');
     expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("继承")}</dt>');
@@ -406,7 +400,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const styles = readStylesSource();
     const actionButtonStyles = styles.slice(
       styles.indexOf(".lv-agent-action-button {"),
-      styles.indexOf(".lv-agent-create-button"),
+      styles.indexOf(".lv-agents-nav {"),
     );
     const restartAction = page.slice(
       page.indexOf('aria-label={restartTooltip}'),

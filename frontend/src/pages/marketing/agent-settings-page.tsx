@@ -10,6 +10,7 @@ import {
   MessageCircle,
   MessageSquare,
   Loader2,
+  MoreHorizontal,
   MoreVertical,
   Calendar,
   Mail,
@@ -2686,6 +2687,27 @@ export const AgentSettingsPage = ({
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
   const showCreateBotEntry = showHiddenAgentTools;
+  const [isCreateBotMenuOpen, setIsCreateBotMenuOpen] = useState(false);
+  const createBotMenuCloseTimerRef = useRef<number | null>(null);
+  const createBotMenuOpenedByHoverRef = useRef(false);
+  const cancelCreateBotMenuClose = () => {
+    if (createBotMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(createBotMenuCloseTimerRef.current);
+      createBotMenuCloseTimerRef.current = null;
+    }
+  };
+  const scheduleCreateBotMenuClose = () => {
+    cancelCreateBotMenuClose();
+    createBotMenuCloseTimerRef.current = window.setTimeout(() => {
+      setIsCreateBotMenuOpen(false);
+      createBotMenuCloseTimerRef.current = null;
+    }, 120);
+  };
+  useEffect(() => () => {
+    if (createBotMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(createBotMenuCloseTimerRef.current);
+    }
+  }, []);
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -5268,6 +5290,75 @@ export const AgentSettingsPage = ({
                                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 </button>
                               </WorkspaceActionTooltip>
+                              {showCreateBotEntry && multiBotEnabled && (
+                                <Popover
+                                  open={isCreateBotMenuOpen}
+                                  onOpenChange={(open) => {
+                                    cancelCreateBotMenuClose();
+                                    setIsCreateBotMenuOpen(open);
+                                  }}
+                                >
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      aria-label={t("更多设置")}
+                                      className="lv-agent-action-button"
+                                      onPointerEnter={(event) => {
+                                        if (event.pointerType !== "mouse") return;
+                                        createBotMenuOpenedByHoverRef.current = true;
+                                        cancelCreateBotMenuClose();
+                                        setIsCreateBotMenuOpen(true);
+                                      }}
+                                      onPointerLeave={(event) => {
+                                        if (event.pointerType === "mouse") scheduleCreateBotMenuClose();
+                                      }}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        event.preventDefault();
+                                        createBotMenuOpenedByHoverRef.current = false;
+                                        cancelCreateBotMenuClose();
+                                        setIsCreateBotMenuOpen(true);
+                                      }}
+                                    >
+                                      <MoreHorizontal className="size-4" aria-hidden="true" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    align="end"
+                                    side="bottom"
+                                    sideOffset={6}
+                                    className="w-44 border-black/10 bg-white p-1.5 shadow-xl"
+                                    onPointerEnter={cancelCreateBotMenuClose}
+                                    onPointerLeave={(event) => {
+                                      if (event.pointerType === "mouse") scheduleCreateBotMenuClose();
+                                    }}
+                                    onOpenAutoFocus={(event) => {
+                                      if (createBotMenuOpenedByHoverRef.current) event.preventDefault();
+                                    }}
+                                    onCloseAutoFocus={(event) => {
+                                      if (createBotMenuOpenedByHoverRef.current) event.preventDefault();
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      disabled={!canCreateAdditionalBot}
+                                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-black/70 hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15 disabled:cursor-not-allowed disabled:text-black/35"
+                                      onClick={() => {
+                                        setIsCreateBotMenuOpen(false);
+                                        handleCreateNew();
+                                      }}
+                                    >
+                                      <Plus className="size-4" aria-hidden="true" />
+                                      {t("新建 Bot")}
+                                    </button>
+                                    {createLimitMessage && (
+                                      <p className="px-2 pb-1 pt-1 text-pretty text-xs leading-relaxed text-black/50">
+                                        {createLimitMessage}
+                                      </p>
+                                    )}
+                                  </PopoverContent>
+                                </Popover>
+                              )}
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
@@ -5312,20 +5403,6 @@ export const AgentSettingsPage = ({
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
-                      )}
-
-                      {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
-                          <button
-                            type="button"
-                            onClick={handleCreateNew}
-                            disabled={!canCreateAdditionalBot}
-                            className="lv-agent-create-button"
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                            {t("新建 Bot")}
-                          </button>
-                        </WorkspaceActionTooltip>
                       )}
                     </div>
 

@@ -271,6 +271,10 @@ describe("multi-Bot diagnostics", () => {
     const view = render(page("ins-1"));
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
     revealHiddenTools();
+    const moreButton = screen.getByRole("button", { name: "更多设置" });
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    fireEvent.pointerEnter(moreButton, { pointerType: "mouse" });
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
@@ -278,54 +282,28 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     view.rerender(page("sales"));
-    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "更多设置" })).toBeInTheDocument();
     view.unmount();
     render(page("ins-1"));
+    expect(screen.queryByRole("button", { name: "更多设置" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 
-  it("shows the disabled create quota tooltip below the button without sidebar clipping", async () => {
+  it("shows the disabled create quota in a portaled overflow menu", async () => {
     maxBots = 1;
     render(page("ins-1"));
     revealHiddenTools();
+    fireEvent.click(screen.getByRole("button", { name: "更多设置" }));
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
     expect(createButton).toHaveTextContent("新建 Bot");
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
-    const tooltipTrigger = createButton.parentElement;
-    expect(tooltipTrigger).not.toBeNull();
-    Object.defineProperty(tooltipTrigger, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        left: 84,
-        right: 304,
-        top: 275,
-        bottom: 311,
-        width: 220,
-        height: 36,
-        x: 84,
-        y: 275,
-        toJSON: () => ({}),
-      }),
-    });
-    fireEvent.mouseEnter(tooltipTrigger!);
-
-    const tooltip = await screen.findByRole("tooltip");
-    expect(tooltip).toHaveTextContent(
+    const menu = screen.getByRole("dialog");
+    expect(menu).toHaveTextContent(
       "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
     );
-    expect(tooltip.parentElement).toBe(document.body);
-    expect(tooltip).toHaveClass("fixed");
-    expect(tooltip).toHaveStyle({ left: "194px", top: "319px" });
-    expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(tooltip.querySelector("[aria-hidden='true']")).toHaveClass("bottom-full");
-
-    fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
-    fireEvent.focus(tooltipTrigger!);
-    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    expect(menu.closest("[data-radix-popper-content-wrapper]")?.parentElement).toBe(document.body);
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("rechecks the current quota when the create dialog is confirmed", async () => {
@@ -333,6 +311,7 @@ describe("multi-Bot diagnostics", () => {
     maxBots = 2;
     const view = render(page("ins-1"));
     revealHiddenTools();
+    fireEvent.click(screen.getByRole("button", { name: "更多设置" }));
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
 
@@ -365,6 +344,7 @@ describe("multi-Bot diagnostics", () => {
     multiBotEnabled = false;
     render(page("ins-1"));
     revealHiddenTools();
+    expect(screen.queryByRole("button", { name: "更多设置" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });
