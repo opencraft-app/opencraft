@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +23,152 @@ import (
 // resizeSettleTimeout bounds how long a single resize step waits for the
 // instance to leave its transient state.
 const resizeSettleTimeout = 5 * time.Minute
+
+// ResolveInstanceTypeCandidates implements InstanceTypeCandidateResolver. CVM
+// reports compatibility and availability for the exact existing instance; the
+// target pool's configured type is used only to derive the desired logical
+// CPU/memory shape and as the first choice when it is currently SELL.
+func (p *TencentCloudProvider) ResolveInstanceTypeCandidates(ctx context.Context, instance CloudInstanceRef, preferredInstanceType string) ([]string, error) {
+	preferredInstanceType = strings.TrimSpace(preferredInstanceType)
+	var err error
+	instance, err = normalizeCloudInstanceRef(instance)
+	if err != nil || preferredInstanceType == "" {
+		return nil, errors.New("ResolveInstanceTypeCandidates: cloudID and preferred instance type are required")
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return nil, err
+	}
+	req := cvm.NewDescribeInstancesModificationRequest()
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
+	req.SetContext(ctx)
+
+	var resp *cvm.DescribeInstancesModificationResponse
+	if err := retryRateLimit(ctx, "DescribeInstancesModification", func() error {
+		r, e := client.DescribeInstancesModification(req)
+		if e != nil {
+			return e
+		}
+		resp = r
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("DescribeInstancesModification %s: %w", instance.CloudID, err)
+	}
+	if resp == nil || resp.Response == nil {
+		return nil, fmt.Errorf("DescribeInstancesModification %s: empty response", instance.CloudID)
+	}
+
+	var targetCPU, targetMemory int64
+	foundPreferred := false
+	for _, item := range resp.Response.InstanceTypeConfigStatusSet {
+		if item == nil || item.InstanceTypeConfig == nil || item.InstanceTypeConfig.InstanceType == nil {
+			continue
+		}
+		config := item.InstanceTypeConfig
+		if strings.EqualFold(strings.TrimSpace(*config.InstanceType), preferredInstanceType) {
+			if config.CPU == nil || config.Memory == nil {
+				return nil, fmt.Errorf("DescribeInstancesModification %s: preferred type %s has incomplete shape", instance.CloudID, preferredInstanceType)
+			}
+			targetCPU, targetMemory = *config.CPU, *config.Memory
+			foundPreferred = true
+			break
+		}
+	}
+	if !foundPreferred {
+		return nil, fmt.Errorf("DescribeInstancesModification %s: preferred type %s is not a compatible target", instance.CloudID, preferredInstanceType)
+	}
+
+	seen := make(map[string]struct{})
+	others := make([]string, 0)
+	preferredSell := false
+	for _, item := range resp.Response.InstanceTypeConfigStatusSet {
+		if item == nil || item.Status == nil || !strings.EqualFold(strings.TrimSpace(*item.Status), "SELL") || item.InstanceTypeConfig == nil {
+			continue
+		}
+		config := item.InstanceTypeConfig
+		if config.InstanceType == nil || config.CPU == nil || config.Memory == nil || *config.CPU != targetCPU || *config.Memory != targetMemory {
+			continue
+		}
+		instanceType := strings.TrimSpace(*config.InstanceType)
+		if instanceType == "" {
+			continue
+		}
+		key := strings.ToUpper(instanceType)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if strings.EqualFold(instanceType, preferredInstanceType) {
+			preferredSell = true
+			continue
+		}
+		others = append(others, instanceType)
+	}
+	sort.Strings(others)
+	candidates := make([]string, 0, len(others)+1)
+	if preferredSell {
+		candidates = append(candidates, preferredInstanceType)
+	}
+	candidates = append(candidates, others...)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("DescribeInstancesModification %s: no SELL target matches %dC%dG", instance.CloudID, targetCPU, targetMemory)
+	}
+	return candidates, nil
+}
+
+// IsInstanceTypeCandidateRejected reports errors that conclusively reject the
+// selected target type. Only these errors may advance a persisted candidate
+// cursor; rate limits, instance-busy responses, network failures and generic
+// service errors must retry the same candidate.
+func IsInstanceTypeCandidateRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	var sdk *tcerrors.TencentCloudSDKError
+	code := ""
+	if errors.As(err, &sdk) {
+		code = strings.TrimSpace(sdk.Code)
+	} else {
+		code = extractTencentErrorCode(err.Error())
+	}
+	_, rejected := instanceTypeCandidateRejectionCodes[code]
+	return rejected
+}
+
+// ResetInstancesType documents several target-family incompatibility errors
+// whose codes do not contain "InstanceType". Keep this allowlist explicit so
+// instance state, billing, rate-limit and generic service failures never move
+// the candidate cursor accidentally.
+var instanceTypeCandidateRejectionCodes = map[string]struct{}{
+	"InvalidInstanceType.Malformed":                                      {},
+	"InvalidParameter.HostIdCustomizedInstanceTypeNotSupport":            {},
+	"InvalidParameter.HostIdInstanceTypeNotSupport":                      {},
+	"InvalidParameter.HostIdStandardInstanceTypeNotSupport":              {},
+	"InvalidParameter.InstanceTypeSupportedHostNotFound":                 {},
+	"InvalidParameterValue.BasicNetworkInstanceFamily":                   {},
+	"InvalidParameterValue.GPUInstanceFamily":                            {},
+	"InvalidParameterValue.InstanceType":                                 {},
+	"InvalidParameterValue.InvalidGPUFamilyChange":                       {},
+	"InvalidParameterValue.ZoneNotSupported":                             {},
+	"LimitExceeded.EniLimitInstanceType":                                 {},
+	"LimitExceeded.InstanceQuota":                                        {},
+	"LimitExceeded.InstanceTypeBandwidth":                                {},
+	"ResourceInsufficient.AvailabilityZoneSoldOut":                       {},
+	"ResourceInsufficient.SpecifiedInstanceType":                         {},
+	"ResourceNotFound.InvalidZoneInstanceType":                           {},
+	"ResourceUnavailable.InstanceType":                                   {},
+	"ResourcesSoldOut.AvailableZone":                                     {},
+	"ResourcesSoldOut.SpecifiedInstanceType":                             {},
+	"UnsupportedOperation.HeterogeneousChangeInstanceFamily":             {},
+	"UnsupportedOperation.InstanceTypeNotSupport":                        {},
+	"UnsupportedOperation.LocalDataDiskChangeInstanceFamily":             {},
+	"UnsupportedOperation.NoInstanceTypeSupportSpot":                     {},
+	"UnsupportedOperation.SpecialInstanceType":                           {},
+	"UnsupportedOperation.UnsupportedARMChangeInstanceFamily":            {},
+	"UnsupportedOperation.UnsupportedChangeInstanceFamily":               {},
+	"UnsupportedOperation.UnsupportedChangeInstanceFamilyToARM":          {},
+	"UnsupportedOperation.UnsupportedChangeInstanceToThisInstanceFamily": {},
+}
 
 // DescribeInstanceSpec implements InstanceSpecResizer.
 func (p *TencentCloudProvider) DescribeInstanceSpec(ctx context.Context, instance CloudInstanceRef) (InstanceSpec, error) {

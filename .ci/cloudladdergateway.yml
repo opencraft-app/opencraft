@@ -36,6 +36,7 @@ extends:
     DEFAULT_TARGET_ENV: tkexgz
     MASTER_BUILD_ENVS: tkexgz,tkexsg
     MASTER_AUTO_PIN_ENVS: tkexgz,tkexsg
+    IMAGE_PIN_VARIANT: testing
     ENABLE_MASTER_PROD_PROMOTE: false
     PLAYGROUND_BUILD_ENVS: none
     PLAYGROUND_AUTO_PIN_ENVS: none

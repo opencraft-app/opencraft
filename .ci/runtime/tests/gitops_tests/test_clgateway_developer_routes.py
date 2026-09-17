@@ -9,7 +9,6 @@ CLGATEWAY = REPO_ROOT / "argocd/services/cloudladdergateway"
 AUTH = REPO_ROOT / "argocd/services/lightclaw-auth"
 SERVICE_GATEWAY = REPO_ROOT / "argocd/services/service-gateway"
 WORKLOAD_NAMESPACE = "ns-prjqt8dd-867795-production"
-LEASE_NAMESPACE = WORKLOAD_NAMESPACE
 
 
 def load(path: Path) -> dict:
@@ -31,18 +30,26 @@ def container_env(manifest: dict, prefix: str = "") -> dict[str, object]:
 
 class CloudLadderDeveloperRouteTests(unittest.TestCase):
     def test_only_testing_workloads_enable_dynamic_registration(self) -> None:
-        delivery_modes = {"tkexgz": "direct", "tkexsg": "devtunnel"}
-        for region, delivery_mode in delivery_modes.items():
+        environments = {
+            "tkexgz": ("direct", "https://api-sandbox-bj-7.lightclaw.tech"),
+            "tkexsg": ("devtunnel", "https://api-sandbox-kr-1.lightclaw.tech"),
+        }
+        for region, (delivery_mode, registry_base_url) in environments.items():
             with self.subTest(region=region):
                 testing = load(CLGATEWAY / region / "statefulsetplus-testing.yaml")
                 pod_spec = testing["spec"]["template"]["spec"]
-                self.assertEqual(
-                    pod_spec["serviceAccountName"],
-                    "cloudladdergateway-devroute-testing",
-                )
+                self.assertNotIn("serviceAccountName", pod_spec)
                 env = container_env(testing, "CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_")
                 self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ENABLED"], "true")
-                self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE"], "kubernetes_lease")
+                self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE"], "http")
+                self.assertEqual(
+                    env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_BASE_URL"],
+                    registry_base_url,
+                )
+                self.assertEqual(
+                    env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_SECRET_ENV"],
+                    "CLOUDLADDER_SHADOW_HMAC_SECRET",
+                )
                 self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_DELIVERY_MODE"], delivery_mode)
                 self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ROUTE_ID"], "jifei-callback")
                 self.assertEqual(
@@ -53,7 +60,7 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                     env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRATION_CALLER"],
                     "lightclaw-auth",
                 )
-                self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_LEASE_NAMESPACE"], LEASE_NAMESPACE)
+                self.assertNotIn("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_LEASE_NAMESPACE", env)
                 self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_CIDRS"], "9.0.0.0/8")
                 self.assertEqual(env["CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS"], "18084")
 
@@ -74,23 +81,13 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                         {},
                     )
 
-    def test_lease_rbac_stays_in_namespaced_argo_scope_and_cannot_read_secrets(self) -> None:
+    def test_http_registry_removes_tkex_rbac_dependency(self) -> None:
         for region in ("tkexgz", "tkexsg"):
             with self.subTest(region=region):
                 path = CLGATEWAY / region / "developer-route-rbac-testing.yaml"
-                docs = {doc["kind"]: doc for doc in load_all(path)}
-                self.assertNotIn("Namespace", docs)
-                self.assertEqual(docs["ServiceAccount"]["metadata"]["namespace"], WORKLOAD_NAMESPACE)
-                self.assertEqual(docs["Role"]["metadata"]["namespace"], WORKLOAD_NAMESPACE)
-                self.assertEqual(docs["RoleBinding"]["metadata"]["namespace"], WORKLOAD_NAMESPACE)
-                rules = docs["Role"]["rules"]
-                self.assertEqual(len(rules), 1)
-                self.assertEqual(rules[0]["resources"], ["leases"])
-                self.assertEqual(set(rules[0]["verbs"]), {"get", "create", "update"})
-                self.assertNotIn("secrets", rules[0]["resources"])
-                self.assertEqual(docs["RoleBinding"]["subjects"][0]["namespace"], WORKLOAD_NAMESPACE)
+                self.assertFalse(path.exists())
                 kustomization = load(CLGATEWAY / region / "kustomization.yaml")
-                self.assertIn(path.name, kustomization["resources"])
+                self.assertNotIn(path.name, kustomization["resources"])
 
     def test_static_routes_and_shared_fallbacks_are_preserved(self) -> None:
         expected = {
@@ -119,11 +116,27 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
             if doc["kind"] == "StatefulSetPlus"
         )
         pod_spec = devtunnel["spec"]["template"]["spec"]
-        self.assertEqual(pod_spec["serviceAccountName"], "cloudladdergateway-devroute-testing")
+        self.assertNotIn("serviceAccountName", pod_spec)
         env = container_env(devtunnel, "DEVTUNNEL_CAPABILITY_")
         self.assertEqual(env["DEVTUNNEL_CAPABILITY_REGISTRY_ENABLED"], "true")
-        self.assertEqual(env["DEVTUNNEL_CAPABILITY_LEASE_NAMESPACE"], LEASE_NAMESPACE)
+        self.assertEqual(env["DEVTUNNEL_CAPABILITY_STORE"], "http")
+        self.assertEqual(
+            env["DEVTUNNEL_CAPABILITY_REGISTRY_BASE_URL"],
+            "https://api-sandbox-kr-1.lightclaw.tech",
+        )
+        self.assertEqual(
+            env["DEVTUNNEL_CAPABILITY_REGISTRY_SECRET_ENV"],
+            "CLOUDLADDER_SHADOW_HMAC_SECRET",
+        )
+        self.assertNotIn("DEVTUNNEL_CAPABILITY_LEASE_NAMESPACE", env)
         self.assertEqual(env["DEVTUNNEL_CAPABILITY_TUNNEL_HOST_SUFFIX"], "sg.tunnel.internal")
+
+        all_env = pod_spec["containers"][0]["env"]
+        hmac = next(item for item in all_env if item["name"] == "CLOUDLADDER_SHADOW_HMAC_SECRET")
+        self.assertEqual(
+            hmac["valueFrom"]["secretKeyRef"],
+            {"key": "CLOUDLADDER_SHADOW_HMAC_SECRET", "name": "cloudladdergateway-runtime-secrets"},
+        )
 
     def test_sandbox_auth_and_gateway_preserve_the_server_derived_identity(self) -> None:
         environments = {
@@ -145,6 +158,16 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
 
                 gateway = load(SERVICE_GATEWAY / environment / "config.yaml")
                 self.assertIn("100.64.0.0/10", gateway.get("trusted_proxy_cidrs") or [])
+                auth_route = next(route for route in gateway["routes"] if route["name"] == "auth")
+                public = {(item["method"], item["path"]) for item in auth_route["public_allow"]}
+                self.assertTrue(
+                    {
+                        ("GET", "/auth/internal/dev-environments/registration/ready"),
+                        ("GET", "/auth/internal/dev-environments/registration"),
+                        ("PUT", "/auth/internal/dev-environments/registration"),
+                        ("DELETE", "/auth/internal/dev-environments/registration"),
+                    }.issubset(public)
+                )
 
 
 if __name__ == "__main__":

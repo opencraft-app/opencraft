@@ -107,7 +107,10 @@ Service Gateway / ingress 可信代理链计算 `ClientIP()`；直接伪造 `X-F
 Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route/caller，并在数据面处于
 `optional` 或 `disabled` 时仍强制校验 HMAC。国际站返回的 devtunnel capability 只在首次注册响应中
 短期交付给当前 DevCloud agent，后续状态接口不再返回；共享 HMAC、SOPS 和 `DEVTUNNEL_TOKEN` 不进入
-个人环境。注销或 TTL 过期必须使 capability 和动态路由同时失效。
+个人环境。CloudLadder 与 devtunnel 通过同一 HMAC 内部接口读取 Auth testing MySQL 的
+`developer_route_registrations`；表内只保存 capability SHA-256，不保存 capability 明文。注销写入
+disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定，二者都必须使 capability 和
+动态路由同时失效。registry 不可用、响应字段不合法或目标超出 DevCloud CIDR/端口约束时必须 fail closed。
 
 生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
 即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active

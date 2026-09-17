@@ -96,6 +96,7 @@ type Store interface {
 	// GetRunningModifyOperationByInstance 返回该实例当前在跑的账本，found=false 表示没有。
 	// 用于把换了幂等键的重派收敛回同一份账本，而不是并行开出第二份。
 	GetRunningModifyOperationByInstance(ctx context.Context, instanceID string) (operation core.ModifyOperation, found bool, err error)
+	UpdateModifyOperationResizePlan(ctx context.Context, in ModifyOperationResizePlan) (core.ModifyOperation, error)
 	UpdateModifyOperationProgress(ctx context.Context, in ModifyOperationProgress) (core.ModifyOperation, error)
 	ListModifyOperationsByStatus(ctx context.Context, status core.ModifyOperationStatus, limit int) ([]core.ModifyOperation, error)
 }
@@ -119,4 +120,16 @@ type ModifyOperationProgress struct {
 	CurrentStep string
 	LastError   string
 	CompletedAt *time.Time
+}
+
+// ModifyOperationResizePlan freezes and advances the provider-resolved compute
+// candidate plan independently from the step checkpoint. Keeping it separate
+// allows a cloud resize that landed before a process crash to converge through
+// DescribeInstanceSpec without replaying the mutation.
+type ModifyOperationResizePlan struct {
+	ID                         string
+	SourceInstanceType         string
+	InstanceTypeCandidates     []string
+	InstanceTypeCandidateIndex int
+	AppliedInstanceType        string
 }

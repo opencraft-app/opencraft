@@ -84,15 +84,35 @@ func buildCapabilityVerifier(logger *log.Logger) devtunnel.CapabilityVerifier {
 		}
 		ports = append(ports, port)
 	}
-	store, err := devroute.NewInClusterKubernetesLeaseStore(
-		envOr("DEVTUNNEL_CAPABILITY_LEASE_NAMESPACE", ""),
-		envOr("DEVTUNNEL_CAPABILITY_LEASE_PREFIX", "cloudladdergateway-devroute-"),
-		splitCSV(envOr("DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS", "")),
-		ports,
-		devroute.DeliveryModeDevtunnel,
-		envOr("DEVTUNNEL_CAPABILITY_TUNNEL_BASE_URL", ""),
-		envOr("DEVTUNNEL_CAPABILITY_TUNNEL_HOST_SUFFIX", ""),
-	)
+	allowedCIDRs := splitCSV(envOr("DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS", ""))
+	tunnelBaseURL := envOr("DEVTUNNEL_CAPABILITY_TUNNEL_BASE_URL", "")
+	tunnelHostSuffix := envOr("DEVTUNNEL_CAPABILITY_TUNNEL_HOST_SUFFIX", "")
+	var store devroute.Store
+	var err error
+	switch strings.ToLower(envOr("DEVTUNNEL_CAPABILITY_STORE", "kubernetes_lease")) {
+	case "kubernetes_lease":
+		store, err = devroute.NewInClusterKubernetesLeaseStore(
+			envOr("DEVTUNNEL_CAPABILITY_LEASE_NAMESPACE", ""),
+			envOr("DEVTUNNEL_CAPABILITY_LEASE_PREFIX", "cloudladdergateway-devroute-"),
+			allowedCIDRs, ports, devroute.DeliveryModeDevtunnel, tunnelBaseURL, tunnelHostSuffix,
+		)
+	case "http":
+		secretEnv := envOr("DEVTUNNEL_CAPABILITY_REGISTRY_SECRET_ENV", "CLOUDLADDER_SHADOW_HMAC_SECRET")
+		secret := strings.TrimSpace(os.Getenv(secretEnv))
+		if secret == "" {
+			logger.Fatalf("[devtunnel] capability registry secret env %s is empty", secretEnv)
+		}
+		store, err = devroute.NewHTTPStore(devroute.HTTPStoreOptions{
+			BaseURL: envOr("DEVTUNNEL_CAPABILITY_REGISTRY_BASE_URL", ""),
+			Secret:  secret, Caller: envOr("DEVTUNNEL_CAPABILITY_REGISTRY_CALLER", "devtunnel"),
+			RouteID:      envOr("DEVTUNNEL_CAPABILITY_REGISTRY_ROUTE_ID", "developer-route-registry"),
+			Client:       &http.Client{Timeout: durationEnv(logger, "DEVTUNNEL_CAPABILITY_REGISTRY_TIMEOUT", 10*time.Second)},
+			AllowedCIDRs: allowedCIDRs, AllowedPorts: ports, DeliveryMode: devroute.DeliveryModeDevtunnel,
+			TunnelBaseURL: tunnelBaseURL, TunnelHostSuffix: tunnelHostSuffix,
+		})
+	default:
+		logger.Fatalf("[devtunnel] unsupported capability store")
+	}
 	if err != nil {
 		logger.Fatalf("[devtunnel] build capability registry: %v", err)
 	}
