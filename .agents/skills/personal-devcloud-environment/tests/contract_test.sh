@@ -367,6 +367,27 @@ test_heartbeat_survives_transient_failures() (
   assert_eq '3' "$attempts" "heartbeat retry count"
 )
 
+test_stop_heartbeat_interrupts_long_sleep() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/heartbeat-stop" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS=300
+  source "$SCRIPT"
+  prepare_state
+  "$SCRIPT" heartbeat-loop >"$TEST_ROOT/heartbeat-stop.log" 2>&1 &
+  local heartbeat_pid="$!" sleeper_pid="" attempt
+  printf '%s\n' "$heartbeat_pid" >"$HEARTBEAT_PID_FILE"
+  for attempt in $(seq 1 50); do
+    sleeper_pid="$(pgrep -P "$heartbeat_pid" 2>/dev/null | head -1 || true)"
+    [[ -n "$sleeper_pid" ]] && break
+    sleep 0.1
+  done
+  [[ -n "$sleeper_pid" ]] || fail "heartbeat did not enter its long sleep"
+  stop_heartbeat
+  wait "$heartbeat_pid" 2>/dev/null || true
+  ! process_is_running "$heartbeat_pid" || fail "heartbeat parent survived stop"
+  ! process_is_running "$sleeper_pid" || fail "heartbeat sleep child survived stop"
+  [[ ! -e "$HEARTBEAT_PID_FILE" ]] || fail "heartbeat pid file survived stop"
+)
+
 test_order_no_pay_is_loopback_only_and_intl_usd() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/checkcreate" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -522,14 +543,19 @@ test_browser_login_is_minted_privately() (
   curl_with_token() {
     printf '%s\n' '{"userId":"usr_browser","sessionToken":"private-token","loginUrl":"http://127.0.0.1:5173/#session_token=private-token","expiresAt":"2099-01-01T00:00:00Z","impersonated":false}'
   }
-  local output url headers pid curl_bin
+  local output output_file url headers pid first_pid curl_bin
   curl_bin="$(type -P curl)"
-  output="$TEST_ROOT/browser-login-output"
-  mint_browser_login >"$output" 2>&1
-  output="$(<"$output")"
+  output_file="$TEST_ROOT/browser-login-output"
+  mint_browser_login >"$output_file" 2>&1
+  output="$(<"$output_file")"
   [[ "$output" != *private-token* ]] || fail "browser session token leaked to command output"
   assert_eq '' "$(state_get browser_login_url)" "browser login token must not persist in state"
   assert_eq '2099-01-01T00:00:00Z' "$(state_get browser_login_expires_at)" "browser login expiry"
+  first_pid="$(<"$BROWSER_BOOTSTRAP_PID_FILE")"
+  mint_browser_login >>"$output_file" 2>&1
+  ! process_is_running "$first_pid" || fail "previous browser bootstrap survived immediate replacement"
+  output="$(<"$output_file")"
+  [[ "$output" != *private-token* ]] || fail "replacement browser session token leaked to command output"
   url="$(<"$BROWSER_BOOTSTRAP_READY_FILE")"
   [[ "$url" =~ ^http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_-]{24,128}$ ]] \
     || fail "one-time browser URL is malformed: $url"
@@ -580,6 +606,7 @@ run_test 'CN registration sends the DevCloud target and starts its assigned tunn
 run_test 'CN registration without a capability fails closed' test_cn_registration_without_capability_fails_closed
 run_test 'registration agent failure fails closed' test_registration_agent_failure_fails_closed
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
+run_test 'heartbeat stop interrupts a long sleep' test_stop_heartbeat_interrupts_long_sleep
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure

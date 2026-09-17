@@ -25,6 +25,10 @@ class BootstrapState:
         return token
 
 
+class ReusableHTTPServer(http.server.HTTPServer):
+    allow_reuse_address = True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--listen-host", required=True)
@@ -109,7 +113,7 @@ def main() -> None:
             self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
 
-    server = http.server.HTTPServer((args.listen_host, args.port), Handler)
+    server = ReusableHTTPServer((args.listen_host, args.port), Handler)
     server.timeout = 0.25
     stopped = False
 
