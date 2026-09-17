@@ -153,7 +153,7 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                     {"key": "CLOUDLADDER_SHADOW_HMAC_SECRET", "name": "cloudladdergateway-runtime-secrets"},
                 )
 
-    def test_sandbox_auth_and_gateway_preserve_the_server_derived_identity(self) -> None:
+    def test_sandbox_auth_and_gateway_preserve_server_derived_uin(self) -> None:
         environments = {
             "sandbox-bj-7": ("patch-shadowbinding.yaml", "http://1.12.212.56"),
             "sandbox-kr-1": ("patch-shadow-routing.yaml", "http://43.153.246.14"),
@@ -164,13 +164,10 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                 config = next(doc for doc in auth_docs if doc["kind"] == "ConfigMap")["data"]
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CONTROL_ENABLED"], "true")
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT"], environment)
-                if environment == "sandbox-bj-7":
-                    self.assertEqual(
-                        config["PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED"],
-                        "true",
-                    )
-                else:
-                    self.assertNotIn("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", config)
+                self.assertEqual(
+                    config["PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED"],
+                    "true",
+                )
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CLOUDLADDER_ROUTE_ID"], "developer-route-control")
                 self.assertEqual(config["PERSONAL_DEV_ROUTE_CLOUDLADDER_CALLER"], "lightclaw-auth")
                 self.assertEqual(

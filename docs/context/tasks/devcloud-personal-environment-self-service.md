@@ -43,7 +43,7 @@ derived: false
 
 ## interface_refs / data_structure_refs
 
-- Auth `POST /auth/dev-environments/registration`：浏览器/Skill 的唯一注册入口。Auth 始终从当前 session 的 active shadow binding 派生 UIN；国际站目标 IP 继续来自可信代理链，国内 sandbox 可在独立开关开启时接收 Skill 自动探测的 `targetIp`，并只允许 `9.0.0.0/8:18084`。生产、staging 和默认配置不接受显式目标 IP。
+- Auth `POST /auth/dev-environments/registration`：浏览器/Skill 的唯一注册入口。Auth 始终从当前 session 的 active shadow binding 派生 UIN；国内、国际 sandbox 都在独立开关开启时接收 Skill 自动探测的 `targetIp`，以避开跨地域 testing 入口 NAT 后无法还原 DevCloud 9 网地址的问题，并只允许 `9.0.0.0/8:18084`。生产、staging 和默认配置不接受显式目标 IP。
 - Auth `GET /auth/dev-environments/registration`：返回当前 session 对应 UIN 的注册状态。
 - Auth `DELETE /auth/dev-environments/registration`：把当前 session 对应 UIN 标记为 disabled；保留 tombstone，避免旧订单回调误落共享环境。
 - CloudLadderGateway `/v1/dev-environments/registration`：只允许 `lightclaw-auth` 通过服务间 HMAC 调用的内部控制面；DevCloud 和浏览器不得直接访问，也不能提交 session 代替 HMAC。

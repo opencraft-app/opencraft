@@ -220,7 +220,8 @@ test_intl_registration_starts_tunnel() (
   assert_eq 'uin-450860000013.sg.tunnel.internal|short-lived-registration-token' \
     "$(<"$TEST_ROOT/intl-tunnel-assignment")" "tunnel assignment passed to agent"
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
-  ! grep -q 'targetIp' "$TEST_ROOT/intl-registration-request"
+  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/intl-registration-request"
+  ! grep -q '"uin"' "$TEST_ROOT/intl-registration-request"
   ! rg -q 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
 )
 
