@@ -328,7 +328,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>');
     expect(page).toContain('t("当前对话、历史会话、定时任务、运行状态或通道连接")');
     expect(page).toContain('t("主 Bot 当前主模型及其 Provider 凭据")');
-    expect(page).toContain('t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")');
+    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>');
+    expect(page).toContain('t("系统预置")');
+    expect(page).toContain('t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")');
     expect(page).not.toContain('t("使用 LightVela 默认配置创建一个独立 Bot。")');
     expect(page).not.toContain('t("使用 Hermes 默认配置创建独立 Bot。")');
     expect(page).not.toContain("Memory、User Profile");
