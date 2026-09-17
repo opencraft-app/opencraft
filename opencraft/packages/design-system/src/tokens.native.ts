@@ -6,6 +6,7 @@ import {
   radii,
   spacing,
 } from "./tokens.shared";
+import { nativeTypographyTokens } from "./typography/typography.shared";
 
 // Codex owns semantic color roles; iPad owns density, material and navigation
 // geometry. Keeping these layers separate prevents the native app from
@@ -68,22 +69,7 @@ export const ipadMetrics = {
   interaction: { pressedOpacity: 0.58, disabledOpacity: 0.28 },
 } as const;
 
-export const ipadTypography = {
-  largeTitle: { fontSize: 28, lineHeight: 34, fontWeight: "700" as const },
-  navigationTitle: { fontSize: 17, lineHeight: 22, fontWeight: "600" as const },
-  navigationMeta: { fontSize: 13, lineHeight: 18, fontWeight: "400" as const },
-  body: { fontSize: 17, lineHeight: 24, fontWeight: "400" as const },
-  chat: { fontSize: 17, lineHeight: 25, fontWeight: "400" as const },
-  composer: { fontSize: 17, lineHeight: 24, fontWeight: "400" as const },
-  sidebarAction: { fontSize: 17, lineHeight: 22, fontWeight: "400" as const },
-  sidebarThread: { fontSize: 16, lineHeight: 21, fontWeight: "500" as const },
-  sidebarMeta: { fontSize: 13, lineHeight: 17, fontWeight: "400" as const },
-  section: { fontSize: 13, lineHeight: 18, fontWeight: "600" as const },
-  label: { fontSize: 13, lineHeight: 18, fontWeight: "500" as const },
-  code: { fontSize: 12, lineHeight: 18, fontWeight: "400" as const },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: "400" as const },
-  emptyTitle: { fontSize: 28, lineHeight: 34, fontWeight: "700" as const },
-} as const;
+export const ipadTypography = nativeTypographyTokens;
 
 const ipadMaterial = {
   light: {

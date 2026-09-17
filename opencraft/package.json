@@ -20,6 +20,8 @@
     "protocol:refresh": "node scripts/refresh-codex-protocol.mjs",
     "sync:mono2-agent-console": "node scripts/sync-mono2-agent-console.mjs",
     "check:mono2-agent-console": "node scripts/sync-mono2-agent-console.mjs --check",
+    "generate:typography": "node scripts/generate-typography.mjs",
+    "check:typography": "node scripts/generate-typography.mjs --check",
     "dev": "npm run dev:web",
     "dev:web": "npm run build:preview-bridge && npm run dev --workspace @opencraft/workbench-web",
     "dev:lightvela-web": "npm run build:preview-bridge && OPENCRAFT_PRODUCT=lightvela-web npm run dev --workspace @opencraft/workbench-web",
@@ -88,7 +90,7 @@
     "smoke:dictation-interaction": "tsx scripts/smoke-dictation-interaction.ts",
     "smoke:dictation-ownership": "tsx scripts/smoke-dictation-ownership.ts",
     "test:workbench:live": "tsx --test tests/workbench-appserver-live.test.ts",
-    "test:workbench:unit": "tsx --test tests/workbench-shell-navigation.test.ts tests/workspace-pane-geometry.test.ts tests/floating-composer-state.test.ts tests/browser-core.test.ts tests/codex-browser-manager.test.ts tests/desktop-browser.test.ts tests/browser-background.test.ts tests/browser-device-toolbar.test.ts tests/browser-permissions.test.ts tests/browser-preview-bridge.test.ts tests/workbench-browser-runtime.test.ts tests/workbench-host-proxy.test.ts tests/workbench-browser-ambient-context.test.ts tests/workbench-attachment-resolver.test.ts tests/workbench-window-chrome.test.ts tests/workbench-timeline-host.test.ts tests/workbench-sidebar-dock.test.ts tests/workbench-user-message-layout.test.ts tests/workbench-workspace-directory.test.ts tests/workbench-workspace-resource.test.ts tests/workbench-draft-workspace-model.test.ts tests/workbench-web-host-definitions.test.ts tests/workbench-location.test.ts tests/workbench-conversation-binding.test.ts tests/workbench-panels.test.ts tests/workbench-terminal.test.ts tests/workbench-agent-activity-disclosure.test.ts tests/workbench-appearance-theme.test.ts tests/workbench-internal-developer-mode.test.ts tests/workbench-right-panel-tab-drag.test.ts tests/chat-workbench-submission.test.ts tests/page-lifecycle.test.ts",
+    "test:workbench:unit": "tsx --test tests/typography-system.test.ts tests/workbench-shell-navigation.test.ts tests/workspace-pane-geometry.test.ts tests/floating-composer-state.test.ts tests/browser-core.test.ts tests/codex-browser-manager.test.ts tests/desktop-browser.test.ts tests/browser-background.test.ts tests/browser-device-toolbar.test.ts tests/browser-permissions.test.ts tests/browser-preview-bridge.test.ts tests/workbench-browser-runtime.test.ts tests/workbench-host-proxy.test.ts tests/workbench-browser-ambient-context.test.ts tests/workbench-attachment-resolver.test.ts tests/workbench-window-chrome.test.ts tests/workbench-timeline-host.test.ts tests/workbench-sidebar-dock.test.ts tests/workbench-user-message-layout.test.ts tests/workbench-workspace-directory.test.ts tests/workbench-workspace-resource.test.ts tests/workbench-draft-workspace-model.test.ts tests/workbench-web-host-definitions.test.ts tests/workbench-location.test.ts tests/workbench-conversation-binding.test.ts tests/workbench-panels.test.ts tests/workbench-terminal.test.ts tests/workbench-agent-activity-disclosure.test.ts tests/workbench-appearance-theme.test.ts tests/workbench-internal-developer-mode.test.ts tests/workbench-right-panel-tab-drag.test.ts tests/chat-workbench-submission.test.ts tests/page-lifecycle.test.ts",
     "test:web-release": "node --test tests/workbench-web-release.test.mjs",
     "test:shell-space": "tsx --test tests/workbench-shell-space.test.ts tests/floating-sidebar-layout.test.ts tests/context-pane-geometry.test.ts",
     "test:workspace-presentation": "tsx --test tests/workbench-workspace-presentation.test.ts",
@@ -101,7 +103,7 @@
     "test:appserver:lab": "tsx --test tests/appserver-lab*.test.ts",
     "test:chat": "tsx --test tests/chat-*.test.ts tests/composer-core.test.ts tests/codex-composer-codec.test.ts tests/codex-composer-attachment-focus.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "check:boundaries": "node scripts/check-platform-boundaries.mjs",
+    "check:boundaries": "npm run check:typography && node scripts/check-platform-boundaries.mjs",
     "gate": "npm run check:boundaries && npm run typecheck && npm run test:extensions && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
   },
   "dependencies": {
