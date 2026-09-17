@@ -36,6 +36,14 @@ import type {
   WeixinLoginSession,
   WorkspaceMessage,
 } from "../domain/types";
+import type {
+  CreditOrderResult,
+  CreditOrderUrlInput,
+  CreditOrderUrlResult,
+  CreditPackageItem,
+  CreditProduct,
+  CreditQuote,
+} from "../domain/credit-pack";
 import type { OAuthProvider, WeChatOAuthMode } from "../lib/oauth";
 
 export interface OAuthStartOptions {
@@ -500,8 +508,46 @@ export interface BotRepository {
   resetInstanceConfig(botId: string): Promise<BotInstanceConfigResetResult>;
 }
 
+/**
+ * 积分包仓储。
+ *
+ * 对应 credit 服务（credit/internal/httpapi/server.go:35-53），
+ * 接口契约见 docs/frontend-credit-package-integration.md。
+ *
+ * ⚠️ 禁止接入 POST /v1/credit/packages/order-and-pay —— 该接口仅限内部联调
+ * 与自动化测试，控制台不得调用（联调文档 §1）。
+ */
+export interface CreditRepository {
+  /** `GET /v1/credit/products` —— 在售积分包商品。 */
+  listCreditProducts(): Promise<CreditProduct[]>;
+  /**
+   * `POST /v1/credit/inquiry` —— 单个商品询价。
+   *
+   * 按商品逐个询价：产品要求单卡询价失败只禁用该卡、不影响其他卡，
+   * 因此调用方并发调用并单独处理每个 Promise 的失败。
+   */
+  inquireCreditPrice(productId: string): Promise<CreditQuote>;
+  /**
+   * `POST /v1/credit/packages/order` —— 创建待支付订单。
+   *
+   * 商品与周期必须与询价一致。响应为 camelCase（`dealName`），
+   * 下一步 order-url 请求则用 snake_case 的 `deal_name`。
+   */
+  createCreditOrder(productId: string): Promise<CreditOrderResult>;
+  /**
+   * `POST /v1/credit/packages/order-url` —— 获取已创建订单的支付链接。
+   *
+   * `need_charge=1` 时跳转 `pay_url`；`need_charge=0` 时无需支付，直接刷新积分包。
+   * 订单不存在、归属不匹配或类型不匹配时后端返回 404。
+   */
+  createCreditOrderUrl(input: CreditOrderUrlInput): Promise<CreditOrderUrlResult>;
+  /** `GET /v1/credit/packages` —— 当前用户的有效积分包。 */
+  listCreditPackages(): Promise<CreditPackageItem[]>;
+}
+
 export interface Repositories {
   auth: AuthRepository;
   plans: PlanRepository;
   bots: BotRepository;
+  credit: CreditRepository;
 }
