@@ -1,16 +1,17 @@
 ## goal
-将国内站 Agent 侧栏已有 Bot 的“新建 Bot”入口移到删除图标之后的更多菜单，并提交 MR。
+将国内站 Agent 侧栏已有 Bot 的“新建 Bot”入口调整为重启图标左侧的“+”按钮，并在多 Bot 时于删除图标之后展示切换下拉箭头；避免到期提示遮挡“+”。
 
 ## non_goals
 - 不改变 Bot 创建流程、套餐额度、功能开关或 `show()` 灰度门禁。
 - 不合并 MR、不发布。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
-- 用户在本任务中要求：“放在上面删除bot的icon的后面吧，放个...，然后hover到上面的时候，展开有个新建Bot的按钮，老版本的新建bot的按钮就可以去掉了”；随后要求“提交mr吧”。无外部需求单。
+- 用户先要求删除图标后的 `…` 悬停菜单并授权提交 MR !4222；本轮复审改为“+的icon按钮，放在重启按钮的左边了。如果有多bot，那就在删除按钮后面多个下拉箭头的icon”。无外部需求单。
+- 用户确认本地预览与遮挡修复后再次要求“提交mr吧”，授权更新既有 MR，不含合并或发布。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/pages/marketing/agent-settings-page.tsx` 的 `showCreateBotEntry`、`multiBotEnabled`、`canCreateAdditionalBot`、`handleCreateNew` 保持原语义。
-- `frontend/src/components/ui/popover.tsx` 提供 Portal 菜单，避免被侧栏滚动容器裁切。
+- Bot 切换继续使用现有 `Popover`；创建按钮的额度说明复用 `WorkspaceActionTooltip` Portal。
 
 ## history_context
 - `current_design_refs`: `docs/engineering/domains/site-environment-routing.md` 的 Agent 多 Bot 区域边界。
@@ -18,15 +19,16 @@
 - `superseded_refs`: 无。
 
 ## acceptance
-- 删除图标后展示更多图标；鼠标悬停展开含“新建 Bot”的菜单；旧整行按钮移除。
-- 菜单保留点击、键盘与 Escape 操作；额度不足时显示禁用原因。
+- 重启图标左侧展示“+”按钮；多 Bot 时删除图标之后展示下拉箭头；旧 `…` 菜单和整行创建按钮移除。
+- “+”按钮可通过鼠标与键盘触发原创建流程；额度不足时禁用并保留可聚焦的原因提示。
+- 鼠标移到“+”时显示“新建 Bot”提示，不被到期徽标的续费提示遮挡；到期提示内的“立即续费”仍可操作。
 - 前端针对性测试、`pnpm check`、`pnpm build` 通过。
 
 ## affected_paths
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
 - `frontend/src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
 - `frontend/src/pages/marketing/__tests__/agent-diagnostics-multi-bot.test.tsx`
-- `frontend/src/styles.css`
+- `frontend/src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx`
 - `docs/engineering/domains/site-environment-routing.md`
 
 ## required_context
@@ -42,24 +44,29 @@
 | `docs/context/domains/site-environment-routing.md@1da70f2a6` | 区域边界 | 保留国内站开关 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1da70f2a6` | 前端邻接 | 检查测试与 `frontend/openspec`，后者无多 Bot 入口约束命中 |
 | `docs/engineering/domains/site-environment-routing.md@1da70f2a6` | 正式设计 | 同步入口约束 |
+| `docs/context/domains/subscription-entitlements.md` | 本轮 MR 交付路由 | 续费与额度边界 |
+| `docs/context/flows/tapd-gongfeng-delivery.md` | 本轮 MR 交付路由 | 确认提交、推送、MR 状态门禁 |
 
 ## evidence
 - 初始 `git fetch origin master` 基线为 `1da70f2a6`，提交前 rebase 到 `1f21531a2`；工蜂只读鉴权成功。
-- 相邻的 4 个测试文件：58/58 通过；`pnpm check`、`pnpm build` 通过；`git diff --check` 通过。
+- MR !4222 初版的相邻 4 个测试文件：58/58 通过；`pnpm check`、`pnpm build` 通过；`git diff --check` 通过。
+- 本轮复审的相邻 4 个测试文件再次 58/58 通过；`pnpm check`、`pnpm build`、`git diff --check`、文档校验和按精确变更文件运行的 change-impact 校验均通过。
+- 国内站本地预览 `127.0.0.1:5174/agents/models/`（本工作树、已登录浏览器、`show()` 灰度入口）确认“+ → 重启 → 删除 → 下拉箭头”顺序；展开下拉显示两个 Bot。旧 `…` 菜单已移除。未点击创建或更改真实 Bot。
+- 续费气泡修正：到期徽标提示改为下方展开。相邻 3 个测试文件 21/21 通过；Chrome 已登录预览分别悬停到期徽标与“+”，确认前者在下方、后者显示“新建 Bot”且到期气泡消失。`pnpm check`、`pnpm build` 通过，未点击续费或创建。
 - 完整 `pnpm test --api.host 127.0.0.1`：3313 通过、133 失败、14 跳过，另有 worker OOM；失败分布在未改动的模型配置、支付、文档等文件。未在独立基线重跑，不能认定均为既有失败。
 
 ## risks
-- 菜单 Portaled 后鼠标从图标移入菜单可能短暂离开触发器；短延时关闭并在菜单区域取消计时。
-- 额度不足仍需说明原因；在菜单内显示原额度文案。
+- 图标行更密集；已在浏览器确认短 Bot 名和多 Bot 下拉箭头的排布，用户随后要求提交 MR；正式 CR 仍由 Owner 完成。
+- 额度不足仍需说明原因；使用可聚焦的 Portal 提示展示原额度文案。
 - 回滚方式：回退本 MR 的前端与设计文档变更。
 
 ## validation
 - `pnpm exec vitest run` 针对相关测试。
 - `pnpm check`、`pnpm build`。
-- `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`。
+- 本地未暂存阶段使用 `--changed-file` 明确列举变更文件；交付前按暂存内容运行 `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged`。
 
 ## decisions
-- 使用现有 Radix Popover 和 Lucide 更多图标，沿用顶部 icon 按钮样式。
+- 复用现有 Lucide `Plus` 与 `ChevronDown` 和顶部图标按钮样式；Bot 切换仍由现有 Radix Popover 控制。
 - 维持原 `show()` 灰度门禁和套餐禁用条件，不扩大入口可见范围。
 
 ## scan_scope
@@ -69,4 +76,4 @@
 - 有界 `rg` 命中旧创建按钮、顶部操作行和相关测试；无额外扫描产物。
 
 ## handoff
-- 待完成暂存检查、提交、推送和 MR 创建；不合并或发布。MR 须披露完整测试集未通过。
+- 本轮按用户授权更新既有 MR !4222 的分支、标题和描述；不合并或发布。提交后的远端 SHA 与 CI 状态需以实时工蜂查询为准。

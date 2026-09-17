@@ -259,9 +259,10 @@ describe("multi-Bot diagnostics", () => {
 
   it("keeps single-Bot maintenance available and new-Bot creation hidden", async () => {
     bots = [buildBot()];
-    render(page("ins-1"));
+    const view = render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
     expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).not.toBeInTheDocument();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
@@ -271,10 +272,12 @@ describe("multi-Bot diagnostics", () => {
     const view = render(page("ins-1"));
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
     revealHiddenTools();
-    const moreButton = screen.getByRole("button", { name: "更多设置" });
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
-    fireEvent.pointerEnter(moreButton, { pointerType: "mouse" });
-    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    const createButton = screen.getByRole("button", { name: "新建 Bot" });
+    expect(createButton).toBeEnabled();
+    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
+    ]);
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).toHaveAttribute("aria-hidden", "true");
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
@@ -282,28 +285,28 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     view.rerender(page("sales"));
-    expect(screen.getByRole("button", { name: "更多设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
     view.unmount();
     render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "更多设置" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 
-  it("shows the disabled create quota in a portaled overflow menu", async () => {
+  it("explains a disabled create icon in a portaled tooltip", async () => {
     maxBots = 1;
     render(page("ins-1"));
     revealHiddenTools();
-    fireEvent.click(screen.getByRole("button", { name: "更多设置" }));
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
-    expect(createButton).toHaveTextContent("新建 Bot");
-    const menu = screen.getByRole("dialog");
-    expect(menu).toHaveTextContent(
+    const tooltipTrigger = createButton.parentElement;
+    expect(tooltipTrigger).toHaveAttribute("tabindex", "0");
+    fireEvent.focus(tooltipTrigger!);
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent(
       "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
     );
-    expect(menu.closest("[data-radix-popper-content-wrapper]")?.parentElement).toBe(document.body);
-    fireEvent.keyDown(menu, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(tooltip.parentElement).toBe(document.body);
+    fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("rechecks the current quota when the create dialog is confirmed", async () => {
@@ -311,7 +314,6 @@ describe("multi-Bot diagnostics", () => {
     maxBots = 2;
     const view = render(page("ins-1"));
     revealHiddenTools();
-    fireEvent.click(screen.getByRole("button", { name: "更多设置" }));
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
 
@@ -344,7 +346,6 @@ describe("multi-Bot diagnostics", () => {
     multiBotEnabled = false;
     render(page("ins-1"));
     revealHiddenTools();
-    expect(screen.queryByRole("button", { name: "更多设置" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });

@@ -30,7 +30,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
     expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
     expect(page).toContain("{showCreateBotEntry && multiBotEnabled && (");
-    expect(page).toContain("{createLimitMessage && (");
+    expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
     expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
@@ -222,7 +222,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('lv-agents-session-item');
   });
 
-  it("places the create overflow after restart and delete in the Bot header", () => {
+  it("places the create icon before restart and the multi-Bot chevron after delete", () => {
     const page = readPageSource();
     const profile = page.slice(
       page.indexOf('className="lv-agent-actions"'),
@@ -233,12 +233,13 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(profile).toContain("setShowDeleteConfirm(true)");
     expect(profile).toContain("<RefreshCw");
     expect(profile).toContain("<Trash2");
-    expect(profile).toContain("<MoreHorizontal");
-    expect(profile).toContain('aria-label={t("更多设置")}');
-    expect(profile).toContain("onPointerEnter");
-    expect(profile).toContain("<PopoverContent");
-    expect(profile).toContain('t("新建 Bot")');
-    expect(profile.indexOf("<Trash2")).toBeLessThan(profile.indexOf("<MoreHorizontal"));
+    expect(profile).toContain('aria-label={t("新建 Bot")}');
+    expect(profile).toContain('<Plus className="h-4 w-4" aria-hidden="true" />');
+    expect(profile.indexOf('aria-label={t("新建 Bot")}')).toBeLessThan(profile.indexOf("<RestartIcon"));
+    expect(profile.indexOf("<RestartIcon")).toBeLessThan(profile.indexOf("<Trash2"));
+    expect(profile).not.toContain("<MoreHorizontal");
+    expect(page).toContain('{visibleBots.length > 1 && (\n                              <ChevronDown');
+    expect(page.indexOf("<Trash2")).toBeLessThan(page.indexOf('<ChevronDown\n                                aria-hidden="true"'));
   });
 
   it("renders the Bot switcher as an overlay popover instead of in sidebar flow", () => {
@@ -248,7 +249,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("<PopoverTrigger asChild>");
     expect(page).toContain("<PopoverContent");
     expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
-    const switcherStart = page.indexOf("<PopoverContent", page.indexOf("</PopoverContent>") + 1);
+    const switcherStart = page.indexOf("<PopoverContent");
     const menu = page.slice(switcherStart, page.indexOf("</PopoverContent>", switcherStart));
     expect(menu).toContain("border-black/10 bg-white p-1.5 shadow-xl");
     expect(menu).not.toContain("backdrop-");
@@ -312,7 +313,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('className="block space-y-2 text-sm font-medium text-black/70"');
     expect(page).toContain("Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH");
     expect(page).toContain('t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH })');
-    expect(page.match(/t\("新建 Bot"\)/g)).toHaveLength(2);
+    expect(page).toContain('aria-label={t("新建 Bot")}');
     expect(page).not.toContain('className="lv-agent-create-button"');
     expect(page).toContain("handleCreateNew();");
     expect(page).not.toContain('t("立即创建")');
