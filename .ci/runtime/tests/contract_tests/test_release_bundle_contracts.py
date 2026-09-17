@@ -3020,6 +3020,10 @@ api_get() {
 api_post_json() {
   printf '%s' '{"id":"sku-hermes-2c4g","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}'
 }
+jq() {
+  printf '%s\n' 'jq must not be required before the multi-region early return' >&2
+  return 127
+}
 refresh_skus http://unused img-jhb "$pools_json"
 '''
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:

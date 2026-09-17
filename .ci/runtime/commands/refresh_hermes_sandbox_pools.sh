@@ -154,16 +154,24 @@ refresh_skus() {
   local region_count skus_json sku_ids sku_id body
 
   region_count="$(
-    jq -r --arg template "$TEMPLATE_CLASS_ID" '
-      [
-        .[]
-        | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
-        | ((.zone // "") | sub("-[0-9]+$"; ""))
-        | select(length > 0)
-      ]
-      | unique
-      | length
-    ' <<<"$pools_json"
+    python3 -c '
+import json
+import re
+import sys
+
+template = sys.argv[1]
+pools = json.load(sys.stdin)
+regions = set()
+for pool in pools:
+    sku_id = str(pool.get("sku_id") or "")
+    if pool.get("template_class_id") != template and not sku_id.startswith("sku-hermes-"):
+        continue
+    zone = str(pool.get("zone") or "").strip()
+    match = re.match(r"^(.*)-[0-9]+$", zone)
+    if match:
+        regions.add(match.group(1))
+print(len(regions))
+    ' "$TEMPLATE_CLASS_ID" <<<"$pools_json"
   )"
   if [[ "$region_count" -gt 1 ]]; then
     log "multi-region Hermes Pools detected; Pool base_image remains authoritative and global SKU image update is skipped"
