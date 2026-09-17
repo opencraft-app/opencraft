@@ -104,6 +104,13 @@ UIN、TunnelHost 与 TTL；Auth testing MySQL registry 只持久化 capability �
 共享 CloudLadder HMAC、SOPS 或 `DEVTUNNEL_TOKEN`。动态、静态和共享路径的优先级、注销、过期及
 跨 UIN 拒绝都必须有测试证据。
 
+CloudLadder 镜像内的默认配置必须显式声明默认关闭的 `developer_routes`，并把注册控制面固定为
+`developer-route-control` / `lightclaw-auth`；该 caller 只复用服务端
+`CLOUDLADDER_SHADOW_HMAC_SECRET`，且只能调用这一条控制面 route。只有广州、新加坡 testing
+workload 可以通过环境变量开启动态注册。发布门禁必须直接加载最终打包的 `config.example.yaml`
+验证 route、caller、secret env 与 `18084` 端口契约，不能只验证 handler 代码，避免出现接口已发布但
+镜像配置未注册 caller 的运行时断层。
+
 `verify-order-no-pay` 只证明询价和 `pending_pay` 下单成功，不证明支付、计费回调、发货或权益终态。
 只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一
 层证据时必须明确停在哪一层。
