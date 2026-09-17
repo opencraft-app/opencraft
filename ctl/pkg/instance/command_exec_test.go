@@ -951,7 +951,7 @@ func TestExecDebugCommandSupportsRunAsAgentUser(t *testing.T) {
 	if !strings.Contains(cmd, `sudo -u "$target_user"`) {
 		t.Fatalf("expected sudo wrapper, got %q", cmd)
 	}
-	if !strings.Contains(cmd, `bash -c 'echo raw-debug'`) {
+	if !strings.Contains(cmd, `"$@" -c 'echo raw-debug'`) {
 		t.Fatalf("expected raw command inside wrapped shell, got %q", cmd)
 	}
 	if adapter.processCalls[0].Env["HOME"] != "/home/agentuser" {
@@ -959,6 +959,58 @@ func TestExecDebugCommandSupportsRunAsAgentUser(t *testing.T) {
 	}
 	if !strings.Contains(adapter.processCalls[0].Env["PATH"], "/home/agentuser/.local/bin") {
 		t.Fatalf("expected PATH env to include agentuser local bin, got %+v", adapter.processCalls[0].Env)
+	}
+}
+
+func TestDebugCommandSupportsLongRunAsAgentUserScript(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			adapter := &commandSandboxAdapterStub{
+				processEvents: []psandbox.ProcessStreamEvent{
+					{PID: 6790},
+					{Stdout: "model-config\n"},
+					{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+				},
+			}
+			logic := &logic{
+				instanceDao: &commandInstanceDaoStub{
+					entity: &modelinstance.Entity{
+						InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+					},
+				},
+				sandboxAdapter: adapter,
+				logger:         zap.NewNop(),
+			}
+			ctx := pctx.NewContext(nil).WithUserID("user-1")
+			command := "# " + strings.Repeat("x", 70*1024) + "\nprintf 'model-config\\n'"
+			if streaming {
+				err := logic.StreamDebugCommand(ctx, "ins-1", command, "agentuser", func(transport.ExecDebugCommandStreamEvent) error { return nil })
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				resp, err := logic.ExecDebugCommand(ctx, "ins-1", command, "agentuser")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.Status != "SUCCESS" || resp.Output != "model-config\n" {
+					t.Fatalf("unexpected response: %+v", resp)
+				}
+			}
+			if len(adapter.processCalls) != 1 {
+				t.Fatalf("expected one process call, got %d", len(adapter.processCalls))
+			}
+			req := adapter.processCalls[0]
+			if req.Cmd != "/bin/bash" || len(req.Args) != 3 || req.Args[0] != "-l" || req.Args[1] != "-c" {
+				t.Fatal("expected the existing bash login-shell transport")
+			}
+			if len(req.Args[2])+1 > 128*1024 {
+				t.Fatalf("process argument exceeds Linux 4 KiB-page limit: %d bytes", len(req.Args[2])+1)
+			}
+			if req.Env["HOME"] != "/home/agentuser" || req.Env["USER"] != "agentuser" {
+				t.Fatalf("runtime user environment changed: %+v", req.Env)
+			}
+		})
 	}
 }
 
