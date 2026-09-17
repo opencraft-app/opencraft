@@ -179,7 +179,8 @@ func TestLoadSgprodReferralFoundationInventory(t *testing.T) {
 		t.Fatalf("LoadInventory(sgprod): %v", err)
 	}
 	pulsar := inventory.Stacks.Pulsar
-	if !pulsar.Enabled || !pulsar.ManageCluster || pulsar.ExistingClusterID != "" || pulsar.BrokerURL != "" {
+	if !pulsar.Enabled || !pulsar.ManageCluster || pulsar.ExistingClusterID != "pulsar-7j4z44nzn3za" ||
+		pulsar.BrokerURL != "http://pulsar-7j4z44nzn3za.eap-nzekhasa.tdmq.ap-sg.qcloud.tencenttdmq.com:8080" {
 		t.Fatalf("unexpected managed Pulsar foundation: %+v", pulsar)
 	}
 	if pulsar.ExpectedClusterName != "lightvela-pulsar-sg" || pulsar.ExpectedProductName != "PULSAR.P2.MINI1" {

@@ -143,8 +143,8 @@ stacks:
   pulsar:
     enabled: true
     manage_cluster: true
-    existing_cluster_id: ""
-    broker_url: ""
+    existing_cluster_id: pulsar-7j4z44nzn3za
+    broker_url: http://pulsar-7j4z44nzn3za.eap-nzekhasa.tdmq.ap-sg.qcloud.tencenttdmq.com:8080
     expected_cluster_name: lightvela-pulsar-sg
     expected_product_name: PULSAR.P2.MINI1
     expected_zone_ids: [900002]

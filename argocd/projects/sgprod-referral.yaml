@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sgprod-referral
+  namespace: argocd
+spec:
+  description: Referral service project for Singapore production.
+  sourceRepos:
+    - git@git.woa.com:wisp/mono2.git
+  destinations:
+    - namespace: referral
+      name: sgprod
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

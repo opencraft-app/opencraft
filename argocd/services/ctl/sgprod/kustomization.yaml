@@ -10,6 +10,7 @@ resources:
 patches:
   - path: delete-migration-job.yaml
   - path: delete-servicemonitor.yaml
+  - path: patch-referral.yaml
   - target:
       kind: Deployment
       name: ctl-api

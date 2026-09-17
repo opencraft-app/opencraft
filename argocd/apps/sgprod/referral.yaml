@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: referral-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-referral
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/referral/sgprod
+  destination:
+    namespace: referral
+    name: sgprod
