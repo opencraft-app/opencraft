@@ -100,7 +100,11 @@ export const installCreditPackVisibilityHelper = (host?: CreditPackVisibilityHos
 };
 
 export const useCreditPackVisibility = () => {
-  const [visible, setVisible] = useState(() => isCreditPackVisible());
+  /* 初始值固定 false（与 SSR 一致）：hydration 时若直接读 localStorage，
+     开过 flag 的客户端会与 SSR HTML 不匹配，触发整树重建的 hydration 错误。
+     真实值由下方 useEffect 首跑同步（two-pass rendering 标准模式），
+     代价是 flag 开启时区块在 mount 后才出现（内部验收场景可接受）。 */
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     const syncVisibility = () => {
