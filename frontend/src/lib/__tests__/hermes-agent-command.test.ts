@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   getHermesProfileRootCommand,
+  requireHermesSkillsProfile,
   withHermesAgent,
   withHermesAgentCompatibility,
+  withHermesSkillsProfile,
   withHermesProfile,
 } from "../hermes-agent-command";
 import { scopeHermesCronCommand } from "../hermes-cron-client";
@@ -12,6 +14,20 @@ import { buildInstalledSkillsListCommand } from "../hermes-skills-client";
 describe("Hermes agent command routing", () => {
   it("keeps the public main alias for ACLI commands", () => {
     expect(withHermesAgent("acli channel status")).toBe("acli channel status --agent 'main'");
+  });
+
+  it("pins skills commands to both the selected profile and the compatible runtime home", () => {
+    expect(withHermesSkillsProfile("acli skills uninstall 'shared' --source local", "profile-2"))
+      .toBe('HERMES_BASE="${HERMES_HOME:-$HOME/.hermes}"; ACLI_SYS_RUNTIME_HOME="$HERMES_BASE" ACLI_RUNTIME_HOME="$HERMES_BASE/profiles/profile-2" acli skills uninstall \'shared\' --source local --agent \'profile-2\'');
+    expect(withHermesSkillsProfile("acli skills list", "main"))
+      .toContain('ACLI_RUNTIME_HOME="$HERMES_BASE" acli skills list --agent \'main\'');
+    expect(withHermesSkillsProfile("acli skills list", "default"))
+      .toContain('ACLI_RUNTIME_HOME="$HERMES_BASE" acli skills list --agent \'main\'');
+  });
+
+  it("rejects missing or unsafe skills profiles before building a command", () => {
+    expect(() => requireHermesSkillsProfile()).toThrow("缺少有效的 Profile");
+    expect(() => withHermesSkillsProfile("acli skills list", "../main")).toThrow("缺少有效的 Profile");
   });
 
   it("maps the public main alias to default for native Hermes commands", () => {
