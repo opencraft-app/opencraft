@@ -107,18 +107,26 @@ export const AVATAR_SHAPES: ShapeDef[] = [
 
 /* ──────────────────────────────── 配色 ──────────────────────────────── */
 
-/** 头像可选配色：整体偏明亮柔和（高明度 / 中低饱和），避免深色压迫感 */
+/**
+ * 头像可选配色。
+ *
+ * 走鲜亮实色（高饱和 / 中高明度），而不是之前那套低饱和柔光色 ——
+ * 头像在侧边栏里只有 32px，低饱和色缩到那个尺寸后几乎分辨不出彼此，
+ * 一排 bot 看上去是一片灰蒙蒙的糖果色。鲜亮实色在小尺寸下才立得住。
+ *
+ * 明度统一压在能承载白色眼睛的区间：太浅眼睛会糊，太深又回到深色压迫感。
+ */
 export const AVATAR_COLORS = [
-  { id: "rose", label: "浅玫瑰", value: "#F9A8C4" },
-  { id: "lilac", label: "淡紫", value: "#B7A6F3" },
-  { id: "sky", label: "天蓝", value: "#8EC5F5" },
-  { id: "aqua", label: "浅青", value: "#7BD4CE" },
-  { id: "mint", label: "薄荷绿", value: "#8FD9A8" },
-  { id: "butter", label: "奶油黄", value: "#F5D08A" },
-  { id: "coral", label: "珊瑚橙", value: "#F8AE92" },
-  { id: "peach", label: "蜜桃粉", value: "#F7B7A8" },
-  { id: "periwinkle", label: "长春花蓝", value: "#A3B4F0" },
-  { id: "sage", label: "鼠尾草绿", value: "#AFC9A8" },
+  { id: "tangerine", label: "橘橙", value: "#F97316" },
+  { id: "violet", label: "亮紫", value: "#8B5CF6" },
+  { id: "azure", label: "亮蓝", value: "#3B82F6" },
+  { id: "teal", label: "青绿", value: "#14B8A6" },
+  { id: "emerald", label: "翠绿", value: "#10B981" },
+  { id: "amber", label: "琥珀黄", value: "#F59E0B" },
+  { id: "rose", label: "玫红", value: "#F43F5E" },
+  { id: "pink", label: "亮粉", value: "#EC4899" },
+  { id: "indigo", label: "靛蓝", value: "#6366F1" },
+  { id: "lime", label: "青柠绿", value: "#65A30D" },
 ];
 
 export const DEFAULT_AVATAR_SHAPE: AvatarShapeId = "blob";
@@ -169,7 +177,12 @@ export const GeometricAvatar = ({
       {/* 形体与眼睛一起缩放，呼吸时不会错位 —— 所以动效挂在这层 g 上 */}
       <g className="lv-avatar__body" style={{ transformOrigin: "50px 55px" }}>
         <path d={shape.path} fill={color} />
-        {/* 眼珠横向游移挂在这层；眨眼的纵向压缩挂在每只眼睛自己身上 */}
+        {/*
+          眼珠横向游移挂在这层；眨眼的纵向压缩挂在每只眼睛自己身上。
+
+          眼睛用白色：配色换成鲜亮实色后，原来的深色眼珠（rgba(0,0,0,0.82)）
+          在饱和底色上会糊成一团，32px 的侧边栏头像尤其看不清。
+        */}
         <g className="lv-avatar__eyes">
           <rect
             className="lv-avatar__eye"
@@ -178,7 +191,7 @@ export const GeometricAvatar = ({
             width={6}
             height={12}
             rx={3}
-            fill="rgba(0,0,0,0.82)"
+            fill="#FFFFFF"
             style={{ transformOrigin: `${leftEyeX + 3}px ${shape.eyeY}px` }}
           />
           <rect
@@ -188,7 +201,7 @@ export const GeometricAvatar = ({
             width={6}
             height={12}
             rx={3}
-            fill="rgba(0,0,0,0.82)"
+            fill="#FFFFFF"
             style={{ transformOrigin: `${rightEyeX + 3}px ${shape.eyeY}px` }}
           />
         </g>

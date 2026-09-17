@@ -52,7 +52,7 @@ describe("template runnability", () => {
       expect(cronSteps, `${tpl.id} routines`).toHaveLength(tpl.routines.length);
       for (const step of cronSteps) {
         // 必须解析出 5 段合法 cron，而不是退化成兜底值
-        const m = /hermes cron create '([^']+)'/.exec(step.command);
+        const m = /hermes(?: -p '[^']+')? cron create '([^']+)'/.exec(step.command);
         expect(m, `${tpl.id} cron expr`).not.toBeNull();
         expect(m![1]!.trim().split(/\s+/), `${tpl.id} -> ${m![1]}`).toHaveLength(5);
       }
@@ -71,7 +71,7 @@ describe("template runnability", () => {
           console.log(`  skill[${ch}] ${s.label}`);
         }
         if (s.kind === "cron") {
-          const m = /hermes cron create '([^']+)'/.exec(s.command);
+          const m = /hermes(?: -p '[^']+')? cron create '([^']+)'/.exec(s.command);
           console.log(`  cron  ${m ? m[1] : "??"}  <- ${s.label}`);
         }
       }

@@ -276,7 +276,7 @@ const LatestNewsSection = () => {
               setPaused(true);
             }}
             className={cn(
-              "h-1.5 rounded-full transition-all",
+              "h-1.5 cursor-pointer rounded-full transition-all",
               itemIndex === index ? "w-5 bg-black/45" : "w-1.5 bg-black/15 hover:bg-black/25",
             )}
           />
@@ -341,7 +341,7 @@ const ProfileEditDialog = ({
                 onClick={() => setShapeId(shape.id)}
                 className={cn(
                   // 无边框：几何体本身有形状与配色，方框反而抢视线
-                  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[4px] transition",
+                  "inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[4px] transition",
                   shape.id === shapeId
                     ? "bg-black/[0.06]"
                     : "hover:bg-black/[0.03]",
@@ -354,7 +354,7 @@ const ProfileEditDialog = ({
           <button
             type="button"
             onClick={handleRandomize}
-            className="mt-2.5 inline-flex items-center gap-1.5 rounded-[3px] px-2.5 py-1 text-[13px] font-medium text-black/55 transition hover:bg-black/[0.03] hover:text-black/80"
+            className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2.5 py-1 text-[13px] font-medium text-black/55 transition hover:bg-black/[0.03] hover:text-black/80"
           >
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
             {t("换一批")}
@@ -392,7 +392,7 @@ const ProfileEditDialog = ({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-black/[0.1] px-4 py-2 text-sm font-medium text-black/65 transition hover:bg-black/[0.03]"
+            className="cursor-pointer rounded-full border border-black/[0.1] px-4 py-2 text-sm font-medium text-black/65 transition hover:bg-black/[0.03]"
           >
             {t("取消")}
           </button>
@@ -409,7 +409,8 @@ const ProfileEditDialog = ({
             className={cn(
               "rounded-full px-4 py-2 text-sm font-medium transition",
               canSave
-                ? "bg-black text-white hover:bg-black/85"
+                // 可用态要显式给 pointer：Tailwind v4 下 button 默认是 default
+                ? "cursor-pointer bg-black text-white hover:bg-black/85"
                 : "cursor-not-allowed bg-black/[0.06] text-black/30",
             )}
           >
@@ -449,7 +450,7 @@ const BuddyProfileSection = ({
     <section>
       <SectionTitle
         title={t("我的 Bot")}
-        subtitle={t("这是你当前的 Bot 资料卡片")}
+        subtitle={t("这是当前 Bot 的资料卡片")}
       />
 
       <button
@@ -460,7 +461,12 @@ const BuddyProfileSection = ({
           CARD_CLASS,
           // 无描述时整体垂直居中，避免名字偏上；有描述时顶部对齐
           profile.description ? "items-start" : "items-center",
-          "flex w-full gap-4 p-4 text-left transition hover:border-black/[0.12]",
+          /*
+           * cursor-pointer 必须显式写：Tailwind v4 的 Preflight 把 button 的
+           * 光标改成了 default（v3 是 pointer），不加就只有 hover 变边框、
+           * 光标还是箭头，整张卡看起来不像能点。项目里其他按钮同样是显式加的。
+           */
+          "flex w-full cursor-pointer gap-4 p-4 text-left transition hover:border-black/[0.12]",
         )}
       >
         {hasCustomAvatar || !fallbackAvatarUrl ? (
@@ -688,9 +694,14 @@ export const AgentOverviewPanel = ({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    /*
+     * gap-10 管板块之间的间距（原先是 gap-6，各板块挤在一起、层次不清）。
+     * 标题不跟着这个间距走 —— 它和下方 Hero 是同一组内容，拉到 40px 会
+     * 显得断开，所以标题自己用 -mb 收回一部分。
+     */
+    <div className="flex min-w-0 flex-col gap-10">
       {/* 不用 AgentSectionHeader：它的 description 必填且会渲染空段落占位 */}
-      <h2 className="text-[18px] font-semibold leading-6 tracking-normal text-black/[0.95]">
+      <h2 className="-mb-4 text-[18px] font-semibold leading-6 tracking-normal text-black/[0.95]">
         {t("总览")}
       </h2>
       <HeroBanner stats={heroStats} />

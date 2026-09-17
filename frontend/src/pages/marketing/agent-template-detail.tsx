@@ -7,7 +7,7 @@
  *
  * 左侧分类导航 + 右侧内容区；技能与定时任务渲染为双行条目。
  *
- * 命名说明：分类叫「用户画像」而不是「记忆」—— 模板里的 memories 实际写入
+ * 命名说明：分类叫「用户偏好」而不是「记忆」—— 模板里的 memories 实际写入
  * USER.md，MEMORY.md 是 Agent 自己在对话中维护的工作记忆，前端不碰。
  * 见 agent-buddy-setup.ts 的 buildUserProfileWriteCommand。
  */
@@ -81,7 +81,7 @@ export const TemplateDetailView = ({
   const tabs = useMemo(() => {
     const all: { id: TemplateTabId; label: string; hint: string }[] = [
       { id: "instructions", label: t("介绍"), hint: t("这个助手如何工作") },
-      { id: "profile", label: t("用户画像"), hint: t("它已经知道的事") },
+      { id: "profile", label: t("用户偏好"), hint: t("它已经知道的事") },
       { id: "skills", label: t("技能"), hint: t("可以运行的能力") },
       { id: "routines", label: t("定时任务"), hint: t("自动运行的任务") },
     ];
@@ -91,7 +91,7 @@ export const TemplateDetailView = ({
   // 切模板时上一个模板可能停在已隐藏的分类上，兜底回到「介绍」
   const activeTab = tabs.some((item) => item.id === tab) ? tab : "instructions";
 
-  /** 右侧内容区：介绍是分段文字，用户画像是列表，技能与定时任务是双行条目 */
+  /** 右侧内容区：介绍是分段文字，用户偏好是列表，技能与定时任务是双行条目 */
   const renderPanel = () => {
     if (activeTab === "instructions") {
       return <InstructionsText text={template.instructions} />;

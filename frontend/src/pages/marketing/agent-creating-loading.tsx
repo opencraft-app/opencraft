@@ -65,10 +65,22 @@ const StepRow = ({ state }: { state: SetupStepState }) => {
 export const CreatingLoadingView = ({
   errorMessage,
   steps,
+  partialFailureCount = 0,
+  onContinue,
 }: {
   errorMessage?: string | null;
   /** 传入则展示步骤进度清单 */
   steps?: SetupStepState[];
+  /**
+   * 非阻断步骤的失败数。
+   *
+   * 大于 0 时停在本页并给一个「完成」按钮 —— 让用户先看清哪几步红了。
+   * 之前是设完提示就直接跳走，那行字随页面卸载一起消失，用户只看到
+   * 「创建成功」，进去才发现技能没装、定时任务是空的。
+   */
+  partialFailureCount?: number;
+  /** 「完成」回调，仅在 partialFailureCount > 0 时用到 */
+  onContinue?: () => void;
 }) => {
   const t = useT();
   /* 动态 "..." 计数：0 -> 1 -> 2 -> 3 -> 0 ... 每 450ms 切换 */
@@ -120,8 +132,11 @@ export const CreatingLoadingView = ({
           color: "rgba(0,0,0,0.9)",
         }}
       >
+        {/* 有步骤失败时改写主文案 —— 顶着「正在喂咖啡」说失败会很割裂 */}
         {errorMessage ? (
           errorMessage
+        ) : partialFailureCount > 0 ? (
+          t("Bot 已创建，但有 {{count}} 项配置没成功", { count: partialFailureCount })
         ) : (
           <>
             {t("正在给 LightVela Bot 喂咖啡，唤醒大脑中")}
@@ -153,6 +168,25 @@ export const CreatingLoadingView = ({
               <StepRow key={`${state.step.kind}-${index}`} state={state} />
             ))}
           </ul>
+
+          {/*
+            部分失败时的收尾：说清去哪补，再给一个明确的出口。
+            没有这个按钮用户就卡在这页了（流程已经不会自己往下走）。
+          */}
+          {partialFailureCount > 0 && onContinue ? (
+            <div className="mt-5 rounded-[6px] bg-black/[0.02] p-3.5">
+              <p className="text-[12px] leading-[18px] text-black/55">
+                {t("红叉的步骤可以稍后在「技能」和「定时任务」页面手动补上，Bot 本身已经可以用了。")}
+              </p>
+              <button
+                type="button"
+                onClick={onContinue}
+                className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-medium text-white transition hover:bg-black/85"
+              >
+                {t("进入 Bot")}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </motion.div>

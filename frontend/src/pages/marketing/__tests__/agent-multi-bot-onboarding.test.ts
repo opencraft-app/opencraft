@@ -42,8 +42,13 @@ describe("multi-bot creation goes through the onboarding panel", () => {
      * 旧的 createBotAndNavigate 会跳转，这个新回调不能跳。
      */
     expect(handler).not.toContain("navigate(");
-    // 必须把 profileId 一并返回，否则面板只能去猜，可能写进别的 bot
-    expect(handler).toContain("profileId: newBot.profileId");
+    /*
+     * 必须把 profileId 一并返回，否则面板只能去猜，可能写进别的 bot。
+     * 现在先落到 createdProfileId 中间变量上（要先过 "main" 守卫再返回），
+     * 所以断言取值来源与最终返回两处。
+     */
+    expect(handler).toContain("const createdProfileId = newBot.profileId");
+    expect(handler).toContain("profileId: createdProfileId");
   });
 
   it("clones from the bot the user picked, by id", () => {
@@ -56,10 +61,8 @@ describe("multi-bot creation goes through the onboarding panel", () => {
      * 从「模式」（复制当前 / 复制主 Bot）改成「按 id 选 bot」——
      * 模式只能表达两个来源，用户在 A bot 下想复制 B bot 就没法表达。
      */
-    expect(handler).toContain("sourceBotId: params.sourceBotId");
-    expect(handler).toContain('createMode: "clone"');
-    // 没选到来源时必须拦下，不能静默建出一个空白 bot
-    expect(handler).toContain("if (!params.sourceBotId)");
+    expect(handler).toContain("sourceBotId: isBlank ? undefined : params.sourceBotId");
+    expect(handler).toContain('createMode: isBlank ? "blank" : "clone"');
   });
 
   it("keeps the quota gate on the new path", () => {
@@ -94,7 +97,28 @@ describe("multi-bot creation goes through the onboarding panel", () => {
     expect(page).toContain("handleBuddyCreated(createdBotId);");
   });
 
-  it("lists every bot as a clone source, defaulting to the main one", () => {
+  /*
+   * 这条守的是「静默写脏主 bot」。
+   *
+   * addBot 在后端没返回 profile_id 时会兜底成 "main"（agent-context 里的
+   * `created.profileId ?? "main"`），而 "main" 正是主 bot 的 profile。多 bot
+   * 场景下若照此往下走，模板的技能与定时任务会全部写进主 bot：新 bot 里空
+   * 空如也，主 bot 那边莫名多出几条，且全程无报错 —— 正是之前真实发生过的
+   * 现象。宁可报错让用户重试，也不能写错目标。
+   */
+  it("refuses to write the setup plan when the profile id is unresolved", () => {
+    const page = readPageSource();
+    const handler = page.slice(
+      page.indexOf("const handleOnboardingCreateBot"),
+      page.indexOf("const handleConfirmCreate"),
+    );
+    expect(handler).toContain('createdProfileId === "main"');
+    // activeBot 存在 = 在已有 bot 之上再建一个，它的 profile 不可能是 main
+    expect(handler).toContain("if (activeBot && (!createdProfileId");
+    expect(handler).toContain("return null;");
+  });
+
+  it("lists every bot as a clone source", () => {
     const page = readPageSource();
     /*
      * 候选必须来自 bot 列表，而不是「当前 / 主 Bot」两个硬编码模式；
@@ -104,32 +128,71 @@ describe("multi-bot creation goes through the onboarding panel", () => {
     expect(page).toContain("[...visibleBots]");
     // 主 bot 排最前 + 打角标
     expect(page).toContain("Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))");
-    expect(page).toContain("setCloneSourceBotId(defaultBot?.id || activeBot?.id || \"\");");
+    // 默认空白创建，不预选任何来源 bot
+    expect(page).toContain('setCloneSourceBotId("");');
   });
 
-  it("drops the blank-create option from the clone picker", () => {
+  it("offers blank creation as the default, with bots listed as clone sources", () => {
     const page = readPageSource();
     const panel = readFileSync(
       "src/pages/marketing/agent-onboarding-panel.tsx",
       "utf8",
     );
     /*
-     * 只查下拉选项本身，不按整份文件查「空白创建」四个字 ——
-     * 那样连注释里提到它都会误判。
+     * 「空白创建」是默认项：复制会把来源 bot 的人设、技能、记忆一并带过来，
+     * 属于进阶用法；新建的默认预期是拿到一个干净的 bot。
      *
-     * 注意：首个 bot（账号下还没有任何 bot）仍然走空白创建，那条路没有
-     * 可复制的来源，本来就只能空白建。这里限定的是「从其他 Bot 复制」
-     * 这个下拉：它的语义是选一个来源 bot，混进「不复制」并不合理。
+     * 空串代表空白创建，但 Radix Select 不接受空串作为 item value
+     * （它把空串当「未选中」），所以界面层用哨兵值顶一下，读写时转换。
      */
     const picker = panel.slice(
-      panel.indexOf('id="lv-onboarding-clone"'),
+      panel.indexOf("<Select\n"),
       panel.indexOf("</Select>"),
     );
+    expect(picker).toContain("空白创建");
     expect(picker).toContain("cloneOptions.choices.map");
-    expect(picker).not.toContain("空白创建");
-    // 候选来自 bot 列表，不该再有硬编码的模式项
-    expect(page).not.toContain('id: "blank" as const');
+    expect(panel).toContain('const BLANK_CREATE_VALUE = "__blank__";');
+    // 哨兵值必须双向转换，否则空白创建会被当成一个真实的 botId 传下去
+    expect(picker).toContain("cloneOptions.value || BLANK_CREATE_VALUE");
+    expect(picker).toContain('next === BLANK_CREATE_VALUE ? "" : next');
+
+    // 打开创建页时默认就是空白创建（空串）
+    expect(page).toContain('setCloneSourceBotId("");');
+
+    // 候选仍来自 bot 列表，不该回到「复制当前 / 复制主 Bot」那套硬编码模式
     expect(page).not.toContain('id: "clone-main" as const');
+  });
+
+  it("maps an empty source to blank create instead of erroring out", () => {
+    const page = readPageSource();
+    const handler = page.slice(
+      page.indexOf("const handleOnboardingCreateBot"),
+      page.indexOf("const handleConfirmCreate"),
+    );
+    /*
+     * 空 sourceBotId 是合法的默认值，必须走 createMode: "blank"，
+     * 而不是像之前那样报「找不到可克隆的 Bot」。
+     */
+    expect(handler).toContain("const isBlank = !params.sourceBotId;");
+    expect(handler).toContain('createMode: isBlank ? "blank" : "clone"');
+    expect(handler).toContain("sourceBotId: isBlank ? undefined : params.sourceBotId");
+    expect(handler).not.toContain("找不到可克隆的 Bot，请稍后重试。");
+    // 额度校验不能因此被绕过
+    expect(handler).toContain("if (createLimitMessage)");
+  });
+
+  it("only preserves the inherited persona when actually cloning", () => {
+    const panel = readFileSync(
+      "src/pages/marketing/agent-onboarding-panel.tsx",
+      "utf8",
+    );
+    /*
+     * 空白创建没有可继承的人设，读 SOUL 只会拿到空值、白等一次沙箱命令；
+     * 选了模板则该由模板覆盖。两种情况都不进保留分支。
+     */
+    expect(panel).toContain("const shouldPreserveSoul = !pendingSetup.template");
+    expect(panel).toContain("&& Boolean(runtimeRef.current.cloneValue);");
+    expect(panel).toContain("if (shouldPreserveSoul) {");
   });
 
   it("hides the sidebar while any onboarding is on screen", () => {

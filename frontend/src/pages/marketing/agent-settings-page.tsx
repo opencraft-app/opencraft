@@ -2999,6 +2999,32 @@ export const AgentSettingsPage = ({
     hasActiveBot: Boolean(activeBot),
   }) && !showBuddyOnboarding && !showMultiBotOnboarding;
 
+  /*
+   * 把「正在走创建引导」标到 <html> 上，供 CSS 去掉 header 的线框。
+   *
+   * 为什么绕这一圈：这条路由的 header 由 next-site/agents-page-client.tsx
+   * 渲染（本组件收到的是 showHeader={false}），那是个路由层组件，拿不到
+   * 引导状态；而引导状态只有这里知道。用一个根节点 class 把信号传出去，
+   * 是本项目既有做法（见上面的 lw-settings-scrollbar-stable，以及
+   * maintenance-announcement-banner 的 lw-has-announcement）。
+   *
+   * 三个引导标记都要算：
+   *   - showEarlyOnboarding  订阅后的创建期前置引导
+   *   - showBuddyOnboarding  首个 bot 的引导
+   *   - showMultiBotOnboarding  从已有 bot 新建
+   * 漏掉任何一个，那条路径下 logo 还是会被框住。
+   */
+  const isOnboardingVisible = showEarlyOnboarding
+    || showBuddyOnboarding
+    || showMultiBotOnboarding;
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("lv-agent-onboarding", isOnboardingVisible);
+    return () => {
+      root.classList.remove("lv-agent-onboarding");
+    };
+  }, [isOnboardingVisible]);
+
   /** 引导完成：立刻收起表单，再刷新资料与列表 */
   const handleBuddyCreated = useCallback((createdBotId?: string) => {
     setOnboardingJustFinished(true);
@@ -4228,8 +4254,14 @@ export const AgentSettingsPage = ({
      */
     setDirectCreateError(null);
     setCreateBotName("");
-    // 默认选主 Bot —— 它配置最全，复制它出问题最少；没有主 bot 时退回当前
-    setCloneSourceBotId(defaultBot?.id || activeBot?.id || "");
+    /*
+     * 默认空白创建（空串）。
+     *
+     * 复制会把来源 bot 的人设、技能、记忆一起带过来，属于「我知道自己
+     * 要什么」的进阶用法；新建的默认预期是拿到一个干净的 bot，所以默认
+     * 不复制，想复制的人自己去高级里选。
+     */
+    setCloneSourceBotId("");
     setShowMultiBotOnboarding(true);
   };
 
@@ -4248,10 +4280,12 @@ export const AgentSettingsPage = ({
       setDirectCreateError(createLimitMessage);
       return null;
     }
-    if (!params.sourceBotId) {
-      setDirectCreateError(t("找不到可克隆的 Bot，请稍后重试。"));
-      return null;
-    }
+    /*
+     * sourceBotId 为空 = 空白创建（默认），走 createMode: "blank"；
+     * 有值则克隆那个 bot。不再因为「没选来源」而报错 —— 空白创建本身
+     * 就是一个合法且默认的选项。
+     */
+    const isBlank = !params.sourceBotId;
     try {
       const newBot = await addBot({
         name: params.name,
@@ -4261,16 +4295,35 @@ export const AgentSettingsPage = ({
         intro: "",
         soulTemplateId: undefined,
         status: "running",
-        createMode: "clone",
-        sourceBotId: params.sourceBotId,
+        createMode: isBlank ? "blank" : "clone",
+        sourceBotId: isBlank ? undefined : params.sourceBotId,
       });
       // 新 bot 还没进 visibleBots（provisioning 会被过滤），所以直接用返回值
-      return { botId: newBot.id, profileId: newBot.profileId || "" };
+      const createdProfileId = newBot.profileId || "";
+
+      /*
+       * 守卫：多 bot 场景下拿到 "main" 视为「没拿到」。
+       *
+       * addBot 在后端没返回 profile_id 时会兜底成 "main"（见 agent-context
+       * 的 `created.profileId ?? "main"`）。而 "main" 是主 bot 的 profile ——
+       * 如果就这么往下走，模板的技能和定时任务会全部写进主 bot：新 bot 里
+       * 空空如也，主 bot 那边莫名多出几条，且没有任何报错。
+       *
+       * activeBot 存在说明这是「在已有 bot 之上再建一个」，它的 profile 不
+       * 可能是 main。这种情况下返回 null，让引导退回表单并提示重试，
+       * 比静默写脏主 bot 好得多。
+       */
+      if (activeBot && (!createdProfileId || createdProfileId === "main")) {
+        setDirectCreateError(t("Bot 已创建，但配置写入所需的档案标识未就绪，请稍后在设置页重试配置。"));
+        return null;
+      }
+
+      return { botId: newBot.id, profileId: createdProfileId };
     } catch (err) {
       setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
       return null;
     }
-  }, [createLimitMessage, addBot, t]);
+  }, [createLimitMessage, addBot, activeBot, t]);
 
   const handleConfirmCreate = async () => {
     if (createLimitMessage) {
@@ -4634,8 +4687,15 @@ export const AgentSettingsPage = ({
            *
            * 骨架屏期间一并套上 —— 内容区此时已按侧边栏布局排版，header 若还是
            * 全宽会跟下方的两列对不齐。
+           *
+           * --borderless 只给创建 / 引导态：那时右侧没有侧边栏，header 的
+           * 右边框和下边框会把 logo 框成一个孤立小方块。常规页面要保留边框，
+           * 它和侧边栏的分隔线是连着的。
            */
-          className={hasSidebarLayout || shouldShowDataLoading ? "lv-agent-sidebar-header" : undefined}
+          className={cn(
+            (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-sidebar-header",
+            (showBuddyOnboarding || showMultiBotOnboarding) && "lv-agent-sidebar-header--borderless",
+          ) || undefined}
           reloadLanguageAfterSwitch
           showDesktopUserMenu={false}
         />

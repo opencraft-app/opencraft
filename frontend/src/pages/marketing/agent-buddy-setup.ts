@@ -15,13 +15,23 @@
  */
 
 import { buildSoulMd } from "@/lib/soul-interpretations";
-import { getHermesProfileRootCommand } from "@/lib/hermes-agent-command";
-import { buildCreateCommand, shellQuote, type CreateCronJobInput } from "@/lib/hermes-cron-client";
+import {
+  getHermesProfileRootCommand,
+  withHermesAgent,
+  withHermesAgentCompatibility,
+} from "@/lib/hermes-agent-command";
+import {
+  buildCreateCommand,
+  scopeHermesCronCommand,
+  shellQuote,
+  type CreateCronJobInput,
+} from "@/lib/hermes-cron-client";
 import { buildHermesSoulWriteCommand } from "@/pages/marketing/agent-buddy-command";
 import { buildGithubSkillInstallCommand } from "@/lib/hermes-skills-client";
 import { buildProfileMetaWriteCommand } from "@/lib/hermes-profile-meta";
 import { buildSkillsshInstallCommand } from "@/pages/marketing/skills-demo/skill-registries";
 import { buildInstallSkillCommand } from "@/pages/marketing/agent-experts-panel";
+import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import type { AgentTemplate } from "@/pages/marketing/agent-demo-templates";
 
 /**
@@ -38,7 +48,7 @@ export interface BuddyProfileInput {
   description: string;
 }
 
-export type SetupStepKind = "soul" | "profile-meta" | "user-profile" | "skill" | "cron";
+export type SetupStepKind = "soul" | "profile-meta" | "user-profile" | "skill" | "cron" | "gateway";
 
 export interface SetupStep {
   kind: SetupStepKind;
@@ -63,6 +73,8 @@ export const SOUL_STEP_TIMEOUT_MS = 120_000;
 export const SKILL_STEP_TIMEOUT_MS = 120_000;
 /** cron 创建 / USER.md 写入：短命令 */
 export const QUICK_STEP_TIMEOUT_MS = 60_000;
+/** 网关启动要加载配置与插件，给的比快命令宽一些 */
+export const GATEWAY_STEP_TIMEOUT_MS = 120_000;
 
 /**
  * 拼装 SOUL.md 的人设正文。
@@ -85,7 +97,16 @@ export const buildBuddySoulContent = (
 
   const description = profile.description.trim();
   if (description) {
-    sections.push(`## 用户期望\n${description}`);
+    /*
+     * 「## 用户期望」只在有模板时加。
+     *
+     * 有模板：模板 instructions 是正文主体，用户填的描述是追加的一小节，
+     *         给它一个标题才分得清哪段是模板给的、哪段是用户要的。
+     * 无模板：描述本身就是全部正文。再套一层标题会写出
+     *         `## Content` 紧跟 `## 用户期望` 的双标题，结构上很怪
+     *         （功能无碍，但这份文件用户自己也会打开看）。
+     */
+    sections.push(template ? `## 用户期望\n${description}` : description);
   }
 
   // 两者都空时给一句兜底，避免写出空的 ## Content
@@ -448,13 +469,25 @@ export const buildBuddySetupPlan = (params: {
     steps.push({
       kind: "skill",
       label: `正在安装技能 ${skill.name}`,
-      // 三种来源命令不同，见 TemplateSkill 的注释：
-      //   githubSource → 拉 GitHub 目录落盘；skillsShId → acli skills-sh；其余 → SkillHub
+      /*
+       * 三种来源命令不同，但都必须按 profile 定向 —— 同一实例下多个 bot
+       * 靠 profileId 区分，不定向会装到实例的默认 profile（也就是主 bot）
+       * 上去，新建的 bot 里看不到这个技能。
+       *
+       *   githubSource → 命令内部已用 HERMES_PROFILE_ROOT 落盘，自带定向
+       *   skillsShId   → acli skills-sh，用兼容写法探测 --agent 再决定
+       *   其余         → acli skills（SkillHub），加 --agent，与技能页一致
+       *                  （见 skill-registries.ts 的 createDomesticDataLayer）
+       */
       command: skill.githubSource
         ? buildGithubSkillInstallCommand(skill.githubSource, skill.installDir ?? skill.slug, profileId)
         : skill.skillsShId
-          ? buildSkillsshInstallCommand(skill.skillsShId)
-          : buildInstallSkillCommand(skill.slug),
+          ? withHermesAgentCompatibility(
+            buildSkillsshInstallCommand(skill.skillsShId),
+            "acli skills-sh",
+            profileId,
+          )
+          : withHermesAgent(buildInstallSkillCommand(skill.slug), profileId),
       timeoutMs: SKILL_STEP_TIMEOUT_MS,
       required: false,
     });
@@ -468,11 +501,40 @@ export const buildBuddySetupPlan = (params: {
     steps.push({
       kind: "cron",
       label: `正在创建定时任务 ${routine.label}`,
-      command,
+      /*
+       * 必须过 scopeHermesCronCommand：它把 `hermes cron` 改写成
+       * `hermes -p <profile> cron` 并导出 HERMES_PROFILE_ROOT。
+       * 不做这一步，任务会建到实例默认 profile 下 —— 新 bot 的定时任务页
+       * 是空的，而主 bot 那边莫名多出几条。定时任务页读写都走这个函数，
+       * 写入侧也必须一致，否则「写进去的」和「读出来的」不是同一批。
+       */
+      command: scopeHermesCronCommand(command, profileId),
       timeoutMs: QUICK_STEP_TIMEOUT_MS,
       required: false,
     });
   }
+
+  /*
+   * 5. 启动网关
+   *
+   * 网关是 per-bot 的（`acli gateway restart --agent <profileId>`），新建的
+   * bot 不会自己把它拉起来。不做这一步，定时任务页会一直挂着「网关未运行，
+   * 此 Bot 的定时任务不会执行」—— 任务建进去了也不会跑，用户只能手动点
+   * 一次「重启网关」。
+   *
+   * 放在最后：网关启动时会读取 SOUL / 技能 / cron 配置，先把东西写完再拉起，
+   * 省掉一次多余的重启。
+   *
+   * required: false —— 走到这里人设和任务都已落盘，网关没起只是不执行，
+   * 用户在页面上点一次「重启网关」就能恢复，不该让整个引导失败。
+   */
+  steps.push({
+    kind: "gateway",
+    label: "正在启动网关",
+    command: getHermesScriptCommands(profileId).getGatewayRestartCommand(),
+    timeoutMs: GATEWAY_STEP_TIMEOUT_MS,
+    required: false,
+  });
 
   return steps;
 };

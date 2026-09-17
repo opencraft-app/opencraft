@@ -29,13 +29,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgentOnboardingPanel } from "../agent-onboarding-panel";
 
-vi.mock("@/i18n/t", () => ({
-  useT: () => (text: string, vars?: Record<string, unknown>) => (
+/*
+ * 同时 mock useT 与 t：引导面板经由配置计划间接引入了 hermes-parsers 等模块，
+ * 它们在模块顶层就用裸 `t(...)` 定义常量，只 mock useT 会让整个测试文件加载失败。
+ */
+vi.mock("@/i18n/t", () => {
+  const translate = (text: string, vars?: Record<string, unknown>) => (
     vars
-      ? text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(vars[k] ?? ""))
+      ? text.replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? ""))
       : text
-  ),
-}));
+  );
+  return { useT: () => translate, t: translate };
+});
 
 afterEach(() => {
   vi.clearAllMocks();

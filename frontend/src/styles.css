@@ -190,14 +190,13 @@ html.lw-settings-scrollbar-stable {
 }
 
 @media (min-width: 1024px) {
-  /* header 占住侧边栏那一列的表头位置。
-   * 这里刻意不画 border：加了 border-right / border-bottom 后，logo 会被框成
-   * 一个孤立的小方块（侧边栏未加载或引导态下尤其明显）。对齐靠宽度就够了。 */
+  /* header 占住侧边栏那一列的表头位置，边框与侧边栏的分隔线对齐。 */
   header.lv-agent-sidebar-header {
     right: auto;
     width: 264px;
     height: 68px;
-    border-bottom-color: transparent !important;
+    border-right: 1px solid #e9ecf1;
+    border-bottom-color: #e9ecf1 !important;
   }
 
   .lw-settings-shell.lv-agent-settings-shell {
@@ -248,6 +247,36 @@ html.lw-settings-scrollbar-stable {
     max-width: none;
     padding-left: 16px !important;
     padding-right: 16px !important;
+  }
+}
+
+/* 创建 / 引导态的 header 去边框：左上角只留 LightVela logo。
+ *
+ * 那时右侧没有侧边栏，header 的右边框和下边框会把 logo 框成一个孤立的
+ * 小方块。常规 agent 页必须保留边框 —— 它和侧边栏的分隔线是连着的。
+ *
+ * 由 <html class="lv-agent-onboarding"> 把守：这条路由的 header 由
+ * next-site/agents-page-client.tsx 渲染，它是路由层组件、拿不到引导状态，
+ * 所以 agent-settings-page 用根节点 class 把信号传出来（同 in-page 的
+ * lw-settings-scrollbar-stable 做法）。
+ *
+ * 同时覆盖两种挂法：路由层那个无条件的 lv-agent-sidebar-header，以及
+ * 页面内 showHeader 为真时才会用到的 --borderless 标记。
+ *
+ * 放在媒体查询外：引导态在窄屏同样没有侧边栏，各断点都该去掉。
+ * border-bottom 来自 PublicSiteHeader 的 Tailwind 类，需 !important 压过。 */
+.lv-agent-onboarding header.lv-agent-sidebar-header,
+header.lv-agent-sidebar-header--borderless {
+  border-right: 0 !important;
+  border-bottom-color: transparent !important;
+}
+
+/* 引导态的 header 不需要占住 264px 那一列（没有侧边栏要对齐），
+ * 让 logo 回到正常的内容左边距上，而不是缩在一个窄条里。 */
+@media (min-width: 1024px) {
+  .lv-agent-onboarding header.lv-agent-sidebar-header {
+    width: auto;
+    right: 0;
   }
 }
 

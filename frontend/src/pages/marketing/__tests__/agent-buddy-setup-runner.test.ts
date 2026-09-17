@@ -130,7 +130,7 @@ describe("runBuddySetupPlan", () => {
   it("records the error message on the failed step", async () => {
     const steps = plan();
     const exec = vi.fn<SetupExec>().mockImplementation(async (_botId, command) => (
-      command.includes("hermes cron create") ? fail : ok
+      command.includes(" cron create") ? fail : ok
     ));
 
     const result = await runBuddySetupPlan({ botId: "bot-1", steps, exec });

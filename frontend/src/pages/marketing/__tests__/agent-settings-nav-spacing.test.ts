@@ -119,7 +119,11 @@ describe("Agent settings navigation spacing", () => {
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain('"lw-settings-shell"');
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell"');
-    expect(page).toContain('className={hasSidebarLayout || shouldShowDataLoading ? "lv-agent-sidebar-header" : undefined}');
+    /*
+     * header 的 className 从三元式换成了 cn()：除了「是否套侧边栏表头」，
+     * 还要叠加引导态的 --borderless 标记，两个条件互不相干。
+     */
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-sidebar-header"');
     // 聊天页铺满到底（来自 master），与上面的条件化并存
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
     // 页面级骨架屏必须跟路由级加载壳用同一套几何，否则两段加载之间会跳
@@ -136,12 +140,31 @@ describe("Agent settings navigation spacing", () => {
     expect(agentHeaderShell).toContain("width: 264px;");
     expect(agentHeaderShell).toContain("height: 68px;");
     /*
-     * header 刻意不画边框：border-right / border-bottom 会把 logo 框成一个
-     * 孤立的小方块（侧边栏尚未加载或引导态下尤其明显）。跟侧边栏对齐靠
-     * width:264px 就够了，不需要靠描边。
+     * 常规 agent 页的 header 要画边框 —— 它和侧边栏的分隔线是连着的，
+     * 去掉会让 logo 那一格和下方侧边栏断开。
+     *
+     * 只有创建 / 引导态是例外：那时右侧没有侧边栏，这两条边会把 logo
+     * 框成一个孤立的小方块。用根节点 class 把例外圈出来，而不是把常规态
+     * 的边框一起砍了（之前就是这么改过头的）。
+     *
+     * 关键：这条路由的 header 由 next-site/agents-page-client.tsx 渲染，
+     * 传给 AgentSettingsPage 的是 showHeader={false} —— 页面内那个 header
+     * 在这条路由上根本不渲染。所以只改页面内的 className 是无效的，必须
+     * 走 <html class="lv-agent-onboarding"> 才能作用到真正生效的那个
+     * header 上。上一轮就是漏了这一层，改完线框依旧在。
      */
-    expect(agentHeaderShell).not.toContain("border-right:");
-    expect(agentHeaderShell).toContain("border-bottom-color: transparent !important;");
+    expect(agentHeaderShell).toContain("border-right: 1px solid #e9ecf1;");
+    expect(agentHeaderShell).toContain("border-bottom-color: #e9ecf1 !important;");
+    expect(agentsPageClient).toContain("showHeader={false}");
+    expect(styles).toContain(".lv-agent-onboarding header.lv-agent-sidebar-header,");
+    // 三个引导标记都要算进去，漏一个那条路径下 logo 还是会被框住
+    expect(page).toContain("const isOnboardingVisible = showEarlyOnboarding");
+    expect(page).toContain("|| showBuddyOnboarding");
+    expect(page).toContain("|| showMultiBotOnboarding;");
+    expect(page).toContain('root.classList.toggle("lv-agent-onboarding", isOnboardingVisible);');
+    expect(page).toContain(
+      '(showBuddyOnboarding || showMultiBotOnboarding) && "lv-agent-sidebar-header--borderless"',
+    );
     expect(agentHeader).toContain("height: 68px !important;");
     expect(agentHeader).toContain("max-width: none;");
     expect(agentHeader).toContain("padding-left: 16px !important;");

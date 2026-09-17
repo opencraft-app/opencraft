@@ -47,7 +47,22 @@ describe("buildBuddySoulContent", () => {
       template,
     );
     expect(content).toContain(template.instructions.trim());
+    // 有模板时才需要小节标题：区分「模板给的」与「用户要的」
     expect(content).toContain("## 用户期望\n帮我盯竞品");
+  });
+
+  it("writes the description as plain body when no template is used", () => {
+    const content = buildBuddySoulContent(
+      { name: "x", description: "帮我盯项目进度" },
+      undefined,
+    );
+    /*
+     * 空白创建时描述就是全部正文，不该再套 `## 用户期望` ——
+     * 那会让文件出现 `## Content` 紧跟 `## 用户期望` 的双标题。
+     * 功能上无碍，但这份 SOUL.md 用户自己也会打开看。
+     */
+    expect(content).toBe("帮我盯项目进度");
+    expect(content).not.toContain("## 用户期望");
   });
 
   it("no longer emits a tags section", () => {
@@ -421,9 +436,15 @@ describe("buildBuddySetupPlan", () => {
 
   it("writes only identity when no template is chosen", () => {
     const steps = buildBuddySetupPlan({ profile, timestamp: "20260914" });
-    // 无模板时不装技能、不建定时任务，只落身份：
-    // SOUL.md（人设，给模型读）+ profile.yaml（展示元数据，给 UI 读）
-    expect(steps.map((step) => step.kind)).toEqual(["soul", "profile-meta"]);
+    /*
+     * 无模板时不装技能、不建定时任务，只落身份：
+     * SOUL.md（人设，给模型读）+ profile.yaml（展示元数据，给 UI 读）。
+     *
+     * 末尾的 gateway 不是「配置」而是收尾：网关是 per-bot 的，新建的 bot
+     * 不会自己拉起它，不启的话定时任务页会一直报「网关未运行」。所以即便
+     * 没选模板也要启 —— 人设写完了，网关不起同样不干活。
+     */
+    expect(steps.map((step) => step.kind)).toEqual(["soul", "profile-meta", "gateway"]);
   });
 
   it("always persists profile metadata alongside SOUL", () => {
@@ -474,5 +495,110 @@ describe("buildBuddySetupPlan", () => {
         expect(toCronExpression(routine.label), `${item.name} / ${routine.label}`).not.toBeNull();
       }
     }
+  });
+});
+
+/**
+ * 同一实例下多个 bot 靠 profileId 区分，技能与定时任务都是 per-profile 的
+ * （不共享）。写入侧若不按 profile 定向，东西会落到实例默认 profile —— 也就
+ * 是主 bot —— 上去：新建 bot 的技能页 / 定时任务页空空如也，而主 bot 那边
+ * 莫名多出几条。
+ *
+ * 读取侧早就这么做了（skill-registries.ts 的 createDomesticDataLayer 给
+ * `acli skills` 加 --agent；hermes-cron-client.ts 的 scopeHermesCronCommand
+ * 把 `hermes cron` 改写成 `hermes -p <profile> cron`），模板写入侧必须一致，
+ * 否则「写进去的」和「读出来的」不是同一批数据。
+ */
+describe("buildBuddySetupPlan profile scoping", () => {
+  const planFor = (templateId: string) => {
+    const template = DEMO_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return null;
+    return buildBuddySetupPlan({
+      profile: { name: "定向校验", description: "" },
+      template,
+      profileId: "bot-scoped",
+      avatar: { shapeId: "blob", color: "#3B82F6" },
+      timestamp: "20260917",
+    });
+  };
+
+  it("targets the right profile for every skill install", () => {
+    for (const template of DEMO_TEMPLATES) {
+      const plan = planFor(template.id);
+      if (!plan) continue;
+      for (const step of plan.filter((item) => item.kind === "skill")) {
+        /*
+         * 三条安装路径各有各的定向方式，但都必须出现 profileId：
+         *   GitHub   → HERMES_PROFILE_ROOT 落盘
+         *   SkillHub → acli skills ... --agent <profileId>
+         *   skills.sh → 同上，但用 --help 探测后再决定加不加
+         */
+        expect(step.command, `${template.id} / ${step.label}`)
+          .toMatch(/bot-scoped/);
+      }
+    }
+  });
+
+  it("creates cron jobs under the bot's own profile", () => {
+    for (const template of DEMO_TEMPLATES) {
+      const plan = planFor(template.id);
+      if (!plan) continue;
+      for (const step of plan.filter((item) => item.kind === "cron")) {
+        // 必须是 `hermes -p <profile> cron`，裸 `hermes cron` 会落到默认 profile
+        expect(step.command, `${template.id} / ${step.label}`)
+          .toContain("hermes -p 'bot-scoped' cron");
+        expect(step.command).toContain("HERMES_PROFILE_ROOT");
+        expect(step.command, "不允许出现未定向的裸命令")
+          .not.toMatch(/(?:^|;\s*)hermes\s+cron\b/);
+      }
+    }
+  });
+});
+
+/**
+ * 网关是 per-bot 的（`acli gateway restart --agent <profileId>`），新建的 bot
+ * 不会自己把它拉起来。少了这一步，定时任务页会一直挂着「网关未运行，此 Bot
+ * 的定时任务不会执行」—— 任务写进去了也不跑，用户只能手动点一次「重启网关」。
+ *
+ * 这是真实发生过的现象：技能与 cron 的 profile 定向修好之后，任务确实落到了
+ * 新 bot 名下，但网关没起，页面照旧报错、列表照旧是空的。
+ */
+describe("buildBuddySetupPlan gateway bootstrap", () => {
+  const planFor = (templateId?: string) => {
+    const template = templateId
+      ? DEMO_TEMPLATES.find((item) => item.id === templateId)
+      : undefined;
+    if (templateId && !template) return null;
+    return buildBuddySetupPlan({
+      profile: { name: "网关校验", description: "" },
+      template,
+      profileId: "bot-gw",
+      avatar: { shapeId: "blob", color: "#3B82F6" },
+      timestamp: "20260917",
+    });
+  };
+
+  it("always starts the gateway as the final step", () => {
+    // 不选模板也要启网关：人设写完了，网关不起同样不干活
+    for (const templateId of [undefined, ...DEMO_TEMPLATES.map((item) => item.id)]) {
+      const plan = planFor(templateId);
+      if (!plan) continue;
+      const last = plan.at(-1)!;
+      expect(last.kind, `${templateId ?? "无模板"} 的最后一步`).toBe("gateway");
+      /*
+       * 顺序不能变：网关启动时会读 SOUL / 技能 / cron，先写完再拉起，
+       * 省掉一次多余的重启。
+       */
+      expect(plan.filter((step) => step.kind === "gateway")).toHaveLength(1);
+    }
+  });
+
+  it("restarts the gateway for the bot's own profile", () => {
+    const plan = planFor("market-watcher");
+    const gateway = plan!.find((step) => step.kind === "gateway")!;
+    // 不带 --agent 会重启到实例默认 profile，新 bot 的网关依旧不起
+    expect(gateway.command).toBe("acli gateway restart --agent 'bot-gw'");
+    // 失败不该阻断：人设与任务都已落盘，用户点一次「重启网关」就能恢复
+    expect(gateway.required).toBe(false);
   });
 });

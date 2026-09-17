@@ -24,6 +24,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -179,6 +180,15 @@ const BOT_ID_PROBE_INTERVAL_MS = 200;
 /** 读 SOUL 原文的超时，与总览页编辑资料保持一致 */
 const SOUL_READ_TIMEOUT_MS = 30_000;
 
+/**
+ * 「空白创建」在下拉里的哨兵值。
+ *
+ * 对外（cloneOptions.value / sourceBotId）空白创建一律用空串表示，但
+ * Radix Select 不允许 item 的 value 为空串（它把空串当成「未选中」），
+ * 所以界面层用这个哨兵值顶一下，读写时两边转换。
+ */
+const BLANK_CREATE_VALUE = "__blank__";
+
 export const AgentOnboardingPanel = ({
   botId,
   /*
@@ -235,10 +245,16 @@ export const AgentOnboardingPanel = ({
    * 首个 bot（订阅后）不传，因为没有可复制的来源。
    */
   cloneOptions?: {
-    /** 当前选中的来源 bot id */
+    /**
+     * 当前选中的来源 bot id。
+     *
+     * 空串 = 空白创建（不复制任何 bot），也是默认值。
+     * 用空串而不是额外加一个 mode 字段，是因为下游 addBot 正好按
+     * 「有没有 sourceBotId」来决定 createMode，语义是对齐的。
+     */
     value: string;
     onChange: (next: string) => void;
-    /** 账号下全部可复制的 bot */
+    /** 账号下全部可复制的 bot（不含「空白创建」那一项，由面板自己加） */
     choices: {
       id: string;
       label: string;
@@ -263,6 +279,8 @@ export const AgentOnboardingPanel = ({
   const [fatalError, setFatalError] = useState<string | null>(null);
   /** 非阻断失败数，仅用于完成后提示 */
   const [partialFailureCount, setPartialFailureCount] = useState(0);
+  /** 部分失败时停在清单页，记下要跳转的 bot，等用户点「进入 Bot」 */
+  const [createdBotId, setCreatedBotId] = useState("");
 
   /**
    * 轮询探测沙箱是否已能执行命令。
@@ -422,6 +440,9 @@ export const AgentOnboardingPanel = ({
 
   const canSubmit = name.trim().length > 0;
 
+  /** 空白创建：没有选中任何来源 bot（空串） */
+  const isBlankCreate = !cloneOptions?.value;
+
   /** 换一批：重抽候选形状 + 换个配色；若当前形状不在新批次里则顺延选中第一个 */
   const handleRandomize = () => {
     const next = randomizeAvatarBatch({ currentColor: color });
@@ -579,17 +600,20 @@ export const AgentOnboardingPanel = ({
         }
 
         /*
-         * 不选模板时，保留克隆过来的人设正文，只改名字与简介。
+         * 克隆来的 bot 且没选模板时，保留继承来的人设正文，只改名字与简介。
          *
-         * 复制来源下拉里已经没有「不复制」这一项，所以走到这里的新 bot 都是
-         * 某个已有 bot 的副本 —— 连人设一起继承。如果这里再生成一份通用
-         * SOUL 覆盖上去，等于把刚复制来的人设当场抹掉，用户只填了个名字
-         * 却丢了调教结果。
+         * 克隆会把来源 bot 的 SOUL 一起带过来。若这里再生成一份通用 SOUL
+         * 覆盖上去，等于把刚复制来的人设当场抹掉 —— 用户只填了个名字，
+         * 却丢了来源 bot 调教好的人设。
          *
-         * 选了模板则相反：模板的全部意义就是给一套新人设，该覆盖。
+         * 两种情况不需要保留：
+         *   - 空白创建：本来就没有可继承的人设，读了也是空，白等一次命令；
+         *   - 选了模板：模板的全部意义就是给一套新人设，该覆盖。
          */
+        const shouldPreserveSoul = !pendingSetup.template
+          && Boolean(runtimeRef.current.cloneValue);
         let existingSoul = "";
-        if (!pendingSetup.template) {
+        if (shouldPreserveSoul) {
           try {
             const read = await execDebugCommand(
               targetBotId,
@@ -637,9 +661,22 @@ export const AgentOnboardingPanel = ({
         });
         if (cancelled()) return;
 
-        // 非阻断步骤失败：不挡流程，落个提示让用户知道去哪补
+        /*
+         * 有非阻断步骤失败时，停在清单页让用户看清哪几步红了。
+         *
+         * 原先是「设一下提示就立刻 onCreated()」，可 onCreated 会切页面 ——
+         * 提示所在的界面当场被卸载，那行字一帧都没显示出来。结果用户看到
+         * 的是「创建成功」，进去却发现技能没装、定时任务是空的，完全不知道
+         * 中间失败过。技能安装依赖沙箱里的 curl/tar/acli，失败并不罕见，
+         * 这个反馈必须让人看见。
+         *
+         * 清单本身已经标了每步的红叉与原因，用户可以据此决定去技能页还是
+         * 定时任务页补，点「完成」再走。
+         */
         if (result.failures.length > 0) {
           setPartialFailureCount(result.failures.length);
+          setCreatedBotId(targetBotId);
+          return;
         }
         runtimeRef.current.onCreated(targetBotId);
       } catch (error) {
@@ -668,6 +705,10 @@ export const AgentOnboardingPanel = ({
       <CreatingLoadingView
         errorMessage={fatalError}
         steps={steps}
+        partialFailureCount={partialFailureCount}
+        onContinue={createdBotId
+          ? () => runtimeRef.current.onCreated(createdBotId)
+          : undefined}
       />
     );
   }
@@ -776,7 +817,7 @@ export const AgentOnboardingPanel = ({
                     className="text-left text-[12px] font-medium text-black/55"
                     htmlFor="lv-onboarding-clone"
                   >
-                    {t("从其他 Bot 复制")}
+                    {t("创建方式")}
                   </label>
                   {/* 问号：继承/不继承的差异只在用户真正好奇时才需要占版面 */}
                   <span className="group relative inline-flex">
@@ -788,28 +829,55 @@ export const AgentOnboardingPanel = ({
                       role="tooltip"
                       className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-[264px] -translate-x-1/2 rounded-[6px] bg-[#1F2329] px-3 py-2.5 text-left text-[11px] leading-[17px] text-white shadow-[0_8px_28px_rgba(15,23,42,0.18)] group-hover:block"
                     >
-                      <span className="block">
-                        {t("继承模型、人设、技能、用户偏好和长期记忆")}
-                      </span>
-                      <span className="mt-1.5 block text-white/55">
-                        {t("不继承当前对话、历史会话、定时任务、运行状态或通道连接")}
-                      </span>
+                      {/* 提示必须跟着当前选择变 —— 选了空白创建还说「继承人设」是错的 */}
+                      {isBlankCreate ? (
+                        <>
+                          <span className="block">
+                            {t("仅继承主 Bot 当前主模型及其 Provider 凭据")}
+                          </span>
+                          <span className="mt-1.5 block text-white/55">
+                            {t("不继承备用模型、人设、记忆、Skills、通道和定时任务")}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="block">
+                            {t("继承模型、人设、技能、用户偏好和长期记忆")}
+                          </span>
+                          <span className="mt-1.5 block text-white/55">
+                            {t("不继承当前对话、历史会话、定时任务、运行状态或通道连接")}
+                          </span>
+                        </>
+                      )}
                     </span>
                   </span>
                 </div>
 
-                <Select value={cloneOptions.value} onValueChange={cloneOptions.onChange}>
+                <Select
+                  value={cloneOptions.value || BLANK_CREATE_VALUE}
+                  onValueChange={(next) => cloneOptions.onChange(
+                    // 哨兵值还原成空串：Radix Select 不接受空串作为 item value
+                    next === BLANK_CREATE_VALUE ? "" : next,
+                  )}
+                >
                   <SelectTrigger
                     id="lv-onboarding-clone"
                     className="mt-1.5 h-10 w-full rounded-[6px] border-black/[0.09] bg-white px-3 text-[13px] text-black/[0.85] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-black/20 focus:border-black/30"
                   >
-                    <SelectValue placeholder={t("选择要复制的 Bot")} />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper" className="max-h-[260px]">
+                    {/* 默认项排最前 */}
+                    <SelectItem value={BLANK_CREATE_VALUE} textValue={t("空白创建")}>
+                      {t("空白创建")}
+                    </SelectItem>
+                    {cloneOptions.choices.length > 0 ? <SelectSeparator /> : null}
                     {cloneOptions.choices.map((choice) => (
-                      <SelectItem key={choice.id} value={choice.id} textValue={choice.label}>
+                      <SelectItem key={choice.id} value={choice.id} textValue={t("复制 {{name}}", { name: choice.label })}>
                         <span className="flex min-w-0 items-center gap-2">
-                          <span className="min-w-0 truncate">{choice.label}</span>
+                          <span className="min-w-0 truncate">
+                            {t("复制 {{name}}", { name: choice.label })}
+                          </span>
                           {choice.isDefault ? (
                             <span className="shrink-0 rounded-[3px] bg-black/[0.06] px-1.5 py-px text-[10px] font-medium text-black/45">
                               {t("主 Bot")}
