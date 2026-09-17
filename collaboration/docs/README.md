@@ -53,6 +53,11 @@ upsert revision 或假事务掩盖失败。迁移、status、verify 与 serve �
 旧 50 语句账本、已执行首语句的 hash、空失败语句、单一 0 行首表。执行后必须回读为
 empty；任何业务数据、附加表、revision 偏差或未知中间状态都拒绝恢复。
 
+严格 MySQL/TDSQL schema audit 同时校验字段定义与物理列序。已发布的 Computer v2 增量迁移
+曾把 `kind`、`provider_instance_id`、`desired_state` 追加到表尾；修复只能通过新的 forward
+migration 将其依次移动到 `name` 后，禁止改写旧 migration。SQLite 的 Computer v2 migration
+通过重建表已经具有目标列序，不需要额外 no-op 版本。
+
 ## 验证
 
 行为变更至少运行 `go test ./...` 与 `go vet ./...`。修改数据库模型或 OpenAPI 时，必须
