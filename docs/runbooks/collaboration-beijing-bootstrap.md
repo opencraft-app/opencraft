@@ -38,7 +38,8 @@
 
 1. foundation 收敛后，以 `BOOTSTRAP_PHASE=runtime` 和同一 source/image digest 重跑流水线。
 2. Dry-run 必须显示 bootstrap 幂等；人工批准后流水线从 gitops branch 读取 deploy root，运行一次性
-   `database migrate` Job 和只读 `database verify` Job。
+   `database migrate` Job 和只读 `database verify` Job。两个 Job 必须使用启动参数中同一个
+   digest-pinned `COLLABORATION_IMAGE`；verify 不得读取 foundation platform 中的旧镜像。
 3. 两个 Job 成功后才允许生成 runtime GitOps MR。MR 将 active catalog 切换到 runtime sourcePath，
    不保留 migration Job。
 4. 合入后分别记录 Argo revision、Deployment imageID、`Synced/Healthy`、Pod Ready、Service endpoint

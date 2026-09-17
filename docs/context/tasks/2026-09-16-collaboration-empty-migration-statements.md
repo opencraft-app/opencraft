@@ -14,7 +14,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-17
 review_due: 2026-12-15
-revision: 1.2.0
+revision: 1.3.0
 precedence: task
 derived: false
 ---
@@ -41,6 +41,9 @@ derived: false
 - Runtime bootstrap #13 已完成空基线恢复和全部 migration，但严格 MySQL schema audit 报
   `DATABASE_SCHEMA_MISMATCH`：Computer v2 三个新增字段被旧 migration 追加到表尾，而当前
   Ent/PhysicalSchema 要求它们依次位于 `name` 之后。
+- Runtime bootstrap #14 的 migration Job 使用候选 digest `e568ceff…` 成功写入第 10 个 revision；
+  随后的 readiness Job 却从 foundation GitOps platform 读取旧 digest `7b461b…`，旧程序不认识
+  新 revision 并误报 `DATABASE_MIGRATION_UNSAFE`。数据库无需重建，Runtime GitOps MR 未创建。
 
 ## interface_refs / data_structure_refs
 
@@ -58,6 +61,8 @@ derived: false
 - 新增 TDSQL source/runtime 与派生 MySQL forward migration，按
   `name → kind → provider_instance_id → desired_state` 重排列；SQLite 的 Computer v2 重建表
   已具备目标列序，因此不新增 SQLite DDL。
+- `service-command` readiness 支持显式、digest-pinned image override；migration 和 readiness
+  必须使用同一候选镜像。普通 SQL verifier 不接受该 override。
 
 ## affected_paths
 
@@ -74,6 +79,10 @@ derived: false
 - `collaboration/migrations/tdsql/20260917040000_computer_v2_column_order.sql`
 - `collaboration/migrations/mysql/20260917040000_computer_v2_column_order.sql`
 - `collaboration/migrations/released.lock.json`
+- `.ci/runtime/gates/db_contract_verifier.py`
+- `.ci/runtime/contracts/release_plan.py`
+- `.ci/runtime/gates/db.py`
+- `.ci/collaboration-bootstrap.yml`
 
 ## evidence
 
@@ -119,14 +128,23 @@ derived: false
 - 完整 `go test -p 2 ./...` 与 `go test -race -p 2 ./...` 均通过 1134 项；`go vet ./...`、
   Collaboration guard、generated/migration/OpenAPI/双方言 verify、可信 release lock 对账、
   密钥扫描和全新 SQLite `migrate → status → verify` 均通过。
+- Readiness 候选镜像修复 RED：verifier 拒绝 `--image-override`；bootstrap 只把候选 digest 传给
+  migration；通用北京 DB gate 的 readiness 命令缺少候选 digest。GREEN：显式 override 优先于
+  stale deploy platform，bootstrap 两个 Job 各传一次同一 digest，通用 gate 仅为
+  `service-command` readiness 携带候选镜像。
+- 候选镜像修复聚焦 Collaboration delivery 14 项、DB verifier 25 项、DB gate 3 项、release gate
+  21 项全部通过；完整 CI runtime 566 项、materialized smoke、Stream YAML/guard 解析与 diff 检查通过。
 
 ## decisions
 
 - 在运行时规范化 Atlas statements，不改写已发布 migration 字节。
 - dirty 恢复与代码修复分离：先产出新镜像，再对空库残留做一次性受控恢复。
 - Computer v2 列序漂移通过新 migration 前向收敛；SQLite 已符合规格，不制造无语义 no-op migration。
+- 候选镜像迁移和 readiness 是一个不可拆分的 DB gate；不得在 active catalog 尚未切换时让
+  readiness 回退读取 foundation 的旧 workload image。
 
 ## handoff
 
-Recovery 已完成且数据库空基线已回读确认。Runtime bootstrap #13 在严格 schema audit 处失败，
-Runtime 未发布、GitOps MR 未创建；待列序 forward migration 通过完整门禁并产出新镜像后重试。
+Recovery 和 Computer v2 forward migration 已完成。Runtime bootstrap #14 的 migration 已成功，
+readiness 因旧镜像误判而 fail closed；Runtime 未发布、GitOps MR 未创建，待同 digest readiness
+修复合入后以候选 source/image 重新执行受控 Runtime bootstrap。
