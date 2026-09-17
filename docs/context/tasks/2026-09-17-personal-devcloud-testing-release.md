@@ -40,6 +40,10 @@
 
 - `argocd/services/cloudladdergateway/tkexgz/`
 - `argocd/services/cloudladdergateway/tkexsg/`
+- `.ci/cloudladdergateway.yml`
+- `.ci/runtime/gitops/image_pin.py`
+- `.ci/runtime/pin_image_to_gitops.sh`
+- `.ci/templates/service-release.yml`
 - `.ci/runtime/tests/gitops_tests/test_clgateway_developer_routes.py`
 - `docs/engineering/domains/release-gitops.md`
 
@@ -61,10 +65,16 @@
 
 - `cloudladdergateway-tkexgz` 与 `cloudladdergateway-tkexsg` 在 `gitops@b426d882` 均报：namespaced mode 不能管理 cluster-level Namespace。
 - 发布前 TKEx prod/staging/testing 都仍运行旧 digest `sha256:52ce3503...`，尚未发生同步。
+- CloudLadder 自动投影曾把 primary/staging image pin 一并改为 testing 新镜像；MR `!4147` 已在
+  Argo Sync 前恢复 3 个生产期望态文件，最新 GitOps 相对发布前基线只剩 testing 文件差异。
+- 源码发布链增加 `IMAGE_PIN_VARIANT=testing`，后续 CloudLadder master 构建只更新 testing platform
+  env，避免再次污染 production/staging 期望态。
 
 ## risks
 
 - CloudLadder App 同时包含生产与 testing 资源：只允许 resource-scoped dry-run/sync，出现非 testing 资源立即停止。
+- CloudLadder 发布目录同时包含 primary/staging/testing platform env：流水线必须显式选择 testing
+  variant；默认 `all` 只保留给其他需要完整变体晋级的服务。
 - Lease 改存 workload namespace：使用 testing 专用 ServiceAccount、仅 `leases` 的 `get/create/update` 权限和专用 name prefix 保持隔离。
 - 回滚：精确把 testing StatefulSetPlus 和 RBAC 恢复到发布前 revision；不触碰生产对象。
 
