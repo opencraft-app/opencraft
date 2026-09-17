@@ -19,20 +19,26 @@ import { getHermesProfileRootCommand } from "@/lib/hermes-agent-command";
 import { buildCreateCommand, shellQuote, type CreateCronJobInput } from "@/lib/hermes-cron-client";
 import { buildHermesSoulWriteCommand } from "@/pages/marketing/agent-buddy-command";
 import { buildGithubSkillInstallCommand } from "@/lib/hermes-skills-client";
+import { buildProfileMetaWriteCommand } from "@/lib/hermes-profile-meta";
 import { buildSkillsshInstallCommand } from "@/pages/marketing/skills-demo/skill-registries";
 import { buildInstallSkillCommand } from "@/pages/marketing/agent-experts-panel";
 import type { AgentTemplate } from "@/pages/marketing/agent-demo-templates";
 
-/** 用户在引导表单里填的资料 */
+/**
+ * 用户在引导表单里填的资料。
+ *
+ * 只有名字与描述 —— 对齐 hermes 的 profile.yaml（display_name /
+ * description / description_auto），它没有 tags 字段。标签要么塞
+ * SOUL.md（污染模型上下文、迫使整体覆盖），要么塞 ui_meta（模型读不到，
+ * 只是装饰），两条路都不划算，故移除。
+ */
 export interface BuddyProfileInput {
   name: string;
-  /** 逗号/顿号分隔的标签，可为空 */
-  tags: string;
   /** 描述，可为空 */
   description: string;
 }
 
-export type SetupStepKind = "soul" | "user-profile" | "skill" | "cron";
+export type SetupStepKind = "soul" | "profile-meta" | "user-profile" | "skill" | "cron";
 
 export interface SetupStep {
   kind: SetupStepKind;
@@ -58,19 +64,14 @@ export const SKILL_STEP_TIMEOUT_MS = 120_000;
 /** cron 创建 / USER.md 写入：短命令 */
 export const QUICK_STEP_TIMEOUT_MS = 60_000;
 
-/** 标签字符串 → 数组（支持「、」「,」「，」三种分隔） */
-export const parseBuddyTags = (tags: string): string[] => (
-  tags
-    .split(/[、,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-);
-
 /**
  * 拼装 SOUL.md 的人设正文。
  *
- * 模板存在时以模板的 instructions 为骨架，再把用户填的描述/标签作为补充约束，
+ * 模板存在时以模板的 instructions 为骨架，再把用户填的描述作为补充约束，
  * 让「用户自定义」不会被模板整段覆盖。
+ *
+ * ⚠️ 这是**新建**语义，会产出完整正文。编辑既有 bot 的资料时不要走这里，
+ * 否则会冲掉用户在对话里调教出来的人设 —— 用 updateSoulMetadataFields。
  */
 export const buildBuddySoulContent = (
   profile: BuddyProfileInput,
@@ -87,12 +88,7 @@ export const buildBuddySoulContent = (
     sections.push(`## 用户期望\n${description}`);
   }
 
-  const tags = parseBuddyTags(profile.tags);
-  if (tags.length > 0) {
-    sections.push(`## 关注领域\n${tags.map((tag) => `- ${tag}`).join("\n")}`);
-  }
-
-  // 三者都空时给一句兜底，避免写出空的 ## Content
+  // 两者都空时给一句兜底，避免写出空的 ## Content
   if (sections.length === 0) {
     sections.push("你是我的智能伙伴，帮助我处理日常任务。回答简洁直接，先给结论再给理由。");
   }
@@ -171,15 +167,77 @@ export const readSoulField = (markdown: string, field: string): string | null =>
   return null;
 };
 
-/** 从 SOUL markdown 还原资料卡所需的全部字段 */
+/**
+ * 从 SOUL markdown 还原资料卡所需的字段。
+ *
+ * avatar 仍在读 —— 存量用户的 SOUL 里可能有引导早期版本写入的
+ * `LightVela-Avatar`。新写入已改到 profile.yaml 的 ui_meta，这里
+ * 保留读取只为兼容既有数据（见 hermes-profile-meta.ts 的说明）。
+ */
 export const parseBuddyProfileFromSoul = (markdown: string) => ({
   name: readSoulField(markdown, "Name"),
   summary: readSoulField(markdown, "Summary"),
-  tags: readSoulField(markdown, SOUL_TAGS_FIELD),
   avatar: parseAvatarField(readSoulField(markdown, SOUL_AVATAR_FIELD)),
 });
 
-/** 生成 SOUL.md 的完整 markdown（含标签 / 头像自定义字段） */
+/**
+ * 在既有 SOUL markdown 上**只更新元数据字段**，正文原样保留。
+ *
+ * 为什么必须有这个函数：
+ *   buildBuddySoulMarkdown 是**新建**语义 —— 它用 buildBuddySoulContent
+ *   重建整个正文。用在「编辑资料」场景上会把用户在对话里调教出来的人设
+ *   整段冲掉，而 hermes 的原则恰恰相反（见 hermes_cli/config.py 的
+ *   _ensure_default_soul_md：「A SOUL.md the user actually customized is
+ *   never touched」，用户多打一个字符它就再也不动这个文件）。
+ *
+ * 所以编辑场景走这里：认 `## ` 之前为元数据区，逐字段替换 / 插入 / 删除，
+ * 正文一个字节都不碰。
+ *
+ * @param fields 值为 undefined 表示不改该字段；空串表示删除该字段行
+ */
+export const updateSoulMetadataFields = (
+  markdown: string,
+  fields: Record<string, string | undefined>,
+): string => {
+  const entries = Object.entries(fields).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  if (entries.length === 0) return markdown;
+
+  const lines = markdown.split(/\r?\n/);
+  // 元数据区边界：第一个 `## ` 小节之前
+  let boundary = lines.findIndex((line) => line.startsWith("## "));
+  if (boundary < 0) boundary = lines.length;
+
+  for (const [field, rawValue] of entries) {
+    const value = rawValue.trim();
+    const prefix = `${field}:`;
+    const at = lines.findIndex((line, index) => index < boundary && line.startsWith(prefix));
+
+    if (at >= 0) {
+      if (value) {
+        lines[at] = `${prefix} ${value}`;
+      } else {
+        // 空值删除整行，并同步收缩边界，避免后续字段定位错位
+        lines.splice(at, 1);
+        boundary -= 1;
+      }
+      continue;
+    }
+    if (!value) continue; // 本来没有、也不要求写入
+
+    // 新字段插在元数据区末尾（`## ` 前的空行之前）
+    const insertAt = boundary > 0 && lines[boundary - 1]?.trim() === ""
+      ? boundary - 1
+      : boundary;
+    lines.splice(insertAt, 0, `${prefix} ${value}`);
+    boundary += 1;
+  }
+
+  return lines.join("\n");
+};
+
+/** 生成 SOUL.md 的完整 markdown（新建场景；编辑请用 updateSoulMetadataFields） */
 export const buildBuddySoulMarkdown = (
   profile: BuddyProfileInput,
   template: AgentTemplate | undefined,
@@ -193,7 +251,6 @@ export const buildBuddySoulMarkdown = (
     content: buildBuddySoulContent(profile, template),
   });
   return injectSoulMetadata(base, {
-    [SOUL_TAGS_FIELD]: profile.tags.trim() || undefined,
     [SOUL_AVATAR_FIELD]: avatar ? serializeAvatar(avatar.shapeId, avatar.color) : undefined,
   });
 };
@@ -301,19 +358,45 @@ export const buildBuddySetupPlan = (params: {
   profile: BuddyProfileInput;
   template?: AgentTemplate;
   profileId?: string;
-  /** 几何体头像，写入 SOUL 自定义字段 */
+  /** 几何体头像，写入 profile.yaml 的 ui_meta */
   avatar?: { shapeId: string; color: string };
   /** 注入时间戳，便于测试与备份命名 */
   timestamp: string;
+  /**
+   * 编辑模式：只更新 SOUL 的元数据字段，正文原样保留。
+   *
+   * 新建时正文由模板/描述生成；编辑既有 bot 时**必须**开启，否则会冲掉
+   * 用户在对话里调教出来的人设（hermes 的原则是用户改过的 SOUL 永不覆盖，
+   * 见 hermes_cli/config.py 的 _ensure_default_soul_md）。
+   * 开启时需提供 existingSoul。
+   */
+  preserveSoulContent?: boolean;
+  /** 当前 SOUL.md 原文，preserveSoulContent 为真时必传 */
+  existingSoul?: string;
 }): SetupStep[] => {
-  const { profile, template, profileId = "main", avatar, timestamp } = params;
+  const {
+    profile, template, profileId = "main", avatar, timestamp,
+    preserveSoulContent = false, existingSoul,
+  } = params;
   const steps: SetupStep[] = [];
 
-  // 1. SOUL.md —— 名字 / 描述 / 标签 / 头像 / 人设
-  const soulMarkdown = buildBuddySoulMarkdown(profile, template, timestamp, avatar);
+  // 1. SOUL.md —— 名字 / 描述 / 人设
+  //    编辑模式只改元数据行；新建模式生成完整文件
+  const soulMarkdown = preserveSoulContent && existingSoul
+    ? updateSoulMetadataFields(existingSoul, {
+      Name: profile.name.trim() || undefined,
+      Summary: profile.description.trim() || template?.description,
+    })
+    : buildBuddySoulMarkdown(profile, template, timestamp, avatar);
   steps.push({
     kind: "soul",
-    label: "正在写入智能伙伴人设",
+    /*
+     * 文案跟着实际行为走：保留模式只改 Name / Summary 两行元数据，
+     * 说成「写入人设」会让用户以为人设被重写了（实际没有）。
+     */
+    label: preserveSoulContent && existingSoul
+      ? "正在更新 Bot 名称与简介"
+      : "正在写入 Bot 人设",
     command: buildHermesSoulWriteCommand(
       encodeBase64(soulMarkdown),
       timestamp,
@@ -321,6 +404,29 @@ export const buildBuddySetupPlan = (params: {
     ),
     timeoutMs: SOUL_STEP_TIMEOUT_MS,
     required: true,
+  });
+
+  /*
+   * 2. profile.yaml —— 展示名 / 描述 / 头像
+   *
+   * 这是 hermes 的正统元数据落点（display_name / description / ui_meta），
+   * 与 SOUL.md 物理分离：对话调教改 SOUL 正文，表单改 profile.yaml，
+   * 两者不共享文件，从根上不会互相覆盖。
+   *
+   * required: false —— 写失败不该阻断引导，SOUL 里已有同样的名字与描述。
+   */
+  steps.push({
+    kind: "profile-meta",
+    label: "正在保存 Bot 资料",
+    command: buildProfileMetaWriteCommand({
+      displayName: profile.name.trim() || undefined,
+      description: profile.description.trim() || template?.description,
+      // 描述取自模板时标记为自动生成，用户手填则为 false
+      descriptionAuto: !profile.description.trim() && Boolean(template?.description),
+      avatar,
+    }, profileId),
+    timeoutMs: QUICK_STEP_TIMEOUT_MS,
+    required: false,
   });
 
   // 2. USER.md —— 模板预设画像（原「记忆」）

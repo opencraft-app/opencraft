@@ -11,7 +11,7 @@
  * （左上角显示真实名字、资料卡显示旧 demo 名字），已整体替换。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   buildHermesSoulContentReadCommand,
@@ -22,6 +22,11 @@ import {
   DEFAULT_AVATAR_SHAPE,
   type AvatarShapeId,
 } from "@/pages/marketing/agent-avatar-shapes";
+import {
+  EMPTY_PROFILE_META,
+  buildProfileMetaReadCommand,
+  parseProfileMetaOutput,
+} from "@/lib/hermes-profile-meta";
 import { parseBuddyProfileFromSoul } from "@/pages/marketing/agent-buddy-setup";
 import type { SetupExec } from "@/pages/marketing/agent-buddy-setup-runner";
 
@@ -29,8 +34,6 @@ export type BuddyProfile = {
   name: string;
   shapeId: AvatarShapeId;
   color: string;
-  /** 顿号分隔的标签串，空串表示未设置 */
-  tags: string;
   description: string;
 };
 
@@ -93,7 +96,6 @@ export const useBuddyProfile = (params: {
     name: fallbackName,
     shapeId: DEFAULT_AVATAR_SHAPE,
     color: DEFAULT_AVATAR_COLOR,
-    tags: "",
     description: "",
   });
   const [soulExists, setSoulExists] = useState<boolean | null>(cached?.soulExists ?? null);
@@ -130,46 +132,50 @@ export const useBuddyProfile = (params: {
 
     void (async () => {
       try {
-        const result = await exec(
-          botId,
-          buildHermesSoulContentReadCommand(profileId ?? "main"),
-          { timeoutMs: SOUL_READ_TIMEOUT_MS },
-        );
+        /*
+         * 两个来源并行读：
+         *   profile.yaml —— 展示名 / 描述 / 头像（hermes 的正统元数据落点）
+         *   SOUL.md      —— 人设正文，以及存量用户遗留的 Name / Summary / 头像
+         *
+         * profile.yaml 优先：新写入都落在那里。SOUL 只作为存量回落，
+         * 这样既不丢老数据，也不必为了读头像去解析整份人设。
+         */
+        const [metaResult, soulResult] = await Promise.all([
+          exec(botId, buildProfileMetaReadCommand(profileId ?? "main"), {
+            timeoutMs: SOUL_READ_TIMEOUT_MS,
+          }).catch(() => null),
+          exec(botId, buildHermesSoulContentReadCommand(profileId ?? "main"), {
+            timeoutMs: SOUL_READ_TIMEOUT_MS,
+          }),
+        ]);
         if (cancelled) return;
 
-        const parsed = parseHermesSoulContent(result.output || "");
-        if (parsed.status !== "ready") {
-          // missing / too_large / invalid：名字回落 bot.name，其余留空
-          commit(
-            {
-              name: fallbackName,
-              shapeId: DEFAULT_AVATAR_SHAPE,
-              color: DEFAULT_AVATAR_COLOR,
-              tags: "",
-              description: "",
-            },
-            parsed.status === "too_large",
-            false,
-            botId,
-          );
-          return;
-        }
+        const meta = metaResult
+          ? parseProfileMetaOutput(metaResult.output || "")
+          : EMPTY_PROFILE_META;
 
-        const fields = parseBuddyProfileFromSoul(parsed.markdown);
-        const shapeId = fields.avatar && isKnownShape(fields.avatar.shapeId)
-          ? fields.avatar.shapeId
+        const parsed = parseHermesSoulContent(soulResult.output || "");
+        const soulFields = parsed.status === "ready"
+          ? parseBuddyProfileFromSoul(parsed.markdown)
+          : { name: null, summary: null, avatar: null };
+
+        // 头像：profile.yaml 的 ui_meta 优先，回落到 SOUL 的遗留字段
+        const avatar = meta.avatar ?? soulFields.avatar;
+        const shapeId = avatar && isKnownShape(avatar.shapeId)
+          ? avatar.shapeId
           : DEFAULT_AVATAR_SHAPE;
+
         commit(
           {
-            name: fields.name || fallbackName,
+            name: meta.displayName || soulFields.name || fallbackName,
             shapeId,
-            color: fields.avatar?.color || DEFAULT_AVATAR_COLOR,
-            tags: fields.tags ?? "",
-            description: fields.summary ?? "",
+            color: avatar?.color || DEFAULT_AVATAR_COLOR,
+            description: meta.description || soulFields.summary || "",
           },
-          true,
-          // 有 avatar 自定义字段才算走过引导（后端默认 SOUL 不含它）
-          fields.avatar !== null,
+          parsed.status === "ready" || parsed.status === "too_large",
+          // 有头像才算配过 —— 后端建 bot 时会写默认 SOUL.md，
+          // 所以「SOUL 存在」不能代表「用户配过」
+          avatar !== null,
           botId,
         );
       } catch {
@@ -189,5 +195,16 @@ export const useBuddyProfile = (params: {
     return () => { cancelled = true; };
   }, [botId, profileId, fallbackName, exec, reloadToken, commit]);
 
-  return { profile, soulExists, hasBuddyConfig, loading, reload };
+  /*
+   * 必须 memo。
+   *
+   * 这个返回值会被页面塞进 useCallback 的依赖数组（如 handleBuddyCreated），
+   * 每次渲染都返回新对象字面量的话，那些回调的引用也跟着每次渲染变；一旦这类
+   * 回调又出现在某个 effect 的依赖里，那个 effect 就会每渲染一次就 cleanup +
+   * 重跑。创建引导的写配置流程正是这么被反复中断、并重复建 bot 的。
+   */
+  return useMemo(
+    () => ({ profile, soulExists, hasBuddyConfig, loading, reload }),
+    [profile, soulExists, hasBuddyConfig, loading, reload],
+  );
 };

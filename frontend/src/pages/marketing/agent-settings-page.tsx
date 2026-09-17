@@ -2623,7 +2623,37 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const showCreateBotEntry = showHiddenAgentTools;
+  /** 多 bot 创建引导（取代原先的「创建 Bot」弹窗） */
+  const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
+  /** 「从其他 Bot 复制」选中的来源 bot id */
+  const [cloneSourceBotId, setCloneSourceBotId] = useState("");
+
+  /**
+   * 可作为复制来源的 bot。
+   *
+   * 用 visibleBots 而不是 bots：provisioning / deleting 的实例沙箱还没就绪
+   * （或正在销毁），拿它做 clone 源会失败。主 bot 排最前并打角标 —— 它配置
+   * 最全，是多数人想复制的那个。
+   */
+  const cloneSourceChoices = useMemo(
+    () => [...visibleBots]
+      .sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)))
+      .map((bot) => ({
+        id: bot.id,
+        label: resolveAgentDisplayName(bot.name, t),
+        isDefault: Boolean(bot.isDefault),
+      })),
+    [visibleBots, t],
+  );
+  /*
+   * 「新建 Bot」入口。
+   *
+   * 原来跟着 showHiddenAgentTools（需要在控制台敲 show() 才显形）。多 bot
+   * 已经是国内站的正式能力，入口默认放出来即可；是否真能创建仍由
+   * multiBotEnabled（后端 runtime config，国内站默认 true）与
+   * canCreateAdditionalBot（套餐额度）把关，所以这里放开不会绕过限制。
+   */
+  const showCreateBotEntry = true;
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -2902,7 +2932,15 @@ export const AgentSettingsPage = ({
    * 创建失败时不抢错误态 —— 必须让用户看到实例没建起来。
    */
   const earlyOnboardingBotId = requestedCreatingBotId || provisioningBot?.id || "";
-  const earlyOnboardingProfileId = provisioningBot?.profileId ?? "main";
+  /*
+   * 目标 profile。
+   *
+   * 不能回落 "main" —— 那是主 bot 的 profile 根目录（~/.hermes，不带
+   * profiles/ 子路径）。bots 列表未就绪时 provisioningBot 为 null，一旦
+   * 回落就会把新 bot 的人设、描述、头像写进主 bot，多 bot 场景下是串写。
+   * 空串表示「还不知道」，由引导面板等到位再写（见 waitForProfileId）。
+   */
+  const earlyOnboardingProfileId = provisioningBot?.profileId ?? "";
   const showEarlyOnboarding = shouldShowEarlyOnboarding({
     isCreating,
     isModifying,
@@ -2926,7 +2964,6 @@ export const AgentSettingsPage = ({
    * 所以直接按侧边栏自身的渲染条件判断，与加载时序无关。
    * （sdkInstance 是 activeBot 的派生值，且定义在本行之后，这里只看 activeBot。）
    */
-  const hasSidebarLayout = hasAgentSidebarLayout({ isCreating, hasActiveBot: Boolean(activeBot) });
 
   const showBuddyOnboarding = Boolean(activeBot)
     && !isModifying
@@ -2935,8 +2972,21 @@ export const AgentSettingsPage = ({
     && (needsOnboardingByQuery
       || (isActiveBotPendingOnboarding && buddyProfileState.hasBuddyConfig !== true));
 
+  /*
+   * 侧边栏这一帧到底存不存在（决定那三个让位 class 是否套用）。
+   *
+   * 三种情况没有侧边栏：
+   *   - isCreating / 没有 activeBot —— 侧边栏本身不渲染
+   *   - 任一引导态 —— 引导页要全屏居中，左侧导航要等配置完成后才出现，
+   *     否则新用户一进来就面对一堆点不了的入口
+   */
+  const hasSidebarLayout = hasAgentSidebarLayout({
+    isCreating,
+    hasActiveBot: Boolean(activeBot),
+  }) && !showBuddyOnboarding && !showMultiBotOnboarding;
+
   /** 引导完成：立刻收起表单，再刷新资料与列表 */
-  const handleBuddyCreated = useCallback(() => {
+  const handleBuddyCreated = useCallback((createdBotId?: string) => {
     setOnboardingJustFinished(true);
     completeOnboarding();
     if (activeBot) {
@@ -2947,9 +2997,32 @@ export const AgentSettingsPage = ({
     // 创建期引导走的是 URL 上的 botId，此时 activeBot 还不存在（实例仍
     // provisioning），不清这个打标会导致实例就绪后又弹一次引导。
     if (earlyOnboardingBotId) clearPendingOnboarding(earlyOnboardingBotId);
+
+    /*
+     * 切到刚创建的那个 bot。
+     *
+     * 不切的话 activeTabId 还指着创建前那个 bot，用户配置完会停在旧 bot 的
+     * 总览页上，看不到自己刚建的东西。
+     *
+     * 这里同时写 activeTabId 和 URL 的 ?bot=：
+     *   - 新 bot 此刻多半还在 provisioning，会被 visibleBots 过滤掉，光设
+     *     activeTabId 会被那条「指向的 bot 不在列表里就回落第一个」的兜底
+     *     逻辑改回去；
+     *   - 而 requestedBotId（URL）优先级更高，等 refreshBots 把新 bot 带进
+     *     列表后，它会自动把 activeTabId 拉到新 bot 上。
+     */
+    if (createdBotId) {
+      setActiveTabId(createdBotId);
+      setSidebarTab("settings");
+      navigate(
+        getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.overview, createdBotId),
+        { replace: true },
+      );
+    }
+
     buddyProfileState.reload();
     void refreshBots();
-  }, [completeOnboarding, activeBot, earlyOnboardingBotId, buddyProfileState, refreshBots]);
+  }, [completeOnboarding, activeBot, earlyOnboardingBotId, buddyProfileState, refreshBots, navigate]);
 
   const isFirstBotCreation = !activeBot;
   const remainingInstanceBotCount = activeBot
@@ -4137,7 +4210,9 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
+    // 原来这里有 `if (activeBot && !showCreateBotEntry) return;` —— 入口藏在
+    // console reveal 后面时的防御。入口已默认显示，该判断恒为真，故移除；
+    // 真正的闸门是 multiBotEnabled 与 canCreateAdditionalBot。
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -4159,11 +4234,58 @@ export const AgentSettingsPage = ({
       return;
     }
 
+    /*
+     * 多 bot：直接进配置引导，不再先弹一次「创建 Bot」弹窗。
+     *
+     * 弹窗问的名字 + 创建方式，引导页里都有；两者并存会让用户填两次名字。
+     * 实例在引导页点「创建」时才建（见 handleOnboardingCreateBot）——
+     * 必须这样，因为「复制哪个 bot」是用户在引导页里选的。
+     */
     setDirectCreateError(null);
     setCreateBotName("");
-    setCreateBotMode("clone-current");
-    setShowCreateConfirm(true);
+    // 默认选主 Bot —— 它配置最全，复制它出问题最少；没有主 bot 时退回当前
+    setCloneSourceBotId(defaultBot?.id || activeBot?.id || "");
+    setShowMultiBotOnboarding(true);
   };
+
+  /**
+   * 引导页里的「创建」：真正建实例。
+   *
+   * 与 handleConfirmCreate 的区别是不跳 `?creating=` —— 引导面板自己会接着
+   * 显示写配置进度，跳转会让它卸载、配置写到一半断掉。
+   * 返回 profileId 供面板定位写入目标，避免它再去猜。
+   */
+  const handleOnboardingCreateBot = useCallback(async (params: {
+    name: string;
+    sourceBotId: string;
+  }): Promise<{ botId: string; profileId: string } | null> => {
+    if (createLimitMessage) {
+      setDirectCreateError(createLimitMessage);
+      return null;
+    }
+    if (!params.sourceBotId) {
+      setDirectCreateError(t("找不到可克隆的 Bot，请稍后重试。"));
+      return null;
+    }
+    try {
+      const newBot = await addBot({
+        name: params.name,
+        description: undefined,
+        personality: t("默认设定"),
+        personalityEmoji: "✨",
+        intro: "",
+        soulTemplateId: undefined,
+        status: "running",
+        createMode: "clone",
+        sourceBotId: params.sourceBotId,
+      });
+      // 新 bot 还没进 visibleBots（provisioning 会被过滤），所以直接用返回值
+      return { botId: newBot.id, profileId: newBot.profileId || "" };
+    } catch (err) {
+      setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
+      return null;
+    }
+  }, [createLimitMessage, addBot, t]);
 
   const handleConfirmCreate = async () => {
     if (createLimitMessage) {
@@ -4518,8 +4640,11 @@ export const AgentSettingsPage = ({
            * lv-agent-sidebar-header 会把 header 固定成 264px 宽的侧边栏表头
            * （见 styles.css 的 @media min-width:1024px）。没有侧边栏时它会留下
            * 一块孤立的空白竖条，所以按 hasSidebarLayout 决定是否套用。
+           *
+           * 骨架屏期间一并套上 —— 内容区此时已按侧边栏布局排版，header 若还是
+           * 全宽会跟下方的两列对不齐。
            */
-          className={hasSidebarLayout ? "lv-agent-sidebar-header" : undefined}
+          className={hasSidebarLayout || shouldShowDataLoading ? "lv-agent-sidebar-header" : undefined}
           reloadLanguageAfterSwitch
           showDesktopUserMenu={false}
         />
@@ -5097,8 +5222,13 @@ export const AgentSettingsPage = ({
            * lv-agent-sidebar-header 那个 264px 宽的侧边栏表头。没有侧边栏时
            * 用的是普通全宽 header（高度按 lw-app-top-pad 的 96px 算）。
            * header 是 position:fixed，所以内边距本身必须保留。
+           *
+           * 骨架屏期间也套这套：骨架画的就是「侧边栏 + 内容」两列，而它渲染时
+           * bot 还没加载完（hasSidebarLayout 仍是 false）。若不一起套，骨架会
+           * 按 96px 顶距 + 居中窄容器排版，数据到位后再跳成 68px + 左对齐宽
+           * 容器 —— 那一下横竖双向的位移就是加载图跟成品对不齐的原因。
            */
-          hasSidebarLayout && "lv-agent-settings-main",
+          (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main",
         )}
       >
         <section
@@ -5109,7 +5239,7 @@ export const AgentSettingsPage = ({
              * 264px 侧边栏让位。没有侧边栏时沿用会让内容整体偏左，
              * 所以退回 lw-settings-shell 的居中布局。
              */
-            hasSidebarLayout && "lv-agent-settings-shell",
+            (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell",
           )}
         >
           {/* ── Loading 状态 ── */}
@@ -5137,6 +5267,8 @@ export const AgentSettingsPage = ({
                 profileId={earlyOnboardingProfileId}
                 onCreated={handleBuddyCreated}
                 execDebugCommand={repositories.bots.execDebugCommand}
+                /* 预填弹窗里刚填的 bot 名，避免用户重复输入 */
+                initialName={provisioningBot?.name || createBotName}
               />
             </div>
           )}
@@ -5247,7 +5379,16 @@ export const AgentSettingsPage = ({
                 : activeBotDisplayName;
 
               return (
-                <div className="grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]">
+                <div
+                  className={cn(
+                    "grid items-start gap-6",
+                    /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
+                    hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]",
+                  )}
+                >
+                  {/* 引导态隐藏整个侧边栏：新用户先专注建伙伴，
+                      配置完成后导航才出现（避免一进来就面对点不了的入口） */}
+                  {hasSidebarLayout ? (
                   <aside className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated">
                     <div className="lv-agent-profile-wrap">
                       <Popover
@@ -5802,10 +5943,53 @@ export const AgentSettingsPage = ({
                       </div>
                     ) : null}
                   </aside>
+                  ) : null}
 
-                  <section className="lv-agent-settings-content min-w-0 lg:col-start-2">
+                  <section
+                    className={cn(
+                      "lv-agent-settings-content min-w-0",
+                      /* 有侧边栏时占第二列；引导态没有侧边栏，内容自己居中 */
+                      hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]",
+                    )}
+                  >
+                    {/*
+                      多 bot 创建引导刻意放在 activeBot.id 的 key 之外。
+
+                      它拿的是 botId=""（实例点「创建」时才建），跟 activeBot 无关；
+                      而创建过程中 refreshBots 会让新 bot 进入 visibleBots，进而触发
+                      activeTabId 的兜底改写 —— 若跟着那个 key 走，整棵子树会在写配置
+                      的半途重挂载：phase 被重置回 form（用户看到又回了表单），effect
+                      cleanup 还会把 cancelled 置 true，人设/技能/定时任务全都写不进去。
+                    */}
+                    {showMultiBotOnboarding ? (
+                      <div className="_lh-claw-bot-panel">
+                        <div className="_lh-claw-bot-panel__cards min-w-0">
+                          <AgentOnboardingPanel
+                            botId=""
+                            onCreated={(createdBotId) => {
+                              setShowMultiBotOnboarding(false);
+                              // 带上新 bot 的 id，落到它自己的总览页
+                              handleBuddyCreated(createdBotId);
+                            }}
+                            onCreateBot={handleOnboardingCreateBot}
+                            execDebugCommand={repositories.bots.execDebugCommand}
+                            cloneOptions={{
+                              value: cloneSourceBotId,
+                              onChange: setCloneSourceBotId,
+                              /*
+                               * 列出账号下全部 bot，不是只给「当前 / 主 Bot」两个模式 ——
+                               * 在 A bot 页面下想复制 B bot 是很自然的需求。
+                               */
+                              choices: cloneSourceChoices,
+                            }}
+                          />
+                          {directCreateError ? (
+                            <p className="mt-3 text-center text-xs text-[#DC2626]">{directCreateError}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
-                      {/* 未配置人设：主区独占展示配置引导，屏蔽其余所有 section 面板 */}
                       {showBuddyOnboarding ? (
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           <AgentOnboardingPanel
@@ -5813,6 +5997,7 @@ export const AgentSettingsPage = ({
                             profileId={activeBot.profileId ?? "main"}
                             onCreated={handleBuddyCreated}
                             execDebugCommand={repositories.bots.execDebugCommand}
+                            initialName={activeBot.name}
                           />
                         </div>
                       ) : (
@@ -5828,6 +6013,10 @@ export const AgentSettingsPage = ({
                               execDebugCommand={repositories.bots.execDebugCommand}
                               onProfileChanged={buddyProfileState.reload}
                               heroStats={heroStats}
+                              /* 存量用户没配过几何体头像时，资料卡回落
+                                 侧边栏那张插画，避免两处头像不一致 */
+                              hasCustomAvatar={buddyProfileState.hasBuddyConfig === true}
+                              fallbackAvatarUrl={avatarUrl}
                             />
                           )}
                           {activeSection === "channel" && (
@@ -5984,6 +6173,7 @@ export const AgentSettingsPage = ({
                       </Suspense>
                       )}
                     </div>
+                    )}
                   </section>
                 </div>
               );

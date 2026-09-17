@@ -14,8 +14,8 @@ import {
   injectSoulMetadata,
   parseAvatarField,
   parseBuddyProfileFromSoul,
-  parseBuddyTags,
   toCronExpression,
+  updateSoulMetadataFields,
 } from "@/pages/marketing/agent-buddy-setup";
 import { DEMO_TEMPLATES } from "@/pages/marketing/agent-demo-templates";
 
@@ -23,21 +23,6 @@ const template = DEMO_TEMPLATES[0]!;
 /* 带技能的模板 —— 有的模板（如健康管家）刻意不配技能，
    涉及 skill 步骤的断言必须挑一个真的有技能的 */
 const templateWithSkills = DEMO_TEMPLATES.find((item) => item.skills.length > 0)!;
-
-describe("parseBuddyTags", () => {
-  it("splits on all three separators and drops blanks", () => {
-    expect(parseBuddyTags("内容创作、市场分析,行业调研，  ")).toEqual([
-      "内容创作",
-      "市场分析",
-      "行业调研",
-    ]);
-  });
-
-  it("returns an empty array for blank input", () => {
-    expect(parseBuddyTags("")).toEqual([]);
-    expect(parseBuddyTags("  、 ,")).toEqual([]);
-  });
-});
 
 describe("buildBuddySoulSlug", () => {
   it("slugifies ASCII names", () => {
@@ -52,22 +37,28 @@ describe("buildBuddySoulSlug", () => {
 
 describe("buildBuddySoulContent", () => {
   it("keeps the template instructions as the backbone", () => {
-    const content = buildBuddySoulContent({ name: "x", tags: "", description: "" }, template);
+    const content = buildBuddySoulContent({ name: "x", description: "" }, template);
     expect(content).toContain(template.instructions.trim());
   });
 
-  it("appends user description and tags as extra sections without dropping the template", () => {
+  it("appends the user description without dropping the template", () => {
     const content = buildBuddySoulContent(
-      { name: "x", tags: "内容创作、市场分析", description: "帮我盯竞品" },
+      { name: "x", description: "帮我盯竞品" },
       template,
     );
     expect(content).toContain(template.instructions.trim());
     expect(content).toContain("## 用户期望\n帮我盯竞品");
-    expect(content).toContain("## 关注领域\n- 内容创作\n- 市场分析");
+  });
+
+  it("no longer emits a tags section", () => {
+    // 标签已移除 —— hermes 的 profile.yaml 没有 tags 字段，
+    // 塞进 SOUL 只会白占模型上下文
+    const content = buildBuddySoulContent({ name: "x", description: "帮我盯竞品" }, template);
+    expect(content).not.toContain("## 关注领域");
   });
 
   it("never produces empty content when everything is blank", () => {
-    const content = buildBuddySoulContent({ name: "x", tags: "", description: "" }, undefined);
+    const content = buildBuddySoulContent({ name: "x", description: "" }, undefined);
     expect(content.trim().length).toBeGreaterThan(0);
   });
 });
@@ -75,7 +66,7 @@ describe("buildBuddySoulContent", () => {
 describe("buildBuddySoulMarkdown", () => {
   it("emits the canonical SOUL sections", () => {
     const markdown = buildBuddySoulMarkdown(
-      { name: "我的 Hermes", tags: "", description: "帮我处理日常" },
+      { name: "我的 Hermes", description: "帮我处理日常" },
       template,
       "20260914",
     );
@@ -87,7 +78,7 @@ describe("buildBuddySoulMarkdown", () => {
 
   it("borrows the template description when the user left it blank", () => {
     const markdown = buildBuddySoulMarkdown(
-      { name: "n", tags: "", description: "" },
+      { name: "n", description: "" },
       template,
       "20260914",
     );
@@ -171,14 +162,91 @@ describe("encodeBase64", () => {
   });
 });
 
-describe("SOUL custom metadata (tags + avatar)", () => {
-  const profile = { name: "我的 Hermes", tags: "内容创作、市场分析", description: "帮我处理日常" };
+describe("updateSoulMetadataFields", () => {
+  /** 模拟一个用户在对话里调教过的 SOUL：正文是他自己写的人设 */
+  const userAuthored = [
+    "# Soul",
+    "Slug: buddy-old",
+    "Name: 旧名字",
+    "Summary: 旧描述",
+    "",
+    "## Content",
+    "你是我的私人助理，说话要像老朋友一样随意。",
+    "",
+    "## 我的偏好",
+    "- 不要用敬语",
+    "- 回答先给结论",
+  ].join("\n");
+
+  it("never touches the body — the whole point of this function", () => {
+    const next = updateSoulMetadataFields(userAuthored, {
+      Name: "新名字",
+      Summary: "新描述",
+    });
+    // 正文逐行原样保留，这是防止「编辑资料冲掉对话调教人设」的核心保证
+    expect(next).toContain("你是我的私人助理，说话要像老朋友一样随意。");
+    expect(next).toContain("## 我的偏好");
+    expect(next).toContain("- 不要用敬语");
+    expect(next).toContain("- 回答先给结论");
+  });
+
+  it("replaces existing metadata fields in place", () => {
+    const next = updateSoulMetadataFields(userAuthored, {
+      Name: "新名字",
+      Summary: "新描述",
+    });
+    expect(next).toContain("Name: 新名字");
+    expect(next).toContain("Summary: 新描述");
+    expect(next).not.toContain("Name: 旧名字");
+    expect(next).not.toContain("Summary: 旧描述");
+    // 未指定的字段保持原样
+    expect(next).toContain("Slug: buddy-old");
+  });
+
+  it("inserts a field that does not exist yet, before the body", () => {
+    const withoutSummary = ["# Soul", "Name: n", "", "## Content", "正文"].join("\n");
+    const next = updateSoulMetadataFields(withoutSummary, { Summary: "新描述" });
+    expect(next.indexOf("Summary: 新描述")).toBeLessThan(next.indexOf("## Content"));
+    expect(next).toContain("正文");
+  });
+
+  it("deletes a field when given an empty string", () => {
+    const next = updateSoulMetadataFields(userAuthored, { Summary: "" });
+    expect(next).not.toContain("Summary:");
+    expect(next).toContain("Name: 旧名字");
+    expect(next).toContain("你是我的私人助理，说话要像老朋友一样随意。");
+  });
+
+  it("ignores undefined values so callers can patch selectively", () => {
+    const next = updateSoulMetadataFields(userAuthored, {
+      Name: "新名字",
+      Summary: undefined,
+    });
+    expect(next).toContain("Name: 新名字");
+    expect(next).toContain("Summary: 旧描述");
+  });
+
+  it("does not mistake body lines for metadata", () => {
+    const tricky = [
+      "# Soul",
+      "Name: real",
+      "",
+      "## Content",
+      "Name: 这是正文里的一行，不该被改",
+    ].join("\n");
+    const next = updateSoulMetadataFields(tricky, { Name: "新名字" });
+    expect(next).toContain("Name: 新名字");
+    expect(next).toContain("Name: 这是正文里的一行，不该被改");
+  });
+});
+
+describe("SOUL custom metadata (avatar)", () => {
+  const profile = { name: "我的 Hermes", description: "帮我处理日常" };
   const avatar = { shapeId: "blob", color: "#B7A6F3" };
 
-  it("writes tags and avatar into the metadata block, before ## Content", () => {
+  it("writes the avatar into the metadata block, before ## Content", () => {
     const markdown = buildBuddySoulMarkdown(profile, template, "20260914", avatar);
     const contentIndex = markdown.indexOf("## Content");
-    expect(markdown.indexOf(`${SOUL_TAGS_FIELD}:`)).toBeLessThan(contentIndex);
     expect(markdown.indexOf(`${SOUL_AVATAR_FIELD}:`)).toBeLessThan(contentIndex);
   });
 
@@ -188,17 +256,20 @@ describe("SOUL custom metadata (tags + avatar)", () => {
 
     expect(parsed.name).toBe("我的 Hermes");
     expect(parsed.summary).toBe("帮我处理日常");
-    expect(parsed.tags).toBe("内容创作、市场分析");
     expect(parsed.avatar).toEqual(avatar);
+  });
+
+  it("no longer writes a tags field", () => {
+    const markdown = buildBuddySoulMarkdown(profile, template, "20260914", avatar);
+    expect(markdown).not.toContain(SOUL_TAGS_FIELD);
   });
 
   it("omits empty fields instead of writing blank lines", () => {
     const markdown = buildBuddySoulMarkdown(
-      { name: "n", tags: "", description: "" },
+      { name: "n", description: "" },
       undefined,
       "20260914",
     );
-    expect(markdown).not.toContain(SOUL_TAGS_FIELD);
     expect(markdown).not.toContain(SOUL_AVATAR_FIELD);
   });
 
@@ -209,12 +280,10 @@ describe("SOUL custom metadata (tags + avatar)", () => {
       "Name: real",
       "",
       "## Content",
-      `${SOUL_TAGS_FIELD}: fake`,
       "Name: fake",
     ].join("\n");
     const parsed = parseBuddyProfileFromSoul(markdown);
     expect(parsed.name).toBe("real");
-    expect(parsed.tags).toBeNull();
   });
 
   it("treats a malformed avatar field as absent", () => {
@@ -255,7 +324,7 @@ describe("SOUL custom metadata (tags + avatar)", () => {
 });
 
 describe("buildBuddySetupPlan", () => {
-  const profile = { name: "我的 Hermes", tags: "内容创作", description: "帮我处理日常" };
+  const profile = { name: "我的 Hermes", description: "帮我处理日常" };
 
   it("always writes SOUL first and marks it required", () => {
     const steps = buildBuddySetupPlan({ profile, template, timestamp: "20260914" });
@@ -350,10 +419,44 @@ describe("buildBuddySetupPlan", () => {
     }
   });
 
-  it("produces a SOUL-only plan when no template is chosen", () => {
+  it("writes only identity when no template is chosen", () => {
     const steps = buildBuddySetupPlan({ profile, timestamp: "20260914" });
-    expect(steps).toHaveLength(1);
-    expect(steps[0]!.kind).toBe("soul");
+    // 无模板时不装技能、不建定时任务，只落身份：
+    // SOUL.md（人设，给模型读）+ profile.yaml（展示元数据，给 UI 读）
+    expect(steps.map((step) => step.kind)).toEqual(["soul", "profile-meta"]);
+  });
+
+  it("always persists profile metadata alongside SOUL", () => {
+    const steps = buildBuddySetupPlan({ profile, template, timestamp: "20260914" });
+    const meta = steps.find((step) => step.kind === "profile-meta");
+    expect(meta).toBeDefined();
+    // 名字与描述必须落到 profile.yaml —— 只写 SOUL 会让改头像被迫整体覆盖
+    expect(meta!.command).toContain("write_profile_meta");
+    // 失败不该阻断引导：SOUL 里已有同样的名字与描述
+    expect(meta!.required).toBe(false);
+  });
+
+  it("keeps the existing body when editing an already customized SOUL", () => {
+    const existing = [
+      "# Soul",
+      "Name: 旧名字",
+      "",
+      "## Content",
+      "用户自己调教出来的人设，绝不能被表单冲掉。",
+    ].join("\n");
+    const steps = buildBuddySetupPlan({
+      profile: { name: "新名字", description: "新描述" },
+      timestamp: "20260914",
+      preserveSoulContent: true,
+      existingSoul: existing,
+    });
+    const soul = steps.find((step) => step.kind === "soul")!;
+    // 命令里的 SOUL 内容是 base64，解出来验证正文还在
+    const payload = soul.command.split("\n").find((line) => line.length > 80 && /^[A-Za-z0-9+/=]+$/.test(line));
+    expect(payload).toBeDefined();
+    const decoded = Buffer.from(payload!, "base64").toString("utf-8");
+    expect(decoded).toContain("用户自己调教出来的人设，绝不能被表单冲掉。");
+    expect(decoded).toContain("Name: 新名字");
   });
 
   it("gives every step a positive timeout", () => {

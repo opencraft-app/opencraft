@@ -32,17 +32,24 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
-  it("gates additional Bot creation on console reveal while preserving initial Agent creation", () => {
+  it("shows the additional-Bot entry by default, still gated by flag and quota", () => {
     const page = readPageSource();
-    expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
+    /*
+     * 多 bot 已是国内站正式能力，入口不再藏在 console 的 show() 后面。
+     * 但「能不能真的创建」仍由两道闸门把关，这两道必须保留：
+     *   multiBotEnabled        —— 后端 runtime config（国内站默认 true）
+     *   canCreateAdditionalBot —— 套餐额度
+     * 所以这里断言「入口默认放开 + 两道闸门仍在」，而不是只把断言删掉。
+     */
+    expect(page).toContain("const showCreateBotEntry = true;");
     expect(page).toContain("{showCreateBotEntry && multiBotEnabled && (");
     expect(page).toContain("content={createLimitMessage}");
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
-    expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
     expect(page).not.toContain("const canCreateBot = multiBotEnabled");
+    // showHiddenAgentTools 仍用于其它隐藏工具，不应被顺手删掉
+    expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
   });
 
   it("opens a name-only dialog before creating the first Bot as blank", () => {
@@ -313,7 +320,13 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
     expect(page).toContain("const MAX_BOT_NAME_LENGTH = 60");
-    expect(page.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
+    /*
+     * 这条原本硬编码 `toHaveLength(2)`，但 setCreateBotName("") 的调用点数量
+     * 会随创建入口增减而变（master 合入订阅回跳后就变成 3 处），数量本身
+     * 不是它要守的东西。真正要守的是「打开弹窗时不预填默认名，让用户自己取」，
+     * 所以改成断言至少存在清空调用 + 不存在预填写法。
+     */
+    expect(page.match(/setCreateBotName\(""\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(page).not.toContain('setCreateBotName(t("新 Bot"))');
     expect(page).toContain('placeholder={t("请输入 Bot 名称")}');
     expect(page).toContain("maxLength={MAX_BOT_NAME_LENGTH}");

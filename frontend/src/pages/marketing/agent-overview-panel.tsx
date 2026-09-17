@@ -15,9 +15,9 @@
 
 import {
   Activity,
-  ArrowRight,
   ChevronRight,
   Newspaper,
+  RefreshCw,
   Wallet,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -28,7 +28,11 @@ import { ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
-import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
+import {
+  AVATAR_SHAPES,
+  GeometricAvatar,
+  randomizeAvatarBatch,
+} from "@/pages/marketing/agent-avatar-shapes";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import type { BuddyProfile } from "@/pages/marketing/agent-buddy-profile";
 import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
@@ -37,10 +41,14 @@ import {
   type SetupExec,
   type SetupStepState,
 } from "@/pages/marketing/agent-buddy-setup-runner";
+import { BUDDY_DESCRIPTION_PLACEHOLDER } from "@/pages/marketing/agent-demo-templates";
 import {
-  BUDDY_DESCRIPTION_PLACEHOLDER,
-  BUDDY_TAGS_PLACEHOLDER,
-} from "@/pages/marketing/agent-demo-templates";
+  buildHermesSoulContentReadCommand,
+  parseHermesSoulContent,
+} from "@/pages/marketing/agent-buddy-command";
+
+/** 读 SOUL 原文的超时，与 agent-buddy-profile 保持一致 */
+const SOUL_READ_TIMEOUT_MS = 30_000;
 
 /** 统一卡片外观：对齐成就 / 自动任务面板 */
 const CARD_CLASS =
@@ -292,10 +300,23 @@ const ProfileEditDialog = ({
 }) => {
   const t = useT();
   const [name, setName] = useState(profile.name);
-  const [tags, setTags] = useState(profile.tags);
   const [description, setDescription] = useState(profile.description);
+  /* 头像：与创建引导同一套交互（形状候选 + 换一批） */
+  const [shapeId, setShapeId] = useState(profile.shapeId);
+  const [color, setColor] = useState(profile.color);
+  const [shapeBatch, setShapeBatch] = useState(() => AVATAR_SHAPES.slice(0, 8));
 
   const canSave = name.trim().length > 0;
+
+  /** 换一批：重抽候选形状 + 换配色；当前形状不在新批次时顺延第一个 */
+  const handleRandomize = () => {
+    const next = randomizeAvatarBatch({ currentColor: color });
+    setShapeBatch(next.shapes);
+    setColor(next.color);
+    if (!next.shapes.some((item) => item.id === shapeId)) {
+      setShapeId(next.shapes[0]!.id);
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -303,8 +324,41 @@ const ProfileEditDialog = ({
         <div className="pr-6">
           <h2 className="text-lg font-semibold leading-7 text-black/[0.92]">{t("编辑资料")}</h2>
           <p className="mt-1 text-[13px] leading-5 text-black/50">
-            {t("修改你的智能伙伴的名字、标签与描述")}
+            {t("修改你的智能伙伴的头像、名字与描述")}
           </p>
+        </div>
+
+        {/* ── 头像：大预览 + 形状候选 + 换一批 ── */}
+        <div className="mt-5 flex flex-col items-center">
+          <GeometricAvatar shapeId={shapeId} color={color} size={72} alive />
+          <div className="mt-3 flex flex-nowrap justify-center gap-2">
+            {shapeBatch.map((shape) => (
+              <button
+                key={shape.id}
+                type="button"
+                aria-label={shape.id}
+                aria-pressed={shape.id === shapeId}
+                onClick={() => setShapeId(shape.id)}
+                className={cn(
+                  // 无边框：几何体本身有形状与配色，方框反而抢视线
+                  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[4px] transition",
+                  shape.id === shapeId
+                    ? "bg-black/[0.06]"
+                    : "hover:bg-black/[0.03]",
+                )}
+              >
+                <GeometricAvatar shapeId={shape.id} color={color} size={24} />
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={handleRandomize}
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-[3px] px-2.5 py-1 text-[13px] font-medium text-black/55 transition hover:bg-black/[0.03] hover:text-black/80"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("换一批")}
+          </button>
         </div>
 
         <div className="mt-5">
@@ -316,20 +370,6 @@ const ProfileEditDialog = ({
             value={name}
             onChange={(event) => setName(event.target.value)}
             className="mt-1 w-full rounded-[3px] border border-black/[0.1] px-3 py-2 text-sm font-medium text-black/[0.88] outline-none transition focus:border-black/25"
-          />
-        </div>
-
-        <div className="mt-4">
-          <label className="block text-[11px] font-medium text-black/40" htmlFor="lv-profile-tags">
-            {t("标签")}
-            <span className="ml-1 text-black/30">{t("（可选）")}</span>
-          </label>
-          <input
-            id="lv-profile-tags"
-            value={tags}
-            placeholder={BUDDY_TAGS_PLACEHOLDER}
-            onChange={(event) => setTags(event.target.value)}
-            className="mt-1 w-full rounded-[3px] border border-black/[0.1] px-3 py-2 text-sm text-black/[0.88] outline-none transition placeholder:text-black/30 focus:border-black/25"
           />
         </div>
 
@@ -359,7 +399,13 @@ const ProfileEditDialog = ({
           <button
             type="button"
             disabled={!canSave}
-            onClick={() => onSave({ ...profile, name: name.trim(), tags, description })}
+            onClick={() => onSave({
+              ...profile,
+              name: name.trim(),
+              description,
+              shapeId,
+              color,
+            })}
             className={cn(
               "rounded-full px-4 py-2 text-sm font-medium transition",
               canSave
@@ -375,28 +421,35 @@ const ProfileEditDialog = ({
   );
 };
 
-/** 智能伙伴资料卡：头像 + 名字（标签紧随右侧）+ 描述；点击整卡可编辑 */
+/**
+ * 智能伙伴资料卡：头像 + 名字 + 描述；点击整卡可编辑。
+ *
+ * 头像有两套来源，按用户是否配过头像切换：
+ *   - 配过（profile.yaml 的 ui_meta 里有几何体）→ 渲染几何体
+ *   - 没配过（存量用户）→ 回落 bot 插画，与侧边栏同源
+ * 否则存量用户会看到资料卡显示默认几何体、侧边栏显示插画，两个头像不一致。
+ */
 const BuddyProfileSection = ({
   profile,
+  hasCustomAvatar,
+  fallbackAvatarUrl,
   onSave,
 }: {
   profile: BuddyProfile;
+  /** 用户是否配过几何体头像 */
+  hasCustomAvatar: boolean;
+  /** 未配过时用的 bot 插画（与侧边栏同一张） */
+  fallbackAvatarUrl: string;
   onSave: (next: BuddyProfile) => void;
 }) => {
   const t = useT();
   const [editOpen, setEditOpen] = useState(false);
 
-  /** 标签支持「、」「,」「，」三种分隔，去空后渲染成胶囊 */
-  const tagList = profile.tags
-    .split(/[、,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
   return (
     <section>
       <SectionTitle
-        title={t("我的智能伙伴")}
-        subtitle={t("这是你当前的智能伙伴资料卡片")}
+        title={t("我的 Bot")}
+        subtitle={t("这是你当前的 Bot 资料卡片")}
       />
 
       <button
@@ -407,29 +460,28 @@ const BuddyProfileSection = ({
           CARD_CLASS,
           // 无描述时整体垂直居中，避免名字偏上；有描述时顶部对齐
           profile.description ? "items-start" : "items-center",
-          "flex w-full gap-4 p-4 text-left transition hover:border-black/[0.12] hover:shadow-[0_10px_32px_rgba(15,23,42,0.07)]",
+          "flex w-full gap-4 p-4 text-left transition hover:border-black/[0.12]",
         )}
       >
-        <GeometricAvatar
-          shapeId={profile.shapeId}
-          color={profile.color}
-          size={64}
-          className="shrink-0"
-        />
+        {hasCustomAvatar || !fallbackAvatarUrl ? (
+          <GeometricAvatar
+            shapeId={profile.shapeId}
+            color={profile.color}
+            size={64}
+            className="shrink-0"
+          />
+        ) : (
+          <img
+            src={fallbackAvatarUrl}
+            alt=""
+            width={64}
+            height={64}
+            className="h-16 w-16 shrink-0 rounded-full object-contain"
+          />
+        )}
         <span className="min-w-0 flex-1">
-          {/* 名字 + 标签同一行，标签用灰底胶囊 */}
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            <span className="text-[15px] font-semibold leading-6 text-black/[0.88]">
-              {profile.name}
-            </span>
-            {tagList.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[11px] font-medium leading-4 text-black/50"
-              >
-                {tag}
-              </span>
-            ))}
+          <span className="block text-[15px] font-semibold leading-6 text-black/[0.88]">
+            {profile.name}
           </span>
 
           {profile.description ? (
@@ -460,7 +512,7 @@ type RecommendedAutomation = {
   id: string;
   name: string;
   summary: string;
-  /** 与自动任务页 AUTOMATION_TEMPLATE_TONES 对齐的图标底色 */
+  /** 与自动任务页 AUTOMATION_TEMPLATE_TONES 对齐的图标颜色（不含底色） */
   iconClass: string;
   icon: ReactNode;
 };
@@ -475,21 +527,21 @@ const DEMO_AUTOMATIONS: RecommendedAutomation[] = [
     id: "stock-info-digest",
     name: "股票信息速递",
     summary: "每天整理你关注的 A股、港股、美股公开信息；只做信息速递，不给买卖建议",
-    iconClass: "bg-[#F8EEF0] text-[#8E4D58]",
+    iconClass: "text-[#8E4D58]",
     icon: <Wallet className="h-[18px] w-[18px]" aria-hidden="true" />,
   },
   {
     id: "calorie-fitness-checkin",
     name: "卡路里与健身记录",
     summary: "每天主动询问饮食、运动、体重和身体感受，做轻量估算和复盘",
-    iconClass: "bg-[#EFF7F2] text-[#4A7A5F]",
+    iconClass: "text-[#4A7A5F]",
     icon: <Activity className="h-[18px] w-[18px]" aria-hidden="true" />,
   },
   {
     id: "news-digest",
     name: "每日 AI 资讯摘要",
     summary: "每天整理 AI 领域的重要动态和关键进展",
-    iconClass: "bg-[#EEF2F8] text-[#556F9A]",
+    iconClass: "text-[#556F9A]",
     icon: <Newspaper className="h-[18px] w-[18px]" aria-hidden="true" />,
   },
 ];
@@ -516,10 +568,9 @@ const RecommendedAutomationsSection = () => {
         )}
       />
 
-      {/* 卡片结构对齐自动任务页的「任务模板」（整卡可点、左侧色块图标、底部箭头式启用），
-          但圆角与底色跟随本页其他板块：白底 + 4px 圆角。
-          同行卡片由 grid 自动等高，卡内用 flex-col + mt-auto 把「启用」压到底部，
-          描述行数多少都不影响按钮位置。 */}
+      {/* 卡片样式对齐「定时任务」tab 的任务模板：无边框、裸图标、hover 变底色。
+          那边已经从「色块图标 + 箭头页脚」改成了这套更轻的写法，两处同名同图标，
+          视觉不该再有差异。整卡可点，点击跳到定时任务页并预选模板。 */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {DEMO_AUTOMATIONS.map((automation) => (
           /* 跳到定时任务页并预选该模板（?template=<id>），由那边弹出创建表单 */
@@ -527,28 +578,17 @@ const RecommendedAutomationsSection = () => {
             key={automation.id}
             to={`${AGENT_SECTION_PATH_BY_ID.automations}?template=${encodeURIComponent(automation.id)}`}
             aria-label={t("启用{{name}}", { name: automation.name })}
-            className={cn(
-              CARD_CLASS,
-              "group flex min-h-[104px] items-stretch gap-3 p-3 text-left transition hover:border-black/[0.12] hover:shadow-[0_10px_32px_rgba(15,23,42,0.07)]",
-            )}
+            className="flex min-h-[64px] items-start gap-2.5 rounded-sm border-0 bg-white p-3 text-left transition hover:bg-black/[0.03]"
           >
-            <span
-              className={cn(
-                "inline-flex h-9 w-9 shrink-0 items-center justify-center self-start rounded-[4px] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)]",
-                automation.iconClass,
-              )}
-            >
+            <span className={cn("mt-0.5 shrink-0", automation.iconClass)}>
               {automation.icon}
             </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="block truncate text-sm font-medium text-black/82">{automation.name}</span>
-              {/* flex-1 吃掉描述与按钮之间的剩余空间，保证按钮贴底 */}
-              <span className="mt-1 flex-1 line-clamp-2 text-xs leading-5 text-black/45">
-                {automation.summary}
+            <span className="flex min-w-0 flex-1 flex-col self-stretch">
+              <span className="min-w-0 truncate text-sm font-medium text-black/82">
+                {automation.name}
               </span>
-              <span className="mt-2 inline-flex h-5 items-center gap-1 text-xs font-medium text-black/55 transition group-hover:text-black/80">
-                {t("启用")}
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              <span className="mt-0.5 block line-clamp-1 text-pretty text-xs leading-4 text-black/45">
+                {automation.summary}
               </span>
             </span>
           </AppLink>
@@ -567,6 +607,8 @@ export const AgentOverviewPanel = ({
   execDebugCommand,
   onProfileChanged,
   heroStats,
+  hasCustomAvatar = false,
+  fallbackAvatarUrl = "",
 }: {
   botId: string;
   profileId?: string;
@@ -577,20 +619,53 @@ export const AgentOverviewPanel = ({
   onProfileChanged: () => void;
   /** 横幅数据（套餐 / 定时任务 / 站点），由页面注入真实值 */
   heroStats: HeroStats;
+  /**
+   * 用户是否配过几何体头像。
+   * false（存量用户）时资料卡回落 bot 插画，与侧边栏保持一致。
+   */
+  hasCustomAvatar?: boolean;
+  /** 未配过头像时使用的插画 URL（与侧边栏同一张） */
+  fallbackAvatarUrl?: string;
 }) => {
   const t = useT();
   /** 写入中：复用「喂咖啡」动效 + 步骤进度 */
   const [steps, setSteps] = useState<SetupStepState[] | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
 
-  /** 资料写入：把名字 / 标签 / 描述 / 头像落回 SOUL.md */
+  /**
+   * 资料写入：名字 / 描述 / 头像。
+   *
+   * 关键是 preserveSoulContent —— 这是**编辑**而非新建，SOUL.md 的正文
+   * 可能是用户在对话里调教出来的，只能改元数据行（Name / Summary），
+   * 正文必须原样保留。头像与描述另有 profile.yaml 一份（见 buildBuddySetupPlan）。
+   *
+   * 所以要先把当前 SOUL 原文读回来，交给 updateSoulMetadataFields 做字段级替换。
+   */
   const applyProfile = async (next: BuddyProfile) => {
     setWriteError(null);
+
+    let existingSoul = "";
+    try {
+      const read = await execDebugCommand(
+        botId,
+        buildHermesSoulContentReadCommand(profileId),
+        { timeoutMs: SOUL_READ_TIMEOUT_MS },
+      );
+      const parsed = parseHermesSoulContent(read.output || "");
+      if (parsed.status === "ready") existingSoul = parsed.markdown;
+    } catch {
+      /* 读不到就退回新建语义 —— 见下方 preserveSoulContent 的判断 */
+    }
+
     const plan = buildBuddySetupPlan({
-      profile: { name: next.name, tags: next.tags, description: next.description },
+      profile: { name: next.name, description: next.description },
       profileId,
       avatar: { shapeId: next.shapeId, color: next.color },
       timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+      // 只有真的读到了现有 SOUL 才走保留模式；读失败时宁可用新建语义
+      // 生成一份完整文件，也不要写出半截内容
+      preserveSoulContent: Boolean(existingSoul),
+      existingSoul,
     });
     setSteps(plan.map((step) => ({ step, status: "pending" as const })));
 
@@ -619,7 +694,12 @@ export const AgentOverviewPanel = ({
         {t("总览")}
       </h2>
       <HeroBanner stats={heroStats} />
-      <BuddyProfileSection profile={profile} onSave={(next) => void applyProfile(next)} />
+      <BuddyProfileSection
+        profile={profile}
+        hasCustomAvatar={hasCustomAvatar}
+        fallbackAvatarUrl={fallbackAvatarUrl}
+        onSave={(next) => void applyProfile(next)}
+      />
       <LatestNewsSection />
       <RecommendedAutomationsSection />
     </div>

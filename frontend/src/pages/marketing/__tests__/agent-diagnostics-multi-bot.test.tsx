@@ -211,31 +211,36 @@ describe("multi-Bot diagnostics", () => {
     expect(startRescueExport).not.toHaveBeenCalled();
   });
 
-  it("keeps single-Bot maintenance available and new-Bot creation hidden", async () => {
+  it("keeps single-Bot maintenance available alongside the always-visible create entry", async () => {
     bots = [buildBot()];
     render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
-    expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
+    /*
+     * 「新建 Bot」不再需要 show() 才显形 —— 多 bot 已是正式能力，入口默认放出。
+     * 真正的准入仍由 multiBotEnabled（后端 runtime config）与套餐额度把关，
+     * 这里只确认入口可见且没有挤掉单 bot 的维护操作。
+     */
+    expect(screen.getByRole("button", {name:"新建 Bot"})).toBeInTheDocument();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("reveals Bot creation with show() and resets visibility on page remount", async () => {
+  it("opens the onboarding panel from the create entry without a legacy dialog", async () => {
     maxBots = 5;
-    const view = render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
-    revealHiddenTools();
-    fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
-    expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
-    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    view.rerender(page("sales"));
-    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
-    view.unmount();
     render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    // 入口常驻，不依赖 revealHiddenTools()
+    const createButton = screen.getByRole("button", { name: "新建 Bot" });
+    expect(createButton).toBeEnabled();
+    fireEvent.click(createButton);
+    /*
+     * 现在点「新建 Bot」直接进创建引导（选头像 + 填名字），
+     * 不再弹旧的「创建 Bot」弹窗 —— 那个弹窗只问名字，会让用户填两次。
+     */
+    // 「换一批」是引导页独有的头像操作，用它确认进的是引导而非旧弹窗
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
+    // 「空白创建」已从复制来源里移除，下拉只列可复制的 bot
+    expect(screen.queryByRole("radio", { name: "空白创建" })).not.toBeInTheDocument();
   });
 
   it("shows the disabled create quota tooltip below the button without sidebar clipping", async () => {
@@ -282,22 +287,28 @@ describe("multi-Bot diagnostics", () => {
     expect(await screen.findByRole("tooltip")).toBeInTheDocument();
   });
 
-  it("rechecks the current quota when the create dialog is confirmed", async () => {
+  it("rechecks the current quota when creation is submitted from the panel", async () => {
     bots = [buildBot()];
     maxBots = 2;
     const view = render(page("ins-1"));
-    revealHiddenTools();
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
 
+    /*
+     * 这条守的保障没变，只是入口从旧弹窗换成了引导页：
+     * 打开创建界面之后配额才被占满，此时提交必须重新校验、不能真的去建。
+     * 否则用户会拿到一个后端拒绝的失败，或超额建出第三个 bot。
+     */
     bots = [buildBot(), { ...buildBot(), id: "sales", profileId: "sales", isDefault: false, name: "Sales" }];
     view.rerender(page("ins-1"));
-    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
+    await waitFor(() => {
+      expect(screen.getAllByText(
+        "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
+      ).length).toBeGreaterThan(0);
+    });
     expect(addBot).not.toHaveBeenCalled();
-    expect(screen.getAllByText(
-      "当前套餐最多可创建 2 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
-    ).length).toBeGreaterThan(0);
   });
 
   it("localizes the deleting-Bot limit message on the global empty state", () => {

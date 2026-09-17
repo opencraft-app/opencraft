@@ -5,7 +5,7 @@
  * 才解锁总览与其余功能入口。
  *
  * 两条创建路径，都会先播「喂咖啡」动效再进 dashboard：
- *   A. 自填表单：头像（形状/配色可换） + 名字 + 标签 + 描述
+ *   A. 自填表单：头像（形状/配色可换） + 名字 + 描述
  *   B. 个性化模板推荐：点卡片开详情弹窗，弹窗内「创建」
  *
  * 当前为**纯静态 Demo**：
@@ -18,7 +18,15 @@
  *   - 已创建态：点「创建」后自动进入
  */
 
-import { RefreshCw } from "lucide-react";
+import { ChevronRight, HelpCircle, RefreshCw } from "lucide-react";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -35,6 +43,10 @@ import {
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
 import {
+  buildHermesSoulContentReadCommand,
+  parseHermesSoulContent,
+} from "@/pages/marketing/agent-buddy-command";
+import {
   runBuddySetupPlan,
   type SetupExec,
   type SetupStepState,
@@ -42,7 +54,6 @@ import {
 import {
   BUDDY_DESCRIPTION_PLACEHOLDER,
   BUDDY_NAME_DEFAULT,
-  BUDDY_TAGS_PLACEHOLDER,
   DEMO_TEMPLATES,
   type AgentTemplate,
 } from "@/pages/marketing/agent-demo-templates";
@@ -165,11 +176,21 @@ const SANDBOX_PROBE_INTERVAL_MS = 5_000;
 /** 等 botId 的轮询间隔：路由导航很快，探密一点即可 */
 const BOT_ID_PROBE_INTERVAL_MS = 200;
 
+/** 读 SOUL 原文的超时，与总览页编辑资料保持一致 */
+const SOUL_READ_TIMEOUT_MS = 30_000;
+
 export const AgentOnboardingPanel = ({
   botId,
-  profileId = "main",
+  /*
+   * 不给默认值 "main" —— 那是主 bot 的 profile，猜错会把新 bot 的人设
+   * 写进主 bot。拿不到时由 waitForProfileId 等，等不到就报错。
+   */
+  profileId = "",
   onCreated,
+  onCreateBot,
   execDebugCommand,
+  initialName,
+  cloneOptions,
 }: {
   /**
    * 目标 bot。订阅开通 instance 时后端已自带一个 default bot，
@@ -177,10 +198,54 @@ export const AgentOnboardingPanel = ({
    */
   botId: string;
   profileId?: string;
-  /** 配置完成后回调 */
-  onCreated: () => void;
+  /**
+   * 配置完成后回调。
+   *
+   * 带上实际写入配置的那个 bot 的 id —— 多 bot 路径下它是本页刚建出来的，
+   * 页面侧要靠它切到新 bot；不带的话页面只能沿用当前 activeBot，用户创建完
+   * 会停在原来那个 bot 的页面上。
+   */
+  onCreated: (createdBotId: string) => void;
   /** 沙箱命令执行器（由页面注入 repositories.bots.execDebugCommand） */
   execDebugCommand: SetupExec;
+  /**
+   * 名字初值。多 bot 创建时传入弹窗里填的 bot 名，避免用户重复输入；
+   * 不传则用默认名。
+   */
+  initialName?: string;
+  /**
+   * 创建 bot 本身（多 bot 入口用）。
+   *
+   * 传入时表示「实例还不存在」：用户在本页填完资料点创建，先用这个回调
+   * 建实例、拿到 botId 与 profileId，再继续写人设与配置。
+   * 订阅路径不传 —— 那条路实例已经由 ?creating= 带进来了。
+   *
+   * 返回 null 表示创建失败，面板会退回表单并提示。
+   */
+  onCreateBot?: (params: {
+    name: string;
+    /** 复制来源 bot 的 id */
+    sourceBotId: string;
+  }) => Promise<{ botId: string; profileId: string } | null>;
+  /**
+   * 「从其他 Bot 复制」的候选（仅已有 bot 时传入）。
+   *
+   * 列出账号下**全部** bot，而不是只给「复制当前 / 复制主 Bot」两个模式 ——
+   * 用户在 A bot 页面下想复制 B bot 是很自然的需求，按模式给会漏掉 B。
+   * 首个 bot（订阅后）不传，因为没有可复制的来源。
+   */
+  cloneOptions?: {
+    /** 当前选中的来源 bot id */
+    value: string;
+    onChange: (next: string) => void;
+    /** 账号下全部可复制的 bot */
+    choices: {
+      id: string;
+      label: string;
+      /** 主 bot 标记，列表里给个角标 */
+      isDefault?: boolean;
+    }[];
+  };
 }) => {
   const t = useT();
 
@@ -188,7 +253,7 @@ export const AgentOnboardingPanel = ({
   const [phase, setPhase] = useState<"form" | "creating">("form");
   /** 待执行的配置（进入 creating 阶段时定下，避免后续表单改动影响执行） */
   const [pendingSetup, setPendingSetup] = useState<{
-    profile: { name: string; tags: string; description: string };
+    profile: { name: string; description: string };
     template?: AgentTemplate;
     avatar: { shapeId: string; color: string };
   } | null>(null);
@@ -212,6 +277,13 @@ export const AgentOnboardingPanel = ({
   const botIdRef = useRef(botId);
   botIdRef.current = botId;
 
+  /*
+   * profileId 同理，且更要紧：写错 profile 会把新 bot 的人设写进别的 bot。
+   * 所以调用方在拿不到时传空串，这里等它到位，绝不默认成 "main"。
+   */
+  const profileIdRef = useRef(profileId);
+  profileIdRef.current = profileId;
+
   /** 等 botId 出现，最多等 SANDBOX_READY_TIMEOUT_MS */
   const waitForBotId = useCallback(
     async (isCancelled: () => boolean): Promise<string> => {
@@ -221,6 +293,26 @@ export const AgentOnboardingPanel = ({
         if (isCancelled()) return "";
         await new Promise((resolve) => window.setTimeout(resolve, BOT_ID_PROBE_INTERVAL_MS));
         if (botIdRef.current) return botIdRef.current;
+      }
+      return "";
+    },
+    [],
+  );
+
+  /**
+   * 等 profileId 出现。
+   *
+   * 与 waitForBotId 同构，但语义更严：拿不到就返回空串让调用方报错，
+   * 而不是退回 "main"（那会写进主 bot）。
+   */
+  const waitForProfileId = useCallback(
+    async (isCancelled: () => boolean): Promise<string> => {
+      if (profileIdRef.current) return profileIdRef.current;
+      const deadline = Date.now() + SANDBOX_READY_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (isCancelled()) return "";
+        await new Promise((resolve) => window.setTimeout(resolve, BOT_ID_PROBE_INTERVAL_MS));
+        if (profileIdRef.current) return profileIdRef.current;
       }
       return "";
     },
@@ -245,6 +337,66 @@ export const AgentOnboardingPanel = ({
     [execDebugCommand],
   );
 
+  /*
+   * 执行期回调与入参统一放进 ref。
+   *
+   * 这不是风格偏好，是为了让下面那个「建 bot + 写配置」的 effect 只在
+   * phase / pendingSetup 变化时跑。onCreated 之类的 prop 引用很容易每次
+   * 渲染都变（页面侧的回调依赖链上只要有一个未 memo 的对象就会如此），
+   * 一旦它们留在依赖数组里，effect 就会每渲染一次 cleanup + 重跑 ——
+   * 而重跑会再调一次 onCreateBot（又建一个 bot），并把上一次写配置的
+   * 流程 cancel 掉。表现就是：bot 越建越多、人设与技能一个都没写进去、
+   * 配额耗尽后弹回创建表单。
+   */
+  const runtimeRef = useRef({
+    onCreateBot,
+    onCreated,
+    cloneValue: cloneOptions?.value,
+  });
+  runtimeRef.current = { onCreateBot, onCreated, cloneValue: cloneOptions?.value };
+
+  /**
+   * 本次创建已经建好的实例。
+   *
+   * 即便 effect 因为将来某个改动又开始重跑，同一份 pendingSetup 也只会
+   * 建一次 bot —— 重跑时直接复用这里缓存的 id，而不是再建一个。
+   */
+  const createdRef = useRef<{
+    token: object;
+    botId: string;
+    profileId: string;
+  } | null>(null);
+
+  /**
+   * 已启动配置流程的 pendingSetup。
+   *
+   * 重入守卫：effect 只要发现当前这份待办已经在跑就直接返回，
+   * 保证「一次创建 = 一个 bot = 一次配置」。
+   */
+  const setupTokenRef = useRef<object | null>(null);
+
+  /**
+   * 组件是否已卸载。
+   *
+   * 配置流程的中止只看这个 —— 用户离开页面就不再往沙箱写东西；
+   * 而 effect 因依赖抖动重跑时，不该影响正在进行的流程。
+   */
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    /*
+     * setup 里必须显式复位。
+     *
+     * next.config.mjs 开了 reactStrictMode，React 会在同一个组件实例上把
+     * effect 重放一遍：setup → cleanup → setup。只在 cleanup 里置 true 的话，
+     * 重放结束后这个标记就永久是 true，于是后续 run() 在第一个 cancelled()
+     * 检查处直接静默返回 —— 表现为咖啡杯卡在 0/2、不报错、不推进。
+     */
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
+
   /* ── 头像 ── */
   const [shapeId, setShapeId] = useState<AvatarShapeId>(DEFAULT_AVATAR_SHAPE);
   const [color, setColor] = useState(DEFAULT_AVATAR_COLOR);
@@ -252,9 +404,18 @@ export const AgentOnboardingPanel = ({
   const [shapeBatch, setShapeBatch] = useState(() => AVATAR_SHAPES.slice(0, 8));
 
   /* ── 表单 ── */
-  const [name, setName] = useState(BUDDY_NAME_DEFAULT);
-  const [tags, setTags] = useState("");
+  /*
+   * 名字默认值：优先用创建时填的 bot 名。
+   *
+   * 多 bot 创建时用户已在弹窗里填过一次名字（那是 profile 目录名，必须在
+   * addBot 之前定下，hermes 用它做 spawn 与 profile 解析）。这里预填同一个值，
+   * 用户确认或改掉即可 —— 改动只影响 display_name，不动目录名。
+   * 不预填的话用户会觉得"刚填的名字怎么没了"。
+   */
+  const [name, setName] = useState(initialName?.trim() || BUDDY_NAME_DEFAULT);
   const [description, setDescription] = useState("");
+  /** 高级选项默认折叠：复制来源是少数场景，不该挤占主路径 */
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   /* ── 模板弹窗 ── */
   const [activeTemplate, setActiveTemplate] = useState<AgentTemplate | null>(null);
@@ -280,94 +441,224 @@ export const AgentOnboardingPanel = ({
     (template?: AgentTemplate) => {
       const nextProfile = {
         name: (template ? template.name : name.trim()) || BUDDY_NAME_DEFAULT,
-        // 标签只承载用户自己填的内容，模板不覆盖
-        tags: tags.trim(),
         description: template ? template.description : description.trim(),
+      };
+      const nextAvatar = {
+        shapeId: template ? template.shapeId : shapeId,
+        color: template ? template.color : color,
       };
       setActiveTemplate(null);
       setPendingSetup({
         profile: nextProfile,
         template,
-        avatar: {
-          shapeId: template ? template.shapeId : shapeId,
-          color: template ? template.color : color,
-        },
+        avatar: nextAvatar,
       });
+
+      /*
+       * 进 creating 的同一帧就把步骤清单铺出来（全为 pending）。
+       *
+       * 计划本身不依赖 botId / profileId，能提前算；而真正执行前要先建实例、
+       * 再等沙箱就绪，这段是整个流程最慢的一截。原先把 setSteps 放在那之后，
+       * 用户在最需要反馈的几分钟里只看到一只咖啡杯，完全不知道要装技能、
+       * 装到哪一步了 —— 选了模板却看不到「安装技能」就是这么来的。
+       *
+       * 这里传占位 profileId：清单只用到 step.label，真正执行时会用拿到的
+       * profileId 重算一次计划，不会拿占位值去写沙箱。
+       */
+      setSteps(
+        buildBuddySetupPlan({
+          profile: nextProfile,
+          template,
+          profileId: "main",
+          avatar: nextAvatar,
+          timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+        }).map((step) => ({ step, status: "pending" as const })),
+      );
       setPhase("creating");
     },
-    [name, shapeId, color, tags, description],
+    [name, shapeId, color, description],
   );
 
   /*
-   * 真实配置流程：等沙箱可用 → 按计划写配置。
+   * 真实配置流程：建实例 → 等沙箱可用 → 按计划写配置。
    *
-   * 放在 effect 里而非 handler 里，是为了组件卸载时能通过 cancelled 中止，
-   * 避免用户中途离开后还在往沙箱里写东西。
+   * 这个 effect 带不可逆副作用（建 bot、往沙箱写东西），所以它被设计成
+   * 「每份 pendingSetup 只允许跑一次」：
+   *
+   *   - setupTokenRef 做重入守卫。哪怕依赖数组因为某个 prop 引用变化而
+   *     重新触发，也会在这里直接返回，不会再建一个 bot。
+   *   - 中止只绑定「组件卸载」（unmountedRef），不绑定 effect 重跑。
+   *     早先的写法在 cleanup 里无条件 cancelled = true，于是依赖一抖动就把
+   *     正在进行的写配置中断掉 —— 人设与技能写不进去就是这么来的。
    */
   useEffect(() => {
-    if (phase !== "creating" || !pendingSetup) return undefined;
+    if (phase !== "creating" || !pendingSetup) return;
+    // 同一份待办已经在跑：直接返回，绝不重复建实例
+    if (setupTokenRef.current === pendingSetup) return;
+    setupTokenRef.current = pendingSetup;
 
-    let cancelled = false;
+    /* 只有真正卸载才算取消；effect 重跑不该影响进行中的流程 */
+    const cancelled = () => unmountedRef.current;
 
     const run = async () => {
       try {
         /*
-         * 0. 等 botId 到位。
+         * 0. 先确保实例存在。
          *
-         * 创建期引导会早于 `?creating=<botId>` 落到 URL 就渲染出来（否则中间
-         * 那一帧会漏回咖啡杯）。填表通常远慢于路由，所以点「创建」时 botId
-         * 基本已就绪；但用户手速极快时仍可能为空，这里等一下而不是直接失败。
+         * 两条来源：
+         *   a) 多 bot 入口 —— 实例还没建，用 onCreateBot 现场创建。
+         *      必须在这里建而不是更早，因为「复制哪个 bot」是用户在本页选的。
+         *   b) 订阅路径 —— 实例已由 ?creating=<botId> 带进来，等它到位即可。
+         *      引导会早于 URL 更新就渲染（否则中间那帧会漏回咖啡杯），
+         *      填表通常远慢于路由，但手速极快时仍可能为空，所以等而不是直接失败。
          */
-        const targetBotId = await waitForBotId(() => cancelled);
-        if (cancelled) return;
-        if (!targetBotId) {
-          throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
+        let targetBotId = "";
+        let targetProfileId = "";
+
+        if (runtimeRef.current.onCreateBot) {
+          /*
+           * 同一份 pendingSetup 只建一次 bot。effect 正常只跑一次，但这层
+           * 缓存保证万一重跑也不会重复建实例 —— 重复建会留下一堆空 bot 并
+           * 吃掉配额。
+           */
+          const cached = createdRef.current?.token === pendingSetup
+            ? createdRef.current
+            : null;
+
+          if (cached) {
+            targetBotId = cached.botId;
+            targetProfileId = cached.profileId;
+          } else {
+            const created = await runtimeRef.current.onCreateBot({
+              name: pendingSetup.profile.name,
+              sourceBotId: runtimeRef.current.cloneValue ?? "",
+            });
+            if (cancelled()) return;
+            if (!created) {
+              // 页面已经把失败原因显示出来了，这里只负责退回表单
+              setPhase("form");
+              setPendingSetup(null);
+              // 清掉预铺的清单，否则下次进来会闪一眼上次的步骤
+              setSteps([]);
+              // 放开重入守卫，否则用户改完参数再点「创建」会被挡住
+              setupTokenRef.current = null;
+              return;
+            }
+            createdRef.current = {
+              token: pendingSetup,
+              botId: created.botId,
+              profileId: created.profileId,
+            };
+            targetBotId = created.botId;
+            targetProfileId = created.profileId;
+          }
+        } else {
+          targetBotId = await waitForBotId(cancelled);
+          if (cancelled()) return;
+          if (!targetBotId) {
+            throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
+          }
         }
 
         // 1. 等实例真正可执行命令 —— status 变 active 不等于沙箱就绪
-        const ready = await waitForSandbox(targetBotId, () => cancelled);
-        if (cancelled) return;
+        const ready = await waitForSandbox(targetBotId, cancelled);
+        if (cancelled()) return;
         if (!ready) {
           throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
         }
 
         // 2. 按计划写 SOUL / 用户画像 / 技能 / 定时任务
+        //    profileId 决定写进哪个 bot，拿不到就停 —— 猜错会串写到别的 bot。
+        //    onCreateBot 路径下它已随新实例一起返回，无需再等。
+        if (!targetProfileId) {
+          targetProfileId = await waitForProfileId(cancelled);
+          if (cancelled()) return;
+        }
+        if (!targetProfileId) {
+          throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
+        }
+
+        /*
+         * 不选模板时，保留克隆过来的人设正文，只改名字与简介。
+         *
+         * 复制来源下拉里已经没有「不复制」这一项，所以走到这里的新 bot 都是
+         * 某个已有 bot 的副本 —— 连人设一起继承。如果这里再生成一份通用
+         * SOUL 覆盖上去，等于把刚复制来的人设当场抹掉，用户只填了个名字
+         * 却丢了调教结果。
+         *
+         * 选了模板则相反：模板的全部意义就是给一套新人设，该覆盖。
+         */
+        let existingSoul = "";
+        if (!pendingSetup.template) {
+          try {
+            const read = await execDebugCommand(
+              targetBotId,
+              buildHermesSoulContentReadCommand(targetProfileId),
+              { timeoutMs: SOUL_READ_TIMEOUT_MS },
+            );
+            const parsed = parseHermesSoulContent(read.output || "");
+            if (parsed.status === "ready") existingSoul = parsed.markdown;
+          } catch {
+            /* 读不到就退回新建语义，也比写出半截文件好 */
+          }
+          if (cancelled()) return;
+        }
+
         const plan = buildBuddySetupPlan({
           profile: pendingSetup.profile,
           template: pendingSetup.template,
-          profileId,
+          profileId: targetProfileId,
           avatar: pendingSetup.avatar,
           timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+          // 只有真读到了才走保留模式，读失败宁可生成完整文件
+          preserveSoulContent: Boolean(existingSoul),
+          existingSoul,
         });
-        setSteps(plan.map((step) => ({ step, status: "pending" as const })));
+        /*
+         * 清单已在进入 creating 时铺好，这里只在步骤数不一致时才重置 ——
+         * 同样的入参算出的计划结构是一样的，无条件 setSteps 会让已渲染的
+         * 清单闪一下。数量不同说明计划确实变了（理论上不该发生），以真实
+         * 计划为准。
+         */
+        setSteps((prev) => (
+          prev.length === plan.length
+            ? prev
+            : plan.map((step) => ({ step, status: "pending" as const }))
+        ));
 
         const result = await runBuddySetupPlan({
           botId: targetBotId,
           steps: plan,
           exec: execDebugCommand,
           onProgress: (states) => {
-            if (!cancelled) setSteps(states);
+            if (!cancelled()) setSteps(states);
           },
-          shouldCancel: () => cancelled,
+          shouldCancel: cancelled,
         });
-        if (cancelled) return;
+        if (cancelled()) return;
 
         // 非阻断步骤失败：不挡流程，落个提示让用户知道去哪补
         if (result.failures.length > 0) {
           setPartialFailureCount(result.failures.length);
         }
-        onCreated();
+        runtimeRef.current.onCreated(targetBotId);
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled()) return;
         setFatalError(error instanceof Error ? error.message : String(error));
       }
     };
 
     void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, pendingSetup, profileId, waitForBotId, waitForSandbox, execDebugCommand, onCreated, t]);
+    /*
+     * 依赖刻意只留 phase / pendingSetup 与稳定的工具函数。
+     *
+     * onCreateBot、onCreated、cloneOptions.value 走 runtimeRef 读最新值，
+     * 不进依赖数组 —— 它们的引用会随父组件渲染而变，留在这里会让整个创建
+     * 流程被反复 cancel 并重复建 bot。改依赖前先想清楚：这个 effect 带副
+     * 作用（建实例、写沙箱），重跑不是幂等的。
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, pendingSetup, waitForBotId, waitForProfileId, waitForSandbox, execDebugCommand, t]);
 
   /** 卡片上不重复展示当前选中的模板 */
   const templates = useMemo(() => DEMO_TEMPLATES, []);
@@ -402,10 +693,11 @@ export const AgentOnboardingPanel = ({
               aria-pressed={shape.id === shapeId}
               onClick={() => setShapeId(shape.id)}
               className={cn(
-                "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] border transition",
+                // 无边框：几何体本身有形状与配色，方框反而抢视线
+                "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] transition",
                 shape.id === shapeId
-                  ? "border-black/25 bg-black/[0.04]"
-                  : "border-transparent hover:bg-black/[0.03]",
+                  ? "bg-black/[0.06]"
+                  : "hover:bg-black/[0.03]",
               )}
             >
               <GeometricAvatar shapeId={shape.id} color={color} size={26} alive={shape.id === shapeId} />
@@ -442,23 +734,6 @@ export const AgentOnboardingPanel = ({
         <div className="mt-3 w-full max-w-[420px]">
           <label
             className="block text-left text-[11px] font-medium text-black/40"
-            htmlFor="lv-onboarding-tags"
-          >
-            {t("标签")}
-            <span className="ml-1 text-black/30">{t("（可选）")}</span>
-          </label>
-          <input
-            id="lv-onboarding-tags"
-            value={tags}
-            placeholder={BUDDY_TAGS_PLACEHOLDER}
-            onChange={(event) => setTags(event.target.value)}
-            className="mt-1 w-full rounded-[3px] border border-black/[0.1] px-3 py-2 text-sm text-black/[0.88] outline-none transition placeholder:text-black/30 focus:border-black/25"
-          />
-        </div>
-
-        <div className="mt-3 w-full max-w-[420px]">
-          <label
-            className="block text-left text-[11px] font-medium text-black/40"
             htmlFor="lv-onboarding-desc"
           >
             {t("描述")}
@@ -474,7 +749,82 @@ export const AgentOnboardingPanel = ({
           />
         </div>
 
-        {/* TODO(demo): 接真实创建逻辑 */}
+        {/*
+          高级选项（仅已有 bot 时传入）。
+          默认折叠 —— 新建 bot 的主路径是「起个名字就走」，复制来源属于少数
+          场景。新订阅用户不传 cloneOptions，因为没有可复制的来源。
+        */}
+        {cloneOptions ? (
+          <div className="mt-3 w-full max-w-[420px]">
+            <button
+              type="button"
+              aria-expanded={advancedOpen}
+              onClick={() => setAdvancedOpen((open) => !open)}
+              className="inline-flex items-center gap-1 rounded-[3px] py-1 text-[12px] font-medium text-black/45 transition hover:text-black/75"
+            >
+              <ChevronRight
+                className={cn("h-3.5 w-3.5 transition-transform", advancedOpen && "rotate-90")}
+                aria-hidden="true"
+              />
+              {t("高级")}
+            </button>
+
+            {advancedOpen ? (
+              <div className="mt-2 rounded-[6px] bg-black/[0.02] p-3.5">
+                <div className="flex items-center gap-1">
+                  <label
+                    className="text-left text-[12px] font-medium text-black/55"
+                    htmlFor="lv-onboarding-clone"
+                  >
+                    {t("从其他 Bot 复制")}
+                  </label>
+                  {/* 问号：继承/不继承的差异只在用户真正好奇时才需要占版面 */}
+                  <span className="group relative inline-flex">
+                    <HelpCircle
+                      className="h-3.5 w-3.5 cursor-help text-black/25 transition group-hover:text-black/45"
+                      aria-hidden="true"
+                    />
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-[264px] -translate-x-1/2 rounded-[6px] bg-[#1F2329] px-3 py-2.5 text-left text-[11px] leading-[17px] text-white shadow-[0_8px_28px_rgba(15,23,42,0.18)] group-hover:block"
+                    >
+                      <span className="block">
+                        {t("继承模型、人设、技能、用户偏好和长期记忆")}
+                      </span>
+                      <span className="mt-1.5 block text-white/55">
+                        {t("不继承当前对话、历史会话、定时任务、运行状态或通道连接")}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+
+                <Select value={cloneOptions.value} onValueChange={cloneOptions.onChange}>
+                  <SelectTrigger
+                    id="lv-onboarding-clone"
+                    className="mt-1.5 h-10 w-full rounded-[6px] border-black/[0.09] bg-white px-3 text-[13px] text-black/[0.85] shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-black/20 focus:border-black/30"
+                  >
+                    <SelectValue placeholder={t("选择要复制的 Bot")} />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="max-h-[260px]">
+                    {cloneOptions.choices.map((choice) => (
+                      <SelectItem key={choice.id} value={choice.id} textValue={choice.label}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="min-w-0 truncate">{choice.label}</span>
+                          {choice.isDefault ? (
+                            <span className="shrink-0 rounded-[3px] bg-black/[0.06] px-1.5 py-px text-[10px] font-medium text-black/45">
+                              {t("主 Bot")}
+                            </span>
+                          ) : null}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <button
           type="button"
           disabled={!canSubmit}

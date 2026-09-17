@@ -190,12 +190,14 @@ html.lw-settings-scrollbar-stable {
 }
 
 @media (min-width: 1024px) {
+  /* header 占住侧边栏那一列的表头位置。
+   * 这里刻意不画 border：加了 border-right / border-bottom 后，logo 会被框成
+   * 一个孤立的小方块（侧边栏未加载或引导态下尤其明显）。对齐靠宽度就够了。 */
   header.lv-agent-sidebar-header {
     right: auto;
     width: 264px;
     height: 68px;
-    border-right: 1px solid #e9ecf1;
-    border-bottom-color: #e9ecf1 !important;
+    border-bottom-color: transparent !important;
   }
 
   .lw-settings-shell.lv-agent-settings-shell {

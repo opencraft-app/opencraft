@@ -15,6 +15,7 @@
  */
 
 import type { AvatarShapeId } from "@/pages/marketing/agent-avatar-shapes";
+import { isCN } from "@/lib/region";
 import type { GithubSkillSource } from "@/lib/hermes-skills-client";
 
 /* ── 表单 placeholder：引导页与总览页编辑弹窗共用，保证提示一致 ── */
@@ -75,8 +76,24 @@ export type AgentTemplate = {
   routines: TemplateRoutine[];
 };
 
+/**
+ * 模板定义 = 国际站版本 + 可选的国内站覆盖。
+ *
+ * 为什么需要分区域：两站的技能市场不是同一套。
+ *   - 国际站：clawhub / skills.sh（`acli skills-sh install`）
+ *   - 国内站：SkillHub（`acli skills install`），没有 skills-sh
+ * 直接把 skills.sh 的技能搬到国内站会安装失败。
+ *
+ * routines 必须跟着一起覆盖 —— 任务说明里点名了「优先使用 xx Skill」，
+ * 技能换了而说明没换，等于让 Agent 去找一个不存在的技能。
+ */
+export type AgentTemplateDef = AgentTemplate & {
+  /** 国内站覆盖；省略表示该模板两站一致（例如完全不依赖技能的场景） */
+  cn?: Pick<AgentTemplate, "skills" | "routines"> & Partial<Pick<AgentTemplate, "description" | "instructions" | "memories">>;
+};
+
 /** TODO(demo): 接真实模板接口后替换 */
-export const DEMO_TEMPLATES: AgentTemplate[] = [
+const TEMPLATE_DEFS: AgentTemplateDef[] = [
   {
     id: "health-keeper",
     name: "健康管家",
@@ -157,6 +174,33 @@ export const DEMO_TEMPLATES: AgentTemplate[] = [
         desc: "使用 stocks skill 检查 NVDA、AMD、TSLA、GOOG、META。给我一份非常简洁的自选股观察：1. 昨日/当前涨跌情况 2. 今天最值得关注的 2 只 3. 每只给一个最值得观察的价格区域。不要写宏观废话，不预测涨跌，只告诉我发生了什么变化。",
       },
     ],
+    cn: {
+      // SkillHub 的行情技能以 A 股 / 港股为主，标的随之调整
+      description: "查看每日精选 A 股与港股的关键行情信息",
+      memories: [
+        "自选股：贵州茅台、宁德时代、比亚迪、腾讯控股、中国移动",
+        "只要事实变化，不要宏观分析与涨跌预测",
+        "每只股票关注一个具体价格区域",
+      ],
+      skills: [
+        {
+          slug: "topnews",
+          name: "股票舆情智能AI助手",
+          desc: "汇总实时行情、财经快讯、宏观国际新闻和资金面",
+        },
+        {
+          slug: "valuation-analysis",
+          name: "股票价值投资分析系统",
+          desc: "A 股与港股的护城河、财务健康、DCF 估值与行业分析",
+        },
+      ],
+      routines: [
+        {
+          label: "每天 09:00",
+          desc: "使用 topnews skill 检查贵州茅台、宁德时代、比亚迪、腾讯控股、中国移动。给我一份非常简洁的自选股观察：1. 昨日/当前涨跌情况 2. 今天最值得关注的 2 只 3. 每只给一个最值得观察的价格区域。不要写宏观废话，不预测涨跌，只告诉我发生了什么变化。",
+        },
+      ],
+    },
   },
   {
     id: "ai-study-buddy",
@@ -206,6 +250,21 @@ export const DEMO_TEMPLATES: AgentTemplate[] = [
         desc: "在 ~/learning/ai 工作区中复习本周学过的所有知识点，找出掌握薄弱的部分，并据此调整下一周的学习路线。复习内容直接在消息里给出。",
       },
     ],
+    cn: {
+      // 不配技能：SkillHub 没有等价于 teach 的「学习记录 + 课程规划」技能，
+      // 学科辅导类技能解决的是另一件事。学习进度改由 ~/learning/ai 的文件承载。
+      skills: [],
+      routines: [
+        {
+          label: "每天 21:00",
+          desc: "固定使用 ~/learning/ai 作为学习工作区，先 mkdir -p 该目录并 cd 进去。每次开课前先读该目录下的学习记录，确认我已经学过什么，再决定今天讲什么，避免重复；讲完后把今天的知识点、我的理解程度和薄弱环节追加进记录文件。每天晚上 9 点带我学习一个 AI 知识点，默认路线依次覆盖大模型基础、Memory、AI Agent、Browser Use、多 Agent、AI 产品设计。控制在 10 分钟左右，并用一个问题检查理解程度。课程正文直接在消息里讲完，不要只丢文件路径给我。",
+        },
+        {
+          label: "每周日 20:00",
+          desc: "在 ~/learning/ai 工作区中复习本周学过的所有知识点，找出掌握薄弱的部分，并据此调整下一周的学习路线。复习内容直接在消息里给出。",
+        },
+      ],
+    },
   },
   {
     id: "industry-researcher",
@@ -248,6 +307,21 @@ export const DEMO_TEMPLATES: AgentTemplate[] = [
         desc: "如果已安装 research Skill，优先用它完成资料搜索、来源验证和研究，不要绕过 Skill 自行拼凑结论；如果当前环境无法派生后台代理，就按 Skill 的一手来源标准自己直接调研，不要因此跳过任务。每个工作日上午 9 点研究过去 24 小时 AI、AI Agent 和 AI 产品领域的重要变化。优先官方公告、产品博客、论文和其他一手来源。最多选 5 件真正值得知道的事情，说明发生了什么、为什么重要、可能带来什么后续变化。没有重要变化时不要凑数。结论直接写在消息里。",
       },
     ],
+    cn: {
+      skills: [
+        {
+          slug: "tencent-news",
+          name: "腾讯新闻",
+          desc: "7×24 新闻资讯搜索，覆盖国内信息、国际热点与领域新闻",
+        },
+      ],
+      routines: [
+        {
+          label: "工作日 09:00",
+          desc: "如果已安装腾讯新闻 Skill，优先用它检索和交叉验证信息，不要绕过 Skill 自行拼凑结论。每个工作日上午 9 点研究过去 24 小时 AI、AI Agent 和 AI 产品领域的重要变化。优先官方公告、产品博客、论文和其他一手来源，二手转述只用来发现线索、结论要回到原始出处。最多选 5 件真正值得知道的事情，说明发生了什么、为什么重要、可能带来什么后续变化。没有重要变化时不要凑数。结论直接写在消息里。",
+        },
+      ],
+    },
   },
   {
     id: "morning-briefing",
@@ -290,6 +364,21 @@ export const DEMO_TEMPLATES: AgentTemplate[] = [
         desc: "如果已安装 research Skill，优先用它筛选和验证重要事件，不要绕过 Skill 直接凭印象罗列新闻；如果当前环境无法派生后台代理，就自己直接核实，不要因此跳过任务。每天早上 8 点生成一份极简晨间简报，只选择过去 24 小时科技、AI、商业和互联网领域最重要的 5 件事。每件最多三句话：发生了什么、为什么值得知道、接下来值得观察什么。过滤重复报道、软文和纯流量新闻。无法核实的消息不要写进简报。简报正文直接写在消息里。",
       },
     ],
+    cn: {
+      skills: [
+        {
+          slug: "tencent-news",
+          name: "腾讯新闻",
+          desc: "7×24 资讯搜索与新闻早晚报，覆盖实时资讯与领域新闻",
+        },
+      ],
+      routines: [
+        {
+          label: "每天 08:00",
+          desc: "如果已安装腾讯新闻 Skill，优先用它获取和交叉验证过去 24 小时的重要事件，不要凭印象罗列新闻。每天早上 8 点生成一份极简晨间简报，只选择科技、AI、商业和互联网领域最重要的 5 件事。每件最多三句话：发生了什么、为什么值得知道、接下来值得观察什么。过滤重复报道、软文和纯流量新闻。无法核实的消息不要写进简报。简报正文直接写在消息里。",
+        },
+      ],
+    },
   },
   {
     id: "growth-experimenter",
@@ -331,6 +420,16 @@ export const DEMO_TEMPLATES: AgentTemplate[] = [
         desc: "如果已安装 marketing-ideas Skill，优先使用其中的增长策略库和评估框架，不要脱离 Skill 随机生成营销点子。每周一为一个早期 AI 或 SaaS 产品选择一个最值得测试的低成本增长实验。只选一个。说明增长假设、具体执行步骤、所需资源、关键指标和一周后的成功判断标准。优先选择一周内可以完成验证的实验。",
       },
     ],
+    cn: {
+      // 不配技能：SkillHub 没有增长策略库类技能，电商选品解决的是另一件事
+      skills: [],
+      routines: [
+        {
+          label: "每周一 10:00",
+          desc: "每周一为一个早期 AI 或 SaaS 产品选择一个最值得测试的低成本增长实验。只选一个，并说明为什么淘汰了其他候选。必须讲清：增长假设、具体执行步骤、所需资源、关键指标、一周后用什么标准判断成败。只推荐一周内能得出结论的实验，不依赖投放预算和大团队。",
+        },
+      ],
+    },
   },
   {
     id: "social-inspiration",
@@ -377,5 +476,54 @@ export const DEMO_TEMPLATES: AgentTemplate[] = [
         desc: "如果已安装 social-content Skill，优先使用它判断不同社交平台适合的内容形式和表达方式；近期热点和背景信息优先通过 research Skill 获取和验证，若无法派生后台代理就自己直接核实。每个工作日上午选择 3 个近期 AI 和科技领域值得讨论的话题。不要直接生成完整帖子，而是给出 Hook、核心观点、值得讨论的争议点，以及分别适合 X 的表达方式。",
       },
     ],
+    cn: {
+      description: "每天替你找三个值得开口说的话题，并告诉你从哪个角度说更有意思",
+      memories: [
+        "主要发布平台是微信视频号与公众号",
+        "每个工作日给 3 个话题，只要角度不要成品文案",
+        "每个话题需含：Hook、核心观点、争议点、表达方式",
+      ],
+      skills: [
+        {
+          slug: "lingyi-wx-viral-script-generator",
+          name: "视频号爆款文案生成",
+          desc: "按 Hook、中段、CTA 结构生成口播脚本，适配选题与受众",
+        },
+        {
+          slug: "tencent-news",
+          name: "腾讯新闻",
+          desc: "获取并核实近期热点与背景信息",
+        },
+      ],
+      routines: [
+        {
+          label: "工作日 10:00",
+          desc: "如果已安装视频号爆款文案 Skill，优先参考它的 Hook 与结构判断怎样表达更有传播力；近期热点和背景信息优先通过腾讯新闻 Skill 获取和核实。每个工作日上午选择 3 个近期 AI 和科技领域值得讨论的话题。不要直接生成完整帖子，而是给出 Hook、核心观点、值得讨论的争议点，以及适合视频号和公众号的表达方式。没有新角度的热点不要选。",
+        },
+      ],
+    },
   },
 ];
+
+/**
+ * 按区域解析模板。
+ *
+ * 抽成纯函数而不是内联三元，是为了让测试能同时验证两个区域 ——
+ * isCN 是编译期常量，单个测试进程只看得到一个区域的结果。
+ */
+export const resolveTemplatesForRegion = (
+  defs: AgentTemplateDef[],
+  useCN: boolean,
+): AgentTemplate[] => defs.map(({ cn, ...base }) => (useCN && cn ? { ...base, ...cn } : base));
+
+/** 仅供测试：未按区域解析的原始定义 */
+export const __TEMPLATE_DEFS_FOR_TEST = TEMPLATE_DEFS;
+
+/**
+ * 当前站点可用的模板。
+ *
+ * 国内站套用 cn 覆盖（SkillHub 技能 + 对应任务说明），国际站用基础定义。
+ * 在这里解析掉区域差异，消费方只认 `template.skills` / `.routines`，
+ * 不需要各自再判断区域。
+ */
+export const DEMO_TEMPLATES: AgentTemplate[] = resolveTemplatesForRegion(TEMPLATE_DEFS, isCN);
