@@ -736,6 +736,22 @@ stop_browser_bootstrap() {
   rm -f "$BROWSER_BOOTSTRAP_PID_FILE" "$BROWSER_BOOTSTRAP_READY_FILE"
 }
 
+browser_nonce_once() {
+  python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
+}
+
+generate_browser_nonce() {
+  local attempt nonce=""
+  for attempt in 1 2 3; do
+    nonce="$(browser_nonce_once 2>/dev/null || true)"
+    if [[ "$nonce" =~ ^[A-Za-z0-9_-]{24,128}$ ]]; then
+      printf '%s\n' "$nonce"
+      return 0
+    fi
+  done
+  return 1
+}
+
 start_browser_bootstrap() {
   local token="$1" ip listen_host token_file nonce pid url i
   [[ -x "$BROWSER_BOOTSTRAP" ]] || die "missing browser bootstrap helper: $BROWSER_BOOTSTRAP"
@@ -743,7 +759,7 @@ start_browser_bootstrap() {
   ip="$(discover_devcloud_ip)"
   listen_host=0.0.0.0
   [[ "$ip" == "127.0.0.1" || "$ip" == "localhost" ]] && listen_host=127.0.0.1
-  nonce="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+  nonce="$(generate_browser_nonce)" || die "could not generate a browser bootstrap nonce"
   stop_browser_bootstrap
   token_file="$(mktemp "$STATE_ROOT/browser-session.XXXXXX")"
   chmod 600 "$token_file"
