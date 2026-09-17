@@ -31,6 +31,17 @@ func (h *Handler) PrepareReferral(ctx *gin.Context) {
 		ctx.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"code": "invalid_referral_code", "message": "邀请返利码格式不正确。"})
 		return
 	}
+	if token := tokenFromContext(ctx); token != "" {
+		if session, err := h.service.CurrentSession(ctx, token); err == nil {
+			if err := h.service.ClaimReferral(ctx, session.User.ID, code, "authenticated_link"); err != nil {
+				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"code": "referral_claim_failed", "message": "邀请关系暂时无法保存。"})
+				return
+			}
+			h.clearReferralCookie(ctx)
+			ctx.Status(http.StatusNoContent)
+			return
+		}
+	}
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name: referralCookieName, Value: code, Path: referralCookiePath,
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: h.cookieSecure,

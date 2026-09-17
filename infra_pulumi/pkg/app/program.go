@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -52,7 +51,11 @@ func Run(ctx *pulumi.Context) error {
 		Provider:  provider,
 	}
 
-	steps, err := selectedSteps(os.Getenv("INFRA_COMPONENT_SCOPE"))
+	if err := validateInventoryProfileScope(inventory.Profile, runtime.ComponentScope); err != nil {
+		return err
+	}
+
+	steps, err := selectedSteps(runtime.ComponentScope)
 	if err != nil {
 		return err
 	}
@@ -104,7 +107,21 @@ func selectedSteps(scope string) ([]func(*stackctx.Context) error, error) {
 		return []func(*stackctx.Context) error{notify.Ensure}, nil
 	case "pulsar":
 		return []func(*stackctx.Context) error{pulsar.Ensure}, nil
+	case "sandbox-network":
+		return []func(*stackctx.Context) error{networking.Ensure, securitygroup.EnsureSandbox}, nil
 	default:
 		return nil, fmt.Errorf("unsupported INFRA_COMPONENT_SCOPE %q", scope)
 	}
+}
+
+func validateInventoryProfileScope(profile, scope string) error {
+	profile = strings.TrimSpace(profile)
+	scope = strings.TrimSpace(scope)
+	if profile == config.ProfileSandboxNetwork && scope != "sandbox-network" {
+		return fmt.Errorf("inventory profile %q requires component scope sandbox-network", profile)
+	}
+	if scope == "sandbox-network" && profile != config.ProfileSandboxNetwork {
+		return fmt.Errorf("component scope sandbox-network requires inventory profile %q", config.ProfileSandboxNetwork)
+	}
+	return nil
 }

@@ -102,6 +102,17 @@ ruby -ryaml -e '
 
 ruby -ryaml -e '
   config = YAML.load_file(ARGV.fetch(0))
+  route = Array(config["routes"]).find do |item|
+    item["prefix"] == "/v1/frontend/runtime-config"
+  end
+  abort "localstack runtime config route must reach the real ctl-api publicly" unless route &&
+    route["methods"] == %w[GET OPTIONS] &&
+    route["upstream"] == "http://ctl-api.ctl.svc.cluster.local" &&
+    route["access"] == "public"
+' "$LOCALSTACK_ROOT/service-gateway/config.yaml"
+
+ruby -ryaml -e '
+  config = YAML.load_file(ARGV.fetch(0))
   routes = Array(config["routes"])
   expected = {
     "/v1/instances" => %w[GET POST PUT DELETE OPTIONS],
@@ -268,9 +279,74 @@ node --check "$LOCALSTACK_ROOT/shadow/adapter.mjs"
   GOWORK=off GOTOOLCHAIN=auto go test ./...
 )
 rg -q 'location = /auth/wechat-pay' "$LOCALSTACK_ROOT/frontend/nginx.conf"
-rg -q 'localhost:19040/auth/wechat-pay' "$LOCALSTACK_ROOT/frontend/nginx.conf"
+rg -q '\$scheme://\$host:19040/auth/wechat-pay' "$LOCALSTACK_ROOT/frontend/nginx.conf"
+rg -q 'return 301 /dashboard/settings' "$LOCALSTACK_ROOT/frontend/nginx.conf"
 rg -q 'name: frontend-nginx' "$rendered"
 rg -q 'name: fake-wechat-pay-bridge' "$rendered"
+callback_rendered="$(mktemp)"
+trap 'rm -f "$rendered" "$callback_rendered"' EXIT
+"$KUSTOMIZE" build --load-restrictor LoadRestrictionsNone "$LOCALSTACK_ROOT/trade" >"$callback_rendered"
+ruby -ryaml -e '
+  documents = YAML.load_stream(File.read(ARGV.fetch(0)))
+  proxy = documents.find { |item| item&.dig("kind") == "ConfigMap" && item.dig("metadata", "name") == "trade-callback-proxy" }
+  service = documents.find { |item| item&.dig("kind") == "Service" && item.dig("metadata", "name") == "trade-callback-proxy" }
+  deployment = documents.find { |item| item&.dig("kind") == "Deployment" && item.dig("metadata", "name") == "trade-callback-proxy" }
+  abort "missing callback-only proxy resources" unless proxy && service && deployment
+  config = proxy.dig("data", "default.conf").to_s
+  upstream = "proxy_pass http://trade.trade.svc.cluster.local;"
+  health = config[/location = \/healthz \{(.*?)\n\s*\}/m, 1].to_s
+  callback = config[/location = \/trade\/jifei\/callback \{(.*?)\n\s*\}/m, 1].to_s
+  abort "healthz must prove Trade reachability" unless health.include?(upstream)
+  abort "callback path must proxy to Trade" unless callback.include?(upstream)
+  abort "callback proxy exposes another upstream path" unless config.scan(upstream).length == 2
+  abort "callback proxy must default deny" unless config.include?("location / {") && config.include?("return 404;")
+  abort "callback service selector mismatch" unless service.dig("spec", "selector", "app") == "trade-callback-proxy"
+  abort "callback deployment selector mismatch" unless deployment.dig("spec", "selector", "matchLabels", "app") == "trade-callback-proxy"
+' "$callback_rendered"
+rg -Fq 'trade-callback|trade|service/trade-callback-proxy|18084:80|$PUBLIC_BIND_ADDRESS' \
+  "$LOCALSTACK_ROOT/localstack.sh"
+rg -Fq 'trade-internal|trade|service/trade|28084:80|127.0.0.1' \
+  "$LOCALSTACK_ROOT/localstack.sh"
+if rg -n 'service/trade\|18084:' "$LOCALSTACK_ROOT/localstack.sh"; then
+  echo "full Trade listener must not be exposed on callback port 18084" >&2
+  exit 1
+fi
+rg -q '^randomize_trade_internal_token\(\)' "$LOCALSTACK_ROOT/localstack.sh"
+rg -q 'patch secret trade-runtime-secrets' "$LOCALSTACK_ROOT/localstack.sh"
+rg -q 'start_exposure_linux' "$LOCALSTACK_ROOT/localstack.sh"
+rg -q 'load_images_into_local_cluster' "$LOCALSTACK_ROOT/localstack.sh"
+rg -Fq 'frontend|localstack-frontend|service/frontend|5173:8080|$PUBLIC_BIND_ADDRESS' \
+  "$LOCALSTACK_ROOT/localstack.sh"
+rg -Fq 'gateway|lightclaw-gateway|service/service-gateway|8085:80|$PUBLIC_BIND_ADDRESS' \
+  "$LOCALSTACK_ROOT/localstack.sh"
+rg -Fq 'trade-callback|trade|service/trade-callback-proxy|18084:80|$PUBLIC_BIND_ADDRESS' \
+  "$LOCALSTACK_ROOT/localstack.sh"
+rg -Fq 'trade-internal|trade|service/trade|28084:80|127.0.0.1' \
+  "$LOCALSTACK_ROOT/localstack.sh"
+devcloud_exposure_plan="$(
+  LOCALSTACK_PUBLIC_HOST=9.134.214.121 \
+    bash "$LOCALSTACK_ROOT/localstack.sh" exposure-plan
+)"
+test "$devcloud_exposure_plan" = $'frontend\ngateway\ntrade-callback\ntrade-internal\nfake-qq\nfake-wechat-pay'
+localhost_exposure_plan="$(
+  LOCALSTACK_PUBLIC_HOST=localhost \
+    bash "$LOCALSTACK_ROOT/localstack.sh" exposure-plan
+)"
+grep -qx 'sandbox' <<<"$localhost_exposure_plan"
+grep -qx 'mysql' <<<"$localhost_exposure_plan"
+explicit_internal_plan="$(
+  LOCALSTACK_PUBLIC_HOST=9.134.214.121 LOCALSTACK_EXPOSE_INTERNAL_ENDPOINTS=1 \
+    bash "$LOCALSTACK_ROOT/localstack.sh" exposure-plan
+)"
+grep -qx 'sandbox' <<<"$explicit_internal_plan"
+grep -qx 'mysql' <<<"$explicit_internal_plan"
+rg -q 'NEXT_PUBLIC_AUTH_API_BASE_URL="\$GATEWAY_URL"' "$LOCALSTACK_ROOT/localstack.sh"
+for site in cn intl; do
+  test -f "$LOCALSTACK_ROOT/seed-data/$site/030-ctl-bundles.sql"
+  test -f "$LOCALSTACK_ROOT/seed-data/$site/040-trade-bundles.sql"
+done
+rg -Fq '$SITE_SEED_ROOT/$LOCALSTACK_SITE_KIND/030-ctl-bundles.sql' \
+  "$LOCALSTACK_ROOT/localstack.sh"
 for dockerfile in \
   auth \
   payment \
@@ -285,10 +361,12 @@ for dockerfile in \
   trade \
   service-gateway; do
   test -f "$LOCALSTACK_ROOT/images/$dockerfile.Dockerfile"
-  rg -q 'GOARCH=(arm64|"\$\{TARGETARCH\}")' \
+  rg -q 'GOARCH="\$\{TARGETARCH\}"' \
     "$LOCALSTACK_ROOT/images/$dockerfile.Dockerfile"
 done
 test -f "$LOCALSTACK_ROOT/images/frontend.Dockerfile"
+rg -Fq 'COPY shared/lightvela-agent-core /workspace/shared/lightvela-agent-core' \
+  "$LOCALSTACK_ROOT/images/frontend.Dockerfile"
 for dockerfile in \
   auth \
   payment \
@@ -310,3 +388,4 @@ rg -q 'processBaseUrl = "http://fake-envd.localstack-system.svc.cluster.local:19
 rg -q 'launchctl bootstrap' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'wait_for_namespaces_deleted' "$LOCALSTACK_ROOT/localstack.sh"
 bash -n "$LOCALSTACK_ROOT/localstack.sh"
+bash "$REPO_ROOT/.agents/skills/personal-devcloud-environment/tests/contract_test.sh"

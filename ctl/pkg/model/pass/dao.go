@@ -22,6 +22,7 @@ type Dao interface {
 	ListByUserID(userID string) ([]*Entity, error)
 	ListByBundleID(bundleID string) ([]*Entity, error)
 	ListByAppID(appID int64) ([]*Entity, error)
+	GetByUinAndOptionalAppID(uin, appID int64) (*Entity, error)
 	ListByFilters(userID *string, bundleID *string) ([]*Entity, error)
 	ListByFiltersPage(userID *string, bundleID *string, status *string, limit, offset int) ([]*Entity, int64, error)
 	Create(entity *Entity) error
@@ -314,6 +315,20 @@ func (d *dao) ListByAppID(appID int64) ([]*Entity, error) {
 		return nil, err
 	}
 	return entities, nil
+}
+
+func (d *dao) GetByUinAndOptionalAppID(uin, appID int64) (*Entity, error) {
+	var entity Entity
+	query := d.DB().Where(fmt.Sprintf("%s = ?", ColumnUin), uin)
+	if appID > 0 {
+		query = query.Where(fmt.Sprintf("%s = ?", ColumnAppID), appID)
+	}
+	if err := query.
+		Order(model.ColumnCreatedTime + " DESC, " + ColumnPassID + " ASC").
+		First(&entity).Error; err != nil {
+		return nil, err
+	}
+	return &entity, nil
 }
 
 func (d *dao) ListByFilters(userID *string, bundleID *string) ([]*Entity, error) {

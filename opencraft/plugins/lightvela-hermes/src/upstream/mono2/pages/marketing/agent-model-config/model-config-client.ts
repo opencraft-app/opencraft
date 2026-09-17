@@ -266,7 +266,7 @@ export function createHermesModelConfigClient(
 
   const executeWithCredential = async (
     apiKey: string,
-    createAction: (credentialEnvelope: HermesCredentialEnvelope) => Extract<HermesModelConfigAction, { type: "probe" | "add" }>,
+    createAction: (credentialEnvelope: HermesCredentialEnvelope) => Extract<HermesModelConfigAction, { type: "probe" | "add" | "resetToPlatformDefault" }>,
   ): Promise<HermesModelConfigSnapshot> => {
     try {
       const credentialEnvelope = await prepareCredentialEnvelope(apiKey);
@@ -279,6 +279,13 @@ export function createHermesModelConfigClient(
 
   return {
     read: () => execute({ type: "read" }),
+    resetToPlatformDefault: (input: { apiKey: string; model: HermesConfiguredModel }) => (
+      executeWithCredential(input.apiKey, (credentialEnvelope) => ({
+        type: "resetToPlatformDefault",
+        credentialEnvelope,
+        model: input.model,
+      }))
+    ),
     probeConfigured: async (anchor: HermesConfiguredModel) => {
       const snapshot = await execute({ type: "probeConfiguredProvider", anchor });
       return { models: snapshot.probedModels ?? [], succeeded: snapshot.probeSucceeded ?? false };

@@ -35,6 +35,9 @@ func (*rewardStore) StatsForUser(context.Context, string) (domain.Stats, error) 
 func (*rewardStore) RecordRegistration(context.Context, events.Envelope, events.UserRegistered) error {
 	return nil
 }
+func (*rewardStore) RecordClaim(context.Context, events.Envelope, events.UserReferralClaimed) error {
+	return nil
+}
 func (*rewardStore) RecordFirstPaid(context.Context, events.Envelope, events.PassFirstPaid) error {
 	return nil
 }

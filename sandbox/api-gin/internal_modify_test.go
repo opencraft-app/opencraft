@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	"cvm-mock-e2b/internal/core"
+	"cvm-mock-e2b/internal/provider"
 	"cvm-mock-e2b/internal/service"
 	"cvm-mock-e2b/internal/store"
 )
@@ -51,7 +53,7 @@ func newModifyTestHandler(t *testing.T) (*handler, string, core.Pool) {
 	targetPool := newPool("spec-4c8g80g", "SA9.LARGE8", 80)
 
 	if _, err := svc.RefillVerified(ctx, sourcePool.ID, 1, []string{"10.0.0.5"}, []string{"ins-modify-1"},
-		func(context.Context, string) error { return nil }); err != nil {
+		func(context.Context, provider.CloudInstanceRef) error { return nil }); err != nil {
 		t.Fatalf("refill: %v", err)
 	}
 	inst, err := svc.Allocate(ctx, sourcePool.ID)
@@ -225,6 +227,20 @@ func TestGetInternalModifyOperation(t *testing.T) {
 
 	if missing := get("mod-does-not-exist"); missing.Code != http.StatusNotFound {
 		t.Fatalf("unknown operation status = %d body=%s", missing.Code, missing.Body.String())
+	}
+}
+
+func TestInternalModifyOperationResponseIncludesInstanceTypeFallbackProgress(t *testing.T) {
+	response := toInternalModifyOperationResponse(core.ModifyOperation{
+		SourceInstanceType:         "S5.MEDIUM4",
+		InstanceTypeCandidates:     []string{"SA9.LARGE8", "SA2.LARGE8"},
+		InstanceTypeCandidateIndex: 1,
+		AppliedInstanceType:        "SA2.LARGE8",
+	})
+	if response.SourceInstanceType != "S5.MEDIUM4" ||
+		!reflect.DeepEqual(response.InstanceTypeCandidates, []string{"SA9.LARGE8", "SA2.LARGE8"}) ||
+		response.InstanceTypeCandidateIndex != 1 || response.AppliedInstanceType != "SA2.LARGE8" {
+		t.Fatalf("missing instance type fallback progress: %+v", response)
 	}
 }
 

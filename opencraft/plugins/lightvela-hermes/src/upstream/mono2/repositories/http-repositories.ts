@@ -35,6 +35,13 @@ import type {
   WeixinLoginSession,
   WorkspaceMessage,
 } from "../domain/types";
+import type {
+  CreditOrderResult,
+  CreditOrderUrlResult,
+  CreditPackageItem,
+  CreditProduct,
+  CreditQuote,
+} from "../domain/credit-pack";
 import { createFakeRepositories } from "./fake-repositories";
 import {
   createBotIdentity,
@@ -45,6 +52,7 @@ import {
 import type {
   AuthRepository,
   BotRepository,
+  CreditRepository,
   DashboardSnapshot,
   FederationAuthorizationContext,
   FederationAuthorizationInput,
@@ -2225,6 +2233,52 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
   },
 });
 
+/*
+ * 积分包仓储。对应 credit 服务，路由见 credit/internal/httpapi/server.go:35-53。
+ *
+ * 本期只接入 products / inquiry / packages 三个只读接口。
+ * 下单（/v1/credit/packages/order）与支付未接入：trade 侧 payURL 恒为空
+ * （trade/internal/logic/creditorder/service.go:178,229），拿不到微信二维码
+ * 或信用卡托管页地址，购买流程无法闭环。
+ */
+const createHttpCreditRepository = (baseUrl: string): CreditRepository => ({
+  async listCreditProducts() {
+    const payload = await requestEnvelope<CreditProduct[]>(baseUrl, "/v1/credit/products", {
+      method: "GET",
+    });
+    return payload ?? [];
+  },
+  async inquireCreditPrice(productId) {
+    /* timeSpan/timeUnit 固定 1 个月：本期只售 1 个月有效期积分包。
+       ⚠️ 直出 JSON（无 envelope）——与 products 不同，联调文档 §5；
+       后端 server.go 的 inquiry 用 writeJSON(out) 直出 QuoteResult。 */
+    return request<CreditQuote>(baseUrl, "/v1/credit/inquiry", {
+      method: "POST",
+      body: { product_id: productId, time_span: 1, time_unit: "m" },
+    });
+  },
+  async createCreditOrder(productId) {
+    /* 商品与周期必须与询价一致；该接口直出 JSON（无 envelope），响应为 camelCase */
+    return request<CreditOrderResult>(baseUrl, "/v1/credit/packages/order", {
+      method: "POST",
+      body: { product_id: productId, time_span: 1, time_unit: "m" },
+    });
+  },
+  async createCreditOrderUrl(input) {
+    /* 直出 JSON（无 envelope）。订单不存在/归属不符/类型不符时后端返回 404 */
+    return request<CreditOrderUrlResult>(baseUrl, "/v1/credit/packages/order-url", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async listCreditPackages() {
+    const payload = await request<{ credits?: CreditPackageItem[] }>(baseUrl, "/v1/credit/packages", {
+      method: "GET",
+    });
+    return payload.credits ?? [];
+  },
+});
+
 export const createHttpRepositories = (baseUrl: string): Repositories => {
   bootstrapStoredAuthTokenFromLocation();
   return {
@@ -2232,6 +2286,7 @@ export const createHttpRepositories = (baseUrl: string): Repositories => {
     auth: createHttpAuthRepository(baseUrl),
     plans: createHttpPlanRepository(baseUrl),
     bots: createHttpBotRepository(baseUrl),
+    credit: createHttpCreditRepository(baseUrl),
   };
 };
 

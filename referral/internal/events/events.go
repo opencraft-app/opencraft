@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	TypeUserRegistered = "user.registered.v1"
-	TypePassFirstPaid  = "pass.first_paid.v1"
-	TypePassRefunded   = "pass.refunded.v1"
+	TypeUserRegistered      = "user.registered.v1"
+	TypeUserReferralClaimed = "user.referral_claimed.v1"
+	TypePassFirstPaid       = "pass.first_paid.v1"
+	TypePassRefunded        = "pass.refunded.v1"
 )
 
 type Envelope struct {
@@ -26,6 +27,11 @@ type Envelope struct {
 }
 
 type UserRegistered struct {
+	UserID       string `json:"user_id"`
+	ReferralCode string `json:"referral_code"`
+}
+
+type UserReferralClaimed struct {
 	UserID       string `json:"user_id"`
 	ReferralCode string `json:"referral_code"`
 }

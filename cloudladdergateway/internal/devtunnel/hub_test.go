@@ -30,7 +30,7 @@ func TestDispatchDeliveredToPollingAgent(t *testing.T) {
 		if got.RID != req.RID || string(got.Body) != string(req.Body) {
 			t.Errorf("polled request mismatch: %+v", got)
 		}
-		h.Reply(got.RID, TunneledResponse{Status: 200, Body: []byte(`{"returnCode":0}`)})
+		h.Reply(env, got.RID, TunneledResponse{Status: 200, Body: []byte(`{"returnCode":0}`)})
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -105,8 +105,40 @@ func TestPollReturnsFalseOnIdle(t *testing.T) {
 func TestReplyUnknownRIDReturnsFalse(t *testing.T) {
 	h := NewHub()
 	defer h.Close()
-	if h.Reply("ghost", TunneledResponse{Status: 200}) {
+	if h.Reply("", "ghost", TunneledResponse{Status: 200}) {
 		t.Fatalf("Reply on unknown rid should return false")
+	}
+}
+
+func TestReplyRejectsDifferentEnv(t *testing.T) {
+	h := NewHub()
+	defer h.Close()
+
+	type dispatchResult struct {
+		resp TunneledResponse
+		err  error
+	}
+	result := make(chan dispatchResult, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		resp, err := h.Dispatch(ctx, "dev-a.tunnel.internal", TunneledRequest{RID: "r-env"})
+		result <- dispatchResult{resp: resp, err: err}
+	}()
+
+	req, ok, err := h.Poll(ctx, "dev-a.tunnel.internal")
+	if err != nil || !ok {
+		t.Fatalf("Poll: ok=%v err=%v", ok, err)
+	}
+	if h.Reply("dev-b.tunnel.internal", req.RID, TunneledResponse{Status: 201}) {
+		t.Fatal("reply from a different env was accepted")
+	}
+	if !h.Reply("dev-a.tunnel.internal", req.RID, TunneledResponse{Status: 202}) {
+		t.Fatal("reply from the dispatched env was rejected")
+	}
+	got := <-result
+	if got.err != nil || got.resp.Status != 202 {
+		t.Fatalf("Dispatch: response=%+v err=%v", got.resp, got.err)
 	}
 }
 
@@ -157,7 +189,7 @@ func TestConcurrentDispatch(t *testing.T) {
 			req, ok, _ := h.Poll(ctx, env)
 			cancel()
 			if ok {
-				h.Reply(req.RID, TunneledResponse{Status: 200, Body: []byte(req.RID)})
+				h.Reply(env, req.RID, TunneledResponse{Status: 200, Body: []byte(req.RID)})
 			}
 		}
 	}()

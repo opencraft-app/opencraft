@@ -1,5 +1,8 @@
 catalog_publish_exemptions_by_env:
   beijing-sandbox:
+    argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml: collaboration active
+      catalog is owned exclusively by the reviewed two-phase bootstrap workflow;
+      ordinary release-bundle promotion must not overwrite foundation/runtime state.
     argocd/catalogs/sandbox/beijing-sandbox/session.yaml: session has no CI build
       contract or release workflow; deploy-facing catalog is tracked but not promotable
       by release-bundle CI.

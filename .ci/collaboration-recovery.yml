@@ -1,0 +1,99 @@
+version: v2.0
+name: 恢复 Collaboration 北京空基线
+
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-collaboration-beijing-recovery
+  cancel-in-progress: false
+  queue-length: 1
+  queue-timeout-minutes: 120
+
+variables:
+  SOURCE_SHA:
+    value: c15e963260c9d29028954078e10b0451989b5b88
+    readonly: false
+    allow-modify-at-startup: true
+  COLLABORATION_IMAGE:
+    value: lightclaw-bj8.tencentcloudcr.com/lightclaw/collaboration@sha256:6c1037e5aaf66a2a4efa0e56791dec6bc993ec3c2aa2a01fdbbb205044cc69b9
+    readonly: false
+    allow-modify-at-startup: true
+  TIMEOUT_SECONDS:
+    value: "1800"
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: Dry-run Collaboration 空基线 recovery
+    jobs:
+      plan:
+        name: 只读核对精确失败状态和空表
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          DB_JOB_KUBECONFIG_B64: ${{ settings.DB_JOB_KUBECONFIG_B64.password }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 执行只读 recovery plan
+            shell: bash
+            run: |
+              bash .ci/runtime/commands/run_collaboration_baseline_recovery.sh \
+                plan \
+                "${{ variables.SOURCE_SHA }}" \
+                "${{ variables.COLLABORATION_IMAGE }}" \
+                "${{ variables.TIMEOUT_SECONDS }}"
+
+  - name: 人工确认 Collaboration 空基线 recovery
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认删除 0 行残留表和精确失败 revision
+            reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]
+        description: |
+          请核对上一阶段的只读计划：
+          - 环境只能是 beijing-sandbox，镜像必须按 digest 绑定所填 SOURCE_SHA。
+          - 只允许已知双分号缺陷的 20260801000000 applied=1/50 失败 revision。
+          - 业务表只能是 account_login_identities，且必须为 0 行。
+          - 确认后会删除该空表和精确 revision，随后只读回读为 empty。
+          - 不导出 Secret，不生成 GitOps MR，不自动启动 Runtime。
+      timeout-hours: 24
+    jobs:
+      approved:
+        name: 记录人工确认
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - name: 审核已通过
+            shell: bash
+            run: echo "Collaboration Beijing empty-baseline recovery approved."
+
+  - name: 执行 Collaboration 空基线 recovery
+    if: "${{ ci.branch }} == master"
+    jobs:
+      apply:
+        name: 再次校验、精确清理并回读 empty
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          DB_JOB_KUBECONFIG_B64: ${{ settings.DB_JOB_KUBECONFIG_B64.password }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 执行受控 recovery apply
+            shell: bash
+            run: |
+              bash .ci/runtime/commands/run_collaboration_baseline_recovery.sh \
+                apply \
+                "${{ variables.SOURCE_SHA }}" \
+                "${{ variables.COLLABORATION_IMAGE }}" \
+                "${{ variables.TIMEOUT_SECONDS }}"

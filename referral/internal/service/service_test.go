@@ -15,6 +15,7 @@ type fakeStore struct {
 	campaign      *domain.Campaign
 	codes         map[string]*domain.Code
 	registrations int
+	claims        int
 	payments      int
 	refunds       int
 }
@@ -48,6 +49,10 @@ func (f *fakeStore) StatsForUser(context.Context, string) (domain.Stats, error) 
 }
 func (f *fakeStore) RecordRegistration(context.Context, events.Envelope, events.UserRegistered) error {
 	f.registrations++
+	return nil
+}
+func (f *fakeStore) RecordClaim(context.Context, events.Envelope, events.UserReferralClaimed) error {
+	f.claims++
 	return nil
 }
 func (f *fakeStore) RecordFirstPaid(context.Context, events.Envelope, events.PassFirstPaid) error {
@@ -116,6 +121,7 @@ func TestIngestDispatchesVersionedEvents(t *testing.T) {
 		payload  any
 	}{
 		{events.TypeUserRegistered, events.UserRegistered{UserID: "usr_invitee", ReferralCode: "ABC234"}},
+		{events.TypeUserReferralClaimed, events.UserReferralClaimed{UserID: "usr_invitee", ReferralCode: "ABC234"}},
 		{events.TypePassFirstPaid, events.PassFirstPaid{UserID: "usr_invitee", PassID: "pass_1", BundleID: "bundle_1", DealName: "deal_1"}},
 		{events.TypePassRefunded, events.PassRefunded{UserID: "usr_invitee", PassID: "pass_1", DealName: "refund_1"}},
 	}
@@ -129,7 +135,7 @@ func TestIngestDispatchesVersionedEvents(t *testing.T) {
 			t.Fatalf("Ingest[%d]: %v", i, err)
 		}
 	}
-	if store.registrations != 1 || store.payments != 1 || store.refunds != 1 {
-		t.Fatalf("dispatch counts registration=%d payment=%d refund=%d", store.registrations, store.payments, store.refunds)
+	if store.registrations != 1 || store.claims != 1 || store.payments != 1 || store.refunds != 1 {
+		t.Fatalf("dispatch counts registration=%d claim=%d payment=%d refund=%d", store.registrations, store.claims, store.payments, store.refunds)
 	}
 }

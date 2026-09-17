@@ -279,11 +279,13 @@ type Logic interface {
 	//   - passIDs：1..100（caller 已校验非空 + 上限）
 	ListPassesByResourceIDs(appID int64, passIDs []string) ([]*PassDetail, error)
 
-	// DescribePassByCloudAccount 供云 API DescribePass 按影子账号 + pass_id 精确反查 pass。
+	// DescribePassByCloudAccount 供云 API DescribePass 按影子账号反查 pass。
+	// appID=0 表示不按 AppID 过滤；passID 为空表示返回匹配条件下最新创建的 pass。
 	//
 	// 入参：
-	//   - uin / appID：影子账号归属，必须与 pass 表记录一致
-	//   - passID：pass 业务主键
+	//   - uin：影子账号 Uin，必填
+	//   - appID：影子账号 AppID；0 表示不按 AppID 过滤
+	//   - passID：pass 业务主键；为空时按 Uin 和可选 AppID 查询
 	//
 	// 归属不匹配按 ErrPassNotFound 处理，避免对外暴露 pass 是否存在。
 	DescribePassByCloudAccount(uin, appID int64, passID string) (*PassDetail, error)
@@ -2236,14 +2238,21 @@ func (l *logic) DescribePassByCloudAccount(uin, appID int64, passID string) (*Pa
 	if uin <= 0 {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "uin must be > 0")
 	}
-	if appID <= 0 {
-		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be > 0")
+	if appID < 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be >= 0")
 	}
 	passID = strings.TrimSpace(passID)
-	if passID == "" {
-		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required")
-	}
 	dao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	if passID == "" {
+		entity, err := dao.GetByUinAndOptionalAppID(uin, appID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errcode.ErrPassNotFound) {
+				return nil, errcode.ErrPassNotFound
+			}
+			return nil, errcode.Wrap(errcode.ErrPassNotFound, "get pass by cloud account: %v", err)
+		}
+		return entityToDetail(entity), nil
+	}
 	entity, err := dao.GetByPassID(passID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errcode.ErrPassNotFound) {
@@ -2251,7 +2260,7 @@ func (l *logic) DescribePassByCloudAccount(uin, appID int64, passID string) (*Pa
 		}
 		return nil, errcode.Wrap(errcode.ErrPassNotFound, "get pass: %v", err)
 	}
-	if entity.Uin != uin || entity.AppID != appID {
+	if entity.Uin != uin || (appID > 0 && entity.AppID != appID) {
 		return nil, errcode.ErrPassNotFound
 	}
 	return entityToDetail(entity), nil

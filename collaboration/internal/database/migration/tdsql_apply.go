@@ -65,7 +65,7 @@ func applyTDSQLBaseline(
 		return apperror.New("DATABASE_MIGRATION_FAILED", "MySQL 系 migration 文件集合无效", err)
 	}
 	for index := len(snapshot.Revisions); index < len(files); index++ {
-		statements, err := files[index].Stmts()
+		statements, err := tdsqlMigrationStatements(files[index])
 		if err != nil || len(statements) != expected.Migrations[index].Total {
 			return apperror.New("DATABASE_MIGRATION_FAILED", "MySQL 系 migration 语句集合无效", err)
 		}

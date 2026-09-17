@@ -136,7 +136,7 @@
     "src/lib/__tests__/tencent-tssh-file-client.test.ts:125:46|TS2345|494009326d02c8c8": 1,
     "src/lib/__tests__/tencent-tssh-file-client.test.ts:99:46|TS2345|494009326d02c8c8": 1,
     "src/lib/__tests__/zh-hant-overrides.test.ts:31:28|TS2345|87d715c9e063129b": 1,
-    "src/lib/auth-api-base.ts:107:25|TS2339|2d7c1ff71f185987": 1,
+    "src/lib/auth-api-base.ts:110:25|TS2339|2d7c1ff71f185987": 1,
     "src/lib/docs/docs-loader.ts:17:37|TS2339|48df404b4d338484": 1,
     "src/lib/docs/docs-loader.ts:24:31|TS2339|48df404b4d338484": 1,
     "src/lib/support-feedback-cos-client.ts:193:34|TS18048|952926a917898725": 1,

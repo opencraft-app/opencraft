@@ -259,7 +259,7 @@ export function AgentDiagnosticsPanel({
         description={
           isMainBot
             ? t("查看 Hermes Agent 日志，并集中执行相关维护操作")
-            : t("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")
+            : t("查看当前 Bot 的日志和模型配置；Agent 级维护请在主 Bot 中操作")
         }
       />
 

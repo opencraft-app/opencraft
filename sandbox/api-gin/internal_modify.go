@@ -30,16 +30,20 @@ type internalModifyRequest struct {
 }
 
 type internalModifyOperationResponse struct {
-	OperationID          string `json:"operation_id"`
-	SandboxID            string `json:"sandbox_id"`
-	InstanceID           string `json:"instance_id"`
-	SourcePoolID         string `json:"source_pool_id"`
-	TargetPoolID         string `json:"target_pool_id"`
-	TargetInstanceType   string `json:"target_instance_type"`
-	TargetSystemDiskSize int    `json:"target_system_disk_size"`
-	Status               string `json:"status"`
-	CurrentStep          string `json:"current_step,omitempty"`
-	LastError            string `json:"last_error,omitempty"`
+	OperationID                string   `json:"operation_id"`
+	SandboxID                  string   `json:"sandbox_id"`
+	InstanceID                 string   `json:"instance_id"`
+	SourcePoolID               string   `json:"source_pool_id"`
+	TargetPoolID               string   `json:"target_pool_id"`
+	TargetInstanceType         string   `json:"target_instance_type"`
+	TargetSystemDiskSize       int      `json:"target_system_disk_size"`
+	SourceInstanceType         string   `json:"source_instance_type,omitempty"`
+	InstanceTypeCandidates     []string `json:"instance_type_candidates,omitempty"`
+	InstanceTypeCandidateIndex int      `json:"instance_type_candidate_index,omitempty"`
+	AppliedInstanceType        string   `json:"applied_instance_type,omitempty"`
+	Status                     string   `json:"status"`
+	CurrentStep                string   `json:"current_step,omitempty"`
+	LastError                  string   `json:"last_error,omitempty"`
 }
 
 func registerInternalModifyRoutes(r gin.IRouter, h *handler) {
@@ -49,16 +53,20 @@ func registerInternalModifyRoutes(r gin.IRouter, h *handler) {
 
 func toInternalModifyOperationResponse(op core.ModifyOperation) internalModifyOperationResponse {
 	return internalModifyOperationResponse{
-		OperationID:          op.ID,
-		SandboxID:            op.SandboxID,
-		InstanceID:           op.InstanceID,
-		SourcePoolID:         op.SourcePoolID,
-		TargetPoolID:         op.TargetPoolID,
-		TargetInstanceType:   op.TargetInstanceType,
-		TargetSystemDiskSize: op.TargetSystemDiskSize,
-		Status:               string(op.Status),
-		CurrentStep:          op.CurrentStep,
-		LastError:            op.LastError,
+		OperationID:                op.ID,
+		SandboxID:                  op.SandboxID,
+		InstanceID:                 op.InstanceID,
+		SourcePoolID:               op.SourcePoolID,
+		TargetPoolID:               op.TargetPoolID,
+		TargetInstanceType:         op.TargetInstanceType,
+		TargetSystemDiskSize:       op.TargetSystemDiskSize,
+		SourceInstanceType:         op.SourceInstanceType,
+		InstanceTypeCandidates:     op.InstanceTypeCandidates,
+		InstanceTypeCandidateIndex: op.InstanceTypeCandidateIndex,
+		AppliedInstanceType:        op.AppliedInstanceType,
+		Status:                     string(op.Status),
+		CurrentStep:                op.CurrentStep,
+		LastError:                  op.LastError,
 	}
 }
 

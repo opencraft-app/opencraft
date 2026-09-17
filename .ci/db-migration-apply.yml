@@ -50,6 +50,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - name: Dry-run 并要求实际需要 migration
             shell: bash
             run: |
@@ -109,6 +110,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - name: 执行生产 DB migration 并验证 readiness
             shell: bash
             run: |

@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -51,6 +52,60 @@ func TestLoadTokyoSandboxInventory(t *testing.T) {
 	}
 	if inventory.Domains.PublicAPI != "https://api-sandbox-jp-1.lightclaw.tech" {
 		t.Fatalf("unexpected Tokyo public API domain: %q", inventory.Domains.PublicAPI)
+	}
+}
+
+func TestLoadJohorSandboxNetworkInventory(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "envs", "tencentcloud", "sgprod-johor-sandbox-network", "inventory.yaml")
+
+	inventory, err := LoadInventory(path)
+	if err != nil {
+		t.Fatalf("LoadInventory(sgprod-johor-sandbox-network): %v", err)
+	}
+
+	if inventory.Profile != ProfileSandboxNetwork {
+		t.Fatalf("profile = %q, want %q", inventory.Profile, ProfileSandboxNetwork)
+	}
+	if inventory.Region != "ap-johorbahru" || inventory.Network.VpcCIDR != "10.80.0.0/12" {
+		t.Fatalf("unexpected Johor placement: region=%q cidr=%q", inventory.Region, inventory.Network.VpcCIDR)
+	}
+	if got := inventory.Network.SandboxPoolSubnetKeys; !reflect.DeepEqual(got, []string{"pool-a", "pool-b"}) {
+		t.Fatalf("pool subnet keys = %#v", got)
+	}
+	if inventory.Stacks.Networking.SecondaryNATEnabled() {
+		t.Fatal("Johor network-only stack must not create an idle secondary NAT")
+	}
+	if len(inventory.Stacks.Networking.PrimaryEIPs) != 5 {
+		t.Fatalf("primary EIP count = %d, want 5", len(inventory.Stacks.Networking.PrimaryEIPs))
+	}
+	if len(inventory.Stacks.Security.SandboxSG.Ingress) != 0 {
+		t.Fatalf("Johor TAT-only SG ingress = %#v, want empty", inventory.Stacks.Security.SandboxSG.Ingress)
+	}
+}
+
+func TestValidateSandboxNetworkProfileDoesNotRequireTKE(t *testing.T) {
+	secondaryNAT := false
+	inv := &Inventory{Profile: ProfileSandboxNetwork, EnvName: "jhb", Region: "ap-johorbahru", EnvShort: "jhb"}
+	inv.Network.VpcCIDR = "10.80.0.0/12"
+	inv.Network.SupportSubnetKey = "support"
+	inv.Network.SandboxPoolSubnetKeys = []string{"pool-a"}
+	inv.Stacks.Networking.PrimaryNATGatewayName = "sandbox-jhb-nat"
+	inv.Stacks.Networking.ManageSecondaryNAT = &secondaryNAT
+	inv.Stacks.Networking.RouteTableName = "sandbox-jhb-egress"
+	inv.Stacks.Networking.PrimaryEIPs = map[string]EIPBandwidth{"eip-1": {Bandwidth: 200}}
+	inv.Stacks.Networking.SNATSubnets = map[string]SNATSubnetEntry{
+		"pool-a":  {AvailabilityZone: "ap-johorbahru-1", Description: "pool-a"},
+		"support": {AvailabilityZone: "ap-johorbahru-1", Description: "support"},
+	}
+	inv.Stacks.Security.SandboxSG.SecurityGroupName = "sandbox-jhb-isolated"
+	inv.Stacks.Security.SandboxSG.Egress = []string{"ACCEPT#0.0.0.0/0#ALL#ALL"}
+
+	if err := ValidateInventory(inv); err != nil {
+		t.Fatalf("network-only inventory unexpectedly requires full platform fields: %v", err)
 	}
 }
 

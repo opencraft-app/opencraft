@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	atlasmigrate "ariga.io/atlas/sql/migrate"
+	"git.woa.com/wisp/mono2/collaboration/internal/config"
 	"git.woa.com/wisp/mono2/collaboration/internal/database/physicalschema"
 )
 
@@ -17,7 +19,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 	if err != nil {
 		t.Fatalf("tdsqlRuntimeExpectationFromDir() error = %v", err)
 	}
-	if len(runtime.Migrations) != 9 ||
+	if len(runtime.Migrations) != 10 ||
 		runtime.Migrations[0].Version != "20260801000000" ||
 		runtime.Migrations[0].Hash != "EVq8iLGKqGF4ak8nxCZL94xTu4j4VAZWpwG3q0+m/Xk=" ||
 		runtime.Migrations[1].Version != "20260802100000" ||
@@ -28,6 +30,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 		runtime.Migrations[6].Version != "20260804120000" ||
 		runtime.Migrations[7].Version != "20260804130000" ||
 		runtime.Migrations[8].Version != "20260914141219" ||
+		runtime.Migrations[9].Version != "20260917040000" ||
 		len(runtime.UserTables) != 28 {
 		t.Fatalf("runtime expectation = %#v", runtime)
 	}
@@ -48,8 +51,11 @@ func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runtime.Migrations) != 9 || len(runtime.UserTables) != 28 {
+	if len(runtime.Migrations) != 10 || len(runtime.UserTables) != 28 {
 		t.Fatalf("runtime=%#v", runtime)
+	}
+	if runtime.Migrations[0].Total != 25 {
+		t.Fatalf("baseline statement total = %d，期望忽略双分号产生的空语句后为 25", runtime.Migrations[0].Total)
 	}
 	files, err := dir.Files()
 	if err != nil {
@@ -58,6 +64,71 @@ func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testi
 	for _, file := range files {
 		if strings.Contains(strings.ToLower(string(file.Bytes())), "shardkey=") {
 			t.Fatalf("MySQL migration %s contains physical shard option", file.Name())
+		}
+	}
+}
+
+func TestComputerV2列序修复迁移按当前物理规格重排(t *testing.T) {
+	const filename = "20260917040000_computer_v2_column_order.sql"
+	wantFragments := []string{
+		"MODIFY COLUMN `kind` varchar(255) NOT NULL DEFAULT 'legacy_tat' AFTER `name`",
+		"MODIFY COLUMN `provider_instance_id` varchar(128) NULL AFTER `kind`",
+		"MODIFY COLUMN `desired_state` varchar(255) NOT NULL DEFAULT 'active' AFTER `provider_instance_id`",
+	}
+	for _, dialect := range []struct {
+		name   string
+		driver config.DatabaseDriver
+	}{
+		{name: "tdsql", driver: config.DatabaseDriverTDSQL},
+		{name: "mysql", driver: config.DatabaseDriverMySQL},
+	} {
+		t.Run(dialect.name, func(t *testing.T) {
+			dir, err := embeddedDirFor(dialect.driver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dir.Close()
+			files, err := dir.Files()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var migration string
+			for _, file := range files {
+				if file.Name() == filename {
+					migration = string(file.Bytes())
+					break
+				}
+			}
+			if migration == "" {
+				t.Fatalf("missing %s", filename)
+			}
+			previous := -1
+			for _, fragment := range wantFragments {
+				position := strings.Index(migration, fragment)
+				if position <= previous {
+					t.Fatalf("migration does not preserve desired column order: %q", fragment)
+				}
+				previous = position
+			}
+		})
+	}
+}
+
+func TestTDSQLMigrationStatements忽略连续分隔符产生的空语句(t *testing.T) {
+	file := atlasmigrate.NewLocalFile(
+		"20260801000000_fixture.sql",
+		[]byte("CREATE TABLE `a` (`id` bigint);;\n;\nCREATE TABLE `b` (`id` bigint);;\n"),
+	)
+	statements, err := tdsqlMigrationStatements(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(statements) != 2 {
+		t.Fatalf("statements = %#v，期望只保留 2 条可执行 DDL", statements)
+	}
+	for _, statement := range statements {
+		if strings.Trim(statement, " \t\r\n;") == "" {
+			t.Fatalf("返回了空 SQL 语句：%q", statement)
 		}
 	}
 }

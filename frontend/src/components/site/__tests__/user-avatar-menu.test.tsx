@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("framer-motion", () => ({
@@ -188,6 +189,33 @@ describe("UserAvatarMenu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
+  it.each([
+    ["domestic", false],
+    ["international", true],
+  ])("hides the companion link only in the %s sidebar menu", (_site, global) => {
+    mockIsGlobal = global;
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null });
+
+    const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+
+    unmount();
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
+  });
+
   it("opens the international language picker beside the account menu", () => {
     useSession.mockReturnValue({
       session: {
@@ -345,11 +373,15 @@ describe("UserAvatarMenu", () => {
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
 
+    const onConsoleShow = vi.fn();
+    window.addEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
     let shown: unknown;
     act(() => {
       shown = (window as Window & { show?: () => boolean }).show?.();
     });
     expect(shown).toBe(true);
+    expect(onConsoleShow).toHaveBeenCalledTimes(1);
+    window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
 
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
   });

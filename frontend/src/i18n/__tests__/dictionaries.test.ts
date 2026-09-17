@@ -93,12 +93,11 @@ describe("翻译进度与注册表标记一致", () => {
    *   - 改为「棘轮式」基线：允许不超过既有缺口数，一旦有人新增未翻译
    *     文案导致缺口变大，测试立即失败。缺口补齐后应下调此基线。
    *
-   * id-ID 的 172 条缺口来自 master 上通道与模型配置相关功能
-   * （钉钉 / 企业微信 / QQ / Kimi / 智谱等），应由对应需求负责人补齐。
+   * id-ID 的 172 条缺口（master 上通道与模型配置相关功能：钉钉 / 企业微信 / QQ /
+   * Kimi / 智谱等）已于 2026-09-17 全量补齐，债务清零；基线归空后，
+   * 任何新增未翻译文案都会立即触发本测试失败。
    */
-  const KNOWN_TRANSLATION_DEBT: Readonly<Record<string, number>> = {
-    "id-ID": 172,
-  };
+   const KNOWN_TRANSLATION_DEBT: Readonly<Record<string, number>> = {};
 
   it("标记为 translationRequired 的语种不得超出已知翻译债务基线", () => {
     for (const def of LOCALE_DEFINITIONS) {

@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	tcerrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 
 	"cvm-mock-e2b/internal/core"
 	"cvm-mock-e2b/internal/provider"
@@ -25,6 +28,7 @@ type modifyFixture struct {
 type resizeStopProvider struct {
 	*provider.MockCloudProvider
 	resizeStopped bool
+	instance      provider.CloudInstanceRef
 }
 
 type guardedModifyProvider struct {
@@ -33,7 +37,7 @@ type guardedModifyProvider struct {
 	stopCalls  int
 }
 
-func (p *guardedModifyProvider) StopInstanceForResize(context.Context, string) error {
+func (p *guardedModifyProvider) StopInstanceForResize(context.Context, provider.CloudInstanceRef) error {
 	p.stopCalls++
 	if p.beforeStop != nil {
 		return p.beforeStop()
@@ -41,23 +45,57 @@ func (p *guardedModifyProvider) StopInstanceForResize(context.Context, string) e
 	return nil
 }
 
-func (p *resizeStopProvider) StopInstance(context.Context, string) error {
+func (p *resizeStopProvider) StopInstance(context.Context, provider.CloudInstanceRef) error {
 	return errors.New("ordinary pause must not be used for resize")
 }
 
-func (p *resizeStopProvider) StopInstanceForResize(context.Context, string) error {
+func (p *resizeStopProvider) StopInstanceForResize(_ context.Context, instance provider.CloudInstanceRef) error {
 	p.resizeStopped = true
+	p.instance = instance
 	return nil
 }
 
 func TestModifyUsesResizeSpecificStop(t *testing.T) {
 	p := &resizeStopProvider{MockCloudProvider: &provider.MockCloudProvider{}}
-	s := &Service{}
-	if err := s.runModifyStep(context.Background(), p, p, core.ModifyOperation{}, core.Instance{CloudID: "ins-test"}, core.ModifyStepStopInstance); err != nil {
+	f := newModifyFixture(t)
+	inst, err := f.svc.GetInstance(context.Background(), f.instanceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.runModifyStep(context.Background(), p, p, core.ModifyOperation{}, inst, core.ModifyStepStopInstance); err != nil {
 		t.Fatal(err)
 	}
 	if !p.resizeStopped {
 		t.Fatal("resize-specific stop was not called")
+	}
+	if p.instance.CloudID != inst.CloudID || p.instance.Region != "ap-beijing" {
+		t.Fatalf("unexpected regional instance ref: %+v", p.instance)
+	}
+}
+
+func TestBeginModifyRejectsCrossRegionTargetPool(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	target, err := f.svc.CreatePool(ctx, "johor-upgrade", "", "img-test", 0, testVpcID, testSubnetID, "ap-johorbahru-1", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create Johor target pool: %v", err)
+	}
+	target.InstanceType = "SA9.LARGE8"
+	target.SystemDiskSize = 80
+	target.TemplateClassID = "spec-4c8g80g"
+	target.SKUID = "sku-spec-4c8g80g"
+	if _, err := f.svc.UpdatePool(ctx, target); err != nil {
+		t.Fatalf("configure Johor target pool: %v", err)
+	}
+
+	_, err = f.svc.BeginModifyOperation(ctx, BeginModifyInput{
+		IdempotencyKey: "cross-region-upgrade",
+		SandboxID:      f.sandboxID,
+		TargetPoolID:   target.ID,
+		TargetSKUID:    target.SKUID,
+	})
+	if !errors.Is(err, core.ErrPoolRegionChange) {
+		t.Fatalf("expected ErrPoolRegionChange, got %v", err)
 	}
 }
 
@@ -74,7 +112,7 @@ func newModifyFixture(t *testing.T, backing ...store.Store) modifyFixture {
 	targetPool := createSpecPool(t, svc, "spec-4c8g80g", "SA9.LARGE8", 80)
 
 	insts, err := svc.RefillVerified(ctx, sourcePool.ID, 1, []string{"10.0.0.5"}, []string{"ins-modify-1"},
-		func(context.Context, string) error { return nil })
+		func(context.Context, provider.CloudInstanceRef) error { return nil })
 	if err != nil {
 		t.Fatalf("refill source pool: %v", err)
 	}
@@ -374,7 +412,7 @@ func TestRunModifyConvergesAndRebindsToTargetPool(t *testing.T) {
 		t.Fatalf("expected completed_at to be set")
 	}
 
-	spec, err := cp.DescribeInstanceSpec(ctx, "ins-modify-1")
+	spec, err := cp.DescribeInstanceSpec(ctx, provider.CloudInstanceRef{CloudID: "ins-modify-1", Region: "ap-beijing"})
 	if err != nil {
 		t.Fatalf("describe spec: %v", err)
 	}
@@ -514,12 +552,12 @@ func (p *networkGuardedProvider) CreateInstance(context.Context, core.Pool) (str
 	return "", "", nil
 }
 
-func (p *networkGuardedProvider) TerminateInstance(context.Context, string) error {
+func (p *networkGuardedProvider) TerminateInstance(context.Context, provider.CloudInstanceRef) error {
 	p.t.Fatal("modify must not terminate the instance")
 	return nil
 }
 
-func (p *networkGuardedProvider) ReinstallInstance(context.Context, string, string) error {
+func (p *networkGuardedProvider) ReinstallInstance(context.Context, provider.CloudInstanceRef, string) error {
 	p.t.Fatal("modify must not reinstall the instance: user data lives on the system disk")
 	return nil
 }
@@ -720,6 +758,159 @@ func TestRunModifyRequiresResizerCapability(t *testing.T) {
 	}
 }
 
+func TestRunModifyFallsBackToNextRejectedInstanceTypeCandidate(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-candidate-fallback")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"SA9.LARGE8", "SA2.LARGE8"},
+		resizeErrors: map[string]error{
+			"SA9.LARGE8": tcerrors.NewTencentCloudSDKError("LimitExceeded.InstanceQuota", "quota rejected this type", "req-quota"),
+		},
+	}
+
+	got, err := f.svc.RunModifyOperation(ctx, p, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != core.ModifyOperationStatusCompleted {
+		t.Fatalf("status=%s", got.Status)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8", "SA2.LARGE8"}) {
+		t.Fatalf("resize calls=%v", p.resizeCalls)
+	}
+	if !reflect.DeepEqual(got.InstanceTypeCandidates, p.candidates) || got.InstanceTypeCandidateIndex != 1 {
+		t.Fatalf("persisted plan=%v index=%d", got.InstanceTypeCandidates, got.InstanceTypeCandidateIndex)
+	}
+	if got.SourceInstanceType != "S5.MEDIUM4" || got.AppliedInstanceType != "SA2.LARGE8" {
+		t.Fatalf("source=%s applied=%s", got.SourceInstanceType, got.AppliedInstanceType)
+	}
+	if p.resolveCalls != 1 {
+		t.Fatalf("resolve calls=%d", p.resolveCalls)
+	}
+}
+
+func TestRunModifyFallsBackAfterInstanceFamilyCompatibilityRejection(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-family-fallback")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"BF1.LARGE8", "SA2.LARGE8"},
+		resizeErrors: map[string]error{
+			"BF1.LARGE8": tcerrors.NewTencentCloudSDKError(
+				"UnsupportedOperation.HeterogeneousChangeInstanceFamily",
+				"cannot change to heterogeneous family",
+				"req-family",
+			),
+		},
+	}
+
+	got, err := f.svc.RunModifyOperation(ctx, p, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AppliedInstanceType != "SA2.LARGE8" || got.InstanceTypeCandidateIndex != 1 {
+		t.Fatalf("applied=%s index=%d", got.AppliedInstanceType, got.InstanceTypeCandidateIndex)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"BF1.LARGE8", "SA2.LARGE8"}) {
+		t.Fatalf("resize calls=%v", p.resizeCalls)
+	}
+}
+
+func TestRunModifyKeepsCandidateOnTransientResizeError(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-candidate-transient")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"SA9.LARGE8", "SA2.LARGE8"},
+		resizeErrors: map[string]error{
+			"SA9.LARGE8": tcerrors.NewTencentCloudSDKError("RequestLimitExceeded", "retry later", "req-rate"),
+		},
+	}
+
+	if _, err := f.svc.RunModifyOperation(ctx, p, op.ID); err == nil {
+		t.Fatal("expected transient resize error")
+	}
+	stored, err := f.svc.GetModifyOperation(ctx, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.InstanceTypeCandidateIndex != 0 {
+		t.Fatalf("candidate index advanced to %d", stored.InstanceTypeCandidateIndex)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8"}) {
+		t.Fatalf("resize calls=%v", p.resizeCalls)
+	}
+}
+
+func TestRunModifyReadbackConvergesWhenAppliedTypeCheckpointInitiallyFails(t *testing.T) {
+	ctx := context.Background()
+	backing := &failAppliedResizePlanStore{Store: store.NewMemoryStore(), failOnce: true}
+	f := newModifyFixture(t, backing)
+	op := f.begin(t, "task-candidate-checkpoint")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"SA9.LARGE8", "SA2.LARGE8"},
+	}
+
+	if _, err := f.svc.RunModifyOperation(ctx, p, op.ID); err == nil {
+		t.Fatal("expected injected applied-type checkpoint failure")
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8"}) {
+		t.Fatalf("first attempt resize calls=%v", p.resizeCalls)
+	}
+	got, err := f.svc.RunModifyOperation(ctx, p, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != core.ModifyOperationStatusCompleted || got.AppliedInstanceType != "SA9.LARGE8" {
+		t.Fatalf("status=%s applied=%s", got.Status, got.AppliedInstanceType)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8"}) {
+		t.Fatalf("readback repeated cloud resize: %v", p.resizeCalls)
+	}
+	if p.resolveCalls != 1 {
+		t.Fatalf("persisted candidates should be reused, resolve calls=%d", p.resolveCalls)
+	}
+}
+
+type candidateModifyProvider struct {
+	*provider.MockCloudProvider
+	candidates   []string
+	resizeErrors map[string]error
+	resolveCalls int
+	resizeCalls  []string
+}
+
+func (p *candidateModifyProvider) ResolveInstanceTypeCandidates(context.Context, provider.CloudInstanceRef, string) ([]string, error) {
+	p.resolveCalls++
+	return append([]string(nil), p.candidates...), nil
+}
+
+func (p *candidateModifyProvider) ResizeInstanceType(ctx context.Context, instance provider.CloudInstanceRef, instanceType string) error {
+	p.resizeCalls = append(p.resizeCalls, instanceType)
+	if err := p.resizeErrors[instanceType]; err != nil {
+		return err
+	}
+	return p.MockCloudProvider.ResizeInstanceType(ctx, instance, instanceType)
+}
+
+type failAppliedResizePlanStore struct {
+	store.Store
+	failOnce bool
+}
+
+func (s *failAppliedResizePlanStore) UpdateModifyOperationResizePlan(ctx context.Context, in store.ModifyOperationResizePlan) (core.ModifyOperation, error) {
+	if s.failOnce && in.AppliedInstanceType != "" {
+		s.failOnce = false
+		return core.ModifyOperation{}, errors.New("injected resize plan checkpoint failure")
+	}
+	return s.Store.UpdateModifyOperationResizePlan(ctx, in)
+}
+
 // countingResizer 记录云侧规格调用次数，用于断言不可逆步骤没有被重复执行。
 type countingResizer struct {
 	*provider.MockCloudProvider
@@ -727,14 +918,14 @@ type countingResizer struct {
 	diskResizes    int
 }
 
-func (c *countingResizer) ResizeInstanceType(ctx context.Context, cloudID, instanceType string) error {
+func (c *countingResizer) ResizeInstanceType(ctx context.Context, instance provider.CloudInstanceRef, instanceType string) error {
 	c.computeResizes++
-	return c.MockCloudProvider.ResizeInstanceType(ctx, cloudID, instanceType)
+	return c.MockCloudProvider.ResizeInstanceType(ctx, instance, instanceType)
 }
 
-func (c *countingResizer) ResizeSystemDisk(ctx context.Context, cloudID string, sizeGB int) error {
+func (c *countingResizer) ResizeSystemDisk(ctx context.Context, instance provider.CloudInstanceRef, sizeGB int) error {
 	c.diskResizes++
-	return c.MockCloudProvider.ResizeSystemDisk(ctx, cloudID, sizeGB)
+	return c.MockCloudProvider.ResizeSystemDisk(ctx, instance, sizeGB)
 }
 
 // failingResizer 让计算规格升级这一步永远失败，停机步骤仍然成功。
@@ -742,7 +933,7 @@ type failingResizer struct {
 	*provider.MockCloudProvider
 }
 
-func (failingResizer) ResizeInstanceType(context.Context, string, string) error {
+func (failingResizer) ResizeInstanceType(context.Context, provider.CloudInstanceRef, string) error {
 	return errors.New("cvm rejected the instance type change")
 }
 
@@ -752,17 +943,21 @@ type noResizeProvider struct{}
 func (noResizeProvider) CreateInstance(context.Context, core.Pool) (string, string, error) {
 	return "", "", nil
 }
-func (noResizeProvider) ReinstallInstance(context.Context, string, string) error { return nil }
-func (noResizeProvider) DescribeInstance(context.Context, string) (string, error) {
+func (noResizeProvider) ReinstallInstance(context.Context, provider.CloudInstanceRef, string) error {
+	return nil
+}
+func (noResizeProvider) DescribeInstance(context.Context, provider.CloudInstanceRef) (string, error) {
 	return "RUNNING", nil
 }
-func (noResizeProvider) TerminateInstance(context.Context, string) error { return nil }
-func (noResizeProvider) VerifyInstance(context.Context, string) error    { return nil }
-func (noResizeProvider) StopInstance(context.Context, string) error      { return nil }
-func (noResizeProvider) StartInstance(context.Context, string) error     { return nil }
+func (noResizeProvider) TerminateInstance(context.Context, provider.CloudInstanceRef) error {
+	return nil
+}
+func (noResizeProvider) VerifyInstance(context.Context, provider.CloudInstanceRef) error { return nil }
+func (noResizeProvider) StopInstance(context.Context, provider.CloudInstanceRef) error   { return nil }
+func (noResizeProvider) StartInstance(context.Context, provider.CloudInstanceRef) error  { return nil }
 func (noResizeProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
 	return "", nil
 }
-func (noResizeProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+func (noResizeProvider) DescribeInstanceSnapshot(context.Context, string, string) (provider.SnapshotStatus, string, error) {
 	return provider.SnapshotStatusReady, "", nil
 }

@@ -30,6 +30,7 @@ data:
   TENCENT_REGION: "REPLACE_TENCENT_REGION"
   TENCENT_CVM_ENDPOINT: cvm.internal.tencentcloudapi.com
   TENCENT_INSTANCE_TYPE: SA5.LARGE8
+  TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION: '{"ap-beijing":["SA5","S5","SA2","SA3","S6"],"ap-seoul":["SA5","S5","SA2","SA3","S6"],"ap-shanghai":["SA5","S5","SA2","SA3","S6"],"ap-singapore":["SA5","S5","SA2","SA3","S6"]}'
   TENCENT_ADDRESS_TYPE: private
   TENCENT_PUBLIC_EGRESS_MBPS: "0"
   INGRESSPROXY_BASE_URL: "http://ingressproxy-router.sandbox.svc.cluster.local"

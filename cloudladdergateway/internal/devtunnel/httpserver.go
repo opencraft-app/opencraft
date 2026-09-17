@@ -18,12 +18,13 @@ const reservedPrefix = "/_tunnel/"
 // Server 把 Hub 暴露成 HTTP：
 //   - ingest：云梯把改派后的回调打到任意业务路径，Server 按 Host 分流、阻塞等 agent 应答
 //   - GET  /_tunnel/poll?env=<host>       ：agent 长轮询取下一个请求
-//   - POST /_tunnel/reply?rid=<rid>       ：agent 交回应答
+//   - POST /_tunnel/reply?rid=<rid>&env=<host>：agent 交回应答
 //
 // 除非 token 为空（仅本地自测），否则所有端点都要求 Authorization: Bearer <token>。
 type Server struct {
 	hub             *Hub
 	token           string
+	capabilities    CapabilityVerifier
 	dispatchTimeout time.Duration
 	pollTimeout     time.Duration
 	maxBodyBytes    int64
@@ -33,10 +34,18 @@ type Server struct {
 // ServerOptions 配置 Server；零值走安全默认。
 type ServerOptions struct {
 	Token           string
+	Capabilities    CapabilityVerifier
 	DispatchTimeout time.Duration
 	PollTimeout     time.Duration
 	MaxBodyBytes    int64
 	Logger          *log.Logger
+}
+
+// CapabilityVerifier validates a short-lived agent capability against the
+// current developer registration. Static Token authentication remains for the
+// internal ingest hop; capabilities are accepted only on /_tunnel/*.
+type CapabilityVerifier interface {
+	Verify(ctx context.Context, token string, tunnelHost string) error
 }
 
 // NewServer 构造 Server。
@@ -44,6 +53,7 @@ func NewServer(hub *Hub, opts ServerOptions) *Server {
 	s := &Server{
 		hub:             hub,
 		token:           strings.TrimSpace(opts.Token),
+		capabilities:    opts.Capabilities,
 		dispatchTimeout: opts.DispatchTimeout,
 		pollTimeout:     opts.PollTimeout,
 		maxBodyBytes:    opts.MaxBodyBytes,
@@ -89,11 +99,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // authorized 用常数时间比较，避免 token 被计时攻击。token 为空时放行（本地自测）。
 func (s *Server) authorized(r *http.Request) bool {
-	if s.token == "" {
+	if s.token == "" && s.capabilities == nil {
 		return true
 	}
 	got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
+	if s.token != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1 {
+		return true
+	}
+	if s.capabilities == nil || !strings.HasPrefix(r.URL.Path, reservedPrefix) || got == "" {
+		return false
+	}
+	tunnelHost := ""
+	if r.URL.Path == reservedPrefix+"poll" || r.URL.Path == reservedPrefix+"reply" {
+		tunnelHost = strings.TrimSpace(r.URL.Query().Get("env"))
+		if tunnelHost == "" {
+			return false
+		}
+	}
+	return s.capabilities.Verify(r.Context(), got, tunnelHost) == nil
 }
 
 // handleIngest 承接云梯改派来的回调：按 Host 分流、阻塞等 agent 回放的应答。
@@ -168,6 +191,7 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 // handleReply 让 agent 交回某个 rid 的应答。rid 已不存在（ingest 超时放弃）时返 410。
 func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
 	rid := strings.TrimSpace(r.URL.Query().Get("rid"))
+	env := strings.TrimSpace(r.URL.Query().Get("env"))
 	if rid == "" {
 		http.Error(w, "missing rid", http.StatusBadRequest)
 		return
@@ -182,7 +206,7 @@ func (s *Server) handleReply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decode reply: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if !s.hub.Reply(rid, resp) {
+	if !s.hub.Reply(env, rid, resp) {
 		http.Error(w, "unknown or expired rid", http.StatusGone)
 		return
 	}
