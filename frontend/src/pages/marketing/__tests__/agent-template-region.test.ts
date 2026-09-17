@@ -76,4 +76,38 @@ describe("template region adaptation", () => {
       }
     }
   });
+
+  /*
+   * 需要用户自行申请 API Key 的技能不允许进国内站模板。
+   *
+   * 起因是 tencent-news：它的 SKILL.md 规定「Key 未就绪时停止业务查询」，
+   * 用户装完模板不配 Key，定时任务就每天推一条失败。模板的价值在于开箱
+   * 即用，不该在第一步就卡一道申请流程，所以这类技能整条排除，宁可让
+   * 模型用自身能力完成。
+   *
+   * 清单按实际核实结果维护（查 SkillHub 的 SKILL.md）。
+   */
+  const SKILLS_NEEDING_API_KEY = ["tencent-news"];
+
+  it("keeps domestic templates free of skills that require an API key", () => {
+    for (const tpl of cnTemplates) {
+      for (const skill of tpl.skills) {
+        expect(SKILLS_NEEDING_API_KEY, `${tpl.id} 引入了需要 API Key 的 ${skill.slug}`)
+          .not.toContain(skill.slug);
+      }
+      // 任务说明里也不该再引导用户去配 Key
+      const prompts = tpl.routines.map((r) => r.desc).join("\n");
+      expect(prompts, `${tpl.id} 的任务说明仍提到 API Key`).not.toMatch(/API Key/);
+    }
+  });
+
+  it("keeps the domestic stock template on a key-free data skill", () => {
+    const watcher = cnTemplates.find((tpl) => tpl.id === "market-watcher");
+    expect(watcher).toBeDefined();
+    /*
+     * 行情是这个模板的核心能力，不该卡在「先去申请 Key」上。
+     * westock-data 由腾讯自选股官方发布，无需任何凭据。
+     */
+    expect(watcher!.skills.map((s) => s.slug)).toContain("westock-data");
+  });
 });
