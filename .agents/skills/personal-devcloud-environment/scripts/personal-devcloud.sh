@@ -835,7 +835,6 @@ PY
 }
 
 ensure_devtunnel_agent_binary() {
-  [[ "$SITE" == "intl" ]] || return 0
   local revision build_cache
   revision="$(python3 - "$REPO_ROOT" <<'PY'
 import hashlib
@@ -919,7 +918,6 @@ devtunnel_agent_running() {
 
 ensure_devtunnel_agent() {
   local tunnel_host="$1" tunnel_token="$2" token_sha pid
-  [[ "$SITE" == "intl" ]] || return 0
   [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || die "registration did not return a valid tunnelHost"
   [[ "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ && ${#tunnel_token} -ge 16 && ${#tunnel_token} -le 512 ]] \
     || die "registration did not return a valid short-lived tunnel capability"
@@ -977,13 +975,11 @@ register_route() {
   [[ "$status" == "active" ]] || die "registration is not active: ${status:-missing}"
   [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
     || die "registration source address mismatch: expected $ip:$CALLBACK_PORT, got ${target_ip:-missing}:${registered_port:-missing}"
-  if [[ "$SITE" == "intl" ]]; then
-    if [[ ! "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ || ${#tunnel_token} -lt 16 || ${#tunnel_token} -gt 512 ]]; then
-      curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
-      die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
-    fi
-    ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"
+  if [[ ! "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ || ${#tunnel_token} -lt 16 || ${#tunnel_token} -gt 512 ]]; then
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
   fi
+  ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
   state_set registration_response "$safe_response"
@@ -995,11 +991,7 @@ register_route() {
   state_set registered_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   unset tunnel_token
   mark_current_site
-  if [[ "$SITE" == "intl" ]]; then
-    log "registered uin=$(state_get uin) through tunnelHost=$tunnel_host"
-  else
-    log "registered uin=$(state_get uin) -> http://$ip:$CALLBACK_PORT"
-  fi
+  log "registered uin=$(state_get uin) through tunnelHost=$tunnel_host"
 }
 
 stop_heartbeat() {
@@ -1129,10 +1121,8 @@ status() {
       tunnel_host="$(printf '%s' "$response" | json_value 'd.get("tunnelHost", "")' 2>/dev/null || true)"
       [[ "$status" == "active" ]] || rc=1
       [[ -n "$ip" && "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] || rc=1
-      if [[ "$SITE" == "intl" ]]; then
-        [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || rc=1
-        devtunnel_agent_running "$tunnel_host" || rc=1
-      fi
+      [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || rc=1
+      devtunnel_agent_running "$tunnel_host" || rc=1
     else
       rc=1
     fi
@@ -1140,8 +1130,13 @@ status() {
     rc=1
   fi
   kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack -o wide || rc=1
-  kubectl wait --for=condition=Ready pods -A \
-    -l app.kubernetes.io/part-of=lightclaw-localstack --timeout=2s >/dev/null || rc=1
+  local pod_namespace pod_name
+  while IFS=$'\t' read -r pod_namespace pod_name; do
+    [[ -n "$pod_namespace" && -n "$pod_name" ]] || continue
+    kubectl wait --for=condition=Ready "pod/$pod_name" -n "$pod_namespace" --timeout=2s >/dev/null || rc=1
+  done < <(kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack \
+    --field-selector=status.phase!=Succeeded,status.phase!=Failed \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\n"}{end}' 2>/dev/null) || rc=1
   heartbeat_running || rc=1
   return "$rc"
 }
@@ -1171,9 +1166,7 @@ require_active_registration() {
   ip="$(discover_devcloud_ip)"
   [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
     || die "developer route is registered for ${target_ip:-missing}:${registered_port:-missing}, not this DevCloud $ip:$CALLBACK_PORT"
-  if [[ "$SITE" == "intl" ]]; then
-    devtunnel_agent_running "$tunnel_host" || die "devtunnel-agent is not running for tunnelHost=${tunnel_host:-missing}"
-  fi
+  devtunnel_agent_running "$tunnel_host" || die "devtunnel-agent is not running for tunnelHost=${tunnel_host:-missing}"
 }
 
 verify_order_no_pay() {

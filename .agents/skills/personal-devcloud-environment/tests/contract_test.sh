@@ -287,14 +287,41 @@ test_cn_registration_sends_explicit_devcloud_target() (
   curl() { return 0; }
   curl_with_token() {
     printf '%s\n' "$*" >"$TEST_ROOT/cn-registration-request"
-    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"expiresAt":"2099-01-01T00:00:00Z"}'
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"short-lived-cn-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
   }
-  ensure_devtunnel_agent() { fail "CN must not start devtunnel-agent"; }
+  ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/cn-tunnel-assignment"; }
   register_route
   grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/cn-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/cn-registration-request"
+  assert_eq 'uin-450860000013.cn.tunnel.internal|short-lived-cn-registration-token' \
+    "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
   assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
+  ! rg -q 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+)
+
+test_cn_registration_without_capability_fails_closed() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/cn-missing-token" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_IP='9.134.214.121'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    if [[ " $* " == *' -X DELETE '* ]]; then
+      printf 'disabled\n' >"$TEST_ROOT/cn-missing-token-delete"
+      printf '%s\n' '{"uin":450860000013,"status":"disabled"}'
+      return
+    fi
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  ensure_devtunnel_agent() { fail "agent must not start without a per-registration capability"; }
+  if (register_route) >/dev/null 2>&1; then
+    fail "CN registration succeeded without a per-registration tunnel capability"
+  fi
+  [[ -s "$TEST_ROOT/cn-missing-token-delete" ]] || fail "unsafe CN registration was not disabled"
 )
 
 test_heartbeat_survives_transient_failures() (
@@ -520,7 +547,8 @@ run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounse
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout
 run_test 'Intl registration without a capability fails closed' test_intl_registration_without_capability_fails_closed
-run_test 'CN registration sends the discovered DevCloud target without a UIN' test_cn_registration_sends_explicit_devcloud_target
+run_test 'CN registration sends the DevCloud target and starts its assigned tunnel' test_cn_registration_sends_explicit_devcloud_target
+run_test 'CN registration without a capability fails closed' test_cn_registration_without_capability_fails_closed
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
