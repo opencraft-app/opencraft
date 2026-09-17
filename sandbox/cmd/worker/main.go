@@ -569,6 +569,16 @@ func advanceSingleSKURollout(ctx context.Context, svc *service.Service, sku core
 	if err != nil {
 		return false, newSKURolloutError(sku.ID, "", "list_pools_for_sku", err)
 	}
+	multiRegion, err := poolsSpanMultipleRegions(pools)
+	if err != nil {
+		return false, newSKURolloutError(sku.ID, "", "resolve_pool_regions", err)
+	}
+	if multiRegion {
+		// A cloud image ID is regional. CI resolves the regional image set and
+		// writes the concrete image to each Pool. Never replace those Pool-owned
+		// image IDs with the SKU's single-region compatibility field.
+		return false, nil
+	}
 	if desired == "" {
 		return false, nil
 	}
@@ -743,6 +753,21 @@ func advanceSingleSKURollout(ctx context.Context, svc *service.Service, sku core
 		return false, newSKURolloutError(sku.ID, "", "persist_converged_final", err)
 	}
 	return true, nil
+}
+
+func poolsSpanMultipleRegions(pools []core.Pool) (bool, error) {
+	regions := make(map[string]struct{}, 2)
+	for _, pool := range pools {
+		region, err := core.RegionFromZone(pool.Zone)
+		if err != nil {
+			return false, fmt.Errorf("derive region for pool %s: %w", pool.ID, err)
+		}
+		regions[region] = struct{}{}
+		if len(regions) > 1 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func shouldEmitSKURolloutStateEvent(previousState core.SKURolloutState, previousReason string, previousCursor string, nextState core.SKURolloutState, nextReason string, nextCursor string) bool {

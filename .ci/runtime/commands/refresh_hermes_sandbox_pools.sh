@@ -150,7 +150,25 @@ api_patch_json() {
 refresh_skus() {
   local api_base="$1"
   local image_id="$2"
-  local skus_json sku_ids sku_id body
+  local pools_json="$3"
+  local region_count skus_json sku_ids sku_id body
+
+  region_count="$(
+    jq -r --arg template "$TEMPLATE_CLASS_ID" '
+      [
+        .[]
+        | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
+        | ((.zone // "") | sub("-[0-9]+$"; ""))
+        | select(length > 0)
+      ]
+      | unique
+      | length
+    ' <<<"$pools_json"
+  )"
+  if [[ "$region_count" -gt 1 ]]; then
+    log "multi-region Hermes Pools detected; Pool base_image remains authoritative and global SKU image update is skipped"
+    return
+  fi
 
   if ! skus_json="$(api_get "$api_base" "/skus" 2>/dev/null)"; then
     log "SKU endpoint unavailable; pool patch will continue"
@@ -192,23 +210,31 @@ refresh_skus() {
 target_pool_ids() {
   local api_base="$1"
   local pools_json="$2"
+  local target_region="$3"
   python3 -c '
 import json
+import re
 import sys
 import urllib.request
 
-api_base, template, legacy_raw = sys.argv[1:4]
+api_base, template, legacy_raw, target_region = sys.argv[1:5]
 legacy_ids = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 pools = json.load(sys.stdin)
 by_id = {str(pool.get("id") or ""): pool for pool in pools}
 selected = []
 seen = set()
 
+def pool_region(pool):
+    zone = str(pool.get("zone") or "").strip()
+    match = re.match(r"^(.*)-[0-9]+$", zone)
+    return match.group(1) if match else ""
+
 def add(pool_id):
     pool_id = str(pool_id or "")
     if not pool_id or pool_id in seen:
         return
-    if pool_id in by_id:
+    pool = by_id.get(pool_id)
+    if pool and pool_region(pool) == target_region:
         seen.add(pool_id)
         selected.append(pool_id)
 
@@ -232,7 +258,7 @@ except Exception:
 
 for pool_id in selected:
     print(pool_id)
-  ' "$api_base" "$TEMPLATE_CLASS_ID" "$LEGACY_POOL_IDS" <<<"$pools_json"
+  ' "$api_base" "$TEMPLATE_CLASS_ID" "$LEGACY_POOL_IDS" "$target_region" <<<"$pools_json"
 }
 
 print_pool_discovery_debug() {
@@ -279,12 +305,13 @@ patch_pools() {
 verify_refresh() {
   local api_base="$1"
   local image_id="$2"
+  local region="$3"
   local deadline=$((SECONDS + VERIFY_TIMEOUT_SECONDS))
   local mismatches pools_json pool_ids
 
   while true; do
     pools_json="$(api_get "$api_base" "/pools")"
-    pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
+    pool_ids="$(target_pool_ids "$api_base" "$pools_json" "$region")"
     mismatches="$(
       jq -r --arg ids "$pool_ids" --arg image "$image_id" '
           ($ids | split("\n") | map(select(length > 0))) as $target_ids
@@ -310,10 +337,11 @@ verify_refresh() {
 print_summary() {
   local api_base="$1"
   local _image_id="$2"
+  local region="$3"
   local pools_json pool_ids pool_id instances_json counts skus_json
 
   pools_json="$(api_get "$api_base" "/pools")"
-  pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
+  pool_ids="$(target_pool_ids "$api_base" "$pools_json" "$region")"
   log "pool image summary"
   jq -r --arg ids "$pool_ids" '
     ($ids | split("\n") | map(select(length > 0))) as $target_ids
@@ -375,17 +403,17 @@ refresh_env() {
   fi
 
   pools_json="$(api_get "$api_base" "/pools")"
-  pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
+  pool_ids="$(target_pool_ids "$api_base" "$pools_json" "$region")"
   if [[ -z "$pool_ids" ]]; then
     print_pool_discovery_debug "$api_base" "$pools_json"
     fail "no Hermes pools found in ${env_name}"
   fi
   log "target pools for ${env_name}: ${pool_ids//$'\n'/ }"
 
-  refresh_skus "$api_base" "$image_id"
+  refresh_skus "$api_base" "$image_id" "$pools_json"
   patch_pools "$api_base" "$image_id" "$pool_ids"
-  verify_refresh "$api_base" "$image_id" || fail "pool image verification failed for ${env_name}"
-  print_summary "$api_base" "$image_id"
+  verify_refresh "$api_base" "$image_id" "$region" || fail "pool image verification failed for ${env_name}"
+  print_summary "$api_base" "$image_id" "$region"
   kill "$pf_pid" >/dev/null 2>&1 || true
 }
 
