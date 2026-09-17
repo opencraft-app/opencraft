@@ -184,7 +184,7 @@ stacks:
     expected_subnet_id: subnet-38xcw327
     storage_size_gb: 0
     purchase_months: 1
-    auto_renew_flag: 0
+    auto_renew_flag: 1
     auto_voucher: 0
     tags:
       env: shprod
@@ -200,8 +200,11 @@ stacks:
     ctl_producer_role: lightvela-ctl-referral-producer
     referral_consumer_role: lightvela-referral-consumer
     user_auth_ssm_secret: mono-shprod-lightclaw-auth-secrets
+    user_auth_ssm_version_id: referral-sh-20260916-auth
     ctl_ssm_secret: mono-shprod-ctl-runtime-secrets
+    ctl_ssm_version_id: referral-sh-20260916-ctl
     referral_ssm_secret: mono-shprod-referral-runtime-secrets
+    referral_ssm_version_id: SSM_Current
 
   tcr:
     instance_type: basic

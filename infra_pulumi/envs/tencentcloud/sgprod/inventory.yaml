@@ -140,6 +140,52 @@ stacks:
       security_groups:
         - __TKE_NODE_SECURITY_GROUP_ID__
 
+  pulsar:
+    enabled: true
+    manage_cluster: true
+    existing_cluster_id: ""
+    broker_url: ""
+    expected_cluster_name: lightvela-pulsar-sg
+    expected_product_name: PULSAR.P2.MINI1
+    expected_zone_ids: [900002]
+    expected_vpc_id: vpc-253zjh0f
+    expected_subnet_id: subnet-ounkj91k
+    storage_size_gb: 0
+    purchase_months: 1
+    auto_renew_flag: 1
+    auto_voucher: 0
+    tags:
+      env: sgprod
+      app: lightclaw
+      component: referral
+    namespace: lightvela-ref
+    message_ttl_seconds: 604800
+    retention_minutes: 1440
+    retention_size_mb: 10240
+    topic: lightvela.referral.events.v1
+    dead_letter_topic: lightvela.referral.events.v1-dlq
+    user_auth_producer_role: lightvela-user-auth-referral-producer
+    ctl_producer_role: lightvela-ctl-referral-producer
+    referral_consumer_role: lightvela-referral-consumer
+    user_auth_ssm_secret: mono-sgprod-lightclaw-auth-secrets
+    user_auth_ssm_version_id: auth-federation-sg-20260824-2035
+    ctl_ssm_secret: mono-sgprod-ctl-runtime-secrets
+    ctl_ssm_version_id: v5
+    referral_ssm_secret: mono-sgprod-referral-runtime-secrets
+    referral_ssm_version_id: SSM_Current
+
+  referral:
+    enabled: true
+    existing_cluster_id: cynosdbmysql-jwe6dqjx
+    existing_endpoint: 10.15.192.12:3306
+    database: lightvela_referral
+    account: referral
+    account_host: "%"
+    ssm_secret_name: mono-sgprod-referral-runtime-secrets
+    ssm_version_id: SSM_Current
+    internal_service_token_source_ssm: mono-sgprod-ctl-runtime-secrets
+    internal_service_token_version_id: v5
+
   tcr:
     instance_type: basic
     namespace_name: lightclaw

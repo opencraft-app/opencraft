@@ -1384,7 +1384,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
         self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
@@ -1439,6 +1439,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(
             shprod.image_repo,
             "lightclaw-shprod.tencentcloudcr.com/lightclaw/referral",
+        )
+
+        sgprod = load_bundle(manifest, "referral", "sgprod")
+        self.assertEqual(
+            sgprod.image_repo,
+            "lightclaw-sgprod.tencentcloudcr.com/lightclaw/referral",
+        )
+        self.assertIn("scripts/ssm_manifest.referral.sgprod.yaml", sgprod.publish_paths)
+        sgprod_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.referral.sgprod.yaml").read_text()
+        )
+        sgprod_ssm_item = next(
+            item for item in sgprod_ssm["items"] if item["id"] == "referral-runtime-secrets"
+        )
+        self.assertEqual(
+            set(sgprod_ssm_item["required_keys"]),
+            {
+                "REFERRAL_DB_PASSWORD",
+                "REFERRAL_PULSAR_TOKEN",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
         )
 
         shprod_overlay = yaml.safe_load(

@@ -32,6 +32,7 @@ type Config struct {
 	EndpointHost string
 	EndpointPort int
 	SecretName   string
+	Description  string
 }
 
 type IMMaterial struct {
