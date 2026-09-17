@@ -13,7 +13,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-09-17
 review_due: 2026-12-15
-revision: 0.2.0
+revision: 0.3.0
 precedence: task
 derived: false
 ---
@@ -149,3 +149,13 @@ release-gitops、service-ci、site-environment-routing、service-collaboration�
   cluster endpoint 查询；未执行 apply，属于环境阻塞而非本次 bootstrap 行为失败。
 - 下一步：完成验证后等待 commit/push/MR 明确授权；源码合入后重跑受控 Runtime bootstrap，
   由 bootstrap 更新 SSM/SOPS，再重新激活 runtime，不直接编辑 Secret。
+
+## Runtime #17：collaboration-only typed nil 修复
+
+- `gitops@b02dd502` 与候选镜像 `e568ceff…` 同步成功，Pod 的 identity key 已为 32 字节；后续启动
+  失败于“无法组装平台 API”。根因是 `*tat.Client(nil)` 赋给 `Registrar` 接口后接口非 nil，
+  与真正为 nil 的 `TerminalIssuer` 被误判为 TAT 只配置一半。
+- 修复仅在把可选 TAT client 注入平台配置时保留真正 nil；非 Collaboration-only 路径仍传入原
+  client，Computer/TAT 行为不变。RED 为 nil client 得到非 nil Registrar，GREEN 后保持 nil。
+- 完整 Collaboration `go test ./...` 1135 项、`go vet ./...` 与 cli race 31 项通过。live 已回退到
+  foundation；下一步合入源码、构建新候选镜像，再执行一次 runtime bootstrap 和 live 验收。
