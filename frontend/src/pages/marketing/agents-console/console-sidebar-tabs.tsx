@@ -4,6 +4,9 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConsoleTooltip } from "./console-tooltip";
 import { cn } from "@/lib/utils";
 
+// Keep the sidebar treatment local; other AgentTabs retain their own borders.
+const sidebarTriggerClassName = "min-w-0 border-0 bg-transparent px-3 py-0 text-sm transition-none focus-visible:ring-offset-2 data-[state=active]:shadow-sm";
+
 export interface ConsoleSidebarTabsProps {
   value: "settings" | "chat";
   canChat: boolean;
@@ -28,10 +31,10 @@ export function ConsoleSidebarTabs({ value, canChat, label, settingsLabel, chatL
     },
   });
   return <Tabs value={value} onValueChange={intent} className={cn("flex flex-col", value === "settings" ? "shrink-0" : "min-h-0")}>
-    <AgentTabsList variant="segmented" aria-label={label} className="mb-3 grid h-10 w-full grid-cols-2 p-1">
-      <AgentTabsTrigger variant="segmented" value="settings" className="min-w-0 px-3 text-sm" {...triggerEvents("settings")}>{settingsLabel}</AgentTabsTrigger>
+    <AgentTabsList variant="segmented" aria-label={label} className="mb-3 grid h-10 w-full grid-cols-2 gap-1 border-0 p-1">
+      <AgentTabsTrigger variant="segmented" value="settings" className={sidebarTriggerClassName} {...triggerEvents("settings")}>{settingsLabel}</AgentTabsTrigger>
       <ConsoleTooltip content={canChat ? undefined : unavailableLabel} className="h-full min-h-0 min-w-0" label={unavailableLabel}>
-        <AgentTabsTrigger variant="segmented" value="chat" disabled={!canChat} aria-describedby={canChat ? undefined : unavailableId} className="w-full min-w-0 px-3 text-sm" {...triggerEvents("chat")}>{chatLabel}</AgentTabsTrigger>
+        <AgentTabsTrigger variant="segmented" value="chat" disabled={!canChat} aria-describedby={canChat ? undefined : unavailableId} className={cn(sidebarTriggerClassName, "w-full")} {...triggerEvents("chat")}>{chatLabel}</AgentTabsTrigger>
       </ConsoleTooltip>
     </AgentTabsList>
     {!canChat && <span id={unavailableId} className="sr-only">{unavailableLabel}</span>}

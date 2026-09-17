@@ -36,12 +36,45 @@ describe("Agents console presentation", () => {
     expect(screen.getByRole("tabpanel").parentElement).not.toHaveClass("shrink-0");
   });
 
+  it("uses the sidebar-only B treatment without double borders or extra animation", () => {
+    const props = { canChat: true, label: "Sidebar", settingsLabel: "Explore", chatLabel: "Chat", unavailableLabel: "", onSettings: vi.fn(), onChat: vi.fn() };
+    const view = render(<TooltipProvider><ConsoleSidebarTabs {...props} value="settings">Navigation</ConsoleSidebarTabs></TooltipProvider>);
+    expect(screen.getByRole("tablist")).toHaveClass("h-10", "p-1", "gap-1", "rounded-md", "border-0", "bg-[var(--agent-tabs-track,#f3f3f1)]", "shadow-none");
+    expect(screen.getByRole("tablist")).not.toHaveClass("border");
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(tab).toHaveClass("h-full", "rounded-sm", "border-0", "bg-transparent", "py-0", "text-sm", "font-medium", "transition-none", "data-[state=active]:bg-[var(--agent-tabs-selected,#fff)]", "data-[state=active]:shadow-sm", "focus-visible:ring-2", "focus-visible:ring-offset-2");
+      expect(tab).not.toHaveClass("border", "transition", "data-[state=active]:shadow-none");
+    }
+    expect(screen.getByRole("tab", { name: "Explore" })).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+    view.rerender(<TooltipProvider><ConsoleSidebarTabs {...props} value="chat">Sessions</ConsoleSidebarTabs></TooltipProvider>);
+    expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+  });
+
   it("constrains the unavailable Chat tooltip wrapper to the tab list's inner height", () => {
     render(<TooltipProvider><ConsoleSidebarTabs value="settings" canChat={false} label="Sidebar" settingsLabel="Explore" chatLabel="Chat" unavailableLabel="Main bot only" onSettings={vi.fn()} onChat={vi.fn()}>Navigation</ConsoleSidebarTabs></TooltipProvider>);
     const chat = screen.getByRole("tab", { name: "Chat" });
     expect(chat).toBeDisabled();
     expect(chat.parentElement).toHaveClass("h-full", "min-h-0");
-    expect(chat).toHaveClass("h-full", "py-2");
+    expect(chat).toHaveClass("h-full", "py-0");
+  });
+
+  it("keeps unavailable Chat explained and inactive for pointer and keyboard input", async () => {
+    const chatIntent = vi.fn();
+    const user = userEvent.setup();
+    render(<TooltipProvider delayDuration={0}><ConsoleSidebarTabs value="settings" canChat={false} label="Sidebar" settingsLabel="Explore" chatLabel="Chat" unavailableLabel="Main bot only" onSettings={vi.fn()} onChat={chatIntent}>Navigation</ConsoleSidebarTabs></TooltipProvider>);
+    const chat = screen.getByRole("tab", { name: "Chat" });
+    expect(chat).toHaveAccessibleDescription("Main bot only");
+    await user.click(chat);
+    await user.click(screen.getByRole("tab", { name: "Explore" }));
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Explore" })).toHaveAttribute("aria-selected", "true");
+    await user.tab();
+    expect(chat.parentElement).toHaveFocus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Main bot only");
+    await user.keyboard("{Enter}");
+    expect(chatIntent).not.toHaveBeenCalled();
+    expect(chat).toHaveAttribute("aria-selected", "false");
   });
 
   it("gives enabled tooltip buttons one tab stop and disabled reasons a focusable stop", async () => {

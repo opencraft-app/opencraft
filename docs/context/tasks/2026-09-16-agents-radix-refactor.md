@@ -18,6 +18,14 @@ derived: false
 
 # Agents Radix 重构 Task Pack
 
+## sidebar_switcher_b_20260917
+
+- 交付授权：用户已确认本轮B的功能提交和标准sourceRevision记录提交一起推送到既有预览分支。仅上述5文件与生成清单；保留未知fixture，不合并master、不创建MR、不监控CI。以下“未提交”是本地验收时状态，交付实际结果见runtime/sidebar-switcher-b-push-report.md。
+- 用户选择本轮独立探索/对话 Demo B，仅调整 `ConsoleSidebarTabs`：40px轻灰底板、4px内缩/间隔、白色选中项与 `shadow-sm`，去内外双框。两项集中复用本组件的 className；共享 `AgentTabs` / Tabs 默认、其他消费者、回调、Tooltip、数据和权限不变。不新增依赖、变体或动画。
+- context_receipt：本轮根/frontend AGENTS、技能索引、FE-AI/global/flow-cost、UI/可访问性/TDD/验证规范已读；沿用上一轮已 fetch 的 master3165aca5a 前端规范及 DESIGN 对照。路由 `frontend ConsoleSidebarTabs segmented B variant` 无匹配；仅读取既知组件/相邻测试及 frontend-runtime-openspec-i18n 邻接。原工作区与未知 fixture 不动。
+- 验证：RED 2 fail/8 pass → CN/global各5文件33通过；项目check exit0、170现有类型诊断/0新增、47既有i18n警告。标准OpenCraft只读check157通过，未写生成副本。浏览器实际桌面235×40px轨道、111.5×32px项、4px内缩/间隔、0px边框、白色选中/透明非选中/标准轻阴影；390px手机轨道279×40px，Sheet宽度/scrollWidth同319无横向溢出。Home/End、可见焦点和Esc回导航按钮已验，临时viewport已恢复。
+- 仅本地样式验收，聊天后端为mock且token不可用，不声称聊天业务验证。未跑全量前端套件/双站构建/OpenCraft全量gate；未提交、推送或部署，旧交付授权不覆盖本次B。详情 `.workflow/runtime/sidebar-switcher-b-report.md`。
+
 ## preview_delivery_20260917
 
 - 用户已确认两次提交后一次推送现有 `frontsandbox/agents-radix-refactor`，范围为 A 方案、三项组件修正、积分 Progress 及相邻测试/文档/标准生成副本。第二提交仅记录标准脚本生成的最新 sourceRevision。排除未知 fixture，不合并 master、不创建 MR、不归档、不持续监控 CI。

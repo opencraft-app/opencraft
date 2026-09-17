@@ -1,3 +1,17 @@
+# 探索 / 对话组件 B 方案（2026-09-17）
+
+**交付授权（2026-09-17）：** 用户已确认将本轮 B 方案的5个文件提交到既有 `frontsandbox/agents-radix-refactor`；随后运行标准OpenCraft同步，只更新 `UPSTREAM.json` 的 sourceRevision并独立提交，再一次普通推送两个提交。排除未知fixture，保留原工作区；不合并master、不创建MR、不归档、不持续监控CI。下方“不提交/推送”保留为本地实施阶段记录，本次交付以此明确授权为准。
+
+**Goal:** 用户已选择本轮独立 Demo 的 B：40px 轻灰底板、4px 内边距/间隔、白色选中项与标准 `shadow-sm`，去掉内外双边框。
+**Architecture:** 只在 `ConsoleSidebarTabs` 内集中组合既有 `AgentTabs` 的 className 扩展；不新增共享变体或公共接口，不改变其他 segmented/underline 消费者、状态/事件、权限、Tooltip 或控制器。
+**Execution:** S quick 单任务，由当前 agent TDD 实施和自检。继续既有 frontsandbox 工作树；未知 fixture 和原工作区不动。下方交付授权仅适用于此前两次已推送提交，不授权本次 B 的 commit/push/MR/部署。
+
+- [x] B 局部样式及回归：RED 2 失败/8 通过 → CN/global 各 5 文件 33 通过；原重复激活、方向键、面板关联、禁用说明保持。项目 check exit0、0 新增类型错误（170 现有/276 baseline、47 既有 i18n 警告）；OpenCraft 只读检查157文件无漂移。浏览器桌面/390px手机均为40px底板、32px选中块、4px内缩/间隔和0px边框，白色 active/shadow-sm/透明 inactive；Home/End、焦点环、手机关闭回焦通过。README/Task Pack已同步。仅本地完成，等待验收；未重跑全量测试或构建，不声明真实聊天/账务验证，不提交/推送。
+
+写集：`frontend/src/pages/marketing/agents-console/console-sidebar-tabs.tsx`、相邻 `__tests__/console.test.tsx` 与 README、本 plan、`docs/context/tasks/2026-09-16-agents-radix-refactor.md`。只读校验共享生成闭包；不改共享原语/生成副本/依赖。无新增动画；采用已有主题 token、圆角与焦点样式。
+
+---
+
 # 分支预览交付授权（2026-09-17）
 
 用户已确认将下述 A 方案、三项组件修正与积分 Progress 一起提交到既有 `frontsandbox/agents-radix-refactor`：功能提交后运行标准 OpenCraft 同步，仅更新 `UPSTREAM.json` 的 sourceRevision 为第二提交，再一次推送。排除未知 fixture，保留原工作区；不合并 master、不创建 MR、不归档、不持续监控 CI。后文“不提交/推送”为当时实施阶段边界，由本次明确交付授权取代。
