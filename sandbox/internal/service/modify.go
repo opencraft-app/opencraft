@@ -73,6 +73,17 @@ func (s *Service) BeginModifyOperation(ctx context.Context, in BeginModifyInput)
 	if err != nil {
 		return core.ModifyOperation{}, err
 	}
+	sourceRegion, err := core.RegionFromZone(sourcePool.Zone)
+	if err != nil {
+		return core.ModifyOperation{}, err
+	}
+	targetRegion, err := core.RegionFromZone(targetPool.Zone)
+	if err != nil {
+		return core.ModifyOperation{}, err
+	}
+	if sourceRegion != targetRegion {
+		return core.ModifyOperation{}, fmt.Errorf("%w: modify target %s -> %s", core.ErrPoolRegionChange, sourceRegion, targetRegion)
+	}
 
 	sourceType, sourceDisk := effectivePoolSpec(sourcePool)
 	targetType, targetDisk := effectivePoolSpec(targetPool)
@@ -247,20 +258,28 @@ func (s *Service) recordModifyOperationError(ctx context.Context, op core.Modify
 
 func (s *Service) runModifyStep(ctx context.Context, cp provider.CloudProvider, resizer provider.InstanceSpecResizer,
 	op core.ModifyOperation, inst core.Instance, step string) error {
+	pool, err := s.store.GetPool(ctx, inst.PoolID)
+	if err != nil {
+		return err
+	}
+	instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+	if err != nil {
+		return err
+	}
 	switch step {
 	case core.ModifyStepStopInstance:
-		return resizer.StopInstanceForResize(ctx, inst.CloudID)
+		return resizer.StopInstanceForResize(ctx, instance)
 	case core.ModifyStepResizeCompute:
-		return resizer.ResizeInstanceType(ctx, inst.CloudID, op.TargetInstanceType)
+		return resizer.ResizeInstanceType(ctx, instance, op.TargetInstanceType)
 	case core.ModifyStepResizeDisk:
-		return resizer.ResizeSystemDisk(ctx, inst.CloudID, op.TargetSystemDiskSize)
+		return resizer.ResizeSystemDisk(ctx, instance, op.TargetSystemDiskSize)
 	case core.ModifyStepStartInstance:
-		return cp.StartInstance(ctx, inst.CloudID)
+		return cp.StartInstance(ctx, instance)
 	case core.ModifyStepVerifyDelivery:
 		// notBefore 传零值：这一步验的是"改配重启后 agent 活着"，不是首次交付的
 		// 世代归属。liveness 由探测自带的心跳新鲜度窗口保证，而停机 + 改配 + 扩盘
 		// 的耗时远超那个窗口，重启前的旧心跳无法冒充。
-		return provider.VerifyInstanceDelivery(ctx, cp, inst.CloudID, time.Time{})
+		return provider.VerifyInstanceDelivery(ctx, cp, instance, time.Time{})
 	case core.ModifyStepRebindPool:
 		return s.finishModifyRebind(ctx, op)
 	default:

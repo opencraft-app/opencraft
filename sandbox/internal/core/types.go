@@ -419,6 +419,7 @@ var (
 	ErrTemplateClassNotFound             = errors.New("template class not found")
 	ErrSKUNotFound                       = errors.New("sku not found")
 	ErrInvalidPoolSKUBinding             = errors.New("invalid pool sku binding")
+	ErrPoolRegionChange                  = errors.New("pool region cannot be changed")
 	ErrPoolAutoscalePolicyNotFound       = errors.New("pool autoscale policy not found")
 	ErrCapacityBundleNotFound            = errors.New("capacity bundle not found")
 	ErrVPCShardNotFound                  = errors.New("vpc shard not found")

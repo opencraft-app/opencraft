@@ -80,6 +80,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 - 实例内多 Bot 一期只在国内站开放。前端入口同时受国内区域判断和运行时功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，但新增 Bot 由服务端开关再次校验。
 - 国内 service-gateway 环境允许 `/v1/instances/{instance_id}/bots` 及其修复、唯一通道绑定子路由，全球 `sgprod` 不允许这些路径。配置策略测试必须分别断言国内放行和全球不暴露，不能用前端隐藏替代公共 API 边界。
+- Agent 侧栏运行中 Bot 的“重启”使用箭头与圆弧相连的单箭头图标，与双箭头刷新区分；失败 Bot 的“修复”仍使用双箭头图标。执行中显示加载图标，操作入口和确认流程继续按当前 Bot 状态判断。
+- 侧栏顶部重启和删除操作的提示框通过 `document.body` Portal 固定定位并约束在视口内，避免被侧栏滚动容器裁切；按钮的操作与禁用条件不因提示框而改变。
 
 ## 公共账号菜单边界
 
@@ -94,6 +96,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
   微信复制引导；失败仅提示错误并允许重试，不能静默丢弃邀请归因。账号切换不捕获邀请上下文。
 - 邀请返利在 `beijing-sandbox` 与 `shprod` 分别配置独立 Campaign。前端入口消费 CTL runtime flag，默认关闭；
   只有 Referral API/worker、Pulsar、数据库、VelaGW 直接送积分能力和 Gateway 全部就绪后才显式开启。
+  即使 runtime flag 已开启，账号页返利区域仍默认隐藏，只在当前页面执行 console `show()` 后揭示，
+  页面重新挂载后恢复隐藏；该 UI 灰度门禁不得阻断带 `?ref=` 的邀请注册与服务端归因。
   上海使用自己的路由与 Token，新加坡保持关闭，任何环境都不继承北京 Campaign。
 - 每个后续环境在自己的 inventory 中声明集群、namespace、角色和 SSM 目标，并通过参数化 bootstrap
   交付独立 Token。跨环境复制北京 Token、根据 Region 猜 Secret 名或用 UI 隐藏代替 Gateway 边界均不允许。

@@ -51,6 +51,15 @@ class ReferralGatewayRoutesTest(unittest.TestCase):
     def test_shanghai_exposes_the_same_exact_referral_contract(self) -> None:
         routes = routes_for("shprod")
 
+        runtime_config = routes["frontend-runtime-config"]
+        self.assertEqual(runtime_config["prefix"], "/v1/frontend/runtime-config")
+        self.assertEqual(runtime_config["access"], "public")
+        self.assertEqual(runtime_config["methods"], ["GET", "OPTIONS"])
+        self.assertEqual(
+            runtime_config["path_allow"],
+            [{"method": "GET", "path": "/v1/frontend/runtime-config"}],
+        )
+
         public = routes["referral-code-public"]
         self.assertEqual(public["prefix"], "/v1/referrals/codes")
         self.assertEqual(public["access"], "public")

@@ -123,7 +123,7 @@ stages:
           COLLABORATION_IM_SDK_APP_ID: ${{ variables.COLLABORATION_IM_SDK_APP_ID }}
           COLLABORATION_IM_ADMIN_USER_ID: ${{ settings.COLLABORATION_IM_CREDENTIAL.username }}
           COLLABORATION_IM_SECRET_KEY: ${{ settings.COLLABORATION_IM_CREDENTIAL.password }}
-          DB_JOB_KUBECONFIG_B64: ${{ settings.DB_JOB_KUBECONFIG_B64 }}
+          DB_JOB_KUBECONFIG_B64: ${{ settings.DB_JOB_KUBECONFIG_B64.password }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}

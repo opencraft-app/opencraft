@@ -95,6 +95,11 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertIn("ci_ensure_pyyaml", apply_script)
         self.assertLess(apply_script.index("ci_ensure_tccli"), apply_script.index("ci_ensure_pyyaml"))
         self.assertLess(apply_script.index("ci_ensure_pyyaml"), apply_script.index("python3 scripts/export_ssm_to_sops.py"))
+        apply_env = workflow["stages"][2]["jobs"]["apply"]["env"]
+        self.assertEqual(
+            apply_env["DB_JOB_KUBECONFIG_B64"],
+            "${{ settings.DB_JOB_KUBECONFIG_B64.password }}",
+        )
         init_script = (REPO_ROOT / ".ci/init.sh").read_text()
         self.assertIn("ci_ensure_pyyaml()", init_script)
         self.assertIn('"PyYAML==${version}"', init_script)
@@ -112,6 +117,60 @@ class CollaborationDeliveryTests(unittest.TestCase):
             self.assertIn(required, text)
         for forbidden in ("--allow-database-password-reset", "--allow-im-secret-rotation", "--env shprod", "--env sgprod"):
             self.assertNotIn(forbidden, text)
+
+    def test_collaboration_recovery_jobs_use_native_fail_closed_cli(self):
+        plan = db_job.SERVICE_SPECS[("collaboration", "recovery-plan")]
+        apply = db_job.SERVICE_SPECS[("collaboration", "recovery-apply")]
+        common = ["/usr/local/bin/chatserver", "database", "recover-empty-baseline",
+                  "--database-driver", "mysql", "--database-dsn-file",
+                  "/var/run/secrets/collaboration/database.dsn"]
+        self.assertEqual(plan["command"], common)
+        self.assertEqual(apply["command"], common + ["--apply"])
+        for spec in (plan, apply):
+            self.assertEqual(spec["namespace"], "lightvela-collaboration")
+            self.assertEqual(spec["volumes"][0]["secret"]["items"], [
+                {"key": "database.dsn", "path": "database.dsn"},
+            ])
+            self.assertTrue(spec["containerSecurityContext"]["readOnlyRootFilesystem"])
+            self.assertTrue(spec["successLogMarkers"])
+
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/collaboration-recovery.yml").read_text())
+        trigger = workflow.get("on", workflow.get(True))
+        self.assertEqual(trigger, {"manual": "enabled"})
+        self.assertEqual(len(workflow["stages"]), 3)
+        self.assertIn("check-in", workflow["stages"][1])
+        branch_guard = "${{ ci.branch }} == master"
+        self.assertEqual(workflow["stages"][1].get("if"), branch_guard)
+        self.assertEqual(workflow["stages"][2].get("if"), branch_guard)
+        for stage_index, job_name in ((0, "plan"), (2, "apply")):
+            env = workflow["stages"][stage_index]["jobs"][job_name]["env"]
+            self.assertEqual(env, {
+                "DB_JOB_KUBECONFIG_B64": "${{ settings.DB_JOB_KUBECONFIG_B64.password }}",
+            })
+        workflow_text = (REPO_ROOT / ".ci/collaboration-recovery.yml").read_text()
+        for forbidden in ("COLLABORATION_IM_CREDENTIAL", "SOPS_AGE_KEY", "GIT_WOA_PRIVATE_TOKEN",
+                          "ci_load_tencentcloud_credentials", "promote_collaboration_bootstrap_to_gitops"):
+            self.assertNotIn(forbidden, workflow_text)
+
+        script = (REPO_ROOT / ".ci/runtime/commands/run_collaboration_baseline_recovery.sh").read_text()
+        self.assertIn("run_recovery_job recovery-plan", script)
+        self.assertLess(script.index("run_recovery_job recovery-apply"),
+                        script.rindex("run_recovery_job recovery-plan"))
+        self.assertIn("--env beijing-sandbox", script)
+        self.assertIn("@sha256:[0-9a-f]{64}", script)
+        for forbidden in ("kubectl exec", "mysql ", "sops", "tccli"):
+            self.assertNotIn(forbidden, script)
+        script_path = REPO_ROOT / ".ci/runtime/commands/run_collaboration_baseline_recovery.sh"
+        invalid_cases = (
+            [],
+            ["plan", "short", "registry.example/collaboration@sha256:" + "a" * 64, "1800"],
+            ["plan", "a" * 40, "registry.example/collaboration:latest", "1800"],
+            ["apply", "a" * 40, "registry.example/collaboration@sha256:" + "b" * 64, "never"],
+        )
+        for args in invalid_cases:
+            result = subprocess.run(["bash", str(script_path), *args], cwd=REPO_ROOT,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, (args, result.stdout, result.stderr))
 
     def test_collaboration_bootstrap_gitops_script_reuses_projector_and_creates_reviewable_mr(self):
         script = (REPO_ROOT / ".ci/runtime/promote_collaboration_bootstrap_to_gitops.sh").read_text()
@@ -144,6 +203,14 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "beijing-sandbox"
         ]
         self.assertNotIn(active_catalog, publish_paths)
+        catalog_policy = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/_catalogs.bundle").read_text()
+        )
+        exemption = catalog_policy["catalog_publish_exemptions_by_env"]["beijing-sandbox"][
+            active_catalog
+        ]
+        self.assertIn("two-phase bootstrap", exemption)
+        self.assertIn("must not overwrite", exemption)
         appset = (REPO_ROOT / "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml").read_text()
         self.assertNotIn("catalogs/candidates", appset)
         spec = yaml.safe_load((REPO_ROOT / "scripts/ssm_manifest.collaboration.beijing-sandbox.yaml").read_text())

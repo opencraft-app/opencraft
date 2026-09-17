@@ -54,17 +54,21 @@ func TestTencentCloudProviderLiveCreateAndTerminateInstance(t *testing.T) {
 		t.Fatal("live CreateInstance returned empty address")
 	}
 	t.Logf("live tencent instance created cloud_id=%s addr=%s", cloudID, addr)
+	instance, err := CloudInstanceForPool(pool, cloudID)
+	if err != nil {
+		t.Fatalf("derive live instance region: %v", err)
+	}
 
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cleanupCancel()
-		if err := p.TerminateInstance(cleanupCtx, cloudID); err != nil {
+		if err := p.TerminateInstance(cleanupCtx, instance); err != nil {
 			t.Fatalf("live TerminateInstance failed for %s: %v", cloudID, err)
 		}
 		t.Logf("live tencent instance terminated cloud_id=%s", cloudID)
 	}()
 
-	status, err := p.DescribeInstance(ctx, cloudID)
+	status, err := p.DescribeInstance(ctx, instance)
 	if err != nil {
 		t.Fatalf("live DescribeInstance failed: %v", err)
 	}

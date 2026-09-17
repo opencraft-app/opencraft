@@ -60,6 +60,42 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
                                      "capabilities": {"drop": ["ALL"]}},
     },
+    ("collaboration", "recovery-plan"): {
+        "namespace": "lightvela-collaboration",
+        "deployment": "collaboration",
+        "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
+        "image_env_key": "COLLABORATION_IMAGE",
+        "command": ["/usr/local/bin/chatserver", "database", "recover-empty-baseline",
+                    "--database-driver", "mysql", "--database-dsn-file",
+                    "/var/run/secrets/collaboration/database.dsn"],
+        "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
+        "volumes": [{"name": "database-secret", "secret": {
+            "secretName": "collaboration-runtime-secrets", "defaultMode": 0o440,
+            "items": [{"key": "database.dsn", "path": "database.dsn"}],
+        }}],
+        "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
+        "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                     "capabilities": {"drop": ["ALL"]}},
+        "successLogMarkers": ["恢复计划：可执行", "恢复状态：无需操作"],
+    },
+    ("collaboration", "recovery-apply"): {
+        "namespace": "lightvela-collaboration",
+        "deployment": "collaboration",
+        "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
+        "image_env_key": "COLLABORATION_IMAGE",
+        "command": ["/usr/local/bin/chatserver", "database", "recover-empty-baseline",
+                    "--database-driver", "mysql", "--database-dsn-file",
+                    "/var/run/secrets/collaboration/database.dsn", "--apply"],
+        "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
+        "volumes": [{"name": "database-secret", "secret": {
+            "secretName": "collaboration-runtime-secrets", "defaultMode": 0o440,
+            "items": [{"key": "database.dsn", "path": "database.dsn"}],
+        }}],
+        "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
+        "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                     "capabilities": {"drop": ["ALL"]}},
+        "successLogMarkers": ["恢复完成", "恢复状态：无需操作"],
+    },
     ("payment", "migration"): {
         "namespace": "user-auth",
         "deployment": "payment",
@@ -1043,6 +1079,21 @@ def main() -> int:
                 write_summary(args.output_json, summary)
                 print(json.dumps(summary, ensure_ascii=False, indent=2))
                 return 1
+            success_markers = list(spec.get("successLogMarkers") or [])
+            if success_markers:
+                logs = collect_job_logs(
+                    kubeconfig,
+                    spec["namespace"],
+                    manifest["metadata"]["name"],
+                    dynamic.get("secretValues") or {},
+                    retries=args.kubectl_retries,
+                )
+                summary["logs"] = logs
+                if not any(marker in logs for marker in success_markers):
+                    summary["status"] = "audit_failed"
+                    write_summary(args.output_json, summary)
+                    print(json.dumps(summary, ensure_ascii=False, indent=2))
+                    return 1
 
         write_summary(args.output_json, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))

@@ -32,6 +32,9 @@ master 源码
   `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
   不为单一服务放宽 Argo 全局路径限制。foundation 活动目录只允许这两种资源和加密 Secret，
   Runtime、migration 要在 foundation live 收敛并独立验收后启用。
+- Collaboration 北京 Runtime 的 `DB_JOB_KUBECONFIG_B64` 在 Stream 中使用 `PASSWORD` 类型 protected
+  credential；流水线必须引用 `.password` 字段，不能把 credential 对象本身传给 Base64 解码器。
+  kubeconfig 来源保持在受控 DevCloud/Stream 边界，不写入仓库或普通日志。
 
 - Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
   带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。
@@ -40,6 +43,9 @@ master 源码
   Runtime 与 migration/verify Job 显式使用 `mysql`；`tdsql` 只用于真实 TDSQL Proxy。
   MySQL 独立迁移线不修改已发布 SQLite/TDSQL 历史，保留业务 ID、逻辑路由键、主键/索引和
   字符语义；不伪造物理分片审计，不削弱 owner claim、进度 CAS、失败状态拒绝及只读校验。
+  Atlas 对连续 SQL 分隔符产生的空片段不是可执行 migration 语句，不计入
+  revision `total/applied` 也不下发数据库；状态预期和执行路径必须复用同一过滤结果。
+  修复这类解析差异时不改写已发布 SQL、摘要或发布锁。
   foundation、迁移/verify、Runtime、Gateway 和产品 Web 仍按既定分段门禁交付。
 
 - vela-computer候选流水线在checkout前独立内联隔离旧工作树和全部复用的普通`.git`元数据，关闭浅克隆
@@ -172,6 +178,7 @@ master 源码
 - 基础阶段 `REFERRAL_PROCESSING_ENABLED=false` 时，`referral-worker` Deployment 必须同步缩容到 0；
   正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
 - 北京或上海正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
+  Gateway 还必须将只读的 `GET /v1/frontend/runtime-config` 精确转发到 CTL，否则前端会回退为 Referral 关闭。
   公共面只允许查询单个返利码与准备注册上下文，用户统计和返利码创建必须经过 session 鉴权。
 - 上海 CTL 的 Referral patch 必须按容器名 `api` 合并到原容器，不能把 Deployment 名 `ctl-api`
   当作容器名。GitOps 候选需在 Kustomize 中保留原容器并成功应用既有 volumeMount/volume 删除补丁，
@@ -224,6 +231,21 @@ master 源码
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
+- `.ci/collaboration-recovery.yml` 是首发期间的独立受控例外流水线，只修复已知双分号缺陷
+  留下的精确空基线状态，不向 foundation/runtime bootstrap Job 扩大 kubeconfig 或其他权限面。
+  审批前的 `recovery-plan` Job 只读校验已发布 baseline hash、旧 `1/50` revision、
+  `statement_failed`/空 `error_stmt`、首语句 partial hash、单一
+  `account_login_identities` 表及 0 行。审批后 `recovery-apply` 必须再次执行全部校验，
+  按 `count → drop table → revision CAS delete → empty 回读` 收敛。任一字段、表集或行数不符即
+  fail closed；plan 不得写库，recovery 不导出 Secret、不生成 GitOps MR、不自动继续 runtime。
+  两种 recovery Job 成功时必须在删除 Job 前收集并脱敏 CLI 摘要，校验预期成功标记后写入
+  流水线审计 JSON；无日志或标记不符必须按 `audit_failed` 阻断审批。
+  Runtime migration 完成后仍须通过严格 schema audit；Computer v2 字段若因旧增量 DDL 被追加到
+  表尾，必须新增 MySQL/TDSQL forward migration 以 `MODIFY COLUMN ... AFTER ...` 收敛到当前物理
+  列序，不能修改已发布 migration。SQLite 已通过重建表满足同一列序时不添加无语义版本。
+- active catalog 在 foundation/runtime 两阶段均由 bootstrap 流水线独占写入，因此登记为普通
+  release-bundle catalog 覆盖检查的显式豁免；普通服务发布不得覆盖或删除它。该豁免只能在 catalog
+  所有权迁回标准 release bundle 后移除。
 - 北京 Collaboration 固定使用 `AgentNetwork` SDKAppID `1600137234`；SDKAppID/管理员是普通平台值，
   SecretKey 只通过 protected credential 生成临时安全文件并
   写入 SSM/SOPS；不得从旧 Secret 手工复制到仓库或日志。Gateway 与产品 Web 仍是后续独立激活步骤。
