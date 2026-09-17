@@ -240,6 +240,9 @@ master 源码
   fail closed；plan 不得写库，recovery 不导出 Secret、不生成 GitOps MR、不自动继续 runtime。
   两种 recovery Job 成功时必须在删除 Job 前收集并脱敏 CLI 摘要，校验预期成功标记后写入
   流水线审计 JSON；无日志或标记不符必须按 `audit_failed` 阻断审批。
+  Runtime migration 完成后仍须通过严格 schema audit；Computer v2 字段若因旧增量 DDL 被追加到
+  表尾，必须新增 MySQL/TDSQL forward migration 以 `MODIFY COLUMN ... AFTER ...` 收敛到当前物理
+  列序，不能修改已发布 migration。SQLite 已通过重建表满足同一列序时不添加无语义版本。
 - active catalog 在 foundation/runtime 两阶段均由 bootstrap 流水线独占写入，因此登记为普通
   release-bundle catalog 覆盖检查的显式豁免；普通服务发布不得覆盖或删除它。该豁免只能在 catalog
   所有权迁回标准 release bundle 后移除。

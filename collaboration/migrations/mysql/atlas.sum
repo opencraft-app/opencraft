@@ -1,4 +1,4 @@
-h1:826HfJzX5ombiRkla1IjFZFRcth3Hxgz/9lyDqQ9dn8=
+h1:SFDzeGHJ0lsFHAMl9CTxTP+tvp2U6vDtXLQLGi6PMCI=
 20260801000000_baseline.sql h1:utehqG3IXyVxsiKZrct/3xc+8qKFpWhl8TVkYGFAGaA=
 20260802100000_computer_enrollment.sql h1:HfkAZlvK3EEDPHxXLdGzdb3nR7vocOZC1NIXxmsPJEc=
 20260802170000_reminder_anchors.sql h1:0Hr9z8j7LQOgjYVbRv+cp2IfEg9OgiMDBaFBcZn2cmk=
@@ -8,3 +8,4 @@ h1:826HfJzX5ombiRkla1IjFZFRcth3Hxgz/9lyDqQ9dn8=
 20260804120000_agent_handle_reuse.sql h1:RLw5Nk5eBeWcm6rfAfhJeYgiaxR3NiOH98waC41TvlA=
 20260804130000_server_scoped_direct_messages.sql h1:WEbEUMUeKzvHL6trQbASoKsJ2ftLKKGedR9Tnw6yUpM=
 20260914141219_computer_v2.sql h1:EL/qwmdAn/k/Pa418fV+IVPs0pkqQkLMvM2nftkS2OE=
+20260917040000_computer_v2_column_order.sql h1:CYj+7u799AQ+RH69VHPkjxLqcfXgIQTQ/Eb3PktmV4I=
