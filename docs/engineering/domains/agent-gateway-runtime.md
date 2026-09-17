@@ -84,6 +84,13 @@
   `ALLOCATED → MODIFYING → ALLOCATED`。后台 worker 按“停机、计算规格升级、系统盘扩容、
   开机、交付校验、目标 Pool 重绑”单向续跑；幂等键必须阻止不可逆扩盘重复执行，失败只
   前滚重试，不自动缩盘或回源 Pool。
+- 计算规格升级不消费目标 Pool 的预创建库存，也不得把 `Pool.instance_type` 当成存量 CVM
+  的唯一可用机型。Worker 通过腾讯云 `DescribeInstancesModification` 读取该实例的可变配
+  列表，以目标 Pool 配置机型的 CPU/内存定义逻辑目标，只冻结完全同规格且状态为 `SELL`
+  的候选；配置机型可售时优先。`LimitExceeded.InstanceQuota`、明确的机型售罄或不支持错误
+  才推进并持久化候选游标，限频、网络、实例忙和云服务暂态错误继续重试当前候选。每次重试
+  先回读真实实例规格，以收敛“云调用成功、账本落库前中断”的窗口；最终实际机型可与 Pool
+  的创建默认机型不同，但 CPU/内存、系统盘和逻辑 Pool/SKU 归属必须符合目标套餐。
 - 同 SP 升配依赖 CTL `pass` 表持久化在飞 flow 与目标 Bundle；发布 CTL 常驻 workload 前
   必须确认目标环境 schema 已具备对应字段。测试环境发生过紧急补列时，后续正式 migration
   必须可重入并推进迁移版本，不能把 workload Ready 或一次业务成功当作 schema 已由发布链路收敛。

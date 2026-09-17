@@ -165,6 +165,15 @@ type InstanceSpecResizer interface {
 	ResizeSystemDisk(ctx context.Context, instance CloudInstanceRef, sizeGB int) error
 }
 
+// InstanceTypeCandidateResolver is an optional companion capability for
+// InstanceSpecResizer. It resolves the cloud instance types that can satisfy
+// the same logical CPU/memory shape as preferredInstanceType for this exact
+// existing instance. Providers without this capability retain the legacy
+// fixed-target behavior.
+type InstanceTypeCandidateResolver interface {
+	ResolveInstanceTypeCandidates(ctx context.Context, instance CloudInstanceRef, preferredInstanceType string) ([]string, error)
+}
+
 func (m *MockCloudProvider) StopInstanceForResize(ctx context.Context, instance CloudInstanceRef) error {
 	return m.StopInstance(ctx, instance)
 }
