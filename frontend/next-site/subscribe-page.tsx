@@ -420,8 +420,13 @@ const isCapabilityDescKey = (rawKey: string): boolean => {
  *   - 后续后端返回字串变化时，只需同步更新本表
  */
 const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
-  /* bundle_name */
+  /* bundle_name（后端套餐名全集，缺一个运行时就报「未在字典中找到」） */
   void t("启航 Launch");
+  void t("启航 Launch AI");
+  void t("巡游 Cruise");
+  void t("巡游 Cruise AI");
+  void t("远航 Voyage");
+  void t("远航 Voyage AI");
   /* description.Key */
   void t("独立环境");
   void t("7×24小时在线");
