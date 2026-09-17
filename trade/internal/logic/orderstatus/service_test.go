@@ -560,10 +560,10 @@ func TestQueryStatus_SkipJifei(t *testing.T) {
 }
 
 // ============================================================================
-// 加测：jifei 返 totalNum=0 → 按 cancelled 兜底（极端场景）
+// 加测：jifei 返 totalNum=0 → 保留本地中态，等待后续轮询
 // ============================================================================
 
-func TestQueryStatus_JifeiEmptyResp_TreatAsCancelled(t *testing.T) {
+func TestQueryStatus_JifeiEmptyResp_FallsBackToLocalPending(t *testing.T) {
 	os := &fakeOrderStore{
 		getOrderFn: func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 			return fixedTradeOrder(dealName, "u1", store.OrderStatusPendingPay), nil
@@ -585,11 +585,17 @@ func TestQueryStatus_JifeiEmptyResp_TreatAsCancelled(t *testing.T) {
 		t.Fatalf("QueryStatus: %v", err)
 	}
 
-	if out.Status != StatusCancelled {
-		t.Errorf("Status = %q, want %q (empty deals maps to cancelled)", out.Status, StatusCancelled)
+	if out.Status != StatusPending {
+		t.Errorf("Status = %q, want %q (empty deals keeps local pending state)", out.Status, StatusPending)
 	}
-	if got := ow.markCancelledCalls.Load(); got != 1 {
-		t.Errorf("empty deals: MarkCancelled called %d times, want 1", got)
+	if out.Source != SourceLocal {
+		t.Errorf("Source = %q, want %q (empty deals falls back to local state)", out.Source, SourceLocal)
+	}
+	if out.UpstreamErr == "" {
+		t.Error("UpstreamErr empty, want non-empty fallback signal")
+	}
+	if got := ow.markCancelledCalls.Load(); got != 0 {
+		t.Errorf("empty deals: MarkCancelled called %d times, want 0", got)
 	}
 }
 
