@@ -203,6 +203,9 @@ rg -q '030-ctl-bundles.sql=../../local/mysql/seed/030-ctl-bundles.sql' \
   "$LOCALSTACK_ROOT/seed/kustomization.yaml"
 rg -q 'apply_component seed' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'wait_job localstack-system localstack-seed' "$LOCALSTACK_ROOT/localstack.sh"
+while IFS= read -r migration; do
+  rg -Fq -- "- ../../../ctl/migrations/$migration" "$LOCALSTACK_ROOT/ctl/kustomization.yaml"
+done < <(find "$REPO_ROOT/ctl/migrations" -maxdepth 1 -type f -name '*.sql' -exec basename {} \; | sort)
 for deployment in mock-control fake-qq-oauth fake-jifei fake-tencentcloud fake-wechat-pay-bridge fake-envd; do
   rg -q "rollout status -n localstack-system deployment/$deployment" \
     "$LOCALSTACK_ROOT/localstack.sh"
@@ -210,7 +213,7 @@ done
 rg -q 'base_url = "http://trade.trade.svc.cluster.local"' "$LOCALSTACK_ROOT/ctl/server_conf_rewrite.toml"
 rg -q 'base_url = "http://shadow.shadow.svc.cluster.local"' "$LOCALSTACK_ROOT/ctl/server_conf_rewrite.toml"
 rg -q 'JIFEI_CGW_GATEWAY_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local' "$LOCALSTACK_ROOT/trade/kustomization.yaml"
-rg -q 'SHADOW_INTERNAL_BASE_URL=http://shadow-trade-adapter.shadow.svc.cluster.local' "$LOCALSTACK_ROOT/trade/kustomization.yaml"
+rg -q 'SHADOW_INTERNAL_BASE_URL=http://lightclaw-auth.user-auth.svc.cluster.local' "$LOCALSTACK_ROOT/trade/kustomization.yaml"
 rg -q 'SHADOW_PROVIDER=tencent' "$LOCALSTACK_ROOT/shadow/kustomization.yaml"
 rg -q 'SHADOW_CLOUDLADDER_GATEWAY_BASE_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local' "$LOCALSTACK_ROOT/shadow/kustomization.yaml"
 ctl_ai_gateway_token="$(sed -n 's/^CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN=//p' "$LOCALSTACK_ROOT/ctl/secrets.defaults.env")"
@@ -224,6 +227,8 @@ rg -q "'$local_ai_gateway_plan_id'" "$REPO_ROOT/deploy/local/mysql/seed/030-ctl-
 rg -q 'name: SHADOW_BASE_URL' "$LOCALSTACK_ROOT/shadow/adapter.yaml"
 rg -q 'value: http://shadow.shadow.svc.cluster.local' "$LOCALSTACK_ROOT/shadow/adapter.yaml"
 rg -q 'INTERNAL_SERVICE_TOKEN' "$LOCALSTACK_ROOT/shadow/adapter.yaml"
+rg -q '^user-auth|lightclaw-auth-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,SHADOW_BINDING_INTERNAL_TOKEN$' \
+  "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'claimName: shadow-data' "$rendered"
 if [[ -e "$REPO_ROOT/deploy/local/mockservers/trade" ]] ||
   rg -n 'fake-trade' "$rendered"; then
@@ -312,7 +317,7 @@ if rg -n 'service/trade\|18084:' "$LOCALSTACK_ROOT/localstack.sh"; then
   exit 1
 fi
 internal_token_patch_plan="$(bash "$LOCALSTACK_ROOT/localstack.sh" internal-token-patch-plan)"
-test "$internal_token_patch_plan" = $'trade|trade-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN\nctl|ctl-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,CTL_INTERNAL_TOKEN,CTL_SHADOW_TOKEN,CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN\nshadow|shadow-runtime-secrets|SHADOW_INTERNAL_SERVICE_TOKEN\nai-gateway|ai-gateway-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN'
+test "$internal_token_patch_plan" = $'user-auth|lightclaw-auth-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,SHADOW_BINDING_INTERNAL_TOKEN\ntrade|trade-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN\nctl|ctl-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,CTL_INTERNAL_TOKEN,CTL_SHADOW_TOKEN,CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN\nshadow|shadow-runtime-secrets|SHADOW_INTERNAL_SERVICE_TOKEN\nai-gateway|ai-gateway-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN'
 rg -q '^randomize_shared_internal_tokens\(\)' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'randomize_shared_internal_tokens' "$LOCALSTACK_ROOT/localstack.sh"
 rg -q 'start_exposure_linux' "$LOCALSTACK_ROOT/localstack.sh"

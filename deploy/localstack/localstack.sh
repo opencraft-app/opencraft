@@ -597,6 +597,7 @@ wait_rollouts() {
 
 internal_service_token_patch_plan() {
   cat <<'EOF'
+user-auth|lightclaw-auth-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,SHADOW_BINDING_INTERNAL_TOKEN
 trade|trade-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN
 ctl|ctl-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,CTL_INTERNAL_TOKEN,CTL_SHADOW_TOKEN,CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN
 shadow|shadow-runtime-secrets|SHADOW_INTERNAL_SERVICE_TOKEN
