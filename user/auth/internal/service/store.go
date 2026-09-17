@@ -46,6 +46,7 @@ type Store interface {
 	CompletePhoneChange(ctx context.Context, token string, newPhone string, code string, now time.Time) (User, error)
 	CreatePasswordSession(ctx context.Context, input PasswordSignUpInput, passwordHash []byte, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	CreateOAuthSession(ctx context.Context, input OAuthSignInInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
+	CreateReferralClaim(ctx context.Context, userID string, referralCode string, channel string, now time.Time) error
 	ActivateInviteForCurrentUser(ctx context.Context, token string, code string, now time.Time) (User, error)
 	BindOAuthSession(ctx context.Context, token string, input OAuthSignInInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	GetPasswordUser(ctx context.Context, email string) (User, []byte, error)

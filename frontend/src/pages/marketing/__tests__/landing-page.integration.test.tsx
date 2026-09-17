@@ -5,14 +5,30 @@ import { LandingPage, LandingPageView } from "@/pages/marketing/landing-page";
 import i18n from "@/i18n";
 import { isGlobal } from "@/lib/region";
 
-const sessionState = vi.hoisted(() => ({
+type TestSessionUser = {
+  id: string;
+  name: string;
+  inviteRequired: boolean;
+  createdAt: string;
+};
+
+const sessionState = vi.hoisted((): {
+  authReady: boolean;
+  isAuthenticated: boolean;
+  session: { stage: string; user: TestSessionUser | null };
+} => ({
   authReady: true,
   isAuthenticated: false,
   session: { stage: "anonymous", user: null },
 }));
+const prepareReferralCode = vi.hoisted(() => vi.fn());
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => sessionState,
+}));
+
+vi.mock("@/contexts/repository-context", () => ({
+  useRepositories: () => ({ auth: { prepareReferralCode } }),
 }));
 
 vi.mock("@/contexts/agent-context", () => ({
@@ -73,7 +89,7 @@ vi.mock("@/pages/marketing/scenario-tasks/OverviewAutomationTasksSection", () =>
   }) => (
     <div data-testid="overview-automations">
       {packs.map((pack) => pack.name).join("|")}
-      <button type="button" onClick={() => onEnable(packs[0])}>open automation</button>
+      <button type="button" onClick={() => packs[0] && onEnable(packs[0])}>open automation</button>
     </div>
   ),
 }));
@@ -82,6 +98,7 @@ afterEach(async () => {
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
   sessionState.session = { stage: "anonymous", user: null };
+  prepareReferralCode.mockReset().mockResolvedValue(undefined);
   await i18n.changeLanguage("zh-CN");
   cleanup();
 });
@@ -141,6 +158,24 @@ describe("LandingPage", () => {
 
     expect(screen.getByText("avatar menu")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+  });
+
+  it("claims a referral link immediately for an authenticated user", async () => {
+    sessionState.isAuthenticated = true;
+    sessionState.session = {
+      stage: "authenticated",
+      user: { id: "usr_existing", name: "Existing User", inviteRequired: false, createdAt: "2026-04-23T00:00:00Z" },
+    };
+
+    render(
+      <MemoryRouter initialEntries={["/?ref=hbygspxsad"]}>
+        <LandingPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(prepareReferralCode).toHaveBeenCalledWith("HBYGSPXSAD");
+    });
   });
 
   it("opens the shared QQ/WeChat login modal from the public header login action", async () => {
