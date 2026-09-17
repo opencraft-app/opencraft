@@ -296,18 +296,18 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     });
   });
 
-  it("order-url 返回 400 + AUTH_CODE_INVALID（长时间未支付导致 auth_code 过期）→ expired 温和态而非错误框", async () => {
+  it("order-url 返回 400 + AUTH_CODE_INVALID（线上过期场景）→ 保持 master 行为走 error 态，不进温和态", async () => {
+    /* 与 master 体验完全一致：仅 401-form 进 expired 温和态；
+       400-form 走通用 error 弹框（放宽为跟进项，见 MR !4125 评审讨论）。 */
     setUserAgent(WECHAT_UA);
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: "auth_code 已过期", code: "AUTH_CODE_INVALID" }, 400));
     renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail" })}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "二维码已失效" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
     });
-    expect(screen.getByText("请返回 PC 端重新扫码。")).toBeInTheDocument();
-    /* 过期是温和引导态：不弹「支付遇到问题」错误框，也没有注定失败的重试按钮 */
-    expect(screen.queryByRole("heading", { name: "支付遇到问题" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "二维码已失效" })).not.toBeInTheDocument();
     expect(wxSignSpy).not.toHaveBeenCalled();
   });
 
