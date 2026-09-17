@@ -1,0 +1,6 @@
+config:
+  infra-pulumi:environmentName: sgprod-johor-sandbox-network
+  infra-pulumi:inventoryPath: envs/tencentcloud/sgprod-johor-sandbox-network/inventory.yaml
+  infra-pulumi:enableImport: "false"
+  infra-pulumi:componentScope: sandbox-network
+encryptionsalt: v1:yW39mJNKiMM=:v1:6HfnhEzzpM5afJR4:k7Ih+muEWkv03PLVpg8nJmJRwcX9TQ==

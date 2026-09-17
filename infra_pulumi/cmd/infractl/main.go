@@ -367,7 +367,11 @@ func up(projectRoot, stack string) error {
 	); err != nil {
 		return err
 	}
-	if !shouldSyncAfterUp(os.Getenv("INFRA_COMPONENT_SCOPE")) {
+	configMap, err := s.GetAllConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("read stack config after update: %w", err)
+	}
+	if !shouldSyncAfterUp(resolveComponentScope(os.Getenv("INFRA_COMPONENT_SCOPE"), configMap)) {
 		return nil
 	}
 	return sync(projectRoot, stack)
@@ -375,6 +379,13 @@ func up(projectRoot, stack string) error {
 
 func shouldSyncAfterUp(scope string) bool {
 	return strings.TrimSpace(scope) == ""
+}
+
+func resolveComponentScope(environmentValue string, values auto.ConfigMap) string {
+	if scope := strings.TrimSpace(environmentValue); scope != "" {
+		return scope
+	}
+	return strings.TrimSpace(values["infra-pulumi:componentScope"].Value)
 }
 
 func sync(projectRoot, stack string) error {
