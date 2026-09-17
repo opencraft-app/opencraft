@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var pulsarNamespacePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,16}$`)
+var (
+	pulsarNamespacePattern    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,16}$`)
+	resourceIdentifierPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{1,30}$`)
+)
 
 func ValidateInventory(inv *Inventory) error {
 	if inv == nil {
@@ -78,8 +81,47 @@ func ValidateInventory(inv *Inventory) error {
 	if err := validatePulsarInventory(inv.Stacks.Pulsar); err != nil {
 		return err
 	}
+	if err := validateReferralInventory(inv.Stacks.Referral); err != nil {
+		return err
+	}
 	if err := validateCollaborationInventory(inv.Stacks.Collaboration); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateReferralInventory(inv ReferralInventory) error {
+	if !inv.Enabled {
+		return nil
+	}
+	for field, value := range map[string]string{
+		"existing_cluster_id":               inv.ExistingClusterID,
+		"existing_endpoint":                 inv.ExistingEndpoint,
+		"database":                          inv.Database,
+		"account":                           inv.Account,
+		"account_host":                      inv.AccountHost,
+		"ssm_secret_name":                   inv.SSMSecretName,
+		"ssm_version_id":                    inv.SSMVersionID,
+		"internal_service_token_source_ssm": inv.InternalServiceTokenSourceSSM,
+		"internal_service_token_version_id": inv.InternalServiceTokenVersionID,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("inventory missing stacks.referral.%s", field)
+		}
+	}
+	if !resourceIdentifierPattern.MatchString(inv.Database) || !resourceIdentifierPattern.MatchString(inv.Account) {
+		return fmt.Errorf("inventory stacks.referral database and account must use stable alphanumeric identifiers")
+	}
+	if inv.AccountHost != "%" {
+		return fmt.Errorf("inventory stacks.referral.account_host must be %% for dynamic TKE clients")
+	}
+	host, rawPort, err := net.SplitHostPort(inv.ExistingEndpoint)
+	if err != nil || strings.TrimSpace(host) == "" {
+		return fmt.Errorf("inventory stacks.referral.existing_endpoint must be host:port")
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port <= 0 || port > 65535 {
+		return fmt.Errorf("inventory stacks.referral.existing_endpoint has an invalid port")
 	}
 	return nil
 }
@@ -172,19 +214,22 @@ func validatePulsarInventory(inv PulsarInventory) error {
 		return nil
 	}
 	required := map[string]string{
-		"expected_cluster_name":   inv.ExpectedClusterName,
-		"expected_product_name":   inv.ExpectedProductName,
-		"expected_vpc_id":         inv.ExpectedVPCID,
-		"expected_subnet_id":      inv.ExpectedSubnetID,
-		"namespace":               inv.Namespace,
-		"topic":                   inv.Topic,
-		"dead_letter_topic":       inv.DeadLetterTopic,
-		"user_auth_producer_role": inv.UserAuthProducerRole,
-		"ctl_producer_role":       inv.CTLProducerRole,
-		"referral_consumer_role":  inv.ReferralConsumerRole,
-		"user_auth_ssm_secret":    inv.UserAuthSSMSecret,
-		"ctl_ssm_secret":          inv.CTLSSMSecret,
-		"referral_ssm_secret":     inv.ReferralSSMSecret,
+		"expected_cluster_name":    inv.ExpectedClusterName,
+		"expected_product_name":    inv.ExpectedProductName,
+		"expected_vpc_id":          inv.ExpectedVPCID,
+		"expected_subnet_id":       inv.ExpectedSubnetID,
+		"namespace":                inv.Namespace,
+		"topic":                    inv.Topic,
+		"dead_letter_topic":        inv.DeadLetterTopic,
+		"user_auth_producer_role":  inv.UserAuthProducerRole,
+		"ctl_producer_role":        inv.CTLProducerRole,
+		"referral_consumer_role":   inv.ReferralConsumerRole,
+		"user_auth_ssm_secret":     inv.UserAuthSSMSecret,
+		"user_auth_ssm_version_id": inv.UserAuthSSMVersionID,
+		"ctl_ssm_secret":           inv.CTLSSMSecret,
+		"ctl_ssm_version_id":       inv.CTLSSMVersionID,
+		"referral_ssm_secret":      inv.ReferralSSMSecret,
+		"referral_ssm_version_id":  inv.ReferralSSMVersionID,
 	}
 	if !inv.ManageCluster {
 		required["existing_cluster_id"] = inv.ExistingClusterID
