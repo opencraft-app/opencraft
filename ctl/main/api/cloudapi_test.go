@@ -46,7 +46,7 @@ func TestCloudAPIDescribePassAcceptsCloudAPIRequestWithoutSecretKey(t *testing.T
 	}}
 	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: logic})
 
-	body := `{"Uin":330500000004,"AppId":1447552654,"PassId":"pass_cloudapi_1"}`
+	body := `{"Uin":"330500000004","AppId":1447552654,"PassId":"pass_cloudapi_1"}`
 	req := httptest.NewRequest(http.MethodPost, "/cloudapi", strings.NewReader(body))
 	req.Host = "clgateway.production.polaris:8095"
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -88,6 +88,148 @@ func TestCloudAPIDescribePassAcceptsCloudAPIRequestWithoutSecretKey(t *testing.T
 	}
 }
 
+func TestCloudAPIDescribePassAcceptsRequestWithoutPassID(t *testing.T) {
+	resetCloudAPIConfigForTest()
+	t.Cleanup(resetCloudAPIConfigForTest)
+	t.Setenv("CTL_CLOUDAPI_ALLOWED_REGIONS", "ap-shanghai")
+
+	expired := time.Date(2026, 8, 20, 10, 30, 0, 0, time.UTC)
+	logic := &cloudapiPassLogic{detail: &passlogic.PassDetail{
+		PassID:      "pass_cloudapi_by_account",
+		UserID:      "usr_cloudapi_by_account",
+		BundleID:    "bundle_launch_01",
+		Uin:         330500000004,
+		AppID:       1447552654,
+		ExpiredTime: expired,
+		Status:      "active",
+	}}
+	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: logic})
+
+	body := `{"Uin":"330500000004","AppId":1447552654}`
+	req := httptest.NewRequest(http.MethodPost, "/cloudapi", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("X-TC-Action", "DescribePass")
+	req.Header.Set("X-TC-Version", "2026-08-06")
+	req.Header.Set("X-TC-Region", "ap-shanghai")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !logic.called || logic.uin != 330500000004 || logic.appID != 1447552654 || logic.passID != "" {
+		t.Fatalf("logic called=%t uin=%d appID=%d passID=%q", logic.called, logic.uin, logic.appID, logic.passID)
+	}
+	var payload struct {
+		Response struct {
+			Error *struct {
+				Code string `json:"Code"`
+			} `json:"Error"`
+			Pass struct {
+				PassID string `json:"PassId"`
+			} `json:"Pass"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, rec.Body.String())
+	}
+	if payload.Response.Error != nil {
+		t.Fatalf("unexpected cloud api error: %+v body=%s", payload.Response.Error, rec.Body.String())
+	}
+	if payload.Response.Pass.PassID != "pass_cloudapi_by_account" {
+		t.Fatalf("unexpected pass response: %+v", payload.Response.Pass)
+	}
+}
+
+func TestCloudAPIDescribePassAcceptsRequestWithoutAppID(t *testing.T) {
+	resetCloudAPIConfigForTest()
+	t.Cleanup(resetCloudAPIConfigForTest)
+	t.Setenv("CTL_CLOUDAPI_ALLOWED_REGIONS", "ap-shanghai")
+
+	logic := &cloudapiPassLogic{detail: &passlogic.PassDetail{
+		PassID:   "pass_cloudapi_by_uin",
+		UserID:   "usr_cloudapi_by_uin",
+		BundleID: "bundle_launch_01",
+		Uin:      330500000004,
+		AppID:    1447552654,
+		Status:   "active",
+	}}
+	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: logic})
+
+	body := `{"Uin":"330500000004"}`
+	req := httptest.NewRequest(http.MethodPost, "/cloudapi", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("X-TC-Action", "DescribePass")
+	req.Header.Set("X-TC-Version", "2026-08-06")
+	req.Header.Set("X-TC-Region", "ap-shanghai")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !logic.called || logic.uin != 330500000004 || logic.appID != 0 || logic.passID != "" {
+		t.Fatalf("logic called=%t uin=%d appID=%d passID=%q", logic.called, logic.uin, logic.appID, logic.passID)
+	}
+	var payload struct {
+		Response struct {
+			Error *struct {
+				Code string `json:"Code"`
+			} `json:"Error"`
+			Pass struct {
+				PassID string `json:"PassId"`
+			} `json:"Pass"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, rec.Body.String())
+	}
+	if payload.Response.Error != nil {
+		t.Fatalf("unexpected cloud api error: %+v body=%s", payload.Response.Error, rec.Body.String())
+	}
+	if payload.Response.Pass.PassID != "pass_cloudapi_by_uin" {
+		t.Fatalf("unexpected pass response: %+v", payload.Response.Pass)
+	}
+}
+
+func TestCloudAPIDescribePassRejectsExplicitZeroAppID(t *testing.T) {
+	resetCloudAPIConfigForTest()
+	t.Cleanup(resetCloudAPIConfigForTest)
+	t.Setenv("CTL_CLOUDAPI_ALLOWED_REGIONS", "ap-shanghai")
+
+	logic := &cloudapiPassLogic{}
+	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: logic})
+
+	body := `{"Uin":"330500000004","AppId":0}`
+	req := httptest.NewRequest(http.MethodPost, "/cloudapi", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("X-TC-Action", "DescribePass")
+	req.Header.Set("X-TC-Version", "2026-08-06")
+	req.Header.Set("X-TC-Region", "ap-shanghai")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if logic.called {
+		t.Fatalf("logic should not be called for an explicit zero AppId")
+	}
+	var payload struct {
+		Response struct {
+			Error *struct {
+				Code string `json:"Code"`
+			} `json:"Error"`
+		} `json:"Response"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, rec.Body.String())
+	}
+	if payload.Response.Error == nil || payload.Response.Error.Code != "InvalidParameter.AppId" {
+		t.Fatalf("unexpected error payload: %s", rec.Body.String())
+	}
+}
+
 func TestCloudAPIDescribePassRejectsUnsupportedRegionBeforeQuery(t *testing.T) {
 	resetCloudAPIConfigForTest()
 	t.Cleanup(resetCloudAPIConfigForTest)
@@ -96,7 +238,7 @@ func TestCloudAPIDescribePassRejectsUnsupportedRegionBeforeQuery(t *testing.T) {
 	logic := &cloudapiPassLogic{}
 	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: logic})
 
-	body := `{"Uin":330500000004,"AppId":1447552654,"PassId":"pass_cloudapi_1"}`
+	body := `{"Uin":"330500000004","AppId":1447552654,"PassId":"pass_cloudapi_1"}`
 	req := httptest.NewRequest(http.MethodPost, "/cloudapi", strings.NewReader(body))
 	req.Host = "clgateway.production.polaris:8095"
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -136,7 +278,7 @@ func TestCloudAPIDescribePassRejectsUnsupportedActionBeforeQuery(t *testing.T) {
 	logic := &cloudapiPassLogic{}
 	router := newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{logic: logic})
 
-	body := `{"Uin":330500000004,"AppId":1447552654,"PassId":"pass_cloudapi_1"}`
+	body := `{"Uin":"330500000004","AppId":1447552654,"PassId":"pass_cloudapi_1"}`
 	req := httptest.NewRequest(http.MethodPost, "/cloudapi", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("X-TC-Action", "DeletePass")
