@@ -366,15 +366,25 @@ type ModifyOperation struct {
 	TargetSKUID    string `json:"target_sku_id"`
 	// TargetTemplateClassID 与 TargetPoolID 一起决定重绑后的路由归属；4C8G 使用独立
 	// template class，缺失会让后续分配把用户漂到源规格池。
-	TargetTemplateClassID string                `json:"target_template_class_id"`
-	TargetInstanceType    string                `json:"target_instance_type"`
-	TargetSystemDiskSize  int                   `json:"target_system_disk_size"`
-	Status                ModifyOperationStatus `json:"status"`
-	CurrentStep           string                `json:"current_step"`
-	LastError             string                `json:"last_error,omitempty"`
-	StartedAt             time.Time             `json:"started_at"`
-	UpdatedAt             time.Time             `json:"updated_at"`
-	CompletedAt           *time.Time            `json:"completed_at,omitempty"`
+	TargetTemplateClassID string `json:"target_template_class_id"`
+	TargetInstanceType    string `json:"target_instance_type"`
+	TargetSystemDiskSize  int    `json:"target_system_disk_size"`
+	// SourceInstanceType is the cloud-reported type before compute resize.
+	// InstanceTypeCandidates is a frozen per-operation plan resolved from the
+	// vendor's modification API; the cursor survives worker restarts.
+	SourceInstanceType         string   `json:"source_instance_type,omitempty"`
+	InstanceTypeCandidates     []string `json:"instance_type_candidates,omitempty"`
+	InstanceTypeCandidateIndex int      `json:"instance_type_candidate_index,omitempty"`
+	// AppliedInstanceType records the candidate confirmed by cloud read-back.
+	// It may differ from TargetInstanceType while preserving the same logical
+	// CPU/memory shape.
+	AppliedInstanceType string                `json:"applied_instance_type,omitempty"`
+	Status              ModifyOperationStatus `json:"status"`
+	CurrentStep         string                `json:"current_step"`
+	LastError           string                `json:"last_error,omitempty"`
+	StartedAt           time.Time             `json:"started_at"`
+	UpdatedAt           time.Time             `json:"updated_at"`
+	CompletedAt         *time.Time            `json:"completed_at,omitempty"`
 }
 
 // Instance tracks a single VM and its lifecycle.
@@ -419,6 +429,7 @@ var (
 	ErrTemplateClassNotFound             = errors.New("template class not found")
 	ErrSKUNotFound                       = errors.New("sku not found")
 	ErrInvalidPoolSKUBinding             = errors.New("invalid pool sku binding")
+	ErrPoolRegionChange                  = errors.New("pool region cannot be changed")
 	ErrPoolAutoscalePolicyNotFound       = errors.New("pool autoscale policy not found")
 	ErrCapacityBundleNotFound            = errors.New("capacity bundle not found")
 	ErrVPCShardNotFound                  = errors.New("vpc shard not found")

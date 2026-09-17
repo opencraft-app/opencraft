@@ -76,7 +76,7 @@ const PAGE_COPY: Record<LightVelaHermesManagementPage, {
     sectionTitle: "Host runtime",
   },
   storage: {
-    title: "Cloud storage",
+    title: "Cloud Storage",
     description: "Manage files and persistent storage attached to this Hermes Host.",
     sectionTitle: "Storage",
   },
@@ -109,6 +109,16 @@ export function createLightVelaHermesManagementView(
   profileSkills?: AppServerProfileSkillsService,
 ) {
   const copy = PAGE_COPY[page];
+  if (page === "skills") {
+    return function HermesProfileSkillsManagementView(props: ExtensionSettingsViewProps) {
+      return (
+        <HermesSkillsManagementView
+          hostId={props.host.activeHostId}
+          profileSkills={profileSkills}
+        />
+      );
+    };
+  }
   return function LightVelaHermesManagementView(_props: ExtensionSettingsViewProps) {
     const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
     const activeBot = snapshot.bots.find((bot) => bot.instanceId === snapshot.activeBotId) ?? null;
@@ -122,7 +132,6 @@ export function createLightVelaHermesManagementView(
 
     const isAgentConsolePage = page === "channels"
       || page === "models"
-      || page === "skills"
       || page === "memory"
       || page === "schedules"
       || page === "storage"
@@ -150,8 +159,6 @@ export function createLightVelaHermesManagementView(
               <HermesChannelsManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "models" ? (
               <HermesModelsManagementView account={account} botId={activeBot.instanceId} />
-            ) : page === "skills" ? (
-              <HermesSkillsManagementView account={account} botId={activeBot.instanceId} profileSkills={profileSkills} />
             ) : page === "memory" ? (
               <HermesMemoryManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "schedules" ? (

@@ -1,0 +1,52 @@
+profile: sandbox-network
+env_name: sgprod-johor-sandbox-network
+cloud: tencentcloud
+region: ap-johorbahru
+zone_primary: ap-johorbahru-1
+env_short: sgprod-jhb-sbx
+
+network:
+  vpc_cidr: 10.80.0.0/12
+  support_subnet_key: support
+  sandbox_pool_subnet_keys:
+    - pool-a
+    - pool-b
+
+stacks:
+  networking:
+    primary_nat_gateway_name: sandbox-sgprod-jhb-nat
+    manage_secondary_nat: false
+    primary_eips:
+      eip-sgprod-jhb-sandbox-01: { bandwidth: 200 }
+      eip-sgprod-jhb-sandbox-02: { bandwidth: 200 }
+      eip-sgprod-jhb-sandbox-03: { bandwidth: 200 }
+      eip-sgprod-jhb-sandbox-04: { bandwidth: 200 }
+      eip-sgprod-jhb-sandbox-05: { bandwidth: 200 }
+    route_table_name: sandbox-sgprod-jhb-egress
+    snat_subnets:
+      pool-a:
+        availability_zone: ap-johorbahru-1
+        description: sandbox-sgprod-jhb-pool-a
+      pool-b:
+        availability_zone: ap-johorbahru-2
+        description: sandbox-sgprod-jhb-pool-b
+      support:
+        availability_zone: ap-johorbahru-1
+        description: sandbox-sgprod-jhb-support
+
+  security:
+    sandbox_sg:
+      security_group_name: sandbox-sgprod-jhb-isolated
+      description: "TAT-only Johor Sandbox instances: no inbound, private egress denied, public egress allowed"
+      ingress: []
+      egress:
+        - ACCEPT#169.254.0.23/32#80#TCP#allow tencent metadata http
+        - ACCEPT#183.60.83.19/32#53#UDP#allow tencent default dns udp
+        - ACCEPT#183.60.83.19/32#53#TCP#allow tencent default dns tcp
+        - ACCEPT#183.60.82.98/32#53#UDP#allow tencent default dns udp
+        - ACCEPT#183.60.82.98/32#53#TCP#allow tencent default dns tcp
+        - DROP#10.0.0.0/8#ALL#ALL#deny private 10/8
+        - DROP#172.16.0.0/12#ALL#ALL#deny private 172.16/12
+        - DROP#192.168.0.0/16#ALL#ALL#deny private 192.168/16
+        - DROP#169.254.0.0/16#ALL#ALL#deny link-local except metadata above
+        - ACCEPT#0.0.0.0/0#ALL#ALL#allow public internet

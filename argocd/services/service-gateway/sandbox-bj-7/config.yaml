@@ -249,6 +249,14 @@ routes:
   - method: POST
     path: /auth/internal/tencentcloud/account
   - method: GET
+    path: /auth/internal/dev-environments/registration/ready
+  - method: GET
+    path: /auth/internal/dev-environments/registration
+  - method: PUT
+    path: /auth/internal/dev-environments/registration
+  - method: DELETE
+    path: /auth/internal/dev-environments/registration
+  - method: GET
     path: /auth/oauth/qq/start
   - method: GET
     path: /auth/oauth/qq/callback

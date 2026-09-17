@@ -14,6 +14,7 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/apperror"
 	"git.woa.com/wisp/mono2/collaboration/internal/config"
 	"git.woa.com/wisp/mono2/collaboration/internal/database"
+	"git.woa.com/wisp/mono2/collaboration/internal/database/migration"
 	"git.woa.com/wisp/mono2/collaboration/internal/database/platform"
 )
 
@@ -35,6 +36,17 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	action := args[1]
 	if action == "check-consistency" {
 		return runConsistencyCommand(ctx, args[2:], stdout, stderr)
+	}
+	if action == "recover-empty-baseline" {
+		cfg, apply, err := parseDatabaseRecoveryConfig(args[2:])
+		if err == nil {
+			err = recoverEmptyBaselineDatabase(ctx, cfg, apply, stdout)
+		}
+		if err != nil {
+			writeCommandError(stderr, err)
+			return exitCode(err)
+		}
+		return 0
 	}
 	if action != "migrate" && action != "status" && action != "verify" {
 		writeUsage(stderr)
@@ -62,6 +74,33 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func parseDatabaseRecoveryConfig(args []string) (config.Database, bool, error) {
+	filtered := make([]string, 0, len(args))
+	apply := false
+	for _, arg := range args {
+		if arg != "--apply" {
+			filtered = append(filtered, arg)
+			continue
+		}
+		if apply {
+			return config.Database{}, false, apperror.New(
+				"CONFIG_INVALID", "数据库恢复命令参数无效", nil,
+			)
+		}
+		apply = true
+	}
+	cfg, err := parseDatabaseConfig("recover-empty-baseline", filtered)
+	if err != nil {
+		return config.Database{}, false, err
+	}
+	if cfg.Driver != config.DatabaseDriverMySQL {
+		return config.Database{}, false, apperror.New(
+			"CONFIG_INVALID", "空基线恢复只允许显式 MySQL 方言", nil,
+		)
+	}
+	return cfg, apply, nil
+}
+
 func parseDatabaseConfig(action string, args []string) (config.Database, error) {
 	path, err := defaultDatabasePath()
 	if err != nil {
@@ -76,7 +115,7 @@ func parseDatabaseConfig(action string, args []string) (config.Database, error) 
 	var maxOpenConnections, maxIdleConnections int
 	flags := flag.NewFlagSet("database "+action, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.StringVar(&driver, "database-driver", driver, "数据库方言：sqlite 或 tdsql")
+	flags.StringVar(&driver, "database-driver", driver, "数据库方言：sqlite、mysql 或 tdsql")
 	flags.StringVar(&path, "database", path, "SQLite 数据库绝对路径")
 	flags.StringVar(&dsnFile, "database-dsn-file", dsnFile, "TDSQL DSN Secret 文件")
 	flags.DurationVar(&busyTimeout, "busy-timeout", 5*time.Second, "SQLite 忙等待时间")
@@ -97,12 +136,16 @@ func parseDatabaseConfig(action string, args []string) (config.Database, error) 
 		}
 	case config.DatabaseDriverTDSQL:
 		cfg, err = config.NewTDSQLDatabase(dsnFile)
+	case config.DatabaseDriverMySQL:
+		cfg, err = config.NewMySQLDatabase(dsnFile)
+	}
+	if cfg.Driver == config.DatabaseDriverTDSQL || cfg.Driver == config.DatabaseDriverMySQL {
 		if err == nil {
 			cfg.MaxOpenConnections = maxOpenConnections
 			cfg.MaxIdleConnections = maxIdleConnections
 			cfg.ConnectionMaxLifetime = connectionMaxLifetime
 		}
-	default:
+	} else if cfg.Driver == "" && err == nil {
 		return config.Database{}, apperror.New("CONFIG_INVALID", "数据库方言不受支持", nil)
 	}
 	if err != nil {
@@ -230,6 +273,54 @@ func verifyDatabase(ctx context.Context, cfg config.Database, stdout io.Writer) 
 	return nil
 }
 
+func recoverEmptyBaselineDatabase(
+	ctx context.Context,
+	cfg config.Database,
+	apply bool,
+	stdout io.Writer,
+) (returnErr error) {
+	var (
+		handle *database.Handle
+		err    error
+	)
+	if apply {
+		handle, err = database.OpenWriter(ctx, cfg)
+	} else {
+		handle, err = database.OpenReadOnly(ctx, cfg)
+	}
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := handle.Close(); returnErr == nil && closeErr != nil {
+			returnErr = apperror.New("DATABASE_OPEN_FAILED", "关闭数据库连接失败", closeErr)
+		}
+	}()
+	result, err := migration.RecoverEmptyMySQLBaseline(ctx, handle.SQLDB(), apply)
+	if err != nil {
+		return err
+	}
+	if result.AlreadyEmpty && !result.Applied {
+		fmt.Fprintf(stdout, "数据库：%s\n恢复状态：无需操作，数据库已为空\n", maskedDatabaseTarget(cfg))
+		return nil
+	}
+	if !apply {
+		fmt.Fprintf(
+			stdout,
+			"数据库：%s\n恢复计划：可执行\n残留业务表：1\n残留业务行：%d\n",
+			maskedDatabaseTarget(cfg),
+			result.TableRows,
+		)
+		return nil
+	}
+	fmt.Fprintf(
+		stdout,
+		"数据库：%s\n恢复完成\n迁移状态：尚未迁移\n",
+		maskedDatabaseTarget(cfg),
+	)
+	return nil
+}
+
 func migrationStateError(state platform.MigrationState) error {
 	switch state.Kind {
 	case platform.MigrationStateClean:
@@ -269,8 +360,8 @@ func maskedDatabasePath(path string) string {
 }
 
 func maskedDatabaseTarget(cfg config.Database) string {
-	if cfg.Driver == config.DatabaseDriverTDSQL {
-		return "TDSQL（DSN Secret）"
+	if cfg.Driver == config.DatabaseDriverTDSQL || cfg.Driver == config.DatabaseDriverMySQL {
+		return strings.ToUpper(string(cfg.Driver)) + "（DSN Secret）"
 	}
 	return maskedDatabasePath(cfg.Path)
 }
@@ -284,7 +375,8 @@ func displayVersion(version string) string {
 
 func writeUsage(output io.Writer) {
 	fmt.Fprintln(output, "用法：")
-	fmt.Fprintln(output, "  chatserver database <migrate|status|verify> [--database-driver sqlite|tdsql]")
+	fmt.Fprintln(output, "  chatserver database <migrate|status|verify> [--database-driver sqlite|mysql|tdsql]")
+	fmt.Fprintln(output, "  chatserver database recover-empty-baseline --database-driver mysql --database-dsn-file 文件 [--apply]")
 	fmt.Fprintln(output, "  chatserver database check-consistency --scope server|account|registry --partition-key KEY [--registry-type TYPE]")
 	fmt.Fprintln(
 		output,

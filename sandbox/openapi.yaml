@@ -1359,6 +1359,21 @@ components:
           type: string
         target_system_disk_size:
           type: integer
+        source_instance_type:
+          type: string
+          description: Cloud-reported instance type before compute resize
+        instance_type_candidates:
+          type: array
+          description: Frozen SELL candidates matching the target CPU and memory shape
+          items:
+            type: string
+        instance_type_candidate_index:
+          type: integer
+          minimum: 0
+          description: Current cursor in instance_type_candidates
+        applied_instance_type:
+          type: string
+          description: Candidate confirmed by cloud read-back
         status:
           type: string
           enum: [running, completed, failed]

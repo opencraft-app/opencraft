@@ -112,7 +112,6 @@ vi.mock("@/contexts/repository-context", () => ({
 }));
 
 vi.mock("@/components/site/product-chrome", () => ({
-  ProductFooter: () => null,
   ProductReturnHomeHeader: () => null,
 }));
 

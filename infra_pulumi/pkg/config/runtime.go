@@ -22,6 +22,7 @@ type RuntimeConfig struct {
 	RedisPassword             pulumi.StringOutput
 	NotifyTestAllowlistSHA256 pulumi.StringOutput
 	RegistryPullServer        string
+	ComponentScope            string
 	StorageAccessKeyImport    string
 	Reconcile                 ReconcileConfig
 }
@@ -33,17 +34,25 @@ type ReconcileConfig struct {
 
 func LoadRuntimeConfig(ctx *pulumi.Context) (*RuntimeConfig, error) {
 	cfg := pconfig.New(ctx, "infra-pulumi")
+	componentScope := effectiveComponentScope(cfg.Get("componentScope"))
 	runtime := &RuntimeConfig{
 		EnvironmentName:           cfg.Require("environmentName"),
 		InventoryPath:             cfg.Require("inventoryPath"),
 		EnableImport:              cfg.GetBool("enableImport"),
 		SecretID:                  getenvOrEmpty("TENCENTCLOUD_SECRET_ID"),
 		SecretKey:                 getenvOrEmpty("TENCENTCLOUD_SECRET_KEY"),
-		NodePassword:              cfg.RequireSecret("nodePassword"),
-		DBPassword:                cfg.RequireSecret("dbPassword"),
-		RedisPassword:             cfg.RequireSecret("redisPassword"),
 		NotifyTestAllowlistSHA256: cfg.GetSecret("notifyTestAllowlistSHA256"),
 		RegistryPullServer:        cfg.Get("registryPullServer"),
+		ComponentScope:            componentScope,
+	}
+	if requiresPlatformSecrets(componentScope) {
+		runtime.NodePassword = cfg.RequireSecret("nodePassword")
+		runtime.DBPassword = cfg.RequireSecret("dbPassword")
+		runtime.RedisPassword = cfg.RequireSecret("redisPassword")
+	} else {
+		runtime.NodePassword = cfg.GetSecret("nodePassword")
+		runtime.DBPassword = cfg.GetSecret("dbPassword")
+		runtime.RedisPassword = cfg.GetSecret("redisPassword")
 	}
 	if strings.TrimSpace(runtime.RegistryPullServer) == "" {
 		runtime.RegistryPullServer = "ccr.ccs.tencentyun.com"
@@ -59,6 +68,17 @@ func LoadRuntimeConfig(ctx *pulumi.Context) (*RuntimeConfig, error) {
 		return nil, err
 	}
 	return runtime, nil
+}
+
+func effectiveComponentScope(configured string) string {
+	if value, ok := lookupEnv("INFRA_COMPONENT_SCOPE"); ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(configured)
+}
+
+func requiresPlatformSecrets(scope string) bool {
+	return strings.TrimSpace(scope) != "sandbox-network"
 }
 
 func loadReconcileConfig(runtime *RuntimeConfig) error {

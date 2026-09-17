@@ -12,7 +12,10 @@ import {
 test("management modal preserves panel geometry while launchers follow conversation interaction ownership", () => {
   const app = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
   assert.match(app, /toolbarActions=\{conversationRouteOpen \? panelToolbarActions : \[\]\}/);
-  assert.match(app, /const conversationSurfaceVisible = conversationRouteOpen \|\| managementSettingsOpen;/);
+  assert.match(
+    app,
+    /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\);/,
+  );
   assert.match(app, /rightPanelOpen=\{conversationSurfaceVisible && presentedRightPanelOpen\}/);
 });
 

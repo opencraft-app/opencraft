@@ -1,3 +1,64 @@
+# 积分包微信中转支付空票据前置判定（2026-09-16）
+
+**Status:** 已实现并通过定向验证（hook 测试 22/22、tsc 零错误、`git diff --check` 待提交时确认）；未 commit、未推送、未创建 MR。全量 `pnpm check` 因本机 Node 20 与 pnpm 11（要求 Node 22.13+）不兼容未执行，需在 Node 22 环境补跑。
+**Size / Mode:** S / 单 Agent inline quick。
+**Goal:** !3910 起 credit order-url 强制校验 auth_code；后端票据发放失败时静默返回空串（HTTP 200 + `auth_code: ""`），前端按旧灰度设计仍打开中转页 → 微信内必然显示「二维码已失效」，误导用户反复重新生成。本变更在 PC 端下单后即判定票据缺失并给出准确失败态。
+**Design:** `useCreditCheckout` 国内站分支在 `buildPayPlan` 前校验 `authCode`（空串/undefined 均拦截）：进入 `failed` 态并保留 `dealName`（订单已创建成功，供客服排查），不生成中转页 URL；`console.error("[credit] order issued without auth_code", { dealName })` 留痕（对齐 renew-pass-modal 惯例）。UI 层 `failed` 文案由「下单失败」改为中性「支付未完成」——failed 不等于下单失败，避免诱导重复下单产生双订单；与 `delivery_exception` 的中性口径一致。i18n 生成物随文案同步重提取。
+**Non-goals:** 不修后端票据发放根因（需按 order 响应 → credit 日志 `issue auth_code failed` → authcode Redis 接线的路径另行排查）；不改 order-url 校验逻辑与 wx-pay.ts；不动国际站链路。
+
+**Files:**
+- Modify: `src/lib/use-credit-checkout.ts`
+- Modify: `src/domain/credit-pack.ts`
+- Modify: `next-site/credit-pack-section.tsx`
+- Test: `src/lib/__tests__/use-credit-checkout.test.ts`
+- Generated: `src/i18n/generated/*.json`
+
+---
+
+# Agents/账号页 Footer 移除与 AgentChat 高度优化（2026-09-15）
+
+**Status:** Mono2 宿主侧实现完成；本地功能提交为 `4b86ab6de`，滚动锁加固提交为 `b94619205`。当前已将 `origin/master@554355180` 合入暂存区并完成合并后验证，等待确认创建合并提交；未推送、创建 MR 或发布。
+**Size / Mode:** S / 单 Agent inline quick。
+**Goal:** 在不修改 `@tencent/agentchat-lightvela-panel` SDK 的前提下，移除 `/agents/*`、`/account`、`/account/orders` 的 Footer，并让 `/agents/chat` 桌面端对话面板使用剩余视口高度，消除页面外层滚动。
+**Design:** 小于 1024px 时保留现有 `clamp(516px, calc(100vh - 220px), 960px)` 高度；桌面对话页根节点限制为 `100dvh`，main、shell、grid、内容区和面板建立可收缩的高度链，对话面板使用 `lg:h-full`。目标页面分别关闭自身 Footer；共享 `AppRouteShell` 增加默认开启的认证提示页 Footer 配置，仅 Agents 与账号相关客户端显式关闭。SDK props、内部样式、消息滚动和会话逻辑均不调整。
+**Non-goals:** 不修改 SDK 或依赖版本，不改左侧栏自身的长列表滚动、输入框、消息样式、移动端布局或其他公开页面，不合并 MR 或发布。
+
+**Files:**
+- Modify: `next-site/app-route-shell.tsx`
+- Modify: `next-site/agents-page-client.tsx`
+- Modify: `next-site/account-page-client.tsx`
+- Modify: `next-site/account-orders-page-client.tsx`
+- Modify: `src/pages/marketing/agent-chat-panel.tsx`
+- Modify: `src/pages/marketing/agent-settings-page.tsx`
+- Modify: `src/pages/marketing/account-page.tsx`
+- Modify: `src/pages/marketing/account-orders-page.tsx`
+- Modify: `src/styles.css`
+- Test: `next-site/app-route-shell.test.tsx`
+- Test: `next-site/__tests__/agents-page-loading-boundary.test.ts`
+- Test: `next-site/__tests__/account-route-footer-boundary.test.ts`
+- Test: `src/pages/marketing/__tests__/private-page-footer-boundary.test.ts`
+- Test: `src/pages/marketing/__tests__/account-page-name-audit.test.tsx`
+- Test: `src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
+- Test: `src/pages/marketing/__tests__/agent-settings-nav-spacing.test.ts`
+
+**Acceptance:**
+- `/agents/*`、`/account`、`/account/orders` 的已登录页面和未登录认证提示页均不渲染 Footer；其他共享页面壳默认行为不变。
+- 1024px 及以上视口中，document 高度等于视口高度，页面本身没有纵向滚动条；消息滚动继续由 SDK 的消息区承担。
+- 1024px 以下继续使用现有 clamp 高度策略。
+- SDK 依赖与 `<LightVelaPanel>` 参数保持不变，消息区继续内部滚动，输入框保持在面板底部。
+- 定向 Vitest、`pnpm check` 与 `git diff --check` 通过，并完成三个目标页面的浏览器验收。
+
+- [x] **CHAT-HEIGHT-1 / Developer：** 先增加宿主高度类的失败守卫测试并确认 RED，再追加桌面端 `100dvh` 高度覆盖。
+- [x] **CHAT-SCROLL-1 / Developer：** 先增加桌面对话页滚动所有权的失败守卫并确认 RED，再增加对话页专属 class 与桌面 CSS，验证 document 无纵向溢出且 SDK 消息区滚动约束保持不变。
+- [x] **CHAT-FOOTER-1 / Developer：** 根据中途需求先恢复 Footer 并完成一次浏览器验证，随后按最终范围移除。
+- [x] **PRIVATE-FOOTER-1 / Developer：** 先增加认证提示页和三个页面本体的 Footer 失败守卫，再用显式页面配置移除目标 Footer；Task 1 的 11 项与 Task 2 的 69 项测试分别 GREEN。
+- [x] **VERIFY-1 / Developer：** 运行最终聚焦测试、`pnpm check`、`git diff --check` 和三个目标页面的浏览器验收，记录实际结果。
+
+**Verification:** Footer 范围增量按 TDD 执行。认证提示页测试先以 4 failed / 7 passed 进入 RED，实施共享默认开启、目标路由显式关闭后 11 项通过；页面本体测试先以 6 failed / 63 passed 进入 RED，删除目标 Footer 和失效 CSS 后 69 项通过。首次合并 `origin/master@975b48ef5` 后，`pnpm install --frozen-lockfile` exit 0；7 个聚焦测试文件共 85 项通过。再次合并 `origin/master@554355180` 时无代码冲突；主干新增语言切换属性和创建意图重置使两条全文件字符串守卫误报，先稳定复现为 2 failed / 84 passed，再将断言收窄到目标组件属性和 `handleCreateNew` 函数。独立只读审查未发现生产实现阻断，并指出核心高度链缺少直接自动化守卫；补充对 `100dvh`、`overflow: hidden`、`min-height: 0`、shell flex 与内容区 `height: 100%` 的结构化断言后，最终 7 个聚焦测试文件共 87 项通过。最新 `pnpm check` exit 0（TypeScript diagnostics：174 current / 276 baseline / 0 new / 102 resolved），既有 49 条翻译告警及印尼语 172 条待翻译保持不变；`pnpm build:cn` exit 0，Next.js 编译、TypeScript、100 个静态页面生成及 8 条公开路由 SEO 检查通过，保留既有 MDX deprecated option 提示；工作区与暂存区差异均通过 `git diff --check`。合并前本地 1280×720 浏览器中，`/agents/chat` Footer 数量为 0，document、html、body 与页面根节点均为 clientHeight 720 / scrollHeight 720，`scrollY=0`；main top 0 / bottom 720，对话面板 top 44 / bottom 696。首次合并并干净重启 dev server 后再次量测，页面根节点、main、body 与 document 均为 720 / 720，`scrollY=0`，Footer 数量为 0。`/account` 与 `/account/orders` Footer 数量均为 0，主要内容与操作入口正常渲染，控制台无错误；订单页 document 为 720 / 720，账号页因本地预览状态面板为 720 / 889。最新 master 合入后，真实后端未登录空态下 document/body 均为 clientHeight 720 / scrollHeight 720。
+**Boundary:** 本轮未修改 SDK 包、依赖版本或 `<LightVelaPanel>` 参数。合并前本地预览使用模拟认证，AgentChat token 获取失败，无法加载真实会话；首次合并后干净重启时模拟数据没有返回 Bot，未再次渲染 SDK 面板。之后按用户要求改用 `local-proxy` 连接 `https://lightclaw.tech`，本地代理与上游 `/auth/profile/` 均返回未登录 `401`，页面显示真实未登录/空 Bot 状态，未执行线上写操作。SDK 内部消息滚动继续以现网登录态只读量测（消息区 6076 / 425、`overflow-y:auto`）、未变更的 SDK CSS、聚焦守卫及宿主无外层滚动量测确认。未执行远端 CI、推送、创建 MR 或发布，现网仍是修改前版本。
+
+---
+
 # 国际站升级入口临时收起（2026-09-15）
 
 **Goal / user decision:** 国际站默认隐藏升级入口，控制台 `show()` 后可见；国内站保持默认可见。延续此前 console opt-in 交互，增加区域区分。

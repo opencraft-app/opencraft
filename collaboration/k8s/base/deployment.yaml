@@ -30,7 +30,7 @@ spec:
             - serve
             - --collaboration-only
             - --database-driver
-            - tdsql
+            - mysql
             - --database-dsn-file
             - /var/run/secrets/collaboration/database.dsn
             - --database-auto-migrate=false
@@ -97,4 +97,3 @@ spec:
             defaultMode: 0440
         - name: tmp
           emptyDir: {}
-

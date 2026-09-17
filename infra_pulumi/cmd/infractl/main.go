@@ -10,16 +10,21 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	auto "github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
+	"github.com/skipzhang/mono/infra_pulumi/pkg/collaborationbootstrap"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/config"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/referralbootstrap"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/tencenttke"
@@ -50,7 +55,7 @@ type stackSecrets struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: infractl <preview|up|sync|reconcile|validate|import|set-secrets|bootstrap-referral-tokens> [--stack <name>]")
+		fatalf("usage: infractl <preview|up|sync|reconcile|validate|import|set-secrets|bootstrap-referral-tokens|bootstrap-collaboration> [--stack <name>]")
 	}
 
 	projectRoot, err := findProjectRoot()
@@ -129,9 +134,158 @@ func main() {
 		if err := bootstrapReferralTokens(projectRoot, stack, apply, allowTokenChange); err != nil {
 			fatalf("%v", err)
 		}
+	case "bootstrap-collaboration":
+		options, err := parseCollaborationBootstrapArgs(args)
+		if err != nil {
+			fatalf("%v", err)
+		}
+		if err := bootstrapCollaboration(projectRoot, options); err != nil {
+			fatalf("%v", err)
+		}
 	default:
 		fatalf("unknown command %q", cmd)
 	}
+}
+
+type collaborationBootstrapArgs struct {
+	stack                      string
+	imMaterialFile             string
+	apply                      bool
+	allowDatabasePasswordReset bool
+	allowIMSecretRotation      bool
+}
+
+type collaborationIMMaterialFile struct {
+	SDKAppID    int64  `json:"sdkAppId"`
+	AdminUserID string `json:"adminUserId"`
+	SecretKey   string `json:"secretKey"`
+}
+
+func bootstrapCollaboration(projectRoot string, options collaborationBootstrapArgs) error {
+	inventoryPath := filepath.Join(projectRoot, "envs", "tencentcloud", options.stack, "inventory.yaml")
+	inventory, err := config.LoadInventory(inventoryPath)
+	if err != nil {
+		return fmt.Errorf("load inventory for %s: %w", options.stack, err)
+	}
+	if inventory.EnvName != options.stack {
+		return fmt.Errorf("inventory environment %q does not match stack %q", inventory.EnvName, options.stack)
+	}
+	target := inventory.Stacks.Collaboration
+	if !target.Enabled {
+		return fmt.Errorf("stack %s does not enable Collaboration bootstrap", options.stack)
+	}
+	host, rawPort, err := net.SplitHostPort(target.ExistingEndpoint)
+	if err != nil {
+		return fmt.Errorf("parse Collaboration database endpoint: %w", err)
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil {
+		return fmt.Errorf("parse Collaboration database port: %w", err)
+	}
+	im, err := readCollaborationIMMaterial(options.imMaterialFile)
+	if err != nil {
+		return err
+	}
+	secretID := strings.TrimSpace(os.Getenv("TENCENTCLOUD_SECRET_ID"))
+	secretKey := strings.TrimSpace(os.Getenv("TENCENTCLOUD_SECRET_KEY"))
+	database, err := collaborationbootstrap.NewTencentDatabaseAdmin(secretID, secretKey, inventory.Region)
+	if err != nil {
+		return err
+	}
+	secrets, err := collaborationbootstrap.NewTencentSecretStore(secretID, secretKey, inventory.Region)
+	if err != nil {
+		return err
+	}
+	result, err := collaborationbootstrap.Run(
+		context.Background(), database, secrets, collaborationbootstrap.CryptoGenerator{},
+		collaborationbootstrap.Config{
+			ClusterID: target.ExistingClusterID, Database: target.Database, Account: target.Account,
+			AccountHost: target.AccountHost, EndpointHost: host, EndpointPort: port, SecretName: target.SSMSecretName,
+		},
+		collaborationbootstrap.IMMaterial{SecretKey: im.SecretKey},
+		collaborationbootstrap.Options{
+			Apply: options.apply, AllowDatabasePasswordReset: options.allowDatabasePasswordReset,
+			AllowIMSecretRotation: options.allowIMSecretRotation,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("collaboration bootstrap: stack=%s secret=%s status=%s account=%s database=%s privileges=%s\n",
+		options.stack, target.SSMSecretName, changeStatus(result.Secret), changeStatus(result.Account),
+		changeStatus(result.Database), changeStatus(result.Privileges))
+	fmt.Printf("collaboration platform values: sdk_app_id=%d admin_user_id=%s namespace=%s node_pool=%s\n",
+		im.SDKAppID, im.AdminUserID, target.Namespace, target.NodePool)
+	return nil
+}
+
+func readCollaborationIMMaterial(path string) (collaborationIMMaterialFile, error) {
+	if strings.TrimSpace(path) == "" {
+		return collaborationIMMaterialFile{}, fmt.Errorf("--im-material-file is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return collaborationIMMaterialFile{}, fmt.Errorf("stat IM material file: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o037 != 0 {
+		return collaborationIMMaterialFile{}, fmt.Errorf("IM material file must be regular, non-world-accessible, and not group-writable or executable")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return collaborationIMMaterialFile{}, fmt.Errorf("read IM material file: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var material collaborationIMMaterialFile
+	if err := decoder.Decode(&material); err != nil {
+		return collaborationIMMaterialFile{}, fmt.Errorf("decode IM material file: %w", err)
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return collaborationIMMaterialFile{}, err
+	}
+	if material.SDKAppID <= 0 || strings.TrimSpace(material.AdminUserID) == "" || !validIMSecretKey(material.SecretKey) {
+		return collaborationIMMaterialFile{}, fmt.Errorf("IM material file must contain sdkAppId, adminUserId and secretKey")
+	}
+	return material, nil
+}
+
+func validIMSecretKey(value string) bool {
+	if len(value) < 16 || len(value) > 128 || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, char := range value {
+		if unicode.IsSpace(char) || unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("IM material file must contain exactly one JSON object")
+		}
+		return fmt.Errorf("decode IM material file trailer: %w", err)
+	}
+	return nil
+}
+
+func changeStatus(change collaborationbootstrap.Change) string {
+	if change.Applied && change.Created {
+		return "created"
+	}
+	if change.Applied && change.Updated {
+		return "updated"
+	}
+	if change.Created {
+		return "would-create"
+	}
+	if change.Updated {
+		return "would-update"
+	}
+	return "unchanged"
 }
 
 func bootstrapReferralTokens(projectRoot, stack string, apply, allowTokenChange bool) error {
@@ -213,7 +367,11 @@ func up(projectRoot, stack string) error {
 	); err != nil {
 		return err
 	}
-	if !shouldSyncAfterUp(os.Getenv("INFRA_COMPONENT_SCOPE")) {
+	configMap, err := s.GetAllConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("read stack config after update: %w", err)
+	}
+	if !shouldSyncAfterUp(resolveComponentScope(os.Getenv("INFRA_COMPONENT_SCOPE"), configMap)) {
 		return nil
 	}
 	return sync(projectRoot, stack)
@@ -221,6 +379,13 @@ func up(projectRoot, stack string) error {
 
 func shouldSyncAfterUp(scope string) bool {
 	return strings.TrimSpace(scope) == ""
+}
+
+func resolveComponentScope(environmentValue string, values auto.ConfigMap) string {
+	if scope := strings.TrimSpace(environmentValue); scope != "" {
+		return scope
+	}
+	return strings.TrimSpace(values["infra-pulumi:componentScope"].Value)
 }
 
 func sync(projectRoot, stack string) error {
@@ -656,6 +821,38 @@ func parseReferralBootstrapArgs(args []string) (string, bool, bool, error) {
 		}
 	}
 	return stack, apply, allowTokenChange, nil
+}
+
+func parseCollaborationBootstrapArgs(args []string) (collaborationBootstrapArgs, error) {
+	options := collaborationBootstrapArgs{stack: defaultStack}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--stack", "-s":
+			if i+1 >= len(args) {
+				return collaborationBootstrapArgs{}, fmt.Errorf("missing value for %s", args[i])
+			}
+			options.stack = args[i+1]
+			i++
+		case "--im-material-file":
+			if i+1 >= len(args) {
+				return collaborationBootstrapArgs{}, fmt.Errorf("missing value for %s", args[i])
+			}
+			options.imMaterialFile = args[i+1]
+			i++
+		case "--apply":
+			options.apply = true
+		case "--allow-database-password-reset":
+			options.allowDatabasePasswordReset = true
+		case "--allow-im-secret-rotation":
+			options.allowIMSecretRotation = true
+		default:
+			return collaborationBootstrapArgs{}, fmt.Errorf("unknown flag %s", args[i])
+		}
+	}
+	if options.apply && strings.TrimSpace(options.imMaterialFile) == "" {
+		return collaborationBootstrapArgs{}, fmt.Errorf("--im-material-file is required with --apply")
+	}
+	return options, nil
 }
 
 func findProjectRoot() (string, error) {

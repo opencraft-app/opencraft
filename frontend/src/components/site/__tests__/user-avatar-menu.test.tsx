@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("framer-motion", () => ({
@@ -345,11 +346,15 @@ describe("UserAvatarMenu", () => {
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
 
+    const onConsoleShow = vi.fn();
+    window.addEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
     let shown: unknown;
     act(() => {
       shown = (window as Window & { show?: () => boolean }).show?.();
     });
     expect(shown).toBe(true);
+    expect(onConsoleShow).toHaveBeenCalledTimes(1);
+    window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
 
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
   });

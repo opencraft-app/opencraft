@@ -58,6 +58,70 @@ const richDocument: ComposerDocument = {
   ],
 };
 
+test("dictation presentation is owned by its transient input and never by a replaced draft", () => {
+  const controller = createComposerController(existing("voice-owner"), services());
+  const unregister = controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {},
+    beginTransientTextInput: () => ({ update() {}, commit() { return true; }, cancel() {} }) });
+  const first = controller.beginTransientTextInput()!;
+  const interaction = { kind: "dictation" as const, phase: "listening" as const, startedAt: 100,
+    audioLevels: { subscribe: () => () => {} }, finish: async () => true, cancel() {} };
+  first.setInteraction!(interaction);
+  assert.equal(controller.getInputInteractionSnapshot(), interaction);
+  controller.dispatch({ type: "switch-target", target: existing("replacement") });
+  assert.equal(controller.getInputInteractionSnapshot(), null);
+  const second = controller.beginTransientTextInput()!;
+  second.setInteraction!(interaction);
+  first.cancel(); first.setInteraction!({ ...interaction, phase: "transcribing" });
+  assert.equal(controller.getInputInteractionSnapshot(), interaction);
+  unregister();
+  assert.equal(controller.getInputInteractionSnapshot(), null);
+  controller.dispose();
+});
+test("a replacement physical View cannot inherit old dictation controls", () => {
+  const controller = createComposerController(existing("voice-view"), services());
+  const view = () => ({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {}, beginTransientTextInput: () => ({ update() {}, commit() { return true; }, cancel() {} }) });
+  controller.registerView(view());
+  const first = controller.beginTransientTextInput()!;
+  first.setInteraction!({ kind: "dictation", phase: "starting", startedAt: null, audioLevels: { subscribe: () => () => {} }, finish: async () => true, cancel() {} });
+  controller.registerView(view());
+  assert.equal(controller.getInputInteractionSnapshot(), null);
+  controller.dispose();
+});
+test("replacing queued content invalidates dictation and stale result cannot mutate replacement", () => {
+  const controller = createComposerController(existing("replace-voice"), services());
+  let commits = 0;
+  controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {}, beginTransientTextInput: () => ({ update() {}, commit() { commits++; return true; }, cancel() {} }) });
+  const input = controller.beginTransientTextInput()!;
+  input.setInteraction!({ kind: "dictation", phase: "listening", startedAt: 0, audioLevels: { subscribe: () => () => {} }, finish: async () => true, cancel() {} });
+  controller.dispatch({ type: "replace-content", document: richDocument, attachments: [], context: [] });
+  assert.equal(controller.getInputInteractionSnapshot(), null);
+  assert.equal(input.commit("Late"), false);
+  assert.equal(commits, 0);
+});
+test("physical insertion rejection is acknowledged as false, never successful finalization", () => {
+  const controller = createComposerController(existing("rejected"), services());
+  const outcomes: string[] = [];
+  controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {}, beginTransientTextInput: () => ({ update() {}, commit() { return false; }, cancel() {} }) });
+  const input = controller.beginTransientTextInput({ finalized: result => outcomes.push(`${result.mode}:${result.cause}`) })!;
+  assert.equal(input.commit("Recognized"), false);
+  assert.deepEqual(outcomes, ["cancel:commit-rejected"]);
+});
+test("write acknowledgement loses ownership if View write replaces content reentrantly", () => {
+  const controller = createComposerController(existing("reentrant"), services());
+  controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {}, beginTransientTextInput: () => ({ update() {}, commit() {
+    controller.dispatch({ type: "replace-content", document: richDocument, attachments: [], context: [] }); return true;
+  }, cancel() {} }) });
+  assert.equal(controller.beginTransientTextInput()!.commit("Not an acknowledgement"), false);
+  assert.deepEqual(controller.getSnapshot().draft.document, richDocument);
+});
+test("submission cannot consume original content when provisional insertion is rejected", () => {
+  const controller = createComposerController(existing("failed-submit"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {}, beginTransientTextInput: () => ({ update() {}, commit() { return false; }, cancel() {} }) });
+  controller.beginTransientTextInput()!.update("Recognized");
+  assert.throws(() => controller.createSubmitIntent(), /could not be inserted/);
+});
+
 test("Composer keeps independent drafts per target", () => {
   const controller = createComposerController(existing("thread-a"), services());
   controller.dispatch({ type: "set-document", document: richDocument });
@@ -392,7 +456,7 @@ test("platform shells can delegate type-to-compose and focus without owning edit
   const calls: string[] = [];
   const transient = {
     update: (text: string) => calls.push(`preview:${text}`),
-    commit: (text: string) => calls.push(`commit:${text}`),
+    commit: (text: string) => { calls.push(`commit:${text}`); return true; },
     cancel: () => calls.push("cancel-preview"),
   };
   const unregister = controller.registerView({
@@ -443,6 +507,7 @@ test("provisional voice text is sendable and submission atomically commits it", 
             { type: "text", text },
           ]).document,
         });
+        return true;
       },
       cancel() {},
     }),

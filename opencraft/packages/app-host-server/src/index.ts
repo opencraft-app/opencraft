@@ -1,5 +1,7 @@
 import {
   APP_HOST_PROTOCOL_VERSION,
+  stampLogicalClientFrame,
+  routeLogicalClientFrame,
   type AppHostErrorPayload,
   type AppHostToRendererMessage,
   type RendererToAppHostMessage,
@@ -14,6 +16,7 @@ export interface AppHostServerPort {
 }
 
 export interface AppHostServerOptions {
+  readonly logicalClientRouting?: boolean;
   readonly createTransport: (
     hostId: string,
     signal?: AbortSignal,
@@ -102,6 +105,9 @@ export class AppHostServer {
       let removed = false;
       for (const [key, claim] of slot.claims) {
         if (claim.connection !== connection) continue;
+        if (this.options.logicalClientRouting && slot.record) {
+          void slot.record.transport.send(stampLogicalClientFrame(JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), key)).catch(() => undefined);
+        }
         slot.claims.delete(key);
         removed = true;
       }
@@ -122,7 +128,8 @@ export class AppHostServer {
         message.leaseId,
         message.generation,
       );
-      await record.transport.send(message.frame);
+      await record.transport.send(this.options.logicalClientRouting
+        ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame);
       return undefined;
     }
     if (message.type === "host/disconnect") {
@@ -313,6 +320,9 @@ export class AppHostServer {
     if (slot === undefined || claim === undefined || claim.generation !== generation) {
       throw new Error(`Host lease ${leaseId} does not own ${hostId}`);
     }
+    if (this.options.logicalClientRouting && slot.record) {
+      await slot.record.transport.send(stampLogicalClientFrame(JSON.stringify({ jsonrpc: "2.0", method: "runtime/client/disconnect" }), key));
+    }
     slot.claims.delete(key);
     connection.forgetLease(hostId, leaseId, generation);
     if (slot.claims.size === 0) await this.stopSlot(slot, false);
@@ -320,7 +330,13 @@ export class AppHostServer {
 
   private publish(hostId: string, generation: number, message: AppHostToRendererMessage): void {
     for (const connection of this.connections) {
-      if (connection.ownsHost(hostId, generation)) connection.post(message);
+      if (!connection.ownsHost(hostId, generation)) continue;
+      if (this.options.logicalClientRouting && message.type === "host/frame") {
+        const slot = this.slots.get(hostId);
+        const ids = [...slot?.claims ?? []].filter(([, claim]) => claim.connection === connection && claim.generation === generation).map(([id]) => id);
+        const frame = routeLogicalClientFrame(message.frame, ids);
+        if (frame !== null) connection.post({ ...message, frame });
+      } else connection.post(message);
     }
   }
 

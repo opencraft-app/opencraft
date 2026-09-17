@@ -38,6 +38,65 @@ function getBlockBody(source: string, marker: string): string | undefined {
 }
 
 describe("Agent settings navigation spacing", () => {
+  it("keeps the desktop chat height chain within the viewport", () => {
+    const chatPage = getBlockBody(styles, "\n  .lv-agent-chat-page {");
+    const chatMain = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agent-settings-main {",
+    );
+    const chatShell = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agent-settings-shell {",
+    );
+    const chatContentChain = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agent-settings-grid,",
+    );
+    const chatContentChainStart = styles.indexOf(
+      "\n  .lv-agent-chat-page .lv-agent-settings-grid,",
+    );
+    const chatContentChainSelectors = styles.slice(
+      chatContentChainStart,
+      styles.indexOf("{", chatContentChainStart),
+    );
+    const chatContentChainSelectorSet = chatContentChainSelectors
+      .trim()
+      .split(",")
+      .map((selector) => selector.trim());
+
+    expect(chatPage).toContain("height: 100dvh;");
+    expect(chatPage).toContain("overflow: hidden;");
+    expect(chatMain).toContain("display: flex;");
+    expect(chatMain).toContain("min-height: 0;");
+    expect(chatMain).toContain("overflow: hidden;");
+    expect(chatShell).toContain("min-height: 0;");
+    expect(chatShell).toContain("flex: 1;");
+    expect(chatContentChainSelectorSet).toEqual([
+      ".lv-agent-chat-page .lv-agent-settings-grid",
+      ".lv-agent-chat-page .lv-agent-settings-content",
+      ".lv-agent-chat-page ._lh-claw-bot-panel",
+      ".lv-agent-chat-page ._lh-claw-bot-panel__cards",
+    ]);
+    expect(chatContentChain).toContain("height: 100%;");
+    expect(chatContentChain).toContain("min-height: 0;");
+  });
+
+  it("keeps the scroll-locked desktop sidebar within the viewport", () => {
+    const lockedSidebar = getBlockBody(
+      styles,
+      "body[data-scroll-locked] .lv-agents-sidebar-scroll-isolated",
+    );
+    const chatSidebar = getBlockBody(
+      styles,
+      "\n  .lv-agent-chat-page .lv-agents-sidebar {",
+    );
+    const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
+
+    expect(lockedSidebar).toContain("position: fixed;");
+    expect(desktopSidebar).toContain("height: calc(100dvh - 68px);");
+    expect(chatSidebar ?? "").not.toContain("height: 100%;");
+  });
+
   it("keeps the desktop Agent shell close to the viewport edge without widening shared settings pages", () => {
     const agentShell = getBlockBody(styles, "\n  .lw-settings-shell.lv-agent-settings-shell {");
     const agentMain = getBlockBody(styles, "\n  .lw-app-top-pad.lv-agent-settings-main {");
@@ -61,6 +120,8 @@ describe("Agent settings navigation spacing", () => {
     expect(page).toContain('"lw-settings-shell"');
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell"');
     expect(page).toContain('className={hasSidebarLayout || shouldShowDataLoading ? "lv-agent-sidebar-header" : undefined}');
+    // 聊天页铺满到底（来自 master），与上面的条件化并存
+    expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
     // 页面级骨架屏必须跟路由级加载壳用同一套几何，否则两段加载之间会跳
     expect(appRouteShell).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
     expect(appRouteShell).toContain('className="lw-settings-shell lv-agent-settings-shell"');
@@ -126,7 +187,7 @@ describe("Agent settings navigation spacing", () => {
     const accountFooter = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
 
-    expect(page).toContain('<UserAvatarMenu variant="sidebar" />');
+    expect(page).toMatch(/<UserAvatarMenu\b[^>]*\bvariant="sidebar"[^>]*\/>/);
     expect(page).toContain("showDesktopUserMenu={false}");
     expect(agentsPageClient).toContain("showDesktopUserMenu={isWorkbench}");
     expect(accountFooter).toContain("margin-top: auto;");

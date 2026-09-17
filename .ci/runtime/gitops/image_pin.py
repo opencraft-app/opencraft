@@ -17,6 +17,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", required=True, help="Target env")
     parser.add_argument("--image", required=True, help="Pinned image reference or JSON payload with images mapping")
     parser.add_argument("--deployed-at", required=True, help="Deploy timestamp, typically CI_JOB_STARTED_AT")
+    parser.add_argument(
+        "--variant",
+        default="all",
+        help="Platform env variant to update (for example testing); default updates every variant",
+    )
     return parser.parse_args()
 
 
@@ -30,8 +35,17 @@ def parse_args() -> argparse.Namespace:
 PLATFORM_ENV_PATTERN = re.compile(r"^(?P<prefix>.+?)-platform(?:-[A-Za-z0-9]+)?\.env$")
 
 
-def resolve_platform_envs(repo_root: Path, service: str, env: str) -> list[Path]:
+def resolve_platform_envs(repo_root: Path, service: str, env: str, variant: str = "all") -> list[Path]:
     service_dir = repo_root / "argocd" / "services" / service / env
+    normalized_variant = variant.strip().lower()
+    if normalized_variant not in ("", "all"):
+        suffix = "" if normalized_variant in ("primary", "prod", "production") else f"-{normalized_variant}"
+        selected = service_dir / f"{service}-platform{suffix}.env"
+        if not selected.is_file() or not PLATFORM_ENV_PATTERN.match(selected.name):
+            raise FileNotFoundError(
+                f"expected platform env variant {normalized_variant!r} at {selected}"
+            )
+        return [selected]
     candidates = sorted(
         path for path in service_dir.glob("*-platform*.env") if PLATFORM_ENV_PATTERN.match(path.name)
     )
@@ -86,7 +100,7 @@ def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     try:
-        platform_envs = resolve_platform_envs(repo_root, args.service, args.env)
+        platform_envs = resolve_platform_envs(repo_root, args.service, args.env, args.variant)
         payloads = [(path, parse_image_payload(args.image, path)) for path in platform_envs]
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)

@@ -16,18 +16,15 @@ func Ensure(ctx *stackctx.Context) error {
 	if !inv.Enabled {
 		return nil
 	}
-	detail, err := tdmq.GetProInstanceDetail(ctx.Pulumi, &tdmq.GetProInstanceDetailArgs{
-		ClusterId: inv.ExistingClusterID,
-	}, pulumi.Provider(ctx.Provider))
+	protect := pulumi.Protect(true)
+	clusterID, managedCluster, err := ensureCluster(ctx, inv, protect)
 	if err != nil {
-		return fmt.Errorf("read existing Pulsar cluster: %w", err)
-	}
-	if err := validateExistingCluster(inv, detail); err != nil {
 		return err
 	}
-
-	clusterID := pulumi.String(inv.ExistingClusterID)
-	protect := pulumi.Protect(true)
+	namespaceOptions := []pulumi.ResourceOption{protect}
+	if managedCluster != nil {
+		namespaceOptions = append(namespaceOptions, pulumi.DependsOn([]pulumi.Resource{managedCluster}))
+	}
 	namespace, err := tdmq.NewNamespace(ctx.Pulumi, "referral-pulsar-namespace", &tdmq.NamespaceArgs{
 		ClusterId:   clusterID,
 		EnvironName: pulumi.String(inv.Namespace),
@@ -37,7 +34,7 @@ func Ensure(ctx *stackctx.Context) error {
 			SizeInMb:      pulumi.Int(inv.RetentionSizeMB),
 		},
 		Remark: pulumi.String("LightVela referral domain events"),
-	}, ctx.Options(protect)...)
+	}, ctx.Options(namespaceOptions...)...)
 	if err != nil {
 		return err
 	}
@@ -48,7 +45,7 @@ func Ensure(ctx *stackctx.Context) error {
 		Partitions:      pulumi.Int(0),
 		PulsarTopicType: pulumi.IntPtr(2),
 		Remark:          pulumi.String("Dead-letter events for LightVela referral processing"),
-	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}))...)
+	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}), pulumi.IgnoreChanges([]string{"partitions"}))...)
 	if err != nil {
 		return err
 	}
@@ -60,7 +57,7 @@ func Ensure(ctx *stackctx.Context) error {
 		Partitions:      pulumi.Int(0),
 		PulsarTopicType: pulumi.IntPtr(2),
 		Remark:          pulumi.String("Versioned LightVela referral events"),
-	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}))...)
+	}, ctx.Options(protect, pulumi.DependsOn([]pulumi.Resource{namespace}), pulumi.IgnoreChanges([]string{"partitions"}))...)
 	if err != nil {
 		return err
 	}
@@ -103,6 +100,48 @@ func Ensure(ctx *stackctx.Context) error {
 	ctx.Pulumi.Export("pulsarReferralTopic", topic.TopicName)
 	ctx.Pulumi.Export("pulsarReferralDeadLetterTopic", dlq.TopicName)
 	return nil
+}
+
+func ensureCluster(ctx *stackctx.Context, inv config.PulsarInventory, protect pulumi.ResourceOption) (pulumi.StringInput, pulumi.Resource, error) {
+	if !inv.ManageCluster {
+		detail, err := tdmq.GetProInstanceDetail(ctx.Pulumi, &tdmq.GetProInstanceDetailArgs{
+			ClusterId: inv.ExistingClusterID,
+		}, pulumi.Provider(ctx.Provider))
+		if err != nil {
+			return nil, nil, fmt.Errorf("read existing Pulsar cluster: %w", err)
+		}
+		if err := validateExistingCluster(inv, detail); err != nil {
+			return nil, nil, err
+		}
+		return pulumi.String(inv.ExistingClusterID), nil, nil
+	}
+
+	zones := make(pulumi.IntArray, 0, len(inv.ExpectedZoneIDs))
+	for _, zoneID := range inv.ExpectedZoneIDs {
+		zones = append(zones, pulumi.Int(zoneID))
+	}
+	tags := make(pulumi.StringMap, len(inv.Tags))
+	for key, value := range inv.Tags {
+		tags[key] = pulumi.String(value)
+	}
+	cluster, err := tdmq.NewProfessionalCluster(ctx.Pulumi, "referral-pulsar-cluster", &tdmq.ProfessionalClusterArgs{
+		AutoRenewFlag: pulumi.Int(inv.AutoRenewFlag),
+		AutoVoucher:   pulumi.IntPtr(inv.AutoVoucher),
+		ClusterName:   pulumi.String(inv.ExpectedClusterName),
+		ProductName:   pulumi.String(inv.ExpectedProductName),
+		StorageSize:   pulumi.Int(inv.StorageSizeGB),
+		TimeSpan:      pulumi.IntPtr(inv.PurchaseMonths),
+		ZoneIds:       zones,
+		Vpc: &tdmq.ProfessionalClusterVpcArgs{
+			VpcId:    pulumi.String(inv.ExpectedVPCID),
+			SubnetId: pulumi.String(inv.ExpectedSubnetID),
+		},
+		Tags: tags,
+	}, ctx.Options(protect, pulumi.IgnoreChanges([]string{"storageSize"}))...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create managed Pulsar cluster: %w", err)
+	}
+	return cluster.ID().ToStringOutput(), cluster, nil
 }
 
 func validateExistingCluster(inv config.PulsarInventory, detail *tdmq.GetProInstanceDetailResult) error {

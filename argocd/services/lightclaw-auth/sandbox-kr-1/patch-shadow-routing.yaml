@@ -25,6 +25,12 @@ data:
   SHADOW_BILLING_OPEN_TIMEOUT: 15s
   SHADOW_BILLING_POLL_INTERVAL: 1s
   SHADOW_BILLING_CLOUDLADDER_ROUTE_ID: tcapi-billing-intl-test
+  PERSONAL_DEV_ROUTE_CONTROL_ENABLED: "true"
+  PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT: "sandbox-kr-1"
+  PERSONAL_DEV_ROUTE_CLOUDLADDER_GATEWAY_BASE_URL: http://43.153.246.14
+  PERSONAL_DEV_ROUTE_CLOUDLADDER_ROUTE_ID: developer-route-control
+  PERSONAL_DEV_ROUTE_CLOUDLADDER_CALLER: lightclaw-auth
+  PERSONAL_DEV_ROUTE_CLOUDLADDER_TIMEOUT: 10s
   LIGHTCLAW_GITHUB_REGISTRATION_ENABLED: "true"
   LIGHTCLAW_PAYMENT_METHODS_ENABLED: "true"
   LIGHTCLAW_PAYMENT_METHOD_SIGN_ORDER_LIMIT: "5"
@@ -51,3 +57,8 @@ spec:
                 secretKeyRef:
                   name: cloudladder-callback-secrets
                   key: SHADOW_TENCENT_CALLBACK_TOKEN
+            - name: CLOUDLADDER_SHADOW_HMAC_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: lightclaw-auth-secrets
+                  key: CLOUDLADDER_SHADOW_HMAC_SECRET

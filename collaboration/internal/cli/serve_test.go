@@ -450,6 +450,27 @@ func TestServeCLICreatesTencentCommunityAndReturnsReadyServer(t *testing.T) {
 				`{"ActionStatus":"OK","ErrorCode":0,"ErrorInfo":"","GroupId":"`+
 					body.GroupID+`"}`,
 			)
+		case "/v4/million_group_open_http_svc/create_topic":
+			var body struct {
+				GroupID     string `json:"GroupId"`
+				TopicID     string `json:"TopicId"`
+				TopicName   string `json:"TopicName"`
+				FromAccount string `json:"From_Account"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create_topic: %v", err)
+			}
+			if body.GroupID == "" ||
+				!strings.HasPrefix(body.TopicID, body.GroupID+"@TOPIC#_T_") ||
+				strings.TrimSpace(body.TopicName) == "" ||
+				body.FromAccount == "" {
+				t.Fatalf("create_topic body = %#v", body)
+			}
+			_, _ = io.WriteString(
+				writer,
+				`{"ActionStatus":"OK","ErrorCode":0,"ErrorInfo":"","TopicId":"`+
+					body.TopicID+`"}`,
+			)
 		default:
 			t.Fatalf("Tencent path = %s", request.URL.Path)
 		}
@@ -752,6 +773,21 @@ func TestServeCLI支持显式TDSQLDSN文件(t *testing.T) {
 	if cfg.database.Driver != config.DatabaseDriverTDSQL ||
 		cfg.database.DSNFile != dsnFile || cfg.databaseAutoMigrate {
 		t.Fatalf("serve TDSQL config = %#v", cfg.database)
+	}
+}
+
+func TestServeCLI支持显式MySQLDSN文件(t *testing.T) {
+	root := t.TempDir()
+	dsnFile := filepath.Join(root, "mysql.dsn")
+	cfg, err := parseServeConfig([]string{
+		"--database-driver", "mysql", "--database-dsn-file", dsnFile,
+		"--database-auto-migrate=false", "--listen", "0.0.0.0:8080",
+		"--jwt-key-file", filepath.Join(root, "jwt.key"), "--im-sdk-app-id", "1600000000",
+		"--im-admin-user-id", "platform_admin", "--im-secret-key-file", filepath.Join(root, "im-secret.key"),
+		"--im-identity-key-file", filepath.Join(root, "im-identity.key"),
+	})
+	if err != nil || cfg.database.Driver != config.DatabaseDriverMySQL || cfg.database.DSNFile != dsnFile {
+		t.Fatalf("serve MySQL config = %#v err=%v", cfg.database, err)
 	}
 }
 

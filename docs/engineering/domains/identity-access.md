@@ -23,6 +23,10 @@
 - 邀请返利上下文不是访问邀请码或登录凭据。浏览器只能先通过公开接口校验返利码，再由 Auth 写入
   30 分钟 HttpOnly Cookie；OAuth/手机号/密码注册仅在新用户事务中消费它并写 outbox。已有用户登录、
   自行构造 `X-User-Id` 或直接提交任意 owner ID 都不能建立归因。成功或退出后清除上下文。
+- Referral 的公共面只允许精确的返利码查询和 Auth `/auth/referral/prepare`；`/v1/referrals/me/**`
+  必须经过现有 LightVela session 内省。`service-gateway` 在转发前清除调用方提供的 `X-User-Id`
+  等身份头并注入会话中的权威用户 ID，Referral 只消费该集群内断言；不得把 Referral ClusterIP、
+  任意 owner 参数或宽泛路径暴露为公共身份入口。
 
 ## 机器契约与验证
 
@@ -91,6 +95,27 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 缺少 token、会话内省失败、subject 为空或 subject 与内部 Bearer 不匹配时必须 fail closed，不能降级为
 本地账号认证或信任浏览器身份头。验证至少覆盖身份头覆盖、用户凭据剥离、内部 Bearer 替换、JIT 映射
 幂等，以及独立登录路由为 404。
+
+### 个人 DevCloud testing 注册身份（2026-09-17）
+
+个人环境注册是 sandbox-only 的测试控制面，不是新的登录渠道。开发者先用国内或国际 testing 账号
+建立正常 LightVela session；`user/auth` 只从该 session 的 active shadow binding 读取 UIN，客户端不能
+提交或覆盖 UIN。注册请求只允许提交 callback 端口和 TTL，目标 IP 由 Auth 经已登记的
+Service Gateway / ingress 可信代理链计算 `ClientIP()`；直接伪造 `X-Forwarded-For`、自定义用户头或
+请求体 IP 都不能改变身份与落点。
+
+Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route/caller，并在数据面处于
+`optional` 或 `disabled` 时仍强制校验 HMAC。国际站返回的 devtunnel capability 只在首次注册响应中
+短期交付给当前 DevCloud agent，后续状态接口不再返回；共享 HMAC、SOPS 和 `DEVTUNNEL_TOKEN` 不进入
+个人环境。CloudLadder 与 devtunnel 通过同一 HMAC 内部接口读取 Auth testing MySQL 的
+`developer_route_registrations`；表内只保存 capability SHA-256，不保存 capability 明文。注销写入
+disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定，二者都必须使 capability 和
+动态路由同时失效。registry 不可用、响应字段不合法或目标超出 DevCloud CIDR/端口约束时必须 fail closed。
+
+生产和 staging 不启用 `PERSONAL_DEV_ROUTE_CONTROL_ENABLED` 或 developer route store；同名 HTTP 路由
+即使存在也只返回 disabled，不得降级到客户端自报身份或共享 Secret。验收至少覆盖无 session、非 active
+binding、伪造代理头、错误 HMAC、跨 UIN、注销和过期；任何日志与测试报告都不得包含 session、密码或
+capability 明文。
 
 API 真源是 `user/auth/api/openapi.yaml`，Shadow 的实现/架构在 `shadow/internal/` 和 `shadow/ARCHITECTURE.md`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 

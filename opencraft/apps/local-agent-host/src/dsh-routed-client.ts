@@ -4,8 +4,12 @@ import { DshHistoryIndex } from "./dsh-history-index.js";
 
 /** Only transport identifiers change. Renderer protocol identities stay logical. */
 export class DshRoutedClient extends DshClient {
+  private readonly volatileIds = new Set<string>();
+  private readonly volatileIndexes = new Map<string, DshHistoryIndex>();
+  markVolatile(id: string): void { this.volatileIds.add(id); }
+  forgetVolatile(id: string): void { this.volatileIndexes.get(id)?.close(); this.volatileIndexes.delete(id); }
   constructor(baseUrl: string, readonly routing: DshSessionRouting, readonly historyIndex = new DshHistoryIndex(":memory:")) { super(baseUrl); }
-  closeIndex(): void { this.historyIndex.close(); }
+  closeIndex(): void { this.historyIndex.close(); for (const index of this.volatileIndexes.values()) index.close(); this.volatileIndexes.clear(); }
   private async hydrateImages(nativeId: string, entry: DshHistoryEntry, signal?: AbortSignal): Promise<DshHistoryEntry> {
     if (!["user/message", "assistant/message", "tool/result"].includes(entry.event.type)) return entry;
     const visit = async (value: any): Promise<any> => {
@@ -22,27 +26,32 @@ export class DshRoutedClient extends DshClient {
   override async call<T>(method: string, payload: Record<string, unknown> = {}, signal?: AbortSignal, rpcId?: string): Promise<T> {
     const logicalId = typeof payload.sessionId === "string" ? payload.sessionId : null;
     if (method === "session.history" && logicalId) {
+      let index = this.historyIndex;
+      if (this.volatileIds.has(logicalId)) {
+        index = this.volatileIndexes.get(logicalId) ?? new DshHistoryIndex(":memory:");
+        this.volatileIndexes.set(logicalId, index);
+      }
       const entries: DshHistoryEntry[] = [];
       const size = typeof payload.maxMessages === "number" ? Math.max(1, payload.maxMessages) : 100;
       const current = this.routing.native(logicalId);
       for (const generation of [...this.routing.generations(logicalId)].reverse()) {
-        await this.historyIndex.refresh(generation.nativeId, before => super.call(method, {
+        await index.refresh(generation.nativeId, before => super.call(method, {
           sessionId: generation.nativeId, maxMessages: 100, ...(before === undefined ? {} : { beforeSeq: before }),
         }, signal), generation.nativeId !== current);
         const offset = generation.generation === 0 ? 0 : generation.previousLastSeq - generation.seedThroughSeq;
         const before = typeof payload.beforeSeq === "number" ? payload.beforeSeq - offset : undefined;
-        const rows = this.historyIndex.read(generation.nativeId, before, Math.min(Number.MAX_SAFE_INTEGER, size + 1 - entries.length));
+        const rows = index.read(generation.nativeId, before, Math.min(Number.MAX_SAFE_INTEGER, size + 1 - entries.length));
         for (const entry of rows) {
           const event = this.routing.event(generation.nativeId, entry.event);
           if (event) entries.push(await this.hydrateImages(generation.nativeId, { ...entry, event }, signal));
         }
         if (entries.length > size) break;
       }
-      return { events: entries.slice(0, size).reverse(), hasMore: entries.length > size, projections: this.historyIndex.projections(current) } as T;
+      return { events: entries.slice(0, size).reverse(), hasMore: entries.length > size, projections: index.projections(current) } as T;
     }
     const result = await super.call<any>(method, logicalId ? { ...payload, sessionId: this.routing.native(logicalId) } : payload, signal, rpcId);
     if (method === "session.list" && Array.isArray(result.items)) {
-      return { ...result, items: result.items.filter((item: any) => !this.routing.hidden(item.sessionId) && this.routing.native(this.routing.logical(item.sessionId)) === item.sessionId)
+      return { ...result, items: result.items.filter((item: any) => !this.volatileIds.has(item.sessionId) && !this.routing.hidden(item.sessionId) && this.routing.native(this.routing.logical(item.sessionId)) === item.sessionId)
         .map((item: any) => ({ ...item, sessionId: this.routing.logical(item.sessionId) })) } as T;
     }
     return result;

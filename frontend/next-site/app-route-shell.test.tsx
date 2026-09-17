@@ -3,6 +3,8 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let currentLanguage = "es";
+let sessionAuthReady = true;
+let sessionIsAuthenticated = false;
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/agents/skills",
@@ -20,6 +22,17 @@ vi.mock("react-i18next", async (importOriginal) => {
 
 vi.mock("@/observability/rum-user-bridge", () => ({ RumUserBridge: () => null }));
 vi.mock("@/theme/theme-style", () => ({ ThemeStyleInjector: () => null }));
+vi.mock("@/components/site/legal-footer", () => ({
+  LegalFooter: () => <footer data-testid="legal-footer" />,
+}));
+vi.mock("@/components/site/login-modal", () => ({ LoginModal: () => null }));
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => ({
+    authReady: sessionAuthReady,
+    isAuthenticated: sessionIsAuthenticated,
+  }),
+}));
+vi.mock("@/i18n/t", () => ({ useT: () => (key: string) => key }));
 vi.mock("@/lib/region", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/region")>();
   return { ...actual, isGlobal: true };
@@ -33,6 +46,8 @@ import { AppRouteShell } from "./app-route-shell";
 describe("AppRouteShell document metadata", () => {
   beforeEach(() => {
     currentLanguage = "es";
+    sessionAuthReady = true;
+    sessionIsAuthenticated = false;
     document.title = "Agent Console | LightVela";
     document.documentElement.lang = "en-US";
   });
@@ -109,5 +124,27 @@ describe("AppRouteShell document metadata", () => {
       expect(document.title).toBe("我的智能体伙伴 | LightVela");
       expect(document.head.querySelectorAll("title")).toHaveLength(1);
     });
+  });
+});
+
+describe("AppRouteShell auth-gate footer", () => {
+  it("keeps the auth-gate footer by default", () => {
+    const { container } = render(
+      <AppRouteShell>
+        <div>private</div>
+      </AppRouteShell>,
+    );
+
+    expect(container.querySelector('[data-testid="legal-footer"]')).toBeInTheDocument();
+  });
+
+  it("can omit the auth-gate footer for app-style routes", () => {
+    const { container } = render(
+      <AppRouteShell showAuthGateFooter={false}>
+        <div>private</div>
+      </AppRouteShell>,
+    );
+
+    expect(container.querySelector('[data-testid="legal-footer"]')).not.toBeInTheDocument();
   });
 });

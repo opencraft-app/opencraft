@@ -1,4 +1,8 @@
+import contextlib
+import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +21,40 @@ from harness_ci import db_job
 
 
 class RunGitopsDbJobTests(unittest.TestCase):
+    def test_recovery_success_includes_redacted_safe_plan_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deploy_root = Path(tmp)
+            env_file = deploy_root / "argocd/services/collaboration/beijing-sandbox/collaboration-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("COLLABORATION_IMAGE=example.com/collaboration@sha256:" + "a" * 64 + "\n")
+            argv = [
+                "run_gitops_db_job.py",
+                "--deploy-root", str(deploy_root),
+                "--service", "collaboration",
+                "--operation", "recovery-plan",
+                "--env", "beijing-sandbox",
+                "--revision", "abc123",
+                "--apply", "--wait",
+                "--image-override", "example.com/collaboration@sha256:" + "b" * 64,
+            ]
+            output = io.StringIO()
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)),
+                mock.patch.object(db_job, "apply_manifest"),
+                mock.patch.object(db_job, "wait_for_job", return_value="succeeded"),
+                mock.patch.object(db_job, "collect_job_logs", return_value="恢复计划：可执行\n残留业务表：1\n残留业务行：0") as logs,
+                mock.patch.object(db_job, "kubectl_delete"),
+                contextlib.redirect_stdout(output),
+            ):
+                exit_code = db_job.main()
+
+        self.assertEqual(exit_code, 0)
+        logs.assert_called_once()
+        audit = json.loads(output.getvalue())
+        self.assertEqual(audit["status"], "succeeded")
+        self.assertEqual(audit["logs"], "恢复计划：可执行\n残留业务表：1\n残留业务行：0")
+
     def test_missing_legacy_platform_env_falls_back_to_env_name(self) -> None:
         with mock.patch.object(db_job, "REPO_ROOT", Path("/tmp/nonexistent-lightclaw-repo")):
             self.assertEqual(
@@ -198,13 +236,49 @@ class RunGitopsDbJobTests(unittest.TestCase):
             with (
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)) as resolver,
-                mock.patch.object(db_job, "apply_manifest"),
+                mock.patch.object(db_job, "apply_manifest") as apply_manifest,
                 mock.patch.object(db_job, "kubectl_delete"),
             ):
                 exit_code = db_job.main()
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(resolver.call_args.args[2], "beijing-playground")
+        apply_manifest.assert_called_once()
+        self.assertEqual(apply_manifest.call_args.args[1]["kind"], "Job")
+        self.assertEqual(
+            apply_manifest.call_args.args[1]["metadata"]["namespace"],
+            "lightvela-playground-sandbox-bj-7",
+        )
+
+    def test_main_bootstraps_namespace_only_when_db_contract_requests_it(self) -> None:
+        argv = [
+            "run_gitops_db_job.py",
+            "--service",
+            "payment",
+            "--operation",
+            "migration",
+            "--env",
+            "sgprod",
+            "--revision",
+            "abc123",
+            "--apply",
+            "--image-override",
+            "example.com/payment:override",
+        ]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(db_job, "load_job_db_contract", return_value={"bootstrap_namespace": True}),
+            mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)),
+            mock.patch.object(db_job, "apply_manifest") as apply_manifest,
+            mock.patch.object(db_job, "kubectl_delete"),
+        ):
+            exit_code = db_job.main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(apply_manifest.call_count, 2)
+        namespace_manifest = apply_manifest.call_args_list[0].args[1]
+        self.assertEqual(namespace_manifest["kind"], "Namespace")
+        self.assertEqual(namespace_manifest["metadata"]["name"], "user-auth")
 
     def test_ctl_migration_uses_fixed_migrate_image_even_with_release_image_override(self) -> None:
         image = db_job.resolve_job_image(
@@ -273,6 +347,86 @@ class RunGitopsDbJobTests(unittest.TestCase):
                 self.assertIn("multiStatements=true", command)
                 self.assertIn(binary, command)
 
+    def test_credit_migration_builds_self_contained_runtime_resources(self) -> None:
+        with mock.patch.object(
+            db_job,
+            "resolve_contract_secret_values",
+            return_value={"credit_db_password": "credit-password"},
+        ):
+            dynamic, resources = db_job.build_credit_dynamic_resources(
+                job_name="gitops-credit-migration-test",
+                namespace="credit",
+                env_name="shprod",
+                deploy_root=Path("/tmp/gitops"),
+                service_platform_env={
+                    "CREDIT_MYSQL_HOST": "10.15.192.13",
+                    "CREDIT_MYSQL_PORT": "3306",
+                    "CREDIT_NODE_POOL": "general-shprod",
+                },
+                db_contract={"db_job_secret_resolver": "credit_db_password"},
+            )
+
+        self.assertEqual(dynamic["nodeSelector"], {"pool": "general-shprod"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "10.15.192.13"}, dynamic["env"])
+        self.assertIn({"name": "CREDIT_DB", "value": "credit"}, dynamic["env"])
+        self.assertIn(
+            {
+                "name": "CREDIT_DB_PASSWORD",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": "gitops-credit-migration-test-secrets",
+                        "key": "CREDIT_DB_PASSWORD",
+                    }
+                },
+            },
+            dynamic["env"],
+        )
+        self.assertEqual(resources[0]["kind"], "Secret")
+        self.assertEqual(resources[0]["stringData"]["CREDIT_DB_PASSWORD"], "credit-password")
+        self.assertNotIn("configmap", db_job.SERVICE_SPECS[("credit", "migration")])
+        self.assertNotIn("secret", db_job.SERVICE_SPECS[("credit", "migration")])
+
+    def test_referral_migration_builds_self_contained_runtime_resources(self) -> None:
+        with mock.patch.object(
+            db_job,
+            "resolve_contract_secret_values",
+            return_value={"referral_db_password": "referral-password"},
+        ):
+            dynamic, resources = db_job.build_referral_dynamic_resources(
+                job_name="gitops-referral-migration-test",
+                namespace="referral",
+                env_name="shprod",
+                deploy_root=Path("/tmp/gitops"),
+                service_platform_env={
+                    "REFERRAL_MYSQL_HOST": "10.15.192.13",
+                    "REFERRAL_MYSQL_PORT": "3306",
+                    "REFERRAL_DB": "lightvela_referral",
+                    "REFERRAL_DB_USER": "referral",
+                    "REFERRAL_NODE_POOL": "general-shprod",
+                },
+                db_contract={"db_job_secret_resolver": "referral_db_password"},
+            )
+
+        self.assertEqual(dynamic["nodeSelector"], {"pool": "general-shprod"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "10.15.192.13"}, dynamic["env"])
+        self.assertIn({"name": "REFERRAL_DB", "value": "lightvela_referral"}, dynamic["env"])
+        self.assertIn(
+            {
+                "name": "REFERRAL_DB_PASSWORD",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": "gitops-referral-migration-test-secrets",
+                        "key": "REFERRAL_DB_PASSWORD",
+                    }
+                },
+            },
+            dynamic["env"],
+        )
+        self.assertEqual(resources[0]["kind"], "Secret")
+        self.assertEqual(resources[0]["stringData"]["REFERRAL_DB_PASSWORD"], "referral-password")
+        self.assertNotIn("configmap", db_job.SERVICE_SPECS[("referral", "migration")])
+        self.assertNotIn("secret", db_job.SERVICE_SPECS[("referral", "migration")])
+
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
 
@@ -305,6 +459,25 @@ class RunGitopsDbJobTests(unittest.TestCase):
     def test_run_command_rejects_empty_command_parts(self) -> None:
         with self.assertRaisesRegex(ValueError, "non-empty strings"):
             db_job.run_command(["kubectl", ""])
+
+    def test_kubectl_run_retries_timeout_with_bytes_output(self) -> None:
+        timeout = subprocess.TimeoutExpired(
+            cmd=["kubectl", "get", "pods"],
+            timeout=75,
+            output=b"partial stdout",
+            stderr=b"i/o timeout",
+        )
+        success = db_job.CommandResult(["kubectl", "get", "pods"], 0, "ok", "")
+
+        with (
+            mock.patch.object(db_job, "run_command", side_effect=[timeout, success]) as run,
+            mock.patch.object(db_job.time, "sleep") as sleep,
+        ):
+            result = db_job.kubectl_run(["kubectl", "get", "pods"], retries=2)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(2)
 
     def test_wait_for_job_retries_transient_get_eof_until_success(self) -> None:
         with (

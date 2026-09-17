@@ -27,6 +27,35 @@ master 源码
 
 ## 不变量
 
+- 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
+  `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、
+  NAT/EIP、路由/SNAT 和 TAT-only Sandbox 安全组；不得借网络扩容创建第二套 TKE、数据库、
+  Redis、TCR、CLS、内部模型 CLB 或跳板机。network-only `preview` 不需要平台密码，`up`
+  不回写 TKE deploy 输出或 kubeconfig，并且必须在精确资源 diff 审阅后单独获得付费授权。
+  首个 pool 使用 `ap-johorbahru-1`，但网络预留 1/2 区 pool 子网；新加坡存量 pool 的生命周期
+  继续由原 region 维护，网络创建本身不改变 CTL admission。
+
+- Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
+  Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
+  `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；
+  不为单一服务放宽 Argo 全局路径限制。foundation 活动目录只允许这两种资源和加密 Secret，
+  Runtime、migration 要在 foundation live 收敛并独立验收后启用。
+- Collaboration 北京 Runtime 的 `DB_JOB_KUBECONFIG_B64` 在 Stream 中使用 `PASSWORD` 类型 protected
+  credential；流水线必须引用 `.password` 字段，不能把 credential 对象本身传给 Base64 解码器。
+  kubeconfig 来源保持在受控 DevCloud/Stream 边界，不写入仓库或普通日志。
+
+- Stream V2流水线的触发入口使用顶层普通`on:`。其预处理按行首文本映射到`triggerOn`，
+  带引号的入口虽然符合YAML语法，却会丢失触发限制并落入默认通配规则；候选制品契约测试须覆盖此预处理差异。
+
+- Collaboration 北京复用现有普通 MySQL 8 服务的独立逻辑库/账号/DSN，不新建 DB 实例。
+  Runtime 与 migration/verify Job 显式使用 `mysql`；`tdsql` 只用于真实 TDSQL Proxy。
+  MySQL 独立迁移线不修改已发布 SQLite/TDSQL 历史，保留业务 ID、逻辑路由键、主键/索引和
+  字符语义；不伪造物理分片审计，不削弱 owner claim、进度 CAS、失败状态拒绝及只读校验。
+  Atlas 对连续 SQL 分隔符产生的空片段不是可执行 migration 语句，不计入
+  revision `total/applied` 也不下发数据库；状态预期和执行路径必须复用同一过滤结果。
+  修复这类解析差异时不改写已发布 SQL、摘要或发布锁。
+  foundation、迁移/verify、Runtime、Gateway 和产品 Web 仍按既定分段门禁交付。
+
 - vela-computer候选流水线在checkout前独立内联隔离旧工作树和全部复用的普通`.git`元数据，关闭浅克隆
   （`fetchDepth=0`），让checkout从空对象库获取完整历史。连通性正常的浅缓存也不复用：
   SDK按SHA做depth1增量fetch时曾在预检通过后仍报缺失父对象，预检不能覆盖该协商失败路径。
@@ -119,17 +148,30 @@ master 源码
   发布 Credit 不得改变存量 Pass 地域。
 - 东京、上海和新加坡接入 Credit 时，Credit、Trade 与 Service Gateway 的环境配置必须在同一候选
   revision 完成渲染和 contract 校验。上海、新加坡保持生产人工晋级，不因源码包含环境配置而自动发布。
-- Credit 每日用量的 `sendResource` 依赖 CloudLadder 的 `qbilling-send-resource-test` 签名路由；
+- Credit 每日用量的 `sendResource` 必须按环境使用 CloudLadder 签名路由：北京 sandbox 与上海使用
+  `qbilling-send-resource-cn-prod`，东京与新加坡使用 `qbilling-send-resource-intl-prod`，仅北京 7 与
+  首尔保留 `qbilling-send-resource-test`。正式路由必须使用计费文档指定的域名，不得写死上游 IP。
   `tkexgz` 与 `tkexsg` 的 CloudLadder 源码、Trade transport 和目标镜像必须协同构建/晋级，避免 Trade
   已切换签名路由而网关仍返回 404。
 - Credit migration Job 独立于 Trade 的历史固定名 Job，避免 Kubernetes Job immutable 字段和旧完成
   状态阻断新服务迁移；移除旧 Job 时仍需通过 release contract 验证 migration delivery 未被静默跳过。
+- Credit 首次进入上海或新加坡生产时，DB migration/readiness 门禁允许在 GitOps MR 创建前幂等创建
+  contract 声明的最小 `credit` Namespace，并打上 CI bootstrap 标签供后续 Argo 接管；该动作不得提前
+  创建 Deployment、Service、常驻 ConfigMap 或 runtime Secret，也不得在一次性 Job 清理时删除 Namespace。
+  Namespace 创建失败必须 fail closed，不能以“首次发布”为由跳过 DB 版本探测或 readiness。
+  Namespace bootstrap 必须由 `db_contract.bootstrap_namespace: true` 显式启用；Trade、CTL 等 namespace
+  已有的服务不得在每次 DB Job 前重复申请 cluster-scope Namespace。kubectl 超时输出可能是 bytes，runner
+  必须先安全解码再进入既定重试，不能让日志格式异常绕过重试或遮蔽原始集群错误。
+- 首次发布阶段的 Credit migration、版本探测和 readiness Job 必须自包含：非敏感连接参数与 node pool
+  从候选 revision 投影后的 `credit-platform.env` 读取，数据库密码从同一投影中的 SOPS Secret 解析后只注入
+  一次性 Kubernetes Secret。Job 不依赖 live `credit-config` 或 `credit-runtime-secrets`；临时 Secret 与 Job
+  执行后清理，因此尚未存在 Credit workload 时也能先完成 DB 门禁，再生成可审阅的 GitOps MR。
 - 积分包控制台 checkout 新增用户路由时，先发布支持订单归属和资源类型校验的 Trade 与 Credit，
   再在目标 Service Gateway 的 authenticated、实名、精确 allowlist 中加入
   `POST /v1/credit/packages/order-url`。各地域只能在 Credit、Trade、Redis、Secret 和计费回调均完成
   接线后启用该路由；共享源码或策略测试不能替代目标地域的独立发布验收。
 
-### Referral 北京试点交付
+### Referral 北京与上海交付
 
 - 现有北京 P2 Pulsar 集群是外部依赖，Pulumi 只管理 namespace、主 topic、DLQ、三类角色和最小权限；
   preview 必须先只读核对 cluster id、名称、规格、可用区、VPC、子网和 broker endpoint，不能把弹性存储
@@ -137,20 +179,84 @@ master 源码
 - 发布顺序固定为 Pulsar 子资源和角色 token、Referral/Auth/CTL Secret、Auth/CTL/Referral schema、
   Referral API/worker、Auth/CTL relay、Service Gateway 路由、前端入口。邀请双方各 500 积分通过 CTL 送积分
   接口按额度发放，VelaGW 自动准备内部权益模板，不要求运营预先导入 Plan。
-- Referral 流水线只构建北京镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
-  `ENABLE_MASTER_PROD_PROMOTE=false`。Pulsar、独立 DB/user 和 SSM/SOPS 前置条件完成后才加入 Argo catalog；
-  首次基础发布保持 worker processing、Gateway 路由和前端入口关闭，待 schema/API/campaign 健康后单独启用。
+- Referral 流水线构建北京与上海镜像，必须显式设置 `MASTER_AUTO_PIN_ENVS=none` 和
+  `ENABLE_MASTER_PROD_PROMOTE=false`。上海只能通过人工 promote、人工合并 GitOps MR 和人工 Argo sync 发布。
+  Pulsar、独立 DB/user 和 SSM/SOPS 前置条件完成后才加入 Argo；首次基础发布保持 Referral 总开关、worker
+  processing、campaign Job、Auth/CTL relay、Gateway 路由和前端入口关闭，待 schema/API 健康后单独启用。
 - 基础阶段 `REFERRAL_PROCESSING_ENABLED=false` 时，`referral-worker` Deployment 必须同步缩容到 0；
   正式启用时须在同一变更中恢复副本并开启 processing，避免“禁用即退出”的 worker 被 Deployment 误判为 CrashLoop。
-- 北京正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
+- 北京或上海正式激活必须同时开启 Auth/CTL outbox relay、Referral worker processing、精确 Gateway 路由和 CTL runtime flag；
+  Gateway 还必须将只读的 `GET /v1/frontend/runtime-config` 精确转发到 CTL，否则前端会回退为 Referral 关闭。
   公共面只允许查询单个返利码与准备注册上下文，用户统计和返利码创建必须经过 session 鉴权。
-- 北京环境显式设置 `REFERRAL_ENABLED=true`；全局和上海/新加坡默认关闭。CTL migration 31 未执行时
+- 上海 CTL 的 Referral patch 必须按容器名 `api` 合并到原容器，不能把 Deployment 名 `ctl-api`
+  当作容器名。GitOps 候选需在 Kustomize 中保留原容器并成功应用既有 volumeMount/volume 删除补丁，
+  否则不得创建或合并发布 MR。
+- 北京与上海环境显式设置 `REFERRAL_ENABLED=true`；全局和新加坡默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
   bootstrap 证据；镜像构建、Pulsar 资源存在或 UI 可见均不能单独代表返利闭环。
 - Role Token 交付统一使用 `infractl bootstrap-referral-tokens --stack <env>`。命令从目标环境 inventory
   读取集群、角色和 SSM 名称，默认只做全量预检，显式 `--apply` 后才幂等合并；默认拒绝覆盖不同 Token。上海首次上线复用
   同一入口，必须先补齐并审查 `shprod` inventory，不能复制北京 Token 或在日常发布中重复执行。
+- 上海没有可复用 Pulsar 集群时，`shprod` 可显式使用 `manage_cluster=true` 由 `pulsar` scope 购买受保护的
+  P2 专业集群。首次 apply 只建立独立消息基础设施，不得同步开启 Auth/CTL relay、Referral worker、Gateway
+  路由或前端入口；创建后必须把真实 cluster ID 与 broker endpoint 回填 inventory，再执行 Role Token bootstrap。
+- TDMQ P2 会把非分区 Topic 的 `partitions=0` 创建参数规范化为读取值 `1`。Pulumi 必须忽略该只读字段的
+  回读漂移，并继续以 `pulsar_topic_type=2` 作为“持久化非分区 Topic”的语义真源；不得因伪漂移反复更新
+  生产 Topic。首次 apply 后的 scoped preview 必须达到全部 unchanged。
+- 上海 foundation 使用独立 `lightvela_referral` 数据库和 `referral` 用户。激活时必须使用上海独立 Campaign、
+  Pulsar producer/consumer Token 和精确 Gateway 路由，同时把 worker 恢复到 2 副本；不得复用北京 campaign ID、
+  Token 或 endpoint。上海 Campaign 双方各 500 积分、`vesting_days=0`，资格仍是首次成功开通且 0 元 dianshi 订单也算。
+- Referral 首次生产迁移必须从候选 `referral-platform.env` 和对应 SOPS Secret 构造一次性 Job/Secret，不能依赖
+  尚未部署的 live ConfigMap 或 runtime Secret；bundle 必须显式声明 `bootstrap_namespace: true`，临时 Namespace
+  只用于 DB 门禁，随后由 Argo 接管正式资源。生产 DB migration 服务映射必须显式包含 `referral -> referral`。
+- Stream 手动启动变量不能作为生产 DB migration 的条件 stage 真源。`run_migration` 必须使用
+  `.ci/db-migration-apply.yml` 的固定 dry-run、人工审核、apply 序列；旧入口遇到此决策时 fail closed。
+  dry-run 和 apply 都按相同的不可变 SOURCE_SHA、目标环境及实际 schema 版本重新校验；脚本阶段成功
+  不代表迁移 Job 已执行或数据库已升级。
+- 标准 service-release 与生产 GitOps promote 只使用主仓库的服务源码、发布脚本和 manifests；其 checkout
+  不应拉取无关子模块。需要子模块的独立构建入口须自行显式启用，不能让通用发布链依赖外部仓库可用性。
+
+### Collaboration 北京两阶段 bootstrap
+
+- Collaboration 首次发布不是镜像流水线的附带动作。`.ci/collaboration.yml` 继续保持
+  `MASTER_AUTO_PIN_ENVS=none`；`.ci/collaboration-bootstrap.yml` 是唯一可写入口，固定执行
+  dry-run、人工审批、apply 和可审阅 GitOps MR，不自动合并。
+- 现有 CynosDB 集群 ID、内部 endpoint、独立 DB/账号、SSM 名、namespace 和 node pool 进入
+  `infra_pulumi` inventory。`infractl bootstrap-collaboration` 默认只读，显式 `--apply` 后按
+  SSM → 账号 → 逻辑库 → DB 级权限幂等执行；任何失败都可重入，默认拒绝密码或 IM Secret 轮换。
+- 首次创建账号的密码须符合目标 CynosDB 的复杂度约束，同时能安全写入受管 DSN。若 SSM 已创建而
+  账号尚未创建，且其中旧 DSN 密码不合规，重入 bootstrap 仅重新生成并更新该受管 DSN 密码，
+  保留其他 Secret 字段后再创建账号；账号已经存在时不得借此隐式轮换密码，仍需显式恢复授权。
+- CynosDB 账号创建 API 返回只表示请求被受理；同次 bootstrap 在授予目标库权限时，若刚创建的
+  账号暂未就绪，只对明确的账号未存在瞬态错误做有界等待，尊重取消并保持其他错误立即失败。
+  超时后保留已完成的 SSM、账号和逻辑库，由下一次只读预检重新判断，不盲目重复创建。
+- `foundation` GitOps MR 只包含 Namespace、ServiceAccount 与由 SSM 导出的加密 Secret，不能出现
+  Deployment、Service 或 migration Job。只有 foundation 在目标集群收敛后，才能进入 runtime 阶段。
+- SSM→SOPS 导出和后续 GitOps 投影需要相同的受控 Python `yaml` 依赖，apply 必须在读取 SSM 前
+  准备并验证固定版本的隔离环境。若 DB/SSM 已幂等写入而导出失败，保留云端事实，修复工具链后
+  重新只读预检并经人工审批重入；不得手工复制明文 Secret 或跳过加密投影。
+- `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
+  active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
+  不进入常驻 Kustomize。
+- `.ci/collaboration-recovery.yml` 是首发期间的独立受控例外流水线，只修复已知双分号缺陷
+  留下的精确空基线状态，不向 foundation/runtime bootstrap Job 扩大 kubeconfig 或其他权限面。
+  审批前的 `recovery-plan` Job 只读校验已发布 baseline hash、旧 `1/50` revision、
+  `statement_failed`/空 `error_stmt`、首语句 partial hash、单一
+  `account_login_identities` 表及 0 行。审批后 `recovery-apply` 必须再次执行全部校验，
+  按 `count → drop table → revision CAS delete → empty 回读` 收敛。任一字段、表集或行数不符即
+  fail closed；plan 不得写库，recovery 不导出 Secret、不生成 GitOps MR、不自动继续 runtime。
+  两种 recovery Job 成功时必须在删除 Job 前收集并脱敏 CLI 摘要，校验预期成功标记后写入
+  流水线审计 JSON；无日志或标记不符必须按 `audit_failed` 阻断审批。
+  Runtime migration 完成后仍须通过严格 schema audit；Computer v2 字段若因旧增量 DDL 被追加到
+  表尾，必须新增 MySQL/TDSQL forward migration 以 `MODIFY COLUMN ... AFTER ...` 收敛到当前物理
+  列序，不能修改已发布 migration。SQLite 已通过重建表满足同一列序时不添加无语义版本。
+- active catalog 在 foundation/runtime 两阶段均由 bootstrap 流水线独占写入，因此登记为普通
+  release-bundle catalog 覆盖检查的显式豁免；普通服务发布不得覆盖或删除它。该豁免只能在 catalog
+  所有权迁回标准 release bundle 后移除。
+- 北京 Collaboration 固定使用 `AgentNetwork` SDKAppID `1600137234`；SDKAppID/管理员是普通平台值，
+  SecretKey 只通过 protected credential 生成临时安全文件并
+  写入 SSM/SOPS；不得从旧 Secret 手工复制到仓库或日志。Gateway 与产品 Web 仍是后续独立激活步骤。
 
 ## CloudLadder Gateway 回调环境
 
@@ -169,7 +275,35 @@ StatefulSetPlus manifest 中的
 
 Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与 Pass 的
 `jifei-callback-<region>` 共用目标配置。`tkexgz` 与 `tkexsg` 生产 workload 必须显式声明
-全部 Credit 地域回调目标；北京联调阶段统一为 `https://lightclaw.tech`，避免依赖镜像内默认值。
+全部 Credit 地域回调目标，避免依赖镜像内默认值。生产切流后的映射为：`tkexgz` 仅上海
+`SH` 指向 `https://api.lightvela.com`，其他地域保留北京预发布 `https://lightclaw.tech`；
+`tkexsg` 仅新加坡 `SG` 指向 `https://api.lightvela.ai`，其他地域统一指向东京 sandbox
+`https://api-sandbox-jp-1.lightclaw.tech`。映射变更必须同步更新逐地域 GitOps 契约测试，不能通过
+修改共享路由默认值或 Pass 回调配置实现。
+
+## 个人 DevCloud testing-only 发布门禁（2026-09-17）
+
+个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
+`sandbox-kr-1` Auth 配置、广州/新加坡 testing CloudLadder 运行态。只允许启用北京和韩国 sandbox
+Auth、`lightvela-proxy-testing`、`devtunnel-testing` 和韩国 sandbox Service Gateway。动态注册状态
+保存在各自 Auth testing MySQL 的 `developer_route_registrations`，CloudLadder 与 devtunnel 只用既有
+Shadow HMAC 调用 registry；不得为该能力新增 TKEx ServiceAccount、Role、RoleBinding 或 Lease。production
+与 staging manifests 必须保持零 diff，运行态也不得发生变更。
+
+CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
+环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
+`cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
+变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
+依赖“暂不执行 Argo Sync”作为长期隔离措施。
+
+广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
+发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
+Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
+namespace、name、目标 revision 与镜像。
+
+完成证据必须分层记录：源码合并 revision、Argo 目标 revision、精确资源 `Synced/Healthy`、运行镜像、
+国内/国际 registration、registry/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared
+优先级和 fail-closed 结果。源码合入、HTTP 200、Pod Ready 或页面可打开都不能单独作为个人环境闭环。
 
 ## CloudLadder HMAC 分阶段发布
 

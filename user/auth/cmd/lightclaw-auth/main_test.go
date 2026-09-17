@@ -176,6 +176,65 @@ func TestBuildPaymentMethodClientUsesBillingConfig(t *testing.T) {
 	}
 }
 
+func TestBuildDeveloperRouteClientDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false")
+	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
+	if err != nil || client != nil {
+		t.Fatalf("disabled client=%v err=%v", client, err)
+	}
+}
+
+func TestBuildDeveloperRouteClientRequiresMatchingSandboxHTTPSHost(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ROUTE_CLOUDLADDER_GATEWAY_BASE_URL", "http://gateway.testing")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "test-secret")
+
+	for _, publicBaseURL := range []string{
+		"https://api.lightvela.com",
+		"http://api-sandbox-bj-7.lightclaw.tech",
+		"https://api-sandbox-kr-1.lightclaw.tech",
+	} {
+		if client, err := buildDeveloperRouteClient(publicBaseURL); err == nil || client != nil {
+			t.Fatalf("unsafe public base URL %q accepted, client=%v err=%v", publicBaseURL, client, err)
+		}
+	}
+	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
+	if err != nil || client == nil {
+		t.Fatalf("matching sandbox config rejected, client=%v err=%v", client, err)
+	}
+}
+
+func TestBuildDeveloperRouteRegistryDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false")
+	registry, secret, err := buildDeveloperRouteRegistry(
+		"https://api-sandbox-bj-7.lightclaw.tech",
+		service.NewMemoryStore(service.StoreOptions{}),
+	)
+	if err != nil || registry != nil || secret != "" {
+		t.Fatalf("registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+}
+
+func TestBuildDeveloperRouteRegistryRequiresSandboxAndHMAC(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ROUTE_CLOUDLADDER_HMAC_SECRET", "")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "")
+	authStore := service.NewMemoryStore(service.StoreOptions{})
+	if registry, secret, err := buildDeveloperRouteRegistry("https://api-sandbox-bj-7.lightclaw.tech", authStore); err == nil || registry != nil || secret != "" {
+		t.Fatalf("missing secret accepted registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "test-secret")
+	registry, secret, err := buildDeveloperRouteRegistry("https://api-sandbox-bj-7.lightclaw.tech", authStore)
+	if err != nil || registry == nil || secret != "test-secret" {
+		t.Fatalf("registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+	if registry, _, err := buildDeveloperRouteRegistry("https://api.lightvela.com", authStore); err == nil || registry != nil {
+		t.Fatalf("production-like host accepted registry=%v err=%v", registry, err)
+	}
+}
+
 func loggingDiscardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

@@ -24,17 +24,27 @@ import {
 import { BotAvatar, type BotAvatarHandle } from "./bot-avatar";
 import {
   BotAvatarStageContext,
+  IDLE_PROJECTION,
   type BotAvatarAction,
+  type BotAvatarBounds,
   type BotAvatarMarkClaim,
   type BotAvatarPointerSnapshot,
   type BotAvatarPointerSource,
   type BotAvatarStageProjection,
   useBotAvatarProjection as useProjection,
 } from "./bot-avatar-stage-context";
+import {
+  BotAvatarScheduler,
+  botAvatarActivityLevel,
+} from "./bot-avatar-runtime";
 
 interface MarkSource {
   readonly participant: BotAvatarMarkClaim["participant"];
   readonly followPointer: boolean;
+  readonly pointerVisible: boolean;
+  readonly visible: boolean;
+  readonly bounds: BotAvatarMarkClaim["bounds"];
+  readonly element: BotAvatarMarkClaim["element"];
 }
 
 function sourceIdFor(participantId: string): string {
@@ -119,6 +129,53 @@ export function BotAvatarMark({
 }) {
   const generatedId = useId();
   const { registerClaim } = useContext(BotAvatarStageContext);
+  const element = useRef<HTMLSpanElement>(null);
+  const bounds = useRef<BotAvatarBounds | null>(null);
+  const [visible, setVisible] = useState(true);
+
+  useLayoutEffect(() => {
+    const node = element.current;
+    if (node === null) return;
+    const updatePosition = (width: number, height: number) => {
+      const rect = node.getBoundingClientRect();
+      bounds.current = { left: rect.left, top: rect.top, width, height };
+    };
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(([entry]) => {
+            if (entry === undefined) return;
+            updatePosition(entry.contentRect.width, entry.contentRect.height);
+          });
+    if (resizeObserver === null) {
+      const initial = node.getBoundingClientRect();
+      bounds.current = {
+        left: initial.left,
+        top: initial.top,
+        width: initial.width,
+        height: initial.height,
+      };
+    }
+    resizeObserver?.observe(node);
+    const intersectionObserver =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(([entry]) => {
+            if (entry === undefined) return;
+            setVisible(entry.isIntersecting);
+            bounds.current = {
+              left: entry.boundingClientRect.left,
+              top: entry.boundingClientRect.top,
+              width: entry.boundingClientRect.width,
+              height: entry.boundingClientRect.height,
+            };
+          });
+    intersectionObserver?.observe(node);
+    return () => {
+      resizeObserver?.disconnect();
+      intersectionObserver?.disconnect();
+    };
+  }, []);
 
   useLayoutEffect(
     () =>
@@ -127,8 +184,11 @@ export function BotAvatarMark({
         participant,
         active,
         followPointer,
+        visible,
+        bounds,
+        element,
       }),
-    [active, followPointer, generatedId, participant, registerClaim],
+    [active, followPointer, generatedId, participant, registerClaim, visible],
   );
 
   return (
@@ -141,8 +201,11 @@ export function BotAvatarMark({
       }
       data-active={active || undefined}
       data-size={size}
+      ref={element}
     >
-      {active ? <BotAvatarMirror participant={participant} size={size} /> : null}
+      {active ? (
+        <BotAvatarMirror participant={participant} size={size} />
+      ) : null}
     </span>
   );
 }
@@ -172,6 +235,16 @@ export function BotAvatarStage({
     active: false,
   });
   const pointerListeners = useRef(new Set<() => void>());
+  const scheduler = useMemo(() => new BotAvatarScheduler(), []);
+  const sourcesRef = useRef(sources);
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || !document.hidden,
+  );
+  const [reducedMotion, setReducedMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   const pointer = useMemo<BotAvatarPointerSource>(
     () => ({
       snapshot: pointerSnapshot,
@@ -182,7 +255,15 @@ export function BotAvatarStage({
     }),
     [],
   );
-  const projections = useMemo(() => {
+  const targetedParticipants = useMemo(() => {
+    const next = new Set<string>();
+    for (const fact of latestBotPresenceFacts(presence)) {
+      const targetParticipantId = fact.activity?.targetParticipantId;
+      if (targetParticipantId) next.add(targetParticipantId);
+    }
+    return next;
+  }, [presence]);
+  const baseProjections = useMemo(() => {
     const next = new Map<string, BotAvatarStageProjection>();
     for (const fact of latestBotPresenceFacts(presence)) {
       next.set(
@@ -205,15 +286,43 @@ export function BotAvatarStage({
     }
     return next;
   }, [motionOverrides, presence]);
+  const projections = useMemo(() => {
+    const next = new Map(baseProjections);
+    for (const participantId of sources.keys()) {
+      if (!targetedParticipants.has(participantId)) continue;
+      const current = next.get(participantId) ?? IDLE_PROJECTION;
+      if (current.phase !== "idle" || motionOverrides?.has(participantId))
+        continue;
+      next.set(
+        participantId,
+        Object.freeze({ ...current, motionState: "listening" }),
+      );
+    }
+    return next;
+  }, [baseProjections, motionOverrides, sources, targetedParticipants]);
   const commitSources = useCallback(() => {
     const next = new Map<string, MarkSource>();
     for (const claim of claimsRef.current.values()) {
       if (!claim.active) continue;
       const participantId = claim.participant.participantId;
       const current = next.get(participantId);
+      const currentPointerUsable =
+        current?.followPointer === true && current.pointerVisible;
+      const useClaimPointer =
+        claim.followPointer && claim.visible && !currentPointerUsable;
       next.set(participantId, {
         participant: claim.participant,
         followPointer: claim.followPointer || current?.followPointer === true,
+        pointerVisible:
+          (claim.followPointer && claim.visible) ||
+          current?.pointerVisible === true,
+        visible: claim.visible || current?.visible === true,
+        bounds: useClaimPointer
+          ? claim.bounds
+          : (current?.bounds ?? claim.bounds),
+        element: useClaimPointer
+          ? claim.element
+          : (current?.element ?? claim.element),
       });
     }
     setSources((current) => {
@@ -223,6 +332,10 @@ export function BotAvatarStage({
         if (
           previous === undefined ||
           previous.followPointer !== source.followPointer ||
+          previous.pointerVisible !== source.pointerVisible ||
+          previous.visible !== source.visible ||
+          previous.bounds !== source.bounds ||
+          previous.element !== source.element ||
           previous.participant !== source.participant
         )
           return next;
@@ -250,12 +363,27 @@ export function BotAvatarStage({
     [],
   );
   const context = useMemo(
-    () => ({ pointer, projections, registerClaim, perform }),
-    [perform, pointer, projections, registerClaim],
+    () => ({ pointer, projections, registerClaim, perform, scheduler }),
+    [perform, pointer, projections, registerClaim, scheduler],
   );
+
+  sourcesRef.current = sources;
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
+      for (const source of sourcesRef.current.values()) {
+        if (!source.followPointer || !source.visible) continue;
+        const element = source.element.current;
+        const previous = source.bounds.current;
+        if (element === null || previous === null) continue;
+        const rect = element.getBoundingClientRect();
+        source.bounds.current = {
+          left: rect.left,
+          top: rect.top,
+          width: previous.width,
+          height: previous.height,
+        };
+      }
       pointerSnapshot.current = {
         x: event.clientX,
         y: event.clientY,
@@ -277,6 +405,20 @@ export function BotAvatarStage({
     };
   }, []);
 
+  useEffect(() => () => scheduler.dispose(), [scheduler]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateVisibility = () => setPageVisible(!document.hidden);
+    const updateMotion = () => setReducedMotion(media.matches);
+    document.addEventListener("visibilitychange", updateVisibility);
+    media.addEventListener("change", updateMotion);
+    return () => {
+      document.removeEventListener("visibilitychange", updateVisibility);
+      media.removeEventListener("change", updateMotion);
+    };
+  }, []);
+
   return (
     <BotAvatarStageContext.Provider value={context}>
       {children}
@@ -284,9 +426,18 @@ export function BotAvatarStage({
         {[...sources].map(([participantId, source]) => (
           <span className="bot-chat-mark-source" key={participantId}>
             <BotAvatar
+              activityLevel={botAvatarActivityLevel({
+                visible: pageVisible && source.visible,
+                working:
+                  (projections.get(participantId) ?? IDLE_PROJECTION).phase !==
+                  "idle",
+                targeted: targetedParticipants.has(participantId),
+              })}
               followPointer={source.followPointer}
               participant={source.participant}
+              pointerBounds={source.bounds}
               presentation="live"
+              reducedMotion={reducedMotion}
               ref={(handle) => {
                 if (handle === null)
                   actionHandlesRef.current.delete(participantId);

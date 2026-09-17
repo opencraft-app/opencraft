@@ -5,10 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"git.woa.com/wisp/mono2/collaboration/internal/config"
 )
 
 func statusTDSQL(ctx context.Context, db *sql.DB) (StatusInfo, error) {
-	state, expected, err := inspectTDSQLState(ctx, db)
+	return statusTDSQLFor(ctx, db, config.DatabaseDriverTDSQL)
+}
+
+func statusTDSQLFor(ctx context.Context, db *sql.DB, dialect config.DatabaseDriver) (StatusInfo, error) {
+	state, expected, err := inspectMySQLState(ctx, db, dialect)
 	if err != nil {
 		return StatusInfo{}, err
 	}
@@ -46,7 +52,11 @@ func inspectTDSQLState(
 	ctx context.Context,
 	db *sql.DB,
 ) (State, tdsqlRuntimeExpectation, error) {
-	dir, err := embeddedDirFor("tdsql")
+	return inspectMySQLState(ctx, db, config.DatabaseDriverTDSQL)
+}
+
+func inspectMySQLState(ctx context.Context, db *sql.DB, dialect config.DatabaseDriver) (State, tdsqlRuntimeExpectation, error) {
+	dir, err := embeddedDirFor(dialect)
 	if err != nil {
 		return State{}, tdsqlRuntimeExpectation{}, err
 	}
@@ -128,7 +138,7 @@ func readTDSQLSnapshot(ctx context.Context, db *sql.DB) (TDSQLSnapshot, error) {
 	}
 
 	revisionRows, err := db.QueryContext(ctx, `
-		SELECT version, applied, total, error, hash, partial_hashes, claim_id
+		SELECT version, applied, total, error, error_stmt, hash, partial_hashes, claim_id
 		FROM atlas_schema_revisions
 		ORDER BY version
 	`)
@@ -144,6 +154,7 @@ func readTDSQLSnapshot(ctx context.Context, db *sql.DB) (TDSQLSnapshot, error) {
 			&revision.Applied,
 			&revision.Total,
 			&revision.Error,
+			&revision.ErrorStmt,
 			&revision.Hash,
 			&partialHashes,
 			&revision.ClaimID,

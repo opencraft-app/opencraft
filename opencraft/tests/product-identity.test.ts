@@ -9,7 +9,6 @@ import {
 import { resolveWorkbenchProductId } from "../apps/workbench-web/src/workbench-product.ts";
 import { botConversationResourceUri, parseBotConversationViewResource } from "../packages/bot-conversation/src/view-resource.ts";
 import { createConversationKey } from "@opencraft/chat-core";
-import { OPENCRAFT_AGENT_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_BOT_CONVERSATIONS_EXTENSION } from "../packages/appserver-protocol/src/bot-conversations.ts";
 import { LIGHTVELA_TOKEN_KEY, LIGHTVELA_ACTIVE_BOT_KEY, LIGHTVELA_API_BASE } from "../plugins/lightvela-hermes/src/account/lightvela-account-service.ts";
 
@@ -66,7 +65,6 @@ test("rebranding does not change conversation identity or external capability ne
   const uri = "vela-bot:conversation?hostId=velahermes0&conversationId=20260906_125907_f05d94";
   assert.equal(botConversationResourceUri(key), uri);
   assert.deepEqual(parseBotConversationViewResource(uri), { kind: "conversation", key });
-  assert.equal(OPENCRAFT_AGENT_CATALOG_EXTENSION, "vela/agents");
   assert.equal(OPENCRAFT_BOT_CONVERSATIONS_EXTENSION, "vela/bot-conversations");
   assert.match(read("apps/workbench-electron/src/daemon-client.ts"), /"vela-daemon\.sock"/u);
 });

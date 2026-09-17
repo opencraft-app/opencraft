@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "families": {
+    "ui": {
+      "web": "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"PingFang TC\", \"Inter Variable\", Inter, \"Noto Sans SC Variable\", \"Noto Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", Arial, sans-serif",
+      "native": "system"
+    },
+    "content": {
+      "web": "var(--font-family-ui)",
+      "native": "system"
+    },
+    "mono": {
+      "web": "\"SF Mono\", \"SFMono-Regular\", \"JetBrains Mono Variable\", ui-monospace, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace",
+      "native": "monospace"
+    }
+  },
+  "weights": {
+    "regular": 400,
+    "medium": 500,
+    "semibold": 600,
+    "bold": 700
+  },
+  "tracking": {
+    "wide": 0,
+    "normal": -0.01,
+    "tight": -0.02
+  },
+  "platforms": {
+    "web": {
+      "scales": {
+        "body": { "fontSize": 14, "lineHeight": 20 },
+        "chat": { "fontSize": 14, "lineHeight": 22 },
+        "composer": { "fontSize": 14, "lineHeight": 21 },
+        "modeTitle": { "fontSize": 17, "lineHeight": 24 },
+        "largeTitle": { "fontSize": 28, "lineHeight": 34 },
+        "navigationTitle": { "fontSize": 17, "lineHeight": 22 },
+        "navigationMeta": { "fontSize": 13, "lineHeight": 18 },
+        "toolbarTitle": { "fontSize": 13, "lineHeight": 18 },
+        "toolbarMeta": { "fontSize": 11, "lineHeight": 16 },
+        "navigationAction": { "fontSize": 14, "lineHeight": 20 },
+        "navigationLabel": { "fontSize": 13, "lineHeight": 18 },
+        "threadTitle": { "fontSize": 14, "lineHeight": 20 },
+        "metadata": { "fontSize": 12, "lineHeight": 18 },
+        "label": { "fontSize": 11, "lineHeight": 15 },
+        "code": { "fontSize": 12, "lineHeight": 20 },
+        "caption": { "fontSize": 12, "lineHeight": 16 },
+        "disclaimer": { "fontSize": 10, "lineHeight": 14 },
+        "emptyTitle": { "fontSize": 20, "lineHeight": 28 },
+        "textLg": { "fontSize": 18, "lineHeight": 29 },
+        "textMd": { "fontSize": 16, "lineHeight": 24 },
+        "textXs": { "fontSize": 12, "lineHeight": 18 },
+        "text2xs": { "fontSize": 10, "lineHeight": 14 }
+      },
+      "roles": {
+        "body": { "family": "ui", "scale": "body", "weight": "regular" },
+        "chat": { "family": "content", "scale": "chat", "weight": "regular" },
+        "composer": { "family": "content", "scale": "composer", "weight": "regular" },
+        "modeTitle": { "family": "ui", "scale": "modeTitle", "weight": "semibold" },
+        "largeTitle": { "family": "ui", "scale": "largeTitle", "weight": "bold" },
+        "navigationTitle": { "family": "ui", "scale": "navigationTitle", "weight": "semibold" },
+        "navigationMeta": { "family": "ui", "scale": "navigationMeta", "weight": "regular" },
+        "toolbarTitle": { "family": "ui", "scale": "toolbarTitle", "weight": "medium" },
+        "toolbarMeta": { "family": "ui", "scale": "toolbarMeta", "weight": "regular" },
+        "navigationAction": { "family": "ui", "scale": "navigationAction", "weight": "regular" },
+        "navigationLabel": { "family": "ui", "scale": "navigationLabel", "weight": "semibold" },
+        "threadTitle": { "family": "ui", "scale": "threadTitle", "weight": "regular" },
+        "metadata": { "family": "ui", "scale": "metadata", "weight": "regular" },
+        "label": { "family": "ui", "scale": "label", "weight": "medium" },
+        "code": { "family": "mono", "scale": "code", "weight": "regular" },
+        "caption": { "family": "ui", "scale": "caption", "weight": "regular" },
+        "disclaimer": { "family": "ui", "scale": "disclaimer", "weight": "regular" },
+        "emptyTitle": { "family": "ui", "scale": "emptyTitle", "weight": "semibold" }
+      }
+    },
+    "native": {
+      "scales": {
+        "body": { "fontSize": 17, "lineHeight": 24 },
+        "chat": { "fontSize": 17, "lineHeight": 25 },
+        "composer": { "fontSize": 17, "lineHeight": 24 },
+        "modeTitle": { "fontSize": 17, "lineHeight": 22 },
+        "largeTitle": { "fontSize": 28, "lineHeight": 34 },
+        "navigationTitle": { "fontSize": 17, "lineHeight": 22 },
+        "navigationMeta": { "fontSize": 13, "lineHeight": 18 },
+        "toolbarTitle": { "fontSize": 13, "lineHeight": 18 },
+        "toolbarMeta": { "fontSize": 12, "lineHeight": 16 },
+        "navigationAction": { "fontSize": 17, "lineHeight": 22 },
+        "navigationLabel": { "fontSize": 13, "lineHeight": 18 },
+        "threadTitle": { "fontSize": 16, "lineHeight": 21 },
+        "metadata": { "fontSize": 13, "lineHeight": 17 },
+        "label": { "fontSize": 13, "lineHeight": 18 },
+        "code": { "fontSize": 12, "lineHeight": 18 },
+        "caption": { "fontSize": 12, "lineHeight": 16 },
+        "disclaimer": { "fontSize": 12, "lineHeight": 16 },
+        "emptyTitle": { "fontSize": 28, "lineHeight": 34 }
+      },
+      "roles": {
+        "body": { "family": "ui", "scale": "body", "weight": "regular" },
+        "chat": { "family": "content", "scale": "chat", "weight": "regular" },
+        "composer": { "family": "content", "scale": "composer", "weight": "regular" },
+        "modeTitle": { "family": "ui", "scale": "modeTitle", "weight": "semibold" },
+        "largeTitle": { "family": "ui", "scale": "largeTitle", "weight": "bold" },
+        "navigationTitle": { "family": "ui", "scale": "navigationTitle", "weight": "semibold" },
+        "navigationMeta": { "family": "ui", "scale": "navigationMeta", "weight": "regular" },
+        "toolbarTitle": { "family": "ui", "scale": "toolbarTitle", "weight": "medium" },
+        "toolbarMeta": { "family": "ui", "scale": "toolbarMeta", "weight": "regular" },
+        "navigationAction": { "family": "ui", "scale": "navigationAction", "weight": "regular" },
+        "navigationLabel": { "family": "ui", "scale": "navigationLabel", "weight": "semibold" },
+        "threadTitle": { "family": "ui", "scale": "threadTitle", "weight": "medium" },
+        "metadata": { "family": "ui", "scale": "metadata", "weight": "regular" },
+        "label": { "family": "ui", "scale": "label", "weight": "medium" },
+        "code": { "family": "mono", "scale": "code", "weight": "regular" },
+        "caption": { "family": "ui", "scale": "caption", "weight": "regular" },
+        "disclaimer": { "family": "ui", "scale": "disclaimer", "weight": "regular" },
+        "emptyTitle": { "family": "ui", "scale": "emptyTitle", "weight": "bold" }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,7 +17,8 @@ import (
 const modifyOperationColumns = `
 	id, idempotency_key, sandbox_id, instance_id, source_pool_id, target_pool_id, target_sku_id,
 	target_template_class_id, target_instance_type, target_system_disk_size, status, current_step,
-	last_error, started_at, updated_at, completed_at
+	last_error, started_at, updated_at, completed_at, source_instance_type,
+	instance_type_candidates, instance_type_candidate_index, applied_instance_type
 `
 
 // RebindAllocatedInstance moves a checked-out instance into the target pool.
@@ -92,10 +94,11 @@ func (s *MySQLStore) CreateModifyOperation(ctx context.Context, op core.ModifyOp
 	for attempt := 0; attempt < 2; attempt++ {
 		_, err := s.db.ExecContext(ctx, `
 			INSERT INTO modify_operations (`+modifyOperationColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, op.ID, op.IdempotencyKey, op.SandboxID, op.InstanceID, op.SourcePoolID, op.TargetPoolID, op.TargetSKUID,
 			op.TargetTemplateClassID, op.TargetInstanceType, op.TargetSystemDiskSize, op.Status, op.CurrentStep,
-			nullableString(op.LastError), op.StartedAt, op.UpdatedAt, op.CompletedAt)
+			nullableString(op.LastError), op.StartedAt, op.UpdatedAt, op.CompletedAt, op.SourceInstanceType,
+			marshalStringSlice(op.InstanceTypeCandidates), op.InstanceTypeCandidateIndex, op.AppliedInstanceType)
 		if err == nil {
 			s.logf("CreateModifyOperation id=%s key=%s sandbox=%s", op.ID, op.IdempotencyKey, op.SandboxID)
 			return op, true, nil
@@ -164,6 +167,29 @@ func (s *MySQLStore) getModifyOperationByIdempotencyKey(ctx context.Context, key
 	`, strings.TrimSpace(key)))
 }
 
+func (s *MySQLStore) UpdateModifyOperationResizePlan(ctx context.Context, in ModifyOperationResizePlan) (core.ModifyOperation, error) {
+	id := strings.TrimSpace(in.ID)
+	if id == "" {
+		return core.ModifyOperation{}, errors.New("modify operation resize plan requires id")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE modify_operations
+		SET source_instance_type = ?, instance_type_candidates = ?,
+			instance_type_candidate_index = ?, applied_instance_type = ?, updated_at = ?
+		WHERE id = ?
+	`, strings.TrimSpace(in.SourceInstanceType), marshalStringSlice(in.InstanceTypeCandidates),
+		in.InstanceTypeCandidateIndex, strings.TrimSpace(in.AppliedInstanceType), time.Now().UTC(), id)
+	if err != nil {
+		return core.ModifyOperation{}, err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		if _, getErr := s.GetModifyOperation(ctx, id); getErr != nil {
+			return core.ModifyOperation{}, getErr
+		}
+	}
+	return s.GetModifyOperation(ctx, id)
+}
+
 func (s *MySQLStore) UpdateModifyOperationProgress(ctx context.Context, in ModifyOperationProgress) (core.ModifyOperation, error) {
 	id := strings.TrimSpace(in.ID)
 	if id == "" {
@@ -217,13 +243,15 @@ func (s *MySQLStore) ListModifyOperationsByStatus(ctx context.Context, status co
 
 func readModifyOperation(scanner rowScanner) (core.ModifyOperation, error) {
 	var (
-		op          core.ModifyOperation
-		lastError   sql.NullString
-		completedAt sql.NullTime
+		op            core.ModifyOperation
+		lastError     sql.NullString
+		completedAt   sql.NullTime
+		candidateJSON sql.NullString
 	)
 	err := scanner.Scan(&op.ID, &op.IdempotencyKey, &op.SandboxID, &op.InstanceID, &op.SourcePoolID,
 		&op.TargetPoolID, &op.TargetSKUID, &op.TargetTemplateClassID, &op.TargetInstanceType,
-		&op.TargetSystemDiskSize, &op.Status, &op.CurrentStep, &lastError, &op.StartedAt, &op.UpdatedAt, &completedAt)
+		&op.TargetSystemDiskSize, &op.Status, &op.CurrentStep, &lastError, &op.StartedAt, &op.UpdatedAt, &completedAt,
+		&op.SourceInstanceType, &candidateJSON, &op.InstanceTypeCandidateIndex, &op.AppliedInstanceType)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.ModifyOperation{}, core.ErrModifyOperationNotFound
 	}
@@ -231,11 +259,27 @@ func readModifyOperation(scanner rowScanner) (core.ModifyOperation, error) {
 		return core.ModifyOperation{}, err
 	}
 	op.LastError = nullStringValue(lastError)
+	if candidateJSON.Valid && strings.TrimSpace(candidateJSON.String) != "" {
+		if err := json.Unmarshal([]byte(candidateJSON.String), &op.InstanceTypeCandidates); err != nil {
+			return core.ModifyOperation{}, fmt.Errorf("decode modify operation instance type candidates: %w", err)
+		}
+	}
 	if completedAt.Valid {
 		ts := completedAt.Time
 		op.CompletedAt = &ts
 	}
 	return op, nil
+}
+
+func marshalStringSlice(values []string) any {
+	if len(values) == 0 {
+		return nil
+	}
+	body, err := json.Marshal(values)
+	if err != nil {
+		return nil
+	}
+	return string(body)
 }
 
 // assertSameModifyTarget rejects an idempotency key replayed with a different target.

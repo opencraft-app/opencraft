@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { NativeSpeechEvent, NativeSpeechOptions, NativeSpeechPreferences } from "@opencraft/app-host-protocol";
 import {
   CONNECT_APP_HOST_MESSAGE,
   isConnectAppHostMessage,
@@ -12,6 +13,21 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
 
 contextBridge.exposeInMainWorld("opencraftDesktop", Object.freeze({
   kind: "electron",
+  ...(process.platform === "darwin" ? { speech: Object.freeze({
+    probe: (language?: string) => ipcRenderer.invoke("opencraft:speech-probe", language),
+    readPreferences: () => ipcRenderer.invoke("opencraft:speech-preferences-read"),
+    writePreferences: (value: NativeSpeechPreferences) => ipcRenderer.invoke("opencraft:speech-preferences-write", value),
+    start: (id: string, options: NativeSpeechOptions) => ipcRenderer.invoke("opencraft:speech-start", id, options),
+    stop: (id: string) => ipcRenderer.invoke("opencraft:speech-stop", id),
+    cancel: (id: string) => ipcRenderer.invoke("opencraft:speech-cancel", id),
+    onEvent: (listener: (event: NativeSpeechEvent) => void) => {
+      const receive = (_event: Electron.IpcRendererEvent, packet: NativeSpeechEvent) => listener(packet);
+      ipcRenderer.on("opencraft:speech-event", receive); return () => ipcRenderer.off("opencraft:speech-event", receive);
+    },
+  }) } : {}),
+  projects: Object.freeze({
+    pickDirectory: () => ipcRenderer.invoke("opencraft:project-folder-pick"),
+  }),
   browserState: Object.freeze({
     read: () => ipcRenderer.invoke("opencraft:browser-state-read"),
     write: (key: string, value: string) => ipcRenderer.invoke("opencraft:browser-state-write", key, value),

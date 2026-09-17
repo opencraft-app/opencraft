@@ -8,6 +8,8 @@
     "./modal": "./src/modal.shared.ts",
     "./theme": "./src/theme.ts",
     "./theme-engine": "./src/theme-engine.ts",
+    "./typography": "./src/typography/typography.shared.ts",
+    "./typography.web": "./src/typography.web.scss",
     "./tokens": "./src/tokens.shared.ts",
     "./tokens.native": "./src/tokens.native.ts",
     "./tokens.web": "./src/tokens.web.scss",

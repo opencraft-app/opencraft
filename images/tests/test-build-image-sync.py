@@ -104,6 +104,7 @@ class ImageSyncTests(unittest.TestCase):
             "ap-shanghai": "img-sh",
             "ap-singapore": "img-sg",
             "ap-tokyo": "img-jp",
+            "ap-johorbahru": "img-jhb",
         }
         target_poll_count = {region: 0 for region in target_ids}
 
@@ -163,7 +164,7 @@ class ImageSyncTests(unittest.TestCase):
             result = build_image.step_sync_images(
                 "img-source",
                 "ap-seoul",
-                ["ap-beijing", "ap-shanghai", "ap-singapore", "ap-tokyo"],
+                ["ap-beijing", "ap-shanghai", "ap-singapore", "ap-tokyo", "ap-johorbahru"],
                 "hermes-agent-test",
             )
         finally:
@@ -173,8 +174,14 @@ class ImageSyncTests(unittest.TestCase):
             build_image.POLL_INTERVAL_IMAGE = original_poll_interval
             build_image.POLL_TIMEOUT_IMAGE_SYNC = original_poll_timeout
 
-        self.assertEqual(sync_calls, ["ap-beijing", "ap-shanghai", "ap-singapore", "ap-tokyo"])
+        self.assertEqual(sync_calls, ["ap-beijing", "ap-shanghai", "ap-singapore", "ap-tokyo", "ap-johorbahru"])
         self.assertEqual(result, target_ids)
+
+    def test_default_target_regions_include_johor_bahru(self):
+        self.assertEqual(
+            build_image.DEFAULT_TARGET_REGIONS,
+            ["ap-beijing", "ap-shanghai", "ap-singapore", "ap-tokyo", "ap-johorbahru"],
+        )
 
 
 if __name__ == "__main__":

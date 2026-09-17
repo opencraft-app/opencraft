@@ -30,6 +30,8 @@ vi.mock("@/lib/region", () => ({
     return mockIsGlobal;
   },
   localizedPath: (path: string, locale: "zh-CN" | "zh-SG" | "zh-Hant" | "en-US" | "id-ID" | "es") => {
+    if (!mockIsGlobal) return path;
+
     const lang =
       locale === "zh-CN"
         ? "zh"
@@ -212,7 +214,11 @@ describe("LightVelaFooter", () => {
     expect(supportLink).toHaveAttribute("href", "https://wj.qq.com/s2/27184784/6d06/");
     expect(supportLink).toHaveAttribute("target", "_blank");
     expect(supportLink).toHaveAttribute("rel", "noopener noreferrer");
-    expect(screen.queryByRole("link", { name: "博客" })).not.toBeInTheDocument();
+    const productSection = screen.getByRole("heading", { name: "产品" }).closest("section");
+    expect(productSection).not.toBeNull();
+    const product = within(productSection as HTMLElement);
+    expect(product.getAllByRole("link")[0]).toHaveAccessibleName("博客");
+    expect(product.getAllByRole("link")[0]).toHaveAttribute("href", "/blog");
     expect(screen.queryByRole("link", { name: "Tencent EdgeOne" })).not.toBeInTheDocument();
   });
 

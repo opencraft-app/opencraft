@@ -32,6 +32,10 @@ type Config struct {
 	LifecycleWorkerBatchSize     int
 }
 
+type MigrationConfig struct {
+	MySQLDSN string
+}
+
 func Load() (Config, error) {
 	cfg := Config{
 		Addr:                         envOrDefault("CREDIT_ADDR", ":8080"),
@@ -102,19 +106,11 @@ func Load() (Config, error) {
 		}
 		cfg.LifecycleWorkerBatchSize = value
 	}
-	if cfg.MySQLDSN == "" {
-		cfg.MySQLDSN = buildMySQLDSN(
-			envOrDefault("CREDIT_DB_USER", "credit"),
-			strings.TrimSpace(os.Getenv("CREDIT_DB_PASSWORD")),
-			envOrDefault("MYSQL_HOST", "127.0.0.1"),
-			envOrDefault("MYSQL_PORT", "3306"),
-			strings.TrimSpace(os.Getenv("CREDIT_DB")),
-		)
+	migrationCfg, err := LoadMigration()
+	if err != nil {
+		return Config{}, err
 	}
-	if cfg.MySQLDSN == "" {
-		return Config{}, fmt.Errorf("CREDIT_MYSQL_DSN is required")
-	}
-	cfg.MySQLDSN = normalizeMySQLDSN(cfg.MySQLDSN)
+	cfg.MySQLDSN = migrationCfg.MySQLDSN
 	if cfg.InternalServiceToken == "" {
 		return Config{}, fmt.Errorf("LIGHTCLAW_INTERNAL_SERVICE_TOKEN is required")
 	}
@@ -128,6 +124,23 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("LLMGATEWAY_INTERNAL_SERVICE_TOKEN is required")
 	}
 	return cfg, nil
+}
+
+func LoadMigration() (MigrationConfig, error) {
+	dsn := strings.TrimSpace(os.Getenv("CREDIT_MYSQL_DSN"))
+	if dsn == "" {
+		dsn = buildMySQLDSN(
+			envOrDefault("CREDIT_DB_USER", "credit"),
+			strings.TrimSpace(os.Getenv("CREDIT_DB_PASSWORD")),
+			envOrDefault("MYSQL_HOST", "127.0.0.1"),
+			envOrDefault("MYSQL_PORT", "3306"),
+			strings.TrimSpace(os.Getenv("CREDIT_DB")),
+		)
+	}
+	if dsn == "" {
+		return MigrationConfig{}, fmt.Errorf("CREDIT_MYSQL_DSN is required")
+	}
+	return MigrationConfig{MySQLDSN: normalizeMySQLDSN(dsn)}, nil
 }
 
 func (c Config) ValidatePackageID() error {

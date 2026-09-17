@@ -382,6 +382,33 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(chatPanel).toContain("multiSession={multiSession}");
   });
 
+  it("fills the available desktop layout while preserving the compact panel height", () => {
+    const chatPanel = readChatPanelSource();
+
+    expect(chatPanel).toContain(
+      "h-[clamp(516px,calc(100vh-220px),960px)]",
+    );
+    expect(chatPanel).toContain("lg:h-full");
+  });
+
+  it("marks the active chat route and removes its desktop page padding", () => {
+    const page = readPageSource();
+
+    expect(page).toContain('activeSection === "chat" && "lv-agent-chat-page"');
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
+    /*
+     * lv-agent-settings-main / -shell / 栅格列这三处本分支按
+     * hasSidebarLayout || shouldShowDataLoading 条件化了（引导态没有侧边栏，
+     * 骨架屏则要跟最终页面保持同一套几何），所以不再是 master 那种
+     * 写死在字符串里的形式。这里断言「类名仍在 + 条件仍在」，
+     * 具体几何由 agent-settings-nav-spacing 那条守。
+     */
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
+    expect(page).toContain("lv-agent-settings-grid grid items-start gap-6");
+    expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
+  });
+
   it("exposes rename and delete in the session menu (delete needs confirmation)", () => {
     const page = readPageSource();
 
@@ -404,22 +431,28 @@ describe("agent settings sidebar chat/settings tabs", () => {
       styles.indexOf(".lv-agent-action-button {"),
       styles.indexOf(".lv-agent-create-button"),
     );
+    const restartAction = page.slice(
+      page.indexOf('aria-label={restartTooltip}'),
+      page.indexOf('aria-label={deleteTooltip}'),
+    );
 
     expect(page).toContain('const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启")');
     expect(page).toContain("activeBot.isDefault && remainingInstanceBotCount > 0");
     expect(page).toContain('t("请先删除其他 Bot，再删除主 Bot")');
     expect(page).toContain('activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot")');
-    expect(page).toContain('className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")}');
+    expect(restartAction).toContain('isActiveBotRestarting || isRepairingBot ? (');
+    expect(restartAction).toContain('<Loader2 className="h-3.5 w-3.5 animate-spin"');
+    expect(restartAction).toContain('activeBot.status === "failed" ? (');
+    expect(restartAction).toContain('<RefreshCw className="h-3.5 w-3.5"');
+    expect(restartAction).toContain('<RestartIcon className="h-4 w-4"');
+    expect(page).toContain('<WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>');
+    expect(page).toContain('<WorkspaceActionTooltip content={deleteTooltip} side="bottom" compact focusable={false}>');
+    expect(restartAction).not.toContain('className="lv-agent-action-tooltip"');
     expect(page).toContain('className="h-3.5 w-3.5"');
-    expect(page).toContain('className="lv-agent-action-item"');
-    expect(page).toContain('className="lv-agent-action-tooltip"');
     expect(actionButtonStyles).toContain("cursor: pointer;");
     expect(actionButtonStyles).toContain("background: transparent;");
     expect(actionButtonStyles).toContain("background: rgb(0 0 0 / 4%);");
     expect(actionButtonStyles).toContain("box-shadow: 0 0 0 2px rgb(0 0 0 / 15%);");
-    expect(actionButtonStyles).toContain(".lv-agent-action-tooltip");
-    expect(actionButtonStyles).toContain("top: 100%;");
-    expect(actionButtonStyles).toContain("z-index: 30;");
   });
 
   it("keeps the Bot delete confirmation explicit about data loss", () => {

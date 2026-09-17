@@ -56,7 +56,7 @@ class ProdDbMigrationTests(unittest.TestCase):
             mock.patch.object(
                 prod_db_migration.db_contract_verifier,
                 "apply_manifest",
-            ),
+            ) as apply_manifest,
             mock.patch.object(
                 prod_db_migration.db_contract_verifier,
                 "wait_for_job",
@@ -88,6 +88,8 @@ class ProdDbMigrationTests(unittest.TestCase):
 
         expected_version.assert_called_once_with(source_dir, contract, "shprod")
         self.assertEqual(result["expected"], 27)
+        apply_manifest.assert_called_once()
+        self.assertEqual(apply_manifest.call_args.args[1]["metadata"]["name"], "db-version-ctl-shprod")
 
     def test_maps_user_auth_bundle_to_lightclaw_auth_db_job_service(self) -> None:
         self.assertEqual(prod_db_migration.map_service("user-auth"), ("user-auth", "lightclaw-auth"))
@@ -96,6 +98,14 @@ class ProdDbMigrationTests(unittest.TestCase):
     def test_trade_uses_its_registered_migration_job_runner(self) -> None:
         self.assertIn("trade", prod_db_migration.SUPPORTED_SERVICES)
         self.assertEqual(prod_db_migration.map_service("trade"), ("trade", "trade"))
+
+    def test_credit_uses_its_registered_migration_job_runner(self) -> None:
+        self.assertIn("credit", prod_db_migration.SUPPORTED_SERVICES)
+        self.assertEqual(prod_db_migration.map_service("credit"), ("credit", "credit"))
+
+    def test_referral_uses_its_registered_migration_job_runner(self) -> None:
+        self.assertIn("referral", prod_db_migration.SUPPORTED_SERVICES)
+        self.assertEqual(prod_db_migration.map_service("referral"), ("referral", "referral"))
 
     def test_rejects_unknown_service(self) -> None:
         with self.assertRaisesRegex(ValueError, "SERVICE must be one of"):

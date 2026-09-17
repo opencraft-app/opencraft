@@ -12,6 +12,7 @@ import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
+import { emitConsoleShowEvent } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 
 type RevealWorkbenchHost = Window & {
@@ -68,6 +69,7 @@ export const UserAvatarMenu = ({
     const revealWorkbench = (...args: unknown[]) => {
       if (mounted) {
         setHiddenEntriesRevealed(true);
+        emitConsoleShowEvent();
       }
       if (typeof originalShow === "function") {
         const originalResult = originalShow.apply(host, args);

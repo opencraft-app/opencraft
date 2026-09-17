@@ -16,7 +16,7 @@ func TestCollaborationComponentManifestHasOneInternalServiceAndSlimRuntime(t *te
 		"name: collaboration",
 		"--collaboration-only",
 		"--database-driver",
-		"tdsql",
+		"mysql",
 		"--database-auto-migrate=false",
 		"/var/run/secrets/collaboration/database.dsn",
 		"/var/run/secrets/collaboration/gateway.token",
@@ -60,7 +60,7 @@ func TestCollaborationMigrationUsesSameLogicalDatabaseSecret(t *testing.T) {
 		"database",
 		"migrate",
 		"--database-driver",
-		"tdsql",
+		"mysql",
 		"/var/run/secrets/collaboration/database.dsn",
 		"secretName: collaboration-runtime-secrets",
 	} {

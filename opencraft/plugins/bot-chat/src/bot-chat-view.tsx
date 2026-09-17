@@ -134,12 +134,6 @@ function MessageContent({
           </a>
         );
       })}
-      {message.delivery === "sending" ? (
-        <span className="bot-chat-message__delivery">Sending…</span>
-      ) : null}
-      {message.delivery === "failed" ? (
-        <span className="bot-chat-message__delivery is-failed">Not sent</span>
-      ) : null}
     </>
   );
 }
@@ -156,20 +150,28 @@ function MessageBubble({
   const [enteredAsNew] = useState(entering);
   const { message } = projection;
   return (
-    <article
-      className="bot-chat-message"
-      data-selection="text"
-      data-author-kind={message.author.kind}
-      data-continued-next={projection.continuedToNext || undefined}
-      data-continued-prev={projection.continuedFromPrevious || undefined}
-      data-delivery={message.delivery}
-      data-enter={enteredAsNew ? "new" : undefined}
-      data-group-end={projection.groupEnd || undefined}
-      data-group-start={projection.groupStart || undefined}
-      data-streaming={message.streaming || undefined}
-    >
-      <MessageContent message={message} />
-    </article>
+    <div className="bot-chat-message-shell" data-author-kind={message.author.kind}>
+      <article
+        className="bot-chat-message"
+        data-selection="text"
+        data-author-kind={message.author.kind}
+        data-continued-next={projection.continuedToNext || undefined}
+        data-continued-prev={projection.continuedFromPrevious || undefined}
+        data-delivery={message.delivery}
+        data-enter={enteredAsNew ? "new" : undefined}
+        data-group-end={projection.groupEnd || undefined}
+        data-group-start={projection.groupStart || undefined}
+        data-streaming={message.streaming || undefined}
+      >
+        <MessageContent message={message} />
+      </article>
+      {message.delivery === "sending" ? (
+        <span className="bot-chat-message__delivery" role="status">Sending…</span>
+      ) : null}
+      {message.delivery === "failed" ? (
+        <span className="bot-chat-message__delivery is-failed" role="status">Not sent</span>
+      ) : null}
+    </div>
   );
 }
 

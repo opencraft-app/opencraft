@@ -1595,11 +1595,13 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
         )}
       </div>
 
-      <AutomationScenarioTemplatesSection
-        templates={templates}
-        onEnable={requestTemplateCreate}
-        loading={loadingBlueprints}
-      />
+      {activeView === "created" && (
+        <AutomationScenarioTemplatesSection
+          templates={templates}
+          onEnable={requestTemplateCreate}
+          loading={loadingBlueprints}
+        />
+      )}
 
       {creating && (
         <AutomationFormModal
@@ -4527,7 +4529,7 @@ export function AutomationFormModal({
                     setZeroTokenKind(value);
                     setScriptSafetyConfirmed(false);
                   }}
-                  className={`flex min-h-24 flex-col justify-start rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
+                  className={`flex flex-col justify-start rounded-md border px-3 py-2 text-left transition ${selectedCreateTaskKind === value
                     ? "border-blue-300 bg-blue-50"
                     : "border-black/10 hover:border-black/20"}`}
                 >
@@ -5158,11 +5160,9 @@ function RecurringPicker({
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const [weekdayPickerOpen, setWeekdayPickerOpen] = useState(false);
   const [monthdayPickerOpen, setMonthdayPickerOpen] = useState(false);
-  const [activeDailyTimePickerIndex, setActiveDailyTimePickerIndex] = useState<number | null>(null);
   const periodPickerRef = useRef<HTMLDivElement | null>(null);
   const weekdayPickerRef = useRef<HTMLDivElement | null>(null);
   const monthdayPickerRef = useRef<HTMLDivElement | null>(null);
-  const dailyTimePickerRef = useRef<HTMLSpanElement | null>(null);
   const periodOptions: Array<{ value: RecurringPeriod; label: string }> = [
     { value: "daily", label: t("每天") },
     { value: "weekly", label: t("每周") },
@@ -5176,38 +5176,20 @@ function RecurringPicker({
   const selectedMonthdays = normalizeMonthdays(monthdays);
   const addDailyTimeTooltip = useHoverTooltipPosition<HTMLSpanElement>();
   useEffect(() => {
-    if (!periodPickerOpen && !weekdayPickerOpen && !monthdayPickerOpen && activeDailyTimePickerIndex == null) return;
+    if (!periodPickerOpen && !weekdayPickerOpen && !monthdayPickerOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (periodPickerRef.current?.contains(target)) return;
       if (weekdayPickerRef.current?.contains(target)) return;
       if (monthdayPickerRef.current?.contains(target)) return;
-      if (dailyTimePickerRef.current?.contains(target)) return;
       setPeriodPickerOpen(false);
       setWeekdayPickerOpen(false);
       setMonthdayPickerOpen(false);
-      setActiveDailyTimePickerIndex(null);
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [activeDailyTimePickerIndex, monthdayPickerOpen, periodPickerOpen, weekdayPickerOpen]);
-  useEffect(() => {
-    if (period !== "daily") setActiveDailyTimePickerIndex(null);
-  }, [period]);
-  useLayoutEffect(() => {
-    if (activeDailyTimePickerIndex == null) return;
-    const picker = dailyTimePickerRef.current;
-    if (!picker) return;
-    const scrollSelected = (part: "hour" | "minute") => {
-      const selected = picker.querySelector<HTMLElement>(`[data-clock-part="${part}"][data-clock-selected="true"]`);
-      const scrollParent = selected?.parentElement;
-      if (!selected || !scrollParent) return;
-      scrollParent.scrollTop = selected.offsetTop - (scrollParent.clientHeight - selected.offsetHeight) / 2;
-    };
-    scrollSelected("hour");
-    scrollSelected("minute");
-  }, [activeDailyTimePickerIndex, editingDailyTimes, time]);
+  }, [monthdayPickerOpen, periodPickerOpen, weekdayPickerOpen]);
   const toggleWeekday = useCallback((day: number) => {
     // 至少保留 1 天：取消最后一个选中项时直接忽略，避免 normalizeWeekdays 静默兜底为周一
     if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
@@ -5224,24 +5206,16 @@ function RecurringPicker({
       : [...selectedMonthdays, day];
     onMonthdays(normalizeMonthdays(next));
   }, [onMonthdays, selectedMonthdays]);
-  const selectDailyTimePart = useCallback((index: number, part: "hour" | "minute", value: string) => {
-    const current = editingDailyTimes[index] ?? time;
-    const { hour, minute } = splitClockTimeDraft(current, time);
-    const nextTime = part === "hour" ? `${value}:${minute}` : `${hour}:${value}`;
+  const updateDailyTime = useCallback((index: number, nextTime: string) => {
     const next = editingDailyTimes.map((item, itemIndex) => itemIndex === index ? nextTime : item);
     onDailyTimes(next);
     if (index === 0) onTime(nextTime);
-  }, [editingDailyTimes, onDailyTimes, onTime, time]);
+  }, [editingDailyTimes, onDailyTimes, onTime]);
   const removeDailyTime = useCallback((index: number) => {
     const next = editingDailyTimes.filter((_, itemIndex) => itemIndex !== index);
     const normalized = normalizeDailyTimesForForm(next, time);
     onDailyTimes(normalized);
     onTime(normalized[0] ?? time);
-    setActiveDailyTimePickerIndex((current) => {
-      if (current == null) return null;
-      if (current === index) return null;
-      return current > index ? current - 1 : current;
-    });
   }, [editingDailyTimes, onDailyTimes, onTime, time]);
   const addDailyTime = useCallback(() => {
     const existing = new Set(normalizedDailyTimes);
@@ -5352,94 +5326,14 @@ function RecurringPicker({
         <div className="relative flex w-[588px] max-w-full flex-wrap items-center gap-1">
           {editingDailyTimes.map((dailyTime, index) => (
             <Fragment key={index}>
-              <span
-                className="relative inline-flex h-9 w-[90px] shrink-0 items-center rounded-lg border border-black/10 bg-white focus-within:border-black/25"
-                ref={activeDailyTimePickerIndex === index ? dailyTimePickerRef : undefined}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveDailyTimePickerIndex((current) => current === index ? null : index)}
-                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="flex h-full min-w-0 flex-1 items-center px-2 text-left text-sm focus:outline-none"
-                  aria-haspopup="listbox"
-                  aria-expanded={activeDailyTimePickerIndex === index}
-                  aria-label={t("执行时间")}
-                >
-                  <span className="truncate">{dailyTime}</span>
-                </button>
-                {editingDailyTimes.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeDailyTime(index);
-                    }}
-                    className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65"
-                    aria-label={t("移除时间点")}
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                )}
-                {activeDailyTimePickerIndex === index && (() => {
-                  const selected = splitClockTimeDraft(dailyTime, time);
-                  return (
-                    <div className="absolute left-0 top-[calc(100%+6px)] z-30 grid w-[112px] grid-cols-2 gap-0.5 rounded-md border border-black/10 bg-white p-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]">
-                      <div className="max-h-[224px] overflow-y-auto pr-0.5" role="listbox" aria-label="hour">
-                        {CLOCK_HOUR_OPTIONS.map((hour) => {
-                          const selectedHour = hour === selected.hour;
-                          return (
-                            <button
-                              key={hour}
-                              type="button"
-                              data-clock-part="hour"
-                              data-clock-selected={selectedHour ? "true" : undefined}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => selectDailyTimePart(index, "hour", hour)}
-                              className={
-                                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition " +
-                                (selectedHour
-                                  ? "bg-[#2F7BFF] text-white"
-                                  : "text-black/85 hover:bg-black/[0.04]")
-                              }
-                              aria-pressed={selectedHour}
-                              role="option"
-                              aria-selected={selectedHour}
-                            >
-                              {hour}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="max-h-[224px] overflow-y-auto pl-0.5" role="listbox" aria-label="minute">
-                        {CLOCK_MINUTE_OPTIONS.map((minute) => {
-                          const selectedMinute = minute === selected.minute;
-                          return (
-                            <button
-                              key={minute}
-                              type="button"
-                              data-clock-part="minute"
-                              data-clock-selected={selectedMinute ? "true" : undefined}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => selectDailyTimePart(index, "minute", minute)}
-                              className={
-                                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition " +
-                                (selectedMinute
-                                  ? "bg-[#2F7BFF] text-white"
-                                  : "text-black/85 hover:bg-black/[0.04]")
-                              }
-                              aria-pressed={selectedMinute}
-                              role="option"
-                              aria-selected={selectedMinute}
-                            >
-                              {minute}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </span>
+              <RecurringTimePicker
+                value={dailyTime}
+                fallback={time}
+                index={index}
+                removable={editingDailyTimes.length > 1}
+                onChange={(nextTime) => updateDailyTime(index, nextTime)}
+                onRemove={() => removeDailyTime(index)}
+              />
             </Fragment>
           ))}
           {addDailyTimeButton}
@@ -5911,7 +5805,28 @@ function parseOncePickerInputSegments(segments: OncePickerInputSegments): string
   return `${formatLocalDateInputValue(candidate)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function OncePickerInputSegment({
+type RecurringTimeInputSegments = Pick<OncePickerInputSegments, "hour" | "minute">;
+
+function getRecurringTimeInputSegments(value: string, fallback: string): RecurringTimeInputSegments {
+  const { hour, minute } = splitClockTimeDraft(value, fallback);
+  return { hour, minute };
+}
+
+function parseRecurringTimeInputSegments(segments: RecurringTimeInputSegments): string | null {
+  const hour = Number(segments.hour);
+  const minute = Number(segments.minute);
+  if (
+    !/^\d{1,2}$/.test(segments.hour)
+    || !/^\d{1,2}$/.test(segments.minute)
+    || hour < 0
+    || hour > 23
+    || minute < 0
+    || minute > 59
+  ) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function TimePickerInputSegment({
   label,
   value,
   maxLength,
@@ -6005,7 +5920,7 @@ function OncePickerTimeColumn({
         ref={listRef}
         role="listbox"
         aria-label={label}
-        className="h-52 overscroll-contain overflow-y-auto rounded-lg pr-1"
+        className="h-52 overscroll-contain overflow-y-auto rounded-lg pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {options.map((option, index) => {
           const isSelected = option === value;
@@ -6047,6 +5962,146 @@ function OncePickerTimeColumn({
         })}
       </div>
     </div>
+  );
+}
+
+function RecurringTimePicker({
+  value,
+  fallback,
+  index,
+  removable,
+  onChange,
+  onRemove,
+}: {
+  value: string;
+  fallback: string;
+  index: number;
+  removable: boolean;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  const inputLabel = `${t("执行时间")} ${index + 1}`;
+  const [inputSegments, setInputSegments] = useState(() => getRecurringTimeInputSegments(value, fallback));
+  const [open, setOpen] = useState(false);
+  const initialTime = getRecurringTimeInputSegments(value, fallback);
+  const [draftHour, setDraftHour] = useState(initialTime.hour);
+  const [draftMinute, setDraftMinute] = useState(initialTime.minute);
+
+  useEffect(() => {
+    const next = getRecurringTimeInputSegments(value, fallback);
+    setInputSegments(next);
+    setDraftHour(next.hour);
+    setDraftMinute(next.minute);
+  }, [fallback, value]);
+
+  const commitInputSegments = useCallback(() => {
+    const nextValue = parseRecurringTimeInputSegments(inputSegments);
+    if (!nextValue) {
+      setInputSegments(getRecurringTimeInputSegments(value, fallback));
+      return value;
+    }
+    setInputSegments(getRecurringTimeInputSegments(nextValue, fallback));
+    if (nextValue !== value) onChange(nextValue);
+    return nextValue;
+  }, [fallback, inputSegments, onChange, value]);
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) {
+      const nextTime = commitInputSegments();
+      const next = getRecurringTimeInputSegments(nextTime, fallback);
+      setDraftHour(next.hour);
+      setDraftMinute(next.minute);
+    }
+    setOpen(nextOpen);
+  }, [commitInputSegments, fallback]);
+
+  const updateInputSegment = useCallback((segment: keyof RecurringTimeInputSegments, nextValue: string) => {
+    setInputSegments((current) => ({ ...current, [segment]: nextValue }));
+  }, []);
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverAnchor asChild>
+        <div
+          role="group"
+          aria-label={inputLabel}
+          onBlur={(event) => {
+            const inputGroup = event.currentTarget;
+            window.setTimeout(() => {
+              if (!inputGroup.contains(document.activeElement)) commitInputSegments();
+            }, 0);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.target.blur();
+          }}
+          tabIndex={-1}
+          className={`flex h-9 shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20 ${removable ? "w-[140px]" : "w-[116px]"}`}
+        >
+          <div className="flex min-w-0 flex-1 items-center px-2">
+            <TimePickerInputSegment
+              label={`${inputLabel} HH`}
+              value={inputSegments.hour}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("hour", nextValue)}
+            />
+            <span aria-hidden="true" className="text-sm text-black/55">:</span>
+            <TimePickerInputSegment
+              label={`${inputLabel} mm`}
+              value={inputSegments.minute}
+              maxLength={2}
+              className="w-7"
+              onChange={(nextValue) => updateInputSegment("minute", nextValue)}
+            />
+          </div>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${t("选择")} ${inputLabel}`}
+              title={`${t("选择")} ${inputLabel}`}
+              className="mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-black/75 transition hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+            >
+              <Clock className="size-4" aria-hidden="true" />
+            </button>
+          </PopoverTrigger>
+          {removable && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+              aria-label={t("移除时间点")}
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        role="dialog"
+        aria-label={inputLabel}
+        className="z-[210] w-[144px] max-w-[calc(100vw-32px)] p-0"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        <div className="grid grid-cols-2 gap-1.5 p-2">
+          <OncePickerTimeColumn label={t("小时")} options={CLOCK_HOUR_OPTIONS} value={draftHour} onChange={setDraftHour} />
+          <OncePickerTimeColumn label={t("分钟")} options={CLOCK_MINUTE_OPTIONS} value={draftMinute} onChange={setDraftMinute} />
+        </div>
+        <div className="flex items-center justify-end border-t border-black/[0.06] p-2">
+          <button
+            type="button"
+            onClick={() => {
+              onChange(`${draftHour}:${draftMinute}`);
+              setOpen(false);
+            }}
+            className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+          >
+            {t("确认")}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -6137,7 +6192,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
           className="flex h-9 w-[220px] max-w-full items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20"
         >
           <div className="flex min-w-0 flex-1 items-center px-2">
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} YYYY`}
               value={inputSegments.year}
               maxLength={4}
@@ -6145,7 +6200,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("year", nextValue)}
             />
             <span aria-hidden="true" className="text-sm text-black/55">/</span>
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} MM`}
               value={inputSegments.month}
               maxLength={2}
@@ -6153,7 +6208,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("month", nextValue)}
             />
             <span aria-hidden="true" className="text-sm text-black/55">/</span>
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} DD`}
               value={inputSegments.day}
               maxLength={2}
@@ -6161,7 +6216,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("day", nextValue)}
             />
             <span aria-hidden="true" className="w-2" />
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} HH`}
               value={inputSegments.hour}
               maxLength={2}
@@ -6169,7 +6224,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
               onChange={(nextValue) => updateInputSegment("hour", nextValue)}
             />
             <span aria-hidden="true" className="text-sm text-black/55">:</span>
-            <OncePickerInputSegment
+            <TimePickerInputSegment
               label={`${t("执行时间")} mm`}
               value={inputSegments.minute}
               maxLength={2}
@@ -6271,14 +6326,7 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-black/[0.06] p-2">
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-black/10 bg-white px-3 text-sm font-medium text-black/75 transition hover:bg-black/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
-          >
-            {t("取消")}
-          </button>
+        <div className="flex items-center justify-end border-t border-black/[0.06] p-2">
           <button
             type="button"
             onClick={() => {

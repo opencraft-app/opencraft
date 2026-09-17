@@ -79,6 +79,7 @@ export type HermesModelConfigAction =
   | { type: "probe"; credentialEnvelope: HermesCredentialEnvelope; baseUrl: string; apiMode?: string }
   | { type: "connectivityProbe"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; strategy?: HermesConnectionProbeStrategy }
   | { type: "add"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean }
+  | { type: "resetToPlatformDefault"; credentialEnvelope: HermesCredentialEnvelope; model: HermesConfiguredModel }
   | { type: "assign"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string; purpose: "primary" | "fallback" | "idle" }
   | { type: "removeFallback"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string }
   | { type: "remove"; providerKey: string; modelId: string; baseUrl?: string; routeBaseUrl?: string };
@@ -1125,6 +1126,80 @@ def credential_key_referenced(value, target):
         return any(credential_key_referenced(item, target) for item in value)
     return False
 
+def configured_credential_keys(config):
+    keys = set()
+    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    custom_providers = config.get("custom_providers") if isinstance(config.get("custom_providers"), list) else []
+    for provider in list(providers.values()) + custom_providers:
+        if not isinstance(provider, dict): continue
+        key = text(provider.get("key_env") or provider.get("api_key_env"), "provider.key_env", required=False)
+        if key: keys.add(key)
+    for model in configured_models(config):
+        key = text(model.get("keyEnv"), "model.keyEnv", required=False)
+        if key: keys.add(key)
+    return keys
+
+def reset_to_platform_default(config, action, credential):
+    original_config = copy.deepcopy(config)
+    model = normalized_model(action.get("model"))
+    if model["providerKey"].strip().lower() != "custom":
+        raise ProviderOperationError("platform_default_invalid")
+    model["keyEnv"] = custom_endpoint_key_env(model["providerKey"])
+
+    original_keys = configured_credential_keys(config)
+    touched_keys = set(original_keys)
+    touched_keys.add(model["keyEnv"])
+
+    try:
+        previous_env = load_env()
+        if not isinstance(previous_env, dict): raise ValueError("credential snapshot is invalid")
+    except Exception as error:
+        raise ProviderOperationError("save_failed") from error
+    previous_credentials = {
+        key: previous_env.get(key) if isinstance(previous_env.get(key), str) else None
+        for key in touched_keys
+    }
+
+    try:
+        save_provider_env_credential(model["keyEnv"], credential)
+        config["providers"] = {}
+        config.pop("custom_providers", None)
+        ensure_provider_model(config, model)
+        apply_primary(config, model)
+        write_fallback_routes(config, [])
+        lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else None
+        if lightvela is not None:
+            lightvela.pop("model_config", None)
+            if not lightvela: config.pop("lightvela", None)
+
+        saved = save_and_reload(config)
+        expect_fallback_config_saved(saved, config)
+        snapshot = read_snapshot(saved)
+        if not same_route(snapshot["primary"], model): raise ValueError("platform default was not restored")
+        if snapshot["fallbacks"]: raise ValueError("fallbacks were not removed")
+        if any(item["providerKey"].strip().lower() != "custom" for item in snapshot["configuredModels"]):
+            raise ValueError("user providers were not removed")
+
+        for key in original_keys:
+            if key != model["keyEnv"] and not credential_key_referenced(saved, key):
+                remove_provider_env_credential(key)
+        remaining = load_env()
+        if not isinstance(remaining, dict) or str(remaining.get(model["keyEnv"]) or "").strip() != credential.strip():
+            raise ValueError("platform credential was not persisted")
+        return {"snapshot": snapshot}
+    except Exception as error:
+        rollback_failed = False
+        try: save_config(original_config)
+        except Exception: rollback_failed = True
+        for key, previous in previous_credentials.items():
+            try:
+                if previous is None: remove_env_credential_only(key)
+                else: save_provider_env_credential(key, previous)
+            except Exception: rollback_failed = True
+        if rollback_failed: raise ConfigurationRollbackError("configuration rollback failed") from error
+        if isinstance(error, ProviderOperationError): raise
+        raise ProviderOperationError("save_failed") from error
+
 def apply_primary(config, model):
     current = config.get("model") if isinstance(config.get("model"), dict) else {}
     current.pop("api_key", None)
@@ -1209,10 +1284,11 @@ def execute_unlocked(action):
     action = as_dict(action, "action")
     kind = text(action.get("type"), "type")
     if kind == "prepareCredentialEnvelope": return {"credentialEnvelope": prepare_credential_envelope()}
-    credential = decrypt_credential(action.get("credentialEnvelope")) if kind in ("probe", "connectivityProbe", "add") else None
+    credential = decrypt_credential(action.get("credentialEnvelope")) if kind in ("probe", "connectivityProbe", "add", "resetToPlatformDefault") else None
     config = load_config() or {}
     if not isinstance(config, dict): raise ValueError("Hermes config must be an object")
     if kind == "read": return {"snapshot": read_snapshot(config)}
+    if kind == "resetToPlatformDefault": return reset_to_platform_default(config, action, credential)
     if kind == "appendProviderModel": return append_saved_provider_model(config, action)
     if kind == "probeConfiguredProvider": return probe_saved_provider(config, action)
     if kind == "probeConfiguredModel": return probe_saved_model(config, action)
@@ -1338,7 +1414,7 @@ def execute_unlocked(action):
     raise ValueError("unsupported action")
 
 def execute(action):
-    if action.get("type") not in ("add", "assign", "removeFallback", "remove", "appendProviderModel"):
+    if action.get("type") not in ("add", "assign", "removeFallback", "remove", "appendProviderModel", "resetToPlatformDefault"):
         return execute_unlocked(action)
     root = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
     os.makedirs(root, exist_ok=True)

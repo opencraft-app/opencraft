@@ -443,6 +443,7 @@ class DbContractVerifierTests(unittest.TestCase):
             ):
                 self.assertEqual(main(), 0)
 
+        apply.assert_called_once()
         self.assertEqual(apply.call_args.args[1]["metadata"]["namespace"], "lightvela-playground-sandbox-kr-1")
 
     def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:

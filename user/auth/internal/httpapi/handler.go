@@ -39,6 +39,7 @@ type Handler struct {
 	avatarStore       AvatarStore
 	tatRegisterIssuer tat.RegisterCodeIssuer
 	deviceBindTokens  *deviceBindTokenCodec
+	developerRoutes   DeveloperRouteClient
 	publicBaseURL     string
 	frontendBaseURL   string
 	federation        *FederationConfig

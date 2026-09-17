@@ -16,6 +16,7 @@ import (
 
 	"cvm-mock-e2b/internal/core"
 	"cvm-mock-e2b/internal/observability"
+	"cvm-mock-e2b/internal/provider"
 	"cvm-mock-e2b/internal/store"
 )
 
@@ -26,7 +27,7 @@ type Service struct {
 	shuffle   func(n int, swap func(i, j int))
 }
 
-type InstanceVerifier func(ctx context.Context, cloudID string) error
+type InstanceVerifier func(ctx context.Context, instance provider.CloudInstanceRef) error
 
 type AllocationResolution struct {
 	Pool             core.Pool
@@ -226,7 +227,21 @@ func (s *Service) GetPool(ctx context.Context, id string) (core.Pool, error) {
 
 // UpdatePool updates pool metadata including desired capacity.
 func (s *Service) UpdatePool(ctx context.Context, pool core.Pool) (core.Pool, error) {
-	var err error
+	current, err := s.store.GetPool(ctx, pool.ID)
+	if err != nil {
+		return core.Pool{}, err
+	}
+	currentRegion, err := core.RegionFromZone(current.Zone)
+	if err != nil {
+		return core.Pool{}, err
+	}
+	nextRegion, err := core.RegionFromZone(pool.Zone)
+	if err != nil {
+		return core.Pool{}, err
+	}
+	if currentRegion != nextRegion {
+		return core.Pool{}, fmt.Errorf("%w: %s -> %s", core.ErrPoolRegionChange, currentRegion, nextRegion)
+	}
 	pool, err = normalizePool(pool)
 	if err != nil {
 		return core.Pool{}, err
@@ -289,6 +304,9 @@ func (s *Service) ResetPoolRefillFailures(ctx context.Context, id string) (core.
 func normalizePool(pool core.Pool) (core.Pool, error) {
 	if strings.TrimSpace(pool.VpcID) == "" || strings.TrimSpace(pool.SubnetID) == "" || strings.TrimSpace(pool.Zone) == "" {
 		return core.Pool{}, fmt.Errorf("missing pool network config: need vpc_id, subnet_id, zone")
+	}
+	if _, err := core.RegionFromZone(pool.Zone); err != nil {
+		return core.Pool{}, err
 	}
 	if strings.TrimSpace(pool.BaseImage) == "" {
 		return core.Pool{}, fmt.Errorf("missing pool base_image")
@@ -481,6 +499,10 @@ func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, 
 	if count <= 0 {
 		return nil, fmt.Errorf("count must be positive")
 	}
+	pool, err := s.GetPool(ctx, poolID)
+	if err != nil {
+		return nil, err
+	}
 	placeholders, err := s.InsertCreating(ctx, poolID, count)
 	if err != nil {
 		return nil, err
@@ -496,7 +518,11 @@ func (s *Service) RefillVerified(ctx context.Context, poolID string, count int, 
 			cloudID = cloudIDs[i]
 		}
 		target := core.StateClean
-		if err := verify(ctx, cloudID); err != nil {
+		instance, refErr := provider.CloudInstanceForPool(pool, cloudID)
+		if refErr != nil {
+			return nil, refErr
+		}
+		if err := verify(ctx, instance); err != nil {
 			target = core.StateFailed
 		}
 		inst, ferr := s.FinalizeCreating(ctx, ph.ID, target, addr, cloudID)
@@ -1152,7 +1178,8 @@ func (s *Service) resolvePoolsForTemplateSKUs(ctx context.Context, bindings []co
 		}
 		if strings.TrimSpace(binding.RegionAffinity) != "" {
 			for _, pool := range poolsBySKU[binding.SKUID] {
-				if regionFromZone(pool.Zone) == binding.RegionAffinity {
+				region, err := core.RegionFromZone(pool.Zone)
+				if err == nil && region == binding.RegionAffinity {
 					resolved = append(resolved, pool)
 				}
 			}
@@ -1174,18 +1201,6 @@ func activeTemplateBindings(bindings []core.TemplatePoolBinding) ([]core.Templat
 		poolIDs = append(poolIDs, binding.PoolID)
 	}
 	return activeBindings, poolIDs
-}
-
-func regionFromZone(zone string) string {
-	trimmed := strings.TrimSpace(zone)
-	if trimmed == "" {
-		return ""
-	}
-	parts := strings.Split(trimmed, "-")
-	if len(parts) < 2 {
-		return trimmed
-	}
-	return strings.Join(parts[:2], "-")
 }
 
 func (s *Service) PoolRolloutReady(ctx context.Context, pool core.Pool) bool {

@@ -26,6 +26,7 @@
 .ci/runtime/commands/onboard_argocd_target_cluster.py
 .ci/runtime/commands/plan_release_gates.py
 .ci/runtime/commands/project_release_bundle.py
+.ci/runtime/commands/project_collaboration_bootstrap.py
 .ci/runtime/commands/resolve_hermes_image_id.py
 .ci/runtime/commands/resolve_prod_promote_envs.py
 .ci/runtime/commands/resolve_release_bundle.py
@@ -84,6 +85,7 @@
 .ci/runtime/gitops/__init__.py
 .ci/runtime/gitops/argocd.py
 .ci/runtime/gitops/argocd_target_cluster.py
+.ci/runtime/gitops/collaboration_bootstrap.py
 .ci/runtime/gitops/deployed_at_diff.py
 .ci/runtime/gitops/pin_only_promote_diff.py
 .ci/runtime/gitops/gitops_cleanup_source_branch.py
@@ -128,6 +130,7 @@
 .ci/runtime/harness_ci/hermes_image_env.py
 .ci/runtime/harness_ci/hermes_image_resolver.py
 .ci/runtime/harness_ci/hermes_tat_regions.py
+.ci/runtime/harness_ci/kubernetes_namespace.py
 .ci/runtime/harness_ci/prod_envs.py
 .ci/runtime/harness_ci/prod_db_migration.py
 .ci/runtime/harness_ci/secrets.py

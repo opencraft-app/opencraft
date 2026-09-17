@@ -2,7 +2,7 @@ import { Service, type Context } from "@deepseek-ai/cordis";
 
 import { HermesAppServerAdapter, isHermesSessionNotFound } from "./adapter";
 import { HermesProjectionRecovery } from "./projection-recovery";
-import { HermesBotAppServerHandler } from "./bot-protocol-handler";
+import { HermesBotAppServerHandler, type HermesBotHandlerOptions } from "./bot-protocol-handler";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
 import type { HermesHistoryClient } from "./history-client";
 import type { HermesHostTerminal } from "./tat-terminal";
@@ -27,8 +27,10 @@ import type {
 
 export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptions, "replayCheckpoint"> {
   projectionRecovery?: HermesProjectionRecovery;
-  /** Bot protocol is dormant until the Bot product surface is enabled again. */
+  /** Legacy runtime-only opt-in; production uses the instance-bound catalog below. */
   enableBotConversations?: boolean;
+  resolveProfileBots?: HermesBotHandlerOptions["resolveProfileBots"];
+  botManagement?: HermesBotHandlerOptions["management"];
   defaultCwd?: string;
   fileSystem?: HermesHostFileSystem;
   history?: HermesHistoryClient;
@@ -83,11 +85,11 @@ export class BrowserHermesAppServerBridge {
     });
     this.adapter = new HermesAppServerAdapter(this.transport, options.defaultCwd ?? "/", options.history,
       undefined, options.projectionRecovery, options.composerQueue);
-    this.bots = options.enableBotConversations === true
+    this.bots = options.enableBotConversations === true || options.resolveProfileBots !== undefined
       ? new HermesBotAppServerHandler(this.adapter, (event) => {
           const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
           for (const listener of this.notificationListeners) listener(notification);
-        })
+        }, { resolveProfileBots: options.resolveProfileBots, management: options.botManagement })
       : null;
     this.stopNotifications = this.adapter.subscribeNotification((method, params) => {
       this.bots?.observeAppServerNotification(method, params);
@@ -215,6 +217,7 @@ export class BrowserHermesAppServerBridge {
   }
 
   dispose(): void {
+    this.bots?.dispose();
     if (this.disposed) return;
     this.disposed = true;
     this.stopNotifications();

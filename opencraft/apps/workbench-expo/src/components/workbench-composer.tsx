@@ -3,6 +3,8 @@ import { ArrowUp, Check, ChevronDown, Square } from "lucide-react-native";
 import {
   composerDocumentToPlainText,
   resolveComposerPrimaryAction,
+  reasoningCapability,
+  resolveReasoningEffort,
   type ComposerController,
   type ComposerFollowUpAction,
   type SubmitIntent,
@@ -56,9 +58,7 @@ export function WorkbenchComposer({
 
   const selectModel = useCallback((model: WorkbenchComposerModelChoice) => {
     const currentEffort = snapshot.draft.selections.effort;
-    const effort = currentEffort !== undefined && model.efforts.some((choice) => choice.value === currentEffort)
-      ? currentEffort
-      : model.defaultEffort ?? model.efforts[0]?.value;
+    const effort = resolveReasoningEffort(reasoningCapability(model.efforts.map(choice => choice.value), model.defaultEffort), currentEffort);
     controller.dispatch({
       type: "set-selections",
       patch: { model: model.value, effort },

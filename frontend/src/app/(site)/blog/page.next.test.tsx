@@ -1,14 +1,10 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
-const notFound = vi.fn(() => {
-  throw new Error("NEXT_NOT_FOUND");
-});
-
 let mockIsGlobal = false;
 
 vi.mock("next/navigation", () => ({
-  notFound: () => notFound(),
+  notFound: vi.fn(),
 }));
 
 vi.mock("@/lib/region", () => ({
@@ -24,12 +20,11 @@ vi.mock("@next-site/public-pages", () => ({
 vi.stubGlobal("React", React);
 
 describe("/blog route", () => {
-  it("returns not found for the domestic build", async () => {
+  it("renders the Chinese Blog page for the domestic build", async () => {
     mockIsGlobal = false;
     const { default: BlogRoute } = await import("./page.next");
 
-    expect(() => BlogRoute()).toThrow("NEXT_NOT_FOUND");
-    expect(notFound).toHaveBeenCalled();
+    expect(React.isValidElement(BlogRoute())).toBe(true);
   });
 
   it("renders the blog page for the international build", async () => {

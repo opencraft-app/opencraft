@@ -1,7 +1,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { ChevronDown, ChevronUp, Ellipsis, Eye, EyeOff, Plus, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Ellipsis, Eye, EyeOff, Plus, RefreshCw, Search } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { SettingsButton, SettingsIconButton, SettingsNotice, SettingsSelect, SettingsSwitch, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { RuntimeProviderView, RuntimeModelView } from "@opencraft/appserver-protocol";
@@ -13,6 +13,38 @@ function MoreActions({ label, children }: { label: string; children: React.React
   return <Popover.Root><Popover.Trigger asChild><SettingsIconButton label={label}><Ellipsis size={16} /></SettingsIconButton></Popover.Trigger>
     <Popover.Portal><Popover.Content className="model-services-actions" align="end" sideOffset={6} collisionPadding={12} aria-label={label}>{children}</Popover.Content></Popover.Portal>
   </Popover.Root>;
+}
+
+function ProviderDefaultAction({ provider, controller, disabled }: { provider: RuntimeProviderView; controller: ModelServicesController; disabled: boolean }) {
+  const snapshot = controller.service.getSnapshot();
+  const availableModels = snapshot.models?.groups
+    .find(group => group.id === provider.provider)?.models
+    .filter(model => model.enabled !== false) ?? [];
+  const defaults = snapshot.settings?.namespaces
+    .find(entry => entry.ns === "agent-default-model")?.value as { provider?: string; model?: string } | undefined;
+  const currentModel = defaults?.provider === provider.provider ? defaults.model : undefined;
+  const unavailable = disabled || !provider.active || availableModels.length === 0;
+  if (availableModels.length <= 1) {
+    const model = availableModels[0];
+    return <ContextMenu.Item disabled={unavailable || currentModel === model?.id} onSelect={() => { if (model) void controller.setDefault(provider, model.id); }}>设为默认</ContextMenu.Item>;
+  }
+  return <ContextMenu.Sub>
+    <ContextMenu.SubTrigger className="model-services-context__sub-trigger" disabled={unavailable}>
+      <span>设为默认</span><ChevronRight size={14} aria-hidden="true" />
+    </ContextMenu.SubTrigger>
+    <ContextMenu.Portal>
+      <ContextMenu.SubContent className="model-services-context" sideOffset={4} collisionPadding={12}>
+        {availableModels.map(model => <ContextMenu.Item
+          key={model.id}
+          aria-label={`设为默认：${model.id}`}
+          disabled={currentModel === model.id}
+          onSelect={() => { void controller.setDefault(provider, model.id); }}
+        >
+          <span>{model.name}</span>{currentModel === model.id ? <span className="model-services-context__current">当前</span> : null}
+        </ContextMenu.Item>)}
+      </ContextMenu.SubContent>
+    </ContextMenu.Portal>
+  </ContextMenu.Sub>;
 }
 
 function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; controller: ModelServicesController }) {
@@ -30,7 +62,6 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
       disabled={!canToggle || disabled || defaultProtected || (!provider.enabled && !provider.configured)}
       onCheckedChange={value => { void controller.toggle(provider, value); }} />
   </div>;
-  if (!custom) return row;
   const begin = (kind: "rename" | "delete") => { setName(provider.displayName); setError(null); setAction({kind, revision: controller.revision(provider)}); };
   const submit = async () => {
     if (!action || saving) return;
@@ -43,6 +74,8 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
   };
   return <><ContextMenu.Root><ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger><ContextMenu.Portal>
     <ContextMenu.Content className="model-services-context" onCloseAutoFocus={event => { if (action) event.preventDefault(); }}>
+      <ProviderDefaultAction provider={provider} controller={controller} disabled={disabled} />
+      {custom ? <ContextMenu.Separator className="model-services-context__separator" /> : null}
       {custom ? <><ContextMenu.Item disabled={disabled} onSelect={() => begin("rename")}>重命名</ContextMenu.Item>
       <ContextMenu.Item disabled={disabled} onSelect={() => begin("delete")}>删除</ContextMenu.Item></> : null}
       {controller.draft(provider).dirty ? <small>请先保存或取消配置修改</small> : null}

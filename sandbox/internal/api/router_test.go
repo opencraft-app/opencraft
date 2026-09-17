@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"cvm-mock-e2b/internal/core"
+	"cvm-mock-e2b/internal/provider"
 	"cvm-mock-e2b/internal/service"
 	"cvm-mock-e2b/internal/store"
 )
@@ -85,6 +86,22 @@ func TestPostPoolsUsesBoundSafeCreateContract(t *testing.T) {
 	}
 }
 
+func TestPatchPoolsRejectsCrossRegionZoneChange(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "regional", "", "img-hermes", 0, apiTestVpcID, apiTestSubnetID, "ap-singapore-2", apiTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/pools/"+pool.ID, bytes.NewBufferString(`{"zone":"ap-johorbahru-1"}`))
+	rec := httptest.NewRecorder()
+	New(svc, nil).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestPatchPoolsRejectsChangingBoundSKU(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
@@ -154,7 +171,7 @@ func TestPatchPoolBaseImageCanMarkCleanInventoryDry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	insts, err := svc.RefillVerified(ctx, pool.ID, 2, []string{"10.0.0.10", "10.0.0.11"}, []string{"ins-1", "ins-2"}, func(context.Context, string) error {
+	insts, err := svc.RefillVerified(ctx, pool.ID, 2, []string{"10.0.0.10", "10.0.0.11"}, []string{"ins-1", "ins-2"}, func(context.Context, provider.CloudInstanceRef) error {
 		return nil
 	})
 	if err != nil {
@@ -213,7 +230,7 @@ func TestPatchPoolInstanceTypeCanMarkCleanInventoryDry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	insts, err := svc.RefillVerified(ctx, pool.ID, 2, []string{"10.0.0.10", "10.0.0.11"}, []string{"ins-1", "ins-2"}, func(context.Context, string) error {
+	insts, err := svc.RefillVerified(ctx, pool.ID, 2, []string{"10.0.0.10", "10.0.0.11"}, []string{"ins-1", "ins-2"}, func(context.Context, provider.CloudInstanceRef) error {
 		return nil
 	})
 	if err != nil {

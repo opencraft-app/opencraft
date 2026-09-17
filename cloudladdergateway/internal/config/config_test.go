@@ -15,6 +15,37 @@ func TestValidateRejectsUnknownAuthMode(t *testing.T) {
 	}
 }
 
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidEnabled(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ENABLED", "sometimes")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.enabled env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid enabled error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidAllowedPort(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS", "18084,not-a-port")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.allowed_ports env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid allowed port error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesLoadsHTTPRegistry(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE", "http")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_ROUTE_ID", "developer-route-registry")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_CALLER", "cloudladdergateway")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_SECRET_ENV", "CLOUDLADDER_SHADOW_HMAC_SECRET")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_TIMEOUT", "11s")
+	cfg := Config{}
+	if err := applyDeveloperRouteEnvOverrides(&cfg); err != nil {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v", err)
+	}
+	d := cfg.DeveloperRoutes
+	if d.Store != "http" || d.RegistryBaseURL != "https://api-sandbox-bj-7.lightclaw.tech" || d.RegistryRouteID != "developer-route-registry" || d.RegistryCaller != "cloudladdergateway" || d.RegistrySecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" || d.RegistryTimeout != "11s" {
+		t.Fatalf("unexpected developer route registry config: %+v", d)
+	}
+}
+
 func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")
@@ -117,6 +148,7 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 		"jifei-test", "jifei-prod",
 		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
 		"qbilling-send-resource-test",
+		"qbilling-send-resource-cn-prod", "qbilling-send-resource-intl-prod",
 		"dianshi-price", "dianshi-order",
 		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
 		"billing-query-via-polaris",
@@ -348,37 +380,61 @@ func TestExampleConfigGrantsTradeCallerProdBillingRoute(t *testing.T) {
 	t.Fatal("lightvela-trade caller is missing")
 }
 
-func TestExampleConfigRoutesCreditSendResourceThroughTestBilling(t *testing.T) {
+func TestExampleConfigRoutesCreditSendResourceThroughExpectedBillingEndpoints(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
 		t.Fatalf("load example config: %v", err)
 	}
+	expected := map[string]struct {
+		baseURL string
+		host    string
+	}{
+		"qbilling-send-resource-test": {
+			baseURL: "http://9.139.137.40",
+			host:    "qbilling.itd.com",
+		},
+		"qbilling-send-resource-cn-prod": {
+			baseURL: "http://qbilling.billing.tencentyun.com",
+			host:    "qbilling.billing.tencentyun.com",
+		},
+		"qbilling-send-resource-intl-prod": {
+			baseURL: "http://intl.resource.qbilling.tencentyun.com",
+			host:    "intl.resource.qbilling.tencentyun.com",
+		},
+	}
+	found := make(map[string]bool, len(expected))
 	for _, route := range cfg.Routes {
-		if route.ID != "qbilling-send-resource-test" {
+		want, ok := expected[route.ID]
+		if !ok {
 			continue
 		}
+		found[route.ID] = true
 		if route.Mode != RouteModeSignedHTTPTunnel {
-			t.Fatalf("route mode = %q", route.Mode)
+			t.Errorf("route %s mode = %q", route.ID, route.Mode)
 		}
 		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
-			t.Fatalf("route callers = %#v", route.Callers)
+			t.Errorf("route %s callers = %#v", route.ID, route.Callers)
 		}
 		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
 		if err != nil {
-			t.Fatalf("resolve Credit sendResource upstream: %v", err)
+			t.Errorf("resolve Credit sendResource upstream %s: %v", route.ID, err)
+			continue
 		}
-		if got := upstream.BaseURL; got != "http://9.139.137.40" {
-			t.Fatalf("Credit sendResource base_url = %q", got)
+		if got := upstream.BaseURL; got != want.baseURL {
+			t.Errorf("route %s base_url = %q, want %q", route.ID, got, want.baseURL)
 		}
-		if got := upstream.Headers["Host"]; got != "qbilling.itd.com" {
-			t.Fatalf("Credit sendResource Host = %q", got)
+		if got := upstream.Headers["Host"]; got != want.host {
+			t.Errorf("route %s Host = %q, want %q", route.ID, got, want.host)
 		}
 		if !slices.Equal(upstream.AllowedMethods, []string{"POST"}) {
-			t.Fatalf("Credit sendResource allowed methods = %#v", upstream.AllowedMethods)
+			t.Errorf("route %s allowed methods = %#v", route.ID, upstream.AllowedMethods)
 		}
-		return
 	}
-	t.Fatal("qbilling-send-resource-test route is missing")
+	for routeID := range expected {
+		if !found[routeID] {
+			t.Errorf("%s route is missing", routeID)
+		}
+	}
 }
 
 func TestExampleConfigGrantsTradeCallerCreditSendResourceRoute(t *testing.T) {
@@ -390,10 +446,16 @@ func TestExampleConfigGrantsTradeCallerCreditSendResourceRoute(t *testing.T) {
 		if caller.ID != "lightvela-trade" {
 			continue
 		}
-		if slices.Contains(caller.Routes, "qbilling-send-resource-test") {
-			return
+		for _, routeID := range []string{
+			"qbilling-send-resource-test",
+			"qbilling-send-resource-cn-prod",
+			"qbilling-send-resource-intl-prod",
+		} {
+			if !slices.Contains(caller.Routes, routeID) {
+				t.Errorf("lightvela-trade caller routes missing %s: %#v", routeID, caller.Routes)
+			}
 		}
-		t.Fatalf("lightvela-trade caller routes missing qbilling-send-resource-test: %#v", caller.Routes)
+		return
 	}
 	t.Fatal("lightvela-trade caller is missing")
 }

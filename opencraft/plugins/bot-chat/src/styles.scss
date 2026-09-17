@@ -1,10 +1,7 @@
 .bot-chat-stage {
   --bot-chat-rail-width: 780px;
   --bot-chat-inline-gutter: clamp(18px, 4.5vw, 64px);
-  --bot-chat-bubble-agent-fill: var(
-    --surface-message-user,
-    rgb(26 28 31 / 6%)
-  );
+  --bot-chat-bubble-agent-fill: var(--surface-message-user, rgb(26 28 31 / 6%));
   --bot-chat-bubble-user-fill: var(--gray-1000, #0d0d0d);
   --bot-chat-bubble-user-text: var(--gray-0, #fff);
   position: relative;
@@ -249,18 +246,31 @@
   line-height: 16px;
 }
 
+.bot-chat-message-shell {
+  display: grid;
+  width: fit-content;
+  max-width: min(88%, 640px, calc(100% - 18px));
+  min-width: 0;
+  justify-items: start;
+
+  &[data-author-kind="human"] {
+    justify-items: end;
+  }
+}
+
 .bot-chat-message {
   position: relative;
   display: block;
   width: fit-content;
-  max-width: min(88%, 640px, calc(100% - 18px));
+  max-width: 100%;
   min-width: 0;
   padding: 8px 12px;
   border-radius: 18px;
   overflow-wrap: anywhere;
   background: var(--bot-chat-bubble-agent-fill);
   box-shadow:
-    inset 0 0 0 0.5px color-mix(in srgb, var(--color-border-subtle) 58%, transparent),
+    inset 0 0 0 0.5px
+      color-mix(in srgb, var(--color-border-subtle) 58%, transparent),
     0 1px 1px rgb(0 0 0 / 2%);
   font-size: 14px;
   line-height: 21px;
@@ -319,7 +329,7 @@
 
 .bot-chat-message__delivery {
   display: block;
-  margin-top: 4px;
+  margin: 2px 8px 0;
   color: var(--color-text-tertiary);
   font-size: 10px;
   line-height: 13px;
@@ -604,8 +614,14 @@
   }
 
   .bot-chat-avatar__sheen {
-    opacity: 0.16;
+    opacity: 0.52;
     mix-blend-mode: screen;
+  }
+
+  .bot-chat-avatar__rim {
+    opacity: 0.72;
+    pointer-events: none;
+    vector-effect: non-scaling-stroke;
   }
 
   .bot-chat-avatar__effect,
@@ -626,68 +642,16 @@
     opacity: 0;
   }
 
+  [data-avatar-effect] {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
   .bot-chat-avatar__effect-dots,
   .bot-chat-avatar__effect-ball,
   .bot-chat-avatar__action-particles {
     fill: currentColor;
     stroke: none;
-  }
-
-  &[data-effect="dots"] .bot-chat-avatar__effect-dots {
-    animation: bot-chat-effect-dots 1.8s ease-in-out infinite;
-  }
-
-  &[data-effect="orbit"] .bot-chat-avatar__effect-belt {
-    animation: bot-chat-effect-spin 2.4s linear infinite;
-  }
-
-  &[data-effect="radar"] .bot-chat-avatar__effect-radar {
-    animation: bot-chat-effect-radar 1.75s linear infinite;
-    fill: color-mix(in srgb, currentColor 12%, transparent);
-  }
-
-  &[data-effect="progress"] .bot-chat-avatar__effect-progress {
-    animation: bot-chat-effect-progress 1.25s ease-in-out infinite;
-    stroke-dasharray: 34 105;
-  }
-
-  &[data-effect="gather"] .bot-chat-avatar__effect-ring {
-    animation: bot-chat-effect-gather 1.2s cubic-bezier(0.2, 0.8, 0.2, 1)
-      infinite;
-  }
-
-  &[data-effect="wave"] .bot-chat-avatar__effect-wave {
-    animation: bot-chat-effect-wave 1.1s ease-in-out infinite alternate;
-  }
-
-  &[data-effect="send"] .bot-chat-avatar__effect-arrow.is-out,
-  &[data-effect="receive"] .bot-chat-avatar__effect-arrow.is-in {
-    animation: bot-chat-effect-send 1s ease-in-out infinite;
-  }
-
-  &[data-effect="dock"] .bot-chat-avatar__effect-arrow.is-in {
-    animation: bot-chat-effect-dock 1.2s ease-in-out infinite;
-  }
-
-  &[data-effect="ball"] .bot-chat-avatar__effect-ball {
-    animation: bot-chat-effect-ball 1.15s ease-in-out infinite;
-  }
-
-  &[data-effect="whirl"] .bot-chat-avatar__effect-ring {
-    animation: bot-chat-effect-spin 1.1s linear infinite;
-    stroke-dasharray: 7 8;
-  }
-
-  &[data-effect="pencil"] .bot-chat-avatar__effect-pencil {
-    animation: bot-chat-effect-pencil 0.72s ease-in-out infinite alternate;
-  }
-
-  &[data-effect="bang"] .bot-chat-avatar__effect-bang {
-    animation: bot-chat-effect-bang 1.25s ease-out infinite;
-  }
-
-  &[data-effect="standby"] .bot-chat-avatar__effect-standby {
-    animation: bot-chat-effect-standby 2s ease-in-out infinite;
   }
 
   &[data-emphasis="true"] .bot-chat-avatar__persona {
@@ -698,14 +662,6 @@
       drop-shadow(
         0 0 8px color-mix(in srgb, var(--bot-avatar-highlight) 22%, transparent)
       );
-  }
-
-  &[data-motion="spawning"] .bot-chat-avatar__action-particles,
-  &[data-motion="sending"] .bot-chat-avatar__action-particles,
-  &[data-motion="celebrate"] .bot-chat-avatar__action-particles,
-  &[data-motion="notifying"] .bot-chat-avatar__action-particles {
-    animation: bot-chat-particle-burst 1.1s cubic-bezier(0.2, 0.8, 0.2, 1)
-      infinite;
   }
 
   &[data-presentation="static"] .bot-chat-avatar__persona {
@@ -735,6 +691,17 @@
             color-mix(in srgb, var(--bot-avatar-highlight) 12%, transparent)
         );
     }
+  }
+}
+
+:root[data-theme="dark"] .bot-chat-avatar,
+.electron-dark .bot-chat-avatar {
+  .bot-chat-avatar__sheen {
+    opacity: 0.34;
+  }
+
+  .bot-chat-avatar__rim {
+    opacity: 0.9;
   }
 }
 
@@ -1121,166 +1088,6 @@
   49%,
   100% {
     opacity: 0;
-  }
-}
-
-@keyframes bot-chat-effect-dots {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: translate3d(-0.5px, 1px, 0) scale(0.88);
-  }
-  50% {
-    opacity: 0.92;
-    transform: translate3d(0.8px, -0.8px, 0) scale(1.04);
-  }
-}
-
-@keyframes bot-chat-effect-spin {
-  from {
-    opacity: 0.68;
-    transform: rotate(0deg);
-  }
-  to {
-    opacity: 0.68;
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes bot-chat-effect-radar {
-  from {
-    opacity: 0.16;
-    transform: rotate(0deg);
-  }
-  to {
-    opacity: 0.16;
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes bot-chat-effect-progress {
-  0% {
-    opacity: 0.28;
-    stroke-dashoffset: 0;
-    transform: rotate(-90deg);
-  }
-  55% {
-    opacity: 0.82;
-  }
-  100% {
-    opacity: 0.28;
-    stroke-dashoffset: -139;
-    transform: rotate(270deg);
-  }
-}
-
-@keyframes bot-chat-effect-gather {
-  0% {
-    opacity: 0;
-    transform: scale(1.35);
-  }
-  45% {
-    opacity: 0.75;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.72);
-  }
-}
-
-@keyframes bot-chat-effect-wave {
-  from {
-    opacity: 0.45;
-    transform: translate3d(-1px, -0.5px, 0) scaleY(0.75);
-  }
-  to {
-    opacity: 0.88;
-    transform: translate3d(1px, 0.7px, 0) scaleY(1.15);
-  }
-}
-
-@keyframes bot-chat-effect-send {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: translateX(-2px);
-  }
-  50% {
-    opacity: 0.9;
-    transform: translateX(2px);
-  }
-}
-
-@keyframes bot-chat-effect-dock {
-  0% {
-    opacity: 0;
-    transform: translate3d(-4px, -5px, 0);
-  }
-  60% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-    transform: translate3d(4px, 5px, 0);
-  }
-}
-
-@keyframes bot-chat-effect-ball {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: translate3d(-1px, 7px, 0);
-  }
-  50% {
-    opacity: 0.92;
-    transform: translate3d(-7px, -2px, 0);
-  }
-}
-
-@keyframes bot-chat-effect-pencil {
-  from {
-    opacity: 0.45;
-    transform: translate3d(-1.5px, 1.5px, 0) rotate(-4deg);
-  }
-  to {
-    opacity: 0.92;
-    transform: translate3d(1.2px, -1.2px, 0) rotate(4deg);
-  }
-}
-
-@keyframes bot-chat-effect-bang {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(2px) scale(0.8);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-1px) scale(1.08);
-  }
-}
-
-@keyframes bot-chat-effect-standby {
-  0%,
-  100% {
-    opacity: 0.28;
-  }
-  50% {
-    opacity: 0.82;
-  }
-}
-
-@keyframes bot-chat-particle-burst {
-  0% {
-    opacity: 0;
-    transform: scale(0.76) rotate(-8deg);
-  }
-  35% {
-    opacity: 0.92;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.2) rotate(8deg);
   }
 }
 

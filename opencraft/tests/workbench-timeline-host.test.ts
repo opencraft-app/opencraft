@@ -380,10 +380,10 @@ test("application Settings owns route slots while target management owns a modal
   );
   assert.match(
     workbenchApp,
-    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : conversationSurfaceVisible \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
+    /<AppShell[\s\S]*?leftPanel=\{[\s\S]*?routeSettingsOpen \? settingsNavigation : \(conversationSurfaceVisible \|\| standaloneManagementOpen\) \? <Sidebar[\s\S]*?<div className="workbench-route-stage">[\s\S]*?\{settingsRoute\}[\s\S]*?<\/AppShell>/u,
   );
   assert.match(workbenchApp, /const managementSettingsOpen = settingsOpen[\s\S]*?selectedSettingsContribution\?\.management !== undefined/u);
-  assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen \|\| managementSettingsOpen/u);
+  assert.match(workbenchApp, /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\)/u);
   assert.match(workbenchApp, /hidden=\{!conversationSurfaceVisible\}/u);
   assert.match(workbenchApp, /inert=\{!conversationRouteOpen \|\| undefined\}/u);
   assert.match(workbenchApp, /<ManagementSettingsContent[\s\S]*?navigation=\{settingsNavigation\}/u);

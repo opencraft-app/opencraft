@@ -5,8 +5,6 @@ import {
   getAcliResetBlockReason,
   getAcliResetClickAction,
   getResetBlockReason,
-  hermesModelName,
-  hermesSwitchModelFullId,
   isExecCommandSucceeded,
   isResetConfigRouteMissingError,
   truncateExecOutput,
@@ -16,11 +14,9 @@ import {
 const bot = (id: string, status: ResettableBot["status"] = "running"): ResettableBot => ({ id, status });
 
 describe("getResetBlockReason", () => {
-  it("blocks both main and named Bots when the instance has siblings", () => {
-    expect(getResetBlockReason({ ...bot("main"), isDefault: true }, false, 1)).toBe("multi_bot");
-    expect(getResetBlockReason({ ...bot("sales"), isDefault: false }, false, 1)).toBe("multi_bot");
-    expect(getResetBlockReason({ ...bot("sales"), isDefault: false }, false, 0)).toBe("multi_bot");
-    expect(getResetBlockReason({ ...bot("main"), isDefault: true }, false, 0)).toBeNull();
+  it("allows the backend to decide gateway compatibility for main and named Profiles", () => {
+    expect(getResetBlockReason(bot("main"), false)).toBeNull();
+    expect(getResetBlockReason(bot("sales"), false)).toBeNull();
   });
   it("allows reset when running and not already resetting", () => {
     expect(getResetBlockReason(bot("a"), false)).toBeNull();
@@ -85,58 +81,6 @@ describe("ACLI_RESET_COMMAND", () => {
     expect(ACLI_RESET_COMMAND).toBe(
       "acli bundle-update && acli backend upgrade-start --blueprint-id latest --wait=true --force=true",
     );
-  });
-});
-
-describe("hermesModelName", () => {
-  it("returns the segment after the last slash for prefixed model ids", () => {
-    expect(hermesModelName("openai/gpt-4o")).toBe("gpt-4o");
-    expect(hermesModelName("anthropic/claude-3-5-sonnet")).toBe("claude-3-5-sonnet");
-  });
-
-  it("uses the last slash so multi-level ids still resolve", () => {
-    /* 与 ctl 后端 hermesModelName 等价：strings.LastIndex(modelID, "/") */
-    expect(hermesModelName("provider/group/model-x")).toBe("model-x");
-  });
-
-  it("returns the original string when there is no slash", () => {
-    expect(hermesModelName("gpt-4o")).toBe("gpt-4o");
-  });
-
-  it("trims surrounding whitespace before processing", () => {
-    expect(hermesModelName("  openai/gpt-4o  ")).toBe("gpt-4o");
-  });
-
-  it("returns empty string for blank or empty input", () => {
-    expect(hermesModelName("")).toBe("");
-    expect(hermesModelName("   ")).toBe("");
-  });
-
-  it("returns the original (trimmed) value when the slash is at the end", () => {
-    /* 边界：`openai/` 取不到合法 suffix 时回退到原值，避免返回空串误导调用方 */
-    expect(hermesModelName("openai/")).toBe("openai/");
-  });
-});
-
-describe("hermesSwitchModelFullId", () => {
-  it("uses modelId as-is when it already contains a slash", () => {
-    expect(hermesSwitchModelFullId("custom", "openai/gpt-4o")).toBe("openai/gpt-4o");
-  });
-
-  it("joins providerName and modelId when modelId is not prefixed", () => {
-    expect(hermesSwitchModelFullId("openai", "gpt-4o")).toBe("openai/gpt-4o");
-  });
-
-  it("trims whitespace from both sides before joining", () => {
-    expect(hermesSwitchModelFullId("  openai  ", "  gpt-4o  ")).toBe("openai/gpt-4o");
-  });
-
-  it("preserves the slash convention used by the backend python parser", () => {
-    /* 与 ctl 后端 renderHermesModelSetCommand 里的 python 解析器一致：
-     *   if "/" in model: print(model)
-     *   elif provider and model: print(provider + "/" + model)
-     */
-    expect(hermesSwitchModelFullId("custom", "anthropic/claude")).toBe("anthropic/claude");
   });
 });
 

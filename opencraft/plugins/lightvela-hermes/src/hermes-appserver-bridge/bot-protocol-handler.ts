@@ -13,6 +13,7 @@ import type {
 
 import {
   HermesAppServerAdapter,
+  isHermesHistoryNotMaterialized,
   isUnmaterializedHermesHistory,
 } from "./adapter";
 import type {
@@ -21,6 +22,15 @@ import type {
   AppServerTurn,
   HermesProfileSummary,
 } from "./types";
+import { instanceBotRevision, isProfileBotsUnsupported, type HermesInstanceProfileBot } from "./instance-profile-bots";
+import type { HermesBotManagementPort } from "./instance-bot-management";
+import { HermesGroupConversations } from "./group-conversations";
+
+export interface HermesBotHandlerOptions {
+  /** Borrowed, physical-instance-bound control-plane catalog. */
+  readonly resolveProfileBots?: () => Promise<readonly HermesInstanceProfileBot[]>;
+  readonly management?: HermesBotManagementPort;
+}
 
 const BOT_ID = "lightvela.hermes";
 const PROFILE_BOT_PREFIX = `${BOT_ID}.profile:`;
@@ -228,6 +238,8 @@ export class HermesBotAppServerHandler {
   private readonly nextSeqByConversation = new Map<string, number>();
   private readonly deltaSeqByMessage = new Map<string, number>();
   private readonly turnsById = new Map<string, AppServerTurn>();
+  private readonly conversationByTurnId = new Map<string, string>();
+  private readonly activeExecutionByConversation = new Map<string, string>();
   private readonly botCreateReceipts = new Map<string, IdempotentEntry<unknown>>();
   private readonly conversationCreateReceipts = new Map<string, IdempotentEntry<unknown>>();
   private readonly sendReceipts = new Map<string, IdempotentEntry<unknown>>();
@@ -241,19 +253,142 @@ export class HermesBotAppServerHandler {
   private readonly canonicalConversationByProfile = new Map<string, AppServerThread>();
   /** One canonical creation transaction per Profile in this Handler. */
   private readonly canonicalConversationCreations = new Map<string, Promise<AppServerThread>>();
+  private readonly profileByBotId = new Map<string, string>();
+  private readonly boundProfileByBotId = new Map<string, string>();
+  private catalogReady = false;
+  private unsupported = false;
+  private disposed = false;
+  private catalogRefresh: Promise<void> | null = null;
+  private managementTail: Promise<unknown> = Promise.resolve();
+  private readonly groups: HermesGroupConversations;
 
   constructor(
     private readonly adapter: HermesAppServerAdapter,
     private readonly emit: (event: AppServerBotConversationEvent) => void,
-  ) {}
+    private readonly options: HermesBotHandlerOptions = {},
+  ) {
+    if (options.resolveProfileBots !== undefined) this.botsById.clear();
+    this.groups = new HermesGroupConversations(adapter, {
+      resolveBot: (botId) => this.resolveBot(botId),
+      botForProfile: (profile) => this.botForProfile(profile),
+      profileForBotId: (botId) => this.profileForBotId(botId),
+      emit: (method, conversationId, payload) => this.emitConversation(
+        method as AppServerBotConversationEvent["method"], conversationId, payload,
+      ),
+    });
+  }
+
+  private get managedCatalog(): boolean { return this.options.resolveProfileBots !== undefined; }
+  get botManagement(): boolean { return !this.managedCatalog || this.options.management !== undefined; }
+  get groupConversations(): boolean { return this.groups.available; }
+
+  dispose(): void { this.disposed = true; this.groups.dispose(); }
+
+  async prepareCapability(): Promise<boolean> {
+    if (this.unsupported || this.disposed) return false;
+    if (this.managedCatalog && !this.catalogReady) {
+      try { await this.refreshCatalog(); }
+      catch (error) {
+        if (!isProfileBotsUnsupported(error)) throw error;
+        this.unsupported = true;
+        return false;
+      }
+    }
+    await this.groups.prepareCapability().catch(() => false);
+    return true;
+  }
+
+  private refreshCatalog(): Promise<void> {
+    if (this.catalogRefresh !== null) return this.catalogRefresh;
+    const refresh = (async () => {
+      await this.managementTail;
+      if (this.disposed) throw new Error("Hermes Bot handler is detached");
+      const bindings = this.options.resolveProfileBots === undefined
+        ? undefined : await this.options.resolveProfileBots();
+      const profiles = await this.adapter.listProfiles();
+      if (this.disposed) throw new Error("Hermes Bot handler is detached");
+      if (bindings === undefined) this.replaceBots(profiles);
+      else {
+        const byProfile = new Map(profiles.map(profile => [profile.name, profile]));
+        const bots = new Map<string, AppServerBotDescriptor>();
+        const routes = new Map<string, string>();
+        for (const binding of bindings) {
+          const previousRoute = this.boundProfileByBotId.get(binding.botId);
+          if (previousRoute !== undefined && previousRoute !== binding.nativeProfile) {
+            throw new Error("Hermes Bot profile binding changed within one Host connection");
+          }
+          const profile = byProfile.get(binding.nativeProfile);
+          if (profile === undefined) continue;
+          const base = botDescriptor(profile);
+          bots.set(binding.botId, Object.freeze({
+            ...base, botId: binding.botId, name: binding.name,
+            revision: this.options.management?.revision(binding) ?? instanceBotRevision(binding),
+            subtitle: binding.description || base.subtitle,
+            status: base.status === "disabled" ? "disabled" : binding.status,
+            management: {
+              rename: this.botManagement, clone: this.botManagement,
+              delete: this.botManagement && binding.nativeProfile !== "default",
+            },
+          }));
+          routes.set(binding.botId, binding.nativeProfile);
+        }
+        this.botsById.clear();
+        this.profileByBotId.clear();
+        for (const [id, bot] of bots) this.botsById.set(id, bot);
+        for (const [id, profile] of routes) this.profileByBotId.set(id, profile);
+        for (const [id, profile] of routes) this.boundProfileByBotId.set(id, profile);
+      }
+      this.catalogReady = true;
+    })().finally(() => { if (this.catalogRefresh === refresh) this.catalogRefresh = null; });
+    this.catalogRefresh = refresh;
+    return refresh;
+  }
+
+  private profileForBotId(botId: string): string | null {
+    return !this.managedCatalog ? profileForBotId(botId) : this.profileByBotId.get(botId) ?? null;
+  }
+
+  private rememberTurn(conversationId: string, turn: AppServerTurn, active = true): void {
+    const owner = this.conversationByTurnId.get(turn.id);
+    if (owner !== undefined && owner !== conversationId) throw new Error("Ambiguous Hermes execution identity");
+    this.conversationByTurnId.set(turn.id, conversationId);
+    this.turnsById.set(turn.id, turn);
+    if (turn.status === "inProgress" && active) this.activeExecutionByConversation.set(conversationId, turn.id);
+    else if (turn.status !== "inProgress" && this.activeExecutionByConversation.get(conversationId) === turn.id) {
+      this.activeExecutionByConversation.delete(conversationId);
+    }
+  }
+
+  private rememberConversation(conversationId: string, bot: AppServerBotDescriptor): void {
+    const owner = this.botByConversationId.get(conversationId);
+    if (owner !== undefined && owner.botId !== bot.botId) throw new Error("Ambiguous Hermes conversation identity");
+    this.botByConversationId.set(conversationId, bot);
+  }
+
+  private async resolveConversationBot(conversationId: string): Promise<AppServerBotDescriptor> {
+    const existing = this.botByConversationId.get(conversationId);
+    if (existing !== undefined) {
+      // Refresh may remove or disable a Bot; cached session identity is not admission authority.
+      return this.resolveBot(existing.botId);
+    }
+    const thread = await this.adapter.loadThread(conversationId, false);
+    if (this.managedCatalog && thread.name !== CANONICAL_BOT_CHAT_TITLE) this.notFound("Conversation", conversationId);
+    const bot = this.botForProfile(this.adapter.profileForThread(conversationId));
+    this.rememberConversation(conversationId, bot);
+    return bot;
+  }
 
   async handle(method: string, value: Record<string, unknown>): Promise<unknown> {
+    if (!this.botManagement && ["bot/create", "bot/update", "bot/delete"].includes(method)) {
+      this.capabilityUnavailable("Bot management belongs to the LightVela control plane");
+    }
+    if (!await this.prepareCapability()) this.capabilityUnavailable("Hermes profile Bots are unavailable");
     switch (method) {
       case "bot/list": return this.listBots(value);
       case "bot/read": return { bot: await this.resolveBot(this.requiredString(value.botId, "botId")) };
-      case "bot/create": return this.createBot(value);
-      case "bot/update": return this.updateBot(value);
-      case "bot/delete": return this.deleteBot(value);
+      case "bot/create": return this.options.management ? this.runManaged(() => this.createManagedBot(value)) : this.createBot(value);
+      case "bot/update": return this.options.management ? this.runManaged(() => this.updateManagedBot(value)) : this.updateBot(value);
+      case "bot/delete": return this.options.management ? this.runManaged(() => this.deleteManagedBot(value)) : this.deleteBot(value);
       case "bot/conversation/list": return this.listConversations(value);
       case "bot/conversation/create": return this.createConversation(value);
       case "bot/conversation/read": return this.readConversation(value);
@@ -262,14 +397,47 @@ export class HermesBotAppServerHandler {
       case "bot/execution/cancel": return this.cancelExecution(value);
       case "bot/attachment/upload": return this.uploadAttachment(value);
       case "bot/conversation/update":
+        if (await this.groups.owns(this.requiredString(value.conversationId, "conversationId"))) {
+          return this.groups.update(
+            this.requiredString(value.conversationId, "conversationId"),
+            this.requiredRevision(value.expectedRevision),
+            asRecord(value.patch),
+          );
+        }
+        return this.capabilityUnavailable(`${method} is not supported by Hermes direct conversations`);
+      case "bot/conversation/delete":
+        if (await this.groups.owns(this.requiredString(value.conversationId, "conversationId"))) {
+          return this.groups.remove(this.requiredString(value.conversationId, "conversationId"));
+        }
+        return this.capabilityUnavailable(`${method} is not supported by Hermes direct conversations`);
       case "bot/conversation/archive":
       case "bot/conversation/unarchive":
-      case "bot/conversation/delete":
-      case "bot/interaction/respond":
         return this.capabilityUnavailable(`${method} is not supported by Hermes`);
+      case "bot/interaction/respond": {
+        const conversationId = this.requiredString(value.conversationId, "conversationId");
+        if (!await this.groups.owns(conversationId)) return this.capabilityUnavailable(`${method} is not supported by Hermes direct conversations`);
+        const response = asRecord(value.response);
+        if (response.type !== "approval") return this.capabilityUnavailable("Hermes group rooms currently support approval responses only");
+        return this.groups.respond(
+          conversationId,
+          this.requiredString(value.interactionId, "interactionId"),
+          this.requiredString(response.choiceId, "choiceId"),
+        );
+      }
       default:
         throw Object.assign(new Error(`Unknown Bot method: ${method}`), { rpcCode: -32601 });
     }
+  }
+
+  private runManaged(operation: () => Promise<unknown>): Promise<unknown> {
+    const priorRefresh = this.catalogRefresh;
+    const result = this.managementTail.then(async () => {
+      await priorRefresh;
+      if (this.disposed) throw new Error("Hermes Bot handler is detached");
+      return operation();
+    });
+    this.managementTail = result.catch(() => undefined);
+    return result;
   }
 
   observeAppServerNotification(method: string, params: unknown): void {
@@ -278,16 +446,20 @@ export class HermesBotAppServerHandler {
     if (conversationId === null) return;
     const turnId = typeof value.turnId === "string" ? value.turnId : asRecord(value.turn).id;
     const turn = typeof turnId === "string" ? this.turnsById.get(turnId) : undefined;
-    const bot = this.botByConversationId.get(conversationId) ?? DEFAULT_BOT;
+    const bot = this.botByConversationId.get(conversationId);
+    if (bot === undefined) return;
     if (method === "turn/started") {
       const started = value.turn as AppServerTurn | undefined;
       if (started === undefined) return;
-      this.turnsById.set(started.id, started);
+      const owner = this.conversationByTurnId.get(started.id);
+      if (owner !== undefined && owner !== conversationId) return;
+      this.rememberTurn(conversationId, started);
       this.emitConversation("bot/execution/updated", conversationId, { execution: executionFromTurn(conversationId, started, bot) });
       this.emitPresence(conversationId, started.id, "thinking", "Thinking", bot);
       return;
     }
     if (turn === undefined) return;
+    if (this.conversationByTurnId.get(turn.id) !== conversationId) return;
     const item = value.item as AppServerThreadItem | undefined;
     if (method === "item/started" && item?.type === "agentMessage") {
       const message = messageFromItem(conversationId, turn, item, "streaming", bot);
@@ -321,15 +493,14 @@ export class HermesBotAppServerHandler {
     }
     if (method === "turn/completed") {
       const completed = (value.turn as AppServerTurn | undefined) ?? turn;
-      this.turnsById.set(completed.id, completed);
+      this.rememberTurn(conversationId, completed);
       this.emitPresence(conversationId, completed.id, null, null, bot);
       this.emitConversation("bot/execution/updated", conversationId, { execution: executionFromTurn(conversationId, completed, bot) });
     }
   }
 
   private async listBots(value: Record<string, unknown>): Promise<unknown> {
-    const profiles = await this.adapter.listProfiles();
-    this.replaceBots(profiles);
+    await this.refreshCatalog();
     const all = [...this.botsById.values()]
       .filter((bot) => bot.status !== "disabled")
       .sort((left, right) => left.name.localeCompare(right.name));
@@ -382,6 +553,71 @@ export class HermesBotAppServerHandler {
     this.botCreateReceipts.set(requestId, { params: structuredClone(value), result });
     this.emit({ method: "bot/updated", params: { bot } });
     return result;
+  }
+
+  private publishManagedBot(binding: HermesInstanceProfileBot): AppServerBotDescriptor {
+    if (this.disposed) throw new Error("Hermes Bot handler is detached");
+    const previous = this.boundProfileByBotId.get(binding.botId);
+    if (previous !== undefined && previous !== binding.nativeProfile) throw new Error("Hermes Bot profile binding changed");
+    const bot: AppServerBotDescriptor = {
+      ...botDescriptor({ name: binding.nativeProfile }), botId: binding.botId,
+      revision: this.options.management!.revision(binding), name: binding.name, subtitle: binding.description || "LightVela",
+      status: binding.status, management: { rename: true, clone: true, delete: binding.nativeProfile !== "default" },
+    };
+    this.botsById.set(bot.botId, bot);
+    this.profileByBotId.set(bot.botId, binding.nativeProfile);
+    this.boundProfileByBotId.set(bot.botId, binding.nativeProfile);
+    for (const [id, owner] of this.botByConversationId) if (owner.botId === bot.botId) this.botByConversationId.set(id, bot);
+    this.emit({ method: "bot/updated", params: { bot } });
+    return bot;
+  }
+
+  private async createManagedBot(value: Record<string, unknown>): Promise<unknown> {
+    const requestId = this.requiredString(value.clientRequestId, "clientRequestId");
+    const prior = this.botCreateReceipts.get(requestId);
+    if (prior !== undefined) {
+      if (!sameJson(prior.params, value)) this.idempotencyConflict(requestId);
+      return { ...(prior.result as object), replayed: true };
+    }
+    const binding = await this.options.management!.create({
+      clientRequestId: requestId, name: this.requiredString(value.name, "name"),
+      ...(value.templateId === undefined ? {} : { templateId: this.requiredString(value.templateId, "templateId") }),
+    });
+    const result = { bot: this.publishManagedBot(binding), replayed: false };
+    this.botCreateReceipts.set(requestId, { params: structuredClone(value), result });
+    return result;
+  }
+
+  private async updateManagedBot(value: Record<string, unknown>): Promise<unknown> {
+    const botId = this.requiredString(value.botId, "botId");
+    const patch = asRecord(value.patch);
+    if (Object.keys(patch).some(key => key !== "name" && key !== "subtitle")) this.capabilityUnavailable("此 Bot 仅支持修改名称和说明。");
+    if (Object.keys(patch).length === 0) throw Object.assign(new Error("Empty Bot patch"), { rpcCode: -32602 });
+    const binding = await this.options.management!.update(botId, this.requiredRevision(value.expectedRevision), {
+      ...(patch.name === undefined ? {} : { name: this.requiredString(patch.name, "name") }),
+      ...(typeof patch.subtitle === "string" ? { subtitle: patch.subtitle } : {}),
+    });
+    return { bot: this.publishManagedBot(binding) };
+  }
+
+  private async deleteManagedBot(value: Record<string, unknown>): Promise<unknown> {
+    const botId = this.requiredString(value.botId, "botId");
+    const revision = this.requiredRevision(value.expectedRevision);
+    for (const [id, bot] of this.botByConversationId) {
+      if (bot.botId === botId && this.activeExecutionByConversation.has(id)) this.capabilityUnavailable("请先停止 Bot 当前执行，再删除。");
+    }
+    await this.options.management!.delete(botId, revision);
+    if (this.disposed) throw new Error("Hermes Bot handler is detached");
+    this.botsById.delete(botId);
+    const profile = this.profileByBotId.get(botId);
+    this.profileByBotId.delete(botId);
+    if (profile) this.canonicalConversationByProfile.delete(profile);
+    for (const [id, bot] of this.botByConversationId) if (bot.botId === botId) {
+      this.emitConversation("bot/conversation/deleted", id, { conversationId: id, revision: revision + 1 });
+      this.botByConversationId.delete(id);
+    }
+    this.emit({ method: "bot/deleted", params: { botId, revision: revision + 1 } });
+    return { botId, revision: revision + 1 };
   }
 
   private async updateBot(value: Record<string, unknown>): Promise<unknown> {
@@ -450,13 +686,18 @@ export class HermesBotAppServerHandler {
   private async resolveBot(botId: string): Promise<AppServerBotDescriptor> {
     const cached = this.botsById.get(botId);
     if (cached !== undefined) return cached;
-    this.replaceBots(await this.adapter.listProfiles());
+    await this.refreshCatalog();
     const bot = this.botsById.get(botId);
     if (bot === undefined) this.notFound("Bot", botId);
     return bot;
   }
 
   private botForProfile(profile: string): AppServerBotDescriptor {
+    if (this.managedCatalog) {
+      const entry = [...this.profileByBotId].find(([, nativeProfile]) => nativeProfile === profile);
+      if (entry === undefined) this.notFound("Bot profile", profile);
+      return this.botsById.get(entry![0])!;
+    }
     const botId = botIdForProfile(profile);
     const existing = this.botsById.get(botId);
     if (existing !== undefined) return existing;
@@ -466,8 +707,9 @@ export class HermesBotAppServerHandler {
   }
 
   private async listConversations(value: Record<string, unknown>): Promise<unknown> {
-    const requestedBot = typeof value.botId === "string" ? await this.resolveBot(value.botId) : DEFAULT_BOT;
-    const profile = profileForBotId(requestedBot.botId);
+    const requestedBot = typeof value.botId === "string" ? await this.resolveBot(value.botId)
+      : !this.managedCatalog ? DEFAULT_BOT : this.botForProfile("default");
+    const profile = this.profileForBotId(requestedBot.botId);
     if (profile === null) this.notFound("Bot", requestedBot.botId);
     const page = await this.adapter.listThreads({
       cursor: typeof value.cursor === "string" ? value.cursor : null,
@@ -479,11 +721,15 @@ export class HermesBotAppServerHandler {
       exactTitle: CANONICAL_BOT_CHAT_TITLE,
     });
     for (const thread of page.data) {
-      this.botByConversationId.set(thread.id, requestedBot);
+      if (this.managedCatalog && this.adapter.profileForThread(thread.id) !== profile) {
+        throw new Error("Hermes conversation does not belong to the requested Bot profile");
+      }
+      this.rememberConversation(thread.id, requestedBot);
       this.canonicalConversationByProfile.set(profile, thread);
     }
+    const groups = await this.groups.list(typeof value.botId === "string" ? requestedBot.botId : undefined);
     return {
-      data: page.data.map((thread) => descriptor(thread, requestedBot)),
+      data: [...page.data.map((thread) => descriptor(thread, requestedBot)), ...groups],
       ...(page.nextCursor === null ? {} : { nextCursor: page.nextCursor }),
     };
   }
@@ -495,17 +741,23 @@ export class HermesBotAppServerHandler {
       if (!sameJson(prior.params, value)) this.idempotencyConflict(requestId);
       return { ...(prior.result as object), replayed: true };
     }
-    if (value.topology !== "direct") this.capabilityUnavailable("Hermes supports direct Bot conversations only");
+    if (value.topology === "group") {
+      if (!this.groups.available) this.capabilityUnavailable("Hermes hosted group rooms are unavailable");
+      const result = await this.groups.create(value);
+      this.conversationCreateReceipts.set(requestId, { params: structuredClone(value), result });
+      return result;
+    }
+    if (value.topology !== "direct") this.capabilityUnavailable("Unsupported Hermes Bot conversation topology");
     const participantIds = Array.isArray(value.participantIds) ? value.participantIds.map(String) : [];
     if (participantIds.length !== 1 || !participantIds[0]!.startsWith("bot:")) {
       throw Object.assign(new Error("A direct Hermes conversation requires exactly one Bot participant"), { rpcCode: -32602 });
     }
     const bot = await this.resolveBot(participantIds[0]!.slice("bot:".length));
     if (bot.status !== "available") this.capabilityUnavailable(`Bot ${bot.name} is not available`);
-    const profile = profileForBotId(bot.botId);
+    const profile = this.profileForBotId(bot.botId);
     if (profile === null) this.notFound("Bot", bot.botId);
     const thread = await this.resolveCanonicalConversation(profile);
-    this.botByConversationId.set(thread.id, bot);
+    this.rememberConversation(thread.id, bot);
     const result = { conversation: descriptor(thread, bot), replayed: false };
     this.conversationCreateReceipts.set(requestId, { params: structuredClone(value), result });
     return result;
@@ -555,6 +807,13 @@ export class HermesBotAppServerHandler {
 
   private async readConversation(value: Record<string, unknown>): Promise<unknown> {
     const conversationId = this.requiredString(value.conversationId, "conversationId");
+    if (await this.groups.owns(conversationId)) {
+      const initial = asRecord(value.initialMessagesPage);
+      return this.groups.read(
+        conversationId,
+        typeof initial.limit === "number" ? Math.min(Math.max(Math.floor(initial.limit), 1), 100) : 50,
+      );
+    }
     const cursorAtStart = this.nextSeqByConversation.get(conversationId) ?? 0;
     const initial = asRecord(value.initialMessagesPage);
     const limit = typeof initial.limit === "number" ? Math.min(Math.max(Math.floor(initial.limit), 1), 100) : 50;
@@ -565,20 +824,43 @@ export class HermesBotAppServerHandler {
       this.adapter.loadThread(conversationId, false),
       history,
     ]);
+    const profile = this.adapter.profileForThread(conversationId);
+    let canonicalBotConversation = !this.managedCatalog && thread.name === CANONICAL_BOT_CHAT_TITLE;
+    if (this.managedCatalog) {
+      const canonical = this.canonicalConversationByProfile.get(profile)
+        ?? await this.adapter.resolveNamedThread(profile, CANONICAL_BOT_CHAT_TITLE);
+      if (canonical === null || canonical.id !== conversationId) {
+        this.notFound("Conversation", conversationId);
+      }
+      this.canonicalConversationByProfile.set(profile, canonical);
+      canonicalBotConversation = true;
+    }
     const page = historyResult.page ?? (() => {
       // A lazy canonical session exists in the WebSocket title registry before
       // Hermes creates a REST history row. Resume owns existence; REST owns
       // only materialized messages, so its 404 is an empty snapshot iff the
       // authoritative Resume reports zero messages.
-      if (isUnmaterializedHermesHistory(thread, historyResult.error)) {
+      if (
+        isUnmaterializedHermesHistory(thread, historyResult.error)
+        // A canonical Bot Chat has already been authoritatively resumed by
+        // loadThread. Dashboard owns only its materialized transcript and may
+        // legitimately have no row yet. Hermes message_count is Gateway state,
+        // not a durable-history row count, so it cannot gate this fallback.
+        || (canonicalBotConversation
+          && isHermesHistoryNotMaterialized(historyResult.error))
+      ) {
         return { data: [], chronological: [], nextOffset: null };
       }
       throw historyResult.error;
     })();
-    const bot = this.botForProfile(this.adapter.profileForThread(conversationId));
-    this.botByConversationId.set(conversationId, bot);
-    for (const turn of page.chronological) this.turnsById.set(turn.id, turn);
+    const bot = this.botForProfile(profile);
+    this.rememberConversation(conversationId, bot);
+    for (const turn of page.chronological) this.rememberTurn(conversationId, turn);
     await this.adapter.activateProjection(conversationId, page.chronological);
+    // Cold activation can append a server-running Turn; warm activation can
+    // replace history with the retained owner. Cancellation must consume that
+    // authoritative post-activation ledger, not the pre-activation REST tail.
+    for (const turn of page.chronological) this.rememberTurn(conversationId, turn);
     const activeTurns = page.chronological.filter((turn) => turn.status === "inProgress");
     return {
       conversation: descriptor(thread, bot),
@@ -596,6 +878,14 @@ export class HermesBotAppServerHandler {
 
   private async listMessages(value: Record<string, unknown>): Promise<unknown> {
     const conversationId = this.requiredString(value.conversationId, "conversationId");
+    if (await this.groups.owns(conversationId)) {
+      return this.groups.messages(
+        conversationId,
+        typeof value.cursor === "string" ? value.cursor : undefined,
+        typeof value.limit === "number" ? value.limit : 50,
+      );
+    }
+    const bot = await this.resolveConversationBot(conversationId);
     const cursor = typeof value.cursor === "string" ? value.cursor : "hermes-messages:0";
     const match = /^hermes-messages:(\d+)$/u.exec(cursor);
     if (match === null) throw Object.assign(new Error("Invalid Hermes Bot message cursor"), { rpcCode: -32602 });
@@ -605,10 +895,7 @@ export class HermesBotAppServerHandler {
       typeof value.limit === "number" ? value.limit : 50,
       value.direction === "forwards" ? "asc" : "desc",
     );
-    const bot = this.botByConversationId.get(conversationId)
-      ?? this.botForProfile(this.adapter.profileForThread(conversationId));
-    this.botByConversationId.set(conversationId, bot);
-    for (const turn of page.chronological) this.turnsById.set(turn.id, turn);
+    for (const turn of page.chronological) this.rememberTurn(conversationId, turn);
     return {
       data: messagesFromTurns(conversationId, page.chronological, bot),
       ...(page.nextOffset === null ? {} : { nextCursor: `hermes-messages:${page.nextOffset}` }),
@@ -646,6 +933,16 @@ export class HermesBotAppServerHandler {
     receiptKey: string,
   ): Promise<Record<string, unknown>> {
     if (!Array.isArray(value.content)) throw Object.assign(new Error("content must be an array"), { rpcCode: -32602 });
+    if (await this.groups.owns(conversationId)) {
+      const result = await this.groups.send(
+        conversationId,
+        clientMessageId,
+        value.content,
+        typeof value.replyToMessageId === "string" ? value.replyToMessageId : undefined,
+      );
+      this.sendReceipts.set(receiptKey, { params: structuredClone(value), result });
+      return result;
+    }
     const input = value.content.flatMap((rawPart): Record<string, unknown>[] => {
       const part = asRecord(rawPart) as AppServerBotInputPart;
       if (part.type === "text") return [{ type: "text", text: part.text }];
@@ -660,18 +957,17 @@ export class HermesBotAppServerHandler {
       }
       return [];
     });
-    const bot = this.botByConversationId.get(conversationId)
-      ?? this.botForProfile(this.adapter.profileForThread(conversationId));
-    this.botByConversationId.set(conversationId, bot);
+    const bot = await this.resolveConversationBot(conversationId);
+    if (bot.status !== "available") this.capabilityUnavailable(`Bot ${bot.name} is not available`);
     const submission = await this.adapter.submitBotTurn(
       conversationId,
       input,
       clientMessageId,
       undefined,
-      profileForBotId(bot.botId),
+      this.profileForBotId(bot.botId),
     );
     const turn = submission.turn;
-    this.turnsById.set(turn.id, turn);
+    this.rememberTurn(conversationId, turn, submission.disposition !== "queued");
     const userItem = turn.items.find((item) => item.type === "userMessage");
     if (userItem === undefined) throw new Error("Hermes accepted a Turn without a user message");
     const message = messageFromItem(conversationId, turn, userItem, "complete", bot)!;
@@ -695,10 +991,20 @@ export class HermesBotAppServerHandler {
       if (!sameJson(prior.params, value)) this.idempotencyConflict(commandId);
       return { ...(prior.result as object), replayed: true };
     }
+    if (await this.groups.owns(conversationId)) {
+      const result = await this.groups.cancel(conversationId, executionId, commandId);
+      this.cancelReceipts.set(key, { params: structuredClone(value), result });
+      return result;
+    }
     const turn = this.turnsById.get(executionId);
-    if (turn === undefined) this.notFound("Execution", executionId);
+    if (turn === undefined || this.conversationByTurnId.get(executionId) !== conversationId) this.notFound("Execution", executionId);
+    if (turn!.status !== "inProgress") this.capabilityUnavailable("Execution is no longer running");
+    if (this.activeExecutionByConversation.get(conversationId) !== executionId) {
+      this.capabilityUnavailable("Execution does not own the active Hermes turn");
+    }
     await this.adapter.cancelTurn(conversationId);
-    const bot = this.botByConversationId.get(conversationId) ?? DEFAULT_BOT;
+    this.activeExecutionByConversation.delete(conversationId);
+    const bot = this.botByConversationId.get(conversationId)!;
     const execution: AppServerBotExecution = {
       ...executionFromTurn(conversationId, turn!, bot),
       status: "cancelled",

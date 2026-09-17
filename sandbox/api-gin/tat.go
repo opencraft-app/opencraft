@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -490,14 +489,9 @@ func (h *handler) resolveSandboxContext(c *gin.Context, sandboxID string) (core.
 }
 
 func regionFromPool(pool core.Pool) string {
-	zone := strings.TrimSpace(pool.Zone)
-	if zone == "" {
+	region, err := core.RegionFromZone(pool.Zone)
+	if err != nil {
 		return defaultTATRegion
 	}
-	if idx := strings.LastIndex(zone, "-"); idx > 0 {
-		if _, err := strconv.Atoi(zone[idx+1:]); err == nil {
-			return zone[:idx]
-		}
-	}
-	return zone
+	return region
 }

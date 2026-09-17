@@ -33,6 +33,7 @@
 - `vibebase`
 - `nextgen-dashboard`
 - `payment`
+- `referral`（独立 Campaign、Pulsar worker 与精确 Gateway 路由）
 - `sandbox`
 - `service-gateway`
 - `subscription`
@@ -55,6 +56,7 @@
   - `shprod-lightclaw-auth`
   - `shprod-vibebase`
   - `shprod-payment`
+  - `shprod-referral`
   - `shprod-sandbox`
   - `shprod-service-gateway`
   - `shprod-subscription`

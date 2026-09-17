@@ -18,6 +18,7 @@ import {
   BOT_AVATAR_MOTION,
   BOT_AVATAR_MOTION_STATES,
   botAvatarContinuousPose,
+  botAvatarMotionState,
 } from "../plugins/bot-chat/src/bot-avatar-motion";
 import {
   BOT_MOTION_REPLAY_SCENES,
@@ -25,9 +26,7 @@ import {
   createBotMotionReplayController,
   projectBotMotionReplay,
 } from "../plugins/bot-chat/src/motion-replay";
-import {
-  projectBotActivityIndicator,
-} from "../plugins/bot-chat/src/bot-activity-indicator";
+import { projectBotActivityIndicator } from "../plugins/bot-chat/src/bot-activity-indicator";
 
 class ManualScheduler implements BotConversationScheduler {
   private clock = 1_000;
@@ -88,13 +87,13 @@ function intent(
   };
 }
 
-function timelineMessages(
-  projection: BotTimelineProjection,
-) {
+function timelineMessages(projection: BotTimelineProjection) {
   return projection.units.flatMap((unit) =>
-    unit.kind === "message" ? unit.messageRuns.flatMap((run) =>
-      run.messages.map((message) => message.message)
-    ) : []
+    unit.kind === "message"
+      ? unit.messageRuns.flatMap((run) =>
+          run.messages.map((message) => message.message),
+        )
+      : [],
   );
 }
 
@@ -343,6 +342,32 @@ test("Bot motion replay covers the complete current Grok motion vocabulary", () 
   assert.equal(BOT_AVATAR_MOTION["powering-down"].effect, "standby");
 });
 
+test("semantic Presence never fabricates celebration on ordinary completion", () => {
+  const fact: BotPresenceFact = {
+    conversationKey: createConversationKey("bot-preview", "celebration-policy"),
+    participantId: "bot:vela",
+    executionId: "execution",
+    seq: 1,
+    phase: "working",
+    activity: null,
+    observedAtMs: 1,
+    expiresAtMs: 2,
+  };
+  for (const phase of [
+    "idle",
+    "thinking",
+    "working",
+    "typing",
+    "waiting",
+    "blocked",
+  ] as const) {
+    assert.notEqual(
+      botAvatarMotionState(phase, { ...fact, phase }),
+      "celebrate",
+    );
+  }
+});
+
 test("replay visual state remains presentation-only and does not rewrite Presence", () => {
   const scheduler = new ManualScheduler();
   const replay = createBotMotionReplayController(scheduler);
@@ -389,12 +414,20 @@ test("Bot motion replay projects a monotonic product transcript instead of debug
     replay.presenceFor(key),
   );
   assert.deepEqual(
-    timelineMessages(complete.timeline).slice(0, 3).map((message) => message.id),
+    timelineMessages(complete.timeline)
+      .slice(0, 3)
+      .map((message) => message.id),
     timelineMessages(group.timeline).map((message) => message.id),
   );
-  assert.equal(timelineMessages(complete.timeline).at(-2)?.id, "replay:vela:release-plan");
+  assert.equal(
+    timelineMessages(complete.timeline).at(-2)?.id,
+    "replay:vela:release-plan",
+  );
   assert.equal(timelineMessages(complete.timeline).at(-2)?.streaming, false);
-  assert.equal(timelineMessages(complete.timeline).at(-1)?.id, "replay:vela:release-ready");
+  assert.equal(
+    timelineMessages(complete.timeline).at(-1)?.id,
+    "replay:vela:release-ready",
+  );
   replay.dispose();
 });
 
@@ -450,19 +483,21 @@ test("bubble adjacency is projected once from transcript order", () => {
   );
   const opencraftRuns = projection.timeline.units.flatMap((unit) =>
     unit.kind === "message" &&
-      unit.messageRuns[0]?.author.participantId === "bot:vela"
+    unit.messageRuns[0]?.author.participantId === "bot:vela"
       ? unit.messageRuns
-      : []
+      : [],
   );
 
   assert.equal(opencraftRuns.length, 2);
   assert.deepEqual(
-    opencraftRuns.flatMap((run) => run.messages).map((message) => ({
-      previous: message.continuedFromPrevious,
-      next: message.continuedToNext,
-      start: message.runStart,
-      end: message.groupEnd,
-    })),
+    opencraftRuns
+      .flatMap((run) => run.messages)
+      .map((message) => ({
+        previous: message.continuedFromPrevious,
+        next: message.continuedToNext,
+        start: message.runStart,
+        end: message.groupEnd,
+      })),
     [
       { previous: false, next: true, start: true, end: false },
       { previous: true, next: false, start: true, end: true },
@@ -601,6 +636,14 @@ test("Bot avatar animation uses persistent sources with local flow-owned mirrors
     new URL("../plugins/bot-chat/src/bot-avatar-stage.tsx", import.meta.url),
     "utf8",
   );
+  const avatarSource = readFileSync(
+    new URL("../plugins/bot-chat/src/bot-avatar.tsx", import.meta.url),
+    "utf8",
+  );
+  const runtimeSource = readFileSync(
+    new URL("../plugins/bot-chat/src/bot-avatar-runtime.ts", import.meta.url),
+    "utf8",
+  );
   const styles = readFileSync(
     new URL("../plugins/bot-chat/src/styles.scss", import.meta.url),
     "utf8",
@@ -608,10 +651,20 @@ test("Bot avatar animation uses persistent sources with local flow-owned mirrors
 
   assert.match(stageSource, /<use\b[\s\S]*?\bhref=/);
   assert.match(stageSource, /bot-chat-mark-sources/);
+  assert.match(stageSource, /ResizeObserver/);
+  assert.match(stageSource, /IntersectionObserver/);
   assert.doesNotMatch(
-    stageSource,
-    /getBoundingClientRect|ResizeObserver|MutationObserver|translate3d/,
+    avatarSource,
+    /getBoundingClientRect|requestAnimationFrame/,
   );
-  assert.match(styles, /\.bot-chat-mark-anchor\s*\{[\s\S]*display: inline-grid/);
+  assert.match(runtimeSource, /class BotAvatarScheduler/);
+  assert.match(
+    styles,
+    /\.bot-chat-mark-anchor\s*\{[\s\S]*display: inline-grid/,
+  );
+  assert.doesNotMatch(
+    styles,
+    /\[data-effect="(?:dots|orbit|radar|progress|gather|wave|send|receive|dock|ball|whirl|pencil|bang|standby)"\][\s\S]{0,180}?infinite/,
+  );
   assert.doesNotMatch(styles, /\.bot-chat-mark-actor/);
 });

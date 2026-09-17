@@ -153,12 +153,17 @@ project_and_pin_gitops_state() {
   IFS=',' read -r -a services <<<"$SERVICE_ARG"
   for service in "${services[@]}"; do
     echo "GitOps 发布进度：更新 ${service}/${ENV_NAME} 的镜像 pin"
-    python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py" \
-      --repo-root "$target_repo_root" \
-      --service "$service" \
-      --env "$ENV_NAME" \
-      --image "$PIN_IMAGE" \
+    image_pin_args=(
+      --repo-root "$target_repo_root"
+      --service "$service"
+      --env "$ENV_NAME"
+      --image "$PIN_IMAGE"
       --deployed-at "$DEPLOYED_AT"
+    )
+    if [[ -n "${GITOPS_IMAGE_PIN_VARIANT:-}" && "${GITOPS_IMAGE_PIN_VARIANT}" != "all" ]]; then
+      image_pin_args+=(--variant "$GITOPS_IMAGE_PIN_VARIANT")
+    fi
+    python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py" "${image_pin_args[@]}"
     if [[ "$add_to_git" == "true" ]]; then
       git -C "$target_repo_root" add "argocd/services/$service/$ENV_NAME"
     fi

@@ -266,33 +266,38 @@ func (s *Server) orderURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveOrderURLUserID(w http.ResponseWriter, r *http.Request, code, dealName string) (string, bool) {
-	if userID := strings.TrimSpace(r.Header.Get("X-User-Id")); userID != "" {
-		return userID, true
-	}
 	code = strings.TrimSpace(code)
-	if code == "" || s.auth == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized")
-		return "", false
-	}
-	ticket, err := s.auth.Consume(r.Context(), code)
-	if err != nil {
-		if errors.Is(err, authcode.ErrTicketNotFound) {
+	if code != "" {
+		if s.auth == nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return "", false
+		}
+		ticket, err := s.auth.Consume(r.Context(), code)
+		if err != nil {
+			if errors.Is(err, authcode.ErrTicketNotFound) {
+				writeError(w, http.StatusUnauthorized, "auth_code invalid or expired")
+				return "", false
+			}
+			log.Printf("credit order URL: consume auth_code failed: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+			return "", false
+		}
+		if ticket == nil || strings.TrimSpace(ticket.UserID) == "" {
 			writeError(w, http.StatusUnauthorized, "auth_code invalid or expired")
 			return "", false
 		}
-		log.Printf("credit order URL: consume auth_code failed: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal server error")
-		return "", false
+		if ticket.DealName != dealName {
+			writeError(w, http.StatusForbidden, "auth_code deal_name mismatch")
+			return "", false
+		}
+		return ticket.UserID, true
 	}
-	if ticket == nil || strings.TrimSpace(ticket.UserID) == "" {
-		writeError(w, http.StatusUnauthorized, "auth_code invalid or expired")
-		return "", false
+
+	if userID := strings.TrimSpace(r.Header.Get("X-User-Id")); userID != "" {
+		return userID, true
 	}
-	if ticket.DealName != dealName {
-		writeError(w, http.StatusForbidden, "auth_code deal_name mismatch")
-		return "", false
-	}
-	return ticket.UserID, true
+	writeError(w, http.StatusUnauthorized, "unauthorized")
+	return "", false
 }
 
 func paymentWxAppID(wxOpenID string) string {

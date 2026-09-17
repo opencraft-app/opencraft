@@ -4,6 +4,13 @@
     "name": "Ubuntu Server 24.04 LTS 64位",
     "source_region": "ap-seoul",
     "target_region": "ap-beijing",
+    "target_regions": [
+      "ap-beijing",
+      "ap-shanghai",
+      "ap-singapore",
+      "ap-tokyo",
+      "ap-johorbahru"
+    ],
     "image_id": "img-mmytdhbn",
     "queried_at": "2026-03-25"
   },

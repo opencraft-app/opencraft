@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +19,13 @@ func ValidateInventory(inv *Inventory) error {
 	}
 	if inv.Network.VpcCIDR == "" {
 		return fmt.Errorf("inventory missing network.vpc_cidr")
+	}
+	switch inv.Profile {
+	case ProfileSandboxNetwork:
+		return validateSandboxNetworkInventory(inv)
+	case ProfileFull:
+	default:
+		return fmt.Errorf("inventory has unsupported profile %q", inv.Profile)
 	}
 	if inv.Stacks.TKE.ClusterVersion == "" {
 		return fmt.Errorf("inventory missing stacks.tke.cluster_version")
@@ -69,6 +78,92 @@ func ValidateInventory(inv *Inventory) error {
 	if err := validatePulsarInventory(inv.Stacks.Pulsar); err != nil {
 		return err
 	}
+	if err := validateCollaborationInventory(inv.Stacks.Collaboration); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSandboxNetworkInventory(inv *Inventory) error {
+	if strings.TrimSpace(inv.Network.SupportSubnetKey) == "" {
+		return fmt.Errorf("sandbox-network inventory missing network.support_subnet_key")
+	}
+	if len(inv.Network.SandboxPoolSubnetKeys) == 0 {
+		return fmt.Errorf("sandbox-network inventory requires at least one pool subnet")
+	}
+	seen := map[string]struct{}{}
+	for _, key := range inv.Network.SandboxPoolSubnetKeys {
+		key = strings.TrimSpace(key)
+		if key == "" || key == inv.Network.SupportSubnetKey {
+			return fmt.Errorf("sandbox-network inventory has invalid pool subnet key %q", key)
+		}
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("sandbox-network inventory has duplicate pool subnet key %q", key)
+		}
+		seen[key] = struct{}{}
+	}
+	networking := inv.Stacks.Networking
+	if strings.TrimSpace(networking.PrimaryNATGatewayName) == "" {
+		return fmt.Errorf("sandbox-network inventory missing stacks.networking.primary_nat_gateway_name")
+	}
+	if strings.TrimSpace(networking.RouteTableName) == "" {
+		return fmt.Errorf("sandbox-network inventory missing stacks.networking.route_table_name")
+	}
+	if len(networking.PrimaryEIPs) == 0 || len(networking.PrimaryEIPs) > 5 {
+		return fmt.Errorf("sandbox-network inventory requires 1 to 5 primary EIPs")
+	}
+	if networking.SecondaryNATEnabled() {
+		if strings.TrimSpace(networking.SecondaryNATGatewayName) == "" || len(networking.SecondaryEIPs) == 0 {
+			return fmt.Errorf("sandbox-network inventory enabled secondary NAT without name/EIPs")
+		}
+	}
+	requiredSubnets := append([]string(nil), inv.Network.SandboxPoolSubnetKeys...)
+	requiredSubnets = append(requiredSubnets, inv.Network.SupportSubnetKey)
+	for _, key := range requiredSubnets {
+		subnet, ok := networking.SNATSubnets[key]
+		if !ok || strings.TrimSpace(subnet.AvailabilityZone) == "" || strings.TrimSpace(subnet.Description) == "" {
+			return fmt.Errorf("sandbox-network inventory missing complete SNAT subnet %q", key)
+		}
+	}
+	if strings.TrimSpace(inv.Stacks.Security.SandboxSG.SecurityGroupName) == "" {
+		return fmt.Errorf("sandbox-network inventory missing Sandbox security group name")
+	}
+	if len(inv.Stacks.Security.SandboxSG.Egress) == 0 {
+		return fmt.Errorf("sandbox-network inventory requires Sandbox security group egress rules")
+	}
+	return nil
+}
+
+func validateCollaborationInventory(inv CollaborationInventory) error {
+	if !inv.Enabled {
+		return nil
+	}
+	required := map[string]string{
+		"existing_cluster_id": inv.ExistingClusterID,
+		"existing_endpoint":   inv.ExistingEndpoint,
+		"database":            inv.Database,
+		"account":             inv.Account,
+		"account_host":        inv.AccountHost,
+		"ssm_secret_name":     inv.SSMSecretName,
+		"namespace":           inv.Namespace,
+		"node_pool":           inv.NodePool,
+	}
+	for field, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("inventory missing stacks.collaboration.%s", field)
+		}
+	}
+	if inv.AccountHost != "%" {
+		return fmt.Errorf("inventory stacks.collaboration.account_host must be %% for dynamic TKE clients")
+	}
+	host, rawPort, err := net.SplitHostPort(inv.ExistingEndpoint)
+	if err != nil || strings.TrimSpace(host) == "" {
+		return fmt.Errorf("inventory stacks.collaboration.existing_endpoint must be host:port")
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port <= 0 || port > 65535 {
+		return fmt.Errorf("inventory stacks.collaboration.existing_endpoint has an invalid port")
+	}
 	return nil
 }
 
@@ -77,8 +172,6 @@ func validatePulsarInventory(inv PulsarInventory) error {
 		return nil
 	}
 	required := map[string]string{
-		"existing_cluster_id":     inv.ExistingClusterID,
-		"broker_url":              inv.BrokerURL,
 		"expected_cluster_name":   inv.ExpectedClusterName,
 		"expected_product_name":   inv.ExpectedProductName,
 		"expected_vpc_id":         inv.ExpectedVPCID,
@@ -92,6 +185,10 @@ func validatePulsarInventory(inv PulsarInventory) error {
 		"user_auth_ssm_secret":    inv.UserAuthSSMSecret,
 		"ctl_ssm_secret":          inv.CTLSSMSecret,
 		"referral_ssm_secret":     inv.ReferralSSMSecret,
+	}
+	if !inv.ManageCluster {
+		required["existing_cluster_id"] = inv.ExistingClusterID
+		required["broker_url"] = inv.BrokerURL
 	}
 	for field, value := range required {
 		if strings.TrimSpace(value) == "" {
@@ -107,6 +204,23 @@ func validatePulsarInventory(inv PulsarInventory) error {
 	for _, zoneID := range inv.ExpectedZoneIDs {
 		if zoneID <= 0 {
 			return fmt.Errorf("inventory stacks.pulsar.expected_zone_ids must contain positive values")
+		}
+	}
+	if inv.ManageCluster {
+		if (inv.ExistingClusterID == "") != (inv.BrokerURL == "") {
+			return fmt.Errorf("managed Pulsar existing_cluster_id and broker_url must both be empty before creation or both record the created cluster")
+		}
+		if inv.PurchaseMonths < 1 || inv.PurchaseMonths > 50 {
+			return fmt.Errorf("managed Pulsar purchase_months must be between 1 and 50")
+		}
+		if inv.StorageSizeGB < 0 {
+			return fmt.Errorf("managed Pulsar storage_size_gb must not be negative")
+		}
+		if inv.AutoRenewFlag != 0 && inv.AutoRenewFlag != 1 {
+			return fmt.Errorf("managed Pulsar auto_renew_flag must be 0 or 1")
+		}
+		if inv.AutoVoucher != 0 && inv.AutoVoucher != 1 {
+			return fmt.Errorf("managed Pulsar auto_voucher must be 0 or 1")
 		}
 	}
 	if inv.MessageTTLSeconds <= 0 {

@@ -6,7 +6,7 @@ import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { AuthenticationService } from "@opencraft/workbench-runtime";
 import { authenticationProviderAdapter } from "../apps/workbench-web/src/runtime/authentication-contributions";
-import type { AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
+import type { AppServerThread, AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 import { deserialize, serialize } from "bson";
 import { IDBFactory } from "fake-indexeddb";
 
@@ -42,7 +42,7 @@ import {
   TencentTatSessionMultiplexer,
 } from "../plugins/lightvela-hermes/src/lib/tencent-tat-session-multiplexer";
 import { createTatWebSocketConstructor } from "../plugins/lightvela-hermes/src/lib/tat-websocket";
-import { HermesAppServerAdapter, mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
+import { HermesAppServerAdapter, isUnmaterializedHermesHistory, mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 import { HermesBotAppServerHandler } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/bot-protocol-handler";
 import { BrowserHermesAppServerBridge } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/index";
 import { encodeHermesModelSelection } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/model-catalog";
@@ -899,7 +899,7 @@ function createHermesHistoryHarness() {
           stored_session_id: "stored-1",
           message_count: 2,
           messages: [],
-          info: { cwd: "/workspace/projects/demo" },
+          info: { cwd: "/workspace/projects/demo", reasoning_effort: "high" },
         } as T;
       }
       if (method === "session.list") {
@@ -957,9 +957,11 @@ test("Hermes paginated resume exposes a cursor and hydrates stored history", asy
   }) as {
     thread: { turns: unknown[] };
     turnsBackwardsCursor: string | null;
+    reasoningEffort: string | null;
   };
   assert.deepEqual(resumed.thread.turns, []);
   assert.equal(resumed.turnsBackwardsCursor, "hermes-messages:0");
+  assert.equal(resumed.reasoningEffort, "high");
   assert.equal(harness.calls.some(({ method }) => method === "session.history"), false);
 
   const page = await dispatchAppServerRequest(harness.adapter, {
@@ -1312,6 +1314,19 @@ test("Hermes first-Turn promotion treats only an unmaterialized empty history ro
   );
 });
 
+test("Hermes accepts Dashboard's Conversation-not-found spelling only for a resumed empty session", () => {
+  const empty = {
+    extra: { hermes: { messageCount: 0 } },
+  } as AppServerThread;
+  const materialized = {
+    extra: { hermes: { messageCount: 1 } },
+  } as AppServerThread;
+  const missing = new Error("Conversation not found: 20260915_220527_127dc9");
+  assert.equal(isUnmaterializedHermesHistory(empty, missing), true);
+  assert.equal(isUnmaterializedHermesHistory(materialized, missing), false);
+  assert.equal(isUnmaterializedHermesHistory(empty, new Error("HTTP 500: storage unavailable")), false);
+});
+
 test("Hermes resume does not hide a missing durable history that should contain messages", async () => {
   const rpc: HermesRpcClient = {
     async call<T>(method: string): Promise<T> {
@@ -1456,6 +1471,37 @@ test("Hermes model.options is projected as a provider-safe AppServer catalog", a
   assert.deepEqual(calls, [{ method: "model.options", params: { explicit_only: true } }]);
 });
 
+test("Hermes reasoning capability distinguishes unsupported, optional, and mandatory thinking", async () => {
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "model.options") return {
+        model: "glm-5.3-flash", provider: "tokenhub", providers: [{
+          slug: "tokenhub", name: "TokenHub", authenticated: true,
+          models: ["plain", "optional", "glm-5.3-flash"],
+          capabilities: {
+            plain: { reasoning: false },
+            optional: { reasoning: true, can_disable_reasoning: true },
+            "glm-5.3-flash": { reasoning: true, can_disable_reasoning: false },
+          },
+        }],
+      } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const response = await dispatchAppServerRequest(adapter, { id: 1, method: "model/list", params: { includeHidden: false } }) as {
+    data: Array<{ displayName: string; supportedReasoningEfforts: Array<{ reasoningEffort: string }>; defaultReasoningEffort: string | null }>;
+  };
+  const byName = new Map(response.data.map((model) => [model.displayName, model]));
+  assert.deepEqual(byName.get("plain")?.supportedReasoningEfforts, []);
+  assert.equal(byName.get("plain")?.defaultReasoningEffort, null);
+  assert.deepEqual(byName.get("optional")?.supportedReasoningEfforts.map(({ reasoningEffort }) => reasoningEffort), ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+  assert.equal(byName.get("optional")?.defaultReasoningEffort, "medium");
+  assert.deepEqual(byName.get("glm-5.3-flash")?.supportedReasoningEfforts.map(({ reasoningEffort }) => reasoningEffort), ["low", "high", "max"]);
+  assert.equal(byName.get("glm-5.3-flash")?.defaultReasoningEffort, "high");
+});
+
 test("Hermes model catalog is scoped to the owning Thread profile and live session", async () => {
   const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
   const rpc: HermesRpcClient = {
@@ -1542,6 +1588,16 @@ test("Hermes model selection is decoded for session creation and live turn switc
       if (method === "config.set") {
         return { value: "model-b", confirm_required: false } as T;
       }
+      if (method === "model.options") {
+        return {
+          model: "model-a",
+          provider: "provider-a",
+          providers: [
+            { slug: "provider-a", name: "Provider A", authenticated: true, models: ["model-a"] },
+            { slug: "provider-b", name: "Provider B", authenticated: true, models: ["model-b"] },
+          ],
+        } as T;
+      }
       if (method === "prompt.submit") return { status: "accepted" } as T;
       throw new Error(`Unexpected ${method}`);
     },
@@ -1563,16 +1619,126 @@ test("Hermes model selection is decoded for session creation and live turn switc
 
   const next = encodeHermesModelSelection("provider-b", "model-b");
   await adapter.startTurn(thread.id, [{ type: "text", text: "hello" }], next);
-  assert.equal(calls[1]?.method, "config.set");
-  assert.deepEqual(calls[1]?.params, {
+  assert.equal(calls[1]?.method, "model.options");
+  assert.equal(calls[2]?.method, "config.set");
+  assert.deepEqual(calls[2]?.params, {
     session_id: "live-model",
     key: "model",
-    value: "'model-b' --provider 'provider-b' --session",
+    value: "model-b --provider provider-b --session",
     confirm_expensive_model: true,
   });
-  assert.equal(calls[2]?.method, "prompt.submit");
-  assert.equal(calls[2]?.params.queued, true);
+  assert.equal(calls[3]?.method, "prompt.submit");
+  assert.equal(calls[3]?.params.queued, true);
   assert.equal(adapter.executionModel(thread.id), next);
+});
+
+test("Hermes applies AppServer reasoning effort to new and existing sessions", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      const value = params as Record<string, unknown>;
+      calls.push({ method, params: value });
+      if (method === "session.create") {
+        return {
+          session_id: "live-reasoning",
+          stored_session_id: "stored-reasoning",
+          message_count: 0,
+          messages: [],
+          info: {
+            cwd: value.cwd,
+            model: value.model,
+            provider: value.provider,
+          },
+        } as T;
+      }
+      if (method === "config.set") return { value: value.value } as T;
+      if (method === "prompt.submit") return { status: "accepted" } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const model = encodeHermesModelSelection("tokenhub", "glm-5.3-flash");
+  const started = await dispatchAppServerRequest(adapter, {
+    id: 1,
+    method: "thread/start",
+    params: { cwd: "/workspace", model, effort: "high" },
+  }) as { thread: { id: string }; reasoningEffort: string | null };
+
+  assert.equal(started.reasoningEffort, "high");
+  assert.deepEqual(calls[0], {
+    method: "session.create",
+    params: {
+      cwd: "/workspace",
+      source: "desktop",
+      model: "glm-5.3-flash",
+      provider: "tokenhub",
+      reasoning_effort: "high",
+    },
+  });
+
+  await dispatchAppServerRequest(adapter, {
+    id: 2,
+    method: "turn/start",
+    params: {
+      threadId: started.thread.id,
+      input: [{ type: "text", text: "hello" }],
+      model,
+      effort: "low",
+      clientUserMessageId: "reasoning-message",
+    },
+  });
+
+  assert.deepEqual(calls.slice(1), [
+    {
+      method: "config.set",
+      params: {
+        session_id: "live-reasoning",
+        key: "reasoning",
+        value: "low",
+      },
+    },
+    {
+      method: "prompt.submit",
+      params: {
+        session_id: "live-reasoning",
+        text: "hello",
+        queued: true,
+      },
+    },
+  ]);
+  assert.equal(adapter.executionReasoningEffort(started.thread.id), "low");
+});
+
+test("Hermes rebinds a stale foreign provider to the unique live catalog owner", async () => {
+  const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, raw?: unknown): Promise<T> {
+      const params = (raw ?? {}) as Record<string, unknown>;
+      calls.push({ method, params });
+      if (method === "session.create") return {
+        session_id: "live-stale", stored_session_id: "stored-stale", message_count: 0, messages: [],
+        info: { model: "deepseek-v4-flash-0731", provider: "111", cwd: "/workspace" },
+      } as T;
+      if (method === "model.options") return {
+        model: "deepseek-v4-flash-0731",
+        provider: "111",
+        providers: [{ slug: "111", name: "111", authenticated: true, models: ["deepseek-v4-flash-0731", "hy-3d-3.0"] }],
+      } as T;
+      if (method === "config.set") return { value: "hy-3d-3.0", confirm_required: false } as T;
+      if (method === "prompt.submit") return { status: "accepted" } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const thread = await adapter.startThread("/workspace");
+  await adapter.startTurn(thread.id, [{ type: "text", text: "hello" }],
+    encodeHermesModelSelection("lightvela-custom-111-1yq8src", "hy-3d-3.0"));
+  const configSet = calls.find(({ method }) => method === "config.set");
+  assert.equal(configSet?.params.value, "hy-3d-3.0 --provider 111 --session");
+  assert.equal(calls.at(-1)?.method, "prompt.submit");
+  assert.equal(adapter.executionModel(thread.id), encodeHermesModelSelection("111", "hy-3d-3.0"));
 });
 
 test("Hermes cold deep links recover their owning Profile before Resume", async () => {
@@ -1774,7 +1940,11 @@ class FakeHermesRpcSocket extends EventTarget {
   readyState = WebSocket.OPEN;
   readonly requests: Array<{ id: number | string; method: string; params: Record<string, unknown> }> = [];
   send(data: string): void {
-    this.requests.push(JSON.parse(data) as { id: number | string; method: string; params: Record<string, unknown> });
+    const request = JSON.parse(data) as { id: number | string; method: string; params: Record<string, unknown> };
+    this.requests.push(request);
+    if (request.method === "groups.capabilities") queueMicrotask(() => this.receive({
+      jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "groups.capabilities unsupported" },
+    }));
   }
   receive(value: unknown): void {
     this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) }));
@@ -1942,7 +2112,7 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
     enableBotConversations: true,
     history: {
       async readMessages() {
-        throw new Error('HTTP 404: {"detail":"Session not found"}');
+        throw new Error("Conversation not found: release-stored-1");
       },
       dispose() {},
     },
@@ -2059,7 +2229,9 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
   socket.receive({ jsonrpc: "2.0", id: createSession.id, result: {
     session_id: "release-live-1",
     stored_session_id: "release-stored-1",
-    message_count: 0,
+    // Gateway state is not the Dashboard's durable-row count. A newly resumed
+    // canonical Bot Chat can report state while its REST transcript is absent.
+    message_count: 1,
     messages: [],
   } });
   await flush();
@@ -2099,7 +2271,14 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
   await flush();
   const readEmptyList = socket.requests.at(-1)!;
   assert.equal(readEmptyList.method, "session.list");
-  socket.receive({ jsonrpc: "2.0", id: readEmptyList.id, result: { sessions: [] } });
+  socket.receive({ jsonrpc: "2.0", id: readEmptyList.id, result: { sessions: [{
+    id: "release-stored-1",
+    title: "Bot Chat",
+    preview: "",
+    started_at: 1,
+    source: "desktop",
+    profile: "release-captain",
+  }] } });
   assert.deepEqual((await readEmptyConversation).initialMessagesPage.data, []);
 
   const requestCountBeforeReopen = socket.requests.length;
@@ -2543,6 +2722,7 @@ test("Hermes Bot send idempotency owns the in-flight request, not only its recei
   }) => void) | null = null;
   let submissions = 0;
   const adapter = {
+    async loadThread() {},
     profileForThread: () => "default",
     submitBotTurn: async () => {
       submissions += 1;
@@ -2557,6 +2737,7 @@ test("Hermes Bot send idempotency owns the in-flight request, not only its recei
   };
   const first = handler.handle("bot/message/send", params) as Promise<Record<string, unknown>>;
   const replay = handler.handle("bot/message/send", structuredClone(params)) as Promise<Record<string, unknown>>;
+  await flush();
   assert.equal(submissions, 1);
   resolveSubmission?.({
     turn: {
@@ -3073,6 +3254,24 @@ test("Hermes Dashboard history client requests authenticated bounded transcript 
   await history.readMessages("stored/1", { limit: 120, offset: 0, order: "latest", includeCompacted: true });
   assert.equal(requestedPath, "/api/sessions/stored%2F1/messages?limit=120&offset=0&order=latest&include_compacted=true");
   assert.equal(requestedToken, "dashboard-secret");
+});
+
+test("Hermes Dashboard history client unwraps an HTTP 200 semantic error envelope", async () => {
+  const history = new HermesDashboardHistoryClient({
+    async fetchJson<T>() {
+      return { detail: "Conversation not found: 20260915_220527_127dc9" } as T;
+    },
+    close() {},
+  }, "dashboard-secret");
+  await assert.rejects(
+    history.readMessages("20260915_220527_127dc9", {
+      limit: 120,
+      offset: 0,
+      order: "latest",
+      includeCompacted: true,
+    }),
+    /Conversation not found: 20260915_220527_127dc9/u,
+  );
 });
 
 test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer shapes", async () => {

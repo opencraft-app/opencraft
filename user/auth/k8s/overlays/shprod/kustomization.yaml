@@ -12,6 +12,7 @@ patches:
   - path: patch-phone-auth.yaml
   - path: patch-oauth-registration.yaml
   - path: patch-shadowbinding.yaml
+  - path: patch-referral.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

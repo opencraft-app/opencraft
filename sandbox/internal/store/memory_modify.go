@@ -110,6 +110,22 @@ func (s *MemoryStore) GetRunningModifyOperationByInstance(_ context.Context, ins
 	return oldest, found, nil
 }
 
+func (s *MemoryStore) UpdateModifyOperationResizePlan(_ context.Context, in ModifyOperationResizePlan) (core.ModifyOperation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	op, ok := s.modifyOperations[strings.TrimSpace(in.ID)]
+	if !ok {
+		return core.ModifyOperation{}, core.ErrModifyOperationNotFound
+	}
+	op.SourceInstanceType = strings.TrimSpace(in.SourceInstanceType)
+	op.InstanceTypeCandidates = append([]string(nil), in.InstanceTypeCandidates...)
+	op.InstanceTypeCandidateIndex = in.InstanceTypeCandidateIndex
+	op.AppliedInstanceType = strings.TrimSpace(in.AppliedInstanceType)
+	op.UpdatedAt = time.Now().UTC()
+	s.modifyOperations[op.ID] = op
+	return op, nil
+}
+
 func (s *MemoryStore) UpdateModifyOperationProgress(_ context.Context, in ModifyOperationProgress) (core.ModifyOperation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

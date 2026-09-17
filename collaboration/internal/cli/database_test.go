@@ -190,10 +190,11 @@ func TestParseDatabaseConfig支持显式TDSQLDSN文件(t *testing.T) {
 	}
 }
 
-func TestParseDatabaseConfig拒绝旧MySQL方言(t *testing.T) {
-	_, err := parseDatabaseConfig("migrate", []string{"--database-driver", "mysql"})
-	if code := apperror.CodeOf(err); code != "CONFIG_INVALID" {
-		t.Fatalf("错误码 = %q，期望 CONFIG_INVALID；err=%v", code, err)
+func TestParseDatabaseConfig支持显式MySQL方言(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mysql.dsn")
+	cfg, err := parseDatabaseConfig("migrate", []string{"--database-driver", "mysql", "--database-dsn-file", path})
+	if err != nil || cfg.Driver != config.DatabaseDriverMySQL || cfg.DSNFile != path {
+		t.Fatalf("MySQL config = %#v err=%v", cfg, err)
 	}
 }
 
@@ -203,6 +204,38 @@ func TestParseDatabaseConfig拒绝未知方言(t *testing.T) {
 	})
 	if code := apperror.CodeOf(err); code != "CONFIG_INVALID" {
 		t.Fatalf("错误码 = %q，期望 CONFIG_INVALID；err=%v", code, err)
+	}
+}
+
+func TestParseDatabaseRecoveryConfig只允许显式MySQL和Apply开关(t *testing.T) {
+	dsnFile := filepath.Join(t.TempDir(), "mysql.dsn")
+	plan, apply, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "mysql",
+		"--database-dsn-file", dsnFile,
+	})
+	if err != nil || apply || plan.Driver != config.DatabaseDriverMySQL {
+		t.Fatalf("plan = (%#v, %v, %v)", plan, apply, err)
+	}
+	applyConfig, apply, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "mysql",
+		"--database-dsn-file", dsnFile,
+		"--apply",
+	})
+	if err != nil || !apply || applyConfig.Driver != config.DatabaseDriverMySQL {
+		t.Fatalf("apply = (%#v, %v, %v)", applyConfig, apply, err)
+	}
+	if _, _, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "tdsql",
+		"--database-dsn-file", dsnFile,
+	}); apperror.CodeOf(err) != "CONFIG_INVALID" {
+		t.Fatalf("tdsql recovery error = %v", err)
+	}
+	if _, _, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "mysql",
+		"--database-dsn-file", dsnFile,
+		"--apply", "--apply",
+	}); apperror.CodeOf(err) != "CONFIG_INVALID" {
+		t.Fatalf("duplicate apply error = %v", err)
 	}
 }
 

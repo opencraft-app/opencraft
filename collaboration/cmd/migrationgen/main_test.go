@@ -15,7 +15,7 @@ func TestParseDialect只接受正式方言(t *testing.T) {
 	}{
 		{input: "sqlite", dialect: dialect.SQLite, directory: "sqlite", ok: true},
 		{input: "tdsql", dialect: dialect.MySQL, directory: "tdsql", ok: true},
-		{input: "mysql", ok: false},
+		{input: "mysql", dialect: dialect.MySQL, directory: "mysql", ok: true},
 	}
 	for _, tt := range tests {
 		gotDialect, gotDirectory, err := parseDialect(tt.input)

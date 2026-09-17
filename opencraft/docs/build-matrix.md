@@ -8,7 +8,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | --- | --- | --- | --- |
 | `web-browser` | Vite, HTTP origin, same-origin `/appserver` gateway | Hashed static release | Linux/macOS/Windows |
 | `lightvela-web` | LightVela/Hermes Vite product, no HyperNode plugin | `dist-lightvela-web` hashed static release | Linux/macOS/Windows |
-| `electron-renderer` | Vite, relative assets, Electron loopback origin | Relocatable renderer tree | Linux/macOS/Windows |
+| `electron-renderer` | Vite, origin-root asset URLs, Electron loopback origin | Relocatable renderer tree | Linux/macOS/Windows |
 | `electron-host` | Sandboxed Electron main/preload + static loopback origin + independent OpenCraft Daemon | Main/preload, daemon executable and pinned DSH runtime | Linux/macOS/Windows |
 | `electron-macos-arm64-zip` | Electron host + renderer | Apple Silicon `.app` ZIP | Linux/macOS |
 | `electron-macos-arm64-preview` | Electron host + renderer | Isolated Apple Silicon ad-hoc `.app` ZIP | macOS |

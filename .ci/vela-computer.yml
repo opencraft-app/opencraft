@@ -1,7 +1,7 @@
 version: v2.0
 name: 构建 vela-computer 候选制品
 
-"on":
+on:
   push:
     branches: [ master ]
     paths: [ vela-computer/** ]

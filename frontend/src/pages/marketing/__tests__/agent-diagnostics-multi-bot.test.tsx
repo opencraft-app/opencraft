@@ -12,6 +12,7 @@ const getRescueExportStatus = vi.fn();
 const getHermesImportStatus = vi.fn();
 const startRescueExport = vi.fn();
 const resetInstanceConfig = vi.fn();
+const resetToPlatformDefault = vi.fn();
 const addBot = vi.fn();
 const botRepository = { execDebugCommand, getRescueExportStatus, getHermesImportStatus, startRescueExport, resetInstanceConfig };
 const testRegion = vi.hoisted(() => ({ isCN: true, isGlobal: false }));
@@ -100,8 +101,15 @@ vi.mock("@/contexts/repository-context", () => ({
   }),
 }));
 
+vi.mock("@/pages/marketing/agent-model-config/model-config-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/pages/marketing/agent-model-config/model-config-client")>();
+  return {
+    ...actual,
+    createHermesModelConfigClient: () => ({ resetToPlatformDefault }),
+  };
+});
+
 vi.mock("@/components/site/product-chrome", () => ({
-  ProductFooter: () => null,
   ProductReturnHomeHeader: () => null,
 }));
 
@@ -165,6 +173,18 @@ describe("multi-Bot diagnostics", () => {
     getRescueExportStatus.mockResolvedValue(null);
     getHermesImportStatus.mockResolvedValue(null);
     execDebugCommand.mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "root log" });
+    resetInstanceConfig.mockResolvedValue({
+      keyId: "key-default",
+      keyPrefix: "sk-default",
+      config: {
+        providerName: "custom",
+        baseUrl: "https://gateway.lightvela.test/v1",
+        modelId: "auto",
+        api: "chat_completions",
+        apiKey: "platform-default-secret",
+      },
+    });
+    resetToPlatformDefault.mockResolvedValue({ primary: null, fallbacks: [], configuredModels: [] });
     addBot.mockResolvedValue({ ...buildBot(), id: "created", profileId: "created", isDefault: false });
   });
   afterEach(cleanup);
@@ -174,14 +194,14 @@ describe("multi-Bot diagnostics", () => {
     await screen.findByText("Agent 备份与恢复");
     expect(screen.getByText("查看 Hermes Agent 日志，并集中执行相关维护操作")).toBeInTheDocument();
     await waitFor(() => expect(getRescueExportStatus).toHaveBeenCalledWith("ins-1"));
-    expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeEnabled();
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("root log");
     expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h -n 50");
 
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
-    expect(screen.getByText("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
+    expect(screen.getByText("查看当前 Bot 的日志和模型配置；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
     const chatTab = screen.getByRole("tab", { name: "对话" });
     expect(chatTab).toBeDisabled();
     expect(chatTab).not.toHaveAttribute("title");
@@ -195,6 +215,32 @@ describe("multi-Bot diagnostics", () => {
     await screen.findByText("sales log");
     expect(execDebugCommand).toHaveBeenLastCalledWith("sales", "hermes -p 'sales' logs --since 1h -n 50");
     expect(getRescueExportStatus.mock.calls.every(([id]) => id === "ins-1")).toBe(true);
+  });
+
+  it("resets only the selected named Profile with the platform default key", async () => {
+    render(page("sales"));
+
+    const card = (await screen.findByRole("heading", { name: "重置模型配置" })).closest("article");
+    expect(card).not.toBeNull();
+    const execute = card!.querySelector("button") as HTMLButtonElement;
+    expect(execute).toBeEnabled();
+    fireEvent.click(execute);
+    fireEvent.click(await screen.findByRole("button", { name: "确认重置" }));
+
+    await waitFor(() => expect(resetInstanceConfig).toHaveBeenCalledWith("sales"));
+    expect(resetToPlatformDefault).toHaveBeenCalledWith({
+      apiKey: "platform-default-secret",
+      model: {
+        id: "auto",
+        providerKey: "custom",
+        providerName: "custom",
+        baseUrl: "https://gateway.lightvela.test/v1",
+        routeBaseUrl: "https://gateway.lightvela.test/v1",
+        apiMode: "chat_completions",
+        keyEnv: "",
+      },
+    });
+    expect(execDebugCommand).toHaveBeenCalledWith("sales", "acli gateway restart --agent 'sales'");
   });
 
   it("retains instance backup progress and disables maintenance when returning from a sibling", async () => {

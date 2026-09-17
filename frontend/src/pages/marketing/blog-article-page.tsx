@@ -125,7 +125,7 @@ export function BlogArticlePage({
   slug,
 }: BlogArticlePageProps) {
   const t = useT();
-  const post = getBlogPost(slug);
+  const post = getBlogPost(slug, publicLocale ?? "en-US");
 
   if (!post) return null;
 
@@ -135,6 +135,7 @@ export function BlogArticlePage({
   const articlePath = currentPath?.startsWith("/") ? currentPath : `/blog/${post.slug}`;
   const coverBlock = post.content[0];
   const coverAlt = coverBlock?.type === "image" ? coverBlock.alt : post.title;
+  const articleLang = publicLocale === "en-US" || !publicLocale ? "en" : publicLocale;
 
   return (
     <div className="landing-page flex min-h-screen flex-col bg-white text-black">
@@ -148,7 +149,7 @@ export function BlogArticlePage({
         renderLanguageSwitcher={renderLanguageSwitcher}
       />
       <main className="flex-1 px-6 pb-24 pt-[116px] sm:px-10">
-        <article lang="en" className="mx-auto w-full max-w-5xl">
+        <article lang={articleLang} className="mx-auto w-full max-w-5xl">
           <a
             href={blogHref}
             aria-label={t("返回")}

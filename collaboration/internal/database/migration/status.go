@@ -33,8 +33,8 @@ func StatusFor(
 	db *sql.DB,
 	dialect config.DatabaseDriver,
 ) (StatusInfo, error) {
-	if dialect == config.DatabaseDriverTDSQL {
-		return statusTDSQL(ctx, db)
+	if dialect == config.DatabaseDriverTDSQL || dialect == config.DatabaseDriverMySQL {
+		return statusTDSQLFor(ctx, db, dialect)
 	}
 	dir, err := embeddedDirFor(dialect)
 	if err != nil {
@@ -120,7 +120,7 @@ func readExistingRevisionsFor(
 		SELECT COUNT(*) FROM sqlite_schema
 		WHERE type = 'table' AND name = ?
 	`
-	if dialect == config.DatabaseDriverTDSQL {
+	if dialect == config.DatabaseDriverTDSQL || dialect == config.DatabaseDriverMySQL {
 		existsQuery = `
 			SELECT COUNT(*) FROM information_schema.tables
 			WHERE table_schema = DATABASE() AND table_name = ?

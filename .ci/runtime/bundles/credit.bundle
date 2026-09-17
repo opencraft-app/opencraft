@@ -4,15 +4,32 @@ bundles:
     source: credit
     db_contract:
       mode: migration
+      bootstrap_namespace: true
       db_job_service: credit
       migration_operation: migration
       migration_paths:
       - credit/migrations/**
       expected_migration_source: credit/migrations
+      db_job_secret_resolver: credit_db_password
+      secret_resolvers:
+        credit_db_password:
+          type: sops_yaml
+          file: argocd/secrets/{env}/credit-runtime-secrets.sops.yaml
+          yaml_path: stringData.CREDIT_DB_PASSWORD
       verifier:
         namespace: credit
-        configmap: credit-config
-        secret: credit-runtime-secrets
+        image: mysql:8.0
+        service_platform_env_file: argocd/services/credit/{env}/credit-platform.env
+        static_env:
+          CREDIT_DB: credit
+          CREDIT_DB_USER: credit
+        env_from_service_platform:
+          MYSQL_HOST: CREDIT_MYSQL_HOST
+          MYSQL_PORT: CREDIT_MYSQL_PORT
+        env_from_secret_resolver:
+          CREDIT_DB_PASSWORD: credit_db_password
+        node_selector_from_service_platform:
+          pool: CREDIT_NODE_POOL
         database_env: CREDIT_DB
         user_env: CREDIT_DB_USER
         password_env: CREDIT_DB_PASSWORD

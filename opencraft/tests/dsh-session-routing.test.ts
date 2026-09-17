@@ -1,4 +1,11 @@
 import test from "node:test";
+test("fork turn boundaries select the generation that actually owns the logical turn", () => {
+  const routing = new DshSessionRouting(":memory:");
+  routing.publish("parent", { logicalId: "parent", nativeId: "parent.g1", generation: 1, seedThroughSeq: 20, seedThroughTurn: 2, previousLastSeq: 50, previousLastTurn: 5 });
+  assert.deepEqual(routing.forkCoordinates("parent", 4), { nativeId: "parent", lastTurn: 4, beforeTurn: undefined });
+  assert.deepEqual(routing.forkCoordinates("parent", 7), { nativeId: "parent.g1", lastTurn: 4, beforeTurn: undefined });
+  routing.close();
+});
 import assert from "node:assert/strict";
 import { DshSessionRouting } from "../apps/local-agent-host/src/dsh-session-routing.js";
 import { mkdtemp, rm } from "node:fs/promises";

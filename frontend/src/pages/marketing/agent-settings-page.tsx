@@ -40,7 +40,7 @@ import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useI
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
-import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useIsDesktop } from "@/components/site/public-site-header";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
@@ -66,6 +66,10 @@ import {
   type IProductConfig,
 } from "@/pages/marketing/agent-config";
 import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import {
+  createHermesModelConfigClient,
+  HermesModelConfigResponseError,
+} from "@/pages/marketing/agent-model-config/model-config-client";
 import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
@@ -158,8 +162,6 @@ import {
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
-  hermesModelName,
-  hermesSwitchModelFullId,
   isExecCommandSucceeded,
   isResetConfigRouteMissingError,
   truncateExecOutput,
@@ -365,6 +367,13 @@ function TeaSdkSettingsPanel({
 
 /* ─── Types ─── */
 
+// Solar Icons: solar:restart-bold. The arrow joins the circular stroke.
+const RestartIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M18.2577 3.50828C18.538 3.62437 18.7207 3.89785 18.7207 4.20119V8.44383C18.7207 8.85805 18.3849 9.19383 17.9707 9.19383H13.728C13.4247 9.19383 13.1512 9.0111 13.0351 8.73085C12.9191 8.45059 12.9832 8.128 13.1977 7.9135L14.8007 6.3105C12.1674 5.20912 9.01606 5.7309 6.87348 7.87348C4.04217 10.7048 4.04217 15.2952 6.87348 18.1265C9.70478 20.9578 14.2952 20.9578 17.1265 18.1265C18.7727 16.4803 19.4622 14.2401 19.1935 12.0937C19.142 11.6827 19.4335 11.3078 19.8445 11.2563C20.2555 11.2049 20.6304 11.4963 20.6819 11.9073C21.0057 14.4934 20.1746 17.1997 18.1872 19.1872C14.7701 22.6043 9.2299 22.6043 5.81282 19.1872C2.39573 15.7701 2.39573 10.2299 5.81282 6.81282C8.55119 4.07444 12.6515 3.5312 15.9309 5.18028L17.4404 3.67086C17.6549 3.45637 17.9774 3.3922 18.2577 3.50828Z" />
+  </svg>
+);
+
 const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 1024 1024" aria-hidden="true" fill="none" {...props}>
     <path
@@ -383,14 +392,18 @@ type WorkspaceActionTooltipSide = "top" | "bottom";
 const WORKSPACE_ACTION_TOOLTIP_GAP = 8;
 const WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN = 16;
 
-function WorkspaceActionTooltip({
+export function WorkspaceActionTooltip({
   children,
   content,
   side = "top",
+  compact = false,
+  focusable = true,
 }: {
   children: ReactNode;
   content?: ReactNode;
   side?: WorkspaceActionTooltipSide;
+  compact?: boolean;
+  focusable?: boolean;
 }) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -465,7 +478,7 @@ function WorkspaceActionTooltip({
     <span
       ref={triggerRef}
       className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
-      tabIndex={0}
+      tabIndex={focusable ? 0 : undefined}
       aria-describedby={open ? tooltipId : undefined}
       onMouseEnter={showTooltip}
       onMouseLeave={scheduleClose}
@@ -485,7 +498,8 @@ function WorkspaceActionTooltip({
               id={tooltipId}
               role="tooltip"
               className={cn(
-                "pointer-events-auto fixed z-50 w-72 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+                "pointer-events-auto fixed z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white text-[11px] font-medium text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+                compact ? "w-max px-2.5 py-1 leading-4" : "w-72 px-3 py-2 text-pretty leading-relaxed",
                 side === "top" && "-translate-y-full",
               )}
               style={{ left: position.left, top: position.top }}
@@ -3498,13 +3512,8 @@ export const AgentSettingsPage = ({
     }
   };
 
-  /*
-   * 重置配置（轮换 API Key）相关
-   * ──────────────────────────────────────────────────────────────
-   * 服务端 reset 成功后旧 key 立即作废；前端必须把本次返回的新运行时
-   * config 立刻下发到实例。若后续 acli 命令失败，用户再次重置会重新
-   * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
-   */
+  /* 使用平台权威 default Key 和默认模型重建当前 Hermes Profile。Key 仅在
+   * 本次调用栈中进入一次性加密 envelope，不进入 React state 或 shell 文本。 */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -3526,7 +3535,7 @@ export const AgentSettingsPage = ({
   }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
-    if (botsLoading || !isActiveBotDefault || maintenanceBusy || getResetBlockReason(activeBot, resetting, remainingInstanceBotCount)) return;
+    if (botsLoading || maintenanceBusy || getResetBlockReason(activeBot, resetting)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
@@ -3537,56 +3546,30 @@ export const AgentSettingsPage = ({
     setResetting(true);
     try {
       const result = await repositories.bots.resetInstanceConfig(targetBotId);
-
-      const resetBackendResult = await repositories.bots.execDebugCommand(
+      const modelConfigClient = createHermesModelConfigClient(
+        repositories.bots.execDebugCommand,
         targetBotId,
-        "acli backend reset-config",
+        activeBot.profileId,
       );
-      if (!isExecCommandSucceeded(resetBackendResult)) {
-        throw new Error(
-          t("初始化配置文件失败：{{detail}}", {
-            detail: truncateExecOutput(resetBackendResult.output, resetBackendResult.status),
-          }),
-        );
-      }
-
-      const hermesScriptCommands = await getHermesScriptCommands(activeBot?.profileId);
-      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
-        name: result.config.providerName,
-        baseUrl: result.config.baseUrl,
-        api: result.config.api,
+      await modelConfigClient.resetToPlatformDefault({
         apiKey: result.config.apiKey,
-        models: [{ id: result.config.modelId, name: hermesModelName(result.config.modelId) }],
+        model: {
+          id: result.config.modelId,
+          providerKey: result.config.providerName,
+          providerName: result.config.providerName,
+          baseUrl: result.config.baseUrl,
+          routeBaseUrl: result.config.baseUrl,
+          apiMode: result.config.api,
+          keyEnv: "",
+        },
       });
-      const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
-      if (!isExecCommandSucceeded(providerSaveResult)) {
-        const sanitizedOutput = result.config.apiKey
-          ? providerSaveResult.output.replace(
-            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-            "sk-***",
-          )
-          : providerSaveResult.output;
-        throw new Error(
-          t("默认模型保存失败：{{detail}}", {
-            detail: truncateExecOutput(sanitizedOutput, providerSaveResult.status),
-          }),
-        );
-      }
 
-      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
-        hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
-      );
-      const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
-      if (!isExecCommandSucceeded(switchModelResult)) {
-        const sanitizedSwitchOutput = result.config.apiKey
-          ? switchModelResult.output.replace(
-            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-            "sk-***",
-          )
-          : switchModelResult.output;
+      const gatewayRestartCommand = (await getHermesScriptCommands(activeBot.profileId)).getGatewayRestartCommand();
+      const gatewayRestartResult = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
+      if (!isExecCommandSucceeded(gatewayRestartResult)) {
         throw new Error(
-          t("默认模型切换失败：{{detail}}", {
-            detail: truncateExecOutput(sanitizedSwitchOutput, switchModelResult.status),
+          t("模型配置已恢复，但 Gateway 重启失败：{{detail}}", {
+            detail: truncateExecOutput(gatewayRestartResult.output, gatewayRestartResult.status),
           }),
         );
       }
@@ -3600,7 +3583,9 @@ export const AgentSettingsPage = ({
         ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
         : isResetConfigRouteMissingError(err)
         ? t("当前后端服务暂不支持重置配置，请稍后再试。")
-        : err instanceof Error ? err.message : fallbackMessage;
+        : err instanceof HermesModelConfigResponseError
+          ? t("当前 Bot 的模型配置恢复失败，原配置已保留。")
+          : err instanceof Error ? err.message : fallbackMessage;
       toast.error(message);
     } finally {
       setResetting(false);
@@ -4633,7 +4618,13 @@ export const AgentSettingsPage = ({
   ) : null;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
+    <div
+      className={cn(
+        "flex min-h-dvh flex-col bg-white",
+        activeSection === "chat" && "lv-agent-chat-page",
+      )}
+      style={{ color: "rgba(0,0,0,0.90)" }}
+    >
       {showHeader && (
         <ProductReturnHomeHeader
           /*
@@ -5229,6 +5220,8 @@ export const AgentSettingsPage = ({
            * 容器 —— 那一下横竖双向的位移就是加载图跟成品对不齐的原因。
            */
           (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main",
+          /* 聊天页自己铺满到底，不留外层的 pb-6（来自 master） */
+          activeSection === "chat" && "lg:pb-0",
         )}
       >
         <section
@@ -5344,11 +5337,9 @@ export const AgentSettingsPage = ({
               const isRepairingBot = repairingBotIds.has(activeBot.id);
               const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
               const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
-              const resetBlockReason = getResetBlockReason(activeBot, resetting, remainingInstanceBotCount);
-              const resetDisabled = botsLoading || !isActiveBotDefault || maintenanceBusy || resetBlockReason !== null;
-              const resetTooltip = resetBlockReason === RESET_BLOCK_REASON.MULTI_BOT
-                ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
-                : maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
+              const resetBlockReason = getResetBlockReason(activeBot, resetting);
+              const resetDisabled = botsLoading || maintenanceBusy || resetBlockReason !== null;
+              const resetTooltip = maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
                   : t("重置模型配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
@@ -5381,7 +5372,8 @@ export const AgentSettingsPage = ({
               return (
                 <div
                   className={cn(
-                    "grid items-start gap-6",
+                    /* lv-agent-settings-grid 来自 master，勿删 */
+                    "lv-agent-settings-grid grid items-start gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
                     hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]",
                   )}
@@ -5510,7 +5502,7 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
-                              <span className="lv-agent-action-item">
+                              <WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
                                   aria-label={restartTooltip}
@@ -5526,14 +5518,16 @@ export const AgentSettingsPage = ({
                                     setShowRestartConfirm(true);
                                   }}
                                 >
-                                  <RefreshCw className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" />
+                                  {isActiveBotRestarting || isRepairingBot ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                                  ) : activeBot.status === "failed" ? (
+                                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                                  ) : (
+                                    <RestartIcon className="h-4 w-4" />
+                                  )}
                                 </button>
-                                <span className="lv-agent-action-tooltip">
-                                  {restartTooltip}
-                                  <span className="lv-agent-action-tooltip-arrow" />
-                                </span>
-                              </span>
-                              <span className="lv-agent-action-item">
+                              </WorkspaceActionTooltip>
+                              <WorkspaceActionTooltip content={deleteTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
                                   aria-label={deleteTooltip}
@@ -5548,11 +5542,7 @@ export const AgentSettingsPage = ({
                                 >
                                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 </button>
-                                <span className="lv-agent-action-tooltip">
-                                  {deleteTooltip}
-                                  <span className="lv-agent-action-tooltip-arrow" />
-                                </span>
-                              </span>
+                              </WorkspaceActionTooltip>
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
@@ -6216,7 +6206,6 @@ export const AgentSettingsPage = ({
         </section>
       </main>
 
-      <ProductFooter />
     </div>
   );
 };

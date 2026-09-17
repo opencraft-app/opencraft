@@ -21,6 +21,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - name: 校验 promote 分支
             shell: bash
             env:
@@ -90,6 +91,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - name: 按环境策略自动合并 GitOps MR
             shell: bash
             run: |
@@ -120,6 +122,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 0
+              enableSubmodule: false
           - name: 校验 GitOps 合并状态并评论 MR
             shell: bash
             run: |
