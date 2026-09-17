@@ -1,6 +1,6 @@
 ## goal
 
-让同 SP 升配在原 CVM 上按目标逻辑规格动态选择腾讯云允许且在售的机型；某个候选因单机型库存、配额或兼容性被拒绝时，持久化进度并尝试下一候选，而不是永久绑定 `SA5.LARGE8`。
+让同 SP 升配在原 CVM 上按目标逻辑规格和地域机型族策略动态选择腾讯云允许且在售的机型；某个候选因单机型库存、配额或兼容性被拒绝时，持久化进度并尝试下一候选，而不是永久绑定 `SA5.LARGE8` 或误选未批准机型族。
 
 ## non_goals
 
@@ -14,6 +14,7 @@
 - TAPD `1010132091137784162`：同 SP 升配保持原地修改、磁盘只增不减和前滚幂等。
 - 2026-09-17 线上证据：`SA2.MEDIUM4` 原实例升到逻辑 `4C8G80G` 时，固定目标 `SA5.LARGE8` 返回 `LimitExceeded.InstanceQuota`；同实例 `DescribeInstancesModification` 同时返回多个 `4C8G` 且 `SELL` 的候选。
 - 用户要求：升配不依赖预创建库存；一个机型不可用时尝试其他可变配机型，保留旧环境变量但不作为升配唯一目标。
+- 用户于 2026-09-17 补充要求：候选机型族严格限定为 `SA5、S5、SA2、SA3、S6`，并按实例实际地域管理；不得再选择 `BF1/S8/SA4/SA9` 等未批准机型族。
 
 ## interface_refs / data_structure_refs
 
@@ -35,7 +36,8 @@
 ## acceptance
 
 - 从腾讯云可变配列表中只选择与目标逻辑 CPU/内存一致且 `SELL` 的候选。
-- 优先保留既有目标机型；候选被明确拒绝时推进并持久化到下一候选。
+- 候选必须按实例实际地域的策略顺序 `SA5 → S5 → SA2 → SA3 → S6` 过滤和排序；未配置地域失败关闭。
+- 候选被明确拒绝时推进并持久化到下一候选。
 - 网络、限频和实例忙等暂态错误不跳过当前候选。
 - 云调用成功但进程在落库前中断时，下一轮通过真实实例规格回读收敛。
 - 老 `modify_operations` 行无需人工迁移数据即可继续运行。
@@ -73,6 +75,7 @@
 
 - 2026-09-17 新加坡生产只读查询：实例 `SA2.MEDIUM4`，目标 `SA5.LARGE8` 在可变配列表但执行被 `LimitExceeded.InstanceQuota` 拒绝。
 - 同一实例精确 `4C8G` 候选包含 `SA2/BF1/SA5/SA4/S8/SA9.LARGE8`（`SELL`），`S5/S9e.LARGE8`（`SOLD_OUT`）。
+- 首版动态候选上线后，该实例曾选中未批准的 `BF1.LARGE8` 并完成交付；随后实时查询显示白名单内 `SA5.LARGE8`、`S5.LARGE8`、`SA2.LARGE8` 均为 `SELL`，可执行受控二次原地变配修正。
 - 基线：`GOWORK=off go test ./internal/provider ./internal/service ./internal/store` 通过。
 - CTL 聚焦基线中 `pkg/pass/worker` 通过；`pkg/instance` 因本机无 rootless Docker 的既有 testcontainers 前置失败，非本任务代码失败。
 
@@ -80,7 +83,7 @@
 
 - 错误分类过宽会在云侧暂态错误时错误切换机型；只允许明确的候选拒绝错误推进。
 - 候选全部失败时实例仍可能停机；本任务至少避免单一机型永久重试，并保留后续恢复策略扩展点。
-- Pool 的 `InstanceType` 继续是新建容量默认值，而原地升配后的已分配实例可能属于同逻辑规格的其他机型族；不得把该字段继续当作现存 CVM 的绝对事实。
+- Pool 的 `InstanceType` 继续是新建容量默认值，而原地升配后的已分配实例可能属于同逻辑规格、同地域策略允许的其他机型族；不得把该字段继续当作现存 CVM 的绝对事实。
 - 腾讯云候选结果会随库存与账号状态变化；候选计划必须在单次 operation 内冻结并持久化。
 
 ## validation
@@ -96,6 +99,7 @@
 - 动态候选在 Sandbox provider/service 内完成；Trade、前端和计费协议不变。
 - `Pool.InstanceType` 作为期望逻辑规格的首选/创建默认，不再作为升配唯一候选。
 - 候选必须与首选目标机型的 CPU/内存完全一致，避免套餐资源漂移。
+- 候选还必须命中实例实际 region 的有序机型族白名单；策略通过 `TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION` 显式管理。
 - 不删除旧环境变量，兼容不支持候选发现的 provider 和旧环境。
 
 ## scan_scope
