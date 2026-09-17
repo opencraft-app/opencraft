@@ -293,9 +293,11 @@ Shadow HMAC 调用 registry；不得为该能力新增 TKEx ServiceAccount、Rol
 与 staging manifests 必须保持零 diff，运行态也不得发生变更。
 
 北京 `sandbox-bj-7` 可单独开启 `PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED`，用于接收 Skill 自动
-探测的 DevCloud `9.0.0.0/8:18084` 直连地址；韩国 `sandbox-kr-1` 不得开启，继续使用可信代理来源与
-devtunnel。该开关只有在 sandbox route control client 成功构造时才生效，不能进入 production、staging
-或其他环境的 Auth 配置。
+探测的 DevCloud `9.0.0.0/8:18084` 地址；韩国 `sandbox-kr-1` 不得开启，继续使用可信代理来源。两站
+CloudLadder testing 的动态 developer route 都必须使用各自的 `devtunnel-testing` 反向隧道和短期
+capability，不能让 TKEx Pod 直连任意 DevCloud。该开关只有在 sandbox route control client 成功构造时
+才生效，不能进入 production、staging 或其他环境的 Auth 配置。已有静态 UIN 路由可以继续保留原落点，
+动态注册的 delivery mode 变化不得顺带改写静态测试账号。
 
 CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
 环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
