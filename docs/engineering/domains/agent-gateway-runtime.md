@@ -31,6 +31,8 @@
 
 - OpenCraft 的页面创建入口唯一拥有卸载：先卸载 React 消费者，再释放 Host；BFCache 保留原图。受管 DSH 意外退出时失败收尾活动请求，不自动重发；按有界预算恢复进程、模型配置和事件流。短暂启动成功不重置连续崩溃预算。见 [宿主验收矩阵](../../../opencraft/design/dsh-host-acceptance.md)。
 
+- OpenCraft Typography 由 Design System 的单一 registry 驱动：`typography.tokens.json` 定义统一 family fallback 与 Web/Native 语义 metrics，TypeScript/Native 直接投影，Web 变量由脚本生成并经 `--check` 门禁。TypographyRole、TextTone 与平台 smoothing 分离；Shell/Sidebar/Settings Chrome 通过语义 primitive 组合，不再在 Feature CSS 复制字号、行高、权重或把主要导航整体降为 secondary。Web/Electron 使用 system-first fallback，Native 使用平台 system face；这统一语义和 fallback owner，不要求跨平台物理字形一致。
+
 - 已保存连接检查只接受 provider/model/revision，由后端解析存储的端点和凭据，密钥不回传界面；未保存修改不自动提交，不把旧密钥用于调用方提供的新地址。
 
 - 模型 Base URL 与操作路径分离；配置、发现、探测和执行前共享校验，禁止把完整操作 URL 再拼接一次。合法网关前缀保留，不静默重写地址。

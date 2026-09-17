@@ -49,6 +49,24 @@ Electron bridge               native/web adapters
 
 ## Package ownership
 
+### Typography ownership
+
+Typography is a design-system protocol, not feature CSS. The checked-in
+`packages/design-system/src/typography/typography.tokens.json` registry is the
+single data authority for font-family roles and per-platform semantic metrics.
+`typography.shared.ts` projects that registry to TypeScript/Native, while
+`scripts/generate-typography.mjs` deterministically creates the Web custom
+properties in `_generated.web.scss`. Generated output is checked but never
+hand-edited.
+
+The hand-written `typography.web.scss` adapter composes a Typography Role with
+an independent TextTone. Platform rasterization remains a root rendering
+policy. This keeps font metrics, theme color and macOS/Windows/browser smoothing
+orthogonal: selection or disabled state can change tone without creating a new
+font role, and platform rendering can change without rewriting every component.
+Shell and extension chrome consume the semantic primitive; feature-local raw
+metrics are reserved for content systems with a separate owner.
+
 ### Client voice input ownership
 
 Voice input is a client input service, not an Agent Host tool or chat model.

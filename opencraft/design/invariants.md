@@ -19,6 +19,7 @@
 | WSP-13 | ephemeral fork 返回结果是 baseline，不请求持久 Resume/queue；旧连接代次不能被采用 | Session.adoptFork + HostRuntime；appserver-session.test.ts 与 smoke-side-chat-appserver.ts |
 | WSP-14 | 当前产品没有下方面板、移动到下方/Show bottom panel 入口或底部占位；旧标签无损归回右侧 | AppShell/RightPanel、restoreRightPanelTabs；类型、聚焦测试、Web/native smoke |
 | WSP-15 | 账号登录或零云端 Bot 不接管本机/其他 Host 工作区；创建仅来自主动环境操作；只有选中 Host 的真实连接错误可请求干预 | App connectionIntervention、LightVela contribution；匿名/已登录零 Bot 回归 |
+| WSP-16 | Skills 与 Cloud Storage 可作为 Workbench 侧栏 Work 区中的 LightVela 独立路由；导航只选择既有贡献页，不能创建/切换 Host、Bot 或会话 | LightVela Work navigation；聚焦路由测试与 Web 验收 |
 
 ## 证据纪律
 

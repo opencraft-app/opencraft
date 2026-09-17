@@ -1,42 +1,112 @@
-import { Suspense, lazy, useMemo } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+import type { ProfileSkillInstalled } from "@opencraft/appserver-protocol";
 import type { AppServerProfileSkillsService } from "@opencraft/profile-skills-appserver";
+import {
+  SettingsActions,
+  SettingsButton,
+  SettingsGroup,
+  SettingsListItem,
+  SettingsNotice,
+  SettingsPageHeader,
+  SettingsSection,
+} from "@opencraft/extension-react";
 
-import type { LightVelaAccountService } from "../account/lightvela-account-service";
-import { HermesAgentConsoleHost } from "./hermes-agent-console-host";
-import { RepositoryProvider } from "../upstream/mono2/contexts/repository-context";
-import { createWorkbenchRepositories } from "../upstream/workbench-repositories";
-import { createProfileSkillsDataLayer } from "./profile-skills-data-layer";
-import { LIGHTVELA_HERMES_HOST_ID } from "./lightvela-hermes-settings-view";
+export function profileSkillsTarget(hostId: string, profileId = "default") {
+  const normalizedHostId = hostId.trim();
+  if (normalizedHostId === "") throw new TypeError("A connected Hermes Host is required");
+  return { hostId: normalizedHostId, profileId };
+}
 
-const HermesAgentSkillsPanel = lazy(async () => {
-  const module = await import("../upstream/mono2/pages/marketing/agent-skills-panel");
-  return { default: module.HermesAgentSkillsPanel };
-});
-
-export function HermesSkillsManagementView({ account, botId, profileSkills }: {
-  readonly account: LightVelaAccountService;
-  readonly botId: string;
+export function HermesSkillsManagementView({
+  hostId,
+  profileId = "default",
+  profileSkills,
+}: {
+  readonly hostId: string;
+  readonly profileId?: string;
   readonly profileSkills?: AppServerProfileSkillsService;
 }) {
-  const repositories = useMemo(() => createWorkbenchRepositories(account), [account]);
-  const skillsDataLayer = useMemo(() => profileSkills === undefined
-    ? undefined
-    : createProfileSkillsDataLayer(profileSkills, { hostId: LIGHTVELA_HERMES_HOST_ID, profileId: "default" }),
-  [profileSkills]);
-  if (skillsDataLayer === undefined) {
-    return <div className="p-6 text-sm text-black/50">Profile Skills protocol is unavailable for this Host.</div>;
+  const [skills, setSkills] = useState<readonly ProfileSkillInstalled[] | null>(null);
+  const [revision, setRevision] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingSkill, setPendingSkill] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (profileSkills === undefined || hostId.trim() === "") return;
+    setError(null);
+    try {
+      const result = await profileSkills.listInstalled(
+        profileSkillsTarget(hostId, profileId),
+        { limit: 100, forceReload: true },
+      );
+      setSkills(result.data);
+      setRevision(result.revision);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [hostId, profileId, profileSkills]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = useCallback((skill: ProfileSkillInstalled) => {
+    if (profileSkills === undefined || revision === null || pendingSkill !== null) return;
+    setPendingSkill(skill.name);
+    setError(null);
+    void profileSkills.setEnabled(profileSkillsTarget(hostId, profileId), {
+      name: skill.name,
+      enabled: !skill.enabled,
+      expectedRevision: revision,
+      operationId: crypto.randomUUID(),
+    }).then(() => load()).catch((cause) => {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }).finally(() => setPendingSkill(null));
+  }, [hostId, load, pendingSkill, profileId, profileSkills, revision]);
+
+  if (profileSkills === undefined) {
+    return <SettingsNotice tone="error">The connected Hermes Host does not expose the Profile Skills protocol.</SettingsNotice>;
   }
+  if (hostId.trim() === "") {
+    return <SettingsNotice>Select a Hermes Host to manage its Profile Skills.</SettingsNotice>;
+  }
+
   return (
-    <RepositoryProvider value={repositories}>
-      <HermesAgentConsoleHost>
-        <Suspense fallback={<div className="flex min-h-48 items-center justify-center text-sm text-black/45">正在加载...</div>}>
-          <HermesAgentSkillsPanel
-            botId={botId}
-            execDebugCommand={account.execDebugCommand.bind(account)}
-            skillsDataLayer={skillsDataLayer}
-          />
-        </Suspense>
-      </HermesAgentConsoleHost>
-    </RepositoryProvider>
+    <>
+      <SettingsPageHeader title="Skills" description={`Installed Skills for Hermes Profile: ${profileId}.`} />
+      <SettingsSection title="Installed Skills" description="Skills are managed through the connected Hermes Host; no LightVela account is required.">
+        <SettingsActions>
+          <SettingsButton type="button" variant="secondary" disabled={pendingSkill !== null} onClick={() => void load()}>
+            Refresh
+          </SettingsButton>
+        </SettingsActions>
+        {error === null ? null : <SettingsNotice tone="error">{error}</SettingsNotice>}
+        {skills === null ? <SettingsNotice>Loading installed Skills…</SettingsNotice> : skills.length === 0 ? (
+          <SettingsNotice>No Skills are installed for this Profile. Refresh after installing a Skill through Hermes.</SettingsNotice>
+        ) : (
+          <SettingsGroup aria-label="Installed Skills">
+            {skills.map((skill) => (
+              <SettingsListItem
+                key={skill.name}
+                label={skill.name}
+                description={skill.description}
+                metadata={`${skill.category} · ${skill.provenance}`}
+                actions={(
+                  <SettingsButton
+                    type="button"
+                    variant="secondary"
+                    disabled={pendingSkill !== null}
+                    onClick={() => toggle(skill)}
+                  >
+                    {pendingSkill === skill.name ? "Saving…" : skill.enabled ? "Disable" : "Enable"}
+                  </SettingsButton>
+                )}
+              />
+            ))}
+          </SettingsGroup>
+        )}
+      </SettingsSection>
+    </>
   );
 }

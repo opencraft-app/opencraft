@@ -1,3 +1,5 @@
+@use "./typography.web" as typography;
+
 // Shared quiet controls. Layout belongs to the consumer, interaction to here.
 @mixin quiet-control {
   appearance: none;
@@ -21,16 +23,13 @@
 // Menus keep their own denser geometry; consumers opt in only for sidebar rows.
 @mixin navigation-control {
   @include quiet-control;
+  @include typography.role(navigation-action, primary);
   display: flex;
   width: 100%;
   min-height: var(--height-navigation-row);
   align-items: center;
   gap: 9px;
   padding: 0 8px;
-  color: var(--color-text-secondary);
-  font-size: var(--codex-sidebar-font-size);
-  line-height: var(--codex-sidebar-line-height);
-  font-weight: 400;
   text-align: left;
   &.is-selected, &[aria-current="page"] {
     background: var(--color-background-button-tertiary-hover);
