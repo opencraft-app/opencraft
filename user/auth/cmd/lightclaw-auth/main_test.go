@@ -205,6 +205,36 @@ func TestBuildDeveloperRouteClientRequiresMatchingSandboxHTTPSHost(t *testing.T)
 	}
 }
 
+func TestBuildDeveloperRouteRegistryDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false")
+	registry, secret, err := buildDeveloperRouteRegistry(
+		"https://api-sandbox-bj-7.lightclaw.tech",
+		service.NewMemoryStore(service.StoreOptions{}),
+	)
+	if err != nil || registry != nil || secret != "" {
+		t.Fatalf("registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+}
+
+func TestBuildDeveloperRouteRegistryRequiresSandboxAndHMAC(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ROUTE_CLOUDLADDER_HMAC_SECRET", "")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "")
+	authStore := service.NewMemoryStore(service.StoreOptions{})
+	if registry, secret, err := buildDeveloperRouteRegistry("https://api-sandbox-bj-7.lightclaw.tech", authStore); err == nil || registry != nil || secret != "" {
+		t.Fatalf("missing secret accepted registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "test-secret")
+	registry, secret, err := buildDeveloperRouteRegistry("https://api-sandbox-bj-7.lightclaw.tech", authStore)
+	if err != nil || registry == nil || secret != "test-secret" {
+		t.Fatalf("registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+	if registry, _, err := buildDeveloperRouteRegistry("https://api.lightvela.com", authStore); err == nil || registry != nil {
+		t.Fatalf("production-like host accepted registry=%v err=%v", registry, err)
+	}
+}
+
 func loggingDiscardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

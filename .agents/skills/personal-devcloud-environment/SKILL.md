@@ -15,7 +15,7 @@ description: 在个人 DevCloud 从零启动可浏览器点测的完整 LightVel
 - DevCloud 只提交回调端口和 TTL。UIN 来自当前 testing 登录会话的 active shadow binding，
   来源 IP 由 Auth 从可信代理链派生。
 - 不读取或下发共享 CloudLadder HMAC、SOPS、`DEVTUNNEL_TOKEN`。国际站只接收绑定
-  UIN、TunnelHost 和 Lease 状态的短期 capability；脚本不把 capability 明文写入状态文件。
+  UIN、TunnelHost 和 Auth testing registry 状态的短期 capability；脚本不把 capability 明文写入状态文件。
 - 不操作共享 Kubernetes context。脚本只接受自己创建的 `kind-lightvela-personal-<site>`，
   且 API server 必须是 loopback。
 - Auth、CTL、Trade、Payment、Subscription、AI Gateway、Sandbox、Service Gateway 和前端

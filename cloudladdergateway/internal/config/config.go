@@ -39,6 +39,11 @@ type DeveloperRoutesConfig struct {
 	Enabled            bool     `yaml:"enabled"`
 	RouteID            string   `yaml:"route_id"`
 	Store              string   `yaml:"store"`
+	RegistryBaseURL    string   `yaml:"registry_base_url"`
+	RegistryRouteID    string   `yaml:"registry_route_id"`
+	RegistryCaller     string   `yaml:"registry_caller"`
+	RegistrySecretEnv  string   `yaml:"registry_secret_env"`
+	RegistryTimeout    string   `yaml:"registry_timeout"`
 	RegistrationRoute  string   `yaml:"registration_route"`
 	RegistrationCaller string   `yaml:"registration_caller"`
 	DeliveryMode       string   `yaml:"delivery_mode"`
@@ -262,6 +267,18 @@ func Load(path string) (Config, error) {
 	if cfg.DeveloperRoutes.Store == "" {
 		cfg.DeveloperRoutes.Store = "memory"
 	}
+	if cfg.DeveloperRoutes.RegistryRouteID == "" {
+		cfg.DeveloperRoutes.RegistryRouteID = "developer-route-registry"
+	}
+	if cfg.DeveloperRoutes.RegistryCaller == "" {
+		cfg.DeveloperRoutes.RegistryCaller = "cloudladdergateway"
+	}
+	if cfg.DeveloperRoutes.RegistrySecretEnv == "" {
+		cfg.DeveloperRoutes.RegistrySecretEnv = "CLOUDLADDER_SHADOW_HMAC_SECRET"
+	}
+	if cfg.DeveloperRoutes.RegistryTimeout == "" {
+		cfg.DeveloperRoutes.RegistryTimeout = "10s"
+	}
 	if cfg.DeveloperRoutes.RegistrationRoute == "" {
 		cfg.DeveloperRoutes.RegistrationRoute = "developer-route-registration"
 	}
@@ -417,6 +434,17 @@ func (c Config) Validate() error {
 		case "kubernetes_lease":
 			if strings.TrimSpace(d.LeaseNamespace) == "" {
 				return fmt.Errorf("developer_routes.lease_namespace is required for kubernetes_lease")
+			}
+		case "http":
+			registryURL, err := url.ParseRequestURI(strings.TrimSpace(d.RegistryBaseURL))
+			if err != nil || registryURL.Host == "" || (registryURL.Scheme != "http" && registryURL.Scheme != "https") || registryURL.User != nil || registryURL.RawQuery != "" || registryURL.Fragment != "" {
+				return fmt.Errorf("developer_routes.registry_base_url must be an absolute http(s) URL without credentials or query")
+			}
+			if strings.TrimSpace(d.RegistryRouteID) == "" || strings.TrimSpace(d.RegistryCaller) == "" || strings.TrimSpace(d.RegistrySecretEnv) == "" {
+				return fmt.Errorf("developer_routes registry route, caller, and secret env are required for http")
+			}
+			if _, err := ParseDuration(d.RegistryTimeout, 10*time.Second); err != nil {
+				return fmt.Errorf("developer_routes.registry_timeout: %w", err)
 			}
 		default:
 			return fmt.Errorf("developer_routes.store %q is not supported", d.Store)
@@ -666,6 +694,11 @@ func applyDeveloperRouteEnvOverrides(cfg *Config) error {
 	}{
 		{"ROUTE_ID", &cfg.DeveloperRoutes.RouteID},
 		{"STORE", &cfg.DeveloperRoutes.Store},
+		{"REGISTRY_BASE_URL", &cfg.DeveloperRoutes.RegistryBaseURL},
+		{"REGISTRY_ROUTE_ID", &cfg.DeveloperRoutes.RegistryRouteID},
+		{"REGISTRY_CALLER", &cfg.DeveloperRoutes.RegistryCaller},
+		{"REGISTRY_SECRET_ENV", &cfg.DeveloperRoutes.RegistrySecretEnv},
+		{"REGISTRY_TIMEOUT", &cfg.DeveloperRoutes.RegistryTimeout},
 		{"REGISTRATION_ROUTE", &cfg.DeveloperRoutes.RegistrationRoute},
 		{"REGISTRATION_CALLER", &cfg.DeveloperRoutes.RegistrationCaller},
 		{"DELIVERY_MODE", &cfg.DeveloperRoutes.DeliveryMode},
