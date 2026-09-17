@@ -516,6 +516,28 @@ test_browser_login_is_minted_privately() (
     || fail "browser session token file survived bootstrap startup"
 )
 
+test_browser_nonce_retries_empty_generation() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/browser-nonce" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  local attempts_file nonce
+  attempts_file="$TEST_ROOT/browser-nonce-attempts"
+  printf '0\n' >"$attempts_file"
+  browser_nonce_once() {
+    local attempts
+    attempts="$(<"$attempts_file")"
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" >"$attempts_file"
+    if ((attempts == 1)); then
+      return 0
+    fi
+    printf '%s\n' 'valid_browser_nonce_0123456789'
+  }
+  nonce="$(generate_browser_nonce)"
+  assert_eq 'valid_browser_nonce_0123456789' "$nonce" "browser nonce retry result"
+  assert_eq '2' "$(<"$attempts_file")" "browser nonce retry count"
+)
+
 test_skill_name_and_paths_are_consistent() {
   rg -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
   if rg -n 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
@@ -558,6 +580,7 @@ run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_
 run_test 'testing gateway migrates stale state and rejects production overrides' test_testing_gateway_migrates_stale_state_and_rejects_prod_override
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately
+run_test 'browser login retries an empty nonce generation' test_browser_nonce_retries_empty_generation
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
 
