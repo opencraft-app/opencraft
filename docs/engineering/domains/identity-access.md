@@ -109,7 +109,8 @@ Service Gateway / ingress 可信代理链计算 `ClientIP()`。国内 sandbox �
 Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route/caller，并在数据面处于
 `optional` 或 `disabled` 时仍强制校验 HMAC。国际站返回的 devtunnel capability 只在首次注册响应中
 短期交付给当前 DevCloud agent，后续状态接口不再返回；共享 HMAC、SOPS 和 `DEVTUNNEL_TOKEN` 不进入
-个人环境。CloudLadder 与 devtunnel 通过同一 HMAC 内部接口读取 Auth testing MySQL 的
+个人环境。该内部控制面 JSON 契约中的 UIN 使用规范十进制字符串；Auth 只在服务边界内转换为整数类型，
+不得让 Go 默认数字编码与 CloudLadder 的字符串主键产生隐式类型漂移。CloudLadder 与 devtunnel 通过同一 HMAC 内部接口读取 Auth testing MySQL 的
 `developer_route_registrations`；表内只保存 capability SHA-256，不保存 capability 明文。注销写入
 disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定，二者都必须使 capability 和
 动态路由同时失效。registry 不可用、响应字段不合法或目标超出 DevCloud CIDR/端口约束时必须 fail closed。
