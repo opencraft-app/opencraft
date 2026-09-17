@@ -8,6 +8,20 @@ import { DshExecutionTelemetry } from "./dsh-execution-telemetry.js";
 type Value = Record<string, any>;
 class LocalService { constructor(readonly ctx: Value) {} }
 
+function hasCompletedAssistantActivity(record: Value): boolean {
+  return record.itemLedger.some((item: Value) => {
+    if (item.type === "agentMessage") {
+      return item.phase === "commentary"
+        && typeof item.text === "string"
+        && item.text.trim().length > 0;
+    }
+    if (item.type === "dynamicToolCall" || item.type === "commandExecution") {
+      return item.status === "completed" || item.status === "failed";
+    }
+    return false;
+  });
+}
+
 /** Local ports for the imported HyperNode engine/TurnManager/tool projection.
  * Native ledger sequence supplies repeatable identity and time during replay.
  * There is no remote tenancy, SSH worker or asynchronous delta queue here.
@@ -27,7 +41,27 @@ export class DshExecutionRecord {
     const clock = { now: () => this.now };
     const TurnManager = turnManagerImplementation(LocalService, () => `${turnId}:item:${this.seq}:${this.allocation++}`, clock);
     const Tools = toolImplementation(LocalService, undefined, clock);
-    const Core = engineImplementation(clock, (_span: unknown, name: string) => this.telemetry.milestone(name), (_span: unknown, status: string) => this.telemetry.end(status));
+    const ImportedCore = engineImplementation(clock, (_span: unknown, name: string) => this.telemetry.milestone(name), (_span: unknown, status: string) => this.telemetry.end(status));
+    class Core extends ImportedCore {
+      processSessionEvent(worker: Value, active: Value, message: Value) {
+        const event = message.event;
+        const activityOnlyCompletion = event?.type === "turn/end"
+          && event.data?.reason?.kind === "completed"
+          && active.assistantStream == null
+          && active.pendingAssistantCompletion == null
+          && hasCompletedAssistantActivity(active.record);
+        if (!activityOnlyCompletion) {
+          return super.processSessionEvent(worker, active, message);
+        }
+
+        // Codex models final_answer as an optional Item. A Turn whose visible
+        // commentary/tool activity is already settled may complete without
+        // manufacturing an answer. Truly empty completions continue through
+        // the imported fail-closed invariant.
+        this.ctx.dshAppServerProjection?.settle(worker, active);
+        this.completeWorkerTurn(worker);
+      }
+    }
     const thread: Value = { id: sessionId };
     this.ctx = {
       threadManager: { get: () => thread, changed: () => {}, persistThread: () => {} },

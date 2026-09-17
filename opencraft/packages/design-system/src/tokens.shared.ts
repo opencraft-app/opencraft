@@ -39,6 +39,9 @@ export const menuGeometry = {
   surfacePadding: 5,
   itemGap: 2,
   itemRadius: radii.md,
+  boundedMinimumWidth: 200,
+  boundedMaximumWidth: 320,
+  listMaximumHeight: 250,
 } as const;
 
 export const frame = {
@@ -278,6 +281,13 @@ export const codexGeometryTokens = {
     applicationMenu: frame.applicationMenuHeight,
     primary: frame.toolbarHeight,
     pane: frame.paneToolbarHeight,
+    controlHeight: 32,
+    controlRadius: radii.lg,
+    controlInlinePadding: spacing[2],
+    controlContentGap: 6,
+    controlIconSize: 13,
+    controlChevronSize: 10,
+    controlMaximumWidth: 224,
   },
   sidebar: {
     preferredWidth: frame.sidebarDefaultWidth,
@@ -301,6 +311,8 @@ export const codexGeometryTokens = {
     chrome: 28,
     button: 30,
     buttonCompact: 28,
+    filterHeight: 36,
+    filterWidth: 160,
     radius: 7,
     projectIcon: 24,
     status: 24,
@@ -309,6 +321,10 @@ export const codexGeometryTokens = {
     trafficLight: 12,
     iconSmall: 13,
     icon: 15,
+  },
+  menu: {
+    itemHeight: 28,
+    itemBlockPadding: 5,
   },
   conversation: {
     maximumWidth: frame.threadContentMaxWidth,

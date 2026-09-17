@@ -4,6 +4,7 @@ import { recoverDshGeneration } from "./dsh-generation-recovery.mjs";
 import { createServer } from "node:http";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { join, isAbsolute } from "node:path";
 import { createSurfaceCheckpoint } from "./hypernode/surface-checkpoint.mjs";
 import { DshCheckpointStore } from "./dsh-checkpoint-store.mjs";
@@ -22,12 +23,71 @@ export async function apply(ctx, config) {
   const discoveryScope = createScope(ctx, discoveryKey);
   let discoveryProvider;
   let discoveryControl;
+  const workspaceProviders = new Map();
+  const workspaceCandidateProviders = new WeakMap();
+  const workspaceProvider = cwd => {
+    let provider = workspaceProviders.get(cwd);
+    if (provider !== undefined) return provider;
+    provider = new FileSystemSkillProvider(discoveryScope.ctx, {
+      signal: new AbortController().signal,
+      invalidate: () => discoveryControl?.invalidate(),
+    }, {
+      providerName: "opencraft-workspace-filesystem",
+      includeDefaultRoots: false,
+      customSkillDirs: [join(cwd, ".opencraft", "skills")],
+      watch: false,
+    });
+    workspaceProviders.set(cwd, provider);
+    return provider;
+  };
   const stopDiscovery = discoveryScope.ctx.skills.registerProvider(control => {
     discoveryControl = control;
-    discoveryProvider = new FileSystemSkillProvider(discoveryScope.ctx, control, { watch: false });
+    discoveryProvider = new FileSystemSkillProvider(discoveryScope.ctx, control, {
+      watch: false,
+      customSkillDirs: typeof config?.persistentSkillsRoot === "string"
+        ? [config.persistentSkillsRoot]
+        : [],
+    });
     return discoveryProvider;
   });
-  ctx.effect(() => async () => { stopDiscovery(); await discoveryProvider.dispose(); await discoveryScope.dispose(); });
+  const stopWorkspaceDiscovery = discoveryScope.ctx.skills.registerProvider(() => ({
+    name: "opencraft-workspace-skills",
+    async list(options) {
+      if (typeof options.cwd !== "string" || !isAbsolute(options.cwd)) return [];
+      const provider = workspaceProvider(options.cwd);
+      const discovered = await provider.list({ ...options, cwd: undefined });
+      const candidates = Array.isArray(discovered) ? discovered : discovered.candidates;
+      const mapped = candidates.map(candidate => {
+        const result = {
+          ...candidate,
+          source: "project-opencraft",
+          provider: "opencraft-workspace-skills",
+          // Explicit OpenCraft workspace installs precede legacy .agents skills.
+          rank: 150,
+        };
+        workspaceCandidateProviders.set(result, provider);
+        return result;
+      });
+      return Array.isArray(discovered) ? mapped : { ...discovered, candidates: mapped };
+    },
+    async get(candidate, options) {
+      const provider = workspaceCandidateProviders.get(candidate);
+      if (provider === undefined) return undefined;
+      const definition = await provider.get(candidate, options);
+      return definition === undefined ? undefined : {
+        ...definition,
+        source: "project-opencraft",
+        provider: "opencraft-workspace-skills",
+      };
+    },
+  }));
+  ctx.effect(() => async () => {
+    stopWorkspaceDiscovery();
+    stopDiscovery();
+    await Promise.all([...workspaceProviders.values()].map(provider => provider.dispose()));
+    await discoveryProvider.dispose();
+    await discoveryScope.dispose();
+  });
   const { default: Ajv } = await import(new URL("../../../ajv/dist/ajv.js", config.toolsModuleUrl).href);
   const validator = new Ajv({ allErrors: true, strict: false });
   const { isSurfaceEvent, SessionId } = await import(new URL("../../dsh-session/lib/index.js", config.toolsModuleUrl).href);
@@ -62,6 +122,14 @@ export async function apply(ctx, config) {
   };
   if (typeof config?.token !== "string" || config.token.length < 32) throw new Error("Capability bridge requires a private token");
   const registrations = new Map();
+  const unregister = async sessionId => {
+    const registration = registrations.get(sessionId);
+    for (const dispose of [...(registration?.disposers ?? [])].reverse()) await dispose();
+    registrations.delete(sessionId);
+    const directory = skillDirectories.get(sessionId);
+    if (directory) { await rm(directory, { recursive: true, force: true }); skillDirectories.delete(sessionId); }
+    for (const call of [...pending.values()]) if (call.sessionId === sessionId) call.reject(new Error("Capability owner disconnected"));
+  };
   const skillDirectories = new Map();
   const pending = new Map();
   const calls = [];
@@ -152,7 +220,9 @@ export async function apply(ctx, config) {
       if (req.method === "POST" && route.startsWith("/thread/")) {
         const operation = route.slice("/thread/".length);
         if (!Object.hasOwn(threadEngine, operation)) throw new Error("Unknown thread operation");
-        res.end(JSON.stringify(await threadEngine[operation](body))); return;
+        const result = await threadEngine[operation](body);
+        if (operation === "release" && result.released) await unregister(body.sessionId);
+        res.end(JSON.stringify(result)); return;
       }
       if (req.method === "POST" && route === "/permissions") {
         const agent = body.sessionId ? ctx.agents.get(body.sessionId) : null;
@@ -221,10 +291,24 @@ export async function apply(ctx, config) {
         }
         res.end(JSON.stringify({ cwd: body.cwd, skills, errors })); return;
       }
+      if (req.method === "POST" && route === "/validate-capabilities") {
+        if (!Array.isArray(body.capabilities)) throw new Error("Capabilities must be an array");
+        for (const capability of body.capabilities) {
+          validator.compile(capability.inputSchema);
+          assertObjectJsonSchema(modelSchema(capability.inputSchema));
+        }
+        res.end("{}"); return;
+      }
       if (req.method === "POST" && route === "/register") {
         const agent = ctx.agents.get(body.sessionId);
-        if (!agent) throw new Error("Capability registration requires an existing agent");
         if (!Array.isArray(body.capabilities)) throw new Error("Capabilities must be an array");
+        // Host owns declarations; display-only recovery must not mount an Agent.
+        // The activation path retries registration once the native Agent exists.
+        if (!agent) { res.end(JSON.stringify({ registered: 0, deferred: true })); return; }
+        const previous = registrations.get(body.sessionId);
+        if (previous?.agent === agent && isDeepStrictEqual(previous.capabilities, body.capabilities)) {
+          res.end(JSON.stringify({ registered: body.capabilities.length })); return;
+        }
         const disposers = [];
         if (registrations.has(body.sessionId)) throw new Error("Unregister existing capabilities before replacing them");
         const scope = createScope(ctx, agent);
@@ -269,9 +353,8 @@ export async function apply(ctx, config) {
             skillDirectories.set(body.sessionId, directory);
           }
         } catch (error) { for (const dispose of disposers.reverse()) await dispose(); throw error; }
-        for (const dispose of registrations.get(body.sessionId) ?? []) await dispose();
-        registrations.set(body.sessionId, disposers);
-        res.end(JSON.stringify({ registered: disposers.length })); return;
+        registrations.set(body.sessionId, { agent, capabilities: body.capabilities, disposers });
+        res.end(JSON.stringify({ registered: body.capabilities.length })); return;
       }
       if (req.method === "POST" && route === "/respond") {
         const call = pending.get(body.id);
@@ -281,11 +364,7 @@ export async function apply(ctx, config) {
         res.end(JSON.stringify({ accepted: true })); return;
       }
       if (req.method === "POST" && route === "/unregister") {
-        for (const dispose of [...(registrations.get(body.sessionId) ?? [])].reverse()) await dispose();
-        registrations.delete(body.sessionId);
-        const directory = skillDirectories.get(body.sessionId);
-        if (directory) { await rm(directory, { recursive: true, force: true }); skillDirectories.delete(body.sessionId); }
-        for (const call of [...pending.values()]) if (call.sessionId === body.sessionId) call.reject(new Error("Capability owner disconnected"));
+        await unregister(body.sessionId);
         res.end("{}"); return;
       }
       res.writeHead(404).end("{}");
@@ -298,7 +377,7 @@ export async function apply(ctx, config) {
   console.log("opencraft capability bridge: http://127.0.0.1:" + address.port);
   ctx.effect(() => async () => {
     for (const call of [...pending.values()]) call.reject(new Error("Capability plugin disposed"));
-    for (const disposers of registrations.values()) for (const dispose of [...disposers].reverse()) await dispose();
+    for (const registration of registrations.values()) for (const dispose of [...registration.disposers].reverse()) await dispose();
     for (const handle of generationHandles.values()) await handle.dispose();
     server.closeAllConnections();
     server.close();

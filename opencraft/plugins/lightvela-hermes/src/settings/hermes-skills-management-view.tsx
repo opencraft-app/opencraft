@@ -1,112 +1,161 @@
-import { useCallback, useEffect, useState } from "react";
-
-import type { ProfileSkillInstalled } from "@opencraft/appserver-protocol";
+import { Suspense, lazy, useMemo, useState, useSyncExternalStore } from "react";
 import type { AppServerProfileSkillsService } from "@opencraft/profile-skills-appserver";
 import {
-  SettingsActions,
-  SettingsButton,
-  SettingsGroup,
-  SettingsListItem,
-  SettingsNotice,
-  SettingsPageHeader,
-  SettingsSection,
+  SegmentedControl,
+  type PlatformViewHost,
+  type PlatformViewRegions,
+  type PlatformToolbarSelectOption,
 } from "@opencraft/extension-react";
 
-export function profileSkillsTarget(hostId: string, profileId = "default") {
-  const normalizedHostId = hostId.trim();
-  if (normalizedHostId === "") throw new TypeError("A connected Hermes Host is required");
-  return { hostId: normalizedHostId, profileId };
+import type { LightVelaAccountService } from "../account/lightvela-account-service";
+import { HermesAgentConsoleHost } from "./hermes-agent-console-host";
+import { RepositoryProvider } from "../upstream/mono2/contexts/repository-context";
+import { createWorkbenchRepositories } from "../upstream/workbench-repositories";
+import {
+  createCatalogOnlySkillsDataLayer,
+  createLocalDshSkillsDataLayer,
+  createProfileSkillsDataLayer,
+} from "./profile-skills-data-layer";
+import { LIGHTVELA_HERMES_HOST_ID } from "./lightvela-hermes-settings-view";
+const HermesAgentSkillsPanel = lazy(async () => {
+  const module = await import("../upstream/mono2/pages/marketing/agent-skills-panel");
+  return { default: module.HermesAgentSkillsPanel };
+});
+
+const EMPTY_DIRECTORY = Object.freeze({ entries: Object.freeze([]) });
+const subscribeEmpty = (): (() => void) => () => undefined;
+const getEmptyDirectory = () => EMPTY_DIRECTORY;
+
+type SkillInstallTarget = {
+  readonly id: string;
+  readonly kind: "local-dsh" | "hermes-profile";
+  readonly hostId: string;
+  readonly label: string;
+  readonly profileId?: string;
+};
+
+export interface HermesProfileDirectory {
+  subscribe(listener: () => void): () => void;
+  getSnapshot(): {
+    readonly entries: readonly {
+      readonly hostId: string;
+      readonly bot: {
+        readonly botId: string;
+        readonly name: string;
+        readonly status: "available" | "unavailable" | "disabled";
+        readonly runtimeProfileId?: string;
+      };
+    }[];
+  };
 }
 
 export function HermesSkillsManagementView({
-  hostId,
-  profileId = "default",
+  account,
+  botId,
   profileSkills,
+  profileDirectory,
+  host,
+  headerRegion,
+  toolbarSelect: ToolbarSelect,
 }: {
-  readonly hostId: string;
-  readonly profileId?: string;
+  readonly account: LightVelaAccountService;
+  readonly botId: string;
   readonly profileSkills?: AppServerProfileSkillsService;
+  readonly profileDirectory?: HermesProfileDirectory;
+  readonly host: PlatformViewHost;
+  readonly headerRegion?: PlatformViewRegions["Header"];
+  readonly toolbarSelect?: PlatformViewRegions["ToolbarSelect"];
 }) {
-  const [skills, setSkills] = useState<readonly ProfileSkillInstalled[] | null>(null);
-  const [revision, setRevision] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingSkill, setPendingSkill] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (profileSkills === undefined || hostId.trim() === "") return;
-    setError(null);
-    try {
-      const result = await profileSkills.listInstalled(
-        profileSkillsTarget(hostId, profileId),
-        { limit: 100, forceReload: true },
-      );
-      setSkills(result.data);
-      setRevision(result.revision);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+  const repositories = useMemo(() => createWorkbenchRepositories(account), [account]);
+  const directory = useSyncExternalStore(
+    profileDirectory?.subscribe ?? subscribeEmpty,
+    profileDirectory?.getSnapshot ?? getEmptyDirectory,
+    profileDirectory?.getSnapshot ?? getEmptyDirectory,
+  );
+  const targets = useMemo<readonly SkillInstallTarget[]>(() => {
+    const local = host.profiles
+      .filter((profile) => profile.hostKind === "local" && profile.enabled)
+      .map((profile): SkillInstallTarget => ({
+        id: `local-dsh:${profile.hostId}`,
+        kind: "local-dsh",
+        hostId: profile.hostId,
+        label: "本机 DSH",
+      }));
+    const hermes = directory.entries
+      .filter((entry) => entry.hostId === LIGHTVELA_HERMES_HOST_ID
+        && entry.bot.status === "available"
+        && entry.bot.runtimeProfileId !== undefined)
+      .map((entry): SkillInstallTarget => ({
+        id: `hermes-profile:${entry.hostId}:${entry.bot.runtimeProfileId}`,
+        kind: "hermes-profile",
+        hostId: entry.hostId,
+        profileId: entry.bot.runtimeProfileId,
+        label: `Hermes · ${entry.bot.runtimeProfileId}`,
+      }));
+    return [...local, ...hermes];
+  }, [directory.entries, host.profiles]);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? targets[0] ?? null;
+  const skillsDataLayer = useMemo(() => {
+    if (profileSkills === undefined || selectedTarget === null) return createCatalogOnlySkillsDataLayer();
+    if (selectedTarget.kind === "local-dsh") {
+      return createLocalDshSkillsDataLayer(profileSkills, {
+        hostId: selectedTarget.hostId,
+        scope: { type: "local-dsh", root: "user" },
+      }, host.ensureRuntimeReady === undefined ? undefined : {
+        ensureReady: host.ensureRuntimeReady,
+      });
     }
-  }, [hostId, profileId, profileSkills]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const toggle = useCallback((skill: ProfileSkillInstalled) => {
-    if (profileSkills === undefined || revision === null || pendingSkill !== null) return;
-    setPendingSkill(skill.name);
-    setError(null);
-    void profileSkills.setEnabled(profileSkillsTarget(hostId, profileId), {
-      name: skill.name,
-      enabled: !skill.enabled,
-      expectedRevision: revision,
-      operationId: crypto.randomUUID(),
-    }).then(() => load()).catch((cause) => {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }).finally(() => setPendingSkill(null));
-  }, [hostId, load, pendingSkill, profileId, profileSkills, revision]);
-
-  if (profileSkills === undefined) {
-    return <SettingsNotice tone="error">The connected Hermes Host does not expose the Profile Skills protocol.</SettingsNotice>;
-  }
-  if (hostId.trim() === "") {
-    return <SettingsNotice>Select a Hermes Host to manage its Profile Skills.</SettingsNotice>;
-  }
+    return createProfileSkillsDataLayer(profileSkills, {
+      hostId: selectedTarget.hostId,
+      profileId: selectedTarget.profileId!,
+    }, host.ensureRuntimeReady === undefined ? undefined : {
+      ensureReady: host.ensureRuntimeReady,
+    });
+  }, [host.ensureRuntimeReady, profileSkills, selectedTarget]);
+  const targetOptions = useMemo<readonly PlatformToolbarSelectOption[]>(() => targets.map((target) => ({
+    value: target.id,
+    label: target.label,
+    textValue: target.label,
+    visual: target.kind === "local-dsh" ? "local" : "remote",
+  })), [targets]);
+  const installTargetSelector = ToolbarSelect === undefined ? undefined : (
+    <ToolbarSelect
+      value={selectedTarget?.id ?? null}
+      options={targetOptions}
+      onValueChange={setSelectedTargetId}
+      label="选择技能安装位置"
+      title="Host"
+      placeholder="暂无可用安装位置"
+      disabled={targets.length === 0}
+    />
+  );
 
   return (
-    <>
-      <SettingsPageHeader title="Skills" description={`Installed Skills for Hermes Profile: ${profileId}.`} />
-      <SettingsSection title="Installed Skills" description="Skills are managed through the connected Hermes Host; no LightVela account is required.">
-        <SettingsActions>
-          <SettingsButton type="button" variant="secondary" disabled={pendingSkill !== null} onClick={() => void load()}>
-            Refresh
-          </SettingsButton>
-        </SettingsActions>
-        {error === null ? null : <SettingsNotice tone="error">{error}</SettingsNotice>}
-        {skills === null ? <SettingsNotice>Loading installed Skills…</SettingsNotice> : skills.length === 0 ? (
-          <SettingsNotice>No Skills are installed for this Profile. Refresh after installing a Skill through Hermes.</SettingsNotice>
-        ) : (
-          <SettingsGroup aria-label="Installed Skills">
-            {skills.map((skill) => (
-              <SettingsListItem
-                key={skill.name}
-                label={skill.name}
-                description={skill.description}
-                metadata={`${skill.category} · ${skill.provenance}`}
-                actions={(
-                  <SettingsButton
-                    type="button"
-                    variant="secondary"
-                    disabled={pendingSkill !== null}
-                    onClick={() => toggle(skill)}
-                  >
-                    {pendingSkill === skill.name ? "Saving…" : skill.enabled ? "Disable" : "Enable"}
-                  </SettingsButton>
-                )}
+    <RepositoryProvider value={repositories}>
+      <HermesAgentConsoleHost>
+        <Suspense fallback={<div className="flex min-h-48 items-center justify-center text-sm text-black/45">正在加载...</div>}>
+          <HermesAgentSkillsPanel
+            key={selectedTarget?.id ?? "catalog-only"}
+            botId={botId}
+            profileId={selectedTarget?.kind === "hermes-profile" ? selectedTarget.profileId : undefined}
+            execDebugCommand={account.execDebugCommand.bind(account)}
+            headerEnd={installTargetSelector}
+            headerRegion={headerRegion}
+            renderHeaderNavigation={(navigation) => (
+              <SegmentedControl
+                value={navigation.value}
+                options={navigation.options}
+                onValueChange={navigation.onValueChange}
+                label={navigation.label}
+                disabled={navigation.disabled}
               />
-            ))}
-          </SettingsGroup>
-        )}
-      </SettingsSection>
-    </>
+            )}
+            skillsDataLayer={skillsDataLayer}
+            showHeader={false}
+          />
+        </Suspense>
+      </HermesAgentConsoleHost>
+    </RepositoryProvider>
   );
 }

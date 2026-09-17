@@ -16,7 +16,7 @@ export const buttonVariantNames = [
 
 export type ButtonVariant = (typeof buttonVariantNames)[number];
 
-export const buttonSizeNames = ["sm", "md", "lg"] as const;
+export const buttonSizeNames = ["sm", "md", "lg", "toolbar"] as const;
 
 export type ButtonSize = (typeof buttonSizeNames)[number];
 
@@ -31,6 +31,7 @@ export const buttonSizeMetrics = {
   sm: { height: 32, horizontalPadding: 12, fontSize: 12, lineHeight: 16 },
   md: { height: 40, horizontalPadding: 16, fontSize: 14, lineHeight: 20 },
   lg: { height: 44, horizontalPadding: 24, fontSize: 16, lineHeight: 22 },
+  toolbar: { height: 32, horizontalPadding: 8, fontSize: 13, lineHeight: 18 },
 } as const satisfies Record<
   ButtonSize,
   { readonly height: number; readonly horizontalPadding: number; readonly fontSize: number; readonly lineHeight: number }

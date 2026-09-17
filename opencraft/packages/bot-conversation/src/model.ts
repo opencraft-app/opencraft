@@ -36,6 +36,8 @@ export interface BotConversationDescriptor {
   readonly title: string | null;
   readonly rosterRevision: number;
   readonly participants: readonly BotParticipantSnapshot[];
+  /** Historical room whose roster can no longer execute writes. */
+  readonly readOnly?: boolean;
 }
 
 export type BotMessageContentPart =
@@ -128,6 +130,11 @@ export interface BotExecutionSnapshot {
   readonly status: BotExecutionStatus;
   readonly startedAtMs: number;
   readonly completedAtMs: number | null;
+  /** Stable failure category only; raw provider diagnostics stay at the Host. */
+  readonly error?: {
+    readonly code: string;
+    readonly retryable: boolean;
+  };
 }
 
 export type BotInteractionSnapshot =

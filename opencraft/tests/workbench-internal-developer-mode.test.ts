@@ -5,7 +5,17 @@ import {
   advanceInternalDeveloperModeGesture,
   EMPTY_ESCAPE_SEQUENCE,
   INTERNAL_DEVELOPER_MODE_MAX_GAP_MS,
+  isInternalAudienceVisible,
+  setInternalDeveloperMode,
+  toggleInternalDeveloperMode,
 } from "../apps/workbench-web/src/internal-developer-mode.ts";
+
+test("internal contribution audiences are projected only in developer mode", () => {
+  assert.equal(isInternalAudienceVisible(undefined, false), true);
+  assert.equal(isInternalAudienceVisible("public", false), true);
+  assert.equal(isInternalAudienceVisible("internal", false), false);
+  assert.equal(isInternalAudienceVisible("internal", true), true);
+});
 
 function press(
   state = EMPTY_ESCAPE_SEQUENCE,
@@ -44,4 +54,11 @@ test("held keys, interruptions, and stale presses cannot unlock the gesture", ()
   );
   assert.equal(stale.unlocked, false);
   assert.equal(stale.state.count, 1);
+});
+
+test("the same gesture action toggles internal developer mode off again", () => {
+  setInternalDeveloperMode(false);
+  assert.equal(toggleInternalDeveloperMode(), "enabled");
+  assert.equal(toggleInternalDeveloperMode(), "disabled");
+  assert.equal(setInternalDeveloperMode(false), false);
 });

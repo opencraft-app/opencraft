@@ -152,6 +152,7 @@ test("independent OpenCraft Daemon carries App Host frames over authenticated lo
 test("Electron Main is a process bridge and no longer owns Agent or physical AppServer transports", async () => {
   const source = await readFile(new URL("../apps/workbench-electron/src/main.ts", import.meta.url), "utf8");
   assert.match(source, /OpenCraftDaemonClientManager/u);
+  assert.match(source, /dshCapabilityPlugin:/u);
   assert.match(source, /serve-workbench-static\.mjs/u);
   assert.doesNotMatch(source, /AppHostServerSession|AppHostServer\b|WebSocketTransport|startLocalAgentHost/u);
   assert.doesNotMatch(source, /serve-workbench-web\.mjs|OPENCRAFT_APPSERVER_URL|function appServerTarget/u);

@@ -7,7 +7,7 @@ import { emptyModelDocument } from "../apps/local-agent-host/src/model-config/mo
 import { compileSubmitIntent, SubmitCompileError } from "@opencraft/composer-appserver";
 import type { SubmitIntent } from "@opencraft/composer-core";
 
-function fixture(defaultModel: { provider: string; model: string } | null = null, productOwned = false) {
+function fixture(defaultModel: { provider: string; model: string } | null = null, productOwned = false, currentModel = "text") {
   const catalog = { groups: [{ id: "custom", name: "Custom", models: [
     { id: "text", name: "Text", input: ["text"] },
     { id: "vision", name: "Vision", input: ["text", "image"] },
@@ -16,7 +16,7 @@ function fixture(defaultModel: { provider: string; model: string } | null = null
   const client = { call: async (method: string) => {
     if (method === "llm.models") return catalog;
     if (method === "llm.providers") return { providers: [] };
-    if (method === "session.models") return { ...catalog, current: { provider: "custom", model: "text" }, routable: true };
+    if (method === "session.models") return { ...catalog, current: { provider: "custom", model: currentModel }, routable: true };
     if (method === "settings.describe") return { namespaces: [
       { ns: "llm-pi-ai", value: {} }, { ns: "agent-default-model", value: defaultModel ?? {} },
     ] };
@@ -61,6 +61,15 @@ test("the native resolved model capability takes precedence over stale catalog m
   try {
     const result = await adapter.dispatch("model/list", {}) as any;
     assert.deepEqual(result.data.map((model: any) => model.inputModalities), [["text"], ["text"], ["text", "image"]]);
+  } finally { adapter.close(); }
+});
+test("an unknown native capability falls back to the explicit custom model declaration", async () => {
+  const adapter = fixture(null, false, "vision");
+  adapter.setModelInfoReader(async () => ({ input: null }));
+  try {
+    const result = await adapter.dispatch("model/list", {}) as any;
+    assert.deepEqual(result.data.find((model: any) => model.displayName === "Vision")?.inputModalities, ["text", "image"]);
+    await (adapter as any).assertInput("existing", [{ type: "image", url: "data:image/png;base64,synthetic" }]);
   } finally { adapter.close(); }
 });
 test("clearing the product default removes the adapter's old engine selection", async () => {

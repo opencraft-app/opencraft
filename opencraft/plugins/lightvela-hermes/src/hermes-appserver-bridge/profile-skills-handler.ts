@@ -125,7 +125,7 @@ function slicePage<T>(items: readonly T[], cursor: unknown, limit: unknown) {
 }
 
 function normalizeScope(value: unknown): ProfileSkillScope {
-  if (!isProfileSkillScope(value)) {
+  if (!isProfileSkillScope(value) || value.type !== "profile") {
     throw new ProfileSkillsDomainError("PROFILE_NOT_FOUND", "Profile Skills requires an explicit Profile scope", false);
   }
   return { type: "profile", profileId: value.profileId.trim() };
@@ -511,7 +511,8 @@ export class HermesDashboardProfileSkillsHandler {
     if (replay !== null) return replay;
     if (expectedRevision !== undefined) await this.requireRevision(scope, expectedRevision, operationId);
     const conflicting = Object.values(this.journal.actions).find((row) => (
-      row.action.scope.profileId === scope.profileId
+      row.action.scope.type === "profile"
+      && row.action.scope.profileId === scope.profileId
       && row.action.kind === kind
       && row.action.target === target
       && (row.action.state === "accepted" || row.action.state === "running")
@@ -561,7 +562,9 @@ export class HermesDashboardProfileSkillsHandler {
     params: Record<string, unknown>,
   ): Promise<ProfileSkillsActionResult> {
     const row = this.journal.actions[actionId];
-    if (row === undefined || row.action.scope.profileId !== scope.profileId) {
+    if (row === undefined
+      || row.action.scope.type !== "profile"
+      || row.action.scope.profileId !== scope.profileId) {
       throw new ProfileSkillsDomainError("ACTION_NOT_FOUND", `Profile Skills Action not found: ${actionId}`, false, { scope, actionId });
     }
     if (row.action.state === "accepted" || row.action.state === "running") {
@@ -632,6 +635,7 @@ export class HermesDashboardProfileSkillsHandler {
     reschedule: boolean,
   ): Promise<void> {
     try {
+      if (row.action.scope.type !== "profile") return;
       const revision = (await this.listInstalled(row.action.scope, {})).revision;
       this.writeAction(actionId, { ...row, invalidationPublished: true });
       this.emit({

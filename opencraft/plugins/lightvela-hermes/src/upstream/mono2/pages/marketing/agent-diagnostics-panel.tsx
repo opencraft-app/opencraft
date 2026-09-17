@@ -274,8 +274,8 @@ export function AgentDiagnosticsPanel({
           />
           {isMainBot && <MaintenanceActionCard
             icon={<RotateCcw className="h-3 w-3" />}
-            title={t("重装 Agent（保留数据）")}
-            description={t("重装整个 Agent 并保留数据，期间所有 Bot 将暂时不可用")}
+            title={t("重置 Hermes（保留数据）")}
+            description={t("重置 Hermes 运行环境并保留数据，期间所有 Bot 将暂时不可用")}
             action={resetAgentAction}
             loadingLabel={t("重置中...")}
             consoleLines={resetAgentConsole}

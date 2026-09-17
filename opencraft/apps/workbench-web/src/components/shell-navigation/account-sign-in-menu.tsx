@@ -1,15 +1,16 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AccountAvatar, shellAccountEntranceLabel, type ShellAccount, type ShellSignIn } from "./navigation-content";
+import { AccountLeadingVisual, shellAccountEntranceLabel, type ShellAccount, type ShellSignIn } from "./navigation-content";
 
 /** Same provider-driven account entrance in fixed and floating Sidecars. */
-export function AccountSignInMenu({ account, signIn, id, visible, container }: {
+export function AccountSignInMenu({ account, signIn, id, visible, container, onOpenSettings }: {
   account: ShellAccount;
   signIn: ShellSignIn;
   id: string;
   visible: boolean;
   container: HTMLElement | null;
+  onOpenSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => { if (!visible) setOpen(false); }, [visible]);
@@ -18,7 +19,7 @@ export function AccountSignInMenu({ account, signIn, id, visible, container }: {
     <DropdownMenu.Trigger asChild>
       <button id={id} type="button" className="shell-navigation__entrance" data-surface="account"
         aria-label={label} title={label}>
-        <AccountAvatar account={account} />
+        <AccountLeadingVisual account={account} />
         <span className="shell-navigation__name" aria-live="polite">{label}</span>
       </button>
     </DropdownMenu.Trigger>
@@ -35,6 +36,13 @@ export function AccountSignInMenu({ account, signIn, id, visible, container }: {
           <span className="shell-sign-in-menu__copy"><span>{option.label}</span><small>{option.description}</small></span>
           <ArrowUpRight aria-hidden="true" size={14} />
         </DropdownMenu.Item>)}
+        <DropdownMenu.Separator className="shell-sign-in-menu__separator" />
+        <DropdownMenu.Item className="shell-sign-in-menu__item" textValue="设置" onSelect={() => {
+          setOpen(false);
+          onOpenSettings();
+        }}>
+          <Settings aria-hidden="true" size={16} /><span>设置</span>
+        </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
   </DropdownMenu.Root>;

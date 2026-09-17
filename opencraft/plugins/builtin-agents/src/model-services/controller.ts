@@ -14,6 +14,7 @@ export class ModelServicesController {
   private drafts = new Map<string, ServiceDraft>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private creationIds = new Map<string, string>();
+  private pendingModelCapabilities = new Set<string>();
   selected: string | null = null;
   initialized = false;
   private disposed = false;
@@ -26,6 +27,8 @@ export class ModelServicesController {
   getSnapshot = () => this.serial;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   notify() { this.serial++; for (const listener of this.listeners) listener(); }
+  private modelCapabilityKey(provider: string, model: string) { return JSON.stringify([provider, model]); }
+  isModelCapabilityPending(provider: string, model: string) { return this.pendingModelCapabilities.has(this.modelCapabilityKey(provider, model)); }
   select(id: string | null) { this.initialized = true; const old = this.selected ? this.drafts.get(this.selected) : undefined; if (old && !old.dirty) old.key = ""; this.selected = id; this.modelQuery = ""; this.error = null; this.message = null; this.notify(); }
   revision(provider: RuntimeProviderView) { return this.service.getSnapshot().settings?.namespaces.find(ns => ns.ns === provider.settingsNs)?.revision ?? -1; }
   draft(provider: RuntimeProviderView): ServiceDraft {
@@ -111,6 +114,34 @@ export class ModelServicesController {
     this.edit(provider, { models: [...draft.config.models, model] });
     await this.commit(provider);
   }); }
+  async setModelImageInput(provider: RuntimeProviderView, modelId: string, enabled: boolean) {
+    const pendingKey = this.modelCapabilityKey(provider.provider, modelId);
+    if (this.disposed || this.pendingModelCapabilities.has(pendingKey)) return;
+    this.pendingModelCapabilities.add(pendingKey); this.error = null; this.message = null; this.notify();
+    try {
+      if (provider.configuration?.modelDeclarations !== true) throw new Error("此模型的能力由运行时管理");
+      const draft = this.draft(provider);
+      if (draft.dirty) throw new Error("请先保存或取消连接配置的修改");
+      const model = draft.config.models.find(entry => entry.id === modelId);
+      if (!model) throw new Error("模型声明已变化，请刷新后重试");
+      const input = enabled ? ["text", "image"] as const : ["text"] as const;
+      const models = draft.config.models.map(entry => entry.id === modelId ? { ...entry, input } : entry);
+      await this.service.saveProvider(provider, {
+        baseURL: draft.config.baseURL,
+        credential: { kind: "keep" },
+        displayName: draft.config.displayName,
+        ...(draft.config.api ? { api: draft.config.api } : {}),
+        models,
+      }, draft.revision);
+      this.drafts.delete(provider.provider);
+      this.message = enabled ? "已允许图片输入" : "已设为仅文本输入";
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.pendingModelCapabilities.delete(pendingKey);
+      if (!this.disposed) this.notify();
+    }
+  }
   create(name: string) { return this.run(async () => {
     const previous = this.creationIds.get(name);
     const id = previous ?? `custom-${crypto.randomUUID()}`;
@@ -151,5 +182,5 @@ export class ModelServicesController {
     await this.service.saveDefaultModel(provider.provider, model, undefined, revision);
     this.message = "默认模型已更新，已有会话保持原选择";
   }); }
-  dispose() { this.disposed = true; for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear(); this.creationIds.clear(); this.drafts.clear(); this.listeners.clear(); }
+  dispose() { this.disposed = true; for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear(); this.creationIds.clear(); this.pendingModelCapabilities.clear(); this.drafts.clear(); this.listeners.clear(); }
 }

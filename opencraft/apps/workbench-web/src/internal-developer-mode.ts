@@ -14,6 +14,13 @@ export interface EscapeSequenceResult {
   readonly unlocked: boolean;
 }
 
+export function isInternalAudienceVisible(
+  audience: "public" | "internal" | undefined,
+  internalDeveloperMode: boolean,
+): boolean {
+  return audience !== "internal" || internalDeveloperMode;
+}
+
 export const EMPTY_ESCAPE_SEQUENCE: EscapeSequenceState = Object.freeze({
   count: 0,
   lastPressAt: null,
@@ -66,15 +73,26 @@ function getServerSnapshot(): boolean {
 }
 
 export function enableInternalDeveloperMode(): boolean {
-  if (enabled) return false;
-  enabled = true;
+  return setInternalDeveloperMode(true);
+}
+
+export function setInternalDeveloperMode(next: boolean): boolean {
+  if (enabled === next) return false;
+  enabled = next;
   try {
-    window.sessionStorage.setItem(INTERNAL_DEVELOPER_MODE_SESSION_KEY, "enabled");
+    if (next) window.sessionStorage.setItem(INTERNAL_DEVELOPER_MODE_SESSION_KEY, "enabled");
+    else window.sessionStorage.removeItem(INTERNAL_DEVELOPER_MODE_SESSION_KEY);
   } catch {
-    // Storage availability is optional; the in-memory session still unlocks.
+    // Storage availability is optional; the in-memory session still toggles.
   }
   for (const listener of listeners) listener();
   return true;
+}
+
+export function toggleInternalDeveloperMode(): "enabled" | "disabled" {
+  const next = !enabled;
+  setInternalDeveloperMode(next);
+  return next ? "enabled" : "disabled";
 }
 
 export function useInternalDeveloperMode(): boolean {

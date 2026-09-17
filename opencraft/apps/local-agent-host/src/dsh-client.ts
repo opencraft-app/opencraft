@@ -56,6 +56,7 @@ export class DshClient {
     signal?: AbortSignal,
     rpcId = `opencraft-${randomUUID()}`,
   ): Promise<TResult> {
+    const deadline = AbortSignal.timeout(this.requestTimeoutMs);
     const response = await fetch(new URL(`/api/${method}`, this.baseUrl), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -65,7 +66,7 @@ export class DshClient {
         method,
         payload,
       }),
-      signal: signal ?? AbortSignal.timeout(this.requestTimeoutMs),
+      signal: signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
     });
     if (!response.ok) {
       throw new DshClientError("DSH_HTTP_ERROR", `${method} failed with HTTP ${response.status}`, response.status >= 500);

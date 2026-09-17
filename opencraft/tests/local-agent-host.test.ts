@@ -410,6 +410,9 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
         atomicSteer: true,
         perItemPause: false,
       });
+      assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].version, 1);
+      assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.install, true);
+      assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.officialCatalog, false);
       const started = await request(socket, 51, "thread/start", { cwd: "/workspace/demo" });
       await request(socket, 52, "turn/start", {
         threadId: started.thread.id,
@@ -452,6 +455,38 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
   } finally {
     await host.close();
     await dsh.close();
+  }
+});
+
+test("local Agent Host routes Profile Skills mutations to its isolated DSH user root", async () => {
+  const dsh = await fakeDsh();
+  const skillsDirectory = await mkdtemp(join(tmpdir(), "opencraft-local-host-skills-"));
+  const host = await startLocalAgentHost({
+    dshUrl: dsh.url,
+    token: "skills-token",
+    skillsDirectory,
+  });
+  const socket = await connect(host.websocketUrl);
+  try {
+    const initialized = await request(socket, 70, "initialize", {});
+    assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.install, true);
+    const markdown = "---\nname: routed-skill\ndescription: Routed Skill\n---\n\nUse it.\n";
+    const receipt = await request(socket, 71, "skills/install", {
+      scope: { type: "local-dsh", root: "user" },
+      identifier: "routed-skill",
+      operationId: "install-routed-skill",
+      artifact: { name: "routed-skill", files: [{ path: "SKILL.md", content: markdown }] },
+    });
+    assert.equal(receipt.action.state, "succeeded");
+    const listed = await request(socket, 72, "skills/installed/list", {
+      scope: { type: "local-dsh", root: "user" },
+    });
+    assert.deepEqual(listed.data.map((skill: { name: string }) => skill.name), ["routed-skill"]);
+  } finally {
+    socket.close();
+    await host.close();
+    await dsh.close();
+    await rm(skillsDirectory, { recursive: true, force: true });
   }
 });
 

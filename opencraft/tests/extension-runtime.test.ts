@@ -123,6 +123,7 @@ test("one activation atomically publishes declarations and presentation surfaces
       id: "vela.example.settings-view",
       title: "Example settings",
       viewType: "vela.example.settings",
+      audience: "internal",
     });
     api.settings.registerPage({
       id: "vela.example.settings-page",
@@ -136,6 +137,7 @@ test("one activation atomically publishes declarations and presentation surfaces
       title: "Example",
       surface: "sidebar-primary",
       target: { kind: "settings", pageId: "vela.example.settings-page" },
+      audience: "internal",
     });
     api.sidebar.registerCatalog({
       id: "vela.example.catalog",
@@ -179,6 +181,7 @@ test("one activation atomically publishes declarations and presentation surfaces
   assert.equal(snapshot.commands.length, 1);
   assert.equal(snapshot.settingsSchemas.length, 1);
   assert.equal(snapshot.views.length, 1);
+  assert.equal(snapshot.views[0]?.contribution.audience, "internal");
   assert.equal(snapshot.settingsPages.length, 1);
   assert.deepEqual(snapshot.settingsPages[0]?.contribution.management, {
     familyId: "vela.example.manage",
@@ -187,6 +190,7 @@ test("one activation atomically publishes declarations and presentation surfaces
   assert.equal(snapshot.settingsPages[0]?.contribution.layout, "master-detail");
   assert.equal(Object.isFrozen(snapshot.settingsPages[0]?.contribution.management), true);
   assert.equal(snapshot.navigation.length, 1);
+  assert.equal(snapshot.navigation[0]?.contribution.audience, "internal");
   assert.equal(snapshot.sidebarCatalogs.length, 1);
   assert.equal(snapshot.workbenchSurfaces.length, 2);
   assert.equal(snapshot.themes.length, 1);

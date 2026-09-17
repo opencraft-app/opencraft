@@ -16,6 +16,21 @@
   --height-toolbar: 46px;
   --height-toolbar-sm: 36px;
   --height-toolbar-pane: 40px;
+  --height-toolbar-control: 32px;
+  --radius-toolbar-control: var(--radius-lg);
+  --padding-toolbar-control-inline: calc(var(--spacing) * 2);
+  --gap-toolbar-control: 6px;
+  --size-toolbar-control-icon: 13px;
+  --size-toolbar-control-chevron: 10px;
+  --width-toolbar-control-max: 224px;
+  --width-menu-bounded-min: 200px;
+  --width-menu-bounded-max: 320px;
+  --height-menu-list-max: 250px;
+  --font-toolbar-control-size: 13px;
+  --font-toolbar-control-line-height: 18px;
+  --font-toolbar-control-weight: var(--font-weight-medium);
+  --height-filter-control: 36px;
+  --width-filter-control: 160px;
   --height-token-settings-row: 56px;
   --height-token-settings-control: 32px;
   --width-token-settings-control: 352px;
@@ -52,6 +67,8 @@
   // anchor alignment, but must not manufacture another padding/gap scale.
   --menu-surface-padding: 5px;
   --menu-item-gap: 2px;
+  --height-menu-item: 28px;
+  --padding-menu-item-block: 5px;
   --menu-item-radius: var(--radius-md);
   // Browser presentation planes are owned by the application shell. Feature
   // packages may choose a semantic plane, but must never compare or invent

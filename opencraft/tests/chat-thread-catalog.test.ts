@@ -29,3 +29,10 @@ test("same-title root, fork and subagent Threads retain visible lineage identity
   assert.equal(fork.lineage, "fork");
   assert.equal(subagent.lineage, "subagent");
 });
+
+test("AppServer loading and failure states retain their product meaning", () => {
+  assert.equal(projectAppServerThread(thread({ status: { type: "notLoaded" } }), 100_000).status, "ready");
+  assert.equal(projectAppServerThread(thread({ status: { type: "idle" } }), 100_000).status, "ready");
+  assert.equal(projectAppServerThread(thread({ status: { type: "active", activeFlags: [] } }), 100_000).status, "running");
+  assert.equal(projectAppServerThread(thread({ status: { type: "systemError" } }), 100_000).status, "error");
+});

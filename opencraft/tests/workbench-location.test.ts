@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createConversationScopeRegistry,
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
   encodeWorkbenchLocation,
@@ -10,11 +11,12 @@ import {
   serializeWorkbenchLocation,
 } from "@opencraft/workbench-runtime";
 import {
-  createBrowserWorkbenchNavigation,
+  createApplicationNavigation,
   parseApplicationRouteUrl,
   parseWorkbenchLocationUrl,
   workbenchLocationUrl,
 } from "../apps/workbench-web/src/runtime/workbench-navigation";
+import { createWorkbenchNavigationTransaction } from "../apps/workbench-web/src/runtime/workbench-navigation-transaction";
 
 test("Workbench Thread identity includes Host and survives URL round trips", () => {
   const first = createWorkbenchThreadLocation("ssh:alpha", "thread/42");
@@ -84,7 +86,7 @@ test("Web replace creates a new View unless Draft promotion explicitly preserves
       removeEventListener() {},
     },
   });
-  const navigation = createBrowserWorkbenchNavigation(
+  const navigation = createApplicationNavigation(
     createWorkbenchDraftLocation("local", "draft-a"),
   );
   try {
@@ -106,11 +108,34 @@ test("Web replace creates a new View unless Draft promotion explicitly preserves
   }
 });
 
-test("Settings is a top-level application route that preserves return identity", () => {
+test("Settings and extension routes have real history; Chat is an explicit destination", async () => {
+  const location = createWorkbenchThreadLocation("local", "thread-a");
+  const navigation = createApplicationNavigation(location, { mode: "memory" });
+  try {
+    const scope = navigation.getSnapshot().routeScopeId;
+    navigation.openSettings("connections");
+    navigation.openSettings("appearance");
+    assert.equal(navigation.getSnapshot().historyIndex, 2);
+    navigation.openExtensionView("vela.drive.files", "folder-a");
+    assert.equal(navigation.getSnapshot().historyIndex, 3);
+    navigation.back(); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(navigation.getSnapshot().applicationRoute, { kind: "settings", slug: "appearance" });
+    assert.equal(navigation.getSnapshot().canGoForward, true);
+    navigation.forward(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(navigation.getSnapshot().applicationRoute.kind, "extension-view");
+    navigation.openChat();
+    assert.equal(navigation.getSnapshot().applicationRoute.kind, "conversation");
+    assert.deepEqual(navigation.getSnapshot().location, location);
+    assert.equal(navigation.getSnapshot().routeScopeId, scope);
+    navigation.back(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(navigation.getSnapshot().applicationRoute.kind, "extension-view");
+  } finally { navigation.dispose(); }
+});
+
+test("navigateToHome presents a local Draft before Host preparation settles", async () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const urls: string[] = [];
-  const historyDeltas: number[] = [];
-  let pushedEntries = 0;
+  const initialLocation = createWorkbenchThreadLocation("local", "thread-a");
   const history = {
     state: null as unknown,
     replaceState(next: unknown, _unused: string, url: string) {
@@ -119,97 +144,70 @@ test("Settings is a top-level application route that preserves return identity",
     },
     pushState(next: unknown, _unused: string, url: string) {
       this.state = next;
-      pushedEntries += 1;
       urls.push(url);
     },
     back() {},
     forward() {},
-    go(delta: number) {
-      historyDeltas.push(delta);
-    },
+    go() {},
   };
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
-      location: { href: "https://vela.test/local/thread-a?hostId=local" },
+      location: { href: "https://vela.test/settings/lightvela.hermes.skills" },
       history,
       addEventListener() {},
       removeEventListener() {},
     },
   });
-  const location = createWorkbenchThreadLocation("local", "thread-a");
-  const navigation = createBrowserWorkbenchNavigation(location);
+  const scopes = createConversationScopeRegistry();
+  const draft = scopes.openDraft({
+    entrypoint: "new-chat",
+    execution: {
+      hostId: "local",
+      workspace: { cwd: null, runtimeWorkspaceRoots: [] },
+    },
+  });
+  const location = createWorkbenchDraftLocation("local", draft.id);
+  let presented: { location: typeof location; viewId: string } | null = null;
+  let resolvePreparation: ((value: null) => void) | null = null;
+  const activation = {
+    presentLocalDraft(nextLocation: typeof location, viewId: string) {
+      presented = { location: nextLocation, viewId };
+    },
+    prepare() {
+      return new Promise<null>((resolve) => {
+        resolvePreparation = resolve;
+      });
+    },
+    setViewId() {}, cancelPending() {},
+    dispose() {},
+  };
+  const navigation = createWorkbenchNavigationTransaction(
+    initialLocation,
+    activation as never,
+    scopes,
+  );
   try {
-    const conversationViewId = navigation.getSnapshot().routeScopeId;
-    navigation.openSettings("connections");
-    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
-      kind: "settings",
-      slug: "connections",
-    });
-    assert.deepEqual(navigation.getSnapshot().location, location);
-    assert.equal(navigation.getSnapshot().routeScopeId, conversationViewId);
-    assert.equal(urls.at(-1), "/settings/connections");
+    navigation.navigateToHome(location);
 
-    const settingsHistoryIndex = navigation.getSnapshot().historyIndex;
-    navigation.openSettings("appearance");
-    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
-      kind: "settings",
-      slug: "appearance",
-    });
-    assert.equal(urls.at(-1), "/settings/appearance");
-    assert.equal(
-      navigation.getSnapshot().historyIndex,
-      settingsHistoryIndex,
-      "switching settings sections replaces the settings history entry",
-    );
-    assert.equal(pushedEntries, 1);
-
-    navigation.openExtensionView("vela.drive.files");
-    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
-      kind: "extension-view",
-      viewId: "vela.drive.files",
-      resourceUri: null,
-    });
-    assert.equal(urls.at(-1), "/views/vela.drive.files");
-    assert.equal(pushedEntries, 1, "switching application surfaces replaces one owned entry");
-
-    const resourceUri =
-      "vela-bot:conversation?hostId=host-a&conversationId=conversation-a";
-    navigation.replaceExtensionViewResource("vela.drive.files", resourceUri);
-    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
-      kind: "extension-view",
-      viewId: "vela.drive.files",
-      resourceUri,
-    });
-    assert.equal(
-      urls.at(-1),
-      `/views/vela.drive.files?resource=${encodeURIComponent(resourceUri)}`,
-    );
-
-    navigation.openSettings("extension:lightvela/account");
-    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
-      kind: "settings",
-      slug: "extension:lightvela/account",
-    });
-    assert.equal(
-      urls.at(-1),
-      "/settings/extension%3Alightvela%2Faccount",
-    );
-
-    navigation.closeSettings();
-    assert.deepEqual(
-      historyDeltas,
-      [-1],
-      "Back to app exits the single settings entry instead of visiting prior sections",
-    );
-
-    navigation.push(location);
     assert.deepEqual(navigation.getSnapshot().applicationRoute, {
       kind: "conversation",
     });
-    assert.equal(urls.at(-1), "/local/thread-a?hostId=local");
+    assert.deepEqual(navigation.getSnapshot().location, location);
+    assert.equal(
+      navigation.getSnapshot().url,
+      `/?hostId=local&draftId=${encodeURIComponent(draft.id)}`,
+    );
+    assert.deepEqual(presented?.location, location);
+
+    resolvePreparation?.(null);
+    await Promise.resolve();
+    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
+      kind: "conversation",
+    });
   } finally {
     navigation.dispose();
+    scopes.dispose();
     if (previousWindow === undefined)
       delete (globalThis as { window?: unknown }).window;
     else Object.defineProperty(globalThis, "window", previousWindow);
@@ -239,60 +237,21 @@ test("Extension View resources round-trip and can be canonically replaced", () =
   });
 });
 
-test("an active Extension View can push a resource without replacing its previous deep link", () => {
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  const urls: string[] = [];
-  let pushedEntries = 0;
-  const history = {
-    state: null as unknown,
-    replaceState(next: unknown, _unused: string, url: string) {
-      this.state = next;
-      urls.push(url);
-    },
-    pushState(next: unknown, _unused: string, url: string) {
-      this.state = next;
-      pushedEntries += 1;
-      urls.push(url);
-    },
-    back() {},
-    forward() {},
-    go() {},
-  };
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: {
-      location: { href: "https://vela.test/local/thread-a?hostId=local" },
-      history,
-      addEventListener() {},
-      removeEventListener() {},
-    },
-  });
-  const navigation = createBrowserWorkbenchNavigation(
-    createWorkbenchThreadLocation("local", "thread-a"),
-  );
+test("an active Extension View can push and pop resources without losing Chat destination", async () => {
+  const location = createWorkbenchThreadLocation("local", "thread-a");
+  const navigation = createApplicationNavigation(location, { mode: "memory" });
   try {
-    const channel = "lightvela-collaboration://servers/server-1/chat/channels/channel-1";
-    const thread = `${channel}/im-threads/thread-1`;
-    navigation.openExtensionView("lightvela.collaboration.workspace", channel);
-    const channelIndex = navigation.getSnapshot().historyIndex;
-
-    navigation.pushExtensionViewResource("lightvela.collaboration.workspace", thread);
-
-    assert.deepEqual(navigation.getSnapshot().applicationRoute, {
-      kind: "extension-view",
-      viewId: "lightvela.collaboration.workspace",
-      resourceUri: thread,
-    });
-    assert.equal(navigation.getSnapshot().historyIndex, channelIndex + 1);
-    assert.equal(pushedEntries, 2);
-    assert.equal(
-      urls.at(-1),
-      `/views/lightvela.collaboration.workspace?resource=${encodeURIComponent(thread)}`,
-    );
-  } finally {
-    navigation.dispose();
-    if (previousWindow === undefined)
-      delete (globalThis as { window?: unknown }).window;
-    else Object.defineProperty(globalThis, "window", previousWindow);
-  }
+    navigation.openExtensionView("workspace", "channel");
+    navigation.pushExtensionViewResource("workspace", "thread");
+    assert.equal(navigation.getSnapshot().historyIndex, 2);
+    navigation.back(); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(navigation.getSnapshot().applicationRoute, { kind: "extension-view", viewId: "workspace", resourceUri: "channel" });
+    navigation.forward(); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(navigation.getSnapshot().applicationRoute, { kind: "extension-view", viewId: "workspace", resourceUri: "thread" });
+    navigation.replaceExtensionViewResource("workspace", "renamed");
+    assert.equal(navigation.getSnapshot().historyIndex, 2);
+    navigation.openChat();
+    assert.equal(navigation.getSnapshot().applicationRoute.kind, "conversation");
+    assert.deepEqual(navigation.getSnapshot().location, location);
+  } finally { navigation.dispose(); }
 });

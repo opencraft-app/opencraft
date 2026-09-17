@@ -2,6 +2,7 @@ import { HermesRpcError, type HermesRpcClient } from "./rpc-transport";
 import type { HermesHistoryClient } from "./history-client";
 import {
   decodeHermesModelSelection,
+  canonicalHermesModelSelection,
   hermesModelSwitchArgument,
   mapHermesModelOptions,
   modelSelectionFromExecution,
@@ -12,6 +13,7 @@ import type {
   HermesMessage,
   HermesModelOptionsPayload,
   HermesPendingClarify,
+  HermesProfileDescription,
   HermesProfileSummary,
   HermesSessionPayload,
   HermesSessionSummary,
@@ -30,6 +32,7 @@ import {
 import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const PROFILE_MODEL_OPTIONS_SETTLE_MS = 20_000;
 
 class HermesAppServerDomainError extends Error {
   readonly rpcCode = -32009;
@@ -296,6 +299,14 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
   return result;
 }
 
+function isHiddenTranscriptMessage(message: HermesMessage): boolean {
+  // Hermes persists model-switch metadata as a role-user row so strict model
+  // providers accept the mid-history pivot. Desktop presents it as a system
+  // event; the AppServer projection has no equivalent item, so never render it
+  // as user-authored transcript content.
+  return message.display_kind === "hidden" || message.display_kind === "model_switch";
+}
+
 function timestamp(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return Math.floor(Date.now() / 1000);
   return value > 10_000_000_000 ? Math.floor(value / 1000) : Math.floor(value);
@@ -390,7 +401,7 @@ function projectTurnItems(sessionId: string, entries: Array<{ message: HermesMes
   const toolsByCallId = new Map<string, number>();
 
   for (const { message, index } of entries) {
-    if (message.display_kind === "hidden") continue;
+    if (isHiddenTranscriptMessage(message)) continue;
     const address = messageAddress(message, index);
 
     if (message.role === "user") {
@@ -559,7 +570,7 @@ function mapMessageRanges(sessionId: string, messages: HermesMessage[], running 
     entries = [];
   };
   for (const [index, message] of messages.entries()) {
-    if (message.display_kind === "hidden" || message.role === "system") continue;
+    if (isHiddenTranscriptMessage(message) || message.role === "system") continue;
     if (message.role === "user" || turns.length === 0) {
       if (turns.length > 0) flush();
       turns.push({
@@ -773,7 +784,10 @@ export class HermesAppServerAdapter {
   private readonly serverRequestListeners = new Set<(request: HermesAppServerInteractionRequest) => void>();
   private readonly pendingClarifyByRequest = new Map<string, PendingClarifyOwnership>();
   /** Concurrent agent/list and model/list share one ephemeral model.options snapshot. */
-  private readonly modelCatalogReads = new Map<string, Promise<ReturnType<typeof mapHermesModelOptions>>>();
+  private readonly modelCatalogReads = new Map<string, Promise<{
+    payload: HermesModelOptionsPayload;
+    models: ReturnType<typeof mapHermesModelOptions>;
+  }>>();
   /** `running=false` means waiting-for-input while this barrier exists, not Turn completion. */
   private readonly stopGatewayEvents: () => void;
   private readonly stopComposerQueue: () => void;
@@ -1214,15 +1228,36 @@ export class HermesAppServerAdapter {
           explicit_only: params.includeHidden !== true,
           ...(liveSessionId === null ? {} : { session_id: liveSessionId }),
           ...(profile === null ? {} : { profile }),
-        }).then((payload) => mapHermesModelOptions(payload).filter(
-          (model) => params.includeHidden === true || !model.hidden,
-        ));
+        }).then((payload) => ({
+          payload,
+          models: mapHermesModelOptions(payload).filter(
+            (model) => params.includeHidden === true || !model.hidden,
+          ),
+        }));
       this.modelCatalogReads.set(catalogKey, catalogRead);
       void catalogRead.finally(() => queueMicrotask(() => {
         if (this.modelCatalogReads.get(catalogKey) === catalogRead) this.modelCatalogReads.delete(catalogKey);
       })).catch(() => undefined);
     }
-    const all = await catalogRead;
+    const catalog = await catalogRead;
+    const rawSelection = threadId === null
+      ? null
+      : modelSelectionFromExecution(
+        this.payloadByStored.get(threadId)?.info?.model,
+        this.payloadByStored.get(threadId)?.info?.provider,
+      );
+    const canonicalSelection = threadId === null
+      ? null
+      : canonicalHermesModelSelection(
+        catalog.payload,
+        this.payloadByStored.get(threadId)?.info?.model,
+        this.payloadByStored.get(threadId)?.info?.provider,
+      );
+    const all = canonicalSelection === null || rawSelection === null || canonicalSelection === rawSelection
+      ? catalog.models
+      : catalog.models.map((model) => model.id === canonicalSelection
+        ? { ...model, model: rawSelection }
+        : model);
     const offset = typeof params.cursor === "string" && /^hermes-models:\d+$/u.test(params.cursor)
       ? Number(params.cursor.slice("hermes-models:".length))
       : 0;
@@ -1767,6 +1802,31 @@ export class HermesAppServerAdapter {
 
   createProfile(params: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.gateway.call("profiles.create", params);
+  }
+
+  describeProfile(name: string): Promise<HermesProfileDescription> {
+    return this.gateway.call("profiles.describe", { name });
+  }
+
+  listProfileModelOptions(
+    profile: string,
+    settleMs = PROFILE_MODEL_OPTIONS_SETTLE_MS,
+  ): Promise<HermesModelOptionsPayload> {
+    const request = this.gateway.call<HermesModelOptionsPayload>("model.options", {
+      profile,
+      include_unconfigured: false,
+      explicit_only: false,
+    });
+    if (!Number.isFinite(settleMs) || settleMs <= 0) return request;
+    let timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = globalThis.setTimeout(() => {
+        reject(new Error(`model.options did not answer within ${Math.floor(settleMs)}ms`));
+      }, settleMs);
+    });
+    return Promise.race([request, deadline]).finally(() => {
+      if (timer !== null) globalThis.clearTimeout(timer);
+    });
   }
 
   configureProfile(params: Record<string, unknown>): Promise<Record<string, unknown>> {

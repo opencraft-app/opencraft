@@ -150,7 +150,7 @@ export const dispatchAppServerRequest = async (
                   // Hosted-room rosters are frozen in Hermes protocol v1.
                   // Creation supports groups; membership mutation does not.
                   groupMembership: false,
-                  configuration: false,
+                  configuration: services.bots!.configuration,
                   routines: false,
                 },
                 limits: {

@@ -13,16 +13,20 @@ build. Neither renderer is a wrapper around the other.
 
 ```text
 ApplicationSupervisor
-├─ HostRuntimeRegistry
-│  └─ HostRuntime(hostId)
-│     ├─ @opencraft/appserver-client
-│     │  └─ @opencraft/appserver-protocol ── Codex app-server protocol
-│     ├─ Resume / Replica / Thread projections
-│     └─ DuplexTransport
-│        ├─ WebSocket (browser/RN)
-│        ├─ Electron App Host channel → OpenCraft Daemon
-│        ├─ Memory server
-│        └─ Recording / Replay
+├─ AgentRuntimeDirectory
+│  └─ HostRuntimeRegistry
+│     └─ HostRuntime(hostId)
+│        ├─ ProtocolPort (initialized AppServer request boundary)
+│        ├─ Runtime readiness / connection generation
+│        ├─ Domain resources (Threads, Projects, Files, Catalog, Terminal)
+│        ├─ @opencraft/appserver-client
+│        │  └─ @opencraft/appserver-protocol ── Codex app-server protocol
+│        ├─ Resume / Replica / Thread projections
+│        └─ DuplexTransport
+│           ├─ WebSocket (browser/RN)
+│           ├─ Electron App Host channel → OpenCraft Daemon
+│           ├─ Memory server
+│           └─ Recording / Replay
 ├─ BrowserRuntime
 ├─ RendererRuntime
 ├─ EcosystemSupervisor
@@ -46,6 +50,10 @@ Codex desktop frame           iOS · Android · Expo Web
         │                           │
 Electron bridge               native/web adapters
 ```
+
+`AgentRuntimeDirectory` waits for Host readiness; it does not own Host
+registration, transport, Thread state, Skills state or model configuration.
+Views and domain services never read the raw AppServer client registry.
 
 ## Package ownership
 
@@ -158,6 +166,20 @@ that acceptance is reported separately in [the native speech plan](../design/nat
 
 ### Thread lifecycle ownership
 
+DSH display recovery uses [JIT history](../design/dsh-jit-history.md): native
+message pages retain their original unit and are mapped to requested Turn
+windows without a persistent event mirror. Reading a conversation does not
+activate its Agent. A read-only native description supplies metadata; execution
+acquires the runtime lazily. Older history-index databases are left untouched
+and are no longer opened by the local Host.
+
+Current model identity is a Thread configuration binding, not an execution-engine
+label or merely the last request's model. Fork returns the acknowledged choice;
+Catalog persists it for resume and lazy execution, including never-run children.
+Dynamic tool wire declarations are retained separately from normalized engine
+descriptors. Preflight precedes native creation; cold display registration accepts
+the declaration without mounting an Agent, and activation installs it idempotently.
+
 OpenCraft owns persisted Thread names, archive state and fork/subagent relation
 in `opencraft-threads.sqlite` under the Host product data directory. Engine
 history remains behind the native execution port; metadata discovery never
@@ -210,7 +232,90 @@ An interaction epoch invalidates picker/create results when the draft, Host,
 workspace, submission phase or visible route changes. Persisted additions remain
 in their original Host catalog, but never retarget a replacement draft.
 
+### Read-only SQLite diagnostics
+
+Electron internal developer mode exposes a Settings inspector for the four
+OpenCraft-owned local Agent SQLite databases under the current desktop profile:
+session routing, history index, thread catalog and execution authority. Main
+owns the filesystem boundary and opens only those fixed filenames with SQLite
+`readOnly` plus `query_only`; Renderer receives database metadata, table schema
+and bounded paginated rows. The port accepts neither paths nor SQL and provides
+no mutation, import, export or delete operation. Developer-mode visibility is a
+presentation gate, not the security boundary. Row values stay on the device;
+Blob data is summarized and long cells are bounded for debug rendering.
+The Workbench-owned five-Escape gesture toggles internal developer mode for the
+current browser session. Plugins, Laboratory and the Electron SQLite inspector
+are internal Settings entrances. Disabling the mode removes them
+immediately; an active internal-only route returns to Appearance rather than
+leaving inaccessible content mounted.
+
+Bot product surfaces are temporarily part of the same internal presentation
+audience. Normal mode does not project the Bots application, Bot sidebar
+entities, Bot creation command, or Bot conversation views. Enabling developer
+mode restores them together; disabling it while a Bot view is active returns
+to the ordinary Chat route. The extensions and AppServer capabilities remain
+loaded, so this audience flag is a presentation policy rather than an
+authorization or persistence boundary.
+
+### UI preference authority
+
+Workbench UI preferences are owned by one asynchronous, typed
+`UiPreferencesRuntime`. Every registered key declares a schema, default value
+and subject scope (`installation`, `account`, or `workspace`); React never
+chooses or calls a physical store. Web installation preferences use a
+Renderer-owned IndexedDB adapter. Electron's loopback origin uses a random port
+per launch, so its installation authority is a Main-owned profile SQLite table
+behind a restricted asynchronous preload bridge; Renderer IndexedDB cannot be
+its cross-restart authority. Future account/workspace keys must supply their
+own HTTP/AppServer authority adapter with revision/CAS.
+Temporary interaction state such as peek, hover, drag projection and animation
+never enters the preference store.
+
+Shell Navigation is the first migrated consumer. Applications Pin, Account
+Pin, rail detent, last visible detent, navigation-rail width and left context
+sidebar width are installation-scoped.
+Applications defaults to unpinned. The legacy `applications: true` value is
+not migrated because previous releases automatically persisted that product
+default and cannot distinguish it from explicit user intent; other valid
+legacy geometry is migrated once. IndexedDB and Electron SQLite both carry
+monotonically increasing revisions; Web uses BroadcastChannel invalidation and
+Electron publishes change events through its preload port.
+
+Cloud Storage uses the standalone management-page hierarchy adapted from
+`codex/chat-demo-v2`: the route owns a stable page title and content boundary.
+Its View and navigation contribution are internal-audience only: normal mode
+hides both, and disabling developer mode exits an already-open storage route.
+This is a presentation gate; storage services and data are not removed.
+Anonymous state renders the complete LightVela site selection and sign-in
+controls in that content area instead of replacing the page with a bare notice.
+Authenticated state mounts the existing TAT file manager for the selected Bot.
+This page does not invent local-storage semantics. Skills is a separate full
+Workbench adapted from `chat-demo-v2`: public catalog discovery is anonymous,
+while installed state and mutations belong to an explicit installation target.
+Targets are either the local DSH user root (`~/.opencraft/skills`) or a connected
+Hermes Profile; local DSH is never represented as a Profile or Bot. Workspace
+discovery additionally reads `<cwd>/.opencraft/skills`, while DSH retains its
+native project/user `.agents/skills` roots. Local SkillHub artifacts cross the
+AppServer boundary as bounded, checksummed files, install atomically below the
+managed root, and uninstall moves the exact entry to recoverable local trash.
+Hermes Profile mutations continue through the Profile Skills Host protocol.
+For Settings layout, edge-to-edge is an inset policy rather than a scroll
+ownership transfer. The persistent AppShell Header remains outside the content
+viewport; the Settings viewport keeps `min-height: 0`, stable scrollbar gutter
+and the sole vertical `auto` overflow, matching Codex's Header-plus-scrollport
+topology. Only master-detail pages suppress that outer scroll and delegate it to
+their bounded internal panes. Feature content must not add a second page-level
+scroll container merely to compensate for Shell clipping.
+
 Task workspace presentation is specified in [the workspace design](../design/README.md).
+The right-panel tab strip owns one dropdown immediately after its existing plus
+picker. Its first section lists available creation actions; its second section
+lists all tabs in the current owner's region, independent of Browser/Terminal
+type. Right-side Browser and Terminal icons remain direct creation shortcuts.
+Both menus call the same creation actions; existing entries dispatch activate-tab
+without creating resources. No type-group metadata or second tab store is needed.
+Duplicate titles retain distinct IDs and display an ordinal; Escape does not
+create/switch a resource, and selection hands focus off after the Radix menu closes.
 The product exposes right-side tools only; no bottom outlet or move/reveal controls.
 Legacy bottom tabs return to the right without disposing their resources.
 The Cordis panel service owns tab state; main-chat overlay consumes
@@ -423,6 +528,75 @@ typed feature contract, not the rendered element tree.
 
 ## Fixed navigation entrances
 
+### Terminal character metrics boundary
+
+TerminalPanel separates visual inset from its measured xterm host, and that host
+also isolates inherited application letter spacing, word spacing and text
+transforms. xterm owns font/grid metrics and its internal row compensation; CSS
+must not override those internal rows. The terminal explicitly requests zero
+additional grid letter spacing. Canvas cell measurement and the DOM width cache
+must not see different application typography. WSP-21 acceptance measures full
+row text advances and the last-column cursor as well as screen/host boxes.
+`smoke:terminal-geometry` mounts the real panel and xterm with only the PTY port
+replaced, exercises DPR 1/2, hostile body tracking, widths, wide cells, font change
+and visibility, and includes the old inheritance as a failing control. Its
+rounding budget accounts for pinned xterm's 32-glyph integer-width measurement;
+it does not add layout padding or silently remove columns.
+
+### Conversation terminal semantics
+
+The Host remains the sole owner of PTYs and retained process output. The
+renderer application projects those resources through one
+`ConversationTerminalSessionRegistry` keyed by Conversation Scope. Its ordered
+session directory, most recently activated terminal, Host identity, cwd, shell,
+phase and bounded readable buffer are application semantics; xterm and panel
+tabs are presentations, not a second process or session authority.
+
+The Terminal panel adapter writes active-terminal changes when a terminal tab
+is selected. Selecting Browser or another panel type does not erase the most
+recent terminal selection. Closing the selected terminal falls back within the
+same Conversation Scope, while releasing the Scope removes every association
+and observer. Panel owner IDs and Conversation resource owner IDs remain
+distinct.
+
+`read_thread_terminal` is a read-only, no-argument dynamic tool. The calling
+AppServer Host ID and Thread ID must resolve through `ConversationBindingStore`
+to one Conversation Scope before the current terminal can be read. The tool
+does not accept a session ID, enumerate other terminals, inspect xterm DOM or
+cross Host/Thread boundaries. Its output is decoded from the AppServer terminal
+projection and capped to the latest application buffer; the Host replay window
+continues to own longer retention and reconnect truncation.
+
+### Application Router authority
+
+`createApplicationNavigation` in `runtime/workbench-navigation.ts` owns a React
+Router data router with no loaders/actions. Electron uses `createMemoryRouter`;
+Web uses `createBrowserRouter`. The existing Shell consumes its external-store
+snapshot. Connected and hostless supervisors use the same implementation; Views
+do not call the browser History API or keep a second writable application route.
+Legacy v7 browser metadata is read only as migration input.
+
+Application path, Router entry key, conversation identity and route/View scope are
+distinct. `openChat` navigates to the entry's remembered conversation (or hostless
+Home); it is not a POP. `navigateToHome` presents a new local Draft. Settings and
+extension destinations normally PUSH, explicit invalid-route corrections REPLACE,
+and only history controls POP. Router keys supply a known-entry projection for
+back/forward. Web saves that key projection per browser session and verifies the
+current Router key when restoring it; it is not another path authority. Desktop
+memory history lasts for the window, not across process restarts.
+
+`WorkbenchNavigationTransaction` fences preparation by intent epoch, commits only
+accepted destinations, and restores the complete prior entry after a failed POP.
+Changing routes cancels pending readiness without stopping a live turn. A late
+Thread lease is released; late success/error cannot take navigation ownership.
+POP to a different View of the same conversation must still restore that View.
+Thread/Draft stores, composer state, Host connections and background execution
+remain resource owners independent of route history. Shell divider hit targets
+start below the toolbar, so pane geometry cannot intercept history controls.
+
+Reference boundaries and acceptance evidence are in the
+[application navigation plan](../design/application-navigation/task_plan.md).
+
 Chat and Settings are the built-in application routes. Local Model Services is
 a normal Settings page using the shared Settings category and master-detail
 container; there is no Environment application route, parent context pane,
@@ -440,8 +614,9 @@ survive View reattachment and must be applied before saving a connection. A
 capability-gated draft endpoint probe uses only explicitly entered credentials,
 does not mutate the runtime and is not a substitute for full runtime validation.
 The page is absent when that extension/platform contribution is unavailable; the
-Shell never falls back to an active remote Host. Global Settings retains
-Appearance, Plugins and Laboratory. EnvironmentDirectory, account discovery and
+Shell never falls back to an active remote Host. Global Settings always retains
+Appearance; internal developer mode adds Plugins and Laboratory, and Electron
+also adds the read-only SQLite inspector described above. EnvironmentDirectory, account discovery and
 persisted Host profiles remain runtime services used by Chat and providers, but
 they have no built-in application navigation or creation UI.
 Desktop account restoration runs asynchronously after extension activation and
@@ -559,7 +734,12 @@ Environment discovery lives in `workbench-runtime/src/environment-directory`,
 owned by the Cordis `environmentDirectory` service. Configured local/manual
 profiles and trusted provider sources feed one directory. Entries are lazy
 connection recipes, not connected Hosts: cloud lifecycle, source freshness and
-transport phase remain separate. LightVela discovery lives in its plugin's
+transport phase remain separate. Provider-managed entries carry a typed
+`MachineResourceLifecycle` with canonical and raw phases plus explicit action
+capabilities; configured Local/manual Hosts carry `resource: null`. Resource
+actions route only through the owning source, require a caller operation ID and
+fail closed when either capability or handler is absent. `provisionHost()` still
+persists a connection recipe and never means cloud allocation. LightVela discovery lives in its plugin's
 `environment-directory` folder and binds identity to region, account and instance.
 It lists non-running states, paginates with generation fences, and clears entries
 on sign-out. Explicit saved bindings preserve Host IDs; unbound legacy profiles
@@ -567,6 +747,9 @@ are not silently reassigned. Environment and Chat share an ephemeral profile
 projection; discovery registers factories without connecting or changing the
 active conversation. Passive Chat queries only connected/auto-connect Hosts.
 New instance creation refreshes this same source, not a second profile registry.
+The new-thread Host dot observes the selected Host runtime connection directly;
+View/task activation errors never recolor it. Cloud resource phases
+appear as secondary machine copy and cannot replace connection status.
 
 There is exactly one Sidecar. It composes a primary application `SidecarPane`, an
 optional contextual `SidecarPane`, and one Footer; the panes are not independent
@@ -792,6 +975,13 @@ output tree and ad-hoc signing path. This prevents a preview from taking the
 release app's single-instance lock, daemon socket, browser session or stored
 credentials. The preview hook mutates only the assembled package: it removes
 foreign native prebuilds and signs after all packaged resources are final.
+
+Release renderers use one standard Oxc minification pass plus content-hashed
+asset names. They do not enable top-level ultra mangling, repeated aggressive
+compression, or a second JavaScript-obfuscator pass over Electron Main,
+Preload, or Daemon bundles. Runtime correctness and debuggable failure
+semantics take precedence over transforming control flow; source maps remain
+outside the public published tree.
 
 ## Next feature rule
 

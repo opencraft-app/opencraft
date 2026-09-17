@@ -16,6 +16,7 @@
 - 对外统一 API / 管理 API 入口：`service-gateway`、`admin-gateway`
 - 管理后台与运维面板：`gateway-dashboard`、`nextgen-dashboard`
 - AI 兼容代理能力：`ai-gateway`
+- 浏览器、macOS 桌面与 Expo 共用的 Agent 工作台：`opencraft`
 - 云资源、集群、仓库、监控等基础设施：`infra_pulumi`
 
 如果只想用一句话理解：
@@ -64,6 +65,44 @@ make local-stack-up
 
 环境模型、Secret 覆盖和清理命令见
 [`deploy/localstack/README.md`](deploy/localstack/README.md)。
+
+## OpenCraft 本地工作台与预览
+
+[`opencraft/`](opencraft/) 是 mono2 内的工作台源码真源，不再从旧独立仓库双向同步。浏览器、Electron 和 Expo 共享领域语义，但各有构建与运行边界；代码入口见 [OpenCraft README](opencraft/README.md)，平台产物与门禁以 [构建矩阵](opencraft/docs/build-matrix.md) 为准。
+
+快速启动浏览器工作台（不需要模型 API Key 才能打开界面）：
+
+```bash
+cd opencraft
+npm ci
+npm run dev:web
+```
+
+在 Apple Silicon Mac 上验收桌面版，建议从最新 `master` 建隔离工作树。预览打包脚本会重建该工作树内的 `release/preview`，不要对正在使用的预览目录重复运行：
+
+```bash
+git fetch origin master
+opencraft_preview_root=$(mktemp -d /tmp/mono2-opencraft-preview.XXXXXX)
+git worktree add --detach "$opencraft_preview_root/mono2" origin/master
+cd "$opencraft_preview_root/mono2/opencraft"
+npm ci
+npm run package:electron:mac:arm64:preview
+codesign --verify --deep --strict "apps/workbench-electron/release/preview/mac-arm64/OpenCraft Preview.app"
+mkdir -p "$opencraft_preview_root/profile" "$opencraft_preview_root/models"
+OPENCRAFT_MODEL_STORAGE_DIRECTORY="$opencraft_preview_root/models" \
+  "apps/workbench-electron/release/preview/mac-arm64/OpenCraft Preview.app/Contents/MacOS/OpenCraft Preview" \
+  --user-data-dir="$opencraft_preview_root/profile"
+```
+
+这是独立数据目录的本地 QA 预览，不会沿用现有登录态或模型凭据；打包成功不等于实机交互验收，更不等于源码发布或 GitOps 同步。日常维护、状态所有权和测试入口先读 [OpenCraft AGENTS](opencraft/AGENTS.md)，参考仓库 `ref/` 只作为固定版本的证据，不是产品源码写入点。
+
+系统浏览器登录还要验收全机的 `opencraft://` 回调。多份同名预览共用 Bundle ID；点击登录、浏览器打开后，在完成授权前检查 macOS 将回调交给哪一个 `.app`：
+
+```bash
+swift -e 'import AppKit; print(NSWorkspace.shared.urlForApplication(toOpen: URL(string: "opencraft://auth/lightvela")!)?.path ?? "none")'
+```
+
+输出应指向本次预览且其主可执行文件存在、签名有效；否则先停止登录验收，不要反复提交授权，也不要批量清理其他预览的系统注册。
 
 ## Agent 自动化玩法
 
@@ -791,6 +830,8 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
   - 用户域，目前核心是 `user/auth`
 - [frontend](frontend)
   - 用户前台 Web 项目
+- [opencraft](opencraft)
+  - 多端 Agent 工作台与桌面 Local Agent；独立 npm workspace
 - [service-gateway](service-gateway)
   - 公网服务网关
 - [nextgen-dashboard](nextgen-dashboard)

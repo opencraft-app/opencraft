@@ -5,8 +5,18 @@
 - DSH owns sessions, durable events, running turns, queued messages, pending
   questions and approval decisions. The bridge must not infer an answer from
   a tool label or terminate a wait merely because a renderer disconnected.
-- `DshClient` owns HTTP envelopes and multiplexed event envelopes. It preserves
-  the native `rpcId`; `/api/respond` uses `client-response`, not `client-request`.
+- `DshClient` owns HTTP envelopes, per-request transport deadlines and
+  multiplexed event envelopes. A caller-owned cancellation signal narrows the
+  request lifetime; it never replaces the finite transport deadline. The client
+  preserves the native `rpcId`; `/api/respond` uses `client-response`, not
+  `client-request`.
+- `DshRoutedClient` owns bounded history-window reads and shared in-flight work.
+  It does not maintain a second full-history index. Every shared flight must
+  settle and be evicted after success, failure, cancellation or timeout so one
+  stalled native request cannot poison later restores.
+- `ThreadLifecycle` serializes operations for a logical Thread. It does not own
+  another transport timeout or terminate native DSH work; its delegates must
+  already have bounded lifetimes at the transport boundary.
 - `DshInteractions` owns only pending wire correlations and response translation.
   It replays pending requests to subscribers, suppresses simultaneous duplicate
   responses, and withdraws requests on DSH resolution or an accepted receipt.
@@ -34,6 +44,9 @@
 | goal/change | thread/goal/updated or thread/goal/cleared, independent of TODO |
 | thread/goal/get | authoritative session.history goal projection |
 | assistant/message | deferred phase: commentary before further work, final_answer on successful turn end |
+| thread status `notLoaded` or `idle` | neutral Workbench Thread state; no attention marker |
+| thread status `active` | running Workbench Thread state |
+| thread status `systemError` | explicit error state; never a running or review marker |
 
 `DshTurnProjection` is the shared ordered fold for history and live events.
 An unfinished message keeps a null phase until its execution boundary is known.
@@ -64,3 +77,8 @@ multiSelect/intent presentation, recovery of missed upstream timeline events,
 history pages beginning after a tool's call, and model-modality catalog propagation
 still need explicit protocol work. Do not add renderer heuristics or mark these
 capabilities supported merely because a generic tool card can be displayed.
+
+The Workbench owns only the presentation of projected Thread state. A review
+marker requires a real product attention source; restore not yet loaded is not
+review work. Sidebar colors consume semantic design tokens and do not reinterpret
+transport or AppServer lifecycle state.
