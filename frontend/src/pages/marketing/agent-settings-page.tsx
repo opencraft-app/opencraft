@@ -351,6 +351,13 @@ function TeaSdkSettingsPanel({
 
 /* ─── Types ─── */
 
+// Solar Icons: solar:restart-bold. The arrow joins the circular stroke.
+const RestartIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M18.2577 3.50828C18.538 3.62437 18.7207 3.89785 18.7207 4.20119V8.44383C18.7207 8.85805 18.3849 9.19383 17.9707 9.19383H13.728C13.4247 9.19383 13.1512 9.0111 13.0351 8.73085C12.9191 8.45059 12.9832 8.128 13.1977 7.9135L14.8007 6.3105C12.1674 5.20912 9.01606 5.7309 6.87348 7.87348C4.04217 10.7048 4.04217 15.2952 6.87348 18.1265C9.70478 20.9578 14.2952 20.9578 17.1265 18.1265C18.7727 16.4803 19.4622 14.2401 19.1935 12.0937C19.142 11.6827 19.4335 11.3078 19.8445 11.2563C20.2555 11.2049 20.6304 11.4963 20.6819 11.9073C21.0057 14.4934 20.1746 17.1997 18.1872 19.1872C14.7701 22.6043 9.2299 22.6043 5.81282 19.1872C2.39573 15.7701 2.39573 10.2299 5.81282 6.81282C8.55119 4.07444 12.6515 3.5312 15.9309 5.18028L17.4404 3.67086C17.6549 3.45637 17.9774 3.3922 18.2577 3.50828Z" />
+  </svg>
+);
+
 const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 1024 1024" aria-hidden="true" fill="none" {...props}>
     <path
@@ -369,14 +376,18 @@ type WorkspaceActionTooltipSide = "top" | "bottom";
 const WORKSPACE_ACTION_TOOLTIP_GAP = 8;
 const WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN = 16;
 
-function WorkspaceActionTooltip({
+export function WorkspaceActionTooltip({
   children,
   content,
   side = "top",
+  compact = false,
+  focusable = true,
 }: {
   children: ReactNode;
   content?: ReactNode;
   side?: WorkspaceActionTooltipSide;
+  compact?: boolean;
+  focusable?: boolean;
 }) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -451,7 +462,7 @@ function WorkspaceActionTooltip({
     <span
       ref={triggerRef}
       className="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
-      tabIndex={0}
+      tabIndex={focusable ? 0 : undefined}
       aria-describedby={open ? tooltipId : undefined}
       onMouseEnter={showTooltip}
       onMouseLeave={scheduleClose}
@@ -471,7 +482,8 @@ function WorkspaceActionTooltip({
               id={tooltipId}
               role="tooltip"
               className={cn(
-                "pointer-events-auto fixed z-50 w-72 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+                "pointer-events-auto fixed z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white text-[11px] font-medium text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
+                compact ? "w-max px-2.5 py-1 leading-4" : "w-72 px-3 py-2 text-pretty leading-relaxed",
                 side === "top" && "-translate-y-full",
               )}
               style={{ left: position.left, top: position.top }}
@@ -5212,7 +5224,7 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
-                              <span className="lv-agent-action-item">
+                              <WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
                                   aria-label={restartTooltip}
@@ -5228,14 +5240,16 @@ export const AgentSettingsPage = ({
                                     setShowRestartConfirm(true);
                                   }}
                                 >
-                                  <RefreshCw className={cn("h-3.5 w-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" />
+                                  {isActiveBotRestarting || isRepairingBot ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                                  ) : activeBot.status === "failed" ? (
+                                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                                  ) : (
+                                    <RestartIcon className="h-4 w-4" />
+                                  )}
                                 </button>
-                                <span className="lv-agent-action-tooltip">
-                                  {restartTooltip}
-                                  <span className="lv-agent-action-tooltip-arrow" />
-                                </span>
-                              </span>
-                              <span className="lv-agent-action-item">
+                              </WorkspaceActionTooltip>
+                              <WorkspaceActionTooltip content={deleteTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
                                   aria-label={deleteTooltip}
@@ -5250,11 +5264,7 @@ export const AgentSettingsPage = ({
                                 >
                                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                 </button>
-                                <span className="lv-agent-action-tooltip">
-                                  {deleteTooltip}
-                                  <span className="lv-agent-action-tooltip-arrow" />
-                                </span>
-                              </span>
+                              </WorkspaceActionTooltip>
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
