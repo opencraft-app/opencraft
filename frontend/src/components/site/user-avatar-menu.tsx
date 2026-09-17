@@ -227,14 +227,16 @@ export const UserAvatarMenu = ({
 
             {/* Menu items */}
             <div className="py-1.5">
-              <a
-                href={AGENTS_HOME_PATH}
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <Bot className={menuIconClass} />
-                {t("我的智能体伙伴")}
-              </a>
+              {!isSidebar && (
+                <a
+                  href={AGENTS_HOME_PATH}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <Bot className={menuIconClass} />
+                  {t("我的智能体伙伴")}
+                </a>
+              )}
               <a
                 href="/account"
                 onClick={() => setOpen(false)}
