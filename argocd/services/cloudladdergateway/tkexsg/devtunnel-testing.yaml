@@ -86,7 +86,7 @@ spec:
         - name: DEVTUNNEL_CAPABILITY_REGISTRY_ENABLED
           value: "true"
         - name: DEVTUNNEL_CAPABILITY_LEASE_NAMESPACE
-          value: cloudladdergateway-devroute-testing
+          value: ns-prjqt8dd-867795-production
         - name: DEVTUNNEL_CAPABILITY_LEASE_PREFIX
           value: cloudladdergateway-devroute-
         - name: DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS

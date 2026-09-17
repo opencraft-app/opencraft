@@ -1,13 +1,4 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: cloudladdergateway-devroute-testing
-  labels:
-    app.kubernetes.io/name: cloudladdergateway
-    app.kubernetes.io/component: developer-route-store
-    app.kubernetes.io/environment: testing
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: cloudladdergateway-devroute-testing
@@ -17,7 +8,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cloudladdergateway-devroute-testing
-  namespace: cloudladdergateway-devroute-testing
+  namespace: ns-prjqt8dd-867795-production
 rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
@@ -27,7 +18,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: cloudladdergateway-devroute-testing
-  namespace: cloudladdergateway-devroute-testing
+  namespace: ns-prjqt8dd-867795-production
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

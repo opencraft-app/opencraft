@@ -9,7 +9,7 @@ CLGATEWAY = REPO_ROOT / "argocd/services/cloudladdergateway"
 AUTH = REPO_ROOT / "argocd/services/lightclaw-auth"
 SERVICE_GATEWAY = REPO_ROOT / "argocd/services/service-gateway"
 WORKLOAD_NAMESPACE = "ns-prjqt8dd-867795-production"
-LEASE_NAMESPACE = "cloudladdergateway-devroute-testing"
+LEASE_NAMESPACE = WORKLOAD_NAMESPACE
 
 
 def load(path: Path) -> dict:
@@ -74,13 +74,15 @@ class CloudLadderDeveloperRouteTests(unittest.TestCase):
                         {},
                     )
 
-    def test_lease_rbac_is_testing_only_and_cannot_read_secrets(self) -> None:
+    def test_lease_rbac_stays_in_namespaced_argo_scope_and_cannot_read_secrets(self) -> None:
         for region in ("tkexgz", "tkexsg"):
             with self.subTest(region=region):
                 path = CLGATEWAY / region / "developer-route-rbac-testing.yaml"
                 docs = {doc["kind"]: doc for doc in load_all(path)}
-                self.assertEqual(docs["Namespace"]["metadata"]["name"], LEASE_NAMESPACE)
+                self.assertNotIn("Namespace", docs)
                 self.assertEqual(docs["ServiceAccount"]["metadata"]["namespace"], WORKLOAD_NAMESPACE)
+                self.assertEqual(docs["Role"]["metadata"]["namespace"], WORKLOAD_NAMESPACE)
+                self.assertEqual(docs["RoleBinding"]["metadata"]["namespace"], WORKLOAD_NAMESPACE)
                 rules = docs["Role"]["rules"]
                 self.assertEqual(len(rules), 1)
                 self.assertEqual(rules[0]["resources"], ["leases"])
