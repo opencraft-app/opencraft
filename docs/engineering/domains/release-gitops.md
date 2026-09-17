@@ -27,6 +27,14 @@ master 源码
 
 ## 不变量
 
+- 新加坡 Sandbox 扩展到新山时，云网络与现有 `llmgateway-sgprod-jhb` 支撑 VPC 分离。
+  `infra_pulumi` 使用持久化 `sandbox-network` scope，只拥有 VPC、pool/support 子网、
+  NAT/EIP、路由/SNAT 和 TAT-only Sandbox 安全组；不得借网络扩容创建第二套 TKE、数据库、
+  Redis、TCR、CLS、内部模型 CLB 或跳板机。network-only `preview` 不需要平台密码，`up`
+  不回写 TKE deploy 输出或 kubeconfig，并且必须在精确资源 diff 审阅后单独获得付费授权。
+  首个 pool 使用 `ap-johorbahru-1`，但网络预留 1/2 区 pool 子网；新加坡存量 pool 的生命周期
+  继续由原 region 维护，网络创建本身不改变 CTL admission。
+
 - Collaboration 北京 foundation 首次进 Argo 时必须能在默认 Kustomize load restriction 下渲染。
   Namespace 和默认 ServiceAccount 的 deploy-facing 清单置于
   `argocd/services/collaboration/beijing-sandbox-foundation/` 内，并由契约测试核对其与源清单的语义一致；

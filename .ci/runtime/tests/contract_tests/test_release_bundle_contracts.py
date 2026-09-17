@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -2946,6 +2947,97 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("acli bundle-update", repair_script_text)
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
+
+    def test_hermes_pool_refresh_selects_only_target_region(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+api_get() { printf '%s' "$resolved_json"; }
+target_pool_ids http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertEqual(result.stdout.splitlines(), ["pool-jhb"])
+
+    def test_hermes_pool_refresh_does_not_publish_one_global_image_for_multi_region_sku(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+source "$script_path"
+api_get() {
+  printf '%s' '[{"id":"sku-hermes-2c4g","template_class_id":"hermes","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}]'
+}
+api_post_json() {
+  printf '%s' '{"id":"sku-hermes-2c4g","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}'
+}
+jq() {
+  printf '%s\n' 'jq must not be required before the multi-region early return' >&2
+  return 127
+}
+refresh_skus http://unused img-jhb "$pools_json"
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertNotIn("updating SKU", result.stdout)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()

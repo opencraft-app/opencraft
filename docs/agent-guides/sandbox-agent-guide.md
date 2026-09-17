@@ -19,6 +19,8 @@
 - 切 pool 镜像时，只允许把 `CLEAN` 标成 `DRY`，`ALLOCATED` 不应被强改
 - 测试环境切 pool 镜像的唯一标准入口是 `.codebuddy/skills/sandbox-ops` 的 SQL fallback；不要再尝试已删除的 pool API / `sandbox/scripts/update-image.sh`
 - Pool 创建后所属 region 不可变；允许在同一 region 内调整 zone、VPC 和 subnet，但不得把已有 pool 从 `ap-singapore-*` 改到 `ap-johorbahru-*` 等其他地域。
+- 同一 SKU 跨多个 Pool region 时，具体云镜像以 `pool.zone + pool.base_image` 为准；SKU 的单值 `desired_image_id` 仅兼容单 Region rollout，不得覆盖其他 Region 的 Pool 镜像。
+- Hermes CI 刷新 Pool 时必须使用构建结果中的 `HERMES_IMAGE_ID_<REGION>`，并按 `pool.zone` 只更新目标 Region。
 - CVM、CBS、TAT 交付校验以及升配生命周期必须携带由 owning pool 的 zone 推导出的 region；`TENCENT_REGION` 只提供默认环境配置，不能覆盖已有实例的 pool 归属。
 - 同 SP 升配只能在同一 region 的 pool 之间重绑；跨 region 需要新建实例/迁移方案，不能把原 CVM 的 pool 元数据直接改到目标地域。
 

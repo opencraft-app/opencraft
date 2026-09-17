@@ -20,6 +20,13 @@ func ValidateInventory(inv *Inventory) error {
 	if inv.Network.VpcCIDR == "" {
 		return fmt.Errorf("inventory missing network.vpc_cidr")
 	}
+	switch inv.Profile {
+	case ProfileSandboxNetwork:
+		return validateSandboxNetworkInventory(inv)
+	case ProfileFull:
+	default:
+		return fmt.Errorf("inventory has unsupported profile %q", inv.Profile)
+	}
 	if inv.Stacks.TKE.ClusterVersion == "" {
 		return fmt.Errorf("inventory missing stacks.tke.cluster_version")
 	}
@@ -73,6 +80,56 @@ func ValidateInventory(inv *Inventory) error {
 	}
 	if err := validateCollaborationInventory(inv.Stacks.Collaboration); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateSandboxNetworkInventory(inv *Inventory) error {
+	if strings.TrimSpace(inv.Network.SupportSubnetKey) == "" {
+		return fmt.Errorf("sandbox-network inventory missing network.support_subnet_key")
+	}
+	if len(inv.Network.SandboxPoolSubnetKeys) == 0 {
+		return fmt.Errorf("sandbox-network inventory requires at least one pool subnet")
+	}
+	seen := map[string]struct{}{}
+	for _, key := range inv.Network.SandboxPoolSubnetKeys {
+		key = strings.TrimSpace(key)
+		if key == "" || key == inv.Network.SupportSubnetKey {
+			return fmt.Errorf("sandbox-network inventory has invalid pool subnet key %q", key)
+		}
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("sandbox-network inventory has duplicate pool subnet key %q", key)
+		}
+		seen[key] = struct{}{}
+	}
+	networking := inv.Stacks.Networking
+	if strings.TrimSpace(networking.PrimaryNATGatewayName) == "" {
+		return fmt.Errorf("sandbox-network inventory missing stacks.networking.primary_nat_gateway_name")
+	}
+	if strings.TrimSpace(networking.RouteTableName) == "" {
+		return fmt.Errorf("sandbox-network inventory missing stacks.networking.route_table_name")
+	}
+	if len(networking.PrimaryEIPs) == 0 || len(networking.PrimaryEIPs) > 5 {
+		return fmt.Errorf("sandbox-network inventory requires 1 to 5 primary EIPs")
+	}
+	if networking.SecondaryNATEnabled() {
+		if strings.TrimSpace(networking.SecondaryNATGatewayName) == "" || len(networking.SecondaryEIPs) == 0 {
+			return fmt.Errorf("sandbox-network inventory enabled secondary NAT without name/EIPs")
+		}
+	}
+	requiredSubnets := append([]string(nil), inv.Network.SandboxPoolSubnetKeys...)
+	requiredSubnets = append(requiredSubnets, inv.Network.SupportSubnetKey)
+	for _, key := range requiredSubnets {
+		subnet, ok := networking.SNATSubnets[key]
+		if !ok || strings.TrimSpace(subnet.AvailabilityZone) == "" || strings.TrimSpace(subnet.Description) == "" {
+			return fmt.Errorf("sandbox-network inventory missing complete SNAT subnet %q", key)
+		}
+	}
+	if strings.TrimSpace(inv.Stacks.Security.SandboxSG.SecurityGroupName) == "" {
+		return fmt.Errorf("sandbox-network inventory missing Sandbox security group name")
+	}
+	if len(inv.Stacks.Security.SandboxSG.Egress) == 0 {
+		return fmt.Errorf("sandbox-network inventory requires Sandbox security group egress rules")
 	}
 	return nil
 }

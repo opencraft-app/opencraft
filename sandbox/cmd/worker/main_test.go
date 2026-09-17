@@ -2113,6 +2113,75 @@ func TestAdvanceSingleSKURolloutProgressesOnePoolAtATime(t *testing.T) {
 	}
 }
 
+func TestAdvanceSingleSKURolloutPreservesPoolImagesAcrossRegions(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-2c4g",
+		Name:            "Hermes 2C4G",
+		TemplateClassID: "hermes",
+		BaseImage:       "img-singapore",
+		DesiredImageID:  "img-singapore",
+		StableImageID:   "img-singapore",
+		InstanceType:    "SA9.MEDIUM4",
+		RolloutState:    core.SKURolloutStateStable,
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+
+	singaporePool, err := svc.CreatePool(ctx, "sg", "", "img-singapore", 1, "vpc-sg", "subnet-sg", "ap-singapore-1", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create Singapore pool: %v", err)
+	}
+	singaporePool.SKUID = "sku-hermes-2c4g"
+	if _, err := svc.UpdatePool(ctx, singaporePool); err != nil {
+		t.Fatalf("bind Singapore pool: %v", err)
+	}
+
+	johorPool, err := svc.CreatePool(ctx, "jhb", "", "img-johor", 1, "vpc-jhb", "subnet-jhb", "ap-johorbahru-1", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create Johor pool: %v", err)
+	}
+	johorPool.SKUID = "sku-hermes-2c4g"
+	if _, err := svc.UpdatePool(ctx, johorPool); err != nil {
+		t.Fatalf("bind Johor pool: %v", err)
+	}
+	instances, err := svc.RefillVerified(ctx, johorPool.ID, 1, []string{"10.80.0.10"}, []string{"ins-johor"}, verifyOK)
+	if err != nil {
+		t.Fatalf("refill Johor pool: %v", err)
+	}
+
+	changed, err := advanceSingleSKURollout(ctx, svc, mustGetSKU(t, svc, "sku-hermes-2c4g"))
+	if err != nil {
+		t.Fatalf("advance multi-region rollout: %v", err)
+	}
+	if changed {
+		t.Fatal("multi-region SKU rollout must not apply one global image to regional Pools")
+	}
+	gotJohor, err := svc.GetPool(ctx, johorPool.ID)
+	if err != nil {
+		t.Fatalf("get Johor pool: %v", err)
+	}
+	if gotJohor.BaseImage != "img-johor" {
+		t.Fatalf("Johor pool image = %q, want regional image img-johor", gotJohor.BaseImage)
+	}
+	gotInstance, err := svc.GetInstance(ctx, instances[0].ID)
+	if err != nil {
+		t.Fatalf("get Johor instance: %v", err)
+	}
+	if gotInstance.State != core.StateClean {
+		t.Fatalf("Johor instance state = %s, want CLEAN", gotInstance.State)
+	}
+}
+
 func TestAdvanceSingleSKURolloutSkipsPausedPoolWhenSelectingTarget(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
