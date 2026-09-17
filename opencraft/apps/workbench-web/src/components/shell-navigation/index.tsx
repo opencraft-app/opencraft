@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { LayoutGrid } from "lucide-react";
 import { AccountSignInMenu } from "./account-sign-in-menu";
-import { SidebarToggleIcon } from "../../chrome-actions/sidebar-toggle-icon";
 import {
   motion,
   useTransform,
@@ -14,8 +14,10 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { useUiPreferencesRuntime } from "../../runtime/ui-preferences-runtime";
 import {
   createShellNavigationState, projectShellNavigation, reduceShellNavigation,
   resolveShellNavigationWidth, shellNavigationMetrics,
@@ -23,7 +25,7 @@ import {
   type ShellNavigationRailDetent,
 } from "@opencraft/workbench-runtime";
 import {
-  AccountAvatar,
+  AccountLeadingVisual,
   isAnonymousShellAccount,
   NavigationContent,
   shellAccountEntranceLabel,
@@ -31,17 +33,8 @@ import {
 } from "./navigation-content";
 
 export type { ShellNavigationConfig } from "./navigation-content";
-const preferenceKey = "opencraft.shell-navigation.v2";
-// v2 stored the old 260px default as an untyped number, so it cannot be
-// distinguished from a deliberate resize. Start the narrower geometry cleanly.
-const widthPreferenceKey = "opencraft.shell-navigation.width.v3";
 const surfaces = ["applications", "account"] as const;
 const labels = { applications: "Applications", account: "Account" };
-
-function readPreferences() {
-  try { return createShellNavigationState(JSON.parse(localStorage.getItem(preferenceKey) ?? "null")); }
-  catch { return createShellNavigationState(); }
-}
 
 /** Web storage/layout adapter; no route, Host or Thread state is owned here. */
 export function useShellNavigation(input: {
@@ -55,16 +48,29 @@ export function useShellNavigation(input: {
   rightPanelFullWidth?: boolean;
   accountAvailable?: boolean;
 }) {
-  const [state, dispatch] = useReducer(reduceShellNavigation, undefined, readPreferences);
-  const [width, setWidth] = useState(() => {
-    try { return resolveShellNavigationWidth(JSON.parse(localStorage.getItem(widthPreferenceKey) ?? "null")); }
-    catch { return shellNavigationMetrics.columnWidth; }
+  const preferences = useUiPreferencesRuntime();
+  const preferenceSnapshot = useSyncExternalStore(
+    preferences.subscribe,
+    preferences.getSnapshot,
+    preferences.getSnapshot,
+  );
+  const restoredState = () => createShellNavigationState({
+    applications: preferenceSnapshot.values["shell.applicationsPinned"],
+    account: preferenceSnapshot.values["shell.accountPinned"],
+    railDetent: preferenceSnapshot.values["shell.navigationDetent"],
+    lastVisibleRailDetent: preferenceSnapshot.values["shell.lastVisibleNavigationDetent"],
   });
+  const [state, dispatch] = useReducer(reduceShellNavigation, undefined, restoredState);
+  const [width, setWidth] = useState(() => resolveShellNavigationWidth(
+    preferenceSnapshot.values["shell.navigationWidth"],
+  ));
   const commitWidth = useCallback((next: number) => {
     const resolved = resolveShellNavigationWidth(next);
     setWidth(resolved);
-    try { localStorage.setItem(widthPreferenceKey, JSON.stringify(resolved)); } catch { /* Storage denied. */ }
-  }, []);
+    void preferences.set("shell.navigationWidth", resolved).catch((error) => {
+      console.error("Could not save navigation width", error);
+    });
+  }, [preferences]);
   const [previouslyAvailable, setPreviouslyAvailable] = useState<boolean>();
   const [previousLevel, setPreviousLevel] = useState<number>();
   const space = input.rightPanelOpen === undefined ? undefined : resolveShellSpace({
@@ -81,14 +87,31 @@ export function useShellNavigation(input: {
     allowDock: input.enabled && input.allowDock !== false });
   useLayoutEffect(() => setPreviouslyAvailable(projection.dockAvailable), [projection.dockAvailable]);
   useEffect(() => {
-    try {
-      localStorage.setItem(preferenceKey, JSON.stringify({
-        ...state.pinned,
-        railDetent: state.railDetent,
-        lastVisibleRailDetent: state.lastVisibleRailDetent,
-      }));
-    } catch { /* Private/storage-denied mode. */ }
-  }, [state.pinned, state.railDetent, state.lastVisibleRailDetent]);
+    const next = restoredState();
+    if (
+      next.pinned.applications !== state.pinned.applications
+      || next.pinned.account !== state.pinned.account
+      || next.railDetent !== state.railDetent
+      || next.lastVisibleRailDetent !== state.lastVisibleRailDetent
+    ) dispatch({ type: "restore-preferences", preferences: {
+      applications: next.pinned.applications,
+      account: next.pinned.account,
+      railDetent: next.railDetent,
+      lastVisibleRailDetent: next.lastVisibleRailDetent,
+    } });
+    const nextWidth = resolveShellNavigationWidth(preferenceSnapshot.values["shell.navigationWidth"]);
+    if (nextWidth !== width) setWidth(nextWidth);
+  }, [preferenceSnapshot.revision]);
+  useEffect(() => {
+    void Promise.all([
+      preferences.set("shell.applicationsPinned", state.pinned.applications),
+      preferences.set("shell.accountPinned", state.pinned.account),
+      preferences.set("shell.navigationDetent", state.railDetent),
+      preferences.set("shell.lastVisibleNavigationDetent", state.lastVisibleRailDetent),
+    ]).catch((error) => {
+      console.error("Could not save navigation preferences", error);
+    });
+  }, [preferences, state.pinned, state.railDetent, state.lastVisibleRailDetent]);
   // A peek absorbed into its dock must not reappear on a later resize.
   useEffect(() => {
     if (state.peek && projection.docked[state.peek]) dispatch({ type: "dismiss", surface: state.peek });
@@ -200,7 +223,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
       const directSignIn = surface === "account" && anonymousAccount;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
         account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
-        visible={visible} container={root.current} />;
+        visible={visible} container={root.current} onOpenSettings={config.onOpenSettings} />;
       return <Dialog.Root key={surface} modal={false}
       open={visible && projection.peek === surface}
       onOpenChange={open => {
@@ -224,8 +247,8 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
           data-pinned={surface === "applications" && projection.primaryNavigation ? visible : directSignIn ? false : state.pinned[surface]}
           title={surface === "applications" && projection.primaryNavigation ? "Applications" : `${surfaceLabel}${!directSignIn && state.pinned[surface] ? " · Pinned" : ""}`}>
-          {surface === "applications" ? <SidebarToggleIcon sidebarOpen={projection.docked.applications || projection.peek === "applications"} />
-            : <><AccountAvatar account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span></>}
+          {surface === "applications" ? <LayoutGrid aria-hidden="true" size={18} />
+            : <><AccountLeadingVisual account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span></>}
         </button>
       </Dialog.Trigger>
       <Dialog.Portal container={root.current}>
@@ -235,15 +258,6 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
           <NavigationContent compact={false} config={config} surface={surface} onInvoke={action => {
             dispatch({ type: "dismiss", surface }); action();
           }} />
-          {surface === "account" ? <div className="shell-navigation__items shell-navigation__placement">
-            <button type="button" aria-label={`${state.pinned[surface] ? "Unpin" : "Pin"} ${labels[surface]}`}
-              onClick={() => {
-                dispatch({ type: "pin", surface, pinned: !state.pinned[surface] });
-                if (!state.pinned[surface]) onPin?.();
-              }}>
-              {state.pinned[surface] ? "Unpin from sidebar" : "Keep in sidebar"}
-            </button>
-          </div> : null}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

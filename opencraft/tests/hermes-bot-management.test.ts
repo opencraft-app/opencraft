@@ -109,3 +109,106 @@ test("an older in-flight catalog finishes before mutation publication", async ()
   const selected = await handler.handle("bot/read", { botId: created.bot.botId }) as any;
   assert.equal(selected.bot.name, "Fresh");
 });
+
+test("per-Bot model configuration stays profile-scoped and preserves Hermes confirmation", async () => {
+  const { handler, adapter, events } = managementFixture();
+  const configureCalls: Record<string, unknown>[] = [];
+  const modelOptionProfiles: string[] = [];
+  adapter.listProfiles = async () => [{
+    name: "default",
+    provider: "lightvela",
+    model: "glm-5.3-flash",
+  }];
+  adapter.describeProfile = async (name: string) => ({
+    name,
+    model: { provider: "lightvela", default: "glm-5.3-flash" },
+  });
+  adapter.listProfileModelOptions = async (profile: string) => {
+    modelOptionProfiles.push(profile);
+    return {
+      provider: "lightvela",
+      model: "glm-5.3-flash",
+      providers: [{
+        slug: "lightvela",
+        name: "LightVela",
+        authenticated: true,
+        models: ["glm-5.3-flash", "deepseek-v4-flash-0731"],
+      }, {
+        slug: "offline",
+        name: "Offline Provider",
+        authenticated: false,
+        models: ["offline-model"],
+      }, {
+        slug: "empty",
+        name: "Empty Provider",
+        authenticated: true,
+        models: [],
+      }],
+    };
+  };
+  adapter.configureProfile = async (params: Record<string, unknown>) => {
+    configureCalls.push(params);
+    if (params.confirm_expensive_model !== true) {
+      return {
+        ok: false,
+        applied: {},
+        confirm_required: true,
+        confirm_message: "This route may incur additional charges.",
+      };
+    }
+    return { ok: true, applied: { model: true } };
+  };
+
+  const current = (await handler.handle("bot/read", { botId: "instance" }) as any).bot;
+  assert.deepEqual(current.model, { provider: "lightvela", model: "glm-5.3-flash" });
+  const read = await handler.handle("bot/configuration/read", { botId: "instance" }) as any;
+  assert.deepEqual(read.configuration.model, {
+    provider: "lightvela",
+    model: "glm-5.3-flash",
+  });
+  assert.deepEqual(modelOptionProfiles, []);
+
+  const options = await handler.handle("bot/configuration/options", { botId: "instance" }) as any;
+  assert.deepEqual(options.providers, [{
+    provider: "lightvela",
+    name: "LightVela",
+    authenticated: true,
+    models: ["glm-5.3-flash", "deepseek-v4-flash-0731"],
+  }]);
+  assert.deepEqual(modelOptionProfiles, ["default"]);
+
+  const pending = await handler.handle("bot/configuration/update", {
+    botId: "instance",
+    expectedRevision: current.revision,
+    model: { provider: "lightvela", model: "deepseek-v4-flash-0731" },
+  }) as any;
+  assert.equal(pending.applied, false);
+  assert.deepEqual(pending.confirmationRequired, {
+    message: "This route may incur additional charges.",
+  });
+  assert.equal(pending.bot.revision, current.revision);
+
+  const applied = await handler.handle("bot/configuration/update", {
+    botId: "instance",
+    expectedRevision: current.revision,
+    model: { provider: "lightvela", model: "deepseek-v4-flash-0731" },
+    confirmExpensiveModel: true,
+  }) as any;
+  assert.equal(applied.applied, true);
+  assert.deepEqual(applied.configuration.model, {
+    provider: "lightvela",
+    model: "deepseek-v4-flash-0731",
+  });
+  assert.ok(applied.bot.revision > current.revision);
+  assert.deepEqual(configureCalls, [
+    { name: "default", model: "deepseek-v4-flash-0731", provider: "lightvela" },
+    {
+      name: "default",
+      model: "deepseek-v4-flash-0731",
+      provider: "lightvela",
+      confirm_expensive_model: true,
+    },
+  ]);
+  assert.deepEqual(modelOptionProfiles, ["default"]);
+  assert.ok(events.some(event => event.method === "bot/updated" && event.params.bot.model?.model === "deepseek-v4-flash-0731"));
+});

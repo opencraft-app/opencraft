@@ -98,9 +98,12 @@ export class RuntimeProviderService {
       return { ...group, models: (await Promise.all(group.models.map(async model => {
         const info = this.modelInfoReader && liveModels.has(JSON.stringify([group.id, model.id]))
           ? await this.modelInfoReader(group.id, model.id) : null;
+        const input = info?.input
+          ?? model.input
+          ?? (model as { inputModalities?: readonly string[] }).inputModalities;
         return { ...model,
         ...(info ? { reasoning: info.reasoning ?? undefined } : {}),
-        input: modelInputModalities(info ? info.input : model.input ?? (model as { inputModalities?: readonly string[] }).inputModalities)
+        input: modelInputModalities(input)
           .filter((modality): modality is "text" | "image" => modality !== "audio"),
         enabled: !disabled.has(model.id),
         source: builtin && !builtin.has(model.id) ? "custom" as const : "builtin" as const,

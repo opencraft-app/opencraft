@@ -52,6 +52,60 @@ test("completion without assistant output fails rather than inventing success", 
   assert.match(projection.terminalOutcome!.error!.message, /without an assistant message/);
 });
 
+test("commentary and failed tool activity may complete without fabricating a final answer", () => {
+  const projection = new DshTurnProjection("s", "dsh-turn-s-activity", "/");
+  projection.project({
+    type: "assistant/message",
+    seq: 1,
+    time: 1,
+    data: {
+      message: {
+        content: [
+          { type: "text", text: "Let me try the browser tool." },
+          { type: "tool-call", id: "call-browser", name: "browser", arguments: "{}" },
+        ],
+      },
+    },
+  });
+  projection.project({
+    type: "tool/call",
+    seq: 2,
+    time: 2,
+    data: { callId: "call-browser", name: "browser", arguments: "{}" },
+  });
+  projection.project({
+    type: "tool/result",
+    seq: 3,
+    time: 3,
+    data: {
+      message: {
+        source: { kind: "tool", callId: "call-browser" },
+        content: [{
+          type: "tool-result",
+          toolCallId: "call-browser",
+          content: [{ type: "text", text: 'unknown tool "browser"' }],
+          isError: true,
+        }],
+      },
+    },
+  });
+  projection.project({ type: "turn/end", seq: 4, time: 4, data: { reason: { kind: "completed" } } });
+
+  const snapshot = projection.execution.snapshot();
+  assert.equal(snapshot.status, "completed");
+  assert.equal(snapshot.error, null);
+  assert.ok(snapshot.items.some((item: any) =>
+    item.type === "agentMessage"
+      && item.phase === "commentary"
+      && item.text === "Let me try the browser tool."));
+  assert.ok(snapshot.items.some((item: any) =>
+    item.type === "dynamicToolCall"
+      && item.tool === "browser"
+      && item.status === "failed"));
+  assert.equal(snapshot.items.some((item: any) =>
+    item.type === "agentMessage" && item.phase === "final_answer"), false);
+});
+
 test("ported HyperNode reconciliation replaces mismatched final text without appending it twice", () => {
   const projection = new DshTurnProjection("s", "dsh-turn-s-1", "/");
   const chunk = projection.project({ type: "assistant/chunk", seq: 1, time: 1, data: { chunk: { type: "text-delta", index: 0, text: "draft" } } });

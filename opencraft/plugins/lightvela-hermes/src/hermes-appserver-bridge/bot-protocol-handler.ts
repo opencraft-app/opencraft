@@ -1,5 +1,7 @@
 import type {
   AppServerBotAttachment,
+  AppServerBotConfiguration,
+  AppServerBotConfigurationOptions,
   AppServerBotConversationDescriptor,
   AppServerBotConversationEvent,
   AppServerBotDescriptor,
@@ -9,6 +11,7 @@ import type {
   AppServerBotMessageContentPart,
   AppServerBotParticipantSnapshot,
   AppServerBotPresenceFact,
+  AppServerBotModelSelection,
 } from "@opencraft/appserver-protocol";
 
 import {
@@ -24,6 +27,7 @@ import type {
 } from "./types";
 import { instanceBotRevision, isProfileBotsUnsupported, type HermesInstanceProfileBot } from "./instance-profile-bots";
 import type { HermesBotManagementPort } from "./instance-bot-management";
+import { classifyHermesBotExecutionFailure } from "./bot-execution-failure";
 import { HermesGroupConversations } from "./group-conversations";
 
 export interface HermesBotHandlerOptions {
@@ -40,6 +44,12 @@ const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+
+const profileModel = (profile: HermesProfileSummary): AppServerBotModelSelection | undefined => {
+  const provider = typeof profile.provider === "string" ? profile.provider.trim() : "";
+  const model = typeof profile.model === "string" ? profile.model.trim() : "";
+  return provider !== "" && model !== "" ? Object.freeze({ provider, model }) : undefined;
+};
 
 const HUMAN: AppServerBotParticipantSnapshot = Object.freeze({
   participantId: "person:you",
@@ -91,6 +101,7 @@ function botDescriptor(profile: HermesProfileSummary, revisionOverride?: number)
   const serverRevision = Object.values(profile.ui_meta_revisions ?? {})
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
     .reduce((maximum, value) => Math.max(maximum, Math.floor(value)), 1);
+  const model = profileModel(profile);
   return Object.freeze({
     botId: botIdForProfile(profileName),
     revision: revisionOverride ?? serverRevision,
@@ -99,6 +110,8 @@ function botDescriptor(profile: HermesProfileSummary, revisionOverride?: number)
     avatar: Object.freeze({ type: "generated", seed: `lightvela-hermes:${profileName}`, palette: "aqua" }),
     status: meta.hidden === true ? "disabled" : "available",
     capabilities: Object.freeze(["messageStreaming", "executionCancellation", "attachments"]),
+    runtimeProfileId: profileName,
+    ...(model === undefined ? {} : { model }),
   });
 }
 
@@ -157,7 +170,7 @@ function turnCausalMessageId(turn: AppServerTurn): string {
   return turn.items.find((item) => item.type === "userMessage")?.id ?? `causal:${turn.id}`;
 }
 
-function executionFromTurn(
+export function executionFromTurn(
   conversationId: string,
   turn: AppServerTurn,
   bot: AppServerBotDescriptor = DEFAULT_BOT,
@@ -179,8 +192,18 @@ function executionFromTurn(
     ...(turn.completedAt === null ? {} : { completedAtMs: secondsToMs(turn.completedAt) }),
     ...(turn.error === null || turn.error === undefined
       ? {}
-      : { error: { code: "HERMES_EXECUTION_FAILED", retryable: true, details: { error: turn.error } } }),
+      : { error: classifyHermesBotExecutionFailure({ error: turn.error }) }),
   };
+}
+
+export function restoredExecutionsFromTurns(
+  conversationId: string,
+  turns: readonly AppServerTurn[],
+  bot: AppServerBotDescriptor = DEFAULT_BOT,
+): AppServerBotExecution[] {
+  return turns
+    .filter((turn) => turn.status === "inProgress" || turn.status === "failed")
+    .map((turn) => executionFromTurn(conversationId, turn, bot));
 }
 
 function messageFromItem(
@@ -271,6 +294,7 @@ export class HermesBotAppServerHandler {
     this.groups = new HermesGroupConversations(adapter, {
       resolveBot: (botId) => this.resolveBot(botId),
       botForProfile: (profile) => this.botForProfile(profile),
+      findBotForProfile: (profile) => this.findBotForProfile(profile),
       profileForBotId: (botId) => this.profileForBotId(botId),
       emit: (method, conversationId, payload) => this.emitConversation(
         method as AppServerBotConversationEvent["method"], conversationId, payload,
@@ -280,6 +304,7 @@ export class HermesBotAppServerHandler {
 
   private get managedCatalog(): boolean { return this.options.resolveProfileBots !== undefined; }
   get botManagement(): boolean { return !this.managedCatalog || this.options.management !== undefined; }
+  get configuration(): boolean { return true; }
   get groupConversations(): boolean { return this.groups.available; }
 
   dispose(): void { this.disposed = true; this.groups.dispose(); }
@@ -320,9 +345,13 @@ export class HermesBotAppServerHandler {
           const profile = byProfile.get(binding.nativeProfile);
           if (profile === undefined) continue;
           const base = botDescriptor(profile);
+          const previous = this.botsById.get(binding.botId);
           bots.set(binding.botId, Object.freeze({
             ...base, botId: binding.botId, name: binding.name,
-            revision: this.options.management?.revision(binding) ?? instanceBotRevision(binding),
+            revision: Math.max(
+              this.options.management?.revision(binding) ?? instanceBotRevision(binding),
+              previous?.revision ?? 1,
+            ),
             subtitle: binding.description || base.subtitle,
             status: base.status === "disabled" ? "disabled" : binding.status,
             management: {
@@ -386,6 +415,11 @@ export class HermesBotAppServerHandler {
     switch (method) {
       case "bot/list": return this.listBots(value);
       case "bot/read": return { bot: await this.resolveBot(this.requiredString(value.botId, "botId")) };
+      case "bot/configuration/read": return this.readBotConfiguration(value);
+      case "bot/configuration/options": return this.readBotConfigurationOptions(value);
+      case "bot/configuration/update": return this.options.management
+        ? this.runManaged(() => this.updateBotConfiguration(value))
+        : this.updateBotConfiguration(value);
       case "bot/create": return this.options.management ? this.runManaged(() => this.createManagedBot(value)) : this.createBot(value);
       case "bot/update": return this.options.management ? this.runManaged(() => this.updateManagedBot(value)) : this.updateBot(value);
       case "bot/delete": return this.options.management ? this.runManaged(() => this.deleteManagedBot(value)) : this.deleteBot(value);
@@ -559,10 +593,13 @@ export class HermesBotAppServerHandler {
     if (this.disposed) throw new Error("Hermes Bot handler is detached");
     const previous = this.boundProfileByBotId.get(binding.botId);
     if (previous !== undefined && previous !== binding.nativeProfile) throw new Error("Hermes Bot profile binding changed");
+    const current = this.botsById.get(binding.botId);
     const bot: AppServerBotDescriptor = {
       ...botDescriptor({ name: binding.nativeProfile }), botId: binding.botId,
-      revision: this.options.management!.revision(binding), name: binding.name, subtitle: binding.description || "LightVela",
+      revision: Math.max(this.options.management!.revision(binding), current?.revision ?? 1),
+      name: binding.name, subtitle: binding.description || "LightVela",
       status: binding.status, management: { rename: true, clone: true, delete: binding.nativeProfile !== "default" },
+      ...(current?.model === undefined ? {} : { model: current.model }),
     };
     this.botsById.set(bot.botId, bot);
     this.profileByBotId.set(bot.botId, binding.nativeProfile);
@@ -586,6 +623,117 @@ export class HermesBotAppServerHandler {
     const result = { bot: this.publishManagedBot(binding), replayed: false };
     this.botCreateReceipts.set(requestId, { params: structuredClone(value), result });
     return result;
+  }
+
+  private async loadBotConfiguration(
+    profile: string,
+  ): Promise<AppServerBotConfiguration> {
+    const description = await this.adapter.describeProfile(profile);
+    const describedProvider = description.model?.provider?.trim() ?? "";
+    const describedModel = description.model?.default?.trim() ?? "";
+    const model = describedProvider !== "" && describedModel !== ""
+      ? Object.freeze({ provider: describedProvider, model: describedModel })
+      : null;
+    return Object.freeze({ model });
+  }
+
+  private async loadBotConfigurationOptions(
+    profile: string,
+  ): Promise<AppServerBotConfigurationOptions> {
+    const options = await this.adapter.listProfileModelOptions(profile);
+    const providers = (options.providers ?? []).flatMap((provider) => {
+      const providerId = typeof provider.slug === "string" ? provider.slug.trim() : "";
+      if (providerId === "") return [];
+      const models = (provider.models ?? [])
+        .map((candidate) => typeof candidate === "string" ? candidate : candidate.id ?? candidate.name ?? "")
+        .map((candidate) => candidate.trim())
+        .filter((candidate, index, values) => candidate !== "" && values.indexOf(candidate) === index);
+      if (provider.authenticated === false || models.length === 0) return [];
+      return [Object.freeze({
+        provider: providerId,
+        name: provider.name?.trim() || providerId,
+        models: Object.freeze(models),
+        authenticated: true,
+        ...(provider.warning?.trim() ? { warning: provider.warning.trim() } : {}),
+      })];
+    });
+    return Object.freeze({ providers: Object.freeze(providers) });
+  }
+
+  private async readBotConfiguration(value: Record<string, unknown>): Promise<unknown> {
+    const botId = this.requiredString(value.botId, "botId");
+    await this.resolveBot(botId);
+    const profile = this.profileForBotId(botId);
+    if (profile === null) this.notFound("Bot", botId);
+    return { configuration: await this.loadBotConfiguration(profile) };
+  }
+
+  private async readBotConfigurationOptions(value: Record<string, unknown>): Promise<unknown> {
+    const botId = this.requiredString(value.botId, "botId");
+    await this.resolveBot(botId);
+    const profile = this.profileForBotId(botId);
+    if (profile === null) this.notFound("Bot", botId);
+    return this.loadBotConfigurationOptions(profile);
+  }
+
+  private async updateBotConfiguration(value: Record<string, unknown>): Promise<unknown> {
+    const botId = this.requiredString(value.botId, "botId");
+    const current = await this.resolveBot(botId);
+    const expectedRevision = this.requiredRevision(value.expectedRevision);
+    if (current.revision !== expectedRevision) this.revisionConflict(botId, expectedRevision, current.revision);
+    const requested = asRecord(value.model);
+    const model: AppServerBotModelSelection = Object.freeze({
+      provider: this.requiredString(requested.provider, "model.provider").trim(),
+      model: this.requiredString(requested.model, "model.model").trim(),
+    });
+    if (model.provider === "" || model.model === "") {
+      throw Object.assign(new Error("model.provider and model.model must be non-empty strings"), { rpcCode: -32602 });
+    }
+    const profile = this.profileForBotId(botId);
+    if (profile === null) this.notFound("Bot", botId);
+    // Finish every fallible read before the mutation. Once Hermes acknowledges
+    // profiles.configure, the bridge must be able to return a receipt without
+    // turning a successful write into an ambiguous client-side failure.
+    const currentConfiguration = await this.loadBotConfiguration(profile);
+    const result = asRecord(await this.adapter.configureProfile({
+      name: profile,
+      model: model.model,
+      provider: model.provider,
+      ...(value.confirmExpensiveModel === true ? { confirm_expensive_model: true } : {}),
+    }));
+    if (result.confirm_required === true) {
+      const message = typeof result.confirm_message === "string" && result.confirm_message.trim() !== ""
+        ? result.confirm_message.trim()
+        : "Hermes requires confirmation before changing this Bot model.";
+      return {
+        bot: current,
+        configuration: currentConfiguration,
+        applied: false,
+        confirmationRequired: { message },
+      };
+    }
+    const applied = asRecord(result.applied);
+    if (result.ok === false || applied.model === false) {
+      throw Object.assign(new Error("Hermes did not apply the Bot model configuration"), {
+        rpcCode: -32009,
+        domainData: { code: "BOT_CONFIGURATION_FAILED", retryable: true },
+      });
+    }
+    const bot: AppServerBotDescriptor = Object.freeze({
+      ...current,
+      revision: current.revision + 1,
+      model,
+    });
+    this.botsById.set(botId, bot);
+    for (const [conversationId, owner] of this.botByConversationId) {
+      if (owner.botId === botId) this.botByConversationId.set(conversationId, bot);
+    }
+    this.emit({ method: "bot/updated", params: { bot } });
+    return {
+      bot,
+      configuration: Object.freeze({ model }),
+      applied: true,
+    };
   }
 
   private async updateManagedBot(value: Record<string, unknown>): Promise<unknown> {
@@ -704,6 +852,12 @@ export class HermesBotAppServerHandler {
     const bot = botDescriptor({ name: profile });
     this.botsById.set(botId, bot);
     return bot;
+  }
+
+  private findBotForProfile(profile: string): AppServerBotDescriptor | null {
+    if (!this.managedCatalog) return this.botsById.get(botIdForProfile(profile)) ?? null;
+    const entry = [...this.profileByBotId].find(([, nativeProfile]) => nativeProfile === profile);
+    return entry === undefined ? null : this.botsById.get(entry[0]) ?? null;
   }
 
   private async listConversations(value: Record<string, unknown>): Promise<unknown> {
@@ -869,7 +1023,7 @@ export class HermesBotAppServerHandler {
         data: messagesFromTurns(conversationId, page.chronological, bot),
         ...(page.nextOffset === null ? {} : { nextCursor: `hermes-messages:${page.nextOffset}` }),
       },
-      executions: activeTurns.map((turn) => executionFromTurn(conversationId, turn, bot)),
+      executions: restoredExecutionsFromTurns(conversationId, page.chronological, bot),
       interactions: [],
       presence: activeTurns.map((turn) => this.presence(conversationId, turn.id, "thinking", "Thinking", bot)),
       liveCursor: { epoch: this.epoch, nextSeq: cursorAtStart },

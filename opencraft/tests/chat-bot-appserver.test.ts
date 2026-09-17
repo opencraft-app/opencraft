@@ -9,6 +9,7 @@ import {
 } from "@opencraft/bot-conversation-appserver";
 import type { AppServerBotConversationService } from "@opencraft/bot-conversation-appserver";
 import { createCordisAppServerRegistry } from "@opencraft/appserver-client";
+import { projectBotTimeline } from "@opencraft/bot-conversation";
 import { createConversationKey } from "@opencraft/chat-core";
 import type { SubmitIntent } from "@opencraft/composer-core";
 
@@ -321,6 +322,47 @@ test("Bot AppServer Source owns pending interactions through hydration and respo
 
   assert.equal(service.respondCalls, 1);
   assert.equal(source.getSnapshot(key).interactions[0]?.status, "resolved");
+  source.dispose();
+});
+
+test("failed Bot executions keep only safe error categories in the timeline", async () => {
+  const service = new FakeBotService();
+  const source = new AppServerBotConversationSource(asService(service));
+  const key = createConversationKey("host-a", CONVERSATION.conversationId);
+  await source.load(key);
+  service.emit({
+    hostId: "host-a",
+    method: "bot/execution/updated",
+    params: {
+      conversationId: CONVERSATION.conversationId,
+      stamp: { epoch: "epoch-1", seq: 0 },
+      execution: {
+        executionId: "failed-1",
+        conversationId: CONVERSATION.conversationId,
+        participantId: BOT.participantId,
+        causalMessageId: "message-1",
+        status: "failed",
+        startedAtMs: 1,
+        completedAtMs: 2,
+        error: {
+          code: "BOT_PROVIDER_QUOTA_LIMIT",
+          retryable: false,
+          details: { error: "private provider diagnostic" },
+        },
+      },
+    },
+  });
+  const snapshot = source.getSnapshot(key);
+  const failure = snapshot.executions[0];
+  assert.deepEqual(failure?.error, { code: "BOT_PROVIDER_QUOTA_LIMIT", retryable: false });
+  assert.doesNotMatch(JSON.stringify(failure), /private provider diagnostic/u);
+  const timeline = projectBotTimeline({
+    transcript: snapshot.transcript,
+    executions: snapshot.executions,
+    presence: snapshot.presence,
+    revision: snapshot.revision,
+  });
+  assert.equal(timeline.units.find((unit) => unit.kind === "execution")?.kind, "execution");
   source.dispose();
 });
 

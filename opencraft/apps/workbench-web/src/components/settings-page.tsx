@@ -19,7 +19,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import type { ThemePreference } from "@opencraft/design-system/theme";
 import type { ExtensionContributionStore, ExtensionManager } from "@opencraft/extension-runtime";
@@ -35,17 +35,19 @@ import {
   SettingsSegmented,
   SettingsTextInput,
   type PlatformViewRendererRegistry,
+  type PlatformViewRegions,
   type ProvisionHostInput,
 } from "@opencraft/extension-react";
 import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import type { AppearanceThemeDescriptor } from "../appearance-theme";
 import { useInternalDeveloperMode } from "../internal-developer-mode";
+import { SqliteDebugSettings } from "./sqlite-debug-settings";
 
 export type SettingsSection = "appearance" | "laboratory" | "plugins" | string;
 
 export interface SettingsContentProps {
   readonly section: SettingsSection;
-  readonly onSectionChange: (section: SettingsSection) => void;
+  readonly onSectionChange: (section: SettingsSection, mode?: "push" | "replace") => void;
   readonly profiles: readonly HostConnectionProfile[];
   readonly activeHostId: string;
   readonly themes: readonly AppearanceThemeDescriptor[];
@@ -62,6 +64,7 @@ export interface SettingsContentProps {
   readonly extensionContributions: ExtensionContributionStore;
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
+  readonly regions?: PlatformViewRegions;
 }
 
 export interface SettingsNavigationProps {
@@ -112,6 +115,7 @@ export function SettingsNavigation({
   onBack,
   presentation = "route",
 }: SettingsNavigationProps) {
+  const internalDeveloperMode = useInternalDeveloperMode();
   const [managementQuery, setManagementQuery] = useState("");
   const extensionPages = useSettingsExtensionPages(extensionContributions, currentPlatform());
   const selectedPage = extensionPages.find((page) => page.id === section) ?? null;
@@ -212,22 +216,36 @@ export function SettingsNavigation({
             <Palette size={16} />
             <span>Appearance</span>
           </button>
-          <button
-            type="button"
-            aria-current={section === "plugins" ? "page" : undefined}
-            onClick={() => onSectionChange("plugins")}
-          >
-            <Blocks size={16} />
-            <span>Plugins</span>
-          </button>
-          <button
-            type="button"
-            aria-current={section === "laboratory" ? "page" : undefined}
-            onClick={() => onSectionChange("laboratory")}
-          >
-            <FlaskConical size={16} />
-            <span>Laboratory</span>
-          </button>
+          {internalDeveloperMode ? (
+            <>
+              <button
+                type="button"
+                aria-current={section === "plugins" ? "page" : undefined}
+                onClick={() => onSectionChange("plugins")}
+              >
+                <Blocks size={16} />
+                <span>Plugins</span>
+              </button>
+              <button
+                type="button"
+                aria-current={section === "laboratory" ? "page" : undefined}
+                onClick={() => onSectionChange("laboratory")}
+              >
+                <FlaskConical size={16} />
+                <span>Laboratory</span>
+              </button>
+            </>
+          ) : null}
+          {internalDeveloperMode && currentPlatform() === "electron" ? (
+              <button
+              type="button"
+              aria-current={section === "sqlite-debug" ? "page" : undefined}
+              onClick={() => onSectionChange("sqlite-debug")}
+            >
+              <Database size={16} />
+              <span>SQLite inspector</span>
+            </button>
+          ) : null}
           {extensionPages.filter((page) => page.management === undefined).map((page, index, pages) => (
             <div key={page.id}>
             {page.group && pages[index - 1]?.group !== page.group ? <div className="settings-page__navigation-heading">{page.group}</div> : null}
@@ -316,10 +334,12 @@ export function SettingsContent({
   extensionContributions,
   extensionManager,
   platformViewRenderers,
+  regions,
   onOpenView,
   onPushViewResource,
   onReplaceViewResource,
 }: SettingsContentProps) {
+  const internalDeveloperMode = useInternalDeveloperMode();
   const [error, setError] = useState<string | null>(null);
   const [extensionUrl, setExtensionUrl] = useState("");
   const [extensionOperation, setExtensionOperation] = useState<string | null>(null);
@@ -341,6 +361,15 @@ export function SettingsContent({
     platformViewRenderers.getSnapshot,
   );
   const selectedExtensionPage = extensionPages.find((page) => page.id === section) ?? null;
+  const internalExtensionPage = contributionSnapshot.settingsPages.some(
+    ({ contribution }) => contribution.id === section && contribution.audience === "internal",
+  );
+  useEffect(() => {
+    const internalOnly = internalExtensionPage || section === "plugins" || section === "laboratory" || section === "sqlite-debug";
+    if (internalOnly && (!internalDeveloperMode || (section === "sqlite-debug" && platform !== "electron"))) {
+      onSectionChange("appearance", "replace");
+    }
+  }, [internalDeveloperMode, internalExtensionPage, onSectionChange, platform, section]);
   const selectedExtensionView = selectedExtensionPage === null
     ? null
     : contributionSnapshot.views.find(
@@ -377,8 +406,11 @@ export function SettingsContent({
                     }}
                     contribution={selectedExtensionView}
                     host={extensionViewHost}
+                    regions={regions}
                   />
                 )
+              ) : section === "sqlite-debug" && internalDeveloperMode && platform === "electron" ? (
+                <SqliteDebugSettings />
               ) : section === "appearance" ? (
                 <>
                   <SettingsPageHeader title="Appearance" description="Choose how OpenCraft looks across the workbench." />

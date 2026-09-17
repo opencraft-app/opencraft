@@ -13,11 +13,14 @@ LightVela 是多语言 monorepo。国内生产站为 `lightvela.com`，国际生
 | 前端 | `frontend/`, `frontend-ds/`, `nextgen-dashboard/`, `gateway-dashboard/` |
 | 身份与商业化 | `user/auth/`, `shadow/`, `subscription/`, `payment/`, `trade/` |
 | Agent 与网关运行时 | `cloudagent/`, `ai-gateway/`, `velagw/`, `velalink/`, gateway services |
+| 多端 Agent 工作台 | `opencraft/` |
 | 共享产品内核 | `shared/` |
 | 控制与沙箱 | `ctl/`, `sandbox/` |
 | 交付与基础设施 | `argocd/`, `.ci/`, `infra_pulumi/` |
 
 仅当任务需要跨服务定位时，读取[仓库地图](docs/context/project/repository-map.md)。
+
+OpenCraft 任务先读 [局部 Agent 入口](opencraft/AGENTS.md)；本地开发与隔离预览从 [根 README 的 OpenCraft 入口](README.md#opencraft-本地工作台与预览) 和 [构建矩阵](opencraft/docs/build-matrix.md) 进入。根入口不复制其平台运行手册。
 
 面向研发、产品和运维的人读正式知识从 [Vela 工程文档](docs/engineering/README.md) 进入；服务责任和共置文档由 [Service Catalog](docs/engineering/catalog/services.yaml) 路由。`docs/context/` 是它们的短派生消费层，不是另一套平行真相。
 

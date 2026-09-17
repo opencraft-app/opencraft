@@ -123,6 +123,9 @@ function execution(value: AppServerBotExecution, key: ConversationKey): BotExecu
     status: value.status,
     startedAtMs: value.startedAtMs ?? Date.now(),
     completedAtMs: value.completedAtMs ?? null,
+    ...(value.error === undefined ? {} : {
+      error: Object.freeze({ code: value.error.code, retryable: value.error.retryable }),
+    }),
   });
 }
 
@@ -197,6 +200,7 @@ function descriptor(
     title: value.title || null,
     rosterRevision: value.revision,
     participants: Object.freeze([...participants]),
+    ...(value.readOnly === true ? { readOnly: true } : {}),
   });
 }
 
@@ -363,6 +367,9 @@ export class AppServerBotConversationSource implements BotConversationSource {
     }
     const state = this.ensure(key);
     await this.load(key);
+    if (state.snapshot.descriptor.readOnly === true) {
+      throw new BotConversationSourceError("BOT_CONVERSATION_READ_ONLY", "This historical group is read-only because a member no longer exists.", false);
+    }
     if (state.remoteConversationId === null) throw new BotConversationSourceError("NOT_LOADED", "Bot conversation is not loaded", true);
     const author = state.snapshot.descriptor.participants.find((item) => item.kind === "human") ?? FALLBACK_HUMAN;
     const optimistic: BotConversationMessage = Object.freeze({
@@ -425,6 +432,8 @@ export class AppServerBotConversationSource implements BotConversationSource {
 
   async cancel(key: ConversationKey, executionId: string): Promise<void> {
     const state = this.ensure(key);
+    if (state.snapshot.descriptor.readOnly === true)
+      throw new BotConversationSourceError("BOT_CONVERSATION_READ_ONLY", "This historical group is read-only because a member no longer exists.", false);
     if (state.remoteConversationId === null) throw new BotConversationSourceError("NOT_LOADED", "Bot conversation is not loaded", true);
     const result = await this.service.cancelExecution(key.hostId, {
       conversationId: state.remoteConversationId,
@@ -444,6 +453,8 @@ export class AppServerBotConversationSource implements BotConversationSource {
     response: BotInteractionResponse,
   ): Promise<void> {
     const state = this.ensure(key);
+    if (state.snapshot.descriptor.readOnly === true)
+      throw new BotConversationSourceError("BOT_CONVERSATION_READ_ONLY", "This historical group is read-only because a member no longer exists.", false);
     if (state.remoteConversationId === null)
       throw new BotConversationSourceError("NOT_LOADED", "Bot conversation is not loaded", true);
     const result = await this.service.respondToInteraction(key.hostId, {

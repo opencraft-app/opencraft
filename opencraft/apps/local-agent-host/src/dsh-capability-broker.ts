@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import type { DshExecutionOwner } from "./dsh-execution-authority.js";
+import type { DynamicToolSpec } from "@opencraft/appserver-protocol/generated/v2";
 
 export interface DshHostCapability {
   readonly id: string;
@@ -10,7 +11,7 @@ export interface DshHostCapability {
   readonly inputSchema: Record<string, unknown>;
 }
 type Send = (frame: Record<string, unknown>) => void;
-interface Registration { owner: DshExecutionOwner; send: Send; capabilities: readonly DshHostCapability[] }
+interface Registration { owner: DshExecutionOwner; send: Send; specs: readonly DynamicToolSpec[]; capabilities: readonly DshHostCapability[] }
 interface Pending { registration: Registration; threadId: string; reject: (error: Error) => void; respond: (result: unknown, error?: unknown) => void }
 
 /** Host half of HyperNode capability-request/result/cancel, addressed only to
@@ -26,7 +27,7 @@ export class DshCapabilityBroker {
     const capabilities = normalizeCapabilities(specs);
     if (previous && isDeepStrictEqual(previous.capabilities, capabilities)) return previous.capabilities;
     if (previous) this.cancelThread(threadId, "Capabilities replaced");
-    this.registrations.set(threadId, { owner, send, capabilities });
+    this.registrations.set(threadId, { owner, send, specs: structuredClone(specs) as DynamicToolSpec[], capabilities });
     return capabilities;
   }
   matches(threadId: string, owner: DshExecutionOwner, specs: unknown): boolean {
@@ -34,6 +35,13 @@ export class DshCapabilityBroker {
     return !!previous && previous.owner === owner && isDeepStrictEqual(previous.capabilities, normalizeCapabilities(specs));
   }
   list(threadId: string): readonly DshHostCapability[] { return this.registrations.get(threadId)?.capabilities ?? []; }
+  /** Fork inherits wire declarations, not normalized invocation descriptors or reply ownership. */
+  specs(threadId: string, owner: DshExecutionOwner): readonly DynamicToolSpec[] | undefined {
+    const registration = this.registrations.get(threadId);
+    if (!registration) return undefined;
+    if (registration.owner !== owner) throw new Error("Thread capabilities belong to another connection");
+    return structuredClone(registration.specs);
+  }
   threads(owner?: DshExecutionOwner): string[] {
     return [...this.registrations].filter(([, value]) => !owner || value.owner === owner).map(([id]) => id);
   }
@@ -108,7 +116,8 @@ export function normalizeCapabilities(specs: unknown): DshHostCapability[] {
     };
     for (const spec of specs) {
       if (spec?.type === "function") add(null, spec);
-      else if (spec?.type === "namespace" && typeof spec.name === "string" && Array.isArray(spec.tools)) {
+      else if (spec?.type === "namespace" && typeof spec.name === "string" && spec.name
+        && typeof spec.description === "string" && Array.isArray(spec.tools)) {
         for (const tool of spec.tools) add(spec.name, tool);
       } else throw new Error("Invalid dynamic tool specification");
     }

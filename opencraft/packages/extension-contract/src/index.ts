@@ -137,6 +137,8 @@ export interface ViewContribution {
   readonly role?: "bot-conversation";
   readonly icon?: string;
   readonly platforms?: readonly ExtensionPlatform[];
+  /** Presentation audience only; internal views stay registered but hidden by the host. */
+  readonly audience?: "public" | "internal";
 }
 
 export type NavigationSurface = "sidebar-primary" | "sidebar-footer";
@@ -155,6 +157,8 @@ export interface NavigationContribution {
   readonly order?: number;
   readonly icon?: string;
   readonly platforms?: readonly ExtensionPlatform[];
+  /** Presentation audience only; this is not an authorization boundary. */
+  readonly audience?: "public" | "internal";
 }
 
 /**
@@ -186,8 +190,12 @@ export interface SettingsPageContribution {
    * its device-local developer mode. This is not an authorization boundary.
    */
   readonly audience?: "public" | "internal";
-  /** The settings shell owns viewport geometry for collection/detail pages. */
-  readonly layout?: "document" | "master-detail";
+  /**
+   * The Settings Shell owns viewport geometry. `edge-to-edge` removes the
+   * document inset but retains the Shell viewport as the scroll owner;
+   * `master-detail` delegates scrolling to its internal panes.
+   */
+  readonly layout?: "document" | "master-detail" | "edge-to-edge";
   readonly group?: string;
   /**
    * Declares that this page belongs to one target-management surface instead

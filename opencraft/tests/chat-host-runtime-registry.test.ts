@@ -32,6 +32,24 @@ function draftIntent(draftId: string): SubmitIntent {
   };
 }
 
+test("canceling route readiness releases a late Thread lease without replacing the active location", async () => {
+  let finish!: (lease: any) => void, releases = 0;
+  const runtime = { acquireThread: () => new Promise(resolve => { finish = resolve; }) };
+  const initial = createWorkbenchDraftLocation("local", "a");
+  const coordinator = createWorkbenchCoordinator({ ensureConnected: async () => runtime } as any, initial);
+  try {
+    const pending = coordinator.prepare(createWorkbenchThreadLocation("local", "late"));
+    await new Promise(resolve => setImmediate(resolve));
+    coordinator.cancelPending();
+    assert.equal(coordinator.getSnapshot().pendingLocation, null);
+    finish({ threadId: "late", release: () => { releases++; } });
+    assert.equal(await pending, null);
+    assert.equal(releases, 1);
+    assert.deepEqual(coordinator.getSnapshot().location, initial);
+    assert.equal(coordinator.getSnapshot().phase, "idle");
+  } finally { coordinator.dispose(); }
+});
+
 class FakeHostRuntime {
   starts = 0;
   disposals = 0;
@@ -476,6 +494,34 @@ test("prepared activation does not change presentation before commit", async () 
     assert.deepEqual(coordinator.getSnapshot().location, initial);
     assert.equal(prepared.commit(), true);
     assert.equal(coordinator.getActiveThreadLease()?.threadId, "thread-prepared");
+  } finally {
+    coordinator.dispose();
+    await registry.dispose();
+  }
+});
+
+test("a local New-chat Draft replaces the visible Thread before Host readiness", async () => {
+  const local = new FakeHostRuntime("local");
+  const registry = new HostRuntimeRegistry([registration("local", local)]);
+  const initial = createWorkbenchThreadLocation("local", "thread-current");
+  const coordinator = createWorkbenchCoordinator(registry, initial, "local", "route:thread");
+  try {
+    assert.equal(await coordinator.activate(initial), true);
+    assert.equal(coordinator.getActiveThreadLease()?.threadId, "thread-current");
+
+    const home = createWorkbenchDraftLocation("local", "draft-home");
+    coordinator.presentLocalDraft(home, "route:home");
+
+    assert.deepEqual(coordinator.getSnapshot().location, home);
+    assert.deepEqual(coordinator.getSnapshot().pendingLocation, home);
+    assert.equal(coordinator.getSnapshot().phase, "resolving");
+    assert.equal(coordinator.getActiveThreadLease(), null);
+
+    const prepared = await coordinator.prepare(home);
+    assert.ok(prepared);
+    assert.equal(prepared.commit(), true);
+    assert.deepEqual(coordinator.getSnapshot().location, home);
+    assert.equal(coordinator.getSnapshot().pendingLocation, null);
   } finally {
     coordinator.dispose();
     await registry.dispose();

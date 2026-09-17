@@ -56,3 +56,29 @@ test("stalled DSH RPC has a bounded timeout", async () => {
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
+
+test("caller cancellation does not replace the DSH RPC deadline", async () => {
+  const server = createServer(() => {});
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const lifetime = new AbortController();
+  try {
+    const address = server.address() as { port: number };
+    const client = new DshClient(`http://127.0.0.1:${address.port}`, 30);
+    const outcome = await Promise.race([
+      client.call("session.history", {}, lifetime.signal).then(
+        () => "resolved",
+        error => error,
+      ),
+      new Promise<"still pending">(resolve => setTimeout(() => resolve("still pending"), 150)),
+    ]);
+
+    assert.notEqual(outcome, "still pending");
+    assert.ok(outcome instanceof Error);
+    assert.match(outcome.message, /timeout|aborted/i);
+    assert.equal(lifetime.signal.aborted, false);
+  } finally {
+    lifetime.abort();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});

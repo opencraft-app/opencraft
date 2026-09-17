@@ -142,6 +142,10 @@ const styles = StyleSheet.create((theme) => ({
           minHeight: buttonSizeMetrics.lg.height,
           paddingHorizontal: buttonSizeMetrics.lg.horizontalPadding,
         },
+        toolbar: {
+          minHeight: buttonSizeMetrics.toolbar.height,
+          paddingHorizontal: buttonSizeMetrics.toolbar.horizontalPadding,
+        },
       },
       disabled: {
         true: { opacity: theme.metrics.interaction.disabledOpacity },
@@ -179,6 +183,10 @@ const styles = StyleSheet.create((theme) => ({
           fontSize: buttonSizeMetrics.lg.fontSize,
           lineHeight: buttonSizeMetrics.lg.lineHeight,
         },
+        toolbar: {
+          fontSize: buttonSizeMetrics.toolbar.fontSize,
+          lineHeight: buttonSizeMetrics.toolbar.lineHeight,
+        },
       },
     },
   },
@@ -192,6 +200,7 @@ const iconButtonStyles = StyleSheet.create({
         sm: { width: buttonSizeMetrics.sm.height },
         md: { width: buttonSizeMetrics.md.height },
         lg: { width: buttonSizeMetrics.lg.height },
+        toolbar: { width: buttonSizeMetrics.toolbar.height },
       },
     },
   },

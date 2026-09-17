@@ -66,7 +66,7 @@ test("tool resizing uses the same main reserve as the window arbiter", () => {
 });
 
 test("projected navigation labels, footer and peek follow the same responsive decision", () => {
-  const state = createShellNavigationState();
+  const state = createShellNavigationState({ applications: true });
   for (const width of [1500, 1200, 1100, 1000, 700]) {
     const space = resolveShellSpace({ ...input, width });
     const projection = projectShellNavigation({ state, space, viewportWidth: width, contextWidth: 275, contextAvailable: true, sidecarOpen: true });

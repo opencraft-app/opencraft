@@ -1,4 +1,11 @@
-import { environmentIdentity, type EnvironmentEntry, type EnvironmentSource, type EnvironmentSourceSnapshot, type HostConnectionProfile } from "@opencraft/workbench-runtime";
+import {
+  environmentIdentity,
+  normalizeMachineResourcePhase,
+  type EnvironmentEntry,
+  type EnvironmentSource,
+  type EnvironmentSourceSnapshot,
+  type HostConnectionProfile,
+} from "@opencraft/workbench-runtime";
 import type { LightVelaAccountService, LightVelaRegion } from "../account/lightvela-account-service";
 
 export function lightVelaEnvironmentHostId(region: LightVelaRegion, accountId: string, instanceId: string) {
@@ -78,12 +85,20 @@ export class LightVelaEnvironmentSource implements EnvironmentSource {
         }
         const entries: EnvironmentEntry[] = [...instances.values()].filter(instance => instance.status.toLowerCase() !== "deleted").map(instance => {
           const lifecycle = instance.status.trim().toLowerCase();
+          const normalized = normalizeMachineResourcePhase(lifecycle);
           const name = instance.name?.trim() || "LightVela 环境";
           return {id: environmentIdentity(this.id, region, accountId, instance.instance_id), sourceId: this.id,
-            name, location: region === "cn" ? "LightVela · 国内站" : "LightVela · 国际站", lifecycle, connectable: lifecycle === "running",
+            name, location: region === "cn" ? "LightVela · 国内站" : "LightVela · 国际站",
+            resource: Object.freeze({
+              providerId: this.id,
+              ...normalized,
+              message: null,
+              capabilities: Object.freeze({ suspend: false, resume: false, remove: false }),
+            }),
+            connectable: normalized.phase === "active",
             profile: {hostId: lightVelaEnvironmentHostId(region, accountId, instance.instance_id), displayName: name,
               providerId: this.id, providerConfig: {instanceId: instance.instance_id, region, accountId}, providerConfigVersion: 1,
-              hostKind: "remote-control", enabled: lifecycle === "running", autoConnect: false, includeInSidebar: true,
+              hostKind: "remote-control", enabled: normalized.phase === "active", autoConnect: false, includeInSidebar: true,
               credentialRef: "lightvela.browser-session", transportEndpoint: "LightVela", executionLocation: "LightVela", workspaceBrowseRoots: [], revision: 1}};
         });
         this.publish("ready", entries, null);

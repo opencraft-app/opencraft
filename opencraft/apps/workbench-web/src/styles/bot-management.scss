@@ -16,4 +16,9 @@
   &__group-form legend { margin-block-end: 4px; color: var(--color-text-secondary); font-size: 13px; }
   &__group-member { display: flex; min-height: 36px; align-items: center; gap: 8px; border-radius: var(--radius-control); padding-inline: 8px; }
   &__group-member:hover { background: var(--color-background-primary-ghost-hover); }
+  &__configuration-status { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; color: var(--color-icon-secondary); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-management__configuration-status .is-spinning { animation: none; }
 }

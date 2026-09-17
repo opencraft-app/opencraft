@@ -22,6 +22,7 @@ export interface OpenCraftDaemonClientOptions {
   readonly userDataDirectory: string;
   readonly daemonEntry: string;
   readonly dshExecutable: string;
+  readonly dshCapabilityPlugin?: string;
   readonly dataDirectory: string;
   readonly modelStorageDirectory?: string;
   readonly executable: string;
@@ -190,6 +191,7 @@ export class OpenCraftDaemonClientManager {
       this.options.daemonEntry,
       "--endpoint", this.endpoint,
       "--dsh-executable", this.options.dshExecutable,
+      ...(this.options.dshCapabilityPlugin ? ["--dsh-capability-plugin", this.options.dshCapabilityPlugin] : []),
       "--data-directory", this.options.dataDirectory,
       ...(this.options.modelStorageDirectory ? ["--model-storage-directory", this.options.modelStorageDirectory] : []),
     ], {

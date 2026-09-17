@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { EnvironmentDirectory, EnvironmentDirectoryService, EnvironmentProfileStore, HostRuntimeRegistry, connectEnvironmentRuntimeRegistry, environmentIdentity,
+  normalizeMachineResourcePhase,
   type EnvironmentEntry, type EnvironmentSource, type EnvironmentSourceSnapshot, type HostConnectionProfile, type HostConnectionProfileStore } from "../packages/workbench-runtime/src/index";
 import { LightVelaEnvironmentSource } from "../plugins/lightvela-hermes/src/environment-directory";
 import type { LightVelaAccountSnapshot } from "../plugins/lightvela-hermes/src/account/lightvela-account-service";
@@ -9,7 +10,20 @@ import type { LightVelaAccountSnapshot } from "../plugins/lightvela-hermes/src/a
 const profile = (hostId: string, providerId = "manual"): HostConnectionProfile => ({hostId, providerId, displayName: hostId, providerConfig: {}, providerConfigVersion: 1,
   hostKind: hostId === "local" ? "local" : "remote-control", enabled: true, autoConnect: false, includeInSidebar: true, credentialRef: null,
   transportEndpoint: null, executionLocation: null, workspaceBrowseRoots: [], revision: 1});
-const entry = (id = "one", state = "running"): EnvironmentEntry => ({id, sourceId: "cloud", name: id, location: "Cloud", lifecycle: state, connectable: state === "running", profile: {...profile(id,"cloud"), enabled: state === "running"}});
+const entry = (id = "one", state = "running"): EnvironmentEntry => ({id, sourceId: "cloud", name: id, location: "Cloud",
+  resource: {providerId:"cloud",...normalizeMachineResourcePhase(state),message:null,capabilities:{suspend:false,resume:false,remove:false}},
+  connectable: state === "running", profile: {...profile(id,"cloud"), enabled: state === "running"}});
+
+test("machine resource phases normalize without losing an unknown provider state", () => {
+  assert.deepEqual(normalizeMachineResourcePhase("Running"), { phase: "active", rawPhase: "running" });
+  assert.deepEqual(normalizeMachineResourcePhase("pending"), { phase: "creating", rawPhase: "pending" });
+  assert.deepEqual(normalizeMachineResourcePhase("Stopping"), { phase: "suspending", rawPhase: "stopping" });
+  assert.deepEqual(normalizeMachineResourcePhase("Stopped"), { phase: "suspended", rawPhase: "stopped" });
+  assert.deepEqual(normalizeMachineResourcePhase("Restarting"), { phase: "resuming", rawPhase: "restarting" });
+  assert.deepEqual(normalizeMachineResourcePhase("Deleting"), { phase: "removing", rawPhase: "deleting" });
+  assert.deepEqual(normalizeMachineResourcePhase("Deleted"), { phase: "destroyed", rawPhase: "deleted" });
+  assert.deepEqual(normalizeMachineResourcePhase("ProviderSpecific"), { phase: "unknown", rawPhase: "providerspecific" });
+});
 function sourceFixture() {
   let state: EnvironmentSourceSnapshot = {revision: 0, phase: "ready", entries: [entry()], error: null};
   const listeners = new Set<() => void>();
@@ -36,6 +50,7 @@ test("directory aggregates recipes, preserves legacy identity and never persists
   assert.deepEqual(overlay.getSnapshot().profiles.map(p=>p.hostId),["local","legacy"]);
   assert.equal(saved.writes(),0);
   const snapshot=d.getSnapshot(); f.set([entry()]);
+  assert.equal((d.getSnapshot().entries.find(value => value.profile.hostId === "local") as any).resource, null);
   assert.equal(d.getSnapshot(),snapshot,"identical source refresh preserves snapshot identity");
   f.set([entry(),entry("stopped","stopped")]);
   assert.equal(d.getSnapshot().entries.length,3);
@@ -48,6 +63,56 @@ test("registration collision and unsubscribe are isolated by owner", () => {
   assert.throws(()=>d.register("second",f.source),/Duplicate/);
   off();off(); assert.equal(f.listeners.size,0);
   d.register("replacement",f.source);off();assert.equal(d.getSnapshot().entries.length,1);d.close();assert.equal(f.listeners.size,0);
+});
+test("resource actions route only through an explicitly capable source", async () => {
+  const directory = new EnvironmentDirectory();
+  directory.setConfiguredProfiles([profile("local")]);
+  const localId = directory.getSnapshot().entries[0]!.id;
+  await assert.rejects(
+    directory.performResourceAction({ environmentId: localId, action: "remove", operationId: "local-remove" }),
+    /not provider-managed/u,
+  );
+
+  const requests: unknown[] = [];
+  const fixture = sourceFixture();
+  const managed = {
+    ...entry("managed"),
+    resource: {
+      providerId: "cloud",
+      phase: "active",
+      rawPhase: "running",
+      message: null,
+      capabilities: { suspend: true, resume: false, remove: false },
+    },
+  } satisfies EnvironmentEntry;
+  fixture.set([managed]);
+  const capableSource: EnvironmentSource = {
+    ...fixture.source,
+    performResourceAction: async (request: unknown) => {
+      requests.push(request);
+      const value = request as {environmentId:string;action:"suspend"|"resume"|"remove";operationId:string};
+      return value.operationId === "wrong-receipt"
+        ? { accepted: true, environmentId: value.environmentId, action: "remove", operationId: value.operationId }
+        : { accepted: true, environmentId: value.environmentId, action: value.action, operationId: value.operationId };
+    },
+  };
+  directory.register("cloud-owner", capableSource);
+  const receipt = await directory.performResourceAction({
+    environmentId: managed.id,
+    action: "suspend",
+    operationId: "suspend-managed",
+  });
+  assert.deepEqual(receipt, { accepted: true, environmentId: managed.id, action: "suspend", operationId: "suspend-managed" });
+  assert.deepEqual(requests, [{ environmentId: managed.id, action: "suspend", operationId: "suspend-managed" }]);
+  await assert.rejects(
+    directory.performResourceAction({ environmentId: managed.id, action: "remove", operationId: "remove-managed" }),
+    /does not support remove/u,
+  );
+  await assert.rejects(
+    directory.performResourceAction({ environmentId: managed.id, action: "suspend", operationId: "wrong-receipt" }),
+    /invalid receipt/u,
+  );
+  directory.close();
 });
 test("discovery registers factories lazily without connecting or rebuilding resident runtimes", async () => {
   const d=new EnvironmentDirectory(),f=sourceFixture(),saved=storeFixture();const store=new EnvironmentProfileStore(saved.store,d);
@@ -86,6 +151,13 @@ test("LightVela discovers existing and non-running instances without provisionin
   assert.equal(source.getSnapshot().phase,"ready");assert.equal(source.getSnapshot().entries.length,2);
   assert.equal(source.getSnapshot().entries[0]?.profile.autoConnect,false);
   assert.equal(source.getSnapshot().entries[1]?.connectable,false);
+  assert.deepEqual((source.getSnapshot().entries.find(entry => entry.profile.hostId.includes("vm")) as any).resource, {
+    providerId: "lightvela.hermes",
+    phase: "active",
+    rawPhase: "running",
+    message: null,
+    capabilities: { suspend: false, resume: false, remove: false },
+  });
   const before=source.getSnapshot().entries[0]!.id;
   f.change("b");await source.refresh();assert.notEqual(source.getSnapshot().entries[0]?.id,before);
   assert.equal(source.matchProfile({...profile("old","lightvela.hermes"),providerConfig:{region:"intl",accountId:"a",instanceId:"vm"}}),null);
@@ -101,4 +173,11 @@ test("refresh failures retain last-known inventory; logout fences late replies",
 test("LightVela fetches all pages and deduplicates instance identity",async()=>{
   const f=accountFixture();let calls=0;f.setLoader(async()=>({items:++calls===1?Array.from({length:100},(_,i)=>({instance_id:`vm-${i}`,status:"Running"})):[{instance_id:"vm-0",status:"Stopped"},{instance_id:"last",status:"Creating"}]}));
   const s=new LightVelaEnvironmentSource(f.account);await s.refresh();assert.equal(calls,2);assert.equal(s.getSnapshot().entries.length,101);assert.equal(s.getSnapshot().entries[0]?.connectable,false);s.dispose();
+});
+test("LightVela uses the normalized active phase for both connectability and its Host recipe",async()=>{
+  const f=accountFixture();f.setLoader(async()=>({items:[{instance_id:"ready",status:"Ready"}]}));
+  const source=new LightVelaEnvironmentSource(f.account);await source.refresh();
+  const found=source.getSnapshot().entries[0]!;
+  assert.equal(found.resource?.phase,"active");assert.equal(found.connectable,true);assert.equal(found.profile.enabled,true);
+  source.dispose();
 });

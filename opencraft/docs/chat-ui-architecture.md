@@ -35,6 +35,10 @@ interruption and failure notifications are lifecycle summaries (`itemsView:
 "summary"`), never empty full Item snapshots. Full membership belongs to
 history reconstruction. Visible reasoning, assistant and tool Items settle
 before the Turn; only explicit completed output receives final-answer phase.
+Like Codex, `final_answer` is an optional Item rather than a prerequisite for a
+completed Turn. A Turn with settled commentary or tool activity may complete
+without fabricating an answer; a completely empty completed Turn still fails
+closed as a provider/runtime contract violation.
 Aborted/interrupted runs retain partial output with final-answer phase, blocked/max-token/unknown
 terminal reasons fail closed, and failures emit a typed error before completion.
 The same terminal policy is consumed by live and history projection.
@@ -68,6 +72,10 @@ execution policy. See [migration contract](../design/dsh-engine-migration.md).
 
 Composer model discovery is a model-only catalog. Product Bot identity is
 owned by the Bot protocol and is not duplicated as a hidden Agent picker.
+Bot execution failures keep the stable member and execution identity across
+history replay and live updates. Their error category is shown beside the
+failed execution; raw provider diagnostics stay at the Host and are never
+converted into a fabricated Bot message.
 Reasoning controls are derived exclusively from each model's declared effort
 set: an empty set hides the control, `none` means disable only when explicitly
 declared, and the model default must be a member of the same set. Hermes maps

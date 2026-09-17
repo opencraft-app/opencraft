@@ -172,3 +172,79 @@ test("leaving a Draft route hides it without discarding its retained document id
   assert.equal(scopes.getActiveDraft()?.id, "draft-retained");
   scopes.dispose();
 });
+
+test("explicit Composer selections survive View recreation through the Scope lease", () => {
+  const leases = createConversationScopeLeaseRegistry({});
+  const views = createConversationViewRegistry({
+    scopeLeases: leases,
+    composerServices: { now: () => 1, createId: () => "id" },
+  });
+  const scopeId = asConversationScopeId("scope-selections");
+  const target = {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-selections"),
+  } as const;
+  leases.ensure(scopeId, asHostId("local"), target);
+
+  const first = views.ensure("view-selections-1", scopeId, asHostId("local"), target).composer;
+  assert.deepEqual(first.getSnapshot().draft.selections, {});
+  first.dispatch({
+    type: "set-selections",
+    patch: { model: "dsh-model:deepseek:test", effort: "high", permissionProfile: null },
+  });
+  assert.equal(leases.readSelections(scopeId)?.model, "dsh-model:deepseek:test");
+  assert.equal(leases.readSelections(scopeId)?.permissionProfile, null);
+
+  assert.ok(views.close("view-selections-1"));
+  const second = views.ensure("view-selections-2", scopeId, asHostId("local"), target).composer;
+  assert.equal(second.getSnapshot().draft.selections.model, "dsh-model:deepseek:test");
+  assert.equal(second.getSnapshot().draft.selections.effort, "high");
+  assert.equal(second.getSnapshot().draft.selections.permissionProfile, null);
+  views.dispose();
+  leases.dispose();
+});
+
+test("a Conversation Scope without explicit selections keeps fresh Composer drafts empty", () => {
+  const leases = createConversationScopeLeaseRegistry({});
+  const views = createConversationViewRegistry({
+    scopeLeases: leases,
+    composerServices: { now: () => 1, createId: () => "id" },
+  });
+  const scopeId = asConversationScopeId("scope-unselected");
+  const target = {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-unselected"),
+  } as const;
+  leases.ensure(scopeId, asHostId("local"), target);
+  const composer = views.ensure("view-unselected", scopeId, asHostId("local"), target).composer;
+  assert.deepEqual(composer.getSnapshot().draft.selections, {});
+  assert.equal(leases.readSelections(scopeId), null);
+  views.dispose();
+  leases.dispose();
+});
+
+test("promoting a Draft target restores Scope selections into the fresh Composer draft", () => {
+  const leases = createConversationScopeLeaseRegistry({});
+  const views = createConversationViewRegistry({
+    scopeLeases: leases,
+    composerServices: { now: () => 1, createId: () => "id" },
+  });
+  const scopeId = asConversationScopeId("scope-promotion");
+  const draftTarget = {
+    type: "new-thread",
+    execution: { hostId: asHostId("local") },
+  } as const;
+  const threadTarget = {
+    type: "existing-thread",
+    key: createConversationKey("local", "thread-promoted"),
+  } as const;
+  leases.ensure(scopeId, asHostId("local"), draftTarget);
+  const composer = views.ensure("view-promotion", scopeId, asHostId("local"), draftTarget).composer;
+  composer.dispatch({ type: "set-selections", patch: { model: "dsh-model:deepseek:prod" } });
+
+  views.bindScopeTarget(scopeId, threadTarget);
+  assert.equal(leases.readSelections(scopeId)?.model, "dsh-model:deepseek:prod");
+  assert.equal(composer.getSnapshot().draft.selections.model, "dsh-model:deepseek:prod");
+  views.dispose();
+  leases.dispose();
+});

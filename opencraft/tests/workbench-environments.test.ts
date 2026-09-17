@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { createWorkbenchDraftLocation } from "@opencraft/workbench-runtime";
 import {
-  createBrowserWorkbenchNavigation,
+  createApplicationNavigation,
   parseApplicationRouteUrl,
 } from "../apps/workbench-web/src/runtime/workbench-navigation";
 
@@ -56,13 +56,13 @@ test("navigation normalizes a legacy Environment URL to its Settings replacement
     location: { href: "https://app.test/environments?environment=local&section=vela.builtin-agents.model-services" },
     history, addEventListener() {}, removeEventListener() {},
   } });
-  const navigation = createBrowserWorkbenchNavigation(createWorkbenchDraftLocation("local", "draft"));
+  const navigation = createApplicationNavigation(createWorkbenchDraftLocation("local", "draft"));
   try {
     assert.deepEqual(navigation.getSnapshot().applicationRoute, {
       kind: "settings",
       slug: "vela.builtin-agents.model-services",
     });
-    assert.equal(urls.at(-1), "/settings/vela.builtin-agents.model-services");
+    assert.equal(navigation.getSnapshot().url, "/settings/vela.builtin-agents.model-services");
   } finally {
     navigation.dispose();
     if (previous) Object.defineProperty(globalThis, "window", previous);

@@ -13,12 +13,13 @@
   "main": "dist-host/main.cjs",
   "dependencies": {
     "@opencraft/app-host-protocol": "0.1.0",
-    "@opencraft/daemon-ipc": "0.1.0"
+    "@opencraft/daemon-ipc": "0.1.0",
+    "@opencraft/ui-preferences": "0.1.0"
   },
   "scripts": {
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && esbuild src/main.ts --bundle --platform=node --format=cjs --external:electron --define:import.meta.url=import_meta_url --banner:js=\"const import_meta_url = require('node:url').pathToFileURL(__filename).href;\" --outfile=dist-host/main.cjs && esbuild src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-host/preload.cjs",
     "typecheck": "tsc --noEmit",
-    "start": "npm run build:host && electron .",
+    "start": "npm run build:host && node ../../scripts/start-electron.mjs",
     "package:mac:arm64:zip": "electron-builder --mac zip --arm64",
     "package:mac:arm64:preview": "node ../../scripts/package-macos-preview.mjs arm64",
     "package:mac:arm64:dmg": "electron-builder --mac dmg --arm64",

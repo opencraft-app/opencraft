@@ -16,7 +16,7 @@ function fixture() {
     if (method === "runtime/settings/describe") return { writable: true, namespaces: [{ ns: "llm-pi-ai", revision, value: { providers: { test: config } } }] };
     if (method === "runtime/providers/list") return { providers: [provider] };
     if (method === "runtime/models/list") return { groups: [{ id: "test", models: [{ id: "test-model", name: "Test model" }] }] };
-    if (method === "runtime/providers/apply") { if (params.expectedRevision !== revision) throw new Error("settings-conflict"); config = { ...config, baseURL: params.baseURL, apiKeyEnv: "UPDATED_REF" }; revision++; return { saved: true, revision }; }
+    if (method === "runtime/providers/apply") { if (params.expectedRevision !== revision) throw new Error("settings-conflict"); config = { ...config, baseURL: params.baseURL, ...(params.models ? { models: params.models } : {}), apiKeyEnv: "UPDATED_REF" }; revision++; return { saved: true, revision }; }
     if (method === "runtime/models/probe") return { ok: true, elapsedMs: 1, model: params.model };
     if (method === "runtime/models/check") return { ok: true, elapsedMs: 1, model: params.model };
     if (method === "runtime/credentials/describe") return { credentials: { UPDATED_REF: { configured: true } } };
@@ -115,10 +115,64 @@ test("check requires an explicit save and sends only saved connection identity, 
   f.controller.dispose(); f.service.dispose();
 });
 
+test("custom model image capability is explicit, reversible, and saved through the provider CAS", async () => {
+  const f = fixture(); await f.service.refresh();
+  await f.controller.setModelImageInput(f.provider, "test-model", true);
+  assert.equal(f.controller.error, null);
+  assert.deepEqual(f.calls.filter(call => call.method === "runtime/providers/apply").at(-1)?.params.models, [
+    { id: "test-model", input: ["text", "image"] },
+  ]);
+  assert.deepEqual(f.service.providerConfiguration(f.provider).models[0]?.input, ["text", "image"]);
+
+  await f.controller.setModelImageInput(f.provider, "test-model", false);
+  assert.equal(f.controller.error, null);
+  assert.deepEqual(f.calls.filter(call => call.method === "runtime/providers/apply").at(-1)?.params.models, [
+    { id: "test-model", input: ["text"] },
+  ]);
+  assert.deepEqual(f.service.providerConfiguration(f.provider).models[0]?.input, ["text"]);
+  f.controller.dispose(); f.service.dispose();
+});
+
+test("model capability mutation stays row-scoped while its request is pending", async () => {
+  const f = fixture(); await f.service.refresh();
+  const draft = f.controller.draft(f.provider);
+  draft.connectionExpanded = false;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const originalSave = f.service.saveProvider.bind(f.service);
+  f.service.saveProvider = async (...args) => { await held; return originalSave(...args); };
+
+  const saving = f.controller.setModelImageInput(f.provider, "test-model", true);
+  assert.equal(f.controller.isModelCapabilityPending("test", "test-model"), true);
+  assert.equal(draft.dirty, false, "a row mutation must not dirty the connection form");
+  assert.equal(draft.connectionExpanded, false, "a row mutation must not expand the connection form");
+  assert.equal(f.controller.busy, false, "a row mutation must not claim the page-wide busy state");
+
+  release(); await saving;
+  assert.equal(f.controller.isModelCapabilityPending("test", "test-model"), false);
+  assert.equal(f.controller.error, null);
+  f.controller.dispose(); f.service.dispose();
+});
+
 test("disposing the page service cancels pending autosave", async () => {
   const f = fixture(); await f.service.refresh();
   f.controller.edit(f.provider, {}, "synthetic"); f.controller.scheduleSave(f.provider); f.controller.dispose();
   await new Promise(resolve => setTimeout(resolve, 550));
   assert.equal(f.calls.some(call => call.method === "runtime/providers/apply"), false);
   f.service.dispose();
+});
+
+test("loading providers uses only an accessible in-place pending icon", () => {
+  Object.assign(globalThis, { React });
+  const request = (() => new Promise(() => undefined)) as HostProtocolRequest;
+  const service = new LocalAgentSettingsService(request, "local");
+  const controller = new ModelServicesController(service);
+  void service.refresh();
+  const View = createModelServicesView(controller);
+  const markup = renderToStaticMarkup(createElement(View, {} as any));
+  assert.match(markup, /model-services__pending/u);
+  assert.match(markup, /role="status" aria-label="正在加载提供商"/u);
+  assert.doesNotMatch(markup, />正在加载提供商/u);
+  controller.dispose();
+  service.dispose();
 });

@@ -3,6 +3,7 @@ import { asHostId, type HostId } from "@opencraft/chat-core";
 import type { HostRuntimeLifecycle, HostRuntimeRegistry } from "./host-runtime-registry";
 import {
   workbenchLocationHostId,
+  type WorkbenchDraftLocation,
   type WorkbenchLocation,
 } from "./workbench-location";
 
@@ -47,7 +48,13 @@ export interface WorkbenchCoordinator<TRuntime extends WorkbenchActivatableRunti
    * View.
    */
   presentInitial(location: WorkbenchLocation, viewId: string): void;
+  /**
+   * Commits a locally owned New-chat Draft as the visible Home route without
+   * waiting for its physical Host. Remote readiness continues via prepare().
+   */
+  presentLocalDraft(location: WorkbenchDraftLocation, viewId: string): void;
   prepare(location: WorkbenchLocation): Promise<PreparedWorkbenchActivation | null>;
+  cancelPending(): void;
   activate(location: WorkbenchLocation): Promise<boolean>;
   getRuntime(): TRuntime;
   /** View-owned lease; Host runtime identity remains independent of presentation. */
@@ -91,6 +98,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
   let activeRuntime: TRuntime | null = null;
   let activeThreadLease: RuntimeThreadLease<TRuntime> | null = null;
   let snapshot: WorkbenchCoordinatorSnapshot;
+  let cancelPreparation: (() => void) | null = null;
 
   const ensureOpen = () => {
     if (disposed) throw new Error("Workbench coordinator is disposed");
@@ -115,6 +123,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
     nextLocation: WorkbenchLocation,
   ): Promise<PreparedWorkbenchActivation | null> => {
     ensureOpen();
+    cancelPreparation?.();
     const activation = ++generation;
     let preparedLease: RuntimeThreadLease<TRuntime> | null = null;
     let preparedRuntime: TRuntime | null = null;
@@ -129,9 +138,10 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
       preparedLease = null;
     };
     const cancel = () => {
+      releasePrepared();
       if (settled) return;
       settled = true;
-      releasePrepared();
+      if (cancelPreparation === cancel) cancelPreparation = null;
       if (!disposed && activation === generation) {
         pendingLocation = null;
         phase = activeRuntime === null ? "idle" : "ready";
@@ -139,6 +149,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
         publish();
       }
     };
+    cancelPreparation = cancel;
 
     try {
       const hostId = workbenchLocationHostId(nextLocation);
@@ -166,6 +177,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
             beforePublish?.();
           } catch (cause) {
             settled = true;
+            if (cancelPreparation === cancel) cancelPreparation = null;
             releasePrepared();
             pendingLocation = null;
             phase = activeRuntime === null ? "error" : "ready";
@@ -174,6 +186,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
             throw cause;
           }
           settled = true;
+          if (cancelPreparation === cancel) cancelPreparation = null;
           const previousLease = activeThreadLease;
           activeRuntime = preparedRuntime;
           activeThreadLease = preparedLease;
@@ -192,6 +205,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
     } catch (cause) {
       releasePrepared();
       settled = true;
+      if (cancelPreparation === cancel) cancelPreparation = null;
       if (disposed || activation !== generation) return null;
       pendingLocation = null;
       phase = "error";
@@ -202,6 +216,7 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
   };
 
   return {
+    cancelPending() { cancelPreparation?.(); ++generation; },
     getSnapshot: () => snapshot,
     subscribe(listener) {
       ensureOpen();
@@ -235,6 +250,23 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
       }
       const hostId = workbenchLocationHostId(nextLocation);
       activeRuntime = registry.getRuntime(hostId);
+      location = nextLocation;
+      viewId = nextViewId;
+      pendingLocation = nextLocation;
+      phase = "resolving";
+      error = null;
+      publish();
+    },
+    presentLocalDraft(nextLocation, nextViewId) {
+      ensureOpen();
+      if (nextViewId.trim().length === 0) {
+        throw new RangeError("Workbench View ID must not be empty");
+      }
+      generation += 1;
+      const previousLease = activeThreadLease;
+      activeRuntime = registry.getRuntime(nextLocation.hostId);
+      activeThreadLease = null;
+      previousLease?.release();
       location = nextLocation;
       viewId = nextViewId;
       pendingLocation = nextLocation;

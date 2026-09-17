@@ -991,6 +991,24 @@ test("generic dynamic tools use Codex compact labels and never invent a raw body
   assert.equal(isToolActivityPresentationSuppressed(blocks[2]!), true);
 });
 
+test("DSH deepseek-harness tools get a semantic icon, detail, and expandable body", () => {
+  const snapshot = projectTimeline(source([{
+    id: "turn-dsh-harness",
+    status: "complete",
+    items: [
+      { id: "read", type: "dynamicToolCall", payload: { namespace: "deepseek-harness", tool: "read", status: "completed", success: true, arguments: { file_path: "src/main.ts" }, contentItems: [{ type: "inputText", text: "console.log(1)" }] } },
+      { id: "grep", type: "dynamicToolCall", payload: { namespace: "deepseek-harness", tool: "grep", status: "running", success: null, arguments: { pattern: "TODO" } } },
+      { id: "ask", type: "dynamicToolCall", payload: { namespace: "deepseek-harness", tool: "ask_user_question", status: "completed", success: true, arguments: { question: "Which target?" } } },
+    ],
+  }]), createDefaultTimelineProjectorRegistry());
+  const blocks = snapshot.frames.flatMap((frame) => frame.blocks).filter((block): block is Extract<TimelineBlock, { type: "tool-call" }> => block.type === "tool-call");
+  assert.deepEqual(blocks.map((block) => presentToolActivity(block).icon), ["read", "search", "wrench"]);
+  assert.deepEqual(blocks.map((block) => presentToolActivity(block).summary), ["Read", "Searching", "Ask user question"]);
+  assert.deepEqual(blocks.map((block) => presentToolActivity(block).detail), ["src/main.ts", "TODO", null]);
+  assert.deepEqual(blocks.map((block) => presentToolActivity(block).canExpand), [true, true, true]);
+  assert.deepEqual(extractToolCallContentParts(blocks[0]!).map((part) => part.role), ["input", "output"]);
+});
+
 test("adjacent imageView tool calls coalesce into one expandable visual activity", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-image-views",

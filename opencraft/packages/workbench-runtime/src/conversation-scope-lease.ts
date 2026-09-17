@@ -1,5 +1,5 @@
 import type { HostId } from "@opencraft/chat-core";
-import type { ComposerTarget } from "@opencraft/composer-core";
+import type { ComposerSelections, ComposerTarget } from "@opencraft/composer-core";
 
 import type { ConversationScopeId } from "./conversation-binding";
 
@@ -14,6 +14,8 @@ interface MutableConversationScopeLease {
   readonly scopeId: ConversationScopeId;
   readonly hostId: HostId;
   target: ComposerTarget;
+  /** Composer selections the user explicitly chose for this conversation. */
+  selections: ComposerSelections | null;
   readonly retainers: Map<symbol, string>;
   touchedAt: number;
 }
@@ -22,6 +24,10 @@ export interface ConversationScopeLeaseRegistry {
   ensure(scopeId: ConversationScopeId, hostId: HostId, target: ComposerTarget): ConversationScopeLease;
   get(scopeId: ConversationScopeId): ConversationScopeLease | null;
   bindTarget(scopeId: ConversationScopeId, target: ComposerTarget): ConversationScopeLease;
+  /** Last explicitly chosen Composer selections for the conversation, if any. */
+  readSelections(scopeId: ConversationScopeId): ComposerSelections | null;
+  /** Replaces the stored selections; callers pass the authoritative snapshot. */
+  writeSelections(scopeId: ConversationScopeId, selections: ComposerSelections): ConversationScopeLease;
   retain(scopeId: ConversationScopeId, reason: string): () => void;
   close(scopeId: ConversationScopeId): boolean;
   dispose(): void;
@@ -37,8 +43,9 @@ export interface ConversationScopeLeaseRegistryConfig {
 /**
  * Owns semantic resources for a stable Conversation Scope. A Draft promotion
  * changes the canonical target without changing the Scope identity. Retained
- * conversation UI state (for example panel layout) may use this lifetime;
- * route-local Composer, scroll and physical presentation state may not.
+ * conversation UI state (for example panel layout or the conversation's
+ * explicitly chosen Composer selections) may use this lifetime; route-local
+ * Composer, scroll and physical presentation state may not.
  */
 export function createConversationScopeLeaseRegistry(
   config: ConversationScopeLeaseRegistryConfig,
@@ -94,6 +101,7 @@ export function createConversationScopeLeaseRegistry(
         scopeId,
         hostId,
         target,
+        selections: null,
         retainers: new Map(),
         touchedAt: ++logicalClock,
       };
@@ -116,6 +124,19 @@ export function createConversationScopeLeaseRegistry(
         throw new Error(`Conversation Scope ${scopeId} cannot move to Host ${targetHostId}`);
       }
       entry.target = target;
+      entry.touchedAt = ++logicalClock;
+      return snapshot(entry);
+    },
+    readSelections(scopeId) {
+      ensureOpen();
+      const entry = entries.get(scopeId);
+      return entry === undefined ? null : entry.selections;
+    },
+    writeSelections(scopeId, selections) {
+      ensureOpen();
+      const entry = entries.get(scopeId);
+      if (entry === undefined) throw new Error(`Conversation Scope ${scopeId} is unavailable`);
+      entry.selections = { ...selections };
       entry.touchedAt = ++logicalClock;
       return snapshot(entry);
     },

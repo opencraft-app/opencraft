@@ -28,6 +28,25 @@ contextBridge.exposeInMainWorld("opencraftDesktop", Object.freeze({
   projects: Object.freeze({
     pickDirectory: () => ipcRenderer.invoke("opencraft:project-folder-pick"),
   }),
+  sqliteDebug: Object.freeze({
+    list: () => ipcRenderer.invoke("opencraft:sqlite-debug-list"),
+    tables: (databaseId: string) => ipcRenderer.invoke("opencraft:sqlite-debug-tables", databaseId),
+    rows: (databaseId: string, table: string, offset: number, limit: number) =>
+      ipcRenderer.invoke("opencraft:sqlite-debug-rows", databaseId, table, offset, limit),
+  }),
+  uiPreferences: Object.freeze({
+    load: (key: string) => ipcRenderer.invoke("opencraft:ui-preference-load", key),
+    compareAndSet: (key: string, expectedRevision: number, valueJson: string) =>
+      ipcRenderer.invoke("opencraft:ui-preference-compare-and-set", key, expectedRevision, valueJson),
+    subscribe: (listener: (key: string) => void) => {
+      const receive = (_event: Electron.IpcRendererEvent, key: string) => listener(key);
+      ipcRenderer.on("opencraft:ui-preference-changed", receive);
+      return () => ipcRenderer.off("opencraft:ui-preference-changed", receive);
+    },
+  }),
+  skillHub: Object.freeze({
+    get: (path: string) => ipcRenderer.invoke("opencraft:skillhub-get", path),
+  }),
   browserState: Object.freeze({
     read: () => ipcRenderer.invoke("opencraft:browser-state-read"),
     write: (key: string, value: string) => ipcRenderer.invoke("opencraft:browser-state-write", key, value),

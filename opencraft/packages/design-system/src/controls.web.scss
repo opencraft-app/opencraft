@@ -31,9 +31,19 @@
   gap: 9px;
   padding: 0 8px;
   text-align: left;
+
+  &:hover:not(:disabled) {
+    background: var(--color-background-navigation-hover);
+  }
+
   &.is-selected, &[aria-current="page"] {
-    background: var(--color-background-button-tertiary-hover);
+    background: var(--color-background-navigation-current);
     color: var(--color-text);
+  }
+
+  &.is-selected:active:not(:disabled),
+  &[aria-current="page"]:active:not(:disabled) {
+    background: var(--color-background-navigation-pressed);
   }
 }
 

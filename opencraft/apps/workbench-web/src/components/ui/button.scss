@@ -24,6 +24,15 @@
   &[data-size="sm"] { min-height: 32px; padding: 0 12px; font-size: 12px; }
   &[data-size="md"] { min-height: 40px; padding: 0 16px; font-size: 14px; }
   &[data-size="lg"] { min-height: 44px; padding: 0 24px; font-size: 16px; }
+  &[data-size="toolbar"] {
+    height: var(--height-toolbar-control);
+    min-height: var(--height-toolbar-control);
+    border-radius: var(--radius-toolbar-control);
+    padding: 0 var(--padding-toolbar-control-inline);
+    font-size: var(--font-toolbar-control-size);
+    font-weight: var(--font-toolbar-control-weight);
+    line-height: var(--font-toolbar-control-line-height);
+  }
 
   &[data-variant="primary"],
   &[data-variant="hero"] {

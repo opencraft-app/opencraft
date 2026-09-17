@@ -282,8 +282,10 @@ test("panel creation picker is outlet-owned and shares its actions with the empt
   assert.match(rightPanelTabsSource, /regionState\.tabs\.length > 0 \?\s*\(\s*<PanelCreationMenu/);
   assert.match(rightPanelTabsSource, /actions=\{creationActions\}/);
   assert.match(rightPanelTabsSource, /creationActions\.map\(\(?action\)?\s*=>/);
-  assert.match(rightPanelTabsSource, /aria-label="New tab"/);
   assert.match(rightPanelTabsSource, /onCloseAutoFocus=\{\(?event\)?\s*=>/);
+  assert.match(rightPanelTabsSource, /tabs=\{regionState\.tabs\}/);
+  assert.match(rightPanelTabsSource, /aria-label=\{tabs \? "Tabs" : "New tab"\}/);
+  assert.doesNotMatch(rightPanelTabsSource, /action\.panelKind|panelTabsForAction|right-panel-type-picker/);
 });
 const browserPanelSource = readFileSync(
   new URL(
@@ -477,6 +479,9 @@ test("Draft menus consume one design-system rhythm and stay out of the hero titl
     surfacePadding: 5,
     itemGap: 2,
     itemRadius: 8,
+    boundedMinimumWidth: 200,
+    boundedMaximumWidth: 320,
+    listMaximumHeight: 250,
   });
   assert.match(
     newThreadDraftSource,

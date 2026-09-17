@@ -16,6 +16,7 @@ export type ShellNavigationAction =
   | { readonly type: "toggle"; readonly surface: ShellNavigationSurface; readonly dockAvailable: boolean }
   | { readonly type: "pin"; readonly surface: ShellNavigationSurface; readonly pinned: boolean }
   | { readonly type: "set-rail-detent"; readonly detent: ShellNavigationRailDetent }
+  | { readonly type: "restore-preferences"; readonly preferences: unknown }
   | { readonly type: "dismiss"; readonly surface: ShellNavigationSurface };
 
 export function createShellNavigationState(preferences?: unknown): ShellNavigationState {
@@ -34,7 +35,7 @@ export function createShellNavigationState(preferences?: unknown): ShellNavigati
     : value?.lastVisibleRailDetent === "compact" ? "compact" : "expanded";
   return {
     pinned: {
-      applications: typeof value?.applications === "boolean" ? value.applications : true,
+      applications: typeof value?.applications === "boolean" ? value.applications : false,
       account: typeof value?.account === "boolean" ? value.account : false,
     },
     railDetent,
@@ -45,6 +46,8 @@ export function createShellNavigationState(preferences?: unknown): ShellNavigati
 
 export function reduceShellNavigation(state: ShellNavigationState, action: ShellNavigationAction): ShellNavigationState {
   switch (action.type) {
+    case "restore-preferences":
+      return createShellNavigationState(action.preferences);
     case "pin":
       return {
         ...state,

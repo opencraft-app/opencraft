@@ -9,6 +9,7 @@ import type {
 } from "@opencraft/appserver-protocol";
 
 import type { HermesAppServerAdapter } from "./adapter";
+import { classifyHermesBotExecutionFailure } from "./bot-execution-failure";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -70,6 +71,7 @@ interface HermesHostedRoomLog {
 interface GroupCallbacks {
   readonly resolveBot: (botId: string) => Promise<AppServerBotDescriptor>;
   readonly botForProfile: (profile: string) => AppServerBotDescriptor;
+  readonly findBotForProfile: (profile: string) => AppServerBotDescriptor | null;
   readonly profileForBotId: (botId: string) => string | null;
   readonly emit: (method: string, conversationId: string, payload: JsonRecord) => void;
 }
@@ -213,19 +215,20 @@ export class HermesGroupConversations {
 
   async read(conversationId: string, limit = 100) {
     const [state, log] = await Promise.all([this.state(conversationId), this.log(conversationId, 0, limit)]);
-    const participants = [HUMAN, ...state.room.members.map((member) => participant(this.botForMember(member)))];
+    const readOnly = this.isReadOnly(state.room);
+    const participants = [HUMAN, ...state.room.members.map((member) => this.participantForMember(member))];
     const messages = log.events.flatMap((event) => {
       const message = this.message(state.room, event);
       return message === null ? [] : [message];
     });
     this.cursorByRoom.set(conversationId, log.latest_seq);
-    this.schedulePoll(conversationId);
+    if (!readOnly) this.schedulePoll(conversationId);
     return {
       conversation: this.descriptor(state.room),
       participants,
       initialMessagesPage: { data: messages },
-      executions: [...this.executions(state.room, log.events), ...this.activeRoomExecutions(state)],
-      interactions: this.interactions(state.room, state),
+      executions: readOnly ? [] : [...this.executions(state.room, log.events), ...this.activeRoomExecutions(state)],
+      interactions: readOnly ? [] : this.interactions(state.room, state),
       presence: [],
       liveCursor: { epoch: this.epoch(state.room), nextSeq: log.latest_seq + 1 },
     };
@@ -245,6 +248,8 @@ export class HermesGroupConversations {
   }
 
   async send(conversationId: string, clientMessageId: string, content: readonly unknown[], replyTo?: string) {
+    const state = await this.state(conversationId);
+    this.assertWritable(state.room);
     const text = content.map((raw) => {
       const part = asRecord(raw) as AppServerBotInputPart;
       if (part.type === "text") return part.text;
@@ -258,7 +263,6 @@ export class HermesGroupConversations {
       event_id: clientMessageId,
       payload: { text, thread_id: replyTo || clientMessageId },
     });
-    const state = await this.state(conversationId);
     const room = state.room;
     const message = this.message(room, result.event)!;
     this.schedulePoll(conversationId, true);
@@ -276,6 +280,7 @@ export class HermesGroupConversations {
 
   async update(conversationId: string, expectedRevision: number, patch: JsonRecord) {
     const state = await this.state(conversationId);
+    this.assertWritable(state.room);
     if (state.room.revision !== expectedRevision) throw new Error("Group revision conflict");
     if (typeof patch.title === "string" && patch.title.trim()) {
       const result = await this.adapter.callHostedRoom<{ room: HermesHostedRoom }>("groups.rename", {
@@ -304,6 +309,7 @@ export class HermesGroupConversations {
 
   async cancel(conversationId: string, executionId: string, commandId: string) {
     const state = await this.state(conversationId);
+    this.assertWritable(state.room);
     await this.adapter.callHostedRoom("groups.stop", { room_id: conversationId, cancel_id: commandId });
     const bot = this.botForMember(state.room.members[0]!);
     const execution: AppServerBotExecution = {
@@ -318,6 +324,8 @@ export class HermesGroupConversations {
   }
 
   async respond(conversationId: string, interactionId: string, choiceId: string) {
+    const state = await this.state(conversationId);
+    this.assertWritable(state.room);
     const pending = this.pendingApprovals.get(interactionId);
     if (pending === undefined || pending.roomId !== conversationId) {
       throw Object.assign(new Error(`Interaction not found: ${interactionId}`), {
@@ -376,36 +384,64 @@ export class HermesGroupConversations {
       revision: Math.max(1, room.revision),
       topology: "group",
       title: room.name,
-      participantIds: ["person:you", ...room.members.map((member) => `bot:${this.botForMember(member).botId}`)],
+      participantIds: ["person:you", ...room.members.map((member) => this.participantForMember(member).participantId)],
       createdAtMs: secondsToMs(room.created_at),
       updatedAtMs: secondsToMs(room.updated_at),
+      ...(this.isReadOnly(room) ? { readOnly: true } : {}),
+    };
+  }
+
+  private memberProfile(member: HermesHostedRoomMember): string {
+    const profile = member.profile?.trim() || asRecord(member.target).profile;
+    if (typeof profile !== "string" || !profile) throw new Error("Hermes room member has no profile identity");
+    return profile;
+  }
+
+  private memberBot(member: HermesHostedRoomMember): AppServerBotDescriptor | null {
+    return this.callbacks.findBotForProfile(this.memberProfile(member));
+  }
+
+  private isReadOnly(room: HermesHostedRoom): boolean {
+    return room.members.some((member) => this.memberBot(member) === null);
+  }
+
+  private assertWritable(room: HermesHostedRoom): void {
+    if (this.isReadOnly(room)) throw new Error("This historical group is read-only because a member profile no longer exists.");
+  }
+
+  private participantForMember(member: HermesHostedRoomMember): AppServerBotParticipantSnapshot {
+    const bot = this.memberBot(member);
+    if (bot !== null) return participant(bot);
+    const profile = this.memberProfile(member);
+    return {
+      participantId: `bot:${member.member_id || profile}`,
+      kind: "bot",
+      displayName: member.display_name?.trim() || member.handle?.trim() || profile,
     };
   }
 
   private botForMember(member: HermesHostedRoomMember): AppServerBotDescriptor {
-    const profile = member.profile?.trim() || asRecord(member.target).profile;
-    if (typeof profile !== "string" || !profile) throw new Error("Hermes room member has no profile identity");
-    return this.callbacks.botForProfile(profile);
+    return this.callbacks.botForProfile(this.memberProfile(member));
   }
 
   private message(room: HermesHostedRoom, event: HermesHostedRoomEvent): AppServerBotMessage | null {
     if (event.kind !== "message.user" && event.kind !== "message.member") return null;
     const text = typeof event.payload.text === "string" ? event.payload.text : "";
-    const bot = event.kind === "message.member"
-      ? this.botForMember(room.members.find((member) => member.member_id === event.payload.member_id)
-        ?? { profile: String(event.actor.id || "default") })
+    const member = event.kind === "message.member"
+      ? room.members.find((candidate) => candidate.member_id === event.payload.member_id)
+        ?? { profile: String(event.actor.id || "default") }
       : null;
     const executionId = typeof event.payload.task_id === "string" ? event.payload.task_id : undefined;
     return {
       messageId: event.event_id,
       conversationId: room.room_id,
       ...(event.kind === "message.user" ? { clientMessageId: event.event_id } : {}),
-      author: bot === null ? HUMAN : participant(bot),
+      author: member === null ? HUMAN : this.participantForMember(member),
       createdAtMs: secondsToMs(event.created_at),
       updatedAtMs: secondsToMs(event.created_at),
       state: "complete",
       content: [{ type: "text", text }],
-      ...(bot === null ? {} : {
+      ...(member === null ? {} : {
         causalMessageId: String(event.payload.discussion_event_id || `causal:${event.event_id}`),
         ...(executionId ? { executionId } : {}),
       }),
@@ -430,6 +466,7 @@ export class HermesGroupConversations {
         causalMessageId: String(event.payload.discussion_event_id || `causal:${taskId}`),
         status,
         completedAtMs: secondsToMs(event.created_at),
+        ...(status === "failed" ? { error: classifyHermesBotExecutionFailure({ reasonCode: event.payload.reason_code, error: event.payload.error }) } : {}),
       }];
     });
   }

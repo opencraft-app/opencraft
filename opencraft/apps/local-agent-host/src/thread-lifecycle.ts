@@ -76,15 +76,17 @@ export class ThreadLifecycle {
       }
       return { status };
     }
-    const savedModel = method === "thread/resume" ? this.catalog.configuration(params.threadId).model : undefined;
-    const effectiveParams = params.model === undefined && typeof savedModel === "string" ? { ...params, model: savedModel } : params;
+    const savedModel = ["thread/resume", "thread/fork", "turn/start"].includes(method)
+      ? this.catalog.configuration(params.threadId).model : undefined;
+    const effectiveParams = params.model == null && typeof savedModel === "string" && savedModel !== "" && savedModel !== "dsh"
+      ? { ...params, model: savedModel } : params;
     const reply = await delegate(method, effectiveParams);
     if (reply?.thread && ["thread/start", "thread/resume", "thread/fork"].includes(method)) {
       this.catalog.upsert(reply.thread, {
         ...(method === "thread/fork" ? { ephemeral: params.ephemeral === true, forkedFromId: params.threadId, parentThreadId: null } : {}),
         configuration: {
           ...Object.fromEntries(["model", "cwd", "runtimeWorkspaceRoots"].filter(key => reply[key] !== undefined).map(key => [key, reply[key]])),
-          ...Object.fromEntries(["model", "cwd", "agentId", "runtimeWorkspaceRoots", "developerInstructions", "permissions"].filter(key => params[key] !== undefined).map(key => [key, params[key]])),
+          ...Object.fromEntries(["cwd", "agentId", "runtimeWorkspaceRoots", "developerInstructions", "permissions"].filter(key => params[key] !== undefined).map(key => [key, params[key]])),
         },
       });
       this.attachments.attach(clientId, reply.thread.id); this.cancelTimer(reply.thread.id);

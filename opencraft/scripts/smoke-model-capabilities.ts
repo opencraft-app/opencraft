@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import WebSocket from "ws";
@@ -62,7 +62,27 @@ try {
   assert.ok(text && vision); assert.deepEqual(text.inputModalities, ["text"]); assert.deepEqual(vision.inputModalities, ["text", "image"]);
   assert.equal(models.some((entry: any) => entry.isDefault), false);
   await assert.rejects(request("thread/start", { cwd: directory }), /请先选择模型/);
-  const parent = (await request("thread/start", { cwd: directory, model: text.model })).thread.id;
+  const dynamicTools = [{ type: "function", name: "fixture_echo", description: "Echo", inputSchema: { type: "object", properties: {} } },
+    { type: "namespace", name: "fixture", description: "Fixture namespace", tools: [
+      { name: "read", description: "Read fixture", inputSchema: { type: "object", properties: {} } },
+    ] }];
+  const parent = (await request("thread/start", { cwd: directory, model: text.model, dynamicTools })).thread.id;
+  assert.equal((await request("thread/resume", { threadId: parent, model: null })).model, text.model);
+  const beforeInvalid = (await request("thread/list")).data.map((t: any) => t.id).sort();
+  await assert.rejects(request("thread/fork", { threadId: parent, dynamicTools: [{ name: "invalid" }] }), /Invalid dynamic tool/);
+  await assert.rejects(request("thread/fork", { threadId: parent, dynamicTools: [
+    { type: "function", name: "invalid_schema", description: "Invalid", inputSchema: { type: "not-json-schema" } },
+  ] }));
+  assert.deepEqual((await request("thread/list")).data.map((t: any) => t.id).sort(), beforeInvalid);
+  const fork = await request("thread/fork", { threadId: parent });
+  assert.equal(fork.model, text.model);
+  assert.equal((await request("thread/resume", { threadId: fork.thread.id, model: null })).model, text.model);
+  assert.equal((await request("runtime/capabilities/register", { threadId: fork.thread.id, dynamicTools })).registered, 2);
+  const overrideFork = await request("thread/fork", { threadId: parent, model: vision.model });
+  assert.equal(overrideFork.model, vision.model);
+  const temporaryFork = await request("thread/fork", { threadId: parent, ephemeral: true });
+  assert.equal(temporaryFork.model, text.model);
+  await request("thread/unsubscribe", { threadId: temporaryFork.thread.id });
   const image = await readFile(resolve("apps/workbench-expo/ios/OpenCraft/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png"));
   const input = [{ type: "image", url: "data:image/png;base64," + image.toString("base64") }];
   await assert.rejects(request("turn/start", { threadId: parent, input }), /does not support image|不支持 image 输入/);
@@ -79,6 +99,7 @@ try {
   assert.equal((await request("model/list")).data.find((entry: any) => entry.isDefault).model, vision.model);
   assert.equal((await request("thread/start", { cwd: directory })).model, vision.model);
   assert.equal((await request("thread/resume", { threadId: parent })).model, text.model);
+  assert.equal((await request("thread/resume", { threadId: fork.thread.id })).model, text.model);
   await defaults(null);
   const cleared = (await request("model/list")).data;
   assert.equal(cleared.filter((entry: any) => decodeModel(entry.model)?.provider === "capability-local").length, 2);
@@ -91,7 +112,29 @@ try {
   assert.equal(restored.some((entry: any) => entry.isDefault), false);
   await assert.rejects(request("thread/start", { cwd: directory }), /请先选择模型/);
   assert.equal((await request("thread/resume", { threadId: parent })).model, text.model);
-  console.log("PASS: real DSH input capabilities, text-image rejection, native vision request, explicit/cleared default and restart; synthetic loopback inference only");
+  assert.equal((await request("thread/resume", { threadId: fork.thread.id })).model, text.model);
+  assert.equal((await request("thread/resume", { threadId: overrideFork.thread.id })).model, vision.model);
+  assert.equal((await request("runtime/capabilities/register", { threadId: overrideFork.thread.id, dynamicTools })).registered, 2);
+  await assert.rejects(access(join(directory, "opencraft-history-index.sqlite")), { code: "ENOENT" });
+  const beforeRestartTurn = captured.length;
+  await request("turn/start", { threadId: parent, input: [{ type: "text", text: "synthetic cold continuation" }] });
+  const continuedDeadline = Date.now() + 20000;
+  while (!frames.some(frame => frame.method === "turn/completed" && frame.params.threadId === parent)) {
+    if (Date.now() > continuedDeadline) throw new Error("Cold continuation did not settle");
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.ok(captured.length > beforeRestartTurn);
+  assert.equal(captured.at(-1).model, "text-fixture");
+  await request("turn/start", { threadId: overrideFork.thread.id, input: [{ type: "text", text: "cold fork binding" }] });
+  const forkDeadline = Date.now() + 20000;
+  while (!frames.some(frame => frame.method === "turn/completed" && frame.params.threadId === overrideFork.thread.id)) {
+    if (Date.now() > forkDeadline) throw new Error("Cold fork continuation did not settle");
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(captured.at(-1).model, "vision-fixture");
+  assert.ok(captured.at(-1).tools.some((tool: any) => tool.function?.name === "fixture_echo"));
+  assert.ok(captured.at(-1).tools.some((tool: any) => tool.function?.name === "read"));
+  console.log("PASS: real DSH blank create/fork, inherited tools, invalid-tool preflight, default/restart, cold execution binding and no history index; synthetic loopback inference only");
 } finally {
   socket?.close(); await host?.close(); await new Promise<void>(resolve => endpoint.close(() => resolve()));
   await rm(directory, { recursive: true, force: true });

@@ -38,8 +38,6 @@
     color: var(--color-text-tertiary);
     strong { font-size: var(--codex-sidebar-meta-font-size); font-weight: 500; }
   }
-  .shell-navigation__items > button { @include controls.navigation-control; }
-
   &[data-shell-navigation-motion="geometry"] {
     gap: var(--shell-navigation-content-gap);
     padding-inline: 0;
@@ -106,10 +104,9 @@
   color: var(--color-text);
   button {
     @include menu.item;
-    @include controls.quiet-control;
+    @include controls.navigation-control;
     min-height: var(--height-navigation-row);
     cursor: pointer;
-    &[aria-current="page"] { background: var(--color-background-primary-ghost-hover); }
     > span:not(.sidebar-account__avatar) { flex: 1; min-width: 0; }
   }
   small, p { color: var(--color-text-secondary); font-size: 12px; }
@@ -146,6 +143,7 @@
   background: var(--color-background-elevated-secondary-opaque);
 }
 .shell-sign-in-menu__item { @include menu.item; }
+.shell-sign-in-menu__separator { height: 1px; margin: calc(var(--spacing) / 2) var(--gap-control-group); background: var(--color-border-subtle); }
 .shell-sign-in-menu__copy {
   display: grid;
   flex: 1;

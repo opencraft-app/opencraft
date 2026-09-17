@@ -1,6 +1,22 @@
-import { DshCapabilityBroker } from "./dsh-capability-broker.js";
+import { DshCapabilityBroker, type DshHostCapability } from "./dsh-capability-broker.js";
 import { DshExecutionAuthority } from "./dsh-execution-authority.js";
 import type { DshSessionRouting } from "./dsh-session-routing.js";
+
+export interface DshCapabilityRegistrationResult {
+  readonly registered: number;
+  readonly deferred?: boolean;
+}
+
+export function verifyDshCapabilityRegistration(
+  expected: number,
+  result: DshCapabilityRegistrationResult,
+): void {
+  if (result.deferred === true || result.registered !== expected) {
+    throw new Error(
+      `DSH registered ${result.registered} of ${expected} dynamic tools`,
+    );
+  }
+}
 
 /** Polling transport only; all execution/connection authority remains in the host. */
 export class DshCapabilityLink {
@@ -28,10 +44,16 @@ export class DshCapabilityLink {
     if (!response.ok) throw new Error("DSH capability bridge request failed: " + response.status);
     return response.json();
   }
-  async register(threadId: string) {
-    return this.request("/register", { sessionId: this.routing?.native(threadId) ?? threadId, capabilities: this.broker.list(threadId) });
+  async register(threadId: string): Promise<DshCapabilityRegistrationResult> {
+    return this.request("/register", {
+      sessionId: this.routing?.native(threadId) ?? threadId,
+      capabilities: this.broker.list(threadId),
+    }) as Promise<DshCapabilityRegistrationResult>;
   }
-  async thread(operation: "create" | "resume" | "fork" | "inject" | "release", params: Record<string, unknown>): Promise<any> {
+  async validate(capabilities: readonly DshHostCapability[]) {
+    await this.request("/validate-capabilities", { capabilities });
+  }
+  async thread(operation: "create" | "describe" | "resume" | "fork" | "inject" | "release", params: Record<string, unknown>): Promise<any> {
     return this.request("/thread/" + operation, params);
   }
   async modelInfo(provider: string, model: string): Promise<any> {

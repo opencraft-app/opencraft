@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
@@ -6,7 +7,54 @@ import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserve
 import { AppServerTerminalController } from "@opencraft/workbench-runtime";
 import { HostProcessService } from "../apps/local-agent-host/src/process-service";
 import { createWorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
-import { createTerminalWorkbenchPanelPlugin, WorkbenchTerminalSessionRegistry } from "../plugins/terminal/src/index";
+import {
+  createTerminalWorkbenchPanelPlugin,
+  terminalBoxIsVisible,
+  terminalGridSizeChanged,
+  WorkbenchTerminalSessionRegistry,
+} from "../plugins/terminal/src/index";
+
+test("terminal grid helpers reject hidden boxes and duplicate PTY sizes", () => {
+  assert.equal(terminalBoxIsVisible(640, 360), true);
+  assert.equal(terminalBoxIsVisible(0, 360), false);
+  assert.equal(terminalBoxIsVisible(640, 0), false);
+  assert.equal(terminalBoxIsVisible(Number.NaN, 360), false);
+  assert.equal(terminalGridSizeChanged(null, { cols: 80, rows: 24 }), true);
+  assert.equal(terminalGridSizeChanged({ cols: 80, rows: 24 }, { cols: 80, rows: 24 }), false);
+  assert.equal(terminalGridSizeChanged({ cols: 80, rows: 24 }, { cols: 79, rows: 24 }), true);
+});
+
+test("terminal visual inset is outside the measured xterm host", () => {
+  const source = readFileSync(
+    new URL("../plugins/terminal/src/index.tsx", import.meta.url),
+    "utf8",
+  );
+  const styles = readFileSync(
+    new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /className="terminal-panel__inset"[\s\S]*?className="terminal-panel__host" ref=\{hostRef\}/u);
+  assert.match(source, /terminal\.open\(host\)/u);
+  assert.match(source, /resizeObserver\.observe\(host\)/u);
+  assert.match(source, /resizeObserver\.observe\(host\);\s*fitAndPublish\(\);\s*scheduleFit\(\);/u);
+  assert.match(source, /fontSet\.addEventListener\("loadingdone"/u);
+  assert.match(source, /terminalGridSizeChanged\(lastPublishedGrid, nextGrid\)/u);
+  assert.doesNotMatch(source, /terminal\.open\(slot\)|resizeObserver\.observe\(slot\)/u);
+  assert.match(styles, /\.terminal-panel__inset\s*\{[\s\S]*?padding:\s*9px 10px;/u);
+  assert.match(styles, /\.terminal-panel__host\s*\{[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/u);
+});
+
+test("terminal measurement and rendering do not inherit application text tracking", () => {
+  const source = readFileSync(new URL("../plugins/terminal/src/index.tsx", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  const boundary = styles.slice(styles.indexOf(".terminal-panel__host {"), styles.indexOf(".terminal-panel__status {"));
+  assert.match(source, /letterSpacing:\s*0/u);
+  assert.match(boundary, /letter-spacing:\s*normal/u);
+  assert.match(boundary, /word-spacing:\s*normal/u);
+  assert.match(boundary, /text-transform:\s*none/u);
+  assert.doesNotMatch(boundary, /\.xterm-rows/u, "xterm owns the renderer's internal spacing compensation");
+});
 
 test("terminal contributes a direct shortcut and a type for the shared panel picker", async () => {
   const runtime = await createWorkbenchPanelReactRuntime();

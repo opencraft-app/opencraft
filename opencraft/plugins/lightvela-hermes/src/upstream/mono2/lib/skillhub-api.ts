@@ -16,9 +16,16 @@ interface SkillHubRuntimeEnv {
   DEV?: boolean;
 }
 
-export function resolveSkillHubApiBase(
-  env: SkillHubRuntimeEnv | undefined = import.meta.env,
-): string {
+interface DesktopSkillHubPort {
+  get(path: string): Promise<{ status: number; contentType: string | null; body: Uint8Array }>;
+}
+
+function desktopSkillHubPort(): DesktopSkillHubPort | null {
+  const desktop = (globalThis as { opencraftDesktop?: { kind?: unknown; skillHub?: DesktopSkillHubPort } }).opencraftDesktop;
+  return desktop?.kind === "electron" && desktop.skillHub ? desktop.skillHub : null;
+}
+
+export function resolveSkillHubApiBase(env: SkillHubRuntimeEnv | undefined = import.meta.env): string {
   const isDev = env?.DEV ?? (typeof process !== "undefined" && process.env.NODE_ENV === "development");
   return isDev ? "/__skillhub_api" : "https://api.skillhub.cn";
 }
@@ -124,6 +131,13 @@ export interface SkillHubSkillFileItem {
 // ─── 请求工具 ───────────────────────────────────────────────────────────────
 
 async function publicGet<T>(path: string): Promise<T> {
+  const desktop = desktopSkillHubPort();
+  if (desktop) {
+    const response = await desktop.get(path);
+    const body = new TextDecoder().decode(response.body);
+    if (response.status < 200 || response.status >= 300) throw new Error(`${response.status} SkillHub request failed`);
+    return JSON.parse(body) as T;
+  }
   const res = await fetch(`${SKILLHUB_API_BASE}${path}`);
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -206,8 +220,15 @@ export function fetchSkillFiles(slug: string): Promise<SkillHubSkillFileItem[]> 
 
 /** 读取单个 Skill 的指定文件内容 */
 export async function fetchSkillFile(slug: string, path: string): Promise<string> {
+  const requestPath = `/api/v1/skills/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`;
+  const desktop = desktopSkillHubPort();
+  if (desktop) {
+    const response = await desktop.get(requestPath);
+    if (response.status < 200 || response.status >= 300) throw new Error(response.status === 404 ? "file not found" : `${response.status} SkillHub request failed`);
+    return new TextDecoder().decode(response.body);
+  }
   const res = await fetch(
-    `${SKILLHUB_API_BASE}/api/v1/skills/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`,
+    `${SKILLHUB_API_BASE}${requestPath}`,
   );
   if (!res.ok) {
     throw new Error(res.status === 404 ? "file not found" : `${res.status} ${res.statusText}`);

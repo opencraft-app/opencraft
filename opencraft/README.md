@@ -18,16 +18,16 @@ their upstream release servers. No private package registry or reference
 source tree is required. Do not copy `node_modules` from another computer.
 
 ```bash
-git clone git@git.woa.com:wisp/opencraft.git
-cd opencraft
+git clone git@git.woa.com:wisp/mono2.git
+cd mono2/opencraft
 npm ci
 npm run dev:web
 ```
 
 The browser UI starts without a configured model account. To execute agent
-tasks, add your own AppServer in **Settings → Connections**, or use the desktop
-app's built-in Local Agent. Model credentials are runtime configuration, not
-build inputs and never part of this repository.
+tasks, connect an available Host or use the desktop app's built-in Local Agent;
+configure its models through the current Settings surface. Model credentials
+are runtime configuration, not build inputs and never part of this repository.
 
 ### Desktop with the bundled Local Agent
 
@@ -40,9 +40,14 @@ npm run dev:electron
 
 This builds the renderer and main process and prepares DSH from the committed
 `runtime/dsh/package.json` and `package-lock.json`. The runtime uses an isolated
-`npm ci`; it never installs into the root workspace. Open **Settings → Local
-Agent** to configure your provider/model credentials. Building and the startup
-smoke test do not require an API key.
+`npm ci`; it never installs into the root workspace. Use Settings to configure
+your provider/model credentials. Building and the startup smoke test do not
+require an API key.
+
+For a macOS QA preview that cannot overwrite an existing window or profile,
+use the isolated worktree and ad-hoc package procedure in the
+[mono2 README](../README.md#opencraft-本地工作台与预览). `dev:electron` is a developer
+loop, not proof of a packaged desktop release.
 
 For distribution, build on the **same OS and CPU architecture** as the target:
 

@@ -38,3 +38,7 @@ Server/Member/腾讯 IM 映射控制面，后者是下发到托管 Computer 的 
 拥有本地 catalog、中央 Service Catalog 条目、派生 Service Context 和 `service-<id>` 路由；
 校验器的一级服务集合与测试同步增加对应入口。OpenCraft 仍是唯一 Human Web 呈现真源，新增服务
 路由不建立旧 Velachat 或 `mono2-clean4` 双写关系。
+
+## 2026-09-16 应用：OpenCraft 工作台入口
+
+根 `AGENTS.md` 只登记 OpenCraft 的路径和局部入口，不承载桌面运行手册；根 `README.md` 给人类可执行的本地与隔离预览步骤，`opencraft/AGENTS.md` 仅补充服务内所有权、参考仓库和验收约束。完整平台契约仍由 OpenCraft 正式文档与构建矩阵拥有。这保持了根路由、服务局部规则与人类操作说明的单一权威关系。

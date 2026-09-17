@@ -208,7 +208,13 @@ export class AppServerBotConversationService extends Service {
     if (management && this.capability(hostId)?.features.botManagement !== true) {
       return Promise.reject(new BotConversationServiceError("BOT_CAPABILITY_UNAVAILABLE", "此实例不支持 Bot 管理。", { hostId, retryable: false }));
     }
-    return client.request(method, params, management ? { timeoutMs: 120_000 } : undefined).catch((error: unknown) => {
+    const configuration = method === "bot/configuration/read"
+      || method === "bot/configuration/options"
+      || method === "bot/configuration/update";
+    if (configuration && this.capability(hostId)?.features.configuration !== true) {
+      return Promise.reject(new BotConversationServiceError("BOT_CAPABILITY_UNAVAILABLE", "此实例不支持 Bot 配置。", { hostId, retryable: false }));
+    }
+    return client.request(method, params, management || method === "bot/configuration/update" ? { timeoutMs: 120_000 } : undefined).catch((error: unknown) => {
       throw domainError(error, hostId);
     });
   }
@@ -219,6 +225,21 @@ export class AppServerBotConversationService extends Service {
 
   async readBot(hostId: string, botId: string): Promise<AppServerBotDescriptor> {
     return (await this.request(hostId, "bot/read", { botId })).bot;
+  }
+
+  readBotConfiguration(hostId: string, botId: string) {
+    return this.request(hostId, "bot/configuration/read", { botId });
+  }
+
+  readBotConfigurationOptions(hostId: string, botId: string) {
+    return this.request(hostId, "bot/configuration/options", { botId });
+  }
+
+  updateBotConfiguration(
+    hostId: string,
+    params: AppServerBotMethodParams<"bot/configuration/update">,
+  ) {
+    return this.request(hostId, "bot/configuration/update", params);
   }
 
   createBot(hostId: string, params: AppServerBotMethodParams<"bot/create">) {

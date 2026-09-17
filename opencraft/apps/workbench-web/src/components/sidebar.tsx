@@ -91,6 +91,7 @@ function ThreadActivity({ status }: { status: WorkbenchThread["status"] }) {
     return (
       <span
         className="sidebar-thread__activity is-running"
+        role="img"
         aria-label="Running"
       />
     );
@@ -98,7 +99,16 @@ function ThreadActivity({ status }: { status: WorkbenchThread["status"] }) {
     return (
       <span
         className="sidebar-thread__activity is-review"
+        role="img"
         aria-label="Ready for review"
+      />
+    );
+  if (status === "error")
+    return (
+      <span
+        className="sidebar-thread__activity is-error"
+        role="img"
+        aria-label="Thread unavailable"
       />
     );
   return <span className="sidebar-thread__activity" aria-hidden="true" />;
@@ -164,7 +174,7 @@ export function Sidebar({
       <nav className="sidebar-navigation" aria-label="Primary">
         <button className="sidebar-action" type="button" onClick={onNewTask}>
           <SidebarActionIcon><SquarePen size={15} /></SidebarActionIcon>
-          <span>New chat</span>
+          <span>Start</span>
         </button>
         {primaryActions.map((action) => (
           <button

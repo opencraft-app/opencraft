@@ -121,11 +121,17 @@ function validateView(owner: ExtensionActivationIdentity, value: ViewContributio
   if (value.role !== undefined && value.role !== "bot-conversation") {
     throw new RangeError(`View ${value.id} has an invalid semantic role`);
   }
+  if (value.audience !== undefined && value.audience !== "public" && value.audience !== "internal") {
+    throw new RangeError(`View ${value.id} has an invalid audience`);
+  }
 }
 
 function validateNavigation(owner: ExtensionActivationIdentity, value: NavigationContribution): void {
   assertOwnedContributionId(owner.extensionId, value.id);
   requireLabel(value.title, `Navigation ${value.id} title`);
+  if (value.audience !== undefined && value.audience !== "public" && value.audience !== "internal") {
+    throw new RangeError(`Navigation ${value.id} has an invalid audience`);
+  }
   if (!(["sidebar-primary", "sidebar-footer"] as const).includes(value.surface)) {
     throw new RangeError(`Navigation ${value.id} has an invalid surface`);
   }
@@ -153,7 +159,12 @@ function validateSettingsPage(owner: ExtensionActivationIdentity, value: Setting
   if (value.audience !== undefined && value.audience !== "public" && value.audience !== "internal") {
     throw new RangeError(`Settings page ${value.id} has an invalid audience`);
   }
-  if (value.layout !== undefined && value.layout !== "document" && value.layout !== "master-detail") throw new RangeError("Invalid settings page layout");
+  if (
+    value.layout !== undefined
+    && value.layout !== "document"
+    && value.layout !== "master-detail"
+    && value.layout !== "edge-to-edge"
+  ) throw new RangeError("Invalid settings page layout");
   if (value.management !== undefined) {
     assertOwnedContributionId(owner.extensionId, value.management.familyId);
     if (value.management.scope !== "agent" && value.management.scope !== "host") {

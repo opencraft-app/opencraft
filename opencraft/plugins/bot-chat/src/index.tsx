@@ -42,6 +42,7 @@ export function createBotChatExtension(
         role: "bot-conversation",
         icon: "bot",
         platforms: ["web", "electron"],
+        audience: "internal",
       });
       if (options.showNavigation !== false) api.navigation.register({
         id: "vela.bot-chat.navigation",
@@ -51,6 +52,7 @@ export function createBotChatExtension(
         icon: "bot",
         order: 20,
         platforms: ["web", "electron"],
+        audience: "internal",
       });
       api.internal.register("platformViewRenderer", {
         viewType: "vela.bot-chat.surface",
