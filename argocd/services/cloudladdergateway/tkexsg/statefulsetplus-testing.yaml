@@ -147,7 +147,7 @@ spec:
         - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_TUNNEL_TOKEN_ENV
           value: DEVTUNNEL_TOKEN
         - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_LEASE_NAMESPACE
-          value: cloudladdergateway-devroute-testing
+          value: ns-prjqt8dd-867795-production
         - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_CIDRS
           value: 9.0.0.0/8
         - name: CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS

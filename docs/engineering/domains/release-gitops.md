@@ -286,7 +286,9 @@ Credit 资源包使用独立的 `jifei-credit-callback-<region>` 路由，不与
 个人环境能力分三层发布：`master` 中的 Auth/CloudLadder/Skill 源码、`sandbox-bj-7` 与
 `sandbox-kr-1` Auth 配置、广州/新加坡 testing CloudLadder 运行态。只允许启用北京和韩国 sandbox
 Auth、`lightvela-proxy-testing`、`devtunnel-testing`、韩国 sandbox Service Gateway 及其专用 Lease
-namespace/RBAC；production 与 staging manifests 必须保持零 diff，运行态也不得发生变更。
+前缀、ServiceAccount 与最小 RBAC；Lease 必须保存在 TKEx App 已授权的 workload namespace，不能由
+namespaced-mode Argo App 创建或跨 namespace 管理资源。production 与 staging manifests 必须保持零
+diff，运行态也不得发生变更。
 
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
