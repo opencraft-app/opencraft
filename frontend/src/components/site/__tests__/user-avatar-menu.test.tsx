@@ -189,6 +189,33 @@ describe("UserAvatarMenu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
+  it.each([
+    ["domestic", false],
+    ["international", true],
+  ])("hides the companion link only in the %s sidebar menu", (_site, global) => {
+    mockIsGlobal = global;
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({ activePass: null });
+
+    const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+
+    unmount();
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
+  });
+
   it("opens the international language picker beside the account menu", () => {
     useSession.mockReturnValue({
       session: {
