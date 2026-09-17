@@ -532,6 +532,10 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("keeps the draw result open and out of the grid when direct injection falls back", async () => {
+    let downloadedName = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click(this: HTMLAnchorElement) {
+      downloadedName = this.download;
+    });
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
       appliedSlug: null,
@@ -548,10 +552,11 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText(
-      "无法写入 Agent 沙箱，已下载 soul.md 到本地",
+      "无法写入 Agent 沙箱，已下载 SOUL.md 到本地",
       {},
       { timeout: 3_000 },
     )).toBeInTheDocument();
+    expect(downloadedName).toBe("SOUL.md");
     expect(screen.getByRole("button", { name: "注入抽卡结果" })).toBeInTheDocument();
     expect(screen.queryByText("Extra Soul")).not.toBeInTheDocument();
   });
@@ -653,7 +658,7 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText(
-      "无法写入 Agent 沙箱，已下载 soul.md 到本地",
+      "无法写入 Agent 沙箱，已下载 SOUL.md 到本地",
       {},
       { timeout: 3_000 },
     )).toBeInTheDocument();
@@ -776,7 +781,7 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "下载自定义人设" }));
 
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledOnce());
-    expect(downloadedName).toBe("soul.md");
+    expect(downloadedName).toBe("SOUL.md");
     expect(downloadedBlob).not.toBeNull();
     expect(await readBlobText(downloadedBlob!)).toBe(currentMarkdown);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:current-soul");
@@ -1066,7 +1071,7 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "选中此人设" }));
     fireEvent.click(screen.getByRole("button", { name: "注入" }));
 
-    expect(await screen.findByText("无法写入 Agent 沙箱，已下载 soul.md 到本地", {}, {
+    expect(await screen.findByText("无法写入 Agent 沙箱，已下载 SOUL.md 到本地", {}, {
       timeout: 3_000,
     })).toBeInTheDocument();
     expect(screen.getByText("已注入：自定义人设 · 真实自定义人设"))
