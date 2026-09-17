@@ -419,6 +419,8 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "sms", now); err != nil {
 			return nil, err
 		}
+	} else if err := insertReferralClaimOutboxTx(ctx, tx, user.ID, input.ReferralCode, "sms", now); err != nil {
+		return nil, err
 	}
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodSMS)
 	if err != nil {
@@ -446,6 +448,8 @@ func (s *MySQLStore) FindOrCreatePhoneAuthUser(ctx context.Context, phone string
 		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, referralCode, "phone_shadow", now); err != nil {
 			return User{}, err
 		}
+	} else if err := insertReferralClaimOutboxTx(ctx, tx, user.ID, referralCode, "phone_shadow", now); err != nil {
+		return User{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit phone auth user: %w", err)
@@ -950,6 +954,8 @@ func (s *MySQLStore) CreateOAuthSession(ctx context.Context, input OAuthSignInIn
 		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "oauth:"+input.Provider, now); err != nil {
 			return nil, err
 		}
+	} else if err := insertReferralClaimOutboxTx(ctx, tx, user.ID, input.ReferralCode, "oauth:"+input.Provider, now); err != nil {
+		return nil, err
 	}
 
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodOAuth)
@@ -960,6 +966,21 @@ func (s *MySQLStore) CreateOAuthSession(ctx context.Context, input OAuthSignInIn
 		return nil, fmt.Errorf("commit oauth session: %w", err)
 	}
 	return session, nil
+}
+
+func (s *MySQLStore) CreateReferralClaim(ctx context.Context, userID string, referralCode string, channel string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin referral claim tx: %w", err)
+	}
+	defer rollback(tx)
+	if err := insertReferralClaimOutboxTx(ctx, tx, userID, referralCode, channel, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit referral claim: %w", err)
+	}
+	return nil
 }
 
 func (s *MySQLStore) ActivateInviteForCurrentUser(ctx context.Context, token string, code string, now time.Time) (User, error) {

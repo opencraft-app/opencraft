@@ -20,9 +20,10 @@
 - 外部 IdP、腾讯云账号/CAM/STS 的实时契约通过登记来源校验，不把凭据或完整响应复制进文档。
 - `service-gateway` 必须先完成会话、实名门禁和 Bot 所有权校验，再启动后台 Worker Action；认证完成后的 TAT 执行超时、重试和清理策略属于运行控制，不得改变或绕过身份判定。
 - Collaboration Human 请求必须经过 `service-gateway`。浏览器只携现有 LightVela session，不能持有 Gateway 到 Collaboration 的内部 Bearer，也不能通过自定义身份头声明用户。
-- 邀请返利上下文不是访问邀请码或登录凭据。浏览器只能先通过公开接口校验返利码，再由 Auth 写入
-  30 分钟 HttpOnly Cookie；OAuth/手机号/密码注册仅在新用户事务中消费它并写 outbox。已有用户登录、
-  自行构造 `X-User-Id` 或直接提交任意 owner ID 都不能建立归因。成功或退出后清除上下文。
+- 邀请返利上下文不是访问邀请码或登录凭据。浏览器先通过公开接口校验返利码；未登录用户由 Auth 写入
+  30 分钟 HttpOnly Cookie，在 OAuth/手机号/密码认证成功后消费。新用户写 `user.registered.v1`，存量用户
+  写幂等 `user.referral_claimed.v1`；已登录用户打开 `?ref=` 时直接以当前权威 session 认领，不等待再次登录。
+  浏览器自行构造 `X-User-Id` 或直接提交任意 owner ID 不能建立归因，成功或退出后清除上下文。
 - Referral 的公共面只允许精确的返利码查询和 Auth `/auth/referral/prepare`；`/v1/referrals/me/**`
   必须经过现有 LightVela session 内省。`service-gateway` 在转发前清除调用方提供的 `X-User-Id`
   等身份头并注入会话中的权威用户 ID，Referral 只消费该集群内断言；不得把 Referral ClusterIP、
