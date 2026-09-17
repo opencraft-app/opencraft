@@ -100,9 +100,11 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 
 个人环境注册是 sandbox-only 的测试控制面，不是新的登录渠道。开发者先用国内或国际 testing 账号
 建立正常 LightVela session；`user/auth` 只从该 session 的 active shadow binding 读取 UIN，客户端不能
-提交或覆盖 UIN。注册请求只允许提交 callback 端口和 TTL，目标 IP 由 Auth 经已登记的
-Service Gateway / ingress 可信代理链计算 `ClientIP()`；直接伪造 `X-Forwarded-For`、自定义用户头或
-请求体 IP 都不能改变身份与落点。
+提交或覆盖 UIN。国际站注册请求只提交 callback 端口和 TTL，目标 IP 由 Auth 经已登记的
+Service Gateway / ingress 可信代理链计算 `ClientIP()`。国内 sandbox 因公网 NAT 无法保留 DevCloud
+地址，可在独立开关开启时由 Skill 显式提交自动探测的 `targetIp`；Auth 只接受 `9.0.0.0/8` IPv4 和
+固定端口 `18084`，CloudLadder 仍执行第二层 CIDR、端口和 health probe。生产、staging、默认配置以及
+国际 testing 均不开启该能力；请求体中的 UIN、自定义用户头或代理头都不能改变 session 派生的身份。
 
 Auth 到 CloudLadder Gateway 的注册、查询和注销请求使用独立 route/caller，并在数据面处于
 `optional` 或 `disabled` 时仍强制校验 HMAC。国际站返回的 devtunnel capability 只在首次注册响应中

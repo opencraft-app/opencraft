@@ -365,6 +365,8 @@ for dockerfile in \
     "$LOCALSTACK_ROOT/images/$dockerfile.Dockerfile"
 done
 test -f "$LOCALSTACK_ROOT/images/frontend.Dockerfile"
+rg -Fq 'COPY shared/lightvela-agent-core /workspace/shared/lightvela-agent-core' \
+  "$LOCALSTACK_ROOT/images/frontend.Dockerfile"
 for dockerfile in \
   auth \
   payment \

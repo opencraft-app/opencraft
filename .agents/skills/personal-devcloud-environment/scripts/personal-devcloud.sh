@@ -564,6 +564,19 @@ print('Lv!' + secrets.token_urlsafe(18))
 PY
 }
 
+prepare_local_credentials() {
+  LOCAL_IDENTITY_EMAIL="${PERSONAL_DEV_EMAIL:-$(state_get email)}"
+  LOCAL_IDENTITY_PASSWORD="${PERSONAL_DEV_PASSWORD:-$(state_get password)}"
+  if [[ -z "$LOCAL_IDENTITY_EMAIL" ]]; then
+    LOCAL_IDENTITY_EMAIL="lv-local-$(hostname -s | tr -cd 'A-Za-z0-9-' | tr '[:upper:]' '[:lower:]')-$(date +%s)@example.com"
+  fi
+  if [[ -z "$LOCAL_IDENTITY_PASSWORD" ]]; then
+    LOCAL_IDENTITY_PASSWORD="$(generate_password)"
+  fi
+  state_set email "$LOCAL_IDENTITY_EMAIL"
+  state_set password "$LOCAL_IDENTITY_PASSWORD"
+}
+
 central_session() {
   local token email password body response
   token="${PERSONAL_DEV_SESSION_TOKEN:-$(state_get central_session_token)}"
@@ -636,11 +649,9 @@ ensure_local_identity() {
   local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token
   require_personal_context
   central_token="$(central_session)"
-  email="${PERSONAL_DEV_EMAIL:-$(state_get email)}"
-  password="${PERSONAL_DEV_PASSWORD:-$(state_get password)}"
-  [[ -n "$email" && -n "$password" ]] || die "missing managed email/password state"
-  state_set email "$email"
-  state_set password "$password"
+  prepare_local_credentials
+  email="$LOCAL_IDENTITY_EMAIL"
+  password="$LOCAL_IDENTITY_PASSWORD"
 
   new_private_temp local-signup
   body="$TEMP_FILE_RESULT"
@@ -664,12 +675,14 @@ ensure_local_identity() {
   [[ "$local_user_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid local user id"
 
   binding="$(wait_for_binding "$central_token")"
-  shadow_name="$(printf '%s' "$binding" | json_value 'd["binding"]["shadowUserName"]')"
-  uin="$(printf '%s' "$binding" | json_value 'd["binding"]["uin"]')"
-  owner_uin="$(printf '%s' "$binding" | json_value 'd["binding"]["ownerUin"]')"
-  app_id="$(printf '%s' "$binding" | json_value 'd["binding"]["appId"]')"
+  shadow_name="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("shadowUserName", "")')"
+  uin="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("uin", "")')"
+  owner_uin="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("ownerUin", "")')"
+  app_id="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("appId", "")')"
   [[ "$shadow_name" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid shadow username"
-  [[ "$uin" =~ ^[0-9]+$ && "$owner_uin" =~ ^[0-9]+$ && "$app_id" =~ ^[0-9]+$ ]] || die "invalid central shadow identity"
+  [[ "$uin" =~ ^[0-9]+$ && "$owner_uin" =~ ^[0-9]+$ ]] || die "invalid central shadow identity"
+  [[ "$app_id" =~ ^[1-9][0-9]*$ ]] \
+    || die "central shadow binding is active but appId is unavailable; use a pre-provisioned testing account"
 
   kubectl exec -i -n localstack-system statefulset/mysql -- \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' <<SQL
@@ -942,13 +955,17 @@ register_route() {
   ensure_site_activation_safe
   require_personal_context
   persist_endpoint_config
-  local token response safe_response ip registered_uin target_ip registered_port status tunnel_host tunnel_token expires_at
+  local token response safe_response ip registered_uin target_ip registered_port status tunnel_host tunnel_token expires_at registration_body
   token="$(central_session)"
   ip="$(discover_devcloud_ip)"
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
+  registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  if [[ "$SITE" == "cn" ]]; then
+    registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  fi
   response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
-    --data-binary "{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}" "$REGISTRATION_URL")"
+    --data-binary "$registration_body" "$REGISTRATION_URL")"
   registered_uin="$(printf '%s' "$response" | json_value 'd.get("uin", "")' 2>/dev/null || true)"
   target_ip="$(printf '%s' "$response" | json_value 'd.get("targetIp", "")' 2>/dev/null || true)"
   registered_port="$(printf '%s' "$response" | json_value 'd.get("port", "")' 2>/dev/null || true)"

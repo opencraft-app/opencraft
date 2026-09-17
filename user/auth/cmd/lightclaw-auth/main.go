@@ -154,6 +154,7 @@ func main() {
 		ShadowBindingInternalToken:    envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
 		ShadowTencentCallbackToken:    envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
 		DeveloperRouteClient:          developerRouteClient,
+		DeveloperRouteExplicitIP:      developerRouteExplicitTargetIPEnabled(developerRouteClient),
 		DeveloperRouteRegistry:        developerRouteRegistry,
 		DeveloperRouteRegistrySecret:  developerRouteRegistrySecret,
 		DeveloperRouteRegistryCaller:  envOrDefault("PERSONAL_DEV_ROUTE_REGISTRY_CALLER", "cloudladdergateway"),
@@ -176,6 +177,10 @@ func main() {
 		slog.Error("lightclaw auth exited unexpectedly", "err", err)
 		os.Exit(1)
 	}
+}
+
+func developerRouteExplicitTargetIPEnabled(client *devroute.Client) bool {
+	return client != nil && envOrDefault("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "false") == "true"
 }
 
 func buildDeveloperRouteClient(publicBaseURL string) (*devroute.Client, error) {
