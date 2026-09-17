@@ -242,6 +242,9 @@ master 源码
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
+- Collaboration `im-identity.key` 的持久语义是 32 字节随机材料的 Base64 表达。bootstrap 新建时必须
+  直接生成该形态；已知旧版本留下的 64 字符 hex 只能通过解码后再编码为 Base64 做无损规范化，
+  不得重新随机生成或当作 IM Secret 轮换。任何其他非法形态必须在 SSM/SOPS 写入前 fail closed。
 - `.ci/collaboration-recovery.yml` 是首发期间的独立受控例外流水线，只修复已知双分号缺陷
   留下的精确空基线状态，不向 foundation/runtime bootstrap Job 扩大 kubeconfig 或其他权限面。
   审批前的 `recovery-plan` Job 只读校验已发布 baseline hash、旧 `1/50` revision、

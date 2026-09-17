@@ -2,6 +2,8 @@ package collaborationbootstrap
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"sort"
@@ -128,9 +130,13 @@ func Run(
 	password := ""
 	secretCreate := false
 	if secretExists {
-		password, err = validateExistingSecret(config, payload, im, options)
+		var identityKeyUpdated bool
+		password, identityKeyUpdated, err = validateExistingSecret(config, payload, im, options)
 		if err != nil {
 			return Result{}, err
+		}
+		if identityKeyUpdated {
+			result.Secret.Updated = true
 		}
 		if !databaseState.AccountExists && !validCynosDBPassword(password) {
 			password, err = newDatabasePassword(generator)
@@ -233,20 +239,27 @@ func validateConfig(config Config) error {
 	return nil
 }
 
-func validateExistingSecret(config Config, payload map[string]string, im IMMaterial, options Options) (string, error) {
+func validateExistingSecret(config Config, payload map[string]string, im IMMaterial, options Options) (string, bool, error) {
 	for _, key := range RequiredSecretKeys() {
 		if strings.TrimSpace(payload[key]) == "" {
-			return "", fmt.Errorf("existing collaboration SSM is missing required key %s", key)
+			return "", false, fmt.Errorf("existing collaboration SSM is missing required key %s", key)
 		}
 	}
 	if strings.TrimSpace(im.SecretKey) != "" && payload[imSecretKey] != im.SecretKey && !options.AllowIMSecretRotation {
-		return "", fmt.Errorf("existing collaboration SSM contains a different IM secret; explicit rotation is required")
+		return "", false, fmt.Errorf("existing collaboration SSM contains a different IM secret; explicit rotation is required")
 	}
 	password, err := passwordFromManagedDSN(config, payload[databaseDSNKey])
 	if err != nil {
-		return "", fmt.Errorf("existing collaboration database.dsn is not managed by this target: %w", err)
+		return "", false, fmt.Errorf("existing collaboration database.dsn is not managed by this target: %w", err)
 	}
-	return password, nil
+	identityKey, identityKeyUpdated, err := canonicalIMIdentityKey(payload[imIdentityKey])
+	if err != nil {
+		return "", false, fmt.Errorf("existing collaboration SSM %s is invalid: %w", imIdentityKey, err)
+	}
+	if identityKeyUpdated {
+		payload[imIdentityKey] = identityKey
+	}
+	return password, identityKeyUpdated, nil
 }
 
 func newSecretPayload(generator TokenGenerator, config Config, im IMMaterial) (map[string]string, string, error) {
@@ -265,11 +278,36 @@ func newSecretPayload(generator TokenGenerator, config Config, im IMMaterial) (m
 		}
 		values[index] = value
 	}
+	identityKey, _, err := canonicalIMIdentityKey(values[2])
+	if err != nil {
+		return nil, "", fmt.Errorf("generate collaboration %s: %w", imIdentityKey, err)
+	}
 	return map[string]string{
 		databaseDSNKey: managedDSN(config, password),
 		jwtKey:         values[0], gatewayKey: values[1], imSecretKey: im.SecretKey,
-		imIdentityKey: values[2], imCallbackKey: values[3],
+		imIdentityKey: identityKey, imCallbackKey: values[3],
 	}, password, nil
+}
+
+func canonicalIMIdentityKey(value string) (string, bool, error) {
+	encoded := strings.TrimSpace(value)
+	decoders := []*base64.Encoding{
+		base64.RawURLEncoding.Strict(),
+		base64.URLEncoding.Strict(),
+		base64.RawStdEncoding.Strict(),
+		base64.StdEncoding.Strict(),
+	}
+	for _, decoder := range decoders {
+		key, err := decoder.DecodeString(encoded)
+		if err == nil && len(key) == 32 {
+			return encoded, encoded != value, nil
+		}
+	}
+	key, err := hex.DecodeString(encoded)
+	if err == nil && len(key) == 32 {
+		return base64.RawURLEncoding.EncodeToString(key), true, nil
+	}
+	return "", false, fmt.Errorf("must be 32-byte Base64 or legacy 64-character hex")
 }
 
 func newDatabasePassword(generator TokenGenerator) (string, error) {

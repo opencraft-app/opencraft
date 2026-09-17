@@ -158,6 +158,10 @@ GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
 首次创建账号使用满足 CynosDB 密码复杂度、且可放入受管 DSN 的生成密码。若 SSM 已存在、
 账号尚未创建，且旧 DSN 密码不合规，重入时只更新 DSN 中的密码并保留其他 Secret 字段；
 已有账号不会通过这条路径隐式轮换密码。
+`im-identity.key` 固定表示 32 字节随机材料的 Base64 文本。早期 bootstrap 曾把同一材料保存为
+64 字符 hex；重入时只把该已知旧形态无损规范化为 Base64，不重新生成密钥，也不改变已有身份派生
+材料。其他长度或编码一律在任何写入前拒绝。只读预检会把这次规范化显示为 Secret update，只有
+显式 `--apply` 才回写 SSM。
 创建账号 API 返回后，账号可能尚未可用于授权；同次 bootstrap 只对新账号的
 `AccountNotExistError` 做有界等待，取消或超时仍停止并保留中间态。后续先只读预检，
 确认账号、逻辑库和权限的实际状态，再决定是否重入 `--apply`。
