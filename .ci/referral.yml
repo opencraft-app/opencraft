@@ -29,6 +29,6 @@ extends:
     BUNDLE: referral
     DISPLAY_NAME: referral
     DEFAULT_TARGET_ENV: beijing-sandbox
-    MASTER_BUILD_ENVS: beijing-sandbox,shprod
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: none
     ENABLE_MASTER_PROD_PROMOTE: false

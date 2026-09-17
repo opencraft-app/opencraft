@@ -194,7 +194,7 @@ master 源码
 - 上海 CTL 的 Referral patch 必须按容器名 `api` 合并到原容器，不能把 Deployment 名 `ctl-api`
   当作容器名。GitOps 候选需在 Kustomize 中保留原容器并成功应用既有 volumeMount/volume 删除补丁，
   否则不得创建或合并发布 MR。
-- 北京与上海环境显式设置 `REFERRAL_ENABLED=true`；全局和新加坡默认关闭。CTL migration 31 未执行时
+- 北京、上海和新加坡环境显式设置 `REFERRAL_ENABLED=true`；其他环境默认关闭。CTL migration 31 未执行时
   严禁开启事件，否则生产发货事务会访问不存在的 outbox 表。
 - 新 bundle 必须进入 `.ci/runtime/materialize-files.txt`。首次上线需要独立 migration 与 campaign
   bootstrap 证据；镜像构建、Pulsar 资源存在或 UI 可见均不能单独代表返利闭环。
@@ -204,6 +204,15 @@ master 源码
 - 上海没有可复用 Pulsar 集群时，`shprod` 可显式使用 `manage_cluster=true` 由 `pulsar` scope 购买受保护的
   P2 专业集群。首次 apply 只建立独立消息基础设施，不得同步开启 Auth/CTL relay、Referral worker、Gateway
   路由或前端入口；创建后必须把真实 cluster ID 与 broker endpoint 回填 inventory，再执行 Role Token bootstrap。
+- 新加坡启用 Referral 时遵循同一 foundation/activation 边界，并使用 `sgprod` 地域内独立的 Pulsar 与
+  `lightvela_referral` 数据库。foundation MR 只增加受管 Pulsar inventory、sgprod 镜像构建、Referral SSM
+  清单和幂等数据库 bootstrap；首次 scoped preview 必须只包含 12 个 Pulsar 资源。Pulsar apply 后先回填真实
+  cluster ID/broker endpoint，再依次执行 `bootstrap-referral-database`、`bootstrap-referral-tokens` 和 SOPS 导出。
+  在这些前置条件、schema migration 和 API/worker 健康证据完成前，不创建 `referral-sgprod` Application，
+  不开启 Auth/CTL relay，也不向 Service Gateway 添加 Referral 路由。
+- 新加坡 activation 使用独立 campaign `singapore-launch-2026-09`、双方各 500 积分且 `vesting_days=0`；
+  CTL schema 必须先升级到 31，Auth schema 必须包含 referral outbox，VelaGW 必须先具备按 `token_amount`
+  自动创建促销 Plan 的能力。Gateway 只暴露单码查询、已登录用户统计/发码和 referral prepare 精确路径。
 - TDMQ P2 会把非分区 Topic 的 `partitions=0` 创建参数规范化为读取值 `1`。Pulumi 必须忽略该只读字段的
   回读漂移，并继续以 `pulsar_topic_type=2` 作为“持久化非分区 Topic”的语义真源；不得因伪漂移反复更新
   生产 Topic。首次 apply 后的 scoped preview 必须达到全部 unchanged。
@@ -242,6 +251,9 @@ master 源码
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
+- Collaboration `im-identity.key` 的持久语义是 32 字节随机材料的 Base64 表达。bootstrap 新建时必须
+  直接生成该形态；已知旧版本留下的 64 字符 hex 只能通过解码后再编码为 Base64 做无损规范化，
+  不得重新随机生成或当作 IM Secret 轮换。任何其他非法形态必须在 SSM/SOPS 写入前 fail closed。
 - `.ci/collaboration-recovery.yml` 是首发期间的独立受控例外流水线，只修复已知双分号缺陷
   留下的精确空基线状态，不向 foundation/runtime bootstrap Job 扩大 kubeconfig 或其他权限面。
   审批前的 `recovery-plan` Job 只读校验已发布 baseline hash、旧 `1/50` revision、

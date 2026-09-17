@@ -11,9 +11,9 @@ source_of_truth:
   - argocd/services/collaboration
   - docs/engineering/domains/release-gitops.md
 status: active
-reviewed_at: 2026-09-15
+reviewed_at: 2026-09-17
 review_due: 2026-12-15
-revision: 0.1.0
+revision: 0.3.0
 precedence: task
 derived: false
 ---
@@ -129,3 +129,33 @@ release-gitops、service-ci、site-environment-routing、service-collaboration�
 - 阅读依据沿用CI/frontend/release/site Packs与两个服务AGENTS；邻接argocd-ci-secrets核对mr-placeholder.yml及changed_guards.py。
 - RED：转发测试期望新guard退出23，旧独立实现退出1；GREEN为3项guard测试、2项前端契约测试、523项runtime/smoke/shell/YAML、文档校验通过。
 - 下一步：推送!4022收敛变更，使用修正后的可信guard，等待必要检查后合入master；不部署。
+
+## MR !4225 live 激活：IM identity key 编码修复
+
+- `gitops@94a1c591` 已把 active catalog 切到 runtime 和候选镜像 `e568ceff…`；live ApplicationSet
+  因全局 `applicationsSync=create-only` 不更新既有 child，限定把 Collaboration leaf sourcePath
+  对齐到 GitOps desired state 后开始自动同步，不改全局 135 个应用策略。
+- Deployment 两个 Pod 均因 `CONFIG_INVALID` 退出：SSM/SOPS 的 `im-identity.key` 为 64 字符 hex，
+  runtime 按 Base64 解码为 48 字节，而契约要求恰好 32 字节。live 已回退到 foundation 并恢复
+  `Synced/Healthy`；DB、SSM、migration 与 readiness 结果保留。
+- 决策：不手工生成或替换 identity material。bootstrap 新建时把 32-byte generator 输出规范化为
+  Base64；重入时将已知 64-hex 旧形态无损转换为同一原始 32 字节的 Base64，未知非法形态 fail closed。
+- context receipt：读取 `docs/context/project/services/collaboration.md@1.0.0`、
+  `docs/context/project/services/infra-pulumi.md@1.0.0`、`infra_pulumi/AGENTS.md`、
+  `infra_pulumi/README.md`、`collaboration/AGENTS.md` 与 `collaboration/docs/README.md`。
+- RED：新 Secret 的 identity key 解码为 48 bytes；旧 64-hex 不触发 update；非法值被接受。
+  GREEN：聚焦测试与 race、完整 `infra_pulumi` test/vet/build、文档校验、docs-impact、diff check
+  和限定变更 secret scan 通过。Pulumi preview 完成编译和静态资源规划后因本地缺腾讯云凭据停在
+  cluster endpoint 查询；未执行 apply，属于环境阻塞而非本次 bootstrap 行为失败。
+- 下一步：完成验证后等待 commit/push/MR 明确授权；源码合入后重跑受控 Runtime bootstrap，
+  由 bootstrap 更新 SSM/SOPS，再重新激活 runtime，不直接编辑 Secret。
+
+## Runtime #17：collaboration-only typed nil 修复
+
+- `gitops@b02dd502` 与候选镜像 `e568ceff…` 同步成功，Pod 的 identity key 已为 32 字节；后续启动
+  失败于“无法组装平台 API”。根因是 `*tat.Client(nil)` 赋给 `Registrar` 接口后接口非 nil，
+  与真正为 nil 的 `TerminalIssuer` 被误判为 TAT 只配置一半。
+- 修复仅在把可选 TAT client 注入平台配置时保留真正 nil；非 Collaboration-only 路径仍传入原
+  client，Computer/TAT 行为不变。RED 为 nil client 得到非 nil Registrar，GREEN 后保持 nil。
+- 完整 Collaboration `go test ./...` 1135 项、`go vet ./...` 与 cli race 31 项通过。live 已回退到
+  foundation；下一步合入源码、构建新候选镜像，再执行一次 runtime bootstrap 和 live 验收。

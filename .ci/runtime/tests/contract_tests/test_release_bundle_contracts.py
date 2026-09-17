@@ -215,7 +215,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 31, "sgprod": 30},
+                    {"shprod": 31, "sgprod": 31},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -1384,7 +1384,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
         self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
@@ -1439,6 +1439,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(
             shprod.image_repo,
             "lightclaw-shprod.tencentcloudcr.com/lightclaw/referral",
+        )
+
+        sgprod = load_bundle(manifest, "referral", "sgprod")
+        self.assertEqual(
+            sgprod.image_repo,
+            "lightclaw-sgprod.tencentcloudcr.com/lightclaw/referral",
+        )
+        self.assertIn("scripts/ssm_manifest.referral.sgprod.yaml", sgprod.publish_paths)
+        sgprod_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.referral.sgprod.yaml").read_text()
+        )
+        sgprod_ssm_item = next(
+            item for item in sgprod_ssm["items"] if item["id"] == "referral-runtime-secrets"
+        )
+        self.assertEqual(
+            set(sgprod_ssm_item["required_keys"]),
+            {
+                "REFERRAL_DB_PASSWORD",
+                "REFERRAL_PULSAR_TOKEN",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
         )
 
         shprod_overlay = yaml.safe_load(
@@ -1553,6 +1574,51 @@ class ReleaseBundleContractTests(unittest.TestCase):
         ctl_runtime = next(item for item in ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets")
         self.assertEqual(ctl_runtime["version_id"], "referral-sh-20260916-ctl")
         self.assertIn("REFERRAL_PULSAR_TOKEN", ctl_runtime["required_keys"])
+
+        sgprod_overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/sgprod/kustomization.yaml").read_text()
+        )
+        sgprod_patches = sgprod_overlay.get("patches") or []
+        sgprod_config_patch = next(
+            item["patch"]
+            for item in sgprod_patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn('value: "singapore-launch-2026-09"', sgprod_config_patch)
+        self.assertIn('value: "true"', sgprod_config_patch)
+        self.assertIn("pulsar-7j4z44nzn3za", sgprod_config_patch)
+
+        sgprod_app = yaml.safe_load(
+            (REPO_ROOT / "argocd/apps/sgprod/referral.yaml").read_text()
+        )
+        self.assertNotIn("syncPolicy", sgprod_app["spec"])
+        self.assertEqual(sgprod_app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(sgprod_app["spec"]["destination"]["name"], "sgprod")
+
+        sgprod_auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/sgprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', sgprod_auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', sgprod_auth_patch)
+
+        sgprod_ctl_patch = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/ctl/sgprod/patch-referral.yaml").read_text()
+        )
+        self.assertEqual(
+            [container["name"] for container in sgprod_ctl_patch["spec"]["template"]["spec"]["containers"]],
+            [container_name],
+        )
+        sgprod_auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )["items"][0]
+        self.assertIn("REFERRAL_PULSAR_TOKEN", sgprod_auth_ssm["required_keys"])
+        sgprod_ctl_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.sgprod.yaml").read_text()
+        )
+        sgprod_ctl_runtime = next(
+            item for item in sgprod_ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets"
+        )
+        self.assertIn("REFERRAL_PULSAR_TOKEN", sgprod_ctl_runtime["required_keys"])
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
