@@ -162,6 +162,35 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 	}
 }
 
+func TestExampleConfigWiresDeveloperRouteControlCaller(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	developerRoutes := cfg.DeveloperRoutes
+	if developerRoutes.RegistrationRoute != "developer-route-control" || developerRoutes.RegistrationCaller != "lightclaw-auth" {
+		t.Fatalf("developer route registration auth = route:%q caller:%q", developerRoutes.RegistrationRoute, developerRoutes.RegistrationCaller)
+	}
+	if !slices.Equal(developerRoutes.AllowedPorts, []int{18084}) {
+		t.Fatalf("developer route allowed ports = %v, want [18084]", developerRoutes.AllowedPorts)
+	}
+
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != developerRoutes.RegistrationCaller {
+			continue
+		}
+		if caller.SecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" {
+			t.Fatalf("developer route caller secret env = %q", caller.SecretEnv)
+		}
+		if !slices.Contains(caller.Routes, developerRoutes.RegistrationRoute) {
+			t.Fatalf("developer route caller routes = %v, missing %q", caller.Routes, developerRoutes.RegistrationRoute)
+		}
+		return
+	}
+	t.Fatalf("developer route registration caller %q is not declared in auth.callers", developerRoutes.RegistrationCaller)
+}
+
 func TestLoadEnablesOTLPAuditFromStandardEnv(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs")
 	path := filepath.Join(t.TempDir(), "config.yaml")
