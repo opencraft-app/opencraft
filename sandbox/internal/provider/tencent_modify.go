@@ -24,10 +24,18 @@ import (
 // instance to leave its transient state.
 const resizeSettleTimeout = 5 * time.Minute
 
+var defaultModifyInstanceFamiliesByRegion = map[string][]string{
+	"ap-beijing":   {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-seoul":     {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-shanghai":  {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-singapore": {"SA5", "S5", "SA2", "SA3", "S6"},
+}
+
 // ResolveInstanceTypeCandidates implements InstanceTypeCandidateResolver. CVM
 // reports compatibility and availability for the exact existing instance; the
 // target pool's configured type is used only to derive the desired logical
-// CPU/memory shape and as the first choice when it is currently SELL.
+// CPU/memory shape. The actual candidates are restricted and ordered by the
+// allowlist for the instance's region.
 func (p *TencentCloudProvider) ResolveInstanceTypeCandidates(ctx context.Context, instance CloudInstanceRef, preferredInstanceType string) ([]string, error) {
 	preferredInstanceType = strings.TrimSpace(preferredInstanceType)
 	var err error
@@ -78,9 +86,17 @@ func (p *TencentCloudProvider) ResolveInstanceTypeCandidates(ctx context.Context
 		return nil, fmt.Errorf("DescribeInstancesModification %s: preferred type %s is not a compatible target", instance.CloudID, preferredInstanceType)
 	}
 
+	families, err := p.modifyInstanceFamilies(instance.Region)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]int, len(families))
+	for i, family := range families {
+		allowed[family] = i
+	}
+
 	seen := make(map[string]struct{})
-	others := make([]string, 0)
-	preferredSell := false
+	byFamily := make(map[string][]string, len(families))
 	for _, item := range resp.Response.InstanceTypeConfigStatusSet {
 		if item == nil || item.Status == nil || !strings.EqualFold(strings.TrimSpace(*item.Status), "SELL") || item.InstanceTypeConfig == nil {
 			continue
@@ -93,27 +109,84 @@ func (p *TencentCloudProvider) ResolveInstanceTypeCandidates(ctx context.Context
 		if instanceType == "" {
 			continue
 		}
+		family := instanceTypeFamily(instanceType)
+		if _, ok := allowed[family]; !ok {
+			continue
+		}
 		key := strings.ToUpper(instanceType)
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		if strings.EqualFold(instanceType, preferredInstanceType) {
-			preferredSell = true
-			continue
+		byFamily[family] = append(byFamily[family], instanceType)
+	}
+
+	candidates := make([]string, 0, len(seen))
+	for _, family := range families {
+		items := byFamily[family]
+		sort.Strings(items)
+		if instanceTypeFamily(preferredInstanceType) == family {
+			for i, item := range items {
+				if strings.EqualFold(item, preferredInstanceType) {
+					items[0], items[i] = items[i], items[0]
+					break
+				}
+			}
 		}
-		others = append(others, instanceType)
+		candidates = append(candidates, items...)
 	}
-	sort.Strings(others)
-	candidates := make([]string, 0, len(others)+1)
-	if preferredSell {
-		candidates = append(candidates, preferredInstanceType)
-	}
-	candidates = append(candidates, others...)
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("DescribeInstancesModification %s: no SELL target matches %dC%dG", instance.CloudID, targetCPU, targetMemory)
+		return nil, fmt.Errorf("DescribeInstancesModification %s: no SELL target matches %dC%dG in region %s policy %v", instance.CloudID, targetCPU, targetMemory, instance.Region, families)
 	}
 	return candidates, nil
+}
+
+func (p *TencentCloudProvider) modifyInstanceFamilies(region string) ([]string, error) {
+	region = strings.ToLower(strings.TrimSpace(region))
+	policy := p.cfg.ModifyInstanceFamiliesByRegion
+	if policy == nil {
+		policy = defaultModifyInstanceFamiliesByRegion
+	}
+	var configured []string
+	found := false
+	for configuredRegion, families := range policy {
+		if strings.ToLower(strings.TrimSpace(configuredRegion)) == region {
+			configured = families
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("no modify instance family policy for region %s", region)
+	}
+	if len(configured) == 0 {
+		return nil, fmt.Errorf("modify instance family policy for region %s is empty", region)
+	}
+	result := make([]string, 0, len(configured))
+	seen := make(map[string]struct{}, len(configured))
+	for _, family := range configured {
+		family = strings.ToUpper(strings.TrimSpace(family))
+		if family == "" {
+			continue
+		}
+		if _, ok := seen[family]; ok {
+			continue
+		}
+		seen[family] = struct{}{}
+		result = append(result, family)
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("modify instance family policy for region %s is empty", region)
+	}
+	return result, nil
+}
+
+func instanceTypeFamily(instanceType string) string {
+	instanceType = strings.ToUpper(strings.TrimSpace(instanceType))
+	if family, _, ok := strings.Cut(instanceType, "."); ok {
+		return family
+	}
+	return instanceType
 }
 
 // IsInstanceTypeCandidateRejected reports errors that conclusively reject the

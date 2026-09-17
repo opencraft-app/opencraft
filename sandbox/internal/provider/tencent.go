@@ -41,6 +41,10 @@ type TencentConfig struct {
 	AddressType            string
 	PublicEgressMbps       int64
 	TerminalTimeoutSeconds int
+	// ModifyInstanceFamiliesByRegion is the ordered allowlist used by in-place
+	// CVM upgrades. Keys are Tencent Cloud regions (for example ap-singapore),
+	// and values are exact instance-family prefixes (for example SA5).
+	ModifyInstanceFamiliesByRegion map[string][]string
 	// IngressProxyBaseURL enables verifying private addresses via ingressproxy ip-backdoor.
 	// Example: http://ingressproxy-router (must have PROXY_ENABLE_IP_BACKDOOR=true).
 	IngressProxyBaseURL string
@@ -63,6 +67,11 @@ func NewTencentCloudProviderFromEnv() (*TencentCloudProvider, error) {
 		InstancePassword:       os.Getenv("TENCENT_INSTANCE_PASSWORD"),
 		TerminalTimeoutSeconds: DefaultTerminalTimeoutSeconds,
 		IngressProxyBaseURL:    strings.TrimSpace(os.Getenv("INGRESSPROXY_BASE_URL")),
+	}
+	if raw := strings.TrimSpace(os.Getenv("TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &cfg.ModifyInstanceFamiliesByRegion); err != nil {
+			return nil, fmt.Errorf("invalid TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION: %w", err)
+		}
 	}
 	if raw := strings.TrimSpace(os.Getenv("TENCENT_TAT_TERMINAL_TIMEOUT_SECONDS")); raw != "" {
 		v, err := strconv.Atoi(raw)

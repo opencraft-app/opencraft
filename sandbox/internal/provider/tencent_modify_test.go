@@ -166,7 +166,10 @@ func TestResolveInstanceTypeCandidatesKeepsExactSellShapeAndPrefersConfiguredTyp
 		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA2.LARGE8", "CPU": 4, "Memory": 8}},
 		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA5.LARGE8", "CPU": 4, "Memory": 8}},
 		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "BF1.LARGE8", "CPU": 4, "Memory": 8}},
-		{"Status": "SOLD_OUT", "InstanceTypeConfig": map[string]any{"InstanceType": "S5.LARGE8", "CPU": 4, "Memory": 8}},
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "S6.LARGE8", "CPU": 4, "Memory": 8}},
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA3.LARGE8", "CPU": 4, "Memory": 8}},
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "S5.LARGE8", "CPU": 4, "Memory": 8}},
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "S8.LARGE8", "CPU": 4, "Memory": 8}},
 		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA2.MEDIUM4", "CPU": 2, "Memory": 4}},
 	})
 
@@ -174,7 +177,7 @@ func TestResolveInstanceTypeCandidatesKeepsExactSellShapeAndPrefersConfiguredTyp
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"SA5.LARGE8", "BF1.LARGE8", "SA2.LARGE8"}
+	want := []string{"SA5.LARGE8", "S5.LARGE8", "SA2.LARGE8", "SA3.LARGE8", "S6.LARGE8"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("candidates=%v want=%v", got, want)
 	}
@@ -192,6 +195,39 @@ func TestResolveInstanceTypeCandidatesExcludesSoldOutPreferredType(t *testing.T)
 	}
 	if !reflect.DeepEqual(got, []string{"SA2.LARGE8"}) {
 		t.Fatalf("candidates=%v", got)
+	}
+}
+
+func TestResolveInstanceTypeCandidatesUsesRegionPolicyOrder(t *testing.T) {
+	p := modificationCandidateTestProvider(t, []map[string]any{
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA5.LARGE8", "CPU": 4, "Memory": 8}},
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "S5.LARGE8", "CPU": 4, "Memory": 8}},
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA2.LARGE8", "CPU": 4, "Memory": 8}},
+	})
+	p.cfg.ModifyInstanceFamiliesByRegion = map[string][]string{
+		"ap-seoul": {"S5", "SA2"},
+	}
+
+	got, err := p.ResolveInstanceTypeCandidates(context.Background(), resizeTestInstance, "SA5.LARGE8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"S5.LARGE8", "SA2.LARGE8"}) {
+		t.Fatalf("candidates=%v", got)
+	}
+}
+
+func TestResolveInstanceTypeCandidatesRejectsUnmanagedRegion(t *testing.T) {
+	p := modificationCandidateTestProvider(t, []map[string]any{
+		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA5.LARGE8", "CPU": 4, "Memory": 8}},
+	})
+	p.cfg.ModifyInstanceFamiliesByRegion = map[string][]string{
+		"ap-singapore": {"SA5"},
+	}
+
+	_, err := p.ResolveInstanceTypeCandidates(context.Background(), resizeTestInstance, "SA5.LARGE8")
+	if err == nil || !strings.Contains(err.Error(), "no modify instance family policy") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
