@@ -369,6 +369,9 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 - Collaboration 使用 Atlas/Ent 迁移历史。DB gate 每次先用候选镜像执行幂等 `database migrate`，
   再由同一 digest 镜像执行 `database verify`；只以 Secret 文件挂载 DSN，不使用其他服务的
   `schema_migrations` SQL 或 shell 拼接凭据。Migration/verify 都是受控一次性 Job，不进入应用启动。
+- `service-command` readiness 的候选 digest 必须由 release plan 显式传入 verifier，并优先于
+  deploy-facing platform 中的旧 workload image；这在 active catalog 仍指向 foundation 时尤其必要。
+  非 `service-command` verifier 不接收服务镜像 override，避免把业务镜像误用为通用 SQL 检查器。
 - 本轮只准备源码接线，不创建数据库实例、逻辑库、Secret 或 live workload。北京成功不能替代
   上海/新加坡的独立接入；CI、GitOps、Argo 收敛和真实 IM 使用仍须分层验收。
 
