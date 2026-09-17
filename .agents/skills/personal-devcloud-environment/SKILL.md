@@ -12,9 +12,9 @@ description: 在个人 DevCloud 从零启动可浏览器点测的完整 LightVel
 ## 安全边界
 
 - 只允许 `cn` 和 `intl` testing；脚本拒绝 production Auth origin。
-- UIN 只来自当前 testing 登录会话的 active shadow binding，客户端不能提交或覆盖。国际站只提交
-  回调端口和 TTL，由 Auth 从可信代理链派生来源 IP；国内站额外提交自动探测到的 `9.0.0.0/8`
-  DevCloud IP，且 Auth 仅在 sandbox 显式开关开启时接受，并把目标严格限制为 `9/8:18084`。
+- UIN 只来自当前 testing 登录会话的 active shadow binding，客户端不能提交或覆盖。国内、国际站
+  都提交自动探测到的 `9.0.0.0/8` DevCloud IP、回调端口和 TTL；这是因为跨地域 testing 入口会
+  NAT 来源地址。Auth 仅在 sandbox 显式开关开启时接受，并把目标严格限制为 `9/8:18084`。
 - 不读取或下发共享 CloudLadder HMAC、SOPS、`DEVTUNNEL_TOKEN`。国内、国际站都只接收绑定
   UIN、TunnelHost 和 Auth testing registry 状态的短期 capability；脚本不把 capability 明文写入状态文件。
 - 不操作共享 Kubernetes context。脚本只接受自己创建的 `kind-lightvela-personal-<site>`，

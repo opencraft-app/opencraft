@@ -958,10 +958,7 @@ register_route() {
   ip="$(discover_devcloud_ip)"
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
-  registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
-  if [[ "$SITE" == "cn" ]]; then
-    registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
-  fi
+  registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
   response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
     --data-binary "$registration_body" "$REGISTRATION_URL")"
   registered_uin="$(printf '%s' "$response" | json_value 'd.get("uin", "")' 2>/dev/null || true)"
