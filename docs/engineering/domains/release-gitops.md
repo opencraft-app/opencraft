@@ -290,6 +290,12 @@ Auth、`lightvela-proxy-testing`、`devtunnel-testing`、韩国 sandbox Service 
 namespaced-mode Argo App 创建或跨 namespace 管理资源。production 与 staging manifests 必须保持零
 diff，运行态也不得发生变更。
 
+CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testing 三份 platform env。个人
+环境相关的 master 构建必须显式使用 `IMAGE_PIN_VARIANT=testing`，只更新
+`cloudladdergateway-platform-testing.env`；通用发布模板的默认值仍为 `all`，供确实需要同步晋级全部
+变体的服务使用。任何 testing 发布若改动 primary 或 staging image pin，必须先恢复生产期望态，不能
+依赖“暂不执行 Argo Sync”作为长期隔离措施。
+
 广州和新加坡 Argo App 同时管理 production、staging 与 testing 资源，因此禁止 App 级全量 Sync。
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
 Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
