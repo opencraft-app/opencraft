@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -226,6 +227,20 @@ func TestGetInternalModifyOperation(t *testing.T) {
 
 	if missing := get("mod-does-not-exist"); missing.Code != http.StatusNotFound {
 		t.Fatalf("unknown operation status = %d body=%s", missing.Code, missing.Body.String())
+	}
+}
+
+func TestInternalModifyOperationResponseIncludesInstanceTypeFallbackProgress(t *testing.T) {
+	response := toInternalModifyOperationResponse(core.ModifyOperation{
+		SourceInstanceType:         "S5.MEDIUM4",
+		InstanceTypeCandidates:     []string{"SA9.LARGE8", "SA2.LARGE8"},
+		InstanceTypeCandidateIndex: 1,
+		AppliedInstanceType:        "SA2.LARGE8",
+	})
+	if response.SourceInstanceType != "S5.MEDIUM4" ||
+		!reflect.DeepEqual(response.InstanceTypeCandidates, []string{"SA9.LARGE8", "SA2.LARGE8"}) ||
+		response.InstanceTypeCandidateIndex != 1 || response.AppliedInstanceType != "SA2.LARGE8" {
+		t.Fatalf("missing instance type fallback progress: %+v", response)
 	}
 }
 

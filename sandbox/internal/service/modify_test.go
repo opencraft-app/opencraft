@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	tcerrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 
 	"cvm-mock-e2b/internal/core"
 	"cvm-mock-e2b/internal/provider"
@@ -753,6 +756,159 @@ func TestRunModifyRequiresResizerCapability(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a provider without resize support to be rejected")
 	}
+}
+
+func TestRunModifyFallsBackToNextRejectedInstanceTypeCandidate(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-candidate-fallback")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"SA9.LARGE8", "SA2.LARGE8"},
+		resizeErrors: map[string]error{
+			"SA9.LARGE8": tcerrors.NewTencentCloudSDKError("LimitExceeded.InstanceQuota", "quota rejected this type", "req-quota"),
+		},
+	}
+
+	got, err := f.svc.RunModifyOperation(ctx, p, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != core.ModifyOperationStatusCompleted {
+		t.Fatalf("status=%s", got.Status)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8", "SA2.LARGE8"}) {
+		t.Fatalf("resize calls=%v", p.resizeCalls)
+	}
+	if !reflect.DeepEqual(got.InstanceTypeCandidates, p.candidates) || got.InstanceTypeCandidateIndex != 1 {
+		t.Fatalf("persisted plan=%v index=%d", got.InstanceTypeCandidates, got.InstanceTypeCandidateIndex)
+	}
+	if got.SourceInstanceType != "S5.MEDIUM4" || got.AppliedInstanceType != "SA2.LARGE8" {
+		t.Fatalf("source=%s applied=%s", got.SourceInstanceType, got.AppliedInstanceType)
+	}
+	if p.resolveCalls != 1 {
+		t.Fatalf("resolve calls=%d", p.resolveCalls)
+	}
+}
+
+func TestRunModifyFallsBackAfterInstanceFamilyCompatibilityRejection(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-family-fallback")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"BF1.LARGE8", "SA2.LARGE8"},
+		resizeErrors: map[string]error{
+			"BF1.LARGE8": tcerrors.NewTencentCloudSDKError(
+				"UnsupportedOperation.HeterogeneousChangeInstanceFamily",
+				"cannot change to heterogeneous family",
+				"req-family",
+			),
+		},
+	}
+
+	got, err := f.svc.RunModifyOperation(ctx, p, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AppliedInstanceType != "SA2.LARGE8" || got.InstanceTypeCandidateIndex != 1 {
+		t.Fatalf("applied=%s index=%d", got.AppliedInstanceType, got.InstanceTypeCandidateIndex)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"BF1.LARGE8", "SA2.LARGE8"}) {
+		t.Fatalf("resize calls=%v", p.resizeCalls)
+	}
+}
+
+func TestRunModifyKeepsCandidateOnTransientResizeError(t *testing.T) {
+	ctx := context.Background()
+	f := newModifyFixture(t)
+	op := f.begin(t, "task-candidate-transient")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"SA9.LARGE8", "SA2.LARGE8"},
+		resizeErrors: map[string]error{
+			"SA9.LARGE8": tcerrors.NewTencentCloudSDKError("RequestLimitExceeded", "retry later", "req-rate"),
+		},
+	}
+
+	if _, err := f.svc.RunModifyOperation(ctx, p, op.ID); err == nil {
+		t.Fatal("expected transient resize error")
+	}
+	stored, err := f.svc.GetModifyOperation(ctx, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.InstanceTypeCandidateIndex != 0 {
+		t.Fatalf("candidate index advanced to %d", stored.InstanceTypeCandidateIndex)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8"}) {
+		t.Fatalf("resize calls=%v", p.resizeCalls)
+	}
+}
+
+func TestRunModifyReadbackConvergesWhenAppliedTypeCheckpointInitiallyFails(t *testing.T) {
+	ctx := context.Background()
+	backing := &failAppliedResizePlanStore{Store: store.NewMemoryStore(), failOnce: true}
+	f := newModifyFixture(t, backing)
+	op := f.begin(t, "task-candidate-checkpoint")
+	p := &candidateModifyProvider{
+		MockCloudProvider: provider.NewMockCloudProvider(),
+		candidates:        []string{"SA9.LARGE8", "SA2.LARGE8"},
+	}
+
+	if _, err := f.svc.RunModifyOperation(ctx, p, op.ID); err == nil {
+		t.Fatal("expected injected applied-type checkpoint failure")
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8"}) {
+		t.Fatalf("first attempt resize calls=%v", p.resizeCalls)
+	}
+	got, err := f.svc.RunModifyOperation(ctx, p, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != core.ModifyOperationStatusCompleted || got.AppliedInstanceType != "SA9.LARGE8" {
+		t.Fatalf("status=%s applied=%s", got.Status, got.AppliedInstanceType)
+	}
+	if !reflect.DeepEqual(p.resizeCalls, []string{"SA9.LARGE8"}) {
+		t.Fatalf("readback repeated cloud resize: %v", p.resizeCalls)
+	}
+	if p.resolveCalls != 1 {
+		t.Fatalf("persisted candidates should be reused, resolve calls=%d", p.resolveCalls)
+	}
+}
+
+type candidateModifyProvider struct {
+	*provider.MockCloudProvider
+	candidates   []string
+	resizeErrors map[string]error
+	resolveCalls int
+	resizeCalls  []string
+}
+
+func (p *candidateModifyProvider) ResolveInstanceTypeCandidates(context.Context, provider.CloudInstanceRef, string) ([]string, error) {
+	p.resolveCalls++
+	return append([]string(nil), p.candidates...), nil
+}
+
+func (p *candidateModifyProvider) ResizeInstanceType(ctx context.Context, instance provider.CloudInstanceRef, instanceType string) error {
+	p.resizeCalls = append(p.resizeCalls, instanceType)
+	if err := p.resizeErrors[instanceType]; err != nil {
+		return err
+	}
+	return p.MockCloudProvider.ResizeInstanceType(ctx, instance, instanceType)
+}
+
+type failAppliedResizePlanStore struct {
+	store.Store
+	failOnce bool
+}
+
+func (s *failAppliedResizePlanStore) UpdateModifyOperationResizePlan(ctx context.Context, in store.ModifyOperationResizePlan) (core.ModifyOperation, error) {
+	if s.failOnce && in.AppliedInstanceType != "" {
+		s.failOnce = false
+		return core.ModifyOperation{}, errors.New("injected resize plan checkpoint failure")
+	}
+	return s.Store.UpdateModifyOperationResizePlan(ctx, in)
 }
 
 // countingResizer 记录云侧规格调用次数，用于断言不可逆步骤没有被重复执行。
