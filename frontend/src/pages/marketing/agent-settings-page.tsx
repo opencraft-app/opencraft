@@ -74,6 +74,7 @@ import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-
 import { useSession } from "@/contexts/session-context";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 // 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
 import type {
   LightVelaMultiSessionOptions,
@@ -575,7 +576,7 @@ async function execDebugCommandStream(
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+    body: JSON.stringify(createDebugExecRequestBody(command)),
   });
 
   if (!response.ok) {

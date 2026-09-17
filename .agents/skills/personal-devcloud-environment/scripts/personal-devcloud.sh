@@ -706,19 +706,31 @@ SQL
   log "local browser account is aligned with central shadow uin=$uin"
 }
 
+browser_bootstrap_process_matches() {
+  local pid="$1" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+  else
+    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  fi
+  [[ "$cmdline" == *"browser-login-bootstrap.py"* ]]
+}
+
 stop_browser_bootstrap() {
-  local pid="" cmdline=""
+  local pid="" attempt
   if [[ -f "$BROWSER_BOOTSTRAP_PID_FILE" ]]; then
     pid="$(tr -dc '0-9' <"$BROWSER_BOOTSTRAP_PID_FILE")"
   fi
-  if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    if [[ -r "/proc/$pid/cmdline" ]]; then
-      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-    else
-      cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    fi
-    if [[ "$cmdline" == *"browser-login-bootstrap.py"* ]]; then
-      kill "$pid" >/dev/null 2>&1 || true
+  if browser_bootstrap_process_matches "$pid"; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for attempt in $(seq 1 50); do
+      process_is_running "$pid" || break
+      sleep 0.05
+    done
+    if process_is_running "$pid" && browser_bootstrap_process_matches "$pid"; then
+      kill -KILL "$pid" >/dev/null 2>&1 || true
     fi
   fi
   rm -f "$BROWSER_BOOTSTRAP_PID_FILE" "$BROWSER_BOOTSTRAP_READY_FILE"
@@ -889,6 +901,7 @@ PY
   log "building devtunnel-agent from current checkout@$revision"
   docker run --rm \
     --user "$(id -u):$(id -g)" \
+    -e GOWORK=off \
     -e GOMODCACHE=/cache/gomod \
     -e GOCACHE=/cache/gocache \
     -v "$REPO_ROOT:/workspace:ro" \
@@ -992,7 +1005,12 @@ register_route() {
     curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
     die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
   fi
-  ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"
+  if ! (ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"); then
+    stop_devtunnel_agent
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    unset tunnel_token
+    die "local devtunnel-agent failed; unsafe active registration was disabled"
+  fi
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
   state_set registration_response "$safe_response"
@@ -1007,19 +1025,37 @@ register_route() {
   log "registered uin=$(state_get uin) through tunnelHost=$tunnel_host"
 }
 
+heartbeat_process_matches() {
+  local pid="$1" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+  else
+    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  fi
+  [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]
+}
+
+process_is_running() {
+  local pid="$1" state=""
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  state="$(ps -p "$pid" -o stat= 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "$state" != Z* ]]
+}
+
 stop_heartbeat() {
-  local pid=""
+  local pid="" attempt
   [[ -f "$HEARTBEAT_PID_FILE" ]] || return 0
   pid="$(tr -dc '0-9' <"$HEARTBEAT_PID_FILE")"
-  if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    local cmdline=""
-    if [[ -r "/proc/$pid/cmdline" ]]; then
-      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-    else
-      cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    fi
-    if [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]; then
-      kill "$pid" >/dev/null 2>&1 || true
+  if heartbeat_process_matches "$pid"; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for attempt in $(seq 1 50); do
+      process_is_running "$pid" || break
+      sleep 0.1
+    done
+    if process_is_running "$pid" && heartbeat_process_matches "$pid"; then
+      kill -KILL "$pid" >/dev/null 2>&1 || true
     fi
   fi
   rm -f "$HEARTBEAT_PID_FILE"
@@ -1035,9 +1071,24 @@ start_heartbeat() {
 }
 
 heartbeat_loop() {
-  local iterations=0 max_iterations="${PERSONAL_DEV_HEARTBEAT_MAX_ITERATIONS:-0}"
+  local iterations=0 max_iterations="${PERSONAL_DEV_HEARTBEAT_MAX_ITERATIONS:-0}" sleeper_pid=""
+  stop_heartbeat_loop() {
+    trap - TERM INT
+    if [[ -n "$sleeper_pid" ]] && kill -0 "$sleeper_pid" >/dev/null 2>&1; then
+      kill -TERM "$sleeper_pid" >/dev/null 2>&1 || true
+      wait "$sleeper_pid" 2>/dev/null || true
+    fi
+    exit 0
+  }
+  trap stop_heartbeat_loop TERM INT
   while true; do
-    sleep "${PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS:-14400}"
+    sleep "${PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS:-14400}" &
+    sleeper_pid="$!"
+    if ! wait "$sleeper_pid"; then
+      sleeper_pid=""
+      continue
+    fi
+    sleeper_pid=""
     if ! heartbeat_once; then
       log "registration heartbeat failed; the loop remains alive and will retry"
     fi
@@ -1155,16 +1206,10 @@ status() {
 }
 
 heartbeat_running() {
-  local pid="" cmdline=""
+  local pid=""
   [[ -f "$HEARTBEAT_PID_FILE" ]] || return 1
   pid="$(tr -dc '0-9' <"$HEARTBEAT_PID_FILE")"
-  [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1 || return 1
-  if [[ -r "/proc/$pid/cmdline" ]]; then
-    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-  else
-    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  fi
-  [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]
+  heartbeat_process_matches "$pid"
 }
 
 require_active_registration() {

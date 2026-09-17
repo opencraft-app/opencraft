@@ -1318,6 +1318,7 @@ export function HermesAgentSkillsPanel({
             <ExpertsPanel
               botId={botId}
               profileId={profileId}
+              mode={isGlobal ? "global" : "domestic"}
               execDebugCommand={execDebugCommand}
               execDebugCommandStream={repositories.bots.execDebugCommandStream}
               lang={isGlobal ? globalExpertLanguage : undefined}

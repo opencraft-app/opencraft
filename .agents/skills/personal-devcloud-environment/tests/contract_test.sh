@@ -222,7 +222,7 @@ test_intl_registration_starts_tunnel() (
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
   grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/intl-registration-request"
   ! grep -q '"uin"' "$TEST_ROOT/intl-registration-request"
-  ! rg -q 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
+  ! grep -Eq 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
 )
 
 test_devtunnel_build_uses_current_checkout() (
@@ -251,6 +251,8 @@ test_devtunnel_build_uses_current_checkout() (
   [[ -x "$DEVTUNNEL_BIN" ]] || fail "devtunnel-agent binary was not created"
   grep -Fq -- "-v $checkout:/workspace:ro" "$TEST_ROOT/devtunnel-docker-args" \
     || fail "devtunnel-agent was not built from the current checkout"
+  grep -Fq -- "-e GOWORK=off" "$TEST_ROOT/devtunnel-docker-args" \
+    || fail "devtunnel-agent build did not disable the read-only root Go workspace"
 )
 
 test_intl_registration_without_capability_fails_closed() (
@@ -298,7 +300,33 @@ test_cn_registration_sends_explicit_devcloud_target() (
     "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
   assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
-  ! rg -q 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+  ! grep -Eq 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+)
+
+test_registration_agent_failure_fails_closed() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/agent-failure" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_IP='9.134.214.121'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    if [[ " $* " == *' -X DELETE '* ]]; then
+      printf 'disabled\n' >"$TEST_ROOT/agent-failure-delete"
+      printf '%s\n' '{"uin":450860000013,"status":"disabled"}'
+      return
+    fi
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"short-lived-cn-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  ensure_devtunnel_agent() { return 1; }
+  stop_devtunnel_agent() { printf 'stopped\n' >"$TEST_ROOT/agent-failure-stop"; }
+  if (register_route) >/dev/null 2>&1; then
+    fail "registration succeeded after the local tunnel agent failed"
+  fi
+  [[ -s "$TEST_ROOT/agent-failure-delete" ]] || fail "agent failure left an active developer route"
+  [[ -s "$TEST_ROOT/agent-failure-stop" ]] || fail "agent failure did not stop local tunnel state"
 )
 
 test_cn_registration_without_capability_fails_closed() (
@@ -337,6 +365,27 @@ test_heartbeat_survives_transient_failures() (
   }
   heartbeat_loop
   assert_eq '3' "$attempts" "heartbeat retry count"
+)
+
+test_stop_heartbeat_interrupts_long_sleep() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/heartbeat-stop" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS=300
+  source "$SCRIPT"
+  prepare_state
+  "$SCRIPT" heartbeat-loop >"$TEST_ROOT/heartbeat-stop.log" 2>&1 &
+  local heartbeat_pid="$!" sleeper_pid="" attempt
+  printf '%s\n' "$heartbeat_pid" >"$HEARTBEAT_PID_FILE"
+  for attempt in $(seq 1 50); do
+    sleeper_pid="$(pgrep -P "$heartbeat_pid" 2>/dev/null | head -1 || true)"
+    [[ -n "$sleeper_pid" ]] && break
+    sleep 0.1
+  done
+  [[ -n "$sleeper_pid" ]] || fail "heartbeat did not enter its long sleep"
+  stop_heartbeat
+  wait "$heartbeat_pid" 2>/dev/null || true
+  ! process_is_running "$heartbeat_pid" || fail "heartbeat parent survived stop"
+  ! process_is_running "$sleeper_pid" || fail "heartbeat sleep child survived stop"
+  [[ ! -e "$HEARTBEAT_PID_FILE" ]] || fail "heartbeat pid file survived stop"
 )
 
 test_order_no_pay_is_loopback_only_and_intl_usd() (
@@ -494,14 +543,19 @@ test_browser_login_is_minted_privately() (
   curl_with_token() {
     printf '%s\n' '{"userId":"usr_browser","sessionToken":"private-token","loginUrl":"http://127.0.0.1:5173/#session_token=private-token","expiresAt":"2099-01-01T00:00:00Z","impersonated":false}'
   }
-  local output url headers pid curl_bin
+  local output output_file url headers pid first_pid curl_bin
   curl_bin="$(type -P curl)"
-  output="$TEST_ROOT/browser-login-output"
-  mint_browser_login >"$output" 2>&1
-  output="$(<"$output")"
+  output_file="$TEST_ROOT/browser-login-output"
+  mint_browser_login >"$output_file" 2>&1
+  output="$(<"$output_file")"
   [[ "$output" != *private-token* ]] || fail "browser session token leaked to command output"
   assert_eq '' "$(state_get browser_login_url)" "browser login token must not persist in state"
   assert_eq '2099-01-01T00:00:00Z' "$(state_get browser_login_expires_at)" "browser login expiry"
+  first_pid="$(<"$BROWSER_BOOTSTRAP_PID_FILE")"
+  mint_browser_login >>"$output_file" 2>&1
+  ! process_is_running "$first_pid" || fail "previous browser bootstrap survived immediate replacement"
+  output="$(<"$output_file")"
+  [[ "$output" != *private-token* ]] || fail "replacement browser session token leaked to command output"
   url="$(<"$BROWSER_BOOTSTRAP_READY_FILE")"
   [[ "$url" =~ ^http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_-]{24,128}$ ]] \
     || fail "one-time browser URL is malformed: $url"
@@ -539,8 +593,8 @@ test_browser_nonce_retries_empty_generation() (
 )
 
 test_skill_name_and_paths_are_consistent() {
-  rg -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
-  if rg -n 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
+  grep -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
+  if grep -ERn 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
     "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md" \
     "$REPO_ROOT/.agents/skills/personal-devcloud-environment/scripts" \
     "$REPO_ROOT/deploy/localstack/README.md"; then
@@ -550,12 +604,12 @@ test_skill_name_and_paths_are_consistent() {
 }
 
 test_payment_and_production_guardrails() {
-  ! rg -n 'place-and-pay|pay-url' "$SCRIPT"
-  ! rg -n 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl[^\n]*sync' "$SCRIPT"
-  rg -q 'verify-order-no-pay' "$SCRIPT"
-  rg -q 'verify-checkmodify-no-pay' "$SCRIPT"
-  rg -q 'checkModify verification is not implemented' "$SCRIPT"
-  ! rg -q 'verified.*checkCreate' "$SCRIPT"
+  ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
+  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl.*sync' "$SCRIPT"
+  grep -q 'verify-order-no-pay' "$SCRIPT"
+  grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
+  grep -q 'checkModify verification is not implemented' "$SCRIPT"
+  ! grep -q 'verified.*checkCreate' "$SCRIPT"
 }
 
 run_test 'CN and Intl state are isolated' test_site_state_isolation
@@ -572,7 +626,9 @@ run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build
 run_test 'Intl registration without a capability fails closed' test_intl_registration_without_capability_fails_closed
 run_test 'CN registration sends the DevCloud target and starts its assigned tunnel' test_cn_registration_sends_explicit_devcloud_target
 run_test 'CN registration without a capability fails closed' test_cn_registration_without_capability_fails_closed
+run_test 'registration agent failure fails closed' test_registration_agent_failure_fails_closed
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
+run_test 'heartbeat stop interrupts a long sleep' test_stop_heartbeat_interrupts_long_sleep
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure

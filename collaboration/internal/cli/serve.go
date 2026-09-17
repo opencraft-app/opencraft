@@ -544,6 +544,13 @@ func readSecureSecretFile(path string, label string) ([]byte, error) {
 	return securefile.Read(path, label, 4096)
 }
 
+func platformTATRegistrar(client *tatadapter.Client) tencenttatport.Registrar {
+	if client == nil {
+		return nil
+	}
+	return client
+}
+
 func serveHumanPlatform(
 	ctx context.Context,
 	cfg serveConfig,
@@ -1053,7 +1060,7 @@ func serveHumanPlatform(
 		},
 		IMResourceKey:      identityKey,
 		ServerCreationWait: 10 * time.Second,
-		TATRegistrar:       tatClient,
+		TATRegistrar:       platformTATRegistrar(tatClient),
 		TerminalIssuer:     terminalIssuer,
 		ManagedTATRegion:   cfg.managedTATRegion,
 		ComputerEnrollment: computerEnrollmentConfig,

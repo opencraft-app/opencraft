@@ -28,6 +28,7 @@ def db_gate_plan(*, env: str, db_status: str) -> SimpleNamespace:
         db_job_service="payment",
         db_job_operation="migration",
         db_job_image_override="",
+        readiness_image_override="",
         release_dependency_changed=False,
         release_dependencies=[],
         auto_merge_allowed=True,
@@ -81,6 +82,11 @@ class DbGateExecutionTests(unittest.TestCase):
         gitops_worktree = Path("/tmp/projected-gitops")
         initial = db_gate_plan(env="beijing-sandbox", db_status="unknown")
         passed = db_gate_plan(env="beijing-sandbox", db_status="passed")
+        candidate = "example.com/payment@sha256:" + "a" * 64
+        initial.db_job_image_override = candidate
+        passed.db_job_image_override = candidate
+        initial.readiness_image_override = candidate
+        passed.readiness_image_override = candidate
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
             mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))), \
@@ -116,6 +122,8 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertIn(str(repo_root), verify_command)
         self.assertIn("--deploy-root", verify_command)
         self.assertIn(str(gitops_worktree), verify_command)
+        self.assertIn("--image-override", verify_command)
+        self.assertIn(candidate, verify_command)
         self.assertIn((db_job_command, gitops_worktree), command_calls)
         self.assertIn((verify_command, gitops_worktree), command_calls)
         output = stderr.getvalue()
@@ -124,6 +132,7 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertIn("DB readiness：will_run=true", output)
         self.assertIn("run_gitops_db_job.py --service payment --operation migration --env beijing-sandbox --revision abc123 --apply --wait", output)
         self.assertIn("verify_db_contract.py --service payment --env beijing-sandbox --apply --wait", output)
+        self.assertIn(f"verify_db_contract.py --service payment --env beijing-sandbox --apply --wait --image-override {candidate}", output)
 
 class DbGateNoMigrationTests(unittest.TestCase):
     def test_beijing_non_migration_change_skips_db_flow(self) -> None:

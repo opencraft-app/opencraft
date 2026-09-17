@@ -25,7 +25,7 @@ type fakeSecrets struct {
 	writes []string
 }
 
-func (f *fakeSecrets) Read(_ context.Context, name string) (map[string]any, bool, error) {
+func (f *fakeSecrets) Read(_ context.Context, name, _ string) (map[string]any, bool, error) {
 	value, ok := f.values[name]
 	if !ok {
 		return map[string]any{}, false, nil
@@ -37,7 +37,7 @@ func (f *fakeSecrets) Read(_ context.Context, name string) (map[string]any, bool
 	return copyValue, true, nil
 }
 
-func (f *fakeSecrets) Write(_ context.Context, name string, payload map[string]any, create bool) error {
+func (f *fakeSecrets) Write(_ context.Context, name, _ string, payload map[string]any, create bool) error {
 	if create && name != "referral-secret" {
 		return context.Canceled
 	}
@@ -52,6 +52,7 @@ func bootstrapInventory() *config.Inventory {
 		Enabled: true, ExistingClusterID: "pulsar-cluster",
 		UserAuthProducerRole: "auth-role", CTLProducerRole: "ctl-role", ReferralConsumerRole: "referral-role",
 		UserAuthSSMSecret: "auth-secret", CTLSSMSecret: "ctl-secret", ReferralSSMSecret: "referral-secret",
+		UserAuthSSMVersionID: "auth-version", CTLSSMVersionID: "ctl-version", ReferralSSMVersionID: "referral-version",
 	}
 	return inventory
 }

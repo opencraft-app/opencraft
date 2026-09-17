@@ -137,11 +137,15 @@ func (a *TencentDatabaseAdmin) Inspect(ctx context.Context, config Config) (Data
 }
 
 func (a *TencentDatabaseAdmin) CreateAccount(ctx context.Context, config Config, password string) error {
+	description := strings.TrimSpace(config.Description)
+	if description == "" {
+		description = "LightVela Collaboration runtime"
+	}
 	request := cynosdb.NewCreateAccountsRequest()
 	request.ClusterId = sdkcommon.StringPtr(config.ClusterID)
 	request.Accounts = []*cynosdb.NewAccount{{
 		AccountName: sdkcommon.StringPtr(config.Account), AccountPassword: sdkcommon.StringPtr(password),
-		Host: sdkcommon.StringPtr(config.AccountHost), Description: sdkcommon.StringPtr("LightVela Collaboration runtime"),
+		Host: sdkcommon.StringPtr(config.AccountHost), Description: sdkcommon.StringPtr(description),
 		PasswordRotation: sdkcommon.Int64Ptr(0), MaxUserConnections: sdkcommon.Int64Ptr(200),
 	}}
 	_, err := a.client.CreateAccountsWithContext(ctx, request)
@@ -162,12 +166,16 @@ func (a *TencentDatabaseAdmin) ResetAccountPassword(ctx context.Context, config 
 }
 
 func (a *TencentDatabaseAdmin) CreateDatabase(ctx context.Context, config Config) error {
+	description := strings.TrimSpace(config.Description)
+	if description == "" {
+		description = "LightVela Collaboration authority and projection data"
+	}
 	request := cynosdb.NewCreateClusterDatabaseRequest()
 	request.ClusterId = sdkcommon.StringPtr(config.ClusterID)
 	request.DbName = sdkcommon.StringPtr(config.Database)
 	request.CharacterSet = sdkcommon.StringPtr("utf8mb4")
 	request.CollateRule = sdkcommon.StringPtr("utf8mb4_bin")
-	request.Description = sdkcommon.StringPtr("LightVela Collaboration authority and projection data")
+	request.Description = sdkcommon.StringPtr(description)
 	_, err := a.client.CreateClusterDatabaseWithContext(ctx, request)
 	return err
 }
