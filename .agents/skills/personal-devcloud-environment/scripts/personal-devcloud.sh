@@ -873,6 +873,7 @@ PY
   log "building devtunnel-agent from current checkout@$revision"
   docker run --rm \
     --user "$(id -u):$(id -g)" \
+    -e GOWORK=off \
     -e GOMODCACHE=/cache/gomod \
     -e GOCACHE=/cache/gocache \
     -v "$REPO_ROOT:/workspace:ro" \
@@ -976,7 +977,12 @@ register_route() {
     curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
     die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
   fi
-  ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"
+  if ! (ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"); then
+    stop_devtunnel_agent
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    unset tunnel_token
+    die "local devtunnel-agent failed; unsafe active registration was disabled"
+  fi
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
   state_set registration_response "$safe_response"
