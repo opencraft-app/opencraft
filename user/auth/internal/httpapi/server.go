@@ -41,6 +41,7 @@ type ServerConfig struct {
 	E2ESessionTTL              time.Duration
 	ShadowBindingInternalToken string
 	ShadowTencentCallbackToken string
+	DeveloperRouteClient       DeveloperRouteClient
 	TrustedProxyCIDRs          []string
 	Federation                 *FederationConfig
 	OIDC                       *OIDCConfig
@@ -86,12 +87,14 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.federation = config.Federation
 	handler.oidc = config.OIDC
 	handler.referralEnabled = config.ReferralEnabled
+	handler.developerRoutes = config.DeveloperRouteClient
 	router.POST("/auth/session/exchange", handler.ExchangeFirstPartySession)
 	// Compatibility alias for already released native clients. New first-party
 	// clients use the neutral session adapter above.
 	router.POST("/auth/native/token", handler.ExchangeNativeLogin)
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
+	registerDeveloperRouteRoutes(router, handler)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)

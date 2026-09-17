@@ -101,8 +101,28 @@ func (a *Authenticator) Verify(req Request) error {
 			return nil
 		}
 	}
-	if credentialsEmpty {
+	return a.verify(req, "", true)
+}
+
+// VerifyRequiredCaller verifies a control-plane request even when data-plane
+// authentication is disabled. The explicit caller allowlist prevents a route
+// from becoming public merely because the gateway data plane is in testing
+// compatibility mode.
+func (a *Authenticator) VerifyRequiredCaller(req Request, allowedCaller string) error {
+	if a == nil {
 		return ErrMissingCredentials
+	}
+	return a.verify(req, strings.TrimSpace(allowedCaller), false)
+}
+
+func (a *Authenticator) verify(req Request, allowedCaller string, enforceRoutePolicy bool) error {
+	if allowedCaller != "" && strings.TrimSpace(req.Caller) != allowedCaller {
+		return ErrUnknownCaller
+	}
+	if _, ok := a.allowUnauthenticated[req.RouteID]; ok {
+		if enforceRoutePolicy {
+			return nil
+		}
 	}
 	if strings.TrimSpace(req.Caller) == "" || strings.TrimSpace(req.Timestamp) == "" || strings.TrimSpace(req.Signature) == "" {
 		return ErrMissingCredentials
@@ -111,11 +131,16 @@ func (a *Authenticator) Verify(req Request) error {
 	if !ok {
 		return ErrUnknownCaller
 	}
-	routeCallers := a.routeCallers[req.RouteID]
-	callerAllowsRoute := len(caller.Routes) > 0 && slices.Contains(caller.Routes, req.RouteID)
-	routeAllowsCaller := len(routeCallers) > 0 && slices.Contains(routeCallers, req.Caller)
-	if !callerAllowsRoute && !routeAllowsCaller {
-		return ErrRouteDenied
+	if strings.TrimSpace(caller.Secret) == "" {
+		return ErrMissingCredentials
+	}
+	if enforceRoutePolicy {
+		routeCallers := a.routeCallers[req.RouteID]
+		callerAllowsRoute := len(caller.Routes) > 0 && slices.Contains(caller.Routes, req.RouteID)
+		routeAllowsCaller := len(routeCallers) > 0 && slices.Contains(routeCallers, req.Caller)
+		if !callerAllowsRoute && !routeAllowsCaller {
+			return ErrRouteDenied
+		}
 	}
 	timestamp, err := time.Parse(time.RFC3339, req.Timestamp)
 	if err != nil {

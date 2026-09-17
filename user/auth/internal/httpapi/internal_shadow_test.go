@@ -464,6 +464,10 @@ func newShadowBindingHTTPTestRouter() (*gin.Engine, *service.Service, *shadowbin
 }
 
 func newShadowBindingHTTPTestRouterWithClient(client shadowbinding.TencentCloudClient) (*gin.Engine, *service.Service, *shadowbinding.Service) {
+	return newShadowBindingHTTPTestRouterWithClients(client, nil)
+}
+
+func newShadowBindingHTTPTestRouterWithClients(client shadowbinding.TencentCloudClient, developerRoutes DeveloperRouteClient) (*gin.Engine, *service.Service, *shadowbinding.Service) {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{Now: fixedHTTPTestNow, SeedDefaultInvites: true})
 	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), client, shadowbinding.Options{Enabled: true, Now: fixedHTTPTestNow})
@@ -482,6 +486,7 @@ func newShadowBindingHTTPTestRouterWithClient(client shadowbinding.TencentCloudC
 		PublicBaseURL:              "https://lightclaw.tech",
 		ShadowBindingInternalToken: "shadow-internal-token",
 		ShadowTencentCallbackToken: "callback-token",
+		DeveloperRouteClient:       developerRoutes,
 	})
 	return router, svc, shadowSvc
 }
