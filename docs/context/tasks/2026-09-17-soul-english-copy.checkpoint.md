@@ -1,21 +1,24 @@
 ## stage
-Local English Soul copy update complete; commit, rebase onto fresh master, push, and MR delivery authorized.
+CR correction committed as frontend source `72c5b9f91`, with OpenCraft regeneration from that exact revision complete. The independent OpenCraft gate was attempted, but one unrelated process-RPC test failed; final generated commit is pending.
 
 ## verified
-- Worktree started from fetched `origin/master` commit `44a58071d`; the remote-tracking master advanced to `3165aca5a` before delivery and the branch must be rebased. Dirty primary checkout was untouched.
-- Exactly 42 existing English dictionary entries were updated through `i18n-apply`; no Chinese keys or other locales changed.
+- Worktree merged fetched `origin/master` at `1782bebc1` before the CR correction. Dirty primary and port-5174 preview worktrees were untouched.
+- The original MR changed 42 existing English dictionary entries. CR correction updated 11 active English Soul values and migrated two Chinese source keys plus all locale messages to reflect the actual uppercase `SOUL.md` download filename.
 - A bounded scan of the six active Soul UI components found no translated `persona` strings remaining.
-- Focused Vitest passed 7 files / 79 tests; `pnpm check` passed with zero new TypeScript diagnostics; `pnpm build:global` passed; `git diff --check` passed.
+- CR-focused Vitest passed 4 files / 73 tests; `pnpm check` passed with zero new TypeScript diagnostics; `pnpm build:global` and `pnpm build:cn` passed; staged source change impact and `git diff --check` passed.
+- `npm --prefix opencraft run sync:mono2-agent-console` regenerated 129 files from source commit `72c5b9f91`; `check:mono2-agent-console` passed. The manifest includes preexisting upstream drift in dependencies and locale dictionaries, so the generated diff is larger than the Soul delta alone.
+- OpenCraft boundary and workspace typechecks, extension tests, and Web build passed. The complete gate stopped at `test:appserver` (152/153 tests pass); the unchanged process RPC test reports `posix_spawnp failed.` on isolated rerun. Later gate stages are unverified.
 - Full `pnpm test` had unrelated failures and later stalled; it was interrupted and is not a passing gate.
 
 ## unverified
 - No authenticated browser screenshot of the Soul page was taken.
 - Full-suite failures were not diagnosed as part of this copy-only request.
-- No remote MR, CI, merge, release, or production state has yet been changed or verified at this checkpoint.
+- Generated changes have not yet been committed or pushed. Remote !4154 has not yet been updated; !4166 remains separate and will require sync after !4154 merges.
+- No merge, release, or production state has changed at this checkpoint.
 
 ## discard
 - Earlier checkout's Soul source scan: its branch was hundreds of commits behind the fetched master and lacked the screenshot subtitle.
-- Build-generated changes to `frontend/next-env.d.ts` and the font subset were restored after proving they arose during this build.
+- Build-generated changes to `frontend/next-env.d.ts` and the font subset are excluded from staged changes and must be cleaned up after gates.
 
 ## restore
 - Worktree: `/Users/pablozhong/codex/lightvela-soul-copy-consistency`.
@@ -23,4 +26,4 @@ Local English Soul copy update complete; commit, rebase onto fresh master, push,
 - Task scope and evidence: `docs/context/tasks/2026-09-17-soul-english-copy.md`.
 
 ## next_action
-Commit the scoped diff, rebase onto current `origin/master`, rerun focused validation, push, create the MR, and verify remote source SHA, target, mergeability, and CI. Do not merge or release.
+Inspect staged generated paths and change impact/docs checks, commit, verify `check:mono2-agent-console` after commit, push !4154 and verify its remote source SHA, target, mergeability, and CI. Do not merge or release; do not overwrite !4166's dirty preview worktree.

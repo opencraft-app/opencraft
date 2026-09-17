@@ -58,6 +58,9 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "https://lightclaw.tech";
     }
+    if (hostname === "frontend.sandbox-bj-7.lightclaw.tech") {
+      return "https://api-sandbox-bj-7.lightclaw.tech";
+    }
     // 命中 sandbox 专属子域时，路由到对应 sandbox 后端 host。
     // 合法性校验：必须以 https:// 开头，防止映射表配置错误时返回无效值。
     const sandboxHost = PAGES_DEV_SUBDOMAIN_TO_API_HOST[hostname];

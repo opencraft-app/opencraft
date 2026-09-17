@@ -50,6 +50,12 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@44a58071d` | Relevant adjacency | Verify source, generated dictionary, and a test neighbor |
 | `frontend/openspec/specs/buddy.md@44a58071d` | Current Soul contract | Any `.md` filename is accepted; preserve SOUL file semantics |
 | `frontend/DESIGN.md@44a58071d` | UI conventions | Copy-only work requires no layout/style changes |
+| `docs/context/flows/tapd-gongfeng-delivery.md@1782bebc1` | MR delivery route | Check actual remote source SHA and CI after pushing |
+| `docs/context/project/services/opencraft.md@1782bebc1` | Generated-closure service route | OpenCraft remains a separate verification surface |
+| `docs/context/project/upstream-subtrees.md@1782bebc1` | Upstream ownership | Only mono2 writes the generated OpenCraft compatibility copy |
+| `docs/context/domains/agent-gateway-runtime.md@1782bebc1` | Runtime boundary | Sync the complete Agent Console closure from committed source |
+| `opencraft/AGENTS.md@1782bebc1` | Closest service rules | Run the shared-frontend OpenCraft gate; never hand-edit vendored files |
+| `opencraft/MONO2_MIGRATION.md@1782bebc1` | Sync contract | Commit the mechanical copy and revision manifest together |
 
 ## evidence
 - `git fetch --quiet origin master`: local `origin/master` advanced first to `44a58071d`, then to `3165aca5a` before MR delivery.
@@ -61,6 +67,7 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 - `git diff --check` passed. Generated `next-env.d.ts` and font-subset build noise was removed after confirming both files were clean before the build.
 - CR correction: 11 active English Soul terms and two fallback notices are covered by focused regression tests; the two browser download paths and all locale notices now use `SOUL.md`.
 - The corrected focused Vitest set passed 4 files / 73 tests. `pnpm check` passed with 0 new TypeScript diagnostics; both `pnpm build:global` (649 pages) and `pnpm build:cn` (103 pages) passed. OpenCraft sync/check follows the final source commit so its revision does not immediately drift.
+- The OpenCraft 129-file closure check, boundary check, workspace typecheck, extension tests, and Web build passed. The full `npm --prefix opencraft run gate` stopped in `test:appserver`: 152/153 passed, one unchanged process-RPC PTY test failed with `posix_spawnp failed.`; isolated rerun reproduced it. Later gate stages were not reached.
 
 ## risks
 - A blanket replacement would corrupt unrelated terms such as operator impersonation or the quiz's user personality profile; use an explicit translation batch.
@@ -68,8 +75,8 @@ Unify the English copy in the Agent Soul page and its draw, quiz, upload, and ed
 - i18n extraction may regenerate unrelated entries; inspect the diff before handoff.
 
 ## validation
-- Passed: `pnpm check` (includes i18n extract/validate, zh-Hant check, and typecheck), original focused Vitest 79/79, CR-focused Vitest 73/73, `pnpm build:global`, `pnpm build:cn`, and `git diff --check`.
-- Not passed: full `pnpm test` (unrelated failures and an eventual stall; stopped after recording the failures).
+- Passed: `pnpm check` (includes i18n extract/validate, zh-Hant check, and typecheck), original focused Vitest 79/79, CR-focused Vitest 73/73, `pnpm build:global`, `pnpm build:cn`, `npm --prefix opencraft run check:mono2-agent-console`, OpenCraft boundary/type checks and extension tests, `npm --prefix opencraft run build:web`, staged change-impact/doc validators, and `git diff --check`.
+- Not passed: full `pnpm test` (unrelated failures and an eventual stall; stopped after recording the failures); full OpenCraft gate (unrelated reproducible `posix_spawnp failed.` in one process-RPC test; later stages not reached).
 
 ## decisions
 - Product object uses “Soul”; the browser-downloaded file is now also named `SOUL.md` to match Agent state and the cross-locale notices.
