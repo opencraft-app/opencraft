@@ -13,6 +13,8 @@
 | `agentButtonClassName` / `agentFieldClassName` | 显式用于共享 Button/Input 的 Agents 外观；共享默认样式不变。 |
 | `agentPanelClassName` | `DESIGN.md` 约定的圆角、边框和卡片阴影。 |
 | `agentPortalClassName` | 稳定的 `agents-ui` 标记；本身不注入全局 CSS。宿主可组合自己的作用域 class。 |
+| `AgentTabsList` / `AgentTabsTrigger` | `variant="segmented" \| "underline"`，用于切换有对应内容面板的页签；List 与 Trigger 使用同一变体。 |
+| `AgentChoiceGroup` / `AgentChoiceGroupItem` | 受控 RadioGroup 的单选卡片外观；方向键/Space、互斥与 checked 语义由 Radix 处理，确认动作由宿主另外执行。 |
 
 ```tsx
 <AgentSection title={t("模型配置")} actions={<Button onClick={save}>...</Button>}>
@@ -26,6 +28,8 @@
 ```
 
 ## Radix 原语
+
+Agents 的 SelectContent / DropdownMenuContent 显式使用 `variant="product"`，圆角、白底、轻边框、阴影和内边距由共享产品浮层样式统一提供，页面仅保留尺寸、定位与事件。公共默认变体不变。`ui/radio-group.tsx` 封装 Radix Root / Item / Indicator；不要用缺少 TabsContent 的 Tabs 替代表单单选。
 
 直接从 `@/components/ui/dropdown-menu`、`alert-dialog`、`tooltip`、`checkbox`、`switch`、`sheet` 导入。保留 Radix 的受控 props、事件、ref 和 `asChild` 组合能力；Sheet 复用现有 Dialog 的 Root、Portal、Overlay 和 Close，`SheetContent.closeLabel` 必填。
 
@@ -59,6 +63,6 @@
 
 `TooltipProvider` 可放在 Agents 宿主；默认保留 Radix 的 hover 缓冲与可 hover 内容，勿设置 `disableHoverableContent`。内容支持文本选择，键盘 focus 展示、Esc 关闭。禁用按钮无法获得焦点，需要说明时用 `TooltipTrigger asChild` 包含可聚焦、有可访问名称的解释容器，内部放 disabled button；勿增加点击业务动作。
 
-依赖版本按现有 `@radix-ui/react-dialog@1.1.15` 的底层依赖组合锁定，避免为本批原语升级既有依赖。OpenCraft 等生成消费者必须使用标准同步脚本同步源码和新增直接依赖；本批没有修改生成物。
+新增 Radix 依赖应与各宿主现有底层依赖组合兼容，避免顺带升级既有原语。OpenCraft 等生成消费者的源码必须通过标准同步脚本生成；新增直接依赖在各宿主自己的 manifest / lockfile 中显式声明，不要求宿主间盲目使用同一版本。
 
 参考：[Radix AlertDialog 异步提交](https://www.radix-ui.com/primitives/docs/components/alert-dialog#close-after-asynchronous-form-submission)、[DropdownMenu](https://www.radix-ui.com/primitives/docs/components/dropdown-menu)、[Tooltip](https://www.radix-ui.com/primitives/docs/components/tooltip)。

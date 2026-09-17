@@ -4,6 +4,10 @@
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
+      "file": "components/agents/agent-choice-group.tsx",
+      "sourceSha256": "e8884fb380049471387ed06ef7c85b0ebff9c6c4d63001023a07d3c06e1e78a9"
+    },
+    {
       "file": "components/agents/agent-confirm-dialog.tsx",
       "sourceSha256": "b7579c6f6c7ec929d315feb4404835b6678bf700f17de73164d1855ff38e978f"
     },
@@ -20,6 +24,10 @@
       "sourceSha256": "20f416b1e6061ba7bd7567c1df6aedfbd608a3e62d47181b8d7bda23af7aa61c"
     },
     {
+      "file": "components/agents/agent-tabs.tsx",
+      "sourceSha256": "76bb16443502c1c57b53f87d477cb7ef6afd193885a29b2dc8f5514a0cceec04"
+    },
+    {
       "file": "components/agents/agent-toolbar.tsx",
       "sourceSha256": "09be5fdd641a1ccf88b80fba5262bb0e654afa2106967cbb9878664a4c424b4e"
     },
@@ -29,7 +37,7 @@
     },
     {
       "file": "components/agents/index.ts",
-      "sourceSha256": "fe08b6a647a0765972cca186ad07724a198e3ec68e9be81305d65d9fd3097beb"
+      "sourceSha256": "37fcd5b981c3878d467e0fc2e26608c072dc6afab33a50680c2e90b6e7376a63"
     },
     {
       "file": "components/agents/styles.ts",
@@ -65,7 +73,7 @@
     },
     {
       "file": "components/ui/control-shell.ts",
-      "sourceSha256": "5433f693cf914f56ee4da00b8e40592b6a9838bde4299fb2cefc64866317115c"
+      "sourceSha256": "f22860f6cd95ffcce614c9a1228e4f28da1eddf7f1bbcbc1666e9202f53cb1fa"
     },
     {
       "file": "components/ui/dialog.tsx",
@@ -77,7 +85,7 @@
     },
     {
       "file": "components/ui/dropdown-menu.tsx",
-      "sourceSha256": "c2c61a9db1bb57383b5f3c2d24fff66ba79b19a6cb9f96ee40e1f1431696bcf2"
+      "sourceSha256": "fcdb73b3715bc1403c550cb784e720c6625415a92ecd95b2dec86efa50df8a0d"
     },
     {
       "file": "components/ui/input.tsx",
@@ -92,8 +100,12 @@
       "sourceSha256": "0535acdfead1fb134117d2556104907bfe24c3b45df7fbc04404f1f0d18eb21a"
     },
     {
+      "file": "components/ui/radio-group.tsx",
+      "sourceSha256": "ef29196d24961c36546fbe5f829626d17d4f0769f03a92090abc327b54ecdfaf"
+    },
+    {
       "file": "components/ui/select.tsx",
-      "sourceSha256": "7a3572dc234eea718c0774012cad23d7fd3c4c71f9d84789054bbf53985b9015"
+      "sourceSha256": "f654507ab224a4591f32099ef62c3729b56ba9a387a02aa91cc37347db0648d9"
     },
     {
       "file": "components/ui/switch.tsx",
@@ -273,7 +285,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "37784b682de1a740bfc1a8d622bef662c1b288f102e4c45a8d3d222abfa9b7ed"
+      "sourceSha256": "4ebb9a7994ea76163eeeddda5c767a7b60e06642def53586fbdfdbef6d65fab7"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -281,7 +293,7 @@
     },
     {
       "file": "pages/marketing/agent-channel-views.tsx",
-      "sourceSha256": "9e8b58de985c18be9abf9c20d3ac9bce51b5a1daf7b11172eebe794a4f47ea72"
+      "sourceSha256": "df355790bcee7f5b563b6fec8bc2a39280b4b8d5d4b53d78b6717dde67d5457e"
     },
     {
       "file": "pages/marketing/agent-config/components/FeishuIcon.tsx",
@@ -405,7 +417,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-views.tsx",
-      "sourceSha256": "eb1014a0a8f21bd9fb61851d5b1f2f861b0c1383d89f252ee9f1f769aa6aa7ee"
+      "sourceSha256": "4ac8e1155e0830f41325dc254c3552bc47bf2c5789af30c74b1a81e9a3a93058"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",
@@ -413,7 +425,7 @@
     },
     {
       "file": "pages/marketing/agent-experts-views.tsx",
-      "sourceSha256": "a871fed605869dc67c1ed8309b7f84e1e8fdf18b3e48b69a8e1823a11d8598fb"
+      "sourceSha256": "ef3cd6721db4eae03ad46da6b611a87663162be3655efe2abdcc76971b5cacf5"
     },
     {
       "file": "pages/marketing/agent-memory-save.ts",
@@ -425,11 +437,11 @@
     },
     {
       "file": "pages/marketing/agent-model-config/agent-model-config-panel.tsx",
-      "sourceSha256": "86599aa8db40a6c6d0354b6fc3f74403372b3e7bf7b725e120c17405cba77722"
+      "sourceSha256": "c8044c412cb5f336be5a002109f2789514df2d4279ef3bb7a8fafd30cc482a61"
     },
     {
       "file": "pages/marketing/agent-model-config/configured-provider-model-form-view.tsx",
-      "sourceSha256": "0719043a31409853fd9139901a6067da0034fdc5ddce76bdbf5b97677d59bd5b"
+      "sourceSha256": "02f19e945e63fc9bc4a034c194a13217462dc2be07e74add010c332f79639e4f"
     },
     {
       "file": "pages/marketing/agent-model-config/configured-provider-model-form.tsx",
@@ -453,7 +465,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-form-controls.tsx",
-      "sourceSha256": "ae50bdbc9cbcc81f4faf26c30775cb4da14b5a89a11f4ae9093fd4faedfe2ac5"
+      "sourceSha256": "d2e88e28ff2a03015441575b003a617113be025048aa62fd8ce4d52dc357c6f2"
     },
     {
       "file": "pages/marketing/agent-model-config/model-provider-views.tsx",
@@ -477,19 +489,19 @@
     },
     {
       "file": "pages/marketing/agent-skills-panel.tsx",
-      "sourceSha256": "5190aad5480617bcc24b90816091ba76c33efd75fa67e498c2330a7b15ce52a4"
+      "sourceSha256": "c9f5ce8b4d71095f32068821bf3b5c9bd38e47d43e2e9bfca6c5f62dbcdfac09"
     },
     {
       "file": "pages/marketing/automation-card-actions-view.tsx",
-      "sourceSha256": "65d668f3fd21c9c96435fb56eea229ddc4cbc3e2dd205478c25a269e5e6bcb30"
+      "sourceSha256": "76d5d6877fa711b72536c4f6d8c55b78e610b3c8305524fc30885feb3596edaa"
     },
     {
       "file": "pages/marketing/automation-days-picker-view.tsx",
-      "sourceSha256": "4049cc90a7c1916a160481727f76b499f69acd8fb84cb7b435c44235f6783928"
+      "sourceSha256": "1750e6169f85b52f1565923678015a08b7b0ad680952417592961a63e084344c"
     },
     {
       "file": "pages/marketing/automation-dialog-view.tsx",
-      "sourceSha256": "d005ef01def3b07df09c68b146da103036ad0084656c9482e7919ea85b85547b"
+      "sourceSha256": "926f492ddc8bb8346b40ced11ec536a9970be7d8b2ed5a305590b09a2ba64d97"
     },
     {
       "file": "pages/marketing/automation-form-actions-view.tsx",
@@ -553,7 +565,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
-      "sourceSha256": "6d31c0f7c305cf11557f8ed21f13db1987e0a2521d41102721785f4be50d9a8e"
+      "sourceSha256": "e1d8953ccab7379e905710e8db68f474060d611f80961b528eb715f8ea4b5f08"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-categories.ts",

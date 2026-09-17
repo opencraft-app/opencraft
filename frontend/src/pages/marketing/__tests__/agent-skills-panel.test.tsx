@@ -118,13 +118,12 @@ describe("HermesAgentSkillsPanel", () => {
   it("defaults to the mono2 Skills Demo and can switch to Experts", async () => {
     renderPanel("skills");
 
-    const outerTabs = within(screen.getByRole("tablist", { name: "技能页面切换" }));
     const demoTabs = within(screen.getByRole("tablist", { name: "技能市场页面切换" }));
-    const skillsTab = outerTabs.getByRole("tab", { name: "技能" });
+    const skillsTitle = screen.getByRole("heading", { name: "技能" });
     const expertsTab = demoTabs.getByRole("tab", { name: "技能包" });
 
-    expect(skillsTab).toHaveAttribute("aria-selected", "true");
-    expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
+    expect(screen.queryByRole("tablist", { name: "技能页面切换" })).not.toBeInTheDocument();
+    expect(skillsTitle).toHaveClass("text-lg", "font-semibold");
     expect(expertsTab).toBeInTheDocument();
     const description = isGlobal
       ? "为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。"

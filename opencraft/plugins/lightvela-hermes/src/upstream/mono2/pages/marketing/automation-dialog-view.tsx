@@ -32,7 +32,7 @@ export function AutomationDialogView({ title, closeLabel, onClose, children, bad
         const target = returnFocusRef?.current?.isConnected ? returnFocusRef.current : openerRef.current;
         target?.focus({ preventScroll: true });
       }}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 pr-8">
+      <div className="mb-5 flex shrink-0 flex-wrap items-center gap-2 pr-8">
         <DialogTitle ref={titleRef} tabIndex={-1} className="min-w-0 break-words text-lg outline-none">{title}</DialogTitle>
         {badge}
       </div>

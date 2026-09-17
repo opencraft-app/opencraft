@@ -3,7 +3,8 @@ import { useRef, type ReactNode } from "react";
 import { ArrowLeft, LayoutGrid, List, Search } from "lucide-react";
 import { AgentTooltip } from "../../components/agents/index";
 import { Button } from "../../components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { AgentTabsList, AgentTabsTrigger } from "../../components/agents/index";
+import { Tabs, TabsContent } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
 
 export interface ExpertToolbarViewProps {
@@ -83,11 +84,11 @@ export function SkillPackageModulesView({ modules, value, onValueChange, childre
   children: ReactNode;
 }) {
   return <Tabs value={value} onValueChange={onValueChange} className="min-w-0 space-y-5">
-    <TabsList className="h-auto max-w-full justify-start overflow-x-auto rounded-md border border-[var(--border-subtle)] bg-white p-1">
-      {modules.map((module) => <TabsTrigger key={module.slug} value={module.slug} className="max-w-64 rounded-sm shadow-none">
+    <AgentTabsList variant="segmented" className="h-auto max-w-full justify-start overflow-x-auto p-1">
+      {modules.map((module) => <AgentTabsTrigger variant="segmented" key={module.slug} value={module.slug} className="max-w-64">
         <span className="truncate">{module.label}</span>
-      </TabsTrigger>)}
-    </TabsList>
+      </AgentTabsTrigger>)}
+    </AgentTabsList>
     <TabsContent value={value} className="mt-0 min-w-0">{children}</TabsContent>
   </Tabs>;
 }

@@ -42,7 +42,7 @@ export const DeepSeekHarnessProviderSelect = ({
         <SelectTrigger aria-labelledby={`${labelId} ${valueId}`} className={cn(agentFieldClassName, "w-full gap-3")}>
           <SelectValue asChild><span id={valueId} className="min-w-0 flex-1 truncate text-left">{selected?.displayName ?? t("暂无可用模型供应商")}</span></SelectValue>
         </SelectTrigger>
-        <SelectContent aria-labelledby={labelId} position="popper" sideOffset={4} className="agents-ui max-h-[var(--radix-select-content-available-height)] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)] rounded-md">
+        <SelectContent variant="product" aria-labelledby={labelId} position="popper" className="agents-ui max-h-[var(--radix-select-content-available-height)] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
           {providers.map((provider) => (
             <SelectItem key={provider.id} value={provider.id} className="rounded-md py-2">{provider.displayName}</SelectItem>
           ))}

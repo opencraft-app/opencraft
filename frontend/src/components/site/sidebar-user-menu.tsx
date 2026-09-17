@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, ChevronDown, ChevronRight, Globe, LayoutDashboard, LogOut, MessageSquare, User } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Progress } from "@/components/ui/progress";
 import { agentPortalClassName } from "@/components/agents";
 
 export type SidebarCreditSummary =
@@ -69,12 +70,11 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
         <div className="space-y-2 border-b border-[var(--border-subtle)] px-3 py-3">
           {credit.state === "ready" ? <>
             <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
-              <span>{credit.label}</span><span className="tabular-nums">{credit.usedPercent}%</span>
+              <span>{credit.label}</span>
+              <span className="text-xs tabular-nums">{credit.used.toLocaleString()} / {credit.total.toLocaleString()}</span>
             </div>
-            <p className="text-sm font-medium tabular-nums text-[var(--text-primary)]">{credit.used.toLocaleString()} / {credit.total.toLocaleString()}</p>
-            <div role="progressbar" aria-label={credit.label} aria-valuenow={credit.usedPercent} aria-valuemin={0} aria-valuemax={100} className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-muted)]">
-              <div className="h-full rounded-full bg-[var(--text-primary)]" style={{ width: `${credit.usedPercent}%` }} />
-            </div>
+            <Progress value={credit.usedPercent} aria-label={credit.label}
+              aria-valuetext={`${credit.used.toLocaleString()} / ${credit.total.toLocaleString()}`} />
           </> : <p role={credit.state === "error" ? "alert" : "status"} className="text-xs text-[var(--text-secondary)]">{credit.label}</p>}
           {upgrade && <a href={upgrade.href} onClick={close} className="lv-sidebar-user-menu-upgrade">{upgrade.label}<ChevronRight className="size-4" aria-hidden="true" /></a>}
         </div>

@@ -27,7 +27,7 @@ export function DiagnosticLogView<TValue extends string>({ title, description, c
       <div className="flex min-w-0 items-center gap-2">
         <Select value={since} onValueChange={(value) => onSinceChange(value as TValue)} disabled={loading}>
           <SelectTrigger aria-label={labels.range} className="h-9 w-28 rounded-md bg-white text-sm"><SelectValue /></SelectTrigger>
-          <SelectContent position="popper" className={cn(agentPortalClassName, "max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)] rounded-md")}>
+          <SelectContent variant="product" position="popper" className={cn(agentPortalClassName, "max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)]")}>
             {options.map((option) => <SelectItem key={option.value} value={option.value} className="rounded-sm">{option.label}</SelectItem>)}
           </SelectContent>
         </Select>

@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { compile } from "tailwindcss";
-import { segmentedTriggerClass } from "@/components/ui/control-shell";
 
 const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
 const consoleShell = readFileSync(join(process.cwd(), "src/pages/marketing/agents-console/console-shell.tsx"), "utf8");
@@ -73,37 +71,25 @@ describe("Agent settings navigation spacing", () => {
     const icon = getBlockBody(styles, "\n.agents-ui .lv-agents-nav-item .lv-agents-nav-icon {");
     expect(item).toContain("color: var(--text-secondary) !important;");
     expect(item).toContain("background: #fff;");
-    expect(active).toContain("background: #dedede !important;");
+    expect(active).toContain("background: #f2f2ef !important;");
     expect(active).toContain("color: #171717 !important;");
     expect(active).toContain("font-weight: 600;");
     expect(active).not.toContain("opacity:");
-    expect(hover).toContain("background: #f5f5f5 !important;");
+    expect(hover).toContain("background: #f7f7f5 !important;");
     expect(icon).toContain("color: inherit;");
     // Desktop-specific overrides must not recolor the same links/icons.
     expect(styles).not.toContain(".lv-agents-sidebar-middle .lv-agents-nav-item.is-active {");
     expect(styles).not.toContain(".lv-agents-sidebar-middle .lv-agents-nav-icon {");
   });
 
-  it("keeps Agents Tabs white with a grey selection that wins over shared active utilities", async () => {
+  it("leaves Agents tabs to explicit component variants", () => {
     const track = getBlockBody(styles, '\n.agents-ui [role="tablist"] {');
     const active = getBlockBody(styles, '\n.agents-ui [role="tab"][data-state="active"] {');
     const hover = getBlockBody(styles, '\n.agents-ui [role="tab"][data-state="inactive"]:not(:disabled):hover {');
-    expect(track).toContain("--surface-muted: #fff;");
-    expect(track).toContain("--border-subtle: #e9ecf1;");
-    expect(active).toContain("background: #dedede !important;");
-    expect(active).toContain("color: #171717 !important;");
-    expect(active).toContain("font-weight: 600 !important;");
-    expect(active).not.toMatch(/(?:height|padding|outline|opacity|box-shadow):/);
-    expect(hover).toContain("background: #f5f5f5 !important;");
-    // Compile actual shared utility classes and the scoped app rule. The
-    // important color declarations survive compilation and outrank ordinary
-    // utilities; real layout/computed colors are separately browser-verified.
-    const generated = (await compile(`@layer app, utilities; @theme { --color-white: #fff; --font-weight-medium: 500; } @layer app { .agents-ui [role="tab"][data-state="active"] { ${active ?? ""} } } @layer utilities { @tailwind utilities; }`)).build(segmentedTriggerClass.split(" "));
-    expect(generated).toContain("background: #dedede !important;");
-    expect(generated).toContain("color: #171717 !important;");
-    expect(generated).toContain("font-weight: 600 !important;");
-    expect(generated).toContain("background-color: var(--color-white);");
-    expect(generated).not.toContain("background-color: var(--color-white) !important;");
+    expect(track).toBeUndefined();
+    expect(active).toBeUndefined();
+    expect(hover).toBeUndefined();
+    expect(styles).not.toContain('.agents-ui [role="tab"][data-state="active"]');
   });
 
   it("keeps the desktop chat height chain within the viewport", () => {

@@ -3,7 +3,8 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { AgentSection, AgentState, AgentTooltip } from "@/components/agents";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AgentTabsList, AgentTabsTrigger } from "@/components/agents";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 export interface MemoryLimitCardViewProps {
@@ -79,9 +80,9 @@ export function MemoryPanelView({ title, description, refreshLabel, loadingLabel
       <div className="grid gap-3 md:grid-cols-2">{cards}</div>
       {fallbackMessage && <p className="text-xs text-[var(--text-secondary)]">{fallbackMessage}</p>}
       <Tabs value={activeTab} onValueChange={(value) => { if (value === "memory" || value === "user") onTabChange(value); }}>
-        <TabsList className="mb-3 h-auto max-w-full flex-wrap rounded-md p-1">
-          {tabs.map((tab) => <TabsTrigger key={tab.value} value={tab.value} className="rounded-sm">{tab.label}</TabsTrigger>)}
-        </TabsList>
+        <AgentTabsList variant="segmented" className="mb-3 h-auto max-w-full flex-wrap p-1">
+          {tabs.map((tab) => <AgentTabsTrigger variant="segmented" key={tab.value} value={tab.value}>{tab.label}</AgentTabsTrigger>)}
+        </AgentTabsList>
         {tabs.map((tab) => <TabsContent key={tab.value} value={tab.value} className="mt-0 min-w-0">
           <MemoryEntriesView entries={tab.entries} emptyText={tab.emptyText} />
         </TabsContent>)}

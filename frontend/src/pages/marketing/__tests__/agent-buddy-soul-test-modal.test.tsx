@@ -71,7 +71,14 @@ describe("SoulTestModal", () => {
       />,
     );
 
-    for (let index = 0; index < 15; index += 1) {
+    const firstAnswer = screen.getByRole("button", { name: /^A\./ });
+    fireEvent.click(firstAnswer);
+    expect(firstAnswer).toHaveClass("border-black/35", "bg-black/[0.04]", "text-black/90");
+    expect(firstAnswer).toHaveAttribute("aria-pressed", "true");
+    expect(firstAnswer.querySelector("svg")).not.toBeNull();
+    act(() => { vi.advanceTimersByTime(300); });
+
+    for (let index = 1; index < 15; index += 1) {
       fireEvent.click(screen.getByRole("button", { name: /^A\./ }));
       act(() => {
         vi.advanceTimersByTime(300);

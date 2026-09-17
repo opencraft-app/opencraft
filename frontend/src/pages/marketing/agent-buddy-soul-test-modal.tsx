@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PersonaDialogView } from "./agent-buddy-views";
 import { useT } from "@/i18n/t";
@@ -298,14 +298,15 @@ function QuestionStep({
                   aria-pressed={isSelected}
                   style={{ fontSize: "14px" }}
                   className={cn(
-                    "w-full rounded-md border px-5 py-4 text-left text-lg leading-relaxed transition-all duration-200",
+                    "flex w-full items-start gap-3 rounded-md border px-5 py-4 text-left text-lg leading-relaxed transition-colors duration-200",
                     isSelected
-                      ? "border-black bg-black text-white"
+                      ? "border-black/35 bg-black/[0.04] text-black/90"
                       : "border-black/8 bg-white text-black/70 hover:border-black/18 hover:bg-black/[0.03]",
                   )}
                 >
-                  <span className="mr-2 font-semibold">{option.key}.</span>
-                  {formatSoulTestText(option.text, t, useEnglishSoulData)}
+                  <span className="font-semibold">{option.key}.</span>
+                  <span className="min-w-0 flex-1">{formatSoulTestText(option.text, t, useEnglishSoulData)}</span>
+                  {isSelected ? <Check className="mt-1 size-4 shrink-0" aria-hidden="true" /> : null}
                 </button>
               );
             })}

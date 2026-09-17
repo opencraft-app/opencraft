@@ -223,33 +223,8 @@ html.lw-settings-scrollbar-stable {
   margin-top: 0;
 }
 
-.agents-ui [role="tablist"] {
-  /* Existing utilities consume this local token even when their layer wins. */
-  --surface-muted: #fff;
-  --border-subtle: #e9ecf1;
-}
-
-.agents-ui [role="tab"][data-state="active"] {
-  /* App-layer colors must outrank the shared data-state utilities. */
-  background: #dedede !important;
-  color: #171717 !important;
-  font-weight: 600 !important;
-}
-
-.agents-ui [role="tab"][data-state="inactive"]:not(:disabled):hover {
-  background: #f5f5f5 !important;
-}
-
 .agents-ui[role="dialog"] h2 {
   letter-spacing: normal;
-}
-
-.agents-ui[role="listbox"] {
-  border-radius: 6px;
-}
-
-.agents-ui[role="listbox"] [role="option"] {
-  border-radius: 4px;
 }
 
 .agents-ui .lv-agent-profile-wrap,
@@ -276,13 +251,13 @@ html.lw-settings-scrollbar-stable {
 }
 
 .agents-ui .lv-agents-nav-item.is-active {
-  background: #dedede !important;
+  background: #f2f2ef !important;
   color: #171717 !important;
   font-weight: 600;
 }
 
 .agents-ui .lv-agents-nav-item:not(.is-active):hover {
-  background: #f5f5f5 !important;
+  background: #f7f7f5 !important;
 }
 
 .agents-ui .lv-agents-nav-item .lv-agents-nav-icon {
@@ -293,6 +268,26 @@ html.lw-settings-scrollbar-stable {
   display: flex;
   align-items: center;
   min-width: 0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.agents-ui .lv-agents-session-item-wrap.is-active {
+  background: #f2f2ef;
+}
+
+.agents-ui .lv-agents-session-item-wrap:not(.is-active):hover {
+  background: #f7f7f5;
+}
+
+.agents-ui .lv-agents-session-item-wrap .lv-agents-session-item,
+.agents-ui .lv-agents-session-item-wrap .lv-agents-session-menu-btn {
+  background: transparent !important;
+}
+
+.agents-ui .lv-agents-session-item-wrap.is-active .lv-agents-session-item {
+  color: #171717 !important;
+  font-weight: 600;
 }
 
 .agents-ui .lv-agents-session-item {

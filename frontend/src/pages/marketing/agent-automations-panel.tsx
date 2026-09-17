@@ -25,7 +25,8 @@ import { AutomationCardActionsView } from "./automation-card-actions-view";
 import { AutomationDaysPickerView } from "./automation-days-picker-view";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AgentTabsList, AgentTabsTrigger } from "@/components/agents";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
@@ -1311,11 +1312,11 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList aria-label={t("定时任务")} className="h-9 rounded-md">
-            <TabsTrigger className="rounded-md" value="created">{t("当前任务")}</TabsTrigger>
-            <TabsTrigger className="rounded-md" value="ended">{t("已结束任务")}</TabsTrigger>
-            <TabsTrigger className="rounded-md" value="recent">{t("最近执行")}</TabsTrigger>
-          </TabsList>
+          <AgentTabsList variant="underline" aria-label={t("定时任务")} className="h-auto">
+            <AgentTabsTrigger variant="underline" value="created">{t("当前任务")}</AgentTabsTrigger>
+            <AgentTabsTrigger variant="underline" value="ended">{t("已结束任务")}</AgentTabsTrigger>
+            <AgentTabsTrigger variant="underline" value="recent">{t("最近执行")}</AgentTabsTrigger>
+          </AgentTabsList>
         <div className="flex items-center gap-2">
           {activeView === "created" && (
             <Select
@@ -1329,10 +1330,10 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
                 <SelectValue />
               </SelectTrigger>
               <SelectContent
+                variant="product"
                 position="popper"
-                sideOffset={6}
                 align="end"
-                className="agents-ui min-w-[120px] rounded-md border-black/10 bg-white shadow-lg"
+                className="agents-ui min-w-[120px]"
               >
                 <SelectItem value="all" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("全部")}</SelectItem>
                 <SelectItem value="agent" className="rounded-sm py-2 pl-7 pr-3 text-xs">{t("智能任务")}</SelectItem>
@@ -1774,7 +1775,7 @@ function RecentCronRunDetailModal({
             {run.status ? formatLastStatus(run.status, t) : t("已执行")}
           </span>}>
 
-        <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+        <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow
             label={t("任务类型")}
             value={zeroTokenConfig
@@ -2213,7 +2214,7 @@ function CronJobDetailModal({
                 {t("已暂停")}
               </span>}>
 
-        <dl className="mt-4 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+        <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
           <DetailRow
             label={t("任务类型")}
@@ -4025,7 +4026,7 @@ export function AutomationFormModal({
           : undefined}
         >
         {canSelectZeroToken ? (
-          <fieldset className="mt-4">
+          <fieldset>
             <legend className="text-sm font-medium text-black/80">{t("任务类型")}</legend>
             <div className="mt-2 grid grid-cols-1 items-stretch gap-2 sm:grid-cols-3">
               {([
@@ -4065,7 +4066,7 @@ export function AutomationFormModal({
             </div>
           </fieldset>
         ) : mode === "edit" && executionMode === "zero_token" ? (
-          <div className="mt-4 rounded-md border border-black/10 bg-black/[0.025] px-3 py-2">
+          <div className="rounded-md border border-black/10 bg-black/[0.025] px-3 py-2">
             <p className="text-sm font-semibold text-black/80">{t("0 Token 任务")}</p>
             <p className="mt-0.5 text-pretty text-xs leading-4 text-black/50">
               {t("不调用模型，执行不消耗模型 Token，但仍会使用运行资源")}
@@ -4083,7 +4084,7 @@ export function AutomationFormModal({
         )}
 
         {/* 名称 */}
-        <div className={canSelectZeroToken || executionMode === "zero_token" ? "mt-3" : "mt-4"}>
+        <div className={canSelectZeroToken || executionMode === "zero_token" ? "mt-3" : undefined}>
           <label htmlFor={`${formId}-name`} className="block text-sm font-medium text-black/80">{t("名称")}</label>
           <input
             id={`${formId}-name`}
@@ -4101,9 +4102,9 @@ export function AutomationFormModal({
         <div className="mt-3">
           <label className="block text-sm font-medium text-black/80">{t("执行时间")}</label>
           <Tabs value={kind} onValueChange={(value) => { if (!scheduleUneditable) setKind(value as FrequencyKind); }} className="mt-1.5">
-          <TabsList aria-label={t("执行时间")} className="h-9 rounded-md">
+          <AgentTabsList variant="segmented" aria-label={t("执行时间")} className="h-9">
             {(["once", "recurring", "interval"] as FrequencyKind[]).map((k) => (
-              <TabsTrigger
+              <AgentTabsTrigger variant="segmented"
                 key={k}
                 value={k}
                 disabled={scheduleUneditable}
@@ -4112,9 +4113,9 @@ export function AutomationFormModal({
                   } ${scheduleUneditable ? "cursor-not-allowed opacity-60" : ""}`}
               >
                 {k === "recurring" ? t("周期") : k === "interval" ? t("按间隔") : t("单次")}
-              </TabsTrigger>
+              </AgentTabsTrigger>
             ))}
-          </TabsList>
+          </AgentTabsList>
           <TabsContent value={kind} className="mt-2">
             {scheduleUneditable ? (
               <div className="rounded-md bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
@@ -4660,7 +4661,7 @@ function RecurringPicker({
   return <div className="flex flex-wrap items-center gap-2">
     <Select value={period} onValueChange={(value) => onPeriod(value as RecurringPeriod)}>
       <SelectTrigger aria-label={t("周期")} className="h-9 w-[100px] rounded-md text-sm"><SelectValue /></SelectTrigger>
-      <SelectContent className="agents-ui z-[250]" position="popper">
+      <SelectContent variant="product" className="agents-ui z-[250]" position="popper">
         {periodOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
       </SelectContent>
     </Select>
@@ -4728,7 +4729,7 @@ function IntervalPicker({
       className="h-9 w-16 rounded-md border border-black/10 bg-white px-3 text-sm focus-visible:ring-2" />
     <Select value={unit} onValueChange={(value) => onUnit(value as IntervalUnit)}>
       <SelectTrigger aria-label={t("按间隔")} className="h-9 w-[90px] rounded-md text-sm"><SelectValue /></SelectTrigger>
-      <SelectContent className="agents-ui z-[250]" position="popper">
+      <SelectContent variant="product" className="agents-ui z-[250]" position="popper">
         {unitOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
       </SelectContent>
     </Select>

@@ -33,7 +33,7 @@ export function AutomationCardActionsView({ terminal, paused, busy, testState, l
     </AgentTooltip>
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button ref={triggerRef} variant="ghost" size="sm" className="size-8 rounded-md p-0" aria-label={labels.menu}><EllipsisVertical className="size-4" /></Button></DropdownMenuTrigger>
-      <DropdownMenuContent portalClassName="agents-ui" align="end" onCloseAutoFocus={(event) => {
+      <DropdownMenuContent variant="product" portalClassName="agents-ui" align="end" onCloseAutoFocus={(event) => {
         if (handoff.current) { event.preventDefault(); handoff.current = false; }
       }}>
         {!terminal && <DropdownMenuItem disabled={busy || testState === "running"} onSelect={actions.test}>{testState === "running" ? <Loader2 className="size-4 animate-spin" /> : testState === "ok" ? <CheckCircle2 className="size-4 text-[#0F8A4B]" /> : testState === "fail" ? <X className="size-4 text-[#B91C1C]" /> : <Zap className="size-4" />}{labels.test}</DropdownMenuItem>}

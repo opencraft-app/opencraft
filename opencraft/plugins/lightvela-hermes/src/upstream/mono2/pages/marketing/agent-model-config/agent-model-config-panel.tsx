@@ -24,7 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+import { AgentTabsList, AgentTabsTrigger } from "../../../components/agents/index";
+import { Tabs, TabsContent } from "../../../components/ui/tabs";
 import { useT } from "../../../i18n/t";
 import { toast } from "../../../lib/toast";
 import { cn } from "../../../lib/utils";
@@ -692,27 +693,27 @@ export function AgentModelConfigPanel({
       >
         <Tabs value={category} onValueChange={(value) => handleCategoryChange(value as ProviderCategory)}>
           <div className="overflow-x-auto bg-white px-5 pt-4 sm:px-6">
-            <TabsList
-              className="flex h-auto w-full justify-start gap-4 rounded-none border-0 border-b border-black/[0.06] bg-transparent p-0 shadow-none sm:gap-10"
+            <AgentTabsList variant="underline"
+              className="flex h-auto w-full gap-4 sm:gap-10"
               aria-label={t("模型配置方式")}
             >
               {PROVIDER_CATEGORIES.map((item) => {
                 return (
-                  <TabsTrigger
+                  <AgentTabsTrigger variant="underline"
                     key={item.id}
                     value={item.id}
                     disabled={busy}
-                    className="relative min-w-0 flex-none rounded-none border-0 bg-transparent px-0 pb-4 pt-1 text-sm font-normal text-black/60 shadow-none transition-none after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-transparent after:content-[''] hover:text-black/85 data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-black data-[state=active]:shadow-none data-[state=active]:after:bg-black sm:text-base"
+                    className="min-w-0 flex-none pb-4 pt-1 text-sm font-normal data-[state=active]:font-semibold sm:text-base"
                   >
                     {item.id === "coding_plan"
                       ? t("模型 Coding Plan")
                       : item.id === "api"
                         ? t("模型 API")
                         : t("自定义模型")}
-                  </TabsTrigger>
+                  </AgentTabsTrigger>
                 );
               })}
-            </TabsList>
+            </AgentTabsList>
           </div>
 
           <TabsContent value={category} forceMount className="m-0 grid gap-5 bg-white px-5 py-6 sm:px-6">
@@ -765,6 +766,7 @@ export function AgentModelConfigPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent
+                    variant="product"
                     position="popper"
                     className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}
                     style={MODEL_SELECT_CONTENT_STYLE}
@@ -809,6 +811,7 @@ export function AgentModelConfigPanel({
                   <SelectValue placeholder={t("请选择 Provider")} />
                 </SelectTrigger>
                 <SelectContent
+                  variant="product"
                   position="popper"
                   className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}
                   style={MODEL_SELECT_CONTENT_STYLE}
@@ -906,6 +909,7 @@ export function AgentModelConfigPanel({
                     <SelectValue placeholder={availableModelOptions.length > 0 ? t("请选择模型") : t("暂无可用模型")} />
                   </SelectTrigger>
                   <SelectContent
+                    variant="product"
                     position="popper"
                     className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}
                     style={MODEL_SELECT_CONTENT_STYLE}

@@ -6,6 +6,8 @@ export const fieldLabelClass = "text-sm font-medium leading-none text-[var(--tex
 export const floatingPanelClass =
   "border border-[color-mix(in_oklab,var(--border-subtle)_92%,white)] bg-[color-mix(in_oklab,white_95%,var(--surface-base))] shadow-[var(--shadow-soft)]";
 
+export const productFloatingPanelClass = "rounded-xl border border-black/10 bg-white p-1.5 shadow-xl";
+
 export const overlayBackdropClass = "fixed inset-0 z-50 bg-[rgba(13,21,48,0.38)] backdrop-blur-md";
 
 export const insetPanelToneClass =

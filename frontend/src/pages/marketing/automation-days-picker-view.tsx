@@ -20,7 +20,7 @@ export function AutomationDaysPickerView({ label, options, selected, onToggle, r
     </span>)}
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="ml-auto size-7 rounded-md p-0" aria-label={label}><ChevronDown className="size-4" /></Button></DropdownMenuTrigger>
-      <DropdownMenuContent portalClassName="agents-ui" aria-label={label} className="max-h-[260px] overflow-y-auto">
+      <DropdownMenuContent variant="product" portalClassName="agents-ui" aria-label={label} className="max-h-[260px] overflow-y-auto">
         {options.map(({ value, label: optionLabel }) => {
           const checked = selected.includes(value);
           const last = checked && selected.length === 1;

@@ -47,7 +47,8 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+import { AgentTabsList, AgentTabsTrigger } from "../../../components/agents/index";
+import { Tabs, TabsContent } from "../../../components/ui/tabs";
 import { AgentConfirmDialog, AgentTooltip } from "../../../components/agents/index";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { CuratedSkillDetailsView } from "./skills-dialog-views";
@@ -2268,27 +2269,27 @@ export function SkillsDemoPanel({
         className="min-w-0"
       >
         <div className="mb-4 flex min-w-0 items-end gap-4 border-b border-black/[0.08]">
-          <TabsList
+          <AgentTabsList variant="underline"
             aria-label={t("技能市场页面切换")}
             className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
           >
-            <TabsTrigger
+            <AgentTabsTrigger variant="underline"
               value="discover"
               disabled={operationBusy}
               className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
             >
               {t("技能")}
-            </TabsTrigger>
+            </AgentTabsTrigger>
             {expertsPanel ? (
-              <TabsTrigger
+              <AgentTabsTrigger variant="underline"
                 value="experts"
                 disabled={operationBusy}
                 className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
               >
                 {t("技能包")}
-              </TabsTrigger>
+              </AgentTabsTrigger>
             ) : null}
-            <TabsTrigger
+            <AgentTabsTrigger variant="underline"
               value="installed"
               ref={installedTabRef}
               disabled={operationBusy}
@@ -2300,8 +2301,8 @@ export function SkillsDemoPanel({
                   {installed.length}
                 </span>
               ) : null}
-            </TabsTrigger>
-          </TabsList>
+            </AgentTabsTrigger>
+          </AgentTabsList>
         </div>
 
         <TabsContent value="discover" className="mt-0">
@@ -2354,10 +2355,10 @@ export function SkillsDemoPanel({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent
+                      variant="product"
                       position="popper"
                       align="end"
-                      sideOffset={4}
-                      className="agents-ui !min-w-[var(--radix-select-trigger-width)] !rounded-md !border-black/10 bg-white shadow-[0_10px_24px_-12px_rgba(0,0,0,0.32),0_3px_8px_rgba(0,0,0,0.06)]"
+                      className="agents-ui !min-w-[var(--radix-select-trigger-width)]"
                     >
                       <SelectItem value="all" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
                         {t("所有来源")}
@@ -2733,7 +2734,7 @@ export function SkillsDemoPanel({
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent align="end" className="agents-ui rounded-md border-black/10 bg-white p-1 shadow-xl">
+                  <SelectContent variant="product" align="end" className="agents-ui">
                     <SelectItem value="all" className="rounded-sm py-2 text-xs">
                       {t("全部分类")} ({installed.length})
                     </SelectItem>
@@ -2754,7 +2755,7 @@ export function SkillsDemoPanel({
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent align="end" className="agents-ui rounded-md border-black/10 bg-white p-1 shadow-xl">
+                  <SelectContent variant="product" align="end" className="agents-ui">
                     <SelectItem value="all" className="rounded-sm py-2 text-xs">
                       {t("全部来源")} ({installed.length})
                     </SelectItem>

@@ -18,6 +18,34 @@ derived: false
 
 # Agents Radix 重构 Task Pack
 
+## preview_delivery_20260917
+
+- 用户已确认两次提交后一次推送现有 `frontsandbox/agents-radix-refactor`，范围为 A 方案、三项组件修正、积分 Progress 及相邻测试/文档/标准生成副本。第二提交仅记录标准脚本生成的最新 sourceRevision。排除未知 fixture，不合并 master、不创建 MR、不归档、不持续监控 CI。
+- 推送准备重验：CN/global各7文件71通过，项目check无新增类型错误，OpenCraft只读check157/adapter6通过，文档与79文件impact/diff检查通过。历史双站构建/OpenCraft完整gate记录保留，不声称本轮重新运行。推送成功与预览构建完成分别判断。
+
+## sidebar_progress_20260917
+
+- 用户要求头像菜单已使用积分采用progress展示。本S quick增量只增加纯展示 `ui/progress.tsx`，菜单改为标签/小号精确数值同排、下面8px浅灰轨道与深色填充；0%保留轨道。不新增依赖/动画，不改controller、账户页、额度算法、升级资格或未知状态。保留旧A与三项修正dirty、未知fixture及原工作区。
+- context_receipt：已读根与frontend规范、已fetch origin/master前端规范、DESIGN、skills索引、FE-AI/global/flow-cost、baseline-ui/可访问性/TDD/验证规范；上下文路由 `frontend agents sidebar account credit progress` 无命中，限定查询菜单/controller/共享摘要及相邻测试并读取runtime-openspec-i18n邻接。无扩大产品范围。
+- TDD先7失败/10通过，完成后CN/global各3文件48通过；check exit0/170现有诊断/0新增/47既有i18n警告。Chrome本地合成25%菜单确认轨道8×254px、填充63.5px、辅助数值及Esc关闭回头像；0%/满额/超额/非有限值由组件测试覆盖，不声称真实账务验收。
+- 标准OpenCraft只读check157通过，无生成漂移。本批按S风险验证，不重跑全量前端/双站构建/OpenCraft完整gate；历史结果不替代本批。详见 `.workflow/runtime/sidebar-progress-report.md`。仅本地修改，无commit/push/MR/部署。
+
+## component_review_fixes_20260917
+
+- 用户批准修正三项 review：连接方式单选误用 Tabs、下拉浮层圆角/阴影散落覆盖、自动任务弹窗标题留白由内容承担。Card 等补充建议不在本批；不改已有 A 配色、侧栏和业务逻辑。
+- context_receipt：根/frontend AGENTS、已 fetch 的 `origin/master@44a58071d` 中 frontend/AGENTS.md 与 DESIGN.md、FE-AI P0/flow-cost/team-state/角色门禁、计划当前段、frontend-runtime-openspec-i18n 邻接与通道交互测试、OpenCraft AGENTS/MONO2_MIGRATION/上游所有权/维护验证规范。路由 `frontend agents Radix component review fixes` 未命中，按已确认文件做有界定位。
+- 验收：RadioGroup 无悬空 panel 引用、互斥/方向键/确认/取消回焦；Select/DropdownMenu 显式产品变体统一 Portal 样式且公共默认不变；固定标题滚动时保留自身间距。新增依赖按各宿主 Radix 闭包锁定；标准生成后验证 OpenCraft 消费。实际执行结果以 plan 当前段与本批 runtime 证据为准，旧通过不作本批证据。
+- 保留未归属 `frontend/src/app/sidebar-account-fixture/`；不修改原 mono2 工作区，不提交/推送/部署。
+- 本批完成：独立review Approved；区域聚焦CN362/global122与check0新增类型错误；Root双站build103/649、标准sync/check157和OpenCraft完整gate1273pass/0fail/0skip通过。实际桌面/390单选键盘、回焦与固定标题留白已验，本地mock预览恢复。首次node-pty依赖执行权限失败及global语言预期失败均在本批report保留；不声称完整frontend suite或真实实例验收。
+
+## selection_a_20260917
+
+- 用户已批准 Demo A 并要求灰底稍浅；本轮实现 `#f2f2ef` 导航/会话整行、白色选中分段、透明下划线页面 Tabs、边框勾选选择卡片，以及头像/名称状态/维护操作/切换箭头的信息行。旧 `#dedede` 全局 Tab 契约被显式变体替代，历史段仅作演进记录。
+- context_receipt：读取根/frontend AGENTS、用户指定 FE-AI 规则、已有计划及 Demo 审查、frontend 服务和 runtime-i18n 邻接、Skills 专项规范、OpenCraft 所有权/验证规范。路由查询未命中后仅按已知组件/消费者/相邻测试调查；功能状态与业务命令仍由原 controller 所有。
+- 依赖边界：新增纯展示 `AgentTabsList/Trigger`，不改通用 Tabs 默认值或依赖；OpenCraft 按 `data-agent-tabs-variant` 与主题 token 适配，并通过标准脚本同步155文件。原工作区不动，所有修改限于既有 frontsandbox 隔离工作树。浏览器、终端、Workbench、成就不扩修。
+- Developer 聚焦结果：CN核心42、消费者274、模型71通过；global核心42通过；OpenCraft adapter6通过；`pnpm check` 通过。Root 已实测 Skills 标题与选中态、键盘切换、任务表单分段/主分类下划线、1024×600侧栏隐藏滚动条和上下边界状态、390×844手机Sheet及Esc回焦。模型mock返回读取失败，不声称真实实例视觉/命令通过。
+- 标准生成检查通过；最终构建、独立审查与交付状态以 `frontend/openspec/plan.md` 当前任务段为准。未提交、推送或发布，不操作真实账务/云端数据。
+
 ## sidebar_feedback_20260917
 
 - 完成：开发双站各69通过、check0new，独立审查各43通过无P1/P2；标准生成并sync/check154、OpenCraft完整gate1273全pass与类型/边界/各平台构建通过。实际桌面入口/外链新窗口/关闭回焦和390手机可见已核对，移动click组件覆盖，不称触屏实机。问卷测试tab已关且未提交内容；文档/impact/diff通过，等待用户验收。

@@ -54,6 +54,13 @@
   --lv-option-foreground-muted: var(--text-secondary);
   --lv-option-indicator: var(--color-accent-blue);
   --lv-option-disabled-opacity: 0.45;
+  --agent-tabs-track: var(--color-background-button-tertiary);
+  --agent-tabs-border: var(--color-border-light);
+  --agent-tabs-selected: var(--surface-raised);
+  --agent-tabs-divider: var(--color-border-light);
+  --agent-tabs-choice-border: var(--color-border);
+  --agent-tabs-choice-selected-border: var(--text-primary);
+  --agent-tabs-choice-selected: var(--color-background-button-tertiary);
 
   /*
    * Legacy Standard Panel vocabulary. mono2 still renders Channels and a few
@@ -528,6 +535,14 @@
   z-index: var(--layer-floating-control, 250);
 }
 
+.lightvela-agent-console-portal.lv-floating-control[data-surface-variant="product"] {
+  padding: 6px;
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
 /* Radix content and overlay are siblings in body, not descendants of the
  * outer Workbench modal. Confirmation content must also clear its own scrim. */
 .lightvela-agent-console-portal.lv-dialog-surface--confirmation {
@@ -595,6 +610,10 @@
 
 .lightvela-agent-console-portal .lv-select-viewport {
   padding: var(--menu-surface-padding, 5px);
+}
+
+.lightvela-agent-console-portal.lv-select-content[data-surface-variant="product"] .lv-select-viewport {
+  padding: 0;
 }
 
 .lightvela-agent-console-portal .lv-select-separator {
@@ -805,6 +824,52 @@
 .lightvela-agent-console-portal .lv-segmented-control__item:focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 1px;
+}
+
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-segmented-control[data-agent-tabs-variant="underline"] {
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--agent-tabs-divider);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-segmented-control__item[data-agent-tabs-variant="underline"] {
+  min-height: 0;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-segmented-control__item[data-agent-tabs-variant="underline"][data-state="active"] {
+  color: var(--text-primary);
+  background: transparent;
+  box-shadow: none;
+}
+
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-agent-choice-group {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-agent-choice-group__item {
+  min-height: 0;
+  padding: 12px 40px 12px 12px;
+  border: 1px solid var(--agent-tabs-choice-border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+:is(.lightvela-agent-console, .lightvela-agent-console-portal) .lv-agent-choice-group__item[data-state="checked"] {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+  background: var(--agent-tabs-choice-selected);
+  box-shadow: none;
 }
 
 /* Scheduled Tasks owns scheduling state only. Workbench owns the visual

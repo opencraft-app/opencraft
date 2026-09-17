@@ -1,12 +1,11 @@
 "use client";
 import { type ReactNode, type RefObject } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { AgentField, agentButtonClassName, agentFieldClassName, agentPanelClassName, agentPortalClassName } from "@/components/agents";
+import { AgentChoiceGroup, AgentChoiceGroupItem, AgentField, agentButtonClassName, agentFieldClassName, agentPanelClassName, agentPortalClassName } from "@/components/agents";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 const CLS = "lh-std-channel-panel";
@@ -61,14 +60,12 @@ export interface ChannelMethodDialogViewProps extends Omit<ChannelDialogViewProp
 }
 export function ChannelMethodDialogView({ value, onValueChange, qrLabel, qrDescription, manualLabel, manualDescription, cancelLabel, confirmLabel, onConfirm, ...dialog }: ChannelMethodDialogViewProps) {
   return <ChannelDialogView {...dialog}>
-    <Tabs value={value} onValueChange={(next) => onValueChange(next as "qrcode" | "manual")}>
-      <TabsList aria-label={dialog.description} className="grid h-auto grid-cols-1 gap-2 bg-transparent p-0">
+    <AgentChoiceGroup value={value} onValueChange={(next) => onValueChange(next as "qrcode" | "manual")} aria-label={dialog.description}>
         {[{ value: "qrcode", label: qrLabel, description: qrDescription }, { value: "manual", label: manualLabel, description: manualDescription }].map((item) =>
-          <TabsTrigger key={item.value} value={item.value} className="flex h-auto flex-col items-start gap-1 whitespace-normal rounded-md border border-[var(--border-subtle)] p-3 text-left shadow-none data-[state=active]:border-[var(--text-primary)]">
+          <AgentChoiceGroupItem key={item.value} value={item.value}>
             <span className="text-sm font-medium">{item.label}</span><span className="text-pretty text-xs font-normal text-[var(--text-secondary)]">{item.description}</span>
-          </TabsTrigger>)}
-      </TabsList>
-    </Tabs>
+          </AgentChoiceGroupItem>)}
+    </AgentChoiceGroup>
     <div className="mt-5 flex flex-wrap justify-end gap-2">
       <DialogClose asChild><Button variant="outline" className={agentButtonClassName}>{cancelLabel}</Button></DialogClose>
       <Button className={agentButtonClassName} onClick={onConfirm}>{confirmLabel}</Button>

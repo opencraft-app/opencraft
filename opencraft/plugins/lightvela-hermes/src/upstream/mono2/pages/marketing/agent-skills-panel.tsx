@@ -1,5 +1,5 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -14,7 +14,6 @@ import {
 } from "../../components/ui/dialog";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Textarea } from "../../components/ui/textarea";
 import { useRepositories } from "../../contexts/repository-context";
 import { useT } from "../../i18n/t";
@@ -75,16 +74,6 @@ const INITIAL_LEARN_SKILL_PROGRESS: LearnSkillProgress = {
   percent: 0,
   label: "Ready to learn",
 };
-
-function getAgentSkillsTabStyle(isActive: boolean): CSSProperties {
-  return {
-    color: isActive ? "rgba(0,0,0,0.95)" : "rgba(0,0,0,0.38)",
-    fontFamily: "inherit",
-    fontSize: "18px",
-    fontWeight: 600,
-    lineHeight: "24px",
-  };
-}
 
 function getLearnSourcePanelClass(selected: boolean) {
   return [
@@ -1272,20 +1261,8 @@ export function HermesAgentSkillsPanel({
 
   return (
     <ZhHantScope className="min-w-0">
-      <Tabs value="skills" className="min-w-0">
       <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
-        <TabsList
-          aria-label={t("技能页面切换")}
-          className="h-auto justify-start gap-8 rounded-none border-0 bg-transparent p-0 text-black/38 shadow-none"
-        >
-          <TabsTrigger
-            value="skills"
-            className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            style={getAgentSkillsTabStyle(true)}
-          >
-            {t("技能")}
-          </TabsTrigger>
-        </TabsList>
+        <h2 className="text-balance text-lg font-semibold leading-6 text-black/95">{t("技能")}</h2>
       </div>
       <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
         {isGlobal
@@ -1293,7 +1270,6 @@ export function HermesAgentSkillsPanel({
           : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
       </p>
 
-      <TabsContent value="skills" className="mt-0">
         <SkillsDemoPanel
           key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
@@ -1332,8 +1308,6 @@ export function HermesAgentSkillsPanel({
             />
           )}
         />
-      </TabsContent>
-      </Tabs>
     </ZhHantScope>
   );
 }

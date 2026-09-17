@@ -131,7 +131,7 @@ function applyWorkbenchAdapter(contents, file) {
     replace('      controlFieldClass,', '      "lv-select-trigger",\n      controlFieldClass,');
     replace('        "z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",',
       '        "lightvela-agent-console-portal lv-floating-control lv-select-content z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",');
-    replace('<SelectPrimitive.Viewport className="p-1.5">', '<SelectPrimitive.Viewport className="lv-select-viewport p-1.5">');
+    replace('<SelectPrimitive.Viewport className={variant === "product" ? "p-0" : "p-1.5"}>', '<SelectPrimitive.Viewport className={variant === "product" ? "lv-select-viewport p-0" : "lv-select-viewport p-1.5"}>');
     replace('"my-1 h-px bg-black/[0.08]"', '"lv-select-separator my-1 h-px bg-black/[0.08]"');
     replace('"relative flex w-full cursor-default select-none', '"lv-select-item relative flex w-full cursor-default select-none');
     replace('className="absolute left-2 flex size-4', 'className="lv-select-item__indicator absolute left-2 flex size-4');
@@ -162,6 +162,16 @@ function applyWorkbenchAdapter(contents, file) {
       'cn("lightvela-agent-console-portal lv-floating-control lv-dropdown-content z-50 max-h-[var(--radix-dropdown-menu-content-available-height)]');
     replace('cn("flex min-h-9 cursor-default', 'cn("lv-dropdown-item flex min-h-9 cursor-default');
     replace('cn("relative flex min-h-9 cursor-default', 'cn("lv-dropdown-item relative flex min-h-9 cursor-default');
+    return contents;
+  }
+  if (file === "components/ui/radio-group.tsx") {
+    replace('className={cn("grid gap-2", className)}', 'className={cn("lv-radio-group grid gap-2", className)}');
+    replace('className={cn("focus-visible:outline-none', 'className={cn("lv-radio-group__item focus-visible:outline-none');
+    return contents;
+  }
+  if (file === "components/agents/agent-choice-group.tsx") {
+    replace('className={cn("grid grid-cols-1 gap-2", className)}', 'className={cn("lv-agent-choice-group grid grid-cols-1 gap-2", className)}');
+    replace('"group/agent-choice relative flex h-auto', '"lv-agent-choice-group__item group/agent-choice relative flex h-auto');
     return contents;
   }
   if (file === "components/ui/tooltip.tsx") {

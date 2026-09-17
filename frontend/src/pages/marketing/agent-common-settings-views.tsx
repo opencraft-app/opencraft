@@ -73,7 +73,7 @@ export function CommonSettingRowView({ setting, value, draft, disabled, unsuppor
                             <SelectTrigger {...controlDescription} ref={selectTriggerRef} aria-label={setting.label} className="h-10 w-full max-w-[17rem] rounded-md">
                               <SelectValue />
                             </SelectTrigger>
-                            <SelectContent position="popper" className={`${agentPortalClassName} max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)] rounded-md`}>
+                            <SelectContent variant="product" position="popper" className={`${agentPortalClassName} max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)]`}>
                               <SelectItem value="smart">{labels.smart}</SelectItem>
                               <SelectItem value="manual">{labels.manual}</SelectItem>
                               <SelectItem value="off">{labels.off}</SelectItem>

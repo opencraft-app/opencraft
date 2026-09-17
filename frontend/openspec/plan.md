@@ -1,3 +1,106 @@
+# 分支预览交付授权（2026-09-17）
+
+用户已确认将下述 A 方案、三项组件修正与积分 Progress 一起提交到既有 `frontsandbox/agents-radix-refactor`：功能提交后运行标准 OpenCraft 同步，仅更新 `UPSTREAM.json` 的 sourceRevision 为第二提交，再一次推送。排除未知 fixture，保留原工作区；不合并 master、不创建 MR、不归档、不持续监控 CI。后文“不提交/推送”为当时实施阶段边界，由本次明确交付授权取代。
+
+# 头像菜单积分进度条（2026-09-17）
+
+**Goal:** 按用户要求用清晰的 Progress 组件展示头像菜单已使用积分，数字作为辅助信息。
+**Architecture:** 仅调整纯展示：标签与小号精确数值同一行，下面8px浅灰轨道/深色已用比例；提取无交互的 `ui/progress.tsx`（`value: number | null` 百分比、其余 div 展示/ARIA props），复用当前进度语义，不引入依赖、动画或新账务计算。
+**Tech Stack:** React / TypeScript / Tailwind / cn；既有Radix Popover不变。
+**Execution:** S quick单任务，由当前agent实现/自检；用户已指定progress展示，沿用已批准Town参考。旧A与三项修正成果保留；不动未知fixture、controller、账户页、额度算法或升级条件，不提交/推送。
+
+- [x] TDD：RED 7 fail/10 pass → CN/global各3文件48 pass，覆盖真实菜单消费共享Progress、两行布局、0%/25%/100%/超额、负数、非有限值与原unknown/loading/error语义。`pnpm check` exit0/0新增类型错误；浏览器合成25%实测8px轨道、254px宽/填充63.5px、辅助数值及Esc回头像；0%轨道由组件测试覆盖，未声称浏览器0%实测。菜单README与正式边界已同步；标准OpenCraft只读check157通过，无需生成写入。本S增量不重跑全量套件/构建，旧构建证据不替代本批。详情见runtime的sidebar-progress-report.md。
+
+写集：`frontend/src/components/ui/progress.tsx`、`frontend/src/components/site/sidebar-user-menu.tsx`及相邻test/README；其他仅plan/TaskPack/正式边界与runtime证据。共享Progress沿用现有div progressbar的ARIA契约，值限定0–100、null/非有限值不报伪造百分比；真实used/total文案不夹紧。未知/加载/失败仍显示原提示且不渲染进度条。
+
+---
+
+# 三项组件 Review 修正（2026-09-17）
+
+**Goal:** 修正用户确认的三个 P2：连接方式单选语义、下拉浮层一致性、任务弹窗标题间距责任。
+**Architecture:** 在既有展示层增量修正，保持 A 方案与原 controller/action。复用现有原语；单选使用 Radix RadioGroup 的共享封装；下拉提供显式产品变体以避免影响其他页面；标题区自己拥有底部留白。
+**Tech Stack:** React / TypeScript / Tailwind / Radix-shadcn。允许仅为 RadioGroup 添加与各宿主现有 Radix 闭包兼容的直接依赖及锁文件，不升级其他原语。
+**Execution:** 用户已授权实施上述三项；M 增量，developer 单写实现后冻结，reviewer 独立复核，Leader 维护计划/文档/标准生成同步及验证。只修这三项；Card 等补充建议不在本批。未授权提交/推送/发布。
+
+## Global Constraints
+
+- 保留现有 A 视觉（导航/会话 #f2f2ef，segmented 浅轨道与白色 active，页面 underline）；白底框线、固定侧栏/阴影、头像菜单不变。
+- 不改 controller、Repository、命令、权限、账务、SDK、browser/terminal/Workbench 或成就；不碰未归属 `frontend/src/app/sidebar-account-fixture/`。
+- 共享原语的既有非 Agents 默认保持兼容；新产品下拉变体为白底、border-black/10、rounded-xl、p-1.5、shadow-xl、sideOffset=6；宿主主题允许通过已有 token 适配。
+- 所有生成副本与 UPSTREAM 只经标准 sync；原 mono2 工作区不写。无 git commit/push/MR/部署。
+
+## Task 1: 三项展示修正与回归（developer）
+
+- [x] RED→GREEN：通道方式为互斥 radio group，无 tab/aria-controls 悬空；上下左右键、Space、确认后原回调、取消/Esc回焦不变。共享 `ui/radio-group.tsx` 与 Agents choice 外观组合；移除已无消费者的 Tabs choice 变体，保留 segmented/underline。
+- [x] RED→GREEN：共享 Select/DropdownMenu 产品浮层变体统一，所有现有 Agents Select/DropdownMenu 调用端显式使用；移除 styles.css 的 listbox 6px 覆盖与页面圆角/阴影重复覆盖，保留尺寸、定位/层级、事件。验证 Portal 本身样式与默认非 Agents 兼容。
+- [x] RED→GREEN：AutomationDialogView 标题区显式 `mb-5`，调用端去除只承担首块留白的 mt；创建/编辑/详情/执行详情、固定头部+内部滚动结构都保持间距。Developer RED 8 fail → GREEN 23 pass，CN 362 / global 专用122 / adapter6通过，`pnpm check` exit0、0新类型错误。直接以global跑中文自动任务断言曾有74项语言预期失败，不声称全量绿。详见 `component-review-fixes-developer.md`。
+
+Allowed writes: `frontend/src/components/ui/{radio-group.tsx,select.tsx,dropdown-menu.tsx,control-shell.ts,__tests__/*}`，`frontend/src/components/agents/{agent-tabs.tsx,agent-choice-group.tsx,styles.ts,index.ts,__tests__/*}`，`frontend/src/styles.css`，`frontend/src/pages/marketing/{agent-channel-views.tsx,automation-dialog-view.tsx,agent-automations-panel.tsx,agent-model-config/*views.tsx,agent-model-config/model-form-controls.tsx,agent-model-config/agent-model-config-panel.tsx,agent-deepseek-harness-provider-controls.tsx,agents-console/console-bot-profile.tsx,agents-console/console-session-list.tsx}`，上述相邻测试；其他 Agents DropdownMenu/Select 消费文件可仅添加产品变体并报告具体文件。允许 `frontend/package.json` / `frontend/pnpm-lock.yaml` 与 `opencraft/plugins/lightvela-hermes/package.json` / `opencraft/package-lock.json` 仅新增兼容 RadioGroup 依赖。宿主样式 `opencraft/plugins/lightvela-hermes/src/upstream/agent-console.css` 与 `opencraft/tests/lightvela-radix-adapter.test.ts` 仅跟随新原语/产品变体修正。禁止手改生成副本。
+
+追加窄写集：`opencraft/scripts/sync-mono2-agent-console.mjs` 的 Select/DropdownMenu 严格源码锚点与 RadioGroup 必要宿主类适配，由 developer 随真实原语 API 修正并测试；仍不得手改生成副本。既有一次性迁移所有权、闭包 seeds、业务适配不改。
+
+## Task 2: 标准共享同步和边界文档（Leader）
+
+- [x] 已补充 frontend/DESIGN.md、相关 README、Task Pack 和正式 UI 边界。标准OpenCraft sync/check157文件；最终完整gate exit0（1273测试执行全pass/0fail/0skip，workspace边界/类型、Web/ExpoWeb/iOS JS构建通过）。实际75文件写集的文档/impact/diff检查通过，未改旧Card默认。首次gate本地node-pty helper644导致启动失败，仅恢复依赖文件执行权限后最小复现/原用例与完整gate重跑通过；详见本批report。
+
+## Task 3: 独立验收（reviewer + Leader）
+
+- [x] 独立 reviewer Approved，无P1/P2，独立CN/global各23项和adapter6通过。Root桌面/390px实测RadioGroup互斥、上下左右键/Space、取消/Esc回焦与手动表单入口；产品Select 12px/6px/shadow-xl；任务标题20px在内容滚动时保留。双站构建103/649页exit0；预览5188已恢复，临时视口重置。不把mock当真实实例业务验证；OpenCraft最终完整gate仍由Task2收口。
+
+**交付状态：** 三项修正本地完成，等待用户验收。证据为 `.workflow/runtime/component-review-fixes-{developer,review,browser,report}.md` 与同前缀日志。保留A方案与未知fixture；无commit/push/MR/归档/部署，远端预览不代表本批。未重跑完整frontend suite；区域专用聚焦回归、项目check、双站build和OpenCraft完整gate为本批验证边界。
+
+---
+
+# Agent 信息与选中态 Demo 评审（2026-09-17）
+
+**当前阶段：** 用户已确认「选 A，然后这个灰底稍微再浅一些」，进入 A 方案正式实现。只实施视觉与布局，不改变业务逻辑；不提交、不推送、不部署。下方 2026-09-16 状态保留为历史记录。
+
+- [x] 检查截图与实际预览，确认全局 active Tab 染色、会话底色截断和 Agent 布局问题。
+- [x] 分类审查相关选中态组件，形成 [设计评审](agents-selected-state-demo-review.md) 与隔离的 A / B 交互 Demo。
+- [x] 完成 Demo 浏览器检查（1512×801 / 1024×600、阴影、长名称、菜单与焦点），交用户评审；不代表正式页面已修复。
+- [x] 用户确认 A；导航 / 会话选中底色从 Demo 的 `#eeeeeb` 调浅为 `#f2f2ef`。
+
+## A 方案实施计划
+
+**Goal:** 落实已批准的 Agent 紧凑信息行与分层选中态，并将灰底调浅一档。
+**Architecture:** 纯展示层为 Tabs 显式区分 segmented / underline / choice，复用现有 Radix 原语；controller、请求、权限、Bot / Profile 身份和资源生命周期不变。公共营销页 / account 默认 Tabs 不变。
+**Tech Stack:** 现有 React / TypeScript / Tailwind / Radix-shadcn；无新依赖。
+**Execution:** 既有重构的 M 增量；developer 单写业务代码 → reviewer 独立审查；Leader 规划、文档、生成同步及独立验证。用户确认前不 commit / push / MR / archive。
+
+### Task 1: A 方案正式展示组件（developer）
+
+- [x] 先补失败测试，再修改展示层与相邻测试；CN 核心42 / 消费者274 / 模型71、global核心42、OpenCraft adapter6通过，`pnpm check` exit0。源码已冻结并交独立审查。
+
+Allowed writes: `frontend/src/components/agents/{agent-tabs.tsx,styles.ts,index.ts,__tests__/*}`、`frontend/src/styles.css`、`frontend/src/components/ui/__tests__/tabs-selected-geometry.test.tsx`、`frontend/src/pages/marketing/agents-console/{console-bot-profile.tsx,console-sidebar-tabs.tsx,console-session-list.tsx,__tests__/*}`、`frontend/src/pages/marketing/{agent-skills-panel.tsx,agent-model-config/agent-model-config-panel.tsx,agent-memory-views.tsx,agent-experts-views.tsx,agent-channel-views.tsx,agent-buddy-views.tsx,agent-buddy-soul-test-modal.tsx,agent-automations-panel.tsx}`、`frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`，及上述消费者的现有相邻测试。Demo 只允许同步 `.workflow/runtime/selected-state-demo/.../content/agent-selection-demo.html` 的 A 色值。
+
+接口约束：保留现有 props/callback/ref、受控 value/onValueChange、busy/disabled 和 Radix 可访问性。允许新增可复用的 AgentTabsList / AgentTabsTrigger 变体包装；通用 `ui/tabs.tsx` 的默认外观不变。不要新增 controller/Repository 或 package 依赖。
+
+执行中已明确追加的窄写集：nav-spacing 与 model-config 相邻测试、`opencraft/plugins/lightvela-hermes/src/upstream/agent-console.css`、`opencraft/tests/lightvela-radix-adapter.test.ts`。原因是宿主旧 segmented CSS 会覆盖共享 variant 的背景/边框，按 variant 与主题 token 保持消费兼容；不扩展暂缓页面业务。
+
+验收与实现要点：
+
+1. `ConsoleBotProfile`：头像左；名称/状态同列；维护操作后是切换箭头。长名称 truncate，状态/续费入口不得被交互按钮包裹；操作可达，错误/创建入口保留。单 Bot 不新增切换能力。新增图标触发器使用现有名称/翻译，不引入无翻译文案。
+2. 导航/会话：白色侧栏和现有边框不变，选中 `#f2f2ef` / 深色文字；hover 更浅（`#f7f7f5`），focus 独立。会话行底色覆盖独立的更多操作按钮，不能嵌套交互元素。
+3. segmented：浅轨道 `#f3f3f1`、白色选中项、细边框 `#deded9`，保留原交互几何；适用于探索/对话、记忆、包模块、定时执行时间。underline：透明底+深文字+2px下划线，适用于 Skills 分类、模型类别、定时任务主分类。choice：选中边框+勾选，适用于通道模式；人设现有边框/勾选保持，测试答案深色选中改为同类浅底/边框标识且保留答案行为。
+4. 移除 `.agents-ui [role=tab][data-state=active]` 全局强制灰底，不得用另一个全局 `!important` 掩盖。技能页单项标题恢复纯标题语义，不改变市场 Tabs、页面内容、刷新/安装事件。筛选/视图按钮统一为小尺寸轻底色，与导航区分。
+5. 红绿测试至少验证：变体没有互相染色、非 Agents 默认 Tabs 不变；真实键盘切换与 disabled 不变；profile 名称/状态同列且维护/选择事件不重复触发；session 整行宿主包含菜单且正确 aria-current；原滚动阴影/账户快捷菜单回归保持。
+
+命令：`cd frontend && pnpm exec vitest run <上述组件/消费者聚焦测试>`，以 `VITE_REGION=global NEXT_PUBLIC_REGION=global` 重跑关联两站用例；`pnpm check`。该包未定义独立 lint script，使用项目 check 与 diff check 并明确覆盖边界。先记 baseline / RED，禁止把失败断言删除当修复。不并行执行 Next build / dev 清理脚本。
+
+### Task 2: 共享消费与正式边界文档（Leader）
+
+- [x] 新模块进入 OpenCraft 生成闭包；通过标准 sync/check 同步155文件，未手改生成文件。最终完整 gate1273通过/0失败/0跳过及边界、类型、Web/ExpoWeb/iOS JS构建通过。更新正式 UI 边界与 Task Pack；sourceRevision仍为已提交源码，后续提交再由标准脚本记录新SHA。
+
+### Task 3: 独立审查与浏览器验收（reviewer + Leader）
+
+- [x] 独立审查 Approved、无P1/P2；两项Minor（任务Tab轨道高度/choice勾选留白）已修复并复审关闭。Root实测Skills/任务选中态、键盘、固定侧栏与390px Sheet，模型mock读取失败不宣称真实模型操作已验收。两站差异由聚焦组件测试覆盖；最终国内103页/国际649页构建均exit0，diff/正式文档/实际写集impact门禁通过。详细证据在`.workflow/runtime/selection-a-*.md`和构建日志中。
+
+**交付状态：** A方案与更浅灰底已本地实现；等待用户验收。本轮未commit/push/MR/deploy，远端预览仍为上一轮提交；原工作区与Native历史不变。无真实账务/云端操作，未恢复CI监控。完整前端全量测试未重跑；聚焦回归、项目check、双站build与OpenCraft完整gate为本轮验证边界。
+
+**Global Constraints:** 白底侧栏、细边框、100dvh、顶部 Agent / 底部头像常驻、中间隐藏滚动条及滚动阴影不变；头像积分/升级/建议反馈不改；双站业务数据/命令、权限、计费、SDK、browser/terminal/Workbench、成就均不扩修。保持原工作区不动，所有改动在既有隔离工作树。
+
+---
+
 # Agents 侧栏与账户快捷菜单增量实施（2026-09-16）
 
 **Status:** S1–S7本地实现与验证完成，等待用户验收；S7已将反馈入口统一至头像菜单。S6演示额度与升级链接保留。真实200%浏览器缩放及真实账务尚未实测。尚未提交、推送、归档或发布。

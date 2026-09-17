@@ -1,5 +1,9 @@
 export { AgentField } from "./agent-field";
 export type { AgentFieldControlProps, AgentFieldProps } from "./agent-field";
+export { AgentTabsList, AgentTabsTrigger } from "./agent-tabs";
+export type { AgentTabsListProps, AgentTabsTriggerProps, AgentTabsVariant } from "./agent-tabs";
+export { AgentChoiceGroup, AgentChoiceGroupItem } from "./agent-choice-group";
+export type { AgentChoiceGroupItemProps, AgentChoiceGroupProps } from "./agent-choice-group";
 export { AgentSection } from "./agent-section";
 export type { AgentSectionProps } from "./agent-section";
 export { AgentState } from "./agent-state";

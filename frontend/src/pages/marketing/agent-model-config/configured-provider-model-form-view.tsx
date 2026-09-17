@@ -35,7 +35,7 @@ export function ConfiguredProviderModelFormView({ id, isGlobalRegion, modelId, o
         <div className={compound.control}>
           <Select value={modelId} onValueChange={onModelChange} disabled={busy || !options.length}>
             <SelectTrigger id={id} className={`${compound.field} w-full flex-1`} onPointerDownCapture={onSelectInteraction} onKeyDownCapture={onSelectInteraction}><SelectValue placeholder={loading ? labels.loading : options.length ? labels.chooseModel : labels.noModels} /></SelectTrigger>
-            <SelectContent position="popper" className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}>
+            <SelectContent variant="product" position="popper" className={cn(agentPortalClassName, MODEL_SELECT_CONTENT_CLASS)}>
               {options.map((option) => {
                 const saved = option.saved;
                 return (

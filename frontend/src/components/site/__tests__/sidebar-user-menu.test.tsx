@@ -21,6 +21,37 @@ function Fixture(props: Partial<typeof data> = {}) {
 }
 
 describe("sidebar user menu presentation", () => {
+  it.each([
+    { used: 0, total: 4500, usedPercent: 0, expected: 0 },
+    { used: 250, total: 1000, usedPercent: 25, expected: 25 },
+    { used: 1000, total: 1000, usedPercent: 100, expected: 100 },
+    { used: 1200, total: 1000, usedPercent: 120, expected: 100 },
+    { used: 0, total: 1000, usedPercent: -5, expected: 0 },
+  ])("shows $used / $total as supporting text above a shared Progress ($usedPercent%)", async ({ used, total, usedPercent, expected }) => {
+    render(<Fixture credit={{ state: "ready", label: "Credits used", used, total, usedPercent }} />);
+    await userEvent.click(screen.getByRole("button", { name: "Open user menu" }));
+    const progress = screen.getByRole("progressbar", { name: "Credits used" });
+    const amount = `${used.toLocaleString()} / ${total.toLocaleString()}`;
+    expect(progress).toHaveAttribute("data-slot", "progress");
+    expect(progress).toHaveAttribute("aria-valuenow", String(expected));
+    expect(progress).toHaveAttribute("aria-valuetext", amount);
+    expect(progress).toHaveClass("h-2", "w-full", "bg-black/10");
+    expect(progress.querySelector('[data-slot="progress-indicator"]')).toHaveStyle({ transform: `translateX(-${100 - expected}%)` });
+    const label = screen.getByText("Credits used");
+    expect(label.parentElement).toContainElement(screen.getByText(amount));
+    expect(screen.getByText(amount)).toHaveClass("text-xs", "tabular-nums");
+    expect(screen.queryByText(`${usedPercent}%`)).not.toBeInTheDocument();
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])("does not expose an invalid progress value (%s)", async (usedPercent) => {
+    render(<Fixture credit={{ state: "ready", label: "Credits used", used: 250, total: 1000, usedPercent }} />);
+    await userEvent.click(screen.getByRole("button", { name: "Open user menu" }));
+    const progress = screen.getByRole("progressbar", { name: "Credits used" });
+    expect(progress).not.toHaveAttribute("aria-valuenow");
+    expect(progress.querySelector('[data-slot="progress-indicator"]')).toHaveStyle({ transform: "translateX(-100%)" });
+    expect(screen.queryByText(`${usedPercent}%`)).not.toBeInTheDocument();
+  });
+
   it("initially focuses its visible heading, leaving sign-out inert on a second Enter", async () => {
     const signOut = vi.fn();
     const user = userEvent.setup();

@@ -4238,7 +4238,7 @@ export const AgentSettingsPage = ({
                       if (mode === "blank" || mode === "clone-current" || mode === "clone-main") setCreateBotMode(mode);
                     }}>
                       <SelectTrigger aria-label={t("创建方式")} className={cn(agentFieldClassName, "w-full")}><SelectValue /></SelectTrigger>
-                      <SelectContent position="popper" className="agents-ui max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)] rounded-md bg-white">
+                      <SelectContent variant="product" position="popper" className="agents-ui max-h-[var(--radix-select-content-available-height)] max-w-[calc(100vw-2rem)]">
                       {([
                         ["clone-current", isActiveBotDefault ? t("复制当前（主 Bot）") : t("复制当前")],
                         ...(!isActiveBotDefault ? [["clone-main", t("复制主 Bot")] as const] : []),

@@ -36,9 +36,12 @@ describe("ChannelPanel Radix interactions", () => {
     const user = userEvent.setup();
     render(<ChannelPanel {...{} as ChannelPanelProps} />);
     await user.click(within(card(channel)).getByRole("button", { name: "+ 连接" }));
+    screen.getByRole("radio", { name: /扫码连接/ }).focus();
     await user.keyboard("{ArrowRight}");
     const manualLabel = channel === "qqbot" ? /App ID \/ Secret 绑定/ : /Client ID \/ Secret 绑定/;
-    expect(screen.getByRole("tab", { name: manualLabel })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: manualLabel })).toHaveFocus();
+    await user.keyboard(" ");
+    await waitFor(() => expect(screen.getByRole("radio", { name: manualLabel })).toBeChecked());
     await user.click(screen.getByRole("button", { name: "确认" }));
     const firstLabel = channel === "qqbot" ? "App ID" : "Client ID";
     const secondLabel = channel === "qqbot" ? "App Secret" : "Client Secret";
@@ -50,7 +53,9 @@ describe("ChannelPanel Radix interactions", () => {
     expect(mock.configure).toHaveBeenCalledWith({ channelValue: channel, channelIdValue: "app-id", channelKeyValue: "app-secret" });
     expect(mock.qr).not.toHaveBeenCalled();
     await user.click(within(card(channel)).getByRole("button", { name: "+ 连接" }));
+    screen.getByRole("radio", { name: /扫码连接/ }).focus();
     await user.keyboard("{ArrowRight}");
+    await user.keyboard(" ");
     await user.click(screen.getByRole("button", { name: "确认" }));
     expect(screen.getByLabelText(firstLabel)).toHaveValue("");
     expect(screen.getByLabelText(secondLabel)).toHaveValue("");
@@ -63,6 +68,9 @@ describe("ChannelPanel Radix interactions", () => {
     trigger.focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("dialog", { name: "选择 QQ 连接方式" })).toHaveAccessibleDescription("请选择适合你的连接方式");
+    expect(screen.getAllByRole("radio")).toHaveLength(2);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
     await waitFor(() => expect(trigger).toHaveFocus());
     expect(mock.qr).not.toHaveBeenCalled();

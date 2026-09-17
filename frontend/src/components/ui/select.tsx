@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
-import { controlFieldClass, floatingPanelClass } from "@/components/ui/control-shell";
+import { controlFieldClass, floatingPanelClass, productFloatingPanelClass } from "@/components/ui/control-shell";
 import { cn } from "@/lib/utils";
 
 const Select = SelectPrimitive.Root;
@@ -40,21 +40,26 @@ const SelectTrigger = React.forwardRef<
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
+type SelectContentProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { variant?: "default" | "product" };
+
 const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  SelectContentProps
+>(({ className, children, variant = "default", sideOffset, ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
+      sideOffset={sideOffset ?? (variant === "product" ? 6 : undefined)}
+      data-surface-variant={variant}
       className={cn(
         "z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
         floatingPanelClass,
+        variant === "product" && productFloatingPanelClass,
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className="p-1.5">{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className={variant === "product" ? "p-0" : "p-1.5"}>{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
@@ -83,3 +88,4 @@ const SelectItem = React.forwardRef<
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
 export { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue };
+export type { SelectContentProps };

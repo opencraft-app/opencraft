@@ -68,7 +68,7 @@ export function WebsiteShareDialogView({ contentRef, siteName, publicUrl, durati
             <label htmlFor={durationId} className="block text-sm font-medium">{labels.duration}</label>
             <Select value={String(durationDays)} onValueChange={(value) => onDurationChange(Number(value))} disabled={loading}>
               <SelectTrigger id={durationId} aria-label={labels.duration} className="h-9 w-full rounded-md"><SelectValue /></SelectTrigger>
-              <SelectContent className="agents-ui">{durationOptions.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}</SelectContent>
+              <SelectContent variant="product" className="agents-ui">{durationOptions.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}</SelectContent>
             </Select>
             <p className="text-sm leading-6 text-[var(--text-secondary)]">{labels.enableHint}</p>
             <div className="flex flex-wrap justify-end gap-2">

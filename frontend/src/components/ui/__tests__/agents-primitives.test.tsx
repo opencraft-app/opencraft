@@ -10,6 +10,7 @@ import { Switch } from "../switch";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "../sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../select";
 
 afterEach(cleanup);
 beforeAll(() => {
@@ -19,10 +20,33 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   });
+  HTMLElement.prototype.scrollIntoView = vi.fn();
 });
 afterAll(() => vi.unstubAllGlobals());
 
 describe("Agents Radix primitives", () => {
+  it("keeps product dropdown styling opt-in", async () => {
+    const user = userEvent.setup();
+    const view = render(<>
+      <DropdownMenu><DropdownMenuTrigger>Product menu</DropdownMenuTrigger><DropdownMenuContent variant="product"><DropdownMenuItem>Item</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+      <DropdownMenu><DropdownMenuTrigger>Default menu</DropdownMenuTrigger><DropdownMenuContent><DropdownMenuItem>Item</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+    </>);
+    await user.click(screen.getByText("Product menu"));
+    expect(screen.getByRole("menu")).toHaveClass("rounded-xl", "border-black/10", "bg-white", "p-1.5", "shadow-xl");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByText("Default menu"));
+    expect(screen.getByRole("menu")).toHaveClass("rounded-md");
+    expect(screen.getByRole("menu")).not.toHaveClass("rounded-xl");
+    expect(view.container.querySelectorAll("[role='menu']")).toHaveLength(0);
+  });
+
+  it("applies the product surface to select content without changing the default", async () => {
+    const view = render(<Select defaultValue="one" open><SelectTrigger><SelectValue /></SelectTrigger><SelectContent variant="product"><SelectItem value="one">One</SelectItem><SelectItem value="two">Two</SelectItem></SelectContent></Select>);
+    const listbox = screen.getByRole("listbox");
+    expect(listbox).toHaveClass("rounded-xl", "border-black/10", "bg-white", "shadow-xl");
+    expect(listbox).toHaveAttribute("data-surface-variant", "product");
+    expect(view.container).not.toContainElement(listbox);
+  });
   it("navigates a portalled menu with the keyboard, skips disabled actions, and restores focus on Escape", async () => {
     const selected = vi.fn();
     const user = userEvent.setup();

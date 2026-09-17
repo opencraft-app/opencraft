@@ -90,7 +90,15 @@ describe("Agents console presentation", () => {
     }
     render(<Profile />);
     expect(document.querySelector("button button")).toBeNull();
+    const name = screen.getByText("Main bot");
+    const status = screen.getByText("Running");
+    expect(name.parentElement).toContainElement(status);
+    const switcher = screen.getByRole("button", { name: "Main bot" });
+    expect(screen.getByRole("button", { name: "Restart" }).compareDocumentPosition(switcher) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await user.tab();
+    expect(screen.getByRole("button", { name: "Restart" })).toHaveFocus();
+    await user.tab();
+    expect(switcher).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(await screen.findByRole("menu")).toBeInTheDocument();
     await user.keyboard("{ArrowDown}{Enter}");

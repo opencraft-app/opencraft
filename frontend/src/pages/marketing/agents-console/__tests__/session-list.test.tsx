@@ -34,7 +34,10 @@ describe("controlled session presentation", () => {
     }
     const user = userEvent.setup();
     render(<Sessions />);
-    expect(screen.getByRole("link", { name: "Default" })).toHaveAttribute("aria-current", "page");
+    const selectedLink = screen.getByRole("link", { name: "Default" });
+    expect(selectedLink).toHaveAttribute("aria-current", "page");
+    expect(selectedLink.closest("li")).toHaveClass("is-active");
+    expect(selectedLink.closest("li")).toContainElement(screen.getAllByRole("button", { name: "Actions" })[0]!);
     const trigger = screen.getAllByRole("button", { name: "Actions" })[0]!;
     await user.click(trigger);
     expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute("data-disabled");

@@ -952,7 +952,7 @@ describe("AgentModelConfigPanel", () => {
     const modelFormPanel = screen.getByRole("tabpanel", { name: "模型 Coding Plan" });
     expect(tabList).toHaveClass("w-full", "gap-4", "rounded-none", "border-b", "bg-transparent");
     expect(tabList).not.toHaveClass("min-w-max");
-    expect(codingPlanTab).toHaveClass("rounded-none", "text-sm", "sm:text-base", "data-[state=active]:after:bg-black");
+    expect(codingPlanTab).toHaveClass("rounded-none", "text-sm", "sm:text-base", "data-[state=active]:after:bg-[var(--text-primary)]");
     expect(modelFormPanel).toHaveClass("bg-white");
     expect(modelFormPanel).not.toHaveClass("bg-black/[0.025]");
     expect(screen.queryByText("推荐")).not.toBeInTheDocument();

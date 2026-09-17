@@ -57,12 +57,12 @@ describe("segmented selected geometry", () => {
     expect(screen.getByRole("tab", { name: "Ended" })).toHaveFocus();
   });
 
-  it("feeds the winning Tailwind background utilities an Agents-local white track with grey selected tabs", async () => {
+  it("does not globally recolor every Agents tab", async () => {
     const styles = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
     const rule = styles.match(/\.agents-ui \[role="tablist"\]\s*\{([^}]*)\}/s)?.[1];
     const declaration = document.createElement("div").style;
     declaration.cssText = rule ?? "";
-    expect(declaration.getPropertyValue("--surface-muted")).toBe("#fff");
+    expect(declaration.getPropertyValue("--surface-muted")).toBe("");
     render(<><Tabs><TabsList aria-label="Automation tabs" className="h-9" /></Tabs><Tabs><TabsList aria-label="Sidebar tabs" className="h-10 bg-[var(--surface-muted)]" /></Tabs></>);
     const backgrounds = screen.getAllByRole("tablist").flatMap((list) => list.className.split(" ").filter((name) => name.startsWith("bg-")));
     expect(backgrounds).toEqual(["bg-[color-mix(in_oklab,var(--surface-muted)_84%,white)]", "bg-[var(--surface-muted)]"]);
@@ -72,7 +72,7 @@ describe("segmented selected geometry", () => {
     expect(generated).toContain("background-color: var(--surface-muted);");
     expect(generated).toContain("background-color: color-mix(in oklab,var(--surface-muted) 84%,white);");
     expect(generated).not.toMatch(/--surface-muted\s*:/);
-    expect(styles).toMatch(/\.agents-ui \[role="tab"\]\[data-state="active"\]\s*\{[^}]*background:\s*#dedede !important;[^}]*color:\s*#171717 !important;/s);
+    expect(styles).not.toMatch(/\.agents-ui \[role="tab"\]\[data-state="active"\]/);
   });
 
   it("keeps the scoped desktop header surface authoritative over its existing inline background", async () => {

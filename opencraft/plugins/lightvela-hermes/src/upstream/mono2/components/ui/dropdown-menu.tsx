@@ -3,6 +3,7 @@ import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { Check } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { productFloatingPanelClass } from "./control-shell";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
@@ -11,17 +12,19 @@ const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 type DropdownMenuContentProps = React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content> & {
   /** Applied to the portalled surface; opt in to the consuming host's CSS scope. */
   portalClassName?: string;
+  variant?: "default" | "product";
 };
 
 const DropdownMenuContent = React.forwardRef<React.ComponentRef<typeof DropdownMenuPrimitive.Content>, DropdownMenuContentProps>(
-  ({ className, portalClassName, sideOffset = 6, collisionPadding = 8, ...props }, ref) => (
+  ({ className, portalClassName, variant = "default", sideOffset = 6, collisionPadding = 8, ...props }, ref) => (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         data-slot="dropdown-menu-content"
-        className={cn("lightvela-agent-console-portal lv-floating-control lv-dropdown-content z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-40 max-w-[var(--radix-dropdown-menu-content-available-width)] overflow-y-auto break-words rounded-md border border-[var(--border-subtle)] bg-white p-1.5 text-[var(--text-primary)] shadow-xl outline-none", portalClassName, className)}
+        data-surface-variant={variant}
+        className={cn("lightvela-agent-console-portal lv-floating-control lv-dropdown-content z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-40 max-w-[var(--radix-dropdown-menu-content-available-width)] overflow-y-auto break-words rounded-md border border-[var(--border-subtle)] bg-white p-1.5 text-[var(--text-primary)] shadow-xl outline-none", variant === "product" && productFloatingPanelClass, portalClassName, className)}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>

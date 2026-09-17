@@ -4,7 +4,7 @@
 
 | View | Inputs and actions | Local UI state |
 | --- | --- | --- |
-| `AutomationDialogView` | title, close label, children, optional badge/style and stable `returnFocusRef`; `onClose` | visible heading initial focus and close-focus restoration |
+| `AutomationDialogView` | title, close label, children, optional badge/style and stable `returnFocusRef`; `onClose` | visible heading initial focus and close-focus restoration; title owns bottom spacing outside any inner scroll area |
 | `AutomationCardActionsView` | terminal/paused/busy flags, original test state, labels, actions | Radix menu; view/copy pass their stable menu trigger to the host |
 | `AutomationFormActionsView` | eligibility/submitting/test state, labels, test/close/submit callbacks | accessible disabled explanation; no async ownership |
 | `AutomationDaysPickerView` | numeric options/selection, translated labels, toggle/clear callbacks | controlled Radix checkbox menu, selecting does not close it |
@@ -22,5 +22,7 @@ The Skill and upstream pickers retain their original selection controllers, real
 ## Dependencies and verification
 
 Use the shared Agent Tooltip/Confirm/State and Radix-based UI primitives. Portal surfaces opt into `agents-ui`; there is no global theme override. Popover is pinned to `1.1.15` in frontend so its resolved focus-scope (`1.1.7`) and dismissable-layer (`1.1.11`) are shared with the installed Dialog/Select family. Consumers must verify their own resolved closure; copying version numbers across packages is insufficient.
+
+Select and DropdownMenu surfaces opt into `variant="product"`; callers keep their sizing and controlled events without redefining surface radius/shadow. Dialog callers do not add a first-child top margin to create heading separation; later field spacing remains local to the form.
 
 Adjacent tests cover the named dialogs, initial/return focus, keyboard menus, pending/deferred outcomes, dependency deletion, nested selectors, regional selection rules, time drafts and one-job/script submission. The dedicated global test exercises English UI. The legacy main suite also contains Chinese-only fixtures; running every legacy case under the global default is a separate fixture-compatibility check and is not a substitute for the explicit English interaction tests.

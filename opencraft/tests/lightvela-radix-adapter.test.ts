@@ -35,6 +35,7 @@ test("controlled form primitives preserve Radix state and expose host styling ro
     ["checkbox", ["lv-checkbox", "CheckboxPrimitive.Root", "CheckboxPrimitive.Indicator"]],
     ["switch", ["lv-switch", "lv-switch__thumb", "SwitchPrimitive.Root", "SwitchPrimitive.Thumb"]],
     ["tabs", ["lv-segmented-control", "lv-segmented-control__item", "TabsPrimitive.Trigger"]],
+    ["radio-group", ["lv-radio-group", "lv-radio-group__item", "RadioGroupPrimitive.Root", "RadioGroupPrimitive.Item"]],
   ] as const) {
     const file = `components/ui/${name}.tsx`;
     const result = adapt(upstream(file), file);
@@ -45,6 +46,10 @@ test("controlled form primitives preserve Radix state and expose host styling ro
   assert.match(button, /"lv-button"/);
   assert.match(button, /default: \{ color: "var\(--color-text-button-primary\)" \}/);
   assert.doesNotMatch(button, /color: "white"/);
+  const choice = adapt(upstream("components/agents/agent-choice-group.tsx"), "components/agents/agent-choice-group.tsx");
+  assert.match(choice, /lv-agent-choice-group/);
+  assert.match(choice, /lv-agent-choice-group__item/);
+  assert.match(choice, /data-\[state=checked\]/);
 });
 
 test("primitive adaptations reject both missing and duplicated source anchors", () => {
@@ -83,5 +88,11 @@ test("confirmation, floating and selected controls use host tokens and actual Ra
   assert.match(css, /\.lv-checkbox\[data-state="indeterminate"\]/);
   assert.match(css, /\.lv-checkbox\[data-state="checked"\]/);
   assert.match(css, /\.lv-segmented-control__item\[data-state="active"\]/);
+  assert.match(css, /\.lv-segmented-control\[data-agent-tabs-variant="underline"\]\s*\{[^}]*background:\s*transparent/s);
+  assert.match(css, /\.lv-segmented-control__item\[data-agent-tabs-variant="underline"\]\[data-state="active"\]\s*\{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none/s);
+  assert.match(css, /\.lv-agent-choice-group\s*\{[^}]*background:\s*transparent/s);
+  assert.match(css, /\.lv-agent-choice-group__item\s*\{[^}]*padding:\s*12px 40px 12px 12px/s);
+  assert.match(css, /\.lv-agent-choice-group__item\[data-state="checked"\]\s*\{[^}]*border-color:\s*var\(--text-primary\)/s);
+  assert.match(css, /\.lv-floating-control\[data-surface-variant="product"\]\s*\{[^}]*padding:\s*6px;[^}]*border-radius:\s*var\(--radius-lg,\s*12px\)/s);
   assert.match(css, /\.lv-switch\[data-state="checked"\]/);
 });
