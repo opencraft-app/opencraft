@@ -254,6 +254,8 @@ master 源码
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
+- runtime 已收敛后允许同一阶段幂等重入，以刷新 SOPS artifact 或平台投影；active catalog 只能指向
+  已知的 foundation 或 runtime sourcePath，任何其他路径仍须 fail closed。重入不得先回退到 foundation。
 - Collaboration `im-identity.key` 的持久语义是 32 字节随机材料的 Base64 表达。bootstrap 新建时必须
   直接生成该形态；已知旧版本留下的 64 字符 hex 只能通过解码后再编码为 Base64 做无损规范化，
   不得重新随机生成或当作 IM Secret 轮换。任何其他非法形态必须在 SSM/SOPS 写入前 fail closed。
