@@ -8,7 +8,7 @@
     {
       "id": "identity-access",
       "paths": ["user/auth/**", "shadow/**", "service-gateway/**"],
-      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md"],
+      "exclude_paths": ["shadow/OWNERS", "**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md"],
       "design_docs": ["docs/engineering/domains/identity-access.md", "docs/engineering/journeys/account-to-agent.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"
@@ -32,7 +32,7 @@
     {
       "id": "site-environment-routing",
       "paths": ["frontend/src/config/**", "frontend/src/app/**", "frontend/src/services/**", "frontend/src/repositories/**", "frontend/src/lib/env*", "frontend/*.config.*", "frontend/src/app-env.d.ts", "admin-gateway/**", "gateway-dashboard/**", "nextgen-dashboard/**"],
-      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "**/i18n/**", "**/pages/marketing/**", "**/public/assets/**", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.svg", "**/*.gif", "**/*.webp", "**/*.ico"],
+      "exclude_paths": ["gateway-dashboard/OWNERS", "**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "**/i18n/**", "**/pages/marketing/**", "**/public/assets/**", "**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.svg", "**/*.gif", "**/*.webp", "**/*.ico"],
       "design_docs": ["docs/engineering/domains/site-environment-routing.md", "docs/engineering/journeys/dual-site-request-routing.md"],
       "risk": "normal",
       "owner": "wisp/mono2-maintainers"
