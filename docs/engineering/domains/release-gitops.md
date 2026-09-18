@@ -248,6 +248,9 @@ master 源码
 - SSM→SOPS 导出和后续 GitOps 投影需要相同的受控 Python `yaml` 依赖，apply 必须在读取 SSM 前
   准备并验证固定版本的隔离环境。若 DB/SSM 已幂等写入而导出失败，保留云端事实，修复工具链后
   重新只读预检并经人工审批重入；不得手工复制明文 Secret 或跳过加密投影。
+- 同一次导出从 Collaboration SSM 只选择 `gateway.token`，生成 Gateway namespace 的专用
+  `collaboration-gateway-token` SOPS Secret；投影不得包含 DSN、JWT 或 IM Secret。Gateway 激活必须
+  在该 artifact 已进入 GitOps 后独立发布，避免 source 配置先于 Secret 收敛。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。

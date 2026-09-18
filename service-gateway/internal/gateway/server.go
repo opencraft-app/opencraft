@@ -200,6 +200,12 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			strings.TrimSpace(cfg.Collaboration.UpstreamBearerTokenEnv) == "" {
 			return nil, errors.New("collaboration upstream and bearer token env are required")
 		}
+		if strings.TrimSpace(os.Getenv(cfg.Collaboration.UpstreamBearerTokenEnv)) == "" {
+			return nil, fmt.Errorf(
+				"collaboration upstream bearer token env %s is empty",
+				cfg.Collaboration.UpstreamBearerTokenEnv,
+			)
+		}
 		configuredRoutes = append(configuredRoutes, collaborationRoute(*cfg.Collaboration))
 	}
 	routes := make([]compiledRoute, 0, len(configuredRoutes))
@@ -426,6 +432,8 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/members"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/channels"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/computers-v2"},
+		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/computers-v2"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/direct-conversations"},
 		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/direct-conversations"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/direct-conversations/{directConversationId}"},
@@ -440,6 +448,7 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 		Upstream:               config.Upstream,
 		UpstreamBearerTokenEnv: config.UpstreamBearerTokenEnv,
 		Access:                 AccessAuthenticated,
+		AllowedOrigins:         append([]string(nil), config.AllowedOrigins...),
 		PathPolicy:             PathPolicyAllowlist,
 		PathAllow:              paths,
 		PublicAllow: []PublicRule{{
