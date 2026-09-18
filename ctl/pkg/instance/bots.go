@@ -62,6 +62,93 @@ os.chmod(path, 0o600)
 
 const checkHermesProfileCapabilityCommand = "hermes profile create --help >/dev/null && hermes profile delete --help >/dev/null"
 
+const alignBlankProfileSkillsScript = `from pathlib import Path
+import shutil
+import sys
+
+home = Path(sys.argv[1])
+target_profile = Path(sys.argv[2])
+root_skills = home / "skills"
+target_skills = target_profile / "skills"
+baseline_manifest = home / ".lightvela" / "base-skills"
+
+def safe_relative_path(raw):
+    value = raw.strip()
+    if not value:
+        return None
+    relative = Path(value)
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+    return relative
+
+def infer_legacy_baseline():
+    bundled_names = set()
+    bundled_manifest = root_skills / ".bundled_manifest"
+    if bundled_manifest.is_file():
+        for line in bundled_manifest.read_text(encoding="utf-8").splitlines():
+            name = line.partition(":")[0].strip()
+            if name:
+                bundled_names.add(name)
+
+    inferred = set()
+    if root_skills.is_dir():
+        for skill_file in root_skills.rglob("SKILL.md"):
+            relative = skill_file.parent.relative_to(root_skills)
+            if skill_file.parent.name in bundled_names or relative.as_posix() == "website-builder":
+                inferred.add(relative)
+    return inferred
+
+baseline = set()
+if baseline_manifest.is_file():
+    for line in baseline_manifest.read_text(encoding="utf-8").splitlines():
+        relative = safe_relative_path(line)
+        if relative is not None:
+            baseline.add(relative)
+else:
+    baseline = infer_legacy_baseline()
+
+if not baseline:
+    raise RuntimeError("LightVela base skills could not be resolved")
+
+missing_sources = [
+    relative.as_posix()
+    for relative in baseline
+    if not (target_skills / relative / "SKILL.md").is_file()
+    and not (root_skills / relative / "SKILL.md").is_file()
+]
+if missing_sources:
+    raise RuntimeError(
+        "LightVela base skills are missing: " + ", ".join(sorted(missing_sources))
+    )
+
+if target_skills.is_dir():
+    target_skill_dirs = sorted(
+        {skill_file.parent for skill_file in target_skills.rglob("SKILL.md")},
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for skill_dir in target_skill_dirs:
+        relative = skill_dir.relative_to(target_skills)
+        if relative not in baseline:
+            shutil.rmtree(skill_dir)
+
+target_skills.mkdir(parents=True, exist_ok=True)
+for relative in sorted(baseline, key=lambda path: path.as_posix()):
+    source = root_skills / relative
+    destination = target_skills / relative
+    if (destination / "SKILL.md").is_file():
+        continue
+    if destination.exists():
+        if destination.is_dir():
+            shutil.rmtree(destination)
+        else:
+            destination.unlink()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination)
+
+print(f"Aligned {len(baseline)} LightVela base skills")
+`
+
 const listHermesProfilesScript = `import asyncio
 from datetime import datetime, timezone
 import json
@@ -756,8 +843,6 @@ func buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, na
 	parts := []string{"hermes profile create", shellQuote(profileID)}
 	if sourceProfileID != "" {
 		parts = append(parts, "--clone-from", shellQuote(hermesNativeProfileID(sourceProfileID)))
-	} else {
-		parts = append(parts, "--no-skills")
 	}
 	commands := []string{"set -eu", strings.Join(parts, " ")}
 	if sourceProfileID != "" {
@@ -772,6 +857,14 @@ func buildHermesProfileCreateCommand(profileID, sourceProfileID, initialSoul, na
 			),
 		)
 	} else {
+		commands = append(commands, fmt.Sprintf(
+			"hermes_home=${HERMES_HOME:-$HOME/.hermes}; %s %s %s %s %s",
+			`"$hermes_home/hermes-agent/venv/bin/python"`,
+			shellQuote("-c"),
+			shellQuote(alignBlankProfileSkillsScript),
+			`"$hermes_home"`,
+			`"$hermes_home/profiles/`+profileID+`"`,
+		))
 		commands = append(commands, fmt.Sprintf(
 			"hermes_home=${HERMES_HOME:-$HOME/.hermes}; %s %s %s %s %s",
 			`"$hermes_home/hermes-agent/venv/bin/python"`,

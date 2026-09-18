@@ -1,5 +1,12 @@
 import type { HostConnectionProfile } from "../host-connections";
-import { environmentIdentity, type EnvironmentDirectorySnapshot, type EnvironmentEntry, type EnvironmentSource } from "./contract";
+import {
+  environmentIdentity,
+  type EnvironmentDirectorySnapshot,
+  type EnvironmentEntry,
+  type EnvironmentSource,
+  type MachineResourceActionReceipt,
+  type MachineResourceActionRequest,
+} from "./contract";
 
 /** Renderer-free catalog. No API calls, persistence, navigation or connections. */
 export class EnvironmentDirectory {
@@ -18,7 +25,9 @@ export class EnvironmentDirectory {
     if (this.closed) throw new Error("Environment directory is closed");
     if (!owner || !source.id || !source.label || !Array.isArray(source.providerIds)
       || typeof source.getSnapshot !== "function" || typeof source.subscribe !== "function"
-      || typeof source.refresh !== "function" || typeof source.matchProfile !== "function") throw new TypeError("Invalid environment source");
+      || typeof source.refresh !== "function" || typeof source.matchProfile !== "function"
+      || (source.performResourceAction !== undefined
+        && typeof source.performResourceAction !== "function")) throw new TypeError("Invalid environment source");
     if (this.sources.has(source.id)) throw new Error(`Duplicate environment source ${source.id}`);
     for (const record of this.sources.values()) {
       if (source.providerIds.some(id => record.source.providerIds.includes(id))) throw new Error("Environment provider already claimed");
@@ -37,6 +46,37 @@ export class EnvironmentDirectory {
     const sources = [...this.sources.values()].filter(({source}) => !sourceId || source.id === sourceId);
     await Promise.all(sources.map(({source}) => source.refresh()));
   }
+  async performResourceAction(
+    request: MachineResourceActionRequest,
+  ): Promise<MachineResourceActionReceipt> {
+    if (!request.operationId.trim()) throw new TypeError("Machine resource operationId must not be empty");
+    const entry = this.snapshot.entries.find((candidate) => candidate.id === request.environmentId);
+    if (entry === undefined) throw new Error(`Unknown environment ${request.environmentId}`);
+    if (entry.resource === null) throw new Error(`Environment ${request.environmentId} is not provider-managed`);
+    if (entry.resource.capabilities[request.action] !== true) {
+      throw new Error(`Environment ${request.environmentId} does not support ${request.action}`);
+    }
+    const record = this.sources.get(entry.sourceId);
+    if (record === undefined
+      || entry.resource.providerId !== record.source.id
+      || record.source.performResourceAction === undefined) {
+      throw new Error(`Environment ${request.environmentId} has no resource action owner`);
+    }
+    const receipt = await record.source.performResourceAction(request);
+    if (receipt.accepted !== true
+      || receipt.environmentId !== request.environmentId
+      || receipt.action !== request.action
+      || receipt.operationId !== request.operationId) {
+      throw new Error("Machine resource provider returned an invalid receipt");
+    }
+    const current = this.snapshot.entries.find((candidate) => candidate.id === entry.id);
+    if (this.closed
+      || this.sources.get(entry.sourceId) !== record
+      || current?.resource?.providerId !== entry.resource.providerId) {
+      throw new Error("Machine resource action completed after its provider owner changed");
+    }
+    return receipt;
+  }
   close() {
     if (this.closed) return;
     this.closed = true;
@@ -54,7 +94,7 @@ export class EnvironmentDirectory {
       if (this.ownedProviders.has(profile.providerId)) continue;
       add({id: environmentIdentity("configured", profile.hostId), sourceId: "configured", name: profile.displayName,
         location: profile.hostKind === "local" ? "此设备" : profile.executionLocation ?? "手动连接",
-        lifecycle: profile.enabled ? "ready" : "disabled", connectable: profile.enabled, profile});
+        resource: null, connectable: profile.enabled, profile});
     }
     const sources = [...this.sources.values()].map(({source}) => {
       const state = source.getSnapshot();

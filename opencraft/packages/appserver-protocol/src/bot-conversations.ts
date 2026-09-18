@@ -57,6 +57,27 @@ export type AppServerBotAvatar =
   | { readonly type: "generated"; readonly seed: string; readonly palette?: string }
   | { readonly type: "resource"; readonly uri: string };
 
+export interface AppServerBotModelSelection {
+  readonly provider: string;
+  readonly model: string;
+}
+
+export interface AppServerBotModelProviderOption {
+  readonly provider: string;
+  readonly name: string;
+  readonly models: readonly string[];
+  readonly authenticated: boolean;
+  readonly warning?: string;
+}
+
+export interface AppServerBotConfiguration {
+  readonly model: AppServerBotModelSelection | null;
+}
+
+export interface AppServerBotConfigurationOptions {
+  readonly providers: readonly AppServerBotModelProviderOption[];
+}
+
 export interface AppServerBotDescriptor {
   readonly botId: BotId;
   readonly revision: number;
@@ -65,6 +86,10 @@ export interface AppServerBotDescriptor {
   readonly avatar?: AppServerBotAvatar;
   readonly status: "available" | "unavailable" | "disabled";
   readonly capabilities: readonly string[];
+  /** Native runtime Profile identity when this Bot is backed by a Hermes Profile. */
+  readonly runtimeProfileId?: string;
+  /** Profile-level default used for future direct and Hosted Room executions. */
+  readonly model?: AppServerBotModelSelection;
   /** Per-entity operations, constrained further by Host botManagement. */
   readonly management?: { readonly rename: boolean; readonly clone: boolean; readonly delete: boolean };
 }
@@ -85,6 +110,8 @@ export interface AppServerBotConversationDescriptor {
   readonly createdAtMs: number;
   readonly updatedAtMs: number;
   readonly archivedAtMs?: number;
+  /** Historical room whose roster can no longer execute writes. */
+  readonly readOnly?: boolean;
 }
 
 export interface AppServerBotAttachment {
@@ -205,6 +232,28 @@ export interface AppServerBotMethodMap {
   "bot/read": {
     params: { readonly botId: BotId };
     result: { readonly bot: AppServerBotDescriptor };
+  };
+  "bot/configuration/read": {
+    params: { readonly botId: BotId };
+    result: { readonly configuration: AppServerBotConfiguration };
+  };
+  "bot/configuration/options": {
+    params: { readonly botId: BotId };
+    result: AppServerBotConfigurationOptions;
+  };
+  "bot/configuration/update": {
+    params: {
+      readonly botId: BotId;
+      readonly expectedRevision: number;
+      readonly model: AppServerBotModelSelection;
+      readonly confirmExpensiveModel?: boolean;
+    };
+    result: {
+      readonly bot: AppServerBotDescriptor;
+      readonly configuration: AppServerBotConfiguration;
+      readonly applied: boolean;
+      readonly confirmationRequired?: { readonly message: string };
+    };
   };
   "bot/create": {
     params: {

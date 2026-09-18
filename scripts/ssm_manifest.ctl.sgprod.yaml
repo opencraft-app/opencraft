@@ -21,6 +21,7 @@ items:
   required_keys:
   - CTL_TRADE_TOKEN
   - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+  - REFERRAL_PULSAR_TOKEN
   - SANDBOX_API_KEY
   labels:
     app.kubernetes.io/name: ctl

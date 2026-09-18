@@ -15,10 +15,12 @@ import type {
 } from "@opencraft/composer-core";
 import {
   draftSubmissionOwnsNavigation,
+  type MachineResourceLifecycle,
   type NewThreadDraftSnapshot,
 } from "@opencraft/workbench-runtime";
 import { menuGeometry } from "@opencraft/design-system/tokens";
-import { ConnectionStatus } from "./target-connection-status";
+import { ConnectionStatus, TargetConnectionStatus } from "./target-connection-status";
+import { machineResourcePhaseLabel } from "./machine-resource-presentation";
 import {
   Check,
   ChevronDown,
@@ -51,6 +53,7 @@ export interface DraftHostOption {
   readonly transportEndpoint: string | null;
   readonly executionLocation: string | null;
   readonly workspaceBrowseRoots: readonly string[];
+  readonly resource: MachineResourceLifecycle | null;
 }
 
 export interface NewThreadDraftPageProps {
@@ -218,6 +221,9 @@ function ExecutionUtilityBar({
     () => hostOptions.find((host) => host.id === activeHostId) ?? null,
     [activeHostId, hostOptions],
   );
+  const displayedHost = switchingHostId === null
+    ? activeHost
+    : hostOptions.find((host) => host.id === switchingHostId) ?? activeHost;
   const canBrowseWorkspace = nativeWorkspacePicking || (activeHost?.workspaceBrowseRoots.length ?? 0) > 0
     || workspace.runtimeWorkspaceRoots.length > 0;
   const filteredWorkspaces = useMemo(() => {
@@ -335,9 +341,7 @@ function ExecutionUtilityBar({
             disabled={executionLocked || switchingHostId !== null}
           >
             <Globe2 size={15} />
-            <span>{switchingHostId === null
-              ? activeHost === null ? "Unavailable target" : activeHost.label
-              : "Connecting…"}</span>
+            <span>{displayedHost === null ? "Unavailable target" : displayedHost.label}</span>
             <ConnectionStatus phase={switchingHostId === null ? connectionPhase : "connecting"} />
             <ChevronDown size={12} />
           </button>
@@ -356,6 +360,7 @@ function ExecutionUtilityBar({
             <div className="new-thread-project-menu__items">
               {hostOptions.map((host) => {
                 const selected = host.id === activeHostId;
+                const resourceLabel = machineResourcePhaseLabel(host.resource);
                 return (
                   <DropdownMenu.Item
                     key={host.id}
@@ -372,11 +377,14 @@ function ExecutionUtilityBar({
                     }}
                   >
                     <Globe2 size={15} />
+                    <TargetConnectionStatus hostId={host.id} />
                     <span>
                       <strong>{host.label}</strong>
-                      <small>{hostKindLabel(host.kind)}{host.executionLocation
-                        ? ` · ${host.executionLocation}`
-                        : ""}</small>
+                      <small>{[
+                        hostKindLabel(host.kind),
+                        host.executionLocation,
+                        resourceLabel,
+                      ].filter(Boolean).join(" · ")}</small>
                     </span>
                     {selected ? <Check size={15} /> : null}
                   </DropdownMenu.Item>

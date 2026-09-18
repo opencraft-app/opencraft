@@ -16,6 +16,7 @@ type Store interface {
 	CreateCode(context.Context, *domain.Code) error
 	StatsForUser(context.Context, string) (domain.Stats, error)
 	RecordRegistration(context.Context, events.Envelope, events.UserRegistered) error
+	RecordClaim(context.Context, events.Envelope, events.UserReferralClaimed) error
 	RecordFirstPaid(context.Context, events.Envelope, events.PassFirstPaid) error
 	RecordRefunded(context.Context, events.Envelope, events.PassRefunded) error
 	ClaimRewards(context.Context, time.Time, int, string, time.Duration) ([]domain.Reward, error)

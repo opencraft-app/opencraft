@@ -19,10 +19,10 @@ import {
 } from "../appearance-theme";
 import type { HostlessWebWorkbenchApplicationSupervisor } from "../runtime/appserver-runtime-context";
 import { useExtensionWorkbenchProjection } from "../runtime/extension-workbench-projection";
-import { parseApplicationRouteUrl, type ApplicationRoute } from "../runtime/workbench-navigation";
 import { getWindowChromePolicy, useWindowChrome } from "../window-chrome";
 import { AppShell } from "./app-shell";
 import { InternalDeveloperModeGate } from "./internal-developer-mode-gate";
+import { useInternalDeveloperMode } from "../internal-developer-mode";
 import { isLightVelaStandaloneManagementSection } from "./lightvela-management-route";
 import { LightVelaWorkNavigation } from "./lightvela-work-navigation";
 import {
@@ -36,33 +36,16 @@ import {
   AppShellHeader,
   AppShellNavigationControls,
 } from "./app-shell-header";
+import {
+  AppShellRouteRegionsProvider,
+  appShellPlatformViewRegions,
+  useAppShellRouteHeader,
+} from "./app-shell-route-regions";
 import { Sidebar } from "./sidebar";
 import { Button } from "./ui/button";
-import {
-  getSidebarMaximumWidth,
-  SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MINIMUM_WIDTH,
-} from "./sidebar-resize-handle";
 import { useResponsiveSidebarDock } from "./use-responsive-sidebar-dock";
+import { usePersistedSidebarWidth } from "./use-persisted-sidebar-width";
 
-const HOSTLESS_APPLICATION_RETURN_KEY = "vela.hostless.application.return.v2";
-
-function hasHostlessApplicationReturn(value: unknown): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as Record<string, unknown>)[HOSTLESS_APPLICATION_RETURN_KEY] === true
-  );
-}
-
-function hostlessApplicationHistoryState(value: unknown): Record<string, unknown> {
-  return {
-    ...(typeof value === "object" && value !== null
-      ? (value as Record<string, unknown>)
-      : {}),
-    [HOSTLESS_APPLICATION_RETURN_KEY]: true,
-  };
-}
 const SettingsContent = lazy(async () => {
   const module = await import("./settings-page");
   return { default: module.SettingsContent };
@@ -78,26 +61,17 @@ export function HostlessWorkbench({
 }: {
   readonly supervisor: HostlessWebWorkbenchApplicationSupervisor;
 }) {
+  const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearanceTheme();
   const windowChrome = useWindowChrome();
   const chromePolicy = getWindowChromePolicy(windowChrome);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const storedWidth = Number.parseFloat(
-      window.localStorage.getItem("sidebar-width") ?? "",
-    );
-    const initialWidth = Number.isFinite(storedWidth)
-      ? storedWidth
-      : SIDEBAR_DEFAULT_WIDTH;
-    return Math.max(
-      SIDEBAR_MINIMUM_WIDTH,
-      Math.min(initialWidth, getSidebarMaximumWidth(Number.POSITIVE_INFINITY)),
-    );
-  });
-  const [applicationRoute, setApplicationRoute] = useState<ApplicationRoute>(() =>
-    parseApplicationRouteUrl(new URL(window.location.href))
-  );
+  const { width: sidebarWidth, commit: commitSidebarWidth } = usePersistedSidebarWidth();
+  const navigation = supervisor.navigation;
+  const navigationSnapshot = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot, navigation.getSnapshot);
+  const applicationRoute = navigationSnapshot.applicationRoute;
+  const routeHeader = useAppShellRouteHeader(JSON.stringify(applicationRoute));
   const settingsSection = applicationRoute.kind === "settings" ? applicationRoute.slug : null;
   const settingsOpen = settingsSection !== null;
   const settingsContributionSnapshot = useSyncExternalStore(
@@ -114,9 +88,6 @@ export function HostlessWorkbench({
     && settingsSection !== null
     && isLightVelaStandaloneManagementSection(settingsSection);
   const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
-  const applicationReturnsToPreviousEntry = useRef(
-    applicationRoute.kind !== "conversation" && hasHostlessApplicationReturn(window.history.state),
-  );
   const profileSnapshot = useSyncExternalStore(
     supervisor.hostProfiles.subscribe,
     supervisor.hostProfiles.getSnapshot,
@@ -138,92 +109,17 @@ export function HostlessWorkbench({
     };
   }, [sidebarWidth]);
 
-  useEffect(() => {
-    const restoreRoute = () => {
-      const route = parseApplicationRouteUrl(new URL(window.location.href));
-      applicationReturnsToPreviousEntry.current =
-        route.kind !== "conversation" &&
-        hasHostlessApplicationReturn(window.history.state);
-      setApplicationRoute(route);
-    };
-    window.addEventListener("popstate", restoreRoute);
-    return () => window.removeEventListener("popstate", restoreRoute);
-  }, []);
-
-  const openSettings = (section = "appearance") => {
-    if (applicationRoute.kind === "settings" && applicationRoute.slug === section) return;
-    const url = `/settings/${encodeURIComponent(section)}`;
-    if (applicationRoute.kind === "conversation") {
-      applicationReturnsToPreviousEntry.current = true;
-      window.history.pushState(
-        hostlessApplicationHistoryState(window.history.state),
-        "",
-        url,
-      );
-    } else {
-      window.history.replaceState(window.history.state, "", url);
-    }
-    setApplicationRoute({ kind: "settings", slug: section });
-  };
-  const closeApplicationRoute = () => {
-    if (applicationReturnsToPreviousEntry.current) {
-      window.history.back();
-      return;
-    }
-    window.history.replaceState(window.history.state, "", "/");
-    setApplicationRoute({ kind: "conversation" });
-  };
-  const openExtensionView = (viewId: string, resourceUri: string | null = null) => {
-    if (
-      applicationRoute.kind === "extension-view" &&
-      applicationRoute.viewId === viewId &&
-      applicationRoute.resourceUri === resourceUri
-    ) return;
-    const parameters = resourceUri === null
-      ? ""
-      : `?${new URLSearchParams({ resource: resourceUri })}`;
-    const url = `/views/${encodeURIComponent(viewId)}${parameters}`;
-    if (applicationRoute.kind === "conversation") {
-      applicationReturnsToPreviousEntry.current = true;
-      window.history.pushState(hostlessApplicationHistoryState(window.history.state), "", url);
-    } else {
-      window.history.replaceState(window.history.state, "", url);
-    }
-    setApplicationRoute({ kind: "extension-view", viewId, resourceUri });
-  };
-  const replaceExtensionViewResource = (viewId: string, resourceUri: string) => {
-    if (
-      applicationRoute.kind !== "extension-view" ||
-      applicationRoute.viewId !== viewId ||
-      applicationRoute.resourceUri === resourceUri
-    ) return;
-    const parameters = new URLSearchParams({ resource: resourceUri });
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `/views/${encodeURIComponent(viewId)}?${parameters}`,
-    );
-    setApplicationRoute({ kind: "extension-view", viewId, resourceUri });
-  };
-  const pushExtensionViewResource = (viewId: string, resourceUri: string) => {
-    if (
-      applicationRoute.kind !== "extension-view" ||
-      applicationRoute.viewId !== viewId ||
-      applicationRoute.resourceUri === resourceUri
-    ) return;
-    const parameters = new URLSearchParams({ resource: resourceUri });
-    window.history.pushState(
-      hostlessApplicationHistoryState(window.history.state),
-      "",
-      `/views/${encodeURIComponent(viewId)}?${parameters}`,
-    );
-    setApplicationRoute({ kind: "extension-view", viewId, resourceUri });
-  };
+  const openSettings = navigation.openSettings;
+  const closeApplicationRoute = navigation.openChat;
+  const openExtensionView = navigation.openExtensionView;
+  const replaceExtensionViewResource = navigation.replaceExtensionViewResource;
+  const pushExtensionViewResource = navigation.pushExtensionViewResource;
   const extensionHost = useMemo<PlatformViewHost>(() => ({
     platform: (globalThis as typeof globalThis & { opencraftDesktop?: { readonly kind?: string } })
       .opencraftDesktop?.kind === "electron" ? "electron" : "web",
     activeHostId: "",
     profiles: profileSnapshot.profiles,
+    ensureRuntimeReady: async (hostId) => { await supervisor.agentRuntimes.ensureReady(hostId); },
     authentication: supervisor.authenticationFlows,
     provisionHost: supervisor.provisionHost,
     removeHost: supervisor.removeHost,
@@ -240,30 +136,29 @@ export function HostlessWorkbench({
     botDirectory: supervisor.botDirectory,
     host: extensionHost,
     applicationRoute,
+    internalDeveloperMode,
     openSettings,
     openView: openExtensionView,
   });
+  useEffect(() => {
+    if (applicationRoute.kind === "extension-view" && extensionProjection.activeView === null) {
+      closeApplicationRoute();
+    }
+  }, [applicationRoute.kind, extensionProjection.activeView]);
   useEffect(() => {
     if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
   }, [extensionProjection.account?.snapshot.phase]);
   const authenticationPresentation = useAuthenticationPresentation(supervisor.authenticationFlows, extensionProjection.account, JSON.stringify(applicationRoute));
   const sharedSidebarOpen = sidebarOpen;
-  const selectSettingsSection = (section: string) => openSettings(section);
+  const selectSettingsSection = (section: string, mode?: "push" | "replace") => openSettings(section, mode);
   const collapseSidebar = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
   const expandSidebar = useCallback(() => setSidebarOpen(true), [setSidebarOpen]);
-  const commitSidebarWidth = useCallback((width: number, persist: boolean) => {
-    setSidebarWidth(width);
-    if (persist) window.localStorage.setItem("sidebar-width", String(width));
-  }, []);
-  const canGoBack =
-    applicationRoute.kind !== "conversation" &&
-    applicationReturnsToPreviousEntry.current;
-  const canGoForward = false;
+  const { canGoBack, canGoForward } = navigationSnapshot;
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((open) => !open);
   }, [setSidebarOpen]);
-  const navigateBack = useCallback(() => window.history.back(), []);
-  const navigateForward = useCallback(() => window.history.forward(), []);
+  const navigateBack = navigation.back;
+  const navigateForward = navigation.forward;
   const header = (
     <AppShellHeader
       title={
@@ -284,6 +179,8 @@ export function HostlessWorkbench({
       onBack={navigateBack}
       onForward={navigateForward}
       navigationActions={chromePolicy.leadingNavigationActions}
+      routeHeaderActive={routeHeader.active}
+      routeHeaderHostRef={routeHeader.hostRef}
     />
   );
   const settingsNavigation = settingsOpen ? (
@@ -315,7 +212,7 @@ export function HostlessWorkbench({
       bots={extensionProjection.bots}
       sidebarLayout={supervisor.sidebarLayout}
       botCreation={extensionProjection.botCreation}
-      onNewTask={() => undefined}
+      onNewTask={closeApplicationRoute}
       onOpenSettings={() => openSettings()}
       onSelectThread={() => undefined}
       threads={[]}
@@ -346,6 +243,7 @@ export function HostlessWorkbench({
           void showAnnouncementLab(supervisor.extensions.announcements);
         }}
         platformViewRenderers={supervisor.platformViewRenderers}
+        regions={appShellPlatformViewRegions}
         profiles={profileSnapshot.profiles}
         themeId={appearance.themeId}
         themePreference={appearance.preference}
@@ -390,6 +288,10 @@ export function HostlessWorkbench({
   return (
     <QueryClientProvider client={supervisor.queryClient}>
       <InternalDeveloperModeGate />
+      <AppShellRouteRegionsProvider
+        controller={routeHeader.controller}
+        target={routeHeader.target}
+      >
       <AppShell
         navigation={{
           settingsActive: routeSettingsOpen,
@@ -413,7 +315,7 @@ export function HostlessWorkbench({
             ? "thread-edge-scroll"
             : "default"
         }
-        header={standaloneManagementOpen ? null : header}
+        header={header}
         floatingSidebarHeader={(onDock) => (
           <AppShellNavigationControls
             hostRole="transient"
@@ -469,6 +371,7 @@ export function HostlessWorkbench({
             )}
         </div>
       </AppShell>
+      </AppShellRouteRegionsProvider>
       <ModalHost requests={modalRequests} />
     </QueryClientProvider>
   );

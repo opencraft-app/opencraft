@@ -101,6 +101,12 @@ func (s *Service) Ingest(ctx context.Context, raw []byte) error {
 			return fmt.Errorf("decode user.registered.v1: %w", err)
 		}
 		return s.store.RecordRegistration(ctx, event, payload)
+	case events.TypeUserReferralClaimed:
+		var payload events.UserReferralClaimed
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return fmt.Errorf("decode user.referral_claimed.v1: %w", err)
+		}
+		return s.store.RecordClaim(ctx, event, payload)
 	case events.TypePassFirstPaid:
 		var payload events.PassFirstPaid
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {

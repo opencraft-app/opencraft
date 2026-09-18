@@ -5,6 +5,11 @@ import { initializeAppearanceTheme } from "./appearance-theme";
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { reportRuntimeError } from "./runtime-error-reporting";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
+import {
+  openWorkbenchUiPreferences,
+  UiPreferencesProvider,
+} from "./runtime/ui-preferences-runtime";
+import type { UiPreferencesRuntime } from "@opencraft/ui-preferences";
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/inter/wght-italic.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
@@ -32,6 +37,7 @@ type BootstrapState =
       readonly phase: "ready";
       readonly module: WorkbenchModule;
       readonly application: WebWorkbenchApplication;
+      readonly preferences: UiPreferencesRuntime;
     }
   | { readonly phase: "error"; readonly error: Error };
 
@@ -81,6 +87,7 @@ function ApplicationBootstrap() {
   useEffect(() => {
     let disposed = false;
     let application: WebWorkbenchApplication | null = null;
+    let preferences: UiPreferencesRuntime | null = null;
     // The query gives the bootstrap boundary its own module identity after a
     // dev-server allowlist or dependency-graph restart. Vite strips it into
     // the normal hashed production chunk; TypeScript does not model Vite
@@ -88,13 +95,14 @@ function ApplicationBootstrap() {
     // @ts-expect-error Vite resource query
     void import("./workbench-entry?opencraft-entry=1")
       .then(async (module) => {
+        preferences = await openWorkbenchUiPreferences();
         const created = await module.a();
         application = created;
         if (disposed) {
-          await created.dispose();
+          await Promise.all([created.dispose(), preferences.close()]);
           return;
         }
-        setState({ phase: "ready", module, application: created });
+        setState({ phase: "ready", module, application: created, preferences });
       })
       .catch((cause) => {
         if (disposed) return;
@@ -105,13 +113,18 @@ function ApplicationBootstrap() {
     return () => {
       disposed = true;
       if (application !== null) void application.dispose().catch(error => reportRuntimeError(error, "application-disposal"));
+      if (preferences !== null) void preferences.close().catch(error => reportRuntimeError(error, "application-disposal"));
     };
   }, []);
 
   if (state.phase === "error") throw state.error;
   if (state.phase === "loading") return <StartupShell />;
   const WorkbenchRoot = state.module.b;
-  return <WorkbenchRoot application={state.application} />;
+  return (
+    <UiPreferencesProvider runtime={state.preferences}>
+      <WorkbenchRoot application={state.application} />
+    </UiPreferencesProvider>
+  );
 }
 
 const reactRoot = ReactDOM.createRoot(rootElement);

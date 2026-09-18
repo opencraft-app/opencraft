@@ -22,7 +22,7 @@ test("LightVela Web release publishes its own checked product artifact", async (
   assert.equal(manifest.scripts["deploy:web"], "npm run build:web:release && npm run publish:web");
 });
 
-test("browser release builds use Rolldown minification without a second obfuscation pass", async () => {
+test("release builds use standard Oxc minification without aggressive obfuscation", async () => {
   const packageSource = await readFile(new URL("../package.json", import.meta.url), "utf8");
   const packageManifest = JSON.parse(packageSource);
   const viteSource = await readFile(
@@ -32,13 +32,12 @@ test("browser release builds use Rolldown minification without a second obfuscat
 
   for (const scriptName of ["build:web:release", "build:lightvela-web:release", "build:electron:release"]) {
     const script = packageManifest.scripts[scriptName];
-    assert.match(script, /OPENCRAFT_RELEASE_MINIFY=ultra/u);
-    assert.doesNotMatch(script, /obfuscate-web-release|obfuscate-electron-host\.mjs browser/u);
+    assert.match(script, /OPENCRAFT_RELEASE_MINIFY=standard/u);
+    assert.doesNotMatch(script, /obfuscate-web-release|obfuscate-electron-host/u);
   }
   assert.match(viteSource, /minify:\s*"oxc"/u);
-  assert.match(viteSource, /maxIterations:\s*10/u);
-  assert.match(viteSource, /toplevel:\s*true/u);
-  assert.doesNotMatch(viteSource, /OPENCRAFT_RELEASE_OBFUSCATION|releaseObfuscation/u);
+  assert.doesNotMatch(viteSource, /maxIterations|toplevel:\s*true|sequences:\s*true/u);
+  assert.doesNotMatch(viteSource, /OPENCRAFT_RELEASE_OBFUSCATION|releaseObfuscation|ultra/u);
 });
 
 async function createFixture(root, buildId, assetName, assetSource) {

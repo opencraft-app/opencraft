@@ -205,11 +205,13 @@ test("non-partial terminal failures own only the typed error surface", () => {
     text: message,
     status: "error",
     error: message,
+    error_surface: { layer: "billing", code: "billing", retryable: false },
     recoverable: true,
   });
 
   assert.equal(turn.status, "failed");
   assert.equal(turn.error?.message, message);
+  assert.deepEqual(turn.error?.errorSurface, { layer: "billing", code: "billing", retryable: false });
   assert.equal(turn.items.some(item => item.type === "agentMessage"), false);
   assert.equal(notifications.at(-1)?.method, "turn/completed");
 });

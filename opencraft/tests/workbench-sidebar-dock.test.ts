@@ -138,9 +138,25 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
   assert.match(navigationSource, /data-shell-navigation-motion="geometry"/u);
   assert.match(navigationSource, /isAnonymousShellAccount\(config\.account\)/u);
   assert.match(navigationSource, /config\.account\?\.onOpen\(\)/u);
+  assert.doesNotMatch(navigationSource, /Keep in sidebar|Unpin from sidebar/u);
+  assert.match(navigationSource, /dispatch\(\{ type: "pin", surface, pinned: true \}\)/u);
   assert.match(navigationContentSource, /return "Sign in"/u);
   assert.match(navigationSource, /useTransform\(\s*\[progress, expandedWidth\]/u);
   assert.match(navigationSource, /data-surface=\{surface\}/u);
+  assert.match(navigationSource, /useUiPreferencesRuntime\(\)/u);
+  assert.doesNotMatch(navigationSource, /localStorage\.(?:getItem|setItem)/u,
+    "Shell Navigation delegates durable state to UiPreferencesRuntime");
+  const appSource = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  const hostlessSource = readFileSync(
+    new URL("../apps/workbench-web/src/components/hostless-workbench.tsx", import.meta.url),
+    "utf8",
+  );
+  for (const source of [appSource, hostlessSource]) {
+    assert.match(source, /usePersistedSidebarWidth\(\)/u);
+    assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
+  }
+  assert.match(navigationSource, /surface === "applications" \? <LayoutGrid aria-hidden="true" size=\{18\}/u,
+    "the Applications entrance uses the shared Lucide app-grid glyph rather than a sidebar-state icon");
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
   assert.doesNotMatch(navigationStyles, /&:last-child/u,

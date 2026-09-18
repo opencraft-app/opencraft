@@ -19,7 +19,7 @@ const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
 const includeBuiltinAgentsPlugin = isElectronRenderer;
-const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "ultra";
+const releaseMinification = process.env.OPENCRAFT_RELEASE_MINIFY === "standard";
 
 // Vite's native import.meta.env projection is honored by both the dev module
 // server and production bundler. Keep product identity out of ad-hoc globals:
@@ -254,8 +254,9 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    // Vite 8 uses Rolldown + Oxc. Release builds select Rolldown's full
-    // compression mode explicitly; `dce-only` is intentionally insufficient.
+    // Vite 8 uses Rolldown + Oxc. Release builds keep the standard Oxc
+    // minifier; aggressive secondary compression/mangling has caused
+    // renderer hangs and is intentionally not part of the release contract.
     minify: "oxc",
     rolldownOptions: releaseMinification ? {
       output: {
@@ -265,28 +266,6 @@ export default defineConfig({
         entryFileNames: "assets/a-[hash].js",
         chunkFileNames: "assets/a-[hash].js",
         assetFileNames: "assets/a-[hash][extname]",
-        minify: {
-          compress: {
-            target: "es2022",
-            dropDebugger: true,
-            // Host connection staging is observable behavior in production.
-            // The LightVela transport emits structured, secret-free timing
-            // events that must survive Oxc's release compression pass.
-            dropConsole: false,
-            unused: true,
-            joinVars: true,
-            sequences: true,
-            maxIterations: 10,
-          },
-          mangle: {
-            toplevel: true,
-            keepNames: false,
-          },
-          codegen: {
-            removeWhitespace: true,
-            legalComments: "none",
-          },
-        },
       },
     } : undefined,
     // Hidden maps remain available to an error collector, while the release

@@ -20,11 +20,14 @@ import type {
   User,
   WorkspaceMessage,
 } from "../domain/types";
+import { CREDIT_PACK_DENOMINATIONS } from "../domain/credit-pack";
 import { planCatalog } from "../domain/plan-catalog";
+import { isGlobal } from "../lib/region";
 import { getAccountPreviewOverrides } from "./account-preview-states";
 import type { OAuthProvider, WeChatOAuthMode } from "../lib/oauth";
 import type {
   BotRepository,
+  CreditRepository,
   DashboardSnapshot,
   PaymentMethod,
   RealnameFaceIdAttempt,
@@ -1244,8 +1247,71 @@ export const createFakeRepositories = (): Repositories => {
       },
     },
     bots: createBotRepository(),
+    credit: createCreditRepository(),
   };
 };
+
+/*
+ * 积分包假数据仓储。
+ *
+ * 真实实现见 http-repositories.ts 的 createHttpCreditRepository；
+ * 本文件用于本地预览与测试，价格为演示值，不代表真实定价。
+ */
+const createCreditRepository = (): CreditRepository => ({
+  async listCreditProducts() {
+    await wait(NETWORK_DELAY_MS);
+    return CREDIT_PACK_DENOMINATIONS.map((denomination) => ({
+      product_id: denomination.product_id,
+      product_name: `${denomination.credit_total} 积分包`,
+      llm_gateway_plan_id: `plan-${denomination.credit_total}`,
+      state: "ONLINE" as const,
+    }));
+  },
+  async inquireCreditPrice(productId) {
+    await wait(NETWORK_DELAY_MS);
+    const denomination = CREDIT_PACK_DENOMINATIONS.find((item) => item.product_id === productId);
+    if (!denomination) {
+      throw new Error(`未知积分包商品：${productId}`);
+    }
+    /* 演示价（单位：分，与真实接口一致——联调文档 §5「最小货币单位」）：
+       国内 100 积分 = 1 元 = 100 分；国际 500 积分 = 1 美元 = 100 分 */
+    const cents = isGlobal ? denomination.credit_total / 5 : denomination.credit_total;
+    const centsStr = cents.toFixed(0);
+    return {
+      product_id: productId,
+      real_total_cost: centsStr,
+      total_cost: centsStr,
+      currency: isGlobal ? ("USD" as const) : ("CNY" as const),
+    };
+  },
+  async listCreditPackages() {
+    await wait(NETWORK_DELAY_MS);
+    const now = Date.now();
+    const inDays = (days: number) => new Date(now + days * 24 * 60 * 60 * 1000).toISOString();
+    return [
+      { credit_type: "paid" as const, credit_total: 1000, credit_available: 620, expired_time: inDays(12) },
+      { credit_type: "paid" as const, credit_total: 4000, credit_available: 4000, expired_time: inDays(27) },
+    ];
+  },
+  async createCreditOrder(productId) {
+    await wait(NETWORK_DELAY_MS);
+    const denomination = CREDIT_PACK_DENOMINATIONS.find((item) => item.product_id === productId);
+    if (!denomination) {
+      throw new Error(`未知积分包商品：${productId}`);
+    }
+    const serial = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+    return { dealName: `2026091000000${serial}`, bigOrderId: `20260910000000${serial}` };
+  },
+  async createCreditOrderUrl(input) {
+    await wait(NETWORK_DELAY_MS);
+    /* 本地预览不做真实支付：返回可识别的假地址，need_charge=1 以便走完整跳转分支 */
+    return {
+      deal_name: input.deal_name,
+      pay_url: `https://example.invalid/fake-credit-checkout?deal=${encodeURIComponent(input.deal_name)}`,
+      need_charge: 1,
+    };
+  },
+});
 
 const createBotRepository = (): BotRepository => {
   const fakeConnectedChannels = new Set<string>();

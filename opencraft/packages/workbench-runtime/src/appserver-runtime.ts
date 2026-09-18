@@ -8,6 +8,9 @@ import type {
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
 import type {
+  AppServerMethod,
+  AppServerMethodParams,
+  AppServerMethodResult,
   AppServerInitializeParams,
   AppServerInitializeResponse,
   ModelListParams,
@@ -138,7 +141,10 @@ export interface AppServerRuntimeClock {
 
 export interface AppServerWorkbenchRuntimeConfig {
   readonly hostId: string;
-  readonly transport: DuplexTransport;
+  /** Fixed transport for isolated runtimes and tests. A closed fixed transport is terminal. */
+  readonly transport?: DuplexTransport;
+  /** Creates one transport for each AppServer Client generation. */
+  readonly createTransport?: () => DuplexTransport;
   readonly hostKind?: AppServerHostKind;
   readonly initialize?: AppServerInitializeParams;
   readonly requestTimeoutMs?: number;
@@ -155,6 +161,33 @@ export interface AppServerWorkbenchRuntimeConfig {
     AppServerClientRegistryService,
     "create" | "remove"
   >;
+}
+
+/** Count the model-callable definitions in an AppServer dynamic-tool catalog. */
+export function countDynamicToolDefinitions(
+  specs: readonly DynamicToolSpec[],
+): number {
+  return specs.reduce(
+    (count, spec) => count + (spec.type === "namespace" ? spec.tools.length : 1),
+    0,
+  );
+}
+
+/**
+ * A Thread capability registration is a readiness lease, not best-effort
+ * metadata. The Renderer owns the handlers, so a partial Host registration
+ * must keep the Thread out of the resident/executable phase.
+ */
+export function verifyDynamicToolRegistration(
+  specs: readonly DynamicToolSpec[],
+  result: { readonly registered: number },
+): void {
+  const expected = countDynamicToolDefinitions(specs);
+  if (result.registered !== expected) {
+    throw new Error(
+      `Host registered ${result.registered} of ${expected} dynamic tools`,
+    );
+  }
 }
 
 export interface StartThreadOptions {
@@ -207,6 +240,14 @@ export interface AppServerHostResourcePort {
   fetchLoopback(input: string, init?: RequestInit): Promise<Response>;
 }
 
+/** Raw protocol access after this runtime has completed AppServer initialize. */
+export interface AppServerProtocolResourcePort {
+  request<TMethod extends AppServerMethod>(
+    method: TMethod,
+    params: AppServerMethodParams<TMethod>,
+  ): Promise<AppServerMethodResult<TMethod>>;
+}
+
 interface AppServerLoopbackHttpTransport {
   fetchLoopback(input: string, init?: RequestInit): Promise<Response>;
 }
@@ -243,6 +284,7 @@ export interface AppServerFileWatchLease {
 
 export interface AppServerWorkbenchRuntime {
   readonly resources: {
+    readonly protocol: AppServerProtocolResourcePort;
     readonly host: AppServerHostResourcePort;
     readonly threads: AppServerThreadResourcePort;
     readonly projects: AppServerProjectResourcePort;
@@ -352,6 +394,9 @@ const volatileThreadViewReplicaStorage: ReplicaClientStorage<ReplicaJsonValue> =
 export function createAppServerWorkbenchRuntime(
   config: AppServerWorkbenchRuntimeConfig,
 ): AppServerWorkbenchRuntime {
+  if ((config.transport === undefined) === (config.createTransport === undefined)) {
+    throw new TypeError("AppServer Workbench requires exactly one transport ownership mode");
+  }
   const hostId = asHostId(config.hostId);
   const clock = config.clock ?? defaultClock;
   const reconnectDelays = config.reconnectDelaysMs ?? [
@@ -379,6 +424,9 @@ export function createAppServerWorkbenchRuntime(
   let ownedRegistry: Awaited<
     ReturnType<typeof createCordisAppServerRegistry>
   > | null = null;
+  let currentTransport: DuplexTransport | null = config.createTransport === undefined
+    ? config.transport ?? null
+    : null;
   let client: AppServerClient | null = null;
   let session: CordisThreadSessionRuntime | null = null;
   let interactions: AppServerInteractionBroker | null = null;
@@ -449,7 +497,7 @@ export function createAppServerWorkbenchRuntime(
     phase,
     hostId,
     connectionGeneration: client?.connectionGeneration ?? 0,
-    transport: client?.status ?? config.transport.status,
+    transport: client?.status ?? currentTransport?.status ?? { state: "idle" },
     residentThreads: [...bindings.values()]
       .filter((binding) => !binding.disposed)
       .map(residencySnapshot),
@@ -474,7 +522,10 @@ export function createAppServerWorkbenchRuntime(
   const scheduleReconnect = (transportStatus?: TransportStatus) => {
     if (disposed || config.autoReconnect === false || reconnectTimer !== null)
       return;
-    const effectiveStatus = automaticReconnectBlock ?? transportStatus ?? config.transport.status;
+    const effectiveStatus = automaticReconnectBlock
+      ?? transportStatus
+      ?? currentTransport?.status
+      ?? { state: "idle" };
     if (effectiveStatus.failure?.recovery === "manual") {
       if (loggedReconnectStopCode !== effectiveStatus.failure.code) {
         loggedReconnectStopCode = effectiveStatus.failure.code;
@@ -856,7 +907,11 @@ export function createAppServerWorkbenchRuntime(
             }
           } else await currentSession.resume.resume({ threadId: binding.threadId, force });
           if (config.dynamicTools && requireClient().initializeResult?.capabilities?.extensions?.["opencraft/host-capabilities"]) {
-            await requireClient().request("runtime/capabilities/register", { threadId: binding.threadId, dynamicTools: config.dynamicTools });
+            const registration = await requireClient().request("runtime/capabilities/register", {
+              threadId: binding.threadId,
+              dynamicTools: config.dynamicTools,
+            });
+            verifyDynamicToolRegistration(config.dynamicTools, registration);
           }
         } finally { stopPreview(); }
         const source = createCodexThreadReplicaSource(
@@ -921,6 +976,7 @@ export function createAppServerWorkbenchRuntime(
     if (initializeServicesOperation !== null)
       return initializeServicesOperation;
     const generation = lifecycleGeneration;
+    let attemptTransport: DuplexTransport | null = null;
     const operation = (async () => {
       ownedRegistry =
         config.clientRegistry === undefined
@@ -928,9 +984,14 @@ export function createAppServerWorkbenchRuntime(
           : null;
       ensureLifecycle(generation);
       const clientRegistry = config.clientRegistry ?? ownedRegistry!.clients;
+      attemptTransport = config.createTransport?.() ?? config.transport ?? null;
+      if (attemptTransport === null) {
+        throw new Error("AppServer transport factory did not create a transport");
+      }
+      currentTransport = attemptTransport;
       client = clientRegistry.create({
         hostId,
-        transport: config.transport,
+        transport: attemptTransport,
         requestTimeoutMs: config.requestTimeoutMs ?? 30_000,
       });
       terminalController = new AppServerTerminalController(hostId, client);
@@ -1018,6 +1079,17 @@ export function createAppServerWorkbenchRuntime(
           errorType: cause instanceof Error ? cause.name : "Error",
           message: cause instanceof Error ? cause.message : String(cause),
         });
+        if (config.createTransport === undefined) {
+          // Registry cleanup closes a fixed transport permanently. It has no
+          // factory-backed successor, so an automatic retry would only spin
+          // on the disposed object forever.
+          clearReconnectTimer();
+          automaticReconnectBlock ??= {
+            state: "closed",
+            reason: "The fixed AppServer transport generation was closed after initialization failed",
+            failure: { code: "fixed-transport-generation-closed", recovery: "manual" },
+          };
+        }
         removeTransportListener?.();
         removeTransportListener = null;
         removeClientHandlers?.();
@@ -1032,11 +1104,15 @@ export function createAppServerWorkbenchRuntime(
         terminalController = null;
         await session?.dispose().catch(() => undefined);
         session = null;
+        const failedClient = client;
         if (ownedRegistry !== null) {
           await ownedRegistry.dispose().catch(() => undefined);
-        } else {
+        } else if (failedClient !== null) {
           await config.clientRegistry?.remove(hostId).catch(() => undefined);
+        } else {
+          await attemptTransport?.close().catch(() => undefined);
         }
+        if (currentTransport === attemptTransport) currentTransport = null;
         ownedRegistry = null;
         client = null;
         commandPort = null;
@@ -1052,13 +1128,20 @@ export function createAppServerWorkbenchRuntime(
 
   const runtime: AppServerWorkbenchRuntime = {
     resources: {
+      protocol: {
+        request(method, params) {
+          return requireClient().request(method, params);
+        },
+      },
       host: {
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
           return client?.initializeResult ?? null;
         },
         async fetchLoopback(input, init) {
-          const transport = loopbackHttpTransport(config.transport);
+          const transport = currentTransport === null
+            ? null
+            : loopbackHttpTransport(currentTransport);
           if (transport === null) {
             const client = requireClient();
             if (!client.initializeResult?.capabilities?.extensions?.["opencraft/loopback-http"]) throw new Error(`Host ${hostId} does not provide loopback HTTP`);
@@ -1353,7 +1436,7 @@ export function createAppServerWorkbenchRuntime(
           error = cause instanceof Error ? cause : new Error(String(cause));
           phase = "error";
           publish();
-          scheduleReconnect(config.transport.status);
+          scheduleReconnect(currentTransport?.status);
           throw cause;
         }
       })().finally(() => {
@@ -1523,6 +1606,7 @@ export function createAppServerWorkbenchRuntime(
         if (ownedRegistry !== null)
           await ownedRegistry.dispose().catch(() => undefined);
         else await config.clientRegistry?.remove(hostId).catch(() => undefined);
+        currentTransport = null;
         await Promise.allSettled(pending);
 
         for (const binding of [...bindings.values()]) disposeBinding(binding);

@@ -121,6 +121,12 @@ export interface ComposerPermissionOption {
   readonly disabled: boolean;
 }
 
+export function hasPermissionProfileChoices(
+  permissionProfiles: readonly ComposerPermissionOption[],
+): boolean {
+  return permissionProfiles.length > 0;
+}
+
 export interface ComposerSelectionCatalog {
   readonly models: readonly ComposerModelOption[];
   readonly permissionProfiles: readonly ComposerPermissionOption[];
@@ -811,6 +817,7 @@ export const CodexComposer = forwardRef<
   const attachments = composerSnapshot.draft.attachments;
   const catalogModels = selectionCatalog?.models ?? [];
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
+  const showPermissionPicker = hasPermissionProfileChoices(catalogPermissions);
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
   const selectedModelValue =
     composerSnapshot.draft.selections.model ??
@@ -1986,7 +1993,7 @@ export const CodexComposer = forwardRef<
                 </div>
               </DropdownMenu.Root>
 
-              <DropdownMenu.Root
+              {showPermissionPicker ? <DropdownMenu.Root
                 modal={false}
                 open={openPicker === "permissions"}
                 onOpenChange={(isOpen) => {
@@ -2075,7 +2082,7 @@ export const CodexComposer = forwardRef<
                     </DropdownMenu.Content>
                   </DropdownMenu.Portal>
                 </div>
-              </DropdownMenu.Root>
+              </DropdownMenu.Root> : null}
             </div>
           </div>
           <div ref={footerLayout.endRef} className="codex-composer-footer__end" inert={voiceActive ? true : undefined} aria-hidden={voiceActive ? true : undefined}>

@@ -75,6 +75,7 @@ import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-
 import { useSession } from "@/contexts/session-context";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 // 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
 import type {
   LightVelaMultiSessionOptions,
@@ -591,7 +592,7 @@ async function execDebugCommandStream(
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+    body: JSON.stringify(createDebugExecRequestBody(command)),
   });
 
   if (!response.ok) {
@@ -2660,14 +2661,14 @@ export const AgentSettingsPage = ({
     [visibleBots, t],
   );
   /*
-   * 「新建 Bot」入口。
+   * 这里原有一个恒为 true 的「是否显示新建入口」变量（把入口从 console
+   * reveal 后面放出来）。合并 master 时删掉：master 做了同一件事但更彻底
+   * —— 变量和使用处一并移除，条件直接写 {multiBotEnabled && (。
+   * 准入闸门不受影响，仍是 multiBotEnabled + canCreateAdditionalBot。
    *
-   * 原来跟着 showHiddenAgentTools（需要在控制台敲 show() 才显形）。多 bot
-   * 已经是国内站的正式能力，入口默认放出来即可；是否真能创建仍由
-   * multiBotEnabled（后端 runtime config，国内站默认 true）与
-   * canCreateAdditionalBot（套餐额度）把关，所以这里放开不会绕过限制。
+   * 注：agent-settings-sidebar-tabs 有一条源码文本断言要求该标识符不再
+   * 出现在本文件里，所以上面刻意没写出它的原名。
    */
-  const showCreateBotEntry = true;
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -2685,6 +2686,8 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
+  const isEmptyPersonaPage = activeSection === "buddy"
+    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -4221,9 +4224,6 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    // 原来这里有 `if (activeBot && !showCreateBotEntry) return;` —— 入口藏在
-    // console reveal 后面时的防御。入口已默认显示，该判断恒为真，故移除；
-    // 真正的闸门是 multiBotEnabled 与 canCreateAdditionalBot。
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -4675,6 +4675,7 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
+        isEmptyPersonaPage && "lv-agent-empty-persona-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -5198,8 +5199,12 @@ export const AgentSettingsPage = ({
                         <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
                       </div>
                       <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>
+                        <dd>{t("系统预置")}</dd>
+                      </div>
+                      <div className="flex items-start gap-2">
                         <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
-                        <dd>{t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")}</dd>
+                        <dd>{t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")}</dd>
                       </div>
                     </dl>
                   ) : (
@@ -5516,7 +5521,7 @@ export const AgentSettingsPage = ({
                                         <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                                         {passExpiryReminderCopy.label}
                                       </button>
-                                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                      <span className="pointer-events-none absolute top-full left-1/2 z-20 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                                         <span
                                           id={passExpiryTooltipId}
                                           role="tooltip"
@@ -5535,7 +5540,7 @@ export const AgentSettingsPage = ({
                                           </button>
                                           <span
                                             aria-hidden="true"
-                                            className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                            className="absolute bottom-full left-1/2 size-2 -translate-x-1/2 translate-y-1/2 rotate-45 border-l border-t border-[var(--border-subtle)] bg-white"
                                           />
                                         </span>
                                       </span>
@@ -5562,6 +5567,27 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
+                              {multiBotEnabled && (
+                                <WorkspaceActionTooltip
+                                  content={createLimitMessage || t("新建 Bot")}
+                                  side="bottom"
+                                  compact
+                                  focusable={!canCreateAdditionalBot}
+                                >
+                                  <button
+                                    type="button"
+                                    aria-label={t("新建 Bot")}
+                                    disabled={!canCreateAdditionalBot}
+                                    className="lv-agent-action-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleCreateNew();
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </WorkspaceActionTooltip>
+                              )}
                               <WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
@@ -5606,6 +5632,7 @@ export const AgentSettingsPage = ({
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
+                                aria-hidden="true"
                                 className={cn("-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                               />
                             )}
@@ -5647,20 +5674,6 @@ export const AgentSettingsPage = ({
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
-                      )}
-
-                      {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
-                          <button
-                            type="button"
-                            onClick={handleCreateNew}
-                            disabled={!canCreateAdditionalBot}
-                            className="lv-agent-create-button"
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                            {t("新建 Bot")}
-                          </button>
-                        </WorkspaceActionTooltip>
                       )}
                     </div>
 

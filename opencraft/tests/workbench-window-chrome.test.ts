@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+test("pane resize hit targets start below window navigation chrome", () => {
+  const styles = readFileSync(new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  const hitTarget = styles.slice(styles.indexOf(".app-shell-left-panel__resize {"));
+  const rule = hitTarget.slice(0, hitTarget.indexOf("> span"));
+  assert.match(rule, /top: var\(--height-toolbar\)/);
+});
+
 import {
   applyWindowChromeDocumentAttributes,
   getHeaderStartMinimumWidth,

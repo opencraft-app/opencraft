@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactElement,
   type Ref,
   type ReactNode,
 } from "react";
@@ -70,7 +71,8 @@ interface AppShellProps {
   navigation?: ShellNavigationConfig;
   layoutScope: string;
   mainContentLayout: AppShellMainContentLayout;
-  header: ReactNode;
+  /** Physical window chrome stays mounted while routes replace shell content. */
+  header: ReactElement;
   floatingSidebarHeader(onDock: () => void): ReactNode;
   /** Optional application context. Chat supplies a conversation list; other apps may omit it. */
   leftPanel?: ReactNode;

@@ -1,0 +1,158 @@
+# devtunnel 反向回调隧道 —— tkexgz 测试实例（国内站联调用）。
+#
+# 作用：承接云梯改派来的 jifei 回调，按 Host 分流到各开发者 DevCloud 上出站长轮询的
+# agent。详见 cloudladdergateway/internal/devtunnel 包注释。
+#
+# 复用 cloudladdergateway 镜像（devtunnel 二进制已打进同一镜像），仅用 command 覆盖入口，
+# 因此镜像 tag 跟随 cloudladdergateway 的 CI pin，无需单独构建流水线。
+#
+# 与 tkexsg testing 一样，由 Auth registry 下发每个 UIN 的短期 capability；开发者机器
+# 只拿到自己的 tunnelHost 和短期 token。共享 DEVTUNNEL_TOKEN 始终留在集群 Secret 内。
+apiVersion: platform.stke/v1alpha1
+kind: StatefulSetPlus
+metadata:
+  annotations:
+    deployImageSource: hub
+    enablesystemd: disable
+    platform.tkex/scaleDown-PendingPod-first: 'true'
+    stkeUpateVersionTag: v3
+    tkex-samename-count: '2'
+  labels:
+    clusterId: cls-5vzjheeo
+    env: production
+    k8s-app: devtunnel-testing
+    moduleFourId: '867795'
+    projectName: prjqt8dd
+    qcloud-app: devtunnel-testing
+    region: ap-guangzhou
+    workload-kind: statefulsetplus
+  name: devtunnel-testing
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  batchDeployConfig: {}
+  podManagementPolicy: Parallel
+  # 必须是 1：hub 的队列是**进程内内存**，没有跨副本共享。多副本时 agent 的长轮询
+  # 挂在其中一个 Pod 上，而云梯的 ingest 会被 ClusterIP 轮到另一个 Pod，那边没有
+  # agent 来取 → 回调稳定超时 504。要扩副本必须先把队列外置（Redis 等）。
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      clusterId: cls-5vzjheeo
+      env: production
+      k8s-app: devtunnel-testing
+      moduleFourId: '867795'
+      projectName: prjqt8dd
+      qcloud-app: devtunnel-testing
+      region: ap-guangzhou
+      workload-kind: statefulsetplus
+  serviceName: devtunnel-testing
+  template:
+    metadata:
+      annotations:
+        eks.tke.cloud.tencent.com/spec-auto-upgrade: 'true'
+      labels:
+        clusterId: cls-5vzjheeo
+        env: production
+        k8s-app: devtunnel-testing
+        moduleFourId: '867795'
+        projectName: prjqt8dd
+        qcloud-app: devtunnel-testing
+        region: ap-guangzhou
+        workload-kind: statefulsetplus
+    spec:
+      affinity: {}
+      containers:
+      - command:
+        - /usr/local/bin/devtunnel
+        env:
+        - name: DEVTUNNEL_LISTEN
+          value: ':8080'
+        - name: DEVTUNNEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: DEVTUNNEL_TOKEN
+              name: cloudladdergateway-devtunnel-secrets
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_ENABLED
+          value: "true"
+        - name: DEVTUNNEL_CAPABILITY_STORE
+          value: http
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_BASE_URL
+          value: https://api-sandbox-bj-7.lightclaw.tech
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_ROUTE_ID
+          value: developer-route-registry
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_CALLER
+          value: cloudladdergateway
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_SECRET_ENV
+          value: CLOUDLADDER_SHADOW_HMAC_SECRET
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_TIMEOUT
+          value: 10s
+        - name: CLOUDLADDER_SHADOW_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: CLOUDLADDER_SHADOW_HMAC_SECRET
+              name: cloudladdergateway-runtime-secrets
+        - name: DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS
+          value: 9.0.0.0/8
+        - name: DEVTUNNEL_CAPABILITY_ALLOWED_PORTS
+          value: "18084"
+        - name: DEVTUNNEL_CAPABILITY_TUNNEL_BASE_URL
+          value: http://devtunnel-testing.ns-prjqt8dd-867795-production.svc.cluster.local:8080
+        - name: DEVTUNNEL_CAPABILITY_TUNNEL_HOST_SUFFIX
+          value: cn.tunnel.internal
+        # 占位值：kustomization.yaml 的 replacements 会用
+        # cloudladdergateway-platform-testing.env 的 CLOUDLADDERGATEWAY_IMAGE 盖掉这里，
+        # 与 lightvela-proxy-testing 始终同一个镜像（devtunnel 二进制在同一镜像里）。
+        image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
+        imagePullPolicy: Always
+        name: devtunnel
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: '500m'
+            memory: 512Mi
+          requests:
+            cpu: '250m'
+            memory: 256Mi
+      dnsConfig:
+        options:
+        - name: ndots
+          value: '2'
+      imagePullSecrets:
+      - name: csighub-skipzhang
+      - name: csighub-xinqishang
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: "devtunnel 反向隧道控制面 + 回调 ingest（集群内，供云梯访问）"
+  name: devtunnel-testing
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  ports:
+    - name: tcp-8080
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    k8s-app: devtunnel-testing
+    qcloud-app: devtunnel-testing
+    region: ap-guangzhou
+    workload-kind: statefulsetplus
+  sessionAffinity: None
+  type: ClusterIP

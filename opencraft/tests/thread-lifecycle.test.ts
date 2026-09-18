@@ -105,6 +105,26 @@ test("disconnect cleanup serializes temporary release against a new resume", asy
     assert.equal(service.attachments.has("b", "child"), false);
   } finally { finish(); await service.close(); }
 });
+
+test("saved model applies to null resume, fork and first execution; acknowledged response owns persistence", async () => {
+  const catalog = new ThreadCatalog(), service = new ThreadLifecycle(catalog, async () => ({ released: true }), () => {});
+  try {
+    await service.dispatch("thread/start", { model: "requested" }, "a", async () => ({ thread: { id: "parent", turns: [] }, model: "resolved" }));
+    for (const method of ["thread/resume", "thread/fork", "turn/start"]) {
+      await service.dispatch(method, { threadId: "parent", model: null }, "a", async (_, params) => {
+        assert.equal(params.model, "resolved");
+        return method === "turn/start" ? { turn: {} } : { thread: { id: method === "thread/fork" ? "child" : "parent", turns: [] }, model: params.model };
+      });
+    }
+    assert.equal(catalog.configuration("child").model, "resolved");
+    catalog.upsert({ id: "legacy" }, { configuration: { model: "dsh" } });
+    await service.dispatch("thread/resume", { threadId: "legacy" }, "a", async (_, params) => {
+      assert.equal(params.model, undefined);
+      return { thread: { id: "legacy", turns: [] }, model: "recovered" };
+    });
+    assert.equal(catalog.configuration("legacy").model, "recovered");
+  } finally { await service.close(); }
+});
 test("disconnect retries an active temporary thread after release is deferred", async () => {
   const catalog = new ThreadCatalog(); let attempts = 0;
   const service = new ThreadLifecycle(catalog, async () => ({ released: ++attempts > 1 }), () => {}, 1);

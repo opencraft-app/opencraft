@@ -564,6 +564,19 @@ print('Lv!' + secrets.token_urlsafe(18))
 PY
 }
 
+prepare_local_credentials() {
+  LOCAL_IDENTITY_EMAIL="${PERSONAL_DEV_EMAIL:-$(state_get email)}"
+  LOCAL_IDENTITY_PASSWORD="${PERSONAL_DEV_PASSWORD:-$(state_get password)}"
+  if [[ -z "$LOCAL_IDENTITY_EMAIL" ]]; then
+    LOCAL_IDENTITY_EMAIL="lv-local-$(hostname -s | tr -cd 'A-Za-z0-9-' | tr '[:upper:]' '[:lower:]')-$(date +%s)@example.com"
+  fi
+  if [[ -z "$LOCAL_IDENTITY_PASSWORD" ]]; then
+    LOCAL_IDENTITY_PASSWORD="$(generate_password)"
+  fi
+  state_set email "$LOCAL_IDENTITY_EMAIL"
+  state_set password "$LOCAL_IDENTITY_PASSWORD"
+}
+
 central_session() {
   local token email password body response
   token="${PERSONAL_DEV_SESSION_TOKEN:-$(state_get central_session_token)}"
@@ -636,11 +649,9 @@ ensure_local_identity() {
   local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token
   require_personal_context
   central_token="$(central_session)"
-  email="${PERSONAL_DEV_EMAIL:-$(state_get email)}"
-  password="${PERSONAL_DEV_PASSWORD:-$(state_get password)}"
-  [[ -n "$email" && -n "$password" ]] || die "missing managed email/password state"
-  state_set email "$email"
-  state_set password "$password"
+  prepare_local_credentials
+  email="$LOCAL_IDENTITY_EMAIL"
+  password="$LOCAL_IDENTITY_PASSWORD"
 
   new_private_temp local-signup
   body="$TEMP_FILE_RESULT"
@@ -664,12 +675,14 @@ ensure_local_identity() {
   [[ "$local_user_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid local user id"
 
   binding="$(wait_for_binding "$central_token")"
-  shadow_name="$(printf '%s' "$binding" | json_value 'd["binding"]["shadowUserName"]')"
-  uin="$(printf '%s' "$binding" | json_value 'd["binding"]["uin"]')"
-  owner_uin="$(printf '%s' "$binding" | json_value 'd["binding"]["ownerUin"]')"
-  app_id="$(printf '%s' "$binding" | json_value 'd["binding"]["appId"]')"
+  shadow_name="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("shadowUserName", "")')"
+  uin="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("uin", "")')"
+  owner_uin="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("ownerUin", "")')"
+  app_id="$(printf '%s' "$binding" | json_value 'd.get("binding", {}).get("appId", "")')"
   [[ "$shadow_name" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid shadow username"
-  [[ "$uin" =~ ^[0-9]+$ && "$owner_uin" =~ ^[0-9]+$ && "$app_id" =~ ^[0-9]+$ ]] || die "invalid central shadow identity"
+  [[ "$uin" =~ ^[0-9]+$ && "$owner_uin" =~ ^[0-9]+$ ]] || die "invalid central shadow identity"
+  [[ "$app_id" =~ ^[1-9][0-9]*$ ]] \
+    || die "central shadow binding is active but appId is unavailable; use a pre-provisioned testing account"
 
   kubectl exec -i -n localstack-system statefulset/mysql -- \
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' <<SQL
@@ -693,22 +706,50 @@ SQL
   log "local browser account is aligned with central shadow uin=$uin"
 }
 
+browser_bootstrap_process_matches() {
+  local pid="$1" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+  else
+    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  fi
+  [[ "$cmdline" == *"browser-login-bootstrap.py"* ]]
+}
+
 stop_browser_bootstrap() {
-  local pid="" cmdline=""
+  local pid="" attempt
   if [[ -f "$BROWSER_BOOTSTRAP_PID_FILE" ]]; then
     pid="$(tr -dc '0-9' <"$BROWSER_BOOTSTRAP_PID_FILE")"
   fi
-  if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    if [[ -r "/proc/$pid/cmdline" ]]; then
-      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-    else
-      cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    fi
-    if [[ "$cmdline" == *"browser-login-bootstrap.py"* ]]; then
-      kill "$pid" >/dev/null 2>&1 || true
+  if browser_bootstrap_process_matches "$pid"; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for attempt in $(seq 1 50); do
+      process_is_running "$pid" || break
+      sleep 0.05
+    done
+    if process_is_running "$pid" && browser_bootstrap_process_matches "$pid"; then
+      kill -KILL "$pid" >/dev/null 2>&1 || true
     fi
   fi
   rm -f "$BROWSER_BOOTSTRAP_PID_FILE" "$BROWSER_BOOTSTRAP_READY_FILE"
+}
+
+browser_nonce_once() {
+  python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
+}
+
+generate_browser_nonce() {
+  local attempt nonce=""
+  for attempt in 1 2 3; do
+    nonce="$(browser_nonce_once 2>/dev/null || true)"
+    if [[ "$nonce" =~ ^[A-Za-z0-9_-]{24,128}$ ]]; then
+      printf '%s\n' "$nonce"
+      return 0
+    fi
+  done
+  return 1
 }
 
 start_browser_bootstrap() {
@@ -718,7 +759,7 @@ start_browser_bootstrap() {
   ip="$(discover_devcloud_ip)"
   listen_host=0.0.0.0
   [[ "$ip" == "127.0.0.1" || "$ip" == "localhost" ]] && listen_host=127.0.0.1
-  nonce="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+  nonce="$(generate_browser_nonce)" || die "could not generate a browser bootstrap nonce"
   stop_browser_bootstrap
   token_file="$(mktemp "$STATE_ROOT/browser-session.XXXXXX")"
   chmod 600 "$token_file"
@@ -822,7 +863,6 @@ PY
 }
 
 ensure_devtunnel_agent_binary() {
-  [[ "$SITE" == "intl" ]] || return 0
   local revision build_cache
   revision="$(python3 - "$REPO_ROOT" <<'PY'
 import hashlib
@@ -861,6 +901,7 @@ PY
   log "building devtunnel-agent from current checkout@$revision"
   docker run --rm \
     --user "$(id -u):$(id -g)" \
+    -e GOWORK=off \
     -e GOMODCACHE=/cache/gomod \
     -e GOCACHE=/cache/gocache \
     -v "$REPO_ROOT:/workspace:ro" \
@@ -906,7 +947,6 @@ devtunnel_agent_running() {
 
 ensure_devtunnel_agent() {
   local tunnel_host="$1" tunnel_token="$2" token_sha pid
-  [[ "$SITE" == "intl" ]] || return 0
   [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || die "registration did not return a valid tunnelHost"
   [[ "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ && ${#tunnel_token} -ge 16 && ${#tunnel_token} -le 512 ]] \
     || die "registration did not return a valid short-lived tunnel capability"
@@ -942,13 +982,14 @@ register_route() {
   ensure_site_activation_safe
   require_personal_context
   persist_endpoint_config
-  local token response safe_response ip registered_uin target_ip registered_port status tunnel_host tunnel_token expires_at
+  local token response safe_response ip registered_uin target_ip registered_port status tunnel_host tunnel_token expires_at registration_body
   token="$(central_session)"
   ip="$(discover_devcloud_ip)"
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
+  registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
   response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
-    --data-binary "{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}" "$REGISTRATION_URL")"
+    --data-binary "$registration_body" "$REGISTRATION_URL")"
   registered_uin="$(printf '%s' "$response" | json_value 'd.get("uin", "")' 2>/dev/null || true)"
   target_ip="$(printf '%s' "$response" | json_value 'd.get("targetIp", "")' 2>/dev/null || true)"
   registered_port="$(printf '%s' "$response" | json_value 'd.get("port", "")' 2>/dev/null || true)"
@@ -960,12 +1001,15 @@ register_route() {
   [[ "$status" == "active" ]] || die "registration is not active: ${status:-missing}"
   [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
     || die "registration source address mismatch: expected $ip:$CALLBACK_PORT, got ${target_ip:-missing}:${registered_port:-missing}"
-  if [[ "$SITE" == "intl" ]]; then
-    if [[ ! "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ || ${#tunnel_token} -lt 16 || ${#tunnel_token} -gt 512 ]]; then
-      curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
-      die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
-    fi
-    ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"
+  if [[ ! "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ || ${#tunnel_token} -lt 16 || ${#tunnel_token} -gt 512 ]]; then
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
+  fi
+  if ! (ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"); then
+    stop_devtunnel_agent
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    unset tunnel_token
+    die "local devtunnel-agent failed; unsafe active registration was disabled"
   fi
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
@@ -978,26 +1022,40 @@ register_route() {
   state_set registered_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   unset tunnel_token
   mark_current_site
-  if [[ "$SITE" == "intl" ]]; then
-    log "registered uin=$(state_get uin) through tunnelHost=$tunnel_host"
+  log "registered uin=$(state_get uin) through tunnelHost=$tunnel_host"
+}
+
+heartbeat_process_matches() {
+  local pid="$1" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
   else
-    log "registered uin=$(state_get uin) -> http://$ip:$CALLBACK_PORT"
+    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
   fi
+  [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]
+}
+
+process_is_running() {
+  local pid="$1" state=""
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  state="$(ps -p "$pid" -o stat= 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "$state" != Z* ]]
 }
 
 stop_heartbeat() {
-  local pid=""
+  local pid="" attempt
   [[ -f "$HEARTBEAT_PID_FILE" ]] || return 0
   pid="$(tr -dc '0-9' <"$HEARTBEAT_PID_FILE")"
-  if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    local cmdline=""
-    if [[ -r "/proc/$pid/cmdline" ]]; then
-      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-    else
-      cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    fi
-    if [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]; then
-      kill "$pid" >/dev/null 2>&1 || true
+  if heartbeat_process_matches "$pid"; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for attempt in $(seq 1 50); do
+      process_is_running "$pid" || break
+      sleep 0.1
+    done
+    if process_is_running "$pid" && heartbeat_process_matches "$pid"; then
+      kill -KILL "$pid" >/dev/null 2>&1 || true
     fi
   fi
   rm -f "$HEARTBEAT_PID_FILE"
@@ -1013,9 +1071,24 @@ start_heartbeat() {
 }
 
 heartbeat_loop() {
-  local iterations=0 max_iterations="${PERSONAL_DEV_HEARTBEAT_MAX_ITERATIONS:-0}"
+  local iterations=0 max_iterations="${PERSONAL_DEV_HEARTBEAT_MAX_ITERATIONS:-0}" sleeper_pid=""
+  stop_heartbeat_loop() {
+    trap - TERM INT
+    if [[ -n "$sleeper_pid" ]] && kill -0 "$sleeper_pid" >/dev/null 2>&1; then
+      kill -TERM "$sleeper_pid" >/dev/null 2>&1 || true
+      wait "$sleeper_pid" 2>/dev/null || true
+    fi
+    exit 0
+  }
+  trap stop_heartbeat_loop TERM INT
   while true; do
-    sleep "${PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS:-14400}"
+    sleep "${PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS:-14400}" &
+    sleeper_pid="$!"
+    if ! wait "$sleeper_pid"; then
+      sleeper_pid=""
+      continue
+    fi
+    sleeper_pid=""
     if ! heartbeat_once; then
       log "registration heartbeat failed; the loop remains alive and will retry"
     fi
@@ -1112,10 +1185,8 @@ status() {
       tunnel_host="$(printf '%s' "$response" | json_value 'd.get("tunnelHost", "")' 2>/dev/null || true)"
       [[ "$status" == "active" ]] || rc=1
       [[ -n "$ip" && "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] || rc=1
-      if [[ "$SITE" == "intl" ]]; then
-        [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || rc=1
-        devtunnel_agent_running "$tunnel_host" || rc=1
-      fi
+      [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || rc=1
+      devtunnel_agent_running "$tunnel_host" || rc=1
     else
       rc=1
     fi
@@ -1123,23 +1194,22 @@ status() {
     rc=1
   fi
   kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack -o wide || rc=1
-  kubectl wait --for=condition=Ready pods -A \
-    -l app.kubernetes.io/part-of=lightclaw-localstack --timeout=2s >/dev/null || rc=1
+  local pod_namespace pod_name
+  while IFS=$'\t' read -r pod_namespace pod_name; do
+    [[ -n "$pod_namespace" && -n "$pod_name" ]] || continue
+    kubectl wait --for=condition=Ready "pod/$pod_name" -n "$pod_namespace" --timeout=2s >/dev/null || rc=1
+  done < <(kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack \
+    --field-selector=status.phase!=Succeeded,status.phase!=Failed \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\n"}{end}' 2>/dev/null) || rc=1
   heartbeat_running || rc=1
   return "$rc"
 }
 
 heartbeat_running() {
-  local pid="" cmdline=""
+  local pid=""
   [[ -f "$HEARTBEAT_PID_FILE" ]] || return 1
   pid="$(tr -dc '0-9' <"$HEARTBEAT_PID_FILE")"
-  [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1 || return 1
-  if [[ -r "/proc/$pid/cmdline" ]]; then
-    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-  else
-    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  fi
-  [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]
+  heartbeat_process_matches "$pid"
 }
 
 require_active_registration() {
@@ -1154,9 +1224,7 @@ require_active_registration() {
   ip="$(discover_devcloud_ip)"
   [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
     || die "developer route is registered for ${target_ip:-missing}:${registered_port:-missing}, not this DevCloud $ip:$CALLBACK_PORT"
-  if [[ "$SITE" == "intl" ]]; then
-    devtunnel_agent_running "$tunnel_host" || die "devtunnel-agent is not running for tunnelHost=${tunnel_host:-missing}"
-  fi
+  devtunnel_agent_running "$tunnel_host" || die "devtunnel-agent is not running for tunnelHost=${tunnel_host:-missing}"
 }
 
 verify_order_no_pay() {

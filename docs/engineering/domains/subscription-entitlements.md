@@ -42,8 +42,10 @@
   `provisioned` 与 `completed`。系统盘扩容不可逆，失败只能幂等前滚，不能自动降配。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
-- 邀请返利不复用访问邀请码。Auth 与 CTL 分别在新用户创建、首个非免费 Pass 开通和退款隔离
-  事务中写 versioned outbox；Referral 通过 Pulsar inbox 去重并允许注册、首付、退款事实乱序到达。
+- 邀请返利不复用访问邀请码。Auth 在新用户创建时写 `user.registered.v1`，存量用户在首次开通前认领时写
+  `user.referral_claimed.v1`；CTL 在首个非免费 Pass 开通和退款隔离事务中写 versioned outbox。Referral
+  通过 Pulsar inbox 去重并允许归因、首付、退款事实乱序到达，但只有归因事件发生时间不晚于首次开通
+  时间时才允许创建奖励，防止已开通或续费用户事后补绑邀请码。
 - 返利资格的用户口径是“首次开通成功”：dianshi 订单完成发货并开通 Pass 即符合，0 元订单也算，
   不检查现金实付金额。历史 `pass.first_paid.v1` 事件名保持兼容，不代表必须现金付费；无订单的旧免费试用不算。
 - 默认返利奖励没有观察期（`vesting_days=0`），首次订单开通成功且归因齐备后进入待发，Worker 异步发放。
@@ -103,6 +105,13 @@ Gateway 和前端的当前 checkout 代码；Account 与 Billing 继续访问真
 UIN、TunnelHost 与 TTL；Auth testing MySQL registry 只持久化 capability 的 SHA-256 摘要，DevCloud 不获得
 共享 CloudLadder HMAC、SOPS 或 `DEVTUNNEL_TOKEN`。动态、静态和共享路径的优先级、注销、过期及
 跨 UIN 拒绝都必须有测试证据。
+
+CloudLadder 镜像内的默认配置必须显式声明默认关闭的 `developer_routes`，并把注册控制面固定为
+`developer-route-control` / `lightclaw-auth`；该 caller 只复用服务端
+`CLOUDLADDER_SHADOW_HMAC_SECRET`，且只能调用这一条控制面 route。只有广州、新加坡 testing
+workload 可以通过环境变量开启动态注册。发布门禁必须直接加载最终打包的 `config.example.yaml`
+验证 route、caller、secret env 与 `18084` 端口契约，不能只验证 handler 代码，避免出现接口已发布但
+镜像配置未注册 caller 的运行时断层。
 
 `verify-order-no-pay` 只证明询价和 `pending_pay` 下单成功，不证明支付、计费回调、发货或权益终态。
 只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一

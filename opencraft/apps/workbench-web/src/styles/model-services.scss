@@ -54,6 +54,7 @@
   &__models summary { padding-top: 16px; color: var(--color-text-secondary); font-size: 12px; cursor: pointer; }
   &__status, &__muted { min-height: 18px; margin: 0; color: var(--color-text-secondary); font-size: 12px; }
   &__overview { padding: 28px; h2 { font-size: 18px; font-weight: 500; } }
+  &__pending { display: flex; min-height: 18px; align-items: center; color: var(--color-text-secondary); }
   &__mobile-select { display: none; }
 }
 .model-services-actions {
@@ -61,7 +62,12 @@
   max-width: min(320px, calc(100vw - 24px)); padding: 12px;
   background: var(--color-background-surface); color: var(--color-text); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); box-shadow: var(--shadow-300);
   small { color: var(--color-text-secondary); overflow-wrap: anywhere; }
-  &__toggle { display: flex; gap: 16px; align-items: center; font-size: 13px; }
+  &__toggle { display: flex; gap: 16px; align-items: center; font-size: 13px;
+    > span { flex: 1; min-width: 0; }
+    strong { display: block; font-size: 13px; font-weight: 500; }
+    small { display: block; margin-top: 3px; font-size: 11px; }
+  }
+  &__pending { display: inline-grid; place-items: center; width: 36px; height: 20px; margin-left: auto; color: var(--color-text-secondary); }
 }
 .model-services-context {
   @include menu.surface;

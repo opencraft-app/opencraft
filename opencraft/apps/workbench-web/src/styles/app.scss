@@ -1,6 +1,7 @@
 @use "@opencraft/design-system/tokens.web";
 @use "@opencraft/design-system/controls.web" as controls;
 @use "@opencraft/design-system/menu.web" as menu;
+@use "@opencraft/design-system/toolbar.web" as toolbar;
 @use "@opencraft/design-system/typography.web" as typography;
 @use "@opencraft/design-system/selection.web";
 @use "../components/sidecar";
@@ -363,11 +364,10 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
 
 .app-shell-left-panel__resize {
   position: absolute;
-  // Codex keeps the moving divider below the fixed z-30 toolbar. Otherwise
-  // the collapsing divider crosses the stationary trigger, steals :hover for
-  // one frame, and makes the button visibly flash.
+  // The pane owns resizing below chrome, including its invisible hit target.
+  // Moving only the painted span leaves Back/Forward covered by the divider.
   z-index: 20;
-  top: 0;
+  top: var(--height-toolbar);
   bottom: 0;
   right: -8px;
   width: 16px;
@@ -379,7 +379,7 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
 
   > span {
     position: absolute;
-    top: var(--height-toolbar);
+    top: 0;
     bottom: 0;
     left: 7.5px;
     width: 1px;
@@ -790,6 +790,70 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   height: 100%;
   flex: 1;
   align-items: center;
+}
+
+.app-shell-header__route {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+}
+
+.app-shell-header__route .lv-skills-route-toolbar {
+  height: 100%;
+  align-items: center;
+  gap: var(--gap-control-group);
+  padding-inline: 8px;
+  border: 0;
+  -webkit-app-region: drag;
+
+  .segmented-control,
+  .app-shell-toolbar-select {
+    -webkit-app-region: no-drag;
+  }
+}
+
+.app-shell-toolbar-select {
+  @include toolbar.trigger;
+  justify-content: flex-start;
+}
+
+.app-shell-toolbar-select__label {
+  @include toolbar.label;
+}
+
+.app-shell-toolbar-select__chevron {
+  @include toolbar.chevron;
+}
+
+.app-shell-toolbar-menu {
+  @include toolbar.menu-surface;
+  z-index: var(--layer-floating-control);
+}
+
+.app-shell-toolbar-menu__title {
+  @include toolbar.menu-title;
+}
+
+.app-shell-toolbar-menu__section {
+  @include toolbar.menu-section;
+}
+
+.app-shell-toolbar-menu__item {
+  @include toolbar.menu-item;
+}
+
+.app-shell-toolbar-menu__item-content {
+  @include toolbar.menu-item-content;
+}
+
+.app-shell-toolbar-menu__check {
+  @include toolbar.menu-check;
+}
+
+.app-shell-header__route[data-app-shell-route-header-active="false"] {
+  display: none;
 }
 
 // A full-width task panel owns the center toolbar. Codex keeps the global
@@ -1407,7 +1471,11 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   }
 
   &.is-review {
-    background: #e25507;
+    background: var(--color-status-pending);
+  }
+
+  &.is-error {
+    background: var(--color-status-error);
   }
 }
 
@@ -1803,7 +1871,7 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
     opacity: 0.46;
   }
 
-  > span {
+  > span:not(.workbench-connection-status) {
     display: flex;
     min-width: 0;
     flex: 1;
@@ -1918,23 +1986,11 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   gap: 2px;
 
   > button {
-    @include typography.role(navigation-action, primary);
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 10px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    text-align: left;
-    cursor: pointer;
-
-    &:hover,
-    &[aria-current="page"] {
-      background: var(--color-background-tertiary);
-      color: var(--color-text);
-    }
+    @include controls.navigation-control;
+    height: 34px;
+    gap: var(--sidebar-leading-gap);
+    padding: 0 var(--sidebar-row-inline-padding);
+    border-radius: 7px;
 
     &:focus-visible {
       outline: 2px solid var(--color-border-focus);
@@ -1954,6 +2010,37 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   width: 100%;
   margin: 0;
   padding-bottom: 80px;
+}
+
+.lightvela-management-page {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 16px;
+}
+
+.lightvela-management-page > .settings-control-page-header {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 0 12px;
+
+  h2 {
+    margin: 0;
+    font-size: clamp(23px, 1.8vw, 26px);
+    font-weight: 700;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+}
+
+.lightvela-management-page__content {
+  width: 100%;
+  margin: 0;
+}
+
+.lightvela-management-page__sign-in {
+  width: 100%;
+  padding: 16px;
 }
 
 .hostless-workbench__main {
@@ -2498,11 +2585,135 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   padding: var(--padding-token-settings-panel) 0 80px;
 }
 
+.sqlite-debug-toolbar,
+.sqlite-debug-pagination {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.sqlite-debug-error {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--color-background-danger-subtle);
+  color: var(--color-text-danger);
+  font-size: 12px;
+  text-wrap: pretty;
+}
+
+.sqlite-debug-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.sqlite-debug-list {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  background: var(--color-background-secondary);
+
+  > button {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    padding: 8px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &[aria-current="page"] { background: var(--color-background-tertiary); }
+    &:disabled { cursor: default; opacity: 0.48; }
+    &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
+  }
+
+  span { display: grid; min-width: 0; gap: 1px; }
+  strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  small, p { margin: 0; color: var(--color-text-tertiary); font-size: 11px; }
+  p { padding: 10px; }
+}
+
+.sqlite-debug-table-wrap {
+  max-height: 440px;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  background: var(--color-background-primary);
+}
+
+.sqlite-debug-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font: 11px/17px var(--font-family-mono, monospace);
+
+  th, td {
+    max-width: 320px;
+    padding: 7px 9px;
+    overflow: hidden;
+    border-right: 1px solid var(--color-border-subtle);
+    border-bottom: 1px solid var(--color-border-subtle);
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-background-secondary);
+    color: var(--color-text-secondary);
+    font-weight: 600;
+  }
+
+  td { color: var(--color-text); }
+}
+
+.sqlite-debug-pagination { margin-top: 10px; }
+
+@container (max-width: 520px) {
+  .sqlite-debug-layout { grid-template-columns: 1fr; }
+}
+
 // Collection pages delegate their two scroll surfaces to the shared settings layout.
 .settings-page__viewport[data-layout="master-detail"] {
   overflow: hidden;
   container-type: inline-size;
   > .settings-page__content { width: 100%; height: 100%; padding: 0; margin: 0; gap: 0; min-height: 0; }
+}
+
+// Codex route pages can own their internal catalog toolbar and spacing while
+// the persistent AppShell continues to own the native titlebar offset.
+.settings-page__viewport[data-layout="edge-to-edge"] {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+
+  > .settings-page__content {
+    width: 100%;
+    height: auto;
+    min-height: 100%;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+  }
 }
 .adaptive-panel { display: grid; width: 100%; height: 100%; min-height: 0; overflow: hidden; }
 .adaptive-panel > [hidden] { display: none; }
@@ -2749,7 +2960,58 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
   &:disabled { cursor: default; }
 }
 
-.settings-control-segmented {
+.segmented-control {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+
+  button {
+    display: inline-flex;
+    height: 32px;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-lg);
+    outline: none;
+    padding: 0 12px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: var(--font-text-sm-size);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--font-text-sm-line-height);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color var(--transition-duration-basic) var(--ease-standard),
+      color var(--transition-duration-basic) var(--ease-standard);
+
+    &:hover:not(:disabled) {
+      background: var(--color-background-button-tertiary-hover);
+      color: var(--color-text);
+    }
+
+    &[aria-checked="true"] {
+      background: var(--color-background-button-secondary);
+      color: var(--color-text);
+    }
+
+    &:focus-visible {
+      position: relative;
+      z-index: 1;
+      box-shadow: 0 0 0 2px var(--focus-ring);
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+  }
+}
+
+.segmented-control[data-appearance="inset"] {
   display: inline-grid;
   grid-auto-columns: minmax(68px, 1fr);
   grid-auto-flow: column;
@@ -2775,7 +3037,8 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
       box-shadow var(--transition-duration-basic) var(--ease-standard),
       color var(--transition-duration-basic) var(--ease-standard);
 
-    &:hover {
+    &:hover:not(:disabled) {
+      background: transparent;
       color: var(--color-text);
     }
 
@@ -2792,10 +3055,6 @@ html[data-codex-window-type="electron"][data-codex-os="darwin"][data-opencraft-w
       box-shadow: 0 0 0 2px var(--focus-ring);
     }
 
-    &:disabled {
-      opacity: 0.45;
-      cursor: default;
-    }
   }
 }
 
@@ -9515,6 +9774,17 @@ html[data-codex-window-type="electron"] .thread-scroll {
   @include menu.item;
 }
 
+.right-panel-tab-menu__separator {
+  height: 1px;
+  margin: var(--menu-surface-padding);
+  background: var(--color-border-subtle);
+}
+
+.right-panel-tab-menu__ordinal {
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .panel-toolbar-error {
   position: absolute;
   top: 100%;
@@ -9557,10 +9827,24 @@ html[data-codex-window-type="electron"] .thread-scroll {
   background: var(--color-background-surface);
 }
 
-.terminal-panel__viewport {
+.terminal-panel__inset {
   position: absolute;
   inset: 0;
   padding: 9px 10px;
+  overflow: hidden;
+}
+
+.terminal-panel__host {
+  // xterm measures its grid independently of app typography. Its DOM width
+  // cache must not inherit body tracking and add it again as row compensation.
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-transform: none;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 
   .xterm,
   .xterm-screen,

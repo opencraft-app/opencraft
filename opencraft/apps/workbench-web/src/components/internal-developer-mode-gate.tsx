@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   advanceInternalDeveloperModeGesture,
   EMPTY_ESCAPE_SEQUENCE,
-  enableInternalDeveloperMode,
-  useInternalDeveloperMode,
+  toggleInternalDeveloperMode,
   type EscapeSequenceState,
 } from "../internal-developer-mode";
 
@@ -14,12 +13,10 @@ import {
  * their existing keyboard behavior while the sequence is observed.
  */
 export function InternalDeveloperModeGate() {
-  const enabled = useInternalDeveloperMode();
   const sequenceRef = useRef<EscapeSequenceState>(EMPTY_ESCAPE_SEQUENCE);
-  const [announcing, setAnnouncing] = useState(false);
+  const [announcing, setAnnouncing] = useState<"enabled" | "disabled" | null>(null);
 
   useEffect(() => {
-    if (enabled) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       const result = advanceInternalDeveloperModeGesture(sequenceRef.current, {
         key: event.key,
@@ -27,25 +24,26 @@ export function InternalDeveloperModeGate() {
         now: performance.now(),
       });
       sequenceRef.current = result.state;
-      if (!result.unlocked || !enableInternalDeveloperMode()) return;
+      if (!result.unlocked) return;
 
-      console.info("[internal-developer-mode] enabled for this browser session");
-      setAnnouncing(true);
+      const state = toggleInternalDeveloperMode();
+      console.info(`[internal-developer-mode] ${state} for this browser session`);
+      setAnnouncing(state);
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [enabled]);
+  }, []);
 
   useEffect(() => {
-    if (!announcing) return undefined;
-    const timer = window.setTimeout(() => setAnnouncing(false), 2_400);
+    if (announcing === null) return undefined;
+    const timer = window.setTimeout(() => setAnnouncing(null), 2_400);
     return () => window.clearTimeout(timer);
   }, [announcing]);
 
-  return announcing ? (
+  return announcing !== null ? (
     <div className="internal-developer-mode-notice" role="status" aria-live="polite">
-      Internal developer mode enabled
+      Internal developer mode {announcing}
     </div>
   ) : null;
 }

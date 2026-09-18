@@ -238,12 +238,12 @@ function applyWorkbenchAdapter(contents, file) {
         'import type { SkillsDataLayer } from "./skills-demo/skill-registries";\nimport { ZhHantScope } from "./zh-hant-scope";',
       )
       .replace(
-        "  initialSectionSlug?: string;\n}",
-        "  initialSectionSlug?: string;\n  skillsDataLayer: SkillsDataLayer;\n}",
+        "  showHeader?: boolean;\n}",
+        "  showHeader?: boolean;\n  skillsDataLayer: SkillsDataLayer;\n}",
       )
       .replace(
-        "  initialSectionSlug,\n}: HermesAgentSkillsPanelProps)",
-        "  initialSectionSlug,\n  skillsDataLayer,\n}: HermesAgentSkillsPanelProps)",
+        "  showHeader = true,\n}: HermesAgentSkillsPanelProps)",
+        "  showHeader = true,\n  skillsDataLayer,\n}: HermesAgentSkillsPanelProps)",
       )
       .replace(
         "          initialTab={initialGlobalSkillsTab}\n",

@@ -1,0 +1,17 @@
+# Progress
+
+2026-09-17: Approved navigation refactor plus AGENTS invariants. Protect dirty worktree. Context router selected frontend-product-surface solely by navigation trigger; its required frontend service card was read, actual scope remains OpenCraft. Existing reference and maintenance/React/desktop/TDD/planning instructions read. Dependency pinned to recovered Codex react-router 7.13.1, not a latest-version claim.
+
+Red → green: replacing Settings with same location; late preparation cannot override Settings. New tests exercise real memory POP/forward, hostless explicit Chat, failed commit leaves history unchanged, same conversation different View restoration and disposal. Navigation core now uses createMemoryRouter/createBrowserRouter without loaders; existing Shell is an external-store consumer, not a second Router. Settings sections push; disabled-page redirect replaces. Browser known-entry-key receipts use sessionStorage only as button projection, validated against current router key. Desktop history is per window.
+
+Shared coordinator now exposes cancelPending to invalidate in-flight readiness and release late leases. Hostless raw History implementation removed. 15 navigation/legacy route tests and 18 Host registry/activation tests passed; Web/runtime typechecks and boundaries passed. Full workbench suite and actual platform checks running.
+
+Real browser probe: Browser Router Settings A → B → back, owner recreation and full reload retain canGoForward; forward reaches B, openChat navigates to the remembered draft. No account/backend involved. Workbench suite: 255/256 passed; pre-existing typography source assertion fails (navigation-action primary mixin), not changed here.
+
+Electron mouse testing found an additional concrete blocker: pane resize target top:0 overlaps toolbar Back at some pane widths. Baseline-ui/shared geometry rule applied using existing height-toolbar token, with a red → green hit-target test. Initial offscreen application-label measurement settled after a render; that alone was not proof of a persistent label layout bug. Do not conflate it with the reproduced toolbar interception. The isolated preview has no real model configured; a visible failed draft is a model-selection error, not navigation loss.
+
+AGENTS navigation invariants added. Typechecks and 27 navigation/window tests passed; 19 Host activation tests passed including late lease release. Final Electron hit-testing pending latest Renderer rebuild.
+
+Final acceptance: latest isolated Electron (CDP 9497) Settings → actual Back → actual Forward → actual Chat all succeed, original draft text remains. Shared divider top boundary fixes previously observed Back interception. Screenshot /tmp/opencraft-navigation-final-verified.png. Browser probe used actual Browser Router with full reload and forward restoration. Final combined focused suite 50/50; Web/runtime typechecks, build, boundaries, docs-impact explicit paths and documentation validation (0 errors/warnings/broken links) pass. Workbench broad suite 256/257 before final hit-target test; its only failure is the existing typography assertion. No installed app replacement, paid inference, commit or release.
+
+Diagnostic eval notes: one DOM probe assumed Back had aria-label but it uses title; a retry reused a top-level const in the persistent tool context. Final probe uses scoped locals/title lookup. These did not alter app state or source.

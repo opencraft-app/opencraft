@@ -9,6 +9,7 @@ import type { NativeSpeechInfo, NativeSpeechPreferences, NativeSpeechOptions } f
 import { DesktopLightVelaLogin, forwardLoginCallback } from "./lightvela-login.js";
 import { createDesktopSessionStore } from "./lightvela-session-store.js";
 import { desktopAccountPublicError, requestDesktopAccount, type DesktopAccountRequest } from "./lightvela-account-http.js";
+import { desktopSkillHubPublicError, requestDesktopSkillHub } from "./skillhub-http.js";
 import { resolveDesktopProduct } from "./product-identity.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
@@ -16,6 +17,8 @@ import { installBrowserGuests } from "./browser-guests.js";
 import { createFilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
 import { ProjectFolderPicker } from "./project-folder-picker.js";
+import { SqliteDebugReader } from "./sqlite-debug-reader.js";
+import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
 
 import {
   BrowserWindow,
@@ -80,6 +83,8 @@ let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 const desktopSessions = createDesktopSessionStore(userDataDirectory);
+const sqliteDebugReader = new SqliteDebugReader(join(userDataDirectory, "dsh"));
+const uiPreferences = new DesktopUiPreferenceStore(join(userDataDirectory, "opencraft-ui.sqlite"));
 const desktopLogin = new DesktopLightVelaLogin({
   openExternal: url => shell.openExternal(url),
   saveSession: (value, signal) => desktopSessions.save(value, signal),
@@ -166,6 +171,30 @@ const projectFolderPicker = new ProjectFolderPicker({
 ipcMain.handle("opencraft:project-folder-pick", async event => {
   if (!trustedLoginCaller(event)) throw new Error("Untrusted project picker caller");
   return projectFolderPicker.pick();
+});
+ipcMain.handle("opencraft:sqlite-debug-list", event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
+  return sqliteDebugReader.list();
+});
+ipcMain.handle("opencraft:sqlite-debug-tables", (event, databaseId: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
+  return sqliteDebugReader.tables(databaseId);
+});
+ipcMain.handle("opencraft:sqlite-debug-rows", (event, databaseId: unknown, table: unknown, offset: unknown, limit: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
+  return sqliteDebugReader.rows(databaseId, table, offset, limit);
+});
+ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
+  return uiPreferences.load(key);
+});
+ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
+  const result = uiPreferences.compareAndSet(key, expectedRevision, valueJson);
+  if (result.outcome === "updated" && !event.sender.isDestroyed()) {
+    event.sender.send("opencraft:ui-preference-changed", result.record.key);
+  }
+  return result;
 });
 
 ipcMain.handle("vela:lightvela-login", async (event, region: unknown) => {
@@ -268,6 +297,11 @@ ipcMain.handle("vela:lightvela-account-request", async (event, input: DesktopAcc
   if (!account) return { status: 401, contentType: "application/json", body: new Uint8Array() };
   try { return await requestDesktopAccount(input, account); }
   catch (error) { throw desktopAccountPublicError(error); }
+});
+ipcMain.handle("opencraft:skillhub-get", async (event, path: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SkillHub caller");
+  try { return await requestDesktopSkillHub(path); }
+  catch (error) { throw desktopSkillHubPublicError(error); }
 });
 ipcMain.handle("vela:lightvela-sign-out", async event => {
   if (!trustedLoginCaller(event)) return;
@@ -614,6 +648,7 @@ const lifecycle = new DesktopLifecycle({
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
     await nativeSpeech.close();
+    uiPreferences.close();
     desktopLogin.cancel();
     const daemon = daemonManager;
     const loopback = loopbackHost;
@@ -663,6 +698,9 @@ async function bootstrap(): Promise<void> {
     dshExecutable: app.isPackaged
       ? join(process.resourcesPath, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
       : join(app.getAppPath(), "../../runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
+    dshCapabilityPlugin: app.isPackaged
+      ? join(process.resourcesPath, "runtime/dsh/opencraft-capability-plugin.mjs")
+      : join(app.getAppPath(), "../local-agent-host/src/dsh-capability-plugin.mjs"),
     dataDirectory: join(app.getPath("userData"), "dsh"),
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || join(homedir(), ".opencraft"),
     executable: process.execPath,

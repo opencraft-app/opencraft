@@ -322,6 +322,8 @@ describe("AgentSettingsPage renewal reminder", () => {
       "select-text",
       "shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
     );
+    expect(tooltip.parentElement).toHaveClass("top-full", "pt-2");
+    expect(tooltip.querySelector('[aria-hidden="true"]')).toHaveClass("bottom-full", "border-l", "border-t");
 
     const renewAction = within(tooltip).getByRole("button", { name: "立即续费" });
     expect(renewAction).toHaveAttribute("type", "button");

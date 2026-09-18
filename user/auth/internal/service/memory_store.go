@@ -35,6 +35,7 @@ type MemoryStore struct {
 	auditTasks                map[int64]*ContentAuditTask
 	emailBindTokens           map[string]memoryEmailBindToken
 	emailBindByToken          map[string]string
+	referralClaims            []referralClaimPayload
 }
 
 type memoryInviteRecord struct {
@@ -548,6 +549,19 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 	user := s.newUserWithInviteRequirementLocked(input.Name, input.Email, "", false, now)
 	s.oauthUsers[key] = user.ID
 	return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
+}
+
+func (s *MemoryStore) CreateReferralClaim(_ context.Context, userID string, referralCode string, channel string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	referralCode = strings.ToUpper(strings.TrimSpace(referralCode))
+	if strings.TrimSpace(userID) == "" || referralCode == "" {
+		return nil
+	}
+	s.referralClaims = append(s.referralClaims, referralClaimPayload{
+		UserID: userID, ReferralCode: referralCode, ClaimChannel: strings.TrimSpace(channel),
+	})
+	return nil
 }
 
 func (s *MemoryStore) ActivateInviteForCurrentUser(_ context.Context, token string, code string, now time.Time) (User, error) {

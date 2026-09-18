@@ -139,6 +139,63 @@ describe("HermesAgentSkillsPanel", () => {
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
+  it("can delegate its heading to a host surface", () => {
+    const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
+    render(
+      <HermesAgentSkillsPanel
+        botId="bot-1"
+        execDebugCommand={execDebugCommand}
+        showHeader={false}
+      />,
+    );
+
+    const description = isGlobal
+      ? "为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。"
+      : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用";
+    expect(screen.queryByRole("tablist", { name: "技能页面切换" })).not.toBeInTheDocument();
+    expect(screen.queryByText(description)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(skillsSearchPlaceholder)).toBeInTheDocument();
+  });
+
+  it("can register host-rendered marketplace navigation and target actions in a Shell header region", async () => {
+    const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
+    const HeaderRegion = ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="shell-header-region">{children}</div>
+    );
+    render(
+      <HermesAgentSkillsPanel
+        botId="bot-1"
+        execDebugCommand={execDebugCommand}
+        headerRegion={HeaderRegion}
+        headerEnd={<button type="button">Local target</button>}
+        renderHeaderNavigation={({ label, options, value, onValueChange }) => (
+          <div role="radiogroup" aria-label={label}>
+            {options.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={option.value === value}
+                onClick={() => onValueChange(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+        showHeader={false}
+      />,
+    );
+
+    const header = screen.getByTestId("shell-header-region");
+    expect(within(header).getByRole("radiogroup", { name: "技能市场页面切换" })).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "Local target" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(skillsSearchPlaceholder)).not.toBe(header);
+    const installed = within(header).getByRole("radio", { name: /已安装/ });
+    await userEvent.click(installed);
+    expect(installed).toHaveAttribute("aria-checked", "true");
+  });
+
   it.each(["experts", "packages"])("defaults to the Experts tab for the %s route", (route) => {
     renderPanel(route);
 

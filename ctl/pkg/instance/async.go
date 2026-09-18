@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -529,22 +530,91 @@ func UpdateModifyPassPayload(ctx pctx.Context, taskID string, payload *ModifyPas
 	})
 }
 
-// ResolveModifyTargetPool 把目标 bundle 的 instance_spec_id 解析成 sandbox 侧的落点。
+// ResolveModifyTargetPool 把目标 bundle 的 instance_spec_id 解析成与当前 sandbox
+// 同地域的目标 Pool。
 //
 // CTL 没有 spec → pool 的静态映射：spec 只给出 template_class_id + sku_id（配置里的
-// spec_pools），真正的 pool 要对着 sandbox 的活跃 Pool 列表筛。多个候选时取第一个——
-// 升配只是把归属换到目标规格的池子，池内库存水位由 sandbox 自己的 worker 管。
-func ResolveModifyTargetPool(ctx pctx.Context, instanceSpecID string) (poolID, skuID string, err error) {
+// spec_pools），真正的 pool 要对着 sandbox 的活跃 Pool 列表筛。Sandbox 不允许原地
+// 变配跨地域，因此候选池还必须与实例当前 Pool 同地域；同地域不同可用区允许。
+func ResolveModifyTargetPool(ctx pctx.Context, instanceSpecID, sandboxID string) (poolID, skuID string, err error) {
 	l := NewLogic().(*logic)
-	pools, err := l.resolveCreateCandidatePools(ctx, instanceSpecID)
+	if l.sandboxAdapter == nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
+	}
+	sandboxID = strings.TrimSpace(sandboxID)
+	if sandboxID == "" {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "source sandbox id is required")
+	}
+	if _, err := l.templateCandidatesForSpec(instanceSpecID); err != nil {
+		return "", "", err
+	}
+	sandboxDetail, err := l.sandboxAdapter.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "get source sandbox %q: %v", sandboxID, err)
+	}
+	if sandboxDetail == nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "source sandbox %q returned empty detail", sandboxID)
+	}
+	livePools, err := l.sandboxAdapter.ListPools(ctx)
+	if err != nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "list pools: %v", err)
+	}
+	targetSKUID := l.skuIDForSpec(instanceSpecID)
+	targetPoolID, err := resolveModifyTargetPoolForSource(
+		livePools,
+		sandboxDetail.TemplateID,
+		l.templateClassForSpec(instanceSpecID),
+		targetSKUID,
+	)
 	if err != nil {
 		return "", "", err
 	}
-	if len(pools) == 0 {
-		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError,
-			"no active sandbox pool for instance spec %q", instanceSpecID)
+	return targetPoolID, targetSKUID, nil
+}
+
+func resolveModifyTargetPoolForSource(pools []psandbox.Pool, sourcePoolID, templateClassID, skuID string) (string, error) {
+	sourcePoolID = strings.TrimSpace(sourcePoolID)
+	var sourcePool *psandbox.Pool
+	for i := range pools {
+		if strings.TrimSpace(pools[i].ID) == sourcePoolID {
+			sourcePool = &pools[i]
+			break
+		}
 	}
-	return pools[0], l.skuIDForSpec(instanceSpecID), nil
+	if sourcePool == nil {
+		return "", errcode.Wrap(errcode.ErrSandboxServiceError, "source sandbox pool %q not found", sourcePoolID)
+	}
+	sourceRegion, err := tencentRegionFromZone(sourcePool.Zone)
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrSandboxServiceError, "resolve source pool region: %v", err)
+	}
+	for _, pool := range pools {
+		if !poolEligibleForCreate(pool, templateClassID, skuID) {
+			continue
+		}
+		region, regionErr := tencentRegionFromZone(pool.Zone)
+		if regionErr != nil || region != sourceRegion {
+			continue
+		}
+		if poolID := strings.TrimSpace(pool.ID); poolID != "" {
+			return poolID, nil
+		}
+	}
+	return "", errcode.Wrap(errcode.ErrSandboxServiceError,
+		"no active sandbox pool for target class %q sku %q in source region %q",
+		templateClassID, skuID, sourceRegion)
+}
+
+func tencentRegionFromZone(zone string) (string, error) {
+	trimmed := strings.TrimSpace(zone)
+	idx := strings.LastIndex(trimmed, "-")
+	if idx <= 0 || idx == len(trimmed)-1 {
+		return "", fmt.Errorf("invalid Tencent Cloud zone %q", zone)
+	}
+	if _, err := strconv.Atoi(trimmed[idx+1:]); err != nil {
+		return "", fmt.Errorf("invalid Tencent Cloud zone %q: %w", zone, err)
+	}
+	return trimmed[:idx], nil
 }
 
 // === trade-pass-destroy 父子 task 公开入口（设计稿 §3.5 / §4.5.2 / §4.5.3 / §4.6 / §4.7）===

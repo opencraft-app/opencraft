@@ -5,10 +5,14 @@ import {
 } from "@opencraft/chat-render-web";
 import { TimelineBlockRendererRegistryService } from "@opencraft/timeline-render-react";
 import {
+  ConversationTerminalSessionRegistry,
+  RegistryConversationTerminalToolHost,
   createConversationBindingStore,
   SideChatService,
+  type AppServerWorkbenchRuntime,
   type PersistedConversationBinding,
 } from "@opencraft/workbench-runtime";
+import { asHostId, createConversationKey } from "@opencraft/chat-core";
 
 import { createBrowserWorkbenchPanelPlugin } from "../browser/browser-panel-plugin";
 import { BrowserPresentationCoordinator } from "../browser/browser-presentation-coordinator";
@@ -30,7 +34,6 @@ import {
   createWorkbenchPanelRuntime,
 } from "./panel-runtime-context";
 import type { WorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
-import type { WorkbenchTerminalSessionRegistry } from "@opencraft/plugin-terminal";
 import {
   bootstrapLightVelaOAuthCallback,
   bootstrapLightVelaWebLoginCallback,
@@ -46,7 +49,7 @@ export interface WebWorkbenchApplication {
   readonly panelRuntime: WorkbenchPanelReactRuntime;
   readonly timelineRenderers: TimelineBlockRendererRegistryService;
   readonly supervisor: WebWorkbenchApplicationSupervisor;
-  readonly terminalSessions: WorkbenchTerminalSessionRegistry | null;
+  readonly terminalSessions: ConversationTerminalSessionRegistry | null;
   dispose(): Promise<void>;
 }
 
@@ -102,6 +105,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     },
   });
   let supervisor: WebWorkbenchApplicationSupervisor;
+  let resolveTerminalRuntime: ((hostId: string) => AppServerWorkbenchRuntime) | null = null;
   let releaseSupervisor: (() => Promise<void>) | undefined;
   const hostProxy = new WebHostProxyBroker(async (hostId, targetUrl, init) => {
     if (supervisor.mode !== "active") {
@@ -133,7 +137,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     throw error;
   }
   let browserWorkbench: BrowserWorkbenchCoordinator;
-  let terminalSessions: WorkbenchTerminalSessionRegistry | null = null;
+  let terminalSessions: ConversationTerminalSessionRegistry | null = null;
   try {
     await panelRuntime.install(TimelineBlockRendererRegistryService);
     await panelRuntime.install(BuiltinTimelineRendererPlugin);
@@ -155,8 +159,21 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
       browserPages,
       browserWorkbench,
     );
+    terminalSessions = new ConversationTerminalSessionRegistry((hostId) => {
+      if (resolveTerminalRuntime === null) {
+        throw new Error("Terminal Host is unavailable without an active AppServer runtime");
+      }
+      return resolveTerminalRuntime(hostId);
+    });
+    const terminalToolHost = new RegistryConversationTerminalToolHost(
+      terminalSessions,
+      ({ hostId, threadId }) => conversationBindings.findScope(
+        createConversationKey(asHostId(hostId), threadId),
+      ),
+    );
     supervisor = await createWebWorkbenchApplicationSupervisor(
       browserToolHost,
+      terminalToolHost,
       conversationBindings,
       cordis,
       (scopeId) => {
@@ -177,6 +194,7 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
     releaseSupervisor = () => supervisor.dispose();
     if (supervisor.mode === "active") {
       const activeSupervisor = supervisor;
+      resolveTerminalRuntime = (hostId) => activeSupervisor.registry.getRuntime(hostId);
       await panelRuntime.install(SideChatService, { resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
       await panelRuntime.install(createSideChatPanelPlugin(panelRuntime.context.sideChats, conversationBindings));
       const desktopKind = (
@@ -195,12 +213,8 @@ export async function createWebWorkbenchApplication(): Promise<WebWorkbenchAppli
         }
       }
       const {
-        WorkbenchTerminalSessionRegistry,
         createTerminalWorkbenchPanelPlugin,
       } = await import("@opencraft/plugin-terminal");
-      terminalSessions = new WorkbenchTerminalSessionRegistry(
-        (hostId) => activeSupervisor.registry.getRuntime(hostId),
-      );
       await panelRuntime.install(
         createTerminalWorkbenchPanelPlugin(terminalSessions),
       );

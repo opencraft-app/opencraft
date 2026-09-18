@@ -46,6 +46,24 @@ type RegisterInput struct {
 	TTLSeconds int    `json:"ttlSeconds"`
 }
 
+type registerRequest struct {
+	UIN        string `json:"uin"`
+	TargetIP   string `json:"targetIp"`
+	Port       int    `json:"port"`
+	TTLSeconds int    `json:"ttlSeconds"`
+}
+
+type registrationResponse struct {
+	UIN         string    `json:"uin"`
+	Status      string    `json:"status"`
+	TargetIP    string    `json:"targetIp,omitempty"`
+	Port        int       `json:"port,omitempty"`
+	TunnelHost  string    `json:"tunnelHost,omitempty"`
+	TunnelToken string    `json:"tunnelToken,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt,omitempty"`
+	UpdatedAt   time.Time `json:"updatedAt,omitempty"`
+}
+
 type Error struct {
 	Status  int
 	Code    string
@@ -114,7 +132,12 @@ func (c *Client) Register(ctx context.Context, input RegisterInput) (Registratio
 	if input.Uin <= 0 || strings.TrimSpace(input.TargetIP) == "" || input.Port <= 0 || input.Port > 65535 || input.TTLSeconds <= 0 {
 		return Registration{}, errors.New("invalid developer route registration input")
 	}
-	body, err := json.Marshal(input)
+	body, err := json.Marshal(registerRequest{
+		UIN:        strconv.FormatInt(input.Uin, 10),
+		TargetIP:   input.TargetIP,
+		Port:       input.Port,
+		TTLSeconds: input.TTLSeconds,
+	})
 	if err != nil {
 		return Registration{}, fmt.Errorf("encode developer route registration: %w", err)
 	}
@@ -176,12 +199,22 @@ func (c *Client) do(ctx context.Context, method string, query url.Values, body [
 		}
 		return Registration{}, &Error{Status: response.StatusCode, Code: strings.TrimSpace(failure.Code), Message: strings.TrimSpace(failure.Message)}
 	}
-	var registration Registration
-	if err := json.Unmarshal(payload, &registration); err != nil {
+	var wire registrationResponse
+	if err := json.Unmarshal(payload, &wire); err != nil {
 		return Registration{}, fmt.Errorf("decode developer route response: %w", err)
 	}
-	if registration.Uin <= 0 || strings.TrimSpace(registration.Status) == "" {
+	uin, err := strconv.ParseInt(strings.TrimSpace(wire.UIN), 10, 64)
+	if err != nil || uin <= 0 || strconv.FormatInt(uin, 10) != wire.UIN || strings.TrimSpace(wire.Status) == "" {
 		return Registration{}, errors.New("developer route response is incomplete")
 	}
-	return registration, nil
+	return Registration{
+		Uin:         uin,
+		Status:      wire.Status,
+		TargetIP:    wire.TargetIP,
+		Port:        wire.Port,
+		TunnelHost:  wire.TunnelHost,
+		TunnelToken: wire.TunnelToken,
+		ExpiresAt:   wire.ExpiresAt,
+		UpdatedAt:   wire.UpdatedAt,
+	}, nil
 }

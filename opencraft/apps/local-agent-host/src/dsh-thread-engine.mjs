@@ -15,18 +15,22 @@ export function forkSeed(source, { lastTurn, beforeTurn } = {}, closers) {
     if (index < 0) throw new Error("Unknown fork turn");
     selected = source.slice(0, index);
   }
-  const detached = structuredClone(selected);
+  // DSH events are deep-frozen at acceptance and the child Session snapshots
+  // every seed event on construction, so a shallow array copy suffices here —
+  // structuredClone of the whole history was a redundant third full deep copy.
+  const detached = selected.slice();
   return [...detached, ...closers(detached)];
 }
 
 /** Native ownership and full event seeding; no renderer projection enters this port. */
 export async function createThreadEngine(ctx, toolsModuleUrl) {
   const module = path => new URL(path, toolsModuleUrl).href;
-  const { Session, SessionId, interruptedTurnClosers } = await import(module("../../dsh-session/lib/index.js"));
+  const { SessionId, interruptedTurnClosers } = await import(module("../../dsh-session/lib/index.js"));
   const { createUserMessage } = await import(module("../../dsh-llm/lib/index.js"));
   const { setSandboxMode } = await import(module("../../dsh-sandbox-policy/lib/index.js"));
   const { setApprovalPolicy } = await import(module("../../dsh-user-approval/lib/index.js"));
   const handles = new Map();
+  const resuming = new Map();
   const setup = input => async child => {
     await ctx.agentPresets.mount(child, input.agentPreset);
     if (input.developerInstructions) child.systemPrompt.section({ name: "opencraft:developer-instructions", order: 90, text: input.developerInstructions });
@@ -63,8 +67,26 @@ export async function createThreadEngine(ctx, toolsModuleUrl) {
   });
   return {
     create,
+    async describe(input) {
+      const live = ctx.agents.get(input.sessionId)?.session;
+      const stored = live ? { meta: live.header, events: live.events } : await ctx.sessionPersistence.inspect(SessionId(input.sessionId));
+      const session = live ?? { id: SessionId(input.sessionId), header: stored.meta, events: stored.events };
+      let selection;
+      for (let i = stored.events.length - 1; i >= 0; i--) {
+        const event = stored.events[i];
+        if (event.type === "request/header") { selection = event.data?.config; break; }
+      }
+      return { selection, loaded: live !== undefined, permissions: {
+        sandbox: ctx.sandboxPolicy.resolve({ session }),
+        approval: ctx.approval.overrideOf(session) ?? ctx.approval.config.policy ?? "ask",
+        preset: ctx.permissionPresets.current(stored.events),
+        networkPolicy: "not-managed-by-file-sandbox",
+      } };
+    },
     async resume(input) {
       if (ctx.agents.get(input.sessionId)) return { sessionId: input.sessionId };
+      if (resuming.has(input.sessionId)) return resuming.get(input.sessionId);
+      const operation = (async () => {
       if (volatileSessions.has(input.sessionId)) throw new Error("Temporary thread has been closed");
       const agentPreset = (await ctx.agentPresets.resolve(input.agentPreset)).id;
       const handle = await ctx.agents.resume({ resumeSessionId: SessionId(input.sessionId),
@@ -72,15 +94,19 @@ export async function createThreadEngine(ctx, toolsModuleUrl) {
         setup: setup({ ...input, agentPreset }) });
       handles.set(input.sessionId, handle);
       return { sessionId: input.sessionId };
+      })().finally(() => resuming.delete(input.sessionId));
+      resuming.set(input.sessionId, operation);
+      return operation;
     },
     async fork(input) {
       const source = ctx.agents.get(input.sourceSessionId)?.session;
       const inspected = source ? { meta: source.header, events: source.events } : await ctx.sessionPersistence.inspect(SessionId(input.sourceSessionId));
       const seed = forkSeed(inspected.events, input, interruptedTurnClosers);
-      const policySession = Session.create(SessionId(input.sourceSessionId), seed, inspected.meta);
+      // Policy resolution only reads the event log; constructing a whole throwaway
+      // Session here deep-copied and froze the entire seed just to fold it once.
       const permissionState = {
-        mode: ctx.sandboxPolicy.resolve({ session: policySession }).mode,
-        approval: ctx.approval.overrideOf(policySession) ?? ctx.approval.config.policy ?? "ask",
+        mode: ctx.sandboxPolicy.resolve({ session: { events: seed, header: inspected.meta, id: SessionId(input.sourceSessionId) } }).mode,
+        approval: ctx.approval.overrideOf({ events: seed }) ?? ctx.approval.config.policy ?? "ask",
       };
       return create({ ...input, seed, cwd: input.cwd ?? inspected.meta.cwd,
         agentPreset: input.agentPreset ?? inspected.meta.agentPreset, permissionState: input.permissionState ?? permissionState,

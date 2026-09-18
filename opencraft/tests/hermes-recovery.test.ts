@@ -97,6 +97,21 @@ test("retained failures distinguish error-only recovery from real partial output
   assert.equal(partial.error?.message, "Disconnected");
 });
 
+test("retained failure recovery preserves the structured error surface", () => {
+  const turn = appendLiveSessionProjection([userTurn()], {
+    ...snapshot,
+    running: false,
+    inflight: {
+      user: "hello",
+      assistant: "",
+      streaming: false,
+      error: "Hermes turn failed",
+      error_surface: { layer: "billing", code: "billing", retryable: false },
+    },
+  })!;
+  assert.deepEqual(turn.error?.errorSurface, { layer: "billing", code: "billing", retryable: false });
+});
+
 test("warm reconnect keeps the exact segment owner paired with its watermark", async () => {
   const recovery = new HermesProjectionRecovery();
   const turn = userTurn();

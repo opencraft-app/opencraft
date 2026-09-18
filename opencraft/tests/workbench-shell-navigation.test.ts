@@ -20,7 +20,7 @@ test("application width preferences are bounded and invalid storage falls back s
   for (const width of [182.828125, 340, 520, 900]) {
     assert.equal(resolveShellNavigationWidth(width), 137, "legacy oversize preferences respect the content cap");
   }
-  const input = { state: createShellNavigationState(), viewportWidth: 1100, contextWidth: 275, contextAvailable: true, sidecarOpen: true };
+  const input = { state: createShellNavigationState({ applications: true }), viewportWidth: 1100, contextWidth: 275, contextAvailable: true, sidecarOpen: true };
   assert.equal(projectShellNavigation({ ...input, navigationWidth: 340 }).dockOpen, true);
   assert.equal(projectShellNavigation({ ...input, navigationWidth: 520 }).railWidth, 137);
   assert.equal(projectShellNavigation({ ...input, viewportWidth: 800, navigationWidth: 520 }).dockOpen, false);
@@ -49,8 +49,8 @@ test("application pane detent is independent from pin preferences and expanded w
   assert.equal(reopened.pinned.applications, true);
 });
 
-test("default app pin and independently persisted account preference", () => {
-  assert.deepEqual(createShellNavigationState().pinned, { applications: true, account: false });
+test("applications default unpinned and account remains an independent preference", () => {
+  assert.deepEqual(createShellNavigationState().pinned, { applications: false, account: false });
   assert.deepEqual(createShellNavigationState({ applications: false, account: true }).pinned, { applications: false, account: true });
   for (const invalid of [null, false, 1, "bad", { applications: "true", account: [] }]) {
     assert.deepEqual(createShellNavigationState(invalid), createShellNavigationState());
@@ -74,7 +74,7 @@ test("width pressure with a collapsed conversation leaves no orphan footer", () 
   const state = createShellNavigationState();
   const projection = projectShellNavigation({ state, viewportWidth: 400, contextWidth: 275, contextAvailable: true, sidecarOpen: false });
   assert.equal(projection.footerVisible, false);
-  assert.equal(state.pinned.applications, true);
+  assert.equal(state.pinned.applications, false);
 });
 
 test("narrow presentation preserves pins, supports peek, restores with hysteresis", () => {
@@ -117,8 +117,32 @@ test("platform container may suspend docking without erasing user preferences", 
   const state = createShellNavigationState();
   const projection = projectShellNavigation({ state, viewportWidth: 1400, contextWidth: 275, contextAvailable: true, sidecarOpen: true, allowDock: false });
   assert.equal(projection.dockOpen, false);
-  assert.equal(state.pinned.applications, true);
+  assert.equal(state.pinned.applications, false);
   assert.deepEqual(projection.footer, project(state).footer);
+});
+
+test("restoring durable preferences never preserves a transient peek", () => {
+  const transient = reduceShellNavigation(createShellNavigationState(), {
+    type: "toggle",
+    surface: "applications",
+    dockAvailable: false,
+  });
+  assert.equal(transient.peek, "applications");
+  const restored = reduceShellNavigation(transient, {
+    type: "restore-preferences",
+    preferences: {
+      applications: true,
+      account: false,
+      railDetent: "compact",
+      lastVisibleRailDetent: "compact",
+    },
+  });
+  assert.deepEqual(restored, createShellNavigationState({
+    applications: true,
+    account: false,
+    railDetent: "compact",
+    lastVisibleRailDetent: "compact",
+  }));
 });
 
 test("context-free applications use one navigation pane without changing pin preferences", () => {

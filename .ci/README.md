@@ -444,7 +444,8 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
    只含 Namespace、ServiceAccount、Secret 的 GitOps MR。
 2. foundation 合入并在 `tke-bj8` 收敛后，手动以 `BOOTSTRAP_PHASE=runtime` 重跑。同一流程先
    证明 bootstrap 幂等，再从 gitops desired state 执行 Collaboration MySQL migration Job 和
-   read-only verify Job；两者成功后才创建 runtime GitOps MR。
+   read-only verify Job；两者必须显式绑定同一个候选 image digest，不能让 verify 从仍指向
+   foundation 的 platform 配置回退到旧镜像；两者成功后才创建 runtime GitOps MR。
 
 流水线把公开 SDKAppID 作为可审阅启动变量（北京 `AgentNetwork` 默认 `1600137234`），需要的 protected settings 为
 `COLLABORATION_IM_CREDENTIAL`（username 为 IM 管理员，password 为 IM SecretKey）、

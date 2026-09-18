@@ -26,6 +26,7 @@ import {
 } from "./appserver-bot-sidebar-adapter";
 import type { ApplicationRoute } from "./workbench-navigation";
 import type { PlatformAccountContributionRegistry } from "./platform-account-contributions";
+import { isInternalAudienceVisible } from "../internal-developer-mode";
 
 const EMPTY_ACCOUNT_SNAPSHOT: PlatformAccountSnapshot = Object.freeze({
   revision: 0,
@@ -72,6 +73,7 @@ export interface ExtensionWorkbenchProjectionOptions {
   readonly botDirectory: AppServerBotDirectory;
   readonly host: PlatformViewHost;
   readonly applicationRoute: ApplicationRoute;
+  readonly internalDeveloperMode: boolean;
   readonly openSettings: (pageId: string) => void;
   readonly openView: (viewId: string, resourceUri?: string | null) => void;
 }
@@ -103,6 +105,7 @@ export function useExtensionWorkbenchProjection({
   botDirectory,
   host,
   applicationRoute,
+  internalDeveloperMode,
   openSettings,
   openView,
 }: ExtensionWorkbenchProjectionOptions): ExtensionWorkbenchProjection {
@@ -137,7 +140,9 @@ export function useExtensionWorkbenchProjection({
     const views = new Map(
       contributionSnapshot.views
         .map(({ contribution }) => contribution)
-        .filter((view) => supportsPlatform(view, host.platform))
+        .filter((view) =>
+          supportsPlatform(view, host.platform)
+          && isInternalAudienceVisible(view.audience, internalDeveloperMode))
         .map((view) => [view.id, view] as const),
     );
     const renderView = (viewId: string, resourceUri: string | null = null, onDismiss?: () => void, authenticationFlowId?: string): ReactNode => {
@@ -190,7 +195,7 @@ export function useExtensionWorkbenchProjection({
         window.open(bot.action.url, "_blank", "noopener,noreferrer");
       }
     };
-    const bots: SidebarEntity[] = [
+    const bots: SidebarEntity[] = internalDeveloperMode ? [
       ...contributionSnapshot.bots
         .map(({ contribution }) => contribution)
         .filter((bot) => supportsPlatform(bot, host.platform))
@@ -216,14 +221,16 @@ export function useExtensionWorkbenchProjection({
         ? []
         : botDirectorySnapshot.entries.map((entry) =>
           projectAppServerBotSidebarEntity(entry, botConversationViewId, openView))),
-    ];
+    ] : [];
     bots.sort((left, right) =>
       (left.order ?? 0) - (right.order ?? 0)
       || left.title.localeCompare(right.title)
       || left.key.localeCompare(right.key));
     const navigation = contributionSnapshot.navigation
       .map(({ contribution }) => contribution)
-      .filter((item) => supportsPlatform(item, host.platform))
+      .filter((item) =>
+        supportsPlatform(item, host.platform)
+        && isInternalAudienceVisible(item.audience, internalDeveloperMode))
       .sort(byOrderThenId);
     const actionFor = (item: (typeof navigation)[number]): SidebarActionItem => ({
         id: item.id,
@@ -288,7 +295,7 @@ export function useExtensionWorkbenchProjection({
         .map(actionFor),
       catalogs,
       bots,
-      botCreation: botConversationViewId === null
+      botCreation: !internalDeveloperMode || botConversationViewId === null
         ? null
         : createAppServerBotCreationCommand(
           botDirectory,
@@ -321,6 +328,7 @@ export function useExtensionWorkbenchProjection({
     contributionSnapshot,
     contributions,
     host,
+    internalDeveloperMode,
     openSettings,
     openView,
     rendererSnapshot,

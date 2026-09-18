@@ -280,6 +280,17 @@ header.lv-agent-sidebar-header--borderless {
   }
 }
 
+/* 空人设页同样去边框。
+ *
+ * 与上面那条不是重复：这条管 isEmptyPersonaPage（已有 bot 但没配人设），
+ * 上面那条管 isOnboardingVisible（创建引导）。两个状态互不包含，各有测试
+ * 守卫（agent-settings-empty-persona / agent-settings-nav-spacing），
+ * 删掉任一条都会让对应场景的边框回来。 */
+header.lv-agent-sidebar-header:has(+ .lv-agent-empty-persona-page) {
+  border-right: 0;
+  border-bottom: 0 !important;
+}
+
 /* 诊断中心输出区原生滚动条彻底隐藏（视觉滚动条由 React 手绘，
  * 见 agent-diagnostics-panel.tsx 的 DiagnosticOutput）。
  * Firefox 走元素 inline style scrollbarWidth:none，WebKit 走这条。 */
@@ -693,43 +704,6 @@ a {
   background: white;
 }
 
-.lv-agent-create-button {
-  display: flex;
-  width: var(--lv-agents-nav-width);
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-  border: 1px solid #e9ecf1;
-  border-radius: 999px;
-  color: rgb(0 0 0 / 72%);
-  background: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.lv-agent-create-button:hover,
-.lv-agent-create-button:focus-visible {
-  border-color: #dfe3ea;
-  color: rgb(0 0 0 / 90%);
-  background: #f7f8fb;
-  outline: none;
-}
-
-.lv-agent-create-button:disabled,
-.lv-agent-create-button:disabled:hover {
-  cursor: not-allowed;
-  border-color: #e9ecf1;
-  color: rgb(0 0 0 / 30%);
-  background: #f7f8fb;
-}
-
 .lv-agents-nav {
   display: flex;
   width: var(--lv-agents-nav-width);
@@ -1045,7 +1019,6 @@ a {
 
   .lv-agent-profile-wrap,
   .lv-agent-profile,
-  .lv-agent-create-button,
   .lv-agents-nav,
   .lv-agent-feedback-link {
     width: 100%;

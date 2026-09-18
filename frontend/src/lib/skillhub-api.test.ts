@@ -35,6 +35,7 @@ describe("skillhub-api", () => {
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   describe("resolveSkillHubApiBase", () => {
@@ -91,6 +92,20 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ skillSets: [] });
       await fetchSkillSets();
       expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skillsets");
+    });
+
+    it("uses the Electron SkillHub capability instead of renderer fetch", async () => {
+      const get = vi.fn(async () => ({
+        status: 200,
+        contentType: "application/json",
+        body: new TextEncoder().encode(JSON.stringify({ skillSets: [] })),
+      }));
+      const rendererFetch = vi.fn();
+      globalThis.fetch = rendererFetch as unknown as typeof globalThis.fetch;
+      vi.stubGlobal("opencraftDesktop", { kind: "electron", skillHub: { get } });
+      await fetchSkillSets({ page: 9 });
+      expect(get).toHaveBeenCalledWith("/api/v1/skillsets?page=9");
+      expect(rendererFetch).not.toHaveBeenCalled();
     });
 
     it("appends scene, keyword and paging query parameters", async () => {

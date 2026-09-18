@@ -111,6 +111,24 @@ test_auth_failure_removes_temp_credentials() (
   [[ ! -e "$body_path" ]] || fail "credential request body survived auth failure"
 )
 
+test_session_only_generates_local_credentials() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/session-only" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_SESSION_TOKEN='short-lived-testing-session' # pragma: allowlist secret
+  unset PERSONAL_DEV_EMAIL PERSONAL_DEV_PASSWORD
+  source "$SCRIPT"
+  prepare_state
+  curl_with_token() { return 0; }
+
+  assert_eq 'short-lived-testing-session' "$(central_session)" "central session reuse"
+  prepare_local_credentials
+  [[ "$LOCAL_IDENTITY_EMAIL" == lv-local-*@example.com ]] \
+    || fail "session-only flow did not generate a local email"
+  [[ -n "$LOCAL_IDENTITY_PASSWORD" ]] \
+    || fail "session-only flow did not generate a local password"
+  assert_eq "$LOCAL_IDENTITY_EMAIL" "$(state_get email)" "local email state"
+  assert_eq "$LOCAL_IDENTITY_PASSWORD" "$(state_get password)" "local password state"
+)
+
 test_personal_kubeconfig_guard() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/kube-guard" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -194,6 +212,7 @@ test_intl_registration_starts_tunnel() (
   central_session() { printf 'session-token\n'; }
   curl() { return 0; }
   curl_with_token() {
+    printf '%s\n' "$*" >"$TEST_ROOT/intl-registration-request"
     printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.sg.tunnel.internal","tunnelToken":"short-lived-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
   }
   ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/intl-tunnel-assignment"; }
@@ -201,7 +220,9 @@ test_intl_registration_starts_tunnel() (
   assert_eq 'uin-450860000013.sg.tunnel.internal|short-lived-registration-token' \
     "$(<"$TEST_ROOT/intl-tunnel-assignment")" "tunnel assignment passed to agent"
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
-  ! rg -q 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
+  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/intl-registration-request"
+  ! grep -q '"uin"' "$TEST_ROOT/intl-registration-request"
+  ! grep -Eq 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
 )
 
 test_devtunnel_build_uses_current_checkout() (
@@ -230,6 +251,8 @@ test_devtunnel_build_uses_current_checkout() (
   [[ -x "$DEVTUNNEL_BIN" ]] || fail "devtunnel-agent binary was not created"
   grep -Fq -- "-v $checkout:/workspace:ro" "$TEST_ROOT/devtunnel-docker-args" \
     || fail "devtunnel-agent was not built from the current checkout"
+  grep -Fq -- "-e GOWORK=off" "$TEST_ROOT/devtunnel-docker-args" \
+    || fail "devtunnel-agent build did not disable the read-only root Go workspace"
 )
 
 test_intl_registration_without_capability_fails_closed() (
@@ -256,7 +279,7 @@ test_intl_registration_without_capability_fails_closed() (
   [[ -s "$TEST_ROOT/intl-missing-token-delete" ]] || fail "unsafe active registration was not disabled"
 )
 
-test_cn_registration_uses_server_derived_target() (
+test_cn_registration_sends_explicit_devcloud_target() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/cn-register" PERSONAL_DEV_SITE=cn
   export PERSONAL_DEV_IP='9.134.214.121'
   source "$SCRIPT"
@@ -266,12 +289,68 @@ test_cn_registration_uses_server_derived_target() (
   central_session() { printf 'session-token\n'; }
   curl() { return 0; }
   curl_with_token() {
-    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"expiresAt":"2099-01-01T00:00:00Z"}'
+    printf '%s\n' "$*" >"$TEST_ROOT/cn-registration-request"
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"short-lived-cn-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
   }
-  ensure_devtunnel_agent() { fail "CN must not start devtunnel-agent"; }
+  ensure_devtunnel_agent() { printf '%s|%s\n' "$1" "$2" >"$TEST_ROOT/cn-tunnel-assignment"; }
   register_route
+  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/cn-registration-request"
+  ! grep -q '"uin"' "$TEST_ROOT/cn-registration-request"
+  assert_eq 'uin-450860000013.cn.tunnel.internal|short-lived-cn-registration-token' \
+    "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
   assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
+  ! grep -Eq 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+)
+
+test_registration_agent_failure_fails_closed() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/agent-failure" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_IP='9.134.214.121'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    if [[ " $* " == *' -X DELETE '* ]]; then
+      printf 'disabled\n' >"$TEST_ROOT/agent-failure-delete"
+      printf '%s\n' '{"uin":450860000013,"status":"disabled"}'
+      return
+    fi
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"short-lived-cn-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  ensure_devtunnel_agent() { return 1; }
+  stop_devtunnel_agent() { printf 'stopped\n' >"$TEST_ROOT/agent-failure-stop"; }
+  if (register_route) >/dev/null 2>&1; then
+    fail "registration succeeded after the local tunnel agent failed"
+  fi
+  [[ -s "$TEST_ROOT/agent-failure-delete" ]] || fail "agent failure left an active developer route"
+  [[ -s "$TEST_ROOT/agent-failure-stop" ]] || fail "agent failure did not stop local tunnel state"
+)
+
+test_cn_registration_without_capability_fails_closed() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/cn-missing-token" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_IP='9.134.214.121'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    if [[ " $* " == *' -X DELETE '* ]]; then
+      printf 'disabled\n' >"$TEST_ROOT/cn-missing-token-delete"
+      printf '%s\n' '{"uin":450860000013,"status":"disabled"}'
+      return
+    fi
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  ensure_devtunnel_agent() { fail "agent must not start without a per-registration capability"; }
+  if (register_route) >/dev/null 2>&1; then
+    fail "CN registration succeeded without a per-registration tunnel capability"
+  fi
+  [[ -s "$TEST_ROOT/cn-missing-token-delete" ]] || fail "unsafe CN registration was not disabled"
 )
 
 test_heartbeat_survives_transient_failures() (
@@ -286,6 +365,27 @@ test_heartbeat_survives_transient_failures() (
   }
   heartbeat_loop
   assert_eq '3' "$attempts" "heartbeat retry count"
+)
+
+test_stop_heartbeat_interrupts_long_sleep() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/heartbeat-stop" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS=300
+  source "$SCRIPT"
+  prepare_state
+  "$SCRIPT" heartbeat-loop >"$TEST_ROOT/heartbeat-stop.log" 2>&1 &
+  local heartbeat_pid="$!" sleeper_pid="" attempt
+  printf '%s\n' "$heartbeat_pid" >"$HEARTBEAT_PID_FILE"
+  for attempt in $(seq 1 50); do
+    sleeper_pid="$(pgrep -P "$heartbeat_pid" 2>/dev/null | head -1 || true)"
+    [[ -n "$sleeper_pid" ]] && break
+    sleep 0.1
+  done
+  [[ -n "$sleeper_pid" ]] || fail "heartbeat did not enter its long sleep"
+  stop_heartbeat
+  wait "$heartbeat_pid" 2>/dev/null || true
+  ! process_is_running "$heartbeat_pid" || fail "heartbeat parent survived stop"
+  ! process_is_running "$sleeper_pid" || fail "heartbeat sleep child survived stop"
+  [[ ! -e "$HEARTBEAT_PID_FILE" ]] || fail "heartbeat pid file survived stop"
 )
 
 test_order_no_pay_is_loopback_only_and_intl_usd() (
@@ -443,14 +543,19 @@ test_browser_login_is_minted_privately() (
   curl_with_token() {
     printf '%s\n' '{"userId":"usr_browser","sessionToken":"private-token","loginUrl":"http://127.0.0.1:5173/#session_token=private-token","expiresAt":"2099-01-01T00:00:00Z","impersonated":false}'
   }
-  local output url headers pid curl_bin
+  local output output_file url headers pid first_pid curl_bin
   curl_bin="$(type -P curl)"
-  output="$TEST_ROOT/browser-login-output"
-  mint_browser_login >"$output" 2>&1
-  output="$(<"$output")"
+  output_file="$TEST_ROOT/browser-login-output"
+  mint_browser_login >"$output_file" 2>&1
+  output="$(<"$output_file")"
   [[ "$output" != *private-token* ]] || fail "browser session token leaked to command output"
   assert_eq '' "$(state_get browser_login_url)" "browser login token must not persist in state"
   assert_eq '2099-01-01T00:00:00Z' "$(state_get browser_login_expires_at)" "browser login expiry"
+  first_pid="$(<"$BROWSER_BOOTSTRAP_PID_FILE")"
+  mint_browser_login >>"$output_file" 2>&1
+  ! process_is_running "$first_pid" || fail "previous browser bootstrap survived immediate replacement"
+  output="$(<"$output_file")"
+  [[ "$output" != *private-token* ]] || fail "replacement browser session token leaked to command output"
   url="$(<"$BROWSER_BOOTSTRAP_READY_FILE")"
   [[ "$url" =~ ^http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_-]{24,128}$ ]] \
     || fail "one-time browser URL is malformed: $url"
@@ -465,9 +570,31 @@ test_browser_login_is_minted_privately() (
     || fail "browser session token file survived bootstrap startup"
 )
 
+test_browser_nonce_retries_empty_generation() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/browser-nonce" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  local attempts_file nonce
+  attempts_file="$TEST_ROOT/browser-nonce-attempts"
+  printf '0\n' >"$attempts_file"
+  browser_nonce_once() {
+    local attempts
+    attempts="$(<"$attempts_file")"
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" >"$attempts_file"
+    if ((attempts == 1)); then
+      return 0
+    fi
+    printf '%s\n' 'valid_browser_nonce_0123456789'
+  }
+  nonce="$(generate_browser_nonce)"
+  assert_eq 'valid_browser_nonce_0123456789' "$nonce" "browser nonce retry result"
+  assert_eq '2' "$(<"$attempts_file")" "browser nonce retry count"
+)
+
 test_skill_name_and_paths_are_consistent() {
-  rg -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
-  if rg -n 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
+  grep -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
+  if grep -ERn 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
     "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md" \
     "$REPO_ROOT/.agents/skills/personal-devcloud-environment/scripts" \
     "$REPO_ROOT/deploy/localstack/README.md"; then
@@ -477,12 +604,12 @@ test_skill_name_and_paths_are_consistent() {
 }
 
 test_payment_and_production_guardrails() {
-  ! rg -n 'place-and-pay|pay-url' "$SCRIPT"
-  ! rg -n 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl[^\n]*sync' "$SCRIPT"
-  rg -q 'verify-order-no-pay' "$SCRIPT"
-  rg -q 'verify-checkmodify-no-pay' "$SCRIPT"
-  rg -q 'checkModify verification is not implemented' "$SCRIPT"
-  ! rg -q 'verified.*checkCreate' "$SCRIPT"
+  ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
+  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl.*sync' "$SCRIPT"
+  grep -q 'verify-order-no-pay' "$SCRIPT"
+  grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
+  grep -q 'checkModify verification is not implemented' "$SCRIPT"
+  ! grep -q 'verified.*checkCreate' "$SCRIPT"
 }
 
 run_test 'CN and Intl state are isolated' test_site_state_isolation
@@ -490,14 +617,18 @@ run_test 'saved kind cluster is restored for follow-up commands' test_saved_kind
 run_test 'active site blocks cross-site activation' test_active_site_blocks_switch
 run_test 'state updates are atomic' test_state_updates_are_atomic
 run_test 'auth failure removes credential temp files' test_auth_failure_removes_temp_credentials
+run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout
 run_test 'Intl registration without a capability fails closed' test_intl_registration_without_capability_fails_closed
-run_test 'CN registration validates the server-derived target' test_cn_registration_uses_server_derived_target
+run_test 'CN registration sends the DevCloud target and starts its assigned tunnel' test_cn_registration_sends_explicit_devcloud_target
+run_test 'CN registration without a capability fails closed' test_cn_registration_without_capability_fails_closed
+run_test 'registration agent failure fails closed' test_registration_agent_failure_fails_closed
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
+run_test 'heartbeat stop interrupts a long sleep' test_stop_heartbeat_interrupts_long_sleep
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure
@@ -505,6 +636,7 @@ run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_
 run_test 'testing gateway migrates stale state and rejects production overrides' test_testing_gateway_migrates_stale_state_and_rejects_prod_override
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately
+run_test 'browser login retries an empty nonce generation' test_browser_nonce_retries_empty_generation
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
 

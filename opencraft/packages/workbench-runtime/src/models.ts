@@ -1,6 +1,6 @@
 import type { TimelineSnapshot } from "@opencraft/chat-core";
 
-export type ThreadStatus = "ready" | "running" | "review";
+export type ThreadStatus = "ready" | "running" | "review" | "error";
 
 export interface WorkbenchThread {
   id: string;

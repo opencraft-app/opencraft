@@ -1,5 +1,8 @@
 // @refresh reset
-import { preflightHostConnection } from "@opencraft/workbench-runtime";
+import {
+  preflightHostConnection,
+  type ConversationTerminalToolHost,
+} from "@opencraft/workbench-runtime";
 import {
   QueryClient,
   QueryClientProvider,
@@ -29,12 +32,14 @@ import { ImageProcessingService } from "@opencraft/image-processing";
 import { processBrowserImage } from "@opencraft/image-processing/browser";
 import { IndexedDbBlobStorage } from "@opencraft/blob-resources/browser";
 import {
-  installBrowserDynamicToolHandler,
   OPENCRAFT_BROWSER_CAPABILITY,
-  OPENCRAFT_BROWSER_DYNAMIC_TOOLS,
   OPENCRAFT_BROWSER_EXTENSION,
   type BrowserDynamicToolHost,
 } from "@opencraft/browser-appserver";
+import {
+  installWorkbenchDynamicToolHandlers,
+  OPENCRAFT_WORKBENCH_DYNAMIC_TOOLS,
+} from "./workbench-dynamic-tools";
 import {
   searchAppServerSkills,
   type FuzzyFileSearchSession,
@@ -90,7 +95,9 @@ import {
   createWorkbenchCoordinator,
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
+  AgentRuntimeDirectory,
   HostRuntimeRegistry,
+  type AgentRuntimeAccess,
   type CordisHostConnectionProviderRuntime,
   type HostConnectionJson,
   type HostConnectionProfile,
@@ -126,7 +133,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { parseWorkbenchLocationUrl } from "./workbench-navigation";
+import { parseWorkbenchLocationUrl, createApplicationNavigation, type ApplicationNavigation } from "./workbench-navigation";
 import { IndexedDbHostConnectionProfileStore } from "./indexeddb-host-profile-store";
 import { environmentSourceAdapter } from "./environment-directory/contribution-adapter";
 import { IndexedDbExtensionSettingsStorage } from "./indexeddb-extension-settings-storage";
@@ -155,6 +162,7 @@ import {
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly agentRuntimes: AgentRuntimeAccess;
   readonly threadManagement: {
     capabilities(hostId: string): { fork: boolean; rename: boolean; archive: boolean };
     rename(hostId: string, threadId: string, name: string): Promise<void>;
@@ -188,11 +196,11 @@ export interface AppServerHostCatalog {
   selectHost(hostId: string): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
   promoteDraft(draftId: string, receipt: SubmissionReceipt): Promise<WorkbenchLocation>;
-  openDraft(options: {
+  navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
     readonly entrypoint?: "home" | "new-chat";
     readonly mode?: WorkbenchHistoryMode;
-  }): Promise<WorkbenchLocation>;
+  }): WorkbenchLocation;
   submit(intent: Parameters<AppServerWorkbenchRuntime["submit"]>[0]): Promise<SubmissionReceipt>;
   readonly navigation: WorkbenchNavigationTransaction<AppServerWorkbenchRuntime>;
   readonly routeCheckpoints: Map<string, unknown>;
@@ -209,11 +217,11 @@ export interface AppServerHostCatalog {
 export interface WebWorkbenchCommands {
   selectHost(hostId: string): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
-  openDraft(options: {
+  navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
     readonly entrypoint?: "home" | "new-chat";
     readonly mode?: WorkbenchHistoryMode;
-  }): Promise<WorkbenchLocation>;
+  }): WorkbenchLocation;
   promoteDraft(draftId: string, receipt: SubmissionReceipt): Promise<WorkbenchLocation>;
   retargetDraft(draftId: string, execution: ComposerExecutionTarget): void;
   submit(intent: Parameters<AppServerWorkbenchRuntime["submit"]>[0]): Promise<SubmissionReceipt>;
@@ -470,6 +478,7 @@ async function disposeOwnedSteps(
 }
 
 interface WebWorkbenchApplicationBase {
+  readonly agentRuntimes: AgentRuntimeDirectory;
   readonly authenticationFlows: AuthenticationFlowService;
   readonly environmentDirectory: EnvironmentDirectory;
   readonly blobs: BlobResourceService;
@@ -499,6 +508,7 @@ interface WebWorkbenchApplicationBase {
 
 export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
   readonly mode: "hostless";
+  readonly navigation: ApplicationNavigation<null>;
 }
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
@@ -621,14 +631,19 @@ function createWebWorkbenchCommands(input: {
 }): WebWorkbenchCommands {
   let commands: WebWorkbenchCommands;
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
+  let hostSelectionEpoch = 0;
   commands = {
     async selectHost(hostId) {
+      const epoch = ++hostSelectionEpoch;
+      const origin = input.navigation.getSnapshot().revision;
       if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && profile.enabled)) throw new Error("此环境当前不可连接，请刷新环境目录。");
       const activeDraft = input.scopes.getActiveDraft();
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
       }
       await input.registry.ensureConnected(hostId);
+      if (epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
+        || input.scopes.getActiveDraft()?.id !== activeDraft?.id) return;
       if (activeDraft !== null && activeDraft.target.execution.hostId !== hostId) {
         const nextDraft = input.scopes.openDraft({
           entrypoint: activeDraft.entrypoint,
@@ -650,7 +665,8 @@ function createWebWorkbenchCommands(input: {
           input.scopes.dismissDraft(activeDraft.id);
         } catch (error) {
           input.scopes.dismissDraft(nextDraft.id);
-          input.scopes.activateDraft(activeDraft.id);
+          if (epoch === hostSelectionEpoch && origin === input.navigation.getSnapshot().revision
+            && input.scopes.getDraft(activeDraft.id)) input.scopes.activateDraft(activeDraft.id);
           throw error;
         }
       }
@@ -658,6 +674,7 @@ function createWebWorkbenchCommands(input: {
       setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
     },
     async navigate(location, mode = "push") {
+      ++hostSelectionEpoch;
       const hostId = location.kind === "thread" ? location.key.hostId : location.hostId;
       const activated = await input.navigation.navigate(location, mode);
       if (!activated) return false;
@@ -668,15 +685,22 @@ function createWebWorkbenchCommands(input: {
       );
       return true;
     },
-    async openDraft(options) {
+    navigateToHome(options) {
+      ++hostSelectionEpoch;
       const draft = input.scopes.openDraft({
         execution: options.execution,
         entrypoint: options.entrypoint,
       });
       const location = createWorkbenchDraftLocation(options.execution.hostId, draft.id);
       try {
-        const activated = await commands.navigate(location, options.mode);
+        const activated = input.navigation.navigateToHome(location, options.mode);
         if (!activated) throw new Error(`Draft ${draft.id} activation was superseded`);
+        input.coordinator.setSelectedHostId(options.execution.hostId);
+        setLocalPreference(
+          currentProductStorageKey("vela.active-host-id"),
+          options.execution.hostId,
+        );
+        setLocalPreference(activeThreadStorageKey(options.execution.hostId), null);
         return location;
       } catch (error) {
         input.scopes.dismissDraft(draft.id);
@@ -684,6 +708,7 @@ function createWebWorkbenchCommands(input: {
       }
     },
     async promoteDraft(draftId, receipt) {
+      ++hostSelectionEpoch;
       const location = await input.navigation.promoteDraft(draftId, receipt);
       setLocalPreference(activeThreadStorageKey(receipt.hostId), receipt.threadId);
       setLocalPreference(currentProductStorageKey("vela.active-host-id"), receipt.hostId);
@@ -835,6 +860,7 @@ class BoundedCheckpointMap extends Map<string, unknown> {
  */
 export async function createWebWorkbenchApplicationSupervisor(
   browserToolHost: BrowserDynamicToolHost,
+  terminalToolHost: ConversationTerminalToolHost,
   conversationBindings: ConversationBindingStore,
   cordis: CordisContext,
   disposeScopeResources: (scopeId: string) => void = () => undefined,
@@ -852,6 +878,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     const images = cordis.imageProcessing;
     const appServerRegistry = await createCordisAppServerRegistry(cordis);
     startupRollback.push(() => appServerRegistry.dispose());
+    const agentRuntimes = new AgentRuntimeDirectory();
     const botConversations = await createCordisBotConversationRuntime(cordis);
     startupRollback.push(() => botConversations.dispose());
     const profileSkills = await createCordisProfileSkillsRuntime(cordis);
@@ -884,9 +911,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const platform = currentWorkbenchPlatform();
     const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
     if (electronAppHost !== null) startupRollback.push(() => electronAppHost.close());
-    const [lightVelaPlatform, lightVela] = await Promise.all([
+    const [lightVelaPlatform, lightVela, createLightVelaHermesExtension] = await Promise.all([
       import("@opencraft/plugin-lightvela-platform"),
       import("@opencraft/plugin-lightvela-hermes"),
+      import("@opencraft/plugin-lightvela-hermes/runtime-entry").then((module) => module.default),
     ]);
     const lightVelaAccount = new lightVelaPlatform.LightVelaAccountService({
       runtimeCommands: new lightVela.AppServerLightVelaRuntimeCommandPort(
@@ -931,7 +959,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
       await extensions.activate(createBuiltinAgentsExtension({
         requestHost: async (hostId, method, params) => {
-          const result = await appServerRegistry.clients.getOrThrow(hostId).request(method, params);
+          const result = await agentRuntimes.request(hostId, method, params);
           if (changesComposerCapabilities(method)) {
             // UI requests start after application construction. Invalidate the
             // existing host-scoped catalog owner, never a session's selection.
@@ -954,9 +982,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     await extensions.activate(lightVelaPlatform.createLightVelaPlatformExtension({
       account: lightVelaAccount,
     }));
-    await extensions.activate(lightVela.createLightVelaHermesExtension({
+    await extensions.activate(createLightVelaHermesExtension({
       account: lightVelaAccount,
       profileSkills: profileSkills.service,
+      profileDirectory: botDirectory,
     }));
     if (platform === "web") {
       const createLightVelaCollaborationExtension = (
@@ -1018,6 +1047,9 @@ export async function createWebWorkbenchApplicationSupervisor(
   }
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
   if (profiles.length === 0) {
+    const navigation = createApplicationNavigation(null);
+    startupRollback.push(() => navigation.dispose());
+    agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
     const provisionHost = (input: ProvisionHostInput) => persistProvisionedHost(
       input,
       hostProfiles,
@@ -1029,6 +1061,8 @@ export async function createWebWorkbenchApplicationSupervisor(
       blobs,
       images,
       mode: "hostless",
+      navigation,
+      agentRuntimes,
       cordis,
       appServerRegistry,
       connectionProviders,
@@ -1047,6 +1081,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       removeHost: (hostId) => hostProfiles.remove(hostId),
       async dispose() {
         await disposeOwnedSteps([
+          () => navigation.dispose(),
           () => conversationBindings.dispose(),
           () => hostProfiles.close(),
           () => queryClient.clear(),
@@ -1116,11 +1151,16 @@ export async function createWebWorkbenchApplicationSupervisor(
           profileRevision: profile.revision,
         };
         const normalizedConfig = providerLease.provider.validate(profile.providerConfig, providerContext);
-        const transport = providerLease.provider.createTransport(normalizedConfig, providerContext);
         runtime = createAppServerWorkbenchRuntime({
         hostId: profile.hostId,
         hostKind: profile.hostKind,
-        transport,
+        // A provider transport is one physical Client generation. Initial
+        // connection cleanup permanently closes it, so retries must acquire a
+        // fresh generation from the still-leased provider.
+        createTransport: () => providerLease.provider.createTransport(
+          normalizedConfig,
+          providerContext,
+        ),
         autoReconnect: true,
         initialize: {
           clientInfo: { name: "opencraft-workbench", version: "0.1.0" },
@@ -1131,14 +1171,18 @@ export async function createWebWorkbenchApplicationSupervisor(
             },
           },
         },
-        dynamicTools: OPENCRAFT_BROWSER_DYNAMIC_TOOLS,
+        dynamicTools: OPENCRAFT_WORKBENCH_DYNAMIC_TOOLS,
         clientRegistry: appServerRegistry.clients,
         installClientHandlers: (client) => {
-          const browser = installBrowserDynamicToolHandler(client, browserToolHost, { hostId: profile.hostId });
+          const tools = installWorkbenchDynamicToolHandlers(
+            client,
+            { browser: browserToolHost, terminal: terminalToolHost },
+            { hostId: profile.hostId },
+          );
           const catalog = client.subscribeNotification(notification => {
             if (changesThreadCatalog(notification.method)) void queryClient.invalidateQueries({ queryKey: ["appserver", profile.hostId, "threads"] });
           });
-          return () => { catalog(); browser(); };
+          return () => { catalog(); tools(); };
         },
         });
       } catch (error) {
@@ -1166,6 +1210,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   });
   const registrations = profiles.map(createHostRegistration);
   const registry = new HostRuntimeRegistry(registrations);
+  agentRuntimes.bindRegistry(registry);
   connectBotHost = async hostId => { await registry.ensureConnected(hostId); };
   startupRollback.push(() => registry.dispose());
   const stopEnvironmentRegistry = connectEnvironmentRuntimeRegistry(hostProfiles, registry, createHostRegistration);
@@ -1266,6 +1311,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     mode: "active",
     cordis,
     appServerRegistry,
+    agentRuntimes,
     connectionProviders,
     extensions,
     extensionManager,
@@ -1435,6 +1481,7 @@ export function AppServerRuntimeProvider({
     };
   }, [registry]);
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    agentRuntimes: supervisor.agentRuntimes,
     threadManagement,
     environmentDirectory: supervisor.environmentDirectory,
     authenticationFlows: supervisor.authenticationFlows,
@@ -1463,7 +1510,7 @@ export function AppServerRuntimeProvider({
     connectionProviders: connectionProviderSnapshot.providers,
     selectHost: commands.selectHost,
     navigate: commands.navigate,
-    openDraft: commands.openDraft,
+    navigateToHome: commands.navigateToHome,
     promoteDraft: commands.promoteDraft,
     submit: commands.submit,
     provisionHost: commands.provisionHost,

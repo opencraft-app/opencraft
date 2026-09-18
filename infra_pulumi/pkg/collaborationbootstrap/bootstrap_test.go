@@ -2,10 +2,14 @@ package collaborationbootstrap
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"reflect"
 	"testing"
 )
+
+const legacyIdentityKeyHex = "2424242424242424242424242424242424242424242424242424242424242424"
 
 type fakeDatabase struct {
 	state  DatabaseState
@@ -100,7 +104,15 @@ func testConfig() Config {
 }
 
 func generatedValues() []string {
-	return []string{"database-password", "jwt-key", "gateway-token", "im-identity", "im-callback"}
+	return []string{"database-password", "jwt-key", "gateway-token", legacyIdentityKeyHex, "im-callback"}
+}
+
+func validIdentityKey() string {
+	raw, err := hex.DecodeString(legacyIdentityKeyHex)
+	if err != nil {
+		panic(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 func TestRunDryRunPlansAllResourcesWithoutWriting(t *testing.T) {
@@ -136,6 +148,49 @@ func TestRunApplyWritesRecoverableOrderAndCompleteSecret(t *testing.T) {
 	if got := secrets.payload["database.dsn"]; got != "collaboration_rw:Aa1_base-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC" {
 		t.Fatalf("database.dsn = %q", got)
 	}
+	identity, err := base64.RawURLEncoding.DecodeString(secrets.payload[imIdentityKey])
+	if err != nil || len(identity) != 32 {
+		t.Fatalf("%s must decode to 32 bytes: len=%d err=%v", imIdentityKey, len(identity), err)
+	}
+}
+
+func TestRunCanonicalizesLegacyHexIdentityKey(t *testing.T) {
+	config := testConfig()
+	payload := map[string]string{
+		"database.dsn": "collaboration_rw:existing-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
+		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
+		"im-identity.key": legacyIdentityKeyHex, "im-callback.token": "callback",
+	}
+	database := &fakeDatabase{state: DatabaseState{AccountExists: true, DatabaseExists: true, Privileges: DatabasePrivileges()}}
+	secrets := &fakeSecrets{payload: payload, exists: true}
+	result, err := Run(t.Context(), database, secrets, &fakeGenerator{}, config, IMMaterial{SecretKey: "im-secret"}, Options{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Secret.Updated || !result.Secret.Applied || !reflect.DeepEqual(secrets.writes, []string{"update-secret"}) {
+		t.Fatalf("legacy identity key was not repaired: result=%+v writes=%v", result, secrets.writes)
+	}
+	if got := secrets.payload[imIdentityKey]; got != validIdentityKey() {
+		t.Fatalf("canonical identity key = %q", got)
+	}
+}
+
+func TestRunRejectsInvalidIdentityKeyWithoutWriting(t *testing.T) {
+	config := testConfig()
+	payload := map[string]string{
+		"database.dsn": "collaboration_rw:existing-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
+		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
+		"im-identity.key": "not-a-valid-key", "im-callback.token": "callback",
+	}
+	database := &fakeDatabase{state: DatabaseState{AccountExists: true, DatabaseExists: true, Privileges: DatabasePrivileges()}}
+	secrets := &fakeSecrets{payload: payload, exists: true}
+	_, err := Run(t.Context(), database, secrets, &fakeGenerator{}, config, IMMaterial{SecretKey: "im-secret"}, Options{Apply: true})
+	if err == nil {
+		t.Fatal("invalid identity key was accepted")
+	}
+	if len(database.writes) != 0 || len(secrets.writes) != 0 {
+		t.Fatalf("invalid identity key caused writes: db=%v secrets=%v", database.writes, secrets.writes)
+	}
 }
 
 func TestRunRepairsInvalidOrphanSecretPasswordBeforeCreatingAccount(t *testing.T) {
@@ -143,7 +198,7 @@ func TestRunRepairsInvalidOrphanSecretPasswordBeforeCreatingAccount(t *testing.T
 	secrets := &fakeSecrets{exists: true, payload: map[string]string{
 		"database.dsn": "collaboration_rw:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
 		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
-		"im-identity.key": "identity", "im-callback.token": "callback",
+		"im-identity.key": validIdentityKey(), "im-callback.token": "callback",
 	}}
 	database := &fakeDatabase{}
 	result, err := Run(t.Context(), database, secrets, &fakeGenerator{values: []string{"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"}}, config, IMMaterial{SecretKey: "im-secret"}, Options{Apply: true})
@@ -166,7 +221,7 @@ func TestRunExistingMatchingStateIsIdempotent(t *testing.T) {
 	payload := map[string]string{
 		"database.dsn": "collaboration_rw:existing-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
 		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
-		"im-identity.key": "identity", "im-callback.token": "callback",
+		"im-identity.key": validIdentityKey(), "im-callback.token": "callback",
 	}
 	database := &fakeDatabase{state: DatabaseState{AccountExists: true, DatabaseExists: true, Privileges: DatabasePrivileges()}}
 	secrets := &fakeSecrets{payload: payload, exists: true}
@@ -183,7 +238,7 @@ func TestRunRejectsForeignSecretBeforeAnyWrite(t *testing.T) {
 	secrets := &fakeSecrets{exists: true, payload: map[string]string{
 		"database.dsn": "other:password@tcp(10.0.0.10:3306)/other_database?parseTime=true",
 		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
-		"im-identity.key": "identity", "im-callback.token": "callback",
+		"im-identity.key": validIdentityKey(), "im-callback.token": "callback",
 	}}
 	database := &fakeDatabase{}
 	_, err := Run(t.Context(), database, secrets, &fakeGenerator{}, testConfig(), IMMaterial{SecretKey: "im-secret"}, Options{Apply: true})
@@ -235,7 +290,7 @@ func TestRunExplicitRotationsUpdateOnlyRequestedCredentials(t *testing.T) {
 	payload := map[string]string{
 		"database.dsn": "collaboration_rw:existing-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
 		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "old-im-secret",
-		"im-identity.key": "identity", "im-callback.token": "callback",
+		"im-identity.key": validIdentityKey(), "im-callback.token": "callback",
 	}
 	database := &fakeDatabase{state: DatabaseState{AccountExists: true, DatabaseExists: true, Privileges: DatabasePrivileges()}}
 	secrets := &fakeSecrets{payload: payload, exists: true}
@@ -251,7 +306,7 @@ func TestRunExplicitRotationsUpdateOnlyRequestedCredentials(t *testing.T) {
 	if !reflect.DeepEqual(secrets.writes, []string{"update-secret"}) || !reflect.DeepEqual(database.writes, []string{"reset-password"}) {
 		t.Fatalf("rotation writes: secrets=%v db=%v", secrets.writes, database.writes)
 	}
-	if secrets.payload["im-secret.key"] != "new-im-secret" || secrets.payload["jwt.key"] != "jwt" || secrets.payload["im-identity.key"] != "identity" {
+	if secrets.payload["im-secret.key"] != "new-im-secret" || secrets.payload["jwt.key"] != "jwt" || secrets.payload["im-identity.key"] != validIdentityKey() {
 		t.Fatalf("rotation changed unrelated keys: %#v", secrets.payload)
 	}
 }
@@ -263,7 +318,7 @@ func TestRunRepairsPrivilegesWhenScopeIsWiderThanTargetDatabase(t *testing.T) {
 	secrets := &fakeSecrets{exists: true, payload: map[string]string{
 		"database.dsn": "collaboration_rw:existing-password@tcp(10.0.0.10:3306)/lightvela_collaboration?charset=utf8mb4&parseTime=true&loc=UTC",
 		"jwt.key":      "jwt", "gateway.token": "gateway", "im-secret.key": "im-secret",
-		"im-identity.key": "identity", "im-callback.token": "callback",
+		"im-identity.key": validIdentityKey(), "im-callback.token": "callback",
 	}}
 	result, err := Run(t.Context(), database, secrets, &fakeGenerator{}, testConfig(), IMMaterial{SecretKey: "im-secret"}, Options{Apply: true})
 	if err != nil {

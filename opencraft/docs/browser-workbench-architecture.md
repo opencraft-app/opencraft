@@ -361,6 +361,13 @@ Codex 的 `adoptionLease` 只用于一次 Electron WebContents handoff，不应�
 | Remote controller lease | Remote Authority | ephemeral control event/query |
 | Query cache | QueryClient | query snapshot |
 
+浏览器 Dynamic Tools 的 schema 随 Electron/Web Renderer 构建，执行 handler
+也由该 Renderer 的 Browser Runtime 持有；它们不是 Daemon 打包开关。每次物理
+AppServer 连接恢复后，Workbench 必须建立一个 connection-owned Thread capability
+lease，并核对 Host/DSH 实际注册数量与声明数量完全相等，之后 Thread 才能进入
+resident/executable。零个或部分注册是 readiness failure，不能让模型进入一个
+“看见浏览器说明、实际只能得到 UNKNOWN_TOOL”的半连接状态。
+
 禁止：
 
 - 用 Conversation `hostId` 推导 Browser Authority；

@@ -75,6 +75,22 @@ configMapGenerator:
       - ../../../ctl/migrations/000022_add_bundle_instance_spec_id.up.sql
       - ../../../ctl/migrations/000023_add_bundle_type.down.sql
       - ../../../ctl/migrations/000023_add_bundle_type.up.sql
+      - ../../../ctl/migrations/000024_create_user_subscription_gateway.down.sql
+      - ../../../ctl/migrations/000024_create_user_subscription_gateway.up.sql
+      - ../../../ctl/migrations/000025_add_bundle_display_fields.down.sql
+      - ../../../ctl/migrations/000025_add_bundle_display_fields.up.sql
+      - ../../../ctl/migrations/000026_create_pass_billing_migration.down.sql
+      - ../../../ctl/migrations/000026_create_pass_billing_migration.up.sql
+      - ../../../ctl/migrations/000027_add_pass_expiry_notify_scan_index.down.sql
+      - ../../../ctl/migrations/000027_add_pass_expiry_notify_scan_index.up.sql
+      - ../../../ctl/migrations/000028_create_static_website_platform.down.sql
+      - ../../../ctl/migrations/000028_create_static_website_platform.up.sql
+      - ../../../ctl/migrations/000029_preserve_historical_version.down.sql
+      - ../../../ctl/migrations/000029_preserve_historical_version.up.sql
+      - ../../../ctl/migrations/000030_add_pass_modify_fields.down.sql
+      - ../../../ctl/migrations/000030_add_pass_modify_fields.up.sql
+      - ../../../ctl/migrations/000031_create_event_outbox.down.sql
+      - ../../../ctl/migrations/000031_create_event_outbox.up.sql
 
 secretGenerator:
   - name: ctl-runtime-secrets

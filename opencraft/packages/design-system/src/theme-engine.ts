@@ -225,6 +225,9 @@ interface SemanticThemeColors {
   buttonTertiaryBackground: string;
   buttonTertiaryBackgroundActive: string;
   buttonTertiaryBackgroundHover: string;
+  navigationBackgroundHover: string;
+  navigationBackgroundCurrent: string;
+  navigationBackgroundPressed: string;
   controlBackground: string;
   controlBackgroundOpaque: string;
   elevatedPrimary: string;
@@ -273,6 +276,9 @@ function lightSemanticColors(theme: ThemeVariant): SemanticThemeColors {
     buttonTertiaryBackground: rgba(theme.ink, 0),
     buttonTertiaryBackgroundActive: rgba(theme.ink, 0.16 + theme.contrast * 0.08),
     buttonTertiaryBackgroundHover: rgba(theme.ink, 0.08 + theme.contrast * 0.04),
+    navigationBackgroundHover: rgba(theme.ink, 0.05 + theme.contrast * 0.03),
+    navigationBackgroundCurrent: rgba(theme.ink, 0.09 + theme.contrast * 0.04),
+    navigationBackgroundPressed: rgba(theme.ink, 0.13 + theme.contrast * 0.06),
     controlBackground: rgba(control, 0.96),
     controlBackgroundOpaque: rgbString(control),
     elevatedPrimary: rgba(elevatedPrimary, 0.96),
@@ -322,6 +328,9 @@ function darkSemanticColors(theme: ThemeVariant): SemanticThemeColors {
     buttonTertiaryBackground: rgba(theme.ink, 0.02 + theme.contrast * 0.015),
     buttonTertiaryBackgroundActive: rgba(theme.ink, 0.07 + theme.contrast * 0.05),
     buttonTertiaryBackgroundHover: rgba(theme.ink, 0.05 + theme.contrast * 0.03),
+    navigationBackgroundHover: rgba(theme.ink, 0.05 + theme.contrast * 0.025),
+    navigationBackgroundCurrent: rgba(theme.ink, 0.09 + theme.contrast * 0.04),
+    navigationBackgroundPressed: rgba(theme.ink, 0.13 + theme.contrast * 0.05),
     controlBackground: rgba(control, 0.96),
     controlBackgroundOpaque: rgbString(control),
     elevatedPrimary: rgba(elevated, 0.96),
@@ -383,6 +392,12 @@ export function buildCodexThemeCssProperties(
     "--color-background-button-secondary-active": semantic.buttonSecondaryBackgroundActive,
     "--color-background-button-secondary-hover": semantic.buttonSecondaryBackgroundHover,
     "--color-background-button-secondary-inactive": semantic.buttonSecondaryBackgroundInactive,
+    // Navigation location is a persistent route state, not a button hover.
+    // Expose an explicit state family so every shell can share the semantic
+    // contract without copying button implementation tokens into feature CSS.
+    "--color-background-navigation-hover": semantic.navigationBackgroundHover,
+    "--color-background-navigation-current": semantic.navigationBackgroundCurrent,
+    "--color-background-navigation-pressed": semantic.navigationBackgroundPressed,
     // Codex menu/list rows use the primary ghost state instead of borrowing a
     // button component's visual contract. Keep the value theme-derived while
     // exposing the source-faithful semantic name to every platform shell.

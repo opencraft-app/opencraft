@@ -476,6 +476,11 @@ test(`LightVela account (${authenticated ? "authenticated without Bots" : "anony
     ({ contribution }) => contribution.viewId === "lightvela.hermes.connectors-view",
   )?.contribution;
   assert.equal(connectorsPage?.audience, "internal");
+  assert.equal(views.find(({ contribution }) => contribution.id === "lightvela.hermes.storage-view")?.contribution.audience, "internal");
+  assert.equal(supervisor.contributions.getSnapshot().settingsPages.find(
+    ({ contribution }) => contribution.id === "lightvela.hermes.storage",
+  )?.contribution.audience, "internal");
+  assert.equal(views.find(({ contribution }) => contribution.id === "lightvela.hermes.skills-view")?.contribution.audience, "public");
   const managementPages = supervisor.contributions.getSnapshot().settingsPages.filter(
     ({ contribution }) => contribution.management?.familyId === "lightvela.hermes.manage",
   );
@@ -1072,6 +1077,23 @@ test("Hermes durable projection gives final text ownership over repeated reasoni
   assert.equal(turns[0]?.items[1]?.text, "Hello. How can I help?");
 });
 
+test("Hermes model-switch markers remain runtime metadata instead of user transcript rows", () => {
+  const marker = "[System: The active model for this chat has changed to glm-5.3-flash via provider lightvela-custom. From this point forward, use this runtime metadata when answering questions about what model/provider is active.]";
+  const turns = mapMessages("stored-model-switch", [
+    { role: "user", content: "Before" },
+    { role: "assistant", content: "First answer" },
+    { role: "user", content: marker, display_kind: "model_switch" },
+    { role: "user", content: "After" },
+    { role: "assistant", content: "Second answer" },
+  ]);
+
+  assert.deepEqual(turns.map((turn) => turn.items.map((item) => item.type)), [
+    ["userMessage", "agentMessage"],
+    ["userMessage", "agentMessage"],
+  ]);
+  assert.equal(turns.flatMap((turn) => turn.items).some((item) => item.type === "userMessage" && item.content.some((part) => part.type === "text" && part.text === marker)), false);
+});
+
 test("Hermes durable projection restores staged file attachments as typed mentions instead of @file text", () => {
   const path = "/home/agentuser/.hermes/opencraft-attachments/e3a8d764-afc4-4a38-afa3-4aacf3bad0f9-1-1-3-构建-Hermes-CVM-镜像-3.log";
   const turns = mapMessages("stored-file-attachment", [
@@ -1469,6 +1491,60 @@ test("Hermes model.options is projected as a provider-safe AppServer catalog", a
   assert.equal(response.data[0]?.isDefault, true);
   assert.deepEqual(response.data[0]?.inputModalities, ["text", "image"]);
   assert.deepEqual(calls, [{ method: "model.options", params: { explicit_only: true } }]);
+});
+
+test("Hermes session model aliases resolve against the same session-scoped catalog", async () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string, params?: unknown): Promise<T> {
+      calls.push({ method, params });
+      if (method === "session.resume") return {
+        session_id: "live-1",
+        stored_session_id: "stored-1",
+        message_count: 0,
+        messages: [],
+        info: { cwd: "/workspace", model: "kimi-k2.8-preview", provider: "custom:111" },
+      } as T;
+      if (method === "session.list") return { sessions: [] } as T;
+      if (method === "model.options") return {
+        providers: [
+          { slug: "111", name: "111", aliases: ["custom:111"], authenticated: true, models: ["kimi-k2.8-preview"] },
+          { slug: "222", name: "222", aliases: ["custom:222"], authenticated: true, models: ["kimi-k2.8-preview"] },
+        ],
+      } as T;
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  (adapter as any).profileByStored.set("stored-1", "default");
+  await adapter.loadThread("stored-1", false);
+  const catalog = await adapter.listModels({ threadId: "stored-1", includeHidden: false });
+  const rawSelection = encodeHermesModelSelection("custom:111", "kimi-k2.8-preview");
+  assert.equal(catalog.data[0]?.id, encodeHermesModelSelection("111", "kimi-k2.8-preview"));
+  assert.equal(catalog.data[0]?.model, rawSelection);
+  assert.equal(catalog.data[1]?.model, encodeHermesModelSelection("222", "kimi-k2.8-preview"));
+  assert.ok(calls.some(({ method, params }) => method === "model.options" && JSON.stringify(params) === JSON.stringify({
+    explicit_only: true,
+    session_id: "live-1",
+    profile: "default",
+  })));
+});
+
+test("Hermes profile model options settle guard releases the property editor", async () => {
+  const rpc: HermesRpcClient = {
+    call: async () => new Promise<never>(() => undefined),
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const outcome = await Promise.race([
+    adapter.listProfileModelOptions("default", 5).then(
+      () => "resolved",
+      error => error instanceof Error ? error.message : String(error),
+    ),
+    new Promise<string>(resolve => setTimeout(() => resolve("test deadline"), 30)),
+  ]);
+  assert.match(outcome, /model\.options did not answer within 5ms/u);
 });
 
 test("Hermes reasoning capability distinguishes unsupported, optional, and mandatory thinking", async () => {
@@ -2150,7 +2226,7 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
       botManagement: true,
       botAssets: false,
       groupMembership: false,
-      configuration: false,
+      configuration: true,
       routines: false,
     },
     limits: {
@@ -2198,6 +2274,7 @@ test("Hermes browser Handler advertises and serves the engine-neutral Bot extens
     },
     status: "available",
     capabilities: ["messageStreaming", "executionCancellation", "attachments"],
+    runtimeProfileId: "release-captain",
   });
 
   const createConversation = bridge.request("bot/conversation/create", {

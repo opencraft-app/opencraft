@@ -2,6 +2,7 @@ import type {
   AppServerModel,
   HermesModelCapabilities,
   HermesModelOptionsPayload,
+  HermesModelProviderOption,
 } from "./types";
 
 const MODEL_SELECTION_PREFIX = "hermes-model:";
@@ -98,6 +99,39 @@ export function modelSelectionFromExecution(
     : encodeHermesModelSelection(normalizedProvider, normalizedModel);
 }
 
+function modelId(value: string | { id?: string; name?: string }): string {
+  return (typeof value === "string" ? value : value.id ?? value.name ?? "").trim();
+}
+
+function sameProviderIdentity(provider: HermesModelProviderOption, candidate: string): boolean {
+  const normalized = candidate.trim().toLowerCase();
+  if (normalized === "") return false;
+  return [provider.slug, provider.name, ...(provider.aliases ?? [])]
+    .some((identity) => typeof identity === "string" && identity.trim().toLowerCase() === normalized);
+}
+
+/**
+ * Keep a resumed session's provider/model selection addressable through the
+ * catalog's canonical slug. Hermes Desktop treats slug, display name, and
+ * declared aliases as one provider identity; custom providers commonly expose
+ * `custom:<name>` in a session and `<name>` in the picker.
+ */
+export function canonicalHermesModelSelection(
+  payload: HermesModelOptionsPayload,
+  model: unknown,
+  provider: unknown,
+): string {
+  const raw = modelSelectionFromExecution(model, provider);
+  const normalizedModel = typeof model === "string" ? model.trim() : "";
+  const normalizedProvider = typeof provider === "string" ? provider.trim() : "";
+  if (normalizedModel === "" || normalizedProvider === "") return raw;
+  const canonical = (payload.providers ?? []).find((candidate) =>
+    sameProviderIdentity(candidate, normalizedProvider)
+      && (candidate.models ?? []).some((entry) => modelId(entry) === normalizedModel),
+  );
+  return canonical === undefined ? raw : encodeHermesModelSelection(canonical.slug.trim(), normalizedModel);
+}
+
 export function mapHermesModelOptions(
   payload: HermesModelOptionsPayload,
 ): AppServerModel[] {
@@ -109,8 +143,8 @@ export function mapHermesModelOptions(
   );
   const occurrences = new Map<string, number>();
   for (const provider of providers) {
-    for (const model of provider.models ?? []) {
-      const normalized = String(model).trim();
+    for (const rawModel of provider.models ?? []) {
+      const normalized = modelId(rawModel);
       if (normalized !== "") {
         occurrences.set(normalized, (occurrences.get(normalized) ?? 0) + 1);
       }
@@ -123,7 +157,7 @@ export function mapHermesModelOptions(
     const providerSlug = provider.slug.trim();
     const providerName = provider.name?.trim() || providerSlug;
     for (const rawModel of provider.models ?? []) {
-      const model = String(rawModel).trim();
+      const model = modelId(rawModel);
       if (model === "") continue;
       const selection = encodeHermesModelSelection(providerSlug, model);
       if (seen.has(selection)) continue;

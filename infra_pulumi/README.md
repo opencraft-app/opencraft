@@ -135,6 +135,23 @@ Auth/CTL SSM 必须预先存在，以避免命令误建不完整的核心服务 
 broker endpoint，最后预检并以 `bootstrap-referral-tokens --stack shprod --apply` 交付三个 Role Token。
 普通上海镜像发布不执行集群购买或 Token bootstrap。
 
+新加坡 Referral 使用同样的两阶段流程，并固定为新加坡地域内独立的 Pulsar、CynosDB 逻辑库和账号：
+
+```bash
+INFRA_COMPONENT_SCOPE=pulsar GOWORK=off go run ./cmd/infractl preview --stack sgprod
+INFRA_COMPONENT_SCOPE=pulsar GOWORK=off go run ./cmd/infractl up --stack sgprod
+GOWORK=off go run ./cmd/infractl bootstrap-referral-database --stack sgprod
+GOWORK=off go run ./cmd/infractl bootstrap-referral-database --stack sgprod --apply
+GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack sgprod
+GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack sgprod --apply
+```
+
+Pulsar 首次 apply 后仍须先回填真实 cluster ID 和 broker endpoint。数据库 bootstrap 默认只读预检，
+显式 `--apply` 后幂等创建独立 `lightvela_referral` 数据库、`referral@%` 账号、DB 级权限，并把生成的
+数据库密码与内部服务 Token 合并进同一 Referral SSM；它不会覆盖已经交付的 Pulsar Token。
+内部服务 Token 从 inventory 指定的 CTL SSM 读取并精确复制，默认拒绝不一致值；仅明确轮换时才允许
+追加 `--allow-internal-token-change`。
+
 北京 Collaboration 首次发布复用 inventory 中登记的现有 CynosDB 集群，使用独立逻辑库、
 账号和 SSM。IM material 必须是权限不超过 `0640` 的 JSON 文件，只包含 `sdkAppId`、
 `adminUserId` 和 `secretKey`；命令不会打印文件内容：
@@ -158,6 +175,10 @@ GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
 首次创建账号使用满足 CynosDB 密码复杂度、且可放入受管 DSN 的生成密码。若 SSM 已存在、
 账号尚未创建，且旧 DSN 密码不合规，重入时只更新 DSN 中的密码并保留其他 Secret 字段；
 已有账号不会通过这条路径隐式轮换密码。
+`im-identity.key` 固定表示 32 字节随机材料的 Base64 文本。早期 bootstrap 曾把同一材料保存为
+64 字符 hex；重入时只把该已知旧形态无损规范化为 Base64，不重新生成密钥，也不改变已有身份派生
+材料。其他长度或编码一律在任何写入前拒绝。只读预检会把这次规范化显示为 Secret update，只有
+显式 `--apply` 才回写 SSM。
 创建账号 API 返回后，账号可能尚未可用于授权；同次 bootstrap 只对新账号的
 `AccountNotExistError` 做有界等待，取消或超时仍停止并保留中间态。后续先只读预检，
 确认账号、逻辑库和权限的实际状态，再决定是否重入 `--apply`。

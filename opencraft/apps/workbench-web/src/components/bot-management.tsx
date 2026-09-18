@@ -2,19 +2,32 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { Bot, MessagesSquare, MoreHorizontal, Plus, RefreshCw } from "lucide-react";
-import { SettingsButton, SettingsIconButton, SettingsPanel, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
+import { Bot, LoaderCircle, MessagesSquare, MoreHorizontal, Plus, RefreshCw } from "lucide-react";
+import {
+  SettingsButton,
+  SettingsIconButton,
+  SettingsNotice,
+  SettingsPanel,
+  SettingsSelect,
+  SettingsTextInput,
+  type ExtensionSettingsViewProps,
+} from "@opencraft/extension-react";
 import type { AppServerBotConversationService, AppServerBotDirectory, AppServerBotDirectoryEntry } from "@opencraft/bot-conversation-appserver";
 import { botConversationResourceUri, botSelectionResourceUri } from "@opencraft/bot-conversation";
 import { createConversationKey } from "@opencraft/chat-core";
-import type { AppServerBotConversationDescriptor } from "@opencraft/appserver-protocol";
+import type { AppServerBotConfigurationOptions, AppServerBotConversationDescriptor } from "@opencraft/appserver-protocol";
 import { ModalSurface } from "./modal/modal-surface";
+import {
+  botConfigurationControlState,
+  botConfigurationHeaderState,
+} from "./bot-configuration-controls";
 import "../styles/context-menu.scss";
 import "../styles/bot-management.scss";
 import { connectCloudHermesBotHost, resolveCloudHermesBotHost } from "../runtime/bot-management-host";
 
 type Directory = Pick<AppServerBotDirectory, "subscribe" | "getSnapshot" | "refresh" | "create" | "update" | "delete">;
-type Action = { kind: "create"; hostId: string } | { kind: "clone" | "rename" | "delete"; entry: AppServerBotDirectoryEntry };
+type BotMutationAction = { kind: "create"; hostId: string } | { kind: "clone" | "rename" | "delete"; entry: AppServerBotDirectoryEntry };
+type Action = BotMutationAction | { kind: "configure"; entry: AppServerBotDirectoryEntry };
 
 function GroupOperation({ hostId, entries, conversations, onClose, onCreated }: {
   hostId: string; entries: readonly AppServerBotDirectoryEntry[]; conversations: AppServerBotConversationService;
@@ -66,7 +79,7 @@ function GroupOperation({ hostId, entries, conversations, onClose, onCreated }: 
 }
 
 function BotOperation({ action, directory, onClose, onComplete }: {
-  action: Action; directory: Directory; onClose(): void; onComplete(): void;
+  action: BotMutationAction; directory: Directory; onClose(): void; onComplete(): void;
 }) {
   const entry = action.kind === "create" ? null : action.entry;
   const hostId = action.kind === "create" ? action.hostId : action.entry.hostId;
@@ -123,6 +136,149 @@ function BotOperation({ action, directory, onClose, onComplete }: {
   </ModalSurface>;
 }
 
+function BotConfigurationOperation({ entry, conversations, directory, onClose, onComplete }: {
+  entry: AppServerBotDirectoryEntry;
+  conversations: AppServerBotConversationService;
+  directory: Directory;
+  onClose(): void;
+  onComplete(): void;
+}) {
+  const formId = useId();
+  const [options, setOptions] = useState<AppServerBotConfigurationOptions | null>(null);
+  const [provider, setProvider] = useState(entry.bot.model?.provider ?? "");
+  const [model, setModel] = useState(entry.bot.model?.model ?? "");
+  const [configurationLoading, setConfigurationLoading] = useState(true);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    setConfigurationLoading(true);
+    setOptionsLoading(true);
+    setOptionsError(null);
+    void conversations.readBotConfiguration(entry.hostId, entry.bot.botId).then(({ configuration: next }) => {
+      if (!mounted.current) return;
+      if (next.model !== null) {
+        setProvider(next.model.provider);
+        setModel(next.model.model);
+      }
+      setConfigurationLoading(false);
+    }).catch(cause => {
+      if (!mounted.current) return;
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setConfigurationLoading(false);
+    });
+    void conversations.readBotConfigurationOptions(entry.hostId, entry.bot.botId).then(next => {
+      if (!mounted.current) return;
+      setOptions(next);
+      const fallback = next.providers.find(candidate => candidate.authenticated);
+      if (fallback !== undefined) {
+        setProvider(previous => previous || fallback.provider);
+        setModel(previous => previous || fallback.models[0] || "");
+      }
+      setOptionsLoading(false);
+    }).catch(cause => {
+      if (!mounted.current) return;
+      setOptionsError(cause instanceof Error ? cause.message : String(cause));
+      setOptionsLoading(false);
+    });
+    return () => { mounted.current = false; };
+  }, [conversations, entry.bot.botId, entry.hostId, optionsAttempt]);
+  const providerOptions = options?.providers ?? [];
+  const selectedProvider = providerOptions.find(candidate => candidate.provider === provider);
+  const displayedProviderOptions = selectedProvider || provider === ""
+    ? providerOptions
+    : [...providerOptions, { provider, name: `${provider}（当前）`, models: model ? [model] : [], authenticated: true }];
+  const providerModels = selectedProvider?.models ?? (provider === "" || model === "" ? [] : [model]);
+  const displayedModelOptions = model === "" || providerModels.includes(model)
+    ? providerModels
+    : [model, ...providerModels];
+  const catalogHasProvider = providerOptions.length > 0;
+  const catalogHasModels = selectedProvider !== undefined && displayedModelOptions.length > 0;
+  const valid = provider.trim() !== "" && model.trim() !== "";
+  const controls = botConfigurationControlState({
+    optionsLoading,
+    busy,
+    provider,
+    model,
+    hasProviderCatalog: catalogHasProvider,
+    hasModelCatalog: catalogHasModels,
+  });
+  const headerState = botConfigurationHeaderState({
+    configurationLoading,
+    optionsLoading,
+    optionsError,
+  });
+  const changeProvider = (next: string) => {
+    setProvider(next);
+    setModel(options?.providers.find(candidate => candidate.provider === next)?.models[0] ?? "");
+    setConfirmation(null);
+  };
+  const changeModel = (next: string) => { setModel(next); setConfirmation(null); };
+  const retryOptions = () => {
+    if (optionsLoading || busy) return;
+    setOptionsAttempt(attempt => attempt + 1);
+  };
+  const save = async (confirmed: boolean) => {
+    if (busy || !valid) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await conversations.updateBotConfiguration(entry.hostId, {
+        botId: entry.bot.botId,
+        expectedRevision: entry.bot.revision,
+        model: { provider: provider.trim(), model: model.trim() },
+        ...(confirmed ? { confirmExpensiveModel: true } : {}),
+      });
+      if (!result.applied && result.confirmationRequired) {
+        if (mounted.current) setConfirmation(result.confirmationRequired.message);
+        return;
+      }
+      await directory.refresh(entry.hostId);
+      if (mounted.current) onComplete();
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+  return <ModalSurface label={`${entry.bot.name} 模型设置`} size="compact" appearance="utility"
+    dismissOnOutsidePress={!busy} onDismiss={() => { if (!busy) onClose(); }}>
+    <SettingsPanel title="模型设置" actions={<span className="bot-management__configuration-status">
+      {headerState === "loading" ? <LoaderCircle aria-label="正在读取模型配置" className="is-spinning" size={16} />
+        : headerState === "retry" ? <SettingsIconButton label="重试读取可用模型" onClick={retryOptions}><RefreshCw size={16} /></SettingsIconButton>
+          : null}
+    </span>} footer={<><SettingsButton disabled={busy} onClick={onClose}>取消</SettingsButton>
+      <SettingsButton variant="primary" type="submit" form={formId} disabled={controls.saveDisabled}>
+        {busy ? "保存中…" : confirmation ? "确认并保存" : "保存"}
+      </SettingsButton></>}>
+      <form id={formId} onSubmit={event => { event.preventDefault(); void save(confirmation !== null); }}>
+        <p>设置“{entry.bot.name}”后续会话与群聊执行使用的默认模型。</p>
+        <label htmlFor={`${formId}-provider`}>模型服务</label>
+        {controls.providerControl === "select" ? <SettingsSelect id={`${formId}-provider`} value={provider} disabled={controls.inputsDisabled}
+          onChange={event => changeProvider(event.target.value)}>
+          <option value="" disabled>选择模型服务</option>
+          {displayedProviderOptions.map(option => <option key={option.provider} value={option.provider}>{option.name}</option>)}
+        </SettingsSelect> : <SettingsTextInput id={`${formId}-provider`} value={provider} disabled={controls.inputsDisabled}
+          placeholder="provider" onChange={event => changeProvider(event.target.value)} />}
+        <label htmlFor={`${formId}-model`}>模型</label>
+        {controls.modelControl === "select" ? <SettingsSelect id={`${formId}-model`} value={model} disabled={controls.inputsDisabled}
+          onChange={event => changeModel(event.target.value)}>
+          <option value="" disabled>选择模型</option>
+          {displayedModelOptions.map(option => <option key={option} value={option}>{option}</option>)}
+        </SettingsSelect> : <SettingsTextInput id={`${formId}-model`} value={model} disabled={controls.inputsDisabled}
+          placeholder="model" onChange={event => changeModel(event.target.value)} />}
+        {selectedProvider?.warning ? <SettingsNotice>{selectedProvider.warning}</SettingsNotice> : null}
+        {confirmation ? <SettingsNotice>{confirmation}</SettingsNotice> : null}
+        {error ? <SettingsNotice tone="error">{error}</SettingsNotice> : null}
+      </form>
+    </SettingsPanel>
+  </ModalSurface>;
+}
+
 export function createBotManagementView(directory: Directory, conversations: AppServerBotConversationService,
   connect: (hostId: string) => Promise<void>) {
   return function BotManagement({ host, activation }: ExtensionSettingsViewProps) {
@@ -140,6 +296,8 @@ export function createBotManagementView(directory: Directory, conversations: App
     stateReason.current = state?.error ?? null;
     const entries = snapshot.entries.filter(entry => entry.hostId === hostId);
     const canManage = state?.phase === "ready" && state.canManageBots;
+    const canConfigure = state?.phase === "ready"
+      && conversations.capability(hostId)?.features.configuration === true;
     const canCreateGroup = state?.phase === "ready"
       && conversations.capability(hostId)?.topologies.includes("group") === true
       && entries.filter(entry => entry.availability === "available" && entry.bot.status === "available").length >= 2;
@@ -181,6 +339,7 @@ export function createBotManagementView(directory: Directory, conversations: App
       if (state?.phase === "ready") void refreshGroups().catch(() => undefined);
     }, [hostId, state?.phase]);
     const actions = (entry: AppServerBotDirectoryEntry) => [
+      { kind: "configure" as const, label: "模型设置", enabled: canConfigure && entry.availability === "available" },
       { kind: "clone" as const, label: "克隆", enabled: canManage && entry.bot.management?.clone === true },
       { kind: "rename" as const, label: "重命名", enabled: canManage && entry.bot.management?.rename === true },
       { kind: "delete" as const, label: "删除", enabled: canManage && entry.bot.management?.delete === true },
@@ -230,7 +389,10 @@ export function createBotManagementView(directory: Directory, conversations: App
           void refreshGroups().catch(() => undefined);
           host.openView("vela.bot-chat.view", botConversationResourceUri(createConversationKey(hostId, conversationId)));
         }} />}
-      {action && <BotOperation action={action} directory={directory} onClose={() => setAction(null)} onComplete={() => setAction(null)} />}
+      {action?.kind === "configure" ? <BotConfigurationOperation entry={action.entry} conversations={conversations}
+        directory={directory} onClose={() => setAction(null)} onComplete={() => setAction(null)} /> : null}
+      {action && action.kind !== "configure" ? <BotOperation action={action} directory={directory}
+        onClose={() => setAction(null)} onComplete={() => setAction(null)} /> : null}
     </section>;
   };
 }

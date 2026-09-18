@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,35 @@ func TestTencentCloudProviderCachesClientsByRegion(t *testing.T) {
 	}
 	if cbsSG == cbsJHB {
 		t.Fatal("expected distinct CBS clients for Singapore and Johor")
+	}
+}
+
+func TestNewTencentCloudProviderFromEnvLoadsRegionalModifyFamilyPolicy(t *testing.T) {
+	t.Setenv("TENCENT_SECRET_ID", "test-id")
+	t.Setenv("TENCENT_SECRET_KEY", "test-key")
+	t.Setenv("TENCENT_REGION", "ap-singapore")
+	t.Setenv("TENCENT_INSTANCE_TYPE", "SA5.LARGE8")
+	t.Setenv("TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION", `{"ap-singapore":["S5","SA2"]}`)
+
+	p, err := NewTencentCloudProviderFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.cfg.ModifyInstanceFamiliesByRegion["ap-singapore"]; !reflect.DeepEqual(got, []string{"S5", "SA2"}) {
+		t.Fatalf("policy=%v", got)
+	}
+}
+
+func TestNewTencentCloudProviderFromEnvRejectsInvalidRegionalModifyFamilyPolicy(t *testing.T) {
+	t.Setenv("TENCENT_SECRET_ID", "test-id")
+	t.Setenv("TENCENT_SECRET_KEY", "test-key")
+	t.Setenv("TENCENT_REGION", "ap-singapore")
+	t.Setenv("TENCENT_INSTANCE_TYPE", "SA5.LARGE8")
+	t.Setenv("TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION", `{invalid`)
+
+	_, err := NewTencentCloudProviderFromEnv()
+	if err == nil || !strings.Contains(err.Error(), "invalid TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION") {
+		t.Fatalf("err=%v", err)
 	}
 }
 

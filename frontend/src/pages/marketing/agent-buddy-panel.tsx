@@ -157,7 +157,7 @@ export function BuddyPanel({
   botId,
   profileId,
 }: {
-  /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 soul.md */
+  /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 SOUL.md */
   botId?: string | null;
   profileId?: string;
 } = {}) {
@@ -535,7 +535,7 @@ export function BuddyPanel({
    *    `~/.openclaw/workspace/SOUL.md` —— 那是 openclaw runtime 的约定）。
    *    走 raw bash 而非 `workspace/files`：后者写死 `${HOME}/.openclaw/workspace`
    *    且强制白名单文件名，hermes 场景两个限制都不适用。
-   *  - 无 botId → 浏览器下载 soul.md（兜底）
+   *  - 无 botId → 浏览器下载 SOUL.md（兜底）
    *  内容：用 SkillHub /api/v1/souls/<slug> 的 content 拼装，对齐 zip 包格式。
    */
   const injectRecommendedSoul = useCallback(async (
@@ -651,7 +651,7 @@ export function BuddyPanel({
       downloadUrl = URL.createObjectURL(blob);
       downloadAnchor = document.createElement("a");
       downloadAnchor.href = downloadUrl;
-      downloadAnchor.download = "soul.md";
+      downloadAnchor.download = "SOUL.md";
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       if (!requestBotId) {
@@ -665,12 +665,12 @@ export function BuddyPanel({
       showToast({
         kind: "fallback",
         message: requestBotId
-          ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
-          : t("当前未选中 Agent，已下载 soul.md 到本地"),
+          ? t("无法写入 Agent 沙箱，已下载 SOUL.md 到本地")
+          : t("当前未选中 Agent，已下载 SOUL.md 到本地"),
       });
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[buddy] download soul.md fallback failed:", err);
+      console.error("[buddy] download SOUL.md fallback failed:", err);
       showToast({
         kind: "error",
         message: t("注入失败，请检查网络后重试"),
@@ -946,7 +946,7 @@ export function BuddyPanel({
       downloadUrl = URL.createObjectURL(blob);
       downloadAnchor = document.createElement("a");
       downloadAnchor.href = downloadUrl;
-      downloadAnchor.download = "soul.md";
+      downloadAnchor.download = "SOUL.md";
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
     } catch (err) {

@@ -151,12 +151,6 @@ const page = (botId: string) => (
   </AppNavigationProvider>
 );
 
-const revealHiddenTools = () => {
-  const show = (window as Window & { show?: unknown }).show;
-  if (typeof show !== "function") throw new Error("show() helper is not installed");
-  act(() => { show(); });
-};
-
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -257,16 +251,19 @@ describe("multi-Bot diagnostics", () => {
     expect(startRescueExport).not.toHaveBeenCalled();
   });
 
-  it("keeps single-Bot maintenance available alongside the always-visible create entry", async () => {
+  /*
+   * 单 bot + maxBots=1（本文件默认值）＝ 配额已满。
+   *
+   * 合并 master 时这里从「断言入口存在」换成 master 的「断言入口 disabled」：
+   * disabled 已隐含存在，还多守住了额度闸门 —— 入口默认放出来之后，唯一
+   * 拦住创建的就是它，值得测。
+   */
+  it("keeps single-Bot maintenance available and shows quota-disabled creation", async () => {
     bots = [buildBot()];
-    render(page("ins-1"));
+    const view = render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
-    /*
-     * 「新建 Bot」不再需要 show() 才显形 —— 多 bot 已是正式能力，入口默认放出。
-     * 真正的准入仍由 multiBotEnabled（后端 runtime config）与套餐额度把关，
-     * 这里只确认入口可见且没有挤掉单 bot 的维护操作。
-     */
-    expect(screen.getByRole("button", {name:"新建 Bot"})).toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"新建 Bot"})).toBeDisabled();
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).not.toBeInTheDocument();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
@@ -289,48 +286,53 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByRole("radio", { name: "空白创建" })).not.toBeInTheDocument();
   });
 
-  it("shows the disabled create quota tooltip below the button without sidebar clipping", async () => {
+  /*
+   * 从 master 侧冲突里拆出来的断言。
+   *
+   * master 那条测试把两件事写在一起：①隐藏工具仍需 show() ②点「新建 Bot」
+   * 弹旧的「创建 Bot」弹窗。②与本分支的实现互斥（入口已改为直接进引导，
+   * 见上一条），但①以及按钮顺序、remount 后入口不丢，都跟创建流程无关，
+   * 是独立的有效约束 —— 所以单独留一条，不跟着弹窗一起丢掉。
+   */
+  it("still hides advanced tools behind show() and keeps the create entry across remounts", async () => {
+    maxBots = 5;
+    const view = render(page("ins-1"));
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    // 「终端」这类高级工具仍藏在 console 的 show() 后面
+    expect(screen.queryByRole("link", { name: "终端" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+    expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
+    expect(
+      Array.from(view.container.querySelectorAll(".lv-agent-actions button"))
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot"]);
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down"))
+      .toHaveAttribute("aria-hidden", "true");
+    // 切换 bot 与整页重挂后，入口都不该消失
+    view.rerender(page("sales"));
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
+    view.unmount();
+    render(page("ins-1"));
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+  });
+
+  it("explains a disabled create icon in a portaled tooltip", async () => {
     maxBots = 1;
     render(page("ins-1"));
-    revealHiddenTools();
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
-    expect(createButton).toHaveTextContent("新建 Bot");
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
     const tooltipTrigger = createButton.parentElement;
-    expect(tooltipTrigger).not.toBeNull();
-    Object.defineProperty(tooltipTrigger, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        left: 84,
-        right: 304,
-        top: 275,
-        bottom: 311,
-        width: 220,
-        height: 36,
-        x: 84,
-        y: 275,
-        toJSON: () => ({}),
-      }),
-    });
-    fireEvent.mouseEnter(tooltipTrigger!);
-
+    expect(tooltipTrigger).toHaveAttribute("tabindex", "0");
+    fireEvent.focus(tooltipTrigger!);
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip).toHaveTextContent(
       "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
     );
     expect(tooltip.parentElement).toBe(document.body);
-    expect(tooltip).toHaveClass("fixed");
-    expect(tooltip).toHaveStyle({ left: "194px", top: "319px" });
-    expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(tooltip.querySelector("[aria-hidden='true']")).toHaveClass("bottom-full");
-
     fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
-    fireEvent.focus(tooltipTrigger!);
-    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
   });
 
   it("rechecks the current quota when creation is submitted from the panel", async () => {
@@ -371,11 +373,10 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByText("已有 Bot 正在删除中，请稍后刷新页面后再创建。")).not.toBeInTheDocument();
   });
 
-  it("does not bypass the feature flag with show()", () => {
+  it("does not bypass the multi-Bot feature flag", () => {
     maxBots = 5;
     multiBotEnabled = false;
     render(page("ins-1"));
-    revealHiddenTools();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });

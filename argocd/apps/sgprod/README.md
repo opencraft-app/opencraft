@@ -30,6 +30,7 @@
 - `gateway-dashboard`
 - `lightclaw-auth`
 - `payment`
+- `referral`
 - `sandbox`
 - `service-gateway`
 - `site-gateway`
@@ -51,6 +52,7 @@
   - `sgprod-lightclaw-auth`
   - `sgprod-nextgen-dashboard`（项目已预置；尚无 leaf app）
   - `sgprod-payment`
+  - `sgprod-referral`
   - `sgprod-sandbox`
   - `sgprod-service-gateway`
   - `sgprod-site-gateway`

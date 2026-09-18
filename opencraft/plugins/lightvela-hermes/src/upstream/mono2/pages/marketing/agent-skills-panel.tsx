@@ -1,5 +1,5 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from "react";
 import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -30,6 +30,7 @@ import {
   type LearnSkillTriggerOptions,
   type SkillsDemoMode,
   type SkillsDemoTab,
+  type SkillsHeaderNavigationProps,
 } from "./skills-demo/SkillsDemoPanel";
 import type { SkillsDataLayer } from "./skills-demo/skill-registries";
 import { ZhHantScope } from "./zh-hant-scope";
@@ -1245,6 +1246,10 @@ export interface HermesAgentSkillsPanelProps {
   profileId?: string;
   execDebugCommand: ExpertsExecDebugCommand;
   initialSectionSlug?: string;
+  headerEnd?: ReactNode;
+  headerRegion?: ComponentType<{ readonly children: ReactNode }>;
+  renderHeaderNavigation?: (props: SkillsHeaderNavigationProps) => ReactNode;
+  showHeader?: boolean;
   skillsDataLayer: SkillsDataLayer;
 }
 
@@ -1253,6 +1258,10 @@ export function HermesAgentSkillsPanel({
   profileId,
   execDebugCommand,
   initialSectionSlug,
+  headerEnd,
+  headerRegion,
+  renderHeaderNavigation,
+  showHeader = true,
   skillsDataLayer,
 }: HermesAgentSkillsPanelProps) {
   const repositories = useRepositories();
@@ -1273,25 +1282,29 @@ export function HermesAgentSkillsPanel({
   return (
     <ZhHantScope className="min-w-0">
       <Tabs value="skills" className="min-w-0">
-      <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
-        <TabsList
-          aria-label={t("技能页面切换")}
-          className="h-auto justify-start gap-8 rounded-none border-0 bg-transparent p-0 text-black/38 shadow-none"
-        >
-          <TabsTrigger
-            value="skills"
-            className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            style={getAgentSkillsTabStyle(true)}
-          >
-            {t("技能")}
-          </TabsTrigger>
-        </TabsList>
-      </div>
-      <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
-        {isGlobal
-          ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
-          : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
-      </p>
+      {showHeader ? (
+        <>
+          <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
+            <TabsList
+              aria-label={t("技能页面切换")}
+              className="h-auto justify-start gap-8 rounded-none border-0 bg-transparent p-0 text-black/38 shadow-none"
+            >
+              <TabsTrigger
+                value="skills"
+                className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                style={getAgentSkillsTabStyle(true)}
+              >
+                {t("技能")}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <p className="mb-3 min-w-0 text-pretty text-sm font-medium leading-6 text-black/50">
+            {isGlobal
+              ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
+              : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
+          </p>
+        </>
+      ) : null}
 
       <TabsContent value="skills" className="mt-0">
         <SkillsDemoPanel
@@ -1303,6 +1316,9 @@ export function HermesAgentSkillsPanel({
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
           initialTab={initialGlobalSkillsTab}
           dataLayer={skillsDataLayer}
+          headerEnd={headerEnd}
+          headerRegion={headerRegion}
+          renderHeaderNavigation={renderHeaderNavigation}
           expertsPanel={(
             <ExpertsPanel
               botId={botId}

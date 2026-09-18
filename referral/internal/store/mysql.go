@@ -154,12 +154,20 @@ func (s *MySQLStore) StatsForUser(ctx context.Context, userID string) (domain.St
 }
 
 func (s *MySQLStore) RecordRegistration(ctx context.Context, event events.Envelope, payload events.UserRegistered) error {
+	return s.recordAttribution(ctx, event, payload.UserID, payload.ReferralCode)
+}
+
+func (s *MySQLStore) RecordClaim(ctx context.Context, event events.Envelope, payload events.UserReferralClaimed) error {
+	return s.recordAttribution(ctx, event, payload.UserID, payload.ReferralCode)
+}
+
+func (s *MySQLStore) recordAttribution(ctx context.Context, event events.Envelope, userID, referralCode string) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
 		inserted, err := recordInbox(ctx, tx, event)
 		if err != nil || !inserted {
 			return err
 		}
-		if strings.TrimSpace(payload.UserID) == "" || normalizeCode(payload.ReferralCode) == "" {
+		if strings.TrimSpace(userID) == "" || normalizeCode(referralCode) == "" {
 			return nil
 		}
 		var campaign domain.Campaign
@@ -175,14 +183,14 @@ func (s *MySQLStore) RecordRegistration(ctx context.Context, event events.Envelo
 			JOIN referral_code rc ON rc.campaign_id = referral_campaign.campaign_id
 			WHERE rc.code = ? AND referral_campaign.status = ?
 			  AND referral_campaign.starts_at <= ? AND referral_campaign.ends_at > ?
-		`, normalizeCode(payload.ReferralCode), domain.CampaignStatusActive, event.OccurredAt.UTC(), event.OccurredAt.UTC()).Scan(campaignScanDest(&campaign, &inviterUserID)...)
+		`, normalizeCode(referralCode), domain.CampaignStatusActive, event.OccurredAt.UTC(), event.OccurredAt.UTC()).Scan(campaignScanDest(&campaign, &inviterUserID)...)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		if inviterUserID == payload.UserID {
+		if inviterUserID == userID {
 			return nil
 		}
 		_, err = tx.ExecContext(ctx, `
@@ -191,12 +199,12 @@ func (s *MySQLStore) RecordRegistration(ctx context.Context, event events.Envelo
 				referral_code, registration_event_id, registered_at, created_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE attribution_id = attribution_id
-		`, "rattr_"+uuid.NewString(), campaign.ID, payload.UserID, inviterUserID,
-			normalizeCode(payload.ReferralCode), event.EventID, event.OccurredAt.UTC(), time.Now().UTC())
+		`, "rattr_"+uuid.NewString(), campaign.ID, userID, inviterUserID,
+			normalizeCode(referralCode), event.EventID, event.OccurredAt.UTC(), time.Now().UTC())
 		if err != nil {
 			return err
 		}
-		return createRewardsIfQualified(ctx, tx, campaign.ID, payload.UserID)
+		return createRewardsIfQualified(ctx, tx, campaign.ID, userID)
 	})
 }
 
@@ -431,6 +439,7 @@ func createRewardsIfQualified(ctx context.Context, tx *sql.Tx, campaignID, invit
 		WHERE referral_campaign.campaign_id = ? AND ra.invitee_user_id = ?
 		  AND ra.registered_at >= referral_campaign.starts_at AND ra.registered_at < referral_campaign.ends_at
 		  AND pf.paid_at >= referral_campaign.starts_at AND pf.paid_at < referral_campaign.ends_at
+		  AND pf.paid_at >= ra.registered_at
 		  AND NOT EXISTS (SELECT 1 FROM referral_refund_fact rf WHERE rf.pass_id = pf.pass_id)
 		ORDER BY pf.paid_at ASC LIMIT 1 FOR UPDATE
 	`, campaignID, inviteeUserID).Scan(campaignScanDest(&campaign, &inviterUserID, &registeredEventID, &registeredAt, &paidAt, &qualifyingPassID)...)

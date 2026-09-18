@@ -752,6 +752,12 @@ func TestServeCLIParsesCollaborationOnlyProfile(t *testing.T) {
 	}
 }
 
+func TestPlatformTATRegistrarPreservesNilInterface(t *testing.T) {
+	if platformTATRegistrar(nil) != nil {
+		t.Fatal("nil TAT client became a non-nil Registrar interface")
+	}
+}
+
 func TestServeCLI支持显式TDSQLDSN文件(t *testing.T) {
 	root := t.TempDir()
 	dsnFile := filepath.Join(root, "mysql.dsn")

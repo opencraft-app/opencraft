@@ -41,6 +41,7 @@ class GatePlan:
     db_job_service: str
     db_job_operation: str
     db_job_image_override: str
+    readiness_image_override: str
     release_dependency_changed: bool
     release_dependencies: list[str]
     auto_merge_allowed: bool
@@ -64,6 +65,7 @@ class GatePlan:
             "db_job_service": self.db_job_service,
             "db_job_operation": self.db_job_operation,
             "db_job_image_override": self.db_job_image_override,
+            "readiness_image_override": self.readiness_image_override,
             "release_dependency_changed": self.release_dependency_changed,
             "release_dependencies": self.release_dependencies,
             "auto_merge_allowed": self.auto_merge_allowed,
@@ -190,6 +192,8 @@ def plan_release_gates(
     db_job_service = str(contract.get("db_job_service") or service)
     db_job_operation = str(contract.get("migration_operation") or "")
     db_job_image_override = resolve_image_override(image, str(contract.get("migration_image_key") or ""))
+    verifier_mode = str((contract.get("verifier") or {}).get("mode") or "")
+    readiness_image_override = db_job_image_override if verifier_mode == "service-command" else ""
     dependencies = release_dependencies_for_env(manifest, service, env)
     release_dependency_changed = dependency_changed(manifest, dependencies, changed_files)
 
@@ -220,9 +224,13 @@ def plan_release_gates(
         manual_actions.append(command)
     if requires_db_readiness and db_status != "passed":
         if readiness_supported:
-            manual_actions.append(
-                f"python3 .ci/runtime/commands/verify_db_contract.py --service {service} --env {env} --apply --wait"
+            command = (
+                f"python3 .ci/runtime/commands/verify_db_contract.py --service {service} "
+                f"--env {env} --apply --wait"
             )
+            if readiness_image_override:
+                command += f" --image-override {readiness_image_override}"
+            manual_actions.append(command)
         else:
             manual_actions.append(f"manual DB readiness confirmation required for {service}/{env}")
     if is_manual_sync_env(env):
@@ -245,6 +253,7 @@ def plan_release_gates(
         db_job_service=db_job_service,
         db_job_operation=db_job_operation,
         db_job_image_override=db_job_image_override,
+        readiness_image_override=readiness_image_override,
         release_dependency_changed=release_dependency_changed,
         release_dependencies=dependencies,
         auto_merge_allowed=auto_merge_allowed,

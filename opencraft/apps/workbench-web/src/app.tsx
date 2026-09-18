@@ -62,6 +62,11 @@ import {
   AppShellNavigationControls,
 } from "./components/app-shell-header";
 import {
+  AppShellRouteRegionsProvider,
+  appShellPlatformViewRegions,
+  useAppShellRouteHeader,
+} from "./components/app-shell-route-regions";
+import {
   Conversation,
   type ConversationInteractionAction,
   type ConversationRestoreSnapshot,
@@ -75,6 +80,7 @@ import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isLightVelaStandaloneManagementSection } from "./components/lightvela-management-route";
 import { LightVelaWorkNavigation } from "./components/lightvela-work-navigation";
 import { InternalDeveloperModeGate } from "./components/internal-developer-mode-gate";
+import { useInternalDeveloperMode } from "./internal-developer-mode";
 import {
   ManagementSettingsContent,
   ModalHost,
@@ -86,6 +92,7 @@ import { PendingConversationPage } from "./components/pending-conversation-page"
 import { Sidebar } from "./components/sidebar";
 import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
 import { useResponsiveSidebarDock } from "./components/use-responsive-sidebar-dock";
+import { usePersistedSidebarWidth } from "./components/use-persisted-sidebar-width";
 import {
   selectedProjectStorageKey,
   useActiveAppServerThread,
@@ -99,6 +106,7 @@ import {
   useConversationScopeRegistrySnapshot,
   useConversationViewActivation,
   useConversationViewIdentity,
+  useHostConnectionPhase,
   useRootComposerController,
   useThreadCatalog,
   useMultiHostThreadCatalog,
@@ -122,11 +130,6 @@ import {
   useConversationPanelState,
   useWorkbenchPanelRuntime,
 } from "./runtime/panel-runtime-context";
-import {
-  getSidebarMaximumWidth,
-  SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MINIMUM_WIDTH,
-} from "./components/sidebar-resize-handle";
 import { getWindowChromePolicy, useWindowChrome } from "./window-chrome";
 import { useTimelineViewportHost } from "./timeline-viewport";
 import { ComposerExtensionActions } from "./runtime/composer-action-renderers";
@@ -221,6 +224,7 @@ function ConversationHydration({
 }
 
 export function App() {
+  const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
   const appearanceTheme = useAppearanceTheme();
@@ -257,6 +261,12 @@ export function App() {
   const conversationViewIdentity = useConversationViewIdentity();
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
+  const activeHostConnectionPhase = useHostConnectionPhase(snapshot.hostId);
+  const environmentSnapshot = useSyncExternalStore(
+    hostCatalog.environmentDirectory.subscribe,
+    hostCatalog.environmentDirectory.getSnapshot,
+    hostCatalog.environmentDirectory.getSnapshot,
+  );
   const queueExtension = runtime.resources.host.getInitializeResult()
     ?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION];
   const queueReorderable = !(
@@ -278,8 +288,9 @@ export function App() {
         executionLocation:
           host.executionLocation ?? hostKindDescription(host.kind),
         workspaceBrowseRoots: host.workspaceBrowseRoots,
+        resource: environmentSnapshot.entries.find((entry) => entry.profile.hostId === host.hostId)?.resource ?? null,
       })),
-    [hostCatalog.hosts, hostCatalog.profiles],
+    [environmentSnapshot.entries, hostCatalog.hosts, hostCatalog.profiles],
   );
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
@@ -311,18 +322,7 @@ export function App() {
   const projectCatalog = useProjectCatalog();
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const storedWidth = Number.parseFloat(
-      window.localStorage.getItem("sidebar-width") ?? "",
-    );
-    const initialWidth = Number.isFinite(storedWidth)
-      ? storedWidth
-      : SIDEBAR_DEFAULT_WIDTH;
-    return Math.max(
-      SIDEBAR_MINIMUM_WIDTH,
-      Math.min(initialWidth, getSidebarMaximumWidth(Number.POSITIVE_INFINITY)),
-    );
-  });
+  const { width: sidebarWidth, commit: commitSidebarWidth } = usePersistedSidebarWidth();
   // Codex projects the single persisted sidebar-width signal into a root
   // layout token. Top-level routes consume the token instead of inventing
   // route-local widths, so switching routes cannot move the content boundary.
@@ -378,6 +378,9 @@ export function App() {
     workbenchNavigation.getSnapshot,
     workbenchNavigation.getSnapshot,
   );
+  const routeHeader = useAppShellRouteHeader(
+    workbenchNavigationSnapshot.routeScopeId,
+  );
   const canGoBack = workbenchNavigationSnapshot.canGoBack;
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
@@ -424,6 +427,7 @@ export function App() {
     platform: extensionPlatform,
     activeHostId: snapshot.hostId,
     profiles: hostCatalog.profiles,
+    ensureRuntimeReady: async (hostId) => { await hostCatalog.agentRuntimes.ensureReady(hostId); },
     provisionHost: hostCatalog.provisionHost,
     removeHost: hostCatalog.removeHost,
     openView: workbenchNavigation.openExtensionView,
@@ -439,6 +443,7 @@ export function App() {
     botDirectory: hostCatalog.botDirectory,
     host: extensionViewHost,
     applicationRoute: workbenchNavigationSnapshot.applicationRoute,
+    internalDeveloperMode,
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
@@ -695,7 +700,7 @@ export function App() {
     },
     [activeThreadLease],
   );
-  const createTask = useCallback(() => {
+  const navigateToHome = useCallback(() => {
     const activeProtocolThread = catalog.protocolThreads.find(
       (thread) => thread.id === activeThreadLease?.threadId,
     );
@@ -727,14 +732,14 @@ export function App() {
           };
     lastDraftWorkspaceRef.current = workspace;
     const hostId = asHostId(hostCatalog.selectedHostId);
-    void hostCatalog
-      .openDraft({
+    try {
+      hostCatalog.navigateToHome({
         execution: { hostId, workspace },
         entrypoint: "new-chat",
-      })
-      .catch((error) => {
-        console.error("Failed to activate New chat Draft", error);
       });
+    } catch (error) {
+      console.error("Failed to navigate to New chat Home", error);
+    }
   }, [
     catalog.protocolThreads,
     conversationScopes,
@@ -804,7 +809,7 @@ export function App() {
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        createTask();
+        navigateToHome();
         return;
       }
       // Match Codex's global type-to-compose behavior. Printable keys only
@@ -831,15 +836,11 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [composerController, createTask, toggleRightPanel]);
+  }, [composerController, navigateToHome, toggleRightPanel]);
 
 
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
   const expandSidebar = useCallback(() => setSidebarOpen(true), []);
-  const commitSidebarWidth = useCallback((width: number, persist: boolean) => {
-    setSidebarWidth(width);
-    if (persist) window.localStorage.setItem("sidebar-width", String(width));
-  }, []);
 
   const activeThread = catalog.threads.find(
     (thread) => thread.id === activeThreadId,
@@ -995,8 +996,8 @@ export function App() {
   const closeSettings = useCallback(() => {
     workbenchNavigation.closeSettings();
   }, [workbenchNavigation]);
-  const selectSettingsSection = useCallback((section: string) => {
-    workbenchNavigation.openSettings(section);
+  const selectSettingsSection = useCallback((section: string, mode?: "push" | "replace") => {
+    workbenchNavigation.openSettings(section, mode);
   }, [workbenchNavigation]);
   const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
@@ -1032,6 +1033,7 @@ export function App() {
         extensionContributions={hostCatalog.extensionContributions}
         extensionManager={hostCatalog.extensionManager}
         platformViewRenderers={hostCatalog.platformViewRenderers}
+        regions={appShellPlatformViewRegions}
         themes={appearanceTheme.availableThemes}
         themeId={appearanceTheme.themeId}
         themePreference={appearanceTheme.preference}
@@ -1126,22 +1128,30 @@ export function App() {
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
       onToggleRightPanel={toggleRightPanel}
-      onHome={createTask}
+      onHome={navigateToHome}
       onBack={workbenchNavigation.back}
       onForward={workbenchNavigation.forward}
       navigationActions={headerNavigationActions}
+      routeHeaderActive={routeHeader.active}
+      routeHeaderHostRef={routeHeader.hostRef}
     />
   );
 
   return (
     <>
       <InternalDeveloperModeGate />
+      <AppShellRouteRegionsProvider
+        controller={routeHeader.controller}
+        target={routeHeader.target}
+      >
       <AppShell
           navigation={{
             settingsActive: routeSettingsOpen,
             actions: [
               { id: "shell.chat", title: "Chat", icon: "chat", active: conversationRouteOpen,
-                onInvoke: () => { if (settingsOpen) closeSettings(); else if (extensionViewOpen) workbenchNavigation.closeExtensionView(); } },
+                onInvoke: () => { void workbenchNavigation.openChat()
+                  .then(changed => { if (!changed) setThreadActionError("当前请求提交中，暂时无法切换页面。"); })
+                  .catch(error => setThreadActionError(error instanceof Error ? error.message : String(error))); } },
               ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
             ],
             account: extensionProjection.account === null ? null : {
@@ -1172,7 +1182,7 @@ export function App() {
               allowEmpty: true,
             })
           }
-          header={standaloneManagementOpen ? null : header}
+          header={header}
           floatingSidebarHeader={(onDock) => (
             <AppShellNavigationControls
               hostRole="transient"
@@ -1180,7 +1190,7 @@ export function App() {
               canGoBack={canGoBack}
               canGoForward={canGoForward}
               onToggleSidebar={onDock}
-              onHome={createTask}
+              onHome={navigateToHome}
               onBack={workbenchNavigation.back}
               onForward={workbenchNavigation.forward}
               actions={headerNavigationActions}
@@ -1190,13 +1200,13 @@ export function App() {
             routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
               renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
-              onNewTaskForTarget={(hostId) => hostCatalog.openDraft({
-                execution: {
-                  hostId: asHostId(hostId),
-                  workspace: { cwd: null, runtimeWorkspaceRoots: [] },
-                },
-                entrypoint: "new-chat",
-              })}
+              onNewTaskForTarget={async (hostId) => hostCatalog.navigateToHome({
+                  execution: {
+                    hostId: asHostId(hostId),
+                    workspace: { cwd: null, runtimeWorkspaceRoots: [] },
+                  },
+                  entrypoint: "new-chat",
+                })}
               onOpenTargetSettings={(hostId) => {
                 const providerId = hostCatalog.profiles.find(
                   (profile) => profile.hostId === hostId,
@@ -1270,7 +1280,7 @@ export function App() {
                   console.error("Failed to activate selected Thread", error);
                 });
               }}
-              onNewTask={createTask}
+              onNewTask={navigateToHome}
               // The route adapter consumes both the DOM event and the old
               // route's focus before issuing a semantic navigation command.
               onOpenSettings={openSettingsFromConversation}
@@ -1326,7 +1336,7 @@ export function App() {
             nativeWorkspacePicking={localProjectPicker !== null}
             activeHostId={snapshot.hostId}
             hostOptions={composerHostOptions}
-            connectionPhase={snapshot.phase}
+            connectionPhase={activeHostConnectionPhase}
             onSelectHost={async (hostId) => {
               setWorkspacePickerOpen(false);
               await hostCatalog.selectHost(hostId);
@@ -1509,6 +1519,7 @@ export function App() {
           ) : null}
         </div>
         </AppShell>
+      </AppShellRouteRegionsProvider>
         <ModalHost requests={modalRequests} />
       {archivedHostId !== null ? <ArchivedThreadsDialog key={archivedHostId} hostId={archivedHostId} load={loadArchivedThreads} restore={restoreArchivedThread} onDismiss={() => setArchivedHostId(null)} /> : null}
       {threadActionError ? <div role="alert" className="settings-control-notice">{threadActionError}<button type="button" onClick={() => setThreadActionError(null)}>关闭提示</button></div> : null}

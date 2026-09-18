@@ -843,6 +843,35 @@
   }
 }
 
+.bot-chat-execution-error {
+  display: grid;
+  width: min(100%, 520px);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 0.5px solid var(--color-border-default);
+  border-radius: 13px;
+  background: var(--color-background-danger-subtle);
+  color: var(--color-text-danger);
+
+  > span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  strong {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  small {
+    font-size: 11px;
+    text-wrap: pretty;
+  }
+}
+
 .bot-chat-interaction {
   display: grid;
   width: min(100%, 560px);
