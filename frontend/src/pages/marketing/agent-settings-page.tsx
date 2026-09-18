@@ -2686,7 +2686,6 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const showCreateBotEntry = showHiddenAgentTools;
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -4040,7 +4039,6 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -5186,7 +5184,7 @@ export const AgentSettingsPage = ({
                                         <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                                         {passExpiryReminderCopy.label}
                                       </button>
-                                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                      <span className="pointer-events-none absolute top-full left-1/2 z-20 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                                         <span
                                           id={passExpiryTooltipId}
                                           role="tooltip"
@@ -5205,7 +5203,7 @@ export const AgentSettingsPage = ({
                                           </button>
                                           <span
                                             aria-hidden="true"
-                                            className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                            className="absolute bottom-full left-1/2 size-2 -translate-x-1/2 translate-y-1/2 rotate-45 border-l border-t border-[var(--border-subtle)] bg-white"
                                           />
                                         </span>
                                       </span>
@@ -5232,6 +5230,27 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
+                              {multiBotEnabled && (
+                                <WorkspaceActionTooltip
+                                  content={createLimitMessage || t("新建 Bot")}
+                                  side="bottom"
+                                  compact
+                                  focusable={!canCreateAdditionalBot}
+                                >
+                                  <button
+                                    type="button"
+                                    aria-label={t("新建 Bot")}
+                                    disabled={!canCreateAdditionalBot}
+                                    className="lv-agent-action-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleCreateNew();
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </WorkspaceActionTooltip>
+                              )}
                               <WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
@@ -5276,6 +5295,7 @@ export const AgentSettingsPage = ({
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
+                                aria-hidden="true"
                                 className={cn("-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                               />
                             )}
@@ -5317,20 +5337,6 @@ export const AgentSettingsPage = ({
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
-                      )}
-
-                      {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
-                          <button
-                            type="button"
-                            onClick={handleCreateNew}
-                            disabled={!canCreateAdditionalBot}
-                            className="lv-agent-create-button"
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                            {t("新建 Bot")}
-                          </button>
-                        </WorkspaceActionTooltip>
                       )}
                     </div>
 
