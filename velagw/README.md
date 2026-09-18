@@ -12,6 +12,7 @@
 2. **LLMGateway 负责跨 Set 能力**：租户归属、外部 key、Set/Shard、BYOK 意图、渠道包和版本发布。
 3. **控制面与流量面分离**：控制面使用 MySQL；流量面只依赖 Redis 路由快照，不回源 MySQL。
 4. **Kubernetes 负责运行资源，不负责业务发布决策**：`VelaGWSet` Controller 收敛单 Set 的 Pod、Service 和 PDB；容量、准入和发布顺序仍由 LLMGateway 的持久化状态机控制。
+5. **公网 listener 不承载监控面**：control、traffic 和 all-in-one 的 `/metrics` 固定返回 404。指标继续在进程内聚合；未来如需 Prometheus 抓取，使用独立内部端口和 ClusterIP Service。
 
 ```mermaid
 flowchart TB
