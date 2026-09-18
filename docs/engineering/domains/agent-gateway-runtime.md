@@ -117,7 +117,7 @@
   的唯一可用机型。Worker 通过腾讯云 `DescribeInstancesModification` 读取该实例的可变配
   列表，以目标 Pool 配置机型的 CPU/内存定义逻辑目标，只冻结完全同规格且状态为 `SELL`
   的候选，再按实例实际 region 的机型族策略排序。地域策略由
-  `TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION` 管理；当前北京、首尔、上海和新加坡均只允许
+  `TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION` 管理；当前北京、新山、首尔、上海和新加坡均只允许
   `SA5 → S5 → SA2 → SA3 → S6`，未列入策略的机型族不得用于升配，未配置地域必须失败关闭。
   `LimitExceeded.InstanceQuota`、明确的机型售罄或不支持错误才推进并持久化候选游标，限频、
   网络、实例忙和云服务暂态错误继续重试当前候选。每次重试先回读真实实例规格，以收敛“云
