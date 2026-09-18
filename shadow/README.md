@@ -163,6 +163,16 @@ curl \
   }'
 ```
 
+Query shadow accounts from an internal administration client:
+
+```bash
+curl \
+  -H 'Authorization: Bearer replace-with-internal-token' \
+  'http://127.0.0.1:8080/internal/shadow/admin/accounts?search=usr_&page=1&page_size=20'
+```
+
+This endpoint joins local users with their optional Tencent Cloud binding, so incomplete registrations remain visible. It requires `SHADOW_INTERNAL_TOKEN`; a missing server-side token fails closed.
+
 6. Update shadow-account phone number:
 
 ```bash
@@ -338,6 +348,7 @@ make build-linux-amd64
 - `SHADOW_FREE_TRIAL_ACTIVITY_ID`: required when `SHADOW_BILLING_MODE=http`
 - `SHADOW_FREE_TRIAL_ACT_ID`: required when `SHADOW_BILLING_MODE=http`
 - `SHADOW_CALLBACK_TOKEN`: optional shared secret. If set, Tencent callback URL must include `?token=...` or send `X-Shadow-Callback-Token`.
+- `SHADOW_INTERNAL_TOKEN`: required Bearer token for `/internal/shadow/admin/*`; the admin endpoint is unavailable when this value is empty.
 - `SHADOW_AUTH_CODE_TTL`: default `10m`
 - `SHADOW_REQUEST_TIMEOUT`: default `10s`
 

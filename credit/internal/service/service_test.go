@@ -48,6 +48,10 @@ func (s *fakeStore) ListOnlineProducts(_ context.Context) ([]store.CreditProduct
 	return out, nil
 }
 
+func (s *fakeStore) ListAdminPackages(context.Context, store.AdminPackageFilter) ([]store.AdminCreditPackage, int64, error) {
+	return nil, 0, nil
+}
+
 func (s *fakeStore) ListPackageAppIDs(_ context.Context, productIDs []string, pageNo, pageSize int) ([]int64, int64, error) {
 	allowed := stringSet(productIDs)
 	seen := make(map[int64]struct{})
