@@ -230,8 +230,8 @@ html.lw-settings-scrollbar-stable {
   }
 }
 
-/* Only the empty persona page removes the brand area's frame; /agents keeps its sidebar header. */
-header.lv-agent-sidebar-header:has(+ .lv-agent-empty-persona-page) {
+/* Named Agent sections without a Bot have no sidebar; /agents keeps its sidebar header. */
+header.lv-agent-sidebar-header:has(+ .lv-agent-empty-section-page) {
   border-right: 0;
   border-bottom: 0 !important;
 }

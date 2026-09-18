@@ -2703,7 +2703,7 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const isEmptyPersonaPage = activeSection === "buddy"
+  const isEmptyAgentSectionPage = Boolean(initialSectionSlug)
     && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
@@ -4416,7 +4416,7 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
-        isEmptyPersonaPage && "lv-agent-empty-persona-page",
+        isEmptyAgentSectionPage && "lv-agent-empty-section-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
