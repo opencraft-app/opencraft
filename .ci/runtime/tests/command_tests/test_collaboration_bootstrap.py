@@ -85,6 +85,25 @@ class CollaborationBootstrapProjectionTests(unittest.TestCase):
         self.assertIn("argocd/services/collaboration/beijing-sandbox\n", active)
         self.assertNotIn("beijing-sandbox-foundation", active)
 
+    def test_runtime_projection_is_idempotent_when_active_catalog_already_runtime(self):
+        module = load_module()
+        root = self.fixture()
+        module.project(phase="foundation", **self.kwargs(root))
+        module.project(phase="runtime", **self.kwargs(root))
+
+        rerun = self.kwargs(root)
+        rerun["deployed_at"] = "2026-09-18T08:00:00Z"
+        changed = module.project(phase="runtime", **rerun)
+
+        active = (root / "argocd/catalogs/sandbox/beijing-sandbox/collaboration.yaml").read_text()
+        self.assertIn("argocd/services/collaboration/beijing-sandbox\n", active)
+        platform = (root / "argocd/services/collaboration/beijing-sandbox/collaboration-platform.env").read_text()
+        self.assertIn("COLLABORATION_DEPLOYED_AT=2026-09-18T08:00:00Z", platform)
+        self.assertIn(
+            "argocd/secrets/beijing-sandbox/collaboration-runtime-secrets.sops.yaml",
+            changed,
+        )
+
     def test_projection_rejects_mutable_image_or_plaintext_secret(self):
         module = load_module()
         root = self.fixture()

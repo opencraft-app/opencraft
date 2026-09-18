@@ -60,8 +60,11 @@ def project(
         if not active.is_file():
             raise ValueError("runtime projection requires an existing foundation active catalog")
         current = yaml.safe_load(active.read_text()) or {}
-        if current.get("sourcePath") != "argocd/services/collaboration/beijing-sandbox-foundation":
-            raise ValueError("runtime projection requires the active catalog to point to foundation")
+        if current.get("sourcePath") not in {
+            "argocd/services/collaboration/beijing-sandbox-foundation",
+            "argocd/services/collaboration/beijing-sandbox",
+        }:
+            raise ValueError("runtime projection requires the active catalog to point to foundation or runtime")
 
     source = foundation_candidate if phase == "foundation" else runtime_candidate
     active.parent.mkdir(parents=True, exist_ok=True)
