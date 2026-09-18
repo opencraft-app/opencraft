@@ -83,6 +83,10 @@ master 源码
   `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
   回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
+- Gateway Dashboard 新增内部上游时，source-facing ConfigMap 占位符、各环境 Kustomize replacement
+  与 deploy-facing `gateway-dashboard-platform.env` 必须在同一变更中成套更新。所有复用共享
+  component 的 sandbox/playground 环境都要提供对应环境键；生产环境则在各自 Kustomization 中
+  显式接线。严格 Kustomize 校验必须证明渲染结果不再包含 `REPLACE_` 占位符，才能创建 promote MR。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
   `*.edgeone.dev` URL 缺少 `eo_token` / `eo_time` 时，应根据同次部署的 project ID 和 deployment ID
