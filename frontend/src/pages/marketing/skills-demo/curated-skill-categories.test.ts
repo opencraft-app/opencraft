@@ -126,6 +126,9 @@ describe("curated Discover categories", () => {
 
   it("provides the full recommendation structure for every Featured skill", () => {
     [
+      "mattpocock/skills/teach",
+      "mattpocock/skills/grill-me",
+      "flowkit-labs/skills/reddit-automation",
       "charon-fan/agent-playbook/self-improving-agent",
       "vercel-labs/skills/find-skills",
       "steipete/clawdis/weather",
@@ -141,5 +144,23 @@ describe("curated Discover categories", () => {
       expect(overview.basicUsage).not.toHaveLength(0);
       expect(overview.examplePrompt).not.toHaveLength(0);
     });
+  });
+
+  it("keeps the new Featured skills localized across supported overview locales", () => {
+    const rawIds = [
+      "mattpocock/skills/teach",
+      "mattpocock/skills/grill-me",
+      "flowkit-labs/skills/reddit-automation",
+    ];
+
+    for (const rawId of rawIds) {
+      const english = getCuratedSkillOverview(rawId, "en-US");
+      for (const locale of ["zh-CN", "id-ID", "es", "ja-JP", "ko-KR"] as const) {
+        const localized = getCuratedSkillOverview(rawId, locale);
+        expect(localized.overview, `${rawId}:${locale}`).not.toEqual(english.overview);
+        expect(localized.basicUsage, `${rawId}:${locale}`).not.toBe(english.basicUsage);
+        expect(localized.examplePrompt, `${rawId}:${locale}`).not.toBe(english.examplePrompt);
+      }
+    }
   });
 });
