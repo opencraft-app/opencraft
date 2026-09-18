@@ -39,16 +39,16 @@ type describePassCloudAPIRequest struct {
 }
 
 type cloudAPIPass struct {
-	PassID       string `json:"PassId"`
-	UserID       string `json:"UserId"`
-	BundleID     string `json:"BundleId"`
-	Uin          int64  `json:"Uin"`
-	AppID        int64  `json:"AppId"`
-	Status       string `json:"Status"`
-	CreatedTime  string `json:"CreatedTime,omitempty"`
-	ExpiredTime  string `json:"ExpiredTime"`
-	IsolatedTime string `json:"IsolatedTime,omitempty"`
-	UpdatedTime  string `json:"UpdatedTime,omitempty"`
+	PassID         string `json:"PassId"`
+	ExternalUserID string `json:"ExternalUserId"`
+	BundleID       string `json:"BundleId"`
+	Uin            int64  `json:"Uin"`
+	AppID          int64  `json:"AppId"`
+	Status         string `json:"Status"`
+	CreatedTime    string `json:"CreatedTime,omitempty"`
+	ExpiredTime    string `json:"ExpiredTime"`
+	IsolatedTime   string `json:"IsolatedTime,omitempty"`
+	UpdatedTime    string `json:"UpdatedTime,omitempty"`
 }
 
 type cloudAPIErrorBody struct {
@@ -172,13 +172,13 @@ func parseCloudAPIUin(raw string) (int64, error) {
 
 func detailToCloudAPIPass(d *passlogic.PassDetail) *cloudAPIPass {
 	resp := &cloudAPIPass{
-		PassID:      d.PassID,
-		UserID:      d.UserID,
-		BundleID:    d.BundleID,
-		Uin:         d.Uin,
-		AppID:       d.AppID,
-		Status:      d.Status,
-		ExpiredTime: d.ExpiredTime.UTC().Format(time.RFC3339),
+		PassID:         d.PassID,
+		ExternalUserID: d.UserID,
+		BundleID:       d.BundleID,
+		Uin:            d.Uin,
+		AppID:          d.AppID,
+		Status:         d.Status,
+		ExpiredTime:    d.ExpiredTime.UTC().Format(time.RFC3339),
 	}
 	if !d.CreatedTime.IsZero() {
 		resp.CreatedTime = d.CreatedTime.UTC().Format(time.RFC3339)
