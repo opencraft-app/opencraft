@@ -228,11 +228,6 @@ func (t *modifyPassTask) advanceInstances(ctx pctx.Context, logger *zap.Logger, 
 		return nil
 	}
 
-	targetPoolID, targetSKUID, err := instanceasync.ResolveModifyTargetPool(ctx, targetSpecID)
-	if err != nil {
-		return fmt.Errorf("resolve target pool for spec %q: %w", targetSpecID, err)
-	}
-
 	childTasks, err := daoFactory.DefaultDaoFactory.TaskDao(nil).ListByParentTaskID(t.TaskId)
 	if err != nil {
 		return fmt.Errorf("list child tasks: %w", err)
@@ -257,6 +252,10 @@ func (t *modifyPassTask) advanceInstances(ctx pctx.Context, logger *zap.Logger, 
 		}
 		if inst.Status == modelinstance.InstanceStatusDeleted || inst.Status == modelinstance.InstanceStatusFailed {
 			continue
+		}
+		targetPoolID, targetSKUID, err := instanceasync.ResolveModifyTargetPool(ctx, targetSpecID, inst.SandboxId)
+		if err != nil {
+			return fmt.Errorf("resolve same-region target pool for instance %s spec %q: %w", inst.InstanceId, targetSpecID, err)
 		}
 		if err := instanceasync.EnqueueModifyInstanceTask(
 			ctx,
