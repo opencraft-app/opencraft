@@ -88,7 +88,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) commonRoutes() {
 	s.mux.HandleFunc("/healthz", s.health)
 	s.mux.HandleFunc("/readyz", s.ready)
-	s.mux.HandleFunc("/metrics", s.metrics)
+	// Metrics must never share the public control or traffic listener. A future
+	// scraper endpoint needs a separate internal-only listener and Service.
+	s.mux.HandleFunc("/metrics", http.NotFound)
 	if s.config.E2EHooks {
 		s.mux.HandleFunc("/_llmgateway_e2e/inflight", s.e2eInflight)
 		s.mux.HandleFunc("/_llmgateway_e2e/sleep", s.e2eSleep)
@@ -190,15 +192,6 @@ func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ready"}})
-}
-
-func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	_, _ = w.Write([]byte(s.svc.PrometheusMetrics()))
 }
 
 func (s *Server) isDraining() bool {

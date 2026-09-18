@@ -33,7 +33,7 @@ func TestE2EHooksAreDisabledByDefault(t *testing.T) {
 	assertStatus(t, handler, "/_llmgateway_e2e/inflight", http.StatusNotFound)
 }
 
-func TestTrafficServerExposesPrometheusMetrics(t *testing.T) {
+func TestPublicServersDoNotExposePrometheusMetrics(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("{}"))
 	}))
@@ -67,19 +67,26 @@ func TestTrafficServerExposesPrometheusMetrics(t *testing.T) {
 		t.Fatalf("proxy status=%d body=%s", proxyRec.Code, proxyRec.Body.String())
 	}
 
-	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	metricsRec := httptest.NewRecorder()
-	handler.ServeHTTP(metricsRec, metricsReq)
-	if metricsRec.Code != http.StatusOK {
-		t.Fatalf("metrics status=%d body=%s", metricsRec.Code, metricsRec.Body.String())
+	if metrics := svc.PrometheusMetrics(); !strings.Contains(metrics, `external_key_id="`+savedBinding.ExternalKeyID+`"`) {
+		t.Fatalf("internal metrics aggregation was removed unexpectedly:\n%s", metrics)
 	}
-	if contentType := metricsRec.Header().Get("Content-Type"); !strings.Contains(contentType, "text/plain") {
-		t.Fatalf("metrics content-type=%q", contentType)
-	}
-	if body := metricsRec.Body.String(); !strings.Contains(body, `llmgateway_traffic_requests_total{`) ||
-		!strings.Contains(body, `external_key_id="`+savedBinding.ExternalKeyID+`"`) ||
-		!strings.Contains(body, `set_id="set-a"`) {
-		t.Fatalf("metrics body missing traffic labels:\n%s", body)
+
+	for name, publicHandler := range map[string]http.Handler{
+		"traffic":    handler,
+		"control":    NewControlServer(svc, Config{}),
+		"all-in-one": NewServer(svc, Config{}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			metricsRec := httptest.NewRecorder()
+			publicHandler.ServeHTTP(metricsRec, metricsReq)
+			if metricsRec.Code != http.StatusNotFound {
+				t.Fatalf("metrics status=%d body=%s, want 404", metricsRec.Code, metricsRec.Body.String())
+			}
+			if body := metricsRec.Body.String(); strings.Contains(body, "llmgateway_") || strings.Contains(body, savedBinding.ExternalKeyID) {
+				t.Fatalf("public metrics response leaked telemetry: %s", body)
+			}
+		})
 	}
 }
 
