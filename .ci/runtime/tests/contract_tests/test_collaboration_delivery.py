@@ -54,6 +54,14 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "optional": False,
         })
 
+        bundle = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text()
+        )["bundles"]["service-gateway"]
+        self.assertIn(
+            "argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+            bundle["publish_paths_by_env"]["beijing-sandbox"],
+        )
+
     def test_runtime_promotion_rejects_catalog_still_pointing_to_foundation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
