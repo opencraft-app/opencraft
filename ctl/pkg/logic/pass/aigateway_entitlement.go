@@ -23,6 +23,66 @@ func EnsureAiGatewayEntitlement(
 	logger *zap.Logger,
 	userID, planID, idempotencyKey string,
 ) (*aigateway.Subscription, error) {
+	return ensureGatewayEntitlement(
+		logger,
+		userID,
+		planID,
+		idempotencyKey,
+		gatewayroute.NewAllocationGateway(strings.TrimSpace(userID)),
+	)
+}
+
+// EnsureActiveRenewalGatewayEntitlement ensures that an active pass still has
+// its AI entitlement before renewal completes. LLMGateway apply is idempotent;
+// legacy AI Gateway must be probed first because apply replaces its active subscription.
+func EnsureActiveRenewalGatewayEntitlement(
+	logger *zap.Logger,
+	userID, planID, idempotencyKey string,
+) (*aigateway.Subscription, error) {
+	userID = strings.TrimSpace(userID)
+	target := gatewayroute.NewAllocationGateway(userID)
+	if recorded, ok, err := gatewayroute.Get(userID); err != nil {
+		return nil, fmt.Errorf("read gateway route before active renewal entitlement: %w", err)
+	} else if ok {
+		target = recorded
+	}
+
+	if target != gatewayroute.GatewayAIGateway {
+		return ensureGatewayEntitlement(logger, userID, planID, idempotencyKey, target)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), aiGatewayEntitlementCallTimeout)
+	defer cancel()
+	subscription, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().GetActiveSubscription(ctx, userID)
+	if err != nil && !errors.Is(err, aigateway.ErrAiGatewaySubscriptionNotFound) {
+		return nil, fmt.Errorf("probe legacy ai-gateway entitlement before active renewal: %w", err)
+	}
+	if subscription != nil {
+		gatewayroute.RecordBestEffort(
+			logger,
+			userID,
+			gatewayroute.GatewayAIGateway,
+			subscription.ID,
+			subscription.PlanID,
+			gatewayroute.SourceDetectActiveSubscription,
+		)
+		return subscription, nil
+	}
+
+	return ensureGatewayEntitlement(
+		logger,
+		userID,
+		planID,
+		idempotencyKey,
+		gatewayroute.GatewayAIGateway,
+	)
+}
+
+func ensureGatewayEntitlement(
+	logger *zap.Logger,
+	userID, planID, idempotencyKey string,
+	target gatewayroute.Gateway,
+) (*aigateway.Subscription, error) {
 	userID = strings.TrimSpace(userID)
 	planID = strings.TrimSpace(planID)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
@@ -41,7 +101,7 @@ func EnsureAiGatewayEntitlement(
 
 	ctx, cancel := context.WithTimeout(context.Background(), aiGatewayEntitlementCallTimeout)
 	defer cancel()
-	subscription, err := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
+	subscription, err := applyGatewaySubscription(ctx, target, newPassSubscriptionRequest{
 		IdempotencyKey: idempotencyKey,
 		UserID:         userID,
 		PlanID:         planID,
