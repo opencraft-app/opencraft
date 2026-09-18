@@ -251,6 +251,8 @@ master 源码
 - 同一次导出从 Collaboration SSM 只选择 `gateway.token`，生成 Gateway namespace 的专用
   `collaboration-gateway-token` SOPS Secret；投影不得包含 DSN、JWT 或 IM Secret。Gateway 激活必须
   在该 artifact 已进入 GitOps 后独立发布，避免 source 配置先于 Secret 收敛。
+- 北京 Gateway 激活阶段在 bridge artifact 合入后，才允许同时增加 KSOPS generator、非 optional
+  Secret 引用和 Collaboration upstream 配置；本地预览 Origin 采用路由级 allowlist，不继承全局 `*`。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。

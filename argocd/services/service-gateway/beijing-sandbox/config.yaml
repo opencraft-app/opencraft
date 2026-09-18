@@ -3,6 +3,12 @@ allowed_origins:
   - "*"
 trusted_proxy_cidrs:
   - 100.64.0.0/10
+collaboration:
+  upstream: http://collaboration.lightvela-collaboration.svc.cluster.local
+  upstream_bearer_token_env: COLLABORATION_GATEWAY_TOKEN
+  allowed_origins:
+    - http://localhost:*
+    - http://127.0.0.1:*
 worker_actions:
   enabled: true
   temporal:

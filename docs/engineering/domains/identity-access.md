@@ -109,6 +109,8 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 同值 token 的权威只保留在 Collaboration SSM；交付工具只选择 `gateway.token` 并重命名投影到
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
+北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 
