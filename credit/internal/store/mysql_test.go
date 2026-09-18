@@ -49,6 +49,52 @@ func TestAllocatePackageAutoIDRejectsEmptyDealName(t *testing.T) {
 	}
 }
 
+func TestListAdminPackagesFiltersAndReturnsUsage(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	filter := AdminPackageFilter{
+		UserID: "usr_1", PackageID: "cpkg-1", ProductID: "credit_1000",
+		Status: PackageStatusActive, Page: 2, PageSize: 50,
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(
+		"SELECT COUNT(*) FROM credit_package cp WHERE cp.user_id = ? AND cp.package_id = ? AND cp.product_id = ? AND cp.status = ?",
+	)).WithArgs("usr_1", "cpkg-1", "credit_1000", PackageStatusActive).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	now := time.Date(2026, 9, 18, 8, 0, 0, 0, time.UTC)
+	columns := []string{
+		"id", "package_id", "user_id", "product_id", "uin", "app_id", "deal_name", "big_order_id",
+		"llm_gateway_plan_id", "llm_subscription_id", "llm_subscription_name", "created_time", "expired_time",
+		"isolated_time", "status", "updated_time", "product_name", "credit_total", "credit_used_total", "credit_left",
+	}
+	rows := sqlmock.NewRows(columns).AddRow(
+		1, "cpkg-1", "usr_1", "credit_1000", "330500000005", 260203940, "deal-1", "big-1",
+		"plan-1", "sub-1", "credit-package:cpkg-1", now, now.Add(30*24*time.Hour), nil,
+		PackageStatusActive, now, "1000积分", "1000.0000", "125.5000", "874.5000",
+	)
+	mock.ExpectQuery(`(?s)FROM credit_package cp.*LEFT JOIN credit_product p.*LEFT JOIN credit_package_usage u.*WHERE cp.user_id = \? AND cp.package_id = \? AND cp.product_id = \? AND cp.status = \?.*LIMIT \? OFFSET \?`).
+		WithArgs("usr_1", "cpkg-1", "credit_1000", PackageStatusActive, 50, 50).
+		WillReturnRows(rows)
+
+	items, total, err := (&MySQLStore{db: db}).ListAdminPackages(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("ListAdminPackages(): %v", err)
+	}
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("total=%d items=%d", total, len(items))
+	}
+	if items[0].ProductName != "1000积分" || items[0].CreditUsedTotal.String() != "125.5000" || items[0].CreditLeft.String() != "874.5000" {
+		t.Fatalf("item=%+v", items[0])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
+	}
+}
+
 func TestTryClaimExpiredPackageClaimsActiveOrStaleTerminatingRow(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

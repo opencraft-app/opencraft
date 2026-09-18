@@ -27,20 +27,182 @@ import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   useCreateAuthImpersonationSession,
   useAuthAdminUsers,
   useDeleteAuthAdminUser,
   type AuthAdminUser,
 } from "@/lib/queries/use-auth-admin";
+import {
+  type AdminShadowAccount,
+  useShadowAdminAccounts,
+} from "@/lib/queries/use-shadow-admin";
 import { formatDateTime } from "@/lib/utils";
 
-export default function AuthUsersPage() {
+function ShadowAccountsPanel() {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const accounts = useShadowAdminAccounts({
+    search: search.trim() || undefined,
+    page,
+    pageSize,
+  });
+
+  const columns = useMemo<ColumnDef<AdminShadowAccount>[]>(
+    () => [
+      {
+        accessorKey: "user_id",
+        header: "用户 ID",
+        cell: ({ row }) => (
+          <code className="block max-w-48 truncate font-mono text-xs">
+            {row.original.user_id}
+          </code>
+        ),
+      },
+      {
+        accessorKey: "shadow_user_name",
+        header: "影子用户名",
+        cell: ({ row }) =>
+          row.original.shadow_user_name ? (
+            <code className="block max-w-40 truncate font-mono text-xs">
+              {row.original.shadow_user_name}
+            </code>
+          ) : (
+            "—"
+          ),
+      },
+      {
+        accessorKey: "phone_number",
+        header: "手机号",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap tabular-nums">
+            {row.original.country_code} {row.original.phone_number}
+          </span>
+        ),
+      },
+      {
+        id: "account_ids",
+        header: "UIN / OwnerUIN / AppID",
+        cell: ({ row }) => (
+          <div className="space-y-1 font-mono text-[11px] tabular-nums">
+            <div>{row.original.uin || "—"}</div>
+            <div className="text-muted-foreground">
+              {row.original.owner_uin || "—"}
+            </div>
+            <div className="text-muted-foreground">
+              {row.original.appid || "—"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "instance_id",
+        header: "实例 ID",
+        cell: ({ row }) =>
+          row.original.instance_id ? (
+            <code className="block max-w-40 truncate font-mono text-xs">
+              {row.original.instance_id}
+            </code>
+          ) : (
+            "—"
+          ),
+      },
+      {
+        id: "states",
+        header: "认证状态",
+        cell: ({ row }) => (
+          <div className="flex min-w-28 flex-col items-start gap-1">
+            <Badge variant={row.original.is_register_shadow_account ? "default" : "outline"}>
+              {row.original.is_register_shadow_account ? "已注册" : "注册中"}
+            </Badge>
+            <Badge variant={row.original.is_shadow_account_basic_auth ? "secondary" : "outline"}>
+              {row.original.is_shadow_account_basic_auth ? "基础认证" : "未基础认证"}
+            </Badge>
+            <Badge variant={row.original.is_standard_realname_auth ? "secondary" : "outline"}>
+              {row.original.is_standard_realname_auth ? "标准实名" : "未标准实名"}
+            </Badge>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "created_at",
+        header: "创建时间",
+        cell: ({ row }) => formatDateTime(row.original.created_at),
+      },
+      {
+        accessorKey: "bound_at",
+        header: "绑定时间",
+        cell: ({ row }) =>
+          row.original.bound_at ? formatDateTime(row.original.bound_at) : "—",
+      },
+    ],
+    []
+  );
+
+  const queryError = accounts.error instanceof Error ? accounts.error.message : "";
+
+  return (
+    <div className="space-y-6 pt-4">
+      <div>
+        <Label htmlFor="shadow-account-search" className="sr-only">
+          搜索影子账号
+        </Label>
+        <Input
+          id="shadow-account-search"
+          placeholder="按用户 ID、影子用户名、手机号、UIN、AppID 或实例 ID 搜索"
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(1);
+          }}
+          className="max-w-2xl"
+        />
+      </div>
+
+      {queryError && (
+        <p role="alert" className="text-sm text-destructive">
+          {queryError}
+        </p>
+      )}
+
+      <DataTable
+        columns={columns}
+        data={accounts.data?.items ?? []}
+        total={accounts.data?.total ?? 0}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[20, 50, 100]}
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPageSize(value);
+          setPage(1);
+        }}
+        isLoading={accounts.isLoading}
+      />
+    </div>
+  );
+}
+
+export default function AuthUsersPage() {
+  const [activeView, setActiveView] = useState<"auth" | "shadow">("auth");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [deleteTarget, setDeleteTarget] = useState<AuthAdminUser | null>(null);
   const [impersonationTarget, setImpersonationTarget] = useState<AuthAdminUser | null>(null);
   const [impersonationReturnTo, setImpersonationReturnTo] = useState("");
   const [impersonationReason, setImpersonationReason] = useState("");
-  const { data, isLoading } = useAuthAdminUsers(search || undefined);
+  const { data, isLoading } = useAuthAdminUsers({
+    search: search.trim() || undefined,
+    page,
+    pageSize,
+  });
   const deleteUser = useDeleteAuthAdminUser();
   const createImpersonationSession = useCreateAuthImpersonationSession();
 
@@ -199,22 +361,55 @@ export default function AuthUsersPage() {
     <div className="space-y-6">
       <PageHeader
         title="认证用户"
-        description="查看 user-auth 里的账号主数据、登录方式、QQ OpenID 和邀请码策略。"
+        description="查看认证账号主数据，以及对应的腾讯云影子账号映射。"
       />
 
-      <Input
-        placeholder="按用户 ID、手机号、邮箱或名称搜索"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        className="max-w-md"
-      />
+      <Tabs
+        value={activeView}
+        onValueChange={(value) => setActiveView(value as "auth" | "shadow")}
+      >
+        <TabsList variant="line" aria-label="用户数据类型">
+          <TabsTrigger value="auth">认证用户</TabsTrigger>
+          <TabsTrigger value="shadow">影子账号</TabsTrigger>
+        </TabsList>
 
-      <DataTable
-        columns={columns}
-        data={data?.items ?? []}
-        total={data?.total ?? 0}
-        isLoading={isLoading}
-      />
+        <TabsContent value="auth" className="space-y-6 pt-4">
+          <div>
+            <Label htmlFor="auth-user-search" className="sr-only">
+              搜索认证用户
+            </Label>
+            <Input
+              id="auth-user-search"
+              placeholder="按用户 ID、手机号、邮箱或名称搜索"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              className="max-w-md"
+            />
+          </div>
+
+          <DataTable
+            columns={columns}
+            data={data?.items ?? []}
+            total={data?.total ?? 0}
+            page={page}
+            pageSize={pageSize}
+            pageSizeOptions={[20, 50, 100]}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(value);
+              setPage(1);
+            }}
+            isLoading={isLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="shadow">
+          {activeView === "shadow" && <ShadowAccountsPanel />}
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={!!deleteTarget}

@@ -83,6 +83,8 @@ func NewRouter(svc *service.Service, st store.Store, trade tradeService, auth au
 	mux.HandleFunc("/internal/credit/packages/app-ids", server.requireInternal(server.internalResourceAppIDs))
 	mux.HandleFunc("/internal/credit/packages/by-owner", server.requireInternal(server.internalUserResources))
 	mux.HandleFunc("/internal/credit/packages/query-resources", server.requireInternal(server.internalQueryResources))
+	mux.HandleFunc("/internal/credit/admin/packages", server.requireConfiguredInternal(server.adminPackages))
+	mux.HandleFunc("/internal/credit/admin/packages/", server.requireConfiguredInternal(server.adminPackageAction))
 	mux.HandleFunc("/internal/credit/packages/", server.requireInternal(server.internalPackageAction))
 	return mux
 }
@@ -359,6 +361,10 @@ func (s *Server) userRefundPackage(w http.ResponseWriter, r *http.Request, pkg *
 		writeError(w, http.StatusForbidden, "credit package does not belong to current user")
 		return
 	}
+	s.refundPackage(w, r, pkg)
+}
+
+func (s *Server) refundPackage(w http.ResponseWriter, r *http.Request, pkg *store.CreditPackage) {
 	out, err := s.trade.RefundPackage(r.Context(), pkg.PackageID, tradeclient.RefundRequest{
 		OwnerUin:  pkg.Uin,
 		UIN:       pkg.Uin,
@@ -370,6 +376,83 @@ func (s *Server) userRefundPackage(w http.ResponseWriter, r *http.Request, pkg *
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) adminPackages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	page, ok := positiveQueryInt(w, r, "page", 1, 0)
+	if !ok {
+		return
+	}
+	pageSize, ok := positiveQueryInt(w, r, "page_size", 20, 100)
+	if !ok {
+		return
+	}
+	filter := store.AdminPackageFilter{
+		UserID:    r.URL.Query().Get("user_id"),
+		PackageID: r.URL.Query().Get("package_id"),
+		ProductID: r.URL.Query().Get("product_id"),
+		Status:    r.URL.Query().Get("status"),
+		Page:      page,
+		PageSize:  pageSize,
+	}
+	packages, total, err := s.store.ListAdminPackages(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data": map[string]any{
+			"packages":  packages,
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+		},
+	})
+}
+
+func (s *Server) adminPackageAction(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/internal/credit/admin/packages/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) != "refund" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	pkg, err := s.store.GetPackageByID(r.Context(), strings.TrimSpace(parts[0]))
+	if errors.Is(err, store.ErrPackageNotFound) {
+		writeError(w, http.StatusNotFound, "credit package not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if pkg.Status != store.PackageStatusActive {
+		writeError(w, http.StatusConflict, "only active credit packages can be refunded")
+		return
+	}
+	s.refundPackage(w, r, pkg)
+}
+
+func positiveQueryInt(w http.ResponseWriter, r *http.Request, name string, defaultValue, maxValue int) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return defaultValue, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 || (maxValue > 0 && value > maxValue) {
+		writeError(w, http.StatusBadRequest, name+" is invalid")
+		return 0, false
+	}
+	return value, true
 }
 
 func (s *Server) internalProduct(w http.ResponseWriter, r *http.Request) {
@@ -553,6 +636,20 @@ func (s *Server) internalPackageAction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) requireInternal(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.token != "" && strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") != s.token {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) requireConfiguredInternal(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.token == "" {
+			writeError(w, http.StatusServiceUnavailable, "internal token is not configured")
+			return
+		}
+		if strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ") != s.token {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

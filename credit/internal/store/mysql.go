@@ -18,6 +18,7 @@ type Store interface {
 	GetPackageByID(context.Context, string) (*CreditPackage, error)
 	GetPackageByDealName(context.Context, string) (*CreditPackage, error)
 	GetPackageBySubscriptionName(context.Context, string) (*CreditPackage, error)
+	ListAdminPackages(context.Context, AdminPackageFilter) ([]AdminCreditPackage, int64, error)
 	ListPackageAppIDs(context.Context, []string, int, int) ([]int64, int64, error)
 	ListPackagesByOwner(context.Context, string, int64, []string, int, int) ([]*CreditPackage, int64, error)
 	MovePackageToHistory(context.Context, string, time.Time, string, *time.Time) error
@@ -225,6 +226,84 @@ func (s *MySQLStore) GetPackageBySubscriptionName(ctx context.Context, subscript
 		return nil, err
 	}
 	return &pkg, nil
+}
+
+func (s *MySQLStore) ListAdminPackages(ctx context.Context, filter AdminPackageFilter) ([]AdminCreditPackage, int64, error) {
+	if s == nil || s.db == nil {
+		return nil, 0, fmt.Errorf("credit store is nil")
+	}
+	if filter.Page <= 0 {
+		filter.Page = 1
+	}
+	if filter.PageSize <= 0 {
+		filter.PageSize = 20
+	}
+	if filter.PageSize > 100 {
+		filter.PageSize = 100
+	}
+
+	conditions := make([]string, 0, 4)
+	args := make([]any, 0, 6)
+	for _, candidate := range []struct {
+		value  string
+		column string
+	}{
+		{filter.UserID, "cp.user_id"},
+		{filter.PackageID, "cp.package_id"},
+		{filter.ProductID, "cp.product_id"},
+		{filter.Status, "cp.status"},
+	} {
+		if value := strings.TrimSpace(candidate.value); value != "" {
+			conditions = append(conditions, candidate.column+" = ?")
+			args = append(args, value)
+		}
+	}
+	where := ""
+	if len(conditions) > 0 {
+		where = " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	var total int64
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM credit_package cp"+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	queryArgs := append(append([]any{}, args...), filter.PageSize, (filter.Page-1)*filter.PageSize)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT cp.id, cp.package_id, cp.user_id, cp.product_id, cp.uin, cp.app_id,
+		       cp.deal_name, cp.big_order_id, cp.llm_gateway_plan_id,
+		       cp.llm_subscription_id, cp.llm_subscription_name, cp.created_time,
+		       cp.expired_time, cp.isolated_time, cp.status, cp.updated_time,
+		       COALESCE(p.product_name, ''), COALESCE(u.credit_total, 0),
+		       COALESCE(u.credit_used_total, 0), COALESCE(u.credit_left, 0)
+		  FROM credit_package cp
+		  LEFT JOIN credit_product p ON p.product_id = cp.product_id
+		  LEFT JOIN credit_package_usage u ON u.package_id = cp.package_id
+	`+where+`
+		 ORDER BY cp.created_time DESC, cp.id DESC
+		 LIMIT ? OFFSET ?
+	`, queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	packages := make([]AdminCreditPackage, 0)
+	for rows.Next() {
+		var item AdminCreditPackage
+		pkg := &item.CreditPackage
+		if err := rows.Scan(
+			&pkg.ID, &pkg.PackageID, &pkg.UserID, &pkg.ProductID, &pkg.Uin, &pkg.AppID,
+			&pkg.DealName, &pkg.BigOrderID, &pkg.LLMGatewayPlanID, &pkg.LLMSubscriptionID,
+			&pkg.LLMSubscriptionName, &pkg.CreatedTime, &pkg.ExpiredTime, &pkg.IsolatedTime,
+			&pkg.Status, &pkg.UpdatedTime, &item.ProductName, &item.CreditTotal,
+			&item.CreditUsedTotal, &item.CreditLeft,
+		); err != nil {
+			return nil, 0, err
+		}
+		packages = append(packages, item)
+	}
+	return packages, total, rows.Err()
 }
 
 func (s *MySQLStore) ListPackageAppIDs(ctx context.Context, productIDs []string, pageNo, pageSize int) ([]int64, int64, error) {

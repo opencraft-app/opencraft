@@ -75,6 +75,7 @@ type Store interface {
 	DeleteCurrentUser(ctx context.Context, token string, now time.Time) error
 	DeleteAdminUser(ctx context.Context, userID string, now time.Time) error
 	ListAdminUsers(ctx context.Context, search string, limit int) ([]AdminUser, error)
+	ListAdminUsersPage(ctx context.Context, search string, limit int, offset int) ([]AdminUser, int, error)
 	ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error)
 	DeleteAdminSMSChallenge(ctx context.Context, phone string) error
 	ListAdminInvites(ctx context.Context, search string, state string, limit int) ([]AdminInvite, error)

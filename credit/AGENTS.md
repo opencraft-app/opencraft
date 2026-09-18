@@ -103,6 +103,13 @@ credit worker 调 trade：
 
 - `POST /internal/trade/credit/resources/usage/report`
 
+Gateway Dashboard 管理入口：
+
+- `GET /internal/credit/admin/packages`：按 `user_id/package_id/product_id/status` 精确筛选 live package 并分页返回商品名和当前用量。
+- `POST /internal/credit/admin/packages/{package_id}/refund`：仅允许 `active` package，复用用户侧同一 Trade 在线退款链路。
+
+管理接口使用 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 且在 token 未配置时 fail closed，不查询历史表，也不直接隔离、删除或归档资源。
+
 ## 计费回调
 
 trade 的 `/trade/jifei/callback` 分发：
