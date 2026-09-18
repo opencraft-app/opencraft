@@ -32,6 +32,7 @@ derived: false
 - 用户在北京首次发布步骤说明后回复“确认”，授权该环境的正常发布流程。
 - 独立Collaboration逻辑库复用现有普通DB服务；不新建DB实例。
 - 源码MR !4028已合入，主干候选#15已通过；后端激活必须独立验收。
+- 当前阶段只准备北京后台；本地预览显式配置北京 API Base，不以 shprod 路由作为前置。
 
 ## interface_refs / data_structure_refs
 - collaboration/platform/v1/model-contract.yaml、openapi.yaml及已发布迁移保持不变。
@@ -67,6 +68,11 @@ release-gitops、agent-gateway-runtime、service-collaboration；触及Gateway/W
 | docs/context/project/adjacency/argocd-ci-secrets.md、argocd/README.md | 控制面定位 | 只参考现有入口，不混用其他集群 |
 
 ## evidence
+- 北京 Runtime 已以 digest `sha256:fd3aa143ad5651604394ec8da9aeb6428831766950c2b5b76eb242dcc948bef7`
+  收敛为 Argo Synced/Healthy，Deployment 2/2 Ready，`/healthz` 与 `/readyz` 均为 200。
+- 后台入口审查确认 Gateway 源码已有 Collaboration namespace，但北京 live 配置和 Secret 尚未激活；
+  本轮新增缺 token 启动 fail-fast、受控 Origin、Computer v2 allowlist，以及从 Collaboration SSM
+  单键生成 Gateway 专用 SOPS artifact 的可重入投影。
 - 用户提供本次操作凭据后，采用本任务用户消息→本机内存→已验证SSH→DevCloud内存查询，不输出或生成凭据文件、不改默认云profile。安全读入/拒绝助手来源/拒绝凭据回显的3项回归通过。
 - 新凭据准确找到北京admin-gateway和CTL的既有SSM，Collaboration SSM不存在；此前default.credential视角不是目标发布凭据的证据，不能继续用其空查询判定目标状态。
 - 源码importplan的cynosdbmysql-3dh7jyee已实测running、MYSQL、8.0；可复用DB实例已定位，但尚未创建逻辑库或账号。
@@ -105,4 +111,7 @@ DevCloud已登记SSH入口、既有Argo context元数据、TC profile字段元�
 隔离进展记录：.omx/plans/vela-checkout-repair/与.omx/plans/collaboration-beijing-release/。只记录状态、公开资源标识和错误码，无密钥值。
 
 ## handoff
-普通MySQL兼容和北京bootstrap自动化均已合入并完成主干镜像构建。当前正在把北京bootstrap的公开SDKAppID收敛到`AgentNetwork`；protected IM SecretKey已更新但foundation尚未启动。SDKAppID修复合入后先运行foundation dry-run/审批并创建GitOps MR；foundation收敛后再运行runtime MySQL门禁和runtime MR。DB、SSM、GitOps和live workload仍未修改。
+Collaboration Runtime 已在北京健康运行。当前工作分两步完成 Gateway 激活：先合入并运行单键
+SSM→SOPS bridge 自动化，确认专用 artifact 进入 GitOps；再接入北京 Gateway Kustomize/config、
+构建新镜像并验证本地预览 Origin、LightVela session、JIT actor 与 IM 会话。不得把两步压成缺 Secret
+仍显示 Healthy 的一次发布。

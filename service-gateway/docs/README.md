@@ -20,9 +20,16 @@ OpenCraft 通过现有 LightVela 账户会话访问 Collaboration，不增加第
 collaboration:
   upstream: http://collaboration.lightvela-collaboration.svc.cluster.local
   upstream_bearer_token_env: COLLABORATION_GATEWAY_TOKEN
+  allowed_origins:
+    - http://localhost:*
+    - http://127.0.0.1:*
 ```
 
 `service-gateway-runtime-secrets` 中的 `COLLABORATION_GATEWAY_TOKEN` 必须与 Collaboration Secret 挂载的 `gateway.token` 相同。Gateway 先校验 Human 会话、覆盖调用方伪造的身份头，再将 `/v1/collaboration` 重写为 `/v1` 并使用内部 Bearer 请求上游。内置 allowlist 不开放旧的外部 Computer/TAT bootstrap surface。
+北京首次接线由 Collaboration SSM 的同一个 `gateway.token` 只投影出专用
+`collaboration-gateway-token` Secret，不复制数据库或 IM 密钥。配置 Collaboration upstream
+但缺少该环境变量时，Gateway 必须启动失败，不能以 Healthy Pod 承载稳定 `502`。
+`allowed_origins` 必须限定本地预览和明确产品域名，不能继承北京环境的全局 `*`。
 
 ## 验证
 

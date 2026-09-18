@@ -67,8 +67,9 @@ type Config struct {
 // CollaborationRouteConfig enables the single Collaboration upstream without
 // duplicating its security-sensitive allowlist in every environment file.
 type CollaborationRouteConfig struct {
-	Upstream               string `yaml:"upstream"`
-	UpstreamBearerTokenEnv string `yaml:"upstream_bearer_token_env"`
+	Upstream               string   `yaml:"upstream"`
+	UpstreamBearerTokenEnv string   `yaml:"upstream_bearer_token_env"`
+	AllowedOrigins         []string `yaml:"allowed_origins"`
 }
 
 type WorkerActionsConfig struct {

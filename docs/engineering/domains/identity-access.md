@@ -96,6 +96,9 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 缺少 token、会话内省失败、subject 为空或 subject 与内部 Bearer 不匹配时必须 fail closed，不能降级为
 本地账号认证或信任浏览器身份头。验证至少覆盖身份头覆盖、用户凭据剥离、内部 Bearer 替换、JIT 映射
 幂等，以及独立登录路由为 404。
+同值 token 的权威只保留在 Collaboration SSM；交付工具只选择 `gateway.token` 并重命名投影到
+Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
+Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 
