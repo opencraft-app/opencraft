@@ -4927,8 +4927,12 @@ export const AgentSettingsPage = ({
                         <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
                       </div>
                       <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>
+                        <dd>{t("系统预置")}</dd>
+                      </div>
+                      <div className="flex items-start gap-2">
                         <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
-                        <dd>{t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")}</dd>
+                        <dd>{t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")}</dd>
                       </div>
                     </dl>
                   ) : (
