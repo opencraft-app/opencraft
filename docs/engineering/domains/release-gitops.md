@@ -257,6 +257,8 @@ master 源码
   在该 artifact 已进入 GitOps 后独立发布，避免 source 配置先于 Secret 收敛。
 - 北京 Gateway 激活阶段在 bridge artifact 合入后，才允许同时增加 KSOPS generator、非 optional
   Secret 引用和 Collaboration upstream 配置；本地预览 Origin 采用路由级 allowlist，不继承全局 `*`。
+  `service-gateway.bundle` 的北京 publish paths 必须显式包含该 bridge SOPS artifact，否则 auto-pin
+  应在创建 promote MR 前 fail closed。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
