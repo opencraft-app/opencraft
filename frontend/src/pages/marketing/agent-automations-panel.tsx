@@ -3789,7 +3789,7 @@ function AutomationFormScrollArea({ enabled, children }: { enabled: boolean; chi
   if (!enabled) return <div>{children}</div>;
 
   return (
-    <ScrollArea type="always" className="lv-automation-form-scroll min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]]:overscroll-contain">
+    <ScrollArea type="auto" className="lv-automation-form-scroll min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]]:overscroll-contain">
       <div className="pr-3">{children}</div>
     </ScrollArea>
   );
@@ -3863,6 +3863,8 @@ export function AutomationFormModal({
   const [scriptSafetyConfirmed, setScriptSafetyConfirmed] = useState(false);
   const canSelectZeroToken = mode === "create" && !template && zeroTokenAutomationsEnabled;
   const shouldKeepFormHeight = canSelectZeroToken || Boolean(template) || mode === "edit";
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const expandedFormHeight = executionMode === "agent" && advancedSettingsOpen;
   const zeroTokenScriptEditable = mode === "create" || initialJob?.zero_token_config?.editable === true;
   const initialContextFrom = initialJob?.context_from ?? null;
   const initialSelectedUpstream = initialContextFrom?.[0] ?? "";
@@ -4492,7 +4494,7 @@ export function AutomationFormModal({
         />
       )}
       <div
-        className={`relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? "flex h-[840px] max-h-[calc(100dvh-16px)] flex-col" : "overflow-y-auto"}`}
+        className={`relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? `flex ${expandedFormHeight ? "h-[840px]" : "h-[720px]"} max-h-[calc(100dvh-16px)] flex-col` : "overflow-y-auto"}`}
         style={{
           boxSizing: "border-box",
           width: "min(760px, calc(100vw - 32px))",
@@ -5047,7 +5049,11 @@ export function AutomationFormModal({
         </div>
 
         {executionMode === "agent" && (
-          <details className="group mt-3">
+          <details
+            open={advancedSettingsOpen}
+            onToggle={(event) => setAdvancedSettingsOpen(event.currentTarget.open)}
+            className="group mt-3"
+          >
             <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1.5 text-sm font-medium text-black/70 hover:text-black/90 [&::-webkit-details-marker]:hidden">
               <span>{t("高级设置")}</span>
               <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-black/40 group-open:rotate-180" />

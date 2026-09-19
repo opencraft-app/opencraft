@@ -1018,7 +1018,7 @@ describe("cron context panel integration", () => {
     expect(await screen.findByRole("button", { name: localizedText("喝水与吃药提醒", "Water & medication reminders") })).toBeTruthy();
   });
 
-  it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", (mode) => {
+  it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", async (mode) => {
     renderAutomationForm({
       mode,
       initialJob: mode === "edit" ? makeCronJob({ id: "edit-width", name: "编辑宽度任务" }) : undefined,
@@ -1030,7 +1030,7 @@ describe("cron context panel integration", () => {
       isGlobal ? /Describe what you want the agent to understand and do/ : /请描述需要智能体理解并执行的任务/,
     );
     expect(form).toHaveClass("w-full", "max-w-[800px]", "rounded-lg", "p-5");
-    expect(form).toHaveClass("h-[840px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
     expect(dialog).toHaveClass("py-2");
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
@@ -1040,9 +1040,17 @@ describe("cron context panel integration", () => {
     expect(within(dialog).getByRole("button", {
       name: mode === "create" ? localizedText("新建", "Create") : localizedText("保存", "Save"),
     })).toHaveClass("rounded-lg", "text-sm");
+
+    const advancedSettings = within(dialog).getByText(localizedText("高级设置", "Advanced Settings"));
+    const advancedSettingsSummary = advancedSettings.closest("summary");
+    if (!advancedSettingsSummary) throw new Error("Expected advanced settings summary");
+    fireEvent.click(advancedSettingsSummary);
+    await waitFor(() => expect(form).toHaveClass("h-[840px]"));
+    fireEvent.click(advancedSettingsSummary);
+    await waitFor(() => expect(form).toHaveClass("h-[720px]"));
   });
 
-  it("keeps template create forms at the shared modal height", () => {
+  it("grows template create forms when advanced settings are expanded", async () => {
     const template = getUnifiedAutomationTemplates((text) => text, "zh-CN")[0]!;
     renderAutomationForm({ template });
 
@@ -1051,13 +1059,19 @@ describe("cron context panel integration", () => {
     const testRunButton = within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") });
 
     if (!(form instanceof HTMLElement)) throw new Error("Expected the template task form");
-    expect(form).toHaveClass("h-[840px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
     expect(form).not.toHaveClass("overflow-y-auto");
     const runTimeScrollBody = form.querySelector(".lv-automation-form-scroll");
     if (!runTimeScrollBody) throw new Error("Expected the task form scroll body");
     expect(runTimeScrollBody).toHaveClass("min-h-0", "flex-1");
-    expect(runTimeScrollBody.querySelector('[data-orientation="vertical"]')).toBeInTheDocument();
+    expect(runTimeScrollBody.querySelector("[data-radix-scroll-area-viewport]")).toBeInTheDocument();
     expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
+
+    const advancedSettings = within(dialog).getByText(localizedText("高级设置", "Advanced Settings"));
+    const advancedSettingsSummary = advancedSettings.closest("summary");
+    if (!advancedSettingsSummary) throw new Error("Expected advanced settings summary");
+    fireEvent.click(advancedSettingsSummary);
+    await waitFor(() => expect(form).toHaveClass("h-[840px]"));
   });
 
   it("uses the new copy for the blank create entry and modal title", async () => {
@@ -3407,7 +3421,7 @@ describe("zero-token automation form", () => {
     expect(notificationTaskButton).not.toHaveClass("min-h-24");
     expect(scriptTaskButton).not.toHaveClass("min-h-24");
     expect(dialogContent).toHaveClass("flex", "flex-col");
-    expect(dialogContent).toHaveClass("h-[840px]", "max-h-[calc(100dvh-16px)]");
+    expect(dialogContent).toHaveClass("h-[720px]", "max-h-[calc(100dvh-16px)]");
     expect(dialogContent.parentElement).toHaveClass("items-center");
     expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
     expect(dialogContent).not.toHaveClass("overflow-y-auto", "overflow-hidden");
