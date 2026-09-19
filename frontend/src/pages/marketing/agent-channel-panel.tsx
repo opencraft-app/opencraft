@@ -14,7 +14,7 @@ import './agent-config/styles-index.css';
 import { t } from "@/i18n/t";
 import { resolveAgentConsoleCollectionLabel } from '@/pages/marketing/agent-provider-locale';
 import { Info } from 'lucide-react';
-import { AgentConfirmDialog, AgentState } from '@/components/agents';
+import { AgentConfirmDialog, AgentPageLoadingState } from '@/components/agents';
 import { ChannelCardView, ChannelCredentialDialogView, ChannelMethodDialogView } from './agent-channel-views';
 import {
   useChannelOperations,
@@ -297,11 +297,7 @@ export function ChannelPanel(props: LightVelaChannelPanelProps) {
   }, [pendingDisconnect, ops]);
 
   if (ops.loading) {
-    return (
-      <div className={`${CLS} ${CLS}--loading ${className || ''}`}>
-        <AgentState kind="loading" title={t('加载中...')} />
-      </div>
-    );
+    return <AgentPageLoadingState className={`${CLS} ${CLS}--loading ${className || ''}`} title={t('正在读取通道')} />;
   }
 
   return (

@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -161,6 +162,23 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_production_release_checkouts_do_not_fetch_unneeded_submodules(self) -> None:
+        for path, expected_count in (
+            (".ci/templates/service-release.yml", 4),
+            (".ci/templates/gitops-promotion-prod.yml", 3),
+        ):
+            with self.subTest(template=path):
+                workflow = yaml.safe_load((REPO_ROOT / path).read_text())
+                checkouts = [
+                    step
+                    for stage in workflow["stages"]
+                    for job in (stage.get("jobs") or {}).values()
+                    for step in job.get("steps", [])
+                    if step.get("checkout") == "self"
+                ]
+                self.assertEqual(len(checkouts), expected_count)
+                self.assertTrue(all(step["with"]["enableSubmodule"] is False for step in checkouts))
+
     def test_sandbox_workers_use_isolated_pod_networking(self) -> None:
         documents = [
             document
@@ -197,7 +215,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 30, "sgprod": 30},
+                    {"shprod": 31, "sgprod": 31},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -1366,7 +1384,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         parameters = ((workflow.get("extends") or {}).get("parameters") or {})
 
         self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
-        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
         self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
 
@@ -1423,6 +1441,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "lightclaw-shprod.tencentcloudcr.com/lightclaw/referral",
         )
 
+        sgprod = load_bundle(manifest, "referral", "sgprod")
+        self.assertEqual(
+            sgprod.image_repo,
+            "lightclaw-sgprod.tencentcloudcr.com/lightclaw/referral",
+        )
+        self.assertIn("scripts/ssm_manifest.referral.sgprod.yaml", sgprod.publish_paths)
+        sgprod_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.referral.sgprod.yaml").read_text()
+        )
+        sgprod_ssm_item = next(
+            item for item in sgprod_ssm["items"] if item["id"] == "referral-runtime-secrets"
+        )
+        self.assertEqual(
+            set(sgprod_ssm_item["required_keys"]),
+            {
+                "REFERRAL_DB_PASSWORD",
+                "REFERRAL_PULSAR_TOKEN",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
+        )
+
         shprod_overlay = yaml.safe_load(
             (REPO_ROOT / "referral/k8s/overlays/shprod/kustomization.yaml").read_text()
         )
@@ -1434,8 +1473,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("path: /data/REFERRAL_ENABLED", shprod_config_patch)
         self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", shprod_config_patch)
-        self.assertGreaterEqual(shprod_config_patch.count('value: "false"'), 2)
-        self.assertIn('value: "paused"', shprod_config_patch)
+        self.assertGreaterEqual(shprod_config_patch.count('value: "true"'), 2)
+        self.assertIn('value: "active"', shprod_config_patch)
+        self.assertIn('value: "shanghai-launch-2026-09"', shprod_config_patch)
 
         shprod_worker_patch = next(
             item["patch"]
@@ -1443,13 +1483,43 @@ class ReleaseBundleContractTests(unittest.TestCase):
             if (item.get("target") or {}).get("name") == "referral-worker"
         )
         self.assertIn("path: /spec/replicas", shprod_worker_patch)
-        self.assertIn("value: 0", shprod_worker_patch)
+        self.assertIn("value: 2", shprod_worker_patch)
 
         shprod_service = yaml.safe_load(
             (REPO_ROOT / "argocd/services/referral/shprod/kustomization.yaml").read_text()
         )
-        self.assertNotIn("resources", shprod_service)
-        self.assertFalse((REPO_ROOT / "argocd/services/referral/shprod/referral-campaign.yaml").exists())
+        self.assertIn("referral-campaign.yaml", shprod_service["resources"])
+        self.assertTrue((REPO_ROOT / "argocd/services/referral/shprod/referral-campaign.yaml").exists())
+
+        shprod_auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/shprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', shprod_auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', shprod_auth_patch)
+
+        shprod_ctl_patch = (
+            REPO_ROOT / "argocd/services/ctl/shprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn("name: REFERRAL_ENABLED", shprod_ctl_patch)
+        self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", shprod_ctl_patch)
+        ctl_base = next(
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if isinstance(document, dict)
+            and document.get("kind") == "Deployment"
+            and document.get("metadata", {}).get("name") == "ctl-api"
+        )
+        container_name = ctl_base["spec"]["template"]["spec"]["containers"][0]["name"]
+        for patch_path in (
+            "ctl/k8s/overlays/shprod/patch-referral.yaml",
+            "argocd/services/ctl/shprod/patch-referral.yaml",
+        ):
+            with self.subTest(patch=patch_path):
+                patch = yaml.safe_load((REPO_ROOT / patch_path).read_text())
+                self.assertEqual(
+                    [container["name"] for container in patch["spec"]["template"]["spec"]["containers"]],
+                    [container_name],
+                )
 
         shprod_app = yaml.safe_load(
             (REPO_ROOT / "argocd/apps/shprod/referral.yaml").read_text()
@@ -1491,6 +1561,64 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertNotIn("configmap", verifier)
         self.assertNotIn("secret", verifier)
+
+        auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.shprod.yaml").read_text()
+        )["items"][0]
+        self.assertEqual(auth_ssm["version_id"], "referral-sh-20260916-auth")
+        self.assertIn("REFERRAL_PULSAR_TOKEN", auth_ssm["required_keys"])
+
+        ctl_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.shprod.yaml").read_text()
+        )
+        ctl_runtime = next(item for item in ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets")
+        self.assertEqual(ctl_runtime["version_id"], "referral-sh-20260916-ctl")
+        self.assertIn("REFERRAL_PULSAR_TOKEN", ctl_runtime["required_keys"])
+
+        sgprod_overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/sgprod/kustomization.yaml").read_text()
+        )
+        sgprod_patches = sgprod_overlay.get("patches") or []
+        sgprod_config_patch = next(
+            item["patch"]
+            for item in sgprod_patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn('value: "singapore-launch-2026-09"', sgprod_config_patch)
+        self.assertIn('value: "true"', sgprod_config_patch)
+        self.assertIn("pulsar-7j4z44nzn3za", sgprod_config_patch)
+
+        sgprod_app = yaml.safe_load(
+            (REPO_ROOT / "argocd/apps/sgprod/referral.yaml").read_text()
+        )
+        self.assertNotIn("syncPolicy", sgprod_app["spec"])
+        self.assertEqual(sgprod_app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(sgprod_app["spec"]["destination"]["name"], "sgprod")
+
+        sgprod_auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/sgprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', sgprod_auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', sgprod_auth_patch)
+
+        sgprod_ctl_patch = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/ctl/sgprod/patch-referral.yaml").read_text()
+        )
+        self.assertEqual(
+            [container["name"] for container in sgprod_ctl_patch["spec"]["template"]["spec"]["containers"]],
+            [container_name],
+        )
+        sgprod_auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )["items"][0]
+        self.assertIn("REFERRAL_PULSAR_TOKEN", sgprod_auth_ssm["required_keys"])
+        sgprod_ctl_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.sgprod.yaml").read_text()
+        )
+        sgprod_ctl_runtime = next(
+            item for item in sgprod_ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets"
+        )
+        self.assertIn("REFERRAL_PULSAR_TOKEN", sgprod_ctl_runtime["required_keys"])
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
@@ -2886,6 +3014,97 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
 
+    def test_hermes_pool_refresh_selects_only_target_region(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+api_get() { printf '%s' "$resolved_json"; }
+target_pool_ids http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertEqual(result.stdout.splitlines(), ["pool-jhb"])
+
+    def test_hermes_pool_refresh_does_not_publish_one_global_image_for_multi_region_sku(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+source "$script_path"
+api_get() {
+  printf '%s' '[{"id":"sku-hermes-2c4g","template_class_id":"hermes","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}]'
+}
+api_post_json() {
+  printf '%s' '{"id":"sku-hermes-2c4g","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}'
+}
+jq() {
+  printf '%s\n' 'jq must not be required before the multi-region early return' >&2
+  return 127
+}
+refresh_skus http://unused img-jhb "$pools_json"
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertNotIn("updating SKU", result.stdout)
+
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
@@ -3047,6 +3266,30 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("Dry-run 并打印生产 DB migration 计划", template_text)
         self.assertIn("创建并等待 migration/readiness Job", template_text)
         self.assertIn("--apply", template_text)
+
+        explicit_path = REPO_ROOT / ".ci/db-migration-apply.yml"
+        explicit_text = explicit_path.read_text()
+        explicit = yaml.safe_load(explicit_text)
+        explicit_on = explicit.get(True) or explicit.get("on") or {}
+        explicit_stages = explicit.get("stages") or []
+        self.assertEqual(explicit_on.get("manual"), "enabled")
+        self.assertEqual(
+            [stage.get("name") for stage in explicit_stages],
+            ["Dry-run 生产 DB migration", "人工确认生产 DB migration", "执行生产 DB migration"],
+        )
+        self.assertTrue(all("if" not in stage for stage in explicit_stages))
+        self.assertIn("check-in", explicit_stages[1])
+        explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
+        self.assertIn("description", explicit_reviews)
+        self.assertNotIn("description", explicit_stages[1]["check-in"])
+        for stage_index, job_name in ((0, "dry_run"), (2, "apply")):
+            steps = explicit_stages[stage_index]["jobs"][job_name]["steps"]
+            checkout = next(step for step in steps if step.get("checkout") == "self")
+            self.assertIs(checkout["with"]["enableSubmodule"], False)
+        self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
+        self.assertIn("--apply", explicit_text)
+        self.assertIn('if [[ "$MIGRATION_DECISION" == "run_migration" ]]', template_text)
+        self.assertIn("Use .ci/db-migration-apply.yml", template_text)
 
     def test_lightclaw_auth_prod_replaces_oauth_return_hosts(self) -> None:
         for env in ["shprod", "sgprod"]:
@@ -3343,6 +3586,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
+        self.assertEqual(parameters.get("IMAGE_PIN_VARIANT"), "testing")
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
@@ -3503,6 +3747,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
         self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
+        self.assertEqual(template_parameters.get("IMAGE_PIN_VARIANT", {}).get("default"), "all")
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
@@ -3512,6 +3757,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("resolve_prod_promote_envs()", template_text)
         self.assertNotIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
+        self.assertEqual(
+            template_text.count('GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"'),
+            4,
+        )
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
 

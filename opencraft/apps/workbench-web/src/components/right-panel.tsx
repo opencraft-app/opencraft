@@ -16,6 +16,8 @@ import {
   Plus,
   TerminalSquare,
   X,
+  Check,
+  ChevronDown,
 } from "lucide-react";
 import {
   DndContext,
@@ -115,70 +117,73 @@ function PanelToolbarAction({
 function PanelCreationMenu({
   actions,
   context,
+  tabs,
+  activeTabId,
+  onActivateTab,
 }: {
   actions: readonly PanelToolbarActionDefinition[];
   context: PanelToolbarActionContext;
+  /** Present only for the tab-bar-wide menu; + keeps its creation-only menu. */
+  tabs?: readonly PanelTabDescriptor[];
+  activeTabId?: string | null;
+  onActivateTab?: (tabId: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const pending = useRef<PanelToolbarActionDefinition | null>(null);
+  const pending = useRef<(() => void | Promise<void>) | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; pending.current = null; }; }, []);
   return (
     <>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger asChild>
-          <button
-            type="button"
-            className="chrome-button right-panel-new-tab"
-            aria-label="New tab"
-            title="New tab"
-          >
-            <Plus size={14} />
+          <button type="button" className="chrome-button right-panel-new-tab"
+            aria-label={tabs ? "Tabs" : "New tab"} title={tabs ? "Tabs" : "New tab"}>
+            {tabs ? <ChevronDown size={14} aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}
           </button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            className="right-panel-creation-menu"
-            align="start"
-            sideOffset={6}
+          <DropdownMenu.Content className="right-panel-creation-menu" align="start" sideOffset={6}
+            aria-label={tabs ? "Tabs" : "New tab"}
             onCloseAutoFocus={(event) => {
-              const action = pending.current;
+              const operation = pending.current;
               pending.current = null;
-              if (!action) return;
-              // Close the picker before handing focus to the newly opened panel.
+              if (!operation || !mounted.current) return;
               event.preventDefault();
               setError(null);
               void Promise.resolve()
-                .then(() => action.run(context))
-                .catch((cause) => {
-                  setError(
-                    cause instanceof Error ? cause.message : String(cause),
-                  );
+                .then(() => { if (mounted.current) return operation(); })
+                .catch(cause => {
+                  if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
                 });
-            }}
-          >
-            {actions.length === 0 ? (
-              <DropdownMenu.Item disabled>No types available</DropdownMenu.Item>
-            ) : (
-              actions.map((action) => (
-                <DropdownMenu.Item
-                  key={action.id}
-                  className="right-panel-creation-menu__item"
-                  onSelect={() => {
-                    pending.current = action;
-                  }}
-                >
-                  <ToolbarActionIcon icon={action.icon} />
-                  <span>{action.creationLabel}</span>
-                </DropdownMenu.Item>
-              ))
-            )}
+            }}>
+            {tabs ? <DropdownMenu.Label className="app-shell-toolbar-menu__title">New</DropdownMenu.Label> : null}
+            {actions.length === 0 ? <DropdownMenu.Item disabled>No types available</DropdownMenu.Item> : actions.map(action => (
+              <DropdownMenu.Item key={action.id} className="right-panel-creation-menu__item"
+                onSelect={() => { pending.current = () => action.run(context); }}>
+                <ToolbarActionIcon icon={action.icon} />
+                <span>{tabs ? action.label : action.creationLabel}</span>
+              </DropdownMenu.Item>
+            ))}
+            {tabs ? <>
+              <DropdownMenu.Separator className="right-panel-tab-menu__separator" />
+              <DropdownMenu.Label className="app-shell-toolbar-menu__title">Open tabs</DropdownMenu.Label>
+              <DropdownMenu.RadioGroup value={activeTabId ?? ""}>
+                {tabs.length === 0 ? <DropdownMenu.Item className="right-panel-creation-menu__item" disabled>No open tabs</DropdownMenu.Item> : tabs.map((tab, index) => (
+                  <DropdownMenu.RadioItem key={tab.id} value={tab.id} textValue={tab.title}
+                    className="app-shell-toolbar-menu__item" onSelect={() => {
+                      if (tab.id !== activeTabId) pending.current = () => onActivateTab?.(tab.id);
+                    }}>
+                    <span className="app-shell-toolbar-menu__item-content"><PanelIcon tab={tab} /><span>{tab.title}</span></span>
+                    {tabs.filter(other => other.title === tab.title).length > 1 ? <span className="right-panel-tab-menu__ordinal">{index + 1}</span> : null}
+                    <DropdownMenu.ItemIndicator><Check size={14} aria-hidden="true" /></DropdownMenu.ItemIndicator>
+                  </DropdownMenu.RadioItem>
+                ))}
+              </DropdownMenu.RadioGroup>
+            </> : null}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
-      {error ? (
-        <span role="alert" className="panel-toolbar-error">
-          {error}
-        </span>
-      ) : null}
+      {error ? <span role="alert" className="panel-toolbar-error">{error}</span> : null}
     </>
   );
 }
@@ -529,6 +534,14 @@ export function RightPanel({
                 context={toolbarActionContext}
               />
             ) : null}
+            <PanelCreationMenu
+              key={`${state.ownerId}:tabs`}
+              actions={creationActions}
+              context={toolbarActionContext}
+              tabs={regionState.tabs}
+              activeTabId={regionState.activeTabId}
+              onActivateTab={tabId => onAction({ type: "activate-tab", region, tabId })}
+            />
             <PanelTabDropTail region={region} />
           </div>
           <div className="right-panel-toolbar__actions">

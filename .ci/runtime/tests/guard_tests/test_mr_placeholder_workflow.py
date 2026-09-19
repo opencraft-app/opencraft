@@ -62,6 +62,7 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
         checkout_block = workflow.split("checkout: self", 1)[1].split("          - name: 校验并修复 MR checkout", 1)[0]
         self.assertIn("fetchDepth: 50", checkout_block)
         self.assertIn("enableVirtualMergeBranch: false", checkout_block)
+        self.assertIn("enableSubmodule: false", checkout_block)
 
     def test_ci_only_candidate_guard_fallback_is_constrained(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()

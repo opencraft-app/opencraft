@@ -8,6 +8,8 @@ allowed_origins:
 - http://127.0.0.1:4173
 - http://localhost:5173
 - http://127.0.0.1:5173
+trusted_proxy_cidrs:
+- 100.64.0.0/10
 routes:
 - name: users
   prefix: /users
@@ -182,6 +184,14 @@ routes:
     path: /auth/invite/prepare
   - method: POST
     path: /auth/internal/tencentcloud/account
+  - method: GET
+    path: /auth/internal/dev-environments/registration/ready
+  - method: GET
+    path: /auth/internal/dev-environments/registration
+  - method: PUT
+    path: /auth/internal/dev-environments/registration
+  - method: DELETE
+    path: /auth/internal/dev-environments/registration
   - method: GET
     path: /auth/oauth/qq/start
   - method: GET

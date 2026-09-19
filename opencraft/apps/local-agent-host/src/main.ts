@@ -7,20 +7,52 @@ import { pathToFileURL } from "node:url";
 
 import { WebSocket, WebSocketServer } from "ws";
 
-import { DshAppServerAdapter } from "./dsh-appserver-adapter.js";
+import { DshAppServerAdapter, decodeModel } from "./dsh-appserver-adapter.js";
 import { DshClient, DshClientError } from "./dsh-client.js";
 import { DshSupervisor } from "./dsh-supervisor.js";
 import { DshRestartBudget } from "./dsh-restart-budget.js";
 import { DshExecutionAuthority } from "./dsh-execution-authority.js";
-import { DshCapabilityBroker } from "./dsh-capability-broker.js";
-import { DshCapabilityLink } from "./dsh-capability-link.js";
+import { DshCapabilityBroker, normalizeCapabilities } from "./dsh-capability-broker.js";
+import {
+  DshCapabilityLink,
+  verifyDshCapabilityRegistration,
+} from "./dsh-capability-link.js";
 import { requestLoopback } from "./loopback-http.js";
 import { DshSessionRouting } from "./dsh-session-routing.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
-import { DshHistoryIndex } from "./dsh-history-index.js";
 import { HostProcessService } from "./process-service.js";
+import { ProjectRepository } from "./project-repository.js";
+import { ThreadCatalog } from "./thread-catalog.js";
+import { ThreadLifecycle } from "./thread-lifecycle.js";
+import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { ProfileSkillsMethod } from "@opencraft/appserver-protocol";
+import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
 
 type JsonRpcMessage = Record<string, unknown>;
+const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
+  "skills/installed/list",
+  "skills/installed/content/read",
+  "skills/enabled/set",
+  "skills/catalog/sources/list",
+  "skills/catalog/official/list",
+  "skills/catalog/search",
+  "skills/catalog/preview",
+  "skills/catalog/scan",
+  "skills/install",
+  "skills/uninstall",
+  "skills/update",
+  "skills/action/read",
+]);
+const replyClient = new AsyncLocalStorage<string>();
+interface LogicalClient {
+  readonly key: string;
+  readonly clientId: string;
+  readonly owner: import("./dsh-execution-authority.js").DshExecutionOwner;
+  readonly offered: Set<string>;
+  readonly openedThreads: Set<string>;
+  unsubscribeInteractions?: () => void;
+}
 
 function rpcError(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof DshClientError) return { code: -32001, message: error.message, data: { code: error.code, retryable: error.retryable } };
@@ -38,7 +70,13 @@ function rpcError(error: unknown): { code: number; message: string; data?: unkno
 }
 
 function send(socket: WebSocket, value: unknown): void {
-  if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const packet = value as Record<string, unknown>, client = replyClient.getStore();
+  socket.send(JSON.stringify(client && packet && "id" in packet && !(LOGICAL_CLIENT_FIELD in packet)
+    ? { ...packet, [LOGICAL_CLIENT_FIELD]: client } : value));
+}
+function sendClient(socket: WebSocket, clientId: string, packet: Record<string, unknown>): void {
+  send(socket, { ...packet, [LOGICAL_CLIENT_FIELD]: clientId || undefined });
 }
 
 async function fileRequest(method: string, params: unknown): Promise<unknown> {
@@ -67,13 +105,20 @@ export async function startLocalAgentHost(options: {
   readonly dshUrl?: string;
   readonly dshExecutable?: string;
   readonly dshRepository?: string;
+  /** Explicit development/package path; the Agent Host never infers Electron's cwd. */
+  readonly dshCapabilityPlugin?: string;
   readonly dataDirectory?: string;
   readonly modelStorageDirectory?: string;
+  readonly projectStorageDirectory?: string;
+  /** Test/embedding override; desktop defaults to ~/.opencraft/skills. */
+  readonly skillsDirectory?: string;
 } = {}) {
   let closing = false;
   let onEngineExit: ((error: Error) => void) | undefined;
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
   const bridgeToken = randomBytes(32).toString("hex");
+  const persistentSkillsRoot = resolve(options.skillsDirectory ?? join(homedir(), ".opencraft", "skills"));
+  const profileSkills = new DshProfileSkillsHandler(persistentSkillsRoot);
   let bridgeUrl: string | undefined;
   let capabilityLink: DshCapabilityLink | undefined;
   let bridgeDirectory: string | undefined;
@@ -81,12 +126,22 @@ export async function startLocalAgentHost(options: {
   if (!options.dshUrl && !process.env.OPENCRAFT_DSH_URL?.trim()) {
     const executable = resolve(options.dshExecutable ?? process.env.OPENCRAFT_DSH_EXECUTABLE ?? "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js");
     const bundled = resolve(dirname(executable), "../../../../opencraft-capability-plugin.mjs");
-    let plugin = bundled;
-    try { await access(plugin); } catch { plugin = resolve("apps/local-agent-host/src/dsh-capability-plugin.mjs"); await access(plugin); }
+    let plugin = resolve(options.dshCapabilityPlugin ?? bundled);
+    try { await access(plugin); } catch {
+      if (options.dshCapabilityPlugin !== undefined) throw new Error(`DSH capability plugin is unavailable at ${plugin}`);
+      plugin = resolve("apps/local-agent-host/src/dsh-capability-plugin.mjs");
+      await access(plugin);
+    }
     bridgeDirectory = await mkdtemp(join(tmpdir(), "opencraft-engine-plugin-"));
     const patch = join(bridgeDirectory, "patch.json");
-    await writeFile(patch, JSON.stringify([{ insert: [{ id: "opencraft-capability", name: plugin, config: {
-      token: bridgeToken, skillsRoot: join(bridgeDirectory, "skills"),
+    const engineModule = (name: string) => pathToFileURL(resolve(dirname(executable), `../../${name}/lib/index.js`)).href;
+    await writeFile(patch, JSON.stringify([
+      { id: "session-persistence-jsonl", name: resolve(dirname(plugin), "dsh-thread-persistence-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-persistence-jsonl") } },
+      { id: "session-projection-cache", name: resolve(dirname(plugin), "dsh-thread-projection-plugin.mjs"), config: { moduleUrl: engineModule("dsh-session-projection-cache") } },
+      { insert: [{ id: "opencraft-capability", name: plugin, config: {
+      token: bridgeToken,
+      skillsRoot: join(bridgeDirectory, "skills"),
+      persistentSkillsRoot,
       checkpointRoot: resolve(options.dataDirectory ?? bridgeDirectory, "surface-checkpoints"),
       toolsModuleUrl: pathToFileURL(resolve(dirname(executable), "../../dsh-tools/lib/index.js")).href,
     } }] }]), { mode: 0o600 });
@@ -104,7 +159,21 @@ export async function startLocalAgentHost(options: {
   try { dshUrl = options.dshUrl ?? await supervisor.start(); }
   catch (error) { if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); throw error; }
   const routing = new DshSessionRouting(options.dataDirectory ? resolve(options.dataDirectory, "opencraft-session-routing.sqlite") : ":memory:");
-  const client = new DshRoutedClient(dshUrl, routing, new DshHistoryIndex(options.dataDirectory ? resolve(options.dataDirectory, "opencraft-history-index.sqlite") : ":memory:"));
+  const client = new DshRoutedClient(dshUrl, routing);
+  const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
+  const lifecycle = new ThreadLifecycle(new ThreadCatalog(options.dataDirectory ? join(options.dataDirectory, "opencraft-threads.sqlite") : ":memory:"),
+    async id => {
+      if (!capabilityLink) return { released: false };
+      const result = await capabilityLink.thread("release", { sessionId: routing.native(id) });
+      if (result.released && lifecycle.catalog.get(id)?.ephemeral) client.forgetVolatile(id);
+      return result;
+    }, (method, params) => {
+      for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+        const id = params.threadId ?? params.thread?.id;
+        const global = ["thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed"].includes(method);
+        if (global || !id || lifecycle.attachments.has(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+      }
+    });
   let modelConfiguration: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge | undefined;
   try { if(options.modelStorageDirectory){
     const {ModelConfigurationRepository,ModelCredentialRepository}=await import('./model-config/repository.js');
@@ -115,7 +184,7 @@ export async function startLocalAgentHost(options: {
     if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,await client.call('settings.describe'));
     modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,new DshModelEngineAdapter(client)));
     await modelConfiguration.initialize();
-  } } catch(error) { client.closeIndex(); routing.close(); await supervisor.stop(); if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); throw error; }
+  } } catch(error) { await lifecycle.close(); routing.close(); await supervisor.stop(); if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); throw error; }
   const authority = new DshExecutionAuthority(options.dataDirectory ? resolve(options.dataDirectory, "opencraft-executions.sqlite") : ":memory:");
   const adapter = new DshAppServerAdapter(client,modelConfiguration,authority,patches.length > 0, patches.length ? {
     read: async threadId => {
@@ -133,12 +202,47 @@ export async function startLocalAgentHost(options: {
     if (bridgeUrl) capabilityLink.attach(bridgeUrl);
     for (const pending of routing.pending()) routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
   } } catch (error) {
+    await lifecycle.close();
     await capabilityLink?.close();
-    capabilities.close(); adapter.close(); authority.close(); client.closeIndex(); routing.close();
+    capabilities.close(); adapter.close(); authority.close(); routing.close();
     await supervisor.stop();
     if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true });
     throw error;
   }
+  if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
+  if (capabilityLink) adapter.setThreadEngine({
+    describe: params => capabilityLink!.thread("describe", { ...params, sessionId: routing.native(String(params.sessionId)) }),
+    create: async params => {
+      const created = await capabilityLink!.thread("create", params);
+      if (created.ephemeral) client.markVolatile(created.sessionId);
+      return created;
+    },
+    resume: async params => {
+      const id = String(params.sessionId);
+      const configuration = lifecycle.catalog.configuration(id);
+      const agentPreset = lifecycle.catalog.get(id)?.extra?.dsh?.agentPreset;
+      const selection = decodeModel(configuration.model);
+      const resumed = await capabilityLink!.thread("resume", { ...configuration, ...params, ...selection, agentPreset, sessionId: routing.native(id) });
+      // The native Web API's picker is process-local for a never-run session.
+      // Restore its product-owned binding before resume/fork reads that picker.
+      if (selection) {
+        const models = await client.call<{ current?: { provider: string; model: string } }>("session.models", { sessionId: id });
+        if (models.current?.provider !== selection.provider || models.current?.model !== selection.model)
+          await client.call("session.selectModel", { sessionId: id, ...selection });
+      }
+      if (capabilities.list(id).length) await capabilityLink!.register(id);
+      return resumed;
+    },
+    fork: async params => {
+      const source = String(params.sourceSessionId);
+      const coordinates = routing.forkCoordinates(source, params.lastTurn as number | undefined, params.beforeTurn as number | undefined);
+      const created = await capabilityLink!.thread("fork", { ...params, sourceSessionId: coordinates.nativeId, lastTurn: coordinates.lastTurn, beforeTurn: coordinates.beforeTurn });
+      if (created.ephemeral) client.markVolatile(created.sessionId);
+      return created;
+    },
+    inject: params => capabilityLink!.thread("inject", { ...params, sessionId: routing.native(String(params.sessionId)) }),
+    release: params => capabilityLink!.thread("release", { ...params, sessionId: routing.native(String(params.sessionId)) }),
+  });
   const restartBudget = new DshRestartBudget();
   restartBudget.ready();
   let restartOperation: Promise<void> | null = null;
@@ -148,6 +252,8 @@ export async function startLocalAgentHost(options: {
     if (restartOperation) return restartOperation;
     if (automatic) restartBudget.begin(); else restartBudget.reset();
     engineStatus = "restarting";
+    for (const id of lifecycle.catalog.temporaryIds()) client.forgetVolatile(id);
+    lifecycle.expireTemporaryThreads();
     adapter.engineUnavailable(new Error("DSH runtime stopped; the interrupted request will not be replayed"));
     restartOperation = (async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -193,7 +299,8 @@ export async function startLocalAgentHost(options: {
           }
           await adapter.reconnectStreams();
           if (capabilityLink) for (const threadId of capabilities.threads()) {
-            await client.call("session.models", { sessionId: threadId });
+            // Register only already-loaded generations. Idle display bindings stay
+            // cold; their declarations will mount at the next execution activation.
             await capabilityLink.register(threadId);
           }
           engineStatus = "ready";
@@ -214,6 +321,7 @@ export async function startLocalAgentHost(options: {
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
   const processes = new HostProcessService();
+  const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -239,13 +347,32 @@ export async function startLocalAgentHost(options: {
   });
   websocketServer.on("connection", (socket) => {
     const httpRequests = new Map<string, AbortController>();
-    const owner = { connectionId: randomUUID(), identity: { id: "local-user", username: "local" } };
-    const offered = new Set<string>();
-    const openedThreads = new Set<string>();
-    let unsubscribeInteractions: (() => void) | undefined;
+    const physicalId = randomUUID(), clients = new Map<string, LogicalClient>();
+    socketClients.set(socket, clients);
+    const logicalClient = (clientId: string) => {
+      let state = clients.get(clientId);
+      if (!state) {
+        const key = physicalId + ":" + clientId;
+        state = { key, clientId, owner: { connectionId: key, identity: { id: "local-user", username: "local" } }, offered: new Set(), openedThreads: new Set() };
+        clients.set(clientId, state);
+      }
+      return state;
+    };
+    const disconnectClient = async (state: LogicalClient) => {
+      clients.delete(state.clientId);
+      for (const threadId of capabilities.threads(state.owner)) await capabilityLink?.unregister(threadId);
+      capabilities.disconnect(state.owner); authority.disconnect(state.owner);
+      state.unsubscribeInteractions?.(); state.offered.clear(); state.openedThreads.clear();
+      await lifecycle.disconnect(state.key);
+    };
     const unsubscribe = adapter.subscribe((method, params) => {
-      if (method === "serverRequest/resolved") offered.delete(String((params as { requestId: unknown }).requestId));
-      send(socket, { jsonrpc: "2.0", method, params });
+      const value = params as { threadId?: string; thread?: { id: string }; requestId?: unknown };
+      const id = value?.threadId ?? value?.thread?.id;
+      if (id) lifecycle.touch(id);
+      for (const state of clients.values()) {
+        if (method === "serverRequest/resolved") state.offered.delete(String(value.requestId));
+        if (!id || lifecycle.attachments.has(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
+      }
     });
     const unsubscribeProcesses = processes.subscribe((method, params) => send(socket, { jsonrpc: "2.0", method, params }));
     socket.on("message", async (data, isBinary) => {
@@ -253,6 +380,11 @@ export async function startLocalAgentHost(options: {
       let request: JsonRpcMessage;
       try { request = JSON.parse(data.toString("utf8")) as JsonRpcMessage; }
       catch { send(socket, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } }); return; }
+      const clientId = typeof request?.[LOGICAL_CLIENT_FIELD] === "string" ? request[LOGICAL_CLIENT_FIELD] as string : "";
+      if (clientId.length > 4096) { socket.close(1008, "Invalid logical client"); return; }
+      const state = logicalClient(clientId), { owner, offered, openedThreads } = state;
+      await replyClient.run(clientId, async () => {
+      if (request.method === "runtime/client/disconnect" && !("id" in request)) { await disconnectClient(state); return; }
       if (request && typeof request === "object" && typeof request.id === "string" && !("method" in request) && ("result" in request || "error" in request)) {
         if (capabilities.respond(owner, request.id, request.result, request.error)) return;
         if (!offered.has(request.id)) return;
@@ -270,6 +402,8 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        const targetThread = (request.params as { threadId?: string } | null)?.threadId;
+        if (request.method.startsWith("turn/") && typeof targetThread === "string") lifecycle.assertOpen(targetThread);
         if (request.method === "runtime/http/cancel") {
           const id = (request.params as { requestId: string }).requestId;
           const active = httpRequests.get(id);
@@ -297,13 +431,18 @@ export async function startLocalAgentHost(options: {
           const unchanged = sameOwner && capabilities.matches(params.threadId, owner, params.dynamicTools);
           if (authority.table.get(params.threadId) && !unchanged) throw new Error("Cannot replace capabilities of an active execution");
           if (unchanged) {
-            send(socket, { jsonrpc: "2.0", id: request.id, result: { registered: capabilities.list(params.threadId).length } });
+            const expected = capabilities.list(params.threadId).length;
+            const engineRegistration = await capabilityLink.register(params.threadId);
+            verifyDshCapabilityRegistration(expected, engineRegistration);
+            send(socket, { jsonrpc: "2.0", id: request.id, result: engineRegistration });
             return;
           }
-          const registered = capabilities.register(params.threadId, owner, params.dynamicTools, frame => send(socket, { jsonrpc: "2.0", ...frame }));
+          await capabilityLink.validate(normalizeCapabilities(params.dynamicTools));
+          const registered = capabilities.register(params.threadId, owner, params.dynamicTools, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
           await capabilityLink.unregister(params.threadId);
-          await capabilityLink.register(params.threadId);
-          send(socket, { jsonrpc: "2.0", id: request.id, result: { registered: registered.length } });
+          const engineRegistration = await capabilityLink.register(params.threadId);
+          verifyDshCapabilityRegistration(registered.length, engineRegistration);
+          send(socket, { jsonrpc: "2.0", id: request.id, result: engineRegistration });
           return;
         }
         const readSkills = async () => {
@@ -316,21 +455,42 @@ export async function startLocalAgentHost(options: {
           const cwds = params?.cwds?.length ? params.cwds : [cwd];
           return { data: await Promise.all(cwds.map(cwd => capabilityLink!.skills(threadId, cwd, params?.forceReload === true))) };
         };
-        const result = request.method === "skills/list"
+        // Validate and snapshot before creating a native child/catalog entry. A malformed
+        // declaration must not leave a successfully created but unacknowledged thread.
+        const bindsCapabilities = ["thread/start", "thread/resume", "thread/fork"].includes(request.method);
+        const toolSpecs = bindsCapabilities ? structuredClone(
+          (request.params as { dynamicTools?: unknown } | undefined)?.dynamicTools
+          ?? (request.method === "thread/fork" ? capabilities.specs(String((request.params as { threadId: string }).threadId), owner) : undefined),
+        ) : undefined;
+        if (toolSpecs !== undefined) {
+          const normalized = normalizeCapabilities(toolSpecs);
+          if (capabilityLink) await capabilityLink.validate(normalized);
+        }
+        const result = request.method === "project/list"
+          ? await projects.list(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectListParams)
+          : request.method === "project/create"
+          ? await projects.create(request.params as import("@opencraft/appserver-protocol/generated/v2").ProjectCreateParams)
+          : request.method === "skills/list"
           ? await readSkills()
+          : PROFILE_SKILLS_METHODS.has(request.method as ProfileSkillsMethod)
+          ? await profileSkills.handle(request.method as ProfileSkillsMethod, request.params)
           : request.method.startsWith("process/")
           ? processes.dispatch(request.method, request.params)
           : request.method.startsWith("fs/")
           ? await fileRequest(request.method, request.params)
+          : request.method.startsWith("thread/") || request.method === "turn/start"
+          ? await lifecycle.dispatch(request.method, (request.params ?? {}) as Record<string, unknown>, state.key,
+            (method, params) => adapter.dispatchOwned(method, params, owner, request.id as string | number))
           : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number);
         const capabilityThreadId = (result as { thread?: { id?: string } } | null)?.thread?.id
           ?? (request.params as { threadId?: string } | undefined)?.threadId;
-        const toolSpecs = (request.params as { dynamicTools?: unknown } | undefined)?.dynamicTools;
-        if (["thread/start", "thread/resume"].includes(request.method) && typeof capabilityThreadId === "string" && toolSpecs !== undefined) {
-          capabilities.register(capabilityThreadId, owner, toolSpecs, frame => send(socket, { jsonrpc: "2.0", ...frame }));
+        if (request.method === "turn/start" && typeof capabilityThreadId === "string") lifecycle.acceptedTurn(capabilityThreadId, request.params as Record<string, unknown>);
+        if (bindsCapabilities && typeof capabilityThreadId === "string" && toolSpecs !== undefined) {
+          const registered = capabilities.register(capabilityThreadId, owner, toolSpecs, frame => sendClient(socket, clientId, { jsonrpc: "2.0", ...frame }));
           if (capabilityLink) {
             await capabilityLink.unregister(capabilityThreadId);
-            await capabilityLink.register(capabilityThreadId);
+            const engineRegistration = await capabilityLink.register(capabilityThreadId);
+            verifyDshCapabilityRegistration(registered.length, engineRegistration);
           }
         }
         send(socket, { jsonrpc: "2.0", id: request.id, result });
@@ -341,21 +501,23 @@ export async function startLocalAgentHost(options: {
           const params = request.params as { threadId?: string } | undefined;
           const threadId = reply?.thread?.id ?? params?.threadId;
           if (typeof threadId === "string") openedThreads.add(threadId);
-          unsubscribeInteractions?.();
-          unsubscribeInteractions = adapter.interactions.subscribe(interaction => {
+          state.unsubscribeInteractions?.();
+          state.unsubscribeInteractions = adapter.interactions.subscribe(interaction => {
             if (!openedThreads.has(interaction.params.threadId) || offered.has(interaction.id)) return;
             offered.add(interaction.id);
-            send(socket, { jsonrpc: "2.0", ...interaction });
+            sendClient(socket, clientId, { jsonrpc: "2.0", ...interaction });
           });
         }
       } catch (error) {
         send(socket, { jsonrpc: "2.0", id: request.id, error: rpcError(error) });
       }
+      });
     });
     socket.once("close", () => {
       for (const pending of httpRequests.values()) pending.abort();
-      for (const threadId of capabilities.threads(owner)) void capabilityLink?.unregister(threadId);
-      capabilities.disconnect(owner); authority.disconnect(owner); unsubscribe(); unsubscribeProcesses(); unsubscribeInteractions?.(); offered.clear(); openedThreads.clear();
+      socketClients.delete(socket);
+      for (const state of [...clients.values()]) void disconnectClient(state).catch(() => undefined);
+      unsubscribe(); unsubscribeProcesses();
     });
   });
   try {
@@ -368,12 +530,12 @@ export async function startLocalAgentHost(options: {
     });
   } catch (error) {
     closing = true;
+    await lifecycle.close();
     adapter.close();
     capabilities.close();
     await capabilityLink?.close();
     authority.close();
     routing.close();
-    client.closeIndex();
     processes.close();
     for (const client of websocketServer.clients) client.terminate();
     websocketServer.close();
@@ -394,6 +556,7 @@ export async function startLocalAgentHost(options: {
     async close(): Promise<void> {
       if (closing) return;
       closing = true;
+      await lifecycle.close();
       adapter.close();
       capabilities.close();
       await capabilityLink?.close();
@@ -404,7 +567,6 @@ export async function startLocalAgentHost(options: {
       await restartOperation?.catch(() => undefined);
       authority.close();
       routing.close();
-      client.closeIndex();
       if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true });
     },
   };

@@ -1,5 +1,5 @@
 import type { CatalogModel as Model } from "@opencraft/appserver-protocol";
-import { reasoningCapability } from "@opencraft/composer-core";
+import { reasoningCapability, resolveModelSelection, modelInputModalities, type ModelInputModality } from "@opencraft/composer-core";
 
 export interface WorkbenchReasoningEffortChoice {
   readonly value: string;
@@ -17,6 +17,7 @@ export interface WorkbenchComposerModelChoice {
   readonly label: string;
   readonly description: string | null;
   readonly isDefault: boolean;
+  readonly inputModalities: readonly ModelInputModality[];
   readonly defaultEffort: string | null;
   readonly efforts: readonly WorkbenchReasoningEffortChoice[];
 }
@@ -57,6 +58,7 @@ export function projectComposerModelChoices(
       label: model.displayName,
       description: model.description || null,
       isDefault: model.isDefault,
+      inputModalities: modelInputModalities(model.inputModalities),
       defaultEffort: reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort).defaultEffort,
       efforts: model.supportedReasoningEfforts.map((effort) => Object.freeze({
         value: effort.reasoningEffort,
@@ -70,8 +72,5 @@ export function resolveComposerModelChoice(
   choices: readonly WorkbenchComposerModelChoice[],
   selectedModel: string | undefined,
 ): WorkbenchComposerModelChoice | null {
-  return choices.find((choice) => choice.value === selectedModel)
-    ?? choices.find((choice) => choice.isDefault)
-    ?? choices[0]
-    ?? null;
+  return resolveModelSelection(choices, selectedModel);
 }

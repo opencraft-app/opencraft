@@ -50,6 +50,7 @@ import {
   type BotMotionReplayController,
 } from "./motion-replay";
 import { useBotConversationViewport } from "./conversation-viewport";
+import { BotExecutionError } from "./execution-error";
 import { useBotTimelinePresentation } from "./timeline-presentation";
 import "./styles.scss";
 
@@ -70,7 +71,8 @@ function firstBot(
 }
 
 function executionUnitIsActive(unit: BotTimelineUnit): boolean {
-  return unit.kind === "execution" && (
+  return unit.kind === "execution" && unit.execution.status !== "failed" &&
+    unit.execution.status !== "completed" && unit.execution.status !== "cancelled" && (
     unit.execution.status === "queued" ||
     unit.execution.status === "running" ||
     unit.execution.status === "waiting" ||
@@ -134,12 +136,6 @@ function MessageContent({
           </a>
         );
       })}
-      {message.delivery === "sending" ? (
-        <span className="bot-chat-message__delivery">Sending…</span>
-      ) : null}
-      {message.delivery === "failed" ? (
-        <span className="bot-chat-message__delivery is-failed">Not sent</span>
-      ) : null}
     </>
   );
 }
@@ -156,20 +152,28 @@ function MessageBubble({
   const [enteredAsNew] = useState(entering);
   const { message } = projection;
   return (
-    <article
-      className="bot-chat-message"
-      data-selection="text"
-      data-author-kind={message.author.kind}
-      data-continued-next={projection.continuedToNext || undefined}
-      data-continued-prev={projection.continuedFromPrevious || undefined}
-      data-delivery={message.delivery}
-      data-enter={enteredAsNew ? "new" : undefined}
-      data-group-end={projection.groupEnd || undefined}
-      data-group-start={projection.groupStart || undefined}
-      data-streaming={message.streaming || undefined}
-    >
-      <MessageContent message={message} />
-    </article>
+    <div className="bot-chat-message-shell" data-author-kind={message.author.kind}>
+      <article
+        className="bot-chat-message"
+        data-selection="text"
+        data-author-kind={message.author.kind}
+        data-continued-next={projection.continuedToNext || undefined}
+        data-continued-prev={projection.continuedFromPrevious || undefined}
+        data-delivery={message.delivery}
+        data-enter={enteredAsNew ? "new" : undefined}
+        data-group-end={projection.groupEnd || undefined}
+        data-group-start={projection.groupStart || undefined}
+        data-streaming={message.streaming || undefined}
+      >
+        <MessageContent message={message} />
+      </article>
+      {message.delivery === "sending" ? (
+        <span className="bot-chat-message__delivery" role="status">Sending…</span>
+      ) : null}
+      {message.delivery === "failed" ? (
+        <span className="bot-chat-message__delivery is-failed" role="status">Not sent</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -234,11 +238,14 @@ function TimelineUnitRow({
 }) {
   const activityModel = useMemo(
     () =>
-      unit.kind === "execution"
+      unit.kind === "execution" && unit.execution.status !== "failed"
         ? projectBotActivityIndicator(unit.presence, participants)
         : null,
     [participants, unit],
   );
+  const failedBot = unit.kind === "execution" && unit.execution.status === "failed"
+    ? participants.find((participant) => participant.participantId === unit.execution.participantId)
+    : undefined;
   return (
     <div className="bot-chat-timeline-unit" data-unit-kind={unit.kind}>
       {(unit.kind === "message" ? unit.messageRuns : []).map((run) => {
@@ -259,6 +266,12 @@ function TimelineUnitRow({
         );
       })}
       <BotActivityIndicator model={activityModel} />
+      {unit.kind === "execution" && unit.execution.status === "failed" ? (
+        <BotExecutionError
+          code={unit.execution.error?.code}
+          participantName={failedBot?.displayName ?? "Bot"}
+        />
+      ) : null}
       {requiresApproval && unit.kind === "execution" ? (
         <div className="bot-chat-replay-approval" role="status">
           <CircleAlert aria-hidden="true" size={16} />
@@ -641,6 +654,10 @@ export function createBotChatView(
     );
     const submit = useCallback(
       (intent: Parameters<BotConversationSource["send"]>[1]) => {
+        if (snapshot.descriptor.readOnly === true) {
+          setSubmissionError("This historical group is read-only because a member no longer exists.");
+          return false;
+        }
         setSubmissionError(null);
         followLatest({ smooth: false });
         if (replayEnabled) {
@@ -654,7 +671,7 @@ export function createBotChatView(
         });
         return true;
       },
-      [followLatest, identity, replay, replayEnabled],
+      [followLatest, identity, replay, replayEnabled, snapshot.descriptor.readOnly],
     );
     const cancel = useCallback(() => {
       if (replay !== undefined && replayEnabled) {
@@ -879,8 +896,10 @@ export function createBotChatView(
           ) : null}
           <div className="bot-chat-composer-dock">
             <div className="bot-chat-rail bot-chat-composer-rail">
+              {snapshot.descriptor.readOnly === true ? <p className="bot-chat-stage__status" role="status">This historical group is read-only because a member no longer exists.</p> : null}
               <CodexComposer
                 controller={composer}
+                disabled={snapshot.descriptor.readOnly === true}
                 isStreaming={isStreaming}
                 onCancel={cancel}
                 onResolveAttachment={resolveAttachment}

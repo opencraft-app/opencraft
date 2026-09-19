@@ -1788,6 +1788,36 @@ input.lh-std-input::placeholder {
 }
 
 /* SkillPanel — 已安装技能筛选 */
+.lv-select-trigger.lv-select-trigger--filter {
+  width: min(100%, var(--width-filter-control, 160px));
+  height: var(--height-filter-control, 36px);
+  padding-inline: var(--padding-control-inline, 8px);
+  border-radius: var(--radius-control, 7px);
+  font-size: var(--font-toolbar-control-size, 13px);
+  font-weight: var(--font-toolbar-control-weight, 500);
+  line-height: var(--font-toolbar-control-line-height, 18px);
+  box-shadow: none;
+}
+
+.lv-select-content.lv-select-content--filter {
+  width: var(--radix-select-trigger-width);
+  min-width: var(--radix-select-trigger-width);
+  max-width: min(var(--radix-select-content-available-width), calc(100vw - 2rem));
+}
+
+.lv-select-content--filter .lv-select-viewport {
+  padding: var(--menu-surface-padding, 5px);
+}
+
+.lv-select-item.lv-select-item--filter {
+  min-height: var(--height-menu-item, 28px);
+  padding-block: var(--padding-menu-item-block, 5px);
+  padding-inline-end: var(--padding-control-inline, 8px);
+  border-radius: var(--menu-item-radius, 8px);
+  font-size: var(--font-toolbar-control-size, 13px);
+  line-height: var(--font-toolbar-control-line-height, 18px);
+}
+
 .lh-std-skill-panel__installed-toolbar {
   display: flex;
   flex-wrap: wrap;

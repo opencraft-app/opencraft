@@ -1,13 +1,13 @@
-# Referral Shanghai foundation
+# Referral Shanghai activation
 
-This directory deploys only the disabled Shanghai Referral foundation:
+This directory deploys the Shanghai Referral campaign:
 
 - Referral API replicas: 2
-- Referral worker replicas: 0
-- `REFERRAL_ENABLED=false`
-- `REFERRAL_PROCESSING_ENABLED=false`
-- no campaign bootstrap Job
-- no Auth/CTL relay, Gateway route, or frontend activation
+- Referral worker replicas: 2
+- `REFERRAL_ENABLED=true`
+- `REFERRAL_PROCESSING_ENABLED=true`
+- campaign bootstrap runs as an Argo PostSync hook
 
-Production activation is a separate reviewed change after schema migration and
-API health are verified. Shanghai never inherits the Beijing campaign.
+Auth/CTL relays, exact Gateway routes, and the CTL runtime flag are released as
+the same source activation but remain separately ordered Argo applications.
+Shanghai owns an independent campaign and never inherits the Beijing campaign.

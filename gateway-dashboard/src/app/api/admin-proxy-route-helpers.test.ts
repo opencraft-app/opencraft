@@ -104,6 +104,46 @@ test("buildModuleAdminProxyRequest maps ctl-admin module to ctl admin API", asyn
   assert.equal(await new Response(built.init.body).text(), JSON.stringify({ reason: "manual refund" }));
 });
 
+test("buildModuleAdminProxyRequest maps credit module and keeps the internal token server-side", async () => {
+  const req = new Request("https://admin.example.com/admin/api/credit/packages?status=active", {
+    headers: { authorization: "Bearer browser-token" },
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "credit",
+    path: ["packages"],
+    upstreamBaseURL: "http://credit.internal",
+    upstreamToken: "credit-internal-token",
+  });
+
+  assert.equal(
+    built.url.toString(),
+    "http://credit.internal/internal/credit/admin/packages?status=active",
+  );
+  assert.equal(built.init.headers.get("authorization"), "Bearer credit-internal-token");
+  assert.equal(built.usedBrowserToken, false);
+});
+
+test("buildModuleAdminProxyRequest maps shadow module and keeps the internal token server-side", async () => {
+  const req = new Request("https://admin.example.com/admin/api/shadow/accounts?search=330500000005", {
+    headers: { authorization: "Bearer browser-token" },
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "shadow",
+    path: ["accounts"],
+    upstreamBaseURL: "http://shadow.internal",
+    upstreamToken: "shadow-internal-token",
+  });
+
+  assert.equal(
+    built.url.toString(),
+    "http://shadow.internal/internal/shadow/admin/accounts?search=330500000005",
+  );
+  assert.equal(built.init.headers.get("authorization"), "Bearer shadow-internal-token");
+  assert.equal(built.usedBrowserToken, false);
+});
+
 test("buildModuleAdminProxyRequest maps sandbox PUT binding replacements to internal API", async () => {
   const body = JSON.stringify([{ sku_id: "sku-hermes-2c4g", priority: 1, weight: 100 }]);
   const req = new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/skus", {

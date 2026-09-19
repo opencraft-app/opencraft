@@ -12,6 +12,7 @@ COPY frontend/vendor ./vendor
 COPY frontend/assets ./assets
 COPY frontend/patches ./patches
 COPY velalink /workspace/velalink
+COPY shared/lightvela-agent-core /workspace/shared/lightvela-agent-core
 
 ARG VITE_AUTH_API_BASE_URL
 ARG NEXT_PUBLIC_AUTH_API_BASE_URL

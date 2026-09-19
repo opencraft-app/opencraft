@@ -40,6 +40,7 @@ type TunneledResponse struct {
 // pending 是一次在途请求：hub 把它推给某个 env 的等待队列，agent 取走并回放，
 // 再通过 reply 把应答送回 replyCh，唤醒阻塞的 ingest。
 type pending struct {
+	env     string
 	req     TunneledRequest
 	replyCh chan TunneledResponse
 }
@@ -92,6 +93,7 @@ func (h *Hub) queueFor(env string) chan *pending {
 //   - 成功则返回 agent 回放本地服务得到的应答。
 func (h *Hub) Dispatch(ctx context.Context, env string, req TunneledRequest) (TunneledResponse, error) {
 	p := &pending{
+		env:     env,
 		req:     req,
 		replyCh: make(chan TunneledResponse, 1),
 	}
@@ -153,9 +155,12 @@ func (h *Hub) Poll(ctx context.Context, env string) (TunneledRequest, bool, erro
 // Reply 由 agent 侧调用：把某个 rid 的应答送回等待的 ingest。
 //
 // 返回 false 表示该 rid 已不存在（ingest 已超时放弃，或重复 reply）。
-func (h *Hub) Reply(rid string, resp TunneledResponse) bool {
+func (h *Hub) Reply(env, rid string, resp TunneledResponse) bool {
 	h.mu.Lock()
 	p, ok := h.pendingByRID[rid]
+	if ok && env != "" && p.env != env {
+		ok = false
+	}
 	if ok {
 		delete(h.pendingByRID, rid)
 	}

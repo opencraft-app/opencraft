@@ -1,13 +1,14 @@
-import { projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
+import { projectedHistoryHeadCursors, projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
 import { homedir } from "node:os";
+import { historyCursor, historyBoundary, readTurnWindow } from "./dsh-history-window.js";
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 
 import { DshClient, type DshEvent, type DshHistoryEntry } from "./dsh-client.js";
-import { RuntimeProviderService } from "./runtime-provider-service.js";
+import { RuntimeProviderService, type RuntimeModelInfoReader } from "./runtime-provider-service.js";
 import { checkSavedModel } from "./saved-model-check.js";
-import { reasoningCapability } from "@opencraft/composer-core";
-import type { RuntimeModelProbeParams } from "@opencraft/appserver-protocol";
+import { reasoningCapability, modelInputModalities, unsupportedModelInput } from "@opencraft/composer-core";
+import type { RuntimeModelProbeParams, RuntimeSettingsDescribeResponse } from "@opencraft/appserver-protocol";
 import { DshInteractions } from "./dsh-interactions.js";
 import { DshTurnProjection } from "./dsh-turn-projection.js";
 import { userContent } from "./dsh-content.js";
@@ -16,10 +17,22 @@ import { DshNativeAdmission } from "./dsh-native-admission.js";
 import { projectDshPermissions, type DshPermissionPort } from "./dsh-permission-projection.js";
 import { DshPresentationQueue } from "./dsh-presentation-queue.js";
 import { projectDshGoal } from "./dsh-goal-projection.js";
-import { OPENCRAFT_THREAD_QUEUE_EXTENSION } from "@opencraft/appserver-protocol";
+import {
+  OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,
+  OPENCRAFT_PROFILE_SKILLS_EXTENSION,
+  OPENCRAFT_THREAD_QUEUE_EXTENSION,
+} from "@opencraft/appserver-protocol";
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
 type RecordValue = Record<string, unknown>;
+export interface DshThreadEnginePort {
+  describe?(params: RecordValue): Promise<any>;
+  create(params: RecordValue): Promise<any>;
+  resume(params: RecordValue): Promise<any>;
+  fork(params: RecordValue): Promise<any>;
+  inject(params: RecordValue): Promise<any>;
+  release(params: RecordValue): Promise<any>;
+}
 
 interface DshSessionSummary {
   sessionId: string;
@@ -29,6 +42,8 @@ interface DshSessionSummary {
   cwd?: string;
   agentPreset?: string;
   parentSessionId?: string;
+  origin?: string;
+  ephemeral?: boolean;
   projections?: { asOfSeq: number; values: Record<string, unknown> };
 }
 
@@ -180,10 +195,10 @@ function makeThread(summary: DshSessionSummary, turns: TurnAccumulator[] = []): 
     id: summary.sessionId,
     sessionId: summary.sessionId,
     extra: { dsh: { agentPreset: summary.agentPreset ?? null, blank: summary.blank } },
-    forkedFromId: summary.parentSessionId ?? null,
-    parentThreadId: summary.parentSessionId ?? null,
+    forkedFromId: summary.origin !== "subagent" ? summary.parentSessionId ?? null : null,
+    parentThreadId: summary.origin === "subagent" ? summary.parentSessionId ?? null : null,
     preview: title,
-    ephemeral: false,
+    ephemeral: summary.ephemeral === true,
     section: null,
     sectionEnteredAt: null,
     projectId: null,
@@ -219,7 +234,7 @@ function encodeModel(provider: string, model: string): string {
   return `${DSH_MODEL_PREFIX}${encodeURIComponent(provider)}:${encodeURIComponent(model)}`;
 }
 
-function decodeModel(value: unknown): { provider: string; model: string } | null {
+export function decodeModel(value: unknown): { provider: string; model: string } | null {
   if (typeof value !== "string" || !value.startsWith(DSH_MODEL_PREFIX)) return null;
   const encoded = value.slice(DSH_MODEL_PREFIX.length);
   const separator = encoded.indexOf(":");
@@ -231,9 +246,8 @@ function decodeModel(value: unknown): { provider: string; model: string } | null
 }
 
 function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: string; model: string }): RecordValue[] {
-  const first = catalog.groups[0]?.models[0];
-  const defaultProvider = current?.provider ?? catalog.groups[0]?.id;
-  const defaultModel = current?.model ?? first?.id;
+  const defaultProvider = current?.provider;
+  const defaultModel = current?.model;
   return catalog.groups.flatMap((group) => group.models.map((model) => ({
     id: encodeModel(group.id, model.id),
     model: encodeModel(group.id, model.id),
@@ -249,7 +263,7 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
       description: effort.description ?? effort.name,
     })),
     defaultReasoningEffort: reasoningCapability((model.reasoning?.efforts ?? []).map(e=>e.id),model.reasoning?.defaultEffort).defaultEffort,
-    inputModalities: ["text", "image"],
+    inputModalities: modelInputModalities(model.input),
     supportsPersonality: false,
     multiAgentVersion: null,
     additionalSpeedTiers: [],
@@ -262,6 +276,57 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  setModelInfoReader(reader: RuntimeModelInfoReader): void { this.providers.setModelInfoReader(reader); }
+  private threadEngine: DshThreadEnginePort | null = null;
+  private readonly activations = new Map<string, Promise<unknown>>();
+  private readonly historyFlights = new Map<string, Promise<DshHistoryPage>>();
+  private readHistoryPage(sessionId: string, beforeSeq?: number): Promise<DshHistoryPage> {
+    const key = JSON.stringify([sessionId, beforeSeq]);
+    const prior = this.historyFlights.get(key);
+    if (prior) return prior;
+    const operation = this.client.call<DshHistoryPage>("session.history", {
+      sessionId, maxMessages: 50, ...(beforeSeq === undefined ? {} : { beforeSeq }),
+    }, this.abort.signal).finally(() => {
+      if (this.historyFlights.get(key) === operation) this.historyFlights.delete(key);
+    });
+    this.historyFlights.set(key, operation);
+    return operation;
+  }
+  private async readTurn(sessionId: string, id: string): Promise<TurnAccumulator[]> {
+    let before: number | undefined;
+    const chunks: DshHistoryEntry[][] = [];
+    for (;;) {
+      const page = await this.readHistoryPage(sessionId, before);
+      const first = page.events[0]?.event.seq;
+      if (page.hasMore && (first === undefined || (before !== undefined && first >= before))) throw new Error("Native history cursor made no progress");
+      chunks.unshift(page.events);
+      const start = page.events.find(entry => entry.event.type === "turn/start" && turnId(sessionId, number(object(entry.event.data).turn, -1)) === id);
+      if (start || !page.hasMore) {
+        if (!start) return [];
+        const all = chunks.flat();
+        const from = all.findIndex(entry => entry.event.seq === start.event.seq);
+        const next = all.findIndex((entry, i) => i > from && entry.event.type === "turn/start");
+        const summary = await this.summary(sessionId);
+        return mapEvents(sessionId, all.slice(from, next < 0 ? undefined : next).filter(entry => {
+          const turn = object(entry.event.data).turn;
+          return typeof turn !== "number" || turnId(sessionId, turn) === id;
+        }).map(entry => ({ ...entry,
+          event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd);
+      }
+      before = first;
+    }
+  }
+  private ensureRuntime(sessionId: string): Promise<unknown> {
+    if (!this.threadEngine) return Promise.resolve();
+    const existing = this.activations.get(sessionId);
+    if (existing) return existing;
+    const operation = this.threadEngine.resume({ sessionId }).finally(() => {
+      if (this.activations.get(sessionId) === operation) this.activations.delete(sessionId);
+    });
+    this.activations.set(sessionId, operation);
+    return operation;
+  }
+  setThreadEngine(port: DshThreadEnginePort): void { this.threadEngine = port; }
   private readonly summaries = new Map<string, DshSessionSummary>();
   private readonly abort = new AbortController();
   private readonly sinks = new Set<NotificationSink>();
@@ -735,6 +800,39 @@ export class DshAppServerAdapter {
     return this.client.call<DshSessionModels>("session.models", { sessionId });
   }
 
+  private async describedModel(sessionId: string, requested: unknown,
+    description: { loaded?: boolean; selection?: DshSessionModels["current"] }): Promise<Pick<DshSessionModels, "current">> {
+    // Product binding/explicit override, then a live native pick, then logged
+    // selection and finally the declared default for a legacy blank session.
+    // Never call Agent-bound session.models merely to display a cold thread.
+    const explicit = decodeModel(requested);
+    const native = description.loaded === true ? (await this.sessionModels(sessionId)).current : description.selection;
+    if (explicit) return { current: { ...explicit,
+      ...(native?.provider === explicit.provider && native?.model === explicit.model
+        ? { reasoningEffort: native.reasoningEffort } : {}) } };
+    return { current: native ?? await this.defaultModel() ?? undefined };
+  }
+
+  private async defaultModel(): Promise<{ provider: string; model: string } | null> {
+    const settings = await (this.modelConfiguration ?? this.client).call<RuntimeSettingsDescribeResponse>("settings.describe");
+    const value = object(settings.namespaces.find(entry => entry.ns === "agent-default-model")?.value);
+    return typeof value.provider === "string" && value.provider !== "" && typeof value.model === "string" && value.model !== ""
+      ? { provider: value.provider, model: value.model } : null;
+  }
+
+  private async assertInput(sessionId: string, input: unknown): Promise<void> {
+    if (!Array.isArray(input)) throw new Error("Input must be an array");
+    const current = (await this.sessionModels(sessionId)).current;
+    if (!current) throw new Error("请先选择模型");
+    // RuntimeProviderService is the single capability resolver: an explicit
+    // native answer wins, an unknown native answer falls back to the user's
+    // model declaration, and a fully unknown model remains text-only.
+    const model = (await this.providers.models(true)).groups
+      .find(group => group.id === current.provider)?.models.find(entry => entry.id === current.model);
+    const unsupported = unsupportedModelInput(modelInputModalities(model?.input), input);
+    if (unsupported) throw new Error(`所选模型不支持 ${unsupported} 输入，请更换模型或移除附件`);
+  }
+
   private async selectModel(sessionId: string, requested: unknown, effort?: unknown): Promise<DshSessionModels> {
     const selection = decodeModel(requested);
     if (selection !== null) {
@@ -758,8 +856,9 @@ export class DshAppServerAdapter {
 
   private async summariesList(): Promise<DshSessionSummary[]> {
     const value = await this.client.call<{ items: DshSessionSummary[] }>("session.list");
-    for (const summary of value.items) this.summaries.set(summary.sessionId, summary);
-    return value.items;
+    const items = value.items.map(summary => ({ ...summary, ephemeral: this.summaries.get(summary.sessionId)?.ephemeral ?? summary.ephemeral }));
+    for (const summary of items) this.summaries.set(summary.sessionId, summary);
+    return items;
   }
 
   private async summary(sessionId: string): Promise<DshSessionSummary> {
@@ -815,11 +914,51 @@ export class DshAppServerAdapter {
     return turns;
   }
 
-  private async history(sessionId: string, cursor: unknown, limit: unknown): Promise<{ turns: TurnAccumulator[]; nextCursor: string | null }> {
+  private async history(
+    sessionId: string,
+    cursor: unknown,
+    limit: unknown,
+    sortDirection: "asc" | "desc" = "desc",
+    itemsView?: "full" | "notLoaded",
+  ): Promise<{
+    turns: TurnAccumulator[];
+    pageTurns: TurnAccumulator[];
+    nextCursor: string | null;
+    headCursor: string | null;
+  }> {
+    if (sortDirection === "desc" && (cursor == null || String(cursor).includes("dsh-turns"))) {
+      const count = typeof limit === "number" && Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+      const before = historyBoundary(sessionId, cursor);
+      const window = await readTurnWindow(boundary => this.readHistoryPage(sessionId, boundary), before, count);
+      const summary = await this.summary(sessionId);
+      if (window.projections) this.summaries.set(sessionId, { ...summary, projections: window.projections });
+      const included = new Set(window.events.filter(entry => entry.event.type === "turn/start")
+        .map(entry => turnId(sessionId, number(object(entry.event.data).turn, -1))));
+      const turns = mapEvents(sessionId, window.events.filter(entry => {
+        const turn = object(entry.event.data).turn;
+        return typeof turn !== "number" || included.has(turnId(sessionId, turn));
+      }).map(entry => ({ ...entry,
+        event: this.authority?.projectInput(sessionId, entry.event) ?? entry.event })), summary.running, summary.cwd)
+        .filter(turn => included.has(turn.id));
+      const pageTurns = [...turns].reverse().map(turn => itemsView === "notLoaded" ? { ...turn, items: [], itemsView: "notLoaded" } as unknown as TurnAccumulator : turn);
+      return { turns, pageTurns, nextCursor: window.nextBefore === undefined ? null : historyCursor(sessionId, window.nextBefore),
+        headCursor: turns.length ? historyCursor(sessionId, before) : null };
+    }
     const turns = await this.fullHistory(sessionId);
-    const page = projectedTurnsPage({ id: sessionId, turns }, { threadId: sessionId,
-      cursor: cursor as string | null, limit: limit as number | null, sortDirection: "desc" });
-    return { turns: page.data.reverse() as unknown as TurnAccumulator[], nextCursor: page.nextCursor };
+    const thread = { id: sessionId, turns };
+    const page = projectedTurnsPage(thread, {
+      threadId: sessionId,
+      cursor: cursor as string | null,
+      limit: limit as number | null,
+      sortDirection,
+      ...(itemsView === undefined ? {} : { itemsView }),
+    });
+    return {
+      turns: (sortDirection === "desc" ? [...page.data].reverse() : page.data) as unknown as TurnAccumulator[],
+      pageTurns: page.data as unknown as TurnAccumulator[],
+      nextCursor: page.nextCursor,
+      headCursor: projectedHistoryHeadCursors(thread).turnsBackwardsCursor,
+    };
   }
 
   private settingsWrites: Promise<unknown> = Promise.resolve();
@@ -863,6 +1002,7 @@ export class DshAppServerAdapter {
       return result;
     }
     if (method === "turn/start") {
+      await this.ensureRuntime(sessionId);
       const pending = this.admission.begin(sessionId, owner, requestId, string(value.clientUserMessageId) || undefined);
       try {
         if (value.sandboxPolicy != null || value.approvalPolicy != null) throw new Error("Use a runtime-supported named permission profile; arbitrary policy overrides are not supported");
@@ -981,7 +1121,7 @@ export class DshAppServerAdapter {
       case "runtime/settings/mutate":
         if (value.ns === "llm-pi-ai") throw new Error("Use runtime provider/model commands to change model configuration");
         if (value.ns === "agent-default-model") {
-          const settings = await this.client.call<{ namespaces: Array<{ ns: string; value: unknown }> }>("settings.describe");
+          const settings = await (this.modelConfiguration ?? this.client).call<RuntimeSettingsDescribeResponse>("settings.describe");
           const next = { ...object(settings.namespaces.find(entry => entry.ns === value.ns)?.value) };
           if (!Array.isArray(value.ops)) throw new Error("Invalid default model settings");
           for (const operation of value.ops) {
@@ -990,8 +1130,14 @@ export class DshAppServerAdapter {
             if (op.op === "unset") delete next[op.path[0]];
             else next[op.path[0]] = op.value;
           }
-          const catalog = await this.providers.models();
-          if (!catalog.groups.some(group => group.id === next.provider && group.models.some(model => model.id === next.model))) throw new Error("Default model must be enabled and available");
+          const cleared = this.modelConfiguration && !Object.hasOwn(next, "provider") && !Object.hasOwn(next, "model") && !Object.hasOwn(next, "reasoningEffort");
+          if (!cleared) {
+            const catalog = await this.providers.models();
+            const model = catalog.groups.find(group => group.id === next.provider)?.models.find(model => model.id === next.model);
+            if (!model) throw new Error("Default model must be enabled and available");
+            if (Object.hasOwn(next, "reasoningEffort") && !model.reasoning?.efforts.some(effort => effort.id === next.reasoningEffort))
+              throw new Error(`Model does not support reasoning effort ${String(next.reasoningEffort)}`);
+          }
         }
         return (this.modelConfiguration ?? this.client).call("settings.mutate", value);
       case "runtime/credentials/describe":
@@ -1038,8 +1184,10 @@ export class DshAppServerAdapter {
           userAgent: "opencraft-daemon/0.1.0",
           capabilities: {
             extensions: {
+              "opencraft/thread-lifecycle": { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
               ...(this.hostCapabilities ? { "opencraft/host-capabilities": { version: 1 } } : {}),
               "opencraft/loopback-http": { version: 1 },
+              [OPENCRAFT_PROFILE_SKILLS_EXTENSION]: OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,
               [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
                 version: 2,
                 reorder: false,
@@ -1049,11 +1197,6 @@ export class DshAppServerAdapter {
             },
           },
         };
-      }
-      case "agent/list": {
-        const catalog = await this.providers.models();
-        const modelIds = catalog.groups.flatMap(group => group.models.map(model => encodeModel(group.id, model.id)));
-        return page([{ id: "dsh", displayName: "DeepSeek Harness", description: "OpenCraft built-in coding agent", engineKind: "dsh", isDefault: true, defaultModel: null, modelIds, available: true }], value.cursor, value.limit);
       }
       case "thread/list": {
         const all = (await this.summariesList()).filter((entry) => !entry.blank).map((entry) => makeThread(entry));
@@ -1068,23 +1211,41 @@ export class DshAppServerAdapter {
       }
       case "thread/resume": {
         const sessionId = string(value.threadId);
+        const description = this.threadEngine?.describe ? await this.threadEngine.describe({ sessionId }) : null;
+        if (!description) {
+          await this.ensureRuntime(sessionId);
+          if (value.model !== undefined) await this.selectModel(sessionId, value.model);
+        }
+        const initialTurnsRequest = typeof value.initialTurnsPage === "object"
+          && value.initialTurnsPage !== null
+          && !Array.isArray(value.initialTurnsPage)
+          ? value.initialTurnsPage as RecordValue
+          : null;
+        const sortDirection = initialTurnsRequest?.sortDirection === "asc" ? "asc" : "desc";
+        const itemsView = initialTurnsRequest?.itemsView === "notLoaded" ? "notLoaded" : "full";
+        const requestedLimit = typeof initialTurnsRequest?.limit === "number"
+          ? initialTurnsRequest.limit
+          : 5;
         const [summary, history, models] = await Promise.all([
           this.summary(sessionId),
-          this.history(sessionId, null, 20),
-          this.sessionModels(sessionId),
+          this.history(sessionId, null, requestedLimit, sortDirection, itemsView),
+          description ? this.describedModel(sessionId, value.model, description) : this.sessionModels(sessionId),
         ]);
-        const thread = makeThread(summary, value.excludeTurns === true ? [] : history.turns);
-        const permissionState = await this.effectivePermissions(sessionId);
-        const model = models.current ? encodeModel(models.current.provider, models.current.model) : "dsh";
+        const includeThreadTurns = value.excludeTurns !== true;
+        const thread = makeThread(summary, includeThreadTurns ? history.turns : []);
+        const permissionState = description ? projectDshPermissions(description.permissions) : await this.effectivePermissions(sessionId);
+        const model = models.current ? encodeModel(models.current.provider, models.current.model) : "";
         return {
           thread, cwd: thread.cwd, model, modelProvider: "dsh", serviceTier: null,
           reasoningEffort: models.current?.reasoningEffort ?? null,
           approvalsReviewer: "user", instructionSources: [], runtimeWorkspaceRoots: [thread.cwd],
           multiAgentMode: "explicitRequestOnly",
-          initialTurnsPage: value.initialTurnsPage === true
-            ? { data: [...history.turns].reverse(), nextCursor: history.nextCursor, backwardsCursor: null, itemsPaginationByTurnId: {} }
+          initialTurnsPage: initialTurnsRequest !== null
+            ? { data: history.pageTurns, nextCursor: history.nextCursor, backwardsCursor: null, itemsPaginationByTurnId: {} }
             : null,
-          turnsBackwardsCursor: history.nextCursor,
+          turnsBackwardsCursor: !includeThreadTurns && initialTurnsRequest === null
+            ? history.headCursor
+            : history.nextCursor,
           itemsBackwardsCursor: null,
           ...permissionState,
         };
@@ -1092,6 +1253,14 @@ export class DshAppServerAdapter {
       case "thread/turns/list":
       case "thread/items/list": {
         const threadId = string(value.threadId);
+        if (method === "thread/turns/list" && value.sortDirection !== "asc" && (value.cursor == null || String(value.cursor).includes("dsh-turns"))) {
+          const result = await this.history(threadId, value.cursor, value.limit, "desc", value.itemsView as "full" | "notLoaded");
+          return { data: result.pageTurns, nextCursor: result.nextCursor, backwardsCursor: null, itemsPaginationByTurnId: {} };
+        }
+        if (method === "thread/items/list" && typeof value.turnId === "string") {
+          const turns = await this.readTurn(threadId, value.turnId);
+          return projectedItemsPage({ id: threadId, turns }, { ...value, threadId });
+        }
         const turns = await this.fullHistory(threadId);
         const params = { ...value, threadId };
         return method === "thread/items/list"
@@ -1104,6 +1273,7 @@ export class DshAppServerAdapter {
         const sessionId = string(value.threadId);
         const clientUserMessageId = string(value.clientUserMessageId);
         if (clientUserMessageId === "") throw new Error("Queued submissions require clientUserMessageId");
+        await this.assertInput(sessionId, value.input);
         const pending = this.waitForQueueItem(sessionId, clientUserMessageId);
         try {
           await this.client.call(
@@ -1128,6 +1298,7 @@ export class DshAppServerAdapter {
         const queuedSubmissionId = string(value.queuedSubmissionId);
         const previous = this.queue(sessionId).find((item) => item.id === queuedSubmissionId);
         if (previous === undefined) return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is no longer pending`));
+        await this.assertInput(sessionId, value.input);
         const content = await promptContent(value.input);
         const input = userContent(content);
         await this.client.call("session.updateQueue", {
@@ -1227,14 +1398,65 @@ export class DshAppServerAdapter {
           return { turnId: actualTurnId };
         });
       }
+      case "thread/fork": {
+        if (!this.threadEngine) throw new Error("This engine does not expose native thread forks");
+        if (value.path) throw new Error("Use a thread identity, not a backend-owned rollout path");
+        const sourceId = string(value.threadId);
+        await this.ensureRuntime(sourceId);
+        const source = await this.summary(sourceId);
+        const sourceModel = (await this.sessionModels(sourceId)).current;
+        const selection = decodeModel(value.model) ?? sourceModel;
+        const boundary = (id: unknown): number | undefined => {
+          if (id == null) return undefined;
+          const prefix = `dsh-turn-${sourceId}-`;
+          if (typeof id !== "string" || !id.startsWith(prefix) || !/^\d+$/.test(id.slice(prefix.length))) throw new Error("Fork turn belongs to another thread");
+          return Number(id.slice(prefix.length));
+        };
+        const created = await this.threadEngine.fork({ sourceSessionId: sourceId,
+          cwd: typeof value.cwd === "string" ? value.cwd : source.cwd ?? homedir(),
+          ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions,
+          provider: selection?.provider, model: selection?.model,
+          lastTurn: boundary(value.lastTurnId), beforeTurn: boundary(value.beforeTurnId),
+          permissionPreset: value.permissions,
+        });
+        this.summaries.set(created.sessionId, { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: false,
+          cwd: created.cwd, agentPreset: created.agentPreset, parentSessionId: sourceId, ephemeral: created.ephemeral === true });
+        try {
+          const effort = object(value.config).model_reasoning_effort
+            ?? (selection?.provider === sourceModel?.provider && selection?.model === sourceModel?.model ? sourceModel?.reasoningEffort : undefined);
+          if (selection) await this.selectModel(created.sessionId, encodeModel(selection.provider, selection.model), effort);
+          return await this.dispatchCommand("thread/resume", { threadId: created.sessionId,
+            ...(selection ? { model: encodeModel(selection.provider, selection.model) } : {}),
+            excludeTurns: value.excludeTurns === true });
+        } catch (error) {
+          try { await this.threadEngine.release({ sessionId: created.sessionId }); } catch { /* Native owner still owns the failed child's teardown. */ }
+          throw error;
+        }
+      }
+      case "thread/inject_items": {
+        if (!this.threadEngine) throw new Error("This engine does not expose canonical history injection");
+        await this.ensureRuntime(string(value.threadId));
+        if (!Array.isArray(value.items)) throw new Error("History items must be an array");
+        return this.threadEngine.inject({ sessionId: string(value.threadId), items: value.items });
+      }
       case "thread/start": {
-        const created = await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", {
+        const selection = value.model == null || value.model === "" ? await this.defaultModel() : decodeModel(value.model);
+        if (!selection) throw new Error("请先选择模型或在设置中指定默认模型");
+        const selectedModel = encodeModel(selection.provider, selection.model);
+        const catalog = await this.providers.models();
+        if (!catalog.groups.some(group => group.id === selection.provider && group.models.some(model => model.id === selection.model)))
+          throw new Error("所选模型已停用或不可用，请重新选择");
+        const creation = {
           ...(typeof value.cwd === "string" ? { cwd: value.cwd } : {}),
           ...(typeof value.agentId === "string" && value.agentId !== "dsh" ? { agentPreset: value.agentId } : {}),
-        });
-        const models = await this.selectModel(created.sessionId, value.model);
-        const currentModel = models.current ? encodeModel(models.current.provider, models.current.model) : "dsh";
-        const summary: DshSessionSummary = { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: true, cwd: string(value.cwd, homedir()), agentPreset: created.agentPreset };
+          ...(this.threadEngine ? { ...selection, ephemeral: value.ephemeral === true, developerInstructions: value.developerInstructions } : {}),
+        };
+        const created = this.threadEngine ? await this.threadEngine.create(creation)
+          : await this.client.call<{ sessionId: string; agentPreset?: string }>("session.create", creation);
+        const models = await this.selectModel(created.sessionId, selectedModel);
+        if (!models.current) throw new Error("Engine did not acknowledge the selected model");
+        const currentModel = encodeModel(models.current.provider, models.current.model);
+        const summary: DshSessionSummary = { sessionId: created.sessionId, updatedAt: Date.now(), running: false, blank: true, cwd: created.cwd ?? string(value.cwd, homedir()), agentPreset: created.agentPreset, ephemeral: created.ephemeral === true };
         this.summaries.set(summary.sessionId, summary);
         const thread = makeThread(summary);
         const permissionState = await this.effectivePermissions(summary.sessionId);
@@ -1245,13 +1467,15 @@ export class DshAppServerAdapter {
         };
       }
       case "turn/start": {
+        await this.ensureRuntime(string(value.threadId));
         if (this.modelConfiguration) {
           await this.modelConfiguration.config.synchronize();
           if (this.modelConfiguration.config.application.state !== "applied") throw new Error("模型配置尚未应用，请检查配置后重试");
         }
         const sessionId = string(value.threadId);
-        const content = await promptContent(value.input);
         await this.selectModel(sessionId, value.model, value.effort);
+        await this.assertInput(sessionId, value.input);
+        const content = await promptContent(value.input);
         const nextTurn = this.waitForNextTurn(sessionId);
         try {
           await this.client.call(
@@ -1276,6 +1500,7 @@ export class DshAppServerAdapter {
           throw new Error(`Active DSH turn changed; expected ${expectedTurnId}`);
         }
         const clientUserMessageId = string(value.clientUserMessageId);
+        await this.assertInput(sessionId, value.input);
         await this.client.call(
           "session.prompt",
           {
@@ -1308,8 +1533,8 @@ export class DshAppServerAdapter {
         return {};
       }
       case "model/list": {
-        const catalog = await this.providers.models();
-        return page(mapModels(catalog), value.cursor, value.limit);
+        const [catalog, selection] = await Promise.all([this.providers.models(), this.defaultModel()]);
+        return page(mapModels(catalog, selection ?? undefined), value.cursor, value.limit);
       }
       case "permissionProfile/list": {
         if (!this.permissions) return { data: [], nextCursor: null };
@@ -1317,10 +1542,6 @@ export class DshAppServerAdapter {
         return { data: value.presets.map((preset: any) => ({ id: preset.id, label: preset.name, description: preset.description ?? "", allowed: true })), nextCursor: null };
       }
       case "skills/list": throw new Error("Scoped skills require the connected host capability metadata service");
-      case "project/list": {
-        const result = await this.client.call<{ items: Array<{ workspaceId: string; path: string }> }>("workspace.list");
-        return { data: result.items.map((entry) => ({ id: entry.workspaceId, name: basename(entry.path), roots: [{ path: entry.path }], metadata: { engine: "dsh" } })), nextCursor: null };
-      }
       default: throw new Error(`Method not supported by OpenCraft DSH host: ${method}`);
     }
   }

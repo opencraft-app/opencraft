@@ -73,6 +73,17 @@ func (s *Service) BeginModifyOperation(ctx context.Context, in BeginModifyInput)
 	if err != nil {
 		return core.ModifyOperation{}, err
 	}
+	sourceRegion, err := core.RegionFromZone(sourcePool.Zone)
+	if err != nil {
+		return core.ModifyOperation{}, err
+	}
+	targetRegion, err := core.RegionFromZone(targetPool.Zone)
+	if err != nil {
+		return core.ModifyOperation{}, err
+	}
+	if sourceRegion != targetRegion {
+		return core.ModifyOperation{}, fmt.Errorf("%w: modify target %s -> %s", core.ErrPoolRegionChange, sourceRegion, targetRegion)
+	}
 
 	sourceType, sourceDisk := effectivePoolSpec(sourcePool)
 	targetType, targetDisk := effectivePoolSpec(targetPool)
@@ -247,25 +258,164 @@ func (s *Service) recordModifyOperationError(ctx context.Context, op core.Modify
 
 func (s *Service) runModifyStep(ctx context.Context, cp provider.CloudProvider, resizer provider.InstanceSpecResizer,
 	op core.ModifyOperation, inst core.Instance, step string) error {
+	pool, err := s.store.GetPool(ctx, inst.PoolID)
+	if err != nil {
+		return err
+	}
+	instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+	if err != nil {
+		return err
+	}
 	switch step {
 	case core.ModifyStepStopInstance:
-		return resizer.StopInstanceForResize(ctx, inst.CloudID)
+		return resizer.StopInstanceForResize(ctx, instance)
 	case core.ModifyStepResizeCompute:
-		return resizer.ResizeInstanceType(ctx, inst.CloudID, op.TargetInstanceType)
+		return s.resizeComputeWithCandidates(ctx, resizer, op, instance)
 	case core.ModifyStepResizeDisk:
-		return resizer.ResizeSystemDisk(ctx, inst.CloudID, op.TargetSystemDiskSize)
+		return resizer.ResizeSystemDisk(ctx, instance, op.TargetSystemDiskSize)
 	case core.ModifyStepStartInstance:
-		return cp.StartInstance(ctx, inst.CloudID)
+		return cp.StartInstance(ctx, instance)
 	case core.ModifyStepVerifyDelivery:
 		// notBefore 传零值：这一步验的是"改配重启后 agent 活着"，不是首次交付的
 		// 世代归属。liveness 由探测自带的心跳新鲜度窗口保证，而停机 + 改配 + 扩盘
 		// 的耗时远超那个窗口，重启前的旧心跳无法冒充。
-		return provider.VerifyInstanceDelivery(ctx, cp, inst.CloudID, time.Time{})
+		return provider.VerifyInstanceDelivery(ctx, cp, instance, time.Time{})
 	case core.ModifyStepRebindPool:
 		return s.finishModifyRebind(ctx, op)
 	default:
 		return fmt.Errorf("unknown modify step %q", step)
 	}
+}
+
+func (s *Service) resizeComputeWithCandidates(
+	ctx context.Context,
+	resizer provider.InstanceSpecResizer,
+	op core.ModifyOperation,
+	instance provider.CloudInstanceRef,
+) error {
+	actual, err := resizer.DescribeInstanceSpec(ctx, instance)
+	if err != nil {
+		return err
+	}
+
+	candidates := normalizedInstanceTypeCandidates(op.InstanceTypeCandidates)
+	if len(candidates) == 0 {
+		if resolver, ok := resizer.(provider.InstanceTypeCandidateResolver); ok {
+			candidates, err = resolver.ResolveInstanceTypeCandidates(ctx, instance, op.TargetInstanceType)
+			if err != nil {
+				return err
+			}
+			candidates = normalizedInstanceTypeCandidates(candidates)
+		} else {
+			candidates = normalizedInstanceTypeCandidates([]string{op.TargetInstanceType})
+		}
+		if len(candidates) == 0 {
+			return fmt.Errorf("modify operation %s has no instance type candidates", op.ID)
+		}
+		op.SourceInstanceType = strings.TrimSpace(actual.InstanceType)
+		op.InstanceTypeCandidates = candidates
+		op.InstanceTypeCandidateIndex = 0
+		op.AppliedInstanceType = ""
+		op, err = s.store.UpdateModifyOperationResizePlan(ctx, store.ModifyOperationResizePlan{
+			ID:                         op.ID,
+			SourceInstanceType:         op.SourceInstanceType,
+			InstanceTypeCandidates:     op.InstanceTypeCandidates,
+			InstanceTypeCandidateIndex: op.InstanceTypeCandidateIndex,
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		op.InstanceTypeCandidates = candidates
+	}
+
+	// A previous ResetInstancesType may have succeeded before the applied-type
+	// checkpoint committed. Read-back is authoritative and makes that boundary
+	// safe to resume without repeating the cloud mutation.
+	if appliedIndex := instanceTypeCandidateIndex(candidates, actual.InstanceType); appliedIndex >= 0 {
+		_, err := s.store.UpdateModifyOperationResizePlan(ctx, store.ModifyOperationResizePlan{
+			ID:                         op.ID,
+			SourceInstanceType:         op.SourceInstanceType,
+			InstanceTypeCandidates:     candidates,
+			InstanceTypeCandidateIndex: appliedIndex,
+			AppliedInstanceType:        candidates[appliedIndex],
+		})
+		return err
+	}
+
+	index := op.InstanceTypeCandidateIndex
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(candidates) {
+		return fmt.Errorf("modify operation %s exhausted instance type candidates %v", op.ID, candidates)
+	}
+	for index < len(candidates) {
+		candidate := candidates[index]
+		if err := resizer.ResizeInstanceType(ctx, instance, candidate); err != nil {
+			if !provider.IsInstanceTypeCandidateRejected(err) {
+				return err
+			}
+			index++
+			if _, checkpointErr := s.store.UpdateModifyOperationResizePlan(ctx, store.ModifyOperationResizePlan{
+				ID:                         op.ID,
+				SourceInstanceType:         op.SourceInstanceType,
+				InstanceTypeCandidates:     candidates,
+				InstanceTypeCandidateIndex: index,
+			}); checkpointErr != nil {
+				return checkpointErr
+			}
+			if index >= len(candidates) {
+				return fmt.Errorf("modify operation %s exhausted instance type candidates %v: %w", op.ID, candidates, err)
+			}
+			continue
+		}
+
+		confirmed, err := resizer.DescribeInstanceSpec(ctx, instance)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(strings.TrimSpace(confirmed.InstanceType), candidate) {
+			return fmt.Errorf("resize compute %s: cloud reports instance type %s after targeting %s", instance.CloudID, confirmed.InstanceType, candidate)
+		}
+		_, err = s.store.UpdateModifyOperationResizePlan(ctx, store.ModifyOperationResizePlan{
+			ID:                         op.ID,
+			SourceInstanceType:         op.SourceInstanceType,
+			InstanceTypeCandidates:     candidates,
+			InstanceTypeCandidateIndex: index,
+			AppliedInstanceType:        candidate,
+		})
+		return err
+	}
+	return fmt.Errorf("modify operation %s exhausted instance type candidates %v", op.ID, candidates)
+}
+
+func normalizedInstanceTypeCandidates(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToUpper(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func instanceTypeCandidateIndex(candidates []string, actual string) int {
+	actual = strings.TrimSpace(actual)
+	for i, candidate := range candidates {
+		if strings.EqualFold(candidate, actual) {
+			return i
+		}
+	}
+	return -1
 }
 
 // finishModifyRebind 把实例的归属改到目标池并放回 ALLOCATED。CVM 本体、IP、

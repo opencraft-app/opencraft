@@ -720,7 +720,10 @@ export class HermesTurnEventStateMachine {
     this.turn.completedAt = completedAt;
     this.turn.durationMs = this.turn.startedAt === null ? null : Math.max(0, (completedAt - this.turn.startedAt) * 1_000);
     this.turn.error = status === "failed"
-      ? { message: errorMessage ?? hermesFailureMessage(payload) }
+      ? {
+        message: errorMessage ?? hermesFailureMessage(payload),
+        ...(payload.error_surface === undefined ? {} : { errorSurface: structuredClone(payload.error_surface) }),
+      }
       : null;
     this.phase = "completed";
     this.completed = true;

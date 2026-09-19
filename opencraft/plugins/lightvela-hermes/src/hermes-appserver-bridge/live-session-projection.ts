@@ -64,6 +64,11 @@ export function appendLiveSessionProjection(turns: AppServerTurn[], payload: Her
   if (!split || structured || error || !body) corrections.forEach((entry, index) => addUser(entry.text, `hermes-inflight-correction-${index}-${sid}`));
   turn.status = error ? "failed" : payload.running || payload.pending_clarify ? "inProgress" : "completed";
   if (payload.turn_started_at !== undefined) turn.startedAt = payload.turn_started_at;
-  if (error) turn.error = { message: error, codexErrorInfo: null, additionalDetails: null };
+  if (error) turn.error = {
+    message: error,
+    codexErrorInfo: null,
+    additionalDetails: null,
+    ...(inflight.error_surface === undefined ? {} : { errorSurface: structuredClone(inflight.error_surface) }),
+  };
   return turn;
 }

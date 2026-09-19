@@ -128,13 +128,8 @@ function applyWorkbenchAdapter(contents, file) {
     return contents;
   }
   if (file === "components/ui/select.tsx") {
-    replace('      controlFieldClass,', '      "lv-select-trigger",\n      controlFieldClass,');
     replace('        "z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",',
       '        "lightvela-agent-console-portal lv-floating-control lv-select-content z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",');
-    replace('<SelectPrimitive.Viewport className={variant === "product" ? "p-0" : "p-1.5"}>', '<SelectPrimitive.Viewport className={variant === "product" ? "lv-select-viewport p-0" : "lv-select-viewport p-1.5"}>');
-    replace('"my-1 h-px bg-black/[0.08]"', '"lv-select-separator my-1 h-px bg-black/[0.08]"');
-    replace('"relative flex w-full cursor-default select-none', '"lv-select-item relative flex w-full cursor-default select-none');
-    replace('className="absolute left-2 flex size-4', 'className="lv-select-item__indicator absolute left-2 flex size-4');
     return contents;
   }
   if (file === "components/ui/dialog.tsx") {
@@ -208,12 +203,12 @@ function applyWorkbenchAdapter(contents, file) {
         'import type { SkillsDataLayer } from "./skills-demo/skill-registries";\nimport { ZhHantScope } from "./zh-hant-scope";',
       );
       replace(
-        "  initialSectionSlug?: string;\n}",
-        "  initialSectionSlug?: string;\n  skillsDataLayer: SkillsDataLayer;\n}",
+        "  showHeader?: boolean;\n}",
+        "  showHeader?: boolean;\n  skillsDataLayer: SkillsDataLayer;\n}",
       );
       replace(
-        "  initialSectionSlug,\n}: HermesAgentSkillsPanelProps)",
-        "  initialSectionSlug,\n  skillsDataLayer,\n}: HermesAgentSkillsPanelProps)",
+        "  showHeader = true,\n}: HermesAgentSkillsPanelProps)",
+        "  showHeader = true,\n  skillsDataLayer,\n}: HermesAgentSkillsPanelProps)",
       );
       replace(
         "          initialTab={initialGlobalSkillsTab}\n",
@@ -228,12 +223,12 @@ function applyWorkbenchAdapter(contents, file) {
         "  type Skill,\n  type SkillsDataLayer,\n  type SkillsExecDebugCommandStream,",
       );
       replace(
-        "  initialTab = \"discover\",\n  onTabChange,\n}",
-        "  initialTab = \"discover\",\n  onTabChange,\n  dataLayer,\n}",
+        "  onInitialLoadComplete,\n}",
+        "  onInitialLoadComplete,\n  dataLayer,\n}",
       );
       replace(
-        "  onTabChange?: (value: SkillsDemoTab) => void;\n})",
-        "  onTabChange?: (value: SkillsDemoTab) => void;\n  dataLayer: SkillsDataLayer;\n})",
+        "  onInitialLoadComplete?: () => void;\n})",
+        "  onInitialLoadComplete?: () => void;\n  dataLayer: SkillsDataLayer;\n})",
       );
       replace(
         /  const dataLayer = useMemo\(\n    \(\) => createSkillsDataLayer\([^\n]+\),\n    \[[^\n]+\],\n  \);\n\n/u,

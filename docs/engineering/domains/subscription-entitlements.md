@@ -42,11 +42,14 @@
   `provisioned` 与 `completed`。系统盘扩容不可逆，失败只能幂等前滚，不能自动降配。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
-- 邀请返利不复用访问邀请码。Auth 与 CTL 分别在新用户创建、首个非免费 Pass 开通和退款隔离
-  事务中写 versioned outbox；Referral 通过 Pulsar inbox 去重并允许注册、首付、退款事实乱序到达。
+- 邀请返利不复用访问邀请码。Auth 在新用户创建时写 `user.registered.v1`，存量用户在首次开通前认领时写
+  `user.referral_claimed.v1`；CTL 在首个非免费 Pass 开通和退款隔离事务中写 versioned outbox。Referral
+  通过 Pulsar inbox 去重并允许归因、首付、退款事实乱序到达，但只有归因事件发生时间不晚于首次开通
+  时间时才允许创建奖励，防止已开通或续费用户事后补绑邀请码。
 - 返利资格的用户口径是“首次开通成功”：dianshi 订单完成发货并开通 Pass 即符合，0 元订单也算，
   不检查现金实付金额。历史 `pass.first_paid.v1` 事件名保持兼容，不代表必须现金付费；无订单的旧免费试用不算。
 - 默认返利奖励没有观察期（`vesting_days=0`），首次订单开通成功且归因齐备后进入待发，Worker 异步发放。
+- 上海生产使用独立 Campaign 和 Pulsar 角色，奖励口径与北京一致但不共享 Campaign ID、Token 或预算。
   退款只取消其资格 Pass 对应的未发奖励，不自动追回已发积分。发放前 CTL 还要
   重新校验资格 Pass 的 owner、active 状态和有效期，避免退款事件延迟造成竞态。
 - 邀请人无 active Pass 时保留最多 90 天重试。两侧奖励使用独立幂等键；活动持有单邀请人上限、
@@ -88,6 +91,31 @@ Credit 每日用量的 `sendResource` 出向请求必须经过 CloudLadder，并
 广州生产严格模式覆盖上海正式与北京测试的生产计费出向；两者必须先完成 Trade 签名发布和
 密钥一致性校验。广州 staging/testing 不随生产切换，sandbox-bj-7 的测试计费路径继续由
 testing 入口承载，不应成为广州生产匿名例外。
+
+## 个人 DevCloud testing 计费回调隔离（2026-09-17）
+
+个人 DevCloud 运行 Auth、CTL、Trade、Payment、Subscription、AI Gateway、Sandbox、Service
+Gateway 和前端的当前 checkout 代码；Account 与 Billing 继续访问真实 testing 服务。计费入站回调
+按 `动态个人路由 → 既有静态 UIN 路由 → 共享 testing 默认路由` 解析，未登记的旧测试账号保持原有
+行为。某 UIN 一旦登记，注销或 TTL 过期必须保留 disabled tombstone 并 fail closed，不能把旧订单
+静默回落到共享环境。
+
+国内动态目标只接受 Auth 从可信代理链派生的 DevCloud `9.x` 地址和 callback-only 端口 `18084`；
+客户端不能提交 UIN、IP 或任意端口。国际站复用韩国 testing devtunnel，短期 capability 必须绑定
+UIN、TunnelHost 与 TTL；Auth testing MySQL registry 只持久化 capability 的 SHA-256 摘要，DevCloud 不获得
+共享 CloudLadder HMAC、SOPS 或 `DEVTUNNEL_TOKEN`。动态、静态和共享路径的优先级、注销、过期及
+跨 UIN 拒绝都必须有测试证据。
+
+CloudLadder 镜像内的默认配置必须显式声明默认关闭的 `developer_routes`，并把注册控制面固定为
+`developer-route-control` / `lightclaw-auth`；该 caller 只复用服务端
+`CLOUDLADDER_SHADOW_HMAC_SECRET`，且只能调用这一条控制面 route。只有广州、新加坡 testing
+workload 可以通过环境变量开启动态注册。发布门禁必须直接加载最终打包的 `config.example.yaml`
+验证 route、caller、secret env 与 `18084` 端口契约，不能只验证 handler 代码，避免出现接口已发布但
+镜像配置未注册 caller 的运行时断层。
+
+`verify-order-no-pay` 只证明询价和 `pending_pay` 下单成功，不证明支付、计费回调、发货或权益终态。
+只有使用 testing mock 支付，并同时保存订单、真实回调和业务终态证据，才能宣称支付闭环；缺少任一
+层证据时必须明确停在哪一层。
 
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 

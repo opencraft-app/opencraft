@@ -634,7 +634,7 @@ export function SidebarBots({ items, creation }: {
           <div className="sidebar-section-heading sidebar-bots__heading">
             <button type="button"><Bot size={13} /><span>Bots</span></button>
             {creation === null ? null : (
-              <button type="button" aria-label="Create Bot" onClick={() => setShowCreate(true)}><Plus size={13} /></button>
+              <button type="button" aria-label="Create Bot" onClick={() => creation.open ? creation.open() : setShowCreate(true)}><Plus size={13} /></button>
             )}
           </div>
           <AnimatePresence initial={false} mode="popLayout">

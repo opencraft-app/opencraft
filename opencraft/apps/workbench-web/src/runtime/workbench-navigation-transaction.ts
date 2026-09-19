@@ -7,13 +7,15 @@ import type {
 import {
   draftSubmissionOwnsNavigation,
   equalWorkbenchLocation,
+  type WorkbenchDraftLocation,
 } from "@opencraft/workbench-runtime";
 import type { SubmissionReceipt } from "@opencraft/composer-core";
 
 import {
-  createBrowserWorkbenchNavigation,
-  type BrowserWorkbenchNavigation,
-  type BrowserWorkbenchNavigationSnapshot,
+  createApplicationNavigation,
+  createRouteScopeId,
+  type ApplicationNavigation,
+  type ApplicationNavigationSnapshot,
 } from "./workbench-navigation";
 
 export type WorkbenchHistoryMode = "push" | "replace";
@@ -21,13 +23,18 @@ export type WorkbenchHistoryMode = "push" | "replace";
 export interface WorkbenchNavigationTransaction<
   TRuntime extends WorkbenchActivatableRuntime,
 > {
-  getSnapshot(): BrowserWorkbenchNavigationSnapshot;
+  getSnapshot(): ApplicationNavigationSnapshot;
   subscribe(listener: () => void): () => void;
   navigate(
     location: WorkbenchLocation,
     mode?: WorkbenchHistoryMode,
   ): Promise<boolean>;
-  openSettings(slug?: string): void;
+  navigateToHome(
+    location: WorkbenchDraftLocation,
+    mode?: WorkbenchHistoryMode,
+  ): boolean;
+  openSettings(slug?: string, mode?: WorkbenchHistoryMode): void;
+  openChat(): Promise<boolean>;
   closeSettings(): void;
   openExtensionView(viewId: string, resourceUri?: string | null): void;
   pushExtensionViewResource(viewId: string, resourceUri: string): void;
@@ -42,211 +49,141 @@ export interface WorkbenchNavigationTransaction<
   dispose(): void;
 }
 
-/** The only Web owner that couples browser History to Conversation activation. */
-export function createWorkbenchNavigationTransaction<
-  TRuntime extends WorkbenchActivatableRuntime,
->(
+/** Route intent fences asynchronous resource activation; Router owns every route commit. */
+export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchActivatableRuntime>(
   initialLocation: WorkbenchLocation,
   activation: ConversationActivationCoordinator<TRuntime>,
   scopes: ConversationScopeRegistry,
 ): WorkbenchNavigationTransaction<TRuntime> {
-  const navigation: BrowserWorkbenchNavigation =
-    createBrowserWorkbenchNavigation(initialLocation);
+  const navigation = createApplicationNavigation(initialLocation);
   const listeners = new Set<() => void>();
   let snapshot = navigation.getSnapshot();
-  let committedLocation = initialLocation;
-  let committedIndex = navigation.getSnapshot().historyIndex;
-  let committedRouteScopeId = navigation.getSnapshot().routeScopeId;
+  let committed = snapshot;
+  let activeLocation = initialLocation;
+  let activeScope = snapshot.routeScopeId;
+  let intent = 0;
   let disposed = false;
-  let handledRevision = -1;
-  let restoringHistory = false;
-  activation.setViewId(snapshot.routeScopeId);
+  let restoring = false;
+  activation.setViewId(activeScope);
   const publish = () => {
     snapshot = navigation.getSnapshot();
     for (const listener of listeners) listener();
   };
-
-  const navigationBlocked = () => {
+  const remember = () => { committed = navigation.getSnapshot(); publish(); };
+  const blocked = () => {
     const draft = scopes.getActiveDraft();
     return draft !== null && draftSubmissionOwnsNavigation(draft.phase);
   };
-  const restoreCommittedEntry = (
-    attempted: BrowserWorkbenchNavigationSnapshot,
-  ) => {
-    if (disposed || navigation.getSnapshot().revision !== attempted.revision)
-      return;
-    const delta = committedIndex - attempted.historyIndex;
-    if (delta === 0) {
-      navigation.replace(committedLocation, {
-        routeScopeId: committedRouteScopeId,
-      });
-      return;
-    }
-    restoringHistory = true;
-    navigation.go(delta);
+  const rollbackPop = (attempt: ApplicationNavigationSnapshot) => {
+    if (disposed || navigation.getSnapshot().revision !== attempt.revision) return;
+    const delta = committed.historyIndex - attempt.historyIndex;
+    if (delta !== 0) { restoring = true; navigation.go(delta); }
+    else { navigation.restore(committed); remember(); }
   };
-
-  const removeNavigationListener = navigation.subscribe(() => {
+  const stopNavigation = navigation.subscribe(() => {
     const next = navigation.getSnapshot();
-    if (next.action !== "pop" || next.revision === handledRevision) return;
-    handledRevision = next.revision;
-    if (restoringHistory) {
-      restoringHistory = false;
-      return;
+    if (next.action !== "pop") return;
+    const epoch = ++intent;
+    activation.cancelPending();
+    if (restoring) { restoring = false; remember(); return; }
+    if (blocked()) { rollbackPop(next); return; }
+    if (next.applicationRoute.kind !== "conversation"
+      || (equalWorkbenchLocation(next.location, activeLocation) && next.routeScopeId === activeScope)) {
+      remember(); return;
     }
-    if (navigationBlocked()) {
-      restoreCommittedEntry(next);
-      return;
-    }
-    if (
-      next.applicationRoute.kind !== "conversation" ||
-      equalWorkbenchLocation(next.location, committedLocation)
-    ) {
-      committedIndex = next.historyIndex;
-      publish();
-      return;
-    }
-    void activation
-      .prepare(next.location)
-      .then((prepared) => {
-        if (disposed || navigation.getSnapshot().revision !== next.revision)
-          return;
-        if (prepared === null) {
-          restoreCommittedEntry(next);
-          return;
-        }
-        if (!prepared.commit(next.routeScopeId)) {
-          restoreCommittedEntry(next);
-          return;
-        }
-        committedLocation = next.location;
-        committedIndex = next.historyIndex;
-        committedRouteScopeId = next.routeScopeId;
-        publish();
-      })
-      .catch(() => restoreCommittedEntry(next));
+    void activation.prepare(next.location).then(prepared => {
+      if (disposed || intent !== epoch || navigation.getSnapshot().revision !== next.revision) {
+        prepared?.cancel(); return;
+      }
+      if (!prepared || !prepared.commit(next.routeScopeId)) {
+        prepared?.cancel(); rollbackPop(next); return;
+      }
+      activeLocation = next.location; activeScope = next.routeScopeId;
+      remember();
+    }).catch(() => { if (intent === epoch) rollbackPop(next); });
   });
-
+  const navigate = async (location: WorkbenchLocation, mode: WorkbenchHistoryMode = "push", scope?: typeof activeScope) => {
+    if (disposed) throw new Error("Workbench navigation transaction is disposed");
+    if (blocked()) return false;
+    const epoch = ++intent;
+    let prepared;
+    try { prepared = await activation.prepare(location); }
+    catch (error) { if (disposed || intent !== epoch) return false; throw error; }
+    if (disposed || intent !== epoch) { prepared?.cancel(); return false; }
+    if (!prepared) return false;
+    const viewId = scope ?? (snapshot.applicationRoute.kind === "conversation"
+      && equalWorkbenchLocation(snapshot.location, location) ? snapshot.routeScopeId : createRouteScopeId());
+    // A rejected preparation must not write a route and then attempt a lossy rollback.
+    if (!prepared.commit(viewId)) { prepared.cancel(); return false; }
+    navigation[mode](location, { routeScopeId: viewId });
+    activeLocation = location; activeScope = viewId;
+    remember();
+    return true;
+  };
+  const openChat = async () => {
+    if (disposed) throw new Error("Workbench navigation transaction is disposed");
+    if (blocked()) return false;
+    const target = navigation.getSnapshot();
+    if (equalWorkbenchLocation(target.location, activeLocation) && target.routeScopeId === activeScope) {
+      const epoch = ++intent;
+      activation.cancelPending(); navigation.openChat(); remember();
+      // Settings may have canceled bootstrap readiness, while the local View
+      // itself remained presentable. Resume readiness without delaying Chat.
+      void activation.prepare(target.location).then(prepared => {
+        if (disposed || intent !== epoch) { prepared?.cancel(); return; }
+        if (prepared && !prepared.commit(target.routeScopeId)) prepared.cancel();
+      }).catch(() => undefined);
+      return true;
+    }
+    return navigate(target.location, "push", target.routeScopeId);
+  };
+  const leaveSurface = () => {
+    // Resource failures remain owned by the activation coordinator. Never create
+    // an unhandled rejection from a fire-and-forget Shell close action.
+    void openChat().catch(() => undefined);
+  };
+  const routeAction = (action: () => void) => {
+    if (disposed) throw new Error("Workbench navigation transaction is disposed");
+    if (blocked()) return;
+    ++intent; activation.cancelPending(); action(); remember();
+  };
   return {
     getSnapshot: () => snapshot,
-    subscribe(listener) {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    async navigate(location, mode = "push") {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      if (navigationBlocked()) {
-        throw new Error(
-          "The workbench cannot navigate while the first turn is being submitted",
-        );
-      }
-      const prepared = await activation.prepare(location);
-      if (prepared === null) return false;
-      navigation[mode](location);
-      const committed = navigation.getSnapshot();
-      if (!prepared.commit(committed.routeScopeId)) {
-        restoreCommittedEntry(committed);
-        return false;
-      }
-      committedLocation = location;
-      committedIndex = committed.historyIndex;
-      committedRouteScopeId = committed.routeScopeId;
-      publish();
+    subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    navigate,
+    openChat,
+    navigateToHome(location, mode = "push") {
+      if (disposed) throw new Error("Workbench navigation transaction is disposed");
+      if (blocked()) return false;
+      const epoch = ++intent, scope = createRouteScopeId();
+      activation.presentLocalDraft(location, scope);
+      navigation[mode](location, { routeScopeId: scope });
+      activeLocation = location; activeScope = scope;
+      remember();
+      void activation.prepare(location).then(prepared => {
+        if (disposed || intent !== epoch) { prepared?.cancel(); return; }
+        if (prepared && !prepared.commit(scope)) prepared.cancel();
+      }).catch(() => undefined);
       return true;
     },
-    openSettings(slug = "appearance") {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      if (navigationBlocked()) return;
-      navigation.openSettings(slug);
-      committedIndex = navigation.getSnapshot().historyIndex;
-      publish();
-    },
-    closeSettings() {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      if (navigationBlocked()) return;
-      const previousRevision = navigation.getSnapshot().revision;
-      navigation.closeSettings();
-      const next = navigation.getSnapshot();
-      if (next.revision === previousRevision) return;
-      committedIndex = next.historyIndex;
-      publish();
-    },
-    openExtensionView(viewId, resourceUri = null) {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      if (navigationBlocked()) return;
-      navigation.openExtensionView(viewId, resourceUri);
-      committedIndex = navigation.getSnapshot().historyIndex;
-      publish();
-    },
-    pushExtensionViewResource(viewId, resourceUri) {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      if (navigationBlocked()) return;
-      const previousRevision = navigation.getSnapshot().revision;
-      navigation.pushExtensionViewResource(viewId, resourceUri);
-      const next = navigation.getSnapshot();
-      if (next.revision === previousRevision) return;
-      committedIndex = next.historyIndex;
-      publish();
-    },
-    replaceExtensionViewResource(viewId, resourceUri) {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      const previousRevision = navigation.getSnapshot().revision;
-      navigation.replaceExtensionViewResource(viewId, resourceUri);
-      const next = navigation.getSnapshot();
-      if (next.revision === previousRevision) return;
-      committedIndex = next.historyIndex;
-      publish();
-    },
-    closeExtensionView() {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
-      if (navigationBlocked()) return;
-      const previousRevision = navigation.getSnapshot().revision;
-      navigation.closeExtensionView();
-      const next = navigation.getSnapshot();
-      if (next.revision === previousRevision) return;
-      committedIndex = next.historyIndex;
-      publish();
-    },
+    openSettings(slug = "appearance", mode = "push") { routeAction(() => navigation.openSettings(slug, mode)); },
+    closeSettings: leaveSurface,
+    openExtensionView(viewId, resourceUri = null) { routeAction(() => navigation.openExtensionView(viewId, resourceUri)); },
+    pushExtensionViewResource(viewId, resourceUri) { routeAction(() => navigation.pushExtensionViewResource(viewId, resourceUri)); },
+    replaceExtensionViewResource(viewId, resourceUri) { routeAction(() => navigation.replaceExtensionViewResource(viewId, resourceUri)); },
+    closeExtensionView: leaveSurface,
     async promoteDraft(draftId, receipt) {
-      if (disposed)
-        throw new Error("Workbench navigation transaction is disposed");
+      const epoch = ++intent;
       const prepared = await activation.preparePromotion(draftId, receipt);
-      if (prepared === null)
-        throw new Error("Draft promotion activation failed");
-      const location = prepared.location;
-      navigation.replace(location, { preserveView: true });
-      const committed = navigation.getSnapshot();
-      if (!prepared.commit(committed.routeScopeId)) {
-        restoreCommittedEntry(committed);
-        throw new Error("Draft promotion activation was superseded");
+      if (disposed || intent !== epoch) {
+        prepared?.cancel(); throw new Error("Draft promotion navigation was superseded");
       }
-      committedLocation = location;
-      committedIndex = committed.historyIndex;
-      committedRouteScopeId = committed.routeScopeId;
-      publish();
-      return location;
+      if (!prepared || !prepared.commit(activeScope)) throw new Error("Draft promotion activation failed");
+      navigation.replace(prepared.location, { preserveView: true, routeScopeId: activeScope });
+      activeLocation = prepared.location; remember(); return prepared.location;
     },
-    back() {
-      if (!navigationBlocked()) navigation.back();
-    },
-    forward() {
-      if (!navigationBlocked()) navigation.forward();
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      listeners.clear();
-      removeNavigationListener();
-      navigation.dispose();
-    },
+    back() { if (!blocked()) { ++intent; navigation.back(); } },
+    forward() { if (!blocked()) { ++intent; navigation.forward(); } },
+    dispose() { disposed = true; ++intent; activation.cancelPending(); stopNavigation(); navigation.dispose(); listeners.clear(); },
   };
 }

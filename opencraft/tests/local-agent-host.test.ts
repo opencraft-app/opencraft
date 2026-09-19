@@ -1,11 +1,47 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import WebSocket from "ws";
 import { WebSocketServer } from "ws";
 
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.js";
+import { ThreadCatalog } from "../apps/local-agent-host/src/thread-catalog.js";
+
+test("Host bind failure closes its thread catalog", async t => {
+  const occupied = createServer();
+  await new Promise<void>(resolve => occupied.listen(0, "127.0.0.1", resolve));
+  const address = occupied.address();
+  assert.ok(address && typeof address !== "string");
+  const close = t.mock.method(ThreadCatalog.prototype, "close");
+  try {
+    await assert.rejects(startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", port: address.port }), { code: "EADDRINUSE" });
+    assert.equal(close.mock.callCount(), 1);
+  } finally {
+    close.mock.restore();
+    await new Promise<void>(resolve => occupied.close(() => resolve()));
+  }
+});
+
+test("local product project RPC persists across Host restart without a reachable engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-project-rpc-test-"));
+  let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined;
+  let socket: WebSocket | undefined;
+  try {
+    const root = join(directory, "workspace"); await mkdir(root);
+    const options = { dshUrl: "http://127.0.0.1:1", projectStorageDirectory: directory };
+    host = await startLocalAgentHost(options); socket = await connect(host.websocketUrl);
+    assert.deepEqual(await request(socket, 1, "project/list", {}), { data: [], nextCursor: null });
+    const created = await request(socket, 2, "project/create", { name: "Workspace", roots: [{ path: root }], idempotencyKey: "test-project" });
+    socket.close(); socket = undefined; await host.close();
+    host = await startLocalAgentHost(options); socket = await connect(host.websocketUrl);
+    assert.deepEqual((await request(socket, 3, "project/list", {})).data, [created.project]);
+    assert.equal((await request(socket, 4, "project/create", { name: "Workspace", roots: [{ path: root }], idempotencyKey: "test-project" })).project.id, created.project.id);
+  } finally { socket?.close(); await host?.close(); await rm(directory, { recursive: true, force: true }); }
+});
 
 async function fakeDsh() {
   const responses: Array<Record<string, any>> = [];
@@ -104,7 +140,7 @@ async function fakeDsh() {
       current: { provider: "deepseek", model: "deepseek-v4-flash", reasoningEffort: "high" },
       routable: true,
       groups: [
-        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] },
+        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash", reasoning: { efforts: [{ id: "high", name: "High" }], defaultEffort: "high" } }] },
         { id: "custom:test", name: "Custom", models: [{ id: "hy4-preview", name: "HY4 Preview" }] },
       ],
       failures: [],
@@ -157,7 +193,7 @@ async function fakeDsh() {
     }
     if (envelope.method === "llm.models") value = {
       groups: [
-        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash" }] },
+        { id: "deepseek", name: "DeepSeek", models: [{ id: "deepseek-v4-flash", name: "V4 Flash", reasoning: { efforts: [{ id: "high", name: "High" }], defaultEffort: "high" } }] },
         { id: "custom:test", name: "Custom", models: [{ id: "hy4-preview", name: "HY4 Preview" }] },
       ],
       failures: [],
@@ -310,15 +346,7 @@ test("local Agent Host authenticates and projects DSH history into stable AppSer
       const models = await request(socket, 4, "model/list", { limit: 10 });
       assert.equal(models.data[0].displayName, "V4 Flash");
       assert.equal(models.data[0].isDefault, true);
-      const agents = await request(socket, 40, "agent/list", { limit: 10 });
-      assert.deepEqual(agents.data[0].modelIds, models.data.map((model: { id: string }) => model.id));
-      assert.equal(agents.data[0].modelIds.includes("dsh-model:custom%3Atest:hy4-preview"), true);
-      const selectable = models.data.filter((model: { id: string; model: string }) =>
-        agents.data[0].modelIds.includes(model.id) || agents.data[0].modelIds.includes(model.model));
-      assert.equal(selectable.length, 2, "Composer's agent filter must retain both providers");
-      assert.equal(selectable[1].displayName, "HY4 Preview");
       const firstPage = await request(socket, 41, "model/list", { limit: 1 });
-      assert.equal(agents.data[0].modelIds.length, 2, "agent capabilities must not be limited to a model page");
       assert.equal(firstPage.data.length, 1);
       const resumed = await request(socket, 3, "thread/resume", { threadId: "s1" });
       assert.equal(resumed.thread.turns.length, 1);
@@ -382,6 +410,9 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
         atomicSteer: true,
         perItemPause: false,
       });
+      assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].version, 1);
+      assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.install, true);
+      assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.officialCatalog, false);
       const started = await request(socket, 51, "thread/start", { cwd: "/workspace/demo" });
       await request(socket, 52, "turn/start", {
         threadId: started.thread.id,
@@ -424,6 +455,38 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
   } finally {
     await host.close();
     await dsh.close();
+  }
+});
+
+test("local Agent Host routes Profile Skills mutations to its isolated DSH user root", async () => {
+  const dsh = await fakeDsh();
+  const skillsDirectory = await mkdtemp(join(tmpdir(), "opencraft-local-host-skills-"));
+  const host = await startLocalAgentHost({
+    dshUrl: dsh.url,
+    token: "skills-token",
+    skillsDirectory,
+  });
+  const socket = await connect(host.websocketUrl);
+  try {
+    const initialized = await request(socket, 70, "initialize", {});
+    assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.install, true);
+    const markdown = "---\nname: routed-skill\ndescription: Routed Skill\n---\n\nUse it.\n";
+    const receipt = await request(socket, 71, "skills/install", {
+      scope: { type: "local-dsh", root: "user" },
+      identifier: "routed-skill",
+      operationId: "install-routed-skill",
+      artifact: { name: "routed-skill", files: [{ path: "SKILL.md", content: markdown }] },
+    });
+    assert.equal(receipt.action.state, "succeeded");
+    const listed = await request(socket, 72, "skills/installed/list", {
+      scope: { type: "local-dsh", root: "user" },
+    });
+    assert.deepEqual(listed.data.map((skill: { name: string }) => skill.name), ["routed-skill"]);
+  } finally {
+    socket.close();
+    await host.close();
+    await dsh.close();
+    await rm(skillsDirectory, { recursive: true, force: true });
   }
 });
 

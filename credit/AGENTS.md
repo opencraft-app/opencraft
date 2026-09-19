@@ -82,9 +82,10 @@
 保存，绑定 `user_id + deal_name`，默认 10 分钟过期；消费使用 Lua `GET + DEL` 保证多 Pod 下
 严格一次性。签发失败不回滚已经创建的 Trade 订单，返回空 `auth_code`，登录态链路仍可继续。
 
-`order-url` 支持登录态和 ticket 两种鉴权。可信 `X-User-Id` 存在时优先使用且不消费 ticket；
-没有用户头时必须原子消费 `auth_code`，并校验绑定的 `deal_name`。ticket 无效、过期或重放返回
-401，订单不匹配返回 403。解析出用户后，Credit 要求 Trade 同时校验 `external_user_id` 和
+`order-url` 支持登录态和 ticket 两种鉴权。请求携带 `auth_code` 时必须优先原子消费 ticket，
+按 ticket 恢复原下单用户并校验绑定的 `deal_name`；只有缺少 `auth_code` 时才回退到可信
+`X-User-Id`。ticket 无效、过期或重放不得回退登录态并返回 401，订单不匹配返回 403。
+解析出用户后，Credit 要求 Trade 同时校验 `external_user_id` 和
 `resource_type=credit_package`；订单不存在、归属不符或资源类型不匹配统一按 404 处理。
 
 查询结果只返回 `credit_type/credit_total/credit_available/expired_time`。`credit_type` 按 LLMGateway subscription name 判断：`credit-package:` 为 `paid`，`free-credit:` 为 `free`。isolated 或已到期积分包不返回。
@@ -101,6 +102,13 @@ trade 调 credit：
 credit worker 调 trade：
 
 - `POST /internal/trade/credit/resources/usage/report`
+
+Gateway Dashboard 管理入口：
+
+- `GET /internal/credit/admin/packages`：按 `user_id/package_id/product_id/status` 精确筛选 live package 并分页返回商品名和当前用量。
+- `POST /internal/credit/admin/packages/{package_id}/refund`：仅允许 `active` package，复用用户侧同一 Trade 在线退款链路。
+
+管理接口使用 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 且在 token 未配置时 fail closed，不查询历史表，也不直接隔离、删除或归档资源。
 
 ## 计费回调
 

@@ -71,4 +71,11 @@ describe("Agent memory page async boundary", () => {
     expect(views).toContain("aria-label={refreshLabel}");
     expect(views).not.toMatch(/useRepositories|useOpenClaw|execDebugCommand|fetchHermes|saveHermes/);
   });
+
+  it("uses the centered page state before the first memory snapshot", () => {
+    const views = readViewSource();
+
+    expect(views).toContain("AgentPageLoadingState");
+    expect(views).toContain("loading && !hasSnapshot");
+  });
 });

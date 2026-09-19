@@ -14,10 +14,10 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pill, Plus, RefreshCw, Sunrise, TrendingUp, Wallet, X } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, CreditCard, Droplets, Eraser, Eye, FolderKanban, Newspaper, Pill, Plus, RefreshCw, Sunrise, TrendingUp, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AgentConfirmDialog, AgentState, AgentTooltip } from "@/components/agents";
+import { AgentConfirmDialog, AgentPageLoadingState, AgentState, AgentTooltip, Spinner } from "@/components/agents";
 import { Button } from "@/components/ui/button";
 import { AutomationFormActionsView } from "./automation-form-actions-view";
 import { AutomationDialogView } from "./automation-dialog-view";
@@ -272,7 +272,7 @@ export function getAutomationSkillSelectionIssue({
 /** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" | "info" }) {
   const t = useT();
-  const Icon = tone === "success" ? CheckCircle2 : tone === "info" ? Loader2 : AlertTriangle;
+  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle;
   return createPortal(
     <div className="fixed inset-x-0 top-4 z-[300] flex justify-center px-4" role="status" aria-live="polite">
       <div
@@ -281,7 +281,7 @@ function ErrorToast({ message, onClose, tone = "error" }: { message: string; onC
           (tone === "success" ? "bg-[#0F8A4B]" : tone === "info" ? "bg-black/80" : "bg-[#B91C1C]")
         }
       >
-        <Icon className={"h-4 w-4 shrink-0" + (tone === "info" ? " animate-spin" : "")} />
+        {tone === "info" ? <Spinner size="md" /> : <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
         <span className="truncate">{message}</span>
         <button
           type="button"
@@ -535,7 +535,7 @@ export function AutomationScenarioTemplatesSection({
           <h3 id="automation-scenario-templates-title" className="text-balance text-xs font-medium text-black/45">
             {t("任务模板")}
           </h3>
-          {loading && <Loader2 className="size-3 text-black/35" aria-label={t("正在加载官方模板")} />}
+          {loading && <Spinner size="xs" aria-label={t("正在加载官方模板")} />}
           <button
             type="button"
             onClick={toggleTemplatesCollapsed}
@@ -677,6 +677,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   const runtimeBotId = typeof rawBotId === "string" ? rawBotId : rawBotId?.instanceId ?? null;
   const profileId = typeof rawBotId === "string" ? "main" : rawBotId?.profileId ?? "main";
   const legacyBotTarget = typeof rawBotId === "string";
+  const botKey = `${runtimeBotId ?? ""}:${profileId}`;
   const botId = useMemo<HermesCronTarget | null>(() => (
     runtimeBotId
       ? legacyBotTarget
@@ -685,6 +686,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
       : null
   ), [legacyBotTarget, profileId, runtimeBotId]);
   const [jobs, setJobs] = useState<CronJob[]>([]);
+  const [jobsSnapshotKey, setJobsSnapshotKey] = useState<string | null>(null);
   const [contextCapability, setContextCapability] = useState<"loading" | CronContextCapability>(
     "loading",
   );
@@ -698,7 +700,8 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   const [runtimeBlueprints, setRuntimeBlueprints] = useState<HermesAutomationBlueprint[]>([]);
   const [loadingBlueprints, setLoadingBlueprints] = useState(false);
   const installedSkillSlugsRef = useRef<string[]>([]);
-  const [loadingJobs, setLoadingJobs] = useState(false);
+  // 首次进入页面先保持整页加载态，避免 effect 发起请求前先闪出空壳内容。
+  const [loadingJobs, setLoadingJobs] = useState(true);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
@@ -947,6 +950,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
       const list = await listCronJobs(botId, { hydrateContextFrom: true });
       jobsRef.current = list;
       setJobs(list);
+      setJobsSnapshotKey(botKey);
       return list;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -955,7 +959,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
     } finally {
       if (manageLoading) setLoadingJobs(false);
     }
-  }, [botId]);
+  }, [botId, botKey]);
 
   const refreshRecentRuns = useCallback(async (currentJobs?: CronJob[], manageLoading = true): Promise<CronRunRecord[]> => {
     if (!botId) {
@@ -1254,6 +1258,10 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
     );
   }
 
+  if (loadingJobs && jobsSnapshotKey !== botKey && !listError) {
+    return <AgentPageLoadingState className="agents-ui" title={t("正在读取定时任务")} />;
+  }
+
   return (
     <Tabs value={activeView} onValueChange={(value) => setActiveView(value as typeof activeView)} className="agents-ui space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
@@ -1349,7 +1357,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
             aria-label={t("刷新")}
             variant="ghost" size="sm"
           >
-            <RefreshCw className={`size-4 ${manualRefreshing ? "animate-spin" : ""}`} />
+            {manualRefreshing ? <Spinner size="md" /> : <RefreshCw className="size-4" aria-hidden="true" />}
           </Button></AgentTooltip>
         </div>
       </div>
@@ -4346,7 +4354,7 @@ export function AutomationFormModal({
           </div>
           {channelStatus === "loading" ? (
             <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Spinner size="sm" />
               {t("加载中...")}
             </div>
           ) : (
@@ -4440,10 +4448,11 @@ export function AutomationFormModal({
                         type="button"
                         onClick={() => void handleSendTestMessage(key)}
                         disabled={testSendResults[key]?.status === "sending" || Boolean(chatIdErrors[key])}
+                        aria-busy={testSendResults[key]?.status === "sending"}
                         className="inline-flex h-[26px] items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-2 text-[12px] font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         {testSendResults[key]?.status === "sending" ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Spinner size="xs" />
                         ) : null}
                         {t("发送测试消息")}
                       </button>

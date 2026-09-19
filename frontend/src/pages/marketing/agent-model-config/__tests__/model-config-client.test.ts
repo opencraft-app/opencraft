@@ -32,6 +32,170 @@ const model = {
 const configuredModel = { ...model, providerKey: "lightvela-deepseek", keyEnv: "KEY_lightvela_deepseek" };
 const snapshot = { primary: configuredModel, fallbacks: [], configuredModels: [configuredModel] };
 
+describe("reset to the platform default model", () => {
+  const platformModel = {
+    id: "auto",
+    providerKey: "custom",
+    providerName: "custom",
+    baseUrl: "https://gateway.lightvela.test/v1",
+    apiMode: "chat_completions",
+    keyEnv: "",
+  };
+
+  it("rebuilds the selected Profile from platform input instead of trusting local custom config", () => {
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      {
+        model: { provider: configuredModel.providerKey, default: configuredModel.id },
+        fallback_providers: [{ provider: "stale", model: "stale-model" }],
+        providers: {
+          [configuredModel.providerKey]: {
+            name: configuredModel.providerName,
+            base_url: configuredModel.baseUrl,
+            transport: "openai_chat",
+            key_env: configuredModel.keyEnv,
+            model: configuredModel.id,
+          },
+        },
+        lightvela: { model_config: { configured_models: [configuredModel] }, retained: true },
+        unrelated: { retained: true },
+      },
+      {},
+      { [configuredModel.keyEnv]: apiKey, UNRELATED_SECRET: "keep-me" },
+    );
+
+    expect(parseHermesModelConfigResponse(reset.output).primary).toMatchObject({
+      providerKey: "custom",
+      id: "auto",
+      baseUrl: platformModel.baseUrl,
+    });
+    expect(reset.config).toEqual({
+      model: {
+        provider: "custom",
+        default: "auto",
+        api_mode: "chat_completions",
+        base_url: platformModel.baseUrl,
+      },
+      providers: {
+        custom: {
+          name: "custom",
+          base_url: platformModel.baseUrl,
+          model: "auto",
+          transport: "openai_chat",
+          discover_models: true,
+          key_env: "KEY_custom",
+          models: { auto: { lightvela_configured: true } },
+        },
+      },
+      lightvela: { retained: true },
+      unrelated: { retained: true },
+    });
+    expect(reset.credentials).toEqual({ KEY_custom: "platform-default-secret", UNRELATED_SECRET: "keep-me" });
+    expect(reset.events).toEqual(["save_credential", "save_config", "remove_credential"]);
+  });
+
+  it("scopes the client reset command to the selected named Profile without exposing the key", async () => {
+    const exec = vi.fn()
+      .mockResolvedValueOnce({ status: "succeeded", exitCode: 0, output: response({ ok: true, credentialEnvelope: envelopePreparation }) })
+      .mockResolvedValueOnce({ status: "succeeded", exitCode: 0, output: response({ ok: true, snapshot: { primary: platformModel, fallbacks: [], configuredModels: [platformModel] } }) });
+
+    await createHermesModelConfigClient(exec, "bot-sales", "sales").resetToPlatformDefault({
+      apiKey: "platform-default-secret",
+      model: platformModel,
+    });
+
+    expect(exec).toHaveBeenCalledTimes(2);
+    const command = exec.mock.calls[1]?.[1] ?? "";
+    expect(command).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'sales\'');
+    expect(command).not.toContain("platform-default-secret");
+    const encoded = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
+    const action = JSON.parse(Buffer.from(encoded!, "base64").toString("utf8")) as Record<string, unknown>;
+    expect(action).toMatchObject({ type: "resetToPlatformDefault", model: platformModel });
+    expect(action).not.toHaveProperty("apiKey");
+  });
+
+  it("rolls config and credentials back when platform reset validation fails", () => {
+    const originalConfig = {
+      model: { provider: configuredModel.providerKey, default: configuredModel.id },
+      providers: {
+        [configuredModel.providerKey]: {
+          name: configuredModel.providerName,
+          base_url: configuredModel.baseUrl,
+          transport: "openai_chat",
+          key_env: configuredModel.keyEnv,
+          model: configuredModel.id,
+        },
+      },
+    };
+    const originalCredentials = { [configuredModel.keyEnv]: apiKey };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { CORRUPT_SAVED_ROLE: "1" },
+      originalCredentials,
+    );
+
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toMatchObject(originalConfig);
+    expect(reset.config.providers).not.toHaveProperty("custom");
+    expect(reset.credentials).toEqual(originalCredentials);
+  });
+
+  it("rolls config and credentials back when obsolete credential cleanup fails", () => {
+    const originalConfig = {
+      model: { provider: configuredModel.providerKey, default: configuredModel.id },
+      providers: {
+        [configuredModel.providerKey]: {
+          name: configuredModel.providerName,
+          base_url: configuredModel.baseUrl,
+          transport: "openai_chat",
+          key_env: configuredModel.keyEnv,
+          model: configuredModel.id,
+        },
+      },
+    };
+    const originalCredentials = { [configuredModel.keyEnv]: apiKey };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { FAIL_REMOVE_CREDENTIAL: "1" },
+      originalCredentials,
+    );
+
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toMatchObject(originalConfig);
+    expect(reset.config.providers).not.toHaveProperty("custom");
+    expect(reset.credentials).toEqual(originalCredentials);
+  });
+
+  it("fails before writing when the existing credential snapshot cannot be read", () => {
+    const originalConfig = {
+      model: { provider: configuredModel.providerKey, default: configuredModel.id },
+      providers: {
+        [configuredModel.providerKey]: {
+          name: configuredModel.providerName,
+          base_url: configuredModel.baseUrl,
+          transport: "openai_chat",
+          key_env: configuredModel.keyEnv,
+          model: configuredModel.id,
+        },
+      },
+    };
+    const originalCredentials = { [configuredModel.keyEnv]: apiKey };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { FAIL_LOAD_ENV: "1" },
+      originalCredentials,
+    );
+
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toEqual(originalConfig);
+    expect(reset.credentials).toEqual(originalCredentials);
+    expect(reset.events).toEqual([]);
+  });
+});
+
 describe("append models to a saved Provider", () => {
   const config = {
     model: { provider: "lightvela-deepseek", default: "deepseek-v3" },
@@ -257,10 +421,11 @@ const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
 const envelopePreparation = { token: "a".repeat(48), publicKey: testPublicKey };
 
 type PlaintextTestAction =
-  | Exclude<HermesModelConfigAction, Extract<HermesModelConfigAction, { type: "probe" | "connectivityProbe" | "add" }>>
+  | Exclude<HermesModelConfigAction, Extract<HermesModelConfigAction, { type: "probe" | "connectivityProbe" | "add" | "resetToPlatformDefault" }>>
   | { type: "probe"; apiKey: string; baseUrl: string; apiMode?: string }
   | { type: "connectivityProbe"; apiKey: string; model: typeof model; strategy?: "model_list" | "model_request" }
-  | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean };
+  | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean }
+  | { type: "resetToPlatformDefault"; apiKey: string; model: typeof model };
 
 function response(payload: unknown): string {
   return ["transport diagnostic", HERMES_MODEL_CONFIG_JSON_START, JSON.stringify(payload), HERMES_MODEL_CONFIG_JSON_END].join("\n");
@@ -295,6 +460,8 @@ def load_config():
     path = ROOT / "config.json"
     return json.loads(path.read_text()) if path.exists() else {}
 def load_env():
+    if os.environ.get("FAIL_LOAD_ENV"):
+        raise RuntimeError("credential snapshot failure")
     path = ROOT / "credentials.json"
     return json.loads(path.read_text()) if path.exists() else {}
 def save_config(value):
@@ -543,7 +710,7 @@ function runHelper(
     });
     let remoteAction: HermesModelConfigAction = inputAction as HermesModelConfigAction;
     let preparationOutput = "";
-    if (inputAction.type === "probe" || inputAction.type === "connectivityProbe" || inputAction.type === "add") {
+    if (inputAction.type === "probe" || inputAction.type === "connectivityProbe" || inputAction.type === "add" || inputAction.type === "resetToPlatformDefault") {
       const preparationResult = spawnAction({ type: "prepareCredentialEnvelope" });
       preparationOutput = `${preparationResult.stdout}${preparationResult.stderr}`;
       let preparation: ReturnType<typeof parseHermesCredentialEnvelopePreparation>;
@@ -564,12 +731,16 @@ function runHelper(
         ? { type: "probe", credentialEnvelope, baseUrl: inputAction.baseUrl, apiMode: inputAction.apiMode }
         : inputAction.type === "connectivityProbe"
           ? { type: "connectivityProbe", credentialEnvelope, model: inputAction.model, strategy: inputAction.strategy }
-          : {
+          : inputAction.type === "add" ? {
               type: "add",
               credentialEnvelope,
               model: inputAction.model,
               purpose: inputAction.purpose,
               discoverModels: inputAction.discoverModels,
+            } : {
+              type: "resetToPlatformDefault",
+              credentialEnvelope,
+              model: inputAction.model,
             };
     }
     const command = buildHermesModelConfigCommand(remoteAction);

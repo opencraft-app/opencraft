@@ -4,7 +4,7 @@ metadata:
   name: shprod-referral
   namespace: argocd
 spec:
-  description: Referral service project for the disabled Shanghai production foundation.
+  description: Referral service project for Shanghai production.
   sourceRepos:
     - git@git.woa.com:wisp/mono2.git
   destinations:

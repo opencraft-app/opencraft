@@ -2,11 +2,14 @@ package collaborationbootstrap
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	sdkcommon "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	tcerr "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	cynosdb "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cynosdb/v20190107"
 )
 
@@ -15,6 +18,8 @@ type fakeCynosDBClient struct {
 	databaseResponse  *cynosdb.DescribeClusterDatabasesResponse
 	privilegeResponse *cynosdb.DescribeAccountAllGrantPrivilegesResponse
 	modifyRequest     *cynosdb.ModifyAccountPrivilegesRequest
+	modifyErrors      []error
+	modifyCalls       int
 }
 
 func (f *fakeCynosDBClient) DescribeAccountsWithContext(context.Context, *cynosdb.DescribeAccountsRequest) (*cynosdb.DescribeAccountsResponse, error) {
@@ -39,6 +44,14 @@ func (f *fakeCynosDBClient) CreateClusterDatabaseWithContext(context.Context, *c
 
 func (f *fakeCynosDBClient) ModifyAccountPrivilegesWithContext(_ context.Context, request *cynosdb.ModifyAccountPrivilegesRequest) (*cynosdb.ModifyAccountPrivilegesResponse, error) {
 	f.modifyRequest = request
+	f.modifyCalls++
+	if len(f.modifyErrors) != 0 {
+		err := f.modifyErrors[0]
+		f.modifyErrors = f.modifyErrors[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &cynosdb.ModifyAccountPrivilegesResponse{Response: &cynosdb.ModifyAccountPrivilegesResponseParams{}}, nil
 }
 
@@ -117,6 +130,55 @@ func TestTencentDatabasePrivilegesAreDatabaseScopedOnly(t *testing.T) {
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("privileges = %v, want %v", got, want)
+	}
+}
+
+func TestTencentDatabasePrivilegesWaitsForNewAccountToBecomeVisible(t *testing.T) {
+	client := &fakeCynosDBClient{modifyErrors: []error{
+		tcerr.NewTencentCloudSDKError("InvalidParameterValue.AccountNotExistError", "account not ready", "request-id"),
+	}}
+	admin := newTencentDatabaseAdmin(client)
+	if err := admin.CreateAccount(t.Context(), testConfig(), "Aa1_test-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.SetDatabasePrivileges(t.Context(), testConfig(), DatabasePrivileges()); err != nil {
+		t.Fatalf("transient account-not-ready error was not retried: %v", err)
+	}
+	if client.modifyCalls != 2 {
+		t.Fatalf("privilege calls = %d, want 2", client.modifyCalls)
+	}
+}
+
+func TestTencentDatabasePrivilegesDoesNotRetryUnrelatedErrors(t *testing.T) {
+	permissionDenied := tcerr.NewTencentCloudSDKError("UnauthorizedOperation.PermissionDenied", "denied", "request-id")
+	client := &fakeCynosDBClient{modifyErrors: []error{permissionDenied}}
+	admin := newTencentDatabaseAdmin(client)
+	if err := admin.CreateAccount(t.Context(), testConfig(), "Aa1_test-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.SetDatabasePrivileges(t.Context(), testConfig(), DatabasePrivileges()); !errors.Is(err, permissionDenied) {
+		t.Fatalf("unrelated error = %v, want original permission error", err)
+	}
+	if client.modifyCalls != 1 {
+		t.Fatalf("privilege calls = %d, want 1", client.modifyCalls)
+	}
+}
+
+func TestTencentDatabasePrivilegesStopsWaitingWhenContextExpires(t *testing.T) {
+	client := &fakeCynosDBClient{modifyErrors: []error{
+		tcerr.NewTencentCloudSDKError("InvalidParameterValue.AccountNotExistError", "account not ready", "request-id"),
+	}}
+	admin := newTencentDatabaseAdmin(client)
+	if err := admin.CreateAccount(t.Context(), testConfig(), "Aa1_test-password"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	if err := admin.SetDatabasePrivileges(ctx, testConfig(), DatabasePrivileges()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expired wait = %v, want context deadline", err)
+	}
+	if client.modifyCalls != 1 {
+		t.Fatalf("privilege calls = %d, want 1", client.modifyCalls)
 	}
 }
 

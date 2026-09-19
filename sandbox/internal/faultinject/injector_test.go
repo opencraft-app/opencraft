@@ -19,27 +19,27 @@ func (p *stubProvisionProvider) CreateInstance(context.Context, core.Pool) (stri
 	return "", "", nil
 }
 
-func (p *stubProvisionProvider) ReinstallInstance(context.Context, string, string) error {
+func (p *stubProvisionProvider) ReinstallInstance(context.Context, provider.CloudInstanceRef, string) error {
 	return nil
 }
 
-func (p *stubProvisionProvider) DescribeInstance(context.Context, string) (string, error) {
+func (p *stubProvisionProvider) DescribeInstance(context.Context, provider.CloudInstanceRef) (string, error) {
 	return "", nil
 }
 
-func (p *stubProvisionProvider) TerminateInstance(context.Context, string) error {
+func (p *stubProvisionProvider) TerminateInstance(context.Context, provider.CloudInstanceRef) error {
 	return nil
 }
 
-func (p *stubProvisionProvider) StopInstance(context.Context, string) error {
+func (p *stubProvisionProvider) StopInstance(context.Context, provider.CloudInstanceRef) error {
 	return nil
 }
 
-func (p *stubProvisionProvider) StartInstance(context.Context, string) error {
+func (p *stubProvisionProvider) StartInstance(context.Context, provider.CloudInstanceRef) error {
 	return nil
 }
 
-func (p *stubProvisionProvider) VerifyInstance(context.Context, string) error {
+func (p *stubProvisionProvider) VerifyInstance(context.Context, provider.CloudInstanceRef) error {
 	return nil
 }
 
@@ -47,7 +47,7 @@ func (p *stubProvisionProvider) CreateInstanceSnapshot(context.Context, provider
 	return "", nil
 }
 
-func (p *stubProvisionProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+func (p *stubProvisionProvider) DescribeInstanceSnapshot(context.Context, string, string) (provider.SnapshotStatus, string, error) {
 	return "", "", nil
 }
 
@@ -77,8 +77,8 @@ type stubCleanupProvider struct {
 	deleteErrs []error
 }
 
-func (p *stubCleanupProvider) TerminateInstance(_ context.Context, cloudID string) error {
-	p.terminated = append(p.terminated, cloudID)
+func (p *stubCleanupProvider) TerminateInstance(_ context.Context, instance provider.CloudInstanceRef) error {
+	p.terminated = append(p.terminated, instance.CloudID)
 	return nil
 }
 
@@ -113,7 +113,7 @@ func TestInjectSGLimitWaitsForRecoveredPoolCleanBeforeAllocating(t *testing.T) {
 				if strings.TrimSpace(pool.CapacityBundleID) == "" {
 					continue
 				}
-				if _, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"cloud-recovered"}, func(context.Context, string) error { return nil }); err == nil {
+				if _, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"cloud-recovered"}, func(context.Context, provider.CloudInstanceRef) error { return nil }); err == nil {
 					return
 				}
 			}
@@ -192,7 +192,7 @@ func TestCleanupTerminatesInstancesBeforeDeletingSecurityGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	insts, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"cloud-cleanup"}, func(context.Context, string) error { return nil })
+	insts, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"cloud-cleanup"}, func(context.Context, provider.CloudInstanceRef) error { return nil })
 	if err != nil {
 		t.Fatalf("refill: %v", err)
 	}

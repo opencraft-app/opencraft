@@ -18,6 +18,23 @@ derived: false
 
 # Agents Radix 重构 Task Pack
 
+## master_merge_20260918
+
+- 用户允许备份/stash 后合并最新 master 并恢复原改动；当前合入 f2a1ec32f（201 个提交），保留既有 Account、加载和侧栏交互。merge 与 stash 冲突均已处理，尚待用户确认 commit，不推送或部署。
+- master 行为保留：公开多 Bot、Profile reset、Skills 宿主扩展插槽、积分包开关/来源/重试、国际站升级默认公开和邀请 console-show 事件。展示继续复用本分支组件；OpenCraft 通过标准脚本同步 161 文件。
+- 本轮验证：聚焦 395/49/551 通过，侧栏 CN/global 各 36 通过，check 0 新增诊断（168 current/276 baseline），前端生产构建、OpenCraft 完整 gate 通过；浏览器账户 6 态、侧栏 16px 间距/36px Tabs/12px 字号/滚动边界/Progress/手机 Sheet 通过，无 pageerror。末次构建记录见 runtime ledger。
+- 备份为 /tmp/mono2-master-merge-backup.vHFdfd，stash b80281e 保留。stash 29 个未跟踪文件均存在；早期记录中的 sidebar-account-fixture 不在本次备份/当前树，无法确定其更早去向。未进行真实账号、支付、实名或实例写操作；未重跑前端全部测试或国际站生产构建，独立最终 review 无有效新结论。
+
+## account_pages_refactor_20260918
+
+- 视觉验收增量：用户要求统一实名态2/3和未认证标签。安全卡复用AccountStatusBadge，未认证neutral、已认证success、需继续认证/pending为warning、同步失败danger；文字统一12px，移除大盾牌，原状态计算/错误/回调不动。新增未认证翻译由extract/apply/zh-hant脚本生成。四文件65测试、check0新增、桌面/390px共6场景通过；截图/tmp/account-realname-*。追加读取identity-access must_read及frontend-runtime-openspec-i18n邻接和vitest配置；未修改身份执行边界。
+
+- 目标：按用户已确认设计，把 `/account` 和 `/account/orders` 展示与当前 Agents 规范统一；沿用 `frontend/openspec/plan.md` 顶部六项任务，不重复设计。
+- 本批边界：资料、安全、套餐与积分、统一 Dialog/AlertDialog、整页首屏状态、响应式订单列表和发票 Dialog。领域接口、计费、实名、权限与区域规则不变；原有五条模拟订单及模拟发票提交保留，未接真实订单后端。
+- 验证：177/177聚焦测试，check/build exit0，无新增TS诊断；9个浏览器场景在390/768/1280px无横溢，pageerror和console error/warning均为空。loading/error/login由组件和页面测试覆盖。证据与命令见runtime verification-ledger的Account收尾段；最终独立复审尚无有效交接结论，不声明通过。
+- context_receipt：恢复时已读本工作树根与frontend AGENTS、skills索引、OpenSpec config/plan、批准设计与计划、FE-AI gate-verification；原仓库feai/global/verification/requesting-code-review技能。查询 `frontend account pages refactor verification` 无route匹配，已限定account组件及页面检索AccountPageGate，再读frontend-runtime-openspec-i18n邻接和实际vitest.config.ts测试邻居。
+- 交付：本地mock预览 `http://localhost:5174/account/?state=realname-done&passState=expiring` 与 `/account/orders/`；停在用户视觉验收，不归档/commit/push/MR。已有Agents改动与未知sidebar-account-fixture保留。
+
 ## sidebar_switcher_b_20260917
 
 - 交付授权：用户已确认本轮B的功能提交和标准sourceRevision记录提交一起推送到既有预览分支。仅上述5文件与生成清单；保留未知fixture，不合并master、不创建MR、不监控CI。以下“未提交”是本地验收时状态，交付实际结果见runtime/sidebar-switcher-b-push-report.md。

@@ -8,10 +8,11 @@ import type {
   TransportStatus,
 } from "@opencraft/appserver-client/transport";
 import type {
+  AppServerMethod,
+  AppServerMethodParams,
+  AppServerMethodResult,
   AppServerInitializeParams,
   AppServerInitializeResponse,
-  AgentListParams,
-  AgentListResponse,
   ModelListParams,
   ModelListResponse,
   PermissionProfileListParams,
@@ -32,12 +33,8 @@ import type {
   ThreadStartParams,
   ThreadForkParams,
 } from "@opencraft/appserver-protocol";
-import {
-  OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-  OPENCRAFT_AGENT_CATALOG_EXTENSION,
-  OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
-} from "@opencraft/appserver-protocol";
-import { reasoningCapability } from "@opencraft/composer-core";
+import { OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
+import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
 import type {
   DynamicToolSpec,
   FsChangedNotification,
@@ -46,6 +43,7 @@ import type {
   FsWriteFileResponse,
   ThreadQueueChangedNotification,
   Thread as ProtocolThread,
+  ThreadInjectItemsParams,
   UserInput,
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
@@ -143,7 +141,10 @@ export interface AppServerRuntimeClock {
 
 export interface AppServerWorkbenchRuntimeConfig {
   readonly hostId: string;
-  readonly transport: DuplexTransport;
+  /** Fixed transport for isolated runtimes and tests. A closed fixed transport is terminal. */
+  readonly transport?: DuplexTransport;
+  /** Creates one transport for each AppServer Client generation. */
+  readonly createTransport?: () => DuplexTransport;
   readonly hostKind?: AppServerHostKind;
   readonly initialize?: AppServerInitializeParams;
   readonly requestTimeoutMs?: number;
@@ -162,6 +163,33 @@ export interface AppServerWorkbenchRuntimeConfig {
   >;
 }
 
+/** Count the model-callable definitions in an AppServer dynamic-tool catalog. */
+export function countDynamicToolDefinitions(
+  specs: readonly DynamicToolSpec[],
+): number {
+  return specs.reduce(
+    (count, spec) => count + (spec.type === "namespace" ? spec.tools.length : 1),
+    0,
+  );
+}
+
+/**
+ * A Thread capability registration is a readiness lease, not best-effort
+ * metadata. The Renderer owns the handlers, so a partial Host registration
+ * must keep the Thread out of the resident/executable phase.
+ */
+export function verifyDynamicToolRegistration(
+  specs: readonly DynamicToolSpec[],
+  result: { readonly registered: number },
+): void {
+  const expected = countDynamicToolDefinitions(specs);
+  if (result.registered !== expected) {
+    throw new Error(
+      `Host registered ${result.registered} of ${expected} dynamic tools`,
+    );
+  }
+}
+
 export interface StartThreadOptions {
   readonly cwd: string;
   readonly runtimeWorkspaceRoots?: readonly string[];
@@ -172,6 +200,12 @@ export interface StartThreadOptions {
 }
 
 export interface AppServerThreadResourcePort {
+  capabilities?(): { fork: boolean; rename: boolean; archive: boolean };
+  rename?(threadId: string, name: string): Promise<void>;
+  archive?(threadId: string): Promise<void>;
+  unarchive?(threadId: string): Promise<ProtocolThread>;
+  injectItems?(threadId: string, items: ThreadInjectItemsParams["items"]): Promise<void>;
+  supportsSideChat?(): boolean;
   list(params?: Partial<ThreadListParams>): Promise<ThreadListResponse>;
   start(options: StartThreadOptions): Promise<ProtocolThread>;
   fork?(params: ThreadForkParams): Promise<ProtocolThread>;
@@ -179,7 +213,6 @@ export interface AppServerThreadResourcePort {
 }
 
 export interface AppServerComposerCatalogResourcePort {
-  listAgents(params?: Partial<AgentListParams>): Promise<AgentListResponse>;
   listModels(params?: Partial<ModelListParams>): Promise<ModelListResponse>;
   listPermissionProfiles(
     params?: Partial<PermissionProfileListParams>,
@@ -189,7 +222,6 @@ export interface AppServerComposerCatalogResourcePort {
     options: FuzzyFileSearchSessionOptions,
   ): Promise<FuzzyFileSearchSession>;
   subscribeSkillsChanged(listener: () => void): () => void;
-  subscribeAgentsChanged(listener: () => void): () => void;
 }
 
 export interface AppServerProjectResourcePort {
@@ -206,6 +238,14 @@ export interface AppServerHostResourcePort {
    * The Host transport owns the tunnel; callers only own the request signal.
    */
   fetchLoopback(input: string, init?: RequestInit): Promise<Response>;
+}
+
+/** Raw protocol access after this runtime has completed AppServer initialize. */
+export interface AppServerProtocolResourcePort {
+  request<TMethod extends AppServerMethod>(
+    method: TMethod,
+    params: AppServerMethodParams<TMethod>,
+  ): Promise<AppServerMethodResult<TMethod>>;
 }
 
 interface AppServerLoopbackHttpTransport {
@@ -244,6 +284,7 @@ export interface AppServerFileWatchLease {
 
 export interface AppServerWorkbenchRuntime {
   readonly resources: {
+    readonly protocol: AppServerProtocolResourcePort;
     readonly host: AppServerHostResourcePort;
     readonly threads: AppServerThreadResourcePort;
     readonly projects: AppServerProjectResourcePort;
@@ -319,9 +360,7 @@ const defaultInitialize: AppServerInitializeParams = {
   clientInfo: { name: "opencraft-workbench", version: "0.1.0" },
   capabilities: {
     experimentalApi: true,
-    extensions: {
-      [OPENCRAFT_AGENT_CATALOG_EXTENSION]: OPENCRAFT_AGENT_CATALOG_CAPABILITY,
-    },
+    extensions: {},
   },
 };
 
@@ -355,6 +394,9 @@ const volatileThreadViewReplicaStorage: ReplicaClientStorage<ReplicaJsonValue> =
 export function createAppServerWorkbenchRuntime(
   config: AppServerWorkbenchRuntimeConfig,
 ): AppServerWorkbenchRuntime {
+  if ((config.transport === undefined) === (config.createTransport === undefined)) {
+    throw new TypeError("AppServer Workbench requires exactly one transport ownership mode");
+  }
   const hostId = asHostId(config.hostId);
   const clock = config.clock ?? defaultClock;
   const reconnectDelays = config.reconnectDelaysMs ?? [
@@ -382,6 +424,9 @@ export function createAppServerWorkbenchRuntime(
   let ownedRegistry: Awaited<
     ReturnType<typeof createCordisAppServerRegistry>
   > | null = null;
+  let currentTransport: DuplexTransport | null = config.createTransport === undefined
+    ? config.transport ?? null
+    : null;
   let client: AppServerClient | null = null;
   let session: CordisThreadSessionRuntime | null = null;
   let interactions: AppServerInteractionBroker | null = null;
@@ -452,7 +497,7 @@ export function createAppServerWorkbenchRuntime(
     phase,
     hostId,
     connectionGeneration: client?.connectionGeneration ?? 0,
-    transport: client?.status ?? config.transport.status,
+    transport: client?.status ?? currentTransport?.status ?? { state: "idle" },
     residentThreads: [...bindings.values()]
       .filter((binding) => !binding.disposed)
       .map(residencySnapshot),
@@ -477,7 +522,10 @@ export function createAppServerWorkbenchRuntime(
   const scheduleReconnect = (transportStatus?: TransportStatus) => {
     if (disposed || config.autoReconnect === false || reconnectTimer !== null)
       return;
-    const effectiveStatus = automaticReconnectBlock ?? transportStatus ?? config.transport.status;
+    const effectiveStatus = automaticReconnectBlock
+      ?? transportStatus
+      ?? currentTransport?.status
+      ?? { state: "idle" };
     if (effectiveStatus.failure?.recovery === "manual") {
       if (loggedReconnectStopCode !== effectiveStatus.failure.code) {
         loggedReconnectStopCode = effectiveStatus.failure.code;
@@ -859,7 +907,11 @@ export function createAppServerWorkbenchRuntime(
             }
           } else await currentSession.resume.resume({ threadId: binding.threadId, force });
           if (config.dynamicTools && requireClient().initializeResult?.capabilities?.extensions?.["opencraft/host-capabilities"]) {
-            await requireClient().request("runtime/capabilities/register", { threadId: binding.threadId, dynamicTools: config.dynamicTools });
+            const registration = await requireClient().request("runtime/capabilities/register", {
+              threadId: binding.threadId,
+              dynamicTools: config.dynamicTools,
+            });
+            verifyDynamicToolRegistration(config.dynamicTools, registration);
           }
         } finally { stopPreview(); }
         const source = createCodexThreadReplicaSource(
@@ -924,6 +976,7 @@ export function createAppServerWorkbenchRuntime(
     if (initializeServicesOperation !== null)
       return initializeServicesOperation;
     const generation = lifecycleGeneration;
+    let attemptTransport: DuplexTransport | null = null;
     const operation = (async () => {
       ownedRegistry =
         config.clientRegistry === undefined
@@ -931,9 +984,14 @@ export function createAppServerWorkbenchRuntime(
           : null;
       ensureLifecycle(generation);
       const clientRegistry = config.clientRegistry ?? ownedRegistry!.clients;
+      attemptTransport = config.createTransport?.() ?? config.transport ?? null;
+      if (attemptTransport === null) {
+        throw new Error("AppServer transport factory did not create a transport");
+      }
+      currentTransport = attemptTransport;
       client = clientRegistry.create({
         hostId,
-        transport: config.transport,
+        transport: attemptTransport,
         requestTimeoutMs: config.requestTimeoutMs ?? 30_000,
       });
       terminalController = new AppServerTerminalController(hostId, client);
@@ -995,24 +1053,22 @@ export function createAppServerWorkbenchRuntime(
         interactions,
         compiler: { historyMode: "paginated" },
         resolveCompilerOptions: async (intent) => {
-          if (intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up") return {};
+          const followUp = intent.target.type === "steer-active-turn" || intent.target.type === "enqueue-follow-up";
           const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
           const modelId = intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
-          if (!modelId) {
-            if (intent.selections.effort !== undefined) throw new Error("请先选择模型，再设置推理档位");
-            return {};
-          }
           const scope = client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
           let cursor: string | null = null;
           const seen = new Set<string>();
           do {
             const page: ModelListResponse = await client!.request("model/list", {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})});
-            const model = page.data.find(model => model.id === modelId || model.model === modelId);
-            if (model) return {reasoning:reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort)};
+            const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
+            if (model) return { inputModalities: modelInputModalities(model.inputModalities),
+              ...(!followUp ? { ...(!modelId ? { model: model.model } : {}),
+                reasoning:reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort) } : {}) };
             cursor = page.nextCursor;
             if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
           } while (cursor);
-          throw new Error("所选模型已不可用，请重新选择");
+          throw new Error(modelId ? "所选模型已不可用，请重新选择" : "请先选择模型或在设置中指定默认模型");
         },
         dynamicTools: config.dynamicTools,
       });
@@ -1023,6 +1079,17 @@ export function createAppServerWorkbenchRuntime(
           errorType: cause instanceof Error ? cause.name : "Error",
           message: cause instanceof Error ? cause.message : String(cause),
         });
+        if (config.createTransport === undefined) {
+          // Registry cleanup closes a fixed transport permanently. It has no
+          // factory-backed successor, so an automatic retry would only spin
+          // on the disposed object forever.
+          clearReconnectTimer();
+          automaticReconnectBlock ??= {
+            state: "closed",
+            reason: "The fixed AppServer transport generation was closed after initialization failed",
+            failure: { code: "fixed-transport-generation-closed", recovery: "manual" },
+          };
+        }
         removeTransportListener?.();
         removeTransportListener = null;
         removeClientHandlers?.();
@@ -1037,11 +1104,15 @@ export function createAppServerWorkbenchRuntime(
         terminalController = null;
         await session?.dispose().catch(() => undefined);
         session = null;
+        const failedClient = client;
         if (ownedRegistry !== null) {
           await ownedRegistry.dispose().catch(() => undefined);
-        } else {
+        } else if (failedClient !== null) {
           await config.clientRegistry?.remove(hostId).catch(() => undefined);
+        } else {
+          await attemptTransport?.close().catch(() => undefined);
         }
+        if (currentTransport === attemptTransport) currentTransport = null;
         ownedRegistry = null;
         client = null;
         commandPort = null;
@@ -1057,13 +1128,20 @@ export function createAppServerWorkbenchRuntime(
 
   const runtime: AppServerWorkbenchRuntime = {
     resources: {
+      protocol: {
+        request(method, params) {
+          return requireClient().request(method, params);
+        },
+      },
       host: {
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
           return client?.initializeResult ?? null;
         },
         async fetchLoopback(input, init) {
-          const transport = loopbackHttpTransport(config.transport);
+          const transport = currentTransport === null
+            ? null
+            : loopbackHttpTransport(currentTransport);
           if (transport === null) {
             const client = requireClient();
             if (!client.initializeResult?.capabilities?.extensions?.["opencraft/loopback-http"]) throw new Error(`Host ${hostId} does not provide loopback HTTP`);
@@ -1089,6 +1167,20 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       threads: {
+        capabilities() {
+          const capability = client?.initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; rename?: boolean; archive?: boolean } | undefined;
+          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true };
+        },
+        async rename(threadId, name) { await requireClient().request("thread/name/set", { threadId, name }); },
+        async archive(threadId) { await requireClient().request("thread/archive", { threadId }); },
+        async unarchive(threadId) { return (await requireClient().request("thread/unarchive", { threadId })).thread as ProtocolThread; },
+        supportsSideChat() {
+          const capability = requireClient().initializeResult?.capabilities?.extensions?.["opencraft/thread-lifecycle"] as { fork?: boolean; ephemeral?: boolean; injectItems?: boolean } | undefined;
+          return capability?.fork !== false && capability?.ephemeral !== false && capability?.injectItems !== false;
+        },
+        async injectItems(threadId, items) {
+          await requireClient().request("thread/inject_items", { threadId, items: [...items] });
+        },
         async fork(params) {
           const generation = requireClient().connectionGeneration;
           const response = await requireClient().request("thread/fork", params);
@@ -1101,8 +1193,19 @@ export function createAppServerWorkbenchRuntime(
         async unsubscribe(threadId) {
           const binding = bindings.get(threadId);
           if (binding && binding.retainCount > 0) throw new Error("Cannot unsubscribe a thread with active consumers");
-          await requireClient().request("thread/unsubscribe", { threadId });
-          if (binding && binding.retainCount === 0) disposeBinding(binding);
+          const currentClient = requireClient(), generation = lifecycleGeneration, connectionGeneration = currentClient.connectionGeneration;
+          await currentClient.request("thread/unsubscribe", { threadId });
+          if (disposed || generation !== lifecycleGeneration || client !== currentClient || currentClient.connectionGeneration !== connectionGeneration) return;
+          const current = bindings.get(threadId);
+          if (current && (current !== binding || hasHardResidencyReason(current))) {
+            // The unsubscribe won on the wire; the new consumer must actually
+            // reattach, not merely retain a stale local projection.
+            requireSession().resume.markNeedsResume(threadId);
+            await requireSession().resume.resume({ threadId, force: true });
+            await hydrateBinding(current, false);
+            return;
+          }
+          if (current) disposeBinding(current);
           ephemeralThreadIds.delete(threadId);
           requireSession().views.remove(threadId);
         },
@@ -1197,13 +1300,6 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       composerCatalog: {
-        async listAgents(params = {}) {
-          return requireClient().request("agent/list", {
-            cursor: null,
-            limit: 100,
-            ...params,
-          });
-        },
         async listModels(params = {}) {
           return requireClient().request("model/list", {
             cursor: null,
@@ -1237,11 +1333,6 @@ export function createAppServerWorkbenchRuntime(
         subscribeSkillsChanged(listener) {
           return requireClient().subscribeNotification((notification) => {
             if (notification.method === "skills/changed") listener();
-          });
-        },
-        subscribeAgentsChanged(listener) {
-          return requireClient().subscribeNotification((notification) => {
-            if (notification.method === "agent/catalog/updated") listener();
           });
         },
       },
@@ -1345,7 +1436,7 @@ export function createAppServerWorkbenchRuntime(
           error = cause instanceof Error ? cause : new Error(String(cause));
           phase = "error";
           publish();
-          scheduleReconnect(config.transport.status);
+          scheduleReconnect(currentTransport?.status);
           throw cause;
         }
       })().finally(() => {
@@ -1515,6 +1606,7 @@ export function createAppServerWorkbenchRuntime(
         if (ownedRegistry !== null)
           await ownedRegistry.dispose().catch(() => undefined);
         else await config.clientRegistry?.remove(hostId).catch(() => undefined);
+        currentTransport = null;
         await Promise.allSettled(pending);
 
         for (const binding of [...bindings.values()]) disposeBinding(binding);

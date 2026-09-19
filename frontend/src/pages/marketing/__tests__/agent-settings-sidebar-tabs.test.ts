@@ -27,14 +27,15 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
-  it("gates additional Bot creation on console reveal while preserving initial Agent creation", () => {
+  it("exposes additional Bot creation without console reveal while preserving feature and quota gates", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).toContain("const showCreateBotEntry = showHiddenAgentTools;");
-    expect(page).toContain("{showCreateBotEntry && multiBotEnabled && (");
-    expect(page).toContain("content={createLimitMessage}");
+    expect(page).not.toContain("const showCreateBotEntry = showHiddenAgentTools;");
+    expect(page).toContain("createAction={multiBotEnabled && (");
+    expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
+    expect(page).toContain('aria-label={t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
-    expect(page).toContain("if (activeBot && !showCreateBotEntry) return;");
+    expect(page).not.toContain("if (activeBot && !showCreateBotEntry) return;");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
     expect(page).not.toContain("const canCreateBot = multiBotEnabled");
@@ -113,20 +114,20 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const tabs = readConsoleSource("console-sidebar-tabs");
     expect(page.indexOf("<ConsoleSidebarTabs")).toBeLessThan(page.indexOf("<ConsoleNavigation"));
     expect(tabs).toContain("<Tabs value={value} onValueChange={intent}");
-    expect(tabs).toContain("<TabsList aria-label={label}");
+    expect(tabs).toContain('<AgentTabsList variant="segmented" aria-label={label}');
     expect(tabs).toContain('<TabsContent value={value}');
     expect(page).toContain('value={sidebarTab === "chat" && isActiveBotDefault ? "chat" : "settings"}');
   });
   it("labels the top-level modes as explore and chat", () => {
     const page = readPageSource();
     expect(page).toContain('settingsLabel={t("探索")} chatLabel={t("对话")}');
-    expect(readConsoleSource("console-sidebar-tabs")).toContain('{settingsLabel}</TabsTrigger>');
+    expect(readConsoleSource("console-sidebar-tabs")).toContain('{settingsLabel}</AgentTabsTrigger>');
   });
   it("uses Agents-scoped compact rounding and retains disabled creation", () => {
     const tabs = readConsoleSource("console-sidebar-tabs");
     const styles = readStylesSource();
-    expect(tabs).toContain("grid-cols-2 rounded-md");
-    expect(styles).toContain(".agents-ui .lv-agent-create-button {\n  border-radius: 6px;");
+    expect(tabs).toContain("grid-cols-2 gap-1");
+    expect(styles).toContain(".lv-agent-action-button {");
     expect(styles).toContain("--radius-md: 6px");
     expect(readPageSource()).toContain("disabled={!canCreateAdditionalBot}");
   });
@@ -240,9 +241,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
   });
   it("keeps header actions compact without shrinking their hit areas", () => {
     const page = readPageSource();
-    expect(page).toContain('"size-8 px-0"');
-    expect(page).toContain('"size-8 px-0 text-red-600"');
-    expect(readConsoleSource("console-bot-profile")).toContain("size-4 shrink-0");
+    expect(page).toContain('className="lv-agent-action-button"');
+    expect(page).toContain('className="lv-agent-action-button is-danger"');
+    expect(readConsoleSource("console-bot-profile")).toContain('className="lv-agent-action-button"');
   });
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
@@ -275,8 +276,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('className="block space-y-2 text-sm font-medium text-black/70"');
     expect(page).toContain("Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH");
     expect(page).toContain('t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH })');
-    expect(page.match(/t\("新建 Bot"\)/g)).toHaveLength(2);
-    expect(page).toContain('"lv-agent-create-button w-full"');
+    expect(page.match(/t\("新建 Bot"\)/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(page).not.toContain('"lv-agent-create-button w-full"');
     expect(page).toContain("onClick={handleCreateNew}");
     expect(page).not.toContain('t("立即创建")');
     expect(page).not.toContain('t("创建智能体")');
@@ -285,7 +286,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>');
     expect(page).toContain('t("当前对话、历史会话、定时任务、运行状态或通道连接")');
     expect(page).toContain('t("主 Bot 当前主模型及其 Provider 凭据")');
-    expect(page).toContain('t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")');
+    expect(page).toContain('<dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>');
+    expect(page).toContain('t("系统预置")');
+    expect(page).toContain('t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")');
     expect(page).not.toContain('t("使用 LightVela 默认配置创建一个独立 Bot。")');
     expect(page).not.toContain('t("使用 Hermes 默认配置创建独立 Bot。")');
     expect(page).not.toContain("Memory、User Profile");

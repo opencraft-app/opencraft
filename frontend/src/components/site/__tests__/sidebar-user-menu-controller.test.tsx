@@ -6,6 +6,7 @@ import { UserAvatarMenu } from "../user-avatar-menu";
 import { isGlobal } from "@/lib/region";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { createFakeRepositories } from "@/repositories/fake-repositories";
+import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 
 const mocks = vi.hoisted(() => ({ listMyPasses: vi.fn(), listModifyBundles: vi.fn(), repositories: vi.fn(), paidBilling: vi.fn(), navigate: vi.fn(), signOut: vi.fn() }));
 const pass = (overrides: Partial<Pass> = {}): Pass => ({ pass_id: "p/a", user_id: "a", status: "active", bundle_id: "source", bundle_name: "Pro A", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 1000, credit_available: 750, ...overrides });
@@ -81,6 +82,18 @@ async function openSidebar() {
 }
 
 describe("sidebar account controller boundary", () => {
+  it("emits the shared console-show event without requiring the header to be mounted", () => {
+    const onShow = vi.fn();
+    window.addEventListener(CONSOLE_SHOW_EVENT, onShow);
+    try {
+      render(<UserAvatarMenu variant="sidebar" />);
+      act(() => host().show?.());
+      expect(onShow).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(CONSOLE_SHOW_EVENT, onShow);
+    }
+  });
+
   it("shows domestic feedback without show(), preserves the external link, and closes back to the avatar", async () => {
     render(<UserAvatarMenu variant="sidebar" />);
     const trigger = screen.getByRole("button", { name: "打开用户菜单" });
@@ -187,7 +200,7 @@ describe("sidebar account controller boundary", () => {
     const sidebar = render(<UserAvatarMenu variant="sidebar" />);
     const trigger = screen.getAllByRole("button", { name: "打开用户菜单" })[1]!;
     await userEvent.click(trigger);
-    if (isGlobal) expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
     let result: unknown;
     act(() => { result = host().show?.("reveal", 7); });
     expect(result).toBe(false);
@@ -195,7 +208,7 @@ describe("sidebar account controller boundary", () => {
     expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "建议反馈" }) !== null).toBe(!isGlobal);
     act(() => host().hide?.());
-    if (isGlobal) expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "升级套餐" })).toBeVisible();
     // Cleanup must not overwrite a newer command owner mounted after both menus.
     const laterOwner = vi.fn(); host().show = laterOwner;
     sidebar.unmount(); header.unmount();
@@ -223,10 +236,9 @@ describe("sidebar account controller boundary", () => {
     expect(await screen.findByRole("link", { name: "升级套餐" })).toBeVisible();
     if (order === "account-first") account.unmount(); else sidebar.unmount();
     act(() => host().hide?.());
-    if (isGlobal) {
-      if (order === "account-first") expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
-      else expect(screen.getByTestId("account-upgrade")).toHaveTextContent("0");
-    }
+    // Upgrade discovery is public in every region after the master rollout.
+    if (order === "account-first") expect(screen.getByRole("link", { name: "升级套餐" })).toBeVisible();
+    else expect(screen.getByTestId("account-upgrade")).toHaveTextContent("1");
     let result: unknown;
     act(() => { result = host().show?.(); });
     expect(result).toBe(false);

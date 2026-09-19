@@ -16,12 +16,16 @@
       "sourceSha256": "c3af9e6253b8ab6fcae8c9297257109b0c234bade991f3e85f839fa3cc37db13"
     },
     {
+      "file": "components/agents/agent-loading-state.tsx",
+      "sourceSha256": "75cc8f55fef3ed1400f296d1ea3e5724f2c51db1587c0457a8ff0b033a065d2d"
+    },
+    {
       "file": "components/agents/agent-section.tsx",
       "sourceSha256": "0265cff1fdcbb9d950e7179080811406c1303aa3d8c5e06aabfaba88bb49c13e"
     },
     {
       "file": "components/agents/agent-state.tsx",
-      "sourceSha256": "20f416b1e6061ba7bd7567c1df6aedfbd608a3e62d47181b8d7bda23af7aa61c"
+      "sourceSha256": "62a2780484013af33e166b833089bea151fa9e688d50adbc8f0c08ef425e18c9"
     },
     {
       "file": "components/agents/agent-tabs.tsx",
@@ -37,7 +41,7 @@
     },
     {
       "file": "components/agents/index.ts",
-      "sourceSha256": "37fcd5b981c3878d467e0fc2e26608c072dc6afab33a50680c2e90b6e7376a63"
+      "sourceSha256": "d41fd4e5b1c23bfeacdaafc583246f667b369ab8d40dd2aec5e9c0a8283fbe6c"
     },
     {
       "file": "components/agents/styles.ts",
@@ -53,7 +57,7 @@
     },
     {
       "file": "components/domain/tat-file-manager-panel.tsx",
-      "sourceSha256": "df8d1fb98738c8458a9efd7e7d4d52bf41c61da9e49a36c64bf5bf97f98a6be4"
+      "sourceSha256": "83a1922348e82db7f46570381cbd5d8f3b18e6b131615d87ebff0ada15ff5e97"
     },
     {
       "file": "components/ui/alert-dialog.tsx",
@@ -105,7 +109,15 @@
     },
     {
       "file": "components/ui/select.tsx",
-      "sourceSha256": "f654507ab224a4591f32099ef62c3729b56ba9a387a02aa91cc37347db0648d9"
+      "sourceSha256": "0456b1694262b13fae0ace883647e962effdcf05b58d38497342536fd3e59f18"
+    },
+    {
+      "file": "components/ui/skeleton.tsx",
+      "sourceSha256": "ec2ce2fd9a144fe13410a8793e91da32c015d00576afb375f0b356aab4802a2c"
+    },
+    {
+      "file": "components/ui/spinner.tsx",
+      "sourceSha256": "013df5da405a3cdd4979e79b907e8b095772aec350d88191c8d966aa814264a9"
     },
     {
       "file": "components/ui/switch.tsx",
@@ -132,6 +144,10 @@
       "sourceSha256": "86179ead543c660f84a03e3e48067e9b84b7792a3a31da33a1a947f17d5a57a8"
     },
     {
+      "file": "domain/credit-pack.ts",
+      "sourceSha256": "815219716ea7e752b2fb325e355a63a0e133f995fc32c2625869f9fc3dacf15f"
+    },
+    {
       "file": "domain/instance-bot-errors.ts",
       "sourceSha256": "e5a50bce3dd5334fa04d61a80baa9c9bad88e0692d7af9d07c0de0c9509ec942"
     },
@@ -149,35 +165,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "ef2a970095d453c724a55f97ef33fab16bab6ddadd017a368985533de2aa9b4d"
+      "sourceSha256": "4e57559902c34a548e5f4c3ad2780195c5fb97fb8e24a9bff57679cbaedf1275"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "fcd789daaede5300db8402d0c7c445cb1f72523068101c670f29db63408ae237"
+      "sourceSha256": "e2c99ad9bf16817530ef66efa56539339e664f8fa1fe73add247cb41856f4698"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "ff4b0ae33a4925bd7f8b23d58eea3c508ac4a84905182c5575b8f3b0ca4065bb"
+      "sourceSha256": "2b82e21e5809f7a64a42f94eab875e333d843de68a3dbe7b42ab195f1b0029cd"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "6f55a2c611093e0068527c255544fe58706a16bfb502d84e946d74d5ceb0bf83"
+      "sourceSha256": "2c33507f2a46af0c05259e02434b53053be73de97345a5f94d5d6670e86501e2"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "06944bfd6d41fc5a48a78374d2405be56b853c4aec36bb65d3000ad137db7f73"
+      "sourceSha256": "85cce6662db39f0e94751d43d81b800d9b5311f2e35c21432e834cf145527775"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "9d64342d8ed079efd13c62f684c27435ba22551435bac41bc59e9b8bbf49cb43"
+      "sourceSha256": "7e35995c5b533e26296dd894679efabe91ee0dba4c92ac75a4e64b701de62e5b"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "37adcf7d219a4ea9c121cfc37ad2fa9cf08219147818c477fd1bf4a91b50730e"
+      "sourceSha256": "5aec09e41a163803d286a98b55eb34d833d4d36bcf7138edfb6edfd6a13a6660"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "45c73245ef8a4cb626a4001e930f0a789a5f7ce3f6b08b6516e5e922724e203e"
+      "sourceSha256": "7f714180926d81123b9153e5c11c5c2ff3bb29de3732ab8a7815fbc699c2991f"
     },
     {
       "file": "i18n/index.ts",
@@ -201,7 +217,7 @@
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "e3d7f91f102435d1306c2ec71428c5e16a6c3938b5a808bab29b88ca3a8334a0"
+      "sourceSha256": "c154dae2a964529ca0743bc6dd714e6093d0a7b51af1e39e7227d8c83125c2f6"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -209,7 +225,7 @@
     },
     {
       "file": "lib/debug-exec-request.ts",
-      "sourceSha256": "689934b98f440737942a3887c3d3a0e2559721bf007968ef95607fd35194c8ee"
+      "sourceSha256": "ff7ef8932f85db8dfaae9e5e40e6af50a86f81657d6401da5bf6f4f9eeebdcd3"
     },
     {
       "file": "lib/expert-package-storage.ts",
@@ -217,11 +233,11 @@
     },
     {
       "file": "lib/hermes-agent-command.ts",
-      "sourceSha256": "18108e7064467db603fafab412a1caccea1d9cba2a3bbfca1b7528ecb2aa10e6"
+      "sourceSha256": "0d6f44c0c95b80879a45f74c1f5b50382d7888003d3a31416b800faa40ab424f"
     },
     {
       "file": "lib/hermes-cron-client.ts",
-      "sourceSha256": "d53edade2aa71cf58fffadbe130fed306befa47e9cb7da4b786ae18bee625bd3"
+      "sourceSha256": "317dfb3e9ca03f660c38d678241a3ccdfd95c18f574299d8851af7862a61d2ee"
     },
     {
       "file": "lib/hermes-skills-client.ts",
@@ -241,7 +257,7 @@
     },
     {
       "file": "lib/skillhub-api.ts",
-      "sourceSha256": "b1304ffe425e37c6ab6743fe970f03623ca951a6971d4c634b3403f79c038080"
+      "sourceSha256": "90d64d33db5a9cddda2e924f75cf6ff5ae653123d3e8c3a14f8e56792c94a4c3"
     },
     {
       "file": "lib/tencent-pty-client.ts",
@@ -285,11 +301,11 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "4ebb9a7994ea76163eeeddda5c767a7b60e06642def53586fbdfdbef6d65fab7"
+      "sourceSha256": "ecd2218ff9b27d81f23dd13b893212246c9670f15dd57657e31256b6c3fa85ff"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
-      "sourceSha256": "cfe932e785d97aa0ff9381253c6ef53f268627888a0d4d5eda545a86f0c28789"
+      "sourceSha256": "459c8a399dc76d6df2c7694b8540f0c462b2180bcfde593a0b99ffe0a0db73b5"
     },
     {
       "file": "pages/marketing/agent-channel-views.tsx",
@@ -365,7 +381,7 @@
     },
     {
       "file": "pages/marketing/agent-config/standard-panel.css",
-      "sourceSha256": "218945ba59aa9e12db81ea808263a7b5f850dd0e4999ac8d8cf592f8cfbb1757"
+      "sourceSha256": "27a278f0ec8f4d8f0c146618181fa8a566f4020e526a43c8ff94b8d05f3a5b67"
     },
     {
       "file": "pages/marketing/agent-config/styles-index.css",
@@ -413,7 +429,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "c14d54f9e1e3b7cf36fab0884e4d375840be3d9dc2845bdbba6224c8df6eb4eb"
+      "sourceSha256": "103e90ee2e678b7b366d94cf68e2fa1aa1912181492c682c3b0db36ec86ad232"
     },
     {
       "file": "pages/marketing/agent-diagnostics-views.tsx",
@@ -421,7 +437,7 @@
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",
-      "sourceSha256": "0149a674adb5f42b689bd9cb7c5b46af39203f40459e539ccb1b3e00ad8a00d3"
+      "sourceSha256": "9e8eb6d00e77457c08e5d4a6a192dfe830a0650c39074077e744a3dada2f5671"
     },
     {
       "file": "pages/marketing/agent-experts-views.tsx",
@@ -437,7 +453,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/agent-model-config-panel.tsx",
-      "sourceSha256": "c8044c412cb5f336be5a002109f2789514df2d4279ef3bb7a8fafd30cc482a61"
+      "sourceSha256": "bdf183b4b23fa95730096f06c53d3ea7cc55d9171096bea3bb1e1d2e1b40e989"
     },
     {
       "file": "pages/marketing/agent-model-config/configured-provider-model-form-view.tsx",
@@ -449,7 +465,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "55c244fd14aa937f52aec3e742f7818f5def0cddf1548f03c6c6183ac091381b"
+      "sourceSha256": "611fe016ba4d65b326725bd99de6abaaa5514321cbce71efabc3fd1e2cb325e0"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
@@ -457,7 +473,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
-      "sourceSha256": "5965471734a9ac1a82b75840ad471e7e15c4034dc5e32dc44ba66b9124c213c1"
+      "sourceSha256": "1b7dc26d51f88093c9260034bfd09a46d2a36201c0b8d9bd9325a1523bf98b1d"
     },
     {
       "file": "pages/marketing/agent-model-config/model-connection-result-view.tsx",
@@ -485,11 +501,11 @@
     },
     {
       "file": "pages/marketing/agent-reset-config.ts",
-      "sourceSha256": "348653400c6e0ff223d1d2bfa6c47346fa66769f1c720c124845596ad348947a"
+      "sourceSha256": "6995478e79a819a414f8c06ef4115ff7e90e3b85b097ef0c3aae8edb5ca03f75"
     },
     {
       "file": "pages/marketing/agent-skills-panel.tsx",
-      "sourceSha256": "c9f5ce8b4d71095f32068821bf3b5c9bd38e47d43e2e9bfca6c5f62dbcdfac09"
+      "sourceSha256": "248aa4f5ffb4325d8ffa999a74b3e208a6f7609c84906df3035f1325ae6e2194"
     },
     {
       "file": "pages/marketing/automation-card-actions-view.tsx",
@@ -565,7 +581,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
-      "sourceSha256": "e1d8953ccab7379e905710e8db68f474060d611f80961b528eb715f8ea4b5f08"
+      "sourceSha256": "f1394ac310654bbbb47b15aab7f4e997ff3a96d750786bd6da6e580edf9ba219"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-categories.ts",
@@ -601,7 +617,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/skill-registries.ts",
-      "sourceSha256": "ed8ec297a21a28c5c0795e950efbb61acc64e756e3147f8e00d81e5cdc4404af"
+      "sourceSha256": "ab95d5c5c6f9a072e5246f0abee281e146fd113a5ae412dd47a874388dc6ec87"
     },
     {
       "file": "pages/marketing/skills-demo/skills-dialog-views.tsx",
@@ -617,15 +633,15 @@
     },
     {
       "file": "repositories/fake-repositories.ts",
-      "sourceSha256": "e914ff56304c6e88a0377f53b41571ff345c47c66b0252b5c7bad28762d6bdee"
+      "sourceSha256": "65c58be17a31290d0cdb65cb22ce0e9ed3a86e5d5800aef4a0d153c0668fe066"
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "200456777b19f2fe00ff3375b028016f2046b0ef6075db91f0a31972a7a63728"
+      "sourceSha256": "c508d7946355afe5d72cd7e1d7ca6a0f1c1c00b1338754752312d9aebb010500"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "a3dda5d73ef7cf394ab0420448641c22e32a46fd3b3665f24d0db82c4583974f"
+      "sourceSha256": "eca4a064127d471c062e757842897c6c6cab527c3915be25eaf0a5abc6468277"
     },
     {
       "file": "services/use-async-resource.ts",

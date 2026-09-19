@@ -738,9 +738,8 @@ describe("AgentModelConfigPanel", () => {
     });
     renderPanel(remote);
 
-    expect(screen.getByRole("heading", { name: "模型" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "模型" })).toBeInTheDocument();
     expect(screen.getByText("模型是智能体的“大脑”，在此可配置智能体使用的主模型与备用模型")).toBeInTheDocument();
-    expect(screen.getByText("正在读取模型配置")).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /Alpha API/ }));
     expect(await screen.findByText("model-primary")).toBeInTheDocument();
 

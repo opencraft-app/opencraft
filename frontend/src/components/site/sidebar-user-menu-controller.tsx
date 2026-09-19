@@ -5,7 +5,7 @@ import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { useT } from "@/i18n/t";
-import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { accountPassCanRenew, accountPassDisplayName } from "@/lib/account-pass-summary";
@@ -16,6 +16,7 @@ import { isGlobal } from "@/lib/region";
 import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { registerWindowCommand } from "@/lib/window-command-chain";
+import { emitConsoleShowEvent } from "@/lib/console-show-event";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { InternationalLanguageMenu } from "./language-switcher";
 import { SidebarUserMenu, type SidebarUserMenuProps } from "./sidebar-user-menu";
@@ -44,6 +45,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   useEffect(() => { setHostname(window.location.hostname); }, []);
   useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
     setHiddenEntriesRevealed(true);
+    emitConsoleShowEvent();
     const result = next(...args);
     return result === undefined ? true : result;
   }), []);
@@ -63,7 +65,6 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     ? { state: "ready", label: t("已使用积分"), ...summary.credits }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
   const entries: SidebarUserMenuProps["entries"][number][] = [
-    { id: "agents", kind: "agent", href: AGENTS_HOME_PATH, label: t("我的智能体伙伴") },
     { id: "account", kind: "account", href: "/account", label: t("账号管理") },
   ];
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });

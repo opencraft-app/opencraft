@@ -4,6 +4,16 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
+## 管理后台内部服务路由
+
+- Gateway Dashboard 的积分包管理页通过同源 `/admin/api/credit/*` 访问服务端 BFF；浏览器不直连 Credit，也不接触内部凭据。
+- BFF 将该路径映射到当前环境 Credit 的 `/internal/credit/admin/*`，先校验 Dashboard 管理登录态，再注入仅服务端可见的 `CREDIT_INTERNAL_TOKEN`。
+- `CREDIT_API_URL` 必须指向同环境 Credit Service：共享命名空间环境使用 `http://credit.credit.svc.cluster.local`，隔离 playground 使用该环境的完整 Service DNS；未部署 Credit 的环境显式留空并返回配置错误，不能跨环境回退。
+- `CREDIT_INTERNAL_TOKEN` 必须通过 `gateway-dashboard-runtime-secrets` 注入，并与目标 Credit 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 一致；不得放入 ConfigMap、前端构建变量或浏览器请求。
+- 认证用户页的影子账号视图同样只通过 `/admin/api/shadow/*` 访问 Dashboard BFF；BFF 将请求映射到同环境 Shadow 的 `/internal/shadow/admin/*`，并在校验 Dashboard 管理登录态后注入 `SHADOW_INTERNAL_TOKEN`。
+- `SHADOW_API_URL` 必须指向同环境 Shadow Service，标准集群内地址为 `http://shadow.shadow.svc.cluster.local`。未部署 Shadow 的环境保持未配置并明确返回配置错误，不允许跨环境读取影子账号。
+- `SHADOW_INTERNAL_TOKEN` 只通过 Shadow 与 Dashboard 各自的 runtime secret 注入，两端值必须一致；不得复用外部 callback token，也不得进入 ConfigMap、前端构建变量或浏览器请求。
+
 ## 稳定身份
 
 - 国内生产：`lightvela.com`
@@ -80,6 +90,10 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 - 实例内多 Bot 一期只在国内站开放。前端入口同时受国内区域判断和运行时功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，但新增 Bot 由服务端开关再次校验。
 - 国内 service-gateway 环境允许 `/v1/instances/{instance_id}/bots` 及其修复、唯一通道绑定子路由，全球 `sgprod` 不允许这些路径。配置策略测试必须分别断言国内放行和全球不暴露，不能用前端隐藏替代公共 API 边界。
+- Agent 侧栏运行中 Bot 的“重启”使用箭头与圆弧相连的单箭头图标，与双箭头刷新区分；失败 Bot 的“修复”仍使用双箭头图标。执行中显示加载图标，操作入口和确认流程继续按当前 Bot 状态判断。
+- 侧栏顶部重启和删除操作的提示框通过 `document.body` Portal 固定定位并约束在视口内，避免被侧栏滚动容器裁切；按钮的操作与禁用条件不因提示框而改变。
+- 国内站侧栏的额外 Bot 创建入口是重启图标左侧默认可见的“+”按钮，不再需要 `show()` 揭示；多个 Bot 时，删除图标后显示用于展开 Bot 切换列表的下拉箭头。原侧栏整行“新建 Bot”按钮不再显示，运行时多 Bot 开关和套餐额度限制仍保持不变；额度不足的原因通过可聚焦的 Portal 提示展示。其他隐藏工具仍由 `show()` 控制。
+- 到期徽标的可交互续费提示从徽标下方展开，不覆盖同一 Bot 顶部的创建、重启和删除图标；徽标与提示内的续费操作保持原有入口。
 
 ## 公共账号菜单边界
 
@@ -97,8 +111,11 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
   旧 `/auth/sign-in?ref=<code>` 保留兼容跳转，不再让被邀请用户进入旧版独立登录 UI。
   统一登录弹窗必须先校验返利码并完成 Auth HttpOnly Cookie 写入，成功前不得展示 OAuth、手机号或
   微信复制引导；失败仅提示错误并允许重试，不能静默丢弃邀请归因。账号切换不捕获邀请上下文。
-- 邀请返利首期只在 `beijing-sandbox` 配置。前端入口消费 CTL runtime flag，默认关闭；只有 Referral
-  API/worker、Pulsar、数据库、VelaGW 直接送积分能力和 Gateway 全部就绪后才显式开启。上海和新加坡不继承北京路由。
+- 邀请返利在 `beijing-sandbox` 与 `shprod` 分别配置独立 Campaign。前端入口消费 CTL runtime flag，默认关闭；
+  只有 Referral API/worker、Pulsar、数据库、VelaGW 直接送积分能力和 Gateway 全部就绪后才显式开启。
+  即使 runtime flag 已开启，账号页返利区域仍默认隐藏，只在当前页面执行 console `show()` 后揭示，
+  页面重新挂载后恢复隐藏；该 UI 灰度门禁不得阻断带 `?ref=` 的邀请注册与服务端归因。
+  上海使用自己的路由与 Token，新加坡保持关闭，任何环境都不继承北京 Campaign。
 - 每个后续环境在自己的 inventory 中声明集群、namespace、角色和 SSM 目标，并通过参数化 bootstrap
   交付独立 Token。跨环境复制北京 Token、根据 Region 猜 Secret 名或用 UI 隐藏代替 Gateway 边界均不允许。
 

@@ -35,6 +35,7 @@ type MemoryStore struct {
 	auditTasks                map[int64]*ContentAuditTask
 	emailBindTokens           map[string]memoryEmailBindToken
 	emailBindByToken          map[string]string
+	referralClaims            []referralClaimPayload
 }
 
 type memoryInviteRecord struct {
@@ -548,6 +549,19 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 	user := s.newUserWithInviteRequirementLocked(input.Name, input.Email, "", false, now)
 	s.oauthUsers[key] = user.ID
 	return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
+}
+
+func (s *MemoryStore) CreateReferralClaim(_ context.Context, userID string, referralCode string, channel string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	referralCode = strings.ToUpper(strings.TrimSpace(referralCode))
+	if strings.TrimSpace(userID) == "" || referralCode == "" {
+		return nil
+	}
+	s.referralClaims = append(s.referralClaims, referralClaimPayload{
+		UserID: userID, ReferralCode: referralCode, ClaimChannel: strings.TrimSpace(channel),
+	})
+	return nil
 }
 
 func (s *MemoryStore) ActivateInviteForCurrentUser(_ context.Context, token string, code string, now time.Time) (User, error) {
@@ -1121,6 +1135,11 @@ func (s *MemoryStore) DeleteAdminUser(_ context.Context, userID string, _ time.T
 }
 
 func (s *MemoryStore) ListAdminUsers(_ context.Context, search string, limit int) ([]AdminUser, error) {
+	items, _, err := s.ListAdminUsersPage(context.Background(), search, limit, 0)
+	return items, err
+}
+
+func (s *MemoryStore) ListAdminUsersPage(_ context.Context, search string, limit int, offset int) ([]AdminUser, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1147,12 +1166,23 @@ func (s *MemoryStore) ListAdminUsers(_ context.Context, search string, limit int
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {
+		if items[i].CreatedAt.Equal(items[j].CreatedAt) {
+			return items[i].ID < items[j].ID
+		}
 		return items[i].CreatedAt.After(items[j].CreatedAt)
 	})
-	if len(items) > limit {
-		items = items[:limit]
+	total := len(items)
+	if offset < 0 {
+		offset = 0
 	}
-	return items, nil
+	if offset >= total {
+		return []AdminUser{}, total, nil
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return items[offset:end], total, nil
 }
 
 func (s *MemoryStore) ListAdminSMSChallenges(_ context.Context, search string, limit int) ([]AdminSMSChallenge, error) {

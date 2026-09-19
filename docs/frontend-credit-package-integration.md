@@ -160,7 +160,7 @@ curl -X POST '<BASE_URL>/v1/credit/packages/order-url' \
   }'
 ```
 
-仍处于主站登录态时也可以直接调用，后端优先使用网关注入的用户身份，并且不会消费请求中携带的 `auth_code`：
+仍处于主站登录态且没有 `auth_code` 时也可以直接调用，后端使用网关注入的用户身份：
 
 ```bash
 curl -X POST '<BASE_URL>/v1/credit/packages/order-url' \
@@ -182,6 +182,9 @@ curl -X POST '<BASE_URL>/v1/credit/packages/order-url' \
 | `wx_open_id` | string | 否 | 微信内支付场景使用 |
 | `return_url` | string | 否 | 支付完成后的前端回跳地址 |
 | `cancel_url` | string | 否 | 取消支付后的前端回跳地址 |
+
+请求同时携带 `auth_code` 和登录态时，后端优先消费 `auth_code` 并使用票据绑定的下单用户。
+无效、过期或已消费的票据不会回退登录态，调用方应重新创建订单或在不携带票据时使用登录态链路。
 
 响应示例：
 

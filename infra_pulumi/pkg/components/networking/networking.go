@@ -11,6 +11,7 @@ import (
 	"github.com/tencentcloudstack/pulumi-tencentcloud/sdk/go/tencentcloud/subnet"
 	"github.com/tencentcloudstack/pulumi-tencentcloud/sdk/go/tencentcloud/vpc"
 
+	"github.com/skipzhang/mono/infra_pulumi/pkg/config"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/naming"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/networklayout"
 	"github.com/skipzhang/mono/infra_pulumi/pkg/pulumiutil"
@@ -44,21 +45,6 @@ func Ensure(ctx *stackctx.Context) error {
 		primaryEIPs[key] = res
 	}
 
-	secondaryEIPs := make(map[string]*eip.Instance, len(inv.SecondaryEIPs))
-	for _, key := range sortedKeys(inv.SecondaryEIPs) {
-		cfg := inv.SecondaryEIPs[key]
-		res, err := eip.NewInstance(ctx.Pulumi, naming.StableResource("networking", "eip", key), &eip.InstanceArgs{
-			Name:                    pulumi.StringPtr(key),
-			InternetChargeType:      pulumi.String("TRAFFIC_POSTPAID_BY_HOUR"),
-			InternetMaxBandwidthOut: pulumi.Int(cfg.Bandwidth),
-			Type:                    pulumi.StringPtr("EIP"),
-		}, ctx.OptionsWithImport(ctx.Plan.Networking.SecondaryEIPs[key], pulumi.IgnoreChanges([]string{"name"}))...)
-		if err != nil {
-			return err
-		}
-		secondaryEIPs[key] = res
-	}
-
 	primaryNAT, err := nat.NewGateway(ctx.Pulumi, naming.StableResource("networking", "nat", "primary"), &nat.GatewayArgs{
 		Name:                               pulumi.String(inv.PrimaryNATGatewayName),
 		VpcId:                              vpcResource.ID().ToStringOutput(),
@@ -70,15 +56,30 @@ func Ensure(ctx *stackctx.Context) error {
 		return err
 	}
 
-	_, err = nat.NewGateway(ctx.Pulumi, naming.StableResource("networking", "nat", "secondary"), &nat.GatewayArgs{
-		Name:                               pulumi.String(inv.SecondaryNATGatewayName),
-		VpcId:                              vpcResource.ID().ToStringOutput(),
-		NatProductVersion:                  pulumi.IntPtr(2),
-		AssignedEipSets:                    natPublicIPs(ctx, inv.SecondaryNATPublicIPs, secondaryEIPs),
-		StockPublicIpAddressesBandwidthOut: pulumi.IntPtr(200),
-	}, ctx.ImportOption(ctx.Plan.Networking.SecondaryNATID)...)
-	if err != nil {
-		return err
+	if inv.SecondaryNATEnabled() {
+		secondaryEIPs := make(map[string]*eip.Instance, len(inv.SecondaryEIPs))
+		for _, key := range sortedKeys(inv.SecondaryEIPs) {
+			cfg := inv.SecondaryEIPs[key]
+			res, err := eip.NewInstance(ctx.Pulumi, naming.StableResource("networking", "eip", key), &eip.InstanceArgs{
+				Name:                    pulumi.StringPtr(key),
+				InternetChargeType:      pulumi.String("TRAFFIC_POSTPAID_BY_HOUR"),
+				InternetMaxBandwidthOut: pulumi.Int(cfg.Bandwidth),
+				Type:                    pulumi.StringPtr("EIP"),
+			}, ctx.OptionsWithImport(ctx.Plan.Networking.SecondaryEIPs[key], pulumi.IgnoreChanges([]string{"name"}))...)
+			if err != nil {
+				return err
+			}
+			secondaryEIPs[key] = res
+		}
+		if _, err := nat.NewGateway(ctx.Pulumi, naming.StableResource("networking", "nat", "secondary"), &nat.GatewayArgs{
+			Name:                               pulumi.String(inv.SecondaryNATGatewayName),
+			VpcId:                              vpcResource.ID().ToStringOutput(),
+			NatProductVersion:                  pulumi.IntPtr(2),
+			AssignedEipSets:                    natPublicIPs(ctx, inv.SecondaryNATPublicIPs, secondaryEIPs),
+			StockPublicIpAddressesBandwidthOut: pulumi.IntPtr(200),
+		}, ctx.ImportOption(ctx.Plan.Networking.SecondaryNATID)...); err != nil {
+			return err
+		}
 	}
 
 	routeTable, err := route.NewTable(ctx.Pulumi, naming.StableResource("networking", "route-table"), &route.TableArgs{
@@ -123,7 +124,8 @@ func Ensure(ctx *stackctx.Context) error {
 			CidrBlock:        actualSubnetCIDR,
 			AvailabilityZone: pulumi.String(cfg.AvailabilityZone),
 			RouteTableId:     routeTable.ID().ToStringOutput(),
-		}, ctx.OptionsWithImport(ctx.Plan.Networking.Subnets[subnetKey], pulumi.IgnoreChanges([]string{"tags", "isMulticast"}))...)
+			IsMulticast:      pulumi.BoolPtr(false),
+		}, ctx.OptionsWithImport(ctx.Plan.Networking.Subnets[subnetKey], pulumi.IgnoreChanges(subnetIgnoreChanges(ctx.Inventory.Profile)))...)
 		if err != nil {
 			return err
 		}
@@ -180,6 +182,13 @@ func Ensure(ctx *stackctx.Context) error {
 	ctx.Pulumi.Export("networkSubnetCidrs", subnetCIDRs)
 	ctx.Pulumi.Export("networkPlannedSubnetCidrs", plannedSubnetCIDRs)
 	return nil
+}
+
+func subnetIgnoreChanges(profile string) []string {
+	if profile == config.ProfileSandboxNetwork {
+		return []string{"tags"}
+	}
+	return []string{"tags", "isMulticast"}
 }
 
 func sortedKeys[T any](m map[string]T) []string {

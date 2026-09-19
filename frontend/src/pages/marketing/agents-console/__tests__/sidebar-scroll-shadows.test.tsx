@@ -131,17 +131,24 @@ describe("desktop sidebar scroll shadows", () => {
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 
-  it("uses non-interactive unanimated pseudo-elements in the existing 12px desktop gaps", () => {
+  it("uses bounded edge shadows without adding desktop gaps", () => {
     const css = readFileSync(join(process.cwd(), "src/styles.css"), "utf8");
-    const top = css.match(/\.lv-agents-sidebar\[data-scroll-above="true"\] \.lv-agents-sidebar-profile::after\s*\{([^}]+)\}/)?.[1];
-    const bottom = css.match(/\.lv-agents-sidebar\[data-scroll-below="true"\] \.lv-agents-sidebar-footer::before\s*\{([^}]+)\}/)?.[1];
-    expect(top).toContain("top: 100%;"); expect(bottom).toContain("bottom: 100%;");
-    for (const selector of [".lv-agents-sidebar-profile::after", ".lv-agents-sidebar-footer::before"]) {
-      expect(css).toContain(selector);
-    }
-    const shared = css.match(/\.lv-agents-sidebar-footer::before\s*\{([^}]+)\}/)?.[1];
-    expect(shared).toContain("height: 12px;");
-    expect(shared).toContain("pointer-events: none;");
-    expect(`${shared}${top}${bottom}`).not.toMatch(/animation|transition/);
+    const profileStart = css.indexOf("  .lv-agents-sidebar-profile {\n    padding-left");
+    const footerStart = css.indexOf("  .lv-agents-sidebar-footer {\n    padding-left");
+    const profileBlock = css.slice(profileStart, css.indexOf("\n  }", profileStart));
+    const footerBlock = css.slice(footerStart, css.indexOf("\n  }", footerStart));
+    expect(profileBlock).toContain("border-bottom: 1px solid #e9ecf1;");
+    expect(profileBlock).not.toContain("margin-bottom");
+    expect(footerBlock).toContain("border-top: 1px solid #e9ecf1;");
+    expect(footerBlock).not.toContain("margin-top");
+    expect(css).toContain(".lv-agents-sidebar-footer .lv-agent-account-footer {\n    width: 100%;\n    margin-left: 0;\n    border-top: 0;");
+    expect(css).toContain("width: calc(100% + 28px);");
+    expect(css).toContain(".agents-ui .lv-agents-sidebar {\n    gap: 0;\n  }");
+    expect(css).toContain(".lv-agents-sidebar-profile::after,\n  .lv-agents-sidebar-footer::before {");
+    expect(css).toContain("right: 0;\n    left: 0;\n    height: 8px;\n    pointer-events: none;");
+    expect(css).toContain(".lv-agents-sidebar[data-scroll-above=\"true\"] .lv-agents-sidebar-profile::after {\n    content: \"\";\n    top: 100%;\n    box-shadow: inset 0 8px 8px -8px rgb(0 0 0 / 20%);");
+    expect(css).toContain(".lv-agents-sidebar[data-scroll-below=\"true\"] .lv-agents-sidebar-footer::before {\n    content: \"\";\n    bottom: 100%;\n    box-shadow: inset 0 -8px 8px -8px rgb(0 0 0 / 20%);");
+    expect(css).toContain(".lv-agents-sidebar-middle {\n    flex: 1 1 auto;\n    min-height: 0;\n    min-width: 0;\n    padding-top: 16px;");
+    expect(css).toContain("    padding-bottom: 16px;");
   });
 });

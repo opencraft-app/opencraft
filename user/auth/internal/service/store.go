@@ -46,6 +46,7 @@ type Store interface {
 	CompletePhoneChange(ctx context.Context, token string, newPhone string, code string, now time.Time) (User, error)
 	CreatePasswordSession(ctx context.Context, input PasswordSignUpInput, passwordHash []byte, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	CreateOAuthSession(ctx context.Context, input OAuthSignInInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
+	CreateReferralClaim(ctx context.Context, userID string, referralCode string, channel string, now time.Time) error
 	ActivateInviteForCurrentUser(ctx context.Context, token string, code string, now time.Time) (User, error)
 	BindOAuthSession(ctx context.Context, token string, input OAuthSignInInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	GetPasswordUser(ctx context.Context, email string) (User, []byte, error)
@@ -74,6 +75,7 @@ type Store interface {
 	DeleteCurrentUser(ctx context.Context, token string, now time.Time) error
 	DeleteAdminUser(ctx context.Context, userID string, now time.Time) error
 	ListAdminUsers(ctx context.Context, search string, limit int) ([]AdminUser, error)
+	ListAdminUsersPage(ctx context.Context, search string, limit int, offset int) ([]AdminUser, int, error)
 	ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error)
 	DeleteAdminSMSChallenge(ctx context.Context, phone string) error
 	ListAdminInvites(ctx context.Context, search string, state string, limit int) ([]AdminInvite, error)

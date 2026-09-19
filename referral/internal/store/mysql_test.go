@@ -114,3 +114,31 @@ func TestCreateRewardsUsesCampaignDelayAndIndependentAmounts(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateRewardsRequiresAttributionBeforeFirstPaid(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("pf\\.paid_at >= ra\\.registered_at").
+		WithArgs("campaign", "invitee").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectCommit()
+
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := createRewardsIfQualified(t.Context(), tx, "campaign", "invitee"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

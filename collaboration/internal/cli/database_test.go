@@ -207,6 +207,38 @@ func TestParseDatabaseConfig拒绝未知方言(t *testing.T) {
 	}
 }
 
+func TestParseDatabaseRecoveryConfig只允许显式MySQL和Apply开关(t *testing.T) {
+	dsnFile := filepath.Join(t.TempDir(), "mysql.dsn")
+	plan, apply, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "mysql",
+		"--database-dsn-file", dsnFile,
+	})
+	if err != nil || apply || plan.Driver != config.DatabaseDriverMySQL {
+		t.Fatalf("plan = (%#v, %v, %v)", plan, apply, err)
+	}
+	applyConfig, apply, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "mysql",
+		"--database-dsn-file", dsnFile,
+		"--apply",
+	})
+	if err != nil || !apply || applyConfig.Driver != config.DatabaseDriverMySQL {
+		t.Fatalf("apply = (%#v, %v, %v)", applyConfig, apply, err)
+	}
+	if _, _, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "tdsql",
+		"--database-dsn-file", dsnFile,
+	}); apperror.CodeOf(err) != "CONFIG_INVALID" {
+		t.Fatalf("tdsql recovery error = %v", err)
+	}
+	if _, _, err := parseDatabaseRecoveryConfig([]string{
+		"--database-driver", "mysql",
+		"--database-dsn-file", dsnFile,
+		"--apply", "--apply",
+	}); apperror.CodeOf(err) != "CONFIG_INVALID" {
+		t.Fatalf("duplicate apply error = %v", err)
+	}
+}
+
 func runDatabaseCLI(t *testing.T, action, path string) (string, string, int) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer

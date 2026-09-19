@@ -207,8 +207,11 @@ stacks:
     ctl_producer_role: lightvela-ctl-referral-producer
     referral_consumer_role: lightvela-referral-consumer
     user_auth_ssm_secret: mono-beijing-sandbox-lightclaw-auth-secrets
+    user_auth_ssm_version_id: SSM_Current
     ctl_ssm_secret: mono-beijing-sandbox-ctl-runtime-secrets
+    ctl_ssm_version_id: SSM_Current
     referral_ssm_secret: mono-beijing-sandbox-referral-runtime-secrets
+    referral_ssm_version_id: SSM_Current
 
   collaboration:
     enabled: true

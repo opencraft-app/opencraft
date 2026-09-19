@@ -11,6 +11,7 @@ import {
 import { isCN } from "@/lib/region";
 import { DeepSeekHarnessRuntimeView } from "./agent-deepseek-harness-runtime-view";
 export { DEEPSEEK_HARNESS_LOGO_URL } from "./agent-deepseek-harness-runtime-view";
+import { AgentPageLoadingState } from "@/components/agents";
 import { AgentDeepSeekHarnessModelCard } from "@/pages/marketing/agent-deepseek-harness-model-card";
 import { DeepSeekHarnessRepairDialog } from "@/pages/marketing/agent-deepseek-harness-repair-dialog";
 
@@ -390,6 +391,10 @@ export const AgentDeepSeekHarnessPanel = ({
       : isRuntimeDegraded
         ? t("运行异常")
         : t("已安装");
+
+  if (status === "loading" && !runtime) {
+    return <AgentPageLoadingState className="agents-ui" title={t("正在加载 DeepSeek Harness")} />;
+  }
 
   return (
     <DeepSeekHarnessRuntimeView

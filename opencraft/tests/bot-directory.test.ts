@@ -74,3 +74,21 @@ test("Bot directory drains opaque pages and retains entities while a Host is off
   assert.ok(directory.getSnapshot().entries.every((entry) => entry.availability === "unavailable"));
   directory.dispose();
 });
+
+test("a late Bot create result cannot repopulate a replaced Host", async () => {
+  let resolveCreate: ((value: unknown) => void) | undefined;
+  const original = { hostId: "remote", connectionGeneration: 1, subscribeStatus: () => () => {}, status: { state: "idle" } } as unknown as AppServerClient;
+  let current: AppServerClient | null = original;
+  const clients = { getAll: () => [], get: () => current, subscribeEvent: () => () => {} } as unknown as AppServerClientRegistryService;
+  const service = { subscribe: () => () => {}, waitForCapability: async () => capability,
+    createBot: () => new Promise(resolve => { resolveCreate = resolve; }),
+  } as unknown as AppServerBotConversationService;
+  const directory = new AppServerBotDirectory(service, clients);
+  const pending = directory.create("remote", { clientRequestId: "create", name: "New" });
+  await new Promise(resolve => setImmediate(resolve));
+  current = null;
+  resolveCreate!({ bot: bot("late"), replayed: false });
+  await assert.rejects(pending, /连接已改变/);
+  assert.deepEqual(directory.getSnapshot().entries, []);
+  directory.dispose();
+});

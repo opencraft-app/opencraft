@@ -8,6 +8,7 @@ import {
   asRouteScopeId,
   type RouteScopeId,
 } from "@opencraft/workbench-runtime";
+import { createBrowserRouter, createMemoryRouter } from "react-router";
 
 const HISTORY_NAMESPACE = "vela.application.route.v7";
 
@@ -32,9 +33,10 @@ interface WorkbenchHistoryState {
   readonly applicationReturnIndex: number | null;
 }
 
-export interface BrowserWorkbenchNavigationSnapshot {
+export interface ApplicationNavigationSnapshot<TLocation extends WorkbenchLocation | null = WorkbenchLocation> {
+  readonly url: string;
   readonly revision: number;
-  readonly location: WorkbenchLocation;
+  readonly location: TLocation;
   readonly action: "initial" | "push" | "replace" | "pop";
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
@@ -43,23 +45,25 @@ export interface BrowserWorkbenchNavigationSnapshot {
   readonly applicationRoute: ApplicationRoute;
 }
 
-export interface BrowserWorkbenchNavigation {
-  getSnapshot(): BrowserWorkbenchNavigationSnapshot;
+export interface ApplicationNavigation<TLocation extends WorkbenchLocation | null = WorkbenchLocation> {
+  getSnapshot(): ApplicationNavigationSnapshot<TLocation>;
   subscribe(listener: () => void): () => void;
-  push(location: WorkbenchLocation): void;
-  openSettings(slug?: string): void;
+  push(location: TLocation, options?: { readonly routeScopeId?: RouteScopeId }): void;
+  openSettings(slug?: string, mode?: "push" | "replace"): void;
+  openChat(): void;
   openExtensionView(viewId: string, resourceUri?: string | null): void;
   pushExtensionViewResource(viewId: string, resourceUri: string): void;
   replaceExtensionViewResource(viewId: string, resourceUri: string): void;
   closeSettings(): void;
   closeExtensionView(): void;
   replace(
-    location: WorkbenchLocation,
+    location: TLocation,
     options?: {
       readonly preserveView?: boolean;
       readonly routeScopeId?: RouteScopeId;
     },
   ): void;
+  restore(snapshot: ApplicationNavigationSnapshot<TLocation>): void;
   back(): void;
   forward(): void;
   go(delta: number): void;
@@ -175,373 +179,173 @@ export function workbenchLocationUrl(
   return `/?${parameters}`;
 }
 
-function createRouteScopeId(): RouteScopeId {
+export function createRouteScopeId(): RouteScopeId {
   const uuid =
     globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
   return asRouteScopeId(`web-route:${uuid}`);
 }
 
-function stateFor(
-  location: WorkbenchLocation,
-  index: number,
-  routeScopeId: RouteScopeId,
-  applicationRoute: ApplicationRoute,
-  applicationReturnIndex: number | null,
-): WorkbenchHistoryState {
-  return {
-    namespace: HISTORY_NAMESPACE,
-    index,
-    location: serializeWorkbenchLocation(location),
-    routeScopeId,
-    applicationRoute,
-    applicationReturnIndex,
-  };
+export interface ApplicationRouterOptions {
+  readonly mode?: "memory" | "browser";
+  readonly initialEntries?: string[];
+  readonly initialIndex?: number;
 }
 
-export function createBrowserWorkbenchNavigation(
-  initialLocation: WorkbenchLocation,
-): BrowserWorkbenchNavigation {
-  const listeners = new Set<() => void>();
-  const existingState = isWorkbenchHistoryState(window.history.state)
-    ? window.history.state
-    : null;
-  const urlLocation = parseWorkbenchLocationUrl(new URL(window.location.href));
-  const urlApplicationRoute = parseApplicationRouteUrl(
-    new URL(window.location.href),
-  );
-  let currentIndex = existingState?.index ?? 0;
-  let maximumIndex = currentIndex;
-  let location =
-    existingState === null
-      ? (urlLocation ?? initialLocation)
-      : (parseWorkbenchLocation(existingState.location) ??
-        urlLocation ??
-        initialLocation);
-  let applicationRoute =
-    urlApplicationRoute.kind !== "conversation"
-      ? urlApplicationRoute
-      : (existingState?.applicationRoute ?? CONVERSATION_ROUTE);
-  let applicationReturnIndex = existingState?.applicationReturnIndex ?? null;
-  let revision = 0;
-  let action: BrowserWorkbenchNavigationSnapshot["action"] = "initial";
-  let routeScopeId =
-    existingState === null
-      ? createRouteScopeId()
-      : asRouteScopeId(existingState.routeScopeId);
-  let disposed = false;
-  let snapshot: BrowserWorkbenchNavigationSnapshot;
-
-  const createSnapshot = (): BrowserWorkbenchNavigationSnapshot => ({
-    revision,
-    location,
-    action,
-    canGoBack: currentIndex > 0,
-    canGoForward: currentIndex < maximumIndex,
-    historyIndex: currentIndex,
+/** One application route authority. The platform only chooses the Router history adapter. */
+export function createApplicationNavigation<TLocation extends WorkbenchLocation | null>(
+  initialLocation: TLocation,
+  options: ApplicationRouterOptions = {},
+): ApplicationNavigation<TLocation> {
+  const browserWindow = typeof window === "undefined" ? undefined : window;
+  const mode = options.mode ?? ((globalThis as any).opencraftDesktop?.kind === "electron"
+    || !browserWindow?.document ? "memory" : "browser");
+  const initialUrl = browserWindow?.location.href ?? "http://opencraft.invalid/";
+  const url = new URL(initialUrl);
+  const legacy = isWorkbenchHistoryState(browserWindow?.history.state) ? browserWindow.history.state : null;
+  const firstLocation = initialLocation === null ? null : (parseWorkbenchLocationUrl(url)
+    ?? (legacy ? parseWorkbenchLocation(legacy.location) : null) ?? initialLocation);
+  const firstRoute = parseApplicationRouteUrl(url);
+  const bootUrl = url.pathname.replace(/\/$/, "") === "/environments" && firstRoute.kind === "settings"
+    ? new URL("/settings/" + encodeURIComponent(firstRoute.slug), initialUrl) : url;
+  const firstScope = legacy ? asRouteScopeId(legacy.routeScopeId) : createRouteScopeId();
+  const entry = (location: TLocation, routeScopeId: RouteScopeId) => ({
+    namespace: "opencraft.application-route.v8",
+    location: location === null ? null : serializeWorkbenchLocation(location),
     routeScopeId,
-    applicationRoute,
   });
-  snapshot = createSnapshot();
-
-  const publish = () => {
-    revision += 1;
-    snapshot = createSnapshot();
+  const routes = [{ id: "application", path: "*" }];
+  const memoryEntries = options.initialEntries?.map(path => {
+    const target = new URL(path, initialUrl);
+    return { pathname: target.pathname, search: target.search, hash: target.hash,
+      key: createRouteScopeId(), state: entry((initialLocation === null ? null
+        : parseWorkbenchLocationUrl(target) ?? firstLocation) as TLocation, createRouteScopeId()) };
+  });
+  const router = mode === "memory"
+    ? createMemoryRouter(routes, { initialEntries: memoryEntries ?? [{
+        pathname: bootUrl.pathname, search: bootUrl.search, hash: bootUrl.hash,
+        state: entry(firstLocation as TLocation, firstScope),
+      }], initialIndex: options.initialIndex })
+    : createBrowserRouter(routes, { window: browserWindow });
+  const listeners = new Set<() => void>();
+  const scopes = new Map<string, RouteScopeId>();
+  let disposed = false;
+  let revision = 0;
+  let keys = mode === "memory" && memoryEntries ? memoryEntries.map(entry => entry.key) : [router.state.location.key];
+  let index = Math.max(0, keys.indexOf(router.state.location.key));
+  const receiptKey = "opencraft.application-history-keys.v8";
+  // This is only a known-history projection for the buttons. Router still owns
+  // the actual entries/location. Desktop memory history is window-lifetime only.
+  if (mode === "browser") try {
+    const saved = JSON.parse(browserWindow!.sessionStorage.getItem(receiptKey) ?? "null");
+    if (Array.isArray(saved) && saved.every((key: unknown) => typeof key === "string")
+      && saved.includes(router.state.location.key)) {
+      keys = saved; index = keys.indexOf(router.state.location.key);
+    }
+  } catch { /* unavailable session storage does not prevent navigation */ }
+  let lastRouterLocation = router.state.location;
+  const read = (action: ApplicationNavigationSnapshot["action"]): ApplicationNavigationSnapshot<TLocation> => {
+    const current = router.state.location;
+    const routeUrl = new URL(current.pathname + current.search + current.hash, initialUrl);
+    const state = current.state;
+    const remembered = state?.namespace === "opencraft.application-route.v8"
+      ? parseWorkbenchLocation(state.location) : null;
+    let scope = state?.namespace === "opencraft.application-route.v8" && typeof state.routeScopeId === "string"
+      ? asRouteScopeId(state.routeScopeId) : scopes.get(current.key);
+    if (!scope) { scope = createRouteScopeId(); scopes.set(current.key, scope); }
+    return {
+      url: current.pathname + current.search + current.hash,
+      revision, action, historyIndex: index,
+      location: (initialLocation === null ? null : parseWorkbenchLocationUrl(routeUrl) ?? remembered ?? firstLocation) as TLocation,
+      applicationRoute: parseApplicationRouteUrl(routeUrl),
+      routeScopeId: scope,
+      canGoBack: index > 0, canGoForward: index < keys.length - 1,
+    };
+  };
+  let snapshot = read("initial");
+  const unsubscribe = router.subscribe(state => {
+    if (disposed || state.location === lastRouterLocation) return;
+    lastRouterLocation = state.location;
+    if (state.historyAction === "PUSH") {
+      keys = [...keys.slice(0, index + 1), state.location.key]; index++;
+    } else if (state.historyAction === "REPLACE") {
+      keys = keys.slice(); keys[index] = state.location.key;
+    } else {
+      const found = keys.indexOf(state.location.key);
+      if (found >= 0) index = found;
+      else { keys = [state.location.key]; index = 0; }
+    }
+    if (mode === "browser") try {
+      browserWindow!.sessionStorage.setItem(receiptKey, JSON.stringify(keys));
+    } catch { /* optional button-history receipt */ }
+    revision++;
+    snapshot = read(state.historyAction.toLowerCase() as ApplicationNavigationSnapshot["action"]);
     for (const listener of listeners) listener();
+  });
+  const pathFor = (location: TLocation, route: ApplicationRoute) =>
+    location === null && route.kind === "conversation" ? "/"
+      : route.kind === "settings" ? "/settings/" + encodeURIComponent(route.slug)
+      : route.kind === "extension-view" ? "/views/" + encodeURIComponent(route.viewId)
+        + (route.resourceUri === null ? "" : "?" + new URLSearchParams({ resource: route.resourceUri }))
+      : workbenchLocationUrl(location!);
+  const navigate = (location: TLocation, route: ApplicationRoute, replace: boolean, scope: RouteScopeId) => {
+    if (disposed) throw new Error("Workbench navigation is disposed");
+    // No loaders/actions are attached to the application router: route commits
+    // are synchronous. Conversation hydration is a separate cancellable consumer.
+    void router.navigate(pathFor(location, route), { replace, state: entry(location, scope) });
   };
-
-  if (existingState === null) {
-    window.history.replaceState(
-      stateFor(
-        location,
-        currentIndex,
-        routeScopeId,
-        applicationRoute,
-        applicationReturnIndex,
-      ),
-      "",
-      workbenchLocationUrl(location, applicationRoute),
-    );
-  }
-
-  const handlePopState = (event: PopStateEvent) => {
-    if (disposed) return;
-    const state = isWorkbenchHistoryState(event.state) ? event.state : null;
-    const nextLocation =
-      state === null
-        ? parseWorkbenchLocationUrl(new URL(window.location.href))
-        : parseWorkbenchLocation(state.location);
-    const nextApplicationRoute =
-      state?.applicationRoute ??
-      parseApplicationRouteUrl(new URL(window.location.href));
-    if (nextLocation === null && nextApplicationRoute.kind === "conversation")
-      return;
-    currentIndex = state?.index ?? 0;
-    routeScopeId =
-      state === null
-        ? createRouteScopeId()
-        : asRouteScopeId(state.routeScopeId);
-    maximumIndex = Math.max(maximumIndex, currentIndex);
-    if (nextLocation !== null) location = nextLocation;
-    applicationRoute = nextApplicationRoute;
-    applicationReturnIndex = state?.applicationReturnIndex ?? null;
-    action = "pop";
-    publish();
+  const sameLocation = (left: TLocation, right: TLocation) =>
+    left === null || right === null ? left === right : equalWorkbenchLocation(left, right);
+  const openChat = () => {
+    if (snapshot.applicationRoute.kind === "conversation") return;
+    navigate(snapshot.location, CONVERSATION_ROUTE, false, snapshot.routeScopeId);
   };
-  window.addEventListener("popstate", handlePopState);
-
+  const restore = (target: ApplicationNavigationSnapshot<TLocation>) =>
+    navigate(target.location, target.applicationRoute, true, target.routeScopeId);
+  if (mode === "browser" && (bootUrl.href !== url.href
+    || router.state.location.state?.namespace !== "opencraft.application-route.v8")) restore(snapshot);
   return {
     getSnapshot: () => snapshot,
-    subscribe(listener) {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+    subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    push(location, options = {}) {
+      if (snapshot.applicationRoute.kind === "conversation" && sameLocation(snapshot.location, location)
+        && (!options.routeScopeId || options.routeScopeId === snapshot.routeScopeId)) return;
+      navigate(location, CONVERSATION_ROUTE, false, options.routeScopeId ?? createRouteScopeId());
     },
-    push(nextLocation) {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      if (
-        applicationRoute.kind === "conversation" &&
-        equalWorkbenchLocation(location, nextLocation)
-      )
-        return;
-      currentIndex += 1;
-      maximumIndex = currentIndex;
-      location = nextLocation;
-      applicationRoute = CONVERSATION_ROUTE;
-      applicationReturnIndex = null;
-      routeScopeId = createRouteScopeId();
-      action = "push";
-      window.history.pushState(
-        stateFor(
-          location,
-          currentIndex,
-          routeScopeId,
-          applicationRoute,
-          applicationReturnIndex,
-        ),
-        "",
-        workbenchLocationUrl(location, applicationRoute),
-      );
-      publish();
+    replace(location, options = {}) {
+      const scope = options.routeScopeId ?? (options.preserveView || sameLocation(snapshot.location, location)
+        ? snapshot.routeScopeId : createRouteScopeId());
+      navigate(location, CONVERSATION_ROUTE, true, scope);
     },
-    openSettings(slug = "appearance") {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      if (
-        applicationRoute.kind === "settings" &&
-        applicationRoute.slug === slug
-      )
-        return;
-      if (applicationRoute.kind === "settings") {
-        applicationRoute = { kind: "settings", slug };
-        action = "replace";
-        window.history.replaceState(
-          stateFor(
-            location,
-            currentIndex,
-            routeScopeId,
-            applicationRoute,
-            applicationReturnIndex,
-          ),
-          "",
-          workbenchLocationUrl(location, applicationRoute),
-        );
-        publish();
-        return;
-      }
-      const enteringApplicationRoute = applicationRoute.kind === "conversation";
-      if (enteringApplicationRoute) {
-        applicationReturnIndex = currentIndex;
-        currentIndex += 1;
-        maximumIndex = currentIndex;
-      }
-      applicationRoute = { kind: "settings", slug };
-      action = enteringApplicationRoute ? "push" : "replace";
-      const state = stateFor(location, currentIndex, routeScopeId, applicationRoute, applicationReturnIndex);
-      if (enteringApplicationRoute) {
-        window.history.pushState(state, "", workbenchLocationUrl(location, applicationRoute));
-      } else {
-        window.history.replaceState(state, "", workbenchLocationUrl(location, applicationRoute));
-      }
-      publish();
+    openChat,
+    openSettings(slug = "appearance", mode = "push") {
+      if (snapshot.applicationRoute.kind === "settings" && snapshot.applicationRoute.slug === slug) return;
+      navigate(snapshot.location, { kind: "settings", slug }, mode === "replace", snapshot.routeScopeId);
     },
-    closeSettings() {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      if (applicationRoute.kind !== "settings") return;
-      if (
-        applicationReturnIndex !== null &&
-        applicationReturnIndex < currentIndex
-      ) {
-        window.history.go(applicationReturnIndex - currentIndex);
-        return;
-      }
-      applicationRoute = CONVERSATION_ROUTE;
-      applicationReturnIndex = null;
-      action = "replace";
-      window.history.replaceState(
-        stateFor(
-          location,
-          currentIndex,
-          routeScopeId,
-          applicationRoute,
-          applicationReturnIndex,
-        ),
-        "",
-        workbenchLocationUrl(location, applicationRoute),
-      );
-      publish();
-    },
+    closeSettings: openChat,
     openExtensionView(viewId, resourceUri = null) {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      const normalizedViewId = viewId.trim();
-      if (normalizedViewId.length === 0) throw new RangeError("Extension View ID must not be empty");
-      const normalizedResourceUri = resourceUri?.trim() || null;
-      if (
-        applicationRoute.kind === "extension-view" &&
-        applicationRoute.viewId === normalizedViewId &&
-        applicationRoute.resourceUri === normalizedResourceUri
-      ) return;
-      if (applicationRoute.kind === "conversation") {
-        applicationReturnIndex = currentIndex;
-        currentIndex += 1;
-        maximumIndex = currentIndex;
-        action = "push";
-      } else {
-        action = "replace";
-      }
-      applicationRoute = {
-        kind: "extension-view",
-        viewId: normalizedViewId,
-        resourceUri: normalizedResourceUri,
-      };
-      const state = stateFor(
-        location,
-        currentIndex,
-        routeScopeId,
-        applicationRoute,
-        applicationReturnIndex,
-      );
-      if (action === "push") {
-        window.history.pushState(state, "", workbenchLocationUrl(location, applicationRoute));
-      } else {
-        window.history.replaceState(state, "", workbenchLocationUrl(location, applicationRoute));
-      }
-      publish();
+      if (!viewId.trim()) throw new RangeError("Extension View ID must not be empty");
+      const route: ApplicationRoute = { kind: "extension-view", viewId: viewId.trim(), resourceUri: resourceUri?.trim() || null };
+      if (pathFor(snapshot.location, route) === pathFor(snapshot.location, snapshot.applicationRoute)) return;
+      navigate(snapshot.location, route, false, snapshot.routeScopeId);
     },
     pushExtensionViewResource(viewId, resourceUri) {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      const normalizedViewId = viewId.trim();
-      const normalizedResourceUri = resourceUri.trim();
-      if (normalizedViewId.length === 0)
-        throw new RangeError("Extension View ID must not be empty");
-      if (normalizedResourceUri.length === 0)
-        throw new RangeError("Extension View resource URI must not be empty");
-      if (
-        applicationRoute.kind !== "extension-view" ||
-        applicationRoute.viewId !== normalizedViewId
-      ) {
+      if (snapshot.applicationRoute.kind !== "extension-view" || snapshot.applicationRoute.viewId !== viewId)
         throw new Error("Only the active Extension View can push one of its resources");
-      }
-      if (applicationRoute.resourceUri === normalizedResourceUri) return;
-      currentIndex += 1;
-      maximumIndex = currentIndex;
-      applicationRoute = {
-        kind: "extension-view",
-        viewId: normalizedViewId,
-        resourceUri: normalizedResourceUri,
-      };
-      action = "push";
-      window.history.pushState(
-        stateFor(location, currentIndex, routeScopeId, applicationRoute, applicationReturnIndex),
-        "",
-        workbenchLocationUrl(location, applicationRoute),
-      );
-      publish();
+      if (!resourceUri.trim()) throw new RangeError("Extension View resource URI must not be empty");
+      if (snapshot.applicationRoute.resourceUri === resourceUri.trim()) return;
+      navigate(snapshot.location, { kind: "extension-view", viewId, resourceUri: resourceUri.trim() }, false, snapshot.routeScopeId);
     },
     replaceExtensionViewResource(viewId, resourceUri) {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      const normalizedViewId = viewId.trim();
-      const normalizedResourceUri = resourceUri.trim();
-      if (normalizedViewId.length === 0)
-        throw new RangeError("Extension View ID must not be empty");
-      if (normalizedResourceUri.length === 0)
-        throw new RangeError("Extension View resource URI must not be empty");
-      if (
-        applicationRoute.kind !== "extension-view" ||
-        applicationRoute.viewId !== normalizedViewId
-      ) return;
-      if (applicationRoute.resourceUri === normalizedResourceUri) return;
-      applicationRoute = {
-        kind: "extension-view",
-        viewId: normalizedViewId,
-        resourceUri: normalizedResourceUri,
-      };
-      action = "replace";
-      window.history.replaceState(
-        stateFor(location, currentIndex, routeScopeId, applicationRoute, applicationReturnIndex),
-        "",
-        workbenchLocationUrl(location, applicationRoute),
-      );
-      publish();
+      if (snapshot.applicationRoute.kind !== "extension-view" || snapshot.applicationRoute.viewId !== viewId) return;
+      if (!resourceUri.trim()) throw new RangeError("Extension View resource URI must not be empty");
+      if (snapshot.applicationRoute.resourceUri === resourceUri.trim()) return;
+      navigate(snapshot.location, { kind: "extension-view", viewId, resourceUri: resourceUri.trim() }, true, snapshot.routeScopeId);
     },
-    closeExtensionView() {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      if (applicationRoute.kind !== "extension-view") return;
-      if (
-        applicationReturnIndex !== null &&
-        applicationReturnIndex < currentIndex
-      ) {
-        window.history.go(applicationReturnIndex - currentIndex);
-        return;
-      }
-      applicationRoute = CONVERSATION_ROUTE;
-      applicationReturnIndex = null;
-      action = "replace";
-      window.history.replaceState(
-        stateFor(location, currentIndex, routeScopeId, applicationRoute, applicationReturnIndex),
-        "",
-        workbenchLocationUrl(location, applicationRoute),
-      );
-      publish();
-    },
-    replace(nextLocation, options = {}) {
-      if (disposed) throw new Error("Workbench navigation is disposed");
-      const changed = !equalWorkbenchLocation(location, nextLocation);
-      location = nextLocation;
-      applicationRoute = CONVERSATION_ROUTE;
-      applicationReturnIndex = null;
-      routeScopeId =
-        options.routeScopeId ??
-        (options.preserveView || !changed
-          ? routeScopeId
-          : createRouteScopeId());
-      action = "replace";
-      window.history.replaceState(
-        stateFor(
-          location,
-          currentIndex,
-          routeScopeId,
-          applicationRoute,
-          applicationReturnIndex,
-        ),
-        "",
-        workbenchLocationUrl(location, applicationRoute),
-      );
-      if (changed) publish();
-    },
-    back() {
-      if (!disposed && currentIndex > 0) window.history.back();
-    },
-    forward() {
-      if (!disposed && currentIndex < maximumIndex) window.history.forward();
-    },
-    go(delta) {
-      if (!disposed && Number.isInteger(delta) && delta !== 0)
-        window.history.go(delta);
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      window.removeEventListener("popstate", handlePopState);
-      listeners.clear();
-    },
+    closeExtensionView: openChat,
+    restore,
+    back() { if (!disposed && snapshot.canGoBack) void router.navigate(-1); },
+    forward() { if (!disposed && snapshot.canGoForward) void router.navigate(1); },
+    go(delta) { if (!disposed && Number.isInteger(delta) && delta !== 0) void router.navigate(delta); },
+    dispose() { disposed = true; unsubscribe(); router.dispose(); listeners.clear(); },
   };
 }

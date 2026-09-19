@@ -44,4 +44,11 @@ describe("Agents presentation contract", () => {
     expect(state).toHaveAttribute("aria-busy", kind === "loading" ? "true" : "false");
     expect(screen.getByRole("button", { name: "Next action" })).toBeEnabled();
   });
+
+  it("uses shared skeleton primitives for loading content", () => {
+    render(<AgentState kind="loading" title="Loading" description="Details" />);
+
+    const state = screen.getByRole("status");
+    expect(state.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
+  });
 });

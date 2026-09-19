@@ -10,10 +10,13 @@ resources:
 - statefulsetplus.yaml
 - statefulsetplus-testing.yaml
 - statefulsetplus-staging.yaml
+# devtunnel 只有 testing 一份，供个人 DevCloud 国内站回调联调。
+- devtunnel-testing.yaml
 generators:
 - ksops-secret-generator.yaml
 - ksops-callback-secret-generator.yaml
 - ksops-krsbx-callback-secret-generator.yaml
+- ksops-devtunnel-secret-generator.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
@@ -45,6 +48,11 @@ replacements:
   - select:
       kind: StatefulSetPlus
       name: lightvela-proxy-testing
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+  - select:
+      kind: StatefulSetPlus
+      name: devtunnel-testing
     fieldPaths:
     - spec.template.spec.containers.0.image
 - source:

@@ -1,0 +1,16 @@
+[submodule "ref/bb"]
+	path = ref/bb
+	url = https://github.com/get-bb/bb.git
+[submodule "ref/hermes-agent"]
+	path = ref/hermes-agent
+	url = https://github.com/NousResearch/hermes-agent.git
+[submodule "ref/grokbotani"]
+	path = ref/grokbotani
+	url = https://github.com/iduu/grokbot-animation.git
+[submodule "ref/hermes-desktop"]
+	path = ref/hermes-desktop
+	url = https://github.com/fathah/hermes-desktop.git
+[submodule "shadow/tencentcloud-sdk-go"]
+	path = shadow/tencentcloud-sdk-go
+	url = git@git.woa.com:tencentcloud-internal/tencentcloud-sdk-go.git
+	update = none

@@ -60,7 +60,19 @@ cp sandbox/secret-templates/local.env.example \
 - `POST /internal/sandboxes/{sandboxID}/modify`：使用 `X-API-Key` 受理在线升配，
   以 `idempotency_key` 创建或复用持久化 operation，返回 `202`。
 - `GET /internal/sandbox-modify-operations/{operationID}`：查询在线升配 operation 的
-  `running/completed/failed` 状态与已完成步骤，供 CTL 子任务轮询。
+  `running/completed/failed` 状态与已完成步骤，供 CTL 子任务轮询。计算规格步骤还返回
+  `source_instance_type`、冻结的 `instance_type_candidates`、当前候选游标和经云侧回读确认的
+  `applied_instance_type`；这些字段用于 worker 重启续跑和故障定位。
+
+同 SP 升配始终修改原 CVM，不从目标 Pool 取一台预创建机器。目标 Pool 的
+`instance_type` 只定义逻辑 CPU/内存规格；腾讯云 provider 会从
+`DescribeInstancesModification` 返回的同规格 `SELL` 机型中，按当前地域的机型族白名单和
+优先级依次尝试。默认地域策略通过 `TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION` 管理，当前
+北京、新山、首尔、上海和新加坡均为 `SA5 → S5 → SA2 → SA3 → S6`，未列入策略的机型族不会用于
+升配。只有明确的单候选配额、售罄或不支持错误才切换到下一机型，暂态错误不会推进游标；
+未配置地域会直接拒绝升配，避免跨地域误选。Provider 不支持候选发现时保留旧的固定目标
+行为，因此 `SANDBOX_POOL_INSTANCE_TYPE` / `TENCENT_INSTANCE_TYPE` 仍服务于新建资源和旧环境
+兼容，不作为腾讯云升配的唯一候选。
 
 所有接口返回 JSON，失败返回 `{"error": "..."}`
 

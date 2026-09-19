@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
-import { AgentConfirmDialog, AgentSection, AgentState, AgentTooltip, agentButtonClassName } from "@/components/agents";
+import { AgentConfirmDialog, AgentPageLoadingState, AgentSection, AgentState, AgentTooltip, Spinner, agentButtonClassName } from "@/components/agents";
 import { CommonSettingRowView } from "./agent-common-settings-views";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { toast } from "@/lib/toast";
-import { cn } from "@/lib/utils";
 import type { BotRepository } from "@/repositories/types";
 import {
   fetchHermesCommonSettingsSnapshot,
@@ -165,12 +164,12 @@ export function AgentCommonSettingsPanel({
     },
   ];
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (clearSnapshot = false) => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setLoading(true);
     setLoadError(null);
-    setSnapshot(null);
+    if (clearSnapshot) setSnapshot(null);
     setSavingKey(null);
     setEditingKey(null);
     setPendingSwitchChange(null);
@@ -196,7 +195,7 @@ export function AgentCommonSettingsPanel({
   }, [botId, botStatus, bots, loadSettings, profileId]);
 
   useEffect(() => {
-    void refresh();
+    void refresh(true);
     return () => {
       requestIdRef.current += 1;
       saveInFlightRef.current = null;
@@ -375,6 +374,10 @@ export function AgentCommonSettingsPanel({
     ? settingGroups.find((group) => group.id === pendingResetGroup)?.title
     : null;
 
+  if (!agentStopped && loading && !snapshot) {
+    return <AgentPageLoadingState className="agents-ui" title={t("正在加载高级设置")} />;
+  }
+
   return (
     <section className="agents-ui min-w-0">
       <AgentSectionHeader
@@ -388,14 +391,14 @@ export function AgentCommonSettingsPanel({
             disabled={loading || agentStopped}
             className="inline-flex h-8 w-8 p-0 shrink-0 cursor-pointer items-center justify-center text-black/35 transition hover:text-black/80 disabled:cursor-not-allowed disabled:text-black/20"
             aria-label={t("刷新")}
+            aria-busy={loading}
           >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            {loading ? <Spinner size="md" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
           </Button>
           </AgentTooltip>
         )}
       />
       {agentStopped && <AgentState kind="empty" className="mt-5" title={t("Agent 未运行，启动后才能查看和修改设置。")} />}
-      {!agentStopped && loading && <AgentState kind="loading" className="mt-5" title={t("正在加载设置…")} />}
       {!agentStopped && !loading && loadError && (
         <AgentState kind="error" className="mt-5" title={t("读取配置失败：{{detail}}", { detail: loadError })}
           action={<Button type="button" variant="outline" className={agentButtonClassName} onClick={() => void refresh()}><RefreshCw className="size-4" aria-hidden="true" />{t("重试")}</Button>} />
@@ -411,8 +414,9 @@ export function AgentCommonSettingsPanel({
                 title={group.title} description={group.description}
                 actions={<Button type="button" size="sm" variant="outline" className={agentButtonClassName}
                   disabled={allControlsDisabled || editingKey !== null || groupAlreadyDefault}
+                  aria-busy={resettingGroup === group.id}
                   onClick={() => setPendingResetGroup(group.id)}>
-                  {resettingGroup === group.id ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}{t("恢复默认")}
+                  {resettingGroup === group.id ? <Spinner size="sm" /> : null}{t("恢复默认")}
                 </Button>}>
                 <div className="mt-2">
                 {group.settings.map((setting) => {

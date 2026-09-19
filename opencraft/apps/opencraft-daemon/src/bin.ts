@@ -22,6 +22,7 @@ void startOpenCraftDaemon({
   endpoint: requiredArgument("--endpoint"),
   authToken: requiredEnvironment("OPENCRAFT_DAEMON_AUTH_TOKEN"),
   dshExecutable: requiredArgument("--dsh-executable"),
+  dshCapabilityPlugin: argument("--dsh-capability-plugin"),
   dataDirectory: requiredArgument("--data-directory"),
   modelStorageDirectory: argument("--model-storage-directory"),
 }).then((daemon) => {

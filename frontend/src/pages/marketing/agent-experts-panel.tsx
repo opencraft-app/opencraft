@@ -5,7 +5,6 @@ import {
   GraduationCap,
   HeartPulse,
   Landmark,
-  Loader2,
   Megaphone,
   MoonStar,
   PackageOpen,
@@ -19,12 +18,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ElementType } f
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { AgentState } from "@/components/agents";
+import { AgentPageLoadingState, AgentState } from "@/components/agents";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { ExpertPackageCardView, ExpertToolbarView, SkillPackageDetailLayout, SkillPackageModulesView } from "./agent-experts-views";
 import { useT } from "@/i18n/t";
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
-import { withHermesAgent } from "@/lib/hermes-agent-command";
+import { requireHermesSkillsProfile, withHermesAgent, withHermesSkillsProfile } from "@/lib/hermes-agent-command";
 import { shellQuote } from "@/lib/hermes-cron-client";
 import {
   buildInstalledSkillsListCommand,
@@ -1002,33 +1003,40 @@ async function fetchExperts(params: {
 export function ExpertsPanel({
   botId,
   profileId,
+  mode = "domestic",
   execDebugCommand: baseExecDebugCommand,
   execDebugCommandStream: baseExecDebugCommandStream,
   lang,
 }: {
   botId: string;
   profileId?: string;
+  mode?: "domestic" | "global";
   execDebugCommand: ExpertsExecDebugCommand;
   execDebugCommandStream?: SkillsExecDebugCommandStream;
   lang?: ExpertLanguage;
 }) {
   const t = useT();
+  const scopeSkillsCommand = useCallback((command: string) => {
+    if (!/(?:^|\s)acli skills\s/.test(command)) return command;
+    if (mode === "global") return profileId ? withHermesAgent(command, profileId) : command;
+    return withHermesSkillsProfile(command, profileId);
+  }, [mode, profileId]);
   const execDebugCommand = useCallback<ExpertsExecDebugCommand>((targetBotId, command, options) => (
     baseExecDebugCommand(
       targetBotId,
-      profileId && /(?:^|\s)acli skills\s/.test(command) ? withHermesAgent(command, profileId) : command,
+      scopeSkillsCommand(command),
       options,
     )
-  ), [baseExecDebugCommand, profileId]);
+  ), [baseExecDebugCommand, scopeSkillsCommand]);
   const execDebugCommandStream = useMemo<SkillsExecDebugCommandStream | undefined>(() => {
     if (!baseExecDebugCommandStream) return undefined;
     return (targetBotId, command, onChunk, options) => baseExecDebugCommandStream(
       targetBotId,
-      profileId && /(?:^|\s)acli skills\s/.test(command) ? withHermesAgent(command, profileId) : command,
+      scopeSkillsCommand(command),
       onChunk,
       options,
     );
-  }, [baseExecDebugCommandStream, profileId]);
+  }, [baseExecDebugCommandStream, scopeSkillsCommand]);
   const [activeFilter, setActiveFilter] = useState<ExpertFilterId>("all");
   const [keyword, setKeyword] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
@@ -1132,7 +1140,8 @@ export function ExpertsPanel({
 
     async function refreshInstalledSkills() {
       try {
-        const result = await execDebugCommand(botId, buildInstalledSkillsListCommand(profileId), {
+        const id = mode === "domestic" ? requireHermesSkillsProfile(profileId) : profileId;
+        const result = await execDebugCommand(botId, buildInstalledSkillsListCommand(id), {
           timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
         });
         if (!cancelled) {
@@ -1157,7 +1166,7 @@ export function ExpertsPanel({
     return () => {
       cancelled = true;
     };
-  }, [botId, execDebugCommand]);
+  }, [botId, execDebugCommand, mode, profileId]);
 
   useEffect(() => {
     if (!installedSkillsLoaded || installedSlugs.size === 0 || visibleCards.length === 0) return;
@@ -1322,6 +1331,10 @@ export function ExpertsPanel({
     );
   }
 
+  if (expertsLoading && visibleCards.length === 0) {
+    return <AgentPageLoadingState className="agents-ui" title={t("正在读取技能")} />;
+  }
+
   return (
     <div className="agents-ui min-w-0 space-y-6">
       <div className="space-y-4">
@@ -1341,9 +1354,7 @@ export function ExpertsPanel({
         />
       </div>
 
-      {expertsLoading && visibleCards.length === 0 ? (
-        <AgentState kind="loading" title={t("正在加载技能包")} />
-      ) : expertsError ? (
+      {expertsError ? (
         <AgentState kind="error" title={t("技能包加载失败")} description={getSkillHubErrorMessage(expertsError, t)}
           action={<Button onClick={reloadExperts} className="h-9 rounded-md shadow-none transition-none hover:translate-y-0"><RefreshCw className="size-4" aria-hidden="true" />{t("重试")}</Button>} />
       ) : visibleCards.length > 0 ? (
@@ -1560,6 +1571,7 @@ function InstallButton({
         void onInstall(pkg);
       }}
       disabled={Boolean(installingSlug) || isInstalled}
+      aria-busy={isInstalling}
       className={cn(
         "inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-semibold leading-none transition-colors",
         isInstalled
@@ -1570,7 +1582,7 @@ function InstallButton({
         className,
       )}
     >
-      {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+      {isInstalling ? <Spinner size="sm" /> : null}
       {label}
     </button>
   );
@@ -1713,7 +1725,7 @@ function SkillPackageDetailView({
       <div>
         {loading && !data ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Spinner size="md" />
             {t("正在加载技能包详情...")}
           </div>
         ) : error ? (
@@ -1722,7 +1734,7 @@ function SkillPackageDetailView({
           </div>
         ) : availableSkillSlugs.loading && candidateSkillSlugs.length > 0 ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <Spinner size="md" />
             {t("正在加载技能包详情...")}
           </div>
         ) : skillSlugs.length > 0 ? (
@@ -1748,9 +1760,9 @@ function SkillContent({ slug, lang }: { slug: string; lang?: ExpertLanguage }) {
   if (loading && !data) {
     return (
       <div className="space-y-4 py-4">
-        <div className="h-5 w-40 animate-pulse rounded bg-black/8" />
-        <div className="h-4 w-full animate-pulse rounded bg-black/5" />
-        <div className="h-4 w-4/5 animate-pulse rounded bg-black/5" />
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-4/5" />
       </div>
     );
   }

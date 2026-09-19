@@ -21,6 +21,7 @@ import { createConnectorsSettingsView } from "./connectors/connectors-settings-v
 import type { ConnectorRelease } from "./connectors/connector-client";
 import { connectorTestRelease } from "./connectors/test-release";
 import { AppServerLightVelaRuntimeCommandPort } from "./account/lightvela-runtime-command-port";
+import type { HermesProfileDirectory } from "./settings/hermes-skills-management-view";
 
 export interface LightVelaHermesExtensionOptions extends LightVelaAccountServiceOptions {
   /** Application-owned account shared with other first-party LightVela extensions. */
@@ -29,6 +30,7 @@ export interface LightVelaHermesExtensionOptions extends LightVelaAccountService
   readonly connectorRelease?: ConnectorRelease;
   readonly profileSkills?: AppServerProfileSkillsService;
   readonly appServerClients?: AppServerClientRegistryService;
+  readonly profileDirectory?: HermesProfileDirectory;
 }
 
 export function createLightVelaHermesExtension(
@@ -41,6 +43,7 @@ export function createLightVelaHermesExtension(
     sessionTokenCache = new IndexedDbHermesSessionTokenCache(),
     connectorRelease,
     profileSkills,
+    profileDirectory,
     appServerClients,
     ...accountOptions
   } = options;
@@ -54,20 +57,21 @@ export function createLightVelaHermesExtension(
   const EmptyView = createLightVelaHermesEmptyView(account);
   const ConnectorsView = createConnectorsSettingsView(account, connectorRelease ?? connectorTestRelease);
   const managementPages = [
-    { key: "channels", title: "Channels", icon: "message-circle", scope: "agent", order: 301 },
-    { key: "models", title: "Models", icon: "brain", scope: "agent", order: 302 },
-    { key: "skills", title: "Skills", icon: "sparkles", scope: "agent", order: 303 },
-    { key: "memory", title: "Soul & Memory", icon: "cpu", scope: "agent", order: 304 },
-    { key: "schedules", title: "Scheduled tasks", icon: "calendar", scope: "agent", order: 305 },
-    { key: "runtime", title: "Runtime & connection", icon: "server", scope: "host", order: 306 },
-    { key: "storage", title: "Cloud storage", icon: "cloud", scope: "host", order: 307 },
-    { key: "diagnostics", title: "Diagnostics", icon: "activity", scope: "host", order: 308 },
+    { key: "channels", title: "Channels", icon: "message-circle", scope: "agent", order: 301, layout: "document" },
+    { key: "models", title: "Models", icon: "brain", scope: "agent", order: 302, layout: "document" },
+    { key: "skills", title: "Skills", icon: "sparkles", scope: "agent", order: 303, layout: "edge-to-edge" },
+    { key: "memory", title: "Soul & Memory", icon: "cpu", scope: "agent", order: 304, layout: "document" },
+    { key: "schedules", title: "Scheduled Tasks", icon: "calendar", scope: "agent", order: 305, layout: "document" },
+    { key: "runtime", title: "Runtime & connection", icon: "server", scope: "host", order: 306, layout: "document" },
+    { key: "storage", title: "Cloud Storage", icon: "cloud", scope: "host", order: 307, layout: "document" },
+    { key: "diagnostics", title: "Diagnostics", icon: "activity", scope: "host", order: 308, layout: "document" },
   ] as const satisfies readonly {
     readonly key: LightVelaHermesManagementPage;
     readonly title: string;
     readonly icon: string;
     readonly scope: "agent" | "host";
     readonly order: number;
+    readonly layout: "document" | "edge-to-edge";
   }[];
   return {
     manifest: {
@@ -126,10 +130,12 @@ export function createLightVelaHermesExtension(
       for (const page of managementPages) {
         const viewId = `lightvela.hermes.${page.key}-view`;
         const viewType = `lightvela.hermes.${page.key}`;
+        const audience = page.key === "storage" ? "internal" : "public";
         api.views.register({
           id: viewId,
           title: page.title,
           viewType,
+          audience,
           icon: page.icon,
           platforms: ["web", "electron"],
         });
@@ -137,14 +143,21 @@ export function createLightVelaHermesExtension(
           id: `lightvela.hermes.${page.key}`,
           title: page.title,
           viewId,
+          audience,
           icon: page.icon,
           order: page.order,
+          layout: page.layout,
           platforms: ["web", "electron"],
           management: { familyId: "lightvela.hermes.manage", scope: page.scope },
         });
         api.internal.register("platformViewRenderer", {
           viewType,
-          Component: createLightVelaHermesManagementView(account, page.key, profileSkills),
+          Component: createLightVelaHermesManagementView(
+            account,
+            page.key,
+            profileSkills,
+            profileDirectory,
+          ),
         });
       }
       api.workbench.registerSurface({

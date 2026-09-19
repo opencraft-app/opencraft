@@ -18,6 +18,7 @@ import { isCN } from "@/lib/region";
 import { savePendingWorkbenchPrompt } from "./workbench-prompt-templates";
 import { WebsiteShareDialog } from "./agent-website-share-dialog";
 import { WebsiteSiteRowView } from "./website-site-row-view";
+import { AgentPageLoadingState } from "@/components/agents";
 import { AgentConfirmDialog } from "@/components/agents/agent-confirm-dialog";
 import { AgentState } from "@/components/agents/agent-state";
 
@@ -498,7 +499,7 @@ export const AgentWebsitePanel = () => {
 
   if (loading) {
     return (
-      <AgentState className="agents-ui" kind="loading" title={t("加载中...")} />
+      <AgentPageLoadingState className="agents-ui" title={t("正在加载工作台")} />
     );
   }
 

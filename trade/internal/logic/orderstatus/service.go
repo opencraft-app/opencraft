@@ -19,6 +19,7 @@
 //     - canceled / overdue / delete → MarkOrderCancelled 推进本地终态
 //     - finished → 不更新本地（callback 链路兜底）
 //     - 中态（init/paying/processing/delivered）→ 不更新本地
+//     - 空结果 → 保留本地中态，等待后续轮询（空结果不等于取消）
 package orderstatus
 
 import (
@@ -85,10 +86,10 @@ type QueryStatusInput struct {
 // handler 层 / ctl adapter 直接透传给前端，无二次状态映射。
 type QueryStatusResult struct {
 	DealName    string `json:"deal_name"`
-	OrderType   string `json:"order_type"`             // 'create' / 'renew'
-	LocalStatus string `json:"local_status"`           // trade_order.status 原值（运维 / 排障可见）
-	Status      string `json:"status"`                 // 统一 5 态：pending / paid / success / cancelled / failed
-	Source      string `json:"source"`                 // SourceLocal / SourceJifei
+	OrderType   string `json:"order_type"`   // 'create' / 'renew'
+	LocalStatus string `json:"local_status"` // trade_order.status 原值（运维 / 排障可见）
+	Status      string `json:"status"`       // 统一 5 态：pending / paid / success / cancelled / failed
+	Source      string `json:"source"`       // SourceLocal / SourceJifei
 	BigOrderID  string `json:"big_order_id,omitempty"`
 	UpstreamErr string `json:"upstream_err,omitempty"` // jifei 不可达时携带（B7 降级）
 }
@@ -189,13 +190,16 @@ func (s *Service) QueryStatus(ctx context.Context, in QueryStatusInput) (*QueryS
 		return out, nil
 	}
 
-	// jifei 返 totalNum=0 / deals 空：订单在 jifei 侧不存在（极端场景）— 按 cancelled 处理
-	// （与 overdue / delete 同一类终态，B2 触发本地同步）
+	// jifei 返 totalNum=0 / deals 空时不能据此判定订单已取消。
+	// 新创建的订单可能尚未进入 getDealsByKeyIndex 的可见窗口；真正取消、超时或删除
+	// 必须以 jifei 的显式终态 6 / 8 / 100 为准。这里按上游暂不可见降级到本地中态，
+	// 让前端后续轮询继续反查，避免把有效订单永久写成 cancelled。
 	if resp == nil || resp.TotalNum == 0 || len(resp.Deals) == 0 {
-		log.Printf("[orderstatus] jifei returned no deals, treat as cancelled: dealName=%s", in.DealName)
-		s.bestEffortMarkCancelled(ctx, in.DealName)
-		out.Status = StatusCancelled
-		out.Source = SourceJifei
+		const emptyDealsErr = "jifei returned no deals"
+		log.Printf("[orderstatus] %s, fallback to local: dealName=%s", emptyDealsErr, in.DealName)
+		out.Status = mapLocalStatus(order.Status)
+		out.Source = SourceLocal
+		out.UpstreamErr = emptyDealsErr
 		return out, nil
 	}
 

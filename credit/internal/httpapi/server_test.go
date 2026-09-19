@@ -21,6 +21,8 @@ type httpFakeStore struct {
 	packages      map[string]*store.CreditPackage
 	products      map[string]*store.CreditProduct
 	archiveReason map[string]string
+	adminPackages []store.AdminCreditPackage
+	adminFilter   store.AdminPackageFilter
 }
 
 func newHTTPFakeStore() *httpFakeStore {
@@ -42,6 +44,11 @@ func (s *httpFakeStore) GetProductByID(_ context.Context, productID string) (*st
 
 func (s *httpFakeStore) ListOnlineProducts(context.Context) ([]store.CreditProduct, error) {
 	return nil, nil
+}
+
+func (s *httpFakeStore) ListAdminPackages(_ context.Context, filter store.AdminPackageFilter) ([]store.AdminCreditPackage, int64, error) {
+	s.adminFilter = filter
+	return s.adminPackages, int64(len(s.adminPackages)), nil
 }
 
 func (s *httpFakeStore) ListPackageAppIDs(context.Context, []string, int, int) ([]int64, int64, error) {
@@ -107,6 +114,8 @@ type httpFakeTrade struct {
 	payURLDealName     string
 	payURLRequest      tradeclient.PayURLRequest
 	payURLError        error
+	refundPackageID    string
+	refundRequest      tradeclient.RefundRequest
 }
 
 func (f *httpFakeTrade) Inquiry(context.Context, tradeclient.InquiryRequest) (map[string]any, error) {
@@ -140,8 +149,10 @@ func (f *httpFakeTrade) GeneratePayURL(_ context.Context, dealName string, req t
 	}, nil
 }
 
-func (f *httpFakeTrade) RefundPackage(context.Context, string, tradeclient.RefundRequest) (map[string]any, error) {
-	return map[string]any{}, nil
+func (f *httpFakeTrade) RefundPackage(_ context.Context, packageID string, req tradeclient.RefundRequest) (map[string]any, error) {
+	f.refundPackageID = packageID
+	f.refundRequest = req
+	return map[string]any{"deal_name": "refund-deal-1"}, nil
 }
 
 type httpFakeAuthCodeStore struct {
@@ -388,19 +399,53 @@ func TestUserOrderAndPayUsesTrustedHeaderIdentity(t *testing.T) {
 	}
 }
 
-func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
+func TestUserOrderURLAuthCodePrecedesTrustedHeader(t *testing.T) {
+	st := newHTTPFakeStore()
+	trade := &httpFakeTrade{}
+	authCodes := &httpFakeAuthCodeStore{
+		consumeTicket: &authcode.Ticket{UserID: "usr-ticket-owner", DealName: "deal-credit-1"},
+	}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
+		"deal_name":"deal-credit-1",
+		"auth_code":"auth-code-1",
+		"external_user_id":"usr_spoofed",
+		"platform":"pc",
+		"wx_open_id":"openid-1",
+		"wx_app_id":"spoofed-app-id",
+		"return_url":"https://lightvela.com/credit?paid=1"
+	}`))
+	req.Header.Set("X-User-Id", "usr-scanner")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.payURLDealName != "deal-credit-1" || trade.payURLRequest.ExternalUserID != "usr-ticket-owner" {
+		t.Fatalf("deal_name=%q request=%+v", trade.payURLDealName, trade.payURLRequest)
+	}
+	if authCodes.consumeCalls != 1 || authCodes.consumeCode != "auth-code-1" {
+		t.Fatalf("consume calls=%d code=%q", authCodes.consumeCalls, authCodes.consumeCode)
+	}
+	if trade.payURLRequest.WxAppID != wechatPaymentAppID {
+		t.Fatalf("wx_app_id=%q", trade.payURLRequest.WxAppID)
+	}
+	if !strings.Contains(rec.Body.String(), `"pay_url":"https://buy.cloud.tencent.com/credit"`) ||
+		!strings.Contains(rec.Body.String(), `"need_charge":1`) {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestUserOrderURLUsesTrustedHeaderWithoutAuthCode(t *testing.T) {
 	st := newHTTPFakeStore()
 	trade := &httpFakeTrade{}
 	authCodes := &httpFakeAuthCodeStore{consumeError: errors.New("must not consume")}
 	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, authCodes, "")
 	req := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(`{
 		"deal_name":"deal-credit-1",
-		"auth_code":"unused-code",
-		"external_user_id":"usr_spoofed",
-		"platform":"pc",
-		"wx_open_id":"openid-1",
-		"wx_app_id":"spoofed-app-id",
-		"return_url":"https://lightvela.com/credit?paid=1"
+		"platform":"pc"
 	}`))
 	req.Header.Set("X-User-Id", "usr_trusted")
 	rec := httptest.NewRecorder()
@@ -410,18 +455,11 @@ func TestUserOrderURLUsesTrustedHeaderIdentity(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if trade.payURLDealName != "deal-credit-1" || trade.payURLRequest.ExternalUserID != "usr_trusted" {
-		t.Fatalf("deal_name=%q request=%+v", trade.payURLDealName, trade.payURLRequest)
+	if trade.payURLRequest.ExternalUserID != "usr_trusted" {
+		t.Fatalf("pay URL user = %q", trade.payURLRequest.ExternalUserID)
 	}
 	if authCodes.consumeCalls != 0 {
-		t.Fatalf("authenticated request consumed ticket %d times", authCodes.consumeCalls)
-	}
-	if trade.payURLRequest.WxAppID != wechatPaymentAppID {
-		t.Fatalf("wx_app_id=%q", trade.payURLRequest.WxAppID)
-	}
-	if !strings.Contains(rec.Body.String(), `"pay_url":"https://buy.cloud.tencent.com/credit"`) ||
-		!strings.Contains(rec.Body.String(), `"need_charge":1`) {
-		t.Fatalf("body=%s", rec.Body.String())
+		t.Fatalf("header fallback consumed ticket %d times", authCodes.consumeCalls)
 	}
 }
 
@@ -480,8 +518,10 @@ func TestUserOrderURLRejectsInvalidOrReplayedAuthCode(t *testing.T) {
 	if first.Code != http.StatusOK {
 		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
 	}
+	replayReq := httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(body))
+	replayReq.Header.Set("X-User-Id", "usr-scanner")
 	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, "/v1/credit/packages/order-url", strings.NewReader(body)))
+	router.ServeHTTP(second, replayReq)
 	if second.Code != http.StatusUnauthorized {
 		t.Fatalf("replay status=%d body=%s", second.Code, second.Body.String())
 	}
@@ -612,6 +652,112 @@ func TestUserRefundRejectsPackageOwnedByAnotherUser(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminPackagesRequiresInternalToken(t *testing.T) {
+	st := newHTTPFakeStore()
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, nil, "internal-token")
+	req := httptest.NewRequest(http.MethodGet, "/internal/credit/admin/packages", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminPackagesRejectsMissingServerTokenConfiguration(t *testing.T) {
+	st := newHTTPFakeStore()
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, nil, "")
+	req := httptest.NewRequest(http.MethodGet, "/internal/credit/admin/packages", nil)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminPackagesReturnsFilteredLivePackages(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.adminPackages = []store.AdminCreditPackage{{
+		CreditPackage: store.CreditPackage{
+			PackageID: "cpkg-test001", UserID: "usr_1", ProductID: "credit_1000",
+			Status: store.PackageStatusActive,
+		},
+		ProductName: "1000积分",
+		CreditTotal: store.CreditAmount(1000 * 10000),
+		CreditLeft:  store.CreditAmount(750 * 10000),
+	}}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, &httpFakeTrade{}, nil, "internal-token")
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/internal/credit/admin/packages?user_id=usr_1&package_id=cpkg-test001&product_id=credit_1000&status=active&page=2&page_size=50",
+		nil,
+	)
+	req.Header.Set("Authorization", "Bearer internal-token")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if st.adminFilter.UserID != "usr_1" || st.adminFilter.PackageID != "cpkg-test001" ||
+		st.adminFilter.ProductID != "credit_1000" || st.adminFilter.Status != "active" ||
+		st.adminFilter.Page != 2 || st.adminFilter.PageSize != 50 {
+		t.Fatalf("filter=%+v", st.adminFilter)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"product_name":"1000积分"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"credit_left":750.0000`)) {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestAdminRefundOnlyAllowsActivePackages(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.packages["cpkg-terminating"] = &store.CreditPackage{
+		PackageID: "cpkg-terminating", UserID: "usr_1", Status: store.PackageStatusTerminating,
+	}
+	trade := &httpFakeTrade{}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, nil, "internal-token")
+	req := httptest.NewRequest(http.MethodPost, "/internal/credit/admin/packages/cpkg-terminating/refund", nil)
+	req.Header.Set("Authorization", "Bearer internal-token")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.refundPackageID != "" {
+		t.Fatalf("refund unexpectedly called for %q", trade.refundPackageID)
+	}
+}
+
+func TestAdminRefundUsesExistingTradeRefundFlow(t *testing.T) {
+	st := newHTTPFakeStore()
+	st.packages["cpkg-active"] = &store.CreditPackage{
+		PackageID: "cpkg-active", UserID: "usr_1", ProductID: "credit_1000",
+		Uin: "330500000003", AppID: 1447537330, Status: store.PackageStatusActive,
+	}
+	trade := &httpFakeTrade{}
+	router := NewRouter(service.New(st, httpFakeLLMGateway{}, service.Options{}), st, trade, nil, "internal-token")
+	req := httptest.NewRequest(http.MethodPost, "/internal/credit/admin/packages/cpkg-active/refund", nil)
+	req.Header.Set("Authorization", "Bearer internal-token")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trade.refundPackageID != "cpkg-active" || trade.refundRequest.UIN != "330500000003" ||
+		trade.refundRequest.AppID != 1447537330 || trade.refundRequest.ProductID != "credit_1000" {
+		t.Fatalf("package=%q request=%+v", trade.refundPackageID, trade.refundRequest)
 	}
 }
 

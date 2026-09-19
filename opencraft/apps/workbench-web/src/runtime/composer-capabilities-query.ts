@@ -1,11 +1,9 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
-import type { AgentCatalogEntry } from "@opencraft/appserver-protocol";
 import type { CatalogModel as Model } from "@opencraft/appserver-protocol";
 import { reasoningCapability } from "@opencraft/composer-core";
 
 interface Page<T> { readonly data: readonly T[]; readonly nextCursor?: string | null }
 export interface CapabilitiesReader {
-  listAgents(params: { cursor: string | null; limit: number }): Promise<Page<AgentCatalogEntry>>;
   listModels(params: { cursor: string | null; limit: number; includeHidden: boolean; threadId?: string }): Promise<Page<Model>>;
 }
 export const composerCapabilitiesKey = (hostId: string) => ["appserver", hostId, "composer-capabilities"] as const;
@@ -27,22 +25,22 @@ async function readPages<T>(read: (cursor: string | null) => Promise<Page<T>>, s
   return values;
 }
 
-/** Publish both complete projections together; this is not a server transaction. */
+/** Publish the complete paginated model projection as one query snapshot. */
 export function composerCapabilitiesOptions(hostId: string, threadId: string | null, reader: CapabilitiesReader) {
   return queryOptions({
     queryKey: [...composerCapabilitiesKey(hostId), { threadId }],
     staleTime: 60_000,
     retry: false,
     queryFn: async ({ signal }) => {
-      const [agents, models] = await Promise.all([
-        readPages(cursor => reader.listAgents({ cursor, limit: 100 }), signal),
-        readPages(cursor => reader.listModels({ cursor, limit: 100, includeHidden: false, ...(threadId === null ? {} : { threadId }) }), signal),
-      ]);
+      const models = await readPages(
+        cursor => reader.listModels({ cursor, limit: 100, includeHidden: false, ...(threadId === null ? {} : { threadId }) }),
+        signal,
+      );
       // Existing RPC ports cannot abort transport I/O, but cancelled results
       // must never publish, even if the transport resolves much later.
       signal.throwIfAborted();
       for (const model of models) reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort);
-      return { agents, models };
+      return { models };
     },
   });
 }

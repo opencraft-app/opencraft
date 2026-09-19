@@ -39,6 +39,8 @@ type Handler struct {
 	avatarStore       AvatarStore
 	tatRegisterIssuer tat.RegisterCodeIssuer
 	deviceBindTokens  *deviceBindTokenCodec
+	developerRoutes   DeveloperRouteClient
+	allowExplicitIP   bool
 	publicBaseURL     string
 	frontendBaseURL   string
 	federation        *FederationConfig
@@ -144,7 +146,12 @@ func (h *Handler) ForgotPassword(ctx context.Context, request api.ForgotPassword
 }
 
 func (h *Handler) SignInWithPassword(ctx context.Context, request api.SignInWithPasswordRequestObject) (api.SignInWithPasswordResponseObject, error) {
-	session, err := h.service.SignInWithPassword(ctx, request.Body.Email, request.Body.Password)
+	session, err := h.service.SignInWithPasswordAndReferral(
+		ctx,
+		request.Body.Email,
+		request.Body.Password,
+		h.referralCodeFromContext(ctx),
+	)
 	if err != nil {
 		body, status := toErrorBody(err)
 		if status >= http.StatusInternalServerError {

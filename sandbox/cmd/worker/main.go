@@ -569,6 +569,16 @@ func advanceSingleSKURollout(ctx context.Context, svc *service.Service, sku core
 	if err != nil {
 		return false, newSKURolloutError(sku.ID, "", "list_pools_for_sku", err)
 	}
+	multiRegion, err := poolsSpanMultipleRegions(pools)
+	if err != nil {
+		return false, newSKURolloutError(sku.ID, "", "resolve_pool_regions", err)
+	}
+	if multiRegion {
+		// A cloud image ID is regional. CI resolves the regional image set and
+		// writes the concrete image to each Pool. Never replace those Pool-owned
+		// image IDs with the SKU's single-region compatibility field.
+		return false, nil
+	}
 	if desired == "" {
 		return false, nil
 	}
@@ -745,6 +755,21 @@ func advanceSingleSKURollout(ctx context.Context, svc *service.Service, sku core
 	return true, nil
 }
 
+func poolsSpanMultipleRegions(pools []core.Pool) (bool, error) {
+	regions := make(map[string]struct{}, 2)
+	for _, pool := range pools {
+		region, err := core.RegionFromZone(pool.Zone)
+		if err != nil {
+			return false, fmt.Errorf("derive region for pool %s: %w", pool.ID, err)
+		}
+		regions[region] = struct{}{}
+		if len(regions) > 1 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func shouldEmitSKURolloutStateEvent(previousState core.SKURolloutState, previousReason string, previousCursor string, nextState core.SKURolloutState, nextReason string, nextCursor string) bool {
 	return previousState != nextState ||
 		strings.TrimSpace(previousReason) != strings.TrimSpace(nextReason) ||
@@ -800,7 +825,7 @@ func doRefill(ctx context.Context, svc *service.Service, cp provider.CloudProvid
 				} else {
 					emitWorkerEvent(ctx, "sandbox.capacity_shrink.triggered", "当前 CLEAN 库存高于目标水位，worker 将开始回收多余实例。", attribute.String("pool_id", pool.ID), attribute.Int("shard_target_capacity", desired), attribute.Int("clean_inventory", clean), attribute.Int("excess_count", excess))
 				}
-				if err := shrinkClean(ctx, svc, cp, pool.ID, excess, concurrency); err != nil {
+				if err := shrinkClean(ctx, svc, cp, pool, excess, concurrency); err != nil {
 					return err
 				}
 				continue
@@ -909,11 +934,11 @@ func desiredCapacityTargetForShard(desiredTotal, shardTotal, shardIndex int) int
 	return target
 }
 
-func shrinkClean(ctx context.Context, svc *service.Service, cp provider.CloudProvider, poolID string, excess int, concurrency int) error {
+func shrinkClean(ctx context.Context, svc *service.Service, cp provider.CloudProvider, pool core.Pool, excess int, concurrency int) error {
 	if excess <= 0 {
 		return nil
 	}
-	insts, err := svc.ListInstancesByStates(ctx, poolID, []core.InstanceState{core.StateClean}, excess)
+	insts, err := svc.ListInstancesByStates(ctx, pool.ID, []core.InstanceState{core.StateClean}, excess)
 	if err != nil {
 		return err
 	}
@@ -935,22 +960,27 @@ func shrinkClean(ctx context.Context, svc *service.Service, cp provider.CloudPro
 			defer func() { <-sem }()
 
 			if _, err := svc.AdvanceState(ctx, inst.ID, core.StateDeleting); err != nil {
-				emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_mark_failed", "worker 尝试把多余的 CLEAN 实例标记为删除中失败，本次缩容不会继续处理这个实例。", attribute.String("pool_id", poolID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
+				emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_mark_failed", "worker 尝试把多余的 CLEAN 实例标记为删除中失败，本次缩容不会继续处理这个实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
 				return
 			}
 			if inst.CloudID != "" {
-				if err := cp.TerminateInstance(ctx, inst.CloudID); err != nil {
-					emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_terminate_failed", "worker 在缩容过程中终止云实例失败，该实例会保留在 DELETING 等待后续重试。", attribute.String("pool_id", poolID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
+				instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+				if err != nil {
+					emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_region_failed", "worker 无法从 pool 推导实例地域，本次缩容不会继续处理这个实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
+					return
+				}
+				if err := cp.TerminateInstance(ctx, instance); err != nil {
+					emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_terminate_failed", "worker 在缩容过程中终止云实例失败，该实例会保留在 DELETING 等待后续重试。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 					// Keep in DELETING for retry by cleanup loop.
 					return
 				}
 			}
 			if _, err := svc.AdvanceState(ctx, inst.ID, core.StateDeleted); err != nil {
-				emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_finalize_failed", "worker 在缩容过程中未能把实例推进到 DELETED 状态。", attribute.String("pool_id", poolID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
+				emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_finalize_failed", "worker 在缩容过程中未能把实例推进到 DELETED 状态。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
 				return
 			}
 			if err := svc.DeleteInstance(ctx, inst.ID); err != nil {
-				emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_record_delete_failed", "worker 已完成实例删除，但清理本地实例记录失败。", attribute.String("pool_id", poolID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
+				emitWorkerEvent(ctx, "sandbox.capacity_shrink.instance_record_delete_failed", "worker 已完成实例删除，但清理本地实例记录失败。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
 				return
 			}
 			atomic.AddInt32(&removed, 1)
@@ -958,10 +988,10 @@ func shrinkClean(ctx context.Context, svc *service.Service, cp provider.CloudPro
 	}
 	wg.Wait()
 	if removed > 0 {
-		emitWorkerEvent(ctx, "sandbox.capacity_shrink.completed", "worker 已完成本轮多余 CLEAN 实例回收。", attribute.String("pool_id", poolID), attribute.Int("requested_removal_count", excess), attribute.Int("removed_count", int(removed)))
+		emitWorkerEvent(ctx, "sandbox.capacity_shrink.completed", "worker 已完成本轮多余 CLEAN 实例回收。", attribute.String("pool_id", pool.ID), attribute.Int("requested_removal_count", excess), attribute.Int("removed_count", int(removed)))
 	}
 	if int(removed) < excess {
-		emitWorkerEvent(ctx, "sandbox.capacity_shrink.partial", "worker 本轮计划缩容的实例数量未完全回收，仍有部分实例留待后续处理。", attribute.String("pool_id", poolID), attribute.Int("requested_removal_count", excess), attribute.Int("removed_count", int(removed)))
+		emitWorkerEvent(ctx, "sandbox.capacity_shrink.partial", "worker 本轮计划缩容的实例数量未完全回收，仍有部分实例留待后续处理。", attribute.String("pool_id", pool.ID), attribute.Int("requested_removal_count", excess), attribute.Int("removed_count", int(removed)))
 	}
 	return nil
 }
@@ -1012,7 +1042,15 @@ func createBatch(ctx context.Context, svc *service.Service, cp provider.CloudPro
 				}
 				return
 			}
-			if err := verifyCreatedInstance(ctx, cp, pool.ID, inst.ID, cid, inst.CreatedAt); err != nil {
+			instance, err := provider.CloudInstanceForPool(pool, cid)
+			if err != nil {
+				if _, ferr := svc.FinalizeCreating(ctx, inst.ID, core.StateFailed, addr, cid); ferr != nil {
+					_ = markFailedFallback(ctx, svc, inst.ID)
+				}
+				emitWorkerEvent(ctx, "sandbox.refill.instance_region_failed", "worker 无法从 pool 推导新实例地域，该实例不会进入 CLEAN。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", cid), attribute.String("error", err.Error()))
+				return
+			}
+			if err := verifyCreatedInstance(ctx, cp, pool.ID, inst.ID, instance, inst.CreatedAt); err != nil {
 				if metrics != nil {
 					metrics.ObserveVerifyFailure(pool.ID, "create")
 				}
@@ -1022,14 +1060,14 @@ func createBatch(ctx context.Context, svc *service.Service, cp provider.CloudPro
 					_ = markFailedFallback(ctx, svc, inst.ID)
 				}
 				if cid != "" {
-					_ = cp.TerminateInstance(ctx, cid)
+					_ = cp.TerminateInstance(ctx, instance)
 				}
 				return
 			}
 			if _, ferr := svc.FinalizeCreating(ctx, inst.ID, core.StateClean, addr, cid); ferr != nil {
 				emitWorkerEvent(ctx, "sandbox.refill.instance_finalize_failed", "worker 已成功创建并校验实例，但推进到 CLEAN 状态失败。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", ferr.Error()))
 				if cid != "" {
-					_ = cp.TerminateInstance(ctx, cid)
+					_ = cp.TerminateInstance(ctx, instance)
 				}
 				_ = markFailedFallback(ctx, svc, inst.ID)
 				return
@@ -1052,17 +1090,17 @@ func createBatch(ctx context.Context, svc *service.Service, cp provider.CloudPro
 	return result, nil
 }
 
-func verifyCreatedInstance(ctx context.Context, cp provider.CloudProvider, poolID, instanceID, cloudID string, notBefore time.Time) error {
+func verifyCreatedInstance(ctx context.Context, cp provider.CloudProvider, poolID, instanceID string, instance provider.CloudInstanceRef, notBefore time.Time) error {
 	if createVerifyRetries <= 1 {
-		return provider.VerifyInstanceDelivery(ctx, cp, cloudID, notBefore)
+		return provider.VerifyInstanceDelivery(ctx, cp, instance, notBefore)
 	}
 
 	var lastErr error
 	for attempt := 1; attempt <= createVerifyRetries; attempt++ {
-		lastErr = provider.VerifyInstanceDelivery(ctx, cp, cloudID, notBefore)
+		lastErr = provider.VerifyInstanceDelivery(ctx, cp, instance, notBefore)
 		if lastErr == nil {
 			if attempt > 1 {
-				emitWorkerEvent(ctx, "sandbox.refill.instance_verify_recovered", "worker 对新实例的 TAT 交付校验在重试后恢复成功，本次补货可以继续推进。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("cloud_id", cloudID), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries))
+				emitWorkerEvent(ctx, "sandbox.refill.instance_verify_recovered", "worker 对新实例的 TAT 交付校验在重试后恢复成功，本次补货可以继续推进。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("cloud_id", instance.CloudID), attribute.String("region", instance.Region), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries))
 			}
 			return nil
 		}
@@ -1071,7 +1109,7 @@ func verifyCreatedInstance(ctx context.Context, cp provider.CloudProvider, poolI
 		}
 
 		wait := nextCreateVerifyBackoff(attempt)
-		emitWorkerEvent(ctx, "sandbox.refill.instance_verify_retry", "worker 对新实例的 TAT 交付校验失败，准备按退避策略重试。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("cloud_id", cloudID), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries), attribute.String("wait", wait.String()), attribute.String("error", lastErr.Error()))
+		emitWorkerEvent(ctx, "sandbox.refill.instance_verify_retry", "worker 对新实例的 TAT 交付校验失败，准备按退避策略重试。", attribute.String("pool_id", poolID), attribute.String("instance_id", instanceID), attribute.String("cloud_id", instance.CloudID), attribute.String("region", instance.Region), attribute.Int("attempt", attempt), attribute.Int("max_attempts", createVerifyRetries), attribute.String("wait", wait.String()), attribute.String("error", lastErr.Error()))
 		if wait <= 0 {
 			continue
 		}
@@ -1205,6 +1243,11 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 	for _, inst := range insts {
 		inst := inst
 		if !rs.TryGo(func() {
+			instance, refErr := provider.CloudInstanceForPool(pool, inst.CloudID)
+			if refErr != nil {
+				emitWorkerEvent(ctx, "sandbox.reset.instance_region_failed", "worker 无法从 pool 推导实例地域，本轮不会重装该实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", refErr.Error()))
+				return
+			}
 			resettingInst, err := svc.AdvanceState(ctx, inst.ID, core.StateResetting)
 			if err != nil {
 				emitWorkerEvent(ctx, "sandbox.reset.instance_mark_failed", "worker 尝试把 DRY 实例推进到 RESETTING 失败，本轮不会继续处理这个实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", err.Error()))
@@ -1212,7 +1255,7 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 			}
 			emitWorkerEvent(ctx, "sandbox.reset.instance_started", "worker 已选中一个 DRY 实例并开始重装流程。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID))
 
-			if err := cp.ReinstallInstance(ctx, inst.CloudID, image); err != nil {
+			if err := cp.ReinstallInstance(ctx, instance, image); err != nil {
 				emitWorkerEvent(ctx, "sandbox.reset.instance_reinstall_failed", "worker 调用云侧重装实例失败，该实例会被标记为 FAILED。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("image_id", image), attribute.String("error", err.Error()))
 				if _, ferr := svc.AdvanceState(ctx, inst.ID, core.StateFailed); ferr != nil {
 					emitWorkerEvent(ctx, "sandbox.reset.instance_mark_failed", "worker 在重装失败后尝试将实例标记为 FAILED，但状态落库失败。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", ferr.Error()))
@@ -1229,7 +1272,7 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 			case <-ctx.Done():
 				return
 			}
-			if err := provider.VerifyInstanceDelivery(ctx, cp, inst.CloudID, resettingInst.UpdatedAt); err != nil {
+			if err := provider.VerifyInstanceDelivery(ctx, cp, instance, resettingInst.UpdatedAt); err != nil {
 				emitWorkerEvent(ctx, "sandbox.reset.instance_verify_failed", "实例重装后 TAT 交付校验仍未通过，worker 会保留它在 RESETTING，等待后续 sweep 重试。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 				// Keep in RESETTING and retry in subsequent sweeps; stale scan will mark FAILED eventually.
 				return
@@ -1256,7 +1299,12 @@ func schedulePoolResetWork(ctx context.Context, svc *service.Service, cp provide
 				emitWorkerEvent(ctx, "sandbox.reset.instance_probe_missing", "RESETTING 实例缺少 cloud ID，worker 本轮无法执行 TAT 交付校验。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID))
 				return
 			}
-			if err := provider.VerifyInstanceDelivery(ctx, cp, inst.CloudID, inst.UpdatedAt); err != nil {
+			instance, refErr := provider.CloudInstanceForPool(pool, inst.CloudID)
+			if refErr != nil {
+				emitWorkerEvent(ctx, "sandbox.reset.instance_region_failed", "worker 无法从 pool 推导 RESETTING 实例地域，本轮继续等待。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", refErr.Error()))
+				return
+			}
+			if err := provider.VerifyInstanceDelivery(ctx, cp, instance, inst.UpdatedAt); err != nil {
 				// Transient TAT failures should not destroy the instance.
 				emitWorkerEvent(ctx, "sandbox.reset.instance_verify_failed", "RESETTING 实例的 TAT 交付校验仍未通过，worker 本轮继续等待。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 				return
@@ -1327,7 +1375,12 @@ func cleanupFailed(ctx context.Context, svc *service.Service, cp provider.CloudP
 	for _, inst := range insts {
 		emitWorkerEvent(ctx, "sandbox.cleanup.failed_instance_started", "worker 开始清理一个 FAILED 实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID))
 		if inst.CloudID != "" {
-			if err := cp.TerminateInstance(ctx, inst.CloudID); err != nil {
+			instance, refErr := provider.CloudInstanceForPool(pool, inst.CloudID)
+			if refErr != nil {
+				emitWorkerEvent(ctx, "sandbox.cleanup.instance_region_failed", "worker 无法从 pool 推导 FAILED 实例地域。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", refErr.Error()))
+				continue
+			}
+			if err := cp.TerminateInstance(ctx, instance); err != nil {
 				emitWorkerEvent(ctx, "sandbox.cleanup.instance_terminate_failed", "worker 清理 FAILED 实例时终止云侧实例失败。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 				continue
 			}
@@ -1371,7 +1424,12 @@ func cleanupDeleting(ctx context.Context, svc *service.Service, cp provider.Clou
 	for _, inst := range insts {
 		emitWorkerEvent(ctx, "sandbox.cleanup.deleting_retry_started", "worker 正在重试删除一个仍处于 DELETING 的实例。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID))
 		if inst.CloudID != "" {
-			if err := cp.TerminateInstance(ctx, inst.CloudID); err != nil {
+			instance, refErr := provider.CloudInstanceForPool(pool, inst.CloudID)
+			if refErr != nil {
+				emitWorkerEvent(ctx, "sandbox.cleanup.instance_region_failed", "worker 无法从 pool 推导 DELETING 实例地域。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("error", refErr.Error()))
+				continue
+			}
+			if err := cp.TerminateInstance(ctx, instance); err != nil {
 				emitWorkerEvent(ctx, "sandbox.cleanup.instance_terminate_failed", "worker 重试删除 DELETING 实例时终止云侧实例失败。", attribute.String("pool_id", pool.ID), attribute.String("instance_id", inst.ID), attribute.String("cloud_id", inst.CloudID), attribute.String("error", err.Error()))
 				continue
 			}

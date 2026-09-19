@@ -733,13 +733,16 @@ func shellUserCommand(user string, command string) string {
 	if targetUser == "" {
 		return command
 	}
+	// Select the launcher first so a long script is quoted only once in bash -c's
+	// argument. Duplicating it in both branches can exceed Linux MAX_ARG_STRLEN.
 	return strings.Join([]string{
 		`target_user=` + shellQuoteArg(targetUser),
 		`if [ "$(id -un)" = "$target_user" ]; then`,
-		`  bash -c ` + shellQuoteArg(command),
+		`  set -- bash`,
 		`else`,
-		`  sudo -u "$target_user" -H env HOME="$HOME" USER="$USER" PATH="$PATH" bash -c ` + shellQuoteArg(command),
+		`  set -- sudo -u "$target_user" -H env HOME="$HOME" USER="$USER" PATH="$PATH" bash`,
 		`fi`,
+		`"$@" -c ` + shellQuoteArg(command),
 	}, "\n")
 }
 

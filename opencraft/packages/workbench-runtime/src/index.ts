@@ -1,5 +1,8 @@
 export * from "./appserver-runtime";
+export * from "./agent-runtime";
 export * from "./appserver-terminal";
+export * from "./conversation-terminal";
+export * from "./conversation-terminal-tools";
 export * from "./conversation-binding";
 export * from "./conversation-activation-coordinator";
 export * from "./conversation-scope-lease";
@@ -32,3 +35,4 @@ export * from "./environment-directory";
 export * from "./authentication/contract";
 export * from "./authentication/authentication-service";
 export * from "./authentication/authentication-flow-service";
+export { ThreadTitleWriter, type ThreadIdentity, type ThreadTitlePort } from "./thread-title-writer";

@@ -11,6 +11,8 @@ export interface CreateBotChatExtensionOptions {
   readonly source: BotConversationSource;
   /** AppServer-backed selector-to-exact-conversation transaction. */
   readonly resolver: BotConversationResolver;
+  /** Shell can expose exact Bot cards without an empty standalone application entry. */
+  readonly showNavigation?: boolean;
 }
 
 export function createBotChatExtension(
@@ -40,8 +42,9 @@ export function createBotChatExtension(
         role: "bot-conversation",
         icon: "bot",
         platforms: ["web", "electron"],
+        audience: "internal",
       });
-      api.navigation.register({
+      if (options.showNavigation !== false) api.navigation.register({
         id: "vela.bot-chat.navigation",
         title: "Bot chat",
         surface: "sidebar-primary",
@@ -49,6 +52,7 @@ export function createBotChatExtension(
         icon: "bot",
         order: 20,
         platforms: ["web", "electron"],
+        audience: "internal",
       });
       api.internal.register("platformViewRenderer", {
         viewType: "vela.bot-chat.surface",

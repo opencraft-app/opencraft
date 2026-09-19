@@ -40,8 +40,8 @@
     "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs"
   },
   "dependencies": {
-    "@lightvela/agent-core": "file:../shared/lightvela-agent-core",
     "@babel/runtime-corejs3": "7.29.7",
+    "@lightvela/agent-core": "file:../shared/lightvela-agent-core",
     "@orama/orama": "3.1.18",
     "@orama/tokenizers": "3.1.18",
     "@radix-ui/react-alert-dialog": "1.1.15",
@@ -59,8 +59,8 @@
     "@radix-ui/react-tooltip": "1.2.8",
     "@rollup/rollup-darwin-arm64": "^4.60.0",
     "@tanstack/react-virtual": "^3.14.3",
-    "@tencent/agentchat-claw-panel": "1.2.6",
-    "@tencent/agentchat-lightvela-panel": "1.4.2",
+    "@tencent/agentchat-claw-panel": "1.5.15",
+    "@tencent/agentchat-lightvela-panel": "1.5.15",
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
     "@tencent/universal-report": "4.7.6",

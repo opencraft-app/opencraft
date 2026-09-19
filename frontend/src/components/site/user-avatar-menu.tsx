@@ -14,6 +14,7 @@ import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
 import { registerWindowCommand } from "@/lib/window-command-chain";
+import { emitConsoleShowEvent } from "@/lib/console-show-event";
 
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
@@ -62,6 +63,7 @@ const HeaderUserAvatarMenu = ({
 
   useEffect(() => registerWindowCommand(window, "show", (next, ...args) => {
     setHiddenEntriesRevealed(true);
+    emitConsoleShowEvent();
     const result = next(...args);
     return result === undefined ? true : result;
   }), []);
@@ -156,14 +158,14 @@ const HeaderUserAvatarMenu = ({
 
             {/* Menu items */}
             <div className="py-1.5">
-              <a
-                href={AGENTS_HOME_PATH}
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <Bot className={menuIconClass} />
-                {t("我的智能体伙伴")}
-              </a>
+                <a
+                  href={AGENTS_HOME_PATH}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <Bot className={menuIconClass} />
+                  {t("我的智能体伙伴")}
+                </a>
               <a
                 href="/account"
                 onClick={() => setOpen(false)}

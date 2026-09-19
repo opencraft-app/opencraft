@@ -63,11 +63,16 @@ import {
   type IProductConfig,
 } from "@/pages/marketing/agent-config";
 import { AgentModelConfigPanel } from "@/pages/marketing/agent-model-config/agent-model-config-panel";
+import {
+  createHermesModelConfigClient,
+  HermesModelConfigResponseError,
+} from "@/pages/marketing/agent-model-config/model-config-client";
 import { resolveProductModelProviderOptions } from "@/pages/marketing/agent-model-config/product-provider-adapter";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import { useSession } from "@/contexts/session-context";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 // 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
 import type {
   LightVelaMultiSessionOptions,
@@ -144,8 +149,6 @@ import {
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
-  hermesModelName,
-  hermesSwitchModelFullId,
   isExecCommandSucceeded,
   isResetConfigRouteMissingError,
   truncateExecOutput,
@@ -416,7 +419,7 @@ async function execDebugCommandStream(
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+    body: JSON.stringify(createDebugExecRequestBody(command)),
   });
 
   if (!response.ok) {
@@ -703,7 +706,7 @@ export const MemoryPanel = ({
   const isLoading = status === "loading";
   return <MemoryPanelView
     title={t("持久记忆")} description={t("查看当前 Hermes Agent 的持久记忆和用户画像文件")}
-    refreshLabel={t("刷新")} loadingLabel={t("正在读取记忆...")} loading={isLoading} hasSnapshot={!!snapshot}
+    refreshLabel={t("刷新")} loadingLabel={t("正在读取记忆")} loading={isLoading} hasSnapshot={!!snapshot}
     error={status === "error" ? error || t("记忆读取失败，请稍后重试。") : null}
     fallbackMessage={snapshot?.usedFallbackLimits ? t("未读取到完整限额配置，当前展示默认值。") : undefined}
     activeTab={activeTab} onTabChange={onTabChange} onRefresh={onRefresh}
@@ -2325,7 +2328,6 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const showCreateBotEntry = showHiddenAgentTools;
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -2343,6 +2345,8 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
+  const isEmptyPersonaPage = activeSection === "buddy"
+    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -2987,13 +2991,8 @@ export const AgentSettingsPage = ({
     }
   };
 
-  /*
-   * 重置配置（轮换 API Key）相关
-   * ──────────────────────────────────────────────────────────────
-   * 服务端 reset 成功后旧 key 立即作废；前端必须把本次返回的新运行时
-   * config 立刻下发到实例。若后续 acli 命令失败，用户再次重置会重新
-   * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
-   */
+  /* 使用平台权威 default Key 和默认模型重建当前 Hermes Profile。Key 仅在
+   * 本次调用栈中进入一次性加密 envelope，不进入 React state 或 shell 文本。 */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -3015,7 +3014,7 @@ export const AgentSettingsPage = ({
   }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
-    if (botsLoading || !isActiveBotDefault || maintenanceBusy || getResetBlockReason(activeBot, resetting, remainingInstanceBotCount)) return;
+    if (botsLoading || maintenanceBusy || getResetBlockReason(activeBot, resetting)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
@@ -3026,56 +3025,30 @@ export const AgentSettingsPage = ({
     setResetting(true);
     try {
       const result = await repositories.bots.resetInstanceConfig(targetBotId);
-
-      const resetBackendResult = await repositories.bots.execDebugCommand(
+      const modelConfigClient = createHermesModelConfigClient(
+        repositories.bots.execDebugCommand,
         targetBotId,
-        "acli backend reset-config",
+        activeBot.profileId,
       );
-      if (!isExecCommandSucceeded(resetBackendResult)) {
-        throw new Error(
-          t("初始化配置文件失败：{{detail}}", {
-            detail: truncateExecOutput(resetBackendResult.output, resetBackendResult.status),
-          }),
-        );
-      }
-
-      const hermesScriptCommands = await getHermesScriptCommands(activeBot?.profileId);
-      const providerSaveCmd = hermesScriptCommands.getProviderSaveCommand({
-        name: result.config.providerName,
-        baseUrl: result.config.baseUrl,
-        api: result.config.api,
+      await modelConfigClient.resetToPlatformDefault({
         apiKey: result.config.apiKey,
-        models: [{ id: result.config.modelId, name: hermesModelName(result.config.modelId) }],
+        model: {
+          id: result.config.modelId,
+          providerKey: result.config.providerName,
+          providerName: result.config.providerName,
+          baseUrl: result.config.baseUrl,
+          routeBaseUrl: result.config.baseUrl,
+          apiMode: result.config.api,
+          keyEnv: "",
+        },
       });
-      const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
-      if (!isExecCommandSucceeded(providerSaveResult)) {
-        const sanitizedOutput = result.config.apiKey
-          ? providerSaveResult.output.replace(
-            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-            "sk-***",
-          )
-          : providerSaveResult.output;
-        throw new Error(
-          t("默认模型保存失败：{{detail}}", {
-            detail: truncateExecOutput(sanitizedOutput, providerSaveResult.status),
-          }),
-        );
-      }
 
-      const switchModelCmd = hermesScriptCommands.getModelSwitchCommand(
-        hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
-      );
-      const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
-      if (!isExecCommandSucceeded(switchModelResult)) {
-        const sanitizedSwitchOutput = result.config.apiKey
-          ? switchModelResult.output.replace(
-            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-            "sk-***",
-          )
-          : switchModelResult.output;
+      const gatewayRestartCommand = (await getHermesScriptCommands(activeBot.profileId)).getGatewayRestartCommand();
+      const gatewayRestartResult = await repositories.bots.execDebugCommand(targetBotId, gatewayRestartCommand);
+      if (!isExecCommandSucceeded(gatewayRestartResult)) {
         throw new Error(
-          t("默认模型切换失败：{{detail}}", {
-            detail: truncateExecOutput(sanitizedSwitchOutput, switchModelResult.status),
+          t("模型配置已恢复，但 Gateway 重启失败：{{detail}}", {
+            detail: truncateExecOutput(gatewayRestartResult.output, gatewayRestartResult.status),
           }),
         );
       }
@@ -3089,7 +3062,9 @@ export const AgentSettingsPage = ({
         ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
         : isResetConfigRouteMissingError(err)
         ? t("当前后端服务暂不支持重置配置，请稍后再试。")
-        : err instanceof Error ? err.message : fallbackMessage;
+        : err instanceof HermesModelConfigResponseError
+          ? t("当前 Bot 的模型配置恢复失败，原配置已保留。")
+          : err instanceof Error ? err.message : fallbackMessage;
       toast.error(message);
     } finally {
       setResetting(false);
@@ -3686,7 +3661,6 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -4065,6 +4039,7 @@ export const AgentSettingsPage = ({
       className={cn(
         "agents-ui flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
+        isEmptyPersonaPage && "lv-agent-empty-persona-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -4266,8 +4241,12 @@ export const AgentSettingsPage = ({
                         <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
                       </div>
                       <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>
+                        <dd>{t("系统预置")}</dd>
+                      </div>
+                      <div className="flex items-start gap-2">
                         <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
-                        <dd>{t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")}</dd>
+                        <dd>{t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")}</dd>
                       </div>
                     </dl>
                   ) : (
@@ -4420,13 +4399,11 @@ export const AgentSettingsPage = ({
               const isRepairingBot = repairingBotIds.has(activeBot.id);
               const restartTooltip = activeBot.status === "failed" ? t("修复 Bot") : t("重启");
               const restartOrRepairDisabled = activeBot.status === "failed" ? isRepairingBot : isRestartDisabled;
-              const resetBlockReason = getResetBlockReason(activeBot, resetting, remainingInstanceBotCount);
-              const resetDisabled = botsLoading || !isActiveBotDefault || maintenanceBusy || resetBlockReason !== null;
-              const resetTooltip = resetBlockReason === RESET_BLOCK_REASON.MULTI_BOT
-                ? t("当前 Agent 有多个 Bot，暂不支持重置模型配置")
-                : maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
-                  ? t("请稍后")
-                  : t("重置模型配置");
+              const resetBlockReason = getResetBlockReason(activeBot, resetting);
+              const resetDisabled = botsLoading || maintenanceBusy || resetBlockReason !== null;
+              const resetTooltip = maintenanceBusy || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
+                ? t("请稍后")
+                : t("重置模型配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
               const acliResetDisabled = !isActiveBotDefault || maintenanceBusy || acliResetBlockReason !== null;
               const acliResetTooltip =
@@ -4438,10 +4415,15 @@ export const AgentSettingsPage = ({
               const deleteTooltip = deleteRequiresOtherBotsRemoved
                 ? t("请先删除其他 Bot，再删除主 Bot")
                 : activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
+              const sectionLoadingLabel = activeSection === "diagnostics"
+                ? t("正在加载诊断中心")
+                : activeSection === "settings"
+                  ? t("正在加载高级设置")
+                  : t("正在加载页面…");
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
-                  <AgentState kind="loading" title={t("正在加载页面…")} className="min-h-64" />
+                  <AgentState kind="loading" title={sectionLoadingLabel} className="min-h-64" />
                 );
               const activeBotDisplayName = resolveAgentDisplayName(activeBot.name, t);
 
@@ -4478,24 +4460,24 @@ export const AgentSettingsPage = ({
                     )}
                     actions={<>
                       <WorkspaceActionTooltip content={restartTooltip}>
-                        <Button type="button" variant="ghost" className={cn(agentButtonClassName, "size-8 px-0")} aria-label={restartTooltip} disabled={restartOrRepairDisabled}
+                        <button type="button" className="lv-agent-action-button" aria-label={restartTooltip} disabled={restartOrRepairDisabled}
                           onClick={() => {
                             if (restartOrRepairDisabled) return;
                             if (activeBot.status === "failed") { void handleRetryBot(); return; }
                             setShowRestartConfirm(true);
-                          }}><RefreshCw className={cn("size-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" /></Button>
+                          }}><RefreshCw className={cn("size-3.5", (isActiveBotRestarting || isRepairingBot) && "animate-spin")} aria-hidden="true" /></button>
                       </WorkspaceActionTooltip>
                       <WorkspaceActionTooltip content={deleteTooltip}>
-                        <Button type="button" variant="ghost" className={cn(agentButtonClassName, "size-8 px-0 text-red-600")} aria-label={deleteTooltip} disabled={deleteDisabled}
-                          onClick={() => { if (deleteDisabled) return; setDeleteInput(""); setShowDeleteConfirm(true); }}><Trash2 className="size-3.5" aria-hidden="true" /></Button>
+                        <button type="button" className="lv-agent-action-button is-danger" aria-label={deleteTooltip} disabled={deleteDisabled}
+                          onClick={() => { if (deleteDisabled) return; setDeleteInput(""); setShowDeleteConfirm(true); }}><Trash2 className="size-3.5" aria-hidden="true" /></button>
                       </WorkspaceActionTooltip>
                     </>}
                     error={activeBotRestartError}
-                    createAction={showCreateBotEntry && multiBotEnabled && (
-                      <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
-                        <Button type="button" variant="outline" className={cn(agentButtonClassName, "lv-agent-create-button w-full")} onClick={handleCreateNew} disabled={!canCreateAdditionalBot}>
-                          <Plus className="size-4" aria-hidden="true" />{t("新建 Bot")}
-                        </Button>
+                    createAction={multiBotEnabled && (
+                      <WorkspaceActionTooltip content={createLimitMessage || t("新建 Bot")} label={t("新建 Bot")} side="bottom">
+                        <button type="button" className="lv-agent-action-button" aria-label={t("新建 Bot")} onClick={handleCreateNew} disabled={!canCreateAdditionalBot}>
+                          <Plus className="size-4" aria-hidden="true" />
+                        </button>
                       </WorkspaceActionTooltip>
                     )}
                   />}

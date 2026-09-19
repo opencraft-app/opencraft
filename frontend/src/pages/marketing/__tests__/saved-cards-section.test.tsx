@@ -82,6 +82,7 @@ describe("SavedCardsSection", () => {
 
     expect(screen.getByText("正在加载签约卡…")).toBeInTheDocument();
     expect(await screen.findByText("555555****4444")).toBeInTheDocument();
+    expect(screen.getByText("支付方式").closest("section")).toHaveClass("rounded-md", "shadow-[0_10px_30px_rgba(15,23,42,0.04)]");
     expect(screen.getByText(/Ada Lovelace/)).toBeInTheDocument();
     expect(screen.getByText("默认卡")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/卡号|Card number/i)).not.toBeInTheDocument();

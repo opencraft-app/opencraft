@@ -55,7 +55,7 @@ type stackSecrets struct {
 
 func main() {
 	if len(os.Args) < 2 {
-		fatalf("usage: infractl <preview|up|sync|reconcile|validate|import|set-secrets|bootstrap-referral-tokens|bootstrap-collaboration> [--stack <name>]")
+		fatalf("usage: infractl <preview|up|sync|reconcile|validate|import|set-secrets|bootstrap-referral-tokens|bootstrap-referral-database|bootstrap-collaboration> [--stack <name>]")
 	}
 
 	projectRoot, err := findProjectRoot()
@@ -134,6 +134,14 @@ func main() {
 		if err := bootstrapReferralTokens(projectRoot, stack, apply, allowTokenChange); err != nil {
 			fatalf("%v", err)
 		}
+	case "bootstrap-referral-database":
+		options, err := parseReferralDatabaseBootstrapArgs(args)
+		if err != nil {
+			fatalf("%v", err)
+		}
+		if err := bootstrapReferralDatabase(projectRoot, options); err != nil {
+			fatalf("%v", err)
+		}
 	case "bootstrap-collaboration":
 		options, err := parseCollaborationBootstrapArgs(args)
 		if err != nil {
@@ -153,6 +161,79 @@ type collaborationBootstrapArgs struct {
 	apply                      bool
 	allowDatabasePasswordReset bool
 	allowIMSecretRotation      bool
+}
+
+type referralDatabaseBootstrapArgs struct {
+	stack                      string
+	apply                      bool
+	allowDatabasePasswordReset bool
+	allowInternalTokenChange   bool
+}
+
+func bootstrapReferralDatabase(projectRoot string, options referralDatabaseBootstrapArgs) error {
+	inventoryPath := filepath.Join(projectRoot, "envs", "tencentcloud", options.stack, "inventory.yaml")
+	inventory, err := config.LoadInventory(inventoryPath)
+	if err != nil {
+		return fmt.Errorf("load inventory for %s: %w", options.stack, err)
+	}
+	if inventory.EnvName != options.stack {
+		return fmt.Errorf("inventory environment %q does not match stack %q", inventory.EnvName, options.stack)
+	}
+	target := inventory.Stacks.Referral
+	if !target.Enabled {
+		return fmt.Errorf("stack %s does not enable Referral database bootstrap", options.stack)
+	}
+	host, rawPort, err := net.SplitHostPort(target.ExistingEndpoint)
+	if err != nil {
+		return fmt.Errorf("parse Referral database endpoint: %w", err)
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil {
+		return fmt.Errorf("parse Referral database port: %w", err)
+	}
+	secretID := strings.TrimSpace(os.Getenv("TENCENTCLOUD_SECRET_ID"))
+	secretKey := strings.TrimSpace(os.Getenv("TENCENTCLOUD_SECRET_KEY"))
+	database, err := collaborationbootstrap.NewTencentDatabaseAdmin(secretID, secretKey, inventory.Region)
+	if err != nil {
+		return err
+	}
+	secrets, err := referralbootstrap.NewTencentSecretStore(secretID, secretKey, inventory.Region)
+	if err != nil {
+		return err
+	}
+	ctlPayload, found, err := secrets.Read(
+		context.Background(), target.InternalServiceTokenSourceSSM, target.InternalServiceTokenVersionID,
+	)
+	if err != nil {
+		return fmt.Errorf("read internal token source SSM %s: %w", target.InternalServiceTokenSourceSSM, err)
+	}
+	if !found {
+		return fmt.Errorf("internal token source SSM %s does not exist", target.InternalServiceTokenSourceSSM)
+	}
+	internalToken, ok := ctlPayload["LIGHTCLAW_INTERNAL_SERVICE_TOKEN"].(string)
+	if !ok || strings.TrimSpace(internalToken) == "" {
+		return fmt.Errorf("internal token source SSM %s is missing LIGHTCLAW_INTERNAL_SERVICE_TOKEN", target.InternalServiceTokenSourceSSM)
+	}
+	result, err := referralbootstrap.RunDatabase(
+		context.Background(), database, secrets, collaborationbootstrap.CryptoGenerator{},
+		internalToken, target.SSMVersionID,
+		collaborationbootstrap.Config{
+			ClusterID: target.ExistingClusterID, Database: target.Database, Account: target.Account,
+			AccountHost: target.AccountHost, EndpointHost: host, EndpointPort: port,
+			SecretName: target.SSMSecretName, Description: "LightVela Referral runtime",
+		},
+		referralbootstrap.DatabaseOptions{
+			Apply: options.apply, AllowDatabasePasswordReset: options.allowDatabasePasswordReset,
+			AllowInternalTokenChange: options.allowInternalTokenChange,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("referral database bootstrap: stack=%s secret=%s status=%s account=%s database=%s privileges=%s\n",
+		options.stack, target.SSMSecretName, changeStatus(result.Secret), changeStatus(result.Account),
+		changeStatus(result.Database), changeStatus(result.Privileges))
+	return nil
 }
 
 type collaborationIMMaterialFile struct {
@@ -367,7 +448,11 @@ func up(projectRoot, stack string) error {
 	); err != nil {
 		return err
 	}
-	if !shouldSyncAfterUp(os.Getenv("INFRA_COMPONENT_SCOPE")) {
+	configMap, err := s.GetAllConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("read stack config after update: %w", err)
+	}
+	if !shouldSyncAfterUp(resolveComponentScope(os.Getenv("INFRA_COMPONENT_SCOPE"), configMap)) {
 		return nil
 	}
 	return sync(projectRoot, stack)
@@ -375,6 +460,13 @@ func up(projectRoot, stack string) error {
 
 func shouldSyncAfterUp(scope string) bool {
 	return strings.TrimSpace(scope) == ""
+}
+
+func resolveComponentScope(environmentValue string, values auto.ConfigMap) string {
+	if scope := strings.TrimSpace(environmentValue); scope != "" {
+		return scope
+	}
+	return strings.TrimSpace(values["infra-pulumi:componentScope"].Value)
 }
 
 func sync(projectRoot, stack string) error {
@@ -810,6 +902,29 @@ func parseReferralBootstrapArgs(args []string) (string, bool, bool, error) {
 		}
 	}
 	return stack, apply, allowTokenChange, nil
+}
+
+func parseReferralDatabaseBootstrapArgs(args []string) (referralDatabaseBootstrapArgs, error) {
+	options := referralDatabaseBootstrapArgs{stack: defaultStack}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--stack", "-s":
+			if i+1 >= len(args) {
+				return referralDatabaseBootstrapArgs{}, fmt.Errorf("missing value for %s", args[i])
+			}
+			options.stack = args[i+1]
+			i++
+		case "--apply":
+			options.apply = true
+		case "--allow-database-password-reset":
+			options.allowDatabasePasswordReset = true
+		case "--allow-internal-token-change":
+			options.allowInternalTokenChange = true
+		default:
+			return referralDatabaseBootstrapArgs{}, fmt.Errorf("unknown flag %s", args[i])
+		}
+	}
+	return options, nil
 }
 
 func parseCollaborationBootstrapArgs(args []string) (collaborationBootstrapArgs, error) {

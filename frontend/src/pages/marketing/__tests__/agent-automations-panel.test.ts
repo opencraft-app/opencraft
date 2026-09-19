@@ -1117,7 +1117,7 @@ describe("cron context panel integration", () => {
     expect(within(dialog).getByRole("button", { name: isGlobal ? "Continue creating" : "继续新建" })).toBeTruthy();
   });
 
-  it("keeps the refresh button static and disabled during the initial load", async () => {
+  it("keeps the page behind the centered loading state during the initial load", async () => {
     let resolveJobs: ((jobs: CronJob[]) => void) | undefined;
     cronClientMocks.listCronJobs.mockImplementationOnce(() => new Promise((resolve) => {
       resolveJobs = resolve;
@@ -1125,17 +1125,16 @@ describe("cron context panel integration", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    const refreshButton = screen.getByRole("button", { name: "刷新" });
-    expect(refreshButton).toBeDisabled();
-    expect(refreshButton.querySelector("svg")).not.toHaveClass("animate-spin");
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
 
     resolveJobs?.([]);
-    await waitFor(() => expect(refreshButton).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled());
   });
 
   it("spins the refresh icon only after an explicit refresh", async () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
-    const refreshButton = screen.getByRole("button", { name: "刷新" });
+    const refreshButton = await screen.findByRole("button", { name: "刷新" });
     await waitFor(() => expect(refreshButton).toBeEnabled());
 
     let resolveRefresh: ((jobs: CronJob[]) => void) | undefined;
@@ -1144,12 +1143,12 @@ describe("cron context panel integration", () => {
     }));
     fireEvent.click(refreshButton);
 
-    expect(refreshButton).toBeDisabled();
-    expect(refreshButton.querySelector("svg")).toHaveClass("animate-spin");
+    await waitFor(() => expect(refreshButton).toBeDisabled());
+    expect(refreshButton.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
 
     resolveRefresh?.([]);
     await waitFor(() => expect(refreshButton).toBeEnabled());
-    expect(refreshButton.querySelector("svg")).not.toHaveClass("animate-spin");
+    expect(refreshButton.querySelector("svg")).not.toHaveClass("motion-safe:animate-spin");
   });
 
   it("places the upstream task below notifications in collapsed advanced settings", async () => {

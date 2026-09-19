@@ -1,5 +1,11 @@
 // Platform-neutral Codex design primitives. The explicit `.shared` basename
 // prevents Metro from resolving this module back to `tokens.native.ts`.
+import {
+  codexTypographyTokens,
+  typographyRegistry,
+} from "./typography/typography.shared";
+
+export { codexTypographyTokens } from "./typography/typography.shared";
 export const spacing = {
   unit: 4,
   0: 0,
@@ -33,6 +39,9 @@ export const menuGeometry = {
   surfacePadding: 5,
   itemGap: 2,
   itemRadius: radii.md,
+  boundedMinimumWidth: 200,
+  boundedMaximumWidth: 320,
+  listMaximumHeight: 250,
 } as const;
 
 export const frame = {
@@ -56,19 +65,10 @@ export const frame = {
  * explicitly loads an equivalent font. Keeping only canonical weights here
  * prevents PingFang, Inter, and Android fallbacks from remapping ad-hoc values.
  */
-export const typography = {
-  weight: {
-    regular: "400" as const,
-    medium: "500" as const,
-    semibold: "600" as const,
-    bold: "700" as const,
-  },
-  tracking: {
-    wide: 0,
-    normal: -0.01,
-    tight: -0.02,
-  },
-} as const;
+export const typography = Object.freeze({
+  weight: codexTypographyTokens.weight,
+  tracking: typographyRegistry.tracking,
+});
 
 export const lightPalette = {
   backgroundUnder: "#f9f9f9",
@@ -281,6 +281,13 @@ export const codexGeometryTokens = {
     applicationMenu: frame.applicationMenuHeight,
     primary: frame.toolbarHeight,
     pane: frame.paneToolbarHeight,
+    controlHeight: 32,
+    controlRadius: radii.lg,
+    controlInlinePadding: spacing[2],
+    controlContentGap: 6,
+    controlIconSize: 13,
+    controlChevronSize: 10,
+    controlMaximumWidth: 224,
   },
   sidebar: {
     preferredWidth: frame.sidebarDefaultWidth,
@@ -304,6 +311,8 @@ export const codexGeometryTokens = {
     chrome: 28,
     button: 30,
     buttonCompact: 28,
+    filterHeight: 36,
+    filterWidth: 160,
     radius: 7,
     projectIcon: 24,
     status: 24,
@@ -312,6 +321,10 @@ export const codexGeometryTokens = {
     trafficLight: 12,
     iconSmall: 13,
     icon: 15,
+  },
+  menu: {
+    itemHeight: 28,
+    itemBlockPadding: 5,
   },
   conversation: {
     maximumWidth: frame.threadContentMaxWidth,
@@ -342,29 +355,6 @@ export const codexGeometryTokens = {
     pressedOpacity: 0.62,
     disabledOpacity: 0.24,
   },
-} as const;
-
-export const codexTypographyTokens = {
-  family: {
-    ui: "system" as const,
-    content: "system" as const,
-    mono: "monospace" as const,
-  },
-  weight: typography.weight,
-  tracking: typography.tracking,
-  body: { fontSize: 14, lineHeight: 20, fontWeight: typography.weight.regular },
-  chat: { fontSize: 14, lineHeight: 22, fontWeight: typography.weight.regular },
-  composer: { fontSize: 14, lineHeight: 21, fontWeight: typography.weight.regular },
-  modeTitle: { fontSize: 17, lineHeight: 24, fontWeight: "600" as const },
-  toolbarTitle: { fontSize: 13, lineHeight: 18, fontWeight: "500" as const },
-  toolbarMeta: { fontSize: 11, lineHeight: 16, fontWeight: "400" as const },
-  sidebarAction: { fontSize: 14, lineHeight: 19, fontWeight: "400" as const },
-  sidebarThread: { fontSize: 12, lineHeight: 16, fontWeight: "400" as const },
-  sidebarMeta: { fontSize: 10, lineHeight: 12, fontWeight: "400" as const },
-  label: { fontSize: 11, lineHeight: 15, fontWeight: "500" as const },
-  code: { fontSize: 12, lineHeight: 20 },
-  disclaimer: { fontSize: 10, lineHeight: 14 },
-  emptyTitle: { fontSize: 20, lineHeight: 28, fontWeight: "600" as const },
 } as const;
 
 export const codexShadowTokens = {

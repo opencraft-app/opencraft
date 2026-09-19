@@ -9,7 +9,6 @@ export type {
   ComposerPermissionOption,
   ComposerReasoningEffortOption,
   ComposerSelectionCatalog,
-  ComposerAgentOption,
 } from "./codex-composer";
 export * from "./prosemirror-codec";
 export { resolveComposerFooterDensity } from "./responsive-footer";

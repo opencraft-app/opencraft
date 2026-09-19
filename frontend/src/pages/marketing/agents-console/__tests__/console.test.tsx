@@ -39,10 +39,10 @@ describe("Agents console presentation", () => {
   it("uses the sidebar-only B treatment without double borders or extra animation", () => {
     const props = { canChat: true, label: "Sidebar", settingsLabel: "Explore", chatLabel: "Chat", unavailableLabel: "", onSettings: vi.fn(), onChat: vi.fn() };
     const view = render(<TooltipProvider><ConsoleSidebarTabs {...props} value="settings">Navigation</ConsoleSidebarTabs></TooltipProvider>);
-    expect(screen.getByRole("tablist")).toHaveClass("h-10", "p-1", "gap-1", "rounded-md", "border-0", "bg-[var(--agent-tabs-track,#f3f3f1)]", "shadow-none");
+    expect(screen.getByRole("tablist")).toHaveClass("h-9", "p-1", "gap-1", "rounded-md", "border-0", "bg-[var(--agent-tabs-track,#f3f3f1)]", "shadow-none");
     expect(screen.getByRole("tablist")).not.toHaveClass("border");
     for (const tab of screen.getAllByRole("tab")) {
-      expect(tab).toHaveClass("h-full", "rounded-sm", "border-0", "bg-transparent", "py-0", "text-sm", "font-medium", "transition-none", "data-[state=active]:bg-[var(--agent-tabs-selected,#fff)]", "data-[state=active]:shadow-sm", "focus-visible:ring-2", "focus-visible:ring-offset-2");
+      expect(tab).toHaveClass("h-full", "rounded-sm", "border-0", "bg-transparent", "py-0", "text-xs", "font-medium", "transition-none", "data-[state=active]:bg-[var(--agent-tabs-selected,#fff)]", "data-[state=active]:shadow-sm", "focus-visible:ring-2", "focus-visible:ring-offset-2");
       expect(tab).not.toHaveClass("border", "transition", "data-[state=active]:shadow-none");
     }
     expect(screen.getByRole("tab", { name: "Explore" })).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
@@ -140,6 +140,45 @@ describe("Agents console presentation", () => {
     await user.click(screen.getByRole("button", { name: "Restart" }));
     expect(restart).toHaveBeenCalledTimes(1);
     expect(select).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the public Bot creation action inline with profile maintenance actions", () => {
+    render(
+      <ConsoleBotProfile
+        name="Main bot"
+        avatarUrl="/avatar.png"
+        status={<span>Running</span>}
+        options={[{ id: "main", label: "Main bot" }]}
+        selectedId="main"
+        open={false}
+        onOpenChange={vi.fn()}
+        onSelect={vi.fn()}
+        createAction={<button type="button" aria-label="New Bot">+</button>}
+        actions={<button type="button">Restart</button>}
+      />,
+    );
+
+    const create = screen.getByRole("button", { name: "New Bot" });
+    const restart = screen.getByRole("button", { name: "Restart" });
+    expect(create.parentElement).toBe(restart.parentElement);
+    expect(create.parentElement).not.toHaveClass("mt-3");
+    expect(create.parentElement).toHaveClass("lv-agent-actions");
+  });
+
+  it("keeps the profile switcher in the compact action sizing used by the sidebar", () => {
+    render(
+      <ConsoleBotProfile
+        name="Main bot"
+        status={<span>Running</span>}
+        options={[{ id: "main", label: "Main bot" }, { id: "other", label: "Other bot" }]}
+        selectedId="main"
+        open={false}
+        onOpenChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Main bot" })).toHaveClass("lv-agent-action-button");
   });
 
   it("fires one tab intent for both a changed and already selected tab", async () => {

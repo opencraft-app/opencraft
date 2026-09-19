@@ -14,6 +14,7 @@ import type {
 } from "@opencraft/sidebar-layout";
 import type { ReactNode } from "react";
 import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
+import { ThreadRowMenu, type ThreadActionCallbacks, type ThreadActionCapabilities } from "./thread-management";
 import { groupThreadsByTarget } from "../sidebar-target-groups";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
@@ -40,6 +41,7 @@ interface SidebarProps {
   pendingThreadId?: string | null;
   primaryActions?: readonly SidebarActionItem[];
   footerActions?: readonly SidebarActionItem[];
+  managementNavigation?: ReactNode;
   catalogs?: readonly SidebarCatalogItem[];
   bots?: readonly SidebarEntity[];
   sidebarLayout: SidebarLayoutStore;
@@ -51,6 +53,11 @@ interface SidebarProps {
   renderTargetStatus?(hostId: string): ReactNode;
   onOpenSettings(): void;
   showFooter?: boolean;
+  threadActions?: ThreadActionCallbacks;
+  threadCapabilities?(hostId: string): ThreadActionCapabilities;
+  pendingTitle?(hostId: string, threadId: string): string | null;
+  onManageArchived?(): void;
+  archiveUndo?: { title: string; restore(): void } | null;
 }
 
 
@@ -84,6 +91,7 @@ function ThreadActivity({ status }: { status: WorkbenchThread["status"] }) {
     return (
       <span
         className="sidebar-thread__activity is-running"
+        role="img"
         aria-label="Running"
       />
     );
@@ -91,7 +99,16 @@ function ThreadActivity({ status }: { status: WorkbenchThread["status"] }) {
     return (
       <span
         className="sidebar-thread__activity is-review"
+        role="img"
         aria-label="Ready for review"
+      />
+    );
+  if (status === "error")
+    return (
+      <span
+        className="sidebar-thread__activity is-error"
+        role="img"
+        aria-label="Thread unavailable"
       />
     );
   return <span className="sidebar-thread__activity" aria-hidden="true" />;
@@ -105,6 +122,7 @@ export function Sidebar({
   pendingThreadId = null,
   primaryActions = [],
   footerActions = [],
+  managementNavigation = null,
   catalogs = [],
   bots = [],
   sidebarLayout,
@@ -116,6 +134,11 @@ export function Sidebar({
   renderTargetStatus,
   onOpenSettings,
   showFooter = true,
+  threadActions,
+  threadCapabilities,
+  pendingTitle,
+  onManageArchived,
+  archiveUndo,
 }: SidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [collapsedTargets, setCollapsedTargets] = useState<ReadonlySet<string>>(new Set());
@@ -151,7 +174,7 @@ export function Sidebar({
       <nav className="sidebar-navigation" aria-label="Primary">
         <button className="sidebar-action" type="button" onClick={onNewTask}>
           <SidebarActionIcon><SquarePen size={15} /></SidebarActionIcon>
-          <span>New chat</span>
+          <span>Start</span>
         </button>
         {primaryActions.map((action) => (
           <button
@@ -166,6 +189,8 @@ export function Sidebar({
           </button>
         ))}
       </nav>
+
+      {managementNavigation}
 
       <div className="sidebar-content-scroll" ref={scrollContainerRef}>
         <SidebarBots
@@ -224,6 +249,20 @@ export function Sidebar({
             const pending =
               thread.hostId === pendingHostId && thread.id === pendingThreadId;
             const selected = threadKey === selectedThreadKey;
+            const title = pendingTitle?.(thread.hostId, thread.id) ?? thread.title;
+            const button = (
+              <button
+                type="button"
+                className={["sidebar-thread", selected ? "is-selected" : "", active ? "is-active" : "", pending ? "is-pending" : ""].filter(Boolean).join(" ")}
+                onClick={() => onSelectThread(thread.hostId, thread.id)} aria-current={selected ? "page" : undefined} aria-busy={pending || undefined}
+                title={`${title} · ${thread.hostLabel} · ${thread.id}`}>
+                <ThreadActivity status={thread.status} />
+                <span className="sidebar-thread__copy"><span className="sidebar-thread__label">{title}</span></span>
+                {thread.unread ? <span className="sidebar-thread__unread" /> : null}
+              </button>
+            );
+            if (threadActions && threadCapabilities) return <ThreadRowMenu key={threadKey} target={{ hostId: thread.hostId, threadId: thread.id, title }}
+              capabilities={threadCapabilities(thread.hostId)} {...threadActions}>{button}</ThreadRowMenu>;
             return (
               <button
                 type="button"
@@ -261,6 +300,8 @@ export function Sidebar({
           </section>;
           })}
         </section>
+        {onManageArchived ? <button type="button" className="sidebar-action" onClick={onManageArchived}>已归档会话</button> : null}
+        {archiveUndo ? <div className="sidebar-target-empty" role="status">已归档 {archiveUndo.title} <button type="button" onClick={archiveUndo.restore}>撤销</button></div> : null}
       </div>
 
       {showFooter ? <div className="sidebar-panel__footer">

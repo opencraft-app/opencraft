@@ -71,6 +71,19 @@ describe("buildDeepSeekHarnessWebUiUrl", () => {
 describe("AgentDeepSeekHarnessPanel", () => {
   const clientFactory = vi.fn(() => api as unknown as DeepSeekHarnessCommandClient);
 
+  it("keeps the DeepSeek page hidden behind the centered initial status", async () => {
+    let resolveStatus!: (value: typeof INSTALLED) => void;
+    api.getStatus.mockReturnValue(new Promise((resolve) => { resolveStatus = resolve; }));
+    render(<AgentDeepSeekHarnessPanel botId="bot-loading" clientFactory={clientFactory} />);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveClass("min-h-[min(60vh,520px)]", "items-center", "justify-center");
+    expect(screen.queryByRole("region", { name: "DeepSeek Harness" })).not.toBeInTheDocument();
+
+    resolveStatus(INSTALLED);
+    await waitFor(() => expect(screen.getByRole("region", { name: "DeepSeek Harness" })).toBeInTheDocument());
+  });
+
   beforeEach(() => {
     localStorage.clear();
     translate.mockClear();

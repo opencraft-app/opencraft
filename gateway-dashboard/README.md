@@ -48,6 +48,10 @@ npm run build
 | `SANDBOX_API_URL` | No | 指向 `sandbox-api` 的内部管理上游；仅 sandbox 页面使用，公网 AI Gateway 专用模式下可不配置 |
 | `CTL_API_URL` | No | 指向 `ctl-api` 的内部管理上游；仅 CTL 页面使用，公网 AI Gateway 专用模式下可不配置 |
 | `CTL_INTERNAL_TOKEN` | Required for gateway operations | Dashboard BFF 调用 CTL 单用户迁移和 VelaGW 额度重置接口的服务端 Token；不得下发浏览器 |
+| `CREDIT_API_URL` | Required for credit package administration | 指向 `credit` 的内部管理上游；仅积分包页面使用 |
+| `CREDIT_INTERNAL_TOKEN` | Required for credit package administration | Dashboard BFF 调用 Credit 查询与退款管理接口的服务端 Token；必须与 Credit 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 一致，不得下发浏览器 |
+| `SHADOW_API_URL` | Required for shadow account administration | 指向 `shadow` 的内部管理上游；仅认证用户页的影子账号视图使用 |
+| `SHADOW_INTERNAL_TOKEN` | Required for shadow account administration | Dashboard BFF 调用 Shadow 只读管理接口的服务端 Token；必须与 Shadow 的 `SHADOW_INTERNAL_TOKEN` 一致，不得下发浏览器 |
 | `TICKET_API_URL` | No | 指向 `ticket` 管理上游；仅「用户反馈」页使用。未配置时该页接口返回 500 |
 | `SUPPORT_FEEDBACK_AGENT_ID` | No | 白名单内运营账号的 lightclaw 用户 ID，由 BFF 作为 `X-User-Id` 注入 ticket 以通过 `SUPPORT_AGENT_IDS` 校验；需与 ticket 的 `SUPPORT_AGENT_IDS` 一致。未配置时反馈接口恒 401 |
 | `ADMIN_TOKEN` | Yes | Dashboard 登录所用的管理员 token |
@@ -73,6 +77,12 @@ npm run build
   - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/ctl/[...path]`
   - 代理 `ctl-api` 的 `/internal/*` 接口
   - 网关迁移和额度重置路径由 BFF 注入 `CTL_INTERNAL_TOKEN`，其他 CTL 只读路径不携带该 Token
+- `/admin/api/credit/[...path]`
+  - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/credit/[...path]`
+  - 代理 `credit` 的 `/internal/credit/admin/*` 接口，并由 BFF 注入 `CREDIT_INTERNAL_TOKEN`
+- `/admin/api/shadow/[...path]`
+  - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/shadow/[...path]`
+  - 代理 `shadow` 的 `/internal/shadow/admin/*` 接口，并由 BFF 注入 `SHADOW_INTERNAL_TOKEN`
 
 浏览器不再长期持有裸管理员 token；登录成功后由服务端签发 `HttpOnly` 的无状态 session cookie，真正的上游地址和可选的专用管理 token 通过 Next.js route handler 在服务端转发。旧的 `/api/[...path]`、`/api/auth-admin/*`、`/api/subscription-admin/*`、`/api/sandbox-admin/*`、`/api/ctl-admin/*` 不再是标准入口。
 
@@ -113,6 +123,8 @@ python3 scripts/build-release-image.py --service gateway-dashboard --env shprod 
 - `AUTH_ADMIN_API_URL=http://lightclaw-auth.user-auth.svc.cluster.local`
 - `SANDBOX_API_URL=http://sandbox-api.sandbox.svc.cluster.local`
 - `CTL_API_URL=http://ctl-api.ctl.svc.cluster.local`
+- `CREDIT_API_URL=http://credit.credit.svc.cluster.local`
+- `SHADOW_API_URL=http://shadow.shadow.svc.cluster.local`
 
 建议的内部访问方式：
 

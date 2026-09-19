@@ -15,6 +15,37 @@ func TestValidateRejectsUnknownAuthMode(t *testing.T) {
 	}
 }
 
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidEnabled(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ENABLED", "sometimes")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.enabled env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid enabled error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidAllowedPort(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS", "18084,not-a-port")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.allowed_ports env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid allowed port error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesLoadsHTTPRegistry(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE", "http")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_ROUTE_ID", "developer-route-registry")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_CALLER", "cloudladdergateway")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_SECRET_ENV", "CLOUDLADDER_SHADOW_HMAC_SECRET")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_TIMEOUT", "11s")
+	cfg := Config{}
+	if err := applyDeveloperRouteEnvOverrides(&cfg); err != nil {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v", err)
+	}
+	d := cfg.DeveloperRoutes
+	if d.Store != "http" || d.RegistryBaseURL != "https://api-sandbox-bj-7.lightclaw.tech" || d.RegistryRouteID != "developer-route-registry" || d.RegistryCaller != "cloudladdergateway" || d.RegistrySecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" || d.RegistryTimeout != "11s" {
+		t.Fatalf("unexpected developer route registry config: %+v", d)
+	}
+}
+
 func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
 	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")
@@ -129,6 +160,35 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 			t.Errorf("sensitive outbound route %q remains anonymously accessible", routeID)
 		}
 	}
+}
+
+func TestExampleConfigWiresDeveloperRouteControlCaller(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	developerRoutes := cfg.DeveloperRoutes
+	if developerRoutes.RegistrationRoute != "developer-route-control" || developerRoutes.RegistrationCaller != "lightclaw-auth" {
+		t.Fatalf("developer route registration auth = route:%q caller:%q", developerRoutes.RegistrationRoute, developerRoutes.RegistrationCaller)
+	}
+	if !slices.Equal(developerRoutes.AllowedPorts, []int{18084}) {
+		t.Fatalf("developer route allowed ports = %v, want [18084]", developerRoutes.AllowedPorts)
+	}
+
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != developerRoutes.RegistrationCaller {
+			continue
+		}
+		if caller.SecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" {
+			t.Fatalf("developer route caller secret env = %q", caller.SecretEnv)
+		}
+		if !slices.Contains(caller.Routes, developerRoutes.RegistrationRoute) {
+			t.Fatalf("developer route caller routes = %v, missing %q", caller.Routes, developerRoutes.RegistrationRoute)
+		}
+		return
+	}
+	t.Fatalf("developer route registration caller %q is not declared in auth.callers", developerRoutes.RegistrationCaller)
 }
 
 func TestLoadEnablesOTLPAuditFromStandardEnv(t *testing.T) {

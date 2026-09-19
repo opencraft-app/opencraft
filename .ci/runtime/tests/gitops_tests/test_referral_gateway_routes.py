@@ -48,16 +48,70 @@ class ReferralGatewayRoutesTest(unittest.TestCase):
             auth_public,
         )
 
-    def test_production_environments_do_not_inherit_beijing_referral_routes(self) -> None:
-        for env in ("shprod", "sgprod"):
-            with self.subTest(env=env):
-                routes = routes_for(env)
-                self.assertNotIn("referral-code-public", routes)
-                self.assertNotIn("referral-user", routes)
-                self.assertNotIn(
-                    {"method": "POST", "path": "/auth/referral/prepare"},
-                    routes["auth"].get("public_allow") or [],
-                )
+    def test_shanghai_exposes_the_same_exact_referral_contract(self) -> None:
+        routes = routes_for("shprod")
+
+        runtime_config = routes["frontend-runtime-config"]
+        self.assertEqual(runtime_config["prefix"], "/v1/frontend/runtime-config")
+        self.assertEqual(runtime_config["access"], "public")
+        self.assertEqual(runtime_config["methods"], ["GET", "OPTIONS"])
+        self.assertEqual(
+            runtime_config["path_allow"],
+            [{"method": "GET", "path": "/v1/frontend/runtime-config"}],
+        )
+
+        public = routes["referral-code-public"]
+        self.assertEqual(public["prefix"], "/v1/referrals/codes")
+        self.assertEqual(public["access"], "public")
+        self.assertEqual(
+            public["path_allow"],
+            [{"method": "GET", "path": "/v1/referrals/codes/{code}"}],
+        )
+
+        user = routes["referral-user"]
+        self.assertEqual(user["access"], "authenticated")
+        self.assertEqual(user["auth_strategy"], "session")
+        self.assertEqual(
+            user["path_allow"],
+            [
+                {"method": "GET", "path": "/v1/referrals/me"},
+                {"method": "POST", "path": "/v1/referrals/me/code"},
+                {"method": "GET", "path": "/v1/referrals/me/stats"},
+            ],
+        )
+        self.assertIn(
+            {"method": "POST", "path": "/auth/referral/prepare"},
+            routes["auth"].get("public_allow") or [],
+        )
+
+    def test_singapore_exposes_the_same_exact_referral_contract(self) -> None:
+        routes = routes_for("sgprod")
+
+        public = routes["referral-code-public"]
+        self.assertEqual(public["prefix"], "/v1/referrals/codes")
+        self.assertEqual(public["access"], "public")
+        self.assertEqual(public["methods"], ["GET", "OPTIONS"])
+        self.assertEqual(
+            public["path_allow"],
+            [{"method": "GET", "path": "/v1/referrals/codes/{code}"}],
+        )
+
+        user = routes["referral-user"]
+        self.assertEqual(user["prefix"], "/v1/referrals/me")
+        self.assertEqual(user["access"], "authenticated")
+        self.assertEqual(user["auth_strategy"], "session")
+        self.assertEqual(
+            user["path_allow"],
+            [
+                {"method": "GET", "path": "/v1/referrals/me"},
+                {"method": "POST", "path": "/v1/referrals/me/code"},
+                {"method": "GET", "path": "/v1/referrals/me/stats"},
+            ],
+        )
+        self.assertIn(
+            {"method": "POST", "path": "/auth/referral/prepare"},
+            routes["auth"].get("public_allow") or [],
+        )
 
 
 if __name__ == "__main__":

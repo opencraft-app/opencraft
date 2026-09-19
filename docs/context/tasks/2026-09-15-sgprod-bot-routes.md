@@ -23,7 +23,7 @@ derived: false
 国际站放行OpenCraft的Bot列表、创建/克隆、重命名和删除请求。
 ## non_goals
 不开放额外渠道绑定/retry接口，不修改国内策略，不改变鉴权/归属/实名、不销毁或创建真实Bot。
-用户已明确授权“好的，发布吧”。发布仅限sgprod service-gateway Bot路由；不合入其他OpenCraft改动。
+该路由任务的发布授权仅限 sgprod service-gateway Bot 路由，不扩展为其他 OpenCraft 改动的发布授权。以下 checkpoint 记录不同候选时点，不代表本次合并的实时部署状态。
 ## requirement_ids / requirement_refs / requirement_excerpt
 用户在明确国际站route_not_allowed原因后要求“那你搞一下”。
 ## interface_refs / data_structure_refs
@@ -69,9 +69,21 @@ service-gateway配置/handler测试、ctl Bot路由/测试；无凭据扫描或�
 文档与diff检查通过；根context仍有既有frontmatter/中文/budget等校验失败，新Task没有命中。
 提交/生产发布尚未执行；下一步需明确提交/发布授权，并在可访问sgprod Argo的执行环境落地、验证公共GET Bot接口。
 ## checkpoint
+### 源码与 GitOps 候选阶段
 发布授权已确认。基于最新origin/master隔离工作区应用最小补丁，保留后来增加的Credit路由；gitops候选将独立从最新origin/gitops生成。
 在最新master隔离复验：网关全量测试有两项sandbox-jp-1既有配置失败；未修改的同一baseline复现相同失败。
 sgprod Bot/实例/原生登录部署策略测试及go vet通过。Argo现存CLI登录token过期，正在确认可用运维入口，未执行生产sync。
+
+### 分支记录的后续检查
+2026-09-15 21:41 CST：用户提供有效Argo凭据并授权同步。预检Argo已读取gitops b9dcb6bf6，OutOfSync仅新ConfigMap及引用它的service-gateway Deployment，镜像未变。
+执行`argocd app sync service-gateway-sgprod --timeout 300`成功（8s），随后wait --sync --health成功；最终revision b9dcb6bf6、Synced/Healthy，Deployment Healthy。
+重启保留国际站登录态的OpenCraft预览重新协商Host，Bots页面10秒内从“确认云端Agent”收敛为真实列表，显示New Bot且新建/刷新可用。未执行Bot创建、重命名或删除。
+2026-09-15发布阶段：用户授权已确认。隔离工作区基于最新master保留Credit路由，只提交本任务5文件，commit 6c3315d90，源码MR !4037（ID27261080）。
+工蜂合入返回Review check not passed/409，未绕过审核、未直推master。
+独立gitops候选从origin/gitops 404c37377生成，仅1配置文件5新增1替换，commit a1c6f07ee，MR !4038（ID27261105）。尚未合入gitops或执行sync。
+Argo运维入口9.208.245.238上CLI可用，但127.0.0.1:32059及9.208.245.238:30547认证均返回token expired，不能确认live drift或同步。
+源码最新baseline新增两项sandbox-jp-1既有测试失败，干净baseline复现；sgprod聚焦/go vet通过。
+阻塞：需要MR评审通过和有效Argo登录；未修改线上配置或云端Bot。候选链接：https://git.woa.com/wisp/mono2/-/merge_requests/4037 和 https://git.woa.com/wisp/mono2/-/merge_requests/4038。
 配置已补齐，部署配置驱动的网关测试覆盖四路由、clone载荷、成功/403透传、匿名和实名拒绝及相邻未开放接口。
 CTL路由/profile聚焦测试通过，gateway全量测试与vet通过，release bundle契约86项通过。
 未提交、未推送、未执行Argo sync；生产变更仅为预备配置差异。

@@ -323,6 +323,11 @@ func (h *handler) PostSandboxesSandboxIDSnapshot(c *gin.Context, sandboxID api.S
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	pool, err := h.svc.GetPool(ctx, sb.PoolID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if h.cloud == nil {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "snapshot endpoint requires a cloud provider"})
 		return
@@ -338,8 +343,13 @@ func (h *handler) PostSandboxesSandboxIDSnapshot(c *gin.Context, sandboxID api.S
 	}
 
 	deadline := time.Now().Add(time.Duration(body.RetentionSeconds) * time.Second)
+	instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	snapshotID, err := h.cloud.CreateInstanceSnapshot(ctx, provider.CreateInstanceSnapshotRequest{
-		CloudID:    inst.CloudID,
+		Instance:   instance,
 		PassID:     body.PassID,
 		InstanceID: body.InstanceID,
 		UserID:     body.UserID,
@@ -381,7 +391,8 @@ func (h *handler) GetSandboxesSandboxIDSnapshotStatus(c *gin.Context, sandboxID 
 		c.JSON(http.StatusBadRequest, gin.H{"error": "snapshotID query parameter is required"})
 		return
 	}
-	if _, err := h.svc.GetSandbox(ctx, string(sandboxID)); err != nil {
+	sb, err := h.svc.GetSandbox(ctx, string(sandboxID))
+	if err != nil {
 		if err == core.ErrSandboxNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "sandbox not found"})
 			return
@@ -389,11 +400,21 @@ func (h *handler) GetSandboxesSandboxIDSnapshotStatus(c *gin.Context, sandboxID 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	pool, err := h.svc.GetPool(ctx, sb.PoolID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	region, err := core.RegionFromZone(pool.Zone)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if h.cloud == nil {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "snapshot-status endpoint requires a cloud provider"})
 		return
 	}
-	status, reason, err := h.cloud.DescribeInstanceSnapshot(ctx, params.SnapshotID)
+	status, reason, err := h.cloud.DescribeInstanceSnapshot(ctx, region, params.SnapshotID)
 	if err != nil {
 		if errors.Is(err, provider.ErrSnapshotNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "snapshot not found"})
@@ -482,6 +503,11 @@ func (h *handler) PostSandboxesSandboxIDPause(c *gin.Context, sandboxID api.Sand
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	pool, err := h.svc.GetPool(ctx, sb.PoolID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	// Re-entry short-circuit: already paused → 204 (idempotent).
 	if inst.State == core.StatePaused {
 		c.Status(http.StatusNoContent)
@@ -503,7 +529,13 @@ func (h *handler) PostSandboxesSandboxIDPause(c *gin.Context, sandboxID api.Sand
 	}
 	// Sync stop the cloud instance. cp may be nil in unit tests; treat as no-op.
 	if h.cloud != nil && strings.TrimSpace(pausing.CloudID) != "" {
-		if err := h.cloud.StopInstance(ctx, pausing.CloudID); err != nil {
+		instance, refErr := provider.CloudInstanceForPool(pool, pausing.CloudID)
+		if refErr != nil {
+			_, _ = h.svc.RollbackPausing(ctx, sb.InstanceID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": refErr.Error()})
+			return
+		}
+		if err := h.cloud.StopInstance(ctx, instance); err != nil {
 			// Roll back to ALLOCATED so upstream ctl child-task can retry.
 			if _, rbErr := h.svc.RollbackPausing(ctx, sb.InstanceID); rbErr != nil {
 				log.Printf("[api] pause rollback failed sandbox=%s instance=%s err=%v rollback_err=%v",
@@ -613,7 +645,13 @@ func (h *handler) PostSandboxesSandboxIDResume(c *gin.Context, sandboxID api.San
 	}
 	// Sync start the cloud instance. cp may be nil in unit tests; treat as no-op.
 	if h.cloud != nil && strings.TrimSpace(resuming.CloudID) != "" {
-		if err := h.cloud.StartInstance(ctx, resuming.CloudID); err != nil {
+		instance, refErr := provider.CloudInstanceForPool(pool, resuming.CloudID)
+		if refErr != nil {
+			_, _ = h.svc.RollbackResuming(ctx, sb.InstanceID)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": refErr.Error()})
+			return
+		}
+		if err := h.cloud.StartInstance(ctx, instance); err != nil {
 			// Roll back to PAUSED so upstream ctl child-task can retry within the 1h window.
 			if _, rbErr := h.svc.RollbackResuming(ctx, sb.InstanceID); rbErr != nil {
 				log.Printf("[api] resume rollback failed sandbox=%s instance=%s err=%v rollback_err=%v",

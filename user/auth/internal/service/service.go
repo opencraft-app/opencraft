@@ -694,10 +694,16 @@ func (s *Service) verifyExistingUserPhoneAuthSMS(ctx context.Context, input Veri
 		if err != nil {
 			return nil, err
 		}
+		if err := s.store.CreateReferralClaim(ctx, user.ID, input.ReferralCode, "phone", s.now()); err != nil {
+			return nil, err
+		}
 		return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
 	}
 	user, err := s.store.FindUserByPhone(ctx, input.Phone)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.store.CreateReferralClaim(ctx, user.ID, input.ReferralCode, "phone", s.now()); err != nil {
 		return nil, err
 	}
 	return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
@@ -963,6 +969,10 @@ func (s *Service) SignUpWithPassword(ctx context.Context, input PasswordSignUpIn
 }
 
 func (s *Service) SignInWithPassword(ctx context.Context, email string, password string) (*AuthSession, error) {
+	return s.SignInWithPasswordAndReferral(ctx, email, password, "")
+}
+
+func (s *Service) SignInWithPasswordAndReferral(ctx context.Context, email string, password string, referralCode string) (*AuthSession, error) {
 	normalizedEmail := normalizeEmail(email)
 	if !isValidEmail(normalizedEmail) {
 		return nil, newError("invalid_email", "邮箱格式不正确。", 400)
@@ -979,7 +989,14 @@ func (s *Service) SignInWithPassword(ctx context.Context, email string, password
 		return nil, newError("invalid_credentials", "账号或密码不正确。", 401)
 	}
 
+	if err := s.store.CreateReferralClaim(ctx, user.ID, referralCode, "password", s.now()); err != nil {
+		return nil, err
+	}
 	return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
+}
+
+func (s *Service) ClaimReferral(ctx context.Context, userID, referralCode, channel string) error {
+	return s.store.CreateReferralClaim(ctx, userID, referralCode, channel, s.now())
 }
 
 func (s *Service) SignInWithOAuth(ctx context.Context, input OAuthSignInInput) (*AuthSession, error) {
@@ -1947,6 +1964,14 @@ func (s *Service) DeleteAdminUser(ctx context.Context, userID string) error {
 
 func (s *Service) ListAdminUsers(ctx context.Context, search string, limit int) ([]AdminUser, error) {
 	return s.store.ListAdminUsers(ctx, strings.TrimSpace(search), normalizeAdminLimit(limit))
+}
+
+func (s *Service) ListAdminUsersPage(ctx context.Context, search string, page int, pageSize int) ([]AdminUser, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	pageSize = normalizeAdminLimit(pageSize)
+	return s.store.ListAdminUsersPage(ctx, strings.TrimSpace(search), pageSize, (page-1)*pageSize)
 }
 
 func (s *Service) ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error) {

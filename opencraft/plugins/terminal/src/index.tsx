@@ -1,8 +1,9 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
-import type {
-  AppServerTerminalSession,
-  AppServerWorkbenchRuntime,
+import type { ConversationPanelState } from "@opencraft/workbench-panels";
+import {
+  ConversationTerminalSessionRegistry as WorkbenchTerminalSessionRegistry,
+  type ConversationTerminalOpenOptions,
 } from "@opencraft/workbench-runtime";
 import {
   useEffect,
@@ -12,96 +13,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
-export interface WorkbenchTerminalOpenOptions {
-  readonly resourceOwnerId?: string;
-  readonly hostId: string;
-  readonly cwd: string | null;
-  readonly cols?: number;
-  readonly rows?: number;
-}
-
-interface OwnedTerminalSession {
-  readonly ownerId: string | null;
-  readonly hostId: string;
-  readonly session: AppServerTerminalSession;
-}
-
-export class WorkbenchTerminalSessionRegistry {
-  private readonly sessions = new Map<string, OwnedTerminalSession>();
-  private disposed = false;
-
-  constructor(
-    private readonly resolveRuntime: (hostId: string) => AppServerWorkbenchRuntime,
-  ) {}
-
-  open(options: WorkbenchTerminalOpenOptions): string {
-    if (this.disposed) throw new Error("Workbench terminal registry is disposed");
-    const runtime = this.resolveRuntime(options.hostId);
-    const session = runtime.resources.terminal.open({
-      command: ["/bin/bash", "--noprofile", "--norc"],
-      cwd: options.cwd,
-      cols: options.cols ?? 80,
-      rows: options.rows ?? 24,
-    });
-    const key = JSON.stringify([options.hostId, session.processId]);
-    this.sessions.set(key, {
-      ownerId: options.resourceOwnerId ?? null,
-      hostId: options.hostId,
-      session,
-    });
-    return key;
-  }
-
-  get(sessionId: string): AppServerTerminalSession | null {
-    return this.sessions.get(sessionId)?.session ?? null;
-  }
-
-  listForOwner(ownerId: string): readonly string[] {
-    return [...this.sessions.entries()].flatMap(([sessionId, owned]) =>
-      owned.ownerId === ownerId ? [sessionId] : []);
-  }
-
-  releaseOwner(ownerId: string): void {
-    for (const sessionId of this.listForOwner(ownerId)) this.release(sessionId);
-  }
-
-  async restore(hostId: string): Promise<string[]> {
-    if (this.disposed) throw new Error("Terminal registry is disposed");
-    const terminal = this.resolveRuntime(hostId).resources.terminal;
-    const { processes } = await terminal.list();
-    if (this.disposed) return [];
-    return processes.filter(process => process.phase === "running").map(process => {
-      const id = process.processHandle;
-      const key = JSON.stringify([hostId, id]);
-      if (!this.sessions.has(key)) this.sessions.set(key, {
-        ownerId: null,
-        hostId,
-        session: terminal.attach(id),
-      });
-      return key;
-    });
-  }
-
-  release(sessionId: string): void {
-    const owned = this.sessions.get(sessionId);
-    if (owned === undefined) return;
-    this.sessions.delete(sessionId);
-    void owned.session.terminate().then(async () => {
-      await owned.session.dispose();
-    }).catch(() => {
-      if (!this.disposed) this.sessions.set(sessionId, owned);
-      else void owned.session.dispose();
-    });
-  }
-
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
-    this.disposed = true;
-    const sessions = [...this.sessions.values()];
-    this.sessions.clear();
-    await Promise.allSettled(sessions.map(({ session }) => session.dispose()));
-  }
-}
+export type WorkbenchTerminalOpenOptions = ConversationTerminalOpenOptions;
+export { WorkbenchTerminalSessionRegistry };
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -150,11 +63,27 @@ function terminalTheme(element: HTMLElement) {
   };
 }
 
+export interface TerminalGridSize {
+  readonly cols: number;
+  readonly rows: number;
+}
+
+export function terminalBoxIsVisible(width: number, height: number): boolean {
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+}
+
+export function terminalGridSizeChanged(
+  previous: TerminalGridSize | null,
+  next: TerminalGridSize,
+): boolean {
+  return previous === null || previous.cols !== next.cols || previous.rows !== next.rows;
+}
+
 function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
   return function TerminalPanel({ tab }: PanelRendererProps) {
     const sessionId = tab.resource ?? "";
     const session = registry.get(sessionId);
-    const slotRef = useRef<HTMLDivElement | null>(null);
+    const hostRef = useRef<HTMLDivElement | null>(null);
     const [presentationError, setPresentationError] = useState<Error | null>(null);
     const emptySnapshot = useMemo(() => Object.freeze({
       revision: 0,
@@ -173,15 +102,17 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
     );
 
     useEffect(() => {
-      const slot = slotRef.current;
-      if (slot === null || session === null) return;
+      const host = hostRef.current;
+      if (host === null || session === null) return;
       let disposed = false;
       let frameId: number | null = null;
       let removeSessionListener: () => void = () => undefined;
       let resizeObserver: ResizeObserver | null = null;
       let themeObserver: MutationObserver | null = null;
+      let stopObservingFonts: (() => void) | null = null;
       let terminal: import("@xterm/xterm").Terminal | null = null;
       let lastOutputSequence = 0;
+      let lastPublishedGrid: TerminalGridSize | null = null;
 
       const mount = async () => {
         const [{ Terminal }, { FitAddon }] = await Promise.all([
@@ -196,25 +127,19 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
           cursorBlink: true,
           cursorStyle: "bar",
           fontFamily:
-            getComputedStyle(slot)
+            getComputedStyle(host)
               .getPropertyValue("--font-family-mono")
               .trim() ||
             '"SF Mono", "SFMono-Regular", "JetBrains Mono Variable", ui-monospace, Menlo, Monaco, Consolas, monospace',
           fontSize: 12,
+          letterSpacing: 0,
           lineHeight: 1.22,
           scrollback: 10_000,
-          theme: terminalTheme(slot),
+          theme: terminalTheme(host),
         });
         const fit = new FitAddon();
         terminal.loadAddon(fit);
-        terminal.open(slot);
-        themeObserver = new MutationObserver(() => {
-          if (terminal !== null) terminal.options.theme = terminalTheme(slot);
-        });
-        themeObserver.observe(document.documentElement, {
-          attributes: true,
-          attributeFilter: ["class", "data-theme", "style"],
-        });
+        terminal.open(host);
 
         const writePendingOutput = () => {
           if (terminal === null) return;
@@ -234,9 +159,12 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
 
         const fitAndPublish = () => {
           frameId = null;
-          if (disposed || terminal === null || slot.clientWidth < 1 || slot.clientHeight < 1)
-            return;
+          if (disposed || terminal === null) return;
+          if (!terminalBoxIsVisible(host.clientWidth, host.clientHeight)) return;
           fit.fit();
+          const nextGrid = { cols: terminal.cols, rows: terminal.rows };
+          if (!terminalGridSizeChanged(lastPublishedGrid, nextGrid)) return;
+          lastPublishedGrid = nextGrid;
           void session.resize(terminal.cols, terminal.rows).catch((error) => {
             if (session.getSnapshot().phase === "running") setPresentationError(error as Error);
           });
@@ -244,8 +172,42 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
         const scheduleFit = () => {
           if (frameId === null) frameId = window.requestAnimationFrame(fitAndPublish);
         };
-        resizeObserver = new ResizeObserver(scheduleFit);
-        resizeObserver.observe(slot);
+
+        const invalidateFontMeasurement = () => {
+          if (disposed || terminal === null) return;
+          const nextFontFamily =
+            getComputedStyle(host).getPropertyValue("--font-family-mono").trim()
+            || terminal.options.fontFamily;
+          terminal.options.fontFamily = `${nextFontFamily} `;
+          terminal.options.fontFamily = nextFontFamily;
+          terminal.refresh(0, terminal.rows - 1);
+          scheduleFit();
+        };
+
+        themeObserver = new MutationObserver(() => {
+          if (terminal === null) return;
+          terminal.options.theme = terminalTheme(host);
+          invalidateFontMeasurement();
+        });
+        themeObserver.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ["class", "data-theme", "style"],
+        });
+
+        const fontSet = document.fonts;
+        const handleFontsLoaded = () => invalidateFontMeasurement();
+        fontSet.addEventListener("loadingdone", handleFontsLoaded);
+        void fontSet.ready.then(handleFontsLoaded);
+        stopObservingFonts = () => fontSet.removeEventListener("loadingdone", handleFontsLoaded);
+
+        resizeObserver = new ResizeObserver((entries) => {
+          const entry = entries[0];
+          const width = entry?.contentRect.width ?? host.clientWidth;
+          const height = entry?.contentRect.height ?? host.clientHeight;
+          if (terminalBoxIsVisible(width, height)) scheduleFit();
+        });
+        resizeObserver.observe(host);
+        fitAndPublish();
         scheduleFit();
         terminal.focus();
 
@@ -268,6 +230,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
         cleanupInput?.();
         resizeObserver?.disconnect();
         themeObserver?.disconnect();
+        stopObservingFonts?.();
         removeSessionListener();
         terminal?.dispose();
       };
@@ -285,7 +248,9 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
     const error = presentationError ?? snapshot.error;
     return (
       <section className="terminal-panel" data-phase={snapshot.phase}>
-        <div className="terminal-panel__viewport" data-selection="text" ref={slotRef} />
+        <div className="terminal-panel__inset" data-selection="text">
+          <div className="terminal-panel__host" ref={hostRef} />
+        </div>
         {error !== null ? (
           <div className="terminal-panel__status" role="status">
             {error.message}
@@ -304,6 +269,13 @@ export function createTerminalWorkbenchPanelPlugin(
   registry: WorkbenchTerminalSessionRegistry,
 ) {
   const TerminalPanel = createTerminalPanel(registry);
+  const activeTerminalSessionId = (state: ConversationPanelState): string | null => {
+    for (const region of [state.right, state.bottom]) {
+      const active = region.tabs.find((tab) => tab.id === region.activeTabId);
+      if (active?.kind === "terminal" && active.resource !== undefined) return active.resource;
+    }
+    return null;
+  };
   const terminalTab = (sessionId: string) => ({
     id: `terminal:${sessionId}`,
     kind: "terminal",
@@ -315,10 +287,29 @@ export function createTerminalWorkbenchPanelPlugin(
     preview: false,
   });
   return Object.assign(function TerminalWorkbenchPanelPlugin(ctx: Context) {
+    const observedPanelOwners = new Map<string, () => void>();
+    const syncActiveTerminal = (panelOwnerId: string) => {
+      const sessionId = activeTerminalSessionId(
+        ctx.workbenchPanels.getOwnerSnapshot(panelOwnerId),
+      );
+      if (sessionId !== null) registry.setActive(sessionId);
+    };
+    const observePanelOwner = (panelOwnerId: string) => {
+      if (!observedPanelOwners.has(panelOwnerId)) {
+        observedPanelOwners.set(panelOwnerId, ctx.workbenchPanels.subscribeOwner(
+          panelOwnerId,
+          () => syncActiveTerminal(panelOwnerId),
+        ));
+      }
+      syncActiveTerminal(panelOwnerId);
+    };
     const remove = [
       ctx.workbenchPanels.register<{ readonly sessionId: string }>({
         kind: "terminal",
-        restoreTabs: (ownerId) => registry.listForOwner(ownerId).map(terminalTab),
+        restoreTabs: (ownerId) => {
+          observePanelOwner(ownerId);
+          return registry.listForOwner(ownerId).map(terminalTab);
+        },
         createTab: ({ sessionId }) => terminalTab(sessionId),
         disposeTab: (tab, _ownerId, reason) => {
           // Unmount/owner eviction/plugin replacement is not user intent to kill.
@@ -340,10 +331,15 @@ export function createTerminalWorkbenchPanelPlugin(
           const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
             resourceOwnerId: context.resourceOwnerId });
           ctx.workbenchPanels.open(context.ownerId, "terminal", { sessionId });
+          observePanelOwner(context.ownerId);
         },
       }),
     ];
-    ctx.effect(() => () => remove.reverse().forEach((dispose) => dispose()));
+    ctx.effect(() => () => {
+      for (const unsubscribe of observedPanelOwners.values()) unsubscribe();
+      observedPanelOwners.clear();
+      remove.reverse().forEach((dispose) => dispose());
+    });
   }, {
     inject: ["workbenchPanels", "workbenchPanelRenderers"],
   });

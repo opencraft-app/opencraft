@@ -6,7 +6,7 @@ import type { ChannelPanelProps } from "../agent-config";
 
 const mock = vi.hoisted(() => ({
   configure: vi.fn(), remove: vi.fn(), qr: vi.fn(), wecom: vi.fn(), refresh: vi.fn(),
-  success: vi.fn(), error: vi.fn(), bound: [] as string[],
+  success: vi.fn(), error: vi.fn(), bound: [] as string[], loading: false,
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ i18n: { language: "zh-CN" } }), initReactI18next: { type: "3rdParty", init() {} } }));
 vi.mock("@/i18n/t", () => ({ t: (text: string, values?: Record<string, string>) => text.replace(/\{\{(.*?)\}\}/g, (_, key: string) => values?.[key.trim()] ?? key) }));
@@ -14,7 +14,7 @@ vi.mock("../agent-config", async () => {
   const React = await import("react");
   return {
     useChannelOperations: () => ({
-      loading: false, productConfig: { isI18n: true },
+      loading: mock.loading, productConfig: { isI18n: true },
       configData: { channels: mock.bound.map((value) => ({ value, enabled: true })) },
       currentChannelList: ["qqbot", "dingtalk", "slack", "wecom", "weixin"].map((value) => ({ value, channel: value, channel_name: value, primaryLabel: value })),
       configureChannel: mock.configure, deleteChannel: mock.remove,
@@ -29,9 +29,18 @@ vi.mock("../agent-config", async () => {
   };
 });
 function card(name: string) { return screen.getByRole("heading", { name }).closest(".lh-std-channel-panel__card") as HTMLElement; }
-beforeEach(() => { vi.clearAllMocks(); mock.bound = []; mock.configure.mockResolvedValue(true); mock.remove.mockResolvedValue(true); });
+beforeEach(() => { vi.clearAllMocks(); mock.bound = []; mock.loading = false; mock.configure.mockResolvedValue(true); mock.remove.mockResolvedValue(true); });
 afterEach(cleanup);
 describe("ChannelPanel Radix interactions", () => {
+  it("keeps the channel page hidden behind the centered first-load state", () => {
+    mock.loading = true;
+    render(<ChannelPanel {...{} as ChannelPanelProps} />);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveClass("min-h-[min(60vh,520px)]", "items-center", "justify-center");
+    expect(screen.queryByRole("heading", { name: "通道" })).not.toBeInTheDocument();
+  });
+
   it.each(["qqbot", "dingtalk"])("keeps %s manual binding, trimming and success draft clearing", async (channel) => {
     const user = userEvent.setup();
     render(<ChannelPanel {...{} as ChannelPanelProps} />);

@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { DesktopLightVelaLogin, forwardLoginCallback, NATIVE_CALLBACK, parseLoginCallback, type DesktopLoginSession } from "../apps/workbench-electron/src/lightvela-login";
 import { createDesktopSessionStore } from "../apps/workbench-electron/src/lightvela-session-store";
 import { createFilePrivateStorage } from "../apps/workbench-electron/src/private-storage";
-import { requestDesktopAccount, validateDesktopAccountRequest } from "../apps/workbench-electron/src/lightvela-account-http";
+import { desktopAccountPublicError, requestDesktopAccount, validateDesktopAccountRequest } from "../apps/workbench-electron/src/lightvela-account-http";
+import { HermesInstanceBotManagement } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/instance-bot-management";
 
 async function fixture(overrides: Partial<ConstructorParameters<typeof DesktopLightVelaLogin>[0]> = {}) {
   const opened: URL[] = [];
@@ -261,4 +262,81 @@ test("desktop instance creation permits only the explicit name and timeout contr
   assert.throws(() => validateDesktopAccountRequest({ ...request({ name: "env", timeout: 3600 }), url: "https://api.lightvela.ai/v1/instances" }, session));
   assert.throws(() => validateDesktopAccountRequest({ ...request({ name: "env", timeout: 3600 }), url: "https://api.lightvela.com/v1/passes" }, session));
   for (const path of ["/v1/instances/create-prerequisites", "/v1/instances/instance-test"]) assert.equal(validateDesktopAccountRequest({ url: `https://api.lightvela.com${path}`, method: "GET" }, session).pathname, path);
+});
+
+test("desktop account bridge admits exact Bot catalog and management routes for both regions", async () => {
+  for (const region of ["cn", "intl"] as const) {
+    const session = { region, token: "test-only" };
+    const base = `https://api.lightvela.${region === "cn" ? "com" : "ai"}`;
+    const requests = [
+      { path: "/v1/instances/ins_test/bots", method: "GET" },
+      { path: "/v1/instances/ins_test/bots", method: "POST", body: { name: "中文 Bot", create_mode: "blank" } },
+      { path: "/v1/instances/ins_test/bots", method: "POST", body: { name: "副本", create_mode: "clone", source_bot_id: "profile-source" } },
+      { path: "/v1/instances/ins_test/bots/profile-test", method: "PUT", body: { name: "新名称" } },
+      { path: "/v1/instances/ins_test/bots/profile-test", method: "DELETE" },
+    ];
+    for (const request of requests) {
+      let sent = false;
+      const response = await requestDesktopAccount({ url: base + request.path, method: request.method,
+        ...(request.body ? { contentType: "application/json", body: new TextEncoder().encode(JSON.stringify(request.body)) } : {}),
+      }, session, async (url, init) => {
+        sent = true; assert.equal(String(url), base + request.path); assert.equal(init?.method, request.method);
+        assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer test-only");
+        return Response.json({ data: request.method === "GET" ? { items: [] } : {} });
+      });
+      assert.equal(sent, true); assert.equal(response.status, 200);
+    }
+  }
+});
+
+test("Bot IPC allowlist rejects adjacent routes and invalid mutation payloads before fetch", async () => {
+  const session = { region: "cn" as const, token: "test-only" };
+  const base = "https://api.lightvela.com";
+  for (const path of ["/v1/instances/ins/bots/one/exec", "/v1/instances/ins/bots/one/../two", "/v1/instances/ins%2Fother/bots", "/v1/instances/ins/bots?force=true"]) {
+    assert.throws(() => validateDesktopAccountRequest({ url: base + path, method: "DELETE" }, session));
+  }
+  for (const body of [{ name: "", create_mode: "blank" }, { name: "x", create_mode: "clone" }, { name: "x", create_mode: "blank", source_bot_id: "default" }, { name: "x", create_mode: "blank", command: "echo unsafe" }]) {
+    let sent = false;
+    await assert.rejects(requestDesktopAccount({ url: base + "/v1/instances/ins/bots", method: "POST", contentType: "application/json", body: new TextEncoder().encode(JSON.stringify(body)) }, session,
+      async () => { sent = true; return Response.json({}); }));
+    assert.equal(sent, false);
+  }
+});
+
+test("production Bot management requests cross the actual Electron validator unchanged", async () => {
+  const rows = [{ bot_id: "ins", instance_id: "ins", profile_id: "main", name: "Main", status: "ready" }];
+  const writes: Array<{ method: string; body: any }> = [];
+  const management = new HermesInstanceBotManagement("ins", async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const response = await requestDesktopAccount({ url: `https://api.lightvela.com${path}`, method: init?.method ?? "GET",
+      ...(typeof init?.body === "string" ? { body: new TextEncoder().encode(init.body), contentType: new Headers(init.headers).get("content-type")! } : {}),
+    }, { region: "cn", token: "test-only" }, async (_url, request) => {
+      const method = request?.method ?? "GET";
+      if (method === "GET") return Response.json({ data: { items: rows } });
+      const body = request?.body ? JSON.parse(new TextDecoder().decode(request.body as ArrayBuffer)) : undefined;
+      writes.push({ method, body });
+      if (method === "POST") {
+        const row = { bot_id: `profile-${rows.length}`, instance_id: "ins", profile_id: `profile-${rows.length}`, name: body.name, status: "ready" };
+        rows.push(row); return Response.json({ data: row });
+      }
+      const id = path.split("/").at(-1)!;
+      const row = rows.find(row => row.bot_id === id)!;
+      if (method === "PUT") row.name = body.name;
+      if (method === "DELETE") rows.splice(rows.indexOf(row), 1);
+      return Response.json({ data: row });
+    });
+    return JSON.parse(new TextDecoder().decode(response.body)).data as T;
+  });
+  const created = await management.create({ clientRequestId: "blank", name: "中文助理" });
+  const clone = await management.create({ clientRequestId: "clone", name: "副本", templateId: created.botId });
+  const renamed = await management.update(clone.botId, management.revision(clone), { name: "新名称" });
+  await management.delete(renamed.botId, management.revision(renamed));
+  assert.deepEqual(writes.map(write => write.method), ["POST", "POST", "PUT", "DELETE"]);
+  assert.equal(writes[1]?.body.source_bot_id, created.botId);
+});
+
+test("IPC error mapping preserves safe validation reasons without exposing raw causes", () => {
+  try { validateDesktopAccountRequest({ url: "https://api.lightvela.com/admin/private", method: "GET" }, { region: "cn", token: "test-only" }); }
+  catch (error) { assert.match(desktopAccountPublicError(error).message, /不支持此账号操作/); }
+  assert.doesNotMatch(desktopAccountPublicError(new Error("sensitive-request-payload")).message, /sensitive/);
+  assert.match(desktopAccountPublicError(Object.assign(new Error("private"), { name: "TimeoutError" })).message, /超时/);
 });

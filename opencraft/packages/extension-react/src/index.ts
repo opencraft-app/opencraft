@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 
 import type { ViewContribution } from "@opencraft/extension-contract";
 import type { HostConnectionProfile, ProvisionHostInput } from "@opencraft/workbench-runtime";
@@ -17,6 +17,8 @@ export interface PlatformViewHost {
   readonly platform: "web" | "electron" | "expo";
   readonly activeHostId: string;
   readonly profiles: readonly HostConnectionProfile[];
+  /** Establishes the selected Agent Runtime without choosing a Thread or workspace. */
+  ensureRuntimeReady?(hostId: string): Promise<void>;
   provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
   removeHost(hostId: string): Promise<boolean>;
   openView(viewId: string, resourceUri?: string | null): void;
@@ -31,6 +33,32 @@ export interface PlatformViewHost {
 /** @deprecated Use the location-neutral PlatformViewHost name. */
 export type ExtensionSettingsViewHost = PlatformViewHost;
 
+export interface PlatformViewRegions {
+  /** Route-owned content rendered by the persistent platform Header. */
+  readonly Header?: ComponentType<{ readonly children: ReactNode }>;
+  /** Platform-owned compact selector for controls rendered inside Header. */
+  readonly ToolbarSelect?: ComponentType<PlatformToolbarSelectProps>;
+}
+
+export interface PlatformToolbarSelectOption {
+  readonly value: string;
+  readonly label: ReactNode;
+  readonly textValue: string;
+  /** Semantic visual role; the platform chooses the concrete icon and size. */
+  readonly visual?: "local" | "remote";
+  readonly disabled?: boolean;
+}
+
+export interface PlatformToolbarSelectProps {
+  readonly value: string | null;
+  readonly options: readonly PlatformToolbarSelectOption[];
+  readonly onValueChange: (value: string) => void;
+  readonly label: string;
+  readonly title?: ReactNode;
+  readonly placeholder?: ReactNode;
+  readonly disabled?: boolean;
+}
+
 export interface ExtensionSettingsViewProps {
   /** Only the dedicated sign-in presentation receives a pre-existing flow lease. */
   readonly authenticationFlowId?: string;
@@ -38,6 +66,7 @@ export interface ExtensionSettingsViewProps {
   readonly onDismiss?: () => void;
   readonly contribution: ViewContribution;
   readonly host: PlatformViewHost;
+  readonly regions?: PlatformViewRegions;
   readonly activation: {
     readonly viewId: string;
     readonly resourceUri: string | null;

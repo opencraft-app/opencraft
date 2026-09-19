@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
+import { accountCardClass } from "@/components/account/account-surface";
+import { cn } from "@/lib/utils";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { ReferralOverview, ReferralStats } from "@/repositories/types";
 
@@ -51,15 +53,15 @@ export const ReferralSection = () => {
   if (!visible) return null;
 
   return (
-    <section className="overflow-hidden bg-white" style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}>
-      <div className="flex items-center gap-3 border-b border-[#E6E9EF] px-5 py-5 md:px-8">
+    <section className={cn(accountCardClass, "overflow-hidden")}>
+      <div className="flex items-center gap-3 border-b border-black/[0.08] p-5">
         <Gift className="h-5 w-5" aria-hidden="true" style={{ color: "var(--lw-accent)" }} />
         <div>
           <h3 className="m-0 text-base font-semibold" style={{ color: "rgba(0,0,0,0.9)" }}>{t("邀请返利")}</h3>
           <p className="m-0 mt-1 text-xs" style={{ color: "rgba(0,0,0,0.5)" }}>{t("好友首次开通成功，双方获得积分。")}</p>
         </div>
       </div>
-      <div className="px-5 py-5 md:px-8">
+      <div className="p-5">
         {error ? (
           <p className="m-0 text-sm" role="alert" style={{ color: "#cf3d4c" }}>{error}</p>
         ) : overview && stats ? (

@@ -55,6 +55,23 @@ type CreditPackage struct {
 	UpdatedTime         time.Time  `json:"updated_time"`
 }
 
+type AdminPackageFilter struct {
+	UserID    string
+	PackageID string
+	ProductID string
+	Status    string
+	Page      int
+	PageSize  int
+}
+
+type AdminCreditPackage struct {
+	CreditPackage
+	ProductName     string       `json:"product_name"`
+	CreditTotal     CreditAmount `json:"credit_total"`
+	CreditUsedTotal CreditAmount `json:"credit_used_total"`
+	CreditLeft      CreditAmount `json:"credit_left"`
+}
+
 type HistoryCreditPackage struct {
 	CreditPackage
 	DeletedTime   time.Time `json:"deleted_time"`

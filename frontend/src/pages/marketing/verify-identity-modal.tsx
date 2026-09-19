@@ -592,7 +592,7 @@ export const VerifyIdentityModal = ({
         >
           <motion.div
             className={cn(
-              "fixed inset-x-4 bottom-4 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl border border-[var(--realname-control-border)] bg-[var(--surface-base)] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.15)] outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2",
+              "fixed inset-x-4 bottom-4 flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-md border border-[var(--border-subtle)] bg-white shadow-xl outline-none md:inset-auto md:left-1/2 md:top-1/2 md:w-[680px] md:max-w-[calc(100vw-2rem)] md:-translate-x-1/2 md:-translate-y-1/2",
               layerClassName,
             )}
             initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}

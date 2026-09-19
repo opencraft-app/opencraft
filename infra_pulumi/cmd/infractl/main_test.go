@@ -4,11 +4,31 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	auto "github.com/pulumi/pulumi/sdk/v3/go/auto"
 )
 
 func TestScopedUpdateDoesNotSyncFullPlatformOutputs(t *testing.T) {
 	if shouldSyncAfterUp("notify") {
 		t.Fatal("notify-only update must not sync full platform outputs")
+	}
+}
+
+func TestSandboxNetworkUpdateDoesNotSyncFullPlatformOutputs(t *testing.T) {
+	if shouldSyncAfterUp("sandbox-network") {
+		t.Fatal("sandbox-network update must not sync TKE/deploy outputs")
+	}
+}
+
+func TestResolveComponentScopeUsesStackConfigAndAllowsEnvOverride(t *testing.T) {
+	values := auto.ConfigMap{
+		"infra-pulumi:componentScope": {Value: "sandbox-network"},
+	}
+	if got := resolveComponentScope("", values); got != "sandbox-network" {
+		t.Fatalf("scope from stack config = %q", got)
+	}
+	if got := resolveComponentScope("notify", values); got != "notify" {
+		t.Fatalf("scope with env override = %q", got)
 	}
 }
 
@@ -35,6 +55,28 @@ func TestParseReferralBootstrapArgsDefaultsToBeijing(t *testing.T) {
 	}
 	if stack != defaultStack || apply || allow {
 		t.Fatalf("stack=%q apply=%v allow=%v", stack, apply, allow)
+	}
+}
+
+func TestParseReferralDatabaseBootstrapArgs(t *testing.T) {
+	options, err := parseReferralDatabaseBootstrapArgs([]string{
+		"--stack", "sgprod", "--apply", "--allow-database-password-reset", "--allow-internal-token-change",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.stack != "sgprod" || !options.apply || !options.allowDatabasePasswordReset || !options.allowInternalTokenChange {
+		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestParseReferralDatabaseBootstrapArgsDefaultsToBeijing(t *testing.T) {
+	options, err := parseReferralDatabaseBootstrapArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.stack != defaultStack || options.apply || options.allowDatabasePasswordReset || options.allowInternalTokenChange {
+		t.Fatalf("options = %+v", options)
 	}
 }
 

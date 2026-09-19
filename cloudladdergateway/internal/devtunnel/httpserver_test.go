@@ -2,7 +2,9 @@ package devtunnel
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,30 @@ import (
 	"testing"
 	"time"
 )
+
+type testCapabilityVerifier struct {
+	token string
+	host  string
+	err   error
+}
+
+type boundCapabilityVerifier struct {
+	token string
+	host  string
+}
+
+func (v boundCapabilityVerifier) Verify(_ context.Context, token string, tunnelHost string) error {
+	if token != v.token || tunnelHost != v.host {
+		return errors.New("capability is not bound to this tunnel host")
+	}
+	return nil
+}
+
+func (v *testCapabilityVerifier) Verify(_ context.Context, token string, tunnelHost string) error {
+	v.token = token
+	v.host = tunnelHost
+	return v.err
+}
 
 // startAgent 起一个后台 goroutine 模拟 DevCloud agent：循环 poll，取到请求后回放到
 // replay(把请求交给测试提供的回放函数)，再 reply。srvURL 是 httptest server 地址。
@@ -44,7 +70,7 @@ func startAgent(t *testing.T, srvURL, token, env string, replay func(TunneledReq
 
 			out := replay(req)
 			payload, _ := json.Marshal(out)
-			replyReq, _ := http.NewRequest(http.MethodPost, srvURL+reservedPrefix+"reply?rid="+req.RID, bytes.NewReader(payload))
+			replyReq, _ := http.NewRequest(http.MethodPost, srvURL+reservedPrefix+"reply?rid="+req.RID+"&env="+env, bytes.NewReader(payload))
 			auth(replyReq)
 			rr, err := client.Do(replyReq)
 			if err == nil {
@@ -148,6 +174,86 @@ func TestHTTPAuthRequired(t *testing.T) {
 		t.Fatalf("authed idle poll: got %d want 204", resp2.StatusCode)
 	}
 	resp2.Body.Close()
+}
+
+func TestHTTPAgentCapabilityIsBoundToPollHostAndCannotIngest(t *testing.T) {
+	hub := NewHub()
+	defer hub.Close()
+	verifier := &testCapabilityVerifier{}
+	srv := httptest.NewServer(NewServer(hub, ServerOptions{
+		Token: "shared-ingest-secret", Capabilities: verifier, PollTimeout: 20 * time.Millisecond,
+	}))
+	defer srv.Close()
+
+	poll, _ := http.NewRequest(http.MethodGet, srv.URL+reservedPrefix+"poll?env=uin-450860000013.sg.tunnel.internal", nil)
+	poll.Header.Set("Authorization", "Bearer lvdt1.450860000013.capability")
+	response, err := http.DefaultClient.Do(poll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent || verifier.token != "lvdt1.450860000013.capability" || verifier.host != "uin-450860000013.sg.tunnel.internal" {
+		t.Fatalf("status=%d token=%q host=%q", response.StatusCode, verifier.token, verifier.host)
+	}
+
+	ingest, _ := http.NewRequest(http.MethodPost, srv.URL+"/trade/jifei/callback", strings.NewReader(`{}`))
+	ingest.Host = "uin-450860000013.sg.tunnel.internal"
+	ingest.Header.Set("Authorization", "Bearer lvdt1.450860000013.capability")
+	ingestResponse, err := http.DefaultClient.Do(ingest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingestResponse.Body.Close()
+	if ingestResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("capability authenticated ingest: %d", ingestResponse.StatusCode)
+	}
+}
+
+func TestHTTPAgentCapabilityReplyIsBoundToEnv(t *testing.T) {
+	hub := NewHub()
+	defer hub.Close()
+	const (
+		env   = "uin-450860000013.sg.tunnel.internal"
+		token = "lvdt1.450860000013.capability"
+	)
+	srv := httptest.NewServer(NewServer(hub, ServerOptions{
+		Token: "shared-ingest-secret", Capabilities: boundCapabilityVerifier{token: token, host: env},
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := hub.Dispatch(ctx, env, TunneledRequest{RID: "r-capability-env"})
+		result <- err
+	}()
+	if _, ok, err := hub.Poll(ctx, env); err != nil || !ok {
+		t.Fatalf("Poll: ok=%v err=%v", ok, err)
+	}
+
+	reply := func(query string) int {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+reservedPrefix+"reply?rid=r-capability-env"+query, strings.NewReader(`{"status":204}`))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := reply(""); got != http.StatusUnauthorized {
+		t.Fatalf("reply without env: got %d want 401", got)
+	}
+	if got := reply("&env=uin-450860000014.sg.tunnel.internal"); got != http.StatusUnauthorized {
+		t.Fatalf("reply with another env: got %d want 401", got)
+	}
+	if got := reply("&env=" + env); got != http.StatusOK {
+		t.Fatalf("reply with bound env: got %d want 200", got)
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
 }
 
 // TestHTTPReplyUnknownRID 验证：对未知 rid 的 reply 返 410。

@@ -138,7 +138,7 @@ func readTDSQLSnapshot(ctx context.Context, db *sql.DB) (TDSQLSnapshot, error) {
 	}
 
 	revisionRows, err := db.QueryContext(ctx, `
-		SELECT version, applied, total, error, hash, partial_hashes, claim_id
+		SELECT version, applied, total, error, error_stmt, hash, partial_hashes, claim_id
 		FROM atlas_schema_revisions
 		ORDER BY version
 	`)
@@ -154,6 +154,7 @@ func readTDSQLSnapshot(ctx context.Context, db *sql.DB) (TDSQLSnapshot, error) {
 			&revision.Applied,
 			&revision.Total,
 			&revision.Error,
+			&revision.ErrorStmt,
 			&revision.Hash,
 			&partialHashes,
 			&revision.ClaimID,

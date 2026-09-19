@@ -17,7 +17,7 @@ vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => ({ plan
 vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => true, useRealnamePhoneVerificationEnabled: () => false, useReferralEnabled: () => false }));
 vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass, modifyingPass, refreshPasses: mocks.refresh, user: { plan: { name: "Legacy plan", trialDays: 7 } } }) }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: { id: userId, name: `Owner ${userId}`, createdAt: "2026-01-01" }, currentSubscription: null }, authReady: true, isAuthenticated: true, signOut: mocks.signOut }) }));
-vi.mock("@/components/site/product-chrome", () => ({ ProductPageShell: ({ children }: { children: ReactNode }) => <>{children}</> }));
+vi.mock("@/components/site/product-chrome", () => ({ ProductPageShell: ({ children, className }: { children: ReactNode; className?: string }) => <div data-testid="account-shell" className={className}>{children}</div> }));
 vi.mock("@/pages/marketing/saved-cards-section", () => ({ SavedCardsSection: () => null }));
 vi.mock("@/components/dev/account-preview-state-switcher", () => ({ AccountPreviewStateSwitcher: () => null }));
 vi.mock("@/pages/marketing/renew-pass-modal", () => ({ RenewPassModal: ({ onSuccess }: { onSuccess: () => void }) => <button onClick={onSuccess}>Complete synthetic renewal</button> }));
@@ -37,6 +37,39 @@ beforeEach(() => {
 afterEach(() => { act(() => commandHost().hide?.()); cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("account and sidebar shared pass selection", () => {
+  it("opts into Agents tokens and uses a page-level display heading", () => {
+    render(accountOnly());
+    expect(screen.getByTestId("account-shell")).toHaveClass("agents-ui");
+    expect(screen.getByRole("heading", { name: "账号管理", level: 1 })).toHaveClass("font-display-zh");
+  });
+
+  it("keeps the initial loading state inside the main page layout", () => {
+    activePass = null;
+    mocks.list.mockReturnValue(new Promise<Pass[]>(() => {}));
+    render(accountOnly());
+    expect(screen.getByRole("main")).toContainElement(screen.getByRole("status"));
+    expect(screen.queryByText("账号管理")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["empty", []],
+    ["ready", [buildPass({ bundle_name: "Recovered" })]],
+  ] as const)("recovers the page-level pass error to %s after retry", async (expected, recoveredPasses) => {
+    activePass = null;
+    mocks.list.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(recoveredPasses);
+    render(accountOnly());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("套餐列表加载失败");
+    expect(screen.getByRole("main")).toContainElement(screen.getByRole("alert"));
+    await userEvent.click(screen.getByRole("button", { name: "重试" }));
+    if (expected === "ready") {
+      expect(await screen.findByText("Recovered")).toBeInTheDocument();
+    } else {
+      expect(await screen.findByRole("link", { name: "立即创建" })).toBeInTheDocument();
+    }
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps modifying precedence and the same quota in both consumers without moving account refresh", async () => {
     modifyingPass = buildPass({ pass_id: "modifying", status: "modifying", bundle_name: "Upgrading A", credit_total: 2000, credit_available: 400 });
     render(both());

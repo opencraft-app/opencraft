@@ -24,6 +24,9 @@ const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
+const sendPhoneChangeCode = vi.fn();
+const verifyPhoneChange = vi.fn();
+const requestEmailBind = vi.fn();
 const refreshPasses = vi.fn();
 const listMyPasses = vi.fn();
 const getRenewPrice = vi.fn();
@@ -105,6 +108,9 @@ vi.mock("@/contexts/repository-context", () => ({
     auth: {
       verifyRealname: vi.fn(),
       retryRealnameSync,
+      sendPhoneChangeCode,
+      verifyPhoneChange,
+      requestEmailBind,
     },
     plans: {
       listMyPasses,
@@ -208,6 +214,35 @@ describe("AccountPage nickname audit state", () => {
       auth_code: "weixin://wxpay/bizpayurl?pr=renewal",
       deal_names: ["启航套餐 续费"],
     });
+    sendPhoneChangeCode.mockResolvedValue({ cooldownSeconds: 60 });
+    verifyPhoneChange.mockResolvedValue(undefined);
+    requestEmailBind.mockResolvedValue({ cooldownSeconds: 60 });
+    refreshProfile.mockResolvedValue(undefined);
+  });
+
+  it("runs phone verification before profile refresh and closes after success", async () => {
+    const order: string[] = [];
+    realnamePhoneVerificationEnabled = true;
+    currentUser = {
+      ...currentUser,
+      phone: "13800138000",
+      realnameVerified: true,
+      realnameLevel: "phone_3fa",
+    };
+    verifyPhoneChange.mockImplementation(async () => { order.push("verify"); });
+    refreshProfile.mockImplementation(async () => { order.push("refresh"); });
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: "修改 手机号" }));
+    await userEvent.type(screen.getByPlaceholderText("请输入中国大陆手机号"), "13900139000");
+    await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+    await userEvent.type(screen.getByPlaceholderText("请输入短信验证码"), "1234");
+    await userEvent.click(screen.getByRole("button", { name: "确认修改" }));
+
+    expect(sendPhoneChangeCode).toHaveBeenCalledExactlyOnceWith({ phone: "13900139000" });
+    expect(verifyPhoneChange).toHaveBeenCalledExactlyOnceWith({ phone: "13900139000", code: "1234" });
+    expect(order).toEqual(["verify", "refresh"]);
+    expect(screen.queryByRole("dialog", { name: "修改绑定手机号" })).not.toBeInTheDocument();
   });
 
   it("keeps the account chrome singular across auth states", () => {
@@ -364,33 +399,36 @@ describe("AccountPage nickname audit state", () => {
 
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
-    const subscriptionHeader = subscriptionHeading.parentElement;
+    const subscriptionCard = subscriptionHeading.closest("section");
 
-    expect(subscriptionHeader).not.toBeNull();
-    expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+    expect(subscriptionCard).not.toBeNull();
+    expect(within(subscriptionCard!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
 
   it.each([
-    { usedPercent: 49, expectedColor: "var(--lw-accent)" },
-    { usedPercent: 50, expectedColor: "#C67B1E" },
-    { usedPercent: 79, expectedColor: "#C67B1E" },
-    { usedPercent: 80, expectedColor: "#CF3D4C" },
-    { usedPercent: 95, expectedColor: "#CF3D4C" },
-    { usedPercent: 96, expectedColor: "#991B1B" },
-  ])("uses $expectedColor for $usedPercent% credit usage", ({ usedPercent, expectedColor }) => {
+    { usedPercent: 49, textClass: "text-[var(--lw-accent)]", fillClass: "bg-[var(--lw-accent)]" },
+    { usedPercent: 50, textClass: "text-[#C67B1E]", fillClass: "bg-[#C67B1E]" },
+    { usedPercent: 79, textClass: "text-[#C67B1E]", fillClass: "bg-[#C67B1E]" },
+    { usedPercent: 80, textClass: "text-[#CF3D4C]", fillClass: "bg-[#CF3D4C]" },
+    { usedPercent: 95, textClass: "text-[#CF3D4C]", fillClass: "bg-[#CF3D4C]" },
+    { usedPercent: 96, textClass: "text-[#991B1B]", fillClass: "bg-[#991B1B]" },
+  ])("uses the archived credit tone for $usedPercent% usage", ({ usedPercent, textClass, fillClass }) => {
     activePass = {
       ...buildActivePass(),
       credit_total: 100,
       credit_available: 100 - usedPercent,
     };
 
-    const { container } = renderAccountPage();
+    renderAccountPage();
     const percentage = screen.getByText(`${usedPercent}%`);
-    const progressFill = container.querySelector<HTMLElement>(`[style*="width: ${usedPercent}%"]`);
+    const progress = screen.getByRole("progressbar", { name: "已使用积分" });
+    const progressFill = progress.querySelector<HTMLElement>('[data-slot="progress-indicator"]');
 
-    expect(percentage).toHaveStyle({ color: expectedColor });
+    expect(percentage.parentElement).toHaveClass(textClass);
+    expect(progress).toHaveAttribute("aria-valuenow", String(usedPercent));
     expect(progressFill).not.toBeNull();
-    expect(progressFill).toHaveStyle({ background: expectedColor });
+    expect(progressFill).toHaveClass(fillClass);
+    expect(progressFill).toHaveStyle({ transform: `translateX(-${100 - usedPercent}%)` });
   });
 
   it("shows no model prompt at 95% credit usage", () => {

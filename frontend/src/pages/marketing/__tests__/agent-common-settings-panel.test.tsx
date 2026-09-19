@@ -64,13 +64,36 @@ afterEach(() => {
 });
 
 describe("AgentCommonSettingsPanel", () => {
+  it("keeps the settings page hidden behind the centered first-load state", () => {
+    let resolveSettings!: (snapshot: HermesCommonSettingsSnapshot) => void;
+    const loadSettings = () => new Promise<HermesCommonSettingsSnapshot>((resolve) => {
+      resolveSettings = resolve;
+    });
+
+    render(
+      <AgentCommonSettingsPanel
+        botId="bot-a"
+        botStatus="running"
+        bots={bots}
+        getGatewayRestartCommand={async () => "restart"}
+        loadSettings={loadSettings}
+        saveSetting={vi.fn()}
+      />,
+    );
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveClass("min-h-[min(60vh,520px)]", "items-center", "justify-center");
+    expect(screen.queryByRole("heading", { name: "高级设置" })).not.toBeInTheDocument();
+    resolveSettings(baseSnapshot());
+  });
+
   it("provides non-empty Indonesian saved feedback", () => {
     render(<SavedFeedbackProbe />, "id-ID");
 
     expect(screen.getByText("Tersimpan")).toBeTruthy();
   });
 
-  it("labels the page as advanced settings", () => {
+  it("labels the page as advanced settings", async () => {
     render(
       <AgentCommonSettingsPanel
         botId="bot-a"
@@ -82,7 +105,7 @@ describe("AgentCommonSettingsPanel", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "高级设置" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "高级设置" })).toBeTruthy();
   });
 
   it("uses concise localized loading copy", () => {
@@ -99,8 +122,8 @@ describe("AgentCommonSettingsPanel", () => {
       </LocaleOverrideProvider>,
     );
 
-    expect(renderLoading("zh-CN")).toContain("正在加载设置…");
-    expect(renderLoading("en-US")).toContain("Loading settings...");
+    expect(renderLoading("zh-CN")).toContain("正在加载高级设置");
+    expect(renderLoading("en-US")).toContain("Loading advanced settings");
   });
 
   it("refreshes settings from an icon-only header action", async () => {
@@ -137,7 +160,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     await waitFor(() => expect(loadSettings).toHaveBeenCalledTimes(2));
     expect(refreshButton).toBeDisabled();
-    expect(refreshButton.querySelector("svg")).toHaveClass("animate-spin");
+    expect(refreshButton.querySelector("svg")).toHaveClass("motion-safe:animate-spin");
 
     resolveRefresh(baseSnapshot());
     await waitFor(() => expect(refreshButton).not.toBeDisabled());
@@ -1193,7 +1216,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(loadSettings).not.toHaveBeenCalled();
-    expect(screen.queryByText("正在加载设置…")).toBeNull();
+    expect(screen.queryByText("正在加载高级设置")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
     expect(screen.getByText("Agent 未运行，启动后才能查看和修改设置。")).toBeTruthy();
@@ -1224,7 +1247,7 @@ describe("AgentCommonSettingsPanel", () => {
     );
 
     expect(screen.queryByRole("combobox", { name: "审批模式" })).toBeNull();
-    expect(screen.queryByText("正在加载设置…")).toBeNull();
+    expect(screen.queryByText("正在加载高级设置")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
   });
@@ -1246,7 +1269,7 @@ describe("AgentCommonSettingsPanel", () => {
 
     expect(loadSettings).not.toHaveBeenCalled();
     expect(html).toContain("Agent 未运行，启动后才能查看和修改设置。");
-    expect(html).not.toContain("正在加载设置…");
+    expect(html).not.toContain("正在加载高级设置");
   });
 
   it("keeps running-state load errors visible", async () => {

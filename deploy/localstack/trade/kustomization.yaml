@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../../trade/k8s/base
+  - callback-proxy.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
@@ -14,7 +15,7 @@ configMapGenerator:
       - TRADE_DB=trade
       - TRADE_DB_USER=trade
       - CTL_INTERNAL_BASE_URL=http://ctl-api.ctl.svc.cluster.local
-      - SHADOW_INTERNAL_BASE_URL=http://shadow-trade-adapter.shadow.svc.cluster.local
+      - SHADOW_INTERNAL_BASE_URL=http://lightclaw-auth.user-auth.svc.cluster.local
       - JIFEI_CGW_GATEWAY_URL=http://cloudladdergateway.cloudladdergateway.svc.cluster.local:8095/v1/proxy/jifei-test/interfaces/interface.php
       - JIFEI_CGW_HOST_HEADER=
       - JIFEI_CGW_X_QCLOUD_USER_ID=700000164995
@@ -57,6 +58,9 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent
+      - op: replace
+        path: /spec/template/metadata/annotations/trade.clawhub.dev~1redeploy-at
+        value: localstack
 labels:
   - pairs:
       app.kubernetes.io/part-of: lightclaw-localstack

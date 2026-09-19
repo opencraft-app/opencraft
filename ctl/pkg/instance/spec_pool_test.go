@@ -21,11 +21,53 @@ import (
 	"strings"
 	"testing"
 
+	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	"ctl/pkg/errcode"
 
 	"go.uber.org/zap"
 )
+
+func TestResolveModifyTargetPoolForSourceKeepsRegion(t *testing.T) {
+	pools := []psandbox.Pool{
+		{ID: "source-jhb", Zone: "ap-johorbahru-1", Status: "active", CapacityState: "active", TemplateClassID: "hermes", SKUID: "sku-2c4g"},
+		{ID: "target-sg", Zone: "ap-singapore-2", Status: "active", CapacityState: "active", TemplateClassID: "openclaw-4c8g80g", SKUID: "sku-4c8g"},
+		{ID: "target-jhb", Zone: "ap-johorbahru-2", Status: "active", CapacityState: "active", TemplateClassID: "openclaw-4c8g80g", SKUID: "sku-4c8g"},
+	}
+
+	got, err := resolveModifyTargetPoolForSource(pools, "source-jhb", "openclaw-4c8g80g", "sku-4c8g")
+	if err != nil {
+		t.Fatalf("resolve same-region target pool: %v", err)
+	}
+	if got != "target-jhb" {
+		t.Fatalf("target pool = %q, want target-jhb", got)
+	}
+}
+
+func TestResolveModifyTargetPoolForSourceRejectsMissingRegionalTarget(t *testing.T) {
+	pools := []psandbox.Pool{
+		{ID: "source-jhb", Zone: "ap-johorbahru-1", Status: "active", CapacityState: "active", TemplateClassID: "hermes", SKUID: "sku-2c4g"},
+		{ID: "target-sg", Zone: "ap-singapore-2", Status: "active", CapacityState: "active", TemplateClassID: "openclaw-4c8g80g", SKUID: "sku-4c8g"},
+	}
+
+	_, err := resolveModifyTargetPoolForSource(pools, "source-jhb", "openclaw-4c8g80g", "sku-4c8g")
+	if err == nil {
+		t.Fatal("expected missing same-region target pool error")
+	}
+	if !strings.Contains(err.Error(), "ap-johorbahru") {
+		t.Fatalf("error must include source region, got %v", err)
+	}
+}
+
+func TestTencentRegionFromZone(t *testing.T) {
+	got, err := tencentRegionFromZone(" ap-johorbahru-1 ")
+	if err != nil || got != "ap-johorbahru" {
+		t.Fatalf("region = %q err=%v, want ap-johorbahru", got, err)
+	}
+	if _, err := tencentRegionFromZone("ap-johorbahru"); err == nil {
+		t.Fatal("expected invalid zone error")
+	}
+}
 
 // installInstanceAPIConfigForTest 覆盖 config.ServerConf.APIConfig.Instance，
 // 测试结束后恢复原值，避免污染同包其它测试。

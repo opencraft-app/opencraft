@@ -21,6 +21,10 @@ import type {
   TimelineSurfaceCapabilities,
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
+import { nativeProjectPicker } from "./runtime/project-folder-picker";
+import { ThreadTitleWriter } from "@opencraft/workbench-runtime";
+import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
+import { ArchivedThreadsDialog, type ThreadActionTarget } from "./components/thread-management";
 import {
   type PanelAction,
   type PanelTabDescriptor,
@@ -58,6 +62,11 @@ import {
   AppShellNavigationControls,
 } from "./components/app-shell-header";
 import {
+  AppShellRouteRegionsProvider,
+  appShellPlatformViewRegions,
+  useAppShellRouteHeader,
+} from "./components/app-shell-route-regions";
+import {
   Conversation,
   type ConversationInteractionAction,
   type ConversationRestoreSnapshot,
@@ -68,7 +77,10 @@ import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
 import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
+import { isLightVelaStandaloneManagementSection } from "./components/lightvela-management-route";
+import { LightVelaWorkNavigation } from "./components/lightvela-work-navigation";
 import { InternalDeveloperModeGate } from "./components/internal-developer-mode-gate";
+import { useInternalDeveloperMode } from "./internal-developer-mode";
 import {
   ManagementSettingsContent,
   ModalHost,
@@ -80,6 +92,7 @@ import { PendingConversationPage } from "./components/pending-conversation-page"
 import { Sidebar } from "./components/sidebar";
 import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
 import { useResponsiveSidebarDock } from "./components/use-responsive-sidebar-dock";
+import { usePersistedSidebarWidth } from "./components/use-persisted-sidebar-width";
 import {
   selectedProjectStorageKey,
   useActiveAppServerThread,
@@ -93,6 +106,7 @@ import {
   useConversationScopeRegistrySnapshot,
   useConversationViewActivation,
   useConversationViewIdentity,
+  useHostConnectionPhase,
   useRootComposerController,
   useThreadCatalog,
   useMultiHostThreadCatalog,
@@ -116,11 +130,6 @@ import {
   useConversationPanelState,
   useWorkbenchPanelRuntime,
 } from "./runtime/panel-runtime-context";
-import {
-  getSidebarMaximumWidth,
-  SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MINIMUM_WIDTH,
-} from "./components/sidebar-resize-handle";
 import { getWindowChromePolicy, useWindowChrome } from "./window-chrome";
 import { useTimelineViewportHost } from "./timeline-viewport";
 import { ComposerExtensionActions } from "./runtime/composer-action-renderers";
@@ -215,6 +224,7 @@ function ConversationHydration({
 }
 
 export function App() {
+  const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
   const appearanceTheme = useAppearanceTheme();
@@ -251,6 +261,12 @@ export function App() {
   const conversationViewIdentity = useConversationViewIdentity();
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
+  const activeHostConnectionPhase = useHostConnectionPhase(snapshot.hostId);
+  const environmentSnapshot = useSyncExternalStore(
+    hostCatalog.environmentDirectory.subscribe,
+    hostCatalog.environmentDirectory.getSnapshot,
+    hostCatalog.environmentDirectory.getSnapshot,
+  );
   const queueExtension = runtime.resources.host.getInitializeResult()
     ?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION];
   const queueReorderable = !(
@@ -272,8 +288,9 @@ export function App() {
         executionLocation:
           host.executionLocation ?? hostKindDescription(host.kind),
         workspaceBrowseRoots: host.workspaceBrowseRoots,
+        resource: environmentSnapshot.entries.find((entry) => entry.profile.hostId === host.hostId)?.resource ?? null,
       })),
-    [hostCatalog.hosts, hostCatalog.profiles],
+    [environmentSnapshot.entries, hostCatalog.hosts, hostCatalog.profiles],
   );
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
@@ -305,18 +322,7 @@ export function App() {
   const projectCatalog = useProjectCatalog();
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const storedWidth = Number.parseFloat(
-      window.localStorage.getItem("sidebar-width") ?? "",
-    );
-    const initialWidth = Number.isFinite(storedWidth)
-      ? storedWidth
-      : SIDEBAR_DEFAULT_WIDTH;
-    return Math.max(
-      SIDEBAR_MINIMUM_WIDTH,
-      Math.min(initialWidth, getSidebarMaximumWidth(Number.POSITIVE_INFINITY)),
-    );
-  });
+  const { width: sidebarWidth, commit: commitSidebarWidth } = usePersistedSidebarWidth();
   // Codex projects the single persisted sidebar-width signal into a root
   // layout token. Top-level routes consume the token instead of inventing
   // route-local widths, so switching routes cannot move the content boundary.
@@ -372,6 +378,9 @@ export function App() {
     workbenchNavigation.getSnapshot,
     workbenchNavigation.getSnapshot,
   );
+  const routeHeader = useAppShellRouteHeader(
+    workbenchNavigationSnapshot.routeScopeId,
+  );
   const canGoBack = workbenchNavigationSnapshot.canGoBack;
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
@@ -394,11 +403,14 @@ export function App() {
   )?.contribution ?? null;
   const managementSettingsOpen = settingsOpen
     && selectedSettingsContribution?.management !== undefined;
+  const standaloneManagementOpen = managementSettingsOpen
+    && isLightVelaStandaloneManagementSection(settingsSection);
   const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
   // A target-management route is a modal semantic surface. The underlying
   // conversation keeps its physical shell and geometry, but is inert while
   // the dialog owns interaction and focus.
-  const conversationSurfaceVisible = conversationRouteOpen || managementSettingsOpen;
+  const conversationSurfaceVisible = conversationRouteOpen
+    || (managementSettingsOpen && !standaloneManagementOpen);
   const shellSidebarOpen = sidebarOpen;
   const openSettingsFromConversation = useCallback(() => {
     const focusedElement = document.activeElement;
@@ -415,6 +427,7 @@ export function App() {
     platform: extensionPlatform,
     activeHostId: snapshot.hostId,
     profiles: hostCatalog.profiles,
+    ensureRuntimeReady: async (hostId) => { await hostCatalog.agentRuntimes.ensureReady(hostId); },
     provisionHost: hostCatalog.provisionHost,
     removeHost: hostCatalog.removeHost,
     openView: workbenchNavigation.openExtensionView,
@@ -430,6 +443,7 @@ export function App() {
     botDirectory: hostCatalog.botDirectory,
     host: extensionViewHost,
     applicationRoute: workbenchNavigationSnapshot.applicationRoute,
+    internalDeveloperMode,
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
@@ -480,7 +494,7 @@ export function App() {
     }) => {
       lastDraftWorkspaceRef.current = workspace;
       window.localStorage.setItem(
-        selectedProjectStorageKey(snapshot.hostId),
+        selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId),
         workspace.projectId,
       );
       if (draft === null) throw new Error("No active Draft can be retargeted");
@@ -489,7 +503,7 @@ export function App() {
         workspace,
       });
     },
-    [draft, hostCatalog],
+    [draft, hostCatalog, snapshot.hostId],
   );
 
   const conversationResourceOwnerId = conversationViewIdentity.scopeId;
@@ -686,7 +700,7 @@ export function App() {
     },
     [activeThreadLease],
   );
-  const createTask = useCallback(() => {
+  const navigateToHome = useCallback(() => {
     const activeProtocolThread = catalog.protocolThreads.find(
       (thread) => thread.id === activeThreadLease?.threadId,
     );
@@ -718,14 +732,14 @@ export function App() {
           };
     lastDraftWorkspaceRef.current = workspace;
     const hostId = asHostId(hostCatalog.selectedHostId);
-    void hostCatalog
-      .openDraft({
+    try {
+      hostCatalog.navigateToHome({
         execution: { hostId, workspace },
         entrypoint: "new-chat",
-      })
-      .catch((error) => {
-        console.error("Failed to activate New chat Draft", error);
       });
+    } catch (error) {
+      console.error("Failed to navigate to New chat Home", error);
+    }
   }, [
     catalog.protocolThreads,
     conversationScopes,
@@ -795,7 +809,7 @@ export function App() {
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        createTask();
+        navigateToHome();
         return;
       }
       // Match Codex's global type-to-compose behavior. Printable keys only
@@ -822,15 +836,11 @@ export function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [composerController, createTask, toggleRightPanel]);
+  }, [composerController, navigateToHome, toggleRightPanel]);
 
 
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
   const expandSidebar = useCallback(() => setSidebarOpen(true), []);
-  const commitSidebarWidth = useCallback((width: number, persist: boolean) => {
-    setSidebarWidth(width);
-    if (persist) window.localStorage.setItem("sidebar-width", String(width));
-  }, []);
 
   const activeThread = catalog.threads.find(
     (thread) => thread.id === activeThreadId,
@@ -866,17 +876,6 @@ export function App() {
   );
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
-      agents: composerCatalog.agents.map((agent) => ({
-        id: agent.id,
-        label: agent.displayName,
-        description: agent.description || null,
-        engineKind: agent.engineKind,
-        isDefault: agent.isDefault,
-        defaultModel: agent.defaultModel,
-        modelIds: agent.modelIds,
-        available: agent.available,
-        unavailableReason: agent.unavailableReason,
-      })),
       models: projectComposerModelChoices(composerCatalog.models),
       permissionProfiles: composerCatalog.permissionProfiles.map((profile) => ({
         id: profile.id,
@@ -894,7 +893,6 @@ export function App() {
     }),
     [
       composerCatalog.isFetching,
-      composerCatalog.agents,
       composerCatalog.modelError,
       composerCatalog.onModelMenuOpen,
       composerCatalog.retryModels,
@@ -906,6 +904,31 @@ export function App() {
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
+  const [archivedHostId, setArchivedHostId] = useState<string | null>(null);
+  const [lastArchived, setLastArchived] = useState<ThreadActionTarget | null>(null);
+  const [threadActionError, setThreadActionError] = useState<string | null>(null);
+  const threadTitleWriter = useMemo(() => new ThreadTitleWriter({
+    read: key => readCachedThreadName(queryClient, key),
+    write: (key, value) => writeCachedThreadName(queryClient, key, value),
+    persist: async (key, value) => {
+      await hostCatalog.threadManagement.rename(key.hostId, key.threadId, value);
+      await queryClient.invalidateQueries({ queryKey: ["appserver", key.hostId, "threads"] });
+    },
+  }), [hostCatalog.threadManagement, queryClient]);
+  useSyncExternalStore(threadTitleWriter.subscribe, threadTitleWriter.getSnapshot, threadTitleWriter.getSnapshot);
+  const restoreArchivedThread = useCallback(async (hostId: string, threadId: string) => {
+    await hostCatalog.threadManagement.unarchive(hostId, threadId);
+    await queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
+  }, [hostCatalog.threadManagement, queryClient]);
+  const loadArchivedThreads = useCallback(async (hostId: string) => {
+    return hostCatalog.threadManagement.listArchived(hostId);
+  }, [hostCatalog.threadManagement]);
+  const workspaceSelectionEpoch = useRef(0);
+  useLayoutEffect(() => {
+    workspaceSelectionEpoch.current++;
+    return () => { workspaceSelectionEpoch.current++; };
+  }, [draft?.id, draft?.phase, draft?.target.execution.hostId,
+    draft?.target.execution.workspace.cwd, runtime, snapshot.hostId, conversationRouteOpen, settingsOpen]);
   const readWorkspaceDirectory = useCallback(
     async (path: string) =>
       (await runtime.resources.fileSystem.readDirectory(path)).entries,
@@ -913,11 +936,13 @@ export function App() {
   );
   const chooseWorkspaceDirectory = useCallback(
     async (path: string) => {
+      if (draft === null || draftSubmissionOwnsNavigation(draft.phase) || !conversationRouteOpen || settingsOpen) return;
+      const epoch = workspaceSelectionEpoch.current;
       let project = projectCatalog.projects.find((candidate) =>
         candidate.roots.some((root) => root.path === path),
       );
       if (project === undefined) {
-        const name = path.split("/").filter(Boolean).at(-1) ?? "Project";
+        const name = path.split(/[\\/]+/u).filter(Boolean).at(-1) ?? "Project";
         const created = await runtime.resources.projects.create({
           name,
           roots: [{ path }],
@@ -929,6 +954,7 @@ export function App() {
           queryKey: ["appserver", snapshot.hostId, "projects"],
         });
       }
+      if (epoch !== workspaceSelectionEpoch.current) return;
       const projectRoots = project.roots.map((root) => root.path);
       const cwd = resolveProjectCwd(project, path);
       selectDraftWorkspace({
@@ -944,17 +970,34 @@ export function App() {
       runtime,
       selectDraftWorkspace,
       snapshot.hostId,
+      draft,
+      conversationRouteOpen,
+      settingsOpen,
     ],
   );
   const workspaceBrowseRoot =
     activeHost.workspaceBrowseRoots[0] ??
     draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ??
     null;
+  const localProjectPicker = nativeProjectPicker(snapshot.hostId);
+  const browseWorkspace = useCallback(async () => {
+    if (localProjectPicker === null) {
+      if (workspaceBrowseRoot !== null) setWorkspacePickerOpen(true);
+      return;
+    }
+    const epoch = workspaceSelectionEpoch.current;
+    try {
+      const path = await localProjectPicker.pickDirectory();
+      if (path !== null && epoch === workspaceSelectionEpoch.current) await chooseWorkspaceDirectory(path);
+    } catch (error) {
+      if (epoch === workspaceSelectionEpoch.current) throw error;
+    }
+  }, [localProjectPicker, workspaceBrowseRoot, chooseWorkspaceDirectory]);
   const closeSettings = useCallback(() => {
     workbenchNavigation.closeSettings();
   }, [workbenchNavigation]);
-  const selectSettingsSection = useCallback((section: string) => {
-    workbenchNavigation.openSettings(section);
+  const selectSettingsSection = useCallback((section: string, mode?: "push" | "replace") => {
+    workbenchNavigation.openSettings(section, mode);
   }, [workbenchNavigation]);
   const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
@@ -990,6 +1033,7 @@ export function App() {
         extensionContributions={hostCatalog.extensionContributions}
         extensionManager={hostCatalog.extensionManager}
         platformViewRenderers={hostCatalog.platformViewRenderers}
+        regions={appShellPlatformViewRegions}
         themes={appearanceTheme.availableThemes}
         themeId={appearanceTheme.themeId}
         themePreference={appearanceTheme.preference}
@@ -1020,7 +1064,7 @@ export function App() {
       }}>Close side chat</Button></div>,
   });
   const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
-  if (managementSettingsOpen) {
+  if (managementSettingsOpen && !standaloneManagementOpen) {
     modalRequests.push({
       id: "management-settings",
       label: `${hostCatalog.profiles.find((profile) => profile.hostId === snapshot.hostId)?.displayName ?? "Hermes"} settings`,
@@ -1084,22 +1128,30 @@ export function App() {
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
       onToggleRightPanel={toggleRightPanel}
-      onHome={createTask}
+      onHome={navigateToHome}
       onBack={workbenchNavigation.back}
       onForward={workbenchNavigation.forward}
       navigationActions={headerNavigationActions}
+      routeHeaderActive={routeHeader.active}
+      routeHeaderHostRef={routeHeader.hostRef}
     />
   );
 
   return (
     <>
       <InternalDeveloperModeGate />
+      <AppShellRouteRegionsProvider
+        controller={routeHeader.controller}
+        target={routeHeader.target}
+      >
       <AppShell
           navigation={{
             settingsActive: routeSettingsOpen,
             actions: [
               { id: "shell.chat", title: "Chat", icon: "chat", active: conversationRouteOpen,
-                onInvoke: () => { if (settingsOpen) closeSettings(); else if (extensionViewOpen) workbenchNavigation.closeExtensionView(); } },
+                onInvoke: () => { void workbenchNavigation.openChat()
+                  .then(changed => { if (!changed) setThreadActionError("当前请求提交中，暂时无法切换页面。"); })
+                  .catch(error => setThreadActionError(error instanceof Error ? error.message : String(error))); } },
               ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
             ],
             account: extensionProjection.account === null ? null : {
@@ -1138,23 +1190,23 @@ export function App() {
               canGoBack={canGoBack}
               canGoForward={canGoForward}
               onToggleSidebar={onDock}
-              onHome={createTask}
+              onHome={navigateToHome}
               onBack={workbenchNavigation.back}
               onForward={workbenchNavigation.forward}
               actions={headerNavigationActions}
             />
           )}
           leftPanel={
-            routeSettingsOpen ? settingsNavigation : conversationSurfaceVisible ? <Sidebar
+            routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
               renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
-              onNewTaskForTarget={(hostId) => hostCatalog.openDraft({
-                execution: {
-                  hostId: asHostId(hostId),
-                  workspace: { cwd: null, runtimeWorkspaceRoots: [] },
-                },
-                entrypoint: "new-chat",
-              })}
+              onNewTaskForTarget={async (hostId) => hostCatalog.navigateToHome({
+                  execution: {
+                    hostId: asHostId(hostId),
+                    workspace: { cwd: null, runtimeWorkspaceRoots: [] },
+                  },
+                  entrypoint: "new-chat",
+                })}
               onOpenTargetSettings={(hostId) => {
                 const providerId = hostCatalog.profiles.find(
                   (profile) => profile.hostId === hostId,
@@ -1164,7 +1216,36 @@ export function App() {
                 )?.settingsPageId;
                 workbenchNavigation.openSettings(settingsPageId ?? "appearance");
               }}
+              managementNavigation={conversationRouteOpen || standaloneManagementOpen ? (
+                <LightVelaWorkNavigation
+                  section={standaloneManagementOpen ? settingsSection : null}
+                  extensionContributions={hostCatalog.extensionContributions}
+                  onSectionChange={selectSettingsSection}
+                />
+              ) : null}
               showFooter={false}
+              threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
+              pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
+              onManageArchived={runtime.resources.threads.capabilities?.().archive ? () => setArchivedHostId(snapshot.hostId) : undefined}
+              archiveUndo={lastArchived ? { title: lastArchived.title, restore: () => {
+                const target = lastArchived;
+                void restoreArchivedThread(target.hostId, target.threadId).then(() => setLastArchived(previous => previous === target ? null : previous))
+                  .catch(error => setThreadActionError(error.message));
+              } } : null}
+              threadActions={{
+                onRename: (target, title) => threadTitleWriter.rename(target, title),
+                onFork: async target => {
+                  const origin = workbenchNavigation.getSnapshot().routeScopeId;
+                  const childId = await hostCatalog.threadManagement.fork(target.hostId, target.threadId);
+                  await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
+                  if (workbenchNavigation.getSnapshot().routeScopeId === origin) await hostCatalog.navigate(createWorkbenchThreadLocation(target.hostId, childId));
+                },
+                onArchive: async target => {
+                  await hostCatalog.threadManagement.archive(target.hostId, target.threadId);
+                  setLastArchived(target);
+                  await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] });
+                },
+              }}
               catalogs={extensionProjection.catalogs}
               bots={extensionProjection.bots}
               sidebarLayout={hostCatalog.sidebarLayout}
@@ -1199,7 +1280,7 @@ export function App() {
                   console.error("Failed to activate selected Thread", error);
                 });
               }}
-              onNewTask={createTask}
+              onNewTask={navigateToHome}
               // The route adapter consumes both the DOM event and the old
               // route's focus before issuing a semantic navigation command.
               onOpenSettings={openSettingsFromConversation}
@@ -1252,9 +1333,10 @@ export function App() {
             catalog={composerSuggestionCatalog}
             workspaceOptions={draftWorkspaceOptions}
             workspaceOptionsLoading={projectCatalog.isFetching}
+            nativeWorkspacePicking={localProjectPicker !== null}
             activeHostId={snapshot.hostId}
             hostOptions={composerHostOptions}
-            connectionPhase={snapshot.phase}
+            connectionPhase={activeHostConnectionPhase}
             onSelectHost={async (hostId) => {
               setWorkspacePickerOpen(false);
               await hostCatalog.selectHost(hostId);
@@ -1266,9 +1348,7 @@ export function App() {
                 projectId: workspace.projectId,
               });
             }}
-            onBrowseWorkspace={() => {
-              if (workspaceBrowseRoot !== null) setWorkspacePickerOpen(true);
-            }}
+            onBrowseWorkspace={browseWorkspace}
             onResolveAttachment={resolveActiveHostAttachment}
             composerEndActions={composerEndActions}
             onSubmit={sendMessage}
@@ -1426,6 +1506,11 @@ export function App() {
           </div>
         )}
           </div>
+          {standaloneManagementOpen ? (
+            <section className="lightvela-management-route" aria-label="LightVela management">
+              {settingsContent}
+            </section>
+          ) : null}
           {settingsRoute}
           {extensionViewOpen ? (
             <section className="extension-view-route" aria-label={extensionProjection.activeView?.title}>
@@ -1434,8 +1519,11 @@ export function App() {
           ) : null}
         </div>
         </AppShell>
+      </AppShellRouteRegionsProvider>
         <ModalHost requests={modalRequests} />
-        <WorkspaceDirectoryPicker
+      {archivedHostId !== null ? <ArchivedThreadsDialog key={archivedHostId} hostId={archivedHostId} load={loadArchivedThreads} restore={restoreArchivedThread} onDismiss={() => setArchivedHostId(null)} /> : null}
+      {threadActionError ? <div role="alert" className="settings-control-notice">{threadActionError}<button type="button" onClick={() => setThreadActionError(null)}>关闭提示</button></div> : null}
+      <WorkspaceDirectoryPicker
           open={
             !settingsOpen &&
             workspacePickerOpen &&

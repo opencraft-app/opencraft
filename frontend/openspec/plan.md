@@ -1,3 +1,57 @@
+# 合并最新 master（2026-09-18）
+
+用户已授权备份、stash、合并并恢复本地改动，并在展示两个提交后明确确认“提交”；本次只创建两个本地提交，不 push/MR/部署。
+合入基线：origin/master f2a1ec32f777c7d1e840e72055d2e06d59628079。
+
+- [x] 备份与 stash 原有改动，保留可恢复副本。
+- [x] 解决 merge 与 stash 恢复冲突，保留 Radix/Account 样式及 master 多 Bot、积分包、升级与邀请开关行为；补齐侧栏 console-show 通知，按 master 国际站升级公开规则调整旧断言。
+- [x] 重新生成共享闭包并检查 161 文件无漂移；前端聚焦测试 395 + 49 + 551 通过，头像菜单 CN/global 各 36 通过；check 168 current/276 baseline/0 new，49 条 i18n 告警；生产构建与 OpenCraft 完整 gate 通过，账户 6 态及导航桌面/手机 mock 浏览器验证通过。末次补充后构建复跑结果以 ledger 为准。
+- [x] 展示合并内容并取得用户提交确认；第一提交合并 master 并保留 Agents/Account 改动，第二提交仅通过标准脚本更新 OpenCraft sourceRevision；DevCloud 部署后续处理。
+
+交付边界：合并基线固定为 f2a1ec32f，不 push/MR/部署；具体提交 SHA 与提交后状态记录于 runtime。stash b80281e766db983eae0516ee6da6042789717c07 与 /tmp/mono2-master-merge-backup.vHFdfd（patch、tar、Git bundle）保留。stash 中 29 个未跟踪文件均已恢复；历史提及的 sidebar-account-fixture 未出现在本轮 stash/备份或工作树中，无法确认其更早去向，不声明已恢复该目录。浏览器验证未执行真实支付、实名或实例写操作。
+
+---
+
+# Account / Orders 组件风格统一（2026-09-18）
+
+## 视觉验收增量：实名状态标签
+
+- [x] 统一未认证、已认证及需继续认证为既有 AccountStatusBadge（12px，与邮箱已验证标签一致）；移除大盾牌图标，保留原说明、同步错误和操作回调。RED新增5例按预期失败，GREEN四文件65项通过；check exit0、0新增TS诊断。1280/390px三态共6场景：标签12px/高20px/内边距2px 8px，与邮箱标签一致，无横溢或console/pageerror。
+
+本项按 S quick 局部展示修正执行：只改安全卡及相邻测试，新增“未认证”的翻译经现有脚本生成；不改认证判断、权限、接口或流程。沿用已确认设计及本次明确反馈。
+
+用户已确认 `/account` 与 `/account/orders` 展示重构及分任务实施。继续 `frontsandbox/agents-radix-refactor`，保留现有 Agent Console 未提交改动。
+
+已批准设计：`../../docs/superpowers/specs/2026-09-18-account-pages-agents-style-design.md`；实施任务：`../../docs/superpowers/plans/2026-09-18-account-pages-agents-style-plan.md`。既有审批内容沿用，不在恢复任务时重复设计。
+
+- [x] 共享账户展示原语与资料 / 安全卡，独立复审通过。
+- [x] 套餐视图模型、Progress、订阅状态和统一 Dialog，独立复审通过；账号回归 117/117。
+- [x] 订单页响应式列表与发票 Dialog，保留现有模拟数据和字段规则。
+- [x] 集成检查、生产构建、桌面与移动端本地预览：17 文件 177 项测试、pnpm check / build 通过；390 / 768 / 1280px 浏览器检查无横溢，9 场景无 pageerror 或控制台 error / warning。
+- [ ] 最终独立复审结论交接。已派发 reviewer，尚未收到有效结论，不将空消息记为复审通过。
+- [ ] 用户视觉验收；未归档、提交或推送。
+
+验证边界：使用本地 mock，未执行真实账号 / 实名 / 支付写操作；订单仍为原有模拟数据。首屏 loading / error 由组件和页面测试覆盖，未声称持续加载 / 失败状态的浏览器实测。项目没有 lint script，pnpm check 包含类型基线检查，结果 0 新增类型错误，47 条既有 i18n 告警保留。验证命令与证据见 `.workflow/runtime/verification-ledger.md` 的 Account 收尾段。
+
+边界：无后端 / 计费 / 实名 / 权限规则变更；展示组件使用既有领域类型与 UI 原语。当前授权为实现和验证，commit / push 在展示具体变更范围后单独确认。
+
+---
+
+# Agents 加载体验统一（2026-09-17）
+
+**Goal:** 统一 `/agents/*` 的首次加载、刷新、提交、追加和流式状态展示，具体页面首屏数据未就绪时只显示居中的页面级加载状态，保留请求与业务逻辑。
+**Architecture:** 基础 `Spinner / Skeleton / LoadingState` 负责纯展示，`AgentState` 作为 Agents 状态入口；页面 controller 决定加载模式，页面只负责映射和保留数据。
+**Execution:** M 级增量，按 implementation plan 分三项任务执行；Task 1-3 的共享组件迁移已完成本地实现与定向验证，浏览器场景验证和后续交付仍需单独确认。未知 fixture、原 mono2 工作区及既有已推送历史保留。
+
+- [x] Task 1：新增基础加载原语，统一 AgentState 的视觉和 ARIA 契约，并补组件测试。
+- [x] Task 2：迁移 Agent 壳体、任务、记忆、设置、通道和模型配置的首次加载/刷新/操作态；通道和通用设置已接入页面级首屏门禁。
+- [x] Task 3：统一技能、专家、文件、DeepSeek Harness 和工作台的页面级首屏加载；诊断页与会话列表保留符合其语义的局部 loading。
+- [x] Task 3：迁移会话、Skills、Experts 的首屏/安装/刷新状态；浏览器视口回归保留在 Verification Gate。
+
+实施细节：`frontend/openspec/changes/2026-09-17-agents-loading-implementation-plan.md`；设计依据：`frontend/openspec/changes/2026-09-17-agents-loading-design.md`。
+
+---
+
 # 探索 / 对话组件 B 方案（2026-09-17）
 
 **交付授权（2026-09-17）：** 用户已确认将本轮 B 方案的5个文件提交到既有 `frontsandbox/agents-radix-refactor`；随后运行标准OpenCraft同步，只更新 `UPSTREAM.json` 的 sourceRevision并独立提交，再一次普通推送两个提交。排除未知fixture，保留原工作区；不合并master、不创建MR、不归档、不持续监控CI。下方“不提交/推送”保留为本地实施阶段记录，本次交付以此明确授权为准。
@@ -188,6 +242,23 @@ S5相邻测试窄补充：`src/components/ui/__tests__/tabs-selected-geometry.te
 **Workflow:** 用户显式指定 `feai-workflow` 后，本段为本次实施任务入口；Native brief 保留整体方案批准门禁，runtime 仅作当前批次缓存；旧任务保留在下方，不代归档。
 **Scope amendment:** 2026-09-16 用户明确“成就不用管，页面已经去掉了”。该项从 B4 和 B6 验收范围排除；原批准 brief 保留历史内容与 hash，本段和模块矩阵记录后续范围收缩。
 **Scope amendment 2:** 2026-09-16 用户进一步明确“浏览器、终端、workbench可以先不用管”。`/agents/browser`、`/agents/terminal`、`/agents/workbench` 及其 `/agents/session` 别名从实施和页面验收范围移出，保留现状；此前基线仅保留为历史证据，不修其旧断言以扩大范围。DSH、chat及已迁移模块继续；OpenCraft 对已修改共享组件的必要生成与消费检查保持。
+
+---
+
+# 积分包微信中转支付空票据前置判定（2026-09-16）
+
+**Status:** 已实现并通过定向验证（hook 测试 22/22、tsc 零错误、`git diff --check` 待提交时确认）；未 commit、未推送、未创建 MR。全量 `pnpm check` 因本机 Node 20 与 pnpm 11（要求 Node 22.13+）不兼容未执行，需在 Node 22 环境补跑。
+**Size / Mode:** S / 单 Agent inline quick。
+**Goal:** !3910 起 credit order-url 强制校验 auth_code；后端票据发放失败时静默返回空串（HTTP 200 + `auth_code: ""`），前端按旧灰度设计仍打开中转页 → 微信内必然显示「二维码已失效」，误导用户反复重新生成。本变更在 PC 端下单后即判定票据缺失并给出准确失败态。
+**Design:** `useCreditCheckout` 国内站分支在 `buildPayPlan` 前校验 `authCode`（空串/undefined 均拦截）：进入 `failed` 态并保留 `dealName`（订单已创建成功，供客服排查），不生成中转页 URL；`console.error("[credit] order issued without auth_code", { dealName })` 留痕（对齐 renew-pass-modal 惯例）。UI 层 `failed` 文案由「下单失败」改为中性「支付未完成」——failed 不等于下单失败，避免诱导重复下单产生双订单；与 `delivery_exception` 的中性口径一致。i18n 生成物随文案同步重提取。
+**Non-goals:** 不修后端票据发放根因（需按 order 响应 → credit 日志 `issue auth_code failed` → authcode Redis 接线的路径另行排查）；不改 order-url 校验逻辑与 wx-pay.ts；不动国际站链路。
+
+**Files:**
+- Modify: `src/lib/use-credit-checkout.ts`
+- Modify: `src/domain/credit-pack.ts`
+- Modify: `next-site/credit-pack-section.tsx`
+- Test: `src/lib/__tests__/use-credit-checkout.test.ts`
+- Generated: `src/i18n/generated/*.json`
 
 ---
 

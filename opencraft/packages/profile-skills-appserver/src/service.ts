@@ -6,7 +6,7 @@ import {
 import {
   isProfileSkillsEvent,
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
-  type ProfileSkillScope,
+  type SkillInstallScope,
   type ProfileSkillsCapability,
   type ProfileSkillsEvent,
   type ProfileSkillsMethod,
@@ -14,10 +14,13 @@ import {
   type ProfileSkillsMethodResult,
 } from "@opencraft/appserver-protocol";
 
-export interface ProfileSkillsTarget {
+export type ProfileSkillsTarget = {
   readonly hostId: string;
   readonly profileId: string;
-}
+} | {
+  readonly hostId: string;
+  readonly scope: SkillInstallScope;
+};
 
 export type HostProfileSkillsEvent = ProfileSkillsEvent & { readonly hostId: string };
 
@@ -64,8 +67,9 @@ function domainError(error: unknown, hostId: string): ProfileSkillsServiceError 
   );
 }
 
-const scopeFor = (profileId: string): ProfileSkillScope => {
-  const normalized = profileId.trim();
+const scopeFor = (target: ProfileSkillsTarget): SkillInstallScope => {
+  if ("scope" in target) return target.scope;
+  const normalized = target.profileId.trim();
   if (normalized === "") throw new TypeError("Profile Skills requires a non-empty profileId");
   return { type: "profile", profileId: normalized };
 };
@@ -187,14 +191,14 @@ export class AppServerProfileSkillsService extends Service {
 
   listInstalled(target: ProfileSkillsTarget, options: Omit<ProfileSkillsMethodParams<"skills/installed/list">, "scope"> = {}) {
     return this.request(target.hostId, "skills/installed/list", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...options,
     });
   }
 
   readContent(target: ProfileSkillsTarget, name: string) {
     return this.request(target.hostId, "skills/installed/content/read", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       name,
     });
   }
@@ -204,13 +208,13 @@ export class AppServerProfileSkillsService extends Service {
     params: Omit<ProfileSkillsMethodParams<"skills/enabled/set">, "scope">,
   ) {
     return this.request(target.hostId, "skills/enabled/set", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...params,
     });
   }
 
   listCatalogSources(target: ProfileSkillsTarget) {
-    return this.request(target.hostId, "skills/catalog/sources/list", { scope: scopeFor(target.profileId) });
+    return this.request(target.hostId, "skills/catalog/sources/list", { scope: scopeFor(target) });
   }
 
   listOfficial(
@@ -218,7 +222,7 @@ export class AppServerProfileSkillsService extends Service {
     options: Omit<ProfileSkillsMethodParams<"skills/catalog/official/list">, "scope"> = {},
   ) {
     return this.request(target.hostId, "skills/catalog/official/list", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...options,
     });
   }
@@ -228,21 +232,21 @@ export class AppServerProfileSkillsService extends Service {
     params: Omit<ProfileSkillsMethodParams<"skills/catalog/search">, "scope">,
   ) {
     return this.request(target.hostId, "skills/catalog/search", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...params,
     });
   }
 
   preview(target: ProfileSkillsTarget, identifier: string) {
     return this.request(target.hostId, "skills/catalog/preview", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       identifier,
     });
   }
 
   scan(target: ProfileSkillsTarget, identifier: string) {
     return this.request(target.hostId, "skills/catalog/scan", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       identifier,
     });
   }
@@ -252,7 +256,7 @@ export class AppServerProfileSkillsService extends Service {
     params: Omit<ProfileSkillsMethodParams<"skills/install">, "scope">,
   ) {
     return this.request(target.hostId, "skills/install", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...params,
     });
   }
@@ -262,7 +266,7 @@ export class AppServerProfileSkillsService extends Service {
     params: Omit<ProfileSkillsMethodParams<"skills/uninstall">, "scope">,
   ) {
     return this.request(target.hostId, "skills/uninstall", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...params,
     });
   }
@@ -272,7 +276,7 @@ export class AppServerProfileSkillsService extends Service {
     params: Omit<ProfileSkillsMethodParams<"skills/update">, "scope">,
   ) {
     return this.request(target.hostId, "skills/update", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...params,
     });
   }
@@ -282,7 +286,7 @@ export class AppServerProfileSkillsService extends Service {
     params: Omit<ProfileSkillsMethodParams<"skills/action/read">, "scope">,
   ) {
     return this.request(target.hostId, "skills/action/read", {
-      scope: scopeFor(target.profileId),
+      scope: scopeFor(target),
       ...params,
     });
   }

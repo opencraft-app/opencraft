@@ -17,7 +17,7 @@
 
 import { AlertCircle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentConfirmDialog, AgentState, AgentTooltip } from "@/components/agents";
+import { AgentConfirmDialog, AgentPageLoadingState, AgentState, AgentTooltip } from "@/components/agents";
 import { Button } from "@/components/ui/button";
 import { EmptySoulSlotView, PersonaDialogView as PreviewModal, PersonaInfoView as InfoDialog, SoulSlotCardView } from "./agent-buddy-views";
 import { AnimatePresence } from "framer-motion";
@@ -128,7 +128,7 @@ export function BuddyPanel({
   botId,
   profileId,
 }: {
-  /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 soul.md */
+  /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 SOUL.md */
   botId?: string | null;
   profileId?: string;
 } = {}) {
@@ -513,7 +513,7 @@ export function BuddyPanel({
    *    `~/.openclaw/workspace/SOUL.md` —— 那是 openclaw runtime 的约定）。
    *    走 raw bash 而非 `workspace/files`：后者写死 `${HOME}/.openclaw/workspace`
    *    且强制白名单文件名，hermes 场景两个限制都不适用。
-   *  - 无 botId → 浏览器下载 soul.md（兜底）
+   *  - 无 botId → 浏览器下载 SOUL.md（兜底）
    *  内容：用 SkillHub /api/v1/souls/<slug> 的 content 拼装，对齐 zip 包格式。
    */
   const injectRecommendedSoul = useCallback(async (
@@ -629,7 +629,7 @@ export function BuddyPanel({
       downloadUrl = URL.createObjectURL(blob);
       downloadAnchor = document.createElement("a");
       downloadAnchor.href = downloadUrl;
-      downloadAnchor.download = "soul.md";
+      downloadAnchor.download = "SOUL.md";
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       if (!requestBotId) {
@@ -643,12 +643,12 @@ export function BuddyPanel({
       showToast({
         kind: "fallback",
         message: requestBotId
-          ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
-          : t("当前未选中 Agent，已下载 soul.md 到本地"),
+          ? t("无法写入 Agent 沙箱，已下载 SOUL.md 到本地")
+          : t("当前未选中 Agent，已下载 SOUL.md 到本地"),
       });
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[buddy] download soul.md fallback failed:", err);
+      console.error("[buddy] download SOUL.md fallback failed:", err);
       showToast({
         kind: "error",
         message: t("注入失败，请检查网络后重试"),
@@ -924,7 +924,7 @@ export function BuddyPanel({
       downloadUrl = URL.createObjectURL(blob);
       downloadAnchor = document.createElement("a");
       downloadAnchor.href = downloadUrl;
-      downloadAnchor.download = "soul.md";
+      downloadAnchor.download = "SOUL.md";
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
     } catch (err) {
@@ -1001,6 +1001,10 @@ export function BuddyPanel({
     ? t("编辑自定义人设")
     : t("编辑人设文件");
 
+  if (loadStatus === "loading" || (loadStatus === "loaded" && soulsResource.loading && souls.length === 0)) {
+    return <AgentPageLoadingState className="agents-ui" title={t("正在读取人设")} />;
+  }
+
   return (
     <>
       <header className="mb-3">
@@ -1071,10 +1075,7 @@ export function BuddyPanel({
           <SoulSlotGrid
             drawnSouls={localizedDrawnSouls}
             // souls 池在拉取 + 自身 buddy state 在加载，任一未完成都给 loading
-            loading={
-              loadStatus === "loading"
-              || (soulsResource.loading && souls.length === 0)
-            }
+            loading={soulsResource.loading && souls.length === 0}
             error={souls.length === 0 ? soulsResource.error : null}
             onReload={soulsResource.reload}
             onClickFilled={handleToggleSelect}

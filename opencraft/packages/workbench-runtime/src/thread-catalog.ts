@@ -6,7 +6,9 @@ function projectStatus(thread: Thread): WorkbenchThread["status"] {
   const type = typeof thread.status === "object" && thread.status !== null && "type" in thread.status
     ? String(thread.status.type)
     : "idle";
-  return type === "idle" ? "ready" : type === "notLoaded" ? "review" : "running";
+  if (type === "active") return "running";
+  if (type === "systemError") return "error";
+  return "ready";
 }
 
 function relativeTime(timestampSeconds: number, nowMs: number): string {

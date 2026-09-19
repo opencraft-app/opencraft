@@ -450,6 +450,27 @@ func TestServeCLICreatesTencentCommunityAndReturnsReadyServer(t *testing.T) {
 				`{"ActionStatus":"OK","ErrorCode":0,"ErrorInfo":"","GroupId":"`+
 					body.GroupID+`"}`,
 			)
+		case "/v4/million_group_open_http_svc/create_topic":
+			var body struct {
+				GroupID     string `json:"GroupId"`
+				TopicID     string `json:"TopicId"`
+				TopicName   string `json:"TopicName"`
+				FromAccount string `json:"From_Account"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create_topic: %v", err)
+			}
+			if body.GroupID == "" ||
+				!strings.HasPrefix(body.TopicID, body.GroupID+"@TOPIC#_T_") ||
+				strings.TrimSpace(body.TopicName) == "" ||
+				body.FromAccount == "" {
+				t.Fatalf("create_topic body = %#v", body)
+			}
+			_, _ = io.WriteString(
+				writer,
+				`{"ActionStatus":"OK","ErrorCode":0,"ErrorInfo":"","TopicId":"`+
+					body.TopicID+`"}`,
+			)
 		default:
 			t.Fatalf("Tencent path = %s", request.URL.Path)
 		}
@@ -728,6 +749,12 @@ func TestServeCLIParsesCollaborationOnlyProfile(t *testing.T) {
 	}
 	if cfg.computerInstallPublicURL != "" || cfg.tencentCloudSecretIDFile != "" {
 		t.Fatalf("collaboration-only enabled legacy Computer config: %#v", cfg)
+	}
+}
+
+func TestPlatformTATRegistrarPreservesNilInterface(t *testing.T) {
+	if platformTATRegistrar(nil) != nil {
+		t.Fatal("nil TAT client became a non-nil Registrar interface")
 	}
 }
 

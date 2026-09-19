@@ -6,7 +6,7 @@
 
 地址输入明确为“API 基础地址（Base URL）”，不接受 /chat/completions、/responses、/models 操作路径作为基础地址。界面内联说明并阻止保存/检查，主机保存、探测、发现及引擎应用使用同一校验规则；保留合法网关/部署前缀，不静默截断用户输入。旧错误配置可读取并明确修正，不因新增规则清空存储。
 
-提供商列表每行以共享 SettingsSwitch 滑动开关替代绿点，打开启用、关闭停用；名称按钮与开关为兄弟控件，点击名称只选择，不嵌套交互控件。自定义项右键只保留重命名和删除。默认提供商的关闭有保护及说明，未提供启停能力的项只读。详情摘要明确区分“连接已配置 · 未启用／已启用”；窄屏隐藏列表时保留直接启用和详情更多入口。所有入口调用同一 toggle 命令，不自动保存脏草稿或改变默认模型。不另建原生 checkbox 样式分支。
+提供商列表每行以共享 SettingsSwitch 滑动开关替代绿点，打开启用、关闭停用；名称按钮与开关为兄弟控件，点击名称只选择，不嵌套交互控件。所有提供商的右键菜单复用现有默认模型命令：只有一个已启用模型时直接“设为默认”，多个时通过子菜单明确选择，不建立 provider-only 默认值；自定义项另外保留重命名和删除。默认提供商的关闭有保护及说明，未提供启停能力的项只读。详情摘要明确区分“连接已配置 · 未启用／已启用”；窄屏隐藏列表时保留直接启用和详情更多入口。所有启停入口调用同一 toggle 命令，不自动保存脏草稿或改变默认模型。不另建原生 checkbox 样式分支。
 
 品牌标识是纯呈现层：`model-services/brand-mark.tsx` 为提供商列表、标题与模型行提供固定尺寸槽位。提供商按精确 ID/显式别名匹配，模型独立按家族匹配，不把网关品牌当作模型品牌；未知项使用 Lucide 通用图标。映射不得参与默认选择、配置、凭据或路由。品牌资源使用 MIT 标识的 `@lobehub/icons-static-svg@1.95.0`（[Lobe Icons](https://github.com/lobehub/lobe-icons)），随应用本地打包、按需加载，不引入其 UI 框架；单色 SVG mask 继承主题文字颜色。品牌商标仍属于各自权利人。
 
@@ -39,7 +39,7 @@ every provider implements every model capability. Codex OAuth remains separate.
 - `runtime/models/check`: 调用方只能传 provider、model、expectedRevision。后端绑定已保存的地址、协议、模型和凭据引用，缺失密钥才提示配置；解析凭据后再次检查连接快照，防止新地址接收旧密钥。可以检查尚未启用的完整连接，但不改变启用或默认模型状态。前端仅在宿主声明 canCheckSaved 时呈现此能力。
 
 - `runtime/providers/delete`: 仅删除 `llm-pi-ai` 声明的自定义提供商，按 namespace revision 进行 CAS；验证精确配置路径，保护默认提供商，同次移除其 modelSelection 配置，不删除可能共享的凭据。内置提供商不提供删除入口。
-- 自定义提供商行通过 Radix 右键菜单提供重命名和删除。重命名沿用 apply，只更新显示名，保留连接身份、模型和凭据。脏连接草稿需先保存或取消，确认窗口捕获打开时的 revision；冲突不自动重试。删除需要确认，删除当前项后回到已有启用项或目录。
+- 提供商行通过 Radix 右键菜单提供默认模型选择；单一可用模型直接提交，多模型必须在子菜单选择具体模型。菜单消费 `agent-default-model`、实际 active 状态和模型 enabled 状态，脏连接草稿、只读或忙碌时禁用。自定义提供商另提供重命名和删除。重命名沿用 apply，只更新显示名，保留连接身份、模型和凭据。脏连接草稿需先保存或取消，确认窗口捕获打开时的 revision；冲突不自动重试。删除需要确认，删除当前项后回到已有启用项或目录。
 
 - `runtime/providers/list`: directory and host-supplied creation capabilities
   (`kind`, supported `apis`, namespace `revision`). Existing providers advertise

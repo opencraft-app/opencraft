@@ -247,6 +247,36 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     expect(screen.getByText("finance-news")).toBeInTheDocument();
   });
 
+  it("keeps installed filter popovers within their compact trigger geometry", async () => {
+    renderPanel(mode, "installed");
+    await screen.findByText("finance-news");
+
+    const categoryFilter = screen.getByRole("combobox", { name: "筛选技能分类" });
+    const sourceFilter = screen.getByRole("combobox", { name: "筛选技能来源" });
+    [categoryFilter, sourceFilter].forEach((filter) => {
+      expect(filter).toHaveClass("lv-select-trigger", "lv-select-trigger--filter");
+      expect(filter).not.toHaveClass("h-9", "sm:w-40", "px-3", "text-xs");
+    });
+
+    const expectCompactList = (listbox: HTMLElement) => {
+      expect(listbox).toHaveClass("lv-select-content", "lv-select-content--filter");
+      expect(listbox).not.toHaveClass(
+        "w-[var(--radix-select-trigger-width)]",
+        "min-w-[var(--radix-select-trigger-width)]",
+        "max-w-[calc(100vw-2rem)]",
+      );
+      expect(listbox.style.width).toBe("");
+    };
+
+    fireEvent.click(categoryFilter);
+    const categoryList = await screen.findByRole("listbox");
+    expectCompactList(categoryList);
+    fireEvent.click(await screen.findByRole("option", { name: /全部分类/ }));
+
+    fireEvent.click(sourceFilter);
+    expectCompactList(await screen.findByRole("listbox"));
+  });
+
   it("suppresses the native search clear control when the custom clear button is shown", async () => {
     renderPanel(mode, "installed");
     await screen.findByText("finance-news");

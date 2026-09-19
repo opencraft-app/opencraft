@@ -835,7 +835,9 @@ describe("TatFileManagerPanel upload limits", () => {
     render(<TatFileManagerPanel botId="bot-loading-state" />);
     await waitFor(() => expect(listPathMock).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("当前目录为空。")).not.toBeInTheDocument();
-    expect(screen.getByText("加载中...").closest('[role="status"]')).toHaveAttribute("aria-busy", "true");
+    const status = screen.getByText("正在加载云存储").closest('[role="status"]');
+    expect(status).toHaveAttribute("aria-busy", "true");
+    expect(status).toHaveClass("min-h-[min(60vh,520px)]", "items-center", "justify-center");
     await act(async () => { resolve([]); });
     expect(await screen.findByText("当前目录为空。")).toBeInTheDocument();
   });

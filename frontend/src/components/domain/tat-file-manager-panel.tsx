@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AgentTooltip } from "@/components/agents/agent-tooltip";
+import { AgentPageLoadingState } from "@/components/agents";
 import { AgentState } from "@/components/agents/agent-state";
 import { FileManagerEntryView, FileManagerInlineEditor } from "./file-manager-entry-view";
 import { useRepositories } from "@/contexts/repository-context";
@@ -378,9 +379,10 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const [renamingName, setRenamingName] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [files, setFiles] = useState<TsshFileInfo[]>([]);
+  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
-  const [status, setStatus] = useState<FileManagerStatus>("idle");
+  const [status, setStatus] = useState<FileManagerStatus>("loading");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
@@ -481,11 +483,12 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setRenamingName(null);
     setRenameDraft("");
     setFiles([]);
+    setHasSnapshot(false);
     setSelectedName(null);
     setNotice(null);
     setError(null);
     setProgress(null);
-    setStatus("idle");
+    setStatus("loading");
     setStorageCapacity(null);
     setStorageCapacityStatus("loading");
   }, [botId, clearDownloadTriggerIframes]);
@@ -791,6 +794,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       const entries = await runWithReconnectedClient((client) => client.listPath(managedPath));
       entries.sort((a, b) => Number(isDirectory(b)) - Number(isDirectory(a)) || a.name.localeCompare(b.name));
       setFiles(entries);
+      setHasSnapshot(true);
       setPath(managedPath);
       setPathDraft(managedPath);
       setSelectedName(null);
@@ -1070,6 +1074,10 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const storageUsagePercent = storageCapacity
     ? Math.min(100, Math.max(0, Math.round((storageCapacity.usedBytes / storageCapacity.totalBytes) * 100)))
     : 0;
+
+  if ((status === "loading" || status === "connecting") && !hasSnapshot && !error) {
+    return <AgentPageLoadingState className="agents-ui" title={t("正在加载云存储")} />;
+  }
 
   return (
     <div className="agents-ui space-y-5">

@@ -178,29 +178,41 @@ export const SettingsSelect = forwardRef<HTMLSelectElement, SelectHTMLAttributes
   },
 );
 
-export interface SettingsSegmentedOption {
+export interface SegmentedControlOption {
   readonly value: string;
   readonly label: ReactNode;
   readonly disabled?: boolean;
 }
 
-export interface SettingsSegmentedProps {
+export type SettingsSegmentedOption = SegmentedControlOption;
+
+export interface SegmentedControlProps {
   readonly value: string;
-  readonly options: readonly SettingsSegmentedOption[];
+  readonly options: readonly SegmentedControlOption[];
   readonly onValueChange: (value: string) => void;
   readonly label: string;
   readonly disabled?: boolean;
+  readonly appearance?: "toolbar" | "inset";
+  readonly className?: string;
 }
 
-export function SettingsSegmented({
+/** Shared mutually-exclusive control. Shell and Settings choose appearance, not behavior. */
+export function SegmentedControl({
   value,
   options,
   onValueChange,
   label,
   disabled = false,
-}: SettingsSegmentedProps) {
+  appearance = "toolbar",
+  className,
+}: SegmentedControlProps) {
   return (
-    <div className="settings-control-segmented" role="radiogroup" aria-label={label}>
+    <div
+      className={classes("segmented-control", className)}
+      data-appearance={appearance}
+      role="radiogroup"
+      aria-label={label}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -215,6 +227,13 @@ export function SettingsSegmented({
       ))}
     </div>
   );
+}
+
+export type SettingsSegmentedProps = Omit<SegmentedControlProps, "appearance">;
+
+/** Settings-compatible adapter retained for existing extension views. */
+export function SettingsSegmented(props: SettingsSegmentedProps) {
+  return <SegmentedControl {...props} appearance="inset" className={classes("settings-control-segmented", props.className)} />;
 }
 
 export interface SettingsSwitchProps {

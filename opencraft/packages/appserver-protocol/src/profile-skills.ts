@@ -42,10 +42,39 @@ export const OPENCRAFT_PROFILE_SKILLS_CAPABILITY: ProfileSkillsCapability =
     }),
   });
 
+export const OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY: ProfileSkillsCapability =
+  Object.freeze({
+    version: 1,
+    features: Object.freeze({
+      contentRead: true,
+      officialCatalog: false,
+      catalogSearch: false,
+      catalogPreview: false,
+      catalogScan: false,
+      install: true,
+      uninstall: true,
+      update: false,
+      enablement: false,
+      actionNotifications: false,
+    }),
+    limits: Object.freeze({
+      maxPageSize: 100,
+      maxActionLogLines: 100,
+    }),
+  });
+
 export interface ProfileSkillScope {
   readonly type: "profile";
   readonly profileId: string;
 }
+
+/** OpenCraft-owned local DSH installation scope. */
+export interface LocalDshSkillScope {
+  readonly type: "local-dsh";
+  readonly root: "user";
+}
+
+export type SkillInstallScope = ProfileSkillScope | LocalDshSkillScope;
 
 export interface ProfileSkillInstalled {
   readonly name: string;
@@ -132,7 +161,7 @@ export interface ProfileSkillsErrorData {
   readonly domain: "profile-skills";
   readonly code: ProfileSkillsErrorCode;
   readonly retryable: boolean;
-  readonly scope?: ProfileSkillScope;
+  readonly scope?: SkillInstallScope;
   readonly actionId?: string;
   readonly operationId?: string;
   readonly currentRevision?: string;
@@ -141,7 +170,7 @@ export interface ProfileSkillsErrorData {
 export interface ProfileSkillAction {
   readonly actionId: string;
   readonly operationId: string;
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly kind: ProfileSkillActionKind;
   readonly target?: string;
   readonly state: ProfileSkillActionState;
@@ -154,7 +183,7 @@ export interface ProfileSkillAction {
 }
 
 export interface ProfileSkillsInstalledListParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly cursor?: string;
   readonly limit?: number;
   readonly forceReload?: boolean;
@@ -167,7 +196,7 @@ export interface ProfileSkillsInstalledListResult {
 }
 
 export interface ProfileSkillsContentReadParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly name: string;
 }
 
@@ -178,7 +207,7 @@ export interface ProfileSkillsContentReadResult {
 }
 
 export interface ProfileSkillsEnabledSetParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly name: string;
   readonly enabled: boolean;
   readonly expectedRevision: string;
@@ -193,7 +222,7 @@ export interface ProfileSkillsEnabledSetResult {
 }
 
 export interface ProfileSkillsCatalogSourcesListParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
 }
 
 export interface ProfileSkillsCatalogSourcesListResult {
@@ -204,7 +233,7 @@ export interface ProfileSkillsCatalogSourcesListResult {
 }
 
 export interface ProfileSkillsCatalogOfficialListParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly cursor?: string;
   readonly limit?: number;
 }
@@ -216,7 +245,7 @@ export interface ProfileSkillsCatalogOfficialListResult {
 }
 
 export interface ProfileSkillsCatalogSearchParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly query: string;
   readonly source?: string;
   readonly cursor?: string;
@@ -231,7 +260,7 @@ export interface ProfileSkillsCatalogSearchResult {
 }
 
 export interface ProfileSkillsCatalogPreviewParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly identifier: string;
 }
 
@@ -242,7 +271,7 @@ export interface ProfileSkillsCatalogPreviewResult {
 }
 
 export interface ProfileSkillsCatalogScanParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly identifier: string;
 }
 
@@ -251,13 +280,26 @@ export interface ProfileSkillsCatalogScanResult {
 }
 
 export interface ProfileSkillsMutationBase {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly expectedRevision?: string;
   readonly operationId: string;
 }
 
+export interface ProfileSkillArtifactFile {
+  readonly path: string;
+  readonly content: string;
+  readonly sha256?: string;
+}
+
+export interface ProfileSkillArtifact {
+  readonly name: string;
+  readonly files: readonly ProfileSkillArtifactFile[];
+}
+
 export interface ProfileSkillsInstallParams extends ProfileSkillsMutationBase {
   readonly identifier: string;
+  /** Required by filesystem-backed Hosts; hosted Hermes resolves identifiers itself. */
+  readonly artifact?: ProfileSkillArtifact;
 }
 
 export interface ProfileSkillsUninstallParams extends ProfileSkillsMutationBase {
@@ -271,7 +313,7 @@ export interface ProfileSkillsActionResult {
 }
 
 export interface ProfileSkillsActionReadParams {
-  readonly scope: ProfileSkillScope;
+  readonly scope: SkillInstallScope;
   readonly actionId: string;
   readonly logCursor?: string;
   readonly maxLogLines?: number;
@@ -339,19 +381,24 @@ export type ProfileSkillsEvent =
   | {
       readonly method: "skills/installed/changed";
       readonly params: {
-        readonly scope: ProfileSkillScope;
+        readonly scope: SkillInstallScope;
         readonly revision: string;
         readonly cause: "install" | "uninstall" | "update" | "enablement" | "external";
         readonly actionId?: string;
       };
     };
 
-export function isProfileSkillScope(value: unknown): value is ProfileSkillScope {
+export function isProfileSkillScope(value: unknown): value is SkillInstallScope {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const candidate = value as Partial<ProfileSkillScope>;
-  return candidate.type === "profile"
-    && typeof candidate.profileId === "string"
-    && candidate.profileId.trim().length > 0;
+  const candidate = value as {
+    readonly type?: unknown;
+    readonly profileId?: unknown;
+    readonly root?: unknown;
+  };
+  return (candidate.type === "profile"
+      && typeof candidate.profileId === "string"
+      && candidate.profileId.trim().length > 0)
+    || (candidate.type === "local-dsh" && candidate.root === "user");
 }
 
 export function isProfileSkillsEvent(value: unknown): value is ProfileSkillsEvent {

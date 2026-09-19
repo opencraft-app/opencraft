@@ -4,6 +4,7 @@ import { AppLink } from "@/lib/app-navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { agentButtonClassName, agentFieldClassName, agentPortalClassName } from "@/components/agents";
 import { ConsoleEditDialog } from "./console-edit-dialog";
@@ -36,7 +37,7 @@ export function ConsoleSessionList({ sessions, loading, selectedId, href, active
   const triggers = useRef(new Map<string, HTMLButtonElement>());
   return <>
     <nav className="lv-agents-nav" aria-label={labels.navigation}><div className="lv-agents-nav-group" role="group"><span className="lv-agents-nav-group-label">{labels.recent}</span><ul className="lv-agents-nav-group-items">
-      {loading && sessions.length === 0 ? <li className="lv-agents-session-hint" role="status">{labels.loading}</li> : sessions.length === 0 ? <li><AppLink to={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("lv-agents-session-item lv-agents-nav-item", active && "is-active")}><span className="lv-agents-nav-icon"><MessageSquare className="size-4" aria-hidden="true" /></span><span className="lv-agents-session-title">{labels.defaultChat}</span></AppLink></li> : sessions.map((session) => (
+      {loading && sessions.length === 0 ? <li className="lv-agents-session-hint flex items-center gap-2" role="status" aria-busy="true"><Skeleton className="h-3.5 w-28" /><span className="sr-only">{labels.loading}</span></li> : sessions.length === 0 ? <li><AppLink to={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("lv-agents-session-item lv-agents-nav-item", active && "is-active")}><span className="lv-agents-nav-icon"><MessageSquare className="size-4" aria-hidden="true" /></span><span className="lv-agents-session-title">{labels.defaultChat}</span></AppLink></li> : sessions.map((session) => (
         <li key={session.id} className={cn("lv-agents-session-item-wrap", selectedId === session.id && "is-active")}>
           <AppLink to={href} onClick={() => { onSelect(session.id); onNavigate(); }} aria-current={selectedId === session.id ? "page" : undefined} className="lv-agents-session-item lv-agents-nav-item"><span className="lv-agents-nav-icon"><MessageSquare className="size-4" aria-hidden="true" /></span><span className="lv-agents-session-title">{session.title}</span></AppLink>
           <DropdownMenu open={menuId === session.id} onOpenChange={(open) => onMenuChange(open ? session.id : null)}>

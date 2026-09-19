@@ -1,6 +1,7 @@
 package config
 
 type Inventory struct {
+	Profile     string `yaml:"profile"`
 	EnvName     string `yaml:"env_name"`
 	Cloud       string `yaml:"cloud"`
 	Region      string `yaml:"region"`
@@ -56,16 +57,7 @@ type Inventory struct {
 			StorageLimit       int    `yaml:"storage_limit"`
 		} `yaml:"cynosdb"`
 
-		Networking struct {
-			PrimaryNATGatewayName   string                     `yaml:"primary_nat_gateway_name"`
-			SecondaryNATGatewayName string                     `yaml:"secondary_nat_gateway_name"`
-			PrimaryNATPublicIPs     []string                   `yaml:"primary_nat_public_ips"`
-			SecondaryNATPublicIPs   []string                   `yaml:"secondary_nat_public_ips"`
-			PrimaryEIPs             map[string]EIPBandwidth    `yaml:"primary_eips"`
-			SecondaryEIPs           map[string]EIPBandwidth    `yaml:"secondary_eips"`
-			RouteTableName          string                     `yaml:"route_table_name"`
-			SNATSubnets             map[string]SNATSubnetEntry `yaml:"snat_subnets"`
-		} `yaml:"networking"`
+		Networking NetworkingInventory `yaml:"networking"`
 
 		Connectivity struct {
 			Enabled   bool `yaml:"enabled"`
@@ -115,6 +107,8 @@ type Inventory struct {
 
 		Pulsar PulsarInventory `yaml:"pulsar"`
 
+		Referral ReferralInventory `yaml:"referral"`
+
 		Collaboration CollaborationInventory `yaml:"collaboration"`
 
 		TCR struct {
@@ -151,6 +145,27 @@ type Inventory struct {
 			Jumpserver JumpserverInventory `yaml:"jumpserver"`
 		} `yaml:"compute"`
 	} `yaml:"stacks"`
+}
+
+const (
+	ProfileFull           = "full"
+	ProfileSandboxNetwork = "sandbox-network"
+)
+
+type NetworkingInventory struct {
+	PrimaryNATGatewayName   string                     `yaml:"primary_nat_gateway_name"`
+	SecondaryNATGatewayName string                     `yaml:"secondary_nat_gateway_name"`
+	ManageSecondaryNAT      *bool                      `yaml:"manage_secondary_nat"`
+	PrimaryNATPublicIPs     []string                   `yaml:"primary_nat_public_ips"`
+	SecondaryNATPublicIPs   []string                   `yaml:"secondary_nat_public_ips"`
+	PrimaryEIPs             map[string]EIPBandwidth    `yaml:"primary_eips"`
+	SecondaryEIPs           map[string]EIPBandwidth    `yaml:"secondary_eips"`
+	RouteTableName          string                     `yaml:"route_table_name"`
+	SNATSubnets             map[string]SNATSubnetEntry `yaml:"snat_subnets"`
+}
+
+func (n NetworkingInventory) SecondaryNATEnabled() bool {
+	return n.ManageSecondaryNAT == nil || *n.ManageSecondaryNAT
 }
 
 type EIPBandwidth struct {
@@ -244,8 +259,26 @@ type PulsarInventory struct {
 	CTLProducerRole      string            `yaml:"ctl_producer_role"`
 	ReferralConsumerRole string            `yaml:"referral_consumer_role"`
 	UserAuthSSMSecret    string            `yaml:"user_auth_ssm_secret"`
+	UserAuthSSMVersionID string            `yaml:"user_auth_ssm_version_id"`
 	CTLSSMSecret         string            `yaml:"ctl_ssm_secret"`
+	CTLSSMVersionID      string            `yaml:"ctl_ssm_version_id"`
 	ReferralSSMSecret    string            `yaml:"referral_ssm_secret"`
+	ReferralSSMVersionID string            `yaml:"referral_ssm_version_id"`
+}
+
+// ReferralInventory describes the isolated CynosDB account/database and SSM
+// target used by the Referral service in one environment.
+type ReferralInventory struct {
+	Enabled                       bool   `yaml:"enabled"`
+	ExistingClusterID             string `yaml:"existing_cluster_id"`
+	ExistingEndpoint              string `yaml:"existing_endpoint"`
+	Database                      string `yaml:"database"`
+	Account                       string `yaml:"account"`
+	AccountHost                   string `yaml:"account_host"`
+	SSMSecretName                 string `yaml:"ssm_secret_name"`
+	SSMVersionID                  string `yaml:"ssm_version_id"`
+	InternalServiceTokenSourceSSM string `yaml:"internal_service_token_source_ssm"`
+	InternalServiceTokenVersionID string `yaml:"internal_service_token_version_id"`
 }
 
 type CollaborationInventory struct {

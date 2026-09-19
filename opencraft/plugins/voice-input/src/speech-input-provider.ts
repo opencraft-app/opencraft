@@ -1,3 +1,5 @@
+import { DictationTranscriptLedger } from "./dictation-transcript-ledger";
+
 export type SpeechInputErrorCode =
   | "not-supported"
   | "permission-denied"
@@ -12,18 +14,22 @@ export interface SpeechInputError {
 }
 
 export interface SpeechInputObserver {
-  interim(text: string): void;
+  level?(level: number): void;
+  status?(phase: "starting" | "listening" | "transcribing"): void;
+  /** One completed session transcript, never a recognition hypothesis. */
   commit(text: string): void;
   end(): void;
   error(error: SpeechInputError): void;
 }
 
 export interface SpeechInputSession {
+  readonly phase?: "starting" | "listening";
   stop(): void;
   cancel(): void;
 }
 
 export interface SpeechInputProvider {
+  readonly unavailableMessage?: string;
   readonly id: string;
   isAvailable(): boolean;
   start(
@@ -119,21 +125,25 @@ export class BrowserSpeechInputProvider implements SpeechInputProvider {
     }
     const recognition = new Constructor();
     recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.interimResults = false;
     recognition.lang = options.language ?? globalThis.navigator?.language ?? "en-US";
     let closed = false;
     let cancelled = false;
+    let stopping = false, sequence = 0;
+    const ledger = new DictationTranscriptLedger();
 
     recognition.onresult = (event) => {
-      let interim = "";
+      if (closed || cancelled) return;
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
         const text = result?.[0]?.transcript ?? "";
-        if (text.trim().length === 0) continue;
-        if (result?.isFinal) observer.commit(text);
-        else interim += text;
+        if (result === undefined) continue;
+        try { ledger.accept({ utteranceId: `browser-result-${index}`, sequence: ++sequence,
+          phase: result.isFinal ? "final" : "partial", text }); }
+        catch (error) {
+          closed = true; recognition.abort(); observer.error({ code: "unknown", message: error instanceof Error ? error.message : "听写结果无效" }); return;
+        }
       }
-      observer.interim(interim);
     };
     recognition.onerror = (event) => {
       if (!cancelled) {
@@ -144,13 +154,18 @@ export class BrowserSpeechInputProvider implements SpeechInputProvider {
     recognition.onend = () => {
       if (closed) return;
       closed = true;
-      observer.end();
+      try {
+        if (!stopping) throw new Error("语音服务在用户停止前结束，请重新开始听写");
+        const text = ledger.finish(); if (text.length > 0) observer.commit(text);
+        observer.end();
+      } catch (error) { observer.error({ code: "unknown", message: error instanceof Error ? error.message : "听写未能收尾" }); }
     };
     recognition.start();
 
     const close = (mode: "stop" | "cancel") => {
       if (closed) return;
-      if (mode === "cancel") cancelled = true;
+      if (mode === "cancel") { cancelled = true; closed = true; }
+      else { if (stopping) return; stopping = true; }
       if (mode === "cancel") recognition.abort();
       else recognition.stop();
     };

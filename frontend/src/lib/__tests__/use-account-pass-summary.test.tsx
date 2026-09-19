@@ -12,6 +12,30 @@ const pass = (overrides: Partial<Pass> = {}): Pass => ({
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason?: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
 describe("shared account pass summary", () => {
+  it.each([
+    ["none", []],
+    ["ready", [pass()]],
+  ] as const)("retries a failed fallback and recovers to %s", async (expectedState, recoveredPasses) => {
+    const listMyPasses = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(recoveredPasses);
+    const { result } = renderHook(() => useAccountPassSummary({
+      userId: "a",
+      activePass: null,
+      modifyingPass: null,
+      paidBillingActive: true,
+      global: false,
+      listMyPasses,
+    }));
+
+    await waitFor(() => expect(result.current.state).toBe("error"));
+    act(() => result.current.retry());
+    expect(result.current.state).toBe("loading");
+    await waitFor(() => expect(result.current.state).toBe(expectedState));
+    expect(result.current.pass).toBe(expectedState === "ready" ? recoveredPasses[0] : null);
+    expect(listMyPasses).toHaveBeenCalledTimes(2);
+  });
+
   it("uses modifying, active, then first owned nondeleted fallback without mixing credits", async () => {
     const activePass = pass();
     const modifyingPass = pass({ pass_id: "modifying", status: "modifying", credit_total: 250, credit_available: 45 });

@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { type KeyboardEventHandler, type RefObject, useId, useRef } from "react";
-import { Check, Loader2, Pencil, X } from "lucide-react";
+import { Check, Pencil, X } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { agentPortalClassName } from "@/components/agents";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,11 +101,12 @@ export function CommonSettingRowView({ setting, value, draft, disabled, unsuppor
                             <Button
                               type="button"
                               aria-label={`${labels.save}${setting.label}`}
+                              aria-busy={saving}
                               disabled={disabled || !numberChanged}
                               onClick={onSave}
                               className="inline-flex size-8 p-0 shrink-0 items-center justify-center rounded-md bg-[var(--lw-accent)] text-white transition hover:bg-[var(--lw-accent-hover)] disabled:cursor-not-allowed disabled:opacity-35"
                             >
-                              {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                              {saving ? <Spinner size="md" /> : <Check className="size-4" aria-hidden="true" />}
                             </Button>
                             <Button
                               variant="outline"

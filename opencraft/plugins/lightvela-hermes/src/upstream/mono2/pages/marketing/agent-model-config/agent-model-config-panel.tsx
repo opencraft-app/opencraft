@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Loader2,
   Plus,
   RefreshCw,
 } from "lucide-react";
@@ -14,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AgentSectionHeader } from "../../../components/domain/agent-section-header";
-import { AgentConfirmDialog, AgentState, agentPortalClassName } from "../../../components/agents/index";
+import { AgentConfirmDialog, AgentPageLoadingState, AgentState, Spinner, agentPortalClassName } from "../../../components/agents/index";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -218,19 +217,6 @@ function displayError(message: string, localizedFallback: string) {
     return localizedFallback;
   }
   return message;
-}
-
-function ModelConfigLoading() {
-  const t = useT();
-  return (
-    <div
-      className="flex min-h-48 items-center justify-center rounded-md border border-black/[0.06] bg-white text-sm text-black/50"
-      aria-busy="true"
-    >
-      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />
-      {t("正在读取模型配置")}
-    </div>
-  );
 }
 
 export function AgentModelConfigPanel({
@@ -549,12 +535,7 @@ export function AgentModelConfigPanel({
   };
 
   if (controller.loading && !controller.snapshot) {
-    return (
-      <div className="agents-ui space-y-5 pb-12 md:pb-16">
-        {pageHeader}
-        <ModelConfigLoading />
-      </div>
-    );
+    return <AgentPageLoadingState className="agents-ui" title={t("正在读取模型")} />;
   }
 
   if (controller.loadError && !controller.snapshot) {
@@ -1005,11 +986,12 @@ export function AgentModelConfigPanel({
             <Button
               type="button"
               className="rounded-md"
+              aria-busy={controller.operation === "add"}
               disabled={!selectedModel || !apiKey.trim() || !credentialMatchesProvider || busy || (selectedModelIsPrimary && purpose !== "primary")}
               onClick={() => void handleAdd()}
             >
               {controller.operation === "add"
-                ? <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ? <Spinner size="md" />
                 : null}
               {t("确认配置")}
             </Button>

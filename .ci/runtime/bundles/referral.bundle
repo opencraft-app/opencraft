@@ -32,17 +32,19 @@ bundles:
         database_env: REFERRAL_DB
         user_env: REFERRAL_DB_USER
         password_env: REFERRAL_DB_PASSWORD
-    reason: Referral campaign API and Pulsar reward worker for Beijing, plus a disabled Shanghai foundation.
+    reason: Referral campaign API and Pulsar reward worker for Beijing, Shanghai, and Singapore.
     allowed_paths:
     - referral/k8s/base
     - referral/k8s/overlays/beijing-sandbox
     - referral/k8s/overlays/shprod
+    - referral/k8s/overlays/sgprod
     - referral/Dockerfile
     - referral/migrations
     - argocd/catalogs/sandbox/beijing-sandbox/referral.yaml
     - argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml
     - scripts/ssm_manifest.referral.beijing-sandbox.yaml
     - scripts/ssm_manifest.referral.shprod.yaml
+    - scripts/ssm_manifest.referral.sgprod.yaml
     exit_condition: Can be removed only after referral ownership moves into another entitlement service.
     publish_paths:
     - argocd/services/referral/{env}/**
@@ -71,11 +73,21 @@ bundles:
       - referral/k8s/overlays/shprod/**
       - argocd/secrets/shprod/referral-runtime-secrets.sops.yaml
       - scripts/ssm_manifest.referral.shprod.yaml
+      sgprod:
+      - argocd/services/referral/sgprod/**
+      - argocd/services/referral/common/**
+      - argocd/apps/sgprod/referral.yaml
+      - argocd/projects/sgprod-referral.yaml
+      - referral/k8s/base/**
+      - referral/k8s/overlays/sgprod/**
+      - argocd/secrets/sgprod/referral-runtime-secrets.sops.yaml
+      - scripts/ssm_manifest.referral.sgprod.yaml
     dockerfile: referral/Dockerfile
     build_context: referral
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/referral
       sandbox-bj-*: lightclaw-bj8.tencentcloudcr.com/lightclaw/referral
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/referral
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/referral
       sandbox-kr-*: null
       sandbox-jp-*: null

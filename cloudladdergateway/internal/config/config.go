@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,15 +23,41 @@ const (
 )
 
 type Config struct {
-	Addr         string          `yaml:"addr"`
-	MaxBodyBytes int64           `yaml:"max_body_bytes"`
-	Transport    TransportConfig `yaml:"transport"`
-	Discovery    DiscoveryConfig `yaml:"discovery"`
-	Backends     []BackendConfig `yaml:"backends"`
-	Auth         AuthConfig      `yaml:"auth"`
-	Audit        AuditConfig     `yaml:"audit"`
-	External     []ExternalRoute `yaml:"external_routes"`
-	Routes       []RouteConfig   `yaml:"routes"`
+	Addr            string                `yaml:"addr"`
+	MaxBodyBytes    int64                 `yaml:"max_body_bytes"`
+	Transport       TransportConfig       `yaml:"transport"`
+	Discovery       DiscoveryConfig       `yaml:"discovery"`
+	Backends        []BackendConfig       `yaml:"backends"`
+	Auth            AuthConfig            `yaml:"auth"`
+	Audit           AuditConfig           `yaml:"audit"`
+	DeveloperRoutes DeveloperRoutesConfig `yaml:"developer_routes"`
+	External        []ExternalRoute       `yaml:"external_routes"`
+	Routes          []RouteConfig         `yaml:"routes"`
+}
+
+type DeveloperRoutesConfig struct {
+	Enabled            bool     `yaml:"enabled"`
+	RouteID            string   `yaml:"route_id"`
+	Store              string   `yaml:"store"`
+	RegistryBaseURL    string   `yaml:"registry_base_url"`
+	RegistryRouteID    string   `yaml:"registry_route_id"`
+	RegistryCaller     string   `yaml:"registry_caller"`
+	RegistrySecretEnv  string   `yaml:"registry_secret_env"`
+	RegistryTimeout    string   `yaml:"registry_timeout"`
+	RegistrationRoute  string   `yaml:"registration_route"`
+	RegistrationCaller string   `yaml:"registration_caller"`
+	DeliveryMode       string   `yaml:"delivery_mode"`
+	TunnelBaseURL      string   `yaml:"tunnel_base_url"`
+	TunnelHostSuffix   string   `yaml:"tunnel_host_suffix"`
+	TunnelTokenEnv     string   `yaml:"tunnel_token_env"`
+	LeaseNamespace     string   `yaml:"lease_namespace"`
+	LeasePrefix        string   `yaml:"lease_prefix"`
+	AllowedCIDRs       []string `yaml:"allowed_cidrs"`
+	AllowedPorts       []int    `yaml:"allowed_ports"`
+	DefaultTTL         string   `yaml:"default_ttl"`
+	MaxTTL             string   `yaml:"max_ttl"`
+	ProbePath          string   `yaml:"probe_path"`
+	ProbeTimeout       string   `yaml:"probe_timeout"`
 }
 
 type TransportConfig struct {
@@ -233,8 +261,59 @@ func Load(path string) (Config, error) {
 		cfg.Audit.Stdout = true
 	}
 	applyAuthEnvOverrides(&cfg)
+	if cfg.DeveloperRoutes.RouteID == "" {
+		cfg.DeveloperRoutes.RouteID = "jifei-callback"
+	}
+	if cfg.DeveloperRoutes.Store == "" {
+		cfg.DeveloperRoutes.Store = "memory"
+	}
+	if cfg.DeveloperRoutes.RegistryRouteID == "" {
+		cfg.DeveloperRoutes.RegistryRouteID = "developer-route-registry"
+	}
+	if cfg.DeveloperRoutes.RegistryCaller == "" {
+		cfg.DeveloperRoutes.RegistryCaller = "cloudladdergateway"
+	}
+	if cfg.DeveloperRoutes.RegistrySecretEnv == "" {
+		cfg.DeveloperRoutes.RegistrySecretEnv = "CLOUDLADDER_SHADOW_HMAC_SECRET"
+	}
+	if cfg.DeveloperRoutes.RegistryTimeout == "" {
+		cfg.DeveloperRoutes.RegistryTimeout = "10s"
+	}
+	if cfg.DeveloperRoutes.RegistrationRoute == "" {
+		cfg.DeveloperRoutes.RegistrationRoute = "developer-route-registration"
+	}
+	if cfg.DeveloperRoutes.RegistrationCaller == "" {
+		cfg.DeveloperRoutes.RegistrationCaller = "lightclaw-auth"
+	}
+	if cfg.DeveloperRoutes.DeliveryMode == "" {
+		cfg.DeveloperRoutes.DeliveryMode = "direct"
+	}
+	if cfg.DeveloperRoutes.TunnelHostSuffix == "" {
+		cfg.DeveloperRoutes.TunnelHostSuffix = "tunnel.internal"
+	}
+	if cfg.DeveloperRoutes.TunnelTokenEnv == "" {
+		cfg.DeveloperRoutes.TunnelTokenEnv = "DEVTUNNEL_TOKEN"
+	}
+	if cfg.DeveloperRoutes.LeasePrefix == "" {
+		cfg.DeveloperRoutes.LeasePrefix = "cloudladdergateway-devroute-"
+	}
+	if cfg.DeveloperRoutes.DefaultTTL == "" {
+		cfg.DeveloperRoutes.DefaultTTL = "8h"
+	}
+	if cfg.DeveloperRoutes.MaxTTL == "" {
+		cfg.DeveloperRoutes.MaxTTL = "24h"
+	}
+	if cfg.DeveloperRoutes.ProbePath == "" {
+		cfg.DeveloperRoutes.ProbePath = "/healthz"
+	}
+	if cfg.DeveloperRoutes.ProbeTimeout == "" {
+		cfg.DeveloperRoutes.ProbeTimeout = "5s"
+	}
 	applyBackendEnvOverrides(&cfg)
 	applyRouteEnvOverrides(&cfg)
+	if err := applyDeveloperRouteEnvOverrides(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -343,6 +422,78 @@ func (c Config) Validate() error {
 			if _, err := ParseDuration(webhook.Timeout, 10*time.Second); err != nil {
 				return fmt.Errorf("route %q webhook %q timeout: %w", route.ID, webhook.ID, err)
 			}
+		}
+	}
+	if c.DeveloperRoutes.Enabled {
+		d := c.DeveloperRoutes
+		if _, ok := seen[d.RouteID]; !ok {
+			return fmt.Errorf("developer_routes references unknown route %q", d.RouteID)
+		}
+		switch strings.ToLower(strings.TrimSpace(d.Store)) {
+		case "memory":
+		case "kubernetes_lease":
+			if strings.TrimSpace(d.LeaseNamespace) == "" {
+				return fmt.Errorf("developer_routes.lease_namespace is required for kubernetes_lease")
+			}
+		case "http":
+			registryURL, err := url.ParseRequestURI(strings.TrimSpace(d.RegistryBaseURL))
+			if err != nil || registryURL.Host == "" || (registryURL.Scheme != "http" && registryURL.Scheme != "https") || registryURL.User != nil || registryURL.RawQuery != "" || registryURL.Fragment != "" {
+				return fmt.Errorf("developer_routes.registry_base_url must be an absolute http(s) URL without credentials or query")
+			}
+			if strings.TrimSpace(d.RegistryRouteID) == "" || strings.TrimSpace(d.RegistryCaller) == "" || strings.TrimSpace(d.RegistrySecretEnv) == "" {
+				return fmt.Errorf("developer_routes registry route, caller, and secret env are required for http")
+			}
+			if _, err := ParseDuration(d.RegistryTimeout, 10*time.Second); err != nil {
+				return fmt.Errorf("developer_routes.registry_timeout: %w", err)
+			}
+		default:
+			return fmt.Errorf("developer_routes.store %q is not supported", d.Store)
+		}
+		if strings.TrimSpace(d.RegistrationRoute) == "" || strings.TrimSpace(d.RegistrationCaller) == "" {
+			return fmt.Errorf("developer_routes registration route and caller are required")
+		}
+		switch strings.ToLower(strings.TrimSpace(d.DeliveryMode)) {
+		case "direct":
+		case "devtunnel":
+			u, err := url.ParseRequestURI(strings.TrimSpace(d.TunnelBaseURL))
+			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.EscapedPath() != "" {
+				return fmt.Errorf("developer_routes.tunnel_base_url must be an absolute http(s) URL without credentials, query, or path")
+			}
+			if strings.Trim(strings.TrimSpace(d.TunnelHostSuffix), ".") == "" {
+				return fmt.Errorf("developer_routes.tunnel_host_suffix is required for devtunnel")
+			}
+			if strings.TrimSpace(d.TunnelTokenEnv) == "" {
+				return fmt.Errorf("developer_routes.tunnel_token_env is required for devtunnel")
+			}
+		default:
+			return fmt.Errorf("developer_routes.delivery_mode %q is not supported", d.DeliveryMode)
+		}
+		if len(d.AllowedCIDRs) == 0 || len(d.AllowedPorts) == 0 {
+			return fmt.Errorf("developer_routes allowed cidrs and ports are required")
+		}
+		for _, raw := range d.AllowedCIDRs {
+			if _, err := netip.ParsePrefix(strings.TrimSpace(raw)); err != nil {
+				return fmt.Errorf("developer_routes cidr %q: %w", raw, err)
+			}
+		}
+		for _, port := range d.AllowedPorts {
+			if port < 1 || port > 65535 {
+				return fmt.Errorf("developer_routes.allowed_ports contains invalid port %d", port)
+			}
+		}
+		if !strings.HasPrefix(strings.TrimSpace(d.ProbePath), "/") {
+			return fmt.Errorf("developer_routes.probe_path must start with /")
+		}
+		if _, err := ParseDuration(d.ProbeTimeout, 5*time.Second); err != nil {
+			return fmt.Errorf("developer_routes.probe_timeout: %w", err)
+		}
+		defaultTTL, err := ParseDuration(d.DefaultTTL, 8*time.Hour)
+		if err != nil || defaultTTL <= 0 {
+			return fmt.Errorf("developer_routes.default_ttl is invalid")
+		}
+		maxTTL, err := ParseDuration(d.MaxTTL, 24*time.Hour)
+		if err != nil || maxTTL <= 0 || defaultTTL > maxTTL {
+			return fmt.Errorf("developer_routes.max_ttl is invalid")
 		}
 	}
 	for i, route := range c.External {
@@ -526,6 +677,70 @@ func applyRouteEnvOverrides(cfg *Config) {
 			}
 		}
 	}
+}
+
+func applyDeveloperRouteEnvOverrides(cfg *Config) error {
+	const prefix = "CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_"
+	if raw := strings.TrimSpace(os.Getenv(prefix + "ENABLED")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("developer_routes.enabled env: %w", err)
+		}
+		cfg.DeveloperRoutes.Enabled = value
+	}
+	overrides := []struct {
+		name   string
+		target *string
+	}{
+		{"ROUTE_ID", &cfg.DeveloperRoutes.RouteID},
+		{"STORE", &cfg.DeveloperRoutes.Store},
+		{"REGISTRY_BASE_URL", &cfg.DeveloperRoutes.RegistryBaseURL},
+		{"REGISTRY_ROUTE_ID", &cfg.DeveloperRoutes.RegistryRouteID},
+		{"REGISTRY_CALLER", &cfg.DeveloperRoutes.RegistryCaller},
+		{"REGISTRY_SECRET_ENV", &cfg.DeveloperRoutes.RegistrySecretEnv},
+		{"REGISTRY_TIMEOUT", &cfg.DeveloperRoutes.RegistryTimeout},
+		{"REGISTRATION_ROUTE", &cfg.DeveloperRoutes.RegistrationRoute},
+		{"REGISTRATION_CALLER", &cfg.DeveloperRoutes.RegistrationCaller},
+		{"DELIVERY_MODE", &cfg.DeveloperRoutes.DeliveryMode},
+		{"TUNNEL_BASE_URL", &cfg.DeveloperRoutes.TunnelBaseURL},
+		{"TUNNEL_HOST_SUFFIX", &cfg.DeveloperRoutes.TunnelHostSuffix},
+		{"TUNNEL_TOKEN_ENV", &cfg.DeveloperRoutes.TunnelTokenEnv},
+		{"LEASE_NAMESPACE", &cfg.DeveloperRoutes.LeaseNamespace},
+		{"LEASE_PREFIX", &cfg.DeveloperRoutes.LeasePrefix},
+		{"DEFAULT_TTL", &cfg.DeveloperRoutes.DefaultTTL},
+		{"MAX_TTL", &cfg.DeveloperRoutes.MaxTTL},
+		{"PROBE_PATH", &cfg.DeveloperRoutes.ProbePath},
+		{"PROBE_TIMEOUT", &cfg.DeveloperRoutes.ProbeTimeout},
+	}
+	for _, override := range overrides {
+		if value := strings.TrimSpace(os.Getenv(prefix + override.name)); value != "" {
+			*override.target = value
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv(prefix + "ALLOWED_CIDRS")); value != "" {
+		cfg.DeveloperRoutes.AllowedCIDRs = splitNonEmpty(value)
+	}
+	if value := strings.TrimSpace(os.Getenv(prefix + "ALLOWED_PORTS")); value != "" {
+		cfg.DeveloperRoutes.AllowedPorts = nil
+		for _, item := range splitNonEmpty(value) {
+			port, err := strconv.Atoi(item)
+			if err != nil {
+				return fmt.Errorf("developer_routes.allowed_ports env item %q: %w", item, err)
+			}
+			cfg.DeveloperRoutes.AllowedPorts = append(cfg.DeveloperRoutes.AllowedPorts, port)
+		}
+	}
+	return nil
+}
+
+func splitNonEmpty(raw string) []string {
+	var values []string
+	for _, item := range strings.Split(raw, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			values = append(values, item)
+		}
+	}
+	return values
 }
 
 // parseUinRoutes 解析 `uin=route_id` 逗号分隔的 uin 改派表。

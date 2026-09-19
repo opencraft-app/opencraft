@@ -24,6 +24,7 @@ interface MutableConversationViewLease {
   readonly scopeId: ConversationScopeId;
   readonly hostId: HostId;
   readonly composer: ComposerController;
+  unsubscribeComposer: () => void;
   readonly releaseScope: () => void;
   readonly retainers: Map<symbol, string>;
   touchedAt: number;
@@ -80,6 +81,11 @@ export function createConversationViewRegistry(
     entries.delete(entry.viewId);
     const failures: unknown[] = [];
     try {
+      entry.unsubscribeComposer();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
       entry.composer.dispose();
     } catch (error) {
       failures.push(error);
@@ -131,10 +137,29 @@ export function createConversationViewRegistry(
         scopeId,
         hostId,
         composer: createComposerController(target, config.composerServices),
+        unsubscribeComposer: () => {},
         releaseScope: config.scopeLeases.retain(scopeId, `conversation-view:${viewId}`),
         retainers: new Map(),
         touchedAt: ++logicalClock,
       };
+      // Conversation Scope owns the conversation's explicitly chosen Composer
+      // selections (Codex keeps them on the conversation state, not on any
+      // route-local Composer). Seed a fresh Composer draft from the Scope and
+      // mirror later draft changes back so View recreation cannot lose them.
+      const storedSelections = config.scopeLeases.readSelections(scopeId);
+      if (storedSelections !== null) {
+        created.composer.dispatch({ type: "set-selections", patch: storedSelections });
+      }
+      let mirroredSelections = created.composer.getSnapshot().draft.selections;
+      created.unsubscribeComposer = created.composer.subscribe(() => {
+        const selections = created.composer.getSnapshot().draft.selections;
+        if (selections === mirroredSelections) return;
+        mirroredSelections = selections;
+        // A fresh draft after switch-target starts empty; that is target
+        // rotation, not an explicit reset, so it must not erase Scope state.
+        if (Object.keys(selections).length === 0) return;
+        config.scopeLeases.writeSelections(scopeId, selections);
+      });
       entries.set(viewId, created);
       prune();
       return snapshot(created);
@@ -148,6 +173,13 @@ export function createConversationViewRegistry(
       for (const entry of entries.values()) {
         if (entry.scopeId !== scopeId) continue;
         entry.composer.dispatch({ type: "switch-target", target });
+        // A promoted Draft target has no cached Composer draft; restore the
+        // Scope's chosen selections so they carry into the canonical Thread.
+        const draftSelections = entry.composer.getSnapshot().draft.selections;
+        const storedSelections = config.scopeLeases.readSelections(scopeId);
+        if (storedSelections !== null && Object.keys(draftSelections).length === 0) {
+          entry.composer.dispatch({ type: "set-selections", patch: storedSelections });
+        }
         entry.touchedAt = ++logicalClock;
       }
     },

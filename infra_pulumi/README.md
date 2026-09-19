@@ -71,7 +71,7 @@ GOWORK=off go run ./cmd/infractl import --stack beijing-sandbox
 
 ### 4. 执行变更
 
-`up` 会做三件事：
+完整平台 stack 的 `up` 会做三件事：
 
 - 通过 Pulumi Automation API 执行 stack update
 - 回写 `deploy/envs/<env>/platform.env`，其中包含部署所需地址和资源密码
@@ -81,6 +81,9 @@ GOWORK=off go run ./cmd/infractl import --stack beijing-sandbox
 cd infra_pulumi
 GOWORK=off go run ./cmd/infractl up --stack beijing-sandbox
 ```
+
+`componentScope` 非空的专用 stack 只更新该 scope 拥有的云资源，不回写依赖
+TKE 的 deploy 输出，也不生成 kubeconfig。
 
 只发布到期短信通知组件时，使用组件 scope。该模式不会同步或改写整个平台的 deploy 输出：
 
@@ -95,6 +98,17 @@ INFRA_COMPONENT_SCOPE=notify GOWORK=off go run ./cmd/infractl up --stack beijing
 ```bash
 INFRA_COMPONENT_SCOPE=pulsar GOWORK=off go run ./cmd/infractl preview --stack beijing-sandbox
 ```
+
+新加坡生产的新山 Sandbox 网络使用持久化的 `sandbox-network` scope。该 stack
+只创建 VPC、pool/support 子网、EIP、NAT、路由/SNAT 和 Sandbox 安全组，不需要
+node/DB/Redis Pulumi Secret，也不会创建 TKE、数据库或其他平台组件：
+
+```bash
+GOWORK=off go run ./cmd/infractl preview --stack sgprod-johor-sandbox-network
+```
+
+该 stack 的 inventory 与 Pulumi config 同时固定 network-only 身份；任一侧缺失或
+不匹配都会 fail closed。`up` 会创建计费资源，必须在 preview 审阅后单独确认。
 
 首次创建子资源前由 preview 通过腾讯云只读 API 核对 inventory 中的集群 ID、名称、规格、
 可用区、VPC、子网和 broker endpoint。未经 preview 审阅不得执行 `up`。
@@ -121,6 +135,23 @@ Auth/CTL SSM 必须预先存在，以避免命令误建不完整的核心服务 
 broker endpoint，最后预检并以 `bootstrap-referral-tokens --stack shprod --apply` 交付三个 Role Token。
 普通上海镜像发布不执行集群购买或 Token bootstrap。
 
+新加坡 Referral 使用同样的两阶段流程，并固定为新加坡地域内独立的 Pulsar、CynosDB 逻辑库和账号：
+
+```bash
+INFRA_COMPONENT_SCOPE=pulsar GOWORK=off go run ./cmd/infractl preview --stack sgprod
+INFRA_COMPONENT_SCOPE=pulsar GOWORK=off go run ./cmd/infractl up --stack sgprod
+GOWORK=off go run ./cmd/infractl bootstrap-referral-database --stack sgprod
+GOWORK=off go run ./cmd/infractl bootstrap-referral-database --stack sgprod --apply
+GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack sgprod
+GOWORK=off go run ./cmd/infractl bootstrap-referral-tokens --stack sgprod --apply
+```
+
+Pulsar 首次 apply 后仍须先回填真实 cluster ID 和 broker endpoint。数据库 bootstrap 默认只读预检，
+显式 `--apply` 后幂等创建独立 `lightvela_referral` 数据库、`referral@%` 账号、DB 级权限，并把生成的
+数据库密码与内部服务 Token 合并进同一 Referral SSM；它不会覆盖已经交付的 Pulsar Token。
+内部服务 Token 从 inventory 指定的 CTL SSM 读取并精确复制，默认拒绝不一致值；仅明确轮换时才允许
+追加 `--allow-internal-token-change`。
+
 北京 Collaboration 首次发布复用 inventory 中登记的现有 CynosDB 集群，使用独立逻辑库、
 账号和 SSM。IM material 必须是权限不超过 `0640` 的 JSON 文件，只包含 `sdkAppId`、
 `adminUserId` 和 `secretKey`；命令不会打印文件内容：
@@ -141,6 +172,16 @@ GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
 权限完全匹配时不写入。账号存在但 SSM 丢失时默认拒绝；仅故障恢复可显式追加
 `--allow-database-password-reset`。IM Secret 不一致时默认拒绝；仅明确轮换时追加
 `--allow-im-secret-rotation`。日常镜像发布不得使用这两个恢复开关。
+首次创建账号使用满足 CynosDB 密码复杂度、且可放入受管 DSN 的生成密码。若 SSM 已存在、
+账号尚未创建，且旧 DSN 密码不合规，重入时只更新 DSN 中的密码并保留其他 Secret 字段；
+已有账号不会通过这条路径隐式轮换密码。
+`im-identity.key` 固定表示 32 字节随机材料的 Base64 文本。早期 bootstrap 曾把同一材料保存为
+64 字符 hex；重入时只把该已知旧形态无损规范化为 Base64，不重新生成密钥，也不改变已有身份派生
+材料。其他长度或编码一律在任何写入前拒绝。只读预检会把这次规范化显示为 Secret update，只有
+显式 `--apply` 才回写 SSM。
+创建账号 API 返回后，账号可能尚未可用于授权；同次 bootstrap 只对新账号的
+`AccountNotExistError` 做有界等待，取消或超时仍停止并保留中间态。后续先只读预检，
+确认账号、逻辑库和权限的实际状态，再决定是否重入 `--apply`。
 
 ### 5. 只同步部署输出
 
@@ -180,6 +221,8 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 - `infra-pulumi:registryPullPassword`
 - `infra-pulumi:notifyTestAllowlistSHA256`（仅非生产环境，保存允许接收测试短信的号码 SHA-256）
 
+`sandbox-network` scope 不消费 node/DB/Redis Secret；完整平台 stack 继续强制要求这些 Secret。
+
 更多说明见 [secrets/README.md](secrets/README.md)。
 
 ### 集群级镜像拉取凭据
@@ -210,9 +253,14 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 网络布局按共享规则从 `vpc_cidr` 推导：
 
 - `pool-a .. pool-f` 对应 VPC 内前 6 个 `/16`
-- `support` 对应 VPC 内最后一个 `/19`
+- `support` 对应 VPC 内最后一个 `/18`
 - subnet 落在哪个 AZ，仍由 inventory 指定
 - 如果 `network.vpc_cidr` 缺省，默认使用 `10.0.0.0/12`
+- `stacks.networking.manage_secondary_nat` 缺省为 `true`，保持存量环境兼容；明确设为
+  `false` 时不创建 secondary NAT 及其 EIP。新山 network-only stack 使用单个托管 NAT，
+  因为新加坡 secondary NAT 没有自动路由切换，不把空转资源当作高可用。
+- 子网显式设置 `is_multicast=false`。`sandbox-network` scope 会收敛该字段；完整平台 stack
+  继续忽略存量子网的 multicast 漂移，避免对已纳管环境产生额外更新。
 
 ### 控制面接入 VPC
 
@@ -316,4 +364,6 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 - 北京环境已经纳管
 - 东京已建立 `tokyo-sandbox` inventory 和静态 import/adoption 元数据；当前没有 Pulumi stack 配置，不执行 `preview / import / up`
 - `shprod` 已经能正常 `preview` 且当前是 `60 unchanged`
+- `sgprod-johor-sandbox-network` 已建立 network-only inventory；只能在 preview 审阅和
+  明确付费授权后执行 `up`
 - 北京当前仍有一个已知变更：VPC 名称会从旧名字收敛到新的 `lightclaw-*` 规则

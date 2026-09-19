@@ -73,6 +73,8 @@ export interface HermesProfileSummary {
   name: string;
   display_name?: string;
   title?: string | null;
+  model?: string | null;
+  provider?: string | null;
   description?: string;
   has_avatar?: boolean;
   ui_meta?: Record<string, unknown>;
@@ -86,12 +88,15 @@ export interface HermesModelCapabilities {
   fast?: boolean;
   reasoning?: boolean;
   can_disable_reasoning?: boolean;
+  supported_efforts?: string[];
 }
 
 export interface HermesModelProviderOption {
   slug: string;
   name: string;
-  models?: string[];
+  /** Alternate provider identities accepted by Hermes Desktop, e.g. `custom:<name>`. */
+  aliases?: string[];
+  models?: Array<string | { id?: string; name?: string }>;
   is_current?: boolean;
   authenticated?: boolean;
   warning?: string;
@@ -102,6 +107,13 @@ export interface HermesModelOptionsPayload {
   model?: string;
   provider?: string;
   providers?: HermesModelProviderOption[];
+}
+
+export interface HermesProfileDescription {
+  name: string;
+  description?: string;
+  soul?: string;
+  model?: { provider?: string; default?: string };
 }
 
 export interface AppServerModel {
@@ -118,7 +130,7 @@ export interface AppServerModel {
     reasoningEffort: string;
     description: string;
   }>;
-  defaultReasoningEffort: string;
+  defaultReasoningEffort: string | null;
   inputModalities: Array<"text" | "image" | "audio">;
   supportsPersonality: boolean;
   multiAgentVersion: null;

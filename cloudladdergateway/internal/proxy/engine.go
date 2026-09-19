@@ -26,11 +26,13 @@ import (
 )
 
 var (
-	ErrNoRoute            = errors.New("no route matched request")
-	ErrMethodDenied       = errors.New("method is not allowed for route")
-	ErrInvalidMethod      = errors.New("method is not supported")
-	ErrBodyTooLarge       = errors.New("body is larger than configured max_body_bytes")
-	ErrSignedHostMismatch = errors.New("signed host does not match route trusted host")
+	ErrNoRoute             = errors.New("no route matched request")
+	ErrMethodDenied        = errors.New("method is not allowed for route")
+	ErrInvalidMethod       = errors.New("method is not supported")
+	ErrBodyTooLarge        = errors.New("body is larger than configured max_body_bytes")
+	ErrSignedHostMismatch  = errors.New("signed host does not match route trusted host")
+	ErrUpstreamUnavailable = errors.New("upstream is unavailable")
+	ErrUpstreamTimeout     = errors.New("upstream timed out")
 )
 
 type Engine struct {
@@ -178,6 +180,36 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 }
 
 func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
+	return e.invoke(ctx, req, "", DynamicUpstream{})
+}
+
+type DynamicUpstream struct {
+	BaseURL       string
+	Host          string
+	Authorization string
+}
+
+// InvokeWithDynamicUpstream invokes a configured route while replacing its
+// destination and audit operation. It preserves the configured route's method,
+// timeout, and forwarding policy.
+func (e *Engine) InvokeWithDynamicUpstream(ctx context.Context, req Request, operation string, dynamic DynamicUpstream) (Response, error) {
+	parsed, err := url.ParseRequestURI(strings.TrimRight(strings.TrimSpace(dynamic.BaseURL), "/"))
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.EscapedPath() != "" {
+		return Response{}, fmt.Errorf("invalid dynamic upstream base url %q", dynamic.BaseURL)
+	}
+	if strings.TrimSpace(operation) == "" {
+		return Response{}, errors.New("dynamic upstream operation is empty")
+	}
+	dynamic.BaseURL = parsed.String()
+	dynamic.Host = strings.TrimSpace(dynamic.Host)
+	dynamic.Authorization = strings.TrimSpace(dynamic.Authorization)
+	if strings.ContainsAny(dynamic.Host, "\r\n/\\ \t") {
+		return Response{}, errors.New("invalid dynamic upstream host")
+	}
+	return e.invoke(ctx, req, strings.TrimSpace(operation), dynamic)
+}
+
+func (e *Engine) invoke(ctx context.Context, req Request, dynamicOperation string, dynamic DynamicUpstream) (Response, error) {
 	start := time.Now()
 	req.Method = strings.ToUpper(strings.TrimSpace(req.Method))
 	if req.Method == "" {
@@ -206,6 +238,11 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 	if err != nil {
 		e.recordAudit(ctx, req, req.RouteID, "", 0, start, err, 0, 0)
 		return Response{}, err
+	}
+	if dynamic.BaseURL != "" {
+		route.ID = dynamicOperation
+		route.Upstream.BaseURL = strings.TrimRight(dynamic.BaseURL, "/")
+		route.Upstream.Polaris = nil
 	}
 	if !methodAllowed(route.Upstream.AllowedMethods, req.Method) {
 		err := fmt.Errorf("%w: %s", ErrMethodDenied, req.Method)
@@ -245,13 +282,28 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 		for name, envName := range route.Upstream.HeadersFromEnv {
 			setRequestHeader(httpReq, name, os.Getenv(envName))
 		}
+		if dynamic.Host != "" {
+			setRequestHeader(httpReq, "Host", dynamic.Host)
+		}
+		if dynamic.Authorization != "" {
+			setRequestHeader(httpReq, "Authorization", dynamic.Authorization)
+		}
 		httpReq.Header.Set("X-CloudLadder-Route", route.ID)
 	}
 
 	httpResp, err := e.httpClient.Do(httpReq)
 	if err != nil {
-		e.recordAudit(ctx, req, route.ID, targetURL, 0, start, err, 0, 0)
-		return Response{}, err
+		upstreamErr := fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			upstreamErr = fmt.Errorf("%w: %v", ErrUpstreamTimeout, err)
+		} else {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				upstreamErr = fmt.Errorf("%w: %v", ErrUpstreamTimeout, err)
+			}
+		}
+		e.recordAudit(ctx, req, route.ID, targetURL, 0, start, upstreamErr, 0, 0)
+		return Response{}, upstreamErr
 	}
 	defer httpResp.Body.Close()
 

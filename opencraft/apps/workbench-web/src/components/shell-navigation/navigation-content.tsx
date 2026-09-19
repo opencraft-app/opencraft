@@ -50,6 +50,12 @@ export function AccountAvatar({ account }: { account: ShellAccount | null }) {
   </span>;
 }
 
+export function AccountLeadingVisual({ account }: { account: ShellAccount | null }) {
+  return isAnonymousShellAccount(account)
+    ? <LogIn aria-hidden="true" size={16} />
+    : <AccountAvatar account={account} />;
+}
+
 /** The same content is placed in a rail or a transient surface by the Shell. */
 export function NavigationContent({ config, surface, compact = false, onInvoke }: {
   config: ShellNavigationConfig;

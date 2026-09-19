@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -51,6 +52,60 @@ func TestLoadTokyoSandboxInventory(t *testing.T) {
 	}
 	if inventory.Domains.PublicAPI != "https://api-sandbox-jp-1.lightclaw.tech" {
 		t.Fatalf("unexpected Tokyo public API domain: %q", inventory.Domains.PublicAPI)
+	}
+}
+
+func TestLoadJohorSandboxNetworkInventory(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "envs", "tencentcloud", "sgprod-johor-sandbox-network", "inventory.yaml")
+
+	inventory, err := LoadInventory(path)
+	if err != nil {
+		t.Fatalf("LoadInventory(sgprod-johor-sandbox-network): %v", err)
+	}
+
+	if inventory.Profile != ProfileSandboxNetwork {
+		t.Fatalf("profile = %q, want %q", inventory.Profile, ProfileSandboxNetwork)
+	}
+	if inventory.Region != "ap-johorbahru" || inventory.Network.VpcCIDR != "10.80.0.0/12" {
+		t.Fatalf("unexpected Johor placement: region=%q cidr=%q", inventory.Region, inventory.Network.VpcCIDR)
+	}
+	if got := inventory.Network.SandboxPoolSubnetKeys; !reflect.DeepEqual(got, []string{"pool-a", "pool-b"}) {
+		t.Fatalf("pool subnet keys = %#v", got)
+	}
+	if inventory.Stacks.Networking.SecondaryNATEnabled() {
+		t.Fatal("Johor network-only stack must not create an idle secondary NAT")
+	}
+	if len(inventory.Stacks.Networking.PrimaryEIPs) != 5 {
+		t.Fatalf("primary EIP count = %d, want 5", len(inventory.Stacks.Networking.PrimaryEIPs))
+	}
+	if len(inventory.Stacks.Security.SandboxSG.Ingress) != 0 {
+		t.Fatalf("Johor TAT-only SG ingress = %#v, want empty", inventory.Stacks.Security.SandboxSG.Ingress)
+	}
+}
+
+func TestValidateSandboxNetworkProfileDoesNotRequireTKE(t *testing.T) {
+	secondaryNAT := false
+	inv := &Inventory{Profile: ProfileSandboxNetwork, EnvName: "jhb", Region: "ap-johorbahru", EnvShort: "jhb"}
+	inv.Network.VpcCIDR = "10.80.0.0/12"
+	inv.Network.SupportSubnetKey = "support"
+	inv.Network.SandboxPoolSubnetKeys = []string{"pool-a"}
+	inv.Stacks.Networking.PrimaryNATGatewayName = "sandbox-jhb-nat"
+	inv.Stacks.Networking.ManageSecondaryNAT = &secondaryNAT
+	inv.Stacks.Networking.RouteTableName = "sandbox-jhb-egress"
+	inv.Stacks.Networking.PrimaryEIPs = map[string]EIPBandwidth{"eip-1": {Bandwidth: 200}}
+	inv.Stacks.Networking.SNATSubnets = map[string]SNATSubnetEntry{
+		"pool-a":  {AvailabilityZone: "ap-johorbahru-1", Description: "pool-a"},
+		"support": {AvailabilityZone: "ap-johorbahru-1", Description: "support"},
+	}
+	inv.Stacks.Security.SandboxSG.SecurityGroupName = "sandbox-jhb-isolated"
+	inv.Stacks.Security.SandboxSG.Egress = []string{"ACCEPT#0.0.0.0/0#ALL#ALL"}
+
+	if err := ValidateInventory(inv); err != nil {
+		t.Fatalf("network-only inventory unexpectedly requires full platform fields: %v", err)
 	}
 }
 
@@ -104,11 +159,88 @@ func TestLoadShprodManagedPulsarInventory(t *testing.T) {
 	if pulsar.ExpectedClusterName != "lightvela-pulsar-sh" || pulsar.ExpectedProductName != "PULSAR.P2.MINI1" {
 		t.Fatalf("unexpected managed Pulsar cluster: %+v", pulsar)
 	}
-	if pulsar.PurchaseMonths != 1 || pulsar.AutoRenewFlag != 0 || pulsar.StorageSizeGB != 0 {
+	if pulsar.PurchaseMonths != 1 || pulsar.AutoRenewFlag != 1 || pulsar.StorageSizeGB != 0 {
 		t.Fatalf("unexpected managed Pulsar purchase: %+v", pulsar)
 	}
 	if pulsar.ExpectedVPCID != "vpc-2y7p1lk6" || pulsar.ExpectedSubnetID != "subnet-38xcw327" {
 		t.Fatalf("unexpected managed Pulsar network: %+v", pulsar)
+	}
+}
+
+func TestLoadSgprodReferralFoundationInventory(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test file path")
+	}
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "envs", "tencentcloud", "sgprod", "inventory.yaml")
+
+	inventory, err := LoadInventory(path)
+	if err != nil {
+		t.Fatalf("LoadInventory(sgprod): %v", err)
+	}
+	pulsar := inventory.Stacks.Pulsar
+	if !pulsar.Enabled || !pulsar.ManageCluster || pulsar.ExistingClusterID != "pulsar-7j4z44nzn3za" ||
+		pulsar.BrokerURL != "http://pulsar-7j4z44nzn3za.eap-nzekhasa.tdmq.ap-sg.qcloud.tencenttdmq.com:8080" {
+		t.Fatalf("unexpected managed Pulsar foundation: %+v", pulsar)
+	}
+	if pulsar.ExpectedClusterName != "lightvela-pulsar-sg" || pulsar.ExpectedProductName != "PULSAR.P2.MINI1" {
+		t.Fatalf("unexpected managed Pulsar cluster: %+v", pulsar)
+	}
+	if pulsar.PurchaseMonths != 1 || pulsar.AutoRenewFlag != 1 || pulsar.StorageSizeGB != 0 {
+		t.Fatalf("unexpected managed Pulsar purchase policy: %+v", pulsar)
+	}
+	if len(pulsar.ExpectedZoneIDs) != 1 || pulsar.ExpectedZoneIDs[0] != 900002 ||
+		pulsar.ExpectedVPCID != "vpc-253zjh0f" || pulsar.ExpectedSubnetID != "subnet-ounkj91k" {
+		t.Fatalf("unexpected managed Pulsar placement: %+v", pulsar)
+	}
+	if pulsar.UserAuthSSMVersionID != "auth-federation-sg-20260824-2035" ||
+		pulsar.CTLSSMVersionID != "v5" || pulsar.ReferralSSMVersionID != "SSM_Current" {
+		t.Fatalf("unexpected SSM version mapping: %+v", pulsar)
+	}
+	referral := inventory.Stacks.Referral
+	if !referral.Enabled || referral.ExistingClusterID != "cynosdbmysql-jwe6dqjx" ||
+		referral.ExistingEndpoint != "10.15.192.12:3306" || referral.Database != "lightvela_referral" ||
+		referral.Account != "referral" || referral.AccountHost != "%" ||
+		referral.SSMSecretName != "mono-sgprod-referral-runtime-secrets" ||
+		referral.SSMVersionID != "SSM_Current" ||
+		referral.InternalServiceTokenSourceSSM != "mono-sgprod-ctl-runtime-secrets" ||
+		referral.InternalServiceTokenVersionID != "v5" {
+		t.Fatalf("unexpected Referral database foundation: %+v", referral)
+	}
+}
+
+func TestValidateReferralInventoryRejectsIncompleteTarget(t *testing.T) {
+	valid := ReferralInventory{
+		Enabled: true, ExistingClusterID: "cynosdbmysql-existing", ExistingEndpoint: "10.0.0.10:3306",
+		Database: "lightvela_referral", Account: "referral", AccountHost: "%",
+		SSMSecretName:                 "referral-secret",
+		SSMVersionID:                  "SSM_Current",
+		InternalServiceTokenSourceSSM: "ctl-secret",
+		InternalServiceTokenVersionID: "v5",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*ReferralInventory)
+	}{
+		{name: "missing cluster", mutate: func(v *ReferralInventory) { v.ExistingClusterID = "" }},
+		{name: "missing endpoint", mutate: func(v *ReferralInventory) { v.ExistingEndpoint = "" }},
+		{name: "invalid endpoint", mutate: func(v *ReferralInventory) { v.ExistingEndpoint = "10.0.0.10" }},
+		{name: "missing database", mutate: func(v *ReferralInventory) { v.Database = "" }},
+		{name: "missing account", mutate: func(v *ReferralInventory) { v.Account = "" }},
+		{name: "unsafe host", mutate: func(v *ReferralInventory) { v.AccountHost = "localhost" }},
+		{name: "missing secret", mutate: func(v *ReferralInventory) { v.SSMSecretName = "" }},
+		{name: "missing secret version", mutate: func(v *ReferralInventory) { v.SSMVersionID = "" }},
+		{name: "missing token source", mutate: func(v *ReferralInventory) { v.InternalServiceTokenSourceSSM = "" }},
+		{name: "missing token version", mutate: func(v *ReferralInventory) { v.InternalServiceTokenVersionID = "" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := valid
+			tt.mutate(&candidate)
+			if err := validateReferralInventory(candidate); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 
@@ -185,8 +317,11 @@ func TestValidatePulsarInventoryRejectsUnsafeValues(t *testing.T) {
 		CTLProducerRole:      "ctl-producer",
 		ReferralConsumerRole: "referral-consumer",
 		UserAuthSSMSecret:    "auth-secret",
+		UserAuthSSMVersionID: "SSM_Current",
 		CTLSSMSecret:         "ctl-secret",
+		CTLSSMVersionID:      "SSM_Current",
 		ReferralSSMSecret:    "referral-secret",
+		ReferralSSMVersionID: "SSM_Current",
 	}
 	tests := []struct {
 		name   string
@@ -223,6 +358,7 @@ func TestValidateManagedPulsarInventory(t *testing.T) {
 		Topic: "lightvela.referral.events.v1", DeadLetterTopic: "lightvela.referral.events.v1-dlq",
 		UserAuthProducerRole: "auth-producer", CTLProducerRole: "ctl-producer", ReferralConsumerRole: "referral-consumer",
 		UserAuthSSMSecret: "auth-secret", CTLSSMSecret: "ctl-secret", ReferralSSMSecret: "referral-secret",
+		UserAuthSSMVersionID: "SSM_Current", CTLSSMVersionID: "SSM_Current", ReferralSSMVersionID: "SSM_Current",
 	}
 	if err := validatePulsarInventory(managed); err != nil {
 		t.Fatalf("valid managed Pulsar inventory rejected: %v", err)

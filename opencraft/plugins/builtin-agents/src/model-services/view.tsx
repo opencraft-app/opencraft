@@ -1,7 +1,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { ChevronDown, ChevronUp, Ellipsis, Eye, EyeOff, Plus, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Ellipsis, Eye, EyeOff, LoaderCircle, Plus, RefreshCw, Search } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { SettingsButton, SettingsIconButton, SettingsNotice, SettingsSelect, SettingsSwitch, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { RuntimeProviderView, RuntimeModelView } from "@opencraft/appserver-protocol";
@@ -13,6 +13,38 @@ function MoreActions({ label, children }: { label: string; children: React.React
   return <Popover.Root><Popover.Trigger asChild><SettingsIconButton label={label}><Ellipsis size={16} /></SettingsIconButton></Popover.Trigger>
     <Popover.Portal><Popover.Content className="model-services-actions" align="end" sideOffset={6} collisionPadding={12} aria-label={label}>{children}</Popover.Content></Popover.Portal>
   </Popover.Root>;
+}
+
+function ProviderDefaultAction({ provider, controller, disabled }: { provider: RuntimeProviderView; controller: ModelServicesController; disabled: boolean }) {
+  const snapshot = controller.service.getSnapshot();
+  const availableModels = snapshot.models?.groups
+    .find(group => group.id === provider.provider)?.models
+    .filter(model => model.enabled !== false) ?? [];
+  const defaults = snapshot.settings?.namespaces
+    .find(entry => entry.ns === "agent-default-model")?.value as { provider?: string; model?: string } | undefined;
+  const currentModel = defaults?.provider === provider.provider ? defaults.model : undefined;
+  const unavailable = disabled || !provider.active || availableModels.length === 0;
+  if (availableModels.length <= 1) {
+    const model = availableModels[0];
+    return <ContextMenu.Item disabled={unavailable || currentModel === model?.id} onSelect={() => { if (model) void controller.setDefault(provider, model.id); }}>设为默认</ContextMenu.Item>;
+  }
+  return <ContextMenu.Sub>
+    <ContextMenu.SubTrigger className="model-services-context__sub-trigger" disabled={unavailable}>
+      <span>设为默认</span><ChevronRight size={14} aria-hidden="true" />
+    </ContextMenu.SubTrigger>
+    <ContextMenu.Portal>
+      <ContextMenu.SubContent className="model-services-context" sideOffset={4} collisionPadding={12}>
+        {availableModels.map(model => <ContextMenu.Item
+          key={model.id}
+          aria-label={`设为默认：${model.id}`}
+          disabled={currentModel === model.id}
+          onSelect={() => { void controller.setDefault(provider, model.id); }}
+        >
+          <span>{model.name}</span>{currentModel === model.id ? <span className="model-services-context__current">当前</span> : null}
+        </ContextMenu.Item>)}
+      </ContextMenu.SubContent>
+    </ContextMenu.Portal>
+  </ContextMenu.Sub>;
 }
 
 function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; controller: ModelServicesController }) {
@@ -30,7 +62,6 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
       disabled={!canToggle || disabled || defaultProtected || (!provider.enabled && !provider.configured)}
       onCheckedChange={value => { void controller.toggle(provider, value); }} />
   </div>;
-  if (!custom) return row;
   const begin = (kind: "rename" | "delete") => { setName(provider.displayName); setError(null); setAction({kind, revision: controller.revision(provider)}); };
   const submit = async () => {
     if (!action || saving) return;
@@ -43,6 +74,8 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
   };
   return <><ContextMenu.Root><ContextMenu.Trigger asChild>{row}</ContextMenu.Trigger><ContextMenu.Portal>
     <ContextMenu.Content className="model-services-context" onCloseAutoFocus={event => { if (action) event.preventDefault(); }}>
+      <ProviderDefaultAction provider={provider} controller={controller} disabled={disabled} />
+      {custom ? <ContextMenu.Separator className="model-services-context__separator" /> : null}
       {custom ? <><ContextMenu.Item disabled={disabled} onSelect={() => begin("rename")}>重命名</ContextMenu.Item>
       <ContextMenu.Item disabled={disabled} onSelect={() => begin("delete")}>删除</ContextMenu.Item></> : null}
       {controller.draft(provider).dirty ? <small>请先保存或取消配置修改</small> : null}
@@ -90,6 +123,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   useEffect(() => { void controller.inspectCredential(provider); }, [controller, provider.provider, revision]);
   const models = new Map<string, RuntimeModelView>((snapshot.models?.groups.find(group => group.id === provider.provider)?.models ?? []).map(model => [model.id, model]));
   for (const model of draft.config.models) if (!models.has(model.id)) models.set(model.id, { ...model, name: model.name ?? model.id });
+  const declarations = new Map(draft.config.models.map(model => [model.id, model]));
   const filtered = [...models.values()].filter(model => `${model.name} ${model.id}`.toLowerCase().includes(controller.modelQuery.toLowerCase()));
   const defaults = snapshot.settings?.namespaces.find(entry => entry.ns === "agent-default-model")?.value as { provider?: string; model?: string } | undefined;
   const isDefault = (model: string) => defaults?.provider === provider.provider && defaults.model === model;
@@ -99,15 +133,31 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   const configured = provider.configured && (!draft.config.credentialRef || draft.credentialSet === true);
   const expanded = draft.dirty || (draft.connectionExpanded ?? (!configured && !credentialUnknown));
   const setExpanded = (value: boolean) => { draft.connectionExpanded = value; controller.notify(); };
-  const rows = (enabled: boolean) => filtered.filter(model => (model.enabled !== false) === enabled).map(model => <div className="model-services__model" key={model.id}>
+  const rows = (enabled: boolean) => filtered.filter(model => (model.enabled !== false) === enabled).map(model => {
+    const declared = declarations.get(model.id);
+    // RuntimeModelView is the final resolved capability (native answer,
+    // declaration fallback, then conservative text). Show what Chat will use.
+    const supportsImages = model.input?.includes("image") === true;
+    const capabilityEditable = provider.configuration?.modelDeclarations === true && declared !== undefined;
+    const capabilityPending = controller.isModelCapabilityPending(provider.provider, model.id);
+    return <div className="model-services__model" key={model.id}>
     <BrandMark kind="model" id={model.id} size={32} />
     <div><strong>{model.name}</strong></div>
     {isDefault(model.id) ? <span className="model-services__kind">默认</span> : null}
     <MoreActions label={`模型操作：${model.id}`}><small>{model.id}</small>
       <Popover.Close asChild><SettingsButton variant="quiet" aria-label={`设为默认：${model.id}`} disabled={!editable || draft.dirty || !provider.active || model.enabled === false || isDefault(model.id)} onClick={() => { void controller.setDefault(provider, model.id); }}>设为默认</SettingsButton></Popover.Close>
+      {capabilityEditable ? <div className="model-services-actions__toggle">
+        <span><strong>图片输入</strong><small>允许在聊天时向该模型发送图片附件</small></span>
+        {capabilityPending
+          ? <span className="model-services-actions__pending" role="status" aria-label="正在保存图片输入设置"><LoaderCircle aria-hidden="true" className="is-spinning" size={15} /></span>
+          : <SettingsSwitch label={`允许 ${model.name} 接收图片输入`} checked={supportsImages} disabled={!editable || draft.dirty}
+            title={draft.dirty ? "请先保存或取消连接配置的修改" : undefined}
+            onCheckedChange={value => { void controller.setModelImageInput(provider, model.id, value); }} />}
+      </div> : null}
     </MoreActions>
     <SettingsSwitch label={`启用 ${model.name}`} checked={model.enabled !== false} disabled={!editable || draft.dirty || isDefault(model.id)} onCheckedChange={value => { void controller.changeModel(provider, model.id, value); }} />
-  </div>);
+  </div>;
+  });
   const canTest = !!provider.configuration?.canCheckSaved && !!(draft.config.api ?? provider.configuration.defaultApi);
   return <div className="model-services__detail">
     {conflict ? <SettingsNotice tone="error">配置已在其他位置更新，当前输入保留。<SettingsButton onClick={() => controller.discard(provider)}>放弃输入并刷新</SettingsButton></SettingsNotice> : null}
@@ -174,7 +224,7 @@ export function createModelServicesView(controller: ModelServicesController) {
       <div className="model-services__main"><div className="model-services__mobile-select"><SettingsSelect aria-label="选择提供商" value={selected?.provider ?? ""} onChange={event => pick(event.target.value || null)}><option value="">全部提供商</option>{providers.map(provider => <option key={provider.provider} value={provider.provider}>{provider.displayName}</option>)}</SettingsSelect><CreatePopover label="添加提供商" disabled={controller.busy || !snapshot.providers?.creation} onCreate={async name => { await controller.create(name); if (controller.error) throw new Error(controller.error); }} /></div>
         {snapshot.providers?.application?.state === "failed" ? <SettingsNotice tone="error">{snapshot.providers.application.error}<SettingsButton disabled={controller.busy} onClick={() => { void controller.run(()=>controller.service.reapply()); }}>重试应用</SettingsButton></SettingsNotice> : null}
         {snapshot.error ? <SettingsNotice tone="error">{snapshot.error}<SettingsButton onClick={() => { void controller.service.refresh(); }}>重试</SettingsButton></SettingsNotice> : null}
-        {selected ? <ProviderDetail key={selected.provider} controller={controller} provider={selected} /> : <div className="model-services__overview"><h2>全部提供商</h2>{visible.map(providerRow)}{!providers.length ? <p>{snapshot.phase === "loading" ? "正在加载提供商…" : "暂无提供商"}</p> : null}</div>}
+        {selected ? <ProviderDetail key={selected.provider} controller={controller} provider={selected} /> : <div className="model-services__overview"><h2>全部提供商</h2>{visible.map(providerRow)}{!providers.length ? snapshot.phase === "loading" ? <div className="model-services__pending" role="status" aria-label="正在加载提供商"><LoaderCircle aria-hidden="true" className="is-spinning" size={16} /></div> : <p>暂无提供商</p> : null}</div>}
       </div>
     </div>;
   };

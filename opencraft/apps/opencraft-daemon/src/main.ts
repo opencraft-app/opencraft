@@ -39,6 +39,7 @@ export async function startOpenCraftDaemon(options: {
   readonly endpoint: string;
   readonly authToken: string;
   readonly dshExecutable: string;
+  readonly dshCapabilityPlugin?: string;
   readonly dataDirectory: string;
   readonly modelStorageDirectory?: string;
 }) {
@@ -46,10 +47,12 @@ export async function startOpenCraftDaemon(options: {
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
   let closing: Promise<void> | null = null;
   const appHost = new AppHostServer({
+    logicalClientRouting: true,
     async createTransport(hostId) {
       if (hostId !== "local") throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       localAgent ??= await startLocalAgentHost({
         dshExecutable: options.dshExecutable,
+        dshCapabilityPlugin: options.dshCapabilityPlugin,
         dataDirectory: options.dataDirectory,
         modelStorageDirectory: options.modelStorageDirectory,
       });

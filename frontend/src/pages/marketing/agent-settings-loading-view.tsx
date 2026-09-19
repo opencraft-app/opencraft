@@ -1,5 +1,7 @@
+import { Skeleton } from "@/components/ui/skeleton";
+
 function AgentSettingsSkeletonBlock({ className }: { className: string }) {
-  return <span className={`block animate-pulse bg-black/[0.045] ${className}`} />;
+  return <Skeleton className={className} />;
 }
 
 const sidebarGroups = [2, 2, 2, 3, 2] as const;

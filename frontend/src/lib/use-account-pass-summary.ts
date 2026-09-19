@@ -24,6 +24,7 @@ export function useAccountPassSummary({ userId, activePass, modifyingPass, paidB
   // 相同账号再次进入也拥有新代次，旧成功回调不得清理新一轮数据或请求。
   const scope = useMemo(() => Symbol(key), [key]);
   const [fallback, setFallback] = useState<{ scope: symbol | null; pass: Pass | null; state: SummaryState }>({ scope: null, pass: null, state: "idle" });
+  const [retryRevision, setRetryRevision] = useState(0);
   const request = useRef<{ scope: symbol; cancel: () => void } | null>(null);
 
   useEffect(() => {
@@ -49,7 +50,14 @@ export function useAccountPassSummary({ userId, activePass, modifyingPass, paidB
       pending.cancel();
       if (request.current === pending) request.current = null;
     };
-  }, [scope, canLoad, Boolean(active), userId, listMyPasses]);
+  }, [scope, canLoad, Boolean(active), userId, listMyPasses, retryRevision]);
+
+  const retry = useCallback(() => {
+    if (!canLoad || active) return;
+    if (request.current?.scope === scope) request.current.cancel();
+    setFallback({ scope, pass: null, state: "loading" });
+    setRetryRevision((current) => current + 1);
+  }, [active, canLoad, scope]);
 
   const clearFallback = useCallback(() => {
     if (request.current?.scope === scope) request.current.cancel();
@@ -59,5 +67,5 @@ export function useAccountPassSummary({ userId, activePass, modifyingPass, paidB
   const visibleFallback = canLoad && fallback.scope === scope ? fallback : null;
   const pass = modifying ?? active ?? ownedAccountPass(userId, visibleFallback?.pass);
   const state: SummaryState = pass ? "ready" : !canLoad ? "idle" : visibleFallback?.state ?? "loading";
-  return { pass, credits: accountPassCredits(pass), state, clearFallback };
+  return { pass, credits: accountPassCredits(pass), state, clearFallback, retry };
 }

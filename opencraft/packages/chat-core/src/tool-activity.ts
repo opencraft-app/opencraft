@@ -361,6 +361,30 @@ const DYNAMIC_TOOL_LABELS: Readonly<Record<string, { readonly active: string; re
   read_thread_terminal: { active: "Reading chat terminal", completed: "Read chat terminal" },
 };
 
+/** DSH (DeepSeek Harness) tools arrive under `deepseek-harness` with no native
+ * presenter. Give the common ones a semantic Activity icon and label so they do
+ * not fall through to the bare generic dynamic row. `bash` is listed for
+ * completeness but is projected as `commandExecution` upstream. */
+const DSH_HARNESS_TOOL_ICONS: Readonly<Record<string, ToolActivityIcon>> = {
+  read: "read",
+  bash: "terminal",
+  glob: "search",
+  grep: "search",
+  search: "search",
+  web_search: "search",
+  write: "patch",
+  edit: "patch",
+};
+
+const DSH_HARNESS_TOOL_LABELS: Readonly<Record<string, { readonly active: string; readonly completed: string }>> = {
+  read: { active: "Reading", completed: "Read" },
+  glob: { active: "Searching for files", completed: "Searched for files" },
+  grep: { active: "Searching", completed: "Searched" },
+  web_search: { active: "Searching the web", completed: "Searched the web" },
+  write: { active: "Writing", completed: "Wrote" },
+  edit: { active: "Editing", completed: "Edited" },
+};
+
 function formatDynamicToolName(value: string): string {
   const words = value
     .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
@@ -908,6 +932,52 @@ function createClockSleepPresenter(): ToolActivityPresenter {
   };
 }
 
+function firstNonEmptyString(values: unknown): string | null {
+  if (!Array.isArray(values)) return null;
+  for (const value of values) {
+    const text = nonEmptyString(value);
+    if (text !== null) return text;
+  }
+  return null;
+}
+
+/** Collapses a DSH tool's arguments into a compact one-line detail. */
+function dshHarnessToolDetail(block: ToolCallTimelineBlock): string | null {
+  const input = object(block.input);
+  const detail = nonEmptyString(input?.path)
+    ?? nonEmptyString(input?.file_path)
+    ?? nonEmptyString(input?.command)
+    ?? nonEmptyString(input?.pattern)
+    ?? nonEmptyString(input?.query)
+    ?? firstNonEmptyString(input?.queries)
+    ?? firstNonEmptyString(input?.questions);
+  return detail?.slice(0, 180) ?? null;
+}
+
+/** DSH tools are projected under `deepseek-harness`; unlike generic dynamic
+ * calls they carry real arguments/contentItems and should render like Codex
+ * native tools instead of a bare, unexpandable name. */
+function createDshHarnessPresenter(): ToolActivityPresenter {
+  return {
+    name: "dsh-harness",
+    priority: 100,
+    matches: (block) => block.kind === "dynamic" && block.namespace === "deepseek-harness",
+    present(block, state) {
+      const labels = DSH_HARNESS_TOOL_LABELS[block.name];
+      return {
+        ...toolPresentationBase(block, state),
+        grouping: "groupable",
+        icon: DSH_HARNESS_TOOL_ICONS[block.name] ?? "wrench",
+        summary: labels !== undefined
+          ? state === "running" ? labels.active : labels.completed
+          : formatDynamicToolName(block.name),
+        detail: dshHarnessToolDetail(block),
+        ...genericFields(`${block.namespace ?? ""}:${block.name}:${block.id}`),
+      };
+    },
+  };
+}
+
 /** Codex reserves these dynamic calls for non-Activity presentation. */
 function createHiddenSystemDynamicToolPresenter(): ToolActivityPresenter {
   return {
@@ -926,6 +996,7 @@ export function createDefaultToolActivityPresenterRegistry(): ToolActivityPresen
   registry.register(createChromeTabContextPresenter());
   registry.register(createCodexAppPresenter());
   registry.register(createClockSleepPresenter());
+  registry.register(createDshHarnessPresenter());
   return registry;
 }
 

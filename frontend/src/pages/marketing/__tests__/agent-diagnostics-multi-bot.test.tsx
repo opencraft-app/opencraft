@@ -13,8 +13,14 @@ const getRescueExportStatus = vi.fn();
 const getHermesImportStatus = vi.fn();
 const startRescueExport = vi.fn();
 const resetInstanceConfig = vi.fn();
+const resetToPlatformDefault = vi.fn();
 const addBot = vi.fn();
 const botRepository = { execDebugCommand, getRescueExportStatus, getHermesImportStatus, startRescueExport, resetInstanceConfig };
+const planRepository = {
+  getRenewPrice: vi.fn(),
+  createRenewOrder: vi.fn(),
+  listMyPasses: vi.fn(),
+};
 const testRegion = vi.hoisted(() => ({ isCN: true, isGlobal: false }));
 
 let currentSessionUser: User;
@@ -94,13 +100,17 @@ vi.mock("@/contexts/agent-context", () => ({
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     bots: botRepository,
-    plans: {
-      getRenewPrice: vi.fn(),
-      createRenewOrder: vi.fn(),
-      listMyPasses: vi.fn(),
-    },
+    plans: planRepository,
   }),
 }));
+
+vi.mock("@/pages/marketing/agent-model-config/model-config-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/pages/marketing/agent-model-config/model-config-client")>();
+  return {
+    ...actual,
+    createHermesModelConfigClient: () => ({ resetToPlatformDefault }),
+  };
+});
 
 vi.mock("@/components/site/product-chrome", () => ({
   ProductReturnHomeHeader: () => null,
@@ -144,15 +154,10 @@ const page = (botId: string) => (
   </AppNavigationProvider>
 );
 
-const revealHiddenTools = () => {
-  const show = (window as Window & { show?: unknown }).show;
-  if (typeof show !== "function") throw new Error("show() helper is not installed");
-  act(() => { show(); });
-};
-
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    planRepository.listMyPasses.mockResolvedValue([]);
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     // jsdom has no layout scrolling; Radix Select uses the browser API while focusing options.
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
@@ -169,6 +174,18 @@ describe("multi-Bot diagnostics", () => {
     getRescueExportStatus.mockResolvedValue(null);
     getHermesImportStatus.mockResolvedValue(null);
     execDebugCommand.mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "root log" });
+    resetInstanceConfig.mockResolvedValue({
+      keyId: "key-default",
+      keyPrefix: "sk-default",
+      config: {
+        providerName: "custom",
+        baseUrl: "https://gateway.lightvela.test/v1",
+        modelId: "auto",
+        api: "chat_completions",
+        apiKey: "platform-default-secret",
+      },
+    });
+    resetToPlatformDefault.mockResolvedValue({ primary: null, fallbacks: [], configuredModels: [] });
     addBot.mockResolvedValue({ ...buildBot(), id: "created", profileId: "created", isDefault: false });
   });
   afterEach(() => {
@@ -182,14 +199,14 @@ describe("multi-Bot diagnostics", () => {
     await screen.findByText("Agent 备份与恢复");
     expect(screen.getByText("查看 Hermes Agent 日志，并集中执行相关维护操作")).toBeInTheDocument();
     await waitFor(() => expect(getRescueExportStatus).toHaveBeenCalledWith("ins-1"));
-    expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "执行" })[0]).toBeEnabled();
     fireEvent.click(screen.getAllByRole("button", {name:"查询"})[0]!);
     await screen.findByText("root log");
     expect(execDebugCommand).toHaveBeenLastCalledWith("ins-1", "hermes -p 'default' logs --since 1h -n 50");
 
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
-    expect(screen.getByText("查看当前 Bot 的日志；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
+    expect(screen.getByText("查看当前 Bot 的日志和模型配置；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
     const chatTab = screen.getByRole("tab", { name: "对话" });
     expect(chatTab).toBeDisabled();
     expect(chatTab).not.toHaveAttribute("title");
@@ -207,6 +224,32 @@ describe("multi-Bot diagnostics", () => {
     expect(getRescueExportStatus.mock.calls.every(([id]) => id === "ins-1")).toBe(true);
   });
 
+  it("resets only the selected named Profile with the platform default key", async () => {
+    render(page("sales"));
+
+    const card = (await screen.findByRole("heading", { name: "重置模型配置" })).closest("article");
+    expect(card).not.toBeNull();
+    const execute = card!.querySelector("button") as HTMLButtonElement;
+    expect(execute).toBeEnabled();
+    fireEvent.click(execute);
+    fireEvent.click(await screen.findByRole("button", { name: "确认重置" }));
+
+    await waitFor(() => expect(resetInstanceConfig).toHaveBeenCalledWith("sales"));
+    expect(resetToPlatformDefault).toHaveBeenCalledWith({
+      apiKey: "platform-default-secret",
+      model: {
+        id: "auto",
+        providerKey: "custom",
+        providerName: "custom",
+        baseUrl: "https://gateway.lightvela.test/v1",
+        routeBaseUrl: "https://gateway.lightvela.test/v1",
+        apiMode: "chat_completions",
+        keyEnv: "",
+      },
+    });
+    expect(execDebugCommand).toHaveBeenCalledWith("sales", "acli gateway restart --agent 'sales'");
+  });
+
   it("retains instance backup progress and disables maintenance when returning from a sibling", async () => {
     getRescueExportStatus.mockResolvedValue({phase:"prepare_archive",logs:[{message:"shared backup progress",level:"info"}]});
     const view = render(page("ins-1"));
@@ -221,20 +264,19 @@ describe("multi-Bot diagnostics", () => {
     expect(startRescueExport).not.toHaveBeenCalled();
   });
 
-  it("keeps single-Bot maintenance available and new-Bot creation hidden", async () => {
+  it("keeps single-Bot maintenance available and disables new-Bot creation at quota", async () => {
     bots = [buildBot()];
     render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
-    expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"新建 Bot"})).toBeDisabled();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("reveals Bot creation with show() and resets visibility on page remount", async () => {
+  it("shows Bot creation without show() and preserves visibility on page remount", async () => {
     maxBots = 5;
     const view = render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
-    revealHiddenTools();
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByPlaceholderText("请输入 Bot 名称")).toHaveFocus());
@@ -243,24 +285,20 @@ describe("multi-Bot diagnostics", () => {
     await screen.findByRole("option", { name: "空白创建" });
     await userEvent.keyboard("{End}{Enter}");
     expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
-    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
+    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
     view.unmount();
     render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
   });
 
-  it("shows the disabled create quota tooltip below the button without sidebar clipping", async () => {
+  it("explains a disabled create icon in a portaled tooltip", async () => {
     maxBots = 1;
     render(page("ins-1"));
-    revealHiddenTools();
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
-    expect(createButton).toHaveTextContent("新建 Bot");
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
     const tooltipTrigger = createButton.parentElement;
     expect(tooltipTrigger).not.toBeNull();
     const user = userEvent.setup();
@@ -283,7 +321,6 @@ describe("multi-Bot diagnostics", () => {
     bots = [buildBot()];
     maxBots = 2;
     const view = render(page("ins-1"));
-    revealHiddenTools();
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
 
@@ -311,11 +348,10 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByText("已有 Bot 正在删除中，请稍后刷新页面后再创建。")).not.toBeInTheDocument();
   });
 
-  it("does not bypass the feature flag with show()", () => {
+  it("keeps new-Bot creation hidden when the feature flag is disabled", () => {
     maxBots = 5;
     multiBotEnabled = false;
     render(page("ins-1"));
-    revealHiddenTools();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });

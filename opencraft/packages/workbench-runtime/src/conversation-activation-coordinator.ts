@@ -11,6 +11,7 @@ import type { ConversationScopeRegistry } from "./conversation-scope-registry";
 import type { ConversationViewRegistry } from "./conversation-view-registry";
 import {
   createWorkbenchThreadLocation,
+  type WorkbenchDraftLocation,
   type WorkbenchLocation,
 } from "./workbench-location";
 import type {
@@ -22,12 +23,15 @@ export interface ConversationActivationCoordinator<TRuntime extends WorkbenchAct
   scopeIdFor(location: WorkbenchLocation): ConversationScopeId;
   /** Publishes only local Scope/View identity; it never starts a Host. */
   mountInitial(location: WorkbenchLocation, viewId: string): void;
+  /** Publishes a New-chat Draft and View locally before Host preparation. */
+  presentLocalDraft(location: WorkbenchDraftLocation, viewId: string): void;
   /**
    * Commits the initial local Scope/View before Host hydration. The returned
    * operation owns only remote readiness and may finish after React mounts.
    */
   presentInitial(location: WorkbenchLocation, viewId: string): Promise<boolean>;
   prepare(location: WorkbenchLocation): Promise<PreparedConversationActivation | null>;
+  cancelPending(): void;
   preparePromotion(
     draftId: string,
     receipt: SubmissionReceipt,
@@ -221,12 +225,20 @@ export function createConversationActivationCoordinator<
       coordinator.presentInitial(location, viewId);
       commitActiveView(scopeId, viewId);
     },
+    presentLocalDraft(location, viewId) {
+      ensureOpen();
+      const scopeId = ensureLocationScope(location);
+      scopes.activateDraft(location.draftId);
+      coordinator.presentLocalDraft(location, viewId);
+      commitActiveView(scopeId, viewId);
+    },
     presentInitial(location, viewId) {
       this.mountInitial(location, viewId);
       return prepareLocation(location).then((prepared) =>
         prepared?.commit(viewId) ?? false);
     },
     prepare: prepareLocation,
+    cancelPending: () => coordinator.cancelPending(),
     preparePromotion,
     setViewId(viewId) {
       ensureOpen();

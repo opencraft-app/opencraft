@@ -154,8 +154,7 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
-const upgradeConsole = window as Window & { show?: () => unknown; hide?: () => unknown };
-const cleanupPage = () => { act(() => upgradeConsole.hide?.()); cleanup(); };
+const cleanupPage = () => cleanup();
 
 describe("international upgrade return", () => {
   beforeEach(() => resetState());
@@ -179,7 +178,6 @@ describe("international upgrade return", () => {
     listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] });
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<LocaleOverrideProvider locale="en-US"><SubscribePage /></LocaleOverrideProvider>);
-    act(() => upgradeConsole.show?.());
     const button = await screen.findByRole("button", { name: "Upgrade to this plan" });
     listModifyBundlesMock.mockRejectedValueOnce(error);
     await userEvent.click(button);
@@ -205,7 +203,6 @@ describe("international upgrade return", () => {
     listModifyBundlesMock.mockResolvedValue(quote);
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    act(() => upgradeConsole.show?.());
     const button = await screen.findByRole("button", { name: "升级至此套餐" });
     let resolveQuote!: (value: typeof quote) => void;
     listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
@@ -218,7 +215,7 @@ describe("international upgrade return", () => {
     expect(navigateMock).toHaveBeenCalledWith("/agents?upgrade_return=paid-upgrade");
   });
 
-  it("hides upgrade cards for a direct pass URL until show, and closes selection on hide", async () => {
+  it("shows upgrade cards for a direct pass URL without a console gate", async () => {
     openClawState.isLoggedIn = true;
     openClawState.isSubscribed = true;
     sessionState.isAuthenticated = true;
@@ -234,16 +231,11 @@ describe("international upgrade return", () => {
     window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
     const { SubscribePage } = await import("@next-site/subscribe-page");
     render(<SubscribePage />);
-    await act(async () => {});
     expect(listBundlesMock).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
-    expect(listModifyBundlesMock).not.toHaveBeenCalled();
-    act(() => upgradeConsole.show?.());
-    await userEvent.click(await screen.findByRole("button", { name: "升级至此套餐" }));
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    expect(listModifyBundlesMock).toHaveBeenCalledWith("p1");
+    await userEvent.click(button);
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    act(() => upgradeConsole.hide?.());
-    expect(screen.queryByRole("button", { name: "升级至此套餐" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(createPassOrderMock).not.toHaveBeenCalled();
   });
 });
@@ -268,7 +260,6 @@ const buildNestedBundle = () => ({
 });
 
 const resetState = () => {
-  upgradeConsole.hide?.();
   translationState.real = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;

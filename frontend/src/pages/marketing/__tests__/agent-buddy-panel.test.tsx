@@ -188,7 +188,7 @@ describe("BuddyPanel P1 stability", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the page title and description above the persona card", () => {
+  it("renders the page title and description above the persona card", async () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -196,7 +196,7 @@ describe("BuddyPanel P1 stability", () => {
 
     const { container } = render(<BuddyPanel botId="agent-a" />);
 
-    const title = screen.getByRole("heading", { level: 2, name: "人设" });
+    const title = await screen.findByRole("heading", { level: 2, name: "人设" });
     const description = screen.getByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
     const card = container.querySelector(".lv-buddy-panel");
 
@@ -222,7 +222,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(container.querySelector(".lv-buddy-panel__title")).not.toBeInTheDocument();
   });
 
-  it("aligns the SkillHub source with the persona card grid bounds", () => {
+  it("aligns the SkillHub source with the persona card grid bounds", async () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -230,7 +230,7 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
 
-    const description = screen.getByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
+    const description = await screen.findByText("设置人设文件（SOUL.md），让你的 Agent 拥有独特的性格与表达方式");
     const source = screen.getByRole("link", { name: "灵感来自 SkillHub" });
     const cardHeading = screen.getByRole("heading", { level: 3, name: "人设卡片" });
 
@@ -246,7 +246,7 @@ describe("BuddyPanel P1 stability", () => {
     expect(description.parentElement).not.toBe(source.parentElement);
   });
 
-  it("hides the SkillHub source on the international site", () => {
+  it("hides the SkillHub source on the international site", async () => {
     regionState.isGlobal = true;
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
@@ -255,16 +255,17 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
 
-    expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument());
   });
 
-  it("uses readable heading and compact panel styles without gradient text", () => {
+  it("uses readable heading and compact panel styles without gradient text", async () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
     });
 
     const { container } = render(<BuddyPanel botId="agent-a" />);
+    await screen.findByRole("heading", { level: 3, name: "人设卡片" });
     const card = container.querySelector(".lv-buddy-panel");
 
     expect(card).not.toBeNull();
@@ -538,6 +539,10 @@ describe("BuddyPanel P1 stability", () => {
   });
 
   it("keeps the draw result open and out of the grid when direct injection falls back", async () => {
+    let downloadedName = "";
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function click(this: HTMLAnchorElement) {
+      downloadedName = this.download;
+    });
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [fixtures.agentA],
       appliedSlug: null,
@@ -554,10 +559,11 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText(
-      "无法写入 Agent 沙箱，已下载 soul.md 到本地",
+      "无法写入 Agent 沙箱，已下载 SOUL.md 到本地",
       {},
       { timeout: 3_000 },
     )).toBeInTheDocument();
+    expect(downloadedName).toBe("SOUL.md");
     expect(screen.getByRole("button", { name: "注入抽卡结果" })).toBeInTheDocument();
     expect(screen.queryByText("Extra Soul")).not.toBeInTheDocument();
   });
@@ -659,7 +665,7 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "注入抽卡结果" }));
 
     expect(await screen.findByText(
-      "无法写入 Agent 沙箱，已下载 soul.md 到本地",
+      "无法写入 Agent 沙箱，已下载 SOUL.md 到本地",
       {},
       { timeout: 3_000 },
     )).toBeInTheDocument();
@@ -782,7 +788,7 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "下载自定义人设" }));
 
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledOnce());
-    expect(downloadedName).toBe("soul.md");
+    expect(downloadedName).toBe("SOUL.md");
     expect(downloadedBlob).not.toBeNull();
     expect(await readBlobText(downloadedBlob!)).toBe(currentMarkdown);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:current-soul");
@@ -1073,7 +1079,7 @@ describe("BuddyPanel P1 stability", () => {
     fireEvent.click(screen.getByRole("button", { name: "选中此人设" }));
     fireEvent.click(screen.getByRole("button", { name: "注入" }));
 
-    expect(await screen.findByText("无法写入 Agent 沙箱，已下载 soul.md 到本地", {}, {
+    expect(await screen.findByText("无法写入 Agent 沙箱，已下载 SOUL.md 到本地", {}, {
       timeout: 3_000,
     })).toBeInTheDocument();
     expect(screen.getByText("已注入：自定义人设 · 真实自定义人设"))

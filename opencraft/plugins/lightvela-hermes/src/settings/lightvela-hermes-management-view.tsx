@@ -27,8 +27,12 @@ import { HermesDiagnosticsManagementView } from "./hermes-diagnostics-management
 import { HermesMemoryManagementView } from "./hermes-memory-management-view";
 import { HermesModelsManagementView } from "./hermes-models-management-view";
 import { HermesSchedulesManagementView } from "./hermes-schedules-management-view";
-import { HermesSkillsManagementView } from "./hermes-skills-management-view";
+import {
+  HermesSkillsManagementView,
+  type HermesProfileDirectory,
+} from "./hermes-skills-management-view";
 import { HermesStorageManagementView } from "./hermes-storage-management-view";
+import { LightVelaLoginOptions } from "./lightvela-login-options";
 
 export type LightVelaHermesManagementPage =
   | "channels"
@@ -76,7 +80,7 @@ const PAGE_COPY: Record<LightVelaHermesManagementPage, {
     sectionTitle: "Host runtime",
   },
   storage: {
-    title: "Cloud storage",
+    title: "Cloud Storage",
     description: "Manage files and persistent storage attached to this Hermes Host.",
     sectionTitle: "Storage",
   },
@@ -107,8 +111,77 @@ export function createLightVelaHermesManagementView(
   account: LightVelaAccountService,
   page: LightVelaHermesManagementPage,
   profileSkills?: AppServerProfileSkillsService,
+  profileDirectory?: HermesProfileDirectory,
 ) {
   const copy = PAGE_COPY[page];
+  if (page === "skills") {
+    return function HermesProfileSkillsManagementView(props: ExtensionSettingsViewProps) {
+      const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
+      const activeBot = snapshot.bots.find((bot) => bot.instanceId === snapshot.activeBotId) ?? null;
+
+      return (
+        <div className="lightvela-management-page">
+          <div className="lightvela-management-page__content">
+            {snapshot.phase === "loading" ? <SettingsNotice>Loading the Hermes control plane…</SettingsNotice> : null}
+            {snapshot.error !== null ? <SettingsNotice tone="error">{snapshot.error}</SettingsNotice> : null}
+            <HermesSkillsManagementView
+              account={account}
+              botId={activeBot?.instanceId ?? ""}
+              profileSkills={profileSkills}
+              profileDirectory={profileDirectory}
+              host={props.host}
+              headerRegion={props.regions?.Header}
+              toolbarSelect={props.regions?.ToolbarSelect}
+            />
+          </div>
+        </div>
+      );
+    };
+  }
+  if (page === "storage") {
+    return function HermesStorageSettingsView(props: ExtensionSettingsViewProps) {
+      const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
+      const activeBot = snapshot.bots.find((bot) => bot.instanceId === snapshot.activeBotId) ?? null;
+
+      useEffect(() => {
+        account.bootstrapOAuthFragment();
+        if (account.hasStoredSession() && snapshot.session.status === "anonymous") {
+          void account.refreshBots().catch(() => undefined);
+        }
+      }, []);
+
+      return (
+        <div className="lightvela-management-page">
+          <SettingsPageHeader title={copy.title} />
+          <div className="lightvela-management-page__content">
+            {snapshot.phase === "loading" ? <SettingsNotice>Loading the Hermes control plane…</SettingsNotice> : null}
+            {snapshot.error !== null ? <SettingsNotice tone="error">{snapshot.error}</SettingsNotice> : null}
+            {snapshot.session.status !== "authenticated" ? (
+              <SettingsSection
+                title="Connect LightVela"
+                description="Sign in to browse files stored on your LightVela environment."
+              >
+                <SettingsGroup>
+                  <div className="lightvela-management-page__sign-in">
+                    <LightVelaLoginOptions
+                      account={account}
+                      snapshot={snapshot}
+                      authentication={props.host.authentication}
+                      reason="account-entry"
+                    />
+                  </div>
+                </SettingsGroup>
+              </SettingsSection>
+            ) : activeBot === null ? (
+              <SettingsNotice>Select a running Bot from Overview first.</SettingsNotice>
+            ) : (
+              <HermesStorageManagementView account={account} botId={activeBot.instanceId} />
+            )}
+          </div>
+        </div>
+      );
+    };
+  }
   return function LightVelaHermesManagementView(_props: ExtensionSettingsViewProps) {
     const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot, account.getSnapshot);
     const activeBot = snapshot.bots.find((bot) => bot.instanceId === snapshot.activeBotId) ?? null;
@@ -122,10 +195,8 @@ export function createLightVelaHermesManagementView(
 
     const isAgentConsolePage = page === "channels"
       || page === "models"
-      || page === "skills"
       || page === "memory"
       || page === "schedules"
-      || page === "storage"
       || page === "diagnostics";
 
     return (
@@ -150,8 +221,6 @@ export function createLightVelaHermesManagementView(
               <HermesChannelsManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "models" ? (
               <HermesModelsManagementView account={account} botId={activeBot.instanceId} />
-            ) : page === "skills" ? (
-              <HermesSkillsManagementView account={account} botId={activeBot.instanceId} profileSkills={profileSkills} />
             ) : page === "memory" ? (
               <HermesMemoryManagementView account={account} botId={activeBot.instanceId} />
             ) : page === "schedules" ? (
@@ -165,8 +234,6 @@ export function createLightVelaHermesManagementView(
               />
             ) : page === "runtime" ? (
               <SettingsSection title={copy.sectionTitle} icon={pageIcon(page)}><HermesCommandPanel account={account} botId={activeBot.instanceId} command="hermes --version" actionLabel="Inspect runtime" /></SettingsSection>
-            ) : page === "storage" ? (
-              <HermesStorageManagementView account={account} botId={activeBot.instanceId} />
             ) : null}
           </>
         )}

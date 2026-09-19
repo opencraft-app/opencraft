@@ -218,11 +218,6 @@ html.lw-settings-scrollbar-stable {
 .lv-sidebar-user-menu-status[data-tone="warning"] { color: #92400e; }
 .lv-sidebar-user-menu-status[data-tone="danger"] { color: #b91c1c; }
 
-.agents-ui .lv-agent-create-button {
-  border-radius: 6px;
-  margin-top: 0;
-}
-
 .agents-ui[role="dialog"] h2 {
   letter-spacing: normal;
 }
@@ -395,6 +390,12 @@ html.lw-settings-scrollbar-stable {
     padding-left: 16px !important;
     padding-right: 16px !important;
   }
+}
+
+/* Only the empty persona page removes the brand area's frame; /agents keeps its sidebar header. */
+header.lv-agent-sidebar-header:has(+ .lv-agent-empty-persona-page) {
+  border-right: 0;
+  border-bottom: 0 !important;
 }
 
 /* 诊断中心输出区原生滚动条彻底隐藏（视觉滚动条由 React 手绘，
@@ -642,12 +643,14 @@ a {
 
 .lv-agent-status {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   margin-top: 2px;
   color: rgb(0 0 0 / 40%);
   font-size: 12px;
   line-height: 20px;
+  white-space: nowrap;
 }
 
 .lv-agent-status-row {
@@ -725,6 +728,7 @@ a {
   display: inline-flex;
   width: 24px;
   height: 24px;
+  flex: 0 0 24px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -808,43 +812,6 @@ a {
   border-left: 1px solid var(--border-subtle);
   border-top: 1px solid var(--border-subtle);
   background: white;
-}
-
-.lv-agent-create-button {
-  display: flex;
-  width: var(--lv-agents-nav-width);
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-  border: 1px solid #e9ecf1;
-  border-radius: 999px;
-  color: rgb(0 0 0 / 72%);
-  background: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.lv-agent-create-button:hover,
-.lv-agent-create-button:focus-visible {
-  border-color: #dfe3ea;
-  color: rgb(0 0 0 / 90%);
-  background: #f7f8fb;
-  outline: none;
-}
-
-.lv-agent-create-button:disabled,
-.lv-agent-create-button:disabled:hover {
-  cursor: not-allowed;
-  border-color: #e9ecf1;
-  color: rgb(0 0 0 / 30%);
-  background: #f7f8fb;
 }
 
 .lv-agents-nav {
@@ -1116,19 +1083,44 @@ a {
     padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
+  .agents-ui .lv-agents-sidebar {
+    gap: 0;
+  }
+
   .lv-agents-sidebar-profile,
   .lv-agents-sidebar-footer {
     position: relative;
+    width: calc(100% + 28px);
+    margin-left: -16px;
+    padding-right: 12px;
+    z-index: 1;
     flex-shrink: 0;
     min-width: 0;
+    background: #fff;
+  }
+
+  .lv-agents-sidebar-profile {
+    padding-left: 16px;
+    border-bottom: 1px solid #e9ecf1;
+  }
+
+  .lv-agents-sidebar-footer {
+    padding-left: 16px;
+    border-top: 1px solid #e9ecf1;
+  }
+
+  .lv-agents-sidebar-footer .lv-agent-account-footer {
+    width: 100%;
+    margin-left: 0;
+    border-top: 0;
   }
 
   .lv-agents-sidebar-profile::after,
   .lv-agents-sidebar-footer::before {
     position: absolute;
-    right: -12px;
-    left: -16px;
-    height: 12px;
+    right: 0;
+    left: 0;
+    height: 8px;
     pointer-events: none;
   }
 
@@ -1148,6 +1140,8 @@ a {
     flex: 1 1 auto;
     min-height: 0;
     min-width: 0;
+    padding-top: 16px;
+    padding-bottom: 16px;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1185,7 +1179,6 @@ a {
 
   .lv-agent-profile-wrap,
   .lv-agent-profile,
-  .lv-agent-create-button,
   .lv-agents-nav {
     width: 100%;
   }

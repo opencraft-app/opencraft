@@ -1,16 +1,24 @@
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { NativeSpeechManager } from "./native-speech.js";
+import type { NativeSpeechInfo, NativeSpeechPreferences, NativeSpeechOptions } from "@opencraft/app-host-protocol";
 import { DesktopLightVelaLogin, forwardLoginCallback } from "./lightvela-login.js";
 import { createDesktopSessionStore } from "./lightvela-session-store.js";
-import { requestDesktopAccount, type DesktopAccountRequest } from "./lightvela-account-http.js";
+import { desktopAccountPublicError, requestDesktopAccount, type DesktopAccountRequest } from "./lightvela-account-http.js";
+import { desktopSkillHubPublicError, requestDesktopSkillHub } from "./skillhub-http.js";
 import { resolveDesktopProduct } from "./product-identity.js";
 import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
 import { installBrowserGuests } from "./browser-guests.js";
 import { createFilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
+import { ProjectFolderPicker } from "./project-folder-picker.js";
+import { SqliteDebugReader } from "./sqlite-debug-reader.js";
+import { DesktopUiPreferenceStore } from "./ui-preferences-store.js";
 
 import {
   BrowserWindow,
@@ -75,6 +83,8 @@ let rendererOrigin: string | null = null;
 let daemonManager: OpenCraftDaemonClientManager | null = null;
 const daemonBridges = new Set<{ close(): void }>();
 const desktopSessions = createDesktopSessionStore(userDataDirectory);
+const sqliteDebugReader = new SqliteDebugReader(join(userDataDirectory, "dsh"));
+const uiPreferences = new DesktopUiPreferenceStore(join(userDataDirectory, "opencraft-ui.sqlite"));
 const desktopLogin = new DesktopLightVelaLogin({
   openExternal: url => shell.openExternal(url),
   saveSession: (value, signal) => desktopSessions.save(value, signal),
@@ -95,6 +105,97 @@ function trustedLoginCaller(event: Electron.IpcMainInvokeEvent): boolean {
   return event.sender === mainWebContents && event.senderFrame === mainWebContents?.mainFrame
     && rendererOrigin !== null && event.senderFrame?.url.startsWith(`${rendererOrigin}/`) === true;
 }
+
+function speechHelperPath(): string {
+  // Explicit diagnostic override; never supplied by the renderer.
+  return process.env.OPENCRAFT_NATIVE_SPEECH_HELPER ?? (app.isPackaged
+    ? join(process.resourcesPath, "native", "opencraft-speech-helper")
+    : resolve(dirname(fileURLToPath(import.meta.url)), "../build/native/opencraft-speech-helper"));
+}
+const speechPreferences = createFilePrivateStorage(join(userDataDirectory, "voice-input"));
+function validateSpeechPreferences(value: unknown): asserts value is NativeSpeechPreferences {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid speech preferences");
+  const entry = value as NativeSpeechPreferences;
+  if (Object.keys(entry).some(key => !["deviceId", "language"].includes(key))
+    || (entry.deviceId !== null && (typeof entry.deviceId !== "string" || !entry.deviceId || entry.deviceId.length > 1024))
+    || (entry.language !== null && (typeof entry.language !== "string" || !/^[a-zA-Z]{2,3}([_-][a-zA-Z0-9]{2,8})*$/.test(entry.language))))
+    throw new Error("Invalid speech preferences");
+}
+function readSpeechPreferences(): NativeSpeechPreferences {
+  const stored = speechPreferences.read("preferences");
+  if (stored === null) return { deviceId: null, language: null };
+  const value: unknown = JSON.parse(stored); validateSpeechPreferences(value); return value;
+}
+const nativeSpeech = new NativeSpeechManager({ spawn: () => spawn(speechHelperPath(), [], { stdio: "pipe" }) });
+ipcMain.handle("opencraft:speech-preferences-read", event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted speech caller"); return readSpeechPreferences();
+});
+ipcMain.handle("opencraft:speech-preferences-write", (event, value: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted speech caller"); validateSpeechPreferences(value);
+  speechPreferences.write("preferences", JSON.stringify(value));
+});
+ipcMain.handle("opencraft:speech-probe", async (event, requestedLanguage: unknown) => {
+  if (!trustedLoginCaller(event) || process.platform !== "darwin") throw new Error("Unsupported speech caller");
+  const language = requestedLanguage ?? readSpeechPreferences().language ?? app.getLocale();
+  if (typeof language !== "string" || !/^[a-zA-Z]{2,3}([_-][a-zA-Z0-9]{2,8})*$/.test(language)) throw new Error("Invalid speech language");
+  const { stdout } = await promisify(execFile)(speechHelperPath(), ["--probe", language], { timeout: 10000, maxBuffer: 1024 * 1024 });
+  const info = JSON.parse(stdout) as NativeSpeechInfo;
+  if (typeof info.supported !== "boolean" || typeof info.supportsOnDeviceRecognition !== "boolean" || !Array.isArray(info.devices)) throw new Error("Invalid speech metadata");
+  return info;
+});
+ipcMain.handle("opencraft:speech-start", async (event, id: string, input: NativeSpeechOptions) => {
+  if (!trustedLoginCaller(event) || process.platform !== "darwin" || !input || typeof input !== "object") throw new Error("Unsupported speech caller");
+  const preferences = readSpeechPreferences();
+  await nativeSpeech.start(event.sender.id, id, { language: preferences.language ?? input.language ?? app.getLocale(),
+    deviceId: input.deviceId === undefined ? preferences.deviceId : input.deviceId }, packet => {
+      if (!event.sender.isDestroyed()) event.sender.send("opencraft:speech-event", packet);
+    });
+});
+ipcMain.handle("opencraft:speech-stop", (event, id: string) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted speech caller"); return nativeSpeech.stop(event.sender.id, id);
+});
+ipcMain.handle("opencraft:speech-cancel", (event, id: string) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted speech caller"); return nativeSpeech.cancel(event.sender.id, id);
+});
+
+const projectFolderPicker = new ProjectFolderPicker({
+  open: () => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error("No active project window");
+    return dialog.showOpenDialog(mainWindow, {
+      title: "选择项目文件夹",
+      buttonLabel: "选择文件夹",
+      properties: ["openDirectory", "createDirectory"],
+    });
+  },
+});
+ipcMain.handle("opencraft:project-folder-pick", async event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted project picker caller");
+  return projectFolderPicker.pick();
+});
+ipcMain.handle("opencraft:sqlite-debug-list", event => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
+  return sqliteDebugReader.list();
+});
+ipcMain.handle("opencraft:sqlite-debug-tables", (event, databaseId: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
+  return sqliteDebugReader.tables(databaseId);
+});
+ipcMain.handle("opencraft:sqlite-debug-rows", (event, databaseId: unknown, table: unknown, offset: unknown, limit: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SQLite debug caller");
+  return sqliteDebugReader.rows(databaseId, table, offset, limit);
+});
+ipcMain.handle("opencraft:ui-preference-load", (event, key: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
+  return uiPreferences.load(key);
+});
+ipcMain.handle("opencraft:ui-preference-compare-and-set", (event, key: unknown, expectedRevision: unknown, valueJson: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted UI preference caller");
+  const result = uiPreferences.compareAndSet(key, expectedRevision, valueJson);
+  if (result.outcome === "updated" && !event.sender.isDestroyed()) {
+    event.sender.send("opencraft:ui-preference-changed", result.record.key);
+  }
+  return result;
+});
 
 ipcMain.handle("vela:lightvela-login", async (event, region: unknown) => {
   if (!trustedLoginCaller(event)) return { ok: false, error: "Untrusted login caller" };
@@ -195,7 +296,12 @@ ipcMain.handle("vela:lightvela-account-request", async (event, input: DesktopAcc
   const account = await desktopSessions.read();
   if (!account) return { status: 401, contentType: "application/json", body: new Uint8Array() };
   try { return await requestDesktopAccount(input, account); }
-  catch { throw new Error("Account request failed. Please retry."); }
+  catch (error) { throw desktopAccountPublicError(error); }
+});
+ipcMain.handle("opencraft:skillhub-get", async (event, path: unknown) => {
+  if (!trustedLoginCaller(event)) throw new Error("Untrusted SkillHub caller");
+  try { return await requestDesktopSkillHub(path); }
+  catch (error) { throw desktopSkillHubPublicError(error); }
 });
 ipcMain.handle("vela:lightvela-sign-out", async event => {
   if (!trustedLoginCaller(event)) return;
@@ -475,6 +581,12 @@ async function createMainWindow(): Promise<void> {
   mainWindow = window;
   lifecycle.bindWindow(window);
   mainWebContents = webContents;
+  const speechOwner = webContents.id;
+  webContents.once("destroyed", () => { void nativeSpeech.releaseOwner(speechOwner); });
+  webContents.on("render-process-gone", () => { void nativeSpeech.releaseOwner(speechOwner); });
+  webContents.on("did-start-navigation", details => {
+    if (details.isMainFrame && !details.isSameDocument) void nativeSpeech.releaseOwner(speechOwner);
+  });
 
   const refreshWindowAppearance = () => {
     applyWindowAppearance(window, currentWindowAppearance);
@@ -535,6 +647,8 @@ const lifecycle = new DesktopLifecycle({
   showDock: async () => { if (process.platform === "darwin") await app.dock?.show(); },
   hideDock: () => { if (process.platform === "darwin") app.dock?.hide(); },
   stopRuntime: async () => {
+    await nativeSpeech.close();
+    uiPreferences.close();
     desktopLogin.cancel();
     const daemon = daemonManager;
     const loopback = loopbackHost;
@@ -584,6 +698,9 @@ async function bootstrap(): Promise<void> {
     dshExecutable: app.isPackaged
       ? join(process.resourcesPath, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
       : join(app.getAppPath(), "../../runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
+    dshCapabilityPlugin: app.isPackaged
+      ? join(process.resourcesPath, "runtime/dsh/opencraft-capability-plugin.mjs")
+      : join(app.getAppPath(), "../local-agent-host/src/dsh-capability-plugin.mjs"),
     dataDirectory: join(app.getPath("userData"), "dsh"),
     modelStorageDirectory: process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY?.trim() || join(homedir(), ".opencraft"),
     executable: process.execPath,

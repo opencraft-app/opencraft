@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,22 +33,22 @@ type cloudAPIConfig struct {
 }
 
 type describePassCloudAPIRequest struct {
-	Uin    int64  `json:"Uin"`
-	AppID  int64  `json:"AppId"`
+	Uin    string `json:"Uin"`
+	AppID  *int64 `json:"AppId"`
 	PassID string `json:"PassId"`
 }
 
 type cloudAPIPass struct {
-	PassID       string `json:"PassId"`
-	UserID       string `json:"UserId"`
-	BundleID     string `json:"BundleId"`
-	Uin          int64  `json:"Uin"`
-	AppID        int64  `json:"AppId"`
-	Status       string `json:"Status"`
-	CreatedTime  string `json:"CreatedTime,omitempty"`
-	ExpiredTime  string `json:"ExpiredTime"`
-	IsolatedTime string `json:"IsolatedTime,omitempty"`
-	UpdatedTime  string `json:"UpdatedTime,omitempty"`
+	PassID         string `json:"PassId"`
+	ExternalUserID string `json:"ExternalUserId"`
+	BundleID       string `json:"BundleId"`
+	Uin            int64  `json:"Uin"`
+	AppID          int64  `json:"AppId"`
+	Status         string `json:"Status"`
+	CreatedTime    string `json:"CreatedTime,omitempty"`
+	ExpiredTime    string `json:"ExpiredTime"`
+	IsolatedTime   string `json:"IsolatedTime,omitempty"`
+	UpdatedTime    string `json:"UpdatedTime,omitempty"`
 }
 
 type cloudAPIErrorBody struct {
@@ -78,21 +79,22 @@ func (h *passHandler) handleCloudAPI(w http.ResponseWriter, r *http.Request) {
 		writeCloudAPIError(w, r, "InvalidParameter.RequestBody", "request body must be valid json")
 		return
 	}
-	if req.Uin <= 0 {
-		writeCloudAPIError(w, r, "InvalidParameter.Uin", "Uin must be > 0")
+	uin, err := parseCloudAPIUin(req.Uin)
+	if err != nil {
+		writeCloudAPIError(w, r, "InvalidParameter.Uin", err.Error())
 		return
 	}
-	if req.AppID <= 0 {
-		writeCloudAPIError(w, r, "InvalidParameter.AppId", "AppId must be > 0")
-		return
+	var appID int64
+	if req.AppID != nil {
+		if *req.AppID <= 0 {
+			writeCloudAPIError(w, r, "InvalidParameter.AppId", "AppId must be > 0")
+			return
+		}
+		appID = *req.AppID
 	}
 	req.PassID = strings.TrimSpace(req.PassID)
-	if req.PassID == "" {
-		writeCloudAPIError(w, r, "InvalidParameter.PassId", "PassId is required")
-		return
-	}
 
-	detail, err := h.logic.DescribePassByCloudAccount(req.Uin, req.AppID, req.PassID)
+	detail, err := h.logic.DescribePassByCloudAccount(uin, appID, req.PassID)
 	if err != nil {
 		writeCloudAPIError(w, r, cloudAPIErrorCode(err), err.Error())
 		return
@@ -156,15 +158,27 @@ func validateCloudAPIHeaders(r *http.Request, cfg cloudAPIConfig) error {
 	return nil
 }
 
+func parseCloudAPIUin(raw string) (int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, cloudAPIUserError{code: "InvalidParameter.Uin", message: "Uin is required"}
+	}
+	uin, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || uin <= 0 {
+		return 0, cloudAPIUserError{code: "InvalidParameter.Uin", message: "Uin must be a positive integer string"}
+	}
+	return uin, nil
+}
+
 func detailToCloudAPIPass(d *passlogic.PassDetail) *cloudAPIPass {
 	resp := &cloudAPIPass{
-		PassID:      d.PassID,
-		UserID:      d.UserID,
-		BundleID:    d.BundleID,
-		Uin:         d.Uin,
-		AppID:       d.AppID,
-		Status:      d.Status,
-		ExpiredTime: d.ExpiredTime.UTC().Format(time.RFC3339),
+		PassID:         d.PassID,
+		ExternalUserID: d.UserID,
+		BundleID:       d.BundleID,
+		Uin:            d.Uin,
+		AppID:          d.AppID,
+		Status:         d.Status,
+		ExpiredTime:    d.ExpiredTime.UTC().Format(time.RFC3339),
 	}
 	if !d.CreatedTime.IsZero() {
 		resp.CreatedTime = d.CreatedTime.UTC().Format(time.RFC3339)

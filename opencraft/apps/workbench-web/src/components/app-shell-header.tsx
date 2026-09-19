@@ -8,6 +8,7 @@ import {
   useCallback,
   useLayoutEffect,
   useRef,
+  type RefCallback,
   type ReactNode,
 } from "react";
 
@@ -181,6 +182,8 @@ export function AppShellNavigationControls({
 export interface AppShellHeaderProps {
   readonly title: string | null;
   readonly project: string | null;
+  readonly routeHeaderActive?: boolean;
+  readonly routeHeaderHostRef?: RefCallback<HTMLDivElement>;
   readonly sidebarOpen: boolean;
   readonly rightPanelOpen: boolean;
   readonly rightPanelFullWidth: boolean;
@@ -204,6 +207,8 @@ export interface AppShellHeaderProps {
 export function AppShellHeader({
   title,
   project,
+  routeHeaderActive = false,
+  routeHeaderHostRef,
   sidebarOpen,
   rightPanelOpen: requestedRightPanelOpen,
   rightPanelFullWidth: requestedRightPanelFullWidth,
@@ -299,7 +304,12 @@ export function AppShellHeader({
           aria-hidden={rightPanelFullWidth}
           data-app-shell-header-context-hidden={rightPanelFullWidth}
         >
-          {title !== null ? (
+          <div
+            ref={routeHeaderHostRef}
+            className="app-shell-header__route"
+            data-app-shell-route-header-active={routeHeaderActive}
+          />
+          {!routeHeaderActive && title !== null ? (
             <div className="thread-header-title">
               <span className="thread-header-project-icon">
                 <Code2 size={14} />

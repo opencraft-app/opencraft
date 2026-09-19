@@ -1,6 +1,6 @@
 import { type ReactNode, useId, useRef } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
-import { AgentSection, AgentState, AgentTooltip } from "@/components/agents";
+import { RefreshCw } from "lucide-react";
+import { AgentPageLoadingState, AgentSection, AgentState, AgentTooltip, Spinner } from "@/components/agents";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AgentTabsList, AgentTabsTrigger } from "@/components/agents";
@@ -47,8 +47,8 @@ export function MemoryLimitCardView({ title, description, used, limit, percent, 
       {!editing ? <Button variant="outline" size="sm" disabled={disabled}
         ref={(node) => { if (node && restoreEditFocus.current) { restoreEditFocus.current = false; node.focus({ preventScroll: true }); } }}
         onClick={() => { restoreEditFocus.current = false; onEdit(); }} className="h-8 rounded-md shadow-none transition-none hover:translate-y-0">{labels.edit}</Button> : <>
-        <Button size="sm" disabled={disabled || !valid} onClick={onSave} className="h-8 rounded-md shadow-none transition-none hover:translate-y-0">
-          {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}{saving ? labels.saving : labels.save}
+        <Button size="sm" disabled={disabled || !valid} aria-busy={saving} onClick={onSave} className="h-8 rounded-md shadow-none transition-none hover:translate-y-0">
+          {saving && <Spinner size="sm" />}{saving ? labels.saving : labels.save}
         </Button>
         <Button variant="outline" size="sm" disabled={disabled} onClick={cancel} className="h-8 rounded-md shadow-none transition-none hover:translate-y-0">{labels.cancel}</Button>
       </>}
@@ -70,12 +70,15 @@ export interface MemoryPanelViewProps {
   onTabChange: (value: "memory" | "user") => void; onRefresh: () => void;
 }
 export function MemoryPanelView({ title, description, refreshLabel, loadingLabel, loading, hasSnapshot, error, fallbackMessage, activeTab, tabs, cards, onTabChange, onRefresh }: MemoryPanelViewProps) {
+  if (loading && !hasSnapshot) {
+    return <AgentPageLoadingState className="agents-ui" title={loadingLabel} />;
+  }
+
   return <AgentSection title={title} description={description} className="agents-ui border-0 bg-transparent p-0 shadow-none sm:p-0"
     contentClassName="space-y-4"
     actions={<AgentTooltip content={refreshLabel} triggerMode="control"><Button variant="outline" size="sm" aria-label={refreshLabel} onClick={onRefresh} disabled={loading}
-      className="size-8 rounded-md p-0 shadow-none transition-none hover:translate-y-0"><RefreshCw className={cn("size-4", loading && "animate-spin")} aria-hidden="true" /></Button></AgentTooltip>}>
+      aria-busy={loading} className="size-8 rounded-md p-0 shadow-none transition-none hover:translate-y-0">{loading ? <Spinner size="md" /> : <RefreshCw className="size-4" aria-hidden="true" />}</Button></AgentTooltip>}>
     {error && <AgentState kind="error" title={error} />}
-    {loading && !hasSnapshot && <AgentState kind="loading" title={loadingLabel} />}
     {hasSnapshot && <>
       <div className="grid gap-3 md:grid-cols-2">{cards}</div>
       {fallbackMessage && <p className="text-xs text-[var(--text-secondary)]">{fallbackMessage}</p>}

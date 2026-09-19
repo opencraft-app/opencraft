@@ -8,6 +8,8 @@
 | `AgentToolbar` | `label` 必填，可选 `actions`；普通控件组，各控件保持原来的 Tab 顺序。 |
 | `AgentField` | `label` 和 render-prop `children` 必填；可选 `description`、`error`、`required`、`controlId`。将生成的 `id`、描述和错误关联属性传到实际控件。 |
 | `AgentState` | `kind="loading" \| "empty" \| "error" \| "success"`、`title` 必填；说明和单个主要 action 由调用端提供。无隐藏请求和自动重试。 |
+| `AgentPageLoadingState` | 页面首屏数据未就绪时使用的全内容居中状态；提供 `role="status"`、`aria-busy` 和可翻译标题。只负责展示，不发请求，也不处理重试。 |
+| `Spinner` / `Skeleton` | 加载基础组件。`Spinner` 支持 `xs \| sm \| md \| lg`，默认装饰性并隐藏于辅助技术；传入 `aria-label` 后表达可感知状态。`Skeleton` 使用共享 muted surface token，默认装饰性，支持调用端传入尺寸 class。 |
 | `AgentTooltip` | `content` 可选；`triggerMode="control"` 使用调用端已有的可聚焦控件，不增加 Tab 停靠点；默认 `explanation` 提供可聚焦解释容器，适用于禁用按钮和说明图标。内容始终通过带 `agents-ui` 标记的 Portal 渲染。 |
 | `AgentConfirmDialog` | 受控 `open/onOpenChange`、文案和 `onConfirm`；`confirmDisabled` 与 `cancelDisabled` 分开，`confirmVariant="default" \| "destructive"`。不等待 Promise、不自行关闭；可传 `returnFocusRef` 或 `onCloseAutoFocus` 指定成功后的稳定目标。块级 `description` 通过 div 安全组合。 |
 | `agentButtonClassName` / `agentFieldClassName` | 显式用于共享 Button/Input 的 Agents 外观；共享默认样式不变。 |

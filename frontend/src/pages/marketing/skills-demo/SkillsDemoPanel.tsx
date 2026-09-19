@@ -43,7 +43,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AgentTabsList, AgentTabsTrigger } from "@/components/agents";
@@ -1656,6 +1656,18 @@ export function CreateSkillPanel({
   );
 }
 
+export interface SkillsHeaderNavigationOption {
+  readonly value: Exclude<SkillsDemoTab, "create">;
+  readonly label: ReactNode;
+}
+export interface SkillsHeaderNavigationProps {
+  readonly value: Exclude<SkillsDemoTab, "create">;
+  readonly options: readonly SkillsHeaderNavigationOption[];
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly onValueChange: (value: string) => void;
+}
+
 export function SkillsDemoPanel({
   botId,
   profileId,
@@ -1663,8 +1675,12 @@ export function SkillsDemoPanel({
   execDebugCommandStream,
   mode = "global",
   expertsPanel,
+  headerEnd,
+  headerRegion: HeaderRegion,
+  renderHeaderNavigation,
   initialTab = "discover",
   onTabChange,
+  onInitialLoadComplete,
 }: {
   botId: string;
   profileId?: string;
@@ -1675,8 +1691,12 @@ export function SkillsDemoPanel({
   learnSkillPanel?: ReactNode;
   learnSkillTriggerFactory?: (options: LearnSkillTriggerOptions) => ReactNode;
   expertsPanel?: ReactNode;
+  headerEnd?: ReactNode;
+  headerRegion?: ComponentType<{ readonly children: ReactNode }>;
+  renderHeaderNavigation?: (props: SkillsHeaderNavigationProps) => ReactNode;
   initialTab?: SkillsDemoTab;
   onTabChange?: (value: SkillsDemoTab) => void;
+  onInitialLoadComplete?: () => void;
 }) {
   const t = useT();
   const { i18n } = useTranslation();
@@ -1810,9 +1830,10 @@ export function SkillsDemoPanel({
     } finally {
       if (installedRequestIdRef.current === requestId && activeBotIdRef.current === requestBotId) {
         setInstalledLoading(false);
+        onInitialLoadComplete?.();
       }
     }
-  }, [botId, dataLayer]);
+  }, [botId, dataLayer, onInitialLoadComplete]);
 
   useEffect(() => {
     installedRequestIdRef.current += 1;
@@ -2004,6 +2025,14 @@ export function SkillsDemoPanel({
 
   const hasSearch = debounced.trim().length > 0;
   const operationBusy = Boolean(installingId) || batchInstalling;
+  const selectTab = useCallback((value: string) => {
+    if (operationBusy) return;
+    if (value !== "discover" && value !== "experts" && value !== "installed") return;
+    const nextTab = value as Exclude<SkillsDemoTab, "create">;
+    if (nextTab === "installed" && activeTab !== "installed") void refreshInstalled();
+    setActiveTab(nextTab);
+    onTabChange?.(nextTab);
+  }, [activeTab, onTabChange, operationBusy, refreshInstalled]);
   const searchQueryPending = keyword.trim() !== debounced.trim();
   const shouldShowAllSearchResults = searchResultsExpanded && visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT;
   const displayedSearchResults = shouldShowAllSearchResults
@@ -2260,52 +2289,83 @@ export function SkillsDemoPanel({
 
       <Tabs
         value={activeTab}
-        onValueChange={(value) => {
-          if (operationBusy) return;
-          if (value !== "discover" && value !== "experts" && value !== "installed") return;
-          const nextTab = value as SkillsDemoTab;
-          if (nextTab === "installed" && activeTab !== "installed") void refreshInstalled();
-          setActiveTab(nextTab);
-          onTabChange?.(nextTab);
-        }}
+        onValueChange={selectTab}
         className="min-w-0"
       >
-        <div className="mb-4 flex min-w-0 items-end gap-4 border-b border-black/[0.08]">
-          <AgentTabsList variant="underline"
-            aria-label={t("技能市场页面切换")}
-            className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
-          >
-            <AgentTabsTrigger variant="underline"
-              value="discover"
-              disabled={operationBusy}
-              className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+        {(() => {
+          const navigationOptions: readonly SkillsHeaderNavigationOption[] = [
+            { value: "discover", label: t("技能") },
+            ...(expertsPanel ? [{ value: "experts" as const, label: t("技能包") }] : []),
+            {
+              value: "installed",
+              label: (
+                <>
+                  {t("已安装")}
+                  {!installedLoading ? (
+                    <span className="ml-1.5 tabular-nums text-[var(--color-text-tertiary)]">
+                      {installed.length}
+                    </span>
+                  ) : null}
+                </>
+              ),
+            },
+          ];
+          const navigationControl = renderHeaderNavigation?.({
+            value: activeTab === "create" ? "discover" : activeTab,
+            options: navigationOptions,
+            disabled: operationBusy,
+            label: t("技能市场页面切换"),
+            onValueChange: selectTab,
+          }) ?? (
+            <AgentTabsList variant="underline"
+              aria-label={t("技能市场页面切换")}
+              className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
             >
-              {t("技能")}
-            </AgentTabsTrigger>
-            {expertsPanel ? (
               <AgentTabsTrigger variant="underline"
-                value="experts"
+                value="discover"
                 disabled={operationBusy}
                 className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
               >
-                {t("技能包")}
+                {t("技能")}
               </AgentTabsTrigger>
-            ) : null}
-            <AgentTabsTrigger variant="underline"
-              value="installed"
-              ref={installedTabRef}
-              disabled={operationBusy}
-              className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
-            >
-              {t("已安装")}
-              {!installedLoading ? (
-                <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
-                  {installed.length}
-                </span>
+              {expertsPanel ? (
+                <AgentTabsTrigger variant="underline"
+                  value="experts"
+                  disabled={operationBusy}
+                  className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+                >
+                  {t("技能包")}
+                </AgentTabsTrigger>
               ) : null}
-            </AgentTabsTrigger>
-          </AgentTabsList>
-        </div>
+              <AgentTabsTrigger variant="underline"
+                value="installed"
+                ref={installedTabRef}
+                disabled={operationBusy}
+                className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+              >
+                {t("已安装")}
+                {!installedLoading ? (
+                  <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
+                    {installed.length}
+                  </span>
+                ) : null}
+              </AgentTabsTrigger>
+            </AgentTabsList>
+          );
+          const navigation = (
+            <div className="lv-skills-route-toolbar flex min-w-0 flex-1 items-end gap-2 border-b border-black/[0.08]">
+              {navigationControl}
+              {headerEnd === undefined ? null : (
+                <div className="lv-skills-route-toolbar__end ml-auto shrink-0">{headerEnd}</div>
+              )}
+            </div>
+          );
+          return HeaderRegion === undefined ? (
+            <div className="mb-4">{navigation}</div>
+          ) : (
+            <HeaderRegion>{navigation}</HeaderRegion>
+          );
+        })()}
 
         <TabsContent value="discover" className="mt-0">
           <div className="space-y-6">
@@ -2731,17 +2791,21 @@ export function SkillsDemoPanel({
                   onValueChange={(value) => setInstalledCategoryFilter(value as InstalledCategoryFilter)}
                 >
                   <SelectTrigger
+                    variant="filter"
                     aria-label={t("筛选技能分类")}
-                    className="h-9 w-full rounded-md border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent variant="product" align="end" className="agents-ui">
-                    <SelectItem value="all" className="rounded-sm py-2 text-xs">
+                  <SelectContent
+                    variant="filter"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <SelectItem variant="filter" value="all">
                       {t("全部分类")} ({installed.length})
                     </SelectItem>
                     {installedCategoryOptions.map(({ value, label, count }) => (
-                      <SelectItem key={value} value={value} className="rounded-sm py-2 text-xs">
+                      <SelectItem variant="filter" key={value} value={value}>
                         {label} ({count})
                       </SelectItem>
                     ))}
@@ -2752,17 +2816,21 @@ export function SkillsDemoPanel({
                   onValueChange={(value) => setInstalledSourceFilter(value as InstalledSourceFilter)}
                 >
                   <SelectTrigger
+                    variant="filter"
                     aria-label={t("筛选技能来源")}
-                    className="h-9 w-full rounded-md border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent variant="product" align="end" className="agents-ui">
-                    <SelectItem value="all" className="rounded-sm py-2 text-xs">
+                  <SelectContent
+                    variant="filter"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <SelectItem variant="filter" value="all">
                       {t("全部来源")} ({installed.length})
                     </SelectItem>
                     {installedSourceOptions.map(({ source, count }) => (
-                      <SelectItem key={source.key} value={source.key} className="rounded-sm py-2 text-xs">
+                      <SelectItem variant="filter" key={source.key} value={source.key}>
                         {translateInstalledSourceLabel(t, source.label)} ({count})
                       </SelectItem>
                     ))}

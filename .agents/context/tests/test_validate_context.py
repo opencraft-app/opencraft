@@ -231,6 +231,10 @@ class RepositoryContextContract(unittest.TestCase):
         self.assertEqual(tests_only.returncode, 0, tests_only.stderr)
         self.assertEqual(json.loads(tests_only.stdout.splitlines()[-1])["matched_rules"], [])
 
+        owners_only = self._run_impact("shadow/OWNERS", "gateway-dashboard/OWNERS")
+        self.assertEqual(owners_only.returncode, 0, owners_only.stderr)
+        self.assertEqual(json.loads(owners_only.stdout.splitlines()[-1])["matched_rules"], [])
+
     def test_docs_impact_blocks_high_risk_and_only_advises_normal_risk(self) -> None:
         """``risk`` must decide guard strength, per ADR-0002.
 

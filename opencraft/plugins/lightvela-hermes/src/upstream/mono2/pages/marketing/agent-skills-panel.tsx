@@ -1,9 +1,11 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { AgentPageLoadingState } from "../../components/agents/index";
 import { Button } from "../../components/ui/button";
+import { Spinner } from "../../components/ui/spinner";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +31,7 @@ import {
   type LearnSkillTriggerOptions,
   type SkillsDemoMode,
   type SkillsDemoTab,
+  type SkillsHeaderNavigationProps,
 } from "./skills-demo/SkillsDemoPanel";
 import type { SkillsDataLayer } from "./skills-demo/skill-registries";
 import { ZhHantScope } from "./zh-hant-scope";
@@ -644,11 +647,12 @@ function LearnSkillDialog({
               <Button
                 type="button"
                 aria-label={t("学习")}
+                aria-busy={busy}
                 onClick={() => void learnSkill()}
                 disabled={busy}
                 className="size-9 shrink-0 rounded-full bg-black p-0 text-white hover:bg-black/80"
               >
-                {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="size-4" aria-hidden="true" />}
+                {busy ? <Spinner size="md" /> : <ArrowUp className="size-4" aria-hidden="true" />}
               </Button>
             </div>
           </div>
@@ -760,7 +764,7 @@ function LearnSkillDialog({
                       <div className="max-h-48 overflow-y-auto rounded-md border border-black/5 bg-white">
                         {status === "loading" ? (
                           <div className="flex items-center gap-2 px-3 py-4 text-sm text-black/55">
-                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            <Spinner size="md" />
                             {t("正在加载云端存储...")}
                           </div>
                         ) : files.length === 0 ? (
@@ -959,7 +963,7 @@ function LearnSkillDialog({
                         <div className="max-h-48 overflow-y-auto rounded-md border border-black/5 bg-white">
                           {status === "loading" ? (
                             <div className="flex items-center gap-2 px-3 py-4 text-sm text-black/55">
-                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                              <Spinner size="md" />
                               {t("正在加载云端存储...")}
                             </div>
                           ) : files.length === 0 ? (
@@ -1196,8 +1200,9 @@ function LearnSkillDialog({
               className="rounded-md"
               onClick={() => void learnSkill()}
               disabled={busy}
+              aria-busy={status === "learning"}
             >
-              {status === "learning" ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              {status === "learning" ? <Spinner size="md" /> : null}
               {t("学习")}
             </Button>
           </div>
@@ -1234,6 +1239,10 @@ export interface HermesAgentSkillsPanelProps {
   profileId?: string;
   execDebugCommand: ExpertsExecDebugCommand;
   initialSectionSlug?: string;
+  headerEnd?: ReactNode;
+  headerRegion?: ComponentType<{ readonly children: ReactNode }>;
+  renderHeaderNavigation?: (props: SkillsHeaderNavigationProps) => ReactNode;
+  showHeader?: boolean;
   skillsDataLayer: SkillsDataLayer;
 }
 
@@ -1242,6 +1251,10 @@ export function HermesAgentSkillsPanel({
   profileId,
   execDebugCommand,
   initialSectionSlug,
+  headerEnd,
+  headerRegion,
+  renderHeaderNavigation,
+  showHeader = true,
   skillsDataLayer,
 }: HermesAgentSkillsPanelProps) {
   const repositories = useRepositories();
@@ -1258,18 +1271,27 @@ export function HermesAgentSkillsPanel({
     ? "experts"
     : "discover";
   const [skillsPanelRevision, refreshSkillsPanel] = useState(0);
+  const [skillsReadyBotId, setSkillsReadyBotId] = useState<string | null>(null);
+  const skillsReady = skillsReadyBotId === botId;
+  const handleSkillsInitialLoadComplete = useCallback(() => {
+    setSkillsReadyBotId(botId);
+  }, [botId]);
 
   return (
     <ZhHantScope className="min-w-0">
-      <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
-        <h2 className="text-balance text-lg font-semibold leading-6 text-black/95">{t("技能")}</h2>
-      </div>
-      <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
-        {isGlobal
-          ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
-          : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
-      </p>
-
+      {!skillsReady ? <AgentPageLoadingState className="agents-ui" title={t("正在读取技能")} /> : showHeader ? (
+        <>
+          <div className="mb-1 flex min-w-0 flex-wrap items-center gap-3">
+            <h2 className="text-balance text-lg font-semibold leading-6 text-black/95">{t("技能")}</h2>
+          </div>
+          <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
+            {isGlobal
+              ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
+              : "为你的智能体安装技能（Skill），安装后 Agent 执行任务时可自动调用"}
+          </p>
+        </>
+      ) : null}
+      <div className={skillsReady ? undefined : "hidden"}>
         <SkillsDemoPanel
           key={`${botId}-${skillsPanelRevision}`}
           botId={botId}
@@ -1279,10 +1301,15 @@ export function HermesAgentSkillsPanel({
           mode={(isGlobal ? "global" : "domestic") satisfies SkillsDemoMode}
           initialTab={initialGlobalSkillsTab}
           dataLayer={skillsDataLayer}
+          headerEnd={headerEnd}
+          headerRegion={headerRegion}
+          renderHeaderNavigation={renderHeaderNavigation}
+          onInitialLoadComplete={handleSkillsInitialLoadComplete}
           expertsPanel={(
             <ExpertsPanel
               botId={botId}
               profileId={profileId}
+              mode={isGlobal ? "global" : "domestic"}
               execDebugCommand={execDebugCommand}
               execDebugCommandStream={repositories.bots.execDebugCommandStream}
               lang={isGlobal ? globalExpertLanguage : undefined}
@@ -1308,6 +1335,7 @@ export function HermesAgentSkillsPanel({
             />
           )}
         />
+      </div>
     </ZhHantScope>
   );
 }

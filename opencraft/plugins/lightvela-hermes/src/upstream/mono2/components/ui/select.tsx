@@ -7,6 +7,7 @@ import { cn } from "../../lib/utils";
 
 const Select = SelectPrimitive.Root;
 const SelectValue = SelectPrimitive.Value;
+type SelectVariant = "default" | "filter" | "product";
 
 const SelectSeparator = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Separator>,
@@ -22,12 +23,13 @@ SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 
 const SelectTrigger = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & { variant?: SelectVariant }
+>(({ className, children, variant = "default", ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
       "lv-select-trigger",
+      variant === "filter" && "lv-select-trigger--filter",
       controlFieldClass,
       "flex h-11 items-center justify-between px-3.5 py-2 text-sm",
       className,
@@ -42,18 +44,21 @@ const SelectTrigger = React.forwardRef<
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
-type SelectContentProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { variant?: "default" | "product" };
+type SelectContentProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { variant?: SelectVariant };
 
 const SelectContent = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Content>,
   SelectContentProps
->(({ className, children, variant = "default", sideOffset, ...props }, ref) => (
+>(({ className, children, position, variant = "default", sideOffset, ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
+      position={position ?? (variant === "filter" ? "popper" : undefined)}
       sideOffset={sideOffset ?? (variant === "product" ? 6 : undefined)}
       data-surface-variant={variant}
       className={cn(
+        "lv-select-content",
+        variant === "filter" && "lv-select-content--filter",
         "lightvela-agent-console-portal lv-floating-control lv-select-content z-50 min-w-[12rem] overflow-hidden rounded-[1.25rem]",
         floatingPanelClass,
         variant === "product" && productFloatingPanelClass,
@@ -61,7 +66,7 @@ const SelectContent = React.forwardRef<
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className={variant === "product" ? "lv-select-viewport p-0" : "lv-select-viewport p-1.5"}>{children}</SelectPrimitive.Viewport>
+      <SelectPrimitive.Viewport className={cn("lv-select-viewport", variant === "product" ? "p-0" : "p-1.5")}>{children}</SelectPrimitive.Viewport>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
@@ -69,12 +74,14 @@ SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectItem = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { variant?: SelectVariant }
+>(({ className, children, variant = "default", ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "lv-select-item relative flex w-full cursor-default select-none items-center rounded-[0.85rem] py-2.5 pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none data-[highlighted]:bg-[var(--surface-muted)]",
+      "lv-select-item",
+      variant === "filter" && "lv-select-item--filter",
+      "relative flex w-full cursor-default select-none items-center rounded-[0.85rem] py-2.5 pl-8 pr-3 text-sm text-[var(--text-primary)] outline-none data-[highlighted]:bg-[var(--surface-muted)]",
       className,
     )}
     {...props}
