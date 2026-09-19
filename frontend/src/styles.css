@@ -230,8 +230,8 @@ html.lw-settings-scrollbar-stable {
   }
 }
 
-/* Named Agent sections without a Bot have no sidebar; /agents keeps its sidebar header. */
-header.lv-agent-sidebar-header:has(+ .lv-agent-empty-section-page) {
+/* Agent pages without a Bot have no sidebar frame, including the /agents root route. */
+header.lv-agent-sidebar-header:has(+ .lv-agent-empty-page) {
   border-right: 0;
   border-bottom: 0 !important;
 }
