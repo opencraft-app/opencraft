@@ -180,9 +180,11 @@ html.lw-settings-scrollbar-stable {
   }
 
   .lw-settings-shell.lv-agent-settings-shell {
-    width: min(1760px, calc(100vw - 32px));
+    /* Fill the viewport remainder; only the inner content has a width cap.
+       16px + 248px sidebar + 24px grid gap gives matching 24px gutters. */
+    width: calc(100% - 40px);
     margin-left: 16px;
-    margin-right: auto;
+    margin-right: 24px;
   }
 
   .lw-app-top-pad.lv-agent-settings-main {

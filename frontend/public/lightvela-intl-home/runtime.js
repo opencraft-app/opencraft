@@ -504,3 +504,324 @@
   }
   document.addEventListener('lightvela-home-dispose', dispose, { once: true });
 })();
+
+/* 国际站能力卡动效：静止停在完成帧 → 进入视口播一次 → 桌面 Hover 重播关键变化。
+   状态机：idle → playing → complete；Hover 时 complete → playing → complete。
+   已经开始播放的卡片重复 Hover 不会重启；移动端同一时间只播一张。 */
+(function () {
+  var root = document.getElementById("lightvela-intl-home");
+  if (!root) return;
+  var section = root.querySelector(".about");
+  var cards = Array.prototype.slice.call(root.querySelectorAll(".about__cards .wcard"));
+  if (!section || !cards.length || !("IntersectionObserver" in window)) return;
+
+  var MOTION_IDLE = "idle";
+  var MOTION_PLAYING = "playing";
+  var MOTION_COMPLETE = "complete";
+  var CLASS_PLAYING = "is-playing";
+  var CLASS_REPLAY = "is-replay";
+  var disposed = false;
+  var timers = [];
+  var setTimer = function (callback, delay) {
+    var timer = window.setTimeout(function () {
+      timers = timers.filter(function (activeTimer) { return activeTimer !== timer; });
+      if (!disposed) callback();
+    }, delay);
+    timers.push(timer);
+    return timer;
+  };
+  var clearTimer = function (timer) {
+    window.clearTimeout(timer);
+    timers = timers.filter(function (activeTimer) { return activeTimer !== timer; });
+  };
+  var clearAllTimers = function () {
+    timers.forEach(function (timer) { window.clearTimeout(timer); });
+    timers = [];
+  };
+  var mq = function (query) {
+    return window.matchMedia ? window.matchMedia(query) : null;
+  };
+  var isReduced = function () {
+    var m = mq("(prefers-reduced-motion: reduce)");
+    return !!(m && m.matches);
+  };
+  var isFinePointer = function () {
+    var m = mq("(hover: hover) and (pointer: fine)");
+    return !!(m && m.matches);
+  };
+  var isPhone = function () {
+    var m = mq("(max-width: 640px)");
+    return !!(m && m.matches);
+  };
+
+  var demoOf = function (card) {
+    return card.querySelector(".wcard__demo");
+  };
+  var attrNumber = function (element, name, fallback) {
+    var value = parseInt(element.getAttribute(name), 10);
+    return isNaN(value) ? fallback : value;
+  };
+
+  var settle = function (card, delay) {
+    setTimer(function () {
+      var demo = demoOf(card);
+      if (demo) demo.classList.remove(CLASS_PLAYING);
+      if (demo) demo.classList.remove(CLASS_REPLAY);
+      var stage = demo && demo.firstElementChild;
+      if (stage) stage.classList.remove(CLASS_PLAYING);
+      if (stage) stage.classList.remove(CLASS_REPLAY);
+      card.setAttribute("data-motion", MOTION_COMPLETE);
+      if (!isPhone() && sectionVisible) scheduleLoop(card);
+    }, delay);
+  };
+
+  /* 定时任务卡：每个 case 到达时间点后，只让最后一条通知逐字打出。
+     动画由 case 自己的 15s 周期驱动，避免卡片重播状态与三组 case 相位互相覆盖。 */
+  var AUT_DELIVERY_DELAY = 0;
+  var AUT_TYPE_SPEED = 32;
+  var AUT_HOLDER = "\u200b"; /* 零宽空格：清空后仍保留行高，气泡不塌陷 */
+  var autTimers = [];
+  var autFirstCycleQueued = false;
+  var autCases = Array.prototype.slice.call(
+    root.querySelectorAll(".wcard__demo--auto .aut__case")
+  );
+  /* The first visible automation case is already on screen when the section
+     enters view; later cases type from their animation cycle callbacks. */
+  var initialAutCase = autCases[0];
+  var autDeliveries = Array.prototype.slice.call(
+    root.querySelectorAll(".wcard__demo--auto .aut__bubble--delivery span")
+  );
+  autDeliveries.forEach(function (span) {
+    span.setAttribute("data-aut-text", span.textContent);
+  });
+  var restoreAutTexts = function () {
+    autDeliveries.forEach(function (span) {
+      var text = span.getAttribute("data-aut-text") || "";
+      if (span.textContent !== text) span.textContent = text;
+      span.classList.remove("is-typing");
+    });
+  };
+  var autAnimated = function () {
+    return autDeliveries.length > 0 && !isReduced();
+  };
+  var clearAutTimers = function () {
+    autTimers.forEach(function (timer) { window.clearTimeout(timer); });
+    autTimers = [];
+  };
+  var typeAutDelivery = function (caseElement) {
+    if (!autAnimated()) return;
+    var span = caseElement.querySelector(".aut__bubble--delivery span");
+    if (!span) return;
+    var run = parseInt(span.getAttribute("data-aut-run") || "0", 10) + 1;
+    span.setAttribute("data-aut-run", String(run));
+    span.textContent = AUT_HOLDER;
+    autTimers.push(window.setTimeout(function () {
+      if (disposed) return;
+      var text = span.getAttribute("data-aut-text") || "";
+      if (!text) return;
+      var index = 1;
+      span.classList.add("is-typing");
+      span.textContent = text.slice(0, index);
+      var step = function () {
+        if (disposed) return;
+        if (parseInt(span.getAttribute("data-aut-run") || "0", 10) !== run) return;
+        index += 1;
+        span.textContent = text.slice(0, index);
+        if (index < text.length) {
+          autTimers.push(window.setTimeout(step, AUT_TYPE_SPEED));
+        } else {
+          span.classList.remove("is-typing");
+        }
+      };
+      step();
+    }, AUT_DELIVERY_DELAY));
+  };
+  var onAutCaseCycle = function (event) {
+    if (event.target !== event.currentTarget || event.animationName !== "aut-case-cycle") return;
+    typeAutDelivery(event.currentTarget);
+  };
+  autCases.forEach(function (caseElement) {
+    caseElement.addEventListener("animationstart", onAutCaseCycle);
+    caseElement.addEventListener("animationiteration", onAutCaseCycle);
+  });
+  /* Keep full copy as the fallback. If animationstart fires before this listener
+     is attached, the next visible case still shows content instead of an empty
+     LightVela bubble. The active case is cleared only when typing is scheduled. */
+  var onResize = function () {
+    if (!autAnimated()) {
+      clearAutTimers();
+      restoreAutTexts();
+    }
+  };
+  window.addEventListener("resize", onResize);
+
+  var sectionVisible = false;
+  var loopTimers = [];
+  var scheduleLoop = function (card) {
+    var index = cards.indexOf(card);
+    clearTimer(loopTimers[index]);
+    loopTimers[index] = setTimer(function () {
+      if (sectionVisible && card.getAttribute("data-motion") === MOTION_COMPLETE) replay(card);
+    }, 1300 + index * 180);
+  };
+
+  /* idle → playing → complete，播完回到完成帧（静止首帧即完成帧） */
+  var play = function (card) {
+    if (card.getAttribute("data-motion") === MOTION_PLAYING) return;
+    var demo = demoOf(card);
+    if (!demo) return;
+    if (isReduced()) {
+      card.setAttribute("data-motion", MOTION_COMPLETE);
+      return;
+    }
+    card.setAttribute("data-motion", MOTION_PLAYING);
+    demo.classList.remove(CLASS_REPLAY);
+    demo.classList.add(CLASS_PLAYING);
+    var stage = demo.firstElementChild;
+    if (stage) stage.classList.remove(CLASS_REPLAY);
+    if (stage) stage.classList.add(CLASS_PLAYING);
+    settle(card, attrNumber(demo, "data-dur", 2600) + 80);
+  };
+
+  /* Hover：complete → playing → complete，只重播关键变化 */
+  var replay = function (card) {
+    if (card.getAttribute("data-motion") !== MOTION_COMPLETE) return;
+    var demo = demoOf(card);
+    if (!demo || isReduced()) return;
+    card.setAttribute("data-motion", MOTION_PLAYING);
+    demo.classList.remove(CLASS_REPLAY);
+    var stage = demo.firstElementChild;
+    if (stage) stage.classList.remove(CLASS_REPLAY);
+    void demo.offsetWidth;
+    demo.classList.add(CLASS_REPLAY);
+    if (stage) stage.classList.add(CLASS_REPLAY);
+    settle(card, attrNumber(demo, "data-replay", 1600) + 80);
+  };
+
+  var revealHead = function () {
+    var head = section.querySelector(".about__head");
+    if (head) head.classList.add("is-in");
+  };
+
+  var sectionObserver;
+  var visibilityObserver;
+  var cardObserver;
+  var hoverListeners = [];
+  var dispose = function () {
+    disposed = true;
+    clearAllTimers();
+    clearAutTimers();
+    restoreAutTexts();
+    autCases.forEach(function (caseElement) {
+      caseElement.removeEventListener("animationstart", onAutCaseCycle);
+      caseElement.removeEventListener("animationiteration", onAutCaseCycle);
+    });
+    window.removeEventListener("resize", onResize);
+    if (sectionObserver) sectionObserver.disconnect();
+    if (visibilityObserver) visibilityObserver.disconnect();
+    if (cardObserver) cardObserver.disconnect();
+    hoverListeners.forEach(function (listener) {
+      listener.card.removeEventListener("mouseenter", listener.enter);
+      listener.card.removeEventListener("focusin", listener.focus);
+    });
+    hoverListeners = [];
+    document.removeEventListener("lightvela-home-dispose", dispose);
+  };
+  document.addEventListener("lightvela-home-dispose", dispose, { once: true });
+
+  /* JS 接管后才允许标题 / 卡片有初始位移，避免脚本失效时内容不可见 */
+  section.classList.add("is-motion");
+  cards.forEach(function (card) {
+    card.setAttribute("data-motion", MOTION_IDLE);
+  });
+
+  if (isReduced()) {
+    revealHead();
+    cards.forEach(function (card) {
+      card.classList.add("is-in");
+      card.setAttribute("data-motion", MOTION_COMPLETE);
+    });
+    return;
+  }
+
+  /* 桌面：整块进入视口 40% 后，标题淡入、卡片间隔 70ms 依次播一次 */
+  sectionObserver = new IntersectionObserver(
+    function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.4) return;
+        sectionObserver.disconnect();
+        revealHead();
+        cards.forEach(function (card, index) {
+          setTimer(function () {
+            card.classList.add("is-in");
+            if (!isPhone()) play(card);
+          }, index * 70);
+        });
+      });
+    },
+    { threshold: [0.4] },
+  );
+  sectionObserver.observe(section);
+
+  visibilityObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      sectionVisible = entry.isIntersecting && entry.intersectionRatio >= 0.08;
+      section.classList.toggle("is-visible", sectionVisible);
+      if (sectionVisible && !autFirstCycleQueued && autAnimated() && initialAutCase) {
+        autFirstCycleQueued = true;
+        typeAutDelivery(initialAutCase);
+      }
+      if (!sectionVisible || isPhone()) return;
+      cards.forEach(function (card) {
+        if (card.getAttribute("data-motion") === MOTION_COMPLETE) scheduleLoop(card);
+      });
+    });
+  }, { threshold: [0, 0.08] });
+  visibilityObserver.observe(section);
+
+  /* 移动端：单卡进入视口 60% 时播一次，同一时间只播一张 */
+  if (isPhone()) {
+    var queue = [];
+    var busy = false;
+    var drain = function () {
+      if (busy || !queue.length) return;
+      var card = queue.shift();
+      busy = true;
+      play(card);
+      setTimer(function () {
+        busy = false;
+        drain();
+      }, attrNumber(demoOf(card) || card, "data-dur", 2600) + 140);
+    };
+    cardObserver = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.intersectionRatio < 0.6) return;
+          cardObserver.unobserve(entry.target);
+          entry.target.classList.add("is-in");
+          queue.push(entry.target);
+          drain();
+        });
+      },
+      { threshold: [0.6] },
+    );
+    cards.forEach(function (card) {
+      cardObserver.observe(card);
+    });
+  }
+
+  /* 桌面 Hover / 键盘聚焦：重播一次；移出不打断，直接停在完成帧 */
+  if (isFinePointer()) {
+    cards.forEach(function (card) {
+      var enter = function () {
+        replay(card);
+      };
+      var focus = function () {
+        replay(card);
+      };
+      card.addEventListener("mouseenter", enter);
+      card.addEventListener("focusin", focus);
+      hoverListeners.push({ card: card, enter: enter, focus: focus });
+    });
+  }
+})();
