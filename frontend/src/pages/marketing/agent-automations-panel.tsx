@@ -4667,12 +4667,6 @@ export function AutomationFormModal({
           />
           </div>
 
-          <AutomationSkillPicker
-            value={selectedSkills}
-            loadState={skillLoadState}
-            onChange={setSelectedSkills}
-            onRetry={() => void onRefreshSkills()}
-          />
           </>
         ) : (
           <div className="mt-3">
@@ -4750,81 +4744,6 @@ export function AutomationFormModal({
                 <span>{t("我已了解风险：脚本会直接在云端 Agent 环境中运行，并非独立安全沙箱；请仅运行你信任的脚本。")}</span>
               </label>
             ) : null}
-          </div>
-        )}
-
-        {/* 生效时间段 */}
-        {shouldShowEffectiveWindow && (
-          <div className="mt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={effectiveWindowEnabled}
-                disabled={!canEditEffectiveWindow}
-                onClick={() => {
-                  if (!canEditEffectiveWindow) return;
-                  setEffectiveWindowEnabled((enabled) => !enabled);
-                }}
-                style={{ marginLeft: 10 }}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${effectiveWindowEnabled ? "bg-black" : "bg-black/15"
-                  } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
-                aria-label={t("生效时间段")}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                />
-              </button>
-              {!effectiveWindowEnabled && (
-                <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
-              )}
-              {effectiveWindowEnabled && (
-                <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
-              )}
-            </div>
-            {effectiveWindowEnabled && (
-              <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
-                <input
-                  type="datetime-local"
-                  value={effectiveStartAt}
-                  onChange={(e) => setEffectiveStartAt(e.target.value)}
-                  disabled={!canEditEffectiveWindow}
-                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-                  aria-label={t("生效开始时间")}
-                />
-                <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
-                <input
-                  type="datetime-local"
-                  value={effectiveEndAt}
-                  onChange={(e) => setEffectiveEndAt(e.target.value)}
-                  disabled={!canEditEffectiveWindow}
-                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-                  aria-label={t("生效结束时间")}
-                />
-                <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEffectiveStartAt("");
-                      setEffectiveEndAt("");
-                    }}
-                    disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
-                    className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
-                    aria-label={t("清空")}
-                  >
-                    <Eraser className="h-4 w-4" />
-                  </button>
-                  <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                    {t("清空")}
-                    <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-                  </span>
-                </span>
-              </div>
-            )}
           </div>
         )}
 
@@ -5047,6 +4966,90 @@ export function AutomationFormModal({
             </div>
           )}
         </div>
+
+        {executionMode === "agent" && (
+          <AutomationSkillPicker
+            value={selectedSkills}
+            loadState={skillLoadState}
+            onChange={setSelectedSkills}
+            onRetry={() => void onRefreshSkills()}
+          />
+        )}
+
+        {/* 生效时间段 */}
+        {shouldShowEffectiveWindow && (
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={effectiveWindowEnabled}
+                disabled={!canEditEffectiveWindow}
+                onClick={() => {
+                  if (!canEditEffectiveWindow) return;
+                  setEffectiveWindowEnabled((enabled) => !enabled);
+                }}
+                style={{ marginLeft: 10 }}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${effectiveWindowEnabled ? "bg-black" : "bg-black/15"
+                  } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
+                aria-label={t("生效时间段")}
+              >
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                />
+              </button>
+              {!effectiveWindowEnabled && (
+                <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
+              )}
+              {effectiveWindowEnabled && (
+                <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
+              )}
+            </div>
+            {effectiveWindowEnabled && (
+              <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
+                <input
+                  type="datetime-local"
+                  value={effectiveStartAt}
+                  onChange={(e) => setEffectiveStartAt(e.target.value)}
+                  disabled={!canEditEffectiveWindow}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  aria-label={t("生效开始时间")}
+                />
+                <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
+                <input
+                  type="datetime-local"
+                  value={effectiveEndAt}
+                  onChange={(e) => setEffectiveEndAt(e.target.value)}
+                  disabled={!canEditEffectiveWindow}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  aria-label={t("生效结束时间")}
+                />
+                <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEffectiveStartAt("");
+                      setEffectiveEndAt("");
+                    }}
+                    disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
+                    className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label={t("清空")}
+                  >
+                    <Eraser className="h-4 w-4" />
+                  </button>
+                  <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                    {t("清空")}
+                    <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+                  </span>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {executionMode === "agent" && (
           <details

@@ -1035,6 +1035,14 @@ describe("cron context panel integration", () => {
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
     expect(taskDescription).not.toHaveClass("resize-none");
+    const notificationLabel = within(dialog).getByText(localizedText("通知方式", "Notification"));
+    const skillLabel = within(dialog).getByText(localizedText("调用技能", "Use Skill"));
+    expect(
+      taskDescription.compareDocumentPosition(notificationLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      notificationLabel.compareDocumentPosition(skillLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") })).toHaveClass("rounded-lg", "text-sm");
     expect(within(dialog).getByRole("button", { name: localizedText("取消", "Cancel") })).toHaveClass("rounded-lg", "text-sm");
     expect(within(dialog).getByRole("button", {
