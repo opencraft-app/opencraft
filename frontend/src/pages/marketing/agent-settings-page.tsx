@@ -4417,6 +4417,7 @@ export const AgentSettingsPage = ({
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
         isEmptyAgentPage && "lv-agent-empty-page",
+        isModifying && "lv-agent-upgrading-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -5804,7 +5805,8 @@ export const AgentSettingsPage = ({
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
+                  {canCreateInitialAgent && !directCreating && <Plus className="h-4 w-4" aria-hidden="true" />}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建") : t("暂不可创建")}
                 </button>
               </div>
             )
