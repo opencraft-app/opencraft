@@ -177,7 +177,8 @@ describe("UserAvatarMenu", () => {
       "left-0",
       "origin-bottom-left",
     );
-    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
     fireEvent.mouseLeave(trigger.parentElement!);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -207,7 +208,8 @@ describe("UserAvatarMenu", () => {
     fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
     unmount();
     render(<UserAvatarMenu />);
@@ -454,7 +456,7 @@ describe("UserAvatarMenu", () => {
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     const companionLink = screen.getByRole("link", { name: "我的智能体伙伴" });
-    const accountLink = screen.getByRole("link", { name: "账号管理" });
+    const accountLink = screen.getByRole("link", { name: "账号" });
     const workbenchLink = screen.getByRole("link", { name: "工作台" });
 
     expect(companionLink).toHaveAttribute("href", "/agents");
@@ -468,12 +470,12 @@ describe("UserAvatarMenu", () => {
     const keys = readGeneratedDictionary("zh-to-key");
     const english = readGeneratedDictionary("en-US");
     const companionKey = keys["我的智能体伙伴"];
-    const accountKey = keys["账号管理"];
+    const accountKey = keys["账号"];
 
     expect(companionKey).toBeDefined();
     expect(accountKey).toBeDefined();
     expect(english[companionKey!]).toBe("My AI Companion");
-    expect(english[accountKey!]).toBe("Account Settings");
+    expect(english[accountKey!]).toBe("Account");
   });
 
   it("uses a natural English label for the language entry", () => {

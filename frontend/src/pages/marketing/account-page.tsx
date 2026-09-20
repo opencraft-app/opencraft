@@ -1245,7 +1245,8 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const AccountPage = () => {
+export const AccountPage = ({ view = "account" }: { view?: "account" | "billing" }) => {
+  const isBillingView = view === "billing";
   const t = useT();
   const navigate = useAppNavigate();
   const [searchParams, setSearchParams] = useAppSearchParams();
@@ -1671,11 +1672,11 @@ export const AccountPage = () => {
             transition={{ duration: 0.6 }}
             className="mb-6 md:mb-8"
           >
-            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{t("账号管理")}</h2>
+            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{isBillingView ? t("套餐与费用") : t("账号")}</h2>
           </motion.div>
 
           {/* 实名提醒 tips：从首页「立即创建」跳转、且尚未完成实名认证时展示（仅国内站） */}
-          {realnameRequiredTip && !verified && showRealnameSection && (
+          {!isBillingView && realnameRequiredTip && !verified && showRealnameSection && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1702,7 +1703,7 @@ export const AccountPage = () => {
             className="space-y-6"
           >
             {/* ── Section 1: Profile ── */}
-            <motion.div
+            {!isBillingView && <motion.div
               variants={fadeIn}
               className="overflow-hidden bg-white"
               style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
@@ -2031,14 +2032,14 @@ export const AccountPage = () => {
                   )}
                 </div>
               )}
-            </motion.div>
+            </motion.div>}
 
             {/* ── Section 2: Subscription ── */}
-            <SubscriptionSection subscription={subscription} pass={activePass} />
+            {isBillingView && <SubscriptionSection subscription={subscription} pass={activePass} />}
 
-            {referralEnabled && referralRevealed && <ReferralSection />}
+            {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
 
-            {isGlobal && <SavedCardsSection />}
+            {isBillingView && isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>
@@ -2061,7 +2062,7 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
+        {!isBillingView && showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}
@@ -2069,13 +2070,13 @@ export const AccountPage = () => {
             onSuccess={handlePhoneChangeSuccess}
           />
         )}
-        {showEmailBindSection && !user?.emailVerified && showBindEmailModal && (
+        {!isBillingView && showEmailBindSection && !user?.emailVerified && showBindEmailModal && (
           <BindEmailModal
             key="bind-email"
             onClose={() => setShowBindEmailModal(false)}
           />
         )}
-        {showDeleteModal && (
+        {!isBillingView && showDeleteModal && (
           <DeleteAccountModal
             key="delete"
             onCancel={() => setShowDeleteModal(false)}
@@ -2095,6 +2096,8 @@ export const AccountPage = () => {
     </ProductPageShell>
   );
 };
+
+export const PlansBillingPage = () => <AccountPage view="billing" />;
 
 // InfoRow 组件保留定义以便后续功能上线时恢复使用。
 // 通过 void 引用避免 TS 未使用告警（code: 6133）。

@@ -97,8 +97,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 公共账号菜单边界
 
-- 登录态头像菜单的主要入口固定为“我的智能体伙伴”与“账号管理”，并在底部保留退出登录；个人工作台仍从 Agent 控制台左侧导航进入，不在头像菜单重复展示。
-- 国际站英文使用 `My AI Companion` 与 `Account Settings`，避免生硬的复数伙伴表达和后台管理员语气。
+- 登录态头像菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；公共页 Header 保留“我的智能体伙伴”入口。
+- 国际站英文分别使用 `Account`、`Plans & billing` 与 `My AI Companion`。两个账号私域页面均要求登录、保持 noindex/nofollow；账号页承载资料与身份管理，套餐与费用页承载订阅和国际站支付方式，购买入口仍为 `/subscribe`。
 
 ## 邀请返利环境边界
 

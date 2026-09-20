@@ -131,10 +131,10 @@ vi.mock("@/contexts/session-context", () => ({
   }),
 }));
 
-const renderAccountPage = () => {
+const renderAccountPage = (view: "account" | "billing" = "account") => {
   return render(
     <MemoryRouter>
-      <AccountPage />
+      <AccountPage view={view} />
     </MemoryRouter>,
   );
 };
@@ -360,7 +360,7 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
@@ -368,6 +368,20 @@ describe("AccountPage nickname audit state", () => {
 
     expect(subscriptionHeader).not.toBeNull();
     expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  });
+
+  it.each(["account", "billing"] as const)("separates profile and subscription content on the %s page", (view) => {
+    activePass = buildActivePass();
+    renderAccountPage(view);
+
+    expect(screen.getByRole("heading", { name: view === "account" ? "账号" : "套餐与费用" })).toBeInTheDocument();
+    if (view === "account") {
+      expect(screen.getByRole("button", { name: "修改昵称" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "订阅套餐" })).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByRole("heading", { name: "订阅套餐" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "修改昵称" })).not.toBeInTheDocument();
+    }
   });
 
   it.each([
@@ -384,7 +398,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 100 - usedPercent,
     };
 
-    const { container } = renderAccountPage();
+    const { container } = renderAccountPage("billing");
     const percentage = screen.getByText(`${usedPercent}%`);
     const progressFill = container.querySelector<HTMLElement>(`[style*="width: ${usedPercent}%"]`);
 
@@ -400,7 +414,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 5,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.queryByText(/模型积分即将用尽/)).not.toBeInTheDocument();
     expect(screen.queryByText(/模型积分已用尽/)).not.toBeInTheDocument();
@@ -413,7 +427,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 4,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     const modelLink = screen.getByRole("link", { name: "配置自有模型" });
     expect(modelLink.closest("p")).toHaveTextContent(
@@ -431,7 +445,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 0,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     const modelLink = screen.getByRole("link", { name: "立即配置模型" });
     expect(modelLink.closest("p")).toHaveTextContent(
@@ -449,7 +463,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 0,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.queryByText(/模型积分即将用尽/)).not.toBeInTheDocument();
     expect(screen.queryByText(/模型积分已用尽/)).not.toBeInTheDocument();
@@ -461,7 +475,7 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
@@ -471,7 +485,7 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
 
@@ -493,7 +507,7 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
 
