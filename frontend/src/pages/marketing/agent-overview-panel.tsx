@@ -554,6 +554,10 @@ type RecommendedAutomation = {
  * TODO(demo): 接真实推荐自动化接口后替换。
  * 三个场景与「自动任务」tab 的任务模板保持同名同图标同配色：
  * stock-info-digest / calorie-fitness-checkin / news-digest。
+ *
+ * name / summary 是中文常量，渲染处走 t(...) 翻译。因为传给 t 的是**属性值**
+ * 而非字面量，i18n-extract 的 T_CALL_RE 扫不到，词典里不会有对应 key，
+ * 国际站会直出中文。__i18nExtractOnlyAutomations 补上字面量形式供扫描器收录。
  */
 const DEMO_AUTOMATIONS: RecommendedAutomation[] = [
   {
@@ -578,6 +582,21 @@ const DEMO_AUTOMATIONS: RecommendedAutomation[] = [
     icon: <Newspaper className="h-[18px] w-[18px]" aria-hidden="true" />,
   },
 ];
+
+/*
+ * 让 i18n-extract 收录上面的 name / summary（与 agent-demo-templates.ts 的
+ * __i18nExtractOnly 同一手法）。该函数**永不调用**，导出仅为避开 TS6133。
+ */
+export function __i18nExtractOnlyAutomations(t: (zh: string) => string) {
+  return [
+    t("股票信息速递"),
+    t("每天整理你关注的 A股、港股、美股公开信息；只做信息速递，不给买卖建议"),
+    t("卡路里与健身记录"),
+    t("每天主动询问饮食、运动、体重和身体感受，做轻量估算和复盘"),
+    t("每日 AI 资讯摘要"),
+    t("每天整理 AI 领域的重要动态和关键进展"),
+  ];
+}
 
 const RecommendedAutomationsSection = () => {
   const t = useT();
@@ -610,7 +629,7 @@ const RecommendedAutomationsSection = () => {
           <AppLink
             key={automation.id}
             to={`${AGENT_SECTION_PATH_BY_ID.automations}?template=${encodeURIComponent(automation.id)}`}
-            aria-label={t("启用{{name}}", { name: automation.name })}
+            aria-label={t("启用{{name}}", { name: t(automation.name) })}
             className="flex min-h-[64px] items-start gap-2.5 rounded-sm border-0 bg-white p-3 text-left transition hover:bg-black/[0.03]"
           >
             <span className={cn("mt-0.5 shrink-0", automation.iconClass)}>
@@ -618,10 +637,10 @@ const RecommendedAutomationsSection = () => {
             </span>
             <span className="flex min-w-0 flex-1 flex-col self-stretch">
               <span className="min-w-0 truncate text-sm font-medium text-black/82">
-                {automation.name}
+                {t(automation.name)}
               </span>
               <span className="mt-0.5 block line-clamp-1 text-pretty text-xs leading-4 text-black/45">
-                {automation.summary}
+                {t(automation.summary)}
               </span>
             </span>
           </AppLink>
