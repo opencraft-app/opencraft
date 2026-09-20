@@ -210,6 +210,15 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(refreshPasses).not.toHaveBeenCalled();
   });
 
+  it("labels the first Bot creation action as 新建 with a leading plus icon", () => {
+    bots = [];
+    renderAgentSettingsPage();
+
+    const createButton = screen.getByRole("button", { name: "新建" });
+    expect(createButton.querySelector("svg.lucide-plus")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+  });
+
   it("keeps the existing Agent visible and offers retry when the Pass query stalls", async () => {
     activePass = null;
     passesLoading = true;
