@@ -152,6 +152,24 @@ describe("AutomationSkillPicker", () => {
     expect(screen.getByText("Legal Review")).toBeInTheDocument();
   });
 
+  it("portals the Skill list outside the form scroll area", async () => {
+    const user = userEvent.setup();
+    renderPicker();
+    const trigger = screen.getByRole("button", { name: "调用技能" });
+    const field = trigger.parentElement?.parentElement;
+
+    await user.click(trigger);
+
+    const popup = screen.getByTestId("automation-skill-picker-popup");
+    expect(document.body).toContainElement(popup);
+    expect(field).not.toContainElement(popup);
+    expect(popup).toHaveClass(
+      "z-[210]",
+      "max-h-[var(--radix-popover-content-available-height)]",
+      "w-[var(--radix-popover-trigger-width)]",
+    );
+  });
+
   it("defaults to no Skill and adds a real installed slug after search", async () => {
     const user = userEvent.setup();
     const { onChange } = renderPicker();

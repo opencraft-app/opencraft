@@ -1,5 +1,5 @@
 ## stage
-已提交 MR !4305；等待评审与 CI。
+前序 MR !4305 已合并；补充遮挡修复已提交 MR !4309，等待评审与 CI。
 
 ## verified
 - 新建、编辑和模板表单共用 `AutomationFormModal`。
@@ -22,8 +22,10 @@
 - 通知任务现在必须选择至少一种通知方式；新建和编辑共用的提交校验、必填标签与禁用按钮 Tooltip 已同步更新，智能任务和脚本任务仍保留通知方式可选规则。
 - Chrome 5174 国内站已确认通知任务名称和内容完整、但未选择通知方式时“新建”置灰并显示“未选择通知方式”；相关测试 225/225、`pnpm check`、`pnpm build:cn` 均通过。
 - 通知任务说明已精简为按原文发送、不经过模型改写且不产生模型调用；六种目标语言资源已同步，表单测试 199/199、`pnpm check`、`pnpm build:cn` 通过，并在 Chrome 5174 国内站确认新文案正常展示。
-- 前序弹窗调整已推送到 `codex/automation-modal-responsive-height`，后续改动继续沿用该分支。
-- MR !4305 已创建，目标分支为 `master`；创建时状态为 opened、can_be_merged。
+- 调用技能列表已改为 Portal 浮层并优先向上展开，避免被表单滚动区和固定底部操作栏裁切；相关测试 226/226、`pnpm check`、`pnpm build:cn` 通过，Chrome 5174 国内站已确认列表完整显示且不遮挡底部操作按钮。
+- 上游任务列表同步改为 Portal 浮层并优先向上展开，避免高级设置区域和固定底部操作栏裁切；相关测试 4 个文件 237/237、`pnpm check`、`pnpm build:cn` 通过，Chrome 5174 国内站已确认列表完整显示且底部操作按钮保持可见。
+- 补充遮挡修复已推送到 `codex/automation-skill-picker-overlay`。
+- MR !4309 目标分支为 `master`；最新查询状态为 opened、can_be_merged，CI pending/blocking。
 
 ## unverified
 - 当前账号没有现成自动任务，编辑态通过共享组件代码与 `mode="edit"` 回归测试验证，未进行真实编辑弹窗截图。
@@ -33,7 +35,7 @@
 
 ## restore
 - 工作目录 `/Users/pablozhong/codex/lightvela-automation-modal-responsive`。
-- 分支 `codex/automation-modal-responsive-height`，基于 `origin/master` 的 `3bc843130`。
+- 分支 `codex/automation-skill-picker-overlay`。
 
 ## next_action
-- 等待 MR !4305 的 CI 与评审；本任务不包含合并或发布。
+- 等待 MR !4309 的 CI 与评审；本任务不包含合并或发布。
