@@ -3008,7 +3008,7 @@ describe("once execution time picker", () => {
     expect(screen.getByRole("group", { name: runTime })).toHaveClass("h-9");
   });
 
-  it("matches the one-time control with typed recurring time segments and a clock picker", () => {
+  it("keeps recurring time inputs compact without clock picker icons", () => {
     renderAutomationForm();
 
     const runTime = localizedText("执行时间", "Run time");
@@ -3020,15 +3020,13 @@ describe("once execution time picker", () => {
     fireEvent.change(minuteInput, { target: { value: "45" } });
     expect(hourInput).toHaveValue("14");
     expect(minuteInput).toHaveValue("45");
+    expect(group).toHaveClass("w-[80px]");
+    expect(within(group).queryByRole("button")).toBeNull();
 
-    fireEvent.click(within(group).getByRole("button", { name: `${localizedText("选择", "Select")} ${runTime} 1` }));
-    const picker = screen.getByRole("dialog", { name: `${runTime} 1` });
-    expect(picker).toHaveClass("w-[144px]");
-    expect(within(picker).queryByRole("button", { name: localizedText("取消", "Cancel") })).toBeNull();
-    const hourListbox = within(picker).getByRole("listbox", { name: localizedText("小时", "hours") });
-    const minuteListbox = within(picker).getByRole("listbox", { name: localizedText("分钟", "minutes") });
-    expect(within(hourListbox).getByRole("option", { selected: true })).toHaveTextContent("14");
-    expect(within(minuteListbox).getByRole("option", { selected: true })).toHaveTextContent("45");
+    fireEvent.click(screen.getByRole("button", { name: localizedText("添加时间", "Add time") }));
+    expect(screen.getByRole("group", { name: `${runTime} 1` })).toHaveClass("w-[108px]");
+    expect(screen.getByRole("group", { name: `${runTime} 2` })).toHaveClass("w-[108px]");
+    expect(screen.queryByRole("button", { name: `${localizedText("选择", "Select")} ${runTime} 1` })).toBeNull();
   });
 
   it("edits and commits each date-time segment independently on group blur", async () => {

@@ -10,6 +10,7 @@
 - 聚焦测试 197/197、`pnpm check`、`pnpm build:cn` 通过，新增 TypeScript 诊断为 0，国内站构建生成 103 个静态页面。
 - Chrome 5174 国内站在 933px 高视口中，收起状态使用 755px；展开后仍使用 840px，并保留视口上限、右侧滚动和固定 footer。
 - 通知方式与高级设置之间的顶部间距已由 12px 缩小到 4px。
+- 周期任务时间输入已移除时钟图标；无删除按钮时宽 80px，有删除按钮时宽 108px。
 - 功能提交 `de1c3841d` 已推送到 `codex/automation-modal-responsive-height`，远端 SHA 与本地一致。
 - MR !4305 已创建，目标分支为 `master`；创建时状态为 opened、can_be_merged。
 

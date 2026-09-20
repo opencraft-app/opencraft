@@ -5996,16 +5996,10 @@ function RecurringTimePicker({
   const t = useT();
   const inputLabel = `${t("执行时间")} ${index + 1}`;
   const [inputSegments, setInputSegments] = useState(() => getRecurringTimeInputSegments(value, fallback));
-  const [open, setOpen] = useState(false);
-  const initialTime = getRecurringTimeInputSegments(value, fallback);
-  const [draftHour, setDraftHour] = useState(initialTime.hour);
-  const [draftMinute, setDraftMinute] = useState(initialTime.minute);
 
   useEffect(() => {
     const next = getRecurringTimeInputSegments(value, fallback);
     setInputSegments(next);
-    setDraftHour(next.hour);
-    setDraftMinute(next.minute);
   }, [fallback, value]);
 
   const commitInputSegments = useCallback(() => {
@@ -6019,102 +6013,54 @@ function RecurringTimePicker({
     return nextValue;
   }, [fallback, inputSegments, onChange, value]);
 
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (nextOpen) {
-      const nextTime = commitInputSegments();
-      const next = getRecurringTimeInputSegments(nextTime, fallback);
-      setDraftHour(next.hour);
-      setDraftMinute(next.minute);
-    }
-    setOpen(nextOpen);
-  }, [commitInputSegments, fallback]);
-
   const updateInputSegment = useCallback((segment: keyof RecurringTimeInputSegments, nextValue: string) => {
     setInputSegments((current) => ({ ...current, [segment]: nextValue }));
   }, []);
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverAnchor asChild>
-        <div
-          role="group"
-          aria-label={inputLabel}
-          onBlur={(event) => {
-            const inputGroup = event.currentTarget;
-            window.setTimeout(() => {
-              if (!inputGroup.contains(document.activeElement)) commitInputSegments();
-            }, 0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.target.blur();
-          }}
-          tabIndex={-1}
-          className={`flex h-9 shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20 ${removable ? "w-[140px]" : "w-[116px]"}`}
+    <div
+      role="group"
+      aria-label={inputLabel}
+      onBlur={(event) => {
+        const inputGroup = event.currentTarget;
+        window.setTimeout(() => {
+          if (!inputGroup.contains(document.activeElement)) commitInputSegments();
+        }, 0);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.target.blur();
+      }}
+      tabIndex={-1}
+      className={`flex h-9 shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20 ${removable ? "w-[108px]" : "w-[80px]"}`}
+    >
+      <div className="flex min-w-0 flex-1 items-center px-2">
+        <TimePickerInputSegment
+          label={`${inputLabel} HH`}
+          value={inputSegments.hour}
+          maxLength={2}
+          className="w-7"
+          onChange={(nextValue) => updateInputSegment("hour", nextValue)}
+        />
+        <span aria-hidden="true" className="text-sm text-black/55">:</span>
+        <TimePickerInputSegment
+          label={`${inputLabel} mm`}
+          value={inputSegments.minute}
+          maxLength={2}
+          className="w-7"
+          onChange={(nextValue) => updateInputSegment("minute", nextValue)}
+        />
+      </div>
+      {removable && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          aria-label={t("移除时间点")}
         >
-          <div className="flex min-w-0 flex-1 items-center px-2">
-            <TimePickerInputSegment
-              label={`${inputLabel} HH`}
-              value={inputSegments.hour}
-              maxLength={2}
-              className="w-7"
-              onChange={(nextValue) => updateInputSegment("hour", nextValue)}
-            />
-            <span aria-hidden="true" className="text-sm text-black/55">:</span>
-            <TimePickerInputSegment
-              label={`${inputLabel} mm`}
-              value={inputSegments.minute}
-              maxLength={2}
-              className="w-7"
-              onChange={(nextValue) => updateInputSegment("minute", nextValue)}
-            />
-          </div>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${t("选择")} ${inputLabel}`}
-              title={`${t("选择")} ${inputLabel}`}
-              className="mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-black/75 transition hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-            >
-              <Clock className="size-4" aria-hidden="true" />
-            </button>
-          </PopoverTrigger>
-          {removable && (
-            <button
-              type="button"
-              onClick={onRemove}
-              className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-              aria-label={t("移除时间点")}
-            >
-              <X className="size-3" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        align="start"
-        role="dialog"
-        aria-label={inputLabel}
-        className="z-[210] w-[144px] max-w-[calc(100vw-32px)] p-0"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        <div className="grid grid-cols-2 gap-1.5 p-2">
-          <OncePickerTimeColumn label={t("小时")} options={CLOCK_HOUR_OPTIONS} value={draftHour} onChange={setDraftHour} />
-          <OncePickerTimeColumn label={t("分钟")} options={CLOCK_MINUTE_OPTIONS} value={draftMinute} onChange={setDraftMinute} />
-        </div>
-        <div className="flex items-center justify-end border-t border-black/[0.06] p-2">
-          <button
-            type="button"
-            onClick={() => {
-              onChange(`${draftHour}:${draftMinute}`);
-              setOpen(false);
-            }}
-            className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
-          >
-            {t("确认")}
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
+          <X className="size-3" aria-hidden="true" />
+        </button>
+      )}
+    </div>
   );
 }
 
