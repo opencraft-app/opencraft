@@ -186,7 +186,7 @@ export function AgentDiagnosticsPanel({
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
   const [exportingLogs, setExportingLogs] = useState(false);
   const [sessionRepairConfirmOpen, setSessionRepairConfirmOpen] = useState(false);
-  const [sessionRepairState, setSessionRepairState] = useState<DiagnosticCardState>(DEFAULT_CARD_STATE);
+  const [sessionRepairLoading, setSessionRepairLoading] = useState(false);
   const sessionRepairTargetRef = useRef(botId + ":" + profileId);
   const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, profileId), [logsSince, profileId]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
@@ -196,7 +196,7 @@ export function AgentDiagnosticsPanel({
   useEffect(() => {
     sessionRepairTargetRef.current = botId + ":" + profileId;
     setSessionRepairConfirmOpen(false);
-    setSessionRepairState(DEFAULT_CARD_STATE);
+    setSessionRepairLoading(false);
   }, [botId, profileId]);
 
   const runCommand = useCallback(
@@ -267,21 +267,15 @@ export function AgentDiagnosticsPanel({
   }, []);
 
   const runSessionRepair = useCallback(async () => {
-    if (sessionRepairState.status === "loading") return;
+    if (sessionRepairLoading) return;
     const repairTarget = botId + ":" + profileId;
     setSessionRepairConfirmOpen(false);
-    setSessionRepairState((current) => ({ ...current, status: "loading" }));
+    setSessionRepairLoading(true);
 
     try {
       const result = await execDebugCommand(botId, buildSessionRepairCommand(profileId));
       if (sessionRepairTargetRef.current !== repairTarget) return;
       const nextStatus = getDiagnosticRunStatus(result);
-      const output = normalizeDiagnosticOutput(result.output, result.status);
-      setSessionRepairState({
-        status: nextStatus,
-        output: truncateDiagnosticOutput(output, 8000),
-        rawOutput: output,
-      });
       if (nextStatus === "success") {
         toast.success(t("会话修复成功"));
       } else {
@@ -289,11 +283,13 @@ export function AgentDiagnosticsPanel({
       }
     } catch (error) {
       if (sessionRepairTargetRef.current !== repairTarget) return;
-      const output = error instanceof Error ? error.message : t("命令执行失败");
-      setSessionRepairState({ status: "error", output, rawOutput: output });
       toast.error(t("会话修复失败"));
+    } finally {
+      if (sessionRepairTargetRef.current === repairTarget) {
+        setSessionRepairLoading(false);
+      }
     }
-  }, [botId, execDebugCommand, profileId, sessionRepairState.status, t]);
+  }, [botId, execDebugCommand, profileId, sessionRepairLoading, t]);
 
   return (
     <div className="space-y-4">
@@ -325,7 +321,7 @@ export function AgentDiagnosticsPanel({
             consoleRef={resetAgentConsoleRef}
           />}
           <SessionRepairCard
-            state={sessionRepairState}
+            loading={sessionRepairLoading}
             onRequestRepair={() => setSessionRepairConfirmOpen(true)}
           />
         </div>
@@ -380,14 +376,13 @@ export function AgentDiagnosticsPanel({
 }
 
 function SessionRepairCard({
-  state,
+  loading,
   onRequestRepair,
 }: {
-  state: DiagnosticCardState;
+  loading: boolean;
   onRequestRepair: () => void;
 }) {
   const t = useT();
-  const isLoading = state.status === "loading";
 
   return (
     <article className="rounded-lg border border-black/[0.08] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
@@ -408,31 +403,17 @@ function SessionRepairCard({
         <button
           type="button"
           onClick={onRequestRepair}
-          disabled={isLoading}
-          aria-busy={isLoading}
+          disabled={loading}
+          aria-busy={loading}
           className={cn(
             "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3 text-sm font-semibold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2",
-            isLoading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
+            loading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
           )}
         >
-          {isLoading ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
-          {isLoading ? t("修复中...") : t("修复")}
+          {loading ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+          {loading ? t("修复中...") : t("执行")}
         </button>
       </div>
-      {state.status !== "idle" && (
-        <div
-          role={state.status === "error" ? "alert" : "status"}
-          aria-live="polite"
-          className={cn(
-            "mt-3 rounded-md border px-3 py-2.5 text-xs leading-5",
-            state.status === "success" && "border-emerald-200 bg-emerald-50 text-emerald-800",
-            state.status === "error" && "border-red-200 bg-red-50 text-red-700",
-            state.status === "loading" && "border-black/[0.08] bg-black/[0.025] text-black/50",
-          )}
-        >
-          {isLoading ? t("正在检查并修复会话...") : state.output}
-        </div>
-      )}
     </article>
   );
 }
@@ -472,7 +453,7 @@ function CommonSessionErrorPopover() {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="rounded px-0.5 font-medium text-black/60 underline decoration-black/25 underline-offset-2 transition-colors hover:text-black/85 hover:decoration-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+          className="px-0.5 font-medium text-black/60 underline decoration-black/25 underline-offset-2 transition-colors hover:text-black/85 hover:decoration-black/50 focus-visible:outline-none focus-visible:text-black/85 focus-visible:decoration-2 focus-visible:decoration-black/60"
           aria-label={t("查看常见报错")}
           aria-expanded={open}
           aria-controls={popoverId}

@@ -17,12 +17,12 @@ import {
   type ExecDebugCommandStream,
 } from "../agent-diagnostics-panel";
 
-vi.mock("@/lib/toast", () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
 }));
+
+vi.mock("@/lib/toast", () => ({ toast: toastMocks }));
 
 afterEach(() => {
   cleanup();
@@ -55,6 +55,12 @@ function renderDiagnosticsPanel(execDebugCommand = vi.fn().mockResolvedValue({
 })) {
   render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
   return execDebugCommand;
+}
+
+function getSessionRepairButton() {
+  const card = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+  if (!card) throw new Error("session repair card not found");
+  return within(card).getByRole("button", { name: "执行" });
 }
 
 describe("agent diagnostics commands", () => {
@@ -168,7 +174,7 @@ describe("session repair", () => {
     const user = userEvent.setup();
     const execDebugCommand = renderDiagnosticsPanel();
 
-    await user.click(screen.getByRole("button", { name: "修复" }));
+    await user.click(getSessionRepairButton());
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Hermes 将检查 state.db，并在发现异常时自动创建备份后执行修复。")).toBeInTheDocument();
     expect(execDebugCommand).not.toHaveBeenCalled();
@@ -178,7 +184,9 @@ describe("session repair", () => {
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "hermes -p 'support' sessions repair");
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Repair completed");
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功"));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Repair completed")).not.toBeInTheDocument();
   });
 
   it("disables duplicate repair while the command is running", async () => {
@@ -188,7 +196,7 @@ describe("session repair", () => {
     }));
     renderDiagnosticsPanel(execDebugCommand);
 
-    fireEvent.click(screen.getByRole("button", { name: "修复" }));
+    fireEvent.click(getSessionRepairButton());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
 
     const loadingButton = await screen.findByRole("button", { name: "修复中..." });
@@ -197,36 +205,43 @@ describe("session repair", () => {
     expect(execDebugCommand).toHaveBeenCalledTimes(1);
 
     resolveRepair?.({ status: "SUCCESS", exitCode: 0, output: "done" });
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("done"));
+    await waitFor(() => expect(getSessionRepairButton()).toBeEnabled());
+    expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功");
+    expect(screen.queryByText("done")).not.toBeInTheDocument();
   });
 
-  it("shows command failures next to the repair action", async () => {
+  it("shows command failures with the shared top toast", async () => {
     const execDebugCommand = vi.fn().mockResolvedValue({ status: "FAILED", exitCode: 1, output: "database is locked" });
     renderDiagnosticsPanel(execDebugCommand);
 
-    fireEvent.click(screen.getByRole("button", { name: "修复" }));
+    fireEvent.click(getSessionRepairButton());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("database is locked");
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("会话修复失败"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("database is locked")).not.toBeInTheDocument();
   });
 
-  it("shows thrown command errors next to the repair action", async () => {
+  it("shows thrown command errors with the shared top toast", async () => {
     const execDebugCommand = vi.fn().mockRejectedValue(new Error("repair unavailable"));
     renderDiagnosticsPanel(execDebugCommand);
 
-    fireEvent.click(screen.getByRole("button", { name: "修复" }));
+    fireEvent.click(getSessionRepairButton());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("repair unavailable");
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("会话修复失败"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("repair unavailable")).not.toBeInTheDocument();
   });
 
-  it("clears a previous repair result when switching Profiles", async () => {
+  it("keeps the repair card free of command output when switching Profiles", async () => {
     const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "support repaired" });
     const view = render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
 
-    fireEvent.click(screen.getByRole("button", { name: "修复" }));
+    fireEvent.click(getSessionRepairButton());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("support repaired");
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功"));
+    expect(screen.queryByText("support repaired")).not.toBeInTheDocument();
 
     view.rerender(createElement(AgentDiagnosticsPanel, {
       ...diagnosticsPanelProps(execDebugCommand),
@@ -235,7 +250,7 @@ describe("session repair", () => {
       botName: "Sales",
     }));
 
-    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("does not write a stale repair result after switching Profiles", async () => {
@@ -245,9 +260,9 @@ describe("session repair", () => {
     }));
     const view = render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
 
-    fireEvent.click(screen.getByRole("button", { name: "修复" }));
+    fireEvent.click(getSessionRepairButton());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("正在检查并修复会话...");
+    expect(await screen.findByRole("button", { name: "修复中..." })).toBeDisabled();
 
     view.rerender(createElement(AgentDiagnosticsPanel, {
       ...diagnosticsPanelProps(execDebugCommand),
@@ -259,5 +274,6 @@ describe("session repair", () => {
 
     await waitFor(() => expect(screen.queryByText("stale support result")).not.toBeInTheDocument());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(toastMocks.success).not.toHaveBeenCalled();
   });
 });
