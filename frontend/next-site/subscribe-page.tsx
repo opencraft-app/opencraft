@@ -3683,6 +3683,8 @@ export const SubscribePage = ({
     }
   }, [paymentRefreshing, startPaidPassOrder, t]);
 
+  const bundlesInitialLoading = bundles === null && !bundlesError;
+
   /* v1.7.31 起统一二维码 bridge 模式，不再保留 fallback / 重新打开支付页 — 原 handleReopenPayUrl 已删除 */
 
   /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
@@ -3693,6 +3695,23 @@ export const SubscribePage = ({
       {header}
 
       <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
+        {bundlesInitialLoading ? (
+          <section
+            aria-labelledby="subscribe-bundles-loading-title"
+            data-testid="subscribe-bundles-loading"
+            role="status"
+            style={{ maxWidth: 1080, minHeight: 360, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <Loader2 style={{ width: 24, height: 24, color: colors.warmGray300 }} className="animate-spin" />
+              <h1 id="subscribe-bundles-loading-title" style={{ fontSize: 18, fontWeight: 600, color: colors.black, margin: 0 }}>
+                {t("订阅套餐")}
+              </h1>
+              <p style={{ fontSize: 14, color: colors.warmGray500, margin: 0 }}>{t("加载套餐中...")}</p>
+            </div>
+          </section>
+        ) : (
+          <>
         <section id={PLANS_SECTION_ID} style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* Page Header — Notion style */}
           <motion.div
@@ -3951,6 +3970,8 @@ export const SubscribePage = ({
               document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
+        )}
+          </>
         )}
       </main>
 

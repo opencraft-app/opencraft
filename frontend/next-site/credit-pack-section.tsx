@@ -18,6 +18,8 @@ import { RepositoryError } from '@/repositories/http-repositories';
 import { useT } from '@/i18n/t';
 import { useCreditCheckout } from '@/lib/use-credit-checkout';
 import { centsToYuan, formatYuan } from '@/lib/billing-flow';
+import { ACCOUNT_PATH } from '@/lib/agent-routes';
+import { useAppNavigate } from '@/lib/app-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 
@@ -84,6 +86,7 @@ export const CreditPackSection = ({
   onRequirePlan,
 }: CreditPackSectionProps) => {
   const t = useT();
+  const navigate = useAppNavigate();
   const repositories = useRepositories();
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, QuoteState>>({});
@@ -204,7 +207,7 @@ export const CreditPackSection = ({
   const checkout = useCreditCheckout({
     returnUrl: buildReturnUrl(false),
     cancelUrl: buildReturnUrl(true),
-    /* 到账后不自动关弹窗：弹窗内展示「购买成功」态，用户点「完成」关闭
+    /* 到账后不自动关弹窗：弹窗内展示「购买成功」态，用户点「完成」跳转账户页
        （对齐 pass 的 PaymentPendingModal 成功态） */
   });
 
@@ -395,7 +398,7 @@ export const CreditPackSection = ({
                   data-testid={`credit-pack-card-${denomination.product_id}`}
                   onClick={() => setSelectedProductId(denomination.product_id)}
                   className={cn(
-                    'relative flex w-full flex-col items-start gap-2 rounded-xl border-2 bg-white p-4 pr-11 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
+                    'relative flex w-full flex-col items-start gap-2 rounded-md border-2 bg-white p-4 pr-11 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
                     selected
                       ? 'border-[var(--text-primary)]'
                       : 'border-[var(--border-strong)] hover:border-[var(--text-primary)]/30',
@@ -437,7 +440,7 @@ export const CreditPackSection = ({
           disabled={primaryDisabled}
           onClick={handlePrimary}
           data-testid="credit-pack-primary-action"
-          className="w-full rounded-lg bg-[var(--text-primary)] px-4 py-3 text-sm font-semibold text-white transition-opacity duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-35 sm:w-auto sm:self-start"
+          className="w-full rounded-md bg-[var(--text-primary)] px-4 py-3 text-sm font-semibold text-white transition-opacity duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-35 sm:w-auto sm:self-start"
         >
           {primaryLabel}
         </button>
@@ -465,7 +468,7 @@ export const CreditPackSection = ({
             closeLabel={t('关闭')}
             data-testid="credit-pack-confirm-modal"
             onPointerDownOutside={(event) => event.preventDefault()}
-            className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-[var(--border-strong)] bg-white p-0 shadow-2xl md:w-[30rem]"
+            className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-white p-0 shadow-2xl md:w-[30rem]"
           >
             {isConfirmationStep ? (
               <div className="p-6">
@@ -474,7 +477,7 @@ export const CreditPackSection = ({
                   <DialogDescription className="text-pretty">{t('订单详情')}</DialogDescription>
                 </DialogHeader>
 
-                <dl className="rounded-xl border border-[var(--border-strong)] p-5 text-sm">
+                <dl className="rounded-md border border-[var(--border-strong)] p-5 text-sm">
                   <div className="flex items-start justify-between gap-4 text-[var(--text-secondary)]">
                     <dt className="text-pretty">
                       {t('{{count}} 模型积分', { count: selectedDenomination.credit_total.toLocaleString() })}
@@ -492,7 +495,7 @@ export const CreditPackSection = ({
                   </div>
                 </dl>
 
-                <div className="mt-5 flex items-center gap-3 rounded-xl border border-[var(--border-strong)] px-5 py-4">
+                <div className="mt-5 flex items-center gap-3 rounded-md border border-[var(--border-strong)] px-5 py-4">
                   <span
                     aria-hidden="true"
                     className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--text-primary)]"
@@ -534,7 +537,7 @@ export const CreditPackSection = ({
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
-                    className="h-11 rounded-lg border border-[var(--border-strong)] bg-white px-4 text-sm font-semibold text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className="h-11 rounded-md border border-[var(--border-strong)] bg-white px-4 text-sm font-semibold text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   >
                     {t('取消')}
                   </button>
@@ -543,7 +546,7 @@ export const CreditPackSection = ({
                     disabled={!termsAccepted || checkout.state.status === 'creating'}
                     onClick={handleConfirmPay}
                     data-testid="credit-pack-confirm-pay"
-                    className="h-11 rounded-lg bg-[var(--text-primary)] px-4 text-sm font-semibold text-white transition-opacity duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-35"
+                    className="h-11 rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white transition-opacity duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-35"
                   >
                     {checkout.state.status === 'creating' ? (
                       t('正在创建订单…')
@@ -566,7 +569,7 @@ export const CreditPackSection = ({
                 !qrExpired ? (
                   <div
                     data-testid="credit-pack-qr-panel"
-                    className="flex min-h-64 items-center justify-center rounded-xl bg-[var(--surface-muted)] p-6"
+                    className="flex min-h-64 items-center justify-center rounded-md bg-[var(--surface-muted)] p-6"
                   >
                     <div data-testid="credit-pack-wx-qr" className="bg-white p-2">
                       <QRCodeSVG value={checkout.bridgePlan.bridgeUrl} size={180} level="M" includeMargin={false} />
@@ -577,7 +580,7 @@ export const CreditPackSection = ({
                 {!isGlobal && checkout.bridgePlan && qrExpired ? (
                   <p
                     data-testid="credit-pack-qr-expired"
-                    className="rounded-xl bg-[var(--surface-muted)] px-5 py-12 text-center text-sm text-[var(--text-secondary)]"
+                    className="rounded-md bg-[var(--surface-muted)] px-5 py-12 text-center text-sm text-[var(--text-secondary)]"
                   >
                     {t('二维码已过期，请重新下单。')}
                   </p>
@@ -615,7 +618,7 @@ export const CreditPackSection = ({
                       type="button"
                       onClick={handleReopenPayPage}
                       data-testid="credit-pack-reopen-pay"
-                      className="h-11 w-full rounded-lg bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      className="h-11 w-full rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
                       {t('重新打开支付页面')}
                     </button>
@@ -626,7 +629,7 @@ export const CreditPackSection = ({
                       onClick={() => void handleManualRecheck()}
                       disabled={checkingPayment}
                       data-testid="credit-pack-recheck"
-                      className="h-11 w-full rounded-lg border border-[var(--text-primary)] bg-white px-4 text-sm font-semibold text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="h-11 w-full rounded-md border border-[var(--text-primary)] bg-white px-4 text-sm font-semibold text-[var(--text-primary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {checkingPayment ? t('刷新中...') : t('刷新')}
                     </button>
@@ -636,7 +639,7 @@ export const CreditPackSection = ({
                       type="button"
                       onClick={checkout.reset}
                       data-testid="credit-pack-reorder"
-                      className="h-11 w-full rounded-lg bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      className="h-11 w-full rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
                       {t('重新下单')}
                     </button>
@@ -647,7 +650,7 @@ export const CreditPackSection = ({
                     <button
                       type="button"
                       onClick={() => setModalOpen(false)}
-                      className="h-10 w-full rounded-lg px-4 text-sm font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      className="h-10 w-full rounded-md px-4 text-sm font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
                       {t('暂不处理')}
                     </button>
@@ -655,8 +658,14 @@ export const CreditPackSection = ({
                   {checkout.state.status === 'delivered' || checkout.state.status === 'delivery_pending' ? (
                     <button
                       type="button"
-                      onClick={() => setModalOpen(false)}
-                      className="h-11 w-full rounded-lg bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      onClick={() => {
+                        if (checkout.state.status === 'delivered') {
+                          navigate(ACCOUNT_PATH);
+                          return;
+                        }
+                        setModalOpen(false);
+                      }}
+                      className="h-11 w-full rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
                       {checkout.state.status === 'delivered' ? t('完成') : t('暂不处理')}
                     </button>

@@ -183,6 +183,31 @@ const resetState = () => {
 };
 
 describe("SubscribePage", () => {
+  it("shows a page-level loading state until the bundles request returns", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    let resolveBundles!: (bundles: ReturnType<typeof buildBundle>[]) => void;
+    listBundlesMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBundles = resolve;
+      }),
+    );
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("订阅套餐");
+    expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("加载套餐中...");
+    expect(screen.queryByRole("tab", { name: "4500" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+    });
+
+    expect(screen.queryByTestId("subscribe-bundles-loading")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "巡游 Cruise" })).toBeInTheDocument();
+  });
+
   /**
    * 源码契约：「我已完成支付」手动确认按钮已移除。
    * 轮询是唯一自动接棒途径（超时后也持续轮询），用户无需手动确认。

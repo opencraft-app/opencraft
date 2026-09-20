@@ -39,6 +39,11 @@ vi.mock("@/lib/region", async (importOriginal) => {
 const confirmDeliveryMock = vi.hoisted(() => vi.fn());
 const checkDeliveryOnceMock = vi.hoisted(() => vi.fn(async () => false));
 const resetMock = vi.hoisted(() => vi.fn());
+const navigateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/app-navigation", () => ({
+  useAppNavigate: () => navigateMock,
+}));
 
 type CheckoutStatus =
   | "idle"
@@ -127,6 +132,7 @@ beforeEach(() => {
   checkDeliveryOnceMock.mockReset();
   checkDeliveryOnceMock.mockResolvedValue(false);
   resetMock.mockClear();
+  navigateMock.mockClear();
   inquireCreditPrice.mockReset();
   inquireCreditPrice.mockImplementation(async (productId: string) => ({
     product_id: productId,
@@ -166,6 +172,14 @@ async function reachPayStage(initialStatus: CheckoutStatus) {
 }
 
 describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
+  it("购买成功后点击完成跳转到 account 页面", async () => {
+    await reachPayStage("delivered");
+
+    await userEvent.click(await screen.findByRole("button", { name: "完成" }));
+
+    expect(navigateMock).toHaveBeenCalledWith("/account");
+  });
+
   it("轮询超时就地转换：标题常驻「请完成支付」不切错误，文案中性不误报「支付已完成」", async () => {
     await reachPayStage("payment_pending");
 
