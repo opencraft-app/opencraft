@@ -6033,7 +6033,7 @@ function RecurringTimePicker({
       tabIndex={-1}
       className="flex h-9 w-fit shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20"
     >
-      <div className="flex shrink-0 items-center px-2">
+      <div className="flex shrink-0 items-center pl-2">
         <TimePickerInputSegment
           label={`${inputLabel} HH`}
           value={inputSegments.hour}

@@ -3022,6 +3022,8 @@ describe("once execution time picker", () => {
     expect(minuteInput).toHaveValue("45");
     expect(group).toHaveClass("w-fit");
     expect(group.firstElementChild).not.toHaveClass("flex-1");
+    expect(group.firstElementChild).toHaveClass("pl-2");
+    expect(group.firstElementChild).not.toHaveClass("pr-2");
     expect(within(group).queryByRole("button")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: localizedText("添加时间", "Add time") }));
