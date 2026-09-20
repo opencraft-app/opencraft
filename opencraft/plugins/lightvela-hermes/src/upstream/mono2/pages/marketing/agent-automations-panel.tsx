@@ -1551,7 +1551,8 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
             skillLoadState={installedSkillLoadState}
           />
         ) : displayedJobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
+          <div data-testid="automation-empty-state" className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
+            <Clock className="mb-2 h-6 w-6 opacity-50" aria-hidden="true" />
             {activeView === "ended" ? (
               <p>{t("暂无已结束任务")}</p>
             ) : activeTaskFilter !== "all" ? (
@@ -1559,7 +1560,14 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
             ) : (
               <p>
                 {t("暂无定时任务，")}
-                <span>{t("可从下方任务模板快速启用")}</span>
+                <span>{t("可从下方任务模板快速启用，或直接")}</span>
+                <button
+                  type="button"
+                  onClick={requestCreate}
+                  className="ml-1 font-medium text-black/70 underline decoration-black/25 underline-offset-4 transition hover:text-black"
+                >
+                  {t("新建")}
+                </button>
               </p>
             )}
           </div>
@@ -3790,7 +3798,7 @@ function AutomationFormScrollArea({ enabled, children }: { enabled: boolean; chi
   if (!enabled) return <div>{children}</div>;
 
   return (
-    <ScrollArea type="always" className="lv-automation-form-scroll min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]]:overscroll-contain">
+    <ScrollArea type="auto" className="lv-automation-form-scroll min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]]:overscroll-contain">
       <div className="pr-3">{children}</div>
     </ScrollArea>
   );
@@ -3838,6 +3846,7 @@ export function AutomationFormModal({
   const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
   const testRunHintId = useId();
   const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
+  const submitDisabledTooltip = useHoverTooltipPosition<HTMLSpanElement>();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const initialPromptParts = splitAutomationExecutionPrompt(initialJob?.prompt ?? template?.prompt ?? "");
   const executionRules = template?.executionRules ?? initialPromptParts.executionRules;
@@ -3864,6 +3873,8 @@ export function AutomationFormModal({
   const [scriptSafetyConfirmed, setScriptSafetyConfirmed] = useState(false);
   const canSelectZeroToken = mode === "create" && !template && zeroTokenAutomationsEnabled;
   const shouldKeepFormHeight = canSelectZeroToken || Boolean(template) || mode === "edit";
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const expandedFormHeight = executionMode === "agent" && advancedSettingsOpen;
   const zeroTokenScriptEditable = mode === "create" || initialJob?.zero_token_config?.editable === true;
   const initialContextFrom = initialJob?.context_from ?? null;
   const initialSelectedUpstream = initialContextFrom?.[0] ?? "";
@@ -4080,10 +4091,14 @@ export function AutomationFormModal({
     || zeroTokenKind !== "script"
     || !zeroTokenScriptEditable
     || scriptSafetyConfirmed;
+  const notificationChannelRequired = executionMode === "zero_token"
+    && zeroTokenKind === "fixed_notification";
+  const notificationChannelReady = !notificationChannelRequired || deliverPlatforms.length > 0;
   const canSubmit = !submitting
     && name.trim().length > 0
     && taskContentReady
     && scriptSafetyReady
+    && notificationChannelReady
     && (scheduleUneditable || schedule.length > 0);
   const canTestRun = !submitting
     && testState !== "running"
@@ -4097,6 +4112,12 @@ export function AutomationFormModal({
     : !scriptSafetyReady
       ? t("请先确认脚本运行安全提示")
       : null;
+  const submitDisabledReason = notificationChannelRequired
+    && name.trim().length > 0
+    && taskContentReady
+    && !notificationChannelReady
+    ? t("未选择通知方式")
+    : null;
 
   const handleTestRun = useCallback(() => {
     if (!canTestRun) return;
@@ -4493,7 +4514,7 @@ export function AutomationFormModal({
         />
       )}
       <div
-        className={`lv-dialog-surface relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? "flex h-[840px] max-h-[calc(100dvh-16px)] flex-col" : "overflow-y-auto"}`}
+        className={`lv-dialog-surface relative min-w-0 w-full max-w-[815px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? `flex ${expandedFormHeight ? "h-[840px]" : "h-[755px]"} max-h-[calc(100dvh-16px)] flex-col` : "overflow-y-auto"}`}
         style={{
           boxSizing: "border-box",
           width: "min(760px, calc(100vw - 32px))",
@@ -4666,12 +4687,6 @@ export function AutomationFormModal({
           />
           </div>
 
-          <AutomationSkillPicker
-            value={selectedSkills}
-            loadState={skillLoadState}
-            onChange={setSelectedSkills}
-            onRetry={() => void onRefreshSkills()}
-          />
           </>
         ) : (
           <div className="mt-3">
@@ -4736,7 +4751,7 @@ export function AutomationFormModal({
             )}
             {zeroTokenKind === "fixed_notification" ? (
               <p className="mt-1.5 text-pretty text-xs leading-5 text-black/40">
-                {t("通知内容会按原文发送，不经过模型改写。没有模型调用，但仍会使用 Agent 运行资源。")}
+                {t("通知内容会按原文发送，不经过模型改写，不产生模型调用。")}
               </p>
             ) : zeroTokenScriptEditable ? (
               <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
@@ -4752,82 +4767,7 @@ export function AutomationFormModal({
           </div>
         )}
 
-        {/* 生效时间段 */}
-        {shouldShowEffectiveWindow && (
-          <div className="mt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={effectiveWindowEnabled}
-                disabled={!canEditEffectiveWindow}
-                onClick={() => {
-                  if (!canEditEffectiveWindow) return;
-                  setEffectiveWindowEnabled((enabled) => !enabled);
-                }}
-                style={{ marginLeft: 10 }}
-                className={`lv-switch relative inline-flex h-5 w-9 items-center rounded-full transition ${effectiveWindowEnabled ? "bg-black" : "bg-black/15"
-                  } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
-                aria-label={t("生效时间段")}
-              >
-                <span
-                  className={`lv-switch__thumb inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                />
-              </button>
-              {!effectiveWindowEnabled && (
-                <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
-              )}
-              {effectiveWindowEnabled && (
-                <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
-              )}
-            </div>
-            {effectiveWindowEnabled && (
-              <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
-                <input
-                  type="datetime-local"
-                  value={effectiveStartAt}
-                  onChange={(e) => setEffectiveStartAt(e.target.value)}
-                  disabled={!canEditEffectiveWindow}
-                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-                  aria-label={t("生效开始时间")}
-                />
-                <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
-                <input
-                  type="datetime-local"
-                  value={effectiveEndAt}
-                  onChange={(e) => setEffectiveEndAt(e.target.value)}
-                  disabled={!canEditEffectiveWindow}
-                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-                  aria-label={t("生效结束时间")}
-                />
-                <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEffectiveStartAt("");
-                      setEffectiveEndAt("");
-                    }}
-                    disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
-                    className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
-                    aria-label={t("清空")}
-                  >
-                    <Eraser className="h-4 w-4" />
-                  </button>
-                  <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                    {t("清空")}
-                    <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-                  </span>
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 通知方式（多选；不勾任何 = 仅本地写日志）
+        {/* 通知方式（通知任务必选，其他任务可选）
          *
          * 区域可见性：
          *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
@@ -4858,13 +4798,17 @@ export function AutomationFormModal({
                   onMouseEnter={notificationHelpTooltip.showTooltip}
                   onMouseLeave={notificationHelpTooltip.scheduleClose}
                 >
-                  {executionMode === "zero_token"
-                    ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
-                    : t("如不选，智能体只会在后台执行任务，不发通知。")}
+                  {notificationChannelRequired
+                    ? t("通知任务必须选择至少一种通知方式。")
+                    : executionMode === "zero_token"
+                      ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
+                      : t("如不选，智能体只会在后台执行任务，不发通知。")}
                 </FloatingTooltip>
               )}
             </span>
-            <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+            {!notificationChannelRequired && (
+              <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+            )}
           </div>
           {channelStatus === "loading" ? (
             <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
@@ -5047,8 +4991,96 @@ export function AutomationFormModal({
           )}
         </div>
 
+        {/* 生效时间段 */}
+        {shouldShowEffectiveWindow && (
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={effectiveWindowEnabled}
+                disabled={!canEditEffectiveWindow}
+                onClick={() => {
+                  if (!canEditEffectiveWindow) return;
+                  setEffectiveWindowEnabled((enabled) => !enabled);
+                }}
+                style={{ marginLeft: 10 }}
+                className={`lv-switch relative inline-flex h-5 w-9 items-center rounded-full transition ${effectiveWindowEnabled ? "bg-black" : "bg-black/15"
+                  } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
+                aria-label={t("生效时间段")}
+              >
+                <span
+                  className={`lv-switch__thumb inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                />
+              </button>
+              {!effectiveWindowEnabled && (
+                <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
+              )}
+              {effectiveWindowEnabled && (
+                <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
+              )}
+            </div>
+            {effectiveWindowEnabled && (
+              <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
+                <input
+                  type="datetime-local"
+                  value={effectiveStartAt}
+                  onChange={(e) => setEffectiveStartAt(e.target.value)}
+                  disabled={!canEditEffectiveWindow}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  aria-label={t("生效开始时间")}
+                />
+                <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
+                <input
+                  type="datetime-local"
+                  value={effectiveEndAt}
+                  onChange={(e) => setEffectiveEndAt(e.target.value)}
+                  disabled={!canEditEffectiveWindow}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  aria-label={t("生效结束时间")}
+                />
+                <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEffectiveStartAt("");
+                      setEffectiveEndAt("");
+                    }}
+                    disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
+                    className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label={t("清空")}
+                  >
+                    <Eraser className="h-4 w-4" />
+                  </button>
+                  <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                    {t("清空")}
+                    <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+                  </span>
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {executionMode === "agent" && (
-          <details className="group mt-3">
+          <AutomationSkillPicker
+            value={selectedSkills}
+            loadState={skillLoadState}
+            onChange={setSelectedSkills}
+            onRetry={() => void onRefreshSkills()}
+          />
+        )}
+
+        {executionMode === "agent" && (
+          <details
+            open={advancedSettingsOpen}
+            onToggle={(event) => setAdvancedSettingsOpen(event.currentTarget.open)}
+            className="group mt-1"
+          >
             <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1.5 text-sm font-medium text-black/70 hover:text-black/90 [&::-webkit-details-marker]:hidden">
               <span>{t("高级设置")}</span>
               <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-black/40 group-open:rotate-180" />
@@ -5125,15 +5157,42 @@ export function AutomationFormModal({
           >
             {t("取消")}
           </button>
-          <button
-            type="button"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+          <span
+            ref={submitDisabledTooltip.triggerRef}
+            className="relative inline-flex rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+            aria-describedby={submitDisabledReason && submitDisabledTooltip.open
+              ? submitDisabledTooltip.tooltipId
+              : undefined}
+            tabIndex={submitDisabledReason ? 0 : undefined}
+            onMouseEnter={submitDisabledReason ? submitDisabledTooltip.showTooltip : undefined}
+            onMouseLeave={submitDisabledReason ? submitDisabledTooltip.scheduleClose : undefined}
+            onFocus={submitDisabledReason ? submitDisabledTooltip.showTooltip : undefined}
+            onBlur={submitDisabledReason ? submitDisabledTooltip.scheduleClose : undefined}
           >
-            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {mode === "create" ? t("新建") : t("保存")}
-          </button>
+            <button
+              type="button"
+              disabled={!canSubmit}
+              onClick={handleSubmit}
+              aria-describedby={submitDisabledReason && submitDisabledTooltip.open
+                ? submitDisabledTooltip.tooltipId
+                : undefined}
+              className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {mode === "create" ? t("新建") : t("保存")}
+            </button>
+            {submitDisabledReason && submitDisabledTooltip.open && (
+              <FloatingTooltip
+                id={submitDisabledTooltip.tooltipId}
+                position={submitDisabledTooltip.position}
+                className="whitespace-nowrap"
+                onMouseEnter={submitDisabledTooltip.showTooltip}
+                onMouseLeave={submitDisabledTooltip.scheduleClose}
+              >
+                {submitDisabledReason}
+              </FloatingTooltip>
+            )}
+          </span>
         </div>
       </div>
     </div>,
@@ -5991,16 +6050,10 @@ function RecurringTimePicker({
   const t = useT();
   const inputLabel = `${t("执行时间")} ${index + 1}`;
   const [inputSegments, setInputSegments] = useState(() => getRecurringTimeInputSegments(value, fallback));
-  const [open, setOpen] = useState(false);
-  const initialTime = getRecurringTimeInputSegments(value, fallback);
-  const [draftHour, setDraftHour] = useState(initialTime.hour);
-  const [draftMinute, setDraftMinute] = useState(initialTime.minute);
 
   useEffect(() => {
     const next = getRecurringTimeInputSegments(value, fallback);
     setInputSegments(next);
-    setDraftHour(next.hour);
-    setDraftMinute(next.minute);
   }, [fallback, value]);
 
   const commitInputSegments = useCallback(() => {
@@ -6014,102 +6067,54 @@ function RecurringTimePicker({
     return nextValue;
   }, [fallback, inputSegments, onChange, value]);
 
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (nextOpen) {
-      const nextTime = commitInputSegments();
-      const next = getRecurringTimeInputSegments(nextTime, fallback);
-      setDraftHour(next.hour);
-      setDraftMinute(next.minute);
-    }
-    setOpen(nextOpen);
-  }, [commitInputSegments, fallback]);
-
   const updateInputSegment = useCallback((segment: keyof RecurringTimeInputSegments, nextValue: string) => {
     setInputSegments((current) => ({ ...current, [segment]: nextValue }));
   }, []);
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverAnchor asChild>
-        <div
-          role="group"
-          aria-label={inputLabel}
-          onBlur={(event) => {
-            const inputGroup = event.currentTarget;
-            window.setTimeout(() => {
-              if (!inputGroup.contains(document.activeElement)) commitInputSegments();
-            }, 0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.target.blur();
-          }}
-          tabIndex={-1}
-          className={`flex h-9 shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20 ${removable ? "w-[140px]" : "w-[116px]"}`}
+    <div
+      role="group"
+      aria-label={inputLabel}
+      onBlur={(event) => {
+        const inputGroup = event.currentTarget;
+        window.setTimeout(() => {
+          if (!inputGroup.contains(document.activeElement)) commitInputSegments();
+        }, 0);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.target.blur();
+      }}
+      tabIndex={-1}
+      className="flex h-9 w-fit shrink-0 items-center rounded-md border border-black/10 bg-white transition hover:border-black/20 focus-within:border-black/30 focus-within:ring-2 focus-within:ring-blue-500/20"
+    >
+      <div className="flex shrink-0 items-center pl-2">
+        <TimePickerInputSegment
+          label={`${inputLabel} HH`}
+          value={inputSegments.hour}
+          maxLength={2}
+          className="w-6"
+          onChange={(nextValue) => updateInputSegment("hour", nextValue)}
+        />
+        <span aria-hidden="true" className="text-sm text-black/55">:</span>
+        <TimePickerInputSegment
+          label={`${inputLabel} mm`}
+          value={inputSegments.minute}
+          maxLength={2}
+          className="w-6"
+          onChange={(nextValue) => updateInputSegment("minute", nextValue)}
+        />
+      </div>
+      {removable && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          aria-label={t("移除时间点")}
         >
-          <div className="flex min-w-0 flex-1 items-center px-2">
-            <TimePickerInputSegment
-              label={`${inputLabel} HH`}
-              value={inputSegments.hour}
-              maxLength={2}
-              className="w-7"
-              onChange={(nextValue) => updateInputSegment("hour", nextValue)}
-            />
-            <span aria-hidden="true" className="text-sm text-black/55">:</span>
-            <TimePickerInputSegment
-              label={`${inputLabel} mm`}
-              value={inputSegments.minute}
-              maxLength={2}
-              className="w-7"
-              onChange={(nextValue) => updateInputSegment("minute", nextValue)}
-            />
-          </div>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${t("选择")} ${inputLabel}`}
-              title={`${t("选择")} ${inputLabel}`}
-              className="mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-md text-black/75 transition hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-            >
-              <Clock className="size-4" aria-hidden="true" />
-            </button>
-          </PopoverTrigger>
-          {removable && (
-            <button
-              type="button"
-              onClick={onRemove}
-              className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-              aria-label={t("移除时间点")}
-            >
-              <X className="size-3" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      </PopoverAnchor>
-      <PopoverContent
-        align="start"
-        role="dialog"
-        aria-label={inputLabel}
-        className="z-[210] w-[144px] max-w-[calc(100vw-32px)] p-0"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        <div className="grid grid-cols-2 gap-1.5 p-2">
-          <OncePickerTimeColumn label={t("小时")} options={CLOCK_HOUR_OPTIONS} value={draftHour} onChange={setDraftHour} />
-          <OncePickerTimeColumn label={t("分钟")} options={CLOCK_MINUTE_OPTIONS} value={draftMinute} onChange={setDraftMinute} />
-        </div>
-        <div className="flex items-center justify-end border-t border-black/[0.06] p-2">
-          <button
-            type="button"
-            onClick={() => {
-              onChange(`${draftHour}:${draftMinute}`);
-              setOpen(false);
-            }}
-            className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white transition hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
-          >
-            {t("确认")}
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
+          <X className="size-3" aria-hidden="true" />
+        </button>
+      )}
+    </div>
   );
 }
 

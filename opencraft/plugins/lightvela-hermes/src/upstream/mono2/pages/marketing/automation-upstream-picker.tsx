@@ -1,7 +1,8 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
 import { Check, ChevronDown, Search, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { useT } from "../../i18n/t";
 import type { CronContextCapability, CronJob } from "../../lib/hermes-cron-client";
 import { cn } from "../../lib/utils";
@@ -25,7 +26,6 @@ export function AutomationUpstreamPicker({
 }: AutomationUpstreamPickerProps) {
   const t = useT();
   const listboxId = useId();
-  const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -61,19 +61,6 @@ export function AutomationUpstreamPicker({
     setOpen(true);
     setActiveIndex(-1);
   };
-
-  useEffect(() => {
-    if (!open) return;
-    searchRef.current?.focus();
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (pickerRef.current?.contains(event.target as Node)) return;
-      close();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
 
   if (state === "loading") {
     return <PickerStatus>{t("正在检测上游任务能力...")}</PickerStatus>;
@@ -111,54 +98,72 @@ export function AutomationUpstreamPicker({
         </div>
       )}
 
-      <div ref={pickerRef} className="relative">
-        <button
-          ref={triggerRef}
-          type="button"
-          role={open ? undefined : "combobox"}
-          aria-label={t("上游任务")}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-controls={open ? listboxId : undefined}
-          onClick={() => (open ? close() : openPicker())}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              if (!open) openPicker();
-            }
-            if (event.key === "Escape" && open) {
-              event.preventDefault();
-              close(true);
-            }
-          }}
-          className="flex w-full items-center justify-between gap-3 rounded-md border border-black/10 bg-white py-2 pl-3 pr-11 text-left text-sm text-black/85 hover:border-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
-        >
-          <span className={cn("truncate", !selectedJob && "text-black/40")}>
-            {selectedJob?.name ?? (value ? t("上游任务已不可用") : t("本任务执行时，将使用上游任务最近的输出作为上下文"))}
-          </span>
-        </button>
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) openPicker();
+          else close();
+        }}
+      >
+        <PopoverAnchor asChild>
+          <div className="relative">
+            <PopoverTrigger asChild>
+              <button
+                ref={triggerRef}
+                type="button"
+                role={open ? undefined : "combobox"}
+                aria-label={t("上游任务")}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-controls={open ? listboxId : undefined}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    if (!open) openPicker();
+                  }
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-black/10 bg-white py-2 pl-3 pr-11 text-left text-sm text-black/85 hover:border-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+              >
+                <span className={cn("truncate", !selectedJob && "text-black/40")}>
+                  {selectedJob?.name ?? (value ? t("上游任务已不可用") : t("本任务执行时，将使用上游任务最近的输出作为上下文"))}
+                </span>
+              </button>
+            </PopoverTrigger>
 
-        {value ? (
-          <button
-            type="button"
-            aria-label={t("取消选择")}
-            onClick={() => {
-              onChange("");
-              close();
-            }}
-            className="group/clear absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-black/40 focus:outline-none focus-visible:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-black/15"
-          >
-            <ChevronDown className="absolute size-4 transition-opacity duration-150 group-hover/clear:opacity-0 group-focus-visible/clear:opacity-0" aria-hidden="true" />
-            <X className="size-4 opacity-0 transition-opacity duration-150 group-hover/clear:opacity-100 group-focus-visible/clear:opacity-100" aria-hidden="true" />
-          </button>
-        ) : (
-          <span className="pointer-events-none absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center text-black/40">
-            <ChevronDown className={cn("size-4 transition-transform duration-150", open && "rotate-180")} aria-hidden="true" />
-          </span>
-        )}
+            {value ? (
+              <button
+                type="button"
+                aria-label={t("取消选择")}
+                onClick={() => {
+                  onChange("");
+                  close();
+                }}
+                className="group/clear absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-black/40 focus:outline-none focus-visible:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-black/15"
+              >
+                <ChevronDown className="absolute size-4 transition-opacity duration-150 group-hover/clear:opacity-0 group-focus-visible/clear:opacity-0" aria-hidden="true" />
+                <X className="size-4 opacity-0 transition-opacity duration-150 group-hover/clear:opacity-100 group-focus-visible/clear:opacity-100" aria-hidden="true" />
+              </button>
+            ) : (
+              <span className="pointer-events-none absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center text-black/40">
+                <ChevronDown className={cn("size-4 transition-transform duration-150", open && "rotate-180")} aria-hidden="true" />
+              </span>
+            )}
+          </div>
+        </PopoverAnchor>
 
         {open && (
-          <div className="absolute z-40 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 bg-white p-1.5 shadow-xl">
+          <PopoverContent
+            align="start"
+            side="top"
+            sideOffset={6}
+            collisionPadding={16}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              searchRef.current?.focus();
+            }}
+            data-testid="automation-upstream-picker-popup"
+            className="z-[210] w-[var(--radix-popover-trigger-width)] max-h-[var(--radix-popover-content-available-height)] overflow-hidden rounded-xl border border-black/10 bg-white p-1.5 shadow-xl"
+          >
             <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
               <Search className="size-4 shrink-0 text-black/35" aria-hidden="true" />
               <input
@@ -228,9 +233,9 @@ export function AutomationUpstreamPicker({
                 </p>
               )}
             </div>
-          </div>
+          </PopoverContent>
         )}
-      </div>
+      </Popover>
     </div>
   );
 }

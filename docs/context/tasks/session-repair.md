@@ -84,6 +84,7 @@
 - Hermes 官方 `v2026.9.14 / 0.21.3` 已核验支持 `sessions repair` 与 `--check-only`。
 - 当前 LightVela Hermes COS `latest.json` 已核验为 `0.21.3`。
 - `agent-diagnostics-panel.tsx` 已使用 `execDebugCommand` 和 `withHermesProfile`。
+- 合并 `origin/master@a9766757f` 时，7 份 locale 文件经键级三方审计确认无同键语义冲突：本分支新增 12 个会话修复键，master 修改 44 个其他键；结构化合并后每份为 2957 个键。
 - `pnpm vitest run src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`：19/19 通过，包含英文 locale 和气泡关闭路径覆盖。
 - MR 评论修复后聚焦测试：22/22 通过，新增缺失 Profile fail-closed 和 A→B→A 逆序完成覆盖。
 - `pnpm check`：通过；TypeScript 0 个新增诊断。
@@ -96,6 +97,7 @@
 - hover 与 click 组合可能造成浮层闪烁；使用受控 Radix Popover，并允许指针进入内容区。
 - 新文案可能漏翻；气泡内容和描述统一使用现有 i18n 反查，并通过 locale 校验覆盖。
 - Hermes 版本过旧时命令可能失败；前端保留原始命令输出，不伪报成功。
+- master 同期修改 i18n 与 OpenCraft 同步闭包；合并后必须重新运行同步脚本，不能直接选择任一侧生成副本。
 
 ## validation
 
@@ -113,6 +115,7 @@
 - `pnpm build` 通过，103 个静态页面生成；`npm ci --dry-run --ignore-scripts` 接受 OpenCraft 锁文件。
 - `cd opencraft && npx tsx --test tests/lightvela-management-policy.test.ts` 未通过（4 通过、7 失败）；旧测试预期与当前前端共享组件、QR 命令和布局契约不一致，未扩展修改。
 - `git diff --check` 通过。
+- 合并冲突已在 `58c8f27f3` 解决；会话修复 Profile 写保护和请求代次逻辑保留，master 新增 locale 键同时保留。
 
 ## decisions
 
@@ -151,6 +154,8 @@ MR 评论修复已完成，等待用户确认提交和推送。
 - OpenCraft 同步检查验证 130 个文件，插件类型检查及 Web 构建通过。
 - 暂存变更影响检查通过，`agent-gateway-runtime` 需要 `wisp/mono2-maintainers` 审阅正式设计文档。
 - MR 评论修复后的前端聚焦测试 22/22 通过；`pnpm check`、前端构建、OpenCraft 漂移检查、插件类型检查和 Web 构建通过。
+- 合并最新 master 后 OpenCraft 重新同步 130 个文件，漂移检查和插件类型检查通过。
+- 合并最新 master 后前端聚焦测试 22/22、`pnpm check`、生产构建（104 个静态页面）和 OpenCraft Web 构建通过。
 
 ### unverified
 
@@ -169,4 +174,4 @@ MR 评论修复已完成，等待用户确认提交和推送。
 
 ### next_action
 
-确认后先提交前端真源，再重新同步 OpenCraft 以刷新 `sourceRevision`，提交生成副本与任务记录并推送现有 MR。
+完成合并后验证，提交同步脚本锚点、生成副本和任务记录并推送现有 MR。

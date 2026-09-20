@@ -38,6 +38,15 @@ function makeOverview(definition: KoreanSkillDefinition): CuratedSkillOverview {
 }
 
 const DEFINITIONS: Record<string, KoreanSkillDefinition> = {
+  "mattpocock/skills/teach": {
+    name: "Teach", purpose: "출처에 기반한 짧은 레슨으로 지속적인 학습 작업 공간을 만듭니다", input: "학습 주제, 목표, 선호도와 제약 조건", outcome: "출처, 연습, 진행 기록을 포함한 지속적인 과정", prompt: "이 코드베이스의 기초를 짧은 레슨으로 가르쳐 주세요. 먼저 제 목표를 물어보고 신뢰할 수 있는 출처를 모은 뒤, 출처를 기록하기 전에는 첫 레슨을 작성하지 마세요.",
+  },
+  "mattpocock/skills/grill-me": {
+    name: "Grill Me", purpose: "체계적인 질문으로 계획이나 설계를 철저히 검증합니다", input: "계획, 아이디어, 설계와 이미 결정한 사항", outcome: "더 명확한 위험, 가정, 수용 기준", prompt: "이 계획을 하나씩 질문해 주세요. 중요한 답변을 다음 의사결정 분기로 이어가고 범위, 위험, 수용 기준이 명확해질 때까지 계속해 주세요.",
+  },
+  "flowkit-labs/skills/reddit-automation": {
+    name: "Reddit Automation", purpose: "제품이 실제로 도움을 줄 수 있는 Reddit 대화를 찾습니다", input: "제품 맥락, 대상 사용자, 커뮤니티, 정직하게 제공할 수 있는 도움", outcome: "관련 스레드와 소속을 투명하게 밝힌 유용한 답변 초안", prompt: "이번 주에 우리 제품이 실제로 도움을 줄 수 있는 Reddit 스레드를 찾아 주세요. 관련 이유를 설명하고 소속을 투명하게 밝힌 유용한 답변을 작성한 뒤 게시 전 제 검토를 기다려 주세요.",
+  },
   "charon-fan/agent-playbook/self-improving-agent": {
     name: "Self-Improving Agent", purpose: "우리는 과거 실행, 실패, 수정에서", input: "이 모든 것이", outcome: "이 모든 것이", prompt: "이 실패한 실행을 다시 한번 생각해보고, 다시 사용할 수 있는 교훈과 다음 번에 적용하기 전에 검증하는 방법을 제안해 주세요.",
   },
