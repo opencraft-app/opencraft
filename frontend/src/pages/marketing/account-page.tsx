@@ -1022,6 +1022,8 @@ const SubscriptionSection = ({
                 <p className="text-sm font-bold" style={{ color: "#333" }}>{t("当前套餐")}</p>
                 <AppLink
                   to={plansDocHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-0.5 text-xs font-medium transition-colors hover:text-black/70"
                   style={{ color: "var(--lw-accent)" }}
                 >

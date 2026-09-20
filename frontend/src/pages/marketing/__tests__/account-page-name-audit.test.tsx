@@ -389,7 +389,10 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
     expect(screen.getByText("生效中")).toBeInTheDocument();
     expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "套餐说明" })).toHaveAttribute("href", "/docs/plans");
+    const planDetailsLink = screen.getByRole("link", { name: "套餐说明" });
+    expect(planDetailsLink).toHaveAttribute("href", "/docs/plans");
+    expect(planDetailsLink).toHaveAttribute("target", "_blank");
+    expect(planDetailsLink).toHaveAttribute("rel", "noopener noreferrer");
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
     const subscriptionHeader = subscriptionHeading.parentElement;
 
