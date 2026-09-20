@@ -143,6 +143,7 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
           }}
           resetAgentConsole={resetAgentConsole}
           resetAgentConsoleRef={resetAgentConsoleRef}
+          maintenanceBusy={resettingConfig || resettingAgent}
         />
       </Suspense>
 

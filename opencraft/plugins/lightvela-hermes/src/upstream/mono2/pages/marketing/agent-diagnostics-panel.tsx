@@ -170,6 +170,7 @@ export function AgentDiagnosticsPanel({
   resetAgentAction,
   resetAgentConsole,
   resetAgentConsoleRef,
+  maintenanceBusy = false,
   workspaceRecoveryPanel,
 }: {
   botId: string;
@@ -182,6 +183,7 @@ export function AgentDiagnosticsPanel({
   resetAgentAction: DiagnosticsMaintenanceAction;
   resetAgentConsole: string[];
   resetAgentConsoleRef: RefObject<HTMLPreElement | null>;
+  maintenanceBusy?: boolean;
   workspaceRecoveryPanel?: ReactNode;
 }) {
   const t = useT();
@@ -190,9 +192,13 @@ export function AgentDiagnosticsPanel({
   const [sessionRepairConfirmOpen, setSessionRepairConfirmOpen] = useState(false);
   const [sessionRepairLoading, setSessionRepairLoading] = useState(false);
   const sessionRepairRequestIdRef = useRef(0);
-  const resolvedProfileId = profileId ?? "main";
-  const sessionRepairProfileId = profileId ?? (isMainBot ? "main" : undefined);
-  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, resolvedProfileId), [logsSince, resolvedProfileId]);
+  const diagnosticProfileId = profileId ?? (isMainBot ? "main" : undefined);
+  const commands = useMemo(
+    () => diagnosticProfileId
+      ? getAgentDiagnosticCommands(logsSince, diagnosticProfileId)
+      : [{ id: "logs" as const, command: "" }],
+    [diagnosticProfileId, logsSince],
+  );
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
@@ -205,6 +211,7 @@ export function AgentDiagnosticsPanel({
 
   const runCommand = useCallback(
     async (item: AgentDiagnosticCommand) => {
+      if (!diagnosticProfileId) return;
       setStates((current) => ({
         ...current,
         [item.id]: {
@@ -243,15 +250,16 @@ export function AgentDiagnosticsPanel({
         toast.error(t("获取最近日志失败"));
       }
     },
-    [botId, execDebugCommand, t],
+    [botId, diagnosticProfileId, execDebugCommand, t],
   );
 
   const exportLogs = useCallback(async () => {
+    if (!diagnosticProfileId) return;
     setExportingLogs(true);
     try {
       const result = await collectStreamedDiagnosticOutput(
         botId,
-        buildLogsExportCommand(logsSince, resolvedProfileId),
+        buildLogsExportCommand(logsSince, diagnosticProfileId),
         execDebugCommandStream,
       );
       if (!isDiagnosticCommandSucceeded(result)) {
@@ -264,20 +272,20 @@ export function AgentDiagnosticsPanel({
     } finally {
       setExportingLogs(false);
     }
-  }, [botId, botName, resolvedProfileId, execDebugCommandStream, logsSince, t]);
+  }, [botId, botName, diagnosticProfileId, execDebugCommandStream, logsSince, t]);
 
   const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
     setLogsSince(next);
   }, []);
 
   const runSessionRepair = useCallback(async () => {
-    if (sessionRepairLoading || !sessionRepairProfileId) return;
+    if (maintenanceBusy || sessionRepairLoading || !diagnosticProfileId) return;
     const requestId = ++sessionRepairRequestIdRef.current;
     setSessionRepairConfirmOpen(false);
     setSessionRepairLoading(true);
 
     try {
-      const result = await execDebugCommand(botId, buildSessionRepairCommand(sessionRepairProfileId));
+      const result = await execDebugCommand(botId, buildSessionRepairCommand(diagnosticProfileId));
       if (sessionRepairRequestIdRef.current !== requestId) return;
       const nextStatus = getDiagnosticRunStatus(result);
       if (nextStatus === "success") {
@@ -293,7 +301,7 @@ export function AgentDiagnosticsPanel({
         setSessionRepairLoading(false);
       }
     }
-  }, [botId, execDebugCommand, sessionRepairLoading, sessionRepairProfileId, t]);
+  }, [botId, diagnosticProfileId, execDebugCommand, maintenanceBusy, sessionRepairLoading, t]);
 
   return (
     <div className="space-y-4">
@@ -325,7 +333,7 @@ export function AgentDiagnosticsPanel({
             consoleRef={resetAgentConsoleRef}
           />}
           <SessionRepairCard
-            disabled={!sessionRepairProfileId}
+            disabled={maintenanceBusy || !diagnosticProfileId}
             loading={sessionRepairLoading}
             onRequestRepair={() => setSessionRepairConfirmOpen(true)}
           />
@@ -339,6 +347,7 @@ export function AgentDiagnosticsPanel({
             onRefresh={() => void runCommand(item)}
             onExport={item.id === "logs" ? () => void exportLogs() : undefined}
             isExporting={item.id === "logs" ? exportingLogs : false}
+            disabled={!diagnosticProfileId}
             logsSince={item.id === "logs" ? logsSince : undefined}
             onLogsSinceChange={item.id === "logs" ? handleLogsSinceChange : undefined}
           />
@@ -372,6 +381,7 @@ export function AgentDiagnosticsPanel({
               type="button"
               size="sm"
               onClick={() => void runSessionRepair()}
+              disabled={maintenanceBusy || sessionRepairLoading || !diagnosticProfileId}
               className="h-9 min-w-[104px] px-4"
             >
               {t("确认修复")}
@@ -508,6 +518,7 @@ function DiagnosticCard({
   onRefresh,
   onExport,
   isExporting,
+  disabled,
   logsSince,
   onLogsSinceChange,
 }: {
@@ -516,6 +527,7 @@ function DiagnosticCard({
   onRefresh: () => void;
   onExport?: () => void;
   isExporting?: boolean;
+  disabled: boolean;
   logsSince?: LogsSinceOption;
   onLogsSinceChange?: (value: LogsSinceOption) => void;
 }) {
@@ -543,10 +555,10 @@ function DiagnosticCard({
             <button
               type="button"
               onClick={onExport}
-              disabled={isLoading || isExporting}
+              disabled={disabled || isLoading || isExporting}
               className={cn(
                 "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full px-2 text-xs font-medium text-black/50 transition-colors",
-                isLoading || isExporting
+                disabled || isLoading || isExporting
                   ? "cursor-not-allowed opacity-45"
                   : "hover:bg-black/[0.04] hover:text-black/80",
               )}
@@ -566,7 +578,7 @@ function DiagnosticCard({
             <LogsSelectMenu
               value={logsSince}
               options={LOGS_SINCE_VALUES.map((value) => ({ value, label: getLogsSinceLabel(value, t) }))}
-              disabled={isLoading}
+              disabled={disabled || isLoading}
               ariaLabel={t("选择日志时间段")}
               widthClassName="w-[92px]"
               onChange={onLogsSinceChange}
@@ -575,10 +587,10 @@ function DiagnosticCard({
           <button
             type="button"
             onClick={onRefresh}
-            disabled={isLoading}
+            disabled={disabled || isLoading}
             className={cn(
               "lv-button lv-button--secondary inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3.5 text-sm font-semibold text-white shadow-sm transition-colors",
-              isLoading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
+              disabled || isLoading ? "cursor-not-allowed opacity-60" : "hover:bg-black/85 active:bg-black/95",
             )}
           >
             {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
@@ -598,6 +610,7 @@ function DiagnosticCard({
                   <button
                     type="button"
                     onClick={onRefresh}
+                    disabled={disabled}
                     className="mx-0.5 rounded px-0.5 font-medium text-black/55 underline decoration-black/20 underline-offset-2 transition-colors hover:text-black/80 hover:decoration-black/45"
                   >
                     {t("查询")}

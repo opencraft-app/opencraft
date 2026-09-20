@@ -22,7 +22,8 @@
 - `frontend/src/components/ui/popover.tsx`：Radix Popover 与 Portal。
 - `ExecDebugCommand(botId, command)`：保持现有调试命令调用契约。
 - 不变量：修复命令只作用于当前 `profileId`；执行期间禁止重复触发；非零退出码不得显示成功。
-- 不变量：非主 Bot 缺少 `profileId` 时禁止执行写操作；每次修复使用独立请求编号，迟到结果不得覆盖后续操作。
+- 不变量：非主 Bot 缺少 `profileId` 时禁止日志读取、导出和修复写入；每次修复使用独立请求编号，迟到结果不得覆盖后续操作。
+- 不变量：会话修复服从实例级维护互斥，备份、恢复或其他维护操作运行时不能并发执行。
 
 ## history_context
 
@@ -36,7 +37,8 @@
 - “常见报错”通过 hover、focus、click 打开 Radix 气泡，内容可进入与选择，不使用原生 `title`。
 - 确认后执行 `withHermesProfile("sessions repair", profileId)` 生成的命令。
 - 成功、失败、异常和执行中状态均可观察，执行中不能重复触发。
-- 非主 Bot 缺少 Profile 时修复入口禁用；A→B→A 切换后，旧请求逆序完成不会结束或提示新请求。
+- 非主 Bot 缺少 Profile 时，日志查询、导出和修复入口均禁用；A→B→A 切换后，旧请求逆序完成不会结束或提示新请求。
+- 备份、恢复或其他实例维护操作运行时，会话修复入口禁用且不能打开确认弹窗。
 - 聚焦测试、前端 lint、类型检查、context 校验通过。
 
 ## affected_paths
@@ -87,6 +89,8 @@
 - 合并 `origin/master@a9766757f` 时，7 份 locale 文件经键级三方审计确认无同键语义冲突：本分支新增 12 个会话修复键，master 修改 44 个其他键；结构化合并后每份为 2957 个键。
 - `pnpm vitest run src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`：19/19 通过，包含英文 locale 和气泡关闭路径覆盖。
 - MR 评论修复后聚焦测试：22/22 通过，新增缺失 Profile fail-closed 和 A→B→A 逆序完成覆盖。
+- 第二轮 MR 评论修复后聚焦测试：24/24 通过，新增缺失 Profile 日志读取隔离和维护忙碌禁用覆盖。
+- 两组诊断测试：33/34 通过；唯一失败为目标分支已有的新建 Bot 文案断言漂移，与本轮会话修复无关。
 - `pnpm check`：通过；TypeScript 0 个新增诊断。
 - `pnpm build`：通过；103 个静态页面生成完成，SEO 与静态资源检查通过。
 - 全量 `pnpm test`：3,413 项通过、51 项失败、14 项跳过，随后 worker OOM；失败集中在已有积分包、文档、自动化、新建 Bot 文案等测试，聚焦诊断测试单独通过。
@@ -139,14 +143,14 @@
 
 ## handoff
 
-- 原功能已有 MR `!4307`；MR 新评论要求补充缺失 Profile 写保护和 A→B→A 异步隔离。
-- 两项评论已在本地修复并通过聚焦验证及两端构建，尚未提交或推送；OpenCraft 旧策略测试仍有 7 项既有失败。
+- 原功能已有 MR `!4307`；最新评论要求会话修复服从实例级维护互斥，并禁止缺少 Profile 的命名 Bot 跨读主 Bot 日志。
+- 两项最新评论已在本地修复并通过聚焦检查，尚未提交或推送；OpenCraft 旧策略测试仍有 7 项既有失败。
 
 ## checkpoint
 
 ### stage
 
-MR 评论修复已完成，等待用户确认提交和推送。
+第二轮 MR 评论修复与完整构建已完成，等待用户确认提交和推送。
 
 ### verified
 
@@ -156,6 +160,10 @@ MR 评论修复已完成，等待用户确认提交和推送。
 - MR 评论修复后的前端聚焦测试 22/22 通过；`pnpm check`、前端构建、OpenCraft 漂移检查、插件类型检查和 Web 构建通过。
 - 合并最新 master 后 OpenCraft 重新同步 130 个文件，漂移检查和插件类型检查通过。
 - 合并最新 master 后前端聚焦测试 22/22、`pnpm check`、生产构建（104 个静态页面）和 OpenCraft Web 构建通过。
+- 第二轮 MR 评论修复后前端聚焦测试 24/24、`pnpm check` 和 OpenCraft 130 文件漂移检查、插件类型检查通过。
+- 第二轮两组诊断测试 33/34 通过；唯一失败为目标分支已有的新建 Bot 文案断言漂移。
+- 第二轮前端生产构建通过，生成 104 个静态页面；OpenCraft Web 构建通过。
+- 文档完整性校验通过，无 broken first-party links、未分类文档或 context coverage 缺口。
 
 ### unverified
 
@@ -170,8 +178,8 @@ MR 评论修复已完成，等待用户确认提交和推送。
 ### restore
 
 - 当前分支 `frontsandbox/session-repair` 的 MR 是 `!4307`。
-- `UPSTREAM.json` 的 `sourceRevision` 已与前端提交 `f0a1f991f` 一致。
+- `UPSTREAM.json` 的 `sourceRevision` 已与最新评论修复提交 `71170bace` 一致。
 
 ### next_action
 
-完成合并后验证，提交同步脚本锚点、生成副本和任务记录并推送现有 MR。
+等待用户确认提交和推送现有 MR；提交前端真源后重新运行同步脚本，更新生成副本的 `sourceRevision`。
