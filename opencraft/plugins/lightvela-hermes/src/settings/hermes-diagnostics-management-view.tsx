@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import type { LightVelaAccountService } from "../account/lightvela-account-service";
 import { HermesAgentConsoleHost } from "./hermes-agent-console-host";
@@ -33,9 +33,34 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [resettingConfig, setResettingConfig] = useState(false);
   const [resettingAgent, setResettingAgent] = useState(false);
+  const [sessionRepairPendingKeysByScope, setSessionRepairPendingKeysByScope] = useState<Record<string, string[]>>({});
   const [resetAgentConsole, setResetAgentConsole] = useState<string[]>([]);
   const resetAgentConsoleRef = useRef<HTMLPreElement | null>(null);
   const runnable = botStatus.trim().toLowerCase() === "running";
+  const sessionRepairBusy = (sessionRepairPendingKeysByScope[botId]?.length ?? 0) > 0;
+  const maintenanceBusy = resettingConfig || resettingAgent || sessionRepairBusy;
+  const handleSessionRepairPendingChange = useCallback((change: {
+    maintenanceScopeId: string;
+    requestKey: string;
+    pending: boolean;
+  }) => {
+    setSessionRepairPendingKeysByScope((current) => {
+      const scopeKeys = current[change.maintenanceScopeId] ?? [];
+      if (change.pending) {
+        if (scopeKeys.includes(change.requestKey)) return current;
+        return { ...current, [change.maintenanceScopeId]: [...scopeKeys, change.requestKey] };
+      }
+      if (!scopeKeys.includes(change.requestKey)) return current;
+      const nextScopeKeys = scopeKeys.filter((requestKey) => requestKey !== change.requestKey);
+      const next = { ...current };
+      if (nextScopeKeys.length > 0) {
+        next[change.maintenanceScopeId] = nextScopeKeys;
+      } else {
+        delete next[change.maintenanceScopeId];
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const element = resetAgentConsoleRef.current;
@@ -48,7 +73,7 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
   }, [botId]);
 
   const resetConfig = async () => {
-    if (!runnable || resettingConfig) return;
+    if (!runnable || maintenanceBusy) return;
     setConfirmAction(null);
     setResettingConfig(true);
     try {
@@ -92,7 +117,7 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
   };
 
   const resetAgent = async () => {
-    if (!runnable || resettingAgent) return;
+    if (!runnable || maintenanceBusy) return;
     setConfirmAction(null);
     setResettingAgent(true);
     setResetAgentConsole([`$ ${ACLI_RESET_COMMAND}`]);
@@ -114,7 +139,11 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
     }
   };
 
-  const blockedTooltip = runnable ? "" : t("实例运行后才能执行此操作");
+  const blockedTooltip = !runnable
+    ? t("实例运行后才能执行此操作")
+    : maintenanceBusy
+      ? t("Agent 维护任务执行中，请稍后再试。")
+      : "";
   return (
     <HermesAgentConsoleHost>
       <Suspense fallback={<div className="flex min-h-48 items-center justify-center text-sm text-black/45">{t("加载中...")}</div>}>
@@ -130,20 +159,22 @@ export function HermesDiagnosticsManagementView({ account, botId, botName, botSt
             account.execDebugCommandStream(targetBotId, command, onChunk, { timeoutMs: 120_000 })
           }
           resetConfigAction={{
-            disabled: !runnable || resettingConfig || resettingAgent,
+            disabled: !runnable || maintenanceBusy,
             loading: resettingConfig,
             tooltip: blockedTooltip,
             onExecute: () => setConfirmAction("reset-config"),
           }}
           resetAgentAction={{
-            disabled: !runnable || resettingAgent || resettingConfig,
+            disabled: !runnable || maintenanceBusy,
             loading: resettingAgent,
             tooltip: blockedTooltip,
             onExecute: () => setConfirmAction("reset-agent"),
           }}
           resetAgentConsole={resetAgentConsole}
           resetAgentConsoleRef={resetAgentConsoleRef}
-          maintenanceBusy={resettingConfig || resettingAgent}
+          maintenanceBusy={maintenanceBusy}
+          maintenanceScopeId={botId}
+          onSessionRepairPendingChange={handleSessionRepairPendingChange}
         />
       </Suspense>
 

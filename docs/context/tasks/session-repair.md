@@ -23,7 +23,8 @@
 - `ExecDebugCommand(botId, command)`：保持现有调试命令调用契约。
 - 不变量：修复命令只作用于当前 `profileId`；执行期间禁止重复触发；非零退出码不得显示成功。
 - 不变量：非主 Bot 缺少 `profileId` 时禁止日志读取、导出和修复写入；每次修复使用独立请求编号，迟到结果不得覆盖后续操作。
-- 不变量：会话修复服从实例级维护互斥，备份、恢复或其他维护操作运行时不能并发执行。
+- 不变量：会话修复与备份、恢复、模型配置重置和运行环境重置采用实例级双向互斥；修复运行时其他入口也必须禁用。
+- 不变量：父级按实例和修复请求 key 累计 pending；Profile 切换不得提前释放真实未完成请求的维护锁。
 
 ## history_context
 
@@ -39,6 +40,10 @@
 - 成功、失败、异常和执行中状态均可观察，执行中不能重复触发。
 - 非主 Bot 缺少 Profile 时，日志查询、导出和修复入口均禁用；A→B→A 切换后，旧请求逆序完成不会结束或提示新请求。
 - 备份、恢复或其他实例维护操作运行时，会话修复入口禁用且不能打开确认弹窗。
+- 会话修复运行时，模型配置重置、运行环境重置、备份和恢复入口全部禁用。
+- 禁用的会话修复入口通过可聚焦的 Portal tooltip 解释原因；命名 Bot 缺少 Profile 时，日志卡片显示明确说明态，不渲染空命令条。
+- “常见报错”使用非 tooltip 的 Popover 浮层语义，展开时才关联 `aria-controls`。
+- 会话修复确认弹窗复用 `DialogContent` 的共享浮层圆角、背景与阴影，不覆盖为页面内硬编码样式。
 - 聚焦测试、前端 lint、类型检查、context 校验通过。
 
 ## affected_paths
@@ -90,6 +95,9 @@
 - `pnpm vitest run src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`：19/19 通过，包含英文 locale 和气泡关闭路径覆盖。
 - MR 评论修复后聚焦测试：22/22 通过，新增缺失 Profile fail-closed 和 A→B→A 逆序完成覆盖。
 - 第二轮 MR 评论修复后聚焦测试：24/24 通过，新增缺失 Profile 日志读取隔离和维护忙碌禁用覆盖。
+- 第三轮 MR 评论修复后两组聚焦测试：37/37 通过；新增修复运行中反向禁用模型重置、Hermes 重置、备份和恢复入口的 held-promise 覆盖。
+- 会话修复 pending 以 `maintenanceScopeId + requestKey` 回传父级累计；旧请求完成只删除自身 key，不会提前释放同实例的新请求锁。
+- 禁用原因使用可聚焦的 Portal tooltip；缺少 Profile 的日志卡片退化为说明态；常见报错 Popover 使用 `region` 语义并只在展开时关联 `aria-controls`。
 - 两组诊断测试：33/34 通过；唯一失败为目标分支已有的新建 Bot 文案断言漂移，与本轮会话修复无关。
 - `pnpm check`：通过；TypeScript 0 个新增诊断。
 - `pnpm build`：通过；103 个静态页面生成完成，SEO 与静态资源检查通过。
@@ -119,6 +127,9 @@
 - `pnpm build` 通过，103 个静态页面生成；`npm ci --dry-run --ignore-scripts` 接受 OpenCraft 锁文件。
 - `cd opencraft && npx tsx --test tests/lightvela-management-policy.test.ts` 未通过（4 通过、7 失败）；旧测试预期与当前前端共享组件、QR 命令和布局契约不一致，未扩展修改。
 - `git diff --check` 通过。
+- 第三轮 MR 评论修复后 `pnpm check` 通过，i18n 2958/2958、TypeScript 0 个新增诊断。
+- 第三轮 OpenCraft 同步漂移检查验证 130 个文件，插件类型检查和 Web 构建通过。
+- 第三轮前端生产构建通过，生成 104 个静态页面；文档完整性校验通过。
 - 合并冲突已在 `58c8f27f3` 解决；会话修复 Profile 写保护和请求代次逻辑保留，master 新增 locale 键同时保留。
 
 ## decisions
@@ -143,14 +154,14 @@
 
 ## handoff
 
-- 原功能已有 MR `!4307`；最新评论要求会话修复服从实例级维护互斥，并禁止缺少 Profile 的命名 Bot 跨读主 Bot 日志。
-- 两项最新评论已在本地修复并通过聚焦检查，尚未提交或推送；OpenCraft 旧策略测试仍有 7 项既有失败。
+- 原功能已有 MR `!4307`；本轮最新评论中的 P1 与 P2 1–6、8 已在本地修复，P2 7 保留为生成同步闭包并在交接中说明。
+- 前端真源与正式设计已提交为 `f4474b5a9`；OpenCraft 生成副本按该提交重新同步，本地 `.codebuddy/.cache/` 与两份 Markdown 草稿不属于变更集。
 
 ## checkpoint
 
 ### stage
 
-第二轮 MR 评论修复与完整构建已完成，等待用户确认提交和推送。
+第三轮 MR 评论修复、完整验证和前端真源提交已完成，OpenCraft 同步闭包准备提交到现有 MR 分支。
 
 ### verified
 
@@ -164,12 +175,12 @@
 - 第二轮两组诊断测试 33/34 通过；唯一失败为目标分支已有的新建 Bot 文案断言漂移。
 - 第二轮前端生产构建通过，生成 104 个静态页面；OpenCraft Web 构建通过。
 - 文档完整性校验通过，无 broken first-party links、未分类文档或 context coverage 缺口。
+- 第三轮两组诊断测试 37/37、`pnpm check`、前端生产构建、OpenCraft 130 文件漂移检查、插件类型检查、Web 构建和文档校验均通过。
 
 ### unverified
 
 - OpenCraft `lightvela-management-policy.test.ts` 仍有 7 项失败；其中旧 Button 样式断言不符合当前前端真源，本轮不修改其他失效断言。
 - 尚未验证登录后的 Web/Electron/Expo 页面交互。
-- `UPSTREAM.json.sourceRevision` 在源文件提交前仍记录上一源提交；提交前端真源后需重新运行同步脚本并一并提交生成副本。
 
 ### discard
 
@@ -178,8 +189,8 @@
 ### restore
 
 - 当前分支 `frontsandbox/session-repair` 的 MR 是 `!4307`。
-- `UPSTREAM.json` 的 `sourceRevision` 已与最新评论修复提交 `71170bace` 一致。
+- `UPSTREAM.json` 的 `sourceRevision` 已与前端真源提交 `f4474b5a9` 一致。
 
 ### next_action
 
-等待用户确认提交和推送现有 MR；提交前端真源后重新运行同步脚本，更新生成副本的 `sourceRevision`。
+继续现有 MR `!4307` 的评审与合并流程。
