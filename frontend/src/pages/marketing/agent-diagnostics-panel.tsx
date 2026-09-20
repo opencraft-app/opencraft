@@ -1,7 +1,9 @@
-import { ChevronDown, ClipboardList, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
-import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ClipboardList, DatabaseBackup, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -58,6 +60,10 @@ export function buildLogsCommand(since: LogsSinceOption, profileId = "main"): st
 
 export function buildLogsExportCommand(since: LogsSinceOption, profileId = "main"): string {
   return withHermesProfile(`logs --since ${since} -n ${LOGS_EXPORT_LINES}`, profileId);
+}
+
+export function buildSessionRepairCommand(profileId = "main"): string {
+  return withHermesProfile("sessions repair", profileId);
 }
 
 export async function collectStreamedDiagnosticOutput(
@@ -179,10 +185,19 @@ export function AgentDiagnosticsPanel({
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
   const [exportingLogs, setExportingLogs] = useState(false);
+  const [sessionRepairConfirmOpen, setSessionRepairConfirmOpen] = useState(false);
+  const [sessionRepairState, setSessionRepairState] = useState<DiagnosticCardState>(DEFAULT_CARD_STATE);
+  const sessionRepairTargetRef = useRef(botId + ":" + profileId);
   const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, profileId), [logsSince, profileId]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
+
+  useEffect(() => {
+    sessionRepairTargetRef.current = botId + ":" + profileId;
+    setSessionRepairConfirmOpen(false);
+    setSessionRepairState(DEFAULT_CARD_STATE);
+  }, [botId, profileId]);
 
   const runCommand = useCallback(
     async (item: AgentDiagnosticCommand) => {
@@ -251,6 +266,35 @@ export function AgentDiagnosticsPanel({
     setLogsSince(next);
   }, []);
 
+  const runSessionRepair = useCallback(async () => {
+    if (sessionRepairState.status === "loading") return;
+    const repairTarget = botId + ":" + profileId;
+    setSessionRepairConfirmOpen(false);
+    setSessionRepairState((current) => ({ ...current, status: "loading" }));
+
+    try {
+      const result = await execDebugCommand(botId, buildSessionRepairCommand(profileId));
+      if (sessionRepairTargetRef.current !== repairTarget) return;
+      const nextStatus = getDiagnosticRunStatus(result);
+      const output = normalizeDiagnosticOutput(result.output, result.status);
+      setSessionRepairState({
+        status: nextStatus,
+        output: truncateDiagnosticOutput(output, 8000),
+        rawOutput: output,
+      });
+      if (nextStatus === "success") {
+        toast.success(t("会话修复成功"));
+      } else {
+        toast.error(t("会话修复失败"));
+      }
+    } catch (error) {
+      if (sessionRepairTargetRef.current !== repairTarget) return;
+      const output = error instanceof Error ? error.message : t("命令执行失败");
+      setSessionRepairState({ status: "error", output, rawOutput: output });
+      toast.error(t("会话修复失败"));
+    }
+  }, [botId, execDebugCommand, profileId, sessionRepairState.status, t]);
+
   return (
     <div className="space-y-4">
       <AgentSectionHeader
@@ -280,6 +324,10 @@ export function AgentDiagnosticsPanel({
             consoleLines={resetAgentConsole}
             consoleRef={resetAgentConsoleRef}
           />}
+          <SessionRepairCard
+            state={sessionRepairState}
+            onRequestRepair={() => setSessionRepairConfirmOpen(true)}
+          />
         </div>
         {workspaceRecoveryPanel}
         {commands.map((item) => (
@@ -295,7 +343,170 @@ export function AgentDiagnosticsPanel({
           />
         ))}
       </div>
+
+      <Dialog open={sessionRepairConfirmOpen} onOpenChange={setSessionRepairConfirmOpen}>
+        <DialogContent
+          closeLabel={t("关闭")}
+          className="w-[calc(100vw-2rem)] max-w-[28rem] rounded-lg bg-white p-6 shadow-2xl md:w-[28rem]"
+        >
+          <DialogHeader className="mb-5 pr-8">
+            <DialogTitle className="text-balance text-lg font-semibold text-black/90">
+              {t("确认修复会话？")}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
+              {t("Hermes 将检查 state.db，并在发现异常时自动创建备份后执行修复。")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSessionRepairConfirmOpen(false)}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/65 transition-colors hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+            >
+              {t("取消")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void runSessionRepair()}
+              className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-md bg-black px-4 text-sm font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+            >
+              {t("确认修复")}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function SessionRepairCard({
+  state,
+  onRequestRepair,
+}: {
+  state: DiagnosticCardState;
+  onRequestRepair: () => void;
+}) {
+  const t = useT();
+  const isLoading = state.status === "loading";
+
+  return (
+    <article className="rounded-lg border border-black/[0.08] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+              <DatabaseBackup className="size-3" aria-hidden="true" />
+            </span>
+            <h3 className="truncate text-balance text-base font-semibold text-black/90">{t("会话修复")}</h3>
+          </div>
+          <p className="mt-2 text-pretty text-xs leading-5 text-black/50">
+            {t("用于修复会话中出现的异常问题，点此查看")}
+            <CommonSessionErrorPopover />
+            {t("。")}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onRequestRepair}
+          disabled={isLoading}
+          aria-busy={isLoading}
+          className={cn(
+            "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3 text-sm font-semibold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2",
+            isLoading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
+          )}
+        >
+          {isLoading ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+          {isLoading ? t("修复中...") : t("修复")}
+        </button>
+      </div>
+      {state.status !== "idle" && (
+        <div
+          role={state.status === "error" ? "alert" : "status"}
+          aria-live="polite"
+          className={cn(
+            "mt-3 rounded-md border px-3 py-2.5 text-xs leading-5",
+            state.status === "success" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+            state.status === "error" && "border-red-200 bg-red-50 text-red-700",
+            state.status === "loading" && "border-black/[0.08] bg-black/[0.025] text-black/50",
+          )}
+        >
+          {isLoading ? t("正在检查并修复会话...") : state.output}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function CommonSessionErrorPopover() {
+  const t = useT();
+  const popoverId = useId();
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (!closeTimerRef.current) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const showPopover = useCallback(() => {
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose]);
+
+  const scheduleClose = useCallback(() => {
+    if (pinned) return;
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => setOpen(false), 120);
+  }, [cancelClose, pinned]);
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
+
+  return (
+    <Popover open={open} onOpenChange={(nextOpen) => {
+      cancelClose();
+      if (!nextOpen) setPinned(false);
+      setOpen(nextOpen);
+    }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="rounded px-0.5 font-medium text-black/60 underline decoration-black/25 underline-offset-2 transition-colors hover:text-black/85 hover:decoration-black/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+          aria-label={t("查看常见报错")}
+          aria-expanded={open}
+          aria-controls={popoverId}
+          aria-describedby={open ? popoverId : undefined}
+          onClick={(event) => {
+            event.preventDefault();
+            cancelClose();
+            const nextPinned = !pinned;
+            setPinned(nextPinned);
+            setOpen(nextPinned);
+          }}
+          onMouseEnter={showPopover}
+          onMouseLeave={scheduleClose}
+          onFocus={showPopover}
+          onBlur={scheduleClose}
+        >
+          {t("常见报错")}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        id={popoverId}
+        role="tooltip"
+        align="start"
+        className="w-[min(24rem,calc(100vw-2rem))] select-text border border-black/10 bg-white px-3 py-2 text-left text-xs leading-5 text-black/70 shadow-lg"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onMouseEnter={showPopover}
+        onMouseLeave={scheduleClose}
+        onFocusCapture={showPopover}
+        onBlurCapture={scheduleClose}
+      >
+        <p>Sorry, I encountered an unexpected error.</p>
+        <p>Try again or use /reset to start a fresh session.</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
