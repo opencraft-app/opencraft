@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "f0a1f991f6185b80b159a1ec0247315530b2fc71",
+  "sourceRevision": "282ffcd5ad0521d299db8c977fd3cb9cb0b5fb7f",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -345,7 +345,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "e751dbfc1ed269d3f7d1cae95863ee15529baf9b09c658c6ae9422bfe842913a"
+      "sourceSha256": "3c4fb605459cba0d62555db17ae31d90b01bfa694144f2009fe298fa1e4f6234"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",

@@ -262,7 +262,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
   作为长度编码身份键，跨实例同名 Profile 不得合并；环境/账户作用域由上层目录
   添加。旧 Context/Repository 保留兼容门面直至消费者迁完。
 
-- 诊断中心日志查询、导出和模型配置重置显式选择当前 Bot 的原生 Profile；切换 Bot 后不得复用旧日志或配置状态。LLMGateway 重置按用户级 `purpose=default` 幂等读取平台权威 Key 和最新默认模型，只重建目标 Profile，不修改同实例其他 Profile；Key 通过一次性加密 envelope 下发，配置、凭据清理和 read-back 校验失败时回滚。旧 ai-gateway 仍只允许单一根 Profile，CTL 在签发或撤销实例 Key 前重新读取完整 Profile 列表并 fail closed。
+- 诊断中心日志查询、导出和模型配置重置显式选择当前 Bot 的原生 Profile；切换 Bot 后不得复用旧日志或配置状态。会话修复属于 Profile 级写操作：主 Bot 缺少公开 Profile 时可映射原生 `default`，命名 Bot 缺少后端返回的 `profile_id` 时必须禁用且不得回退主 Profile；每次执行使用独立请求代次，Bot/Profile 切换须使旧代次失效，迟到结果不得结束或提示后续修复。LLMGateway 重置按用户级 `purpose=default` 幂等读取平台权威 Key 和最新默认模型，只重建目标 Profile，不修改同实例其他 Profile；Key 通过一次性加密 envelope 下发，配置、凭据清理和 read-back 校验失败时回滚。旧 ai-gateway 仍只允许单一根 Profile，CTL 在签发或撤销实例 Key 前重新读取完整 Profile 列表并 fail closed。
 - CTL 的 envd 同步与流式 `debug/exec` 共用用户切换包装：先选择直接运行或 `sudo` 启动器，再只附加一次完整脚本，保留运行用户、环境和退出码。不得在两个分支中重复嵌入模型配置等长脚本，避免包装本身放大 `bash -c` 单参数长度；原脚本及其 shell 引号转义后仍须满足运行系统的参数限制。TAT 路径不使用该包装。
 - 重装、备份与恢复属于整个 Agent 的维护操作，仅在主 Bot 展示入口，并明确影响所有 Bot。前端进度、控制台与操作锁按实例隔离，同一实例内切换 Bot 不丢失状态。恢复显式使用 `/home/agentuser/.hermes` 与原生 `default`，不依赖运行时当前选中的 Profile；完整多 Profile 恢复仍需在隔离实例做兼容性验收。
 

@@ -22,6 +22,7 @@
 - `frontend/src/components/ui/popover.tsx`：Radix Popover 与 Portal。
 - `ExecDebugCommand(botId, command)`：保持现有调试命令调用契约。
 - 不变量：修复命令只作用于当前 `profileId`；执行期间禁止重复触发；非零退出码不得显示成功。
+- 不变量：非主 Bot 缺少 `profileId` 时禁止执行写操作；每次修复使用独立请求编号，迟到结果不得覆盖后续操作。
 
 ## history_context
 
@@ -35,6 +36,7 @@
 - “常见报错”通过 hover、focus、click 打开 Radix 气泡，内容可进入与选择，不使用原生 `title`。
 - 确认后执行 `withHermesProfile("sessions repair", profileId)` 生成的命令。
 - 成功、失败、异常和执行中状态均可观察，执行中不能重复触发。
+- 非主 Bot 缺少 Profile 时修复入口禁用；A→B→A 切换后，旧请求逆序完成不会结束或提示新请求。
 - 聚焦测试、前端 lint、类型检查、context 校验通过。
 
 ## affected_paths
@@ -83,6 +85,7 @@
 - 当前 LightVela Hermes COS `latest.json` 已核验为 `0.21.3`。
 - `agent-diagnostics-panel.tsx` 已使用 `execDebugCommand` 和 `withHermesProfile`。
 - `pnpm vitest run src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`：19/19 通过，包含英文 locale 和气泡关闭路径覆盖。
+- MR 评论修复后聚焦测试：22/22 通过，新增缺失 Profile fail-closed 和 A→B→A 逆序完成覆盖。
 - `pnpm check`：通过；TypeScript 0 个新增诊断。
 - `pnpm build`：通过；103 个静态页面生成完成，SEO 与静态资源检查通过。
 - 全量 `pnpm test`：3,413 项通过、51 项失败、14 项跳过，随后 worker OOM；失败集中在已有积分包、文档、自动化、新建 Bot 文案等测试，聚焦诊断测试单独通过。
@@ -98,12 +101,14 @@
 
 - 聚焦测试：`agent-diagnostics-panel.test.ts`，19/19 通过。
 - `pnpm check` 通过。
+- MR 评论修复后 `pnpm check` 通过，TypeScript 0 个新增诊断。
 - `pnpm build` 通过。
 - 全量 `pnpm test` 未通过，记录为仓库既有失败与 4 GiB Node heap OOM；本任务相关测试通过。
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged` 通过。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json` 通过。
 - `cd opencraft && npm run sync:mono2-agent-console && npm run check:mono2-agent-console` 通过，验证 130 个共享文件。
 - `cd opencraft && npm run typecheck --workspace @opencraft/plugin-lightvela-hermes` 通过。
+- MR 评论修复后重新同步 130 个文件，漂移检查和插件类型检查通过。
 - `cd opencraft && npm run build:web` 通过，Vite 打包同步后的插件。
 - `pnpm build` 通过，103 个静态页面生成；`npm ci --dry-run --ignore-scripts` 接受 OpenCraft 锁文件。
 - `cd opencraft && npx tsx --test tests/lightvela-management-policy.test.ts` 未通过（4 通过、7 失败）；旧测试预期与当前前端共享组件、QR 命令和布局契约不一致，未扩展修改。
@@ -112,6 +117,8 @@
 ## decisions
 
 - 使用直接修复命令并增加确认弹窗；避免额外引入 `--check-only` 状态分支。
+- 主 Bot 缺失 Profile 时允许映射 Hermes `default`；非主 Bot 缺失 Profile 时禁用修复，避免误写主 Bot。
+- 修复操作使用单调 request ID 校验结果，Profile 身份相同也不能让旧请求覆盖新请求。
 - 使用现有 Radix Popover；满足 click、hover、focus 与 Portal 要求。
 - 功能在共用诊断组件内实现，国内站和国际站同步显示，文案进入 i18n。
 - `frontend/src/pages/marketing/**` 被 `site-environment-routing` change-impact 规则显式排除，不需要同步该规则映射的正式设计文档。
@@ -129,25 +136,27 @@
 
 ## handoff
 
-- 原功能已有 MR `!4307`；本轮前端修正已提交为 `f0a1f991f`，生成副本和文档待提交，尚未推送。
-- 聚焦验证及两端构建通过，OpenCraft 旧策略测试仍有 7 项失败；交接前保留这一限制。
+- 原功能已有 MR `!4307`；MR 新评论要求补充缺失 Profile 写保护和 A→B→A 异步隔离。
+- 两项评论已在本地修复并通过聚焦验证及两端构建，尚未提交或推送；OpenCraft 旧策略测试仍有 7 项既有失败。
 
 ## checkpoint
 
 ### stage
 
-前端提交已完成；OpenCraft 副本按 `f0a1f991f` 重生成，等待剩余提交和推送。
+MR 评论修复已完成，等待用户确认提交和推送。
 
 ### verified
 
 - 前端聚焦测试 19/19、`pnpm check`、`pnpm build` 均通过。
 - OpenCraft 同步检查验证 130 个文件，插件类型检查及 Web 构建通过。
 - 暂存变更影响检查通过，`agent-gateway-runtime` 需要 `wisp/mono2-maintainers` 审阅正式设计文档。
+- MR 评论修复后的前端聚焦测试 22/22 通过；`pnpm check`、前端构建、OpenCraft 漂移检查、插件类型检查和 Web 构建通过。
 
 ### unverified
 
 - OpenCraft `lightvela-management-policy.test.ts` 仍有 7 项失败；其中旧 Button 样式断言不符合当前前端真源，本轮不修改其他失效断言。
 - 尚未验证登录后的 Web/Electron/Expo 页面交互。
+- `UPSTREAM.json.sourceRevision` 在源文件提交前仍记录上一源提交；提交前端真源后需重新运行同步脚本并一并提交生成副本。
 
 ### discard
 
@@ -160,4 +169,4 @@
 
 ### next_action
 
-提交同步副本、依赖与文档；复核检查后推送现有 MR。
+确认后先提交前端真源，再重新同步 OpenCraft 以刷新 `sourceRevision`，提交生成副本与任务记录并推送现有 MR。
