@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { LocaleOverrideProvider } from "@/i18n/t";
+
 import {
   AGENT_DIAGNOSTIC_COMMANDS,
   AgentDiagnosticsPanel,
@@ -148,12 +150,12 @@ describe("session repair", () => {
     renderDiagnosticsPanel();
 
     expect(screen.getByRole("heading", { name: "会话修复" })).toBeInTheDocument();
-    expect(screen.getByText(/用于修复会话中出现的异常问题，点此查看/)).toBeInTheDocument();
+    expect(screen.getByText("用于修复会话中出现的异常问题。")).toBeInTheDocument();
     const commonErrors = screen.getByRole("button", { name: "查看常见报错" });
 
     await user.hover(commonErrors);
     const hoverTooltip = await screen.findByRole("tooltip");
-    expect(hoverTooltip).toHaveTextContent("Sorry, I encountered an unexpected error.");
+    expect(hoverTooltip).toHaveTextContent("抱歉，我遇到了意外错误。");
     fireEvent.mouseLeave(commonErrors);
     fireEvent.mouseEnter(hoverTooltip);
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -167,7 +169,26 @@ describe("session repair", () => {
     await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
 
     await user.click(commonErrors);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Try again or use /reset to start a fresh session.");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("请重试或使用 /reset 开始新会话。");
+  });
+
+  it("localizes the repair description and common errors", async () => {
+    const user = userEvent.setup();
+    render(createElement(
+      LocaleOverrideProvider,
+      {
+        locale: "en-US",
+        children: createElement(AgentDiagnosticsPanel, diagnosticsPanelProps()),
+      },
+    ));
+
+    expect(screen.getByText("Repairs unexpected session issues.")).toBeInTheDocument();
+    const commonErrors = screen.getByRole("button", { name: "View common errors" });
+    await user.click(commonErrors);
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Sorry, I encountered an unexpected error.");
+    expect(tooltip).toHaveTextContent("Try again or use /reset to start a fresh session.");
   });
 
   it("asks for confirmation and runs repair for the current Profile", async () => {

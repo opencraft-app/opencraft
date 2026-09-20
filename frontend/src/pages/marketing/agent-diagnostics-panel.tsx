@@ -395,9 +395,8 @@ function SessionRepairCard({
             <h3 className="truncate text-balance text-base font-semibold text-black/90">{t("会话修复")}</h3>
           </div>
           <p className="mt-2 text-pretty text-xs leading-5 text-black/50">
-            {t("用于修复会话中出现的异常问题，点此查看")}
+            {t("用于修复会话中出现的异常问题。")}{" "}
             <CommonSessionErrorPopover />
-            {t("。")}
           </p>
         </div>
         <button
@@ -484,8 +483,8 @@ function CommonSessionErrorPopover() {
         onFocusCapture={showPopover}
         onBlurCapture={scheduleClose}
       >
-        <p>Sorry, I encountered an unexpected error.</p>
-        <p>Try again or use /reset to start a fresh session.</p>
+        <p>{t("抱歉，我遇到了意外错误。")}</p>
+        <p>{t("请重试或使用 /reset 开始新会话。")}</p>
       </PopoverContent>
     </Popover>
   );
