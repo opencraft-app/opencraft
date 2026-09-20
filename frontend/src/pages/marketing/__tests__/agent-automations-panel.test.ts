@@ -3020,12 +3020,13 @@ describe("once execution time picker", () => {
     fireEvent.change(minuteInput, { target: { value: "45" } });
     expect(hourInput).toHaveValue("14");
     expect(minuteInput).toHaveValue("45");
-    expect(group).toHaveClass("w-[80px]");
+    expect(group).toHaveClass("w-fit");
+    expect(group.firstElementChild).not.toHaveClass("flex-1");
     expect(within(group).queryByRole("button")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: localizedText("添加时间", "Add time") }));
-    expect(screen.getByRole("group", { name: `${runTime} 1` })).toHaveClass("w-[108px]");
-    expect(screen.getByRole("group", { name: `${runTime} 2` })).toHaveClass("w-[108px]");
+    expect(screen.getByRole("group", { name: `${runTime} 1` })).toHaveClass("w-fit");
+    expect(screen.getByRole("group", { name: `${runTime} 2` })).toHaveClass("w-fit");
     expect(screen.queryByRole("button", { name: `${localizedText("选择", "Select")} ${runTime} 1` })).toBeNull();
   });
 
