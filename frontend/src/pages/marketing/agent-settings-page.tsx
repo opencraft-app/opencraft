@@ -5680,7 +5680,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
                               botId={activeBot.id}
-                              profileId={activeBot.profileId ?? "main"}
+                              profileId={activeBot.profileId}
                               botName={activeBot.name}
                               isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}

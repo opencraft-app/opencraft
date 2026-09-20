@@ -172,7 +172,7 @@ export function AgentDiagnosticsPanel({
   workspaceRecoveryPanel,
 }: {
   botId: string;
-  profileId: string;
+  profileId?: string;
   botName: string;
   isMainBot: boolean;
   execDebugCommand: ExecDebugCommand;
@@ -188,17 +188,19 @@ export function AgentDiagnosticsPanel({
   const [exportingLogs, setExportingLogs] = useState(false);
   const [sessionRepairConfirmOpen, setSessionRepairConfirmOpen] = useState(false);
   const [sessionRepairLoading, setSessionRepairLoading] = useState(false);
-  const sessionRepairTargetRef = useRef(botId + ":" + profileId);
-  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, profileId), [logsSince, profileId]);
+  const sessionRepairRequestIdRef = useRef(0);
+  const resolvedProfileId = profileId ?? "main";
+  const sessionRepairProfileId = profileId ?? (isMainBot ? "main" : undefined);
+  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, resolvedProfileId), [logsSince, resolvedProfileId]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
 
   useEffect(() => {
-    sessionRepairTargetRef.current = botId + ":" + profileId;
+    sessionRepairRequestIdRef.current += 1;
     setSessionRepairConfirmOpen(false);
     setSessionRepairLoading(false);
-  }, [botId, profileId]);
+  }, [botId, isMainBot, profileId]);
 
   const runCommand = useCallback(
     async (item: AgentDiagnosticCommand) => {
@@ -248,7 +250,7 @@ export function AgentDiagnosticsPanel({
     try {
       const result = await collectStreamedDiagnosticOutput(
         botId,
-        buildLogsExportCommand(logsSince, profileId),
+        buildLogsExportCommand(logsSince, resolvedProfileId),
         execDebugCommandStream,
       );
       if (!isDiagnosticCommandSucceeded(result)) {
@@ -261,36 +263,36 @@ export function AgentDiagnosticsPanel({
     } finally {
       setExportingLogs(false);
     }
-  }, [botId, botName, profileId, execDebugCommandStream, logsSince, t]);
+  }, [botId, botName, resolvedProfileId, execDebugCommandStream, logsSince, t]);
 
   const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
     setLogsSince(next);
   }, []);
 
   const runSessionRepair = useCallback(async () => {
-    if (sessionRepairLoading) return;
-    const repairTarget = botId + ":" + profileId;
+    if (sessionRepairLoading || !sessionRepairProfileId) return;
+    const requestId = ++sessionRepairRequestIdRef.current;
     setSessionRepairConfirmOpen(false);
     setSessionRepairLoading(true);
 
     try {
-      const result = await execDebugCommand(botId, buildSessionRepairCommand(profileId));
-      if (sessionRepairTargetRef.current !== repairTarget) return;
+      const result = await execDebugCommand(botId, buildSessionRepairCommand(sessionRepairProfileId));
+      if (sessionRepairRequestIdRef.current !== requestId) return;
       const nextStatus = getDiagnosticRunStatus(result);
       if (nextStatus === "success") {
         toast.success(t("会话修复成功"));
       } else {
         toast.error(t("会话修复失败"));
       }
-    } catch (error) {
-      if (sessionRepairTargetRef.current !== repairTarget) return;
+    } catch {
+      if (sessionRepairRequestIdRef.current !== requestId) return;
       toast.error(t("会话修复失败"));
     } finally {
-      if (sessionRepairTargetRef.current === repairTarget) {
+      if (sessionRepairRequestIdRef.current === requestId) {
         setSessionRepairLoading(false);
       }
     }
-  }, [botId, execDebugCommand, profileId, sessionRepairLoading, t]);
+  }, [botId, execDebugCommand, sessionRepairLoading, sessionRepairProfileId, t]);
 
   return (
     <div className="space-y-4">
@@ -322,6 +324,7 @@ export function AgentDiagnosticsPanel({
             consoleRef={resetAgentConsoleRef}
           />}
           <SessionRepairCard
+            disabled={!sessionRepairProfileId}
             loading={sessionRepairLoading}
             onRequestRepair={() => setSessionRepairConfirmOpen(true)}
           />
@@ -380,9 +383,11 @@ export function AgentDiagnosticsPanel({
 }
 
 function SessionRepairCard({
+  disabled,
   loading,
   onRequestRepair,
 }: {
+  disabled: boolean;
   loading: boolean;
   onRequestRepair: () => void;
 }) {
@@ -406,11 +411,11 @@ function SessionRepairCard({
         <button
           type="button"
           onClick={onRequestRepair}
-          disabled={loading}
+          disabled={disabled || loading}
           aria-busy={loading}
           className={cn(
             "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3 text-sm font-semibold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2",
-            loading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
+            disabled || loading ? "cursor-not-allowed opacity-60" : "hover:bg-black/85 active:bg-black/95",
           )}
         >
           {loading ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}

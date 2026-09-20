@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -237,6 +237,35 @@ describe("session repair", () => {
     expect(screen.queryByText("Repair completed")).not.toBeInTheDocument();
   });
 
+  it("disables repair for a named Bot without a Profile", () => {
+    const execDebugCommand = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      profileId: undefined,
+    }));
+
+    expect(getSessionRepairButton()).toBeDisabled();
+    fireEvent.click(getSessionRepairButton());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(execDebugCommand).not.toHaveBeenCalled();
+  });
+
+  it("uses the default Profile when the main Bot has no Profile", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "done" });
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      profileId: undefined,
+      isMainBot: true,
+    }));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+
+    await waitFor(() => {
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "hermes -p 'default' sessions repair");
+    });
+  });
+
   it("disables duplicate repair while the command is running", async () => {
     let resolveRepair: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
     const execDebugCommand = vi.fn(() => new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
@@ -323,5 +352,44 @@ describe("session repair", () => {
     await waitFor(() => expect(screen.queryByText("stale support result")).not.toBeInTheDocument());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(toastMocks.success).not.toHaveBeenCalled();
+  });
+
+  it("ignores an older repair after switching A to B to A", async () => {
+    const resolvers: Array<(value: { status: string; exitCode: number; output: string }) => void> = [];
+    const execDebugCommand = vi.fn(() => new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolvers.push(resolve);
+    }));
+    const view = render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(await screen.findByRole("button", { name: "修复中..." })).toBeDisabled();
+
+    view.rerender(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      botId: "bot-2",
+      profileId: "sales",
+      botName: "Sales",
+    }));
+    view.rerender(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolvers[0]?.({ status: "SUCCESS", exitCode: 0, output: "first A result" });
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "修复中..." })).toBeDisabled();
+    expect(toastMocks.success).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvers[1]?.({ status: "SUCCESS", exitCode: 0, output: "second A result" });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(getSessionRepairButton()).toBeEnabled());
+    expect(toastMocks.success).toHaveBeenCalledTimes(1);
+    expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功");
   });
 });
