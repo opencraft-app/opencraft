@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * 的状态转换**（payment_pending → delivery_exception）。因此测试用可变控制器
  * 模拟 hook 内部的超时回调切换，断言弹窗就地转换后的渲染契约：
  *
- * - 转换是中性等待态而非错误态：标题「支付确认中」（「支付遇到问题」是 failed
+ * - 转换是中性等待态而非错误态：标题「请完成支付」（「支付遇到问题」是 failed
  *   专用）、正文不预设「支付已完成」、二维码保留（轮询 2 分钟 < authCode TTL
  *   9 分钟，二维码仍有效，不剥夺支付入口）、弹窗外不挂警告行（对齐套餐续费的
  *   超时静默口径）。
@@ -166,7 +166,7 @@ async function reachPayStage(initialStatus: CheckoutStatus) {
 }
 
 describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
-  it("轮询超时就地转换：标题常驻「微信扫码支付」不切错误，文案中性不误报「支付已完成」", async () => {
+  it("轮询超时就地转换：标题常驻「请完成支付」不切错误，文案中性不误报「支付已完成」", async () => {
     await reachPayStage("payment_pending");
 
     /* 模拟轮询超时：hook 内部 payment_pending → delivery_exception */
@@ -180,7 +180,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
 
     /* 标题常驻（对齐套餐 renew-pass-modal：轮询状态切换不动标题，超时静默） */
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "微信扫码支付" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "请完成支付" })).toBeInTheDocument();
     });
     /* 超时不是错误：绝不出现「支付遇到问题」标题（那是 failed 专用） */
     expect(screen.queryByRole("heading", { name: "支付遇到问题" })).not.toBeInTheDocument();
@@ -232,7 +232,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     act(() => {
       checkoutController.applyState?.({ status: "delivery_exception", dealName: "deal-x", error: null });
     });
-    await screen.findByRole("heading", { name: "微信扫码支付" });
+    await screen.findByRole("heading", { name: "请完成支付" });
 
     /* 超时/失败提示只留在弹窗内，页面按钮下方不挂警告 */
     expect(screen.queryByTestId("credit-pack-checkout-status")).not.toBeInTheDocument();
@@ -257,7 +257,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
     expect(await screen.findByTestId("credit-pack-terms-checkbox")).toBeInTheDocument();
     expect(screen.queryByTestId("credit-pack-wx-qr")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "确认购买积分包" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
     expect(resetMock).toHaveBeenCalledTimes(1);
   });
 
