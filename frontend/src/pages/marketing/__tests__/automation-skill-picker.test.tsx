@@ -148,6 +148,7 @@ describe("AutomationSkillPicker", () => {
 
     expect(trigger).toHaveTextContent("选择你希望 Agent 稳定调用的技能");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger.parentElement).toHaveClass("min-h-[38px]");
     expect(screen.getByText("选择你希望 Agent 稳定调用的技能")).toHaveClass("text-black/35");
 
     await user.click(trigger);
