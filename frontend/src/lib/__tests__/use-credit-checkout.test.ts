@@ -194,7 +194,7 @@ describe("useCreditCheckout 国内站（中转页 + wxSign 模式）", () => {
     result.current.reset();
 
     await waitFor(() => {
-      expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
+      expect(result.current.state).toEqual({ status: "idle", productId: null, dealName: null, error: null });
       expect(result.current.bridgePlan).toBeNull();
     });
   });
@@ -300,7 +300,7 @@ describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
   it("初始状态为 idle", () => {
     const { result } = renderHook(() => useCreditCheckout());
 
-    expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
+    expect(result.current.state).toEqual({ status: "idle", productId: null, dealName: null, error: null });
   });
 
   it("下单请求带上固定周期的商品 ID", async () => {
@@ -309,6 +309,9 @@ describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
     await result.current.start("credit_4000");
 
     expect(createCreditOrder).toHaveBeenCalledWith("credit_4000");
+    await waitFor(() => {
+      expect(result.current.state.productId).toBe("credit_4000");
+    });
   });
 
   it("创建订单失败时进入 failed 且不请求支付链接", async () => {

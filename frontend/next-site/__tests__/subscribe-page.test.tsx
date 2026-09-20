@@ -94,6 +94,18 @@ vi.mock("@/i18n/t", () => ({
 
 const navigateMock = vi.fn();
 
+const creditPackVisibilityState = vi.hoisted(() => ({ visible: false }));
+vi.mock("@/lib/credit-pack-visibility", () => ({
+  installCreditPackVisibilityHelper: () => () => undefined,
+  useCreditPackVisibility: () => creditPackVisibilityState.visible,
+}));
+
+vi.mock("../credit-pack-section", () => ({
+  CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
+    <section id={sectionId} data-testid="credit-pack-section" />
+  ),
+}));
+
 vi.mock("@/lib/app-navigation", () => ({
   AppLink: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>
@@ -179,6 +191,7 @@ const resetState = () => {
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
   navigateMock.mockReset();
+  creditPackVisibilityState.visible = false;
   window.history.replaceState({}, "", "/subscribe");
 };
 
@@ -206,6 +219,45 @@ describe("SubscribePage", () => {
 
     expect(screen.queryByTestId("subscribe-bundles-loading")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "巡游 Cruise" })).toBeInTheDocument();
+  });
+
+  it("scrolls a credits deep link after bundle loading mounts the credit section", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    creditPackVisibilityState.visible = true;
+    window.history.replaceState({}, "", "/subscribe?section=credits");
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    let resolveBundles!: (bundles: ReturnType<typeof buildBundle>[]) => void;
+    listBundlesMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBundles = resolve;
+      }),
+    );
+
+    try {
+      const { SubscribePage } = await import("@next-site/subscribe-page");
+      render(<SubscribePage />);
+
+      expect(screen.getByTestId("subscribe-bundles-loading")).toBeInTheDocument();
+      expect(screen.queryByTestId("credit-pack-section")).not.toBeInTheDocument();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+      });
+
+      expect(await screen.findByTestId("credit-pack-section")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+      });
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   /**

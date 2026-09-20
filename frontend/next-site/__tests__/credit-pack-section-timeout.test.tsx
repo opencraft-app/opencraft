@@ -14,9 +14,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *   专用）、正文不预设「支付已完成」、二维码保留（轮询 2 分钟 < authCode TTL
  *   9 分钟，二维码仍有效，不剥夺支付入口）、弹窗外不挂警告行（对齐套餐续费的
  *   超时静默口径）。
- * - 用户「暂不处理」关弹窗后再点购买：终态（超时/失败/已完成）先 reset 旧订单，
- *   弹窗回到条款确认阶段生成新订单（对齐套餐续费每次确认都新建订单）；进行中
- *   状态（payment_pending）重开时也 reset，旧订单轮询由 hook 的代际隔离停止写回。
+ * - 用户「暂不处理」关弹窗后再点购买：支付中、到账中、超时与已到账状态恢复
+ *   原订单，避免 reset 的代际隔离让旧订单到账结果无法写回；明确失败时才允许
+ *   reset 后重新下单。二维码过期先展示过期态，由用户主动点「重新下单」。
  *
  * hook mock：内部持有 React state 的 mini 实现，暴露 applyState 供测试模拟
  * 超时回调切换；reset 真实清空。轮询行为本身由 use-credit-checkout.test.ts 覆盖。
@@ -56,6 +56,7 @@ type CheckoutStatus =
 
 interface CheckoutSnapshot {
   status: CheckoutStatus;
+  productId: string | null;
   dealName: string | null;
   error: string | null;
 }
@@ -74,7 +75,7 @@ vi.mock("@/lib/use-credit-checkout", async () => {
   return {
     useCreditCheckout: () => {
       const [state, setState] = useState(
-        checkoutController.initial ?? { status: "idle", dealName: null, error: null },
+        checkoutController.initial ?? { status: "idle", productId: null, dealName: null, error: null },
       );
       useEffect(() => {
         checkoutController.applyState = setState;
@@ -89,10 +90,12 @@ vi.mock("@/lib/use-credit-checkout", async () => {
           bridgeUrl: "https://pay.example/bridge",
           expiresAt: checkoutController.qrExpiresAt ?? Date.now() + 9 * 60_000,
         },
-        start: vi.fn(),
+        start: vi.fn((productId: string) => {
+          setState((current) => ({ ...current, productId }));
+        }),
         reset: () => {
           resetMock();
-          setState({ status: "idle", dealName: null, error: null });
+          setState({ status: "idle", productId: null, dealName: null, error: null });
         },
         confirmDelivery: confirmDeliveryMock,
         checkDeliveryOnce: checkDeliveryOnceMock,
@@ -108,6 +111,7 @@ const listCreditProducts = vi.fn();
 const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, createCreditOrderUrl, listCreditProducts } };
 vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => repositoriesStub }));
 
+(globalThis as { React?: typeof React }).React = React;
 const { CreditPackSection } = await import("../credit-pack-section");
 
 const ALL_PRODUCTS_ONLINE = [
@@ -151,7 +155,7 @@ afterEach(() => {
 /** 走到支付阶段：选卡 → 打开弹窗 → 勾选条款 → 确认支付（mock 的 start 不改状态，
  *  测试用 applyState 驱动后续转换） */
 async function reachPayStage(initialStatus: CheckoutStatus) {
-  checkoutController.initial = { status: "idle", dealName: null, error: null };
+  checkoutController.initial = { status: "idle", productId: null, dealName: null, error: null };
   render(
     <CreditPackSection isLoggedIn hasActivePlan onRequireLogin={() => undefined} onRequirePlan={() => undefined} />,
   );
@@ -164,6 +168,7 @@ async function reachPayStage(initialStatus: CheckoutStatus) {
   act(() => {
     checkoutController.applyState?.({
       status: initialStatus,
+      productId: "credit_1000",
       dealName: "20260916995023682746371",
       error: null,
     });
@@ -187,6 +192,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     act(() => {
       checkoutController.applyState?.({
         status: "delivery_exception",
+        productId: "credit_1000",
         dealName: "20260916995023682746371",
         error: null,
       });
@@ -203,8 +209,8 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
       "暂未确认支付结果，请稍后刷新。",
     );
     expect(screen.getByTestId("credit-pack-modal-checkout-status")).not.toHaveTextContent("支付已完成");
-    /* 订单号仍透出（客服排查入口） */
-    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("20260916995023682746371");
+    /* 订单号独立透出（客服排查入口），不与状态文案耦合 */
+    expect(screen.getByTestId("credit-pack-modal-order-number")).toHaveTextContent("20260916995023682746371");
   });
 
   it("超时后国内站二维码仍展示（二维码 TTL 未到，不剥夺支付入口）并提供常驻手动刷新", async () => {
@@ -212,7 +218,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     await screen.findByTestId("credit-pack-wx-qr");
 
     act(() => {
-      checkoutController.applyState?.({ status: "delivery_exception", dealName: "deal-x", error: null });
+      checkoutController.applyState?.({ status: "delivery_exception", productId: "credit_1000", dealName: "deal-x", error: null });
     });
 
     /* 二维码保留：用户只是慢了仍可扫码支付 */
@@ -244,7 +250,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     await reachPayStage("payment_pending");
 
     act(() => {
-      checkoutController.applyState?.({ status: "delivery_exception", dealName: "deal-x", error: null });
+      checkoutController.applyState?.({ status: "delivery_exception", productId: "credit_1000", dealName: "deal-x", error: null });
     });
     await screen.findByRole("heading", { name: "请完成支付" });
 
@@ -256,37 +262,39 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     expect(screen.queryByTestId("credit-pack-checkout-status")).not.toBeInTheDocument();
   });
 
-  it("暂不处理关闭弹窗后重新购买：reset 旧订单，弹窗回到条款确认阶段（可生成新订单）", async () => {
+  it("超时后关闭并重新打开弹窗：保留旧订单与二维码，继续允许确认到账", async () => {
     await reachPayStage("payment_pending");
     act(() => {
-      checkoutController.applyState?.({ status: "delivery_exception", dealName: "deal-stale", error: null });
+      checkoutController.applyState?.({ status: "delivery_exception", productId: "credit_1000", dealName: "deal-stale", error: null });
     });
 
     /* 点「暂不处理」关闭弹窗 */
     await userEvent.click(await screen.findByRole("button", { name: "暂不处理" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    /* 重新点「购买所选积分包」：reset 清掉旧订单状态，弹窗回到条款确认阶段
-       （而非复用旧订单的支付阶段）——确认支付将创建新订单 */
+    /* 重新打开旧订单，不能 reset 掉仍可能到账的 generation。 */
     await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
-    expect(await screen.findByTestId("credit-pack-terms-checkbox")).toBeInTheDocument();
-    expect(screen.queryByTestId("credit-pack-wx-qr")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
-    expect(resetMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("credit-pack-wx-qr")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "请完成支付" })).toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
   });
 
-  it("二维码过期后重开弹窗：先 reset 旧订单，回到条款确认阶段生成新单", async () => {
+  it("二维码过期后重开弹窗：先展示过期状态，用户明确重新下单后才 reset", async () => {
     /* 预设已过期的二维码（模拟：payment_pending 保留态下隔了 TTL 再开弹窗） */
     checkoutController.qrExpiresAt = Date.now() - 1_000;
-    checkoutController.initial = { status: "payment_pending", dealName: "deal-expired", error: null };
+    checkoutController.initial = { status: "payment_pending", productId: "credit_1000", dealName: "deal-expired", error: null };
 
     render(
       <CreditPackSection isLoggedIn hasActivePlan onRequireLogin={() => undefined} onRequirePlan={() => undefined} />,
     );
     await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
 
-    /* QR 已过期：handlePrimary 直接 reset 旧订单，弹窗回条款确认阶段 */
+    /* QR 已过期：先恢复旧订单并展示过期提示，避免打开弹窗就隐式终止旧轮询。 */
     await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    expect(await screen.findByTestId("credit-pack-qr-expired")).toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByTestId("credit-pack-reorder"));
     expect(await screen.findByTestId("credit-pack-terms-checkbox")).toBeInTheDocument();
     expect(resetMock).toHaveBeenCalledTimes(1);
   });
@@ -310,7 +318,7 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     await reachPayStage("payment_pending");
 
     act(() => {
-      checkoutController.applyState?.({ status: "failed", dealName: null, error: "库存不足" });
+      checkoutController.applyState?.({ status: "failed", productId: "credit_1000", dealName: null, error: "库存不足" });
     });
 
     await waitFor(() => {
@@ -318,17 +326,38 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     });
   });
 
-  it("进行中状态（payment_pending）点「暂不处理」后重开弹窗：一律 reset 重新下单", async () => {
+  it("进行中状态（payment_pending）点「暂不处理」后重开弹窗：保留原支付码与到账轮询", async () => {
     await reachPayStage("payment_pending");
     await screen.findByTestId("credit-pack-wx-qr");
 
     await userEvent.click(await screen.findByRole("button", { name: "暂不处理" }));
     await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
 
-    /* 对齐套餐：关闭弹窗即结束本轮，重开一律从条款确认开始生成新订单，
-       不复用上一单的支付码与等待态 */
-    expect(await screen.findByTestId("credit-pack-terms-checkbox")).toBeInTheDocument();
-    expect(screen.queryByTestId("credit-pack-wx-qr")).not.toBeInTheDocument();
-    expect(resetMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("credit-pack-wx-qr")).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-terms-checkbox")).not.toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
+  });
+
+  it("关闭弹窗后旧订单到账，再次打开时显示成功且不渲染重复状态行", async () => {
+    await reachPayStage("payment_pending");
+    await userEvent.click(await screen.findByRole("button", { name: "暂不处理" }));
+
+    act(() => {
+      checkoutController.applyState?.({ status: "delivered", productId: "credit_1000", dealName: "deal-delivered", error: null });
+    });
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+
+    expect(await screen.findByRole("heading", { name: "购买成功" })).toBeInTheDocument();
+    expect(screen.getByText("购买成功，积分已到账。")).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-modal-checkout-status")).not.toBeInTheDocument();
+    expect(resetMock).not.toHaveBeenCalled();
+  });
+
+  it("到账处理中使用准确标题，并由说明承载状态文案", async () => {
+    await reachPayStage("delivery_pending");
+
+    expect(await screen.findByRole("heading", { name: "积分到账处理中" })).toBeInTheDocument();
+    expect(screen.getByText("积分到账处理中，请稍候…")).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-modal-checkout-status")).not.toBeInTheDocument();
   });
 });

@@ -1,9 +1,7 @@
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { CreditPackSection } from "../credit-pack-section";
 
 /* 站点切换：getter 型 mock（默认国内站，国际站用例显式切换）。
    vi.hoisted 把 state 声明提升到 import 之前，避免 vi.mock 工厂（import 期执行）
@@ -35,6 +33,9 @@ const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, crea
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => repositoriesStub,
 }));
+
+(globalThis as { React?: typeof React }).React = React;
+const { CreditPackSection } = await import("../credit-pack-section");
 
 const renderSection = (overrides: Partial<Parameters<typeof CreditPackSection>[0]> = {}) =>
   render(
@@ -269,6 +270,29 @@ describe("CreditPackSection", () => {
     expect(screen.getByText("支付完成后，需等待约 15 秒完成下单")).toBeInTheDocument();
     expect(screen.getByTestId("credit-pack-qr-panel")).toHaveClass("bg-[var(--surface-muted)]");
     expect(screen.getByTestId("credit-pack-recheck")).toHaveClass("border", "bg-white");
+  });
+
+  it("切换卡片后恢复未完成订单时仍展示原订单商品", async () => {
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+    await screen.findByTestId("credit-pack-wx-qr");
+
+    await userEvent.click(screen.getByRole("button", { name: "暂不处理" }));
+    await userEvent.click(screen.getByTestId("credit-pack-card-credit_2000"));
+
+    const primaryAction = screen.getByTestId("credit-pack-primary-action");
+    expect(primaryAction).toHaveTextContent("订单详情");
+    await userEvent.click(primaryAction);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("1,000 模型积分")).toBeInTheDocument();
+    expect(within(dialog).queryByText("2,000 模型积分")).not.toBeInTheDocument();
+    expect(createCreditOrder).toHaveBeenCalledTimes(1);
+    expect(createCreditOrder).toHaveBeenCalledWith("credit_1000");
   });
 
   it("need_charge=1 时经占位窗口打开支付页（国际站，对齐 pass 的 startIntlCardPay）", async () => {

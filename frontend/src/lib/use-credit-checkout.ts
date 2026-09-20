@@ -44,6 +44,8 @@ export type CheckoutStatus =
 
 export type CheckoutState = {
   status: CheckoutStatus;
+  /** 当前结算对应的商品；支付与到账阶段必须使用它，不能跟随卡片选择变化。 */
+  productId: string | null;
   /** 当前订单号，用于异常时提供给客服排查 */
   dealName: string | null;
   /** 失败原因，供 UI 展示 */
@@ -54,7 +56,7 @@ export type CheckoutState = {
 const DELIVERY_POLL_INTERVAL_MS = 3000;
 const DELIVERY_POLL_TIMEOUT_MS = 120_000;
 
-const INITIAL_STATE: CheckoutState = { status: "idle", dealName: null, error: null };
+const INITIAL_STATE: CheckoutState = { status: "idle", productId: null, dealName: null, error: null };
 
 /** 对积分包列表做快照，用于购买前后对比。 */
 const snapshotKeys = (items: readonly CreditPackageItem[]): Set<string> =>
@@ -139,11 +141,11 @@ export const useCreditCheckout = (options?: {
     generationRef.current = generation;
     const credit = repositoriesRef.current?.credit;
     if (!credit) {
-      setState({ status: "failed", dealName: null, error: "积分包服务不可用" });
+      setState({ status: "failed", productId, dealName: null, error: "积分包服务不可用" });
       return;
     }
 
-    setState({ status: "creating", dealName: null, error: null });
+    setState({ status: "creating", productId, dealName: null, error: null });
     setBridgePlan(null);
 
     /* 先记录购买前快照：到账判定依赖它。失败不阻塞下单，
@@ -169,6 +171,7 @@ export const useCreditCheckout = (options?: {
       if (generationRef.current !== generation) return;
       setState({
         status: "failed",
+        productId,
         dealName: null,
         error: error instanceof Error ? error.message : "创建订单失败",
       });
@@ -189,6 +192,7 @@ export const useCreditCheckout = (options?: {
         console.error("[credit] order issued without auth_code", { dealName });
         setState({
           status: "failed",
+          productId,
           dealName,
           error: "支付通道暂不可用（支付票据未下发），请稍后重试或联系客服",
         });
@@ -200,7 +204,7 @@ export const useCreditCheckout = (options?: {
         kind: BRIDGE_KIND_CREDIT_PACK,
       });
       setBridgePlan(plan);
-      setState({ status: "payment_pending", dealName, error: null });
+      setState({ status: "payment_pending", productId, dealName, error: null });
       return;
     }
 
@@ -226,7 +230,7 @@ export const useCreditCheckout = (options?: {
       /* need_charge=0：无需支付，关闭占位窗，直接进入到账确认 */
       if (session.need_charge === 0) {
         payWindow?.close();
-        setState({ status: "delivery_pending", dealName, error: null });
+        setState({ status: "delivery_pending", productId, dealName, error: null });
         return;
       }
 
@@ -241,7 +245,7 @@ export const useCreditCheckout = (options?: {
         window.location.assign(session.pay_url);
       }
       setPayUrl(session.pay_url);
-      setState({ status: "payment_pending", dealName, error: null });
+      setState({ status: "payment_pending", productId, dealName, error: null });
     } catch (error) {
       payWindow?.close();
       if (generationRef.current !== generation) return;
@@ -249,6 +253,7 @@ export const useCreditCheckout = (options?: {
          不自动重新下单（产品方案：不自动创建第二笔订单）。 */
       setState({
         status: "failed",
+        productId,
         dealName,
         error: error instanceof Error ? error.message : "获取支付链接失败",
       });

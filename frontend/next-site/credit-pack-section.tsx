@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -191,8 +190,6 @@ export const CreditPackSection = ({
     }
   }, [gate, t]);
 
-  const primaryDisabled = gate === 'unselected';
-
   /* 支付回跳标记：order-url 的 return_url 会带上它，返回后触发到账确认 */
   /* 构造回跳地址（对齐 pass 链路 startIntlCardPay 的做法）：
      去掉当前 URL 的 query/hash 再拼标记——防止把 OAuth code、一次性 ticket
@@ -210,6 +207,10 @@ export const CreditPackSection = ({
     /* 到账后不自动关弹窗：弹窗内展示「购买成功」态，用户点「完成」跳转账户页
        （对齐 pass 的 PaymentPendingModal 成功态） */
   });
+  const hasCurrentOrder = checkout.state.status !== 'idle' && checkout.state.status !== 'failed';
+  const effectivePrimaryLabel =
+    hasCurrentOrder ? t('订单详情') : primaryLabel;
+  const primaryDisabled = !hasCurrentOrder && gate === 'unselected';
 
   const handlePrimary = useCallback(() => {
     if (gate === 'not-logged-in') {
@@ -220,22 +221,27 @@ export const CreditPackSection = ({
       onRequirePlan();
       return;
     }
+    if (hasCurrentOrder) {
+      setTermsAccepted(false);
+      setModalOpen(true);
+      return;
+    }
     if (gate === 'quote-failed' && selectedProductId) {
       void loadQuote(selectedProductId);
       return;
     }
     if (gate === 'purchasable') {
-      /* 重开弹窗一律从条款确认阶段开始（对齐套餐续费：每次「确认续费」都
-         创建新订单）：用户点「暂不处理」关闭弹窗即结束本轮，再点购买按钮
-         重新走确认支付生成新订单——不复用上一单的支付码与等待态。 */
-      if (checkout.state.status !== 'idle' && checkout.state.status !== 'creating') {
+      /* 仍可能到账的旧订单必须保留：reset 会递增 checkout generation，导致旧轮询
+         无法写回到账结果。只有明确失败时才回到确认订单阶段；支付中、到账中、
+         超时待确认和已到账状态均直接恢复原弹窗。 */
+      if (checkout.state.status === 'failed') {
         checkout.reset();
       }
       /* 打开订单确认弹窗：勾选虚拟商品条款后才可支付（产品方案 7.1） */
       setTermsAccepted(false);
       setModalOpen(true);
     }
-  }, [checkout, gate, loadQuote, onRequireLogin, onRequirePlan, selectedProductId]);
+  }, [checkout, gate, hasCurrentOrder, loadQuote, onRequireLogin, onRequirePlan, selectedProductId]);
 
   /* 到账轮询统一启动：payment_pending（扫码 / 新窗口支付）或 delivery_pending
      （need_charge=0 零元单）即开始，超时进 delivery_exception 后可手动重查，
@@ -295,20 +301,12 @@ export const CreditPackSection = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* 支付中/到账中的状态文案（产品方案 7.4） */
-  const checkoutNotice = useMemo(() => {
+  /* 只为异常与手动刷新未到账渲染独立状态行。成功、到账处理中由弹窗说明承载，
+     避免同一句文案在 DialogDescription 和状态行中重复。 */
+  const checkoutStatusNotice = useMemo(() => {
     switch (checkout.state.status) {
-      case 'creating':
-        return t('正在创建订单…');
       case 'payment_pending':
-        /* 国内站：展示二维码等待扫码；国际站：已在新窗口打开托管页 */
-        return checkout.bridgePlan
-          ? t('请使用微信扫码完成支付。')
-          : t('已在新窗口打开支付页面，完成支付后本页将自动确认到账。');
-      case 'delivery_pending':
-        return t('积分到账处理中，请稍候…');
-      case 'delivered':
-        return t('购买成功，积分已到账。');
+        return recheckPendingNotice ? t('暂未确认支付结果，请稍后刷新。') : null;
       case 'delivery_exception':
         /* 轮询超时无法区分「未支付」与「已支付未到账」，文案必须中性——
            与套餐续费（renew-pass-modal）的字面口径一致，不预设用户已支付；
@@ -322,7 +320,7 @@ export const CreditPackSection = ({
       default:
         return null;
     }
-  }, [checkout.state, t]);
+  }, [checkout.state.status, checkout.state.error, recheckPendingNotice, t]);
 
   /* 二维码过期校验：bridgePlan.expiresAt 由 buildPayPlan 写入（now + 9 分钟，
      比后端 auth_code TTL 10 分钟短 1 分钟 buffer）。中转页（wechat-pay-page）
@@ -344,20 +342,30 @@ export const CreditPackSection = ({
     void checkout.start(selectedProductId);
   }, [checkout, selectedProductId]);
 
-  const selectedDenomination = useMemo(
-    () => CREDIT_PACK_DENOMINATIONS.find((d) => d.product_id === selectedProductId),
-    [selectedProductId],
+  const handleReorder = useCallback(() => {
+    checkout.reset();
+    setTermsAccepted(false);
+  }, [checkout]);
+
+  const dialogProductId =
+    checkout.state.status === 'idle' ? selectedProductId : (checkout.state.productId ?? selectedProductId);
+  const dialogQuote = dialogProductId ? quotes[dialogProductId] : undefined;
+  const dialogDenomination = useMemo(
+    () => CREDIT_PACK_DENOMINATIONS.find((d) => d.product_id === dialogProductId),
+    [dialogProductId],
   );
-  const selectedAmount = selectedQuote?.status === 'ready' ? formatAmount(selectedQuote.quote) : null;
+  const dialogAmount = dialogQuote?.status === 'ready' ? formatAmount(dialogQuote.quote) : null;
   const isConfirmationStep = checkout.state.status === 'idle' || checkout.state.status === 'creating';
   const paymentDialogTitle =
     checkout.state.status === 'delivered'
       ? t('购买成功')
-      : checkout.state.status === 'failed'
-        ? t('支付遇到问题')
-        : isGlobal
-          ? t('信用卡支付')
-          : t('请完成支付');
+      : checkout.state.status === 'delivery_pending'
+        ? t('积分到账处理中')
+        : checkout.state.status === 'failed'
+          ? t('支付遇到问题')
+          : isGlobal
+            ? t('信用卡支付')
+            : t('请完成支付');
   const paymentDialogDescription =
     checkout.state.status === 'delivered'
       ? t('购买成功，积分已到账。')
@@ -442,7 +450,7 @@ export const CreditPackSection = ({
           data-testid="credit-pack-primary-action"
           className="w-full rounded-md bg-[var(--text-primary)] px-4 py-3 text-sm font-semibold text-white transition-opacity duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-35 sm:w-auto sm:self-start"
         >
-          {primaryLabel}
+          {effectivePrimaryLabel}
         </button>
         {/* 支付进度只存在于弹窗内：页面按钮下方不挂任何状态提示行
             （对齐套餐续费——关闭弹窗即回到干净页面，进度与操作都在弹窗里）。 */}
@@ -462,7 +470,7 @@ export const CreditPackSection = ({
       ) : null}
 
       {/* 积分下单保持两阶段：确认订单后进入对应站点的支付与到账状态。 */}
-      {selectedDenomination && selectedQuote?.status === 'ready' && selectedAmount ? (
+      {dialogDenomination && dialogQuote?.status === 'ready' ? (
         <Dialog open={modalOpen} onOpenChange={setModalOpen}>
           <DialogContent
             closeLabel={t('关闭')}
@@ -480,9 +488,9 @@ export const CreditPackSection = ({
                 <dl className="rounded-md border border-[var(--border-strong)] p-5 text-sm">
                   <div className="flex items-start justify-between gap-4 text-[var(--text-secondary)]">
                     <dt className="text-pretty">
-                      {t('{{count}} 模型积分', { count: selectedDenomination.credit_total.toLocaleString() })}
+                      {t('{{count}} 模型积分', { count: dialogDenomination.credit_total.toLocaleString() })}
                     </dt>
-                    <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{selectedAmount}</dd>
+                    <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
                   </div>
                   <div className="mt-3 flex items-start justify-between gap-4 text-[var(--text-secondary)]">
                     <dt>{t('有效期')}</dt>
@@ -491,7 +499,7 @@ export const CreditPackSection = ({
                   <div className="my-4 h-px bg-[var(--border-strong)]" />
                   <div className="flex items-baseline justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">{t('总计：')}</dt>
-                    <dd className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">{selectedAmount}</dd>
+                    <dd className="text-2xl font-bold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
                   </div>
                 </dl>
 
@@ -525,10 +533,10 @@ export const CreditPackSection = ({
                   <span>
                     {t('我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。')}
                     {isGlobal ? null : (
-                      <React.Fragment>
+                      <>
                         <br />
                         {t('法律规定、重复扣款或平台交付异常等情况，由客服核验处理。')}
-                      </React.Fragment>
+                      </>
                     )}
                   </span>
                 </label>
@@ -551,7 +559,7 @@ export const CreditPackSection = ({
                     {checkout.state.status === 'creating' ? (
                       t('正在创建订单…')
                     ) : (
-                      <>{t('支付')} {selectedAmount}</>
+                      <>{t('支付')} {dialogAmount}</>
                     )}
                   </button>
                 </div>
@@ -562,6 +570,16 @@ export const CreditPackSection = ({
                   <DialogTitle className="text-balance">{paymentDialogTitle}</DialogTitle>
                   <DialogDescription className="text-pretty">{paymentDialogDescription}</DialogDescription>
                 </DialogHeader>
+
+                <dl
+                  data-testid="credit-pack-active-order-product"
+                  className="mb-5 flex items-center justify-between gap-4 rounded-md border border-[var(--border-strong)] px-4 py-3 text-sm"
+                >
+                  <dt className="text-pretty font-medium text-[var(--text-primary)]">
+                    {t('{{count}} 模型积分', { count: dialogDenomination.credit_total.toLocaleString() })}
+                  </dt>
+                  <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
+                </dl>
 
                 {(checkout.state.status === 'payment_pending' || checkout.state.status === 'delivery_exception') &&
                 !isGlobal &&
@@ -592,25 +610,25 @@ export const CreditPackSection = ({
                   </p>
                 ) : null}
 
-                <p
-                  role="status"
-                  aria-live="polite"
-                  className={cn(
-                    'mt-4 text-center text-pretty text-sm leading-relaxed text-[var(--text-secondary)]',
-                    checkout.state.status === 'delivered' && 'text-green-700',
-                  )}
-                  data-testid="credit-pack-modal-checkout-status"
-                >
-                  {checkout.state.status === 'payment_pending' ? null : checkoutNotice}
-                  {checkout.state.status === 'payment_pending' && recheckPendingNotice
-                    ? t('暂未确认支付结果，请稍后刷新。')
-                    : null}
-                  {checkout.state.dealName && checkout.state.status !== 'delivered' ? (
-                    <span className="mt-1 block text-xs text-[var(--text-tertiary)]">
-                      {t('订单号：{{deal}}', { deal: checkout.state.dealName })}
-                    </span>
-                  ) : null}
-                </p>
+                {checkoutStatusNotice ? (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="mt-4 text-center text-pretty text-sm leading-relaxed text-[var(--text-secondary)]"
+                    data-testid="credit-pack-modal-checkout-status"
+                  >
+                    {checkoutStatusNotice}
+                  </p>
+                ) : null}
+
+                {checkout.state.dealName && checkout.state.status !== 'delivered' ? (
+                  <p
+                    className="mt-1 text-center text-xs text-[var(--text-tertiary)]"
+                    data-testid="credit-pack-modal-order-number"
+                  >
+                    {t('订单号：{{deal}}', { deal: checkout.state.dealName })}
+                  </p>
+                ) : null}
 
                 <div className="mt-6 flex flex-col gap-3">
                   {checkout.payUrl && checkout.state.status === 'payment_pending' ? (
@@ -637,7 +655,7 @@ export const CreditPackSection = ({
                   {checkout.state.status === 'failed' || qrExpired ? (
                     <button
                       type="button"
-                      onClick={checkout.reset}
+                      onClick={handleReorder}
                       data-testid="credit-pack-reorder"
                       className="h-11 w-full rounded-md bg-[var(--text-primary)] px-4 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
