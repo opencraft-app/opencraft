@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowLeft,
   Camera,
   Check,
   ChevronRight,
@@ -22,7 +23,7 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferral
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
-import { ProductPageShell } from "@/components/site/product-chrome";
+import { ProductPageShell, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import {
@@ -40,7 +41,7 @@ import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
-import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
@@ -766,6 +767,7 @@ const SubscriptionSection = ({
   const t = useT();
   const { i18n } = useTranslation();
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
+  const plansDocHref = publicSiteHref("/docs/plans", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
   const { refreshPasses, user, modifyingPass, passUpgradeFailed } = useOpenClaw();
   useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const { session } = useSession();
@@ -917,6 +919,18 @@ const SubscriptionSection = ({
 
   // 展示用的套餐名称
   const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
+  const legacySubscriptionStatus = operablePass ? null : subscription?.status;
+  const displayStatus = isModifying
+    ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中"))
+    : passStatus === "expired" || legacySubscriptionStatus === "expired"
+      ? t("已过期")
+      : passStatus === "isolated"
+        ? t("隔离期")
+        : legacySubscriptionStatus === "pending_payment"
+          ? t("待支付")
+          : legacySubscriptionStatus === "cancelled"
+            ? t("已取消")
+            : t("生效中");
 
   /* ── 未订阅：缺省引导状态 ── */
   if (!hasActive) {
@@ -1004,12 +1018,24 @@ const SubscriptionSection = ({
               <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/8f6347f3-5b3f-4dfb-844d-bb2501cb9e3d.png" alt="" className="h-7 w-7 rounded-lg object-cover" />
             </div> */}
             <div>
-              <p className="text-sm font-bold" style={{ color: "#333" }}>{displayName}</p>
-              <p className="text-xs" style={{ color: "#999" }}>{isModifying ? t("套餐信息将在升级完成后更新，到期时间不变。") : t("当前生效")}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold" style={{ color: "#333" }}>{t("当前套餐")}</p>
+                <AppLink
+                  to={plansDocHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 text-xs font-medium transition-colors hover:text-black/70"
+                  style={{ color: "var(--lw-accent)" }}
+                >
+                  {t("套餐说明")}
+                  <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                </AppLink>
+              </div>
+              <p className="text-sm" style={{ color: "#666" }}>{displayName}</p>
             </div>
           </div>
           <span role={isModifying ? "status" : undefined} className="inline-flex shrink-0 items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            {isModifying ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中")) : t("当前套餐")}
+            {displayStatus}
           </span>
         </div>
 
@@ -1245,7 +1271,8 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const AccountPage = () => {
+export const AccountPage = ({ view = "account" }: { view?: "account" | "billing" }) => {
+  const isBillingView = view === "billing";
   const t = useT();
   const navigate = useAppNavigate();
   const [searchParams, setSearchParams] = useAppSearchParams();
@@ -1363,6 +1390,7 @@ export const AccountPage = () => {
   const nameAuditFailed = user?.nameAuditStatus === "failed";
 
   useEffect(() => {
+    if (isBillingView) return;
     const bound = searchParams.get("email_bound");
     const bindError = searchParams.get("email_bind_error");
     if (!bound && !bindError) return;
@@ -1397,12 +1425,12 @@ export const AccountPage = () => {
     })();
     setEmailBindError(message);
     setEmailBindSuccess(null);
-  }, [refreshProfile, searchParams, setSearchParams, t]);
+  }, [isBillingView, refreshProfile, searchParams, setSearchParams, t]);
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
     // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
-    if (isGlobal) return;
+    if (isBillingView || isGlobal) return;
     if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
     // 读取 return_to（仅站内路径，防开放重定向），实名完成后自动跳回
@@ -1417,7 +1445,7 @@ export const AccountPage = () => {
     setSearchParams(next, { replace: true });
 
     setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
-  }, [searchParams, setSearchParams, t, isGlobal]);
+  }, [isBillingView, searchParams, setSearchParams, t, isGlobal]);
 
   // 实名认证完成后自动清除提醒；若有 return_to 则自动跳回原页面
   useEffect(() => {
@@ -1671,11 +1699,11 @@ export const AccountPage = () => {
             transition={{ duration: 0.6 }}
             className="mb-6 md:mb-8"
           >
-            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{t("账号管理")}</h2>
+            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{isBillingView ? t("套餐与费用") : t("账号")}</h2>
           </motion.div>
 
           {/* 实名提醒 tips：从首页「立即创建」跳转、且尚未完成实名认证时展示（仅国内站） */}
-          {realnameRequiredTip && !verified && showRealnameSection && (
+          {!isBillingView && realnameRequiredTip && !verified && showRealnameSection && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1702,7 +1730,7 @@ export const AccountPage = () => {
             className="space-y-6"
           >
             {/* ── Section 1: Profile ── */}
-            <motion.div
+            {!isBillingView && <motion.div
               variants={fadeIn}
               className="overflow-hidden bg-white"
               style={{ border: "1px solid #E6E9EF", borderRadius: 16 }}
@@ -2031,14 +2059,14 @@ export const AccountPage = () => {
                   )}
                 </div>
               )}
-            </motion.div>
+            </motion.div>}
 
             {/* ── Section 2: Subscription ── */}
-            <SubscriptionSection subscription={subscription} pass={activePass} />
+            {isBillingView && <SubscriptionSection subscription={subscription} pass={activePass} />}
 
-            {referralEnabled && referralRevealed && <ReferralSection />}
+            {!isBillingView && referralEnabled && referralRevealed && <ReferralSection />}
 
-            {isGlobal && <SavedCardsSection />}
+            {isBillingView && isGlobal && <SavedCardsSection />}
           </motion.div>
         </section>
       </main>
@@ -2046,7 +2074,7 @@ export const AccountPage = () => {
 
     pageOverlays = (
       <AnimatePresence>
-        {showRealnameSection && showVerifyModal && (
+        {!isBillingView && showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
             key="verify"
             onClose={() => setShowVerifyModal(false)}
@@ -2061,7 +2089,7 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
+        {!isBillingView && showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}
@@ -2069,13 +2097,13 @@ export const AccountPage = () => {
             onSuccess={handlePhoneChangeSuccess}
           />
         )}
-        {showEmailBindSection && !user?.emailVerified && showBindEmailModal && (
+        {!isBillingView && showEmailBindSection && !user?.emailVerified && showBindEmailModal && (
           <BindEmailModal
             key="bind-email"
             onClose={() => setShowBindEmailModal(false)}
           />
         )}
-        {showDeleteModal && (
+        {!isBillingView && showDeleteModal && (
           <DeleteAccountModal
             key="delete"
             onCancel={() => setShowDeleteModal(false)}
@@ -2088,13 +2116,33 @@ export const AccountPage = () => {
   }
 
   return (
-    <ProductPageShell afterFooter={pageOverlays} footer={null}>
+    <ProductPageShell
+      afterFooter={pageOverlays}
+      footer={null}
+      header={(
+        <ProductReturnHomeHeader
+          showLanguageSwitcher={false}
+          beforeUserMenu={(
+            <AppLink
+              to={AGENTS_HOME_PATH}
+              aria-label={t("返回智能体")}
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black/70 hover:bg-black/5 hover:text-black/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 sm:h-9 sm:min-h-9 sm:px-4 sm:py-0"
+            >
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">{t("返回智能体")}</span>
+            </AppLink>
+          )}
+        />
+      )}
+    >
       {pageContent}
       {/* 本地 mock 预览专用：交互状态切换器（生产/真实后端环境自动隐藏，不影响线上） */}
       <AccountPreviewStateSwitcher />
     </ProductPageShell>
   );
 };
+
+export const PlansBillingPage = () => <AccountPage view="billing" />;
 
 // InfoRow 组件保留定义以便后续功能上线时恢复使用。
 // 通过 void 引用避免 TS 未使用告警（code: 6133）。

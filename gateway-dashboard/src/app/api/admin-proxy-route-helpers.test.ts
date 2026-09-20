@@ -63,6 +63,29 @@ test("buildModuleAdminProxyRequest uses module token before browser token", asyn
   assert.equal(built.usedBrowserToken, false);
 });
 
+test("buildModuleAdminProxyRequest forwards Auth DELETE request bodies", async () => {
+  const body = JSON.stringify({ reason: "personal DevCloud test completed" });
+  const req = new Request("https://admin.example.com/admin/api/auth/shadow-bindings/usr_1", {
+    method: "DELETE",
+    headers: {
+      "content-type": "application/json",
+    },
+    body,
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "auth",
+    path: ["shadow-bindings", "usr_1"],
+    upstreamBaseURL: "https://auth.internal",
+    upstreamToken: "module-token",
+  });
+
+  assert.equal(built.url.toString(), "https://auth.internal/admin/shadow-bindings/usr_1");
+  assert.equal(built.init.method, "DELETE");
+  assert.equal(built.init.headers.get("content-type"), "application/json");
+  assert.equal(await new Response(built.init.body).text(), body);
+});
+
 test("buildModuleAdminProxyRequest maps sandbox module to internal API and forwards body", async () => {
   const req = new Request("https://admin.example.com/admin/api/sandbox/pools", {
     method: "POST",

@@ -17,6 +17,7 @@ export const JAPANESE_SEO_KEYWORDS = [
 export const JAPANESE_STATIC_PAGE_TITLES: Record<string, string> = {
   "/about": "LightVelaについて",
   "/account": "アカウント",
+  "/account/billing": "プランとお支払い",
   "/account/orders": "注文履歴",
   "/auth/email-bind-result": "メール連携結果",
   "/auth/forgot-password": "パスワードを再設定",

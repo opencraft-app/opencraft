@@ -2703,8 +2703,8 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const isEmptyAgentSectionPage = Boolean(initialSectionSlug)
-    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
+  const isEmptyAgentPage = !isModifying
+    && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -4416,7 +4416,8 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
-        isEmptyAgentSectionPage && "lv-agent-empty-section-page",
+        isEmptyAgentPage && "lv-agent-empty-page",
+        isModifying && "lv-agent-upgrading-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -5804,7 +5805,8 @@ export const AgentSettingsPage = ({
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
+                  {canCreateInitialAgent && !directCreating && <Plus className="h-4 w-4" aria-hidden="true" />}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建") : t("暂不可创建")}
                 </button>
               </div>
             )

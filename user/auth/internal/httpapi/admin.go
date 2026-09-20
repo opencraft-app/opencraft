@@ -10,6 +10,7 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
 
 const timeRFC3339Milli = "2006-01-02T15:04:05.000Z07:00"
@@ -77,6 +78,36 @@ type adminImpersonationSessionResponse struct {
 	Impersonated bool   `json:"impersonated"`
 }
 
+type adminShadowBindingRequest struct {
+	UserID         string `json:"userId"`
+	ShadowUserName string `json:"shadowUserName"`
+	Uin            int64  `json:"uin"`
+	OwnerUin       int64  `json:"ownerUin"`
+	AppID          int64  `json:"appId"`
+	Reason         string `json:"reason"`
+}
+
+type adminShadowBindingDisableRequest struct {
+	Reason string `json:"reason"`
+}
+
+type adminShadowBindingResponse struct {
+	UserID                    string  `json:"userId"`
+	ShadowUserName            string  `json:"shadowUserName"`
+	Uin                       int64   `json:"uin"`
+	OwnerUin                  int64   `json:"ownerUin"`
+	AppID                     int64   `json:"appId"`
+	Status                    string  `json:"status"`
+	LastErrorCode             string  `json:"lastErrorCode,omitempty"`
+	LastErrorMessage          string  `json:"lastErrorMessage,omitempty"`
+	BasicAuthStatus           string  `json:"basicAuthStatus,omitempty"`
+	BasicAuthSyncedAt         *string `json:"basicAuthSyncedAt,omitempty"`
+	BasicAuthLastErrorCode    string  `json:"basicAuthLastErrorCode,omitempty"`
+	BasicAuthLastErrorMessage string  `json:"basicAuthLastErrorMessage,omitempty"`
+	CreatedAt                 string  `json:"createdAt"`
+	UpdatedAt                 string  `json:"updatedAt"`
+}
+
 func registerAdminRoutes(group *gin.RouterGroup, authService *service.Service, avatarStore AvatarStore) {
 	handler := &adminHandler{service: authService, avatarStore: avatarStore}
 	group.GET("/users", handler.listUsers)
@@ -87,6 +118,101 @@ func registerAdminRoutes(group *gin.RouterGroup, authService *service.Service, a
 	group.GET("/invites", handler.listInvites)
 	group.POST("/invites", handler.createInvite)
 	group.POST("/invites/:code/disable", handler.disableInvite)
+	group.GET("/shadow-bindings/:userID", handler.getShadowBinding)
+	group.POST("/shadow-bindings", handler.upsertShadowBinding)
+	group.DELETE("/shadow-bindings/:userID", handler.disableShadowBinding)
+}
+
+func (h *adminHandler) getShadowBinding(ctx *gin.Context) {
+	binding, err := h.service.AdminShadowBinding(ctx.Request.Context(), ctx.Param("userID"))
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	ctx.JSON(http.StatusOK, toAdminShadowBindingResponse(binding))
+}
+
+func (h *adminHandler) upsertShadowBinding(ctx *gin.Context) {
+	var req adminShadowBindingRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+	binding, err := h.service.AdminUpsertShadowBinding(ctx.Request.Context(), shadowbinding.AdminBindingInput{
+		UserID:         req.UserID,
+		ShadowUserName: req.ShadowUserName,
+		Uin:            req.Uin,
+		OwnerUin:       req.OwnerUin,
+		AppID:          req.AppID,
+		Reason:         req.Reason,
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	requestLogger(ctx, nil).Info("shadow binding admin mutation",
+		"operation", "bind",
+		"user_id", binding.UserID,
+		"shadow_user_name", binding.ShadowUserName,
+		"uin", binding.Uin,
+		"owner_uin", binding.OwnerUin,
+		"app_id", binding.AppID,
+		"reason", strings.TrimSpace(req.Reason),
+	)
+	ctx.JSON(http.StatusOK, toAdminShadowBindingResponse(binding))
+}
+
+func (h *adminHandler) disableShadowBinding(ctx *gin.Context) {
+	var req adminShadowBindingDisableRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+	binding, err := h.service.AdminDisableShadowBinding(ctx.Request.Context(), shadowbinding.AdminDisableInput{
+		UserID: ctx.Param("userID"),
+		Reason: req.Reason,
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	requestLogger(ctx, nil).Info("shadow binding admin mutation",
+		"operation", "unbind",
+		"user_id", binding.UserID,
+		"shadow_user_name", binding.ShadowUserName,
+		"uin", binding.Uin,
+		"owner_uin", binding.OwnerUin,
+		"app_id", binding.AppID,
+		"reason", strings.TrimSpace(req.Reason),
+	)
+	ctx.JSON(http.StatusOK, toAdminShadowBindingResponse(binding))
+}
+
+func toAdminShadowBindingResponse(binding service.ShadowBindingResult) adminShadowBindingResponse {
+	var basicAuthSyncedAt *string
+	if binding.BasicAuthSyncedAt != nil {
+		formatted := binding.BasicAuthSyncedAt.UTC().Format(timeRFC3339Milli)
+		basicAuthSyncedAt = &formatted
+	}
+	return adminShadowBindingResponse{
+		UserID:                    binding.UserID,
+		ShadowUserName:            binding.ShadowUserName,
+		Uin:                       binding.Uin,
+		OwnerUin:                  binding.OwnerUin,
+		AppID:                     binding.AppID,
+		Status:                    binding.Status,
+		LastErrorCode:             binding.LastErrorCode,
+		LastErrorMessage:          binding.LastErrorMessage,
+		BasicAuthStatus:           binding.BasicAuthStatus,
+		BasicAuthSyncedAt:         basicAuthSyncedAt,
+		BasicAuthLastErrorCode:    binding.BasicAuthLastErrorCode,
+		BasicAuthLastErrorMessage: binding.BasicAuthLastErrorMessage,
+		CreatedAt:                 binding.CreatedAt.UTC().Format(timeRFC3339Milli),
+		UpdatedAt:                 binding.UpdatedAt.UTC().Format(timeRFC3339Milli),
+	}
 }
 
 func (h *adminHandler) listUsers(ctx *gin.Context) {

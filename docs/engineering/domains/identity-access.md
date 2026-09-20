@@ -35,11 +35,23 @@
 
 Gateway Dashboard 的“认证用户”列表通过 User Auth `GET /admin/users` 做服务端分页。请求使用 `page` 和 `page_size`，响应中的 `total` 必须是搜索条件下的完整匹配数，不能用当前页长度代替；未传 `page_size` 时继续接受旧 `limit` 参数作为兼容页大小。MySQL 查询按 `created_at DESC, id ASC` 稳定排序，搜索条件变化时 Dashboard 回到第一页。
 
-### 影子账号后台查询
+### 影子账号后台查询与 testing 绑定管理
 
-Gateway Dashboard 在“认证用户”页面内以独立 Tab 展示影子账号，但绑定事实仍由 `shadow` 独占。Dashboard BFF 使用服务端 `SHADOW_INTERNAL_TOKEN` 调用 `GET /internal/shadow/admin/accounts`，浏览器只携 Dashboard 管理员会话，不接触 Shadow Token，也不得直接读取 SQLite。
+Gateway Dashboard 在“认证用户”页面内以“Shadow 服务视图”展示 Shadow 服务侧账号状态；该事实仍由
+`shadow` 独占。Dashboard BFF 使用服务端 `SHADOW_INTERNAL_TOKEN` 调用
+`GET /internal/shadow/admin/accounts`，浏览器只携 Dashboard 管理员会话，不接触 Shadow Token，
+也不得直接读取 SQLite。
 
 查询使用 `users LEFT JOIN bindings`，同时返回尚未完成注册的本地用户和已建立腾讯云绑定的账号，并强制分页。该管理面仅用于检索注册、基础认证、标准实名和绑定标识；不得增加后台修改实名、换绑手机号或删除绑定的捷径。Shadow 未配置内部 Token 时必须返回不可用，不能回退到匿名访问、callback token 或浏览器管理员凭据。
+
+个人 DevCloud 的 testing mock 账号分配是另一套受控事实：它只修改 Auth MySQL 中既有的
+`shadow_bindings`，不修改 Shadow SQLite。Auth 提供 admin token 保护的查询、绑定和显式解绑接口；
+功能开关默认关闭，只有 `sandbox-*` 环境名与精确匹配的
+`https://api-<environment>.lightclaw.tech` 公共地址同时成立时才可启用。当前只允许
+`sandbox-bj-7` 开启。Gateway Dashboard 的“DevCloud 测试绑定”页签通过 BFF 调用该接口；BFF 必须先
+验证浏览器管理员会话，再使用仅服务端可见的 Auth admin token 转发，匿名请求不能借 BFF 获得写权限。
+相同映射可幂等重试；同一用户改绑、UIN 或影子用户名转移必须先解绑。操作必须携带原因并记录 request ID、
+用户、UIN、OwnerUIN、AppID 的结构化审计日志，不接收 SecretID、SecretKey、密码或客户端自报登录用户。
 
 ### OpenCraft 第一方客户端登录
 
@@ -110,7 +122,9 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
 北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
-而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
+Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
+deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 

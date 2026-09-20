@@ -429,6 +429,7 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger, s
 	}
 	return shadowbinding.New(store, client, shadowbinding.Options{
 		Enabled:             true,
+		AdminEnabled:        shadowBindingAdminEnabled(logger),
 		AuthCodeTTL:         parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
 		AuthCodePrefix:      envOrDefault("SHADOW_AUTH_CODE_PREFIX", ""),
 		UserNamePrefix:      envOrDefault("SHADOW_USER_NAME_PREFIX", ""),
@@ -438,6 +439,35 @@ func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger, s
 		BillingOpenTimeout:  parseDurationEnv("SHADOW_BILLING_OPEN_TIMEOUT", 30*time.Second),
 		BillingPollInterval: parseDurationEnv("SHADOW_BILLING_POLL_INTERVAL", time.Second),
 	})
+}
+
+func shadowBindingAdminEnabled(logger *slog.Logger) bool {
+	if envOrDefault("SHADOW_BINDING_ADMIN_ENABLED", "false") != "true" {
+		return false
+	}
+	environment := strings.TrimSpace(os.Getenv("SHADOW_BINDING_ADMIN_ENVIRONMENT"))
+	publicBaseURL := strings.TrimSpace(os.Getenv("LIGHTCLAW_PUBLIC_BASE_URL"))
+	parsed, err := url.Parse(publicBaseURL)
+	expectedHost := "api-" + environment + ".lightclaw.tech"
+	publicHost := ""
+	valid := false
+	if err == nil && parsed != nil {
+		publicHost = parsed.Hostname()
+		valid = strings.HasPrefix(environment, "sandbox-") &&
+			parsed.Scheme == "https" &&
+			strings.EqualFold(publicHost, expectedHost) &&
+			(parsed.Port() == "" || parsed.Port() == "443") &&
+			(parsed.Path == "" || parsed.Path == "/") &&
+			parsed.RawQuery == "" && parsed.Fragment == "" && parsed.User == nil
+	}
+	if !valid {
+		logger.Warn("testing shadow binding admin disabled due to unsafe environment",
+			"environment", environment,
+			"public_host", publicHost,
+		)
+		return false
+	}
+	return true
 }
 
 func buildPaymentMethodClient(logger *slog.Logger, siteKind string) paymentmethod.Client {
