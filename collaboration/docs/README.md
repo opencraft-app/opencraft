@@ -35,6 +35,10 @@ Collaboration 复用 mono2 现有的普通数据库服务，不申请或管理�
 同一 Collaboration DSN。本服务不得与 CTL、`user/auth` 混表或执行跨库 JOIN，也不得把聊天正文
 复制进平台数据库。
 
+内部 `gateway.token` 仍只由 Collaboration SSM 生成。北京 Gateway 接线通过受控
+SSM→SOPS 导出把这一键重命名投影为 `COLLABORATION_GATEWAY_TOKEN`，目标 Secret
+只包含该键；不得把 Collaboration 的 DSN、JWT 或 IM Secret 复制到 Gateway namespace。
+
 普通 MySQL 8 使用显式 `mysql` 驱动；TDSQL Proxy 继续使用 `tdsql`，SQLite 使用 `sqlite`，
 不根据 DSN 猜测或退回其他方言。MySQL 是正式单实例模式：领域类别、全局业务 ID、逻辑
 ShardKey/显式路由、复合主键、索引和路由字符语义保持不变，不执行 Proxy topology/allsets

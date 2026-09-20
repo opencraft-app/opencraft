@@ -21,6 +21,8 @@ items:
       - NON_SENSITIVE_RUNTIME_POLICY
     optional_plaintext_keys:
       - FUTURE_NON_SENSITIVE_POLICY
+    key_mappings:
+      SOURCE_TOKEN: TARGET_TOKEN
     labels:
       app.kubernetes.io/name: argocd-sample
     annotations:
@@ -49,6 +51,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOPS_ENCRYPTED_REGEX = "^(data|stringData)$"
 SAFE_IDENTIFIER_RE = "^[A-Za-z][A-Za-z0-9-]*$"
+KUBERNETES_SECRET_KEY_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def validate_command_args(cmd: list[str], context: str) -> list[str]:
@@ -284,6 +287,30 @@ def validate_required_keys(item: dict[str, Any], string_data: dict[str, str]) ->
         raise ValueError(f"{item_id}: missing required keys: {', '.join(missing)}")
 
 
+def project_string_data(item: dict[str, Any], string_data: dict[str, str]) -> dict[str, str]:
+    mappings = item.get("key_mappings")
+    if mappings is None:
+        return dict(string_data)
+    if not isinstance(mappings, dict) or not mappings:
+        raise ValueError("key_mappings must be a non-empty mapping")
+
+    projected: dict[str, str] = {}
+    for source, target in mappings.items():
+        if not isinstance(source, str) or not source or not isinstance(target, str) or not target:
+            raise ValueError("key_mappings keys and values must be non-empty strings")
+        if not KUBERNETES_SECRET_KEY_RE.fullmatch(target):
+            raise ValueError(f"invalid mapped Kubernetes key: {target}")
+        if target in projected:
+            raise ValueError(f"duplicate mapped Kubernetes key: {target}")
+        if source in string_data:
+            projected[target] = string_data[source]
+
+    missing = sorted(set(mappings) - set(string_data))
+    if missing:
+        raise ValueError(f"missing mapped source keys: {', '.join(missing)}")
+    return projected
+
+
 def encryption_regex_for_item(
     item: dict[str, Any],
     string_data: dict[str, str],
@@ -398,8 +425,9 @@ def main() -> int:
 
             version_id = resolve_version_id(region, item["secret_name"], configured_version_id)
             raw_secret = fetch_secret(region, item["secret_name"], version_id)
-            string_data = normalize_string_data(raw_secret, string_key=item.get("string_key"))
-            validate_required_keys(item, string_data)
+            source_data = normalize_string_data(raw_secret, string_key=item.get("string_key"))
+            validate_required_keys(item, source_data)
+            string_data = project_string_data(item, source_data)
             doc = build_k8s_resource_doc(item, string_data)
             plaintext = dump_yaml(doc)
             output_path = resolve_output_path(manifest_path, output_dir, item["output_path"])

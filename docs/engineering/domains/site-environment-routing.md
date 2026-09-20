@@ -4,6 +4,16 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
+## 管理后台内部服务路由
+
+- Gateway Dashboard 的积分包管理页通过同源 `/admin/api/credit/*` 访问服务端 BFF；浏览器不直连 Credit，也不接触内部凭据。
+- BFF 将该路径映射到当前环境 Credit 的 `/internal/credit/admin/*`，先校验 Dashboard 管理登录态，再注入仅服务端可见的 `CREDIT_INTERNAL_TOKEN`。
+- `CREDIT_API_URL` 必须指向同环境 Credit Service：共享命名空间环境使用 `http://credit.credit.svc.cluster.local`，隔离 playground 使用该环境的完整 Service DNS；未部署 Credit 的环境显式留空并返回配置错误，不能跨环境回退。
+- `CREDIT_INTERNAL_TOKEN` 必须通过 `gateway-dashboard-runtime-secrets` 注入，并与目标 Credit 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 一致；不得放入 ConfigMap、前端构建变量或浏览器请求。
+- 认证用户页的影子账号视图同样只通过 `/admin/api/shadow/*` 访问 Dashboard BFF；BFF 将请求映射到同环境 Shadow 的 `/internal/shadow/admin/*`，并在校验 Dashboard 管理登录态后注入 `SHADOW_INTERNAL_TOKEN`。
+- `SHADOW_API_URL` 必须指向同环境 Shadow Service，标准集群内地址为 `http://shadow.shadow.svc.cluster.local`。未部署 Shadow 的环境保持未配置并明确返回配置错误，不允许跨环境读取影子账号。
+- `SHADOW_INTERNAL_TOKEN` 只通过 Shadow 与 Dashboard 各自的 runtime secret 注入，两端值必须一致；不得复用外部 callback token，也不得进入 ConfigMap、前端构建变量或浏览器请求。
+
 ## 稳定身份
 
 - 国内生产：`lightvela.com`

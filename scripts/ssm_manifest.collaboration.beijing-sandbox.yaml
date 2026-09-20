@@ -23,3 +23,20 @@ items:
       app.kubernetes.io/managed-by: argocd
     annotations:
       managed-by: export_ssm_to_sops.py
+  - id: collaboration-gateway-bridge
+    secret_name: mono-beijing-sandbox-collaboration-runtime-secrets
+    namespace: lightclaw-gateway
+    kubernetes_resource_name: collaboration-gateway-token
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml
+    secret_type: Opaque
+    required_keys:
+      - gateway.token
+    key_mappings:
+      gateway.token: COLLABORATION_GATEWAY_TOKEN
+    labels:
+      app.kubernetes.io/name: service-gateway
+      app.kubernetes.io/part-of: collaboration
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py

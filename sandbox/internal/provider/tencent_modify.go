@@ -25,10 +25,11 @@ import (
 const resizeSettleTimeout = 5 * time.Minute
 
 var defaultModifyInstanceFamiliesByRegion = map[string][]string{
-	"ap-beijing":   {"SA5", "S5", "SA2", "SA3", "S6"},
-	"ap-seoul":     {"SA5", "S5", "SA2", "SA3", "S6"},
-	"ap-shanghai":  {"SA5", "S5", "SA2", "SA3", "S6"},
-	"ap-singapore": {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-beijing":    {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-johorbahru": {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-seoul":      {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-shanghai":   {"SA5", "S5", "SA2", "SA3", "S6"},
+	"ap-singapore":  {"SA5", "S5", "SA2", "SA3", "S6"},
 }
 
 // ResolveInstanceTypeCandidates implements InstanceTypeCandidateResolver. CVM

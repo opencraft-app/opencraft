@@ -58,6 +58,35 @@ class EncryptionRegexForItemTest(unittest.TestCase):
                 {"TOKEN": "token"},
             )
 
+    def test_key_mappings_project_only_named_keys_without_exposing_siblings(self):
+        projected = MODULE.project_string_data(
+            {
+                "id": "collaboration-gateway-token",
+                "key_mappings": {
+                    "gateway.token": "COLLABORATION_GATEWAY_TOKEN",
+                },
+            },
+            {
+                "database.dsn": "must-not-be-copied",
+                "gateway.token": "shared-token",
+                "im-secret.key": "must-not-be-copied",
+            },
+        )
+
+        self.assertEqual(projected, {"COLLABORATION_GATEWAY_TOKEN": "shared-token"})
+
+    def test_key_mappings_reject_missing_source_key(self):
+        with self.assertRaisesRegex(ValueError, "missing mapped source keys: gateway.token"):
+            MODULE.project_string_data(
+                {
+                    "id": "collaboration-gateway-token",
+                    "key_mappings": {
+                        "gateway.token": "COLLABORATION_GATEWAY_TOKEN",
+                    },
+                },
+                {"database.dsn": "value"},
+            )
+
     def test_plaintext_keys_are_excluded_from_key_level_encryption(self):
         string_data = {
             "CTL_LLMGATEWAY_ADMIN_TOKEN": "secret",
