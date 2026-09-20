@@ -1550,7 +1550,8 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
             skillLoadState={installedSkillLoadState}
           />
         ) : displayedJobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
+          <div data-testid="automation-empty-state" className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
+            <Clock className="mb-2 h-6 w-6 opacity-50" aria-hidden="true" />
             {activeView === "ended" ? (
               <p>{t("暂无已结束任务")}</p>
             ) : activeTaskFilter !== "all" ? (
@@ -1558,7 +1559,14 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
             ) : (
               <p>
                 {t("暂无定时任务，")}
-                <span>{t("可从下方任务模板快速启用")}</span>
+                <span>{t("可从下方任务模板快速启用，或直接")}</span>
+                <button
+                  type="button"
+                  onClick={requestCreate}
+                  className="ml-1 font-medium text-black/70 underline decoration-black/25 underline-offset-4 transition hover:text-black"
+                >
+                  {t("新建")}
+                </button>
               </p>
             )}
           </div>

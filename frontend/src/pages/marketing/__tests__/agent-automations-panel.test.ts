@@ -1100,11 +1100,13 @@ describe("cron context panel integration", () => {
 
     expect(await screen.findByRole("heading", { name: isGlobal ? "Task Templates" : "任务模板" })).toBeTruthy();
     const templateHint = await screen.findByText(
-      isGlobal ? "quickly enable one from the task templates below" : "可从下方任务模板快速启用",
+      isGlobal ? "quickly enable one from the task templates below, or directly" : "可从下方任务模板快速启用，或直接",
     );
     expect(templateHint).not.toHaveClass("font-medium", "text-black/70");
     expect(screen.queryByRole("button", { name: isGlobal ? "Create from a template" : "参考模板新建" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: isGlobal ? "Create" : "新建" }));
+    const emptyState = screen.getByTestId("automation-empty-state");
+    expect(emptyState.querySelector("svg")).toHaveClass("h-6", "w-6", "opacity-50");
+    fireEvent.click(within(emptyState).getByRole("button", { name: isGlobal ? "Create" : "新建" }));
 
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(isGlobal ? "Create Scheduled Task" : "新建定时任务")).toBeTruthy();
@@ -1186,7 +1188,9 @@ describe("cron context panel integration", () => {
     await waitFor(() => {
       expect(cronClientMocks.detectCronContextFromCapability).toHaveBeenCalledWith("bot-1");
     });
-    fireEvent.click(screen.getByRole("button", { name: localizedText("新建", "Create") }));
+    const pageHeader = screen.getByRole("heading", { name: localizedText("定时任务", "Scheduled Tasks") }).closest("header");
+    if (!pageHeader) throw new Error("Expected the scheduled tasks header");
+    fireEvent.click(within(pageHeader).getByRole("button", { name: localizedText("新建", "Create") }));
 
     const advancedSummary = await screen.findByText(localizedText("高级设置", "Advanced Settings"));
     const advancedSettings = advancedSummary.closest("details");
@@ -3739,14 +3743,16 @@ describe("automation create button placement", () => {
     expect(container.querySelector("header")?.textContent).toContain(localizedText("新建", "Create"));
   });
 
-  it("keeps the create button in the header when there is no task", async () => {
+  it("keeps the header create button and adds an empty-state shortcut when there is no task", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([]);
     const { container } = render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     await screen.findByText(localizedText("暂无定时任务，", "No scheduled tasks yet,"));
-    // 入口只有一个且恒定在 header 右上角，避免列表加载完成后按钮从 header 换到空状态导致节点被替换
-    expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: localizedText("新建", "Create") })).toHaveLength(2);
     expect(container.querySelector("header")?.textContent ?? "").toContain(localizedText("新建", "Create"));
+    const emptyState = screen.getByTestId("automation-empty-state");
+    fireEvent.click(within(emptyState).getByRole("button", { name: localizedText("新建", "Create") }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
 
