@@ -7,7 +7,7 @@
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户 2026-09-19 反馈：当前弹窗过高，高级设置与按钮之间空白过大；展开高级设置后应增加高度，浏览器高度不足时右侧显示上下滚动条；新建与编辑均需调整。
-- 用户 2026-09-20 视觉复核后指定高级设置收起高度为 740px。
+- 用户 2026-09-20 视觉复核后将高级设置收起高度从 740px 增加 15px，最终为 755px。
 
 ## interface_refs / data_structure_refs
 - `AutomationFormModal` 同时承载 `mode="create"` 与 `mode="edit"`。
@@ -46,7 +46,7 @@
 - 高级设置使用非受控 `details`，弹窗当前无法根据展开状态调整高度。
 - 底部操作区已在 `AutomationFormScrollArea` 之外，可保持固定。
 - 实现后聚焦测试 197/197 通过；`pnpm check` 通过且新增 TypeScript 诊断为 0；`pnpm build:cn` 通过并生成 103 个静态页面。
-- Chrome 5174 国内站在 933px 高视口实测：收起状态弹窗实际显示为 740px；展开状态继续使用 840px，视口不足时仍由 `100dvh - 16px` 上限和内容区滚动保证字段可达。
+- Chrome 5174 国内站在 933px 高视口实测：收起状态弹窗使用 755px；展开状态继续使用 840px，视口不足时仍由 `100dvh - 16px` 上限和内容区滚动保证字段可达。
 
 ## risks
 - 高度切换可能让低视口内容不可达；继续保留视口上限和内容区滚动。

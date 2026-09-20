@@ -5,10 +5,10 @@
 - 新建、编辑和模板表单共用 `AutomationFormModal`。
 - 当前常见表单固定为 840px；高级设置为非受控 `details`。
 - 内容滚动区与底部操作区已经分离。
-- 高级设置收起时弹窗使用 740px，展开后使用 840px；两者均受 `100dvh - 16px` 上限约束。
+- 高级设置收起时弹窗使用 755px，展开后使用 840px；两者均受 `100dvh - 16px` 上限约束。
 - Radix ScrollArea 改为仅在内容溢出时显示滚动条，底部操作区保持在滚动区之外。
 - 聚焦测试 197/197、`pnpm check`、`pnpm build:cn` 通过，新增 TypeScript 诊断为 0，国内站构建生成 103 个静态页面。
-- Chrome 5174 国内站在 933px 高视口中，收起状态实际显示为 740px；展开后仍使用 840px，并保留视口上限、右侧滚动和固定 footer。
+- Chrome 5174 国内站在 933px 高视口中，收起状态使用 755px；展开后仍使用 840px，并保留视口上限、右侧滚动和固定 footer。
 - 功能提交 `de1c3841d` 已推送到 `codex/automation-modal-responsive-height`，远端 SHA 与本地一致。
 - MR !4305 已创建，目标分支为 `master`；创建时状态为 opened、can_be_merged。
 
