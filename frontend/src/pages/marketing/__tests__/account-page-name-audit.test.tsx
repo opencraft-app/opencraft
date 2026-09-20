@@ -210,6 +210,29 @@ describe("AccountPage nickname audit state", () => {
     });
   });
 
+  it.each(["account", "billing"] as const)("shows a direct Agents link immediately before the avatar on %s", async (view) => {
+    renderAccountPage(view);
+    const main = within(screen.getByRole("main"));
+    const banner = within(screen.getByRole("banner"));
+    const link = banner.getByRole("link", { name: "返回智能体" });
+    const avatar = banner.getByText("avatar menu");
+
+    await waitFor(() => expect(link).toBeVisible());
+    expect(link).toHaveAttribute("href", "/agents");
+    expect(link.nextElementSibling).toBe(avatar);
+    expect(banner.getByTestId("site-header-actions")).toContainElement(link);
+    expect(main.queryByRole("link", { name: "返回智能体" })).not.toBeInTheDocument();
+    link.focus();
+    expect(link).toHaveFocus();
+  });
+
+  it.each([false, true])("hides the Agents return action for unauthenticated sessions (ready: %s)", (ready) => {
+    sessionAuthReady = ready;
+    sessionIsAuthenticated = false;
+    renderAccountPage();
+    expect(screen.queryByRole("link", { name: "返回智能体" })).not.toBeInTheDocument();
+  });
+
   it("keeps the account chrome singular across auth states", () => {
     sessionAuthReady = false;
     sessionIsAuthenticated = false;

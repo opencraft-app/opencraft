@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,7 +87,7 @@ vi.mock("@/components/site/brand-mark", () => ({
 }));
 
 vi.mock("@/components/site/language-switcher", () => ({
-  LanguageSwitcher: () => null,
+  LanguageSwitcher: () => <button type="button">Switch language</button>,
 }));
 
 vi.mock("@/components/site/login-modal", () => ({
@@ -199,6 +199,20 @@ describe("AccountPage global renewal action", () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each([
+    ["account", "en-US"],
+    ["billing", "en-US"],
+    ["account", "zh-Hant"],
+    ["billing", "zh-Hant"],
+  ] as const)("keeps the %s return link on the application route for %s", async (view, locale) => {
+    language = locale;
+    render(<MemoryRouter><AccountPage view={view} /></MemoryRouter>);
+    const link = within(screen.getByRole("banner")).getByRole("link", { name: "返回智能体" });
+    expect(screen.queryByRole("button", { name: "Switch language" })).not.toBeInTheDocument();
+    await waitFor(() => expect(link).toBeVisible());
+    expect(link).toHaveAttribute("href", "/agents");
   });
 
   it.each([

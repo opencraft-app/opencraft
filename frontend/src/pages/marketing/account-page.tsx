@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowLeft,
   Camera,
   Check,
   ChevronRight,
@@ -22,7 +23,7 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferral
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
-import { ProductPageShell } from "@/components/site/product-chrome";
+import { ProductPageShell, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import {
@@ -40,7 +41,7 @@ import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
-import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
@@ -2090,7 +2091,25 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   }
 
   return (
-    <ProductPageShell afterFooter={pageOverlays} footer={null}>
+    <ProductPageShell
+      afterFooter={pageOverlays}
+      footer={null}
+      header={(
+        <ProductReturnHomeHeader
+          showLanguageSwitcher={false}
+          beforeUserMenu={(
+            <AppLink
+              to={AGENTS_HOME_PATH}
+              aria-label={t("返回智能体")}
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black/70 hover:bg-black/5 hover:text-black/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 sm:h-9 sm:min-h-9 sm:px-4 sm:py-0"
+            >
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">{t("返回智能体")}</span>
+            </AppLink>
+          )}
+        />
+      )}
+    >
       {pageContent}
       {/* 本地 mock 预览专用：交互状态切换器（生产/真实后端环境自动隐藏，不影响线上） */}
       <AccountPreviewStateSwitcher />
