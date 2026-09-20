@@ -1030,7 +1030,7 @@ describe("cron context panel integration", () => {
       isGlobal ? /Describe what you want the agent to understand and do/ : /请描述需要智能体理解并执行的任务/,
     );
     expect(form).toHaveClass("w-full", "max-w-[800px]", "rounded-lg", "p-5");
-    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[740px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
     expect(dialog).toHaveClass("py-2");
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
@@ -1047,7 +1047,7 @@ describe("cron context panel integration", () => {
     fireEvent.click(advancedSettingsSummary);
     await waitFor(() => expect(form).toHaveClass("h-[840px]"));
     fireEvent.click(advancedSettingsSummary);
-    await waitFor(() => expect(form).toHaveClass("h-[720px]"));
+    await waitFor(() => expect(form).toHaveClass("h-[740px]"));
   });
 
   it("grows template create forms when advanced settings are expanded", async () => {
@@ -1059,7 +1059,7 @@ describe("cron context panel integration", () => {
     const testRunButton = within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") });
 
     if (!(form instanceof HTMLElement)) throw new Error("Expected the template task form");
-    expect(form).toHaveClass("h-[720px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
+    expect(form).toHaveClass("h-[740px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
     expect(form).not.toHaveClass("overflow-y-auto");
     const runTimeScrollBody = form.querySelector(".lv-automation-form-scroll");
     if (!runTimeScrollBody) throw new Error("Expected the task form scroll body");
@@ -3421,7 +3421,7 @@ describe("zero-token automation form", () => {
     expect(notificationTaskButton).not.toHaveClass("min-h-24");
     expect(scriptTaskButton).not.toHaveClass("min-h-24");
     expect(dialogContent).toHaveClass("flex", "flex-col");
-    expect(dialogContent).toHaveClass("h-[720px]", "max-h-[calc(100dvh-16px)]");
+    expect(dialogContent).toHaveClass("h-[740px]", "max-h-[calc(100dvh-16px)]");
     expect(dialogContent.parentElement).toHaveClass("items-center");
     expect(testRunButton.parentElement?.parentElement).toHaveClass("mt-auto", "pt-4");
     expect(dialogContent).not.toHaveClass("overflow-y-auto", "overflow-hidden");

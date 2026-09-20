@@ -4494,7 +4494,7 @@ export function AutomationFormModal({
         />
       )}
       <div
-        className={`relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? `flex ${expandedFormHeight ? "h-[840px]" : "h-[720px]"} max-h-[calc(100dvh-16px)] flex-col` : "overflow-y-auto"}`}
+        className={`relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? `flex ${expandedFormHeight ? "h-[840px]" : "h-[740px]"} max-h-[calc(100dvh-16px)] flex-col` : "overflow-y-auto"}`}
         style={{
           boxSizing: "border-box",
           width: "min(760px, calc(100vw - 32px))",
