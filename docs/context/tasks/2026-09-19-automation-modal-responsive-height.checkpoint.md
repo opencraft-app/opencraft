@@ -23,6 +23,7 @@
 - Chrome 5174 国内站已确认通知任务名称和内容完整、但未选择通知方式时“新建”置灰并显示“未选择通知方式”；相关测试 225/225、`pnpm check`、`pnpm build:cn` 均通过。
 - 通知任务说明已精简为按原文发送、不经过模型改写且不产生模型调用；六种目标语言资源已同步，表单测试 199/199、`pnpm check`、`pnpm build:cn` 通过，并在 Chrome 5174 国内站确认新文案正常展示。
 - 调用技能列表已改为 Portal 浮层并优先向上展开，避免被表单滚动区和固定底部操作栏裁切；相关测试 226/226、`pnpm check`、`pnpm build:cn` 通过，Chrome 5174 国内站已确认列表完整显示且不遮挡底部操作按钮。
+- 上游任务列表同步改为 Portal 浮层并优先向上展开，避免高级设置区域和固定底部操作栏裁切；相关测试 4 个文件 237/237、`pnpm check`、`pnpm build:cn` 通过，Chrome 5174 国内站已确认列表完整显示且底部操作按钮保持可见。
 - 前序弹窗调整已推送到 `codex/automation-modal-responsive-height`，后续改动继续沿用该分支。
 - MR !4305 已创建，目标分支为 `master`；创建时状态为 opened、can_be_merged。
 
