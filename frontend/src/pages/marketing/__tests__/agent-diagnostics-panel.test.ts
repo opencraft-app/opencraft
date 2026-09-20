@@ -170,6 +170,17 @@ describe("session repair", () => {
 
     await user.click(commonErrors);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("请重试或使用 /reset 开始新会话。");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+
+    await user.unhover(commonErrors);
+    await user.hover(commonErrors);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    await user.unhover(commonErrors);
+    await user.click(document.body);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("localizes the repair description and common errors", async () => {
@@ -189,6 +200,22 @@ describe("session repair", () => {
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip).toHaveTextContent("Sorry, I encountered an unexpected error.");
     expect(tooltip).toHaveTextContent("Try again or use /reset to start a fresh session.");
+  });
+
+  it("keeps the common errors open after clicking during hover until outside click", async () => {
+    const user = userEvent.setup();
+    renderDiagnosticsPanel();
+    const commonErrors = screen.getByRole("button", { name: "查看常见报错" });
+
+    await user.hover(commonErrors);
+    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
+    await user.click(commonErrors);
+    await user.unhover(commonErrors);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+
+    await user.click(document.body);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).not.toBeInTheDocument());
   });
 
   it("asks for confirmation and runs repair for the current Profile", async () => {

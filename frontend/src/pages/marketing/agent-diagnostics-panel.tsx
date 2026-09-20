@@ -2,6 +2,7 @@ import { ChevronDown, ClipboardList, DatabaseBackup, Download, FileText, Loader2
 import { type ReactNode, type RefObject, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useT } from "@/i18n/t";
@@ -354,20 +355,23 @@ export function AgentDiagnosticsPanel({
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setSessionRepairConfirmOpen(false)}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/65 transition-colors hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20"
+              className="h-9 px-4 text-black/65"
             >
               {t("取消")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="sm"
               onClick={() => void runSessionRepair()}
-              className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-md bg-black px-4 text-sm font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+              className="h-9 min-w-[104px] px-4"
             >
               {t("确认修复")}
-            </button>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -445,8 +449,10 @@ function CommonSessionErrorPopover() {
 
   return (
     <Popover open={open} onOpenChange={(nextOpen) => {
-      cancelClose();
-      if (!nextOpen) setPinned(false);
+      if (!nextOpen) {
+        cancelClose();
+        setPinned(false);
+      }
       setOpen(nextOpen);
     }}>
       <PopoverTrigger asChild>
@@ -476,7 +482,7 @@ function CommonSessionErrorPopover() {
         id={popoverId}
         role="tooltip"
         align="start"
-        className="w-[min(24rem,calc(100vw-2rem))] select-text border border-black/10 bg-white px-3 py-2 text-left text-xs leading-5 text-black/70 shadow-lg"
+        className="w-[min(24rem,calc(100vw-2rem))] select-text rounded-md px-3 py-1.5 text-left text-[11px] font-medium leading-5 text-black/70"
         onOpenAutoFocus={(event) => event.preventDefault()}
         onMouseEnter={showPopover}
         onMouseLeave={scheduleClose}
