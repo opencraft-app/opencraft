@@ -14,5 +14,3 @@ configMapGenerator:
 - name: service-gateway-platform-values
   envs:
   - service-gateway-platform.env
-patches:
-- path: collaboration-gateway-token-env-patch.yaml

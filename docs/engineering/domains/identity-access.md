@@ -110,7 +110,9 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
 北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
-而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
+Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
+deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 
