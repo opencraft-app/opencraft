@@ -1827,6 +1827,32 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
 
+    def test_sgprod_multi_bot_runtime_flag_is_wired(self) -> None:
+        sgprod_values = {
+            key: value
+            for line in (REPO_ROOT / "argocd/services/ctl/sgprod/ctl-platform.env").read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(sgprod_values["MULTI_BOT_ENABLED"], "true")
+
+        ctl_api = next(
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if isinstance(document, dict)
+            and document.get("kind") == "Deployment"
+            and document.get("metadata", {}).get("name") == "ctl-api"
+        )
+        ctl_env = {
+            item["name"]: item
+            for item in ctl_api["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        config_map_ref = ctl_env["MULTI_BOT_ENABLED"]["valueFrom"]["configMapKeyRef"]
+        self.assertEqual(config_map_ref["name"], "ctl-platform-values")
+        self.assertEqual(config_map_ref["key"], "MULTI_BOT_ENABLED")
+        self.assertTrue(config_map_ref["optional"])
+
     def test_shprod_website_credential_bootstrap_contract_is_complete(self) -> None:
         def env_values(path: Path) -> dict[str, str]:
             return {

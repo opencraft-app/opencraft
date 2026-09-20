@@ -284,6 +284,7 @@
 - 公开 API 使用 `/v1/instances/{instance_id}/bots` 表达实例作用域；新增 method/path 必须同步 `service-gateway` allowlist，并分别验证 CTL 直连与公共入口路由。
 - 国内站和国际站 Bot 管理精确放行集合 GET/POST、单 Bot PUT/DELETE、失败 Bot retry，以及唯一通道绑定 PUT/POST/DELETE；实例 method 集合同步包含 PUT。
   克隆继续使用 POST 创建载荷的 `create_mode` / `source_bot_id`，不新增路径；鉴权、实名策略和 CTL 归属保护保持生效。源码配置不等于生产已发布。
+- CTL 的多 Bot 服务端开关由 `ctl-api` 从环境级 `ctl-platform-values.MULTI_BOT_ENABLED` 可选注入；缺省继续使用服务自身默认值，各环境需要显式开放或回滚时必须在对应 deploy-facing platform env 中设置。该开关同时约束前端运行时配置与新增 Bot，不替代 Gateway 精确路由、身份归属或 Hermes Profile 能力检查。
 
 OpenCraft 统一环境目录由 Cordis `environmentDirectory` 服务拥有，位于
 `workbench-runtime/src/environment-directory/`；本机/手动配置与提供方发现源汇合，
