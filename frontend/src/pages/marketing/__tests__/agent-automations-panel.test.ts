@@ -3471,6 +3471,10 @@ describe("zero-token automation form", () => {
     expect(notificationTaskButton).toHaveClass("border-blue-300", "bg-blue-50");
     expect(agentTaskButton).not.toHaveClass("border-blue-300");
     expect(agentTaskButton).not.toHaveClass("bg-blue-50");
+    expect(screen.getByText(localizedText(
+      "通知内容会按原文发送，不经过模型改写，不产生模型调用。",
+      "The notification is sent exactly as written, without model rewriting or a model call.",
+    ))).toBeInTheDocument();
     fireEvent.mouseEnter(screen.getByRole("button", { name: localizedText("通知方式", "Notification") }));
     const notificationTooltip = screen.getByRole("tooltip");
     expect(notificationTooltip).toHaveTextContent(

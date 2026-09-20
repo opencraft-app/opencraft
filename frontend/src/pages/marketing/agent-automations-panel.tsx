@@ -4750,7 +4750,7 @@ export function AutomationFormModal({
             )}
             {zeroTokenKind === "fixed_notification" ? (
               <p className="mt-1.5 text-pretty text-xs leading-5 text-black/40">
-                {t("通知内容会按原文发送，不经过模型改写。没有模型调用，但仍会使用 Agent 运行资源。")}
+                {t("通知内容会按原文发送，不经过模型改写，不产生模型调用。")}
               </p>
             ) : zeroTokenScriptEditable ? (
               <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-pretty text-xs leading-4 text-amber-900/80">
