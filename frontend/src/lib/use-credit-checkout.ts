@@ -122,16 +122,21 @@ export const useCreditCheckout = (options?: {
   const [payUrl, setPayUrl] = useState<string | null>(null);
   /** 购买前的积分包快照，用于到账对比 */
   const baselineRef = useRef<Set<string>>(new Set());
-  /** 轮询进行中标记：防止自动接棒与手动刷新并发（对齐套餐 paymentCheckInFlightRef） */
-  const confirmingRef = useRef(false);
+  /** 每次 reset / start 都切换代际，旧订单的异步响应不得写入当前订单。 */
+  const generationRef = useRef(0);
+  /** 当前正在轮询的订单代际；同代防重入，不同代允许新订单独立轮询。 */
+  const confirmingGenerationRef = useRef<number | null>(null);
 
   const reset = useCallback(() => {
+    generationRef.current += 1;
     setState(INITIAL_STATE);
     setBridgePlan(null);
     setPayUrl(null);
   }, []);
 
   const start = useCallback(async (productId: string) => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
     const credit = repositoriesRef.current?.credit;
     if (!credit) {
       setState({ status: "failed", dealName: null, error: "积分包服务不可用" });
@@ -144,8 +149,11 @@ export const useCreditCheckout = (options?: {
     /* 先记录购买前快照：到账判定依赖它。失败不阻塞下单，
        但会让到账判定退化为「出现任何包即视为到账」。 */
     try {
-      baselineRef.current = snapshotKeys(await credit.listCreditPackages());
+      const baseline = snapshotKeys(await credit.listCreditPackages());
+      if (generationRef.current !== generation) return;
+      baselineRef.current = baseline;
     } catch {
+      if (generationRef.current !== generation) return;
       baselineRef.current = new Set();
     }
 
@@ -153,10 +161,12 @@ export const useCreditCheckout = (options?: {
     let authCode: string | undefined;
     try {
       const order = await credit.createCreditOrder(productId);
+      if (generationRef.current !== generation) return;
       dealName = order.dealName;
       authCode = order.auth_code;
       if (!dealName) throw new Error("订单号为空");
     } catch (error) {
+      if (generationRef.current !== generation) return;
       setState({
         status: "failed",
         dealName: null,
@@ -208,6 +218,10 @@ export const useCreditCheckout = (options?: {
         return_url: optionsRef.current?.returnUrl,
         cancel_url: optionsRef.current?.cancelUrl,
       });
+      if (generationRef.current !== generation) {
+        payWindow?.close();
+        return;
+      }
 
       /* need_charge=0：无需支付，关闭占位窗，直接进入到账确认 */
       if (session.need_charge === 0) {
@@ -230,6 +244,7 @@ export const useCreditCheckout = (options?: {
       setState({ status: "payment_pending", dealName, error: null });
     } catch (error) {
       payWindow?.close();
+      if (generationRef.current !== generation) return;
       /* 订单已创建但支付链接失败：保留 dealName 供重试与客服排查，
          不自动重新下单（产品方案：不自动创建第二笔订单）。 */
       setState({
@@ -240,13 +255,17 @@ export const useCreditCheckout = (options?: {
     }
   }, []);
 
-  /* 单次到账判定：出现快照之外的新积分包即视为到账（近似判定，见文件头注释） */
-  const checkDeliveryOnce = useCallback(async (): Promise<boolean> => {
+  /* 按指定订单代际执行一次到账判定；代际失效后只返回，不再写状态。 */
+  const checkDeliveryForGeneration = useCallback(async (
+    generation: number,
+    baseline: ReadonlySet<string>,
+  ): Promise<boolean> => {
     const credit = repositoriesRef.current?.credit;
     if (!credit) return false;
     try {
       const items = await credit.listCreditPackages();
-      const appeared = items.some((item) => !baselineRef.current.has(creditPackageSourceId(item)));
+      if (generationRef.current !== generation) return false;
+      const appeared = items.some((item) => !baseline.has(creditPackageSourceId(item)));
       if (appeared) {
         setState((prev) => ({ ...prev, status: "delivered", error: null }));
         optionsRef.current?.onDelivered?.();
@@ -259,12 +278,21 @@ export const useCreditCheckout = (options?: {
     }
   }, []);
 
+  /* 单次到账判定：出现当前快照之外的新积分包即视为到账（近似判定，见文件头注释） */
+  const checkDeliveryOnce = useCallback(async (): Promise<boolean> => {
+    const generation = generationRef.current;
+    const baseline = new Set(baselineRef.current);
+    return checkDeliveryForGeneration(generation, baseline);
+  }, [checkDeliveryForGeneration]);
+
   const confirmDelivery = useCallback(async () => {
     const credit = repositoriesRef.current?.credit;
     if (!credit) return;
-    /* 防重入：自动轮询接棒与手动刷新共用，已在跑则直接返回 */
-    if (confirmingRef.current) return;
-    confirmingRef.current = true;
+    const generation = generationRef.current;
+    const baseline = new Set(baselineRef.current);
+    /* 同一订单代际防重入；reset / 新下单后的新代际可以立即开始独立轮询。 */
+    if (confirmingGenerationRef.current === generation) return;
+    confirmingGenerationRef.current = generation;
 
     /* 启动时**不修改 status**：保持当前 payment_pending，让国内站二维码持续可见、
        国际站「已在新窗口打开」状态保持；轮询命中再切 delivered，超时切 delivery_exception。
@@ -280,8 +308,10 @@ export const useCreditCheckout = (options?: {
 
     try {
       while (attempts < maxAttempts) {
+        if (generationRef.current !== generation) return;
         attempts += 1;
-        const appeared = await checkDeliveryOnce();
+        const appeared = await checkDeliveryForGeneration(generation, baseline);
+        if (generationRef.current !== generation) return;
         if (appeared) return;
         if (attempts >= maxAttempts) break;
         if (Date.now() - startedAt >= timeoutMs) break;
@@ -289,11 +319,14 @@ export const useCreditCheckout = (options?: {
       }
 
       /* 超时：保留订单号，提供刷新与联系客服入口，不自动重下单 */
+      if (generationRef.current !== generation) return;
       setState((prev) => ({ ...prev, status: "delivery_exception", error: null }));
     } finally {
-      confirmingRef.current = false;
+      if (confirmingGenerationRef.current === generation) {
+        confirmingGenerationRef.current = null;
+      }
     }
-  }, [checkDeliveryOnce]);
+  }, [checkDeliveryForGeneration]);
 
   return { state, bridgePlan, payUrl, start, confirmDelivery, checkDeliveryOnce, reset };
 };

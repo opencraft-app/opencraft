@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  *   超时静默口径）。
  * - 用户「暂不处理」关弹窗后再点购买：终态（超时/失败/已完成）先 reset 旧订单，
  *   弹窗回到条款确认阶段生成新订单（对齐套餐续费每次确认都新建订单）；进行中
- *   状态（payment_pending）保留，可继续完成上一笔支付。
+ *   状态（payment_pending）重开时也 reset，旧订单轮询由 hook 的代际隔离停止写回。
  *
  * hook mock：内部持有 React state 的 mini 实现，暴露 applyState 供测试模拟
  * 超时回调切换；reset 真实清空。轮询行为本身由 use-credit-checkout.test.ts 覆盖。
