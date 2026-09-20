@@ -42,6 +42,9 @@
 - `frontend/src/pages/marketing/agent-diagnostics-panel.tsx`
 - `frontend/src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`
 - `frontend/src/i18n/**`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/**`（由同步脚本生成）
+- `opencraft/plugins/lightvela-hermes/package.json`、`opencraft/package-lock.json`（同步闭包新增 Radix 依赖）
+- `docs/engineering/domains/agent-gateway-runtime.md`（记录共享生成副本边界）
 - `.workflow/native/changes/session-repair/**`
 - `docs/context/tasks/session-repair.md`
 
@@ -65,6 +68,13 @@
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@d0faad45d` | 前端相邻依赖 | 检查测试、i18n 与规格邻居 |
 | `frontend/openspec/specs/marketing.md@d0faad45d` | 诊断中心当前设计 | 保持现有入口和双站规则 |
 | `.agents/skills/feai-native/SKILL.md@d0faad45d` | Native change 流程 | 驱动 shape、build、verify、archive |
+| `docs/context/domains/identity-access.md` | 本轮路由结果 | 核对会话身份边界 |
+| `docs/context/domains/agent-gateway-runtime.md` | 同步副本触发的运行时边界 | 核对 OpenCraft 消费责任 |
+| `docs/context/project/upstream-subtrees.md` | 同步归属 | 确认 mono2 单一写入真源 |
+| `opencraft/AGENTS.md` | OpenCraft 局部约束 | 同步生成副本与验证 |
+| `opencraft/MONO2_MIGRATION.md` | 共享前端边界 | 确定生成副本来源 |
+| `opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | OpenCraft 维护触发 | 区分构建和运行体验 |
+| `docs/engineering/domains/agent-gateway-runtime.md` | 正式设计映射 | 记录生成闭包的责任 |
 
 ## evidence
 
@@ -72,7 +82,7 @@
 - Hermes 官方 `v2026.9.14 / 0.21.3` 已核验支持 `sessions repair` 与 `--check-only`。
 - 当前 LightVela Hermes COS `latest.json` 已核验为 `0.21.3`。
 - `agent-diagnostics-panel.tsx` 已使用 `execDebugCommand` 和 `withHermesProfile`。
-- `pnpm vitest run src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`：18/18 通过，包含英文 locale 文案覆盖。
+- `pnpm vitest run src/pages/marketing/__tests__/agent-diagnostics-panel.test.ts`：19/19 通过，包含英文 locale 和气泡关闭路径覆盖。
 - `pnpm check`：通过；TypeScript 0 个新增诊断。
 - `pnpm build`：通过；103 个静态页面生成完成，SEO 与静态资源检查通过。
 - 全量 `pnpm test`：3,413 项通过、51 项失败、14 项跳过，随后 worker OOM；失败集中在已有积分包、文档、自动化、新建 Bot 文案等测试，聚焦诊断测试单独通过。
@@ -86,12 +96,17 @@
 
 ## validation
 
-- 聚焦测试：`agent-diagnostics-panel.test.ts`，18/18 通过。
+- 聚焦测试：`agent-diagnostics-panel.test.ts`，19/19 通过。
 - `pnpm check` 通过。
 - `pnpm build` 通过。
 - 全量 `pnpm test` 未通过，记录为仓库既有失败与 4 GiB Node heap OOM；本任务相关测试通过。
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged` 通过。
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json` 通过。
+- `cd opencraft && npm run sync:mono2-agent-console && npm run check:mono2-agent-console` 通过，验证 130 个共享文件。
+- `cd opencraft && npm run typecheck --workspace @opencraft/plugin-lightvela-hermes` 通过。
+- `cd opencraft && npm run build:web` 通过，Vite 打包同步后的插件。
+- `pnpm build` 通过，103 个静态页面生成；`npm ci --dry-run --ignore-scripts` 接受 OpenCraft 锁文件。
+- `cd opencraft && npx tsx --test tests/lightvela-management-policy.test.ts` 未通过（4 通过、7 失败）；旧测试预期与当前前端共享组件、QR 命令和布局契约不一致，未扩展修改。
 - `git diff --check` 通过。
 
 ## decisions
@@ -114,5 +129,35 @@
 
 ## handoff
 
-- 实现与聚焦验证完成，准备进入 Native `verify`。
-- 未提交、未推送、未创建 MR。
+- 原功能已有 MR `!4307`；本轮前端修正已提交为 `f0a1f991f`，生成副本和文档待提交，尚未推送。
+- 聚焦验证及两端构建通过，OpenCraft 旧策略测试仍有 7 项失败；交接前保留这一限制。
+
+## checkpoint
+
+### stage
+
+前端提交已完成；OpenCraft 副本按 `f0a1f991f` 重生成，等待剩余提交和推送。
+
+### verified
+
+- 前端聚焦测试 19/19、`pnpm check`、`pnpm build` 均通过。
+- OpenCraft 同步检查验证 130 个文件，插件类型检查及 Web 构建通过。
+- 暂存变更影响检查通过，`agent-gateway-runtime` 需要 `wisp/mono2-maintainers` 审阅正式设计文档。
+
+### unverified
+
+- OpenCraft `lightvela-management-policy.test.ts` 仍有 7 项失败；其中旧 Button 样式断言不符合当前前端真源，本轮不修改其他失效断言。
+- 尚未验证登录后的 Web/Electron/Expo 页面交互。
+
+### discard
+
+- `frontend/next-env.d.ts` 的构建产物差异已回退；本地草稿与 `.codebuddy/.cache/` 不属于变更集。
+
+### restore
+
+- 当前分支 `frontsandbox/session-repair` 的 MR 是 `!4307`。
+- `UPSTREAM.json` 的 `sourceRevision` 已与前端提交 `f0a1f991f` 一致。
+
+### next_action
+
+提交同步副本、依赖与文档；复核检查后推送现有 MR。

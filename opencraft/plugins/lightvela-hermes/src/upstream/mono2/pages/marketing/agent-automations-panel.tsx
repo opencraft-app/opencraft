@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AgentSectionHeader } from "../../components/domain/agent-section-header";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { ScrollArea } from "../../components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useT } from "../../i18n/t";
 import { useZeroTokenAutomationsEnabled } from "../../contexts/runtime-config-context";
@@ -3785,6 +3786,16 @@ interface ScheduleChangeCheck {
   originalSchedule: string;
 }
 
+function AutomationFormScrollArea({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  if (!enabled) return <div>{children}</div>;
+
+  return (
+    <ScrollArea type="always" className="lv-automation-form-scroll min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]]:overscroll-contain">
+      <div className="pr-3">{children}</div>
+    </ScrollArea>
+  );
+}
+
 export function AutomationFormModal({
   botId,
   mode,
@@ -4473,7 +4484,7 @@ export function AutomationFormModal({
   }, [botId, runtimeBotId, canSubmit, mode, initialJob, initialContextFrom, externalMultipleUpstreams, selectedUpstream, upstreamChanged, name, prompt, executionRules, selectedSkills, skillLoadState, onRefreshSkills, onRefreshJobs, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t, executionMode, scriptLanguage, zeroTokenContent, zeroTokenKind]);
 
   return createPortal(
-    <div className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 ${shouldKeepFormHeight ? "py-4" : "py-3"}`} role="dialog" aria-modal="true">
+    <div className={`fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 ${shouldKeepFormHeight ? "py-2" : "py-3"}`} role="dialog" aria-modal="true">
       {testSendToast && (
         <ErrorToast
           message={testSendToast.message}
@@ -4482,7 +4493,7 @@ export function AutomationFormModal({
         />
       )}
       <div
-        className={`lv-dialog-surface relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? "flex h-[720px] max-h-[calc(100dvh-32px)] flex-col" : "overflow-y-auto"}`}
+        className={`lv-dialog-surface relative min-w-0 w-full max-w-[800px] rounded-lg bg-white p-5 shadow-2xl ${shouldKeepFormHeight ? "flex h-[840px] max-h-[calc(100dvh-16px)] flex-col" : "overflow-y-auto"}`}
         style={{
           boxSizing: "border-box",
           width: "min(760px, calc(100vw - 32px))",
@@ -4502,10 +4513,7 @@ export function AutomationFormModal({
           {mode === "create" ? t("新建定时任务") : t("编辑定时任务")}
         </h2>
 
-        <div className={shouldKeepFormHeight
-          ? "min-h-0 flex-1 overscroll-contain overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          : undefined}
-        >
+        <AutomationFormScrollArea enabled={shouldKeepFormHeight}>
         {canSelectZeroToken ? (
           <fieldset className="mt-4">
             <legend className="text-sm font-medium text-black/80">{t("任务类型")}</legend>
@@ -5083,7 +5091,7 @@ export function AutomationFormModal({
             </div>
           </details>
         )}
-        </div>
+        </AutomationFormScrollArea>
 
         {/* 操作 */}
         <div className={`${shouldKeepFormHeight ? "mt-auto pt-4" : "mt-4"} flex items-center justify-end gap-2`}>
