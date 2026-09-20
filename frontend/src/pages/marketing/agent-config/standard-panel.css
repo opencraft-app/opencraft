@@ -1352,13 +1352,14 @@ input.lh-std-input::placeholder {
 }
 
 .lh-std-channel-panel__connect-btn--reconnect {
-  background: var(--lh-std-bg);
-  color: var(--lh-std-text);
-  border-color: var(--lh-std-border-color);
+  background: #1f2937;
+  color: #fff;
+  border-color: #1f2937;
 }
 
 .lh-std-channel-panel__connect-btn--reconnect:hover:not(:disabled) {
-  background: var(--lh-std-bg-hover);
+  background: #111827;
+  border-color: #111827;
 }
 
 .lh-std-channel-panel__connect-btn:disabled {

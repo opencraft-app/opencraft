@@ -83,8 +83,9 @@ export function MemoryPanelView({ title, description, refreshLabel, loadingLabel
       <div className="grid gap-3 md:grid-cols-2">{cards}</div>
       {fallbackMessage && <p className="text-xs text-[var(--text-secondary)]">{fallbackMessage}</p>}
       <Tabs value={activeTab} onValueChange={(value) => { if (value === "memory" || value === "user") onTabChange(value); }}>
-        <AgentTabsList variant="segmented" className="mb-3 h-auto max-w-full flex-wrap p-1">
-          {tabs.map((tab) => <AgentTabsTrigger variant="segmented" key={tab.value} value={tab.value}>{tab.label}</AgentTabsTrigger>)}
+        <AgentTabsList variant="segmented" className="mb-3 inline-grid h-9 max-w-full grid-cols-2 gap-1 border-0 p-1">
+          {tabs.map((tab) => <AgentTabsTrigger variant="segmented" key={tab.value} value={tab.value}
+            className="min-w-0 border-0 bg-transparent px-3 py-0 text-xs transition-none focus-visible:ring-offset-2 data-[state=active]:shadow-sm">{tab.label}</AgentTabsTrigger>)}
         </AgentTabsList>
         {tabs.map((tab) => <TabsContent key={tab.value} value={tab.value} className="mt-0 min-w-0">
           <MemoryEntriesView entries={tab.entries} emptyText={tab.emptyText} />

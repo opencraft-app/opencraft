@@ -105,6 +105,8 @@ describe("channel card action placement", () => {
     const connect = screen.getByRole("button", { name: "Reconnect" });
     expect(guide.closest(".lh-std-channel-panel__card-action-right")).toContainElement(connect);
     expect(guide.compareDocumentPosition(connect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(connect).toHaveClass("text-white", "lh-std-channel-panel__connect-btn--reconnect");
+    expect(connect).toHaveStyle({ color: "rgb(255, 255, 255)" });
   });
 });
 
@@ -120,5 +122,12 @@ describe("channel card action button radius", () => {
     expect(actionRule).toContain("min-height: 36px;");
     expect(actionRule).toContain("white-space: normal;");
     expect(actionRule).toContain("overflow-wrap: anywhere;");
+  });
+
+  it("keeps the connected reconnect action on the filled white-text treatment", () => {
+    const reconnectRule = getRuleBody(standardPanelStyles, ".lh-std-channel-panel__connect-btn--reconnect");
+    expect(reconnectRule).toContain("background: #1f2937;");
+    expect(reconnectRule).toContain("color: #fff;");
+    expect(reconnectRule).toContain("border-color: #1f2937;");
   });
 });

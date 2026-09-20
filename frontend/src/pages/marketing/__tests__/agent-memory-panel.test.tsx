@@ -19,6 +19,19 @@ beforeEach(() => { vi.stubGlobal("ResizeObserver", class { observe() {} unobserv
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Memory panel display and editor contract", () => {
+  it("matches the compact Explore/Chat tab treatment without stretching across the page", () => {
+    render(<MemoryPanel {...props} />);
+    const list = screen.getByRole("tablist");
+    expect(list).toHaveClass("inline-grid", "h-9", "grid-cols-2", "gap-1", "border-0", "p-1", "max-w-full");
+    expect(list).not.toHaveClass("h-auto", "flex-wrap", "w-full");
+    expect(list).toHaveClass("bg-[var(--agent-tabs-track,#f3f3f1)]", "rounded-md");
+    for (const tab of within(list).getAllByRole("tab")) {
+      expect(tab).toHaveClass("min-w-0", "border-0", "px-3", "py-0", "text-xs", "transition-none", "focus-visible:ring-offset-2");
+      expect(tab).toHaveClass("data-[state=active]:bg-[var(--agent-tabs-selected,#fff)]", "data-[state=active]:shadow-sm");
+      expect(tab).not.toHaveClass("text-sm", "py-2", "data-[state=active]:shadow-none");
+    }
+  });
+
   it("opens the refresh explanation in a Portal and invokes refresh only on activation", async () => {
     const refresh = vi.fn();
     const { container } = render(<MemoryPanel {...props} onRefresh={refresh} />);

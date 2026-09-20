@@ -31,7 +31,7 @@ export function ChannelCardView(props: ChannelCardViewProps) {
           <a href={props.guideUrl} target="_blank" rel="noopener noreferrer">{props.guideLabel}</a>
         </Button> : null}
         {props.connected ? <Button type="button" variant="outline" className={cn(agentButtonClassName, `${CLS}__card-unbind`)} onClick={props.onDisconnect} disabled={props.disconnectDisabled}>{props.disconnectLabel}</Button> : null}
-        <Button type="button" variant={props.connected ? "outline" : "default"} className={cn(agentButtonClassName, `${CLS}__connect-btn`)} onClick={(event) => props.onConnect(event.currentTarget)}>{props.connectLabel}</Button>
+        <Button type="button" variant="default" className={cn(agentButtonClassName, `${CLS}__connect-btn`, props.connected && `${CLS}__connect-btn--reconnect`)} onClick={(event) => props.onConnect(event.currentTarget)}>{props.connectLabel}</Button>
       </div>
     </div>
   </div>;

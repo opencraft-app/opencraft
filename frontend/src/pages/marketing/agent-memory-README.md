@@ -11,3 +11,5 @@
 Views have no repository, context, request or SDK imports. All labels and derived validation messages come from the host. The host exports its existing `MemoryPanel` display adapter for direct rendering tests without constructing a second page/session owner.
 
 Radix Tabs do not refresh or query data when switching entries. Both quotas remain disabled while either save is pending. Failed and partial saves retain the editor, draft and error. Requests, config/restart/reread sequencing, Profile targeting and stale-response rejection are unchanged.
+
+Memory/User tabs match the existing Explore/Chat treatment: 36px track, 12px labels, 4px inset/gap, no inner/outer borders, and a white active item with `shadow-sm`. The two equal columns retain intrinsic width instead of filling the content area. This is a local `AgentTabs` className composition; shared defaults and controlled Radix behavior are unchanged.
