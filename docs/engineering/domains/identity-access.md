@@ -31,6 +31,16 @@
 
 ## 机器契约与验证
 
+### 认证用户后台分页
+
+Gateway Dashboard 的“认证用户”列表通过 User Auth `GET /admin/users` 做服务端分页。请求使用 `page` 和 `page_size`，响应中的 `total` 必须是搜索条件下的完整匹配数，不能用当前页长度代替；未传 `page_size` 时继续接受旧 `limit` 参数作为兼容页大小。MySQL 查询按 `created_at DESC, id ASC` 稳定排序，搜索条件变化时 Dashboard 回到第一页。
+
+### 影子账号后台查询
+
+Gateway Dashboard 在“认证用户”页面内以独立 Tab 展示影子账号，但绑定事实仍由 `shadow` 独占。Dashboard BFF 使用服务端 `SHADOW_INTERNAL_TOKEN` 调用 `GET /internal/shadow/admin/accounts`，浏览器只携 Dashboard 管理员会话，不接触 Shadow Token，也不得直接读取 SQLite。
+
+查询使用 `users LEFT JOIN bindings`，同时返回尚未完成注册的本地用户和已建立腾讯云绑定的账号，并强制分页。该管理面仅用于检索注册、基础认证、标准实名和绑定标识；不得增加后台修改实名、换绑手机号或删除绑定的捷径。Shadow 未配置内部 Token 时必须返回不可用，不能回退到匿名访问、callback token 或浏览器管理员凭据。
+
 ### OpenCraft 第一方客户端登录
 
 原生 App 与 Workbench Web 都是现有 OIDC 的第一方 public client，不是登录渠道。客户端使用现有
@@ -99,6 +109,8 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 同值 token 的权威只保留在 Collaboration SSM；交付工具只选择 `gateway.token` 并重命名投影到
 Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
 Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
+北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 

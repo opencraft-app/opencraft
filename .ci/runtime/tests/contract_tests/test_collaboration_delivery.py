@@ -23,6 +23,45 @@ from gates import db_contract_verifier
 
 
 class CollaborationDeliveryTests(unittest.TestCase):
+    def test_beijing_gateway_consumes_dedicated_collaboration_bridge_secret(self):
+        overlay = REPO_ROOT / "argocd/services/service-gateway/beijing-sandbox"
+        config = yaml.safe_load((overlay / "config.yaml").read_text())
+        self.assertEqual(config["collaboration"], {
+            "upstream": "http://collaboration.lightvela-collaboration.svc.cluster.local",
+            "upstream_bearer_token_env": "COLLABORATION_GATEWAY_TOKEN",
+            "allowed_origins": ["http://localhost:*", "http://127.0.0.1:*"],
+        })
+
+        kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+        self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
+        self.assertIn(
+            "collaboration-gateway-token-env-patch.yaml",
+            [patch["path"] for patch in kustomization["patches"]],
+        )
+
+        generator = yaml.safe_load(
+            (overlay / "ksops-collaboration-gateway-token-generator.yaml").read_text()
+        )
+        self.assertEqual(generator["files"], [
+            "../../../secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+        ])
+        patch = yaml.safe_load((overlay / "collaboration-gateway-token-env-patch.yaml").read_text())
+        env = patch["spec"]["template"]["spec"]["containers"][0]["env"][0]
+        self.assertEqual(env["name"], "COLLABORATION_GATEWAY_TOKEN")
+        self.assertEqual(env["valueFrom"]["secretKeyRef"], {
+            "name": "collaboration-gateway-token",
+            "key": "COLLABORATION_GATEWAY_TOKEN",
+            "optional": False,
+        })
+
+        bundle = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text()
+        )["bundles"]["service-gateway"]
+        self.assertIn(
+            "argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+            bundle["publish_paths_by_env"]["beijing-sandbox"],
+        )
+
     def test_runtime_promotion_rejects_catalog_still_pointing_to_foundation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

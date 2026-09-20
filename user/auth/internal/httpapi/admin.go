@@ -20,8 +20,10 @@ type adminHandler struct {
 }
 
 type adminListResponse[T any] struct {
-	Items []T `json:"items"`
-	Total int `json:"total"`
+	Items    []T `json:"items"`
+	Total    int `json:"total"`
+	Page     int `json:"page,omitempty"`
+	PageSize int `json:"pageSize,omitempty"`
 }
 
 type adminUserResponse struct {
@@ -88,7 +90,9 @@ func registerAdminRoutes(group *gin.RouterGroup, authService *service.Service, a
 }
 
 func (h *adminHandler) listUsers(ctx *gin.Context) {
-	items, err := h.service.ListAdminUsers(ctx.Request.Context(), ctx.Query("search"), queryLimit(ctx))
+	page := queryPage(ctx)
+	pageSize := queryPageSize(ctx)
+	items, total, err := h.service.ListAdminUsersPage(ctx.Request.Context(), ctx.Query("search"), page, pageSize)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "list_users_failed"})
 		return
@@ -109,7 +113,7 @@ func (h *adminHandler) listUsers(ctx *gin.Context) {
 			UpdatedAt:      item.UpdatedAt.UTC().Format(timeRFC3339Milli),
 		})
 	}
-	ctx.JSON(http.StatusOK, adminListResponse[adminUserResponse]{Items: resp, Total: len(resp)})
+	ctx.JSON(http.StatusOK, adminListResponse[adminUserResponse]{Items: resp, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *adminHandler) deleteUser(ctx *gin.Context) {
@@ -309,6 +313,40 @@ func queryLimit(ctx *gin.Context) int {
 	value, err := strconv.Atoi(raw)
 	if err != nil {
 		return 50
+	}
+	return value
+}
+
+func queryPage(ctx *gin.Context) int {
+	raw := strings.TrimSpace(ctx.Query("page"))
+	if raw == "" {
+		return 1
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 1
+	}
+	return value
+}
+
+func queryPageSize(ctx *gin.Context) int {
+	raw := strings.TrimSpace(ctx.Query("page_size"))
+	if raw == "" {
+		return normalizeQueryLimit(queryLimit(ctx))
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 50
+	}
+	return normalizeQueryLimit(value)
+}
+
+func normalizeQueryLimit(value int) int {
+	if value <= 0 {
+		return 50
+	}
+	if value > 200 {
+		return 200
 	}
 	return value
 }

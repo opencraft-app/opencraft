@@ -1966,6 +1966,14 @@ func (s *Service) ListAdminUsers(ctx context.Context, search string, limit int) 
 	return s.store.ListAdminUsers(ctx, strings.TrimSpace(search), normalizeAdminLimit(limit))
 }
 
+func (s *Service) ListAdminUsersPage(ctx context.Context, search string, page int, pageSize int) ([]AdminUser, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	pageSize = normalizeAdminLimit(pageSize)
+	return s.store.ListAdminUsersPage(ctx, strings.TrimSpace(search), pageSize, (page-1)*pageSize)
+}
+
 func (s *Service) ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error) {
 	return s.store.ListAdminSMSChallenges(ctx, strings.TrimSpace(search), normalizeAdminLimit(limit))
 }

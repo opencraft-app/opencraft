@@ -46,12 +46,22 @@ interface AdminListResponse<T> {
   total: number;
 }
 
-export function useAuthAdminUsers(search?: string, limit: number = 100) {
+interface AuthAdminUserFilters {
+  search?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useAuthAdminUsers(filters: AuthAdminUserFilters) {
   return useQuery({
-    queryKey: ["auth", "users", search, limit],
+    queryKey: ["auth", "users", filters.search, filters.page, filters.pageSize],
     queryFn: () =>
       apiClient<AdminListResponse<AuthAdminUser>>("auth/users", {
-        params: { search, limit },
+        params: {
+          search: filters.search,
+          page: filters.page,
+          page_size: filters.pageSize,
+        },
       }),
   });
 }

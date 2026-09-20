@@ -1261,8 +1261,10 @@ func TestAdminUsersListReturnsCreatedUsers(t *testing.T) {
 	}
 
 	var response struct {
-		Items []adminUserResponse `json:"items"`
-		Total int                 `json:"total"`
+		Items    []adminUserResponse `json:"items"`
+		Total    int                 `json:"total"`
+		Page     int                 `json:"page"`
+		PageSize int                 `json:"pageSize"`
 	}
 	decodeJSONResponse(t, recorder, &response)
 	if response.Total == 0 || len(response.Items) == 0 {
@@ -1270,6 +1272,18 @@ func TestAdminUsersListReturnsCreatedUsers(t *testing.T) {
 	}
 	if response.Items[0].Email != "admin-alice@example.com" {
 		t.Fatalf("expected created user in response, got %+v", response.Items[0])
+	}
+
+	secondPage := performAdminJSONRequest(t, router, http.MethodGet, "/admin/users?search=Alice&page=2&page_size=1", nil, "admin-secret")
+	if secondPage.Code != http.StatusOK {
+		t.Fatalf("expected 200 for second page, got %d: %s", secondPage.Code, secondPage.Body.String())
+	}
+	decodeJSONResponse(t, secondPage, &response)
+	if response.Total != 1 || len(response.Items) != 0 {
+		t.Fatalf("expected empty second page with total 1, got %+v", response)
+	}
+	if response.Page != 2 || response.PageSize != 1 {
+		t.Fatalf("expected page metadata 2/1, got %+v", response)
 	}
 }
 
