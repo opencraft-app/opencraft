@@ -18,6 +18,8 @@ import {
   updateSoulMetadataFields,
 } from "@/pages/marketing/agent-buddy-setup";
 import { DEMO_TEMPLATES } from "@/pages/marketing/agent-demo-templates";
+import { withHermesSkillsProfile } from "@/lib/hermes-agent-command";
+import { buildSkillhubInstallCommand } from "@/pages/marketing/skills-demo/skill-registries";
 
 const template = DEMO_TEMPLATES[0]!;
 /* 带技能的模板 —— 有的模板（如健康管家）刻意不配技能，
@@ -424,6 +426,50 @@ describe("buildBuddySetupPlan", () => {
       } else {
         expect(step.command).toContain("acli skills install");
       }
+    }
+  });
+
+  /*
+   * SkillHub 安装命令必须与技能页逐字符一致。
+   *
+   * 真实故障（同一个现象修了两次，都是「看起来等价其实不等价」）：
+   * 创建「育儿参谋」时「正在安装技能 育儿大师」整步失败，而同一技能在技能页
+   * 能装上。两处差异各修一次：
+   *   1. 定向用了 withHermesAgent（只加 --agent），缺 ACLI_SYS_RUNTIME_HOME /
+   *      ACLI_RUNTIME_HOME —— 只有较新版 ACLI 自己解析 --agent，旧版靠这两个
+   *      变量定位 profile。
+   *   2. 命令用了 agent-experts-panel 的 buildInstallSkillCommand，它会加
+   *      `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=...` 前缀（专家面板专用
+   *      的下载源覆写），普通技能安装带上它会失败。
+   *
+   * 所以这里不再逐个断言零碎特征，直接跟技能页那条命令做全等比较 ——
+   * 只要两边构造方式再次分叉，无论差在包装还是差在前缀，都会被抓住。
+   */
+  it("builds SkillHub installs exactly like the skills page does", () => {
+    const steps = buildBuddySetupPlan({
+      profile,
+      template: templateWithSkills,
+      profileId: "bot-research",
+      timestamp: "20260914",
+    });
+    const skillHubSkills = templateWithSkills.skills.filter(
+      (skill) => !skill.githubSource && !skill.skillsShId,
+    );
+    expect(skillHubSkills.length).toBeGreaterThan(0);
+
+    for (const skill of skillHubSkills) {
+      const step = steps.find(
+        (item) => item.kind === "skill" && item.command.includes(`'${skill.slug}'`),
+      );
+      expect(step, `${skill.slug} 缺少安装步骤`).toBeDefined();
+      // 技能页的真实命令：buildSkillhubInstallCommand + withHermesSkillsProfile
+      const expected = withHermesSkillsProfile(
+        buildSkillhubInstallCommand(skill.slug),
+        "bot-research",
+      );
+      expect(step!.command).toBe(expected);
+      // 专家面板专用的下载源覆写不该出现在这里
+      expect(step!.command).not.toContain("SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE");
     }
   });
 

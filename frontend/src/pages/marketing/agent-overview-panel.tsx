@@ -23,7 +23,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { useT } from "@/i18n/t";
+import { useCurrentLocale, useT } from "@/i18n/t";
 import { ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
@@ -179,26 +179,43 @@ const HeroBanner = ({ stats }: { stats: HeroStats }) => {
 
 /* ────────────────────────────── 2. 最新动态 ────────────────────────────── */
 
-type ChangelogEntry = { date: string; title: string; body: string; image: string; imageAlt: string };
+/*
+ * changelog 条目。
+ *
+ * date 用结构化的 y/m/d 而不是「2026年9月10日」整串：
+ * 日期格式各语言不同（en 是 "September 10, 2026"、ja 是「2026年9月10日」），
+ * 整串进词典等于每加一条动态都要翻 8 个语种。这里存数字，渲染时用
+ * Intl.DateTimeFormat 按当前 locale 格式化。
+ *
+ * title / body / imageAlt 仍是中文原文 —— 它们是 t() 的 key，
+ * 在渲染时翻译（模块级常量拿不到 hook）。
+ */
+type ChangelogEntry = {
+  date: { y: number; m: number; d: number };
+  title: string;
+  body: string;
+  image: string;
+  imageAlt: string;
+};
 
 /** TODO(demo): 接真实 changelog 数据源后替换 */
 const DEMO_CHANGELOG: ChangelogEntry[] = [
   {
-    date: "2026年9月10日",
+    date: { y: 2026, m: 9, d: 10 },
     title: "定时任务新增通知任务和脚本任务",
     body: "支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。",
     image: assetUrl("/agent-overview/changelog-task-types.jpg"),
     imageAlt: "定时任务新增通知任务和脚本任务",
   },
   {
-    date: "2026年9月2日",
+    date: { y: 2026, m: 9, d: 2 },
     title: "支持创建和发布工作台",
     body: "支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。",
     image: assetUrl("/agent-overview/changelog-workbench.jpg"),
     imageAlt: "支持创建和发布工作台",
   },
   {
-    date: "2026年8月28日",
+    date: { y: 2026, m: 8, d: 28 },
     title: "实验室新增 DeepSeek Harness",
     body: "在 Hermes Agent 之外安装和管理 DeepSeek Harness，使用专属 WebUI、模型提供商配置、插件管理、工作区和独立服务控制。",
     image: assetUrl("/agent-overview/changelog-deepseek-harness.jpg"),
@@ -211,6 +228,7 @@ const CAROUSEL_INTERVAL_MS = 5000;
 
 const LatestNewsSection = () => {
   const t = useT();
+  const locale = useCurrentLocale();
   const [index, setIndex] = useState(0);
   /** 用户手动点过指示器后暂停自动轮播，避免和用户操作打架 */
   const [paused, setPaused] = useState(false);
@@ -243,7 +261,7 @@ const LatestNewsSection = () => {
           <div className="aspect-[16/9] overflow-hidden bg-black/[0.015]">
             <img
               src={entry.image}
-              alt={entry.imageAlt}
+              alt={t(entry.imageAlt)}
               loading="lazy"
               decoding="async"
               width={900}
@@ -254,11 +272,20 @@ const LatestNewsSection = () => {
 
           {/* 右：文案 */}
           <div className="flex min-w-0 flex-col justify-center p-4">
-            <p className="text-xs font-medium text-black/40">{entry.date}</p>
-            <p className="mt-1.5 text-[15px] font-semibold leading-6 text-black/[0.88]">
-              {entry.title}
+            {/*
+              日期按当前 locale 格式化，不进词典。
+              月份用 long 而不是数字：en 得到 "September 10, 2026"，
+              ja/zh 得到「2026年9月10日」，都是各自的习惯写法。
+            */}
+            <p className="text-xs font-medium text-black/40">
+              {new Intl.DateTimeFormat(locale, {
+                year: "numeric", month: "long", day: "numeric",
+              }).format(new Date(entry.date.y, entry.date.m - 1, entry.date.d))}
             </p>
-            <p className="mt-1.5 text-[13px] leading-5 text-black/50">{entry.body}</p>
+            <p className="mt-1.5 text-[15px] font-semibold leading-6 text-black/[0.88]">
+              {t(entry.title)}
+            </p>
+            <p className="mt-1.5 text-[13px] leading-5 text-black/50">{t(entry.body)}</p>
           </div>
         </div>
       </div>
@@ -269,7 +296,7 @@ const LatestNewsSection = () => {
           <button
             key={item.title}
             type="button"
-            aria-label={item.title}
+            aria-label={t(item.title)}
             aria-current={itemIndex === index ? "true" : undefined}
             onClick={() => {
               setIndex(itemIndex);
@@ -382,7 +409,7 @@ const ProfileEditDialog = ({
             id="lv-profile-desc"
             value={description}
             rows={3}
-            placeholder={BUDDY_DESCRIPTION_PLACEHOLDER}
+            placeholder={t(BUDDY_DESCRIPTION_PLACEHOLDER)}
             onChange={(event) => setDescription(event.target.value)}
             className="mt-1 w-full resize-none rounded-[3px] border border-black/[0.1] px-3 py-2 text-[13px] leading-5 text-black/70 outline-none transition placeholder:text-black/30 focus:border-black/25"
           />
@@ -672,6 +699,7 @@ export const AgentOverviewPanel = ({
       // 生成一份完整文件，也不要写出半截内容
       preserveSoulContent: Boolean(existingSoul),
       existingSoul,
+      t,
     });
     setSteps(plan.map((step) => ({ step, status: "pending" as const })));
 

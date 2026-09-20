@@ -23,6 +23,8 @@ let maxBots = 1;
 let multiBotEnabled = true;
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string) => (
     testRegion.isGlobal && text === "已有 Bot 正在删除中，请稍后刷新页面后再创建。"
       ? "A Bot is being deleted. Refresh the page in a moment before creating another."

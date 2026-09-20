@@ -201,6 +201,7 @@ export const AgentOnboardingPanel = ({
   execDebugCommand,
   initialName,
   cloneOptions,
+  onSetupStart,
 }: {
   /**
    * 目标 bot。订阅开通 instance 时后端已自带一个 default bot，
@@ -223,6 +224,14 @@ export const AgentOnboardingPanel = ({
    * 不传则用默认名。
    */
   initialName?: string;
+  /**
+   * 用户点「创建」、面板进入配置阶段时触发（只报一次，早于任何沙箱操作）。
+   *
+   * 页面侧需要它把「引导正在进行」这件事记下来：订阅路径下实例是后端随订阅
+   * 建好的，页面那个「实例已就绪就退出 loading」的兜底 effect 会把 isCreating
+   * 置 false，进而卸载本面板 —— 用户点完模板瞬间被弹回表单，配置一步都没跑。
+   */
+  onSetupStart?: () => void;
   /**
    * 创建 bot 本身（多 bot 入口用）。
    *
@@ -369,9 +378,10 @@ export const AgentOnboardingPanel = ({
   const runtimeRef = useRef({
     onCreateBot,
     onCreated,
+    onSetupStart,
     cloneValue: cloneOptions?.value,
   });
-  runtimeRef.current = { onCreateBot, onCreated, cloneValue: cloneOptions?.value };
+  runtimeRef.current = { onCreateBot, onCreated, onSetupStart, cloneValue: cloneOptions?.value };
 
   /**
    * 本次创建已经建好的实例。
@@ -430,7 +440,11 @@ export const AgentOnboardingPanel = ({
    * 用户确认或改掉即可 —— 改动只影响 display_name，不动目录名。
    * 不预填的话用户会觉得"刚填的名字怎么没了"。
    */
-  const [name, setName] = useState(initialName?.trim() || BUDDY_NAME_DEFAULT);
+  /*
+   * 默认名走 t()：BUDDY_NAME_DEFAULT 是中文常量，直接用会让国际站表单里
+   * 冒出「我的 AI 伙伴」。用惰性初始化，t 在首次渲染时已可用。
+   */
+  const [name, setName] = useState(() => initialName?.trim() || t(BUDDY_NAME_DEFAULT));
   const [description, setDescription] = useState("");
   /** 高级选项默认折叠：复制来源是少数场景，不该挤占主路径 */
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -460,8 +474,16 @@ export const AgentOnboardingPanel = ({
    */
   const handleCreate = useCallback(
     (template?: AgentTemplate) => {
+      /*
+       * 先通知页面「引导已进入配置阶段」，再做任何状态变更。
+       *
+       * 必须在最前面：页面要靠这个信号挡住那个会卸载本面板的兜底 effect
+       * （订阅路径下实例本来就是 running，effect 一跑就把 isCreating 置 false）。
+       */
+      runtimeRef.current.onSetupStart?.();
+
       const nextProfile = {
-        name: (template ? template.name : name.trim()) || BUDDY_NAME_DEFAULT,
+        name: (template ? template.name : name.trim()) || t(BUDDY_NAME_DEFAULT),
         description: template ? template.description : description.trim(),
       };
       const nextAvatar = {
@@ -493,6 +515,8 @@ export const AgentOnboardingPanel = ({
           profileId: "main",
           avatar: nextAvatar,
           timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
+          // 传 t：步骤 label 要跟界面同语言，否则英文表单点完会跳出中文清单
+          t,
         }).map((step) => ({ step, status: "pending" as const })),
       );
       setPhase("creating");
@@ -637,6 +661,7 @@ export const AgentOnboardingPanel = ({
           // 只有真读到了才走保留模式，读失败宁可生成完整文件
           preserveSoulContent: Boolean(existingSoul),
           existingSoul,
+          t,
         });
         /*
          * 清单已在进入 creating 时铺好，这里只在步骤数不一致时才重置 ——
@@ -670,7 +695,7 @@ export const AgentOnboardingPanel = ({
          * 中间失败过。技能安装依赖沙箱里的 curl/tar/acli，失败并不罕见，
          * 这个反馈必须让人看见。
          *
-         * 清单本身已经标了每步的红叉与原因，用户可以据此决定去技能页还是
+         * 清单本身已经逐步标了失败标记与原因，用户可以据此决定去技能页还是
          * 定时任务页补，点「完成」再走。
          */
         if (result.failures.length > 0) {
@@ -784,7 +809,7 @@ export const AgentOnboardingPanel = ({
             id="lv-onboarding-desc"
             value={description}
             rows={2}
-            placeholder={BUDDY_DESCRIPTION_PLACEHOLDER}
+            placeholder={t(BUDDY_DESCRIPTION_PLACEHOLDER)}
             onChange={(event) => setDescription(event.target.value)}
             className="mt-1 w-full resize-none rounded-[3px] border border-black/[0.1] px-3 py-2 text-[13px] leading-5 text-black/70 outline-none transition placeholder:text-black/30 focus:border-black/25"
           />

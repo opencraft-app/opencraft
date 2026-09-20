@@ -283,7 +283,27 @@ class RepositoryError extends Error {
   }
 }
 
-const createNetworkUnavailableError = () => new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
+const createNetworkUnavailableError = (cause?: unknown) => {
+  /*
+   * 保留原始 fetch 失败原因。
+   *
+   * 原来是 `catch {}` 直接丢掉，只留「认证服务暂时不可用」这一句 —— 排障时
+   * 极具误导性：创建 Bot 时技能安装失败，界面显示的是「认证服务不可用」，
+   * 让人以为是登录态问题，实际可能是连接被中断、CORS、代理未起等任意一种。
+   * 这里把 cause 挂上，并在有具体信息时附到 message 末尾。
+   */
+  const detail = cause instanceof Error
+    ? `${cause.name}: ${cause.message}`
+    : cause
+      ? String(cause)
+      : "";
+  const message = detail
+    ? `${AUTH_SERVICE_UNAVAILABLE_MESSAGE}（${detail}）`
+    : AUTH_SERVICE_UNAVAILABLE_MESSAGE;
+  const error = new RepositoryError(message, 0, "network_error");
+  if (cause !== undefined) (error as RepositoryError & { cause?: unknown }).cause = cause;
+  return error;
+};
 
 const isNestedBotsUnavailable = (error: unknown) => {
   if (error instanceof RepositoryError) {
@@ -1383,11 +1403,11 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           body: JSON.stringify(createDebugExecRequestBody(command)),
           signal: abortController.signal,
         });
-      } catch {
+      } catch (error) {
         if (abortController.signal.aborted) {
           throw new Error(`debug_exec_timeout:${timeoutMs ?? 0}`);
         }
-        throw createNetworkUnavailableError();
+        throw createNetworkUnavailableError(error);
       } finally {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
       }

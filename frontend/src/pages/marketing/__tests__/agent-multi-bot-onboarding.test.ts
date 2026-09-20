@@ -18,7 +18,27 @@ describe("multi-bot creation goes through the onboarding panel", () => {
     const page = readPageSource();
     // 点「新建 Bot」时进引导，而不是 setShowCreateConfirm(true)
     expect(page).toContain("setShowMultiBotOnboarding(true);");
-    expect(page).toContain("{showMultiBotOnboarding ? (");
+    /*
+     * 只能有一个挂载点，且条件里不含 activeBot。
+     *
+     * 原来是两条互补分支（`!activeBot` 与 `activeBot ?`），分别放在设置区之前
+     * 和设置区内部。创建过程中新 bot 转 running 进入 visibleBots，activeBot
+     * 从空变真 → React 卸载一个挂载另一个 → AgentOnboardingPanel 的 phase
+     * 重置回 "form"，用户填完表单后又看到一次创建表单（真实故障：新用户订阅
+     * 后创建 Bot 要填两遍）。
+     */
+    expect(page).toContain("{showMultiBotOnboarding && !isModifying && (");
+    expect(page).not.toContain("{showMultiBotOnboarding && activeBot ? (");
+    expect(page).not.toContain("{showMultiBotOnboarding && !activeBot");
+    // 全文件只出现一次挂载条件，避免以后又分叉出第二处
+    expect(page.split("{showMultiBotOnboarding && !isModifying && (").length - 1).toBe(1);
+    /*
+     * 挂载条件不得带 isCreating / showEarlyOnboarding：
+     * 这两个量会在本页建出 provisioning 实例后翻转，一翻转分支就消失、
+     * 渲染跳到订阅分支，面板被重挂载、配置流程被取消。
+     * 互斥性改由订阅分支上的 !showMultiBotOnboarding 单向保证。
+     */
+    expect(page).toContain("showEarlyOnboarding && !showMultiBotOnboarding && (");
   });
 
   it("creates the instance from inside the panel, not before it", () => {
@@ -224,29 +244,59 @@ describe("multi-bot creation goes through the onboarding panel", () => {
   });
 
   /*
+   * 订阅路径：实例已由后端随订阅建好（进页面就是 running），页面上有三个
+   * effect 会判定「创建已完成」—— 两个关 loading、一个把 ?creating= 改写成
+   * ?bot=。它们不知道引导表单正在进行，一跑就把引导面板卸载。
+   * 真实故障：点「育儿参谋」模板后没进创建流程，直接回到了表单。
+   *
+   * 这里只守「三处都让位 + 锁会复位」这个结构约束；
+   * 真正的行为验证在 agent-subscribe-template-flow.test.tsx（真实渲染），
+   * 因为文本断言只能证明代码长这样，证明不了行为对 —— 同一现象我靠文本
+   * 断言修过两次都没修对。
+   */
+  it("locks the creating state while the onboarding panel is mounted", () => {
+    const page = readPageSource();
+
+    // 引导一旦可见就上锁（ref 而非 state：要同一帧生效，避免 effect 抢跑）
+    expect(page).toContain("if (isOnboardingVisible) onboardingLockRef.current = true;");
+    // 三个会关 loading / 改 URL 的 effect 都必须让位
+    expect(page.split("if (onboardingLockRef.current) return;").length - 1).toBe(4);
+    // 完成后要复位，否则后续创建态永远退不出 loading
+    expect(page).toContain("onboardingLockRef.current = false;");
+  });
+
+  /*
    * 这条守的是一个会静默吞掉整个模板配置的回归。
    *
-   * 引导面板一旦被放进 key={activeBot.id} 的容器里，创建过程中 refreshBots
-   * 让新 bot 进入 visibleBots，activeTabId 的兜底改写就会换掉 activeBot，
-   * 于是整棵子树在写配置的半途重挂载：phase 回到 form（表现为「喂完咖啡又
+   * 引导面板只要在创建过程中被重挂载，phase 就回到 form（表现为「填完表单又
    * 回到创建表单」），effect cleanup 把 cancelled 置 true，人设 / 技能 /
    * 定时任务一个都写不进去，而且没有任何报错。
+   *
+   * 两种触发方式都要守住：
+   *   1. 被放进 key={activeBot.id} 的容器里 —— activeTabId 兜底改写会换 key
+   *   2. 挂载条件里含 activeBot —— 新 bot 转 running 进入 visibleBots 时条件翻转
+   * 第 2 种就是「新用户订阅后要填两遍表单」的成因。
    */
-  it("renders the multi-bot onboarding outside the activeBot-keyed container", () => {
+  it("keeps a single onboarding mount point that never remounts mid-flight", () => {
     const page = readPageSource();
     const keyedContainer = 'key={`${activeBot.id}-${activeSection}`}';
+    const mountCondition = "{showMultiBotOnboarding && !isModifying && (";
     expect(page).toContain(keyedContainer);
-    // 引导分支必须出现在 keyed 容器之前，即不被它包住
-    expect(page.indexOf("{showMultiBotOnboarding ? (")).toBeLessThan(
-      page.indexOf(keyedContainer),
-    );
-    // 且引导自己的容器不带 activeBot key
-    const branch = page.slice(
-      page.indexOf("{showMultiBotOnboarding ? ("),
-      page.indexOf(keyedContainer),
-    );
-    expect(branch).toContain('<div className="_lh-claw-bot-panel">');
-    expect(branch).not.toContain("key={");
+    expect(page).toContain(mountCondition);
+    // 挂载点必须在 keyed 容器之前，即不被它包住
+    expect(page.indexOf(mountCondition)).toBeLessThan(page.indexOf(keyedContainer));
+    // 挂载条件不得依赖 activeBot（会在创建途中翻转）
+    expect(mountCondition).not.toContain("activeBot");
+    /*
+     * 面板自己那一小段容器不带 key。
+     *
+     * 只截到 <AgentOnboardingPanel 开标签为止 —— 不能截到 keyedContainer，
+     * 那中间跨越了整个设置区，必然包含其它无关的 key={...}。
+     */
+    const mountStart = page.indexOf(mountCondition);
+    const wrapper = page.slice(mountStart, page.indexOf("<AgentOnboardingPanel", mountStart));
+    expect(wrapper).toContain("_lh-claw-bot-panel__cards");
+    expect(wrapper).not.toContain("key={");
   });
 
   it("shows the setup checklist from the moment the coffee starts", () => {

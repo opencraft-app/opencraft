@@ -14,11 +14,12 @@
  * 模板里的 memories 因此写入 **USER.md（用户画像）**，语义上才成立。
  */
 
+import type { TranslateFn } from "@/i18n/t";
 import { buildSoulMd } from "@/lib/soul-interpretations";
 import {
   getHermesProfileRootCommand,
-  withHermesAgent,
   withHermesAgentCompatibility,
+  withHermesSkillsProfile,
 } from "@/lib/hermes-agent-command";
 import {
   buildCreateCommand,
@@ -29,8 +30,16 @@ import {
 import { buildHermesSoulWriteCommand } from "@/pages/marketing/agent-buddy-command";
 import { buildGithubSkillInstallCommand } from "@/lib/hermes-skills-client";
 import { buildProfileMetaWriteCommand } from "@/lib/hermes-profile-meta";
-import { buildSkillsshInstallCommand } from "@/pages/marketing/skills-demo/skill-registries";
-import { buildInstallSkillCommand } from "@/pages/marketing/agent-experts-panel";
+/*
+ * SkillHub 安装命令必须取 skill-registries 的 buildSkillhubInstallCommand
+ * （技能页同一个），不要用 agent-experts-panel 的 buildInstallSkillCommand。
+ * 后者是专家面板专用，会额外加 `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=...`
+ * 前缀 —— 那是专家面板自己的下载源覆写，普通技能安装带上它会失败。
+ */
+import {
+  buildSkillhubInstallCommand,
+  buildSkillsshInstallCommand,
+} from "@/pages/marketing/skills-demo/skill-registries";
 import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-runtime";
 import type { AgentTemplate } from "@/pages/marketing/agent-demo-templates";
 
@@ -316,16 +325,27 @@ export const buildUserProfileMarkdown = (template: AgentTemplate): string => [
  * 只支持平台真实能解析的形式（见 automation-template-catalog.ts 的
  * toAutomationTemplateSchedule）：daily / weekly / interval。
  * 无法识别时返回 null，调用方应跳过该条而不是猜一个。
+ *
+ * **中英文都要认。** 模板的 routine.label 在国际站是英文
+ * （"Daily 21:30" / "Weekdays 09:00" / "Sundays 20:00"），国内站是中文
+ * （「每天 21:30」/「工作日 09:00」/「每周日 20:00」）。
+ *
+ * 曾经只认中文：国际站模板的定时任务**全部静默失败** —— 解析返回 null，
+ * 调用方跳过该步，用户看不到任何报错，只是创建完发现一个任务都没有。
+ * 所以这里的分支必须和 agent-demo-templates 的 en.routines 措辞对齐，
+ * 新增表达形式时两边要一起改（有测试守卫逐条校验）。
  */
 export const toCronExpression = (label: string): string | null => {
   const normalized = label.trim();
 
-  // 「每 6 小时」/「每 30 分钟」
-  const interval = /^每\s*(\d+)\s*(小时|分钟)$/.exec(normalized);
+  // 「每 6 小时」/「每 30 分钟」；英文 "Every 6 hours" / "Every 30 minutes"
+  const interval = /^每\s*(\d+)\s*(小时|分钟)$/.exec(normalized)
+    ?? /^every\s+(\d+)\s+(hours?|minutes?)$/i.exec(normalized);
   if (interval) {
     const amount = Number(interval[1]);
     if (!Number.isFinite(amount) || amount <= 0) return null;
-    return interval[2] === "小时" ? `0 */${amount} * * *` : `*/${amount} * * * *`;
+    const isHour = interval[2] === "小时" || /^hours?$/i.test(interval[2]!);
+    return isHour ? `0 */${amount} * * *` : `*/${amount} * * * *`;
   }
 
   const time = /(\d{1,2}):(\d{2})/.exec(normalized);
@@ -334,10 +354,18 @@ export const toCronExpression = (label: string): string | null => {
   const minute = Number(time[2]);
   if (hour > 23 || minute > 59) return null;
 
-  // 「工作日 10:00」
-  if (normalized.startsWith("工作日")) return `${minute} ${hour} * * 1-5`;
+  // 「工作日 10:00」/ "Weekdays 10:00"
+  if (normalized.startsWith("工作日") || /^weekdays?\b/i.test(normalized)) {
+    return `${minute} ${hour} * * 1-5`;
+  }
 
-  // 「每周日 18:00」等
+  /*
+   * 星期：中文「每周日 18:00」/ 英文 "Sundays 20:00"。
+   *
+   * 英文侧同时接受复数与单数（Sundays / Sunday）和三字母缩写（Sun），
+   * 因为模板文案未来可能被改成任一种写法 —— 解析失败是静默的，宽容一点
+   * 比让用户丢任务好。
+   */
   const weekdayMap: Record<string, number> = {
     日: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6,
   };
@@ -347,9 +375,26 @@ export const toCronExpression = (label: string): string | null => {
     if (day === undefined) return null;
     return `${minute} ${hour} * * ${day}`;
   }
+  const enWeekly = /^(sun|mon|tue(?:s)?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?)(?:day)?s?\b/i
+    .exec(normalized);
+  if (enWeekly) {
+    const enDayMap: Record<string, number> = {
+      sun: 0, mon: 1, tue: 2, tues: 2, wed: 3, wednes: 3,
+      thu: 4, thurs: 4, fri: 5, sat: 6, satur: 6,
+    };
+    const day = enDayMap[enWeekly[1]!.toLowerCase()];
+    if (day === undefined) return null;
+    return `${minute} ${hour} * * ${day}`;
+  }
 
-  // 「每天 08:00」
-  if (normalized.startsWith("每天")) return `${minute} ${hour} * * *`;
+  // 「每天 08:00」/ "Daily 08:00"（也接受 "Every day 08:00"）
+  if (
+    normalized.startsWith("每天")
+    || /^daily\b/i.test(normalized)
+    || /^every\s+day\b/i.test(normalized)
+  ) {
+    return `${minute} ${hour} * * *`;
+  }
 
   return null;
 };
@@ -394,11 +439,29 @@ export const buildBuddySetupPlan = (params: {
   preserveSoulContent?: boolean;
   /** 当前 SOUL.md 原文，preserveSoulContent 为真时必传 */
   existingSoul?: string;
+  /**
+   * 翻译函数，由调用方从 `useT()` 传入。
+   *
+   * 这里是纯函数、调不了 hook，所以翻译能力必须外部注入。不传时 `tr` 会
+   * 回显中文原文 —— 旧调用点和测试因此不受影响。
+   *
+   * 为什么必须翻译：这些 label 会直接显示在创建进度清单上。原先是硬编码
+   * 中文，导致国际站用户在英文表单里点「创建」后，进度页突然全是中文。
+   */
+  t?: TranslateFn;
 }): SetupStep[] => {
   const {
     profile, template, profileId = "main", avatar, timestamp,
-    preserveSoulContent = false, existingSoul,
+    preserveSoulContent = false, existingSoul, t: tFn,
   } = params;
+  /*
+   * 没传翻译函数时回显原文，保证纯函数在测试/非组件环境下仍可用。
+   *
+   * 局部变量必须命名为 t —— i18n-extract 的 T_CALL_RE 只识别 t(...) 与
+   * rawT(...) 两种调用形式，换成别的名字就扫不到，key 进不了词典，
+   * 运行时只会回显中文（正是这次要修的问题）。
+   */
+  const t: TranslateFn = tFn ?? ((zh) => zh);
   const steps: SetupStep[] = [];
 
   // 1. SOUL.md —— 名字 / 描述 / 人设
@@ -416,8 +479,8 @@ export const buildBuddySetupPlan = (params: {
      * 说成「写入人设」会让用户以为人设被重写了（实际没有）。
      */
     label: preserveSoulContent && existingSoul
-      ? "正在更新 Bot 名称与简介"
-      : "正在写入 Bot 人设",
+      ? t("正在更新 Bot 名称与简介")
+      : t("正在写入 Bot 人设"),
     command: buildHermesSoulWriteCommand(
       encodeBase64(soulMarkdown),
       timestamp,
@@ -438,7 +501,7 @@ export const buildBuddySetupPlan = (params: {
    */
   steps.push({
     kind: "profile-meta",
-    label: "正在保存 Bot 资料",
+    label: t("正在保存 Bot 资料"),
     command: buildProfileMetaWriteCommand({
       displayName: profile.name.trim() || undefined,
       description: profile.description.trim() || template?.description,
@@ -454,7 +517,7 @@ export const buildBuddySetupPlan = (params: {
   if (template && template.memories.length > 0) {
     steps.push({
       kind: "user-profile",
-      label: "正在写入用户画像",
+      label: t("正在写入用户画像"),
       command: buildUserProfileWriteCommand(
         encodeBase64(buildUserProfileMarkdown(template)),
         profileId,
@@ -468,7 +531,7 @@ export const buildBuddySetupPlan = (params: {
   for (const skill of template?.skills ?? []) {
     steps.push({
       kind: "skill",
-      label: `正在安装技能 ${skill.name}`,
+      label: t("正在安装技能 {{name}}", { name: skill.name }),
       /*
        * 三种来源命令不同，但都必须按 profile 定向 —— 同一实例下多个 bot
        * 靠 profileId 区分，不定向会装到实例的默认 profile（也就是主 bot）
@@ -476,8 +539,17 @@ export const buildBuddySetupPlan = (params: {
        *
        *   githubSource → 命令内部已用 HERMES_PROFILE_ROOT 落盘，自带定向
        *   skillsShId   → acli skills-sh，用兼容写法探测 --agent 再决定
-       *   其余         → acli skills（SkillHub），加 --agent，与技能页一致
-       *                  （见 skill-registries.ts 的 createDomesticDataLayer）
+       *   其余         → acli skills（SkillHub），必须与技能页完全一致：
+       *                  buildSkillhubInstallCommand + withHermesSkillsProfile
+       *
+       * 这一条踩过两次坑，都是「看起来等价其实不等价」：
+       *   1. 定向只用 withHermesAgent（只加 --agent），缺
+       *      ACLI_SYS_RUNTIME_HOME / ACLI_RUNTIME_HOME。只有较新版 ACLI 自己
+       *      解析 --agent，旧版靠这两个变量定位 profile。
+       *   2. 命令用了 agent-experts-panel 的 buildInstallSkillCommand，它会加
+       *      `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=...` 前缀（专家面板
+       *      自己的下载源覆写），普通技能安装带上它会失败。
+       * 结论：这两个函数都得跟技能页保持同一个，别再换。
        */
       command: skill.githubSource
         ? buildGithubSkillInstallCommand(skill.githubSource, skill.installDir ?? skill.slug, profileId)
@@ -487,7 +559,7 @@ export const buildBuddySetupPlan = (params: {
             "acli skills-sh",
             profileId,
           )
-          : withHermesAgent(buildInstallSkillCommand(skill.slug), profileId),
+          : withHermesSkillsProfile(buildSkillhubInstallCommand(skill.slug), profileId),
       timeoutMs: SKILL_STEP_TIMEOUT_MS,
       required: false,
     });
@@ -500,7 +572,7 @@ export const buildBuddySetupPlan = (params: {
     if (!command) continue;
     steps.push({
       kind: "cron",
-      label: `正在创建定时任务 ${routine.label}`,
+      label: t("正在创建定时任务 {{label}}", { label: routine.label }),
       /*
        * 必须过 scopeHermesCronCommand：它把 `hermes cron` 改写成
        * `hermes -p <profile> cron` 并导出 HERMES_PROFILE_ROOT。
@@ -530,7 +602,7 @@ export const buildBuddySetupPlan = (params: {
    */
   steps.push({
     kind: "gateway",
-    label: "正在启动网关",
+    label: t("正在启动网关"),
     command: getHermesScriptCommands(profileId).getGatewayRestartCommand(),
     timeoutMs: GATEWAY_STEP_TIMEOUT_MS,
     required: false,

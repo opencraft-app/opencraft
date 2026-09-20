@@ -5,7 +5,9 @@ import { AgentUpgradingView } from "../agent-upgrading-view";
 
 const { getModifyCheckout, listBundles } = vi.hoisted(() => ({ getModifyCheckout: vi.fn(), listBundles: vi.fn() }));
 vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => ({ plans: { getModifyCheckout, listBundles } }) }));
-vi.mock("@/i18n/t", () => ({ useT: () => (text: string) => text }));
+vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN", useT: () => (text: string) => text }));
 
 const pass: Pass = {
   pass_id: "pass-launch", user_id: "u1", bundle_id: "launch", bundle_name: "启航 Launch AI",

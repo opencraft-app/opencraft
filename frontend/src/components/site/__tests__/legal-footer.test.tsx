@@ -35,6 +35,8 @@ const interpolateYear = (text: string, values?: Record<string, number>) =>
   values?.year ? text.replace("{{year}}", String(values.year)) : text;
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string, values?: Record<string, number>) => {
     const locale = localeState.language as keyof typeof footerTranslations;
     const translated = footerTranslations[locale]?.[text as keyof typeof footerTranslations[typeof locale]] ?? text;

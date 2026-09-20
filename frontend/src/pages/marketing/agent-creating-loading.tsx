@@ -52,9 +52,14 @@ const StepRow = ({ state }: { state: SetupStepState }) => {
         </span>
         {status === "failed" ? (
           <span className="mt-0.5 block text-[11px] leading-4 text-red-500">
-            {state.step.required
-              ? state.error
-              : t("这一步没成功，稍后可在对应页面重试")}
+            {/*
+              有 error 就显示 error，不分 required 与否。
+              原来非必需步骤统一显示「这一步没成功」，把真实原因吞掉了 ——
+              技能安装失败时，用户和排障的人都只看到一句无信息量的提示，
+              必须去诊断中心重跑命令才知道为什么。既然沙箱已经把 stderr
+              带回来了，就直接给出来；没有 error 时才退回通用文案。
+            */}
+            {state.error || t("这一步没成功，稍后可在对应页面重试")}
           </span>
         ) : null}
       </span>
@@ -176,7 +181,7 @@ export const CreatingLoadingView = ({
           {partialFailureCount > 0 && onContinue ? (
             <div className="mt-5 rounded-[6px] bg-black/[0.02] p-3.5">
               <p className="text-[12px] leading-[18px] text-black/55">
-                {t("红叉的步骤可以稍后在「技能」和「定时任务」页面手动补上，Bot 本身已经可以用了。")}
+                {t("安装过程遇到了小阻碍，稍后可在「技能」和「定时任务」页面手动安装，Bot 本身已安装成功。")}
               </p>
               <button
                 type="button"

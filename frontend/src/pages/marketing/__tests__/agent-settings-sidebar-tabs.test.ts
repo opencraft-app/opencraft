@@ -47,39 +47,46 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("{multiBotEnabled && (");
     expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
-    expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
+    expect(page).toContain("!isCreating && !botsLoading");
+    expect(page).toContain("!showMultiBotOnboarding && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
     expect(page).not.toContain("const canCreateBot = multiBotEnabled");
     // showHiddenAgentTools 仍用于其它隐藏工具，不应被顺手删掉
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
   });
 
-  it("opens a name-only dialog before creating the first Bot as blank", () => {
+  it("routes the first Bot through the onboarding panel, not the legacy dialog", () => {
     const page = readPageSource();
     const initialCreation = page.slice(
       page.indexOf("const handleCreateNew"),
-      page.indexOf("const handleConfirmCreate"),
+      page.indexOf("const handleOnboardingCreateBot"),
     );
     const noActiveBotBranch = initialCreation.slice(
       initialCreation.indexOf("if (!activeBot)"),
-      initialCreation.indexOf('setCreateBotMode("clone-current")'),
     );
 
-    expect(noActiveBotBranch).toContain('setCreateBotMode("blank")');
-    expect(noActiveBotBranch).toContain("setShowCreateConfirm(true)");
-    expect(noActiveBotBranch).not.toContain("createInitialBot");
+    /*
+     * 首个 bot 曾经走「只问名字」的旧弹窗 —— 新用户第一次建 bot 恰好落在
+     * 这条分支，于是看到的还是老交互。现在统一进创建引导（可选头像、填
+     * 描述、挑模板）。
+     */
+    expect(noActiveBotBranch).toContain("setShowMultiBotOnboarding(true)");
+    expect(noActiveBotBranch).not.toContain("setShowCreateConfirm(true)");
+    // 未订阅仍先去订阅页，这个前置不能被绕过
+    expect(noActiveBotBranch).toContain('navigate("/subscribe")');
 
-    expect(page).toContain("const isFirstBotCreation = !activeBot");
-    expect(page).toContain("const cloneIntent = resolveBotCloneIntent({");
-    expect(page).toContain("isInitialCreation: isFirstBotCreation");
-    expect(page).toContain("currentBotId: activeBot?.id");
-    expect(page).toContain("mainBotId: defaultBot?.id");
-    expect(page).toContain("if (!cloneIntent.ok)");
-    expect(page).not.toContain("createBotSoul");
-    expect(page).not.toContain("initialSoul:");
-    expect(page).toContain("{!isFirstBotCreation && (");
-    expect(page).toContain("createMode: cloneIntent.intent.mode");
-    expect(page).toContain('sourceBotId: cloneIntent.intent.mode === "clone" ? cloneIntent.intent.sourceBotId : undefined');
+    // 订阅回跳（?create=1）同样进引导，那是新用户订阅后的第一屏
+    expect(page).not.toContain("setShowCreateConfirm(true)");
+
+    /*
+     * 首个 bot 的引导必须渲染在 `!isCreating && activeBot && sdkInstance`
+     * 之外 —— 那时 activeBot 为 null，放里面永远渲染不到。
+     *
+     * 且挂载条件不含 activeBot：创建过程中新 bot 进入 visibleBots 会让它从空
+     * 变真，若作为条件就会切换渲染分支、重挂载面板，用户得填第二遍表单。
+     */
+    expect(page).toContain("{showMultiBotOnboarding && !isModifying && (");
+    expect(page).not.toContain("{showMultiBotOnboarding && activeBot ? (");
   });
 
   it("refreshes the shared Bot list before leaving the creation page", () => {
@@ -302,7 +309,10 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
 
     expect(page).toContain("if (!activeBot)");
-    expect(page).toContain("setShowCreateConfirm(true)");
+    // 已有 bot 时走引导，不再经旧弹窗
+    expect(page).toContain("setShowMultiBotOnboarding(true)");
+    // 旧弹窗已无任何触发点，首个 bot 与已有 bot 都走引导
+    expect(page).not.toContain("setShowCreateConfirm(true)");
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');

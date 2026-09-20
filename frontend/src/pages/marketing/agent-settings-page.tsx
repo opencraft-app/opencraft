@@ -2930,6 +2930,17 @@ export const AgentSettingsPage = ({
    * hasBuddyConfig 的刷新又是异步的，中间这段时间引导会闪回。
    */
   const [onboardingJustFinished, setOnboardingJustFinished] = useState(false);
+  /**
+   * 引导面板是否已进入配置阶段（用户点了「创建」）。
+   *
+   * 订阅路径下实例是后端随订阅建好的，进页面时就已经是 running。下面那个
+   * 「实例已就绪 → 退出 loading」的兜底 effect 因此会立刻把 isCreating 置
+   * false，showEarlyOnboarding 随之变 false，引导面板被卸载 —— 用户点完模板
+   * 瞬间被弹回表单，人设/技能/定时任务一步都没跑。
+   *
+   * 有了这个标记，配置期间就不退出 loading，等 onCreated 再走正常收尾。
+   */
+
 
   const isActiveBotPendingOnboarding = isPendingOnboarding(activeBot?.id)
     || isPendingOnboarding(activeBot?.instanceId);
@@ -3020,6 +3031,21 @@ export const AgentSettingsPage = ({
   const isOnboardingVisible = showEarlyOnboarding
     || showBuddyOnboarding
     || showMultiBotOnboarding;
+
+  /*
+   * 引导一旦渲染出来，就锁住创建态，不再让那几个「实例已就绪」的 effect
+   * 改 URL / 关 loading。
+   *
+   * 为什么不靠 onSetupStart（点「创建」时才报）：面板在用户**点模板卡片**
+   * 时就已经被卸载了 —— 那一刻还没进配置阶段，回调根本来不及触发。真实
+   * 表现是点了模板毫无反应（弹窗开了又随组件一起消失），或直接回到表单。
+   *
+   * 用 ref 而不是 state：它只需要被 effect 读，不需要触发重渲染；而且要能
+   * 在同一帧内立刻生效，setState 的异步批处理会留出一帧窗口让 effect 抢跑。
+   */
+  const onboardingLockRef = useRef(false);
+  if (isOnboardingVisible) onboardingLockRef.current = true;
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("lv-agent-onboarding", isOnboardingVisible);
@@ -3031,6 +3057,17 @@ export const AgentSettingsPage = ({
   /** 引导完成：立刻收起表单，再刷新资料与列表 */
   const handleBuddyCreated = useCallback((createdBotId?: string) => {
     setOnboardingJustFinished(true);
+    /*
+     * 配置已结束，放开那三个会退出创建态 / 改 URL 的 effect。
+     *
+     * 不复位的话锁会一直留着：同一次会话里后续再进创建态时，兜底、轮询与
+     * URL 改写全被挡住，实例失败或被删也不会退出 loading。
+     *
+     * 复位安全：上一行的 setOnboardingJustFinished(true) 会让
+     * showEarlyOnboarding 转 false（见 shouldShowEarlyOnboarding），
+     * 引导随即不可见，所以「引导可见就加锁」那行不会立刻把它又置回 true。
+     */
+    onboardingLockRef.current = false;
     completeOnboarding();
     if (activeBot) {
       // 打标时可能用的是 instanceId，两个都清
@@ -3995,8 +4032,12 @@ export const AgentSettingsPage = ({
     if (bots.length > 0) return;
     setDirectCreateError(null);
     setCreateBotName("");
-    setCreateBotMode("blank");
-    setShowCreateConfirm(true);
+    /*
+     * 订阅成功回跳同样进创建引导，不弹旧的「创建 Bot」弹窗 ——
+     * 这是新用户订阅后的第一屏，看到的必须是新流程。
+     */
+    setCloneSourceBotId("");
+    setShowMultiBotOnboarding(true);
   }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
 
   /*
@@ -4014,6 +4055,18 @@ export const AgentSettingsPage = ({
 
   useEffect(() => {
     if (!creatingParam) return;
+    /*
+     * 引导正在写配置时不要动 URL。
+     *
+     * 订阅路径的实例进页面就已是 running，completedCreatingBot 立刻匹配，
+     * 这里会把 ?creating=<id> 改写成 ?bot=<id> —— creatingParam 一消失，
+     * isCreating 变 false、showEarlyOnboarding 变 false，引导面板连同
+     * activeTemplate / phase 一起被卸载。用户点模板后瞬间回到表单、
+     * 配置一步都没跑，就是这条路径造成的。
+     *
+     * 前面两个兜底 effect 已各自让位，这条是第三处（也是真正改 URL 的那处）。
+     */
+    if (onboardingLockRef.current) return;
     if (completedCreatingBot) {
       setIsCreating(false);
       setCreationError(null);
@@ -4047,6 +4100,19 @@ export const AgentSettingsPage = ({
    */
   useEffect(() => {
     if (creatingParam || isCreating || botsLoading || !provisioningBot) return;
+    /*
+     * 引导进行中不要抢方向盘。
+     *
+     * 多 bot 引导在本页点「创建」后会立刻产出一个 provisioning 实例，而此时
+     * URL 上没有 ?creating=。本 effect 于是判定「刷新恢复」，把 isCreating
+     * 翻成 true 并跳 ?creating=<id> —— showEarlyOnboarding 随之变 true，渲染
+     * 从多 bot 分支切到订阅分支。两个分支在 DOM 里位置不同，面板被真重挂载
+     * （日志里 id 由 vxztw 变成 lpjon），phase 归零回 form，正在跑的配置流程
+     * 被 cleanup 取消 —— 表现为 sandbox ready=false、点完「创建」回到表单。
+     *
+     * 引导自己会在 onCreated 里跳转收尾，不需要这里代劳。
+     */
+    if (onboardingLockRef.current) return;
     setIsCreating(true);
     setCreationError(null);
     setActiveTabId(provisioningBot.id);
@@ -4066,6 +4132,15 @@ export const AgentSettingsPage = ({
   useEffect(() => {
     // 等路由先确认创建流程，避免确认按钮的 state 更新早于 ?creating= 导航时误退出。
     if (!isCreating || creationError || !creatingParam) return;
+    /*
+     * 引导正在写配置时绝不退出 loading。
+     *
+     * 订阅路径的实例进页面就已是 running，这个 effect 会立刻判定「就绪」并
+     * setIsCreating(false) → showEarlyOnboarding 变 false → 引导面板卸载。
+     * 用户点完模板瞬间被弹回表单，配置一步都没跑（真实故障）。
+     * 收尾交给 onCreated（handleBuddyCreated），它带着新 bot id 正常跳转。
+     */
+    if (onboardingLockRef.current) return;
     if (requestedCreatingBotId) {
       const targetBot = bots.find((b) => b.id === requestedCreatingBotId);
       if (targetBot && targetBot.status !== "provisioning" && targetBot.status !== "deleting") {
@@ -4086,6 +4161,13 @@ export const AgentSettingsPage = ({
   /* 创建态只以后端真实状态为准：Running 才进入设置页，Failed/Deleting 停在错误态。 */
   useEffect(() => {
     if (!isCreating || creationError) return;
+    /*
+     * 同上：引导进入配置阶段后不再由轮询决定去留。
+     *
+     * 订阅路径的实例本来就是 active，这里的 active 分支会立刻
+     * setIsCreating(false) + navigate，把正在写配置的引导面板卸载掉。
+     */
+    if (onboardingLockRef.current) return;
 
     let cancelled = false;
     let timer: number | undefined;
@@ -4234,14 +4316,24 @@ export const AgentSettingsPage = ({
     }
     if (activeBot && !canCreateAdditionalBot) return;
     if (!activeBot) {
-      if (isSubscribed) {
-        setDirectCreateError(null);
-        setCreateBotName("");
-        setCreateBotMode("blank");
-        setShowCreateConfirm(true);
+      if (!isSubscribed) {
+        navigate("/subscribe");
         return;
       }
-      navigate("/subscribe");
+      /*
+       * 首个 bot 也走创建引导，不再弹旧的「创建 Bot」弹窗。
+       *
+       * 之前这条分支还留着弹窗 —— 那是只问名字的老交互，新用户第一次
+       * 建 bot 恰好走这里，于是看到的还是旧界面。引导页能选头像、填描述、
+       * 挑模板，弹窗一个都没有，两者并存还会让用户填两次名字。
+       *
+       * 首个 bot 不传 cloneOptions（没有可复制的来源），引导页会隐藏
+       * 「创建方式」那一档，addBot 收到空 sourceBotId 走 blank。
+       */
+      setDirectCreateError(null);
+      setCreateBotName("");
+      setCloneSourceBotId("");
+      setShowMultiBotOnboarding(true);
       return;
     }
 
@@ -5313,18 +5405,25 @@ export const AgentSettingsPage = ({
           )}
 
           {/* ── 创建 Loading 动画 ── */}
-          {!isModifying && !passesLoading && isCreating && !showEarlyOnboarding && (
+          {!isModifying && !passesLoading && isCreating && !showEarlyOnboarding && !showMultiBotOnboarding && (
             <CreatingLoadingView errorMessage={creationError} />
           )}
 
           {/* ── 创建期前置引导：不干等实例，先让用户填资料 ── */}
-          {!isModifying && !passesLoading && showEarlyOnboarding && (
+          {/*
+            排除 showMultiBotOnboarding：多 bot 引导正在进行时，这条分支不能
+            接管。否则实例一进 provisioning、isCreating 转 true，渲染就从多 bot
+            分支跳到这里 —— 两处位置不同，面板被重挂载、配置流程被取消。
+          */}
+          {!isModifying && !passesLoading && showEarlyOnboarding && !showMultiBotOnboarding && (
             <div className="_lh-claw-bot-panel__cards min-w-0">
               <AgentOnboardingPanel
                 botId={earlyOnboardingBotId}
                 profileId={earlyOnboardingProfileId}
                 onCreated={handleBuddyCreated}
                 execDebugCommand={repositories.bots.execDebugCommand}
+                /* 点「创建」后挡住兜底 effect，别把正在写配置的面板卸载掉 */
+                onSetupStart={() => { onboardingLockRef.current = true; }}
                 /* 预填弹窗里刚填的 bot 名，避免用户重复输入 */
                 initialName={provisioningBot?.name || createBotName}
               />
@@ -5333,8 +5432,68 @@ export const AgentSettingsPage = ({
 
           {isModifying && <AgentUpgradingView pass={upgradingPass} failed={passUpgradeFailed} paused={passUpgradePaused} refreshing={passUpgradeRefreshing} onRetry={retryPassUpgrade} />}
 
+          {/*
+            首个 bot 的创建引导。
+
+            必须放在 `!isCreating && activeBot && sdkInstance` 那个分支之外：
+            此时账号下还没有任何 bot，activeBot 为 null，放里面永远渲染不到 ——
+            那条分支里的引导只服务「已有 bot 再建一个」的场景。
+
+            显式排除 showEarlyOnboarding 与 isCreating：实例开始创建后就该交给
+            创建期引导（它带 botId / profileId，能接着写配置），两个引导面板
+            同时挂在页面上会出现两套表单。
+
+            不传 cloneOptions：没有可复制的来源，引导页会隐藏「创建方式」
+            那一档，addBot 收到空 sourceBotId 走 blank。
+
+            条件只看 showMultiBotOnboarding 自己：
+            原来还带 !isCreating && !showEarlyOnboarding，而这两个量会在本页
+            建出 provisioning 实例后翻转（见「刷新恢复」effect），一翻转这个
+            分支就消失、渲染跳到订阅分支，面板被重挂载、配置流程被取消。
+            互斥性改由订阅分支上的 !showMultiBotOnboarding 单向保证。
+          */}
+          {showMultiBotOnboarding && !isModifying && (
+            <div className="_lh-claw-bot-panel__cards min-w-0">
+              <AgentOnboardingPanel
+                botId=""
+                onCreated={(createdBotId) => {
+                  setShowMultiBotOnboarding(false);
+                  // 带上新 bot 的 id，落到它自己的总览页
+                  handleBuddyCreated(createdBotId);
+                }}
+                onCreateBot={handleOnboardingCreateBot}
+                execDebugCommand={repositories.bots.execDebugCommand}
+                onSetupStart={() => { onboardingLockRef.current = true; }}
+                /*
+                 * 有可复制来源时才给 cloneOptions —— 首次订阅账号下还没有
+                 * 任何 bot，给了会显示一个空下拉。
+                 *
+                 * 这里用 cloneSourceChoices.length 而不是 activeBot 判断：
+                 * 前者在创建过程中只会「从无到有」地增加一项，不影响已挂载的
+                 * 面板；用 activeBot 会导致整个分支切换、表单重置（见上面注释）。
+                 */
+                cloneOptions={cloneSourceChoices.length > 0
+                  ? {
+                    value: cloneSourceBotId,
+                    onChange: setCloneSourceBotId,
+                    choices: cloneSourceChoices,
+                  }
+                  : undefined}
+              />
+              {directCreateError ? (
+                <p className="mt-3 text-center text-xs text-[#DC2626]">{directCreateError}</p>
+              ) : null}
+            </div>
+          )}
+
           {/* ── 设置区域 ── */}
-          {!isCreating && activeBot && sdkInstance && (
+          {/*
+            必须排除两个引导态。
+            引导是「接管整页」的流程，而这块只看 !isCreating && activeBot ——
+            多 bot 引导时 isCreating 为 false、activeBot 又存在（就是当前那个
+            bot），于是配置进度清单和总览/设置区同屏显示（真实故障截图）。
+          */}
+          {!isCreating && !showMultiBotOnboarding && !showEarlyOnboarding && activeBot && sdkInstance && (
             (() => {
               type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
@@ -6016,42 +6175,19 @@ export const AgentSettingsPage = ({
                     )}
                   >
                     {/*
-                      多 bot 创建引导刻意放在 activeBot.id 的 key 之外。
+                      多 bot 创建引导已统一到设置区之前那一个挂载点。
 
-                      它拿的是 botId=""（实例点「创建」时才建），跟 activeBot 无关；
-                      而创建过程中 refreshBots 会让新 bot 进入 visibleBots，进而触发
-                      activeTabId 的兜底改写 —— 若跟着那个 key 走，整棵子树会在写配置
-                      的半途重挂载：phase 被重置回 form（用户看到又回了表单），effect
-                      cleanup 还会把 cancelled 置 true，人设/技能/定时任务全都写不进去。
+                      这里原本还有一份（条件 `showMultiBotOnboarding && activeBot`），
+                      与那边的 `!activeBot` 互补 —— 本意是「没有 bot 时用外面那个、
+                      已有 bot 时用这个」。但两处在 DOM 树里位置不同，activeBot 一旦
+                      在创建过程中从空变为真值（新 bot 转 running 进入 visibleBots），
+                      React 就会卸载一个、挂载另一个：AgentOnboardingPanel 的 phase
+                      重置回 "form"，用户填完表单后又被扔回创建表单，写配置的 effect
+                      也被 cleanup 中断。
+
+                      现在只保留一个挂载点，条件不含 activeBot，创建全程都是同一个
+                      组件实例，不会重挂载。
                     */}
-                    {showMultiBotOnboarding ? (
-                      <div className="_lh-claw-bot-panel">
-                        <div className="_lh-claw-bot-panel__cards min-w-0">
-                          <AgentOnboardingPanel
-                            botId=""
-                            onCreated={(createdBotId) => {
-                              setShowMultiBotOnboarding(false);
-                              // 带上新 bot 的 id，落到它自己的总览页
-                              handleBuddyCreated(createdBotId);
-                            }}
-                            onCreateBot={handleOnboardingCreateBot}
-                            execDebugCommand={repositories.bots.execDebugCommand}
-                            cloneOptions={{
-                              value: cloneSourceBotId,
-                              onChange: setCloneSourceBotId,
-                              /*
-                               * 列出账号下全部 bot，不是只给「当前 / 主 Bot」两个模式 ——
-                               * 在 A bot 页面下想复制 B bot 是很自然的需求。
-                               */
-                              choices: cloneSourceChoices,
-                            }}
-                          />
-                          {directCreateError ? (
-                            <p className="mt-3 text-center text-xs text-[#DC2626]">{directCreateError}</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : (
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       {showBuddyOnboarding ? (
                         <div className="_lh-claw-bot-panel__cards min-w-0">
@@ -6236,16 +6372,22 @@ export const AgentSettingsPage = ({
                       </Suspense>
                       )}
                     </div>
-                    )}
                   </section>
                 </div>
               );
             })()
           )}
 
-          {/* 空状态：仅在不该走引导时出现（例如已有 bot 但都被过滤掉） */}
+          {/*
+            空状态：仅在不该走引导时出现（例如已有 bot 但都被过滤掉）。
+
+            必须排除 showMultiBotOnboarding —— 首个 bot 引导中
+            visibleBots 本来就是空的，两个条件同时成立会让引导表单下面
+            再叠一个「新建 Bot」按钮（同一页面出现两套创建入口）。
+          */}
           {
-            !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0 && (
+            !isModifying && !passesLoading && !isCreating && !botsLoading
+              && !showMultiBotOnboarding && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (

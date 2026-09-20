@@ -37,6 +37,48 @@ describe("template region adaptation", () => {
     expect(intlSkills.some((s) => s.githubSource)).toBe(true);
   });
 
+  /*
+   * 反向守卫：国际站不能拿到 SkillHub 专有技能。
+   *
+   * 上面那条只查了「国内站不带 skills.sh」，方向是单边的 —— 新模板如果
+   * 把 SkillHub slug 写在基础定义（国际站位）上，它一条都拦不住。实际
+   * 就漏过了：育儿 / 防骗 / 编程三个模板的 SkillHub 技能写在顶层，国际站
+   * 会拿去 `acli skills-sh install`，必然失败。
+   *
+   * 判据用「既没有 skillsShId 也没有 githubSource」—— 那就只剩 SkillHub
+   * 这条安装路径（见 buildBuddySetupPlan 的三分支）。
+   */
+  it("never ships SkillHub-only skills to the international site", () => {
+    for (const tpl of globalTemplates) {
+      for (const skill of tpl.skills) {
+        const isSkillHubOnly = !skill.skillsShId && !skill.githubSource;
+        expect(
+          isSkillHubOnly,
+          `${tpl.id} -> ${skill.slug} 只在 SkillHub 上，国际站装不了；`
+          + "该模板应标 cnOnly，或补一个 skills.sh 对等技能",
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("hides cn-only templates from the international site", () => {
+    const cnOnlyIds = DEFS.filter((def) => def.cnOnly).map((def) => def.id);
+    // 有 cnOnly 标记时才有意义，避免断言悄悄变成零覆盖
+    expect(cnOnlyIds.length).toBeGreaterThan(0);
+
+    const globalIds = globalTemplates.map((tpl) => tpl.id);
+    const cnIds = cnTemplates.map((tpl) => tpl.id);
+    for (const id of cnOnlyIds) {
+      expect(globalIds, `${id} 不该出现在国际站`).not.toContain(id);
+      expect(cnIds, `${id} 应该出现在国内站`).toContain(id);
+    }
+
+    // cnOnly 是定义层的标记，不该泄漏到消费方拿到的对象里
+    for (const tpl of [...globalTemplates, ...cnTemplates]) {
+      expect("cnOnly" in tpl, `${tpl.id} 泄漏了 cnOnly`).toBe(false);
+    }
+  });
+
   it("overrides routines whenever skills change, so prompts never name a missing skill", () => {
     for (const def of DEFS) {
       if (!def.cn) continue;
