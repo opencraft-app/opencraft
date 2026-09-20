@@ -1,11 +1,12 @@
 ## goal
-让无 Bot 的 `/agents/channels/` 页面左上角 LightVela 品牌区域不再显示右边框和底边框。
+让无 Bot 的 Agent 空状态页面（包括 `/agents` 与 `/agents/channels/`）左上角 LightVela 品牌区域不再显示右边框和底边框。
 
 ## non_goals
-- 不改变 `/agents` 根页面、已有 Bot 页面、品牌文字、导航和创建行为。
+- 不改变已有 Bot 页面、品牌文字、导航和创建行为。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户 2026-09-18 截图：`/agents/channels/` 无 Bot 空状态左上角仍有边框；上一版已处理相似问题。
+- 用户 2026-09-19 截图：国际站 `/agents` 无 Bot 空状态仍显示同一圈边框。
 
 ## interface_refs / data_structure_refs
 - `AgentsPageClient` 在具名路由传入 `initialSectionSlug`，根路由不传。
@@ -17,7 +18,7 @@
 - `superseded_refs`：无。
 
 ## acceptance
-- 具名 Agent 页面进入无 Bot 空状态时移除品牌区域右、下边框；`/agents` 根路由和已有 Bot 页面保留原有样式。
+- 根路由和具名 Agent 页面进入无 Bot 空状态时都移除品牌区域右、下边框；已有 Bot 页面保留原有样式。
 - 聚焦测试、前端检查和构建通过。
 
 ## affected_paths
@@ -34,7 +35,7 @@
 | `frontend/AGENTS.md@origin/master` | 服务门禁 | 确定验证命令 |
 | `frontend/DESIGN.md@origin/master` | UI 约束 | 保留现有页面结构 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@origin/master` | 邻接关系 | 检查相关测试与路由 |
-| `docs/context/tasks/2026-09-17-empty-persona-brand-copy.md@origin/master` | 上次需求范围 | 保留 `/agents` 根路由样式 |
+| `docs/context/tasks/2026-09-17-empty-persona-brand-copy.md@origin/master` | 上次需求范围 | 定位此前根路由与具名路由范围差异 |
 | `docs/context/flows/tapd-gongfeng-delivery.md@origin/master` | MR 交付门禁 | 核对授权与远端状态 |
 | `docs/context/flows/change-delivery.md@origin/master` | Task Pack 交接 | 记录最终验证与范围 |
 
@@ -47,14 +48,14 @@
 - 文档校验通过，首方链接错误 0；`git diff --check` 通过。
 
 ## risks
-- 多个具名页面共用 header；通过已有无 Bot 守卫限制覆盖，已有 Bot 时继续显示边框。
+- 根路由和多个具名页面共用 header；通过已有无 Bot 守卫限制覆盖，已有 Bot 时继续显示边框。
 
 ## validation
 - `agent-settings-empty-persona.test.ts` 聚焦测试。
 - `pnpm check`、`pnpm test`、`pnpm build:cn`；仓库没有独立 lint 命令。
 
 ## decisions
-- 使用具名路由标识配合原有无 Bot 守卫，覆盖同类空状态，并保留之前明确要求不变的 `/agents` 根路由。
+- 仅使用原有无 Bot 守卫覆盖根路由和具名路由的相同空状态；不再用 `initialSectionSlug` 排除 `/agents`。
 
 ## scan_scope
 - Agent 页面、头部样式、路由和相关测试。
@@ -63,4 +64,4 @@
 - 精确搜索命中 `isEmptyPersonaPage`、CSS `:has` 选择器和相邻回归测试。
 
 ## handoff
-- 用户已授权将本轮 UI 修复提交 MR。无 Bot 浏览器视觉确认仍待可用账号；本地源码与聚焦测试验证通过。MR 不代表已合并或发布。
+- 原 MR !4268 已于 2026-09-19 合并；用户随后反馈国际站 `/agents` 根路由仍有同类边框。本补丁从最新 `origin/master` 新建分支交付。无 Bot 浏览器视觉确认仍待可用登录态；本地源码与聚焦测试验证通过。MR 不代表发布。

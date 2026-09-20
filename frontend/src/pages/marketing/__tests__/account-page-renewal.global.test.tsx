@@ -171,7 +171,7 @@ const buildIsolatedPass = (): Pass => ({
 const renderAccountPage = () => {
   render(
     <MemoryRouter>
-      <AccountPage />
+      <AccountPage view="billing" />
     </MemoryRouter>,
   );
 };

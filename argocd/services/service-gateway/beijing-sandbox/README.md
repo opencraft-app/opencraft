@@ -12,9 +12,11 @@
 
 - `kustomization.yaml`
 - `ksops-secret-generator.yaml`
+- `ksops-collaboration-gateway-token-generator.yaml`
 - `service-gateway-platform.env`
 - `config.yaml`
 - `../../../secrets/beijing-sandbox/service-gateway-runtime-secrets.sops.yaml`
+- `../../../secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml`
 
 ## Current Runtime Contract
 
@@ -40,3 +42,4 @@ Secret 键：
 
 北京试点后，这个 deploy-facing 目录只保留环境值、配置输入和 secret 输入；
 共享 namespace / serviceaccount 删除逻辑以及其它结构性 patch 已下沉到 `service-gateway/k8s/overlays/beijing-sandbox/`。
+`COLLABORATION_GATEWAY_TOKEN` 的 Deployment 注入同样由该 source-facing overlay 持有，确保 patch 与基准 Deployment 在同一 Component 中组合。

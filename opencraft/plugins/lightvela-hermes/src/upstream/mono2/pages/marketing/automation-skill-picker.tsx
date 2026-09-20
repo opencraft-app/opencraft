@@ -3,6 +3,7 @@ import { AlertTriangle, Check, ChevronDown, CircleHelp, Loader2, Search, X } fro
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { useT } from "../../i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "../../lib/agent-routes";
 import {
@@ -80,7 +81,6 @@ export function AutomationSkillPicker({
   const t = useT();
   const listboxId = useId();
   const helpTooltipId = useId();
-  const pickerRef = useRef<HTMLDivElement>(null);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
   const helpCloseTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -155,19 +155,6 @@ export function AutomationSkillPicker({
   };
 
   useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (pickerRef.current?.contains(event.target as Node)) return;
-      setOpen(false);
-      setQuery("");
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  useEffect(() => {
     if (!helpTooltipOpen) return;
 
     window.addEventListener("resize", updateHelpTooltipPosition);
@@ -217,61 +204,71 @@ export function AutomationSkillPicker({
         )}
         <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
       </div>
-      <div ref={pickerRef} className="relative mt-1.5">
-        <div className="flex min-h-[38px] w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
-          {value.map((slug) => {
-            const displayName = getSkillLabel(slug);
-            const unavailable = loadState.status === "ready" && !loadState.slugs.includes(slug);
-            return (
-              <span
-                key={slug}
-                className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
-                  unavailable
-                    ? "bg-[var(--automation-skill-unavailable-bg)] text-[var(--automation-skill-unavailable-text)]"
-                    : "bg-[var(--automation-skill-chip-bg)] text-[var(--automation-skill-chip-text)]"
-                }`}
-              >
-                <span className="max-w-40 truncate">{displayName}</span>
-                {unavailable && <span className="text-[10px] font-normal">{t("不可用")}</span>}
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) setQuery("");
+        }}
+      >
+        <PopoverAnchor asChild>
+          <div className="mt-1.5">
+            <div className="flex min-h-[38px] w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
+              {value.map((slug) => {
+                const displayName = getSkillLabel(slug);
+                const unavailable = loadState.status === "ready" && !loadState.slugs.includes(slug);
+                return (
+                  <span
+                    key={slug}
+                    className={`inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${
+                      unavailable
+                        ? "bg-[var(--automation-skill-unavailable-bg)] text-[var(--automation-skill-unavailable-text)]"
+                        : "bg-[var(--automation-skill-chip-bg)] text-[var(--automation-skill-chip-text)]"
+                    }`}
+                  >
+                    <span className="max-w-40 truncate">{displayName}</span>
+                    {unavailable && <span className="text-[10px] font-normal">{t("不可用")}</span>}
+                    <button
+                      type="button"
+                      aria-label={`${t("移除技能")} ${displayName}`}
+                      onClick={() => removeSelection(slug)}
+                      className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded text-black/45 hover:bg-black/[0.06] hover:text-black/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+                    >
+                      <X className="size-3" aria-hidden="true" />
+                    </button>
+                  </span>
+                );
+              })}
+              <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label={`${t("移除技能")} ${displayName}`}
-                  onClick={() => removeSelection(slug)}
-                  className="-mr-1 inline-flex size-4 shrink-0 items-center justify-center rounded text-black/45 hover:bg-black/[0.06] hover:text-black/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+                  aria-label={t("调用技能")}
+                  aria-haspopup="listbox"
+                  aria-expanded={open}
+                  aria-controls={open ? listboxId : undefined}
+                  className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-sm focus:outline-none ${
+                    value.length > 0 ? "text-black/55" : "text-black/35"
+                  }`}
                 >
-                  <X className="size-3" aria-hidden="true" />
+                  <span className={`truncate ${value.length > 0 ? "text-black/55" : "text-black/35"}`}>
+                    {value.length > 0 ? t("继续添加技能") : t("选择你希望 Agent 稳定调用的技能")}
+                  </span>
+                  <ChevronDown className={`size-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
                 </button>
-              </span>
-            );
-          })}
-          <button
-            type="button"
-            aria-label={t("调用技能")}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            aria-controls={open ? listboxId : undefined}
-            onClick={() => {
-              setOpen((current) => !current);
-              if (open) setQuery("");
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              setOpen(false);
-              setQuery("");
-            }}
-            className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-sm focus:outline-none ${
-              value.length > 0 ? "text-black/55" : "text-black/35"
-            }`}
-          >
-            <span className={`truncate ${value.length > 0 ? "text-black/55" : "text-black/35"}`}>
-              {value.length > 0 ? t("继续添加技能") : t("选择你希望 Agent 稳定调用的技能")}
-            </span>
-            <ChevronDown className={`size-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
-          </button>
-        </div>
+              </PopoverTrigger>
+            </div>
+          </div>
+        </PopoverAnchor>
 
         {open && (
-          <div className="absolute z-40 mt-1.5 w-full overflow-hidden rounded-lg border border-black/10 bg-white shadow-xl">
+          <PopoverContent
+            align="start"
+            side="top"
+            sideOffset={6}
+            collisionPadding={16}
+            data-testid="automation-skill-picker-popup"
+            className="z-[210] max-h-[var(--radix-popover-content-available-height)] w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-lg border border-black/10 bg-white p-0 shadow-xl"
+          >
             <div className="border-b border-black/[0.06] p-1.5">
               <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
                 <Search className="h-4 w-4 shrink-0 text-black/35" />
@@ -374,9 +371,9 @@ export function AutomationSkillPicker({
                 <div className="px-2.5 py-3 text-sm text-black/45">{t("没有匹配的 Skill")}</div>
               )}
             </div>
-          </div>
+          </PopoverContent>
         )}
-      </div>
+      </Popover>
     </div>
   );
 }

@@ -38,6 +38,15 @@ function makeOverview(definition: JapaneseSkillDefinition): CuratedSkillOverview
 }
 
 const DEFINITIONS: Record<string, JapaneseSkillDefinition> = {
+  "mattpocock/skills/teach": {
+    name: "Teach", purpose: "出典に基づく短いレッスンで継続的な学習ワークスペースを作る", input: "学びたいテーマ、目的、好み、制約", outcome: "出典、練習、進捗記録を含む継続的なコース", prompt: "このコードベースの基礎を短いレッスンで教えてください。最初に私の目的を聞き、信頼できる出典を集め、出典を記録するまで最初のレッスンを書かないでください。",
+  },
+  "mattpocock/skills/grill-me": {
+    name: "Grill Me", purpose: "体系的な質問で計画や設計を厳しく検証する", input: "計画、アイデア、設計、およびすでに決めた事項", outcome: "より明確なリスク、前提、受け入れ基準", prompt: "この計画について、一度に1つずつ質問してください。重要な回答を次の判断分岐へ追い、範囲、リスク、受け入れ基準が明確になるまで続けてください。",
+  },
+  "flowkit-labs/skills/reddit-automation": {
+    name: "Reddit Automation", purpose: "製品が本当に役立つ Reddit の会話を見つける", input: "製品の文脈、対象者、コミュニティ、正直に提供できる支援", outcome: "関連スレッドと、所属を透明に示した有用な返信下書き", prompt: "今週、私たちの製品が本当に役立てる Reddit スレッドを探してください。関連する理由を示し、所属を透明にした有用な返信を下書きして、投稿前に私の確認を待ってください。",
+  },
   "charon-fan/agent-playbook/self-improving-agent": {
     name: "Self-Improving Agent", purpose: "過去の実行結果、失敗、修正から学ぶ", input: "実行時の状況、起きたこと、受け取ったフィードバック", outcome: "範囲が明確で、検証・再利用できる改善案", prompt: "この失敗した実行を振り返り、再利用できる教訓と、次回に適用する前の検証方法を提案してください。",
   },

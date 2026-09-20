@@ -577,6 +577,19 @@ describe("SubscribePage", () => {
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
   });
 
+  it.each(["PASS_EXPIRED", "PASS_ISOLATED"])("links domestic %s errors to billing", async (code) => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+    createPassOrderMock.mockRejectedValue(Object.assign(new Error(code), { code }));
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const user = userEvent.setup();
+    render(<SubscribePage />);
+    await user.click(await screen.findByRole("button", { name: /订阅|开通/ }));
+    await user.click(screen.getByRole("button", { name: /支付/ }));
+    expect(await screen.findByRole("link", { name: "前往续费" })).toHaveAttribute("href", "/account/billing");
+  });
+
   it("refreshes pass state and closes checkout when ordering reports an existing pass", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;
