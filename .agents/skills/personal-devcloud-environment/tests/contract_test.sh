@@ -592,6 +592,120 @@ test_browser_nonce_retries_empty_generation() (
   assert_eq '2' "$(<"$attempts_file")" "browser nonce retry count"
 )
 
+test_testing_binding_bootstrap_uses_session_identity_without_persisting_admin_token() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-bootstrap" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_SHADOW_USER_NAME='mock_personal_dev'
+  export PERSONAL_DEV_SHADOW_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_OWNER_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_APP_ID='1250000000'
+  export PERSONAL_DEV_BINDING_REASON='personal DevCloud testing'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'testing-user-session'; }
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    assert_eq 'managed-admin-token' "$token" "admin token"
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$TEST_ROOT/binding-bootstrap-request.json"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"userId":"usr_testing_1","shadowUserName":"mock_personal_dev","uin":450860000013,"ownerUin":450860000013,"appId":1250000000,"status":"active"}'
+  }
+
+  local output
+  output="$(bootstrap_binding)"
+  grep -q '"status":"active"' <<<"$output"
+  python3 - "$TEST_ROOT/binding-bootstrap-request.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    body = json.load(fh)
+assert body == {
+    "userId": "usr_testing_1",
+    "shadowUserName": "mock_personal_dev",
+    "uin": 450860000013,
+    "ownerUin": 450860000013,
+    "appId": 1250000000,
+    "reason": "personal DevCloud testing",
+}, body
+PY
+  ! grep -Rq 'managed-admin-token' "$STATE_ROOT"
+  ! grep -q 'managed-admin-token' <<<"$output"
+)
+
+test_wait_for_binding_bootstraps_when_managed_inputs_are_present() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-auto" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_SHADOW_USER_NAME='mock_personal_dev'
+  export PERSONAL_DEV_SHADOW_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_OWNER_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_APP_ID='1250000000'
+  export PERSONAL_DEV_BINDING_REASON='personal DevCloud testing'
+  source "$SCRIPT"
+  prepare_state
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' && "$*" == *'/auth/shadow/binding'* ]]; then
+      printf '%s\n' '{"binding":{"status":"missing"}}'
+      return
+    fi
+    if [[ "$token" == 'testing-user-session' && "$*" == *'/auth/session'* ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    printf '%s\n' '{"userId":"usr_testing_1","shadowUserName":"mock_personal_dev","uin":450860000013,"ownerUin":450860000013,"appId":1250000000,"status":"active"}'
+  }
+
+  local binding
+  binding="$(wait_for_binding 'testing-user-session')"
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["binding"]["status"] == "active"' <<<"$binding"
+)
+
+test_testing_binding_release_derives_user_and_keeps_admin_token_private() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-release" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_BINDING_RELEASE_REASON='test completed'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'testing-user-session'; }
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    assert_eq 'managed-admin-token' "$token" "release admin token"
+    [[ "$*" == *'-X DELETE'*'/admin/shadow-bindings/usr_testing_1'* ]] \
+      || fail "release request did not target the current testing user"
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$TEST_ROOT/binding-release-request.json"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"userId":"usr_testing_1","status":"disabled"}'
+  }
+
+  local output
+  output="$(release_binding)"
+  grep -q '"status":"disabled"' <<<"$output"
+  python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == {"reason":"test completed"}' \
+    "$TEST_ROOT/binding-release-request.json"
+  ! grep -Rq 'managed-admin-token' "$STATE_ROOT"
+  ! grep -q 'managed-admin-token' <<<"$output"
+)
+
 test_skill_name_and_paths_are_consistent() {
   grep -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
   if grep -ERn 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
@@ -637,6 +751,9 @@ run_test 'testing gateway migrates stale state and rejects production overrides'
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately
 run_test 'browser login retries an empty nonce generation' test_browser_nonce_retries_empty_generation
+run_test 'testing binding bootstrap derives the target user and keeps admin token private' test_testing_binding_bootstrap_uses_session_identity_without_persisting_admin_token
+run_test 'missing binding is bootstrapped when managed inputs are present' test_wait_for_binding_bootstraps_when_managed_inputs_are_present
+run_test 'testing binding release derives the target user and keeps admin token private' test_testing_binding_release_derives_user_and_keeps_admin_token_private
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
 

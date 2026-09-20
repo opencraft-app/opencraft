@@ -46,6 +46,14 @@ derived: false
 - Auth `POST /auth/dev-environments/registration`：浏览器/Skill 的唯一注册入口。Auth 始终从当前 session 的 active shadow binding 派生 UIN；国内、国际 sandbox 都在独立开关开启时接收 Skill 自动探测的 `targetIp`，以避开跨地域 testing 入口 NAT 后无法还原 DevCloud 9 网地址的问题，并只允许 `9.0.0.0/8:18084`。生产、staging 和默认配置不接受显式目标 IP。
 - Auth `GET /auth/dev-environments/registration`：返回当前 session 对应 UIN 的注册状态。
 - Auth `DELETE /auth/dev-environments/registration`：把当前 session 对应 UIN 标记为 disabled；保留 tombstone，避免旧订单回调误落共享环境。
+- Auth testing `GET /admin/shadow-bindings/:userID`、`POST /admin/shadow-bindings`、`DELETE /admin/shadow-bindings/:userID`：
+  由 Gateway Dashboard 和受控 Codex 使用既有 Auth admin token 管理真实 `shadow_bindings`。新增相同映射幂等；
+  改绑或 UIN 转移必须先显式解绑；请求必须包含原因并写结构化审计日志。接口不接收任何云密钥或密码。
+  Dashboard BFF 对这组新增接口额外验证浏览器 admin session，再使用仅服务端可见的 Auth admin token 转发；
+  直接请求 Dashboard API 不能绕过登录态。
+- `SHADOW_BINDING_ADMIN_ENABLED` 默认关闭；只有环境名以 `sandbox-` 开头且
+  `LIGHTCLAW_PUBLIC_BASE_URL` 精确匹配 `https://api-<environment>.lightclaw.tech` 时才能启用。
+  当前仅 `sandbox-bj-7` GitOps 显式开启，生产即使误配单一开关也保持拒绝。
 - CloudLadderGateway `/v1/dev-environments/registration`：只允许 `lightclaw-auth` 通过服务间 HMAC 调用的内部控制面；DevCloud 和浏览器不得直接访问，也不能提交 session 代替 HMAC。
 - Auth testing `developer_route_registrations`：国内、国际各自在本区域 Auth MySQL 持久化动态状态；只保存 capability SHA-256，`renewed_at + ttl_seconds` 决定 active/expired。
 - `cloudladdergateway/internal/server.NewGinRouterWithDeveloperRoutes`：静态 UIN 表继续作为迁移兜底；动态状态优先，expired/disabled 必须 fail closed。
@@ -60,6 +68,8 @@ derived: false
 ## acceptance
 
 - 未登录请求不能创建、查询或停用注册。
+- 未携带 Auth admin token 的请求不能查询、绑定或解绑 testing 影子账号；管理能力关闭时返回明确拒绝。
+- 同一绑定重复提交幂等；同一用户改绑、同一有效 UIN/影子用户名被另一用户占用时返回冲突；解绑可重复，解绑后的 UIN 可分配给下一测试用户。
 - 客户端不能提交任意 UIN、host 或 URL；非 DevCloud CIDR、非允许端口被拒绝。
 - 两副本通过 Auth HMAC registry 读取同一注册；Pod 重启后注册仍存在，registry 不可用时 fail closed。
 - active 动态注册优先于静态表；expired/disabled 注册返回明确错误且不落共享环境；未知 UIN 保持现有兜底语义。
@@ -140,6 +150,7 @@ derived: false
 
 - 选 Auth testing MySQL registry：双副本一致、重启保留、无需新增中间件；真实 TKEx 发布面不支持本方案所需的 RBAC discovery/管理，因此不再依赖 Lease。
 - UIN 由测试站 session 的公开 `/auth/shadow/binding` 派生，不接受客户端提交。
+- 影子账号首次分配走 Auth testing 管理接口：Dashboard 人工受控操作，或 Skill 从当前 testing session 派生 user ID 后使用本机 secret provider 临时提供的 admin token。admin token 不进入 DevCloud 状态、请求正文或输出。
 - 动态路由仅覆盖 jifei callback；账号注册与出站计费仍复用各测试站现有能力。
 - 现有静态 `700003135209 -> 9.134.214.121:18084` 在动态路径真实验证前保留。
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LogIn, MoreHorizontal, Trash2 } from "lucide-react";
+import { Link2, LogIn, MoreHorizontal, Trash2 } from "lucide-react";
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ShadowBindingsPanel } from "@/components/auth/shadow-bindings-panel";
 import {
   Tabs,
   TabsContent,
@@ -190,7 +191,8 @@ function ShadowAccountsPanel() {
 }
 
 export default function AuthUsersPage() {
-  const [activeView, setActiveView] = useState<"auth" | "shadow">("auth");
+  const [activeView, setActiveView] = useState<"auth" | "binding" | "shadow">("auth");
+  const [shadowBindingUserID, setShadowBindingUserID] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -223,6 +225,11 @@ export default function AuthUsersPage() {
     setImpersonationTarget(user);
     setImpersonationReturnTo("");
     setImpersonationReason("");
+  }
+
+  function openShadowBinding(user: AuthAdminUser) {
+    setShadowBindingUserID(user.id);
+    setActiveView("binding");
   }
 
   async function handleCreateImpersonationSession() {
@@ -338,6 +345,10 @@ export default function AuthUsersPage() {
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openShadowBinding(row.original)}>
+                <Link2 className="mr-2 h-4 w-4" />
+                管理 DevCloud 测试绑定
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => openImpersonationDialog(row.original)}>
                 <LogIn className="mr-2 h-4 w-4" />
                 以此用户身份登录
@@ -361,16 +372,17 @@ export default function AuthUsersPage() {
     <div className="space-y-6">
       <PageHeader
         title="认证用户"
-        description="查看认证账号主数据，以及对应的腾讯云影子账号映射。"
+        description="查看认证账号主数据，并管理仅限 testing 的个人 DevCloud 影子账号绑定。"
       />
 
       <Tabs
         value={activeView}
-        onValueChange={(value) => setActiveView(value as "auth" | "shadow")}
+        onValueChange={(value) => setActiveView(value as "auth" | "binding" | "shadow")}
       >
         <TabsList variant="line" aria-label="用户数据类型">
           <TabsTrigger value="auth">认证用户</TabsTrigger>
-          <TabsTrigger value="shadow">影子账号</TabsTrigger>
+          <TabsTrigger value="binding">DevCloud 测试绑定</TabsTrigger>
+          <TabsTrigger value="shadow">Shadow 服务视图</TabsTrigger>
         </TabsList>
 
         <TabsContent value="auth" className="space-y-6 pt-4">
@@ -404,6 +416,10 @@ export default function AuthUsersPage() {
             }}
             isLoading={isLoading}
           />
+        </TabsContent>
+
+        <TabsContent value="binding">
+          {activeView === "binding" && <ShadowBindingsPanel initialUserID={shadowBindingUserID} />}
         </TabsContent>
 
         <TabsContent value="shadow">
