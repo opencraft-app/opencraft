@@ -1,3 +1,17 @@
+# 人设页恢复原版视觉（2026-09-20）
+
+用户明确要求人设页除加载逻辑外恢复原有样式。以当前分支已合入的 master `f2a1ec32f` 为视觉参照，增量恢复卡片、按钮、标题及人设弹窗；保留 Radix 焦点/Portal、请求生命周期、多 Bot、复制与下载修复，不整文件回退。不调整其他页面、加载判断或全局组件。
+
+- [x] 恢复原版人设展示，补充视觉结构回归测试并保留加载/交互测试。
+- [x] 执行人设相关测试、check 和构建，核对 diff，记录验收边界。
+- [ ] 用户已确认提交本轮人设改动并推送 frontsandbox/agents-radix-refactor；仅暂存本节及本轮源码、测试和文档，排除 DevCloud 规划。OpenCraft sourceRevision 元数据提交单独确认，不创建 MR、不持续监控 CI。
+
+验证：8 文件 126 项测试通过；pnpm check exit0、0 新增类型诊断（168 current / 276 baseline，49 条既有 i18n 告警）；pnpm build exit0；OpenCraft 161 文件只读检查无漂移；git diff --check 通过。未进行本轮真实浏览器视觉验收，不声明像素级一致。用户已授权分支预览，CI 发布完成状态另行核验。
+
+任务记录：`docs/context/tasks/2026-09-20-persona-style-restore.md`。既有 DevCloud 规划与未提交文档保持不动。
+
+---
+
 # 合并最新 master（2026-09-18）
 
 用户已授权备份、stash、合并并恢复本地改动，并在展示两个提交后明确确认“提交”；本次只创建两个本地提交，不 push/MR/部署。

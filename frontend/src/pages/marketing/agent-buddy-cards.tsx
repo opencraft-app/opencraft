@@ -7,6 +7,7 @@
  */
 
 import { Eye } from "lucide-react";
+import type { ReactNode } from "react";
 import { useT } from "@/i18n/t";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulVisuals } from "@/lib/soul-visuals";
@@ -85,10 +86,12 @@ export function SoulFaceCard({
   soul,
   size,
   onInterpret,
+  selectionControl,
 }: {
   soul: SkillHubSoul;
   size: "slot" | "small" | "large";
   onInterpret?: () => void;
+  selectionControl?: ReactNode;
 }) {
   const t = useT();
   const visuals = getSoulVisuals(soul);
@@ -111,8 +114,9 @@ export function SoulFaceCard({
           : "0 12px 32px rgba(0,0,0,0.10)",
       }}
     >
-      {/* 底部信息浮层 */}
-      <div className={`absolute inset-x-3 bottom-3 flex flex-col ${isLarge ? "gap-1" : "gap-0.5"}`}>
+      {selectionControl}
+      {/* Information remains click-through; preview is a separate native control. */}
+      <div className={`absolute inset-x-3 bottom-3 flex flex-col ${isLarge ? "gap-1" : "gap-0.5"} ${selectionControl ? "pointer-events-none" : ""}`}>
         <div
           className={`text-center font-normal text-black ${
             isLarge ? "leading-[1.4em]" : "leading-[1.25em]"
@@ -143,7 +147,7 @@ export function SoulFaceCard({
               e.stopPropagation();
               onInterpret();
             }}
-            className="mt-1 flex cursor-pointer items-center justify-end gap-[3px] text-black/55 transition-colors duration-200 hover:text-[#3957FF]"
+            className="pointer-events-auto relative z-10 mt-1 flex cursor-pointer items-center justify-end gap-[3px] text-black/55 transition-colors duration-200 hover:text-[#3957FF]"
           >
             <Eye className="h-3 w-3" />
             <span className="text-[9px] leading-[1.4em] underline">

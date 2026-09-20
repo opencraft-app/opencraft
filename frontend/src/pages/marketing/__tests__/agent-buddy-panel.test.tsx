@@ -258,7 +258,7 @@ describe("BuddyPanel P1 stability", () => {
     await waitFor(() => expect(screen.queryByRole("link", { name: "灵感来自 SkillHub" })).not.toBeInTheDocument());
   });
 
-  it("uses readable heading and compact panel styles without gradient text", async () => {
+  it("restores the original gradient heading, soft panel and pill actions", async () => {
     mockedLoadBuddyState.mockResolvedValue({
       drawnSouls: [],
       appliedSlug: null,
@@ -277,11 +277,39 @@ describe("BuddyPanel P1 stability", () => {
       "text-balance",
     );
     expect(cardHeading).not.toHaveClass("text-base", "text-xl");
-    expect(cardHeading.style.letterSpacing).toBe("");
-    expect(cardHeading.style.backgroundImage).toBe("");
-    expect(cardHeading.style.color).not.toBe("transparent");
-    expect(card).toHaveClass("agents-ui", "rounded-md");
+    expect(cardHeading.style.backgroundImage).toContain("linear-gradient");
+    expect(cardHeading.style.color).toBe("transparent");
+    expect(card).toHaveClass("rounded-2xl");
+    expect(card).toHaveStyle({ boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)" });
+    for (const name of ["抽取人设", "测试人设", "上传人设文件"]) {
+      expect(screen.getByRole("button", { name })).toHaveClass("rounded-full");
+    }
     expect(screen.queryByText("已抽")).not.toBeInTheDocument();
+  });
+
+  it("keeps the existing centered page loading before the saved persona state resolves", async () => {
+    const request = deferred<Awaited<ReturnType<typeof loadBuddyState>>>();
+    mockedLoadBuddyState.mockReturnValue(request.promise);
+    const { container } = render(<BuddyPanel botId="agent-a" />);
+    expect(screen.getByRole("status")).toHaveTextContent("正在读取人设");
+    expect(container.querySelector(".lv-buddy-panel")).toBeNull();
+    await act(async () => request.resolve({ drawnSouls: [], appliedSlug: null }));
+    expect(await screen.findByRole("heading", { name: "人设卡片" })).toBeInTheDocument();
+  });
+
+  it("restores the original card selection shadow and round applied badge", async () => {
+    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: [fixtures.agentA], appliedSlug: fixtures.agentA.slug });
+    repositoryMocks.execDebugCommand.mockResolvedValue(successResult(`Exists: yes\nSlug: ${fixtures.agentA.slug}\nName: Agent A Soul`));
+    render(<BuddyPanel botId="agent-a" />);
+    const select = await screen.findByRole("button", { name: "选中此人设" });
+    fireEvent.click(select);
+    expect(select).toHaveAttribute("aria-pressed", "true");
+    expect(select.parentElement?.parentElement).toHaveStyle({ boxShadow: "0 0 0 2px #000000, 0 20px 48px rgba(0,0,0,0.08)" });
+    const badge = screen.getByLabelText("当前已注入到 Agent");
+    expect(badge).toHaveClass("rounded-full", "text-white");
+    expect(badge.style.backgroundImage).toContain("linear-gradient");
+    const preview = screen.getByRole("button", { name: "人设解读" });
+    expect(preview.parentElement?.closest("button")).toBeNull();
   });
 
   it("places the drawn-card count immediately after the persona card heading", async () => {
@@ -298,6 +326,7 @@ describe("BuddyPanel P1 stability", () => {
 
     expect(progressChip).not.toBeNull();
     expect(progressChip).toHaveTextContent("已抽1/8");
+    expect(progressChip).toHaveClass("rounded-full");
     expect(cardHeading.parentElement).toHaveClass("lv-buddy-panel__heading");
     expect(cardHeading.nextElementSibling).toBe(progressChip);
     expect(container.querySelector(".lv-buddy-panel__actions")).not.toContainElement(progressChip);
@@ -1242,7 +1271,10 @@ describe("BuddyPanel P1 stability", () => {
     const user = userEvent.setup();
     const trigger = screen.getByRole("button", { name: "删除这张人设" });
     await user.click(trigger);
-    expect(screen.getByRole("alertdialog", { name: "确认删除人设" })).toContainElement(document.activeElement as HTMLElement);
+    const dialog = screen.getByRole("alertdialog", { name: "确认删除人设" });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(dialog).toHaveClass("rounded-[1.75rem]", "max-w-sm");
+    expect(within(dialog).getByRole("button", { name: "取消" })).toHaveClass("rounded-full");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();

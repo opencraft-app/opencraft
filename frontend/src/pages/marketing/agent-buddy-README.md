@@ -13,6 +13,15 @@
 
 The views use shared Radix primitives and Agents Tooltip/Confirm components. They do not import repositories, contexts or request services.
 
+## Original visual treatment (2026-09-20)
+
+At the user's request, persona-specific surfaces restore the visual treatment from the merged master baseline `f2a1ec32f`: gradient heading and applied badge, soft panel/card shadows, pill actions, circular card tools, and rounded persona dialogs. This is local to persona views; shared Agents/UI styles are unchanged.
+
+- `PersonaDeleteConfirmView` uses the existing Radix AlertDialog with the original centered warning/action layout. Escape, cancellation, and removal focus fallback remain available.
+- `SoulFaceCard.selectionControl` places the native selection button alongside the preview control so the original inline preview can be restored without nested buttons. Information remains click-through; the preview is independently focusable/clickable.
+- Dialogs retain Portal, focus containment, return focus, pending close guards, and a scrollable inner body for short viewports.
+- The existing `AgentPageLoadingState` condition and all request, persistence and loading branches are unchanged. The separate multi-stage loading diagnosis is outside this visual restoration.
+
 ## Preserved operation order
 
 - Draws retain the eight-slot cap, slug deduplication and reroll position. Direct injection occupies a slot only after a successful write; download fallback or failure leaves the draw result open.

@@ -17,9 +17,9 @@
 
 import { AlertCircle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AgentConfirmDialog, AgentPageLoadingState, AgentState, AgentTooltip } from "@/components/agents";
+import { AgentPageLoadingState, AgentState, AgentTooltip } from "@/components/agents";
 import { Button } from "@/components/ui/button";
-import { EmptySoulSlotView, PersonaDialogView as PreviewModal, PersonaInfoView as InfoDialog, SoulSlotCardView } from "./agent-buddy-views";
+import { EmptySoulSlotView, PersonaDeleteConfirmView, PersonaDialogView as PreviewModal, PersonaInfoView as InfoDialog, SoulSlotCardView } from "./agent-buddy-views";
 import { AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { useT } from "@/i18n/t";
@@ -77,7 +77,7 @@ import {
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
   background: "#ffffff",
-  boxShadow: "none",
+  boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
 
@@ -1016,13 +1016,21 @@ export function BuddyPanel({
         </p>
       </header>
 
-      <div className="agents-ui lv-buddy-panel relative overflow-hidden rounded-md" style={PANEL_CARD_STYLE}>
+      <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
       <div className="lv-buddy-panel__toolbar px-6 pt-5 pb-3">
         <div className="lv-buddy-panel__toolbar-inner relative mx-auto flex w-full items-center justify-center">
           <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
             <h3
               className="text-balance text-lg font-semibold"
+              style={{
+                letterSpacing: "-0.2px",
+                backgroundImage: "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
+                backgroundClip: "text",
+                WebkitBackgroundClip: "text",
+                color: "transparent",
+                WebkitTextFillColor: "transparent",
+              }}
             >
               {t("人设卡片")}
             </h3>
@@ -1112,7 +1120,7 @@ export function BuddyPanel({
                 aria-label={editPersonaLabel}
                 disabled={customPersonaFileAction !== "idle"}
                 onClick={() => void handleEditCurrentPersona()}
-                className="inline-flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {customPersonaFileAction === "editing" ? (
                   <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -1127,7 +1135,7 @@ export function BuddyPanel({
                   aria-label={t("下载自定义人设")}
                   disabled={customPersonaFileAction !== "idle"}
                   onClick={() => void handleDownloadCustomPersona()}
-                  className="inline-flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {customPersonaFileAction === "downloading" ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -1148,7 +1156,7 @@ export function BuddyPanel({
               type="button"
               onClick={handleOpenDraw}
               disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
-              className="inline-flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition duration-150 motion-safe:hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
               style={{
                 background: "rgba(0,0,0,0.04)",
                 color: "rgba(0,0,0,0.85)",
@@ -1163,9 +1171,9 @@ export function BuddyPanel({
               type="button"
               onClick={() => setSoulTestOpen(true)}
               disabled={!canOpenSoulTest}
-              className="inline-flex items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition duration-150 motion-safe:hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
               style={{
-                background: "rgba(0,0,0,0.04)",
+                background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
                 color: "rgba(0,0,0,0.85)",
                 border: "1px solid rgba(0,0,0,0.06)",
               }}
@@ -1189,7 +1197,7 @@ export function BuddyPanel({
                 type="button"
                 onClick={handleApply}
                 disabled={isApplyDisabled}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-md px-5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition duration-150 motion-safe:hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
                 style={
                   isApplyDisabled
                     ? {
@@ -1200,7 +1208,7 @@ export function BuddyPanel({
                     : {
                         background: "rgba(0,0,0,0.90)",
                         color: "#ffffff",
-                        boxShadow: "none",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
                       }
                 }
               >
@@ -1358,7 +1366,7 @@ function InjectToast({
       aria-live="polite"
     >
       <div
-        className="pointer-events-auto inline-flex max-w-[90%] items-center gap-2 rounded-md px-4 py-2 text-sm font-medium shadow-sm"
+        className="pointer-events-auto inline-flex max-w-[90%] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium shadow-lg"
         style={{
           background: bg,
           color: fg,
@@ -1370,7 +1378,7 @@ function InjectToast({
         <button
           type="button"
           onClick={onClose}
-          className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-md transition hover:bg-white/15"
+          className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full transition hover:bg-white/15"
           aria-label={t("关闭")}
         >
           <X className="h-3.5 w-3.5" />
@@ -1386,7 +1394,7 @@ function ProgressChip({ drawn, max }: { drawn: number; max: number }) {
   const t = useT();
   return (
     <div
-      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium"
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
       style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.65)" }}
     >
       <span style={{ color: "rgba(0,0,0,0.45)" }}>{t("已抽")}</span>
@@ -1556,13 +1564,6 @@ function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel, fall
   fallbackFocusRef: React.RefObject<HTMLElement | null>;
 }) {
   const t = useT();
-  const trigger = useRef(document.activeElement);
-  return <AgentConfirmDialog open title={title} description={message} confirmLabel={confirmLabel} cancelLabel={t("取消")}
-    onConfirm={onConfirm} onOpenChange={(open) => { if (!open) onCancel(); }}
-    onCloseAutoFocus={(event) => {
-      if (!trigger.current?.isConnected && document.activeElement === document.body && fallbackFocusRef.current?.isConnected) {
-        event.preventDefault();
-        fallbackFocusRef.current.focus({ preventScroll: true });
-      }
-    }} />;
+  return <PersonaDeleteConfirmView title={title} description={message} confirmLabel={confirmLabel} cancelLabel={t("取消")}
+    onConfirm={onConfirm} onCancel={onCancel} fallbackFocusRef={fallbackFocusRef} />;
 }

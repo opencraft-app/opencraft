@@ -172,7 +172,7 @@ export function PersonaUploadModal({
           });
           setOpen(true);
         }}
-        className="inline-flex items-center gap-2 rounded-md border border-black/5 bg-black/[0.04] px-5 py-2 text-sm font-medium text-black/85 transition-opacity hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
+        className="inline-flex h-auto items-center gap-2 rounded-full border border-black/5 bg-black/[0.04] px-5 py-2 text-sm font-medium text-black/85 shadow-none transition-opacity hover:translate-y-0 hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Upload className="size-4" aria-hidden="true" />
         {t("上传人设文件")}
@@ -212,7 +212,7 @@ export function PersonaUploadModal({
               {t("正在读取人设文件…")}
             </div>
           ) : view === "upload" ? (
-            <div className="flex min-h-56 flex-col items-center justify-center rounded-md border border-dashed border-black/10 bg-black/[0.02] px-6 py-10 text-center">
+            <div className="flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-black/10 bg-black/[0.02] px-6 py-10 text-center">
               <Upload className="size-8 text-[var(--text-tertiary)]" aria-hidden="true" />
               <p className="mt-3 text-sm font-medium text-[var(--text-primary)]">
                 {t("选择 Markdown 人设文件，将其内容填入 SOUL.md")}
@@ -221,7 +221,7 @@ export function PersonaUploadModal({
                 {t("仅支持 Markdown 文件，文件名不限，扩展名须为 .md，大小不超过 20 KB。")}
               </p>
               {selectionError && (
-                <div role="alert" className="mt-4 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <div role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   <span>{errorMessage(t, selectionError)}</span>
                 </div>
@@ -229,7 +229,7 @@ export function PersonaUploadModal({
               <Button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="mt-4 rounded-md bg-black px-4 py-2 text-sm font-medium text-white h-9 shadow-none transition-none hover:translate-y-0"
+                className="mt-4 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white h-auto shadow-none transition-none hover:translate-y-0"
               >
                 {selectionError ? t("重新上传文件") : t("选择文件")}
               </Button>
@@ -274,20 +274,20 @@ export function PersonaUploadModal({
               ) : null}
               <div id="persona-markdown-feedback" aria-live="polite">
                 {!validation.valid && (
-                  <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     <span>{errorMessage(t, validation.code)}</span>
                   </div>
                 )}
                 {injectError && (
-                  <div role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <div role="alert" className="mt-2 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                     <span>{t("注入失败，请检查网络后重试")}</span>
                   </div>
                 )}
               </div>
               {warnings.length > 0 && (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <p className="mb-1 text-sm font-medium text-amber-900">{t("人设内容建议")}</p>
                   <ul className="space-y-1 text-sm text-amber-900">
                     {warnings.map((warning) => (
@@ -302,7 +302,7 @@ export function PersonaUploadModal({
                   variant="outline"
                   disabled={injecting}
                   onClick={() => inputRef.current?.click()}
-                  className="rounded-md border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
+                  className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] disabled:opacity-50 h-auto shadow-none transition-none hover:translate-y-0"
                 >
                   {t("重新上传文件")}
                 </Button>
@@ -315,7 +315,7 @@ export function PersonaUploadModal({
                     });
                     handlePrimaryAction();
                   }}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 h-9 shadow-none transition-none hover:translate-y-0"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 h-auto shadow-none transition-none hover:translate-y-0"
                 >
                   {injecting && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
                   {injecting

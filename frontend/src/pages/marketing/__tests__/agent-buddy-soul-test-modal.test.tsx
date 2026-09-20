@@ -37,7 +37,7 @@ describe("SoulTestModal", () => {
     const trigger = screen.getByRole("button", { name: "Test" });
     await user.click(trigger);
     const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveClass("agents-ui");
+    expect(dialog).toHaveClass("agents-ui", "rounded-[28px]");
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -73,7 +73,7 @@ describe("SoulTestModal", () => {
 
     const firstAnswer = screen.getByRole("button", { name: /^A\./ });
     fireEvent.click(firstAnswer);
-    expect(firstAnswer).toHaveClass("border-black/35", "bg-black/[0.04]", "text-black/90");
+    expect(firstAnswer).toHaveClass("border-black", "bg-black", "text-white");
     expect(firstAnswer).toHaveAttribute("aria-pressed", "true");
     expect(firstAnswer.querySelector("svg")).not.toBeNull();
     act(() => { vi.advanceTimersByTime(300); });
@@ -114,8 +114,8 @@ describe("SoulTestModal", () => {
       "en-US",
     );
 
-    expect(screen.getByRole("dialog", { name: "Soul personality test" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close Soul personality test" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Soul Quiz" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close Soul Quiz" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^A\./ })).toHaveTextContent(/[A-Za-z]/);
 
     for (let index = 0; index < 15; index += 1) {
@@ -128,12 +128,12 @@ describe("SoulTestModal", () => {
       }
     }
 
-    expect(screen.getByRole("heading", { name: "Your recommended AI companion Soul is" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "We recommend this Soul for your Agent" })).toBeInTheDocument();
     const displayedSoul = screen.getByText(/The Legend|The Worker|The Wayfarer|The Blunt One/);
     const expectedSoul = ENGLISH_SOULS.find((soul) => soul.displayName === displayedSoul.textContent);
     expect(expectedSoul).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add this persona" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add this Soul" }));
 
     expect(onUseSoul).toHaveBeenCalledWith(expectedSoul);
     expect(onUseSoul).toHaveBeenCalledWith(expect.objectContaining({

@@ -270,7 +270,7 @@ export function DrawSoulModal({
                   type="button"
                   onClick={handleStart}
                   disabled={drawablePool.length === 0}
-                  className="rounded-md px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-full px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
                     background: "rgba(0,0,0,0.90)",
                     color: "#ffffff",
@@ -475,11 +475,11 @@ function RevealPanel({
             type="button"
             onClick={onInject}
             disabled={isInjecting}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md font-semibold transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full font-semibold transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-70"
             style={{
               background: "#202020",
               color: "#ffffff",
-              boxShadow: "none",
+              boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
               fontSize: "14px",
             }}
           >
@@ -490,7 +490,7 @@ function RevealPanel({
             type="button"
             onClick={onConfirm}
             disabled={isInjecting}
-            className="h-12 w-full rounded-md border border-black/15 bg-white font-semibold text-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-12 w-full rounded-full border border-black/15 bg-white font-semibold text-black transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
             style={{ fontSize: "14px" }}
           >
             {t("添加，暂不注入")}

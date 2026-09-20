@@ -22,9 +22,9 @@ export function PersonaOverwriteConfirmView({ open, pending, title, description,
         <AlertDialogDescription>{description}</AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter className="justify-end">
-        <AlertDialogCancel disabled={pending} className="h-9 rounded-md shadow-none transition-none hover:translate-y-0"
+        <AlertDialogCancel disabled={pending} className="h-9 rounded-lg shadow-none transition-none hover:translate-y-0"
           onClick={(event) => { event.preventDefault(); onBack(); }}>{backLabel}</AlertDialogCancel>
-        <AlertDialogAction disabled={pending} className="h-9 rounded-md shadow-none transition-none hover:translate-y-0"
+        <AlertDialogAction disabled={pending} className="h-9 rounded-lg shadow-none transition-none hover:translate-y-0"
           onClick={(event) => { event.preventDefault(); onConfirm(); }}>{confirmLabel}</AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
