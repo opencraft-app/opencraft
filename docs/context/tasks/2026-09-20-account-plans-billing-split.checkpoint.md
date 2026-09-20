@@ -1,5 +1,38 @@
+---
+id: account-plans-billing-split-checkpoint
+type: task
+scope: 账号与套餐费用拆分任务的验证和交接状态
+triggers: ["account billing split", "MR 4310", "billing navigation"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/account-page.tsx
+  - frontend/next-site/subscribe-page.tsx
+status: active
+reviewed_at: 2026-09-20
+review_due: 2026-12-19
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 ## stage
-页面拆分及双站文档文字、截图完成本地验证；用户已授权提交 MR，进入交付阶段，不合并或发布。
+MR !4310 已提交；用户确认的 CR 修复已完成本地验证，待追加提交，不合并或发布。
+
+## requirement_ids / requirement_refs / requirement_excerpt
+- MR !4310；修复套餐入口迁移遗漏，补齐回归测试与任务元数据，核对本 MR 生成副本。
+
+## interface_refs / data_structure_refs
+- frontend/src/lib/agent-routes.ts 的 ACCOUNT_PATH、ACCOUNT_BILLING_PATH；Session、Pass contract 不变。
+
+## history_context
+- current_design_refs: docs/engineering/domains/site-environment-routing.md
+- relevant_evolution: 51e192cbd 拆分视图后，subscribe-page.tsx 仍保留旧订阅跳转，需纠正。
+- superseded_refs: c42acf642 旧预览不可作为当前基线。
+
+## context_receipt
+- docs/context/tasks/2026-09-20-account-plans-billing-split.md 中记录本任务完整 context_receipt。
+- 本轮读取 frontend/AGENTS.md、frontend service / site-environment-routing packs，以及 opencraft/AGENTS.md、MONO2_MIGRATION.md、upstream-subtrees.md，约束修复与机械同步范围。
 
 ## verified
 - 基线 origin/master 4debe57e1，独立 worktree lightvela-account-plans-billing。
@@ -20,7 +53,7 @@
 - 临时构建缓存使用被忽略的 .next/docs-cn 与 .next/docs-global，避免 Tailwind 扫描独立未忽略目录。
 
 ## next_action
-- 提交、推送并创建指向 master 的 MR，回查远端 SHA、合并性与 CI；合并或发布仍需另行明确授权。
+- 将 CR 修复追加到原 MR !4310，回查远端 SHA、合并性与 CI；合并或发布仍需另行明确授权。
 
 ## docs_verified
 - 10 篇 Markdown 已更新，国内 4 篇、国际套餐 6 种源语言；slug 与注册表未改。
@@ -34,3 +67,12 @@
 - A 档工具文档保留摘要，新增入口前置、步骤、结果确认与失败提示；仅国内文档包含实名认证，支付卡说明仅写国际站。
 - 价格、套餐规则和无关文档历史差异保持原样，不宣称已发布。
 - MR 交付前刷新 origin/master，无基线漂移；工蜂鉴权成功，同源分支无 opened MR；重跑账号/菜单/文档 6 个测试文件共 128 项通过。
+
+## cr_followup_verified
+- 订阅 PASS_EXPIRED / PASS_ISOLATED 动作改到 /account/billing；五处提示及七语字典已同步；实名跳转仍为 /account。
+- 新增实际 PlansBillingPage wrapper、账号 query 不在 billing 消费、账号回调仍生效、认证弹窗不跨视图泄漏的测试；国内两种续费错误目标及国际既有断言均覆盖。
+- 最终六个聚焦测试文件 160 项通过，pnpm check 为 172 current / 276 baseline / 0 new；国内、国际完整 build 本轮均通过。
+- 两篇任务文件完成 frontmatter 与内容契约；全仓 context errors 1792，本任务 0，恢复报告中的基线。documentation validator 无错误或警告。
+- OpenCraft 使用同一同步脚本的临时有界执行版本，仅选择 lib/agent-routes.ts 和 i18n/generated 下八份本 MR 涉及字典，机械生成副本并更新对应 hash。九份输出逐字节一致；字典整文件生成会一并对齐源内既有翻译键。
+- OpenCraft 全量 check 仍失败于既有 components/ui/scroll-area.tsx 漂移；全量 scratch 生成还会在既有 automations adapter 上失败。本轮没有修改这些业务文件或适配器，不宣称全量同步门禁通过。
+- 曾因磁盘不足中断副本复制，清理本任务废弃临时构建缓存后已重生成并逐字节复核；无截图源或用户文件删除。

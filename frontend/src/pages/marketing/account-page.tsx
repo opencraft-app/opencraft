@@ -1364,6 +1364,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const nameAuditFailed = user?.nameAuditStatus === "failed";
 
   useEffect(() => {
+    if (isBillingView) return;
     const bound = searchParams.get("email_bound");
     const bindError = searchParams.get("email_bind_error");
     if (!bound && !bindError) return;
@@ -1398,12 +1399,12 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     })();
     setEmailBindError(message);
     setEmailBindSuccess(null);
-  }, [refreshProfile, searchParams, setSearchParams, t]);
+  }, [isBillingView, refreshProfile, searchParams, setSearchParams, t]);
 
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
     // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
-    if (isGlobal) return;
+    if (isBillingView || isGlobal) return;
     if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
     // 读取 return_to（仅站内路径，防开放重定向），实名完成后自动跳回
@@ -1418,7 +1419,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     setSearchParams(next, { replace: true });
 
     setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
-  }, [searchParams, setSearchParams, t, isGlobal]);
+  }, [isBillingView, searchParams, setSearchParams, t, isGlobal]);
 
   // 实名认证完成后自动清除提醒；若有 return_to 则自动跳回原页面
   useEffect(() => {
@@ -2047,7 +2048,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
 
     pageOverlays = (
       <AnimatePresence>
-        {showRealnameSection && showVerifyModal && (
+        {!isBillingView && showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
             key="verify"
             onClose={() => setShowVerifyModal(false)}
