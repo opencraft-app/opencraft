@@ -3845,6 +3845,7 @@ export function AutomationFormModal({
   const zeroTokenAutomationsEnabled = useZeroTokenAutomationsEnabled();
   const testRunHintId = useId();
   const notificationHelpTooltip = useHoverTooltipPosition<HTMLButtonElement>();
+  const submitDisabledTooltip = useHoverTooltipPosition<HTMLSpanElement>();
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const initialPromptParts = splitAutomationExecutionPrompt(initialJob?.prompt ?? template?.prompt ?? "");
   const executionRules = template?.executionRules ?? initialPromptParts.executionRules;
@@ -4089,10 +4090,14 @@ export function AutomationFormModal({
     || zeroTokenKind !== "script"
     || !zeroTokenScriptEditable
     || scriptSafetyConfirmed;
+  const notificationChannelRequired = executionMode === "zero_token"
+    && zeroTokenKind === "fixed_notification";
+  const notificationChannelReady = !notificationChannelRequired || deliverPlatforms.length > 0;
   const canSubmit = !submitting
     && name.trim().length > 0
     && taskContentReady
     && scriptSafetyReady
+    && notificationChannelReady
     && (scheduleUneditable || schedule.length > 0);
   const canTestRun = !submitting
     && testState !== "running"
@@ -4106,6 +4111,12 @@ export function AutomationFormModal({
     : !scriptSafetyReady
       ? t("请先确认脚本运行安全提示")
       : null;
+  const submitDisabledReason = notificationChannelRequired
+    && name.trim().length > 0
+    && taskContentReady
+    && !notificationChannelReady
+    ? t("未选择通知方式")
+    : null;
 
   const handleTestRun = useCallback(() => {
     if (!canTestRun) return;
@@ -4755,7 +4766,7 @@ export function AutomationFormModal({
           </div>
         )}
 
-        {/* 通知方式（多选；不勾任何 = 仅本地写日志）
+        {/* 通知方式（通知任务必选，其他任务可选）
          *
          * 区域可见性：
          *   - 国内站（isCN）：weixin / qqbot / wecom / feishu / dingtalk
@@ -4786,13 +4797,17 @@ export function AutomationFormModal({
                   onMouseEnter={notificationHelpTooltip.showTooltip}
                   onMouseLeave={notificationHelpTooltip.scheduleClose}
                 >
-                  {executionMode === "zero_token"
-                    ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
-                    : t("如不选，智能体只会在后台执行任务，不发通知。")}
+                  {notificationChannelRequired
+                    ? t("通知任务必须选择至少一种通知方式。")
+                    : executionMode === "zero_token"
+                      ? t("如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。")
+                      : t("如不选，智能体只会在后台执行任务，不发通知。")}
                 </FloatingTooltip>
               )}
             </span>
-            <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+            {!notificationChannelRequired && (
+              <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+            )}
           </div>
           {channelStatus === "loading" ? (
             <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
@@ -5141,15 +5156,42 @@ export function AutomationFormModal({
           >
             {t("取消")}
           </button>
-          <button
-            type="button"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+          <span
+            ref={submitDisabledTooltip.triggerRef}
+            className="relative inline-flex rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+            aria-describedby={submitDisabledReason && submitDisabledTooltip.open
+              ? submitDisabledTooltip.tooltipId
+              : undefined}
+            tabIndex={submitDisabledReason ? 0 : undefined}
+            onMouseEnter={submitDisabledReason ? submitDisabledTooltip.showTooltip : undefined}
+            onMouseLeave={submitDisabledReason ? submitDisabledTooltip.scheduleClose : undefined}
+            onFocus={submitDisabledReason ? submitDisabledTooltip.showTooltip : undefined}
+            onBlur={submitDisabledReason ? submitDisabledTooltip.scheduleClose : undefined}
           >
-            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {mode === "create" ? t("新建") : t("保存")}
-          </button>
+            <button
+              type="button"
+              disabled={!canSubmit}
+              onClick={handleSubmit}
+              aria-describedby={submitDisabledReason && submitDisabledTooltip.open
+                ? submitDisabledTooltip.tooltipId
+                : undefined}
+              className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {mode === "create" ? t("新建") : t("保存")}
+            </button>
+            {submitDisabledReason && submitDisabledTooltip.open && (
+              <FloatingTooltip
+                id={submitDisabledTooltip.tooltipId}
+                position={submitDisabledTooltip.position}
+                className="whitespace-nowrap"
+                onMouseEnter={submitDisabledTooltip.showTooltip}
+                onMouseLeave={submitDisabledTooltip.scheduleClose}
+              >
+                {submitDisabledReason}
+              </FloatingTooltip>
+            )}
+          </span>
         </div>
       </div>
     </div>,

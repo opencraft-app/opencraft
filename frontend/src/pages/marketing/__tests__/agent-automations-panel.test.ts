@@ -2036,12 +2036,14 @@ describe("terminal cron card visibility", () => {
   });
 
   it("copies a current notification job with its zero-token task type and content", async () => {
+    const notificationChannel = isGlobal ? "telegram" : "wecom";
     const source = makeCronJob({
       id: "copy-current-notification",
       name: "喝水通知",
       prompt: "",
       schedule: { kind: "cron", expr: "0 10 * * *", display: "0 10 * * *" },
       state: "scheduled",
+      deliver: notificationChannel,
       script: "lightvela-zero-token-copy-source.py",
       inference_config: { provider: null, model: null, no_agent: true },
       zero_token_config: {
@@ -2051,6 +2053,14 @@ describe("terminal cron card visibility", () => {
         managed: true,
         editable: true,
       },
+    });
+    cronClientMocks.execCommand.mockResolvedValue({
+      status: "SUCCESS",
+      exit_code: 0,
+      output: JSON.stringify({
+        success: true,
+        data: { platforms: [{ name: notificationChannel, status: "connected" }] },
+      }),
     });
     cronClientMocks.listCronJobs.mockResolvedValue([source]);
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
@@ -2064,6 +2074,9 @@ describe("terminal cron card visibility", () => {
     expect(within(dialog).getByRole("button", {
       name: new RegExp(localizedText("通知任务", "Notification task")),
     })).toHaveClass("border-blue-300", "bg-blue-50");
+    await waitFor(() => expect(within(dialog).getByRole("checkbox", {
+      name: isGlobal ? "Telegram" : /企业微信/,
+    })).toBeChecked());
 
     fireEvent.click(within(dialog).getByRole("button", { name: localizedText("新建", "Create") }));
 
@@ -2081,7 +2094,7 @@ describe("terminal cron card visibility", () => {
       expect.objectContaining({
         name: source.name,
         schedule: "0 10 * * *",
-        deliver: "local",
+        deliver: notificationChannel,
         noAgent: true,
       }),
       expect.stringMatching(/^lightvela-zero-token-[a-z0-9-]+\.py$/),
@@ -3462,8 +3475,8 @@ describe("zero-token automation form", () => {
     const notificationTooltip = screen.getByRole("tooltip");
     expect(notificationTooltip).toHaveTextContent(
       localizedText(
-        "如未勾选通知方式，任务只会在后台执行并写入日志，不发通知。",
-        "If no notification channel is selected, the job will only run in the background and write to logs. No notification will be sent.",
+        "通知任务必须选择至少一种通知方式。",
+        "Notification tasks require at least one notification method.",
       ),
     );
     expect(notificationTooltip.parentElement).toBe(document.body);
@@ -3504,6 +3517,79 @@ describe("zero-token automation form", () => {
     expect(cronClientMocks.createCronJobWithContextAndScriptRollback).not.toHaveBeenCalled();
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["create", "edit"] as const)(
+    "requires a notification method before submitting a %s notification task",
+    async (mode) => {
+      const notificationChannel = isGlobal ? "telegram" : "wecom";
+      renderAutomationForm({
+        mode,
+        enabledChannels: new Set([notificationChannel]),
+        initialJob: mode === "edit" ? makeCronJob({
+          id: "managed-notification",
+          name: "喝水提醒",
+          deliver: "local",
+          script: "lightvela-zero-token-managed-notification.py",
+          inference_config: { provider: null, model: null, no_agent: true },
+          zero_token_config: {
+            kind: "fixed_notification",
+            language: "python",
+            content: "该喝水啦",
+            managed: true,
+            editable: true,
+          },
+        }) : undefined,
+      });
+
+      if (mode === "create") {
+        fireEvent.click(screen.getByRole("button", {
+          name: new RegExp(localizedText("通知任务", "Notification task")),
+        }));
+        fireEvent.change(screen.getByPlaceholderText(localizedText(
+          "请输入定时任务名称",
+          "Enter the scheduled task name",
+        )), { target: { value: "喝水提醒" } });
+        fireEvent.change(screen.getByPlaceholderText(localizedText(
+          "例如：该喝水啦，休息一下再继续吧",
+          "For example: Time for some water—take a short break",
+        )), { target: { value: "该喝水啦" } });
+      }
+
+      const channel = screen.getByRole("checkbox", {
+        name: isGlobal ? "Telegram" : /企业微信/,
+      });
+      if (mode === "create") {
+        await waitFor(() => expect(channel).toBeChecked());
+        fireEvent.click(channel);
+      } else {
+        expect(channel).not.toBeChecked();
+      }
+
+      const notificationHelpButton = screen.getByRole("button", {
+        name: localizedText("通知方式", "Notification"),
+      });
+      const notificationLabelRow = notificationHelpButton.parentElement?.parentElement;
+      if (!notificationLabelRow) throw new Error("Expected notification label row");
+      expect(within(notificationLabelRow).queryByText(localizedText("（可选）", "(Optional)"))).toBeNull();
+
+      const submitButton = screen.getByRole("button", {
+        name: mode === "create" ? localizedText("新建", "Create") : localizedText("保存", "Save"),
+      });
+      expect(submitButton).toBeDisabled();
+      if (!submitButton.parentElement) throw new Error("Expected submit button wrapper");
+      fireEvent.mouseEnter(submitButton.parentElement);
+      const tooltip = screen.getByRole("tooltip");
+      expect(tooltip).toHaveTextContent(localizedText(
+        "未选择通知方式",
+        "No notification method selected",
+      ));
+      expect(tooltip.parentElement).toBe(document.body);
+      expect(submitButton).toHaveAttribute("aria-describedby", tooltip.id);
+
+      fireEvent.click(channel);
+      expect(submitButton).toBeEnabled();
+    },
+  );
 
   it("requires the host-execution acknowledgement before testing a script task", () => {
     const onTestRun = vi.fn();
