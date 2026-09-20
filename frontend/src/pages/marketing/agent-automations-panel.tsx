@@ -5052,7 +5052,7 @@ export function AutomationFormModal({
           <details
             open={advancedSettingsOpen}
             onToggle={(event) => setAdvancedSettingsOpen(event.currentTarget.open)}
-            className="group mt-3"
+            className="group mt-1"
           >
             <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1.5 text-sm font-medium text-black/70 hover:text-black/90 [&::-webkit-details-marker]:hidden">
               <span>{t("高级设置")}</span>

@@ -1044,6 +1044,7 @@ describe("cron context panel integration", () => {
     const advancedSettings = within(dialog).getByText(localizedText("高级设置", "Advanced Settings"));
     const advancedSettingsSummary = advancedSettings.closest("summary");
     if (!advancedSettingsSummary) throw new Error("Expected advanced settings summary");
+    expect(advancedSettingsSummary.parentElement).toHaveClass("mt-1");
     fireEvent.click(advancedSettingsSummary);
     await waitFor(() => expect(form).toHaveClass("h-[840px]"));
     fireEvent.click(advancedSettingsSummary);
