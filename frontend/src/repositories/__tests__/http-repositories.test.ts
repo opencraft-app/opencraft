@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import i18n from "@/i18n";
-import { isGlobal } from "@/lib/region";
 import {
   AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
@@ -544,7 +543,7 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it.skipIf(isGlobal)("loads nested product bots and routes unique channels by stable bot id", async () => {
+  it("loads nested product bots and routes unique channels by stable bot id", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: Array<{ url: string; method: string }> = [];
     const jsonResponse = (data: unknown) => new Response(
@@ -684,7 +683,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it.skipIf(isGlobal)("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
+  it("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: Array<{ url: string; method: string }> = [];
     let createBody: Record<string, unknown> | undefined;
@@ -767,7 +766,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
+  it("does not read Hermes profiles while an instance is provisioning", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const calls: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -805,7 +804,7 @@ describe("http repositories auth token bootstrap", () => {
     expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
   });
 
-  it.skipIf(isGlobal)("marks siblings as unknown when the Bot list falls back to the instance projection", async () => {
+  it("marks siblings as unknown when the Bot list falls back to the instance projection", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -843,7 +842,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal).each([
+  it.each([
     { status: 404, code: "NOT_FOUND", message: "not found" },
     { status: 500, code: INSTANCE_BOT_ERROR_CODE.profileFailed, message: "Hermes profile operation failed" },
   ])("marks siblings as unavailable rather than stopped when a running instance cannot list Bots: $code", async ({ status, code, message }) => {
@@ -887,7 +886,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("does not hide an unrelated Bot list server failure", async () => {
+  it("does not hide an unrelated Bot list server failure", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -931,7 +930,7 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
-  it.skipIf(isGlobal)("does not mark siblings as unknown when the Bot list came from /bots", async () => {
+  it("does not mark siblings as unknown when the Bot list came from /bots", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -988,7 +987,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("keeps the root bot visible while its pass is modifying", async () => {
+  it("keeps the root bot visible while its pass is modifying", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(
@@ -1028,7 +1027,7 @@ describe("http repositories auth token bootstrap", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
+  it("replaces a leaked default profile id with the localized root bot name", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const jsonResponse = (data: unknown) => new Response(
       JSON.stringify({ code: "OK", message: "success", data }),
@@ -1078,7 +1077,7 @@ describe("http repositories auth token bootstrap", () => {
     ]);
   });
 
-  it.skipIf(isGlobal)("does not hide nested bot authorization failures behind the legacy fallback", async () => {
+  it("does not hide nested bot authorization failures behind the legacy fallback", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(
@@ -1105,18 +1104,6 @@ describe("http repositories auth token bootstrap", () => {
       status: 403,
       code: "FORBIDDEN",
     });
-  });
-
-  it.skipIf(!isGlobal)("keeps unique channel coordination on the legacy global path", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    const repositories = createHttpRepositories("https://lightclaw.tech");
-    await repositories.bots.claimUniqueChannel("ins-global", "weixin");
-    await repositories.bots.confirmUniqueChannel("ins-global", "weixin");
-    await repositories.bots.releaseUniqueChannel("ins-global", "weixin");
-
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses ctl instance name before stale local bot drafts", async () => {
@@ -1876,12 +1863,10 @@ describe("http repositories auth token bootstrap", () => {
     await repositories.bots.destroyBot("ins_delete_me");
 
     // Without a prior listBots() the scope cache is empty, so the caller is treated as an
-    // unhydrated main-Bot delete. Domestic builds must still go through the Bot guard —
+    // unhydrated main-Bot delete. Both builds must still go through the Bot guard —
     // sibling Bots may exist server-side even though this client never listed them.
     expect(fetchMock).toHaveBeenCalledWith(
-      isGlobal
-        ? "https://lightclaw.tech/v1/instances/ins_delete_me"
-        : "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
+      "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
       expect.objectContaining({
         method: "DELETE",
       }),

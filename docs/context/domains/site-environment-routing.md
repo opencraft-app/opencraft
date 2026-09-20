@@ -33,6 +33,7 @@ derived: true
 - `sgprod` 与 `shprod` 是不同生产 overlay；不得通过相互复制 overlay 发布。
 - `beijing-sandbox` 用于测试交付，不能证明生产行为。
 - 站点能力通常包含前端门禁、网关/config 门禁和后端 contract 三部分；仅 UI 变更不能视为全站启用。
+- 多 Bot 在双站共用运行时功能开关、前端 Repository 与 CTL contract；`shprod` 和 `sgprod` 必须分别精确放行列表、创建/克隆、重命名、删除、修复与唯一通道绑定路由，且各自保留鉴权、实名和归属校验。
 - Locale 文案和站点 copy 是产品内容；已有 site helper 或生成类型时，不得硬编码 locale 推断。
 
 ## 代码锚点

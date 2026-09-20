@@ -2686,6 +2686,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -5230,7 +5231,7 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
-                              {multiBotEnabled && (
+                              {showCreateBotEntry && (
                                 <WorkspaceActionTooltip
                                   content={createLimitMessage || t("新建 Bot")}
                                   side="bottom"

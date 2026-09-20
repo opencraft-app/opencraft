@@ -261,7 +261,7 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("shows Bot creation without show() and preserves visibility on page remount", async () => {
+  it("shows domestic Bot creation without show() and preserves visibility on page remount", async () => {
     maxBots = 5;
     const view = render(page("ins-1"));
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
@@ -286,6 +286,23 @@ describe("multi-Bot diagnostics", () => {
     view.unmount();
     render(page("ins-1"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+  });
+
+  it("keeps global Bot creation hidden until show() reveals it", () => {
+    maxBots = 5;
+    testRegion.isCN = false;
+    testRegion.isGlobal = true;
+    const view = render(page("ins-1"));
+
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
+    ]);
   });
 
   it("explains a disabled create icon in a portaled tooltip", async () => {
