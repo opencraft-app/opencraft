@@ -376,10 +376,10 @@ export const CreditPackSection = ({
       ? t('购买成功，积分已到账。')
       : checkout.state.status === 'delivery_pending'
         ? t('积分到账处理中，请稍候…')
-        : isExpiredQrOrder
-          ? t('二维码已过期，请重新下单。')
         : checkout.state.status === 'delivery_exception'
           ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。')
+          : isExpiredQrOrder
+            ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。')
         : checkout.state.status === 'failed'
           ? t('请查看下方提示并重新下单。')
           : isGlobal

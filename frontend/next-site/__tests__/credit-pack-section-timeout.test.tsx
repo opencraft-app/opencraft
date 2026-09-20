@@ -307,7 +307,20 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     expect(await screen.findByTestId("credit-pack-qr-expired")).toHaveTextContent(
       "二维码已过期，请重新下单。",
     );
-    expect(screen.getAllByText("二维码已过期，请重新下单。", { selector: "p" })).toHaveLength(2);
+    expect(screen.getAllByText("二维码已过期，请重新下单。", { selector: "p" })).toHaveLength(1);
+    expect(screen.getByText("暂时无法确认订单状态，请稍后查询，避免重复付款。")).toBeInTheDocument();
+    expect(screen.queryByText("请使用微信扫描下方二维码完成支付")).not.toBeInTheDocument();
+  });
+
+  it("delivery_exception 二维码过期时仍保留避免重复付款的中性说明", async () => {
+    checkoutController.qrExpiresAt = Date.now() - 1_000;
+    await reachPayStage("delivery_exception");
+
+    expect(await screen.findByTestId("credit-pack-qr-expired")).toHaveTextContent(
+      "二维码已过期，请重新下单。",
+    );
+    expect(screen.getAllByText("二维码已过期，请重新下单。", { selector: "p" })).toHaveLength(1);
+    expect(screen.getByText("暂时无法确认订单状态，请稍后查询，避免重复付款。")).toBeInTheDocument();
     expect(screen.queryByText("请使用微信扫描下方二维码完成支付")).not.toBeInTheDocument();
   });
 
