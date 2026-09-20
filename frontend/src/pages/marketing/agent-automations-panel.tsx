@@ -6038,7 +6038,7 @@ function RecurringTimePicker({
           label={`${inputLabel} HH`}
           value={inputSegments.hour}
           maxLength={2}
-          className="w-7"
+          className="w-6"
           onChange={(nextValue) => updateInputSegment("hour", nextValue)}
         />
         <span aria-hidden="true" className="text-sm text-black/55">:</span>
@@ -6046,7 +6046,7 @@ function RecurringTimePicker({
           label={`${inputLabel} mm`}
           value={inputSegments.minute}
           maxLength={2}
-          className="w-7"
+          className="w-6"
           onChange={(nextValue) => updateInputSegment("minute", nextValue)}
         />
       </div>

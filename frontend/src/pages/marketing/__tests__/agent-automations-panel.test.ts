@@ -3020,6 +3020,8 @@ describe("once execution time picker", () => {
     fireEvent.change(minuteInput, { target: { value: "45" } });
     expect(hourInput).toHaveValue("14");
     expect(minuteInput).toHaveValue("45");
+    expect(hourInput).toHaveClass("w-6");
+    expect(minuteInput).toHaveClass("w-6");
     expect(group).toHaveClass("w-fit");
     expect(group.firstElementChild).not.toHaveClass("flex-1");
     expect(group.firstElementChild).toHaveClass("pl-2");
