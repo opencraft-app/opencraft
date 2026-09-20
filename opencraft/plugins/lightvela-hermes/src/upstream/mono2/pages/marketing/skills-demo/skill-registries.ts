@@ -32,7 +32,7 @@ import {
 } from "../../../lib/hermes-skills-client";
 
 import { resolveSkillHubApiBase } from "../../../lib/skillhub-api";
-import { withHermesAgent } from "../../../lib/hermes-agent-command";
+import { requireHermesSkillsProfile, withHermesSkillsProfile } from "../../../lib/hermes-agent-command";
 
 import type { ExpertsExecDebugCommand } from "../agent-experts-panel";
 
@@ -248,6 +248,14 @@ export function buildSkillhubBatchInstallCommand(slugs: string[]): string {
 
 export function buildSkillhubUninstallCommand(slug: string): string {
   return `acli skills uninstall ${shellQuote(slug)}`;
+}
+
+export function buildHermesNativeUninstallCommand(slug: string): string {
+  const normalized = slug.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(normalized) || normalized === "." || normalized === "..") {
+    throw new Error("Invalid Hermes skill slug");
+  }
+  return `acli skills uninstall ${shellQuote(normalized)} --source local`;
 }
 
 export function buildSkillhubListCommand(): string {
@@ -1002,7 +1010,8 @@ function parseAcliBatchOutputLine(line: string): AcliBatchOutput | null {
 }
 
 function isAcliBatchUnsupported(output: string): boolean {
-  return /(?:unknown|unrecognized|invalid)\s+(?:command|subcommand).*batch-install|batch-install.*(?:not found|unavailable)/i.test(output);
+  return /(?:unknown|unrecognized|invalid)\s+(?:command|subcommand).*batch-install|batch-install.*(?:not found|unavailable)/i.test(output)
+    || /(?:unknown|unrecognized|invalid)\s+(?:flag|option).*--agent/i.test(output);
 }
 
 function buildRegistryBatchInstallCommand(registry: Registry, skills: Skill[]): string | null {
@@ -1570,8 +1579,9 @@ export function createDomesticDataLayer(
   profileId?: string,
 ): SkillsDataLayer {
   const run = async (command: string, timeoutMs = SKILL_COMMAND_TIMEOUT_MS): Promise<string> => {
-    const scopedCommand = profileId && /(?:^|\s)acli skills\s/.test(command)
-      ? withHermesAgent(command, profileId)
+    const id = requireHermesSkillsProfile(profileId);
+    const scopedCommand = /(?:^|\s)acli skills\s/.test(command)
+      ? withHermesSkillsProfile(command, id)
       : command;
     let result;
     try {
@@ -1593,9 +1603,10 @@ export function createDomesticDataLayer(
   };
 
   const listInstalled = async (): Promise<InstalledListResult> => {
+    const id = requireHermesSkillsProfile(profileId);
     const [skillhubRaw, hermesRaw] = await Promise.allSettled([
       run(buildSkillhubListCommand()),
-      run(buildInstalledSkillsListCommand(profileId)),
+      run(buildInstalledSkillsListCommand(id)),
     ]);
     if (hermesRaw.status === "rejected") throw hermesRaw.reason;
     const failedSources: SearchRegistry[] = skillhubRaw.status === "rejected" ? ["skillhub"] : [];
@@ -1652,9 +1663,9 @@ export function createDomesticDataLayer(
           : [{ registry: skill.registry, rawId: skill.rawId }];
         for (const target of targets) {
           const output = await run(target.registry === "hermes"
-            ? buildHermesSkillDeleteCommand(target.rawId, profileId)
+            ? buildHermesNativeUninstallCommand(target.rawId)
             : buildSkillhubUninstallCommand(target.rawId));
-          if (target.registry !== "hermes" && !parseUninstallOk(output)) {
+          if (!parseUninstallOk(output)) {
             return { ok: false, message: output.trim() || undefined };
           }
         }
@@ -1685,7 +1696,7 @@ export function createDomesticDataLayer(
     const scopedStream: SkillsExecDebugCommandStream = (targetBotId, command, onChunk, options) => (
       execDebugCommandStream(
         targetBotId,
-        profileId && /(?:^|\s)acli skills\s/.test(command) ? withHermesAgent(command, profileId) : command,
+        withHermesSkillsProfile(command, profileId),
         onChunk,
         options,
       )

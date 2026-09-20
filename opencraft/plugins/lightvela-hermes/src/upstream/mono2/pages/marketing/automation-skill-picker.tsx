@@ -218,7 +218,7 @@ export function AutomationSkillPicker({
         <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
       </div>
       <div ref={pickerRef} className="relative mt-1.5">
-        <div className="flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
+        <div className="flex min-h-[38px] w-full flex-wrap items-center gap-1.5 rounded-md border border-black/10 bg-white p-1.5 pl-2 transition focus-within:border-black/30 hover:border-black/20">
           {value.map((slug) => {
             const displayName = getSkillLabel(slug);
             const unavailable = loadState.status === "ready" && !loadState.slugs.includes(slug);
