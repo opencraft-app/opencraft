@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bot, BrainCircuit, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
+import { useTranslation } from "react-i18next";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -15,12 +16,13 @@ import {
   AGENTS_HOME_PATH,
   AGENT_SECTION_PATH_BY_ID,
   getAgentSectionHref,
-  shouldMoveModelEntryToAccountMenu,
   shouldShowWorkbenchEntry,
 } from "@/lib/agent-routes";
+import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import { isGlobal } from "@/lib/region";
 import { emitConsoleShowEvent } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
+import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
@@ -38,6 +40,7 @@ export const UserAvatarMenu = ({
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
+  const { i18n } = useTranslation();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const user = session.user;
@@ -119,8 +122,8 @@ export const UserAvatarMenu = ({
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
-  const showModelEntry = shouldMoveModelEntryToAccountMenu(activePass?.bundle_id);
   const isSidebar = variant === "sidebar";
+  const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass?.bundle_id);
 
   return (
     <div
@@ -269,7 +272,7 @@ export const UserAvatarMenu = ({
                   className={menuItemClass}
                 >
                   <BrainCircuit className={menuIconClass} />
-                  {t("模型")}
+                  {resolveAgentConsoleCollectionLabel("model", i18n.language, t)}
                 </a>
               ) : null}
               {showWorkbenchEntry ? (

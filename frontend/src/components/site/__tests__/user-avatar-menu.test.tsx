@@ -17,6 +17,11 @@ vi.mock("framer-motion", () => ({
 const useSession = vi.fn();
 const useOpenClaw = vi.fn();
 let mockIsGlobal = true;
+let mockLanguage = "zh-CN";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ i18n: { language: mockLanguage } }),
+}));
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => useSession(),
@@ -75,6 +80,7 @@ afterEach(() => {
   useSession.mockReset();
   useOpenClaw.mockReset();
   mockIsGlobal = true;
+  mockLanguage = "zh-CN";
   delete (window as Window & { show?: unknown }).show;
   stubLocation("localhost");
 });
@@ -266,6 +272,53 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu variant="sidebar" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
+  });
+
+  it("uses the plural Models label in the English sidebar menu", () => {
+    mockLanguage = "en-US";
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "Sea Salt Cat", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_launch_ai_01",
+        bundle_name: "Launch AI",
+      },
+    });
+
+    render(<UserAvatarMenu variant="sidebar" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute(
+      "href",
+      "/agents/models",
+    );
+    expect(screen.queryByRole("link", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("does not expose the AI-plan Model entry in the public header menu", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_launch_ai_01",
+        bundle_name: "Launch AI",
+      },
+    });
+
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
   });

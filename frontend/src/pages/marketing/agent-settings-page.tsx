@@ -89,9 +89,9 @@ import {
   AGENT_SECTION_PATH_BY_ID,
   getAgentBotSectionHref,
   getAgentSectionHref,
-  shouldMoveModelEntryToAccountMenu,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
+import { shouldMoveModelEntryToAccountMenu } from "@/lib/agent-plan-navigation";
 import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
