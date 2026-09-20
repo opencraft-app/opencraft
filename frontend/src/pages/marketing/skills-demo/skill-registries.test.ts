@@ -330,6 +330,7 @@ describe("domestic SkillHub command and response handling", () => {
 
   it("uses the domestic acli skills command family", () => {
     expect(buildSkillhubInstallCommand("builder-radar")).toBe("acli skills install 'builder-radar'");
+    expect(buildSkillhubInstallCommand("@indiv-skill/anti-fraud")).toBe("acli skills install '@indiv-skill/anti-fraud'");
     expect(buildSkillhubUninstallCommand("builder-radar")).toBe("acli skills uninstall 'builder-radar'");
     expect(buildSkillhubListCommand()).toBe("acli skills list");
   });
@@ -359,6 +360,35 @@ describe("domestic SkillHub command and response handling", () => {
       iconUrl: "https://cdn.example.com/builder-radar.png",
     })]);
     expect(search[0]).not.toHaveProperty("sourceRegistry");
+
+    const sameSlugSearch = parseSkillhubSearch(JSON.stringify({
+      data: {
+        skills: [
+          {
+            slug: "anti-fraud",
+            name: "防诈专家",
+            homepage: "https://skillhub.cn/skills/indiv-skill/anti-fraud",
+            namespace: { canonicalName: "@indiv-skill/anti-fraud", displayName: "indiv-skill" },
+          },
+          {
+            slug: "anti-fraud",
+            name: "防骗大师.Skill",
+            homepage: "https://skillhub.cn/skills/indiv-ebandao/anti-fraud",
+            namespace: { canonicalName: "@indiv-ebandao/anti-fraud", displayName: "indiv-ebandao" },
+          },
+        ],
+      },
+    }));
+    expect(sameSlugSearch.map((skill) => skill.rawId)).toEqual([
+      "@indiv-skill/anti-fraud",
+      "@indiv-ebandao/anti-fraud",
+    ]);
+    expect(sameSlugSearch.map(skillIdentity)).toEqual([
+      "skillhub:@indiv-skill/anti-fraud",
+      "skillhub:@indiv-ebandao/anti-fraud",
+    ]);
+    expect(getSkillSourceUrl(sameSlugSearch[0]!)).toBe("https://skillhub.cn/skills/indiv-skill/anti-fraud");
+    expect(getSkillSourceUrl(sameSlugSearch[1]!)).toBe("https://skillhub.cn/skills/indiv-ebandao/anti-fraud");
 
     const installed = parseSkillhubList(JSON.stringify({
       success: true,
