@@ -157,7 +157,11 @@ function rememberedIdMatchesSkill(id: string, skill: Pick<Skill, "registry" | "r
   const prefix = `${skill.registry}:`;
   if (!id.startsWith(prefix)) return false;
   const rawId = id.slice(prefix.length);
-  return rawId === skill.rawId.trim().toLowerCase() || rawId.split("/").pop() === skill.slug.trim().toLowerCase();
+  const targetRawId = skill.rawId.trim().toLowerCase();
+  if (rawId === targetRawId) return true;
+  return !rawId.includes("/")
+    && !targetRawId.includes("/")
+    && rawId === skill.slug.trim().toLowerCase();
 }
 
 function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[]): boolean {
@@ -172,7 +176,11 @@ function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[])
   const matchesIdentity = (skill: InstalledSkill) => {
     const candidates = [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]
       .map((value) => value.trim().toLowerCase());
-    return candidates.includes(rawId) || (shortSlug ? candidates.includes(shortSlug) : false);
+    return candidates.includes(rawId) || (
+      !rawId.includes("/")
+      && shortSlug !== undefined
+      && candidates.some((candidate) => !candidate.includes("/") && candidate === shortSlug)
+    );
   };
 
   if (skills.some((skill) => skill.registries.includes(registry) && matchesIdentity(skill))) return true;
@@ -1526,6 +1534,9 @@ function SectionTitle({
   );
 }
 
+// The Create Skill tab is intentionally hidden. Keep this panel ready for its
+// reintroduction, then remove this expectation when it is rendered again.
+// @ts-expect-error TS6133: retained for the intentionally hidden Create Skill tab.
 function CreateSkillPanel({
   learnSkillTrigger,
   learnSkillPanel,

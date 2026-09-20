@@ -70,6 +70,7 @@ Add Teach, Grill Me, and Reddit Automation as the final Featured batch on the in
 - The previous checkout contained the intended international configuration but its assets returned 404 from this preview.
 - All three new banner assets return HTTP 200 from the active preview and are 1200 x 576 JPEGs.
 - The global Skills route `/agents/skills/` returned HTTP 200 after compilation.
+- The MR frontend guard failed after i18n validation, not from domestic/global Featured data: `CreateSkillPanel` is an intentionally hidden upstream panel that TypeScript now reports as unused.
 
 ## risks
 
@@ -82,7 +83,7 @@ Add Teach, Grill Me, and Reddit Automation as the final Featured batch on the in
 - `pnpm exec vitest run src/pages/marketing/skills-demo/curated-skill-categories.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx --maxWorkers=1` passed: 2 files and 71 tests.
 - `python3 .agents/context/scripts/validate_documentation.py --repo . --format json` passed with no errors, broken links, or warnings.
 - `git diff --check` passed.
-- `pnpm check` reached the TypeScript baseline check but reported the existing unrelated `TS6133` for unused `CreateSkillPanel` in `src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`.
+- `pnpm check` passed: TypeScript reported 0 new diagnostics after documenting the intentionally hidden Create Skill panel.
 
 ## decisions
 
@@ -108,4 +109,6 @@ Add Teach, Grill Me, and Reddit Automation as the final Featured batch on the in
 - The domestic Featured list and its existing uncommitted work were left unchanged.
 - The local global preview remains running on port 3000.
 - Existing React 19 compatibility warnings from Tencent Tea and legacy packages appear while compiling the route, but the route completed with HTTP 200.
+- The hidden Create Skill panel now has an explicit TypeScript expectation. Re-enabling the tab will make TypeScript require removal of that expectation.
+- The MR frontend guard failure is fixed on `codex/skills-featured-updates`; the related Skills tests passed again.
 - No commit, push, merge request, or deployment was performed.

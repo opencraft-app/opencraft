@@ -10,7 +10,7 @@ source_of_truth:
 status: complete
 reviewed_at: 2026-09-18
 review_due: 2026-12-17
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -42,7 +42,7 @@ derived: false
 ## acceptance
 
 - 三张指定 SkillHub 卡追加到国内站顶部精选末尾。
-- 每张卡保留 SkillHub slug、图标 URL、下载量快照和唯一横幅资源。
+- 每张卡保留 SkillHub slug、规范 rawId、图标 URL、下载量快照和唯一横幅资源。
 - 三张卡均有完整中文详情模板和安装身份。
 - 新增后顶部精选共 9 张、每页 3 张，第三页为三张新增卡。
 - 运行定向测试、TypeScript 检查和 `git diff --check`。
@@ -76,13 +76,13 @@ derived: false
 
 - 已从 SkillHub API 精确核对用户提供的三条页面：
   - `user_87b8e34f/suno-lyrics-to-song`，下载量 `103205`，使用其 PNG 图标。
-  - `indiv-skill/anti-fraud`，下载量 `125898`，使用其 PNG 图标。
+  - `indiv-skill/anti-fraud`，规范 rawId 为 `@indiv-skill/anti-fraud`，下载量 `145418`，使用其 PNG 图标。
   - `user_f3d82da7/chinese-official-writing`，下载量 `149071`，使用其 PNG 图标。
 - 三张横幅均为本次生成的 1200×576 JPEG，构图保持左侧文案留白、右侧无文字的 3D 主体。
 
 ## risks
 
-- `anti-fraud` 存在同 slug 条目，必须按用户提供的 `indiv-skill` 页面精确选择。
+- SkillHub 存在两个短 slug 同为 `anti-fraud` 的独立条目：`@indiv-skill/anti-fraud`（防诈专家）和 `@indiv-ebandao/anti-fraud`（防骗大师.Skill）。必须按规范 rawId 安装、卸载、缓存和匹配，不能按短 slug 合并。
 - 横幅为独立生成资源，需避免图片内文字、Logo 和水印。
 
 ## validation
@@ -90,9 +90,8 @@ derived: false
 - `cd frontend && pnpm i18n:check` 通过。
 - `cd frontend && pnpm i18n:validate` 通过，无错误，保留仓库既有 51 条告警。
 - `cd frontend && pnpm i18n:zh-hant --check` 通过。
-- `cd frontend && ./node_modules/.bin/vitest run src/pages/marketing/skills-demo/domestic-skill-catalog.test.ts` 通过，6 个测试通过。
-- `cd frontend && ./node_modules/.bin/tsc --noEmit --pretty false` 通过。
-- `cd frontend && pnpm check` 通过。
+- `cd frontend && pnpm exec vitest run src/pages/marketing/skills-demo/domestic-skill-catalog.test.ts src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx --maxWorkers=1` 通过，120 个测试通过。
+- `cd frontend && pnpm check` 通过，TypeScript 无新增诊断。
 - `git diff --check` 通过。
 - 已检查三张横幅配置路径存在，并确认为 1200×576 JPEG。
 
@@ -109,7 +108,7 @@ derived: false
 
 - `DOMESTIC_FEATURED_SKILLS` 由前三页共 9 张卡组成，新增条目位于末尾三张。
 - `FEATURED_BATCH_SIZE = 3`，末页恰为 Suno歌词成曲、防诈专家、中文公文写作。
-- `anti-fraud` 在已有分类卡中存在同一安装 slug；新 Featured 项使用独立展示 `id` `anti-fraud-expert`，但保留用户指定 SkillHub 页面对应的 `anti-fraud` 安装身份。
+- `anti-fraud` 在已有分类卡中存在相同短 slug 的独立 SkillHub 条目。新 Featured 项保留展示 `id` `anti-fraud-expert`，并使用规范安装身份 `@indiv-skill/anti-fraud`；分类卡使用 `@indiv-ebandao/anti-fraud`。
 
 ## handoff
 

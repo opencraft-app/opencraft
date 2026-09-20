@@ -18,7 +18,8 @@ export type DomesticFeaturedSkill = {
   heroClassName: string;
 };
 
-// Snapshot from SkillHub on 2026-07-15. Fixed cards do not refresh this at runtime.
+// Snapshot from SkillHub, initially recorded on 2026-07-15 and corrected to canonical identities on 2026-09-20.
+// Fixed cards do not refresh this at runtime.
 const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
   "find-skill-skillhub": 18_004,
   "image-prompt-skill": 7_852,
@@ -26,7 +27,8 @@ const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
   "ecommerce-product-selector": 8_405,
   "tencent-news": 8_027,
   "suno-lyrics-to-song": 103_205,
-  "anti-fraud": 125_898,
+  "@indiv-skill/anti-fraud": 145_418,
+  "@indiv-ebandao/anti-fraud": 448_369,
   "chinese-official-writing": 149_071,
   "valuation-analysis": 20_710,
   "stock-selecter": 9_846,
@@ -57,7 +59,8 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   "ecommerce-product-selector": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
   "tencent-news": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/2d8152d9-7618-454e-9d87-2487f1b4457f.png",
   "suno-lyrics-to-song": "https://skillhub-1388575217.cos.accelerate.myqcloud.com/skill-icons/uploads/433053/6700622101e14db9b20152bfa87bae00.png",
-  "anti-fraud": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
+  "@indiv-skill/anti-fraud": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
+  "@indiv-ebandao/anti-fraud": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
   "chinese-official-writing": "https://skillhub-1388575217.cos.accelerate.myqcloud.com/skill-icons/uploads/437097/fbafa4ddeb204e4584a699f65e06d137.png",
   weather: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/81015f94-5620-494e-bbd6-ac3268e7ccd3.png",
   "valuation-analysis": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/401a454b-4b16-4aee-a18c-4e3467ca48f1.png",
@@ -91,17 +94,19 @@ function skill(
   name: string,
   description: string,
   installs?: number,
+  options?: Pick<Skill, "slug" | "sourceUrl">,
 ): Skill {
   return {
     registry: "skillhub",
     rawId,
-    slug: rawId,
+    slug: options?.slug ?? rawId,
     name,
     description,
     installs,
     downloads: DOMESTIC_DOWNLOAD_SNAPSHOT[rawId],
     iconUrl: DOMESTIC_ICON_SNAPSHOT[rawId],
     sourceOrg: "SkillHub",
+    sourceUrl: options?.sourceUrl,
   };
 }
 
@@ -185,9 +190,14 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
   {
     id: "anti-fraud-expert",
     skill: skill(
-      "anti-fraud",
+      "@indiv-skill/anti-fraud",
       "防诈专家",
       "识别可疑诈骗话术与风险信号，提供核验、止损和取证建议。",
+      undefined,
+      {
+        slug: "anti-fraud",
+        sourceUrl: "https://skillhub.cn/skills/indiv-skill/anti-fraud",
+      },
     ),
     heroImageSrc: "/assets/skills/featured-domestic-anti-fraud-expert.jpg",
     heroClassName: "bg-[#07343A]",
@@ -235,7 +245,16 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
     skills: [
       skill("tencent-docs", "腾讯文档 TENCENT DOCS", "创建、编辑、搜索和管理腾讯文档、表格、幻灯片、知识库和云端文件。", 8107),
       skill("pdf-image-text-extractor", "PDF和图片文字提取", "从图片和 PDF 中识别、提取文字，并保留结构化结果。", 378),
-      skill("anti-fraud", "防骗大师.Skill", "识别和拆解常见诈骗场景、话术与风险信号，辅助判断可疑信息并采取防范措施。"),
+      skill(
+        "@indiv-ebandao/anti-fraud",
+        "防骗大师.Skill",
+        "识别和拆解常见诈骗场景、话术与风险信号，辅助判断可疑信息并采取防范措施。",
+        undefined,
+        {
+          slug: "anti-fraud",
+          sourceUrl: "https://skillhub.cn/skills/indiv-ebandao/anti-fraud",
+        },
+      ),
       skill("gongwenformat-pro", "公文排版", "将 Markdown、TXT 或 DOCX 转换为符合 GB/T 9704-2012 的 Word 文档。", 239),
       skill("multi-search-engine", "搜索引擎", "聚合多个搜索引擎检索信息，帮助按关键词和任务目标查找并整理结果。"),
       skill("bid-tender-master", "标书大师｜全行业AI标书生成助手", "根据项目名称和预算生成覆盖货物、服务和工程行业的投标文件。", 0),
