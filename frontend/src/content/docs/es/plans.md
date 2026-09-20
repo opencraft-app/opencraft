@@ -2,6 +2,8 @@
 
 ## Resumen
 
+**El menú del avatar al pie de la barra lateral izquierda de la consola del Agent tiene dos entradas: Cuenta para el perfil y el ID de usuario, y Planes y facturación para las suscripciones, los créditos, las renovaciones y los métodos de pago.**
+
 **LightVela ofrece cuatro planes—Launch, Cruise, Launch AI y Cruise AI—que cubren todo, desde un primer intento ligero hasta un uso de alta frecuencia. Cada plan activa un Hermes Agent en un entorno de ejecución en la nube dedicado con su propio CPU, memoria y almacenamiento, donde el Agent permanece en línea 24/7 sin necesidad de comprar un servidor ni realizar una implementación local. Los planes difieren en los recursos de ejecución, la capacidad de almacenamiento y los créditos de IA mensuales, mientras que las capacidades centrales como la mejora autónoma, el acceso multi-canal, las Skills, tareas automatizadas y la memoria a largo plazo permanecen disponibles en todos los niveles. Esta página también explica las reglas de reembolso y el proceso de solicitud basado en correo electrónico. Los precios en vivo y la disponibilidad se muestran en la página de suscripción.**
 
 ---
@@ -23,6 +25,25 @@ LightVela ofrece cuatro niveles de planes—**Launch, Cruise, Launch AI y Cruise
 ---
 
 ## ¿Qué es un plan?
+
+### Acceso a la cuenta y la facturación
+
+Inicia sesión en LightVela. En la consola del Agent, coloca el cursor sobre tu avatar y nombre al pie de la barra lateral izquierda para abrir el menú:
+
+- **Cuenta (Account)** abre la [página de cuenta](/account/) para consultar el perfil, modificar el nombre visible, copiar el ID de usuario o cerrar sesión.
+- **Planes y facturación (Plans & billing)** abre la [página de planes y facturación](/account/billing/) para consultar la suscripción, su vigencia, el uso de créditos y los métodos de pago, o renovar el plan.
+
+En **Planes y facturación**, comprueba el estado de la suscripción. Si el plan se puede renovar, selecciona la opción de renovación y sigue las instrucciones. Si no tienes una suscripción, utiliza el botón de creación para elegir un plan en la página de suscripción. En la sección de métodos de pago puedes añadir una tarjeta. Introduce sus datos en la página del proveedor de pagos; LightVela no almacena números de tarjeta completos.
+
+Comprueba el título de la página para confirmar que estás en el lugar correcto. Si no aparece un plan comprado, verifica que has iniciado sesión con la cuenta utilizada en la compra y actualiza la página; no repitas el pedido. Si no aparece una tarjeta, termina el proceso del proveedor de pagos antes de volver y actualizar.
+
+![Página de cuenta: perfil](../images/account-global.webp)
+
+![Planes y facturación: suscripción y método de pago](../images/account-billing-global.webp)
+
+*Ejemplo de la nueva interfaz con datos de demostración locales, sin suscripción activa ni tarjeta guardada. Las capturas muestran la interfaz en inglés.*
+
+### Planes y recursos
 
 Un plan es el paquete de recursos que activa un Hermes Agent en LightVela. Después de activar cualquier plan actualmente disponible, LightVela te asigna un **entorno de ejecución en la nube dedicado** con su propio CPU, memoria y almacenamiento. Tu Hermes Agent puede permanecer en línea 24/7 sin que requieras comprar un servidor ni implementar nada localmente.
 
@@ -90,7 +111,7 @@ Para saber cómo se asignan y consumen los créditos de IA, consulta [Créditos]
 
 ### Reglas de cambio de plan
 
-Las actualizaciones directas, cambios o degradaciones en un plan activo no están actualmente soportados. Cuando un plan existente está activo, la página de suscripción prioriza marcar tu plan actual. Para continuar usando el mismo plan, renuévalo para extender el período de validez. Para cambiar de planes, consulta las opciones actualmente disponibles en la página de cuenta y la página de suscripción.
+Las actualizaciones directas, cambios o degradaciones en un plan activo no están actualmente soportados. Cuando un plan existente está activo, la página de suscripción prioriza marcar tu plan actual. Para continuar usando el mismo plan, renuévalo para extender el período de validez. Para cambiar de planes, consulta las opciones actualmente disponibles en la página de Planes y facturación y la página de suscripción.
 
 ### Ciclo de vida del plan
 

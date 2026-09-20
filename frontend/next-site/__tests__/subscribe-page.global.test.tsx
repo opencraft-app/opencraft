@@ -690,8 +690,8 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
 
-    expect(await screen.findByText("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(await screen.findByText("当前套餐已进入隔离期，请在套餐与费用页管理套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account/billing");
     expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
   });
 
@@ -707,8 +707,8 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
 
-    expect(await screen.findByText("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(await screen.findByText("当前套餐已到期，续费功能敬请期待；请在套餐与费用页查看套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account/billing");
     expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
   });
 

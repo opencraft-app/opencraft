@@ -17,6 +17,7 @@ export const KOREAN_SEO_KEYWORDS = [
 export const KOREAN_STATIC_PAGE_TITLES: Record<string, string> = {
   "/about": "LightVela 소개",
   "/account": "계정",
+  "/account/billing": "요금제 및 결제",
   "/account/orders": "주문 내역",
   "/auth/email-bind-result": "이메일 연결 결과",
   "/auth/forgot-password": "비밀번호 재설정",

@@ -30,7 +30,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, getAgentCreateBotPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, getAgentCreateBotPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -2416,7 +2416,7 @@ export const CreditCardConfirmOrderModal = ({
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: colors.black }}>{t("自动续费")}</div>
                   <div style={{ fontSize: 12, color: colors.warmGray500, marginTop: 2, lineHeight: 1.6 }}>
-                    {t("订阅将在每个计费周期结束时自动续费，可随时在账号管理页取消。")}
+                    {t("订阅将在每个计费周期结束时自动续费，可随时在套餐与费用页取消。")}
                   </div>
                 </div>
               </div>
@@ -3507,21 +3507,21 @@ export const SubscribePage = ({
         setPaymentContext(null);
         return;
       }
-      /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
+      /* 特例 3：需要走续费路径（expired/isolated） → 引导到套餐与费用页 */
       if (isPassRequiresRenewError(code)) {
         const message = isGlobal
           ? code === "PASS_ISOLATED"
-            ? t("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")
-            : t("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")
+            ? t("当前套餐已进入隔离期，请在套餐与费用页管理套餐，销毁后可重新购买。")
+            : t("当前套餐已到期，续费功能敬请期待；请在套餐与费用页查看套餐，销毁后可重新购买。")
           : code === "PASS_ISOLATED"
-            ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
-            : t("当前套餐已到期，请前往我的账号续费后继续使用。");
+            ? t("当前套餐已进入隔离期，请前往套餐与费用页续费恢复使用，或在该页销毁后重新购买。")
+            : t("当前套餐已到期，请前往套餐与费用页续费后继续使用。");
         setError({
           code,
           message,
           action: {
             label: isGlobal ? t("管理套餐") : t("前往续费"),
-            href: ACCOUNT_PATH,
+            href: ACCOUNT_BILLING_PATH,
           },
         });
         setModalStep("closed");
