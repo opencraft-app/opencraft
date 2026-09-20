@@ -103,4 +103,4 @@
 - 精确搜索命中 `AutomationFormModal`、`AutomationFormScrollArea`、`shouldKeepFormHeight` 与三处 840px 断言。
 
 ## handoff
-- 本地实现与验证完成，用户已授权提交 MR；尚未合并或发布。
+- 前序弹窗调整已通过 MR !4305 合并；两个下拉列表的补充修复已提交 MR !4309，尚未合并或发布。
