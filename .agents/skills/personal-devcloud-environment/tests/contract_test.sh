@@ -176,6 +176,15 @@ test_auth_override_is_sandbox_only() (
   fi
 )
 
+test_auth_admin_override_is_loopback_only() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/auth-admin-allowlist" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://10.0.0.8:38081'
+  source "$SCRIPT"
+  if (configure_site) >/dev/null 2>&1; then
+    fail "non-loopback Auth admin override was accepted"
+  fi
+)
+
 test_download_binary_is_nounset_safe() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/download-binary" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -673,6 +682,7 @@ test_wait_for_binding_bootstraps_when_managed_inputs_are_present() (
 test_testing_binding_release_derives_user_and_keeps_admin_token_private() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-release" PERSONAL_DEV_SITE=cn
   export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:38081'
   export PERSONAL_DEV_BINDING_RELEASE_REASON='test completed'
   source "$SCRIPT"
   prepare_state
@@ -685,8 +695,8 @@ test_testing_binding_release_derives_user_and_keeps_admin_token_private() (
       return
     fi
     assert_eq 'managed-admin-token' "$token" "release admin token"
-    [[ "$*" == *'-X DELETE'*'/admin/shadow-bindings/usr_testing_1'* ]] \
-      || fail "release request did not target the current testing user"
+    [[ "$*" == *'-X DELETE'*'http://127.0.0.1:38081/admin/shadow-bindings/usr_testing_1'* ]] \
+      || fail "release request did not target the configured testing admin endpoint"
     local previous='' arg
     for arg in "$@"; do
       if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
@@ -734,6 +744,7 @@ run_test 'auth failure removes credential temp files' test_auth_failure_removes_
 run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
+run_test 'Auth admin override is loopback-only' test_auth_admin_override_is_loopback_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout

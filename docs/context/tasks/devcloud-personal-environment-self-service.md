@@ -50,7 +50,9 @@ derived: false
   由 Gateway Dashboard 和受控 Codex 使用既有 Auth admin token 管理真实 `shadow_bindings`。新增相同映射幂等；
   改绑或 UIN 转移必须先显式解绑；请求必须包含原因并写结构化审计日志。接口不接收任何云密钥或密码。
   Dashboard BFF 对这组新增接口额外验证浏览器 admin session，再使用仅服务端可见的 Auth admin token 转发；
-  直接请求 Dashboard API 不能绕过登录态。
+  直接请求 Dashboard API 不能绕过登录态。受控 Codex 的 Skill 管理命令通过
+  `PERSONAL_DEV_AUTH_ADMIN_BASE_URL` 连接 loopback 上的 Auth testing 受控转发，不经公网
+  Service Gateway；该地址只允许 HTTP loopback 和显式端口，防止 admin token 被发送到其他主机。
 - `SHADOW_BINDING_ADMIN_ENABLED` 默认关闭；只有环境名以 `sandbox-` 开头且
   `LIGHTCLAW_PUBLIC_BASE_URL` 精确匹配 `https://api-<environment>.lightclaw.tech` 时才能启用。
   当前仅 `sandbox-bj-7` GitOps 显式开启，生产即使误配单一开关也保持拒绝。

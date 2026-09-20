@@ -37,6 +37,7 @@ TTL_SECONDS="${PERSONAL_DEV_TTL_SECONDS:-28800}"
 BROWSER_SESSION_TTL_SECONDS="${PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS:-28800}"
 
 AUTH_BASE=""
+AUTH_ADMIN_BASE=""
 CLGATEWAY_BASE=""
 REGISTRATION_URL=""
 TEMP_FILES=()
@@ -174,10 +175,41 @@ configure_site() {
     esac
   fi
   AUTH_BASE="${AUTH_BASE%/}"
+  AUTH_ADMIN_BASE="${PERSONAL_DEV_AUTH_ADMIN_BASE_URL:-$AUTH_BASE}"
+  AUTH_ADMIN_BASE="${AUTH_ADMIN_BASE%/}"
   CLGATEWAY_BASE="${CLGATEWAY_BASE%/}"
   validate_auth_base
+  validate_auth_admin_base
   validate_clgateway_base
   REGISTRATION_URL="$AUTH_BASE/auth/dev-environments/registration"
+}
+
+validate_auth_admin_base() {
+  if [[ "$AUTH_ADMIN_BASE" == "$AUTH_BASE" ]]; then
+    return
+  fi
+  python3 - "$AUTH_ADMIN_BASE" <<'PY' || die "Auth admin endpoint must match the sandbox Auth origin or use an HTTP loopback port-forward"
+import ipaddress, sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+hostname = (parsed.hostname or "").lower()
+try:
+    is_loopback = ipaddress.ip_address(hostname).is_loopback
+except ValueError:
+    is_loopback = hostname == "localhost"
+valid = (
+    parsed.scheme == "http"
+    and is_loopback
+    and parsed.username is None
+    and parsed.password is None
+    and parsed.port is not None
+    and parsed.path in ("", "/")
+    and not parsed.query
+    and not parsed.fragment
+)
+raise SystemExit(0 if valid else 1)
+PY
 }
 
 validate_auth_base() {
@@ -704,7 +736,7 @@ with open(path, "w", encoding="utf-8") as fh:
     }, fh, ensure_ascii=False)
 PY
   response="$(curl_with_token "$admin_token" -X POST -H 'Content-Type: application/json' \
-    --data-binary "@$body" "$AUTH_BASE/admin/shadow-bindings")" \
+    --data-binary "@$body" "$AUTH_ADMIN_BASE/admin/shadow-bindings")" \
     || die "testing shadow binding bootstrap failed"
   remove_private_temp "$body"
   status="$(printf '%s' "$response" | json_value 'd.get("status", "")')"
@@ -732,7 +764,7 @@ release_binding() {
   body="$TEMP_FILE_RESULT"
   json_body_file "$body" "reason=$reason"
   response="$(curl_with_token "$admin_token" -X DELETE -H 'Content-Type: application/json' \
-    --data-binary "@$body" "$AUTH_BASE/admin/shadow-bindings/$user_id")" \
+    --data-binary "@$body" "$AUTH_ADMIN_BASE/admin/shadow-bindings/$user_id")" \
     || die "testing shadow binding release failed"
   remove_private_temp "$body"
   printf '%s\n' "$response"
