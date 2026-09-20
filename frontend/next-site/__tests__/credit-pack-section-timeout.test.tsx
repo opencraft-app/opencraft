@@ -3,6 +3,8 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CreditPackSection } from "../credit-pack-section";
+
 /**
  * 到账轮询超时（delivery_exception）的渲染契约测试。
  *
@@ -111,9 +113,6 @@ const listCreditProducts = vi.fn();
 const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, createCreditOrderUrl, listCreditProducts } };
 vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => repositoriesStub }));
 
-(globalThis as { React?: typeof React }).React = React;
-const { CreditPackSection } = await import("../credit-pack-section");
-
 const ALL_PRODUCTS_ONLINE = [
   "credit_1000",
   "credit_2000",
@@ -209,6 +208,8 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
       "暂未确认支付结果，请稍后刷新。",
     );
     expect(screen.getByTestId("credit-pack-modal-checkout-status")).not.toHaveTextContent("支付已完成");
+    expect(screen.queryByText("请使用微信扫描下方二维码完成支付")).not.toBeInTheDocument();
+    expect(screen.getByText("暂时无法确认订单状态，请稍后查询，避免重复付款。")).toBeInTheDocument();
     /* 订单号独立透出（客服排查入口），不与状态文案耦合 */
     expect(screen.getByTestId("credit-pack-modal-order-number")).toHaveTextContent("20260916995023682746371");
   });
@@ -312,6 +313,38 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     });
     expect(screen.queryByTestId("credit-pack-wx-qr")).not.toBeInTheDocument();
     expect(screen.getByTestId("credit-pack-reorder")).toBeInTheDocument();
+  });
+
+  it("已到账且二维码过期时不展示过期提示或重新下单", async () => {
+    checkoutController.qrExpiresAt = Date.now() - 60_000;
+    await reachPayStage("delivered");
+
+    expect(screen.getByRole("heading", { name: "购买成功" })).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-qr-expired")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-reorder")).not.toBeInTheDocument();
+  });
+
+  it("到账处理中且二维码过期时不展示过期提示或重新下单", async () => {
+    checkoutController.qrExpiresAt = Date.now() - 60_000;
+    await reachPayStage("delivery_pending");
+
+    expect(screen.getByRole("heading", { name: "积分到账处理中" })).toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-qr-expired")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("credit-pack-reorder")).not.toBeInTheDocument();
+  });
+
+  it("重新下单后继续展示旧订单商品，不跟随后来选中的卡片变化", async () => {
+    checkoutController.qrExpiresAt = Date.now() - 60_000;
+    await reachPayStage("payment_pending");
+
+    await userEvent.click(await screen.findByRole("button", { name: "暂不处理" }));
+    await userEvent.click(screen.getByTestId("credit-pack-card-credit_2000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-reorder"));
+
+    const confirmationDialog = await screen.findByRole("dialog");
+    expect(confirmationDialog).toHaveTextContent("1,000 模型积分");
+    expect(confirmationDialog).not.toHaveTextContent("2,000 模型积分");
   });
 
   it("failed（下单/支付链接失败）就地转换后仍使用「支付遇到问题」错误标题", async () => {

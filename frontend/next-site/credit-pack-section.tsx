@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -83,7 +84,7 @@ export const CreditPackSection = ({
   hasActivePlan,
   onRequireLogin,
   onRequirePlan,
-}: CreditPackSectionProps) => {
+}: CreditPackSectionProps): React.ReactElement => {
   const t = useT();
   const navigate = useAppNavigate();
   const repositories = useRepositories();
@@ -335,6 +336,9 @@ export const CreditPackSection = ({
     return () => window.clearInterval(timer);
   }, [bridgePlanVisible]);
   const qrExpired = checkout.bridgePlan != null && qrNow >= checkout.bridgePlan.expiresAt;
+  const isQrPaymentState =
+    checkout.state.status === 'payment_pending' || checkout.state.status === 'delivery_exception';
+  const isExpiredQrOrder = !isGlobal && isQrPaymentState && checkout.bridgePlan != null && qrExpired;
 
   /* 确认弹窗内点「确认支付」 */
   const handleConfirmPay = useCallback(() => {
@@ -343,7 +347,9 @@ export const CreditPackSection = ({
   }, [checkout, selectedProductId]);
 
   const handleReorder = useCallback(() => {
+    const productId = checkout.state.productId;
     checkout.reset();
+    if (productId) setSelectedProductId(productId);
     setTermsAccepted(false);
   }, [checkout]);
 
@@ -371,6 +377,8 @@ export const CreditPackSection = ({
       ? t('购买成功，积分已到账。')
       : checkout.state.status === 'delivery_pending'
         ? t('积分到账处理中，请稍候…')
+        : checkout.state.status === 'delivery_exception'
+          ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。')
         : checkout.state.status === 'failed'
           ? t('请查看下方提示并重新下单。')
           : isGlobal
@@ -581,10 +589,7 @@ export const CreditPackSection = ({
                   <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmount}</dd>
                 </dl>
 
-                {(checkout.state.status === 'payment_pending' || checkout.state.status === 'delivery_exception') &&
-                !isGlobal &&
-                checkout.bridgePlan &&
-                !qrExpired ? (
+                {isQrPaymentState && !isGlobal && checkout.bridgePlan && !qrExpired ? (
                   <div
                     data-testid="credit-pack-qr-panel"
                     className="flex min-h-64 items-center justify-center rounded-md bg-[var(--surface-muted)] p-6"
@@ -595,7 +600,7 @@ export const CreditPackSection = ({
                   </div>
                 ) : null}
 
-                {!isGlobal && checkout.bridgePlan && qrExpired ? (
+                {isExpiredQrOrder ? (
                   <p
                     data-testid="credit-pack-qr-expired"
                     className="rounded-md bg-[var(--surface-muted)] px-5 py-12 text-center text-sm text-[var(--text-secondary)]"
@@ -652,7 +657,7 @@ export const CreditPackSection = ({
                       {checkingPayment ? t('刷新中...') : t('刷新')}
                     </button>
                   ) : null}
-                  {checkout.state.status === 'failed' || qrExpired ? (
+                  {checkout.state.status === 'failed' || isExpiredQrOrder ? (
                     <button
                       type="button"
                       onClick={handleReorder}

@@ -3,6 +3,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CreditPackSection } from "../credit-pack-section";
+
 /* 站点切换：getter 型 mock（默认国内站，国际站用例显式切换）。
    vi.hoisted 把 state 声明提升到 import 之前，避免 vi.mock 工厂（import 期执行）
    触发 'Cannot access before initialization' 的 TDZ 错误。 */
@@ -33,9 +35,6 @@ const repositoriesStub = { credit: { inquireCreditPrice, createCreditOrder, crea
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => repositoriesStub,
 }));
-
-(globalThis as { React?: typeof React }).React = React;
-const { CreditPackSection } = await import("../credit-pack-section");
 
 const renderSection = (overrides: Partial<Parameters<typeof CreditPackSection>[0]> = {}) =>
   render(
