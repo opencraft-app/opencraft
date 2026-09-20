@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -312,7 +311,7 @@ export const CreditPackSection = ({
         /* 轮询超时无法区分「未支付」与「已支付未到账」，文案必须中性——
            与套餐续费（renew-pass-modal）的字面口径一致，不预设用户已支付；
            订单号由弹窗内的订单号行统一展示（客服排查入口）。 */
-        return t('暂未确认支付结果，请稍后刷新。');
+        return recheckPendingNotice ? t('暂未确认支付结果，请稍后刷新。') : null;
       case 'failed':
         /* 文案必须中性：failed 不等于「下单失败」——订单可能已创建成功
            （如支付票据未下发、pay_url 为空），说「下单失败」会诱导用户
@@ -377,6 +376,8 @@ export const CreditPackSection = ({
       ? t('购买成功，积分已到账。')
       : checkout.state.status === 'delivery_pending'
         ? t('积分到账处理中，请稍候…')
+        : isExpiredQrOrder
+          ? t('二维码已过期，请重新下单。')
         : checkout.state.status === 'delivery_exception'
           ? t('暂时无法确认订单状态，请稍后查询，避免重复付款。')
         : checkout.state.status === 'failed'

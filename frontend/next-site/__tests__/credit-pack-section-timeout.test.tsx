@@ -203,11 +203,8 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     });
     /* 超时不是错误：绝不出现「支付遇到问题」标题（那是 failed 专用） */
     expect(screen.queryByRole("heading", { name: "支付遇到问题" })).not.toBeInTheDocument();
-    /* 中性文案：不预设用户已支付（对齐套餐字面） */
-    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent(
-      "暂未确认支付结果，请稍后刷新。",
-    );
-    expect(screen.getByTestId("credit-pack-modal-checkout-status")).not.toHaveTextContent("支付已完成");
+    /* 初始超时态由说明行承载中性口径，避免和状态行重复 */
+    expect(screen.queryByTestId("credit-pack-modal-checkout-status")).not.toBeInTheDocument();
     expect(screen.queryByText("请使用微信扫描下方二维码完成支付")).not.toBeInTheDocument();
     expect(screen.getByText("暂时无法确认订单状态，请稍后查询，避免重复付款。")).toBeInTheDocument();
     /* 订单号独立透出（客服排查入口），不与状态文案耦合 */
@@ -227,6 +224,9 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     const recheck = await screen.findByRole("button", { name: "刷新" });
     await userEvent.click(recheck);
     expect(checkDeliveryOnceMock).toHaveBeenCalled();
+    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent(
+      "暂未确认支付结果，请稍后刷新。",
+    );
   });
 
   it("payment_pending 阶段即有常驻「刷新」按钮，手动单查未到账提示「暂未确认支付结果」", async () => {
@@ -298,6 +298,17 @@ describe("CreditPackSection 到账轮询超时（delivery_exception）", () => {
     await userEvent.click(screen.getByTestId("credit-pack-reorder"));
     expect(await screen.findByTestId("credit-pack-terms-checkbox")).toBeInTheDocument();
     expect(resetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("payment_pending 二维码过期时说明文案与二维码区域保持一致", async () => {
+    checkoutController.qrExpiresAt = Date.now() - 1_000;
+    await reachPayStage("payment_pending");
+
+    expect(await screen.findByTestId("credit-pack-qr-expired")).toHaveTextContent(
+      "二维码已过期，请重新下单。",
+    );
+    expect(screen.getAllByText("二维码已过期，请重新下单。", { selector: "p" })).toHaveLength(2);
+    expect(screen.queryByText("请使用微信扫描下方二维码完成支付")).not.toBeInTheDocument();
   });
 
   it("弹窗开着时二维码过期（就地翻转）：不再渲染 QR，显示过期提示与「重新下单」", async () => {
