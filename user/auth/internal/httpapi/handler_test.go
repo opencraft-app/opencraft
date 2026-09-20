@@ -1244,6 +1244,98 @@ func TestAdminRoutesRequireBearerToken(t *testing.T) {
 	}
 }
 
+func TestAdminShadowBindingRejectsWhenTestingAdminIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthShadowAdminTestRouter(false)
+	userID := createTestAuthUser(t, router, "shadow-disabled@example.com")
+	recorder := performAdminJSONRequest(t, router, http.MethodPost, "/admin/shadow-bindings", map[string]any{
+		"userId":         userID,
+		"shadowUserName": "mock_disabled",
+		"uin":            450860000013,
+		"ownerUin":       450860000013,
+		"appId":          1250000000,
+		"reason":         "personal DevCloud testing",
+	}, testAdminToken)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response errorResponseBody
+	decodeJSONResponse(t, recorder, &response)
+	if response.Code != "shadow_binding_admin_disabled" {
+		t.Fatalf("error code = %q, want shadow_binding_admin_disabled", response.Code)
+	}
+}
+
+func TestAdminShadowBindingLifecycle(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthShadowAdminTestRouter(true)
+	firstUserID := createTestAuthUser(t, router, "shadow-first@example.com")
+	secondUserID := createTestAuthUser(t, router, "shadow-second@example.com")
+	firstBody := map[string]any{
+		"userId":         firstUserID,
+		"shadowUserName": "mock_first",
+		"uin":            450860000013,
+		"ownerUin":       450860000013,
+		"appId":          1250000000,
+		"reason":         "personal DevCloud testing",
+	}
+
+	created := performAdminJSONRequest(t, router, http.MethodPost, "/admin/shadow-bindings", firstBody, testAdminToken)
+	if created.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", created.Code, created.Body.String())
+	}
+	var binding adminShadowBindingResponse
+	decodeJSONResponse(t, created, &binding)
+	if binding.UserID != firstUserID || binding.Status != shadowbinding.StatusActive || binding.Uin != 450860000013 {
+		t.Fatalf("unexpected created binding: %+v", binding)
+	}
+
+	queried := performAdminJSONRequest(t, router, http.MethodGet, "/admin/shadow-bindings/"+firstUserID, nil, testAdminToken)
+	if queried.Code != http.StatusOK {
+		t.Fatalf("expected query 200, got %d: %s", queried.Code, queried.Body.String())
+	}
+	decodeJSONResponse(t, queried, &binding)
+	if binding.ShadowUserName != "mock_first" || binding.AppID != 1250000000 {
+		t.Fatalf("unexpected queried binding: %+v", binding)
+	}
+
+	conflictingBody := map[string]any{
+		"userId":         secondUserID,
+		"shadowUserName": "mock_second",
+		"uin":            450860000013,
+		"ownerUin":       450860000013,
+		"appId":          1250000000,
+		"reason":         "must not steal occupied UIN",
+	}
+	conflict := performAdminJSONRequest(t, router, http.MethodPost, "/admin/shadow-bindings", conflictingBody, testAdminToken)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", conflict.Code, conflict.Body.String())
+	}
+
+	disabled := performAdminJSONRequest(t, router, http.MethodDelete, "/admin/shadow-bindings/"+firstUserID, map[string]any{
+		"reason": "test completed",
+	}, testAdminToken)
+	if disabled.Code != http.StatusOK {
+		t.Fatalf("expected disable 200, got %d: %s", disabled.Code, disabled.Body.String())
+	}
+	decodeJSONResponse(t, disabled, &binding)
+	if binding.Status != shadowbinding.StatusDisabled {
+		t.Fatalf("disabled status = %q, want %q", binding.Status, shadowbinding.StatusDisabled)
+	}
+
+	reused := performAdminJSONRequest(t, router, http.MethodPost, "/admin/shadow-bindings", conflictingBody, testAdminToken)
+	if reused.Code != http.StatusOK {
+		t.Fatalf("expected reuse 200, got %d: %s", reused.Code, reused.Body.String())
+	}
+	decodeJSONResponse(t, reused, &binding)
+	if binding.UserID != secondUserID || binding.Status != shadowbinding.StatusActive {
+		t.Fatalf("unexpected reused binding: %+v", binding)
+	}
+}
+
 func TestAdminUsersListReturnsCreatedUsers(t *testing.T) {
 	t.Parallel()
 
@@ -1780,6 +1872,47 @@ func newAuthTestRouter() *gin.Engine {
 
 func newAuthAdminTestRouter(adminToken string) *gin.Engine {
 	return newAuthTestRouterWithOptions(nil, adminToken)
+}
+
+func newAuthShadowAdminTestRouter(adminEnabled bool) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	authStore := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	shadowService := shadowbinding.New(shadowbinding.NewMemoryStore(), nil, shadowbinding.Options{
+		Enabled:      true,
+		AdminEnabled: adminEnabled,
+		Now:          fixedHTTPTestNow,
+	})
+	svc := service.NewWithStore(authStore, service.Options{
+		Now:           fixedHTTPTestNow,
+		SessionTTL:    30 * 24 * time.Hour,
+		ShadowBinding: shadowService,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:   true,
+		CookieSameSite: http.SameSiteNoneMode,
+		SessionTTL:     30 * 24 * time.Hour,
+		PublicBaseURL:  "https://lightclaw.tech",
+		AdminToken:     testAdminToken,
+	})
+}
+
+func createTestAuthUser(t *testing.T, router http.Handler, email string) string {
+	t.Helper()
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Shadow Binding Test",
+		"email":      email,
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("create test auth user: got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response sessionResponseBody
+	decodeJSONResponse(t, recorder, &response)
+	return response.Session.User.ID
 }
 
 func newAuthE2ETestRouter(adminToken string, e2eToken string) *gin.Engine {

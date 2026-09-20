@@ -258,7 +258,9 @@ master 源码
 - 北京 Gateway 激活阶段在 bridge artifact 合入后，才允许同时增加 KSOPS generator、非 optional
   Secret 引用和 Collaboration upstream 配置；本地预览 Origin 采用路由级 allowlist，不继承全局 `*`。
   `service-gateway.bundle` 的北京 publish paths 必须显式包含该 bridge SOPS artifact，否则 auto-pin
-  应在创建 promote MR 前 fail closed。
+  应在创建 promote MR 前 fail closed。Deployment 的 bridge Secret 注入 patch 必须由
+  `service-gateway/k8s/overlays/beijing-sandbox` source-facing Component 持有，与基准 Deployment 同层组合；
+  deploy-facing 目录只保留环境配置和 Secret generator，不能对仅由 Component 引入的资源做顶层 patch。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
@@ -335,6 +337,14 @@ CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testi
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
 Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
 namespace、name、目标 revision 与镜像。
+
+Shadow Binding 自助管理沿用既有 Auth `shadow_bindings` 表，不新增 migration。管理接口的代码即使进入
+`master` 也必须默认关闭；GitOps 只允许在 `argocd/services/lightclaw-auth/sandbox-bj-7/` 同时设置
+`SHADOW_BINDING_ADMIN_ENABLED=true` 与匹配的 `SHADOW_BINDING_ADMIN_ENVIRONMENT=sandbox-bj-7`。
+其他 Auth 环境不得出现启用值，运行时还要用精确 `LIGHTCLAW_PUBLIC_BASE_URL` 做第二层 fail-closed 校验。
+Gateway Dashboard 发布只更新 `sandbox-bj-7` 镜像 pin；新增 BFF 路径必须先验证 Dashboard admin session，
+再使用服务端 Auth admin token。不得把该开关或 UI 发布扩散到 production、staging、韩国 sandbox，
+也不得通过 App 级全量 Sync 携带无关资源。
 
 完成证据必须分层记录：源码合并 revision、Argo 目标 revision、精确资源 `Synced/Healthy`、运行镜像、
 国内/国际 registration、registry/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared

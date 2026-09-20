@@ -1,17 +1,22 @@
 import { NextRequest } from "next/server";
 import { proxyModuleAdminRequest } from "../../admin-proxy-route-helpers";
+import { requiresDashboardAdminValidation } from "../admin-route-policy";
 
 export const dynamic = "force-dynamic";
 
 const AUTH_ADMIN_API_URL = process.env.AUTH_ADMIN_API_URL;
 const AUTH_ADMIN_TOKEN = process.env.AUTH_ADMIN_TOKEN;
+const GATEWAY_API_URL = process.env.GATEWAY_API_URL;
 
 function proxyRequest(req: NextRequest, params: { path: string[] }) {
+  const isShadowBindingAdmin = requiresDashboardAdminValidation(params.path);
   return proxyModuleAdminRequest(req, params, {
     module: "auth",
     upstreamBaseURL: AUTH_ADMIN_API_URL,
     upstreamToken: AUTH_ADMIN_TOKEN,
     serviceName: "Auth admin",
+    requireAdminTokenValidation: isShadowBindingAdmin,
+    validationBaseURL: isShadowBindingAdmin ? GATEWAY_API_URL : undefined,
   });
 }
 

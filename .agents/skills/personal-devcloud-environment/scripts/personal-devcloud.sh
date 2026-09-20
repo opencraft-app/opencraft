@@ -630,12 +630,22 @@ central_session() {
 }
 
 wait_for_binding() {
-  local token="$1" response status i
+  local token="$1" response status i admin_response bootstrapped=0
   for i in $(seq 1 15); do
     response="$(curl_with_token "$token" "$AUTH_BASE/auth/shadow/binding" 2>/dev/null || true)"
     status="$(printf '%s' "$response" | json_value 'd.get("binding", {}).get("status", "")' 2>/dev/null || true)"
     if [[ "$status" == "active" ]]; then
       printf '%s\n' "$response"
+      return
+    fi
+    if ((bootstrapped == 0)) && binding_bootstrap_configured; then
+      bootstrapped=1
+      admin_response="$(bootstrap_binding_with_session "$token")"
+      printf '%s' "$admin_response" | python3 -c '
+import json, sys
+json.dump({"binding": json.load(sys.stdin)}, sys.stdout, ensure_ascii=False, separators=(",", ":"))
+print()
+'
       return
     fi
     curl_with_token "$token" -X POST "$AUTH_BASE/auth/shadow/binding/retry" >/dev/null 2>&1 || true
@@ -645,13 +655,96 @@ wait_for_binding() {
   die "central shadow binding did not become active"
 }
 
+binding_bootstrap_configured() {
+  [[ -n "${PERSONAL_DEV_ADMIN_TOKEN:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_USER_NAME:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_UIN:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_OWNER_UIN:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_APP_ID:-}" \
+    && -n "${PERSONAL_DEV_BINDING_REASON:-}" ]]
+}
+
+central_user_id_for_session() {
+  local token="$1" response user_id
+  response="$(curl_with_token "$token" "$AUTH_BASE/auth/session")" \
+    || die "could not resolve the current testing user"
+  user_id="$(printf '%s' "$response" | json_value 'd.get("session", {}).get("user", {}).get("id", "")')"
+  [[ "$user_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "testing session returned an invalid user id"
+  printf '%s\n' "$user_id"
+}
+
+bootstrap_binding_with_session() {
+  local session_token="$1" admin_token user_id shadow_name uin owner_uin app_id reason body response status
+  binding_bootstrap_configured \
+    || die "binding is missing; use the testing Gateway Dashboard or provide the managed PERSONAL_DEV_ADMIN_TOKEN and PERSONAL_DEV_SHADOW_* inputs"
+  admin_token="$PERSONAL_DEV_ADMIN_TOKEN" # pragma: allowlist secret -- runtime environment reference only
+  shadow_name="$PERSONAL_DEV_SHADOW_USER_NAME"
+  uin="$PERSONAL_DEV_SHADOW_UIN"
+  owner_uin="$PERSONAL_DEV_SHADOW_OWNER_UIN"
+  app_id="$PERSONAL_DEV_SHADOW_APP_ID"
+  reason="$PERSONAL_DEV_BINDING_REASON"
+  [[ "$shadow_name" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid managed shadow username"
+  [[ "$uin" =~ ^[1-9][0-9]*$ && "$owner_uin" =~ ^[1-9][0-9]*$ && "$app_id" =~ ^[1-9][0-9]*$ ]] \
+    || die "managed UIN, OwnerUIN, and AppID must be positive integers"
+  user_id="$(central_user_id_for_session "$session_token")"
+
+  new_private_temp shadow-binding
+  body="$TEMP_FILE_RESULT"
+  python3 - "$body" "$user_id" "$shadow_name" "$uin" "$owner_uin" "$app_id" "$reason" <<'PY'
+import json, sys
+path, user_id, shadow_name, uin, owner_uin, app_id, reason = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump({
+        "userId": user_id,
+        "shadowUserName": shadow_name,
+        "uin": int(uin),
+        "ownerUin": int(owner_uin),
+        "appId": int(app_id),
+        "reason": reason.strip(),
+    }, fh, ensure_ascii=False)
+PY
+  response="$(curl_with_token "$admin_token" -X POST -H 'Content-Type: application/json' \
+    --data-binary "@$body" "$AUTH_BASE/admin/shadow-bindings")" \
+    || die "testing shadow binding bootstrap failed"
+  remove_private_temp "$body"
+  status="$(printf '%s' "$response" | json_value 'd.get("status", "")')"
+  [[ "$status" == "active" ]] || die "testing shadow binding bootstrap did not return active"
+  printf '%s\n' "$response"
+}
+
+bootstrap_binding() {
+  prepare_state
+  local token
+  token="$(central_session)"
+  bootstrap_binding_with_session "$token"
+}
+
+release_binding() {
+  prepare_state
+  local admin_token reason token user_id body response
+  admin_token="${PERSONAL_DEV_ADMIN_TOKEN:-}"
+  reason="${PERSONAL_DEV_BINDING_RELEASE_REASON:-${PERSONAL_DEV_BINDING_REASON:-}}"
+  [[ -n "$admin_token" && -n "$reason" ]] \
+    || die "release-binding requires PERSONAL_DEV_ADMIN_TOKEN and a binding release reason"
+  token="$(central_session)"
+  user_id="$(central_user_id_for_session "$token")"
+  new_private_temp shadow-unbind
+  body="$TEMP_FILE_RESULT"
+  json_body_file "$body" "reason=$reason"
+  response="$(curl_with_token "$admin_token" -X DELETE -H 'Content-Type: application/json' \
+    --data-binary "@$body" "$AUTH_BASE/admin/shadow-bindings/$user_id")" \
+    || die "testing shadow binding release failed"
+  remove_private_temp "$body"
+  printf '%s\n' "$response"
+}
+
 ensure_local_identity() {
   local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token
   require_personal_context
   central_token="$(central_session)"
   prepare_local_credentials
   email="$LOCAL_IDENTITY_EMAIL"
-  password="$LOCAL_IDENTITY_PASSWORD"
+  password="$LOCAL_IDENTITY_PASSWORD" # pragma: allowlist secret -- generated private state reference only
 
   new_private_temp local-signup
   body="$TEMP_FILE_RESULT"
@@ -1390,6 +1483,8 @@ Commands:
   heartbeat-loop  Internal background renewal loop
   status          Show local health, registration, and Kubernetes workload state
   browser-login   Create a single-use browser login URL without printing its session token
+  bootstrap-binding  Bind the current testing user to a managed mock account without persisting the admin token
+  release-binding    Disable the current testing binding so its mock UIN can be reused
   verify-order-no-pay        Run inquiry, create a pending-pay order, and expect no billing callback
   verify-checkcreate-no-pay  Deprecated alias; does not prove checkCreate
   verify-checkmodify-no-pay  Refuse until this checkout exposes a real modify-order API
@@ -1410,6 +1505,8 @@ main() {
     heartbeat-loop) heartbeat_loop ;;
     status) status ;;
     browser-login) browser_login ;;
+    bootstrap-binding) bootstrap_binding ;;
+    release-binding) release_binding ;;
     verify-order-no-pay) verify_order_no_pay ;;
     verify-checkcreate-no-pay) verify_checkcreate_no_pay ;;
     verify-checkmodify-no-pay) verify_checkmodify_no_pay ;;

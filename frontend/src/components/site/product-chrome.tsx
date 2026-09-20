@@ -9,6 +9,7 @@ import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 interface ProductReturnHomeHeaderProps {
+  beforeUserMenu?: ReactNode;
   className?: string;
   reloadLanguageAfterSwitch?: boolean;
   renderLink?: RenderPublicSiteHeaderLink;
@@ -29,6 +30,7 @@ const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
 );
 
 export function ProductReturnHomeHeader({
+  beforeUserMenu,
   className,
   reloadLanguageAfterSwitch = false,
   renderLink = renderAppHeaderLink,
@@ -40,6 +42,7 @@ export function ProductReturnHomeHeader({
 
   return (
     <PublicSiteHeader
+      beforeUserMenu={beforeUserMenu}
       authSnapshot={{ authReady, isAuthenticated: isLoggedIn }}
       className={className}
       position="fixed"

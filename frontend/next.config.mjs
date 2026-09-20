@@ -40,6 +40,8 @@ const localProxyRewrites = isLocalProxy
 const config = {
   reactStrictMode: true,
   devIndicators: false,
+  // 只在本地开发时允许双 dev 实例使用独立 dist 目录，避免影响 CI / export build。
+  distDir: isDevelopment && process.env.NEXT_DIST_DIR ? process.env.NEXT_DIST_DIR : '.next',
   transpilePackages: ['velachat', '@lightvela/agent-core'],
   output: isDevelopment ? undefined : 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,

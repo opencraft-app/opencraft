@@ -177,7 +177,8 @@ describe("UserAvatarMenu", () => {
       "left-0",
       "origin-bottom-left",
     );
-    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
     fireEvent.mouseLeave(trigger.parentElement!);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -206,14 +207,15 @@ describe("UserAvatarMenu", () => {
     const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
     fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
 
-    expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "账号管理" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
     unmount();
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
-    expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
+    expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
   });
 
   it("opens the international language picker beside the account menu", () => {
@@ -453,8 +455,8 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
-    const companionLink = screen.getByRole("link", { name: "我的智能体伙伴" });
-    const accountLink = screen.getByRole("link", { name: "账号管理" });
+    const companionLink = screen.getByRole("link", { name: "我的智能体" });
+    const accountLink = screen.getByRole("link", { name: "账号" });
     const workbenchLink = screen.getByRole("link", { name: "工作台" });
 
     expect(companionLink).toHaveAttribute("href", "/agents");
@@ -464,16 +466,31 @@ describe("UserAvatarMenu", () => {
     expect(screen.queryByRole("link", { name: "我的工作台" })).not.toBeInTheDocument();
   });
 
-  it("uses natural English labels for the companion and account entries", () => {
+  it.each([
+    ["en-US", "My Agents", "Back to Agents"],
+    ["zh-CN", "我的智能体", "返回智能体"],
+    ["zh-Hant", "我的智能體", "返回智能體"],
+    ["ja-JP", "マイエージェント", "エージェントに戻る"],
+    ["ko-KR", "내 에이전트", "에이전트로 돌아가기"],
+    ["es", "Mis agentes", "Volver a Agentes"],
+    ["id-ID", "Agen Saya", "Kembali ke Agen"],
+  ])("distinguishes the Agents menu and return action in %s", (locale, menu, back) => {
+    const keys = readGeneratedDictionary("zh-to-key");
+    const dictionary = readGeneratedDictionary(locale);
+    expect(dictionary[keys["我的智能体"]!]).toBe(menu);
+    expect(dictionary[keys["返回智能体"]!]).toBe(back);
+  });
+
+  it("uses natural English labels for the agents and account entries", () => {
     const keys = readGeneratedDictionary("zh-to-key");
     const english = readGeneratedDictionary("en-US");
-    const companionKey = keys["我的智能体伙伴"];
-    const accountKey = keys["账号管理"];
+    const companionKey = keys["我的智能体"];
+    const accountKey = keys["账号"];
 
     expect(companionKey).toBeDefined();
     expect(accountKey).toBeDefined();
-    expect(english[companionKey!]).toBe("My AI Companion");
-    expect(english[accountKey!]).toBe("Account Settings");
+    expect(english[companionKey!]).toBe("My Agents");
+    expect(english[accountKey!]).toBe("Account");
   });
 
   it("uses a natural English label for the language entry", () => {
