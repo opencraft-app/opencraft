@@ -248,7 +248,7 @@ describe("AgentSettingsPage renewal reminder", () => {
     activePass = { ...buildPass(), status: "modifying" };
     const view = renderAgentSettingsPage();
 
-    expect(screen.getByRole("status")).toHaveTextContent("正在为 Hermes Agent 升级套餐");
+    expect(screen.getByRole("status")).toHaveTextContent("正在升级您的 LightVela 套餐...");
     expect(await screen.findByText("巡航套餐")).toBeInTheDocument();
     expect(screen.getByText("目标套餐")).toBeInTheDocument();
     expect(screen.queryByText("当前套餐")).not.toBeInTheDocument();

@@ -385,7 +385,11 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage("billing");
 
+    expect(screen.getByText("当前套餐")).toBeInTheDocument();
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    expect(screen.getByText("生效中")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "套餐说明" })).toHaveAttribute("href", "/docs/plans");
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
     const subscriptionHeader = subscriptionHeading.parentElement;
 
@@ -553,7 +557,9 @@ describe("AccountPage nickname audit state", () => {
     await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
 
     expect(await screen.findByText("续费套餐")).toBeInTheDocument();
-    expect(screen.getByText("生效中")).toBeInTheDocument();
+    const modal = screen.getByRole("button", { name: "关闭" }).parentElement;
+    expect(modal).not.toBeNull();
+    expect(within(modal!).getByText("生效中")).toBeInTheDocument();
     expect(screen.queryByText("有效中")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /月付/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /季付/ })).toBeInTheDocument();

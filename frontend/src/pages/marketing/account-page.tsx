@@ -767,6 +767,7 @@ const SubscriptionSection = ({
   const t = useT();
   const { i18n } = useTranslation();
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
+  const plansDocHref = publicSiteHref("/docs/plans", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
   const { refreshPasses, user, modifyingPass, passUpgradeFailed } = useOpenClaw();
   useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const { session } = useSession();
@@ -918,6 +919,18 @@ const SubscriptionSection = ({
 
   // 展示用的套餐名称
   const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
+  const legacySubscriptionStatus = operablePass ? null : subscription?.status;
+  const displayStatus = isModifying
+    ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中"))
+    : passStatus === "expired" || legacySubscriptionStatus === "expired"
+      ? t("已过期")
+      : passStatus === "isolated"
+        ? t("隔离期")
+        : legacySubscriptionStatus === "pending_payment"
+          ? t("待支付")
+          : legacySubscriptionStatus === "cancelled"
+            ? t("已取消")
+            : t("生效中");
 
   /* ── 未订阅：缺省引导状态 ── */
   if (!hasActive) {
@@ -1005,12 +1018,22 @@ const SubscriptionSection = ({
               <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/8f6347f3-5b3f-4dfb-844d-bb2501cb9e3d.png" alt="" className="h-7 w-7 rounded-lg object-cover" />
             </div> */}
             <div>
-              <p className="text-sm font-bold" style={{ color: "#333" }}>{displayName}</p>
-              <p className="text-xs" style={{ color: "#999" }}>{isModifying ? t("套餐信息将在升级完成后更新，到期时间不变。") : t("当前生效")}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold" style={{ color: "#333" }}>{t("当前套餐")}</p>
+                <AppLink
+                  to={plansDocHref}
+                  className="inline-flex items-center gap-0.5 text-xs font-medium transition-colors hover:text-black/70"
+                  style={{ color: "var(--lw-accent)" }}
+                >
+                  {t("套餐说明")}
+                  <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                </AppLink>
+              </div>
+              <p className="text-sm" style={{ color: "#666" }}>{displayName}</p>
             </div>
           </div>
           <span role={isModifying ? "status" : undefined} className="inline-flex shrink-0 items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            {isModifying ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中")) : t("当前套餐")}
+            {displayStatus}
           </span>
         </div>
 

@@ -323,6 +323,7 @@ describe("AccountPage global renewal action", () => {
     activePass = buildExpiredPass();
     renderAccountPage();
 
+    expect(screen.getAllByText("已过期")).toHaveLength(2);
     expect(screen.getByText("Renewals are coming soon. This plan has expired and cannot be renewed yet.")).toBeInTheDocument();
     expect(screen.queryByText("套餐已过期，请及时续费以免进入隔离期。")).not.toBeInTheDocument();
 
@@ -331,6 +332,7 @@ describe("AccountPage global renewal action", () => {
     activePass = buildIsolatedPass();
     renderAccountPage();
 
+    expect(screen.getByText("隔离期")).toBeInTheDocument();
     expect(screen.getByText("Renewals are coming soon. You can still destroy this plan and subscribe again.")).toBeInTheDocument();
     expect(screen.queryByText("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")).not.toBeInTheDocument();
   });
