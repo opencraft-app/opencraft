@@ -4967,15 +4967,6 @@ export function AutomationFormModal({
           )}
         </div>
 
-        {executionMode === "agent" && (
-          <AutomationSkillPicker
-            value={selectedSkills}
-            loadState={skillLoadState}
-            onChange={setSelectedSkills}
-            onRetry={() => void onRefreshSkills()}
-          />
-        )}
-
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
           <div className="mt-3">
@@ -5049,6 +5040,15 @@ export function AutomationFormModal({
               </div>
             )}
           </div>
+        )}
+
+        {executionMode === "agent" && (
+          <AutomationSkillPicker
+            value={selectedSkills}
+            loadState={skillLoadState}
+            onChange={setSelectedSkills}
+            onRetry={() => void onRefreshSkills()}
+          />
         )}
 
         {executionMode === "agent" && (

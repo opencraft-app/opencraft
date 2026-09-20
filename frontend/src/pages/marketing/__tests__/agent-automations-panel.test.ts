@@ -1021,7 +1021,12 @@ describe("cron context panel integration", () => {
   it.each(["create", "edit"] as const)("uses the compact responsive form in $mode mode", async (mode) => {
     renderAutomationForm({
       mode,
-      initialJob: mode === "edit" ? makeCronJob({ id: "edit-width", name: "编辑宽度任务" }) : undefined,
+      initialJob: mode === "edit" ? makeCronJob({
+        id: "edit-width",
+        name: "编辑宽度任务",
+        schedule: { kind: "cron", expr: "0 9 * * *", display: "每天 09:00" },
+        lightvela_schedule: { kind: "daily_times", times: ["09:00"] },
+      }) : undefined,
     });
 
     const dialog = screen.getByRole("dialog");
@@ -1035,13 +1040,20 @@ describe("cron context panel integration", () => {
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
     expect(taskDescription).toHaveClass("resize-y");
     expect(taskDescription).not.toHaveClass("resize-none");
+    if (mode === "create") {
+      fireEvent.click(within(dialog).getByRole("button", { name: localizedText("周期", "Recurring") }));
+    }
     const notificationLabel = within(dialog).getByText(localizedText("通知方式", "Notification"));
+    const effectiveWindowLabel = within(dialog).getByText(localizedText("生效时间段", "Effective window"));
     const skillLabel = within(dialog).getByText(localizedText("调用技能", "Use Skill"));
     expect(
       taskDescription.compareDocumentPosition(notificationLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      notificationLabel.compareDocumentPosition(skillLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      notificationLabel.compareDocumentPosition(effectiveWindowLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      effectiveWindowLabel.compareDocumentPosition(skillLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: localizedText("测试运行", "Test run") })).toHaveClass("rounded-lg", "text-sm");
     expect(within(dialog).getByRole("button", { name: localizedText("取消", "Cancel") })).toHaveClass("rounded-lg", "text-sm");
