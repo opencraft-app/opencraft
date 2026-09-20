@@ -48,7 +48,9 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 “认证用户 → DevCloud 测试绑定”页面分配 mock 账号。受控 Codex 环境也可从本机 secret
 provider 临时取得 `PERSONAL_DEV_ADMIN_TOKEN`，并同时传入 `PERSONAL_DEV_SHADOW_USER_NAME`、
 `PERSONAL_DEV_SHADOW_UIN`、`PERSONAL_DEV_SHADOW_OWNER_UIN`、`PERSONAL_DEV_SHADOW_APP_ID`
-和 `PERSONAL_DEV_BINDING_REASON`；`up` 会从当前 testing session 派生 LightVela user ID，
+和 `PERSONAL_DEV_BINDING_REASON`。由于公网 Service Gateway 不暴露 Auth admin 路由，受控环境还需
+把 Auth testing 服务转发到 loopback，并通过 `PERSONAL_DEV_AUTH_ADMIN_BASE_URL` 传入该本地地址；
+`up` 会从当前 testing session 派生 LightVela user ID，
 调用 Auth testing 管理接口完成绑定。admin token 不写入 DevCloud 状态文件、请求正文或输出。
 不要把共享 admin token 发给开发者，也不要把上述变量写进仓库或 shell profile。
 
@@ -81,7 +83,8 @@ PERSONAL_DEV_SITE=intl bash .agents/skills/personal-devcloud-environment/scripts
 
 ```bash
 PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh bootstrap-binding
-PERSONAL_DEV_SITE=cn PERSONAL_DEV_BINDING_RELEASE_REASON='test completed' \
+PERSONAL_DEV_SITE=cn PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:<受控转发端口>' \
+  PERSONAL_DEV_BINDING_RELEASE_REASON='test completed' \
   bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh release-binding
 ```
 
