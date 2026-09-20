@@ -1029,7 +1029,7 @@ describe("cron context panel integration", () => {
     const taskDescription = within(dialog).getByPlaceholderText(
       isGlobal ? /Describe what you want the agent to understand and do/ : /请描述需要智能体理解并执行的任务/,
     );
-    expect(form).toHaveClass("w-full", "max-w-[800px]", "rounded-lg", "p-5");
+    expect(form).toHaveClass("w-full", "max-w-[815px]", "rounded-lg", "p-5");
     expect(form).toHaveClass("h-[755px]", "max-h-[calc(100dvh-16px)]", "flex", "flex-col");
     expect(dialog).toHaveClass("py-2");
     expect(form).not.toHaveStyle({ maxHeight: "min(860px, calc(100dvh - 32px))" });
