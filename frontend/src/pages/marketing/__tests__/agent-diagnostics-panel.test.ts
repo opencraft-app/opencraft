@@ -47,6 +47,7 @@ function diagnosticsPanelProps(execDebugCommand = vi.fn().mockResolvedValue({
     resetAgentAction: { disabled: false, loading: false, tooltip: "", onExecute: vi.fn() },
     resetAgentConsole: [],
     resetAgentConsoleRef: { current: null },
+    maintenanceBusy: false,
   };
 }
 
@@ -242,6 +243,42 @@ describe("session repair", () => {
     render(createElement(AgentDiagnosticsPanel, {
       ...diagnosticsPanelProps(execDebugCommand),
       profileId: undefined,
+    }));
+
+    expect(getSessionRepairButton()).toBeDisabled();
+    fireEvent.click(getSessionRepairButton());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(execDebugCommand).not.toHaveBeenCalled();
+  });
+
+  it("disables log reads and exports for a named Bot without a Profile", () => {
+    const execDebugCommand = vi.fn();
+    const execDebugCommandStream = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      profileId: undefined,
+      execDebugCommandStream,
+    }));
+
+    const logsCard = screen.getByRole("heading", { name: "最近日志" }).closest("article");
+    if (!logsCard) throw new Error("logs card not found");
+    expect(within(logsCard).queryByText("hermes -p 'default' logs --since 1h -n 50")).not.toBeInTheDocument();
+    const queryButtons = within(logsCard).getAllByRole("button", { name: "查询" });
+    expect(within(logsCard).getByRole("button", { name: "导出" })).toBeDisabled();
+    expect(within(logsCard).getByRole("button", { name: "选择日志时间段" })).toBeDisabled();
+    queryButtons.forEach((button) => expect(button).toBeDisabled());
+
+    queryButtons.forEach((button) => fireEvent.click(button));
+    fireEvent.click(within(logsCard).getByRole("button", { name: "导出" }));
+    expect(execDebugCommand).not.toHaveBeenCalled();
+    expect(execDebugCommandStream).not.toHaveBeenCalled();
+  });
+
+  it("disables session repair while another maintenance action is running", () => {
+    const execDebugCommand = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      maintenanceBusy: true,
     }));
 
     expect(getSessionRepairButton()).toBeDisabled();

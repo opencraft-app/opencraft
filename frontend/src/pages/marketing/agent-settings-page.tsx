@@ -5706,6 +5706,7 @@ export const AgentSettingsPage = ({
                               }}
                               resetAgentConsole={acliResetConsole}
                               resetAgentConsoleRef={acliResetConsoleRef}
+                              maintenanceBusy={maintenanceBusy}
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}

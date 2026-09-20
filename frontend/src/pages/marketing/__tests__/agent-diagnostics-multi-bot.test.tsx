@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -249,6 +249,16 @@ describe("multi-Bot diagnostics", () => {
     const maintenance = screen.getAllByRole("button", {name:"执行"});
     expect(maintenance.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
     expect(startRescueExport).not.toHaveBeenCalled();
+  });
+
+  it("disables session repair while an instance restore is running", async () => {
+    getHermesImportStatus.mockResolvedValue({phase:"wait_tat",logs:[{message:"shared restore progress",level:"info"}]});
+    render(page("ins-1"));
+
+    await screen.findByText("当前已有 Agent 恢复任务运行中。");
+    const repairCard = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+    expect(repairCard).not.toBeNull();
+    expect(within(repairCard!).getByRole("button", { name: "执行" })).toBeDisabled();
   });
 
   it("keeps single-Bot maintenance available and shows quota-disabled creation", async () => {
