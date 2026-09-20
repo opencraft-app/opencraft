@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
+import { Bot, BrainCircuit, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect, useId } from "react";
 import { InternationalLanguageMenu } from "@/components/site/language-switcher";
@@ -8,9 +8,16 @@ import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
-import { useAppNavigate } from "@/lib/app-navigation";
+import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { ACCOUNT_BILLING_PATH, AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import {
+  ACCOUNT_BILLING_PATH,
+  AGENTS_HOME_PATH,
+  AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionHref,
+  shouldMoveModelEntryToAccountMenu,
+  shouldShowWorkbenchEntry,
+} from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
 import { emitConsoleShowEvent } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
@@ -32,6 +39,7 @@ export const UserAvatarMenu = ({
   const { activePass } = useOpenClaw();
   const t = useT();
   const navigate = useAppNavigate();
+  const [searchParams] = useAppSearchParams();
   const user = session.user;
   const [open, setOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
@@ -111,6 +119,7 @@ export const UserAvatarMenu = ({
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
+  const showModelEntry = shouldMoveModelEntryToAccountMenu(activePass?.bundle_id);
   const isSidebar = variant === "sidebar";
 
   return (
@@ -253,6 +262,16 @@ export const UserAvatarMenu = ({
                 <CreditCard className={menuIconClass} />
                 {t("套餐与费用")}
               </a>
+              {showModelEntry ? (
+                <a
+                  href={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.model, searchParams)}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <BrainCircuit className={menuIconClass} />
+                  {t("模型")}
+                </a>
+              ) : null}
               {showWorkbenchEntry ? (
                 <a
                   href={AGENT_SECTION_PATH_BY_ID.workbench}

@@ -218,6 +218,58 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
   });
 
+  it.each(["bundle_launch_ai_01", "bundle_cruise_ai_01"])(
+    "places the Model link after Plans & billing for %s",
+    (bundleId) => {
+      useSession.mockReturnValue({
+        session: {
+          user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+          currentSubscription: null,
+        },
+        signOut: vi.fn(),
+      });
+      useOpenClaw.mockReturnValue({
+        activePass: {
+          bundle_id: bundleId,
+          bundle_name: "Launch AI",
+        },
+      });
+
+      render(
+        <AppNavigationProvider value={{ ...createNavigationValue(), search: "?bot=bot%2Fsales+east" }}>
+          <UserAvatarMenu variant="sidebar" />
+        </AppNavigationProvider>,
+      );
+      fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+
+      const billingLink = screen.getByRole("link", { name: "套餐与费用" });
+      const modelLink = screen.getByRole("link", { name: "模型" });
+      expect(modelLink).toHaveAttribute("href", "/agents/models?bot=bot%2Fsales+east");
+      expect(billingLink.compareDocumentPosition(modelLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    },
+  );
+
+  it("keeps Model out of the account menu for standard plans", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: null,
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: {
+        bundle_id: "bundle_launch_01",
+        bundle_name: "Launch",
+      },
+    });
+
+    render(<UserAvatarMenu variant="sidebar" />);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
+  });
+
   it("opens the international language picker beside the account menu", () => {
     useSession.mockReturnValue({
       session: {

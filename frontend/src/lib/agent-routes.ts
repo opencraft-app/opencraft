@@ -35,6 +35,15 @@ export const ACCOUNT_PATH = "/account";
 /** 套餐与费用页路由 */
 export const ACCOUNT_BILLING_PATH = `${ACCOUNT_PATH}/billing`;
 
+const MODEL_ENTRY_ACCOUNT_MENU_BUNDLE_IDS = new Set([
+  "bundle_launch_ai_01",
+  "bundle_cruise_ai_01",
+]);
+
+/** AI 积分套餐把模型配置入口从 Agent 主导航迁移到用户菜单。 */
+export const shouldMoveModelEntryToAccountMenu = (bundleId?: string | null): boolean =>
+  MODEL_ENTRY_ACCOUNT_MENU_BUNDLE_IDS.has((bundleId ?? "").trim());
+
 /** 账号页实名提醒 query key：首页「立即创建」跳转账号页时携带，触发实名提醒 tips（避免魔法字符串，统一引用） */
 export const REALNAME_REQUIRED_QUERY_KEY = "realname_required";
 

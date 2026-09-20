@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
-import type { User } from "@/domain/types";
+import type { Pass, User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 
@@ -11,6 +11,7 @@ const refreshProfile = vi.fn();
 
 let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
+let activePass: Pass | null = null;
 
 vi.mock("@/i18n/t", () => ({
   t: (text: string) => text,
@@ -67,7 +68,7 @@ vi.mock("@/contexts/agent-context", () => ({
     refreshPasses: vi.fn(),
     isSubscribed: true,
     addBot: vi.fn(),
-    activePass: null,
+    activePass,
   }),
 }));
 
@@ -114,6 +115,17 @@ const buildBot = (): OpenClawBot => ({
   installedSkills: [],
 });
 
+const buildPass = (bundleId: string): Pass => ({
+  pass_id: "pass_agent_nav",
+  user_id: "usr_dsh_lab",
+  bundle_id: bundleId,
+  bundle_name: bundleId,
+  created_time: "2026-08-20T00:00:00.000Z",
+  expired_time: "2099-08-20T00:00:00.000Z",
+  credit_total: 1000,
+  credit_available: 900,
+});
+
 const renderLabPage = () => render(
   <AppNavigationProvider value={createNavigation()}>
     <AgentSettingsPage sectionId="deepseek-harness" showHeader={false} />
@@ -134,6 +146,7 @@ describe("AgentSettingsPage 实验室导航", () => {
       createdAt: "2026-08-20T00:00:00.000Z",
     };
     bots = [buildBot()];
+    activePass = null;
   });
 
   afterEach(() => {
@@ -165,4 +178,37 @@ describe("AgentSettingsPage 实验室导航", () => {
     expect(screen.getByRole("button", { name: "删除 Bot" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
   });
+
+  it("将通道、模型、技能和定时任务统一到使用分组", async () => {
+    renderLabPage();
+
+    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
+    const useGroup = within(navigation).getByRole("group", { name: "使用" });
+
+    expect(within(navigation).queryByRole("group", { name: "配置" })).not.toBeInTheDocument();
+    expect(within(useGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/agents/channels",
+      "/agents/models",
+      "/agents/skills",
+      "/agents/automations",
+    ]);
+  });
+
+  it.each(["bundle_launch_ai_01", "bundle_cruise_ai_01"])(
+    "在 %s 套餐的使用分组中隐藏模型入口",
+    async (bundleId) => {
+      activePass = buildPass(bundleId);
+      renderLabPage();
+
+      const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
+      const useGroup = within(navigation).getByRole("group", { name: "使用" });
+
+      expect(within(useGroup).queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
+      expect(within(useGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+        "/agents/channels",
+        "/agents/skills",
+        "/agents/automations",
+      ]);
+    },
+  );
 });

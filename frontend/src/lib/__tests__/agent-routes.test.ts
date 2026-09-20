@@ -9,6 +9,7 @@ import {
   getAgentLabSectionFromSlug,
   getAgentSectionFromSlug,
   getAgentSectionHref,
+  shouldMoveModelEntryToAccountMenu,
   shouldShowWorkbenchEntry,
 } from "@/lib/agent-routes";
 
@@ -76,4 +77,18 @@ describe("agent route constants", () => {
     expect(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, "bot/sales east"))
       .toBe("/agents/channels?bot=bot%2Fsales+east");
   });
+
+  it.each(["bundle_launch_ai_01", "bundle_cruise_ai_01"])(
+    "moves the model entry into the account menu for %s",
+    (bundleId) => {
+      expect(shouldMoveModelEntryToAccountMenu(bundleId)).toBe(true);
+    },
+  );
+
+  it.each([null, undefined, "", "bundle_launch_01", "bundle_cruise_01"])(
+    "keeps the model entry in the Agent navigation for %s",
+    (bundleId) => {
+      expect(shouldMoveModelEntryToAccountMenu(bundleId)).toBe(false);
+    },
+  );
 });
