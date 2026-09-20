@@ -135,6 +135,7 @@
 - 上游 subtree 与 vendored 内容保留 pin 和本地差异，不无边界复制。
 - OpenCraft 迁入后由 mono2 单一所有；旧仓库仅保留历史。它与 `frontend` 通过显式生成闭包过渡共享 Agent Console，生成层不得成为第二真源，后续稳定边界应收敛为 workspace package。
 - Agent Console 生成命令必须在 Git 工作树中记录真实源 revision；任何命中生成闭包的 `frontend` 源码变更（包括生成的 i18n 字典）都必须在最终源码提交后运行 `npm --prefix opencraft run sync:mono2-agent-console`，并在同一 MR 提交机械生成副本与 `UPSTREAM.json`，再运行 `check:mono2-agent-console`。并行 MR 先后命中闭包时，后合分支须先纳入最新目标分支，再按合并后的源码重新生成。只读漂移检查可在不包含 `.git` 的 CI 隔离目录中复用已提交清单的 revision，但仍须逐文件校验源内容与 SHA，不能因此跳过 vendored 一致性检查。
+- 当前同步脚本的 `sourceRevision` 取 `frontend/src`、`frontend/public/tat-hermes-web-proxy-sw.js` 与 `frontend/public/assets/skills` 路径集合的最后一次提交，范围大于生成闭包。因此，闭包之外的人设页等前端源码提交也需通过标准脚本刷新清单的 revision；当生成组件、逐文件 SHA 与资源清单均未变化时，只提交 `UPSTREAM.json` 的 revision 更新，不手工改写生成内容。该 SHA 记录源码基线，不表示所有前端页面都已共享给 OpenCraft。
 - 共享范围包含 Dialog 原语、i18n 字典 / 映射和 HTTP Repository，不能只按被修改的业务页面判断同步范围。Dialog 的关闭文案、遮罩样式等可选 prop 与键盘焦点样式随来源同步，同时保留 OpenCraft 的 portal / import 适配。Repository 在升配期间遇到嵌套 Bot 查询 `403 PASS_MODIFYING` 时保留实例根 Bot 数据；其他鉴权错误仍抛出，该数据降级不放宽服务端权限，也不表示升配已交付。
 - Agents 的共享 UI 原语与纯展示组件不拥有账户、实例、Bot/Profile、Repository 或命令执行能力；功能 controller 与宿主继续拥有请求、草稿和可中断资源。弹窗关闭、交互禁用与远端取消是不同操作，视图迁移不得改写成功/失败后的关闭时机或销毁业务资源。具体模块输入、动作与资源归属见 [Agents 模块边界](../../../frontend/openspec/changes/2026-09-16-agents-radix-boundaries.md)。
 - Agents 桌面左栏由既有顶部 header 和固定 sidebar 连续覆盖视口；Agent 信息与账户入口不收缩，中间导航/会话区单独滚动并隐藏滚动条。布局层不拥有 SDK 会话，不能通过切换桌面/移动布局重建主内容；浮层须通过 Portal 避免被左栏裁切，加载态沿用相同槽位。
