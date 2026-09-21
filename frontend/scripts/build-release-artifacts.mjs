@@ -91,13 +91,17 @@ function runCommand(command, args, env) {
   });
 }
 
+const EMBEDDED_WORKBENCH_DIRECTORY = "__opencraft";
+const EMBEDDED_WORKBENCH_LOADER = "embedded-workbench.js";
+const EMBEDDED_WORKBENCH_SCRIPT_PATH = `/${EMBEDDED_WORKBENCH_DIRECTORY}/${EMBEDDED_WORKBENCH_LOADER}`;
+
 export function stageOpenCraftEmbeddedWorkbench(
   outputRoot,
   env = process.env,
 ) {
   const scriptPath = env.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL?.trim();
   if (!scriptPath) return false;
-  if (scriptPath !== "/__opencraft/embedded-workbench.js") {
+  if (scriptPath !== EMBEDDED_WORKBENCH_SCRIPT_PATH) {
     throw new Error(
       `frontend artifact only stages the reviewed same-origin OpenCraft loader, got ${scriptPath}`,
     );
@@ -111,7 +115,7 @@ export function stageOpenCraftEmbeddedWorkbench(
   }
   const sourceRoot = resolve(configuredSource);
   for (const requiredPath of [
-    "embedded-workbench.js",
+    EMBEDDED_WORKBENCH_LOADER,
     "version.json",
     ".vite/manifest.json",
   ]) {
@@ -120,7 +124,7 @@ export function stageOpenCraftEmbeddedWorkbench(
     }
   }
 
-  const targetRoot = resolve(outputRoot, "__opencraft");
+  const targetRoot = resolve(outputRoot, EMBEDDED_WORKBENCH_DIRECTORY);
   const privateManifestRoot = join(sourceRoot, ".vite");
   rmSync(targetRoot, { recursive: true, force: true });
   cpSync(sourceRoot, targetRoot, {
@@ -129,7 +133,7 @@ export function stageOpenCraftEmbeddedWorkbench(
       && !source.startsWith(`${privateManifestRoot}${sep}`)
       && !source.endsWith(".map"),
   });
-  if (!existsSync(join(targetRoot, "embedded-workbench.js"))) {
+  if (!existsSync(join(targetRoot, EMBEDDED_WORKBENCH_LOADER))) {
     throw new Error("OpenCraft Embedded Workbench loader was not staged");
   }
   return true;

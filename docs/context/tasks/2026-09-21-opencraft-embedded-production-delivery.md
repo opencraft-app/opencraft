@@ -54,7 +54,8 @@
 - CI frontend artifact contract 测试通过。
 - 新发现并修复：staging 必须先于 fix-next-static-html-lang 的 EdgeOne 投影，回归执行真实投影脚本，检查 resolveDeployDir 返回的 .edgeone/assets 树。
 - 全量国际站静态构建完成，341 条版本化资源引用检查通过；实际 .edgeone/assets/__opencraft 中 loader 目标存在、version.json 存在、私有 .vite 未上传。
-- frontend 全量测试正在执行，已有模型配置和 Workbench 边界用例报错，须记录最终结果并对照未修改基线；不宣称全量通过。
+- frontend 全量测试暴露模型配置测试环境缺失 Python cryptography；切到已有完整 Python runtime 后模型配置 93/93 通过。其余 Workbench/TAT 断言在未修改的 frontend/src 与测试基线中，git diff 已确认源码/测试/锁文件与 origin/master 一致；不宣称全量通过。
+- 工蜂 MR !4379 已创建；采纳路径常量化评审建议，保持原有行为。
 
 ## decisions
 - 发布通道是 EdgeOne Pages artifact，不是 Argo frontend 镜像晋级。
