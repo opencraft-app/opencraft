@@ -34,8 +34,11 @@ description: 在个人 DevCloud 从零启动可浏览器点测的完整 LightVel
   都只提交回调端口和 TTL，来源 IP 由 Auth 从可信代理链确认。国际站经 NAT 时，注册响应中的
   `targetIp` 是服务端观测到的出网来源 IP，不要求等于页面访问使用的 DevCloud IP；需要严格预检时
   可设置 `PERSONAL_DEV_REGISTRATION_SOURCE_IP`。
-- 不读取或下发共享 CloudLadder HMAC、SOPS、`DEVTUNNEL_TOKEN`。国内、国际站都只接收绑定
-  UIN、TunnelHost 和 Auth testing registry 状态的短期 capability；脚本不把 capability 明文写入状态文件。
+- 默认 `up` 不读取或下发共享 CloudLadder HMAC、SOPS、`DEVTUNNEL_TOKEN`。显式执行
+  `prepare-paid-e2e` 时，只允许从当前站点对应的 testing SOPS 读取三项计费值；调用者必须已拥有
+  合法解密权限，脚本只生成个人 0600 override 并打印 fingerprint，不输出明文、不读取 production
+  文件或共享 Kubernetes Secret。国内、国际站都只接收绑定 UIN、TunnelHost 和 Auth testing registry
+  状态的短期 capability；脚本不把 capability 明文写入状态文件。
 - 不操作共享 Kubernetes context。脚本只接受自己创建的 `kind-lightvela-personal-<site>`，
   且 API server 必须是 loopback。
 - Auth、CTL、Trade、Payment、Subscription、AI Gateway、Sandbox、Service Gateway 和前端
@@ -48,6 +51,24 @@ description: 在个人 DevCloud 从零启动可浏览器点测的完整 LightVel
 - `commit`、`push`、MR、GitOps、Argo Sync 和发布仍需用户明确确认。
 
 ## 一键启动
+
+首次使用先打印当前站点的完整前置条件：
+
+```bash
+# 北京使用 cn；韩国使用 intl。
+PERSONAL_DEV_SITE=intl \
+  bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh prerequisites
+```
+
+该命令会给出智研 testing 账号、国际开户、充值、Gateway Dashboard 影子绑定、受控计费配置和
+终态验收的完整步骤。账号池入口是
+<https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/?current=1&pageSize=20>；账号必须为
+`正常`，UIN/APPID 非空，且 `international` 与站点一致。国际新账号还必须在计费助手命令模式执行
+`/国际开户`。两站余额均通过 `/充值` 调整，金额单位为分，并以机器人返回的“操作后余额”为准。
+
+测试账号准备好后，在 testing Gateway Dashboard 的“认证用户 → DevCloud 测试绑定”中，将当前
+testing 登录用户绑定到对应 UIN/OwnerUIN/APPID，确认状态为 `active`。不得把浏览器填写的 UIN
+当作可信身份；Skill 始终从当前 testing session 的 active binding 获取账号。
 
 先确认当前 checkout 是要验证的代码，然后执行：
 
@@ -128,8 +149,17 @@ PERSONAL_DEV_SITE=cn PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:<受控�
 
 ## 真实 testing 支付与退款
 
-需要真实新购、支付、变配、退款和销毁时，先由 testing 环境 owner 提供以下三项，写入仓库外的
-0600 文件。不要在命令行、聊天、测试报告或 Git diff 中展开值：
+需要真实新购、支付、变配、退款和销毁时，优先使用受控 SOPS 自助导入。北京和韩国分别只读取
+`sandbox-bj-7 + tkexgz`、`sandbox-kr-1 + tkexsg` 的 testing 加密源；不会读取生产文件：
+
+```bash
+# 北京使用 cn；韩国使用 intl。
+PERSONAL_DEV_SITE=intl \
+  bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh prepare-paid-e2e
+```
+
+如果当前同学没有 testing SOPS 解密权限，则由 LightVela testing owner 通过受控渠道提供包含以下
+三项的仓库外 0600 文件。不要在命令行、聊天、测试报告或 Git diff 中展开值：
 
 ```text
 JIFEI_BILLING_APP_ID=<testing value>
@@ -159,8 +189,9 @@ bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh u
   SHA-256 fingerprint，并可与共享 testing fingerprint 前缀做 fail-closed 比对。
 - 重启完成后重建本机 endpoint exposure，避免 Trade Pod rollout 后旧 `port-forward` 指向已退出 Pod。
 
-个人环境只保存这三项的派生 override，不负责从共享环境获取值。若没有明确的 testing owner
-交付，不得从 SOPS、生产 Secret 或他人 namespace 自动解密复制。
+个人环境只保存这三项的派生 override。`prepare-paid-e2e` 必须使用调用者已有的 testing SOPS 权限；
+没有权限时应按 `prerequisites` 给出的模板向 testing owner 申请，禁止尝试 production SOPS、共享
+Kubernetes Secret 或他人 namespace。
 
 注册临近过期或 DevCloud IP 变化时可手工续租：
 

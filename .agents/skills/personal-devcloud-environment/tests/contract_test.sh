@@ -691,6 +691,72 @@ PY
   fi
 )
 
+assert_paid_e2e_sops_import() (
+  local site="$1" expected_trade_source="$2" expected_gateway_source="$3"
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/paid-e2e-sops-$site" PERSONAL_DEV_SITE="$site"
+  local calls="$TEST_ROOT/paid-e2e-sops-$site.calls"
+  local output="$TEST_ROOT/paid-e2e-sops-$site.output"
+  source "$SCRIPT"
+  sops() {
+    [[ "$1" == "--decrypt" && "$2" == "--extract" && -n "$3" && -n "$4" ]] \
+      || return 2
+    printf '%s|%s\n' "$3" "$4" >>"$calls"
+    case "$3" in
+      *JIFEI_BILLING_APP_ID*) printf '%s\n' 'authorized-test-app-id' ;;
+      *JIFEI_BILLING_APP_SECRET*) printf '%s\n' 'authorized-test-app-secret' ;;
+      *CLOUDLADDER_PAYMENT_HMAC_SECRET*) printf '%s\n' 'authorized-test-hmac-secret' ;;
+      *) return 3 ;;
+    esac
+  }
+
+  prepare_paid_e2e_from_sops >"$output" 2>&1
+
+  grep -Fq "$expected_trade_source" "$calls"
+  grep -Fq "$expected_gateway_source" "$calls"
+  ! grep -Eq '/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)/' "$calls"
+  grep -Fq 'JIFEI_BILLING_APP_ID=authorized-test-app-id' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'JIFEI_BILLING_APP_SECRET=authorized-test-app-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=authorized-test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/trade.env"
+  grep -Fq 'CLOUDLADDER_TRADE_HMAC_SECRET=authorized-test-hmac-secret' "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
+  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/trade.env")" "SOPS trade override mode"
+  assert_eq '600' "$(private_file_mode "$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env")" "SOPS CloudLadder override mode"
+  ! grep -Fq 'authorized-test-app-secret' "$output"
+  ! grep -Fq 'authorized-test-hmac-secret' "$output"
+  ! grep -Fq 'authorized-test-app-secret' "$STATE_FILE"
+  ! grep -Fq 'authorized-test-hmac-secret' "$STATE_FILE"
+)
+
+test_paid_e2e_sops_import_is_site_scoped_and_private() {
+  assert_paid_e2e_sops_import \
+    cn \
+    "$REPO_ROOT/argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml" \
+    "$REPO_ROOT/argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml"
+  assert_paid_e2e_sops_import \
+    intl \
+    "$REPO_ROOT/argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml" \
+    "$REPO_ROOT/argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml"
+}
+
+test_prerequisites_document_account_balance_binding_and_secrets() {
+  local cn_output intl_output
+  cn_output="$(PERSONAL_DEV_SITE=cn bash -c 'source "$1"; prerequisites' bash "$SCRIPT")"
+  intl_output="$(PERSONAL_DEV_SITE=intl bash -c 'source "$1"; prerequisites' bash "$SCRIPT")"
+
+  grep -Fq 'resource/account/4/' <<<"$cn_output"
+  grep -Fq '状态=正常' <<<"$cn_output"
+  grep -Fq '/充值' <<<"$cn_output"
+  grep -Fq 'DevCloud 测试绑定' <<<"$cn_output"
+  grep -Fq 'prepare-paid-e2e' <<<"$cn_output"
+  grep -Fq 'international=false' <<<"$cn_output"
+  ! grep -Fq '/国际开户' <<<"$cn_output"
+
+  grep -Fq 'international=true' <<<"$intl_output"
+  grep -Fq '/国际开户' <<<"$intl_output"
+  grep -Fq '/充值' <<<"$intl_output"
+  grep -Fq '金额单位为分' <<<"$intl_output"
+  grep -Fq '旧 pending 单不要重试' <<<"$intl_output"
+}
+
 test_real_kustomize_rejects_runtime_wrapper_alias() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/kustomize-alias" PERSONAL_DEV_SITE=intl
   local bin_dir="$TEST_ROOT/kustomize-alias-bin"
@@ -923,7 +989,11 @@ test_intl_dynamic_route_allowlists_match() {
 
 test_payment_and_production_guardrails() {
   ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
-  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl.*sync' "$SCRIPT"
+  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|kubectl.*sync|argocd/secrets/(shprod|sgprod|beijing-sandbox|sandbox-jp-1)' "$SCRIPT"
+  grep -Fq 'argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml' "$SCRIPT"
+  grep -Fq 'argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml' "$SCRIPT"
+  grep -Fq 'argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml' "$SCRIPT"
+  grep -Fq 'argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml' "$SCRIPT"
   grep -q 'verify-order-no-pay' "$SCRIPT"
   grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
   grep -q 'checkModify verification is not implemented' "$SCRIPT"
@@ -960,6 +1030,8 @@ run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_
 run_test 'testing gateway migrates stale state and rejects production overrides' test_testing_gateway_migrates_stale_state_and_rejects_prod_override
 run_test 'Billing APIGW accepts only the testing route' test_billing_apigw_rejects_non_testing_routes
 run_test 'paid E2E overrides are private and survive rebuilds' test_paid_e2e_private_overrides_are_strict_and_reused
+run_test 'paid E2E SOPS import is site-scoped and private' test_paid_e2e_sops_import_is_site_scoped_and_private
+run_test 'prerequisites cover account, balance, binding, and secrets' test_prerequisites_document_account_balance_binding_and_secrets
 run_test 'runtime kustomize wrapper cannot become its own real binary' test_real_kustomize_rejects_runtime_wrapper_alias
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately

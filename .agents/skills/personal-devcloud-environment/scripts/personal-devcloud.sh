@@ -310,6 +310,89 @@ require_0600_file() {
   [[ "$mode" == "600" ]] || die "private paid-E2E file must have mode 0600: $path (got $mode)"
 }
 
+paid_e2e_sops_sources() {
+  case "$SITE" in
+    cn)
+      PAID_E2E_TRADE_SOPS="$REPO_ROOT/argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml"
+      PAID_E2E_GATEWAY_SOPS="$REPO_ROOT/argocd/secrets/tkexgz/cloudladdergateway-runtime-secrets.sops.yaml"
+      ;;
+    intl)
+      PAID_E2E_TRADE_SOPS="$REPO_ROOT/argocd/secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml"
+      PAID_E2E_GATEWAY_SOPS="$REPO_ROOT/argocd/secrets/tkexsg/cloudladdergateway-runtime-secrets.sops.yaml"
+      ;;
+    *) die "PERSONAL_DEV_SITE must be intl or cn" ;;
+  esac
+}
+
+extract_sops_scalar() {
+  local source="$1" selector="$2" destination="$3" label="$4"
+  [[ -f "$source" ]] || die "missing testing SOPS source for $label: $source"
+  if ! sops --decrypt --extract "$selector" "$source" >"$destination"; then
+    : >"$destination"
+    die "could not decrypt testing $label; request testing SOPS access or an owner-provided 0600 paid-E2E file"
+  fi
+  chmod 600 "$destination"
+  python3 - "$destination" "$label" <<'PY'
+import os
+import pathlib
+import sys
+
+path, label = sys.argv[1:]
+value = pathlib.Path(path).read_text(encoding="utf-8").rstrip("\n")
+if not value or "\x00" in value or "\r" in value or "\n" in value:
+    raise SystemExit(f"decrypted testing {label} is empty or malformed")
+pathlib.Path(path).write_text(value, encoding="utf-8")
+os.chmod(path, 0o600)
+PY
+}
+
+prepare_paid_e2e_from_sops() {
+  prepare_state
+  require_command sops
+  paid_e2e_sops_sources
+
+  local app_id_file app_secret_file hmac_file bundle
+  new_private_temp paid-e2e-app-id
+  app_id_file="$TEMP_FILE_RESULT"
+  new_private_temp paid-e2e-app-secret
+  app_secret_file="$TEMP_FILE_RESULT"
+  new_private_temp paid-e2e-cloudladder-hmac
+  hmac_file="$TEMP_FILE_RESULT"
+  new_private_temp paid-e2e-source
+  bundle="$TEMP_FILE_RESULT"
+
+  extract_sops_scalar "$PAID_E2E_TRADE_SOPS" \
+    '["stringData"]["JIFEI_BILLING_APP_ID"]' "$app_id_file" "billing app ID"
+  extract_sops_scalar "$PAID_E2E_TRADE_SOPS" \
+    '["stringData"]["JIFEI_BILLING_APP_SECRET"]' "$app_secret_file" "billing app secret"
+  extract_sops_scalar "$PAID_E2E_GATEWAY_SOPS" \
+    '["stringData"]["CLOUDLADDER_PAYMENT_HMAC_SECRET"]' "$hmac_file" "CloudLadder testing HMAC"
+
+  python3 - "$app_id_file" "$app_secret_file" "$hmac_file" "$bundle" <<'PY'
+import os
+import pathlib
+import sys
+
+app_id_path, app_secret_path, hmac_path, output_path = sys.argv[1:]
+values = {
+    "JIFEI_BILLING_APP_ID": pathlib.Path(app_id_path).read_text(encoding="utf-8"),
+    "JIFEI_BILLING_APP_SECRET": pathlib.Path(app_secret_path).read_text(encoding="utf-8"),
+    "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET": pathlib.Path(hmac_path).read_text(encoding="utf-8"),
+}
+with open(output_path, "w", encoding="utf-8") as output:
+    for key, value in values.items():
+        output.write(f"{key}={value}\n")
+os.chmod(output_path, 0o600)
+PY
+
+  PERSONAL_DEV_PAID_E2E_SECRET_FILE="$bundle" prepare_paid_e2e_overrides
+  remove_private_temp "$app_id_file"
+  remove_private_temp "$app_secret_file"
+  remove_private_temp "$hmac_file"
+  remove_private_temp "$bundle"
+  log "testing paid-E2E configuration imported from authorized SOPS sources; plaintext values were not printed"
+}
+
 prepare_paid_e2e_overrides() {
   local input="${PERSONAL_DEV_PAID_E2E_SECRET_FILE:-}"
   local trade_override="$PAID_E2E_OVERRIDE_DIR/trade.env"
@@ -1794,6 +1877,56 @@ unregister_for_down() {
     "$SCRIPT_DIR/personal-devcloud.sh" unregister
 }
 
+prerequisites() {
+  local account_site account_hint billing_onboarding
+  case "$SITE" in
+    cn)
+      account_site="国内站（北京 testing）"
+      account_hint="确认 international=false；国内实名 testing 用户需提供已有 session 或账号密码。"
+      billing_onboarding=""
+      ;;
+    intl)
+      account_site="国际站（韩国 testing）"
+      account_hint="确认 international=true。"
+      billing_onboarding="   - 在计费助手机器人的命令模式执行 /国际开户，并确认开户成功。"
+      ;;
+  esac
+  cat <<EOF
+Personal DevCloud paid-E2E prerequisites for $account_site
+
+1. 取得合法 testing 账号
+   - 打开智研账号池：
+     https://zhiyan.woa.com/cle/11113/resource/#/resource/account/4/?current=1&pageSize=20
+   - 使用“添加账号”创建/导入自己的 testing 账号，或“占用”一个明确允许共享的空闲账号。
+   - 账号必须显示“状态=正常”，且账号 ID(UIN) 与 APPID 均非空。
+   - $account_hint
+
+2. 完成开户与充值
+$billing_onboarding
+   - 执行 /充值，按提示填写 UIN、站别和金额；金额单位为分，结果必须显示操作= recharge
+     且“操作后余额”足以覆盖本次订单。/设置金额只用于需要精确目标余额的受控场景。
+   - 余额不足产生的旧 pending 单不要重试；充值确认后创建一笔新订单。
+
+3. 绑定 LightVela testing 用户
+   - 在 testing Gateway Dashboard 打开“认证用户 → DevCloud 测试绑定”。
+   - 把当前 testing 登录用户绑定到上面的 UIN/OwnerUIN/APPID，并确认状态为 active。
+   - 受控管理员也可使用 personal-devcloud.sh bootstrap-binding；不要把 admin token 发给开发者。
+
+4. 准备计费签名配置
+   - 已获 testing SOPS 解密权限：运行
+       PERSONAL_DEV_SITE=$SITE bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh prepare-paid-e2e
+     命令只读取对应站点的 testing SOPS，写入个人 0600 override，并只打印 fingerprint。
+   - 无 SOPS 权限：向 LightVela testing owner 申请站点=$SITE 的 paid-E2E 0600 文件，文件只包含
+     JIFEI_BILLING_APP_ID、JIFEI_BILLING_APP_SECRET、TRADE_BILLING_CLOUDLADDER_HMAC_SECRET。
+     不要通过聊天粘贴值，不要申请或使用 production secret。
+
+5. 启动与验收
+   - 运行 personal-devcloud.sh up；随后运行 status 和 browser-login。
+   - 默认 verify-order-no-pay 不证明支付。真实闭环必须检查支付、计费回调、Trade/Pass/Task 终态，
+     退款场景还要检查 isolateResource/销毁终态。
+EOF
+}
+
 usage() {
   cat <<'EOF'
 Usage: personal-devcloud.sh <command>
@@ -1801,6 +1934,8 @@ Usage: personal-devcloud.sh <command>
 Commands:
   doctor          Check DevCloud IP, Docker, and required tools
   bootstrap       Install user-local tools and create/reuse a kind cluster
+  prerequisites   Print the site-specific account, balance, binding, and secret onboarding checklist
+  prepare-paid-e2e  Import testing billing values from authorized site-specific SOPS without printing them
   up              Build the full stack, provision identity, register callback, start heartbeat
   register        Align local identity and register/renew this DevCloud callback
   heartbeat       Renew the dynamic registration once
@@ -1823,6 +1958,8 @@ main() {
   case "$command" in
     doctor) doctor ;;
     bootstrap) bootstrap ;;
+    prerequisites) prerequisites ;;
+    prepare-paid-e2e) prepare_paid_e2e_from_sops ;;
     up) up ;;
     register) register_command ;;
     heartbeat) register_route ;;
