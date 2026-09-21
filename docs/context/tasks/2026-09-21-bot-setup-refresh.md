@@ -169,3 +169,12 @@ derived: false
 ### 交接状态
 - 本轮四项复查问题均已修复并提供回归；既有 !4311 指向 master，待用户代码评审。
 - 不执行 MR 合并或生产发布；国际站继续沿用原创建流程。
+
+## CR 跟进 checkpoint（2026-09-21）
+- 用户评审指出 Agent Console vendoring 漂移、网络错误泄漏细节、GitHub ref 契约含糊与推荐模板 ID 缺少回归。沿用本任务和 MR !4311 处理。
+- 当前设计：`opencraft/MONO2_MIGRATION.md` 与正式 `agent-gateway-runtime.md` 明确 frontend 真源 → 机械生成闭包；必须先提交源码，再运行同步脚本，提交生成文件及记录真实 sourceRevision 的 UPSTREAM.json。
+- 历史定位：初次 `npm run check:mono2-agent-console` 在 `i18n/generated/en-US.json` 报漂移，不能只修三份 TS 副本。评审所述“国际站构建使用旧副本”需区分：官网 frontend 直接使用真源，OpenCraft 消费生成层。
+- 新增实际 context receipt：`opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md`、`docs/context/project/services/opencraft.md`、`docs/context/domains/agent-gateway-runtime.md`、`docs/context/project/upstream-subtrees.md`、`docs/engineering/domains/agent-gateway-runtime.md`、`docs/engineering/domains/site-environment-routing.md`，及已复读的 frontend / site 路由 must_read、邻接卡和最近服务入口。
+- 已先 fetch 并合并最新 master f09b62866，无冲突；生成前将以合并后的源码为准。
+- 计划：错误详情仅留 cause；GitHub ref 明确只接受分支（现有调用全为分支），不扩展 tag 安装；对推荐 ID 与实际合并模板目录做双语言回归。随后提交真源、机械同步完整闭包并验证。
+- 当前验证：待运行本轮聚焦测试、frontend check/build、OpenCraft 同步/漂移检查与 gate；既有全量测试未全绿记录继续保留。

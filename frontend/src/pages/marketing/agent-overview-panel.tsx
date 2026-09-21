@@ -559,7 +559,7 @@ type RecommendedAutomation = {
  * 而非字面量，i18n-extract 的 T_CALL_RE 扫不到，词典里不会有对应 key，
  * 国际站会直出中文。__i18nExtractOnlyAutomations 补上字面量形式供扫描器收录。
  */
-const DEMO_AUTOMATIONS: RecommendedAutomation[] = [
+export const DEMO_AUTOMATIONS: RecommendedAutomation[] = [
   {
     id: "stock-info-digest",
     name: "股票信息速递",

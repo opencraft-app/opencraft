@@ -124,7 +124,7 @@ export function hasHermesBundledSkillsOptOut(output: string): boolean {
 export interface GithubSkillSource {
   /** owner/repo，如 NousResearch/hermes-agent */
   repo: string;
-  /** 分支或 tag，如 main */
+  /** 分支名，如 main 或 feature/stocks；不支持 tag 或 commit SHA。 */
   ref: string;
   /** 仓库内目录，如 optional-skills/finance/stocks */
   path: string;
