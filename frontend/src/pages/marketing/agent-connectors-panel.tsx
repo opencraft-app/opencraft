@@ -15,8 +15,10 @@ import {
   cancelConnectorOAuth,
   completeConnectorOAuth,
   CONNECTOR_OAUTH_COMPLETE_MESSAGE,
+  disableBuiltinConnector,
   enableBuiltinConnector,
   listInstanceConnectors,
+  retryConnectorDelivery,
   type ConnectorItem,
 } from "@/lib/connectors-client";
 
@@ -129,6 +131,35 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
     return "连接";
   }, []);
 
+  /** 待确认断开的连接器（弹确认层，防误触） */
+  const [pendingDisconnect, setPendingDisconnect] = useState<ConnectorItem | null>(null);
+
+  const disconnect = useCallback(
+    async (item: ConnectorItem) => {
+      setError(null);
+      try {
+        await disableBuiltinConnector(instanceId, item.key);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [instanceId, refresh],
+  );
+
+  const retryDelivery = useCallback(
+    async (item: ConnectorItem) => {
+      setError(null);
+      try {
+        await retryConnectorDelivery(instanceId, item.key);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [instanceId, refresh],
+  );
+
   return (
     <section aria-label={t("连接器")} className="lh-connectors-panel">
       <header>
@@ -166,9 +197,45 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
                   {t(connectLabel(item))}
                 </button>
               )}
+              {item.status === "connected" && (
+                <button
+                  type="button"
+                  onClick={() => setPendingDisconnect(item)}
+                  aria-label={t("断开")}
+                >
+                  {t("断开")}
+                </button>
+              )}
+              {item.status === "connected" && item.deliveryWarning && (
+                <button type="button" onClick={() => void retryDelivery(item)}>
+                  {t("重试同步")}
+                </button>
+              )}
             </li>
           ))}
         </ul>
+      )}
+      {pendingDisconnect && (
+        <div role="dialog" aria-label={t("确认断开连接")}>
+          <p>
+            {t("断开后 Agent 将无法调用 {{name}}，可随时重新连接。", {
+              name: pendingDisconnect.name,
+            })}
+          </p>
+          <button type="button" onClick={() => setPendingDisconnect(null)}>
+            {t("取消")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const target = pendingDisconnect;
+              setPendingDisconnect(null);
+              void disconnect(target);
+            }}
+          >
+            {t("确认断开")}
+          </button>
+        </div>
       )}
     </section>
   );

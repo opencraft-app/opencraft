@@ -186,3 +186,51 @@ describe("ConnectorsPanel OAuth 流程", () => {
     expect(client.completeConnectorOAuth).not.toHaveBeenCalled();
   });
 });
+
+describe("ConnectorsPanel 断开与重试", () => {
+  it("已连接卡片：断开需确认弹窗后调用 disable", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
+      {
+        key: "tencent-meeting",
+        name: "腾讯会议",
+        connectorType: "local_cli",
+        status: "connected",
+      },
+    ]);
+    vi.mocked(client.disableBuiltinConnector).mockResolvedValue(undefined);
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "断开" }));
+    // 确认弹窗
+    fireEvent.click(screen.getByRole("button", { name: "确认断开" }));
+    await waitFor(() =>
+      expect(client.disableBuiltinConnector).toHaveBeenCalledWith(
+        "ins-1",
+        "tencent-meeting",
+      ),
+    );
+    await waitFor(() =>
+      expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("下发警告卡片：显示重试下发按钮并调用 retry", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
+      {
+        key: "tencent-meeting",
+        name: "腾讯会议",
+        connectorType: "local_cli",
+        status: "connected",
+        deliveryWarning: true,
+      },
+    ]);
+    vi.mocked(client.retryConnectorDelivery).mockResolvedValue(undefined);
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "重试同步" }));
+    await waitFor(() =>
+      expect(client.retryConnectorDelivery).toHaveBeenCalledWith(
+        "ins-1",
+        "tencent-meeting",
+      ),
+    );
+  });
+});
