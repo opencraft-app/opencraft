@@ -27,6 +27,7 @@
 - 标题容器实际可用宽度约 134px，en / es / id 的原文案必然折行。
 - 处理方式：**先简写文案**（保留「执行前先确认」语义），再用 `text-wrap: balance` 均衡换行，并保留 2 行截断兜底。
 - 规则：允许 2 行，但第二行不允许只剩 1–2 个字符（孤行）。
+- **改动边界（明确不统一简写）**：简写只作用于审批卡标题（`channel-approval__title` / `aria-label`）。CTA 区的「优势列表」（`.cta__benefits .benefit h3`，如 es `Confirma acciones importantes`、id-ID `Mengonfirmasi tindakan penting`）是独立长条，不受 134px 容器约束、原文案不折行，**保持原翻译不动**，各语言处理一致。
 
 多语言文案对照：
 
