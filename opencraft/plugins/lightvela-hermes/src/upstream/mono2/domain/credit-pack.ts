@@ -135,8 +135,8 @@ export const CREDIT_PACK_DENOMINATIONS: readonly CreditPackDenomination[] = [
   { product_id: "credit_12000", credit_total: 12000 },
 ] as const;
 
-/** 积分来源类型：套餐积分 or 付费积分包。 */
-export type CreditSourceType = "plan" | "paid_pack";
+/** 积分来源类型：套餐积分、活动赠送积分或付费积分包。 */
+export type CreditSourceType = "plan" | "free_credit" | "paid_pack";
 
 /** 账号页「额度明细」的统一展示模型（合并 pass 与 credit 两套数据源）。 */
 export interface CreditSourceView {

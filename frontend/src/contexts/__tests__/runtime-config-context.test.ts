@@ -7,6 +7,7 @@ const {
   normalizeRuntimeConfig,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
+  resolveMultiBotEnabled,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
   shouldSkipRemoteRuntimeConfig,
@@ -40,6 +41,11 @@ describe("runtime config normalization", () => {
     expect(normalizeRuntimeConfig({ features: { multiBotEnabled: true } }).features.multiBotEnabled).toBe(true);
     expect(normalizeRuntimeConfig({ features: { multiBotEnabled: false } }).features.multiBotEnabled).toBe(false);
     expect(normalizeRuntimeConfig({ features: { multiBotEnabled: "true" } }).features.multiBotEnabled).toBe(true);
+  });
+
+  it("uses the runtime multi-bot flag without a regional override", () => {
+    expect(resolveMultiBotEnabled(normalizeRuntimeConfig({ features: { multiBotEnabled: true } }))).toBe(true);
+    expect(resolveMultiBotEnabled(normalizeRuntimeConfig({ features: { multiBotEnabled: false } }))).toBe(false);
   });
 
   it("defaults zero-token automations on unless explicitly disabled", () => {

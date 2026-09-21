@@ -84,6 +84,10 @@ routes:
       - { method: POST, path: "/v1/instances/{instance_id}/bots" }
       - { method: PUT, path: "/v1/instances/{instance_id}/bots/{bot_id}" }
       - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots/{bot_id}/retry" }
+      - { method: PUT, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
+      - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
       - { method: POST, path: "/v1/instances/{instance_id}/debug/exec" }
       - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
       - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }

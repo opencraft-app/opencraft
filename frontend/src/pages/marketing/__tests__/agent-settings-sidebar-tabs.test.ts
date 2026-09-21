@@ -25,11 +25,11 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
-  it("shows additional Bot creation without console reveal while preserving feature and quota gates", () => {
+  it("reveals global additional Bot creation through show() while preserving feature and quota gates", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).not.toContain("showCreateBotEntry");
-    expect(page).toContain("{multiBotEnabled && (");
+    expect(page).toContain("const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);");
+    expect(page).toContain("{showCreateBotEntry && (");
     expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
     expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
