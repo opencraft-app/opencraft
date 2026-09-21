@@ -2,8 +2,10 @@
  * ConnectorsPanel — Agent 设置页「连接器」面板（LightVela P1）。
  *
  * 数据与授权全走 ai-server 连接器平台（契约见 connectors-client.ts）。
- * OAuth 握手：enable → auth_required 时新窗口打开授权页 → 监听回调页
- * postMessage（origin 校验）→ complete → 刷新列表。
+ * OAuth 握手：enable → auth_required 时新窗口打开授权页（保留 opener，
+ * ai-server 回调页依赖 window.opener.postMessage 回执）→ 监听 message
+ * （origin 严格校验 + flowId 匹配）→ complete → 刷新列表。
+ * 兜底：弹窗关闭检测（用户取消）+ 面板重新可见时刷新。
  *
  * 红线：不持有/缓存任何凭据，只展示授权状态。
  */
@@ -20,15 +22,29 @@ import {
   listInstanceConnectors,
   retryConnectorDelivery,
   type ConnectorItem,
+  type ConnectorStatus,
 } from "@/lib/connectors-client";
 
-const STATUS_LABELS: Record<string, string> = {
-  not_connected: "未连接",
-  connected: "已连接",
-  expired: "已过期",
-  failed: "连接失败",
-  auth_required: "待授权",
-};
+/**
+ * 状态文案用 switch + 字面量 t()，确保 i18n-extract 能扫描到键
+ * （对象常量里的值提取器扫不到，会导致非中文语种裸显中文）。
+ */
+function statusLabel(status: ConnectorStatus): string {
+  switch (status) {
+    case "not_connected":
+      return t("未连接");
+    case "connected":
+      return t("已连接");
+    case "expired":
+      return t("已过期");
+    case "failed":
+      return t("连接失败");
+    case "auth_required":
+      return t("待授权");
+    default:
+      return t("未知状态");
+  }
+}
 
 /** 进行中的授权流（新窗口已打开、等待 postMessage 回执） */
 interface PendingFlow {
@@ -52,9 +68,15 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
   const [items, setItems] = useState<ConnectorItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingFlow, setPendingFlow] = useState<PendingFlow | null>(null);
-  // 卸载时用最新 pendingFlow 做 cancel，避免闭包过期
+  /** 进行中的 enable 请求对应的连接器 key（重复点击防护） */
+  const [connectingKey, setConnectingKey] = useState<string | null>(null);
+  // 卸载/回调里读最新 pendingFlow，避免闭包过期；渲染期不写 ref
   const pendingFlowRef = useRef<PendingFlow | null>(null);
-  pendingFlowRef.current = pendingFlow;
+  useEffect(() => {
+    pendingFlowRef.current = pendingFlow;
+  }, [pendingFlow]);
+  /** 授权弹窗引用：关闭检测（用户取消授权）用 */
+  const popupRef = useRef<Window | null>(null);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -72,21 +94,38 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
 
   const connect = useCallback(
     async (item: ConnectorItem) => {
+      // 重复点击防护：同一连接器进行中直接忽略
+      if (connectingKey) return;
       setError(null);
+      setConnectingKey(item.key);
       try {
         const result = await enableBuiltinConnector(instanceId, item.key);
         if (result.status === "auth_required" && result.authorizationUrl && result.flowId) {
+          // 取消上一个未完成 flow（双击/换连接器连点会开新流，旧流悬挂）
+          const previous = pendingFlowRef.current;
+          if (previous) {
+            void cancelConnectorOAuth(instanceId, previous.connectorKey, previous.flowId).catch(
+              () => {
+                /* 旧 flow cancel 尽力而为 */
+              },
+            );
+          }
           setPendingFlow({ connectorKey: item.key, flowId: result.flowId });
-          window.open(result.authorizationUrl, "_blank", "noopener");
+          // 不带 noopener：ai-server 回调页依赖 window.opener.postMessage 回执，
+          // noopener 会置空 opener 导致握手失效。安全性由接收侧 origin 严格
+          // 相等校验 + flowId 匹配保证（标准 OAuth popup 模式）。
+          popupRef.current = window.open(result.authorizationUrl, "_blank");
         } else {
           // 直接成功（无需 OAuth），刷新列表
           await refresh();
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setConnectingKey(null);
       }
     },
-    [instanceId, refresh],
+    [connectingKey, instanceId, refresh],
   );
 
   // 监听 ai-server 回调页的 postMessage 完成事件
@@ -102,6 +141,7 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
       const current = pendingFlowRef.current;
       if (!current || data.flowId !== current.flowId) return;
       setPendingFlow(null);
+      popupRef.current = null;
       void completeConnectorOAuth(instanceId, current.connectorKey, current.flowId)
         .catch(() => {
           /* complete 失败时列表刷新仍会反映真实状态 */
@@ -111,6 +151,43 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [instanceId, refresh]);
+
+  // 弹窗关闭检测：用户未完成授权直接关窗 → cancel 该 flow 并刷新
+  // （postMessage 丢失时这也是兜底恢复路径）
+  useEffect(() => {
+    if (!pendingFlow) return;
+    const timer = window.setInterval(() => {
+      const popup = popupRef.current;
+      if (popup && popup.closed) {
+        const current = pendingFlowRef.current;
+        popupRef.current = null;
+        if (current && current.flowId === pendingFlow.flowId) {
+          setPendingFlow(null);
+          void cancelConnectorOAuth(instanceId, current.connectorKey, current.flowId)
+            .catch(() => {
+              /* cancel 尽力而为 */
+            })
+            .finally(() => void refresh());
+        }
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [instanceId, pendingFlow, refresh]);
+
+  // 面板重新可见（用户从授权页切回）且存在 pendingFlow 时刷新：
+  // 授权可能已在服务端完成但 postMessage 丢失，refresh 反映真实状态
+  useEffect(() => {
+    if (!pendingFlow) return;
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleVisible);
+    };
+  }, [pendingFlow, refresh]);
 
   // 卸载时取消未完成的授权流（用户没完成授权就离开）
   useEffect(() => {
@@ -127,8 +204,8 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
   }, [instanceId]);
 
   const connectLabel = useCallback((item: ConnectorItem) => {
-    if (item.status === "expired" || item.status === "failed") return "重新连接";
-    return "连接";
+    if (item.status === "expired" || item.status === "failed") return t("重新连接");
+    return t("连接");
   }, []);
 
   /** 待确认断开的连接器（弹确认层，防误触） */
@@ -180,39 +257,40 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
         <p>{t("暂无可用的连接器")}</p>
       ) : (
         <ul>
-          {items.map((item) => (
-            <li key={item.key} data-connector-key={item.key}>
-              <span>{item.name}</span>
-              <span>{item.connectorType === "local_cli" ? "CLI" : "MCP"}</span>
-              <span data-status={item.status}>
-                {t(STATUS_LABELS[item.status] ?? item.status)}
-              </span>
-              {item.deliveryWarning && (
-                <span>{t("已授权，等待 Agent 在线后同步")}</span>
-              )}
-              {(item.status === "not_connected" ||
-                item.status === "expired" ||
-                item.status === "failed") && (
-                <button type="button" onClick={() => void connect(item)}>
-                  {t(connectLabel(item))}
-                </button>
-              )}
-              {item.status === "connected" && (
-                <button
-                  type="button"
-                  onClick={() => setPendingDisconnect(item)}
-                  aria-label={t("断开")}
-                >
-                  {t("断开")}
-                </button>
-              )}
-              {item.status === "connected" && item.deliveryWarning && (
-                <button type="button" onClick={() => void retryDelivery(item)}>
-                  {t("重试同步")}
-                </button>
-              )}
-            </li>
-          ))}
+          {items.map((item) => {
+            const busy = connectingKey === item.key;
+            return (
+              <li key={item.key} data-connector-key={item.key}>
+                <span>{item.name}</span>
+                <span>{item.connectorType === "local_cli" ? "CLI" : "MCP"}</span>
+                <span data-status={item.status}>{statusLabel(item.status)}</span>
+                {item.deliveryWarning && (
+                  <span>{t("已授权，等待 Agent 在线后同步")}</span>
+                )}
+                {(item.status === "not_connected" ||
+                  item.status === "expired" ||
+                  item.status === "failed") && (
+                  <button type="button" disabled={busy} onClick={() => void connect(item)}>
+                    {busy ? t("连接中…") : t(connectLabel(item))}
+                  </button>
+                )}
+                {item.status === "connected" && (
+                  <button
+                    type="button"
+                    onClick={() => setPendingDisconnect(item)}
+                    aria-label={t("断开")}
+                  >
+                    {t("断开")}
+                  </button>
+                )}
+                {item.status === "connected" && item.deliveryWarning && (
+                  <button type="button" onClick={() => void retryDelivery(item)}>
+                    {t("重试同步")}
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {pendingDisconnect && (

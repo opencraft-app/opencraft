@@ -91,7 +91,7 @@ describe("ConnectorsPanel", () => {
 
 describe("ConnectorsPanel OAuth 流程", () => {
   it("点连接：auth_required 时打开授权窗口并监听 postMessage 完成", async () => {
-    const windowOpen = vi.fn(() => ({ closed: true }) as unknown as Window);
+    const windowOpen = vi.fn(() => ({ closed: false }) as unknown as Window);
     vi.stubGlobal("open", windowOpen);
     vi.mocked(client.listInstanceConnectors).mockResolvedValue([
       {
@@ -109,12 +109,9 @@ describe("ConnectorsPanel OAuth 流程", () => {
     vi.mocked(client.completeConnectorOAuth).mockResolvedValue({ ok: true });
     render(<ConnectorsPanel instanceId="ins-1" />);
     fireEvent.click(await screen.findByRole("button", { name: "连接" }));
+    // 不带 noopener：ai-server 回调页依赖 window.opener.postMessage 回执
     await waitFor(() =>
-      expect(windowOpen).toHaveBeenCalledWith(
-        "https://oauth.example.com/auth",
-        "_blank",
-        "noopener",
-      ),
+      expect(windowOpen).toHaveBeenCalledWith("https://oauth.example.com/auth", "_blank"),
     );
     // 模拟 ai-server 回调页 postMessage（合法 origin）
     fireEvent(
