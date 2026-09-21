@@ -37,5 +37,6 @@ declare namespace NodeJS {
     readonly NEXT_PUBLIC_WX_PAY_PRODUCT_ID?: string;
     readonly NEXT_PUBLIC_MIDAS_SANDBOX?: string;
     readonly NEXT_PUBLIC_PAID_BILLING_ENABLED?: string;
+    readonly NEXT_PUBLIC_AI_SERVER_BASE_URL?: string;
   }
 }
