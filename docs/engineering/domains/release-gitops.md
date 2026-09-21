@@ -78,6 +78,8 @@ master 源码
   Embedded staging 必须先于 EdgeOne Build Output 投影脚本执行，确保实际上传的
   `.edgeone/assets/__opencraft/` 同样包含 loader、version 与 hashed assets；仅检查 `out/__opencraft/`
   不能作为正式站产物验收。回归用例执行真实投影脚本并通过 `resolveDeployDir` 检查上传树。
+  Embedded artifact 还必须携带 namespaced Host Proxy Service Worker；该稳定路径需要
+  `no-cache`，同时其注册 scope 必须限制在 `/__opencraft/host-proxy/`，不能扩大到站点根。
 - `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
   实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
   平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。

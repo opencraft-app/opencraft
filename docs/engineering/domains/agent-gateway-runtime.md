@@ -23,6 +23,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 ## 稳定不变量
 
 - OpenCraft Embedded Chat 的 loader 和内容寻址资源使用独立 Vite 构建目标，由 frontend artifact 在 EdgeOne Build Output 投影前放入同源 `/__opencraft/`。实际交付包含 `.edgeone/assets/__opencraft/`，入口仍由显式 `show()` 接管；资源缺失时保留 AgentChat 回退，不通过自动开启 rollout 掩盖交付问题。见 [发布契约](release-gitops.md)。
+- Embedded Browser 的 Host Proxy Service Worker 固定在 `/__opencraft/opencraft-host-proxy-sw.js`，scope 仅为 `/__opencraft/host-proxy/`；构建产物缺失时必须失败，禁止将 scope 扩到站点根。稳定 SW 路径在 EdgeOne 使用 `no-cache`，内容寻址的应用资源继续走独立缓存策略。
 
 - OpenCraft 通用按钮与 Settings 表单控件的字体由 Typography registry 投影，控件尺寸保持独立；焦点、禁用和错误反馈由共享状态样式消费主题 token。处理中保留按钮原标签占位，不改变控件宽度。见 [Typography ownership](../../../opencraft/docs/platform-architecture.md#typography-ownership)。
 

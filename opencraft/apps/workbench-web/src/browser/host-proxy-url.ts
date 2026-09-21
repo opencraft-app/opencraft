@@ -1,6 +1,8 @@
 import type { BrowserUrl } from "@opencraft/browser-core";
 
 export const HOST_PROXY_PATH_PREFIX = "/__opencraft/host-proxy/v1";
+export const HOST_PROXY_SERVICE_WORKER_URL = "/__opencraft/opencraft-host-proxy-sw.js";
+export const HOST_PROXY_SERVICE_WORKER_SCOPE = "/__opencraft/host-proxy/";
 
 export interface HostProxyRoute {
   readonly brokerId: string;

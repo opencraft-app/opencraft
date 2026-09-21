@@ -134,6 +134,7 @@ describe("build release artifacts", () => {
     mkdirSync(join(source, ".vite"), { recursive: true });
     mkdirSync(join(source, "assets"), { recursive: true });
     writeFileSync(join(source, "embedded-workbench.js"), "await import('./assets/a-test.js');\n");
+    writeFileSync(join(source, "opencraft-host-proxy-sw.js"), "self.addEventListener('fetch', () => {});\n");
     writeFileSync(join(source, "version.json"), '{"schemaVersion":1,"buildId":"test"}');
     writeFileSync(join(source, ".vite", "manifest.json"), "{}");
     writeFileSync(join(source, "assets", "a-test.js"), "export {};\n");
@@ -145,6 +146,7 @@ describe("build release artifacts", () => {
         OPENCRAFT_EMBED_DIST_DIR: source,
       })).toBe(true);
       expect(existsSync(join(output, "__opencraft", "embedded-workbench.js"))).toBe(true);
+      expect(existsSync(join(output, "__opencraft", "opencraft-host-proxy-sw.js"))).toBe(true);
       expect(existsSync(join(output, "__opencraft", "assets", "a-test.js"))).toBe(true);
       expect(existsSync(join(output, "__opencraft", "assets", "a-test.js.map"))).toBe(false);
       expect(existsSync(join(output, "__opencraft", ".vite"))).toBe(false);
@@ -162,6 +164,7 @@ describe("build release artifacts", () => {
     mkdirSync(join(source, "assets"), { recursive: true });
     mkdirSync(workspace, { recursive: true });
     writeFileSync(join(source, "embedded-workbench.js"), "await import('./assets/a-test.js');\n");
+    writeFileSync(join(source, "opencraft-host-proxy-sw.js"), "self.addEventListener('fetch', () => {});\n");
     writeFileSync(join(source, "version.json"), '{"schemaVersion":1,"buildId":"test"}');
     writeFileSync(join(source, ".vite", "manifest.json"), "{}");
     writeFileSync(join(source, "assets", "a-test.js"), "export {};\n");
@@ -184,7 +187,7 @@ describe("build release artifacts", () => {
       }, workspace);
       const upload = resolveDeployDir({ EDGEONE_PAGES_DIR: output });
       expect(upload).toBe(join(output, ".edgeone"));
-      for (const path of ["embedded-workbench.js", "version.json", "assets/a-test.js"]) {
+      for (const path of ["embedded-workbench.js", "opencraft-host-proxy-sw.js", "version.json", "assets/a-test.js"]) {
         expect(existsSync(join(upload, "assets", "__opencraft", path))).toBe(true);
       }
       expect(existsSync(join(upload, "assets", "__opencraft", ".vite"))).toBe(false);

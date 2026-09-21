@@ -93,6 +93,7 @@ function runCommand(command, args, env) {
 
 const EMBEDDED_WORKBENCH_DIRECTORY = "__opencraft";
 const EMBEDDED_WORKBENCH_LOADER = "embedded-workbench.js";
+const EMBEDDED_HOST_PROXY_SERVICE_WORKER = "opencraft-host-proxy-sw.js";
 const EMBEDDED_WORKBENCH_SCRIPT_PATH = `/${EMBEDDED_WORKBENCH_DIRECTORY}/${EMBEDDED_WORKBENCH_LOADER}`;
 
 export function stageOpenCraftEmbeddedWorkbench(
@@ -116,6 +117,7 @@ export function stageOpenCraftEmbeddedWorkbench(
   const sourceRoot = resolve(configuredSource);
   for (const requiredPath of [
     EMBEDDED_WORKBENCH_LOADER,
+    EMBEDDED_HOST_PROXY_SERVICE_WORKER,
     "version.json",
     ".vite/manifest.json",
   ]) {

@@ -440,6 +440,15 @@ cancel, approve or answer an interaction. The stable
 entry; deployments using another static origin must provide the required module
 CORS policy explicitly.
 
+Web Host loopback preview uses a page-owned broker plus a same-origin Service
+Worker. The worker is deployed at
+`/__opencraft/opencraft-host-proxy-sw.js` and its scope is limited to
+`/__opencraft/host-proxy/`; it must never control the LightVela document root.
+Both ordinary Workbench and Embedded builds explicitly emit this asset because
+the Embedded target does not copy the public directory. Frontend artifact
+staging treats a missing worker as a build failure, and EdgeOne serves the
+stable worker URL with `no-cache` so a release can update its routing logic.
+
 `show()` is a browser-origin-scoped persisted toggle, not a one-way component
 callback. One shared feature-state controller owns versioned storage, in-page
 events, cross-tab storage reconciliation and a ref-counted global command.
