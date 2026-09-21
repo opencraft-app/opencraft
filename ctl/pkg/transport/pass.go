@@ -626,7 +626,7 @@ type RenewPassResponse struct {
 	TaskID string `json:"task_id"`
 }
 
-// === 同 SP 变配（升配）内部接口 DTO ===
+// === Pass 变配（升配，含产品允许的跨 SP 路径）内部接口 DTO ===
 // 需求：TAPD 1010132091137784162 §5.2
 //
 // trade → ctl 两个内部端点共用请求体的公共部分：

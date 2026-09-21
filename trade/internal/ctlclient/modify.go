@@ -9,7 +9,8 @@ import (
 	"time"
 )
 
-// 同 SP 变配的 trade → ctl 反向调。需求：TAPD 1010132091137784162 §5.2 / §7.1
+// Pass 变配（含产品允许的跨 SP 路径）的 trade → ctl 反向调。
+// 需求：TAPD 1010132091137784162 §5.2 / §7.1
 //
 // 两个接口对应计费的两个阶段：
 //   - CheckPassModify ← jifei checkModify：下单前校验，只读，不改状态

@@ -21,7 +21,7 @@ import (
 	"ctl/pkg/transport"
 )
 
-// 同 SP 升配的用户侧入口。需求：TAPD 1010132091137784162 §5.1
+// Pass 升配的用户侧入口。需求：TAPD 1010132091137784162 §5.1
 //
 // 这一层只做"选目标 + 询价 + 下单"，不碰 pass 状态：真正的状态推进由
 // jifei → trade.modifyResource → ctl.AcceptPassModify 链路触发（与新购 / 续费同范式）。

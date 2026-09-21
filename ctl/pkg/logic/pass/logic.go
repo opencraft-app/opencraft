@@ -410,7 +410,7 @@ type Logic interface {
 	// 鉴权：transport 层校验用户是 pass 当前持有人（与 RenewPassOrderUrl 一致）。
 	RenewPassPrice(userID, passID string, req *transport.RenewPassPriceRequest) (*transport.RenewPassPriceResult, error)
 
-	// === 同 SP 升配用户侧入口（TAPD 1010132091137784162 §5.1）===
+	// === Pass 升配用户侧入口（TAPD 1010132091137784162 §5.1）===
 
 	// ListPassModifyBundles 返回该 pass 当前可升配的目标套餐及各自实时差价。
 	//
@@ -521,7 +521,7 @@ type Logic interface {
 	// 鉴权：transport 层 requireInternalBearer（trade 出向带 CTL_INTERNAL_TOKEN）。
 	DestroyPass(passID string, tradeFlowID int64, destroyReason string) (taskID string, err error)
 
-	// === 同 SP 变配（升配）===
+	// === Pass 变配（升配）===
 	// 需求：TAPD 1010132091137784162 §5.2 / §6
 
 	// CheckPassModify 是计费下单前的同步检查（trade.checkModify handler 反向调）。

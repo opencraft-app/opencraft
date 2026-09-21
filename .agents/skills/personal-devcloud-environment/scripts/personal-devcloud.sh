@@ -19,6 +19,7 @@ STATE_ROOT="$STATE_BASE/$SITE"
 STATE_FILE="$STATE_ROOT/state.json"
 TOOLS_DIR="$STATE_ROOT/bin"
 LOG_DIR="$STATE_ROOT/logs"
+PAID_E2E_OVERRIDE_DIR="$STATE_ROOT/private-overrides"
 HEARTBEAT_PID_FILE="$STATE_ROOT/heartbeat.pid"
 DEVTUNNEL_PID_FILE="$STATE_ROOT/devtunnel-agent.pid"
 DEVTUNNEL_BIN="$STATE_ROOT/bin/devtunnel-agent"
@@ -39,6 +40,7 @@ BROWSER_SESSION_TTL_SECONDS="${PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS:-28800}"
 AUTH_BASE=""
 AUTH_ADMIN_BASE=""
 CLGATEWAY_BASE=""
+BILLING_APIGW_URL=""
 REGISTRATION_URL=""
 TEMP_FILES=()
 
@@ -153,12 +155,16 @@ configure_site() {
       AUTH_BASE="${AUTH_BASE:-https://api-sandbox-kr-1.lightclaw.tech}"
       CLGATEWAY_BASE="${PERSONAL_DEV_CLGATEWAY_BASE_URL:-$(state_get clgateway_base)}"
       CLGATEWAY_BASE="${CLGATEWAY_BASE:-http://43.153.246.14}"
+      BILLING_APIGW_URL="${PERSONAL_DEV_BILLING_APIGW_URL:-$(state_get billing_apigw_url)}"
+      BILLING_APIGW_URL="${BILLING_APIGW_URL:-http://43.153.236.65/v1/proxy/jifei-billing-apigw-test/resource-center/interface}"
       ;;
     cn)
       AUTH_BASE="${PERSONAL_DEV_AUTH_BASE_URL:-$(state_get auth_base)}"
       AUTH_BASE="${AUTH_BASE:-https://api-sandbox-bj-7.lightclaw.tech}"
       CLGATEWAY_BASE="${PERSONAL_DEV_CLGATEWAY_BASE_URL:-$(state_get clgateway_base)}"
       CLGATEWAY_BASE="${CLGATEWAY_BASE:-http://1.12.212.56}"
+      BILLING_APIGW_URL="${PERSONAL_DEV_BILLING_APIGW_URL:-$(state_get billing_apigw_url)}"
+      BILLING_APIGW_URL="${BILLING_APIGW_URL:-http://1.12.212.56/v1/proxy/jifei-billing-apigw-test/resource-center/interface}"
       ;;
     *)
       die "PERSONAL_DEV_SITE must be intl or cn"
@@ -178,9 +184,11 @@ configure_site() {
   AUTH_ADMIN_BASE="${PERSONAL_DEV_AUTH_ADMIN_BASE_URL:-$AUTH_BASE}"
   AUTH_ADMIN_BASE="${AUTH_ADMIN_BASE%/}"
   CLGATEWAY_BASE="${CLGATEWAY_BASE%/}"
+  BILLING_APIGW_URL="${BILLING_APIGW_URL%/}"
   validate_auth_base
   validate_auth_admin_base
   validate_clgateway_base
+  validate_billing_apigw_url
   REGISTRATION_URL="$AUTH_BASE/auth/dev-environments/registration"
 }
 
@@ -205,6 +213,25 @@ valid = (
     and parsed.password is None
     and parsed.port is not None
     and parsed.path in ("", "/")
+    and not parsed.query
+    and not parsed.fragment
+)
+raise SystemExit(0 if valid else 1)
+PY
+}
+
+validate_billing_apigw_url() {
+  python3 - "$BILLING_APIGW_URL" <<'PY' || die "Billing APIGW must use the testing jifei-billing route without credentials, query, or fragment"
+import sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+valid = (
+    parsed.scheme in ("http", "https")
+    and bool(parsed.hostname)
+    and parsed.username is None
+    and parsed.password is None
+    and parsed.path == "/v1/proxy/jifei-billing-apigw-test/resource-center/interface"
     and not parsed.query
     and not parsed.fragment
 )
@@ -265,6 +292,155 @@ persist_endpoint_config() {
   state_set site "$SITE"
   state_set auth_base "$AUTH_BASE"
   state_set clgateway_base "$CLGATEWAY_BASE"
+  state_set billing_apigw_url "$BILLING_APIGW_URL"
+}
+
+private_file_mode() {
+  if stat -f '%Lp' "$1" >/dev/null 2>&1; then
+    stat -f '%Lp' "$1"
+  else
+    stat -c '%a' "$1"
+  fi
+}
+
+require_0600_file() {
+  local path="$1" mode
+  [[ -f "$path" ]] || die "private paid-E2E file does not exist: $path"
+  mode="$(private_file_mode "$path")"
+  [[ "$mode" == "600" ]] || die "private paid-E2E file must have mode 0600: $path (got $mode)"
+}
+
+prepare_paid_e2e_overrides() {
+  local input="${PERSONAL_DEV_PAID_E2E_SECRET_FILE:-}"
+  local trade_override="$PAID_E2E_OVERRIDE_DIR/trade.env"
+  local cloudladder_override="$PAID_E2E_OVERRIDE_DIR/cloudladdergateway.env"
+  local fingerprint=""
+
+  if [[ -z "$input" && ! -f "$trade_override" && ! -f "$cloudladder_override" ]]; then
+    state_set paid_e2e_enabled false
+    return 1
+  fi
+
+  mkdir -p "$PAID_E2E_OVERRIDE_DIR"
+  chmod 700 "$PAID_E2E_OVERRIDE_DIR"
+  if [[ -n "$input" ]]; then
+    require_0600_file "$input"
+    python3 - \
+      "$input" \
+      "$REPO_ROOT/deploy/localstack/trade/secrets.defaults.env" \
+      "$REPO_ROOT/deploy/localstack/cloudladdergateway/secrets.defaults.env" \
+      "$trade_override" \
+      "$cloudladder_override" <<'PY'
+import os
+import pathlib
+import re
+import sys
+import tempfile
+
+source_path, trade_defaults_path, cloudladder_defaults_path, trade_output, cloudladder_output = sys.argv[1:]
+required = (
+    "JIFEI_BILLING_APP_ID",
+    "JIFEI_BILLING_APP_SECRET",
+    "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET",
+)
+key_pattern = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def read_env(path: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for line_number, raw in enumerate(pathlib.Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise SystemExit(f"invalid env line {line_number} in {path}")
+        key, value = line.split("=", 1)
+        if not key_pattern.fullmatch(key) or key in result:
+            raise SystemExit(f"invalid or duplicate env key at line {line_number} in {path}")
+        if not value or "\x00" in value or "\r" in value or "\n" in value:
+            raise SystemExit(f"empty or invalid env value for {key} in {path}")
+        result[key] = value
+    return result
+
+
+def atomic_write(path: str, values: dict[str, str]) -> None:
+    destination = pathlib.Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=destination.name + ".", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            for key, value in values.items():
+                output.write(f"{key}={value}\n")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+source = read_env(source_path)
+missing = [key for key in required if key not in source]
+unexpected = sorted(set(source) - set(required))
+if missing or unexpected:
+    raise SystemExit(f"paid-E2E env keys mismatch: missing={missing} unexpected={unexpected}")
+
+trade = read_env(trade_defaults_path)
+trade.update({key: source[key] for key in required})
+cloudladder = read_env(cloudladder_defaults_path)
+cloudladder["CLOUDLADDER_TRADE_HMAC_SECRET"] = source[
+    "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET"
+]
+atomic_write(trade_output, trade)
+atomic_write(cloudladder_output, cloudladder)
+PY
+  fi
+
+  require_0600_file "$trade_override"
+  require_0600_file "$cloudladder_override"
+  fingerprint="$(python3 - "$trade_override" "$cloudladder_override" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+
+def value(path: str, key: str) -> str:
+    prefix = key + "="
+    matches = [line[len(prefix):] for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines() if line.startswith(prefix)]
+    if len(matches) != 1 or not matches[0]:
+        raise SystemExit(f"missing {key} in {path}")
+    return matches[0]
+
+
+trade_secret = value(sys.argv[1], "TRADE_BILLING_CLOUDLADDER_HMAC_SECRET")
+cloudladder_secret = value(sys.argv[2], "CLOUDLADDER_TRADE_HMAC_SECRET")
+if trade_secret != cloudladder_secret:
+    raise SystemExit("Trade and local CloudLadder billing HMAC values differ")
+print(hashlib.sha256(trade_secret.encode()).hexdigest())
+PY
+)" || die "private paid-E2E overrides are invalid"
+
+  local expected="${PERSONAL_DEV_EXPECTED_BILLING_HMAC_SHA256:-}"
+  if [[ -n "$expected" ]]; then
+    [[ "$expected" =~ ^[0-9a-fA-F]{12,64}$ ]] || die "PERSONAL_DEV_EXPECTED_BILLING_HMAC_SHA256 must be a 12-64 character hex prefix"
+    [[ "${fingerprint,,}" == "${expected,,}"* ]] || die "billing HMAC fingerprint does not match the expected shared-testing fingerprint"
+  fi
+  state_set paid_e2e_enabled true
+  state_set billing_hmac_fingerprint "${fingerprint:0:12}"
+  log "paid-E2E private overrides ready; billing_hmac_fingerprint=${fingerprint:0:12}"
+  return 0
+}
+
+verify_paid_e2e_runtime_secrets() {
+  [[ "$(state_get paid_e2e_enabled)" == "true" ]] || return 0
+  local trade_encoded cloudladder_encoded fingerprint
+  trade_encoded="$(kubectl get secret -n trade trade-runtime-secrets -o jsonpath='{.data.TRADE_BILLING_CLOUDLADDER_HMAC_SECRET}')"
+  cloudladder_encoded="$(kubectl get secret -n cloudladdergateway cloudladdergateway-runtime-secrets -o jsonpath='{.data.CLOUDLADDER_TRADE_HMAC_SECRET}')"
+  [[ -n "$trade_encoded" && "$trade_encoded" == "$cloudladder_encoded" ]] \
+    || die "runtime Trade and local CloudLadder billing HMAC values are missing or mismatched"
+  fingerprint="$(printf '%s' "$trade_encoded" | base64 --decode | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+  [[ "${fingerprint:0:12}" == "$(state_get billing_hmac_fingerprint)" ]] \
+    || die "runtime billing HMAC fingerprint differs from the private override"
+  log "runtime billing HMAC aligned; fingerprint=${fingerprint:0:12}"
 }
 
 mark_current_site() {
@@ -422,7 +598,7 @@ download_binary() {
 ensure_tools() {
   prepare_state
   local dependency
-  for dependency in curl docker python3 tar git nohup base64 awk; do
+  for dependency in curl docker python3 tar git nohup base64 awk rg; do
     require_command "$dependency"
   done
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
@@ -474,8 +650,12 @@ ensure_tools() {
 
 discover_devcloud_ip() {
   if [[ -n "${PERSONAL_DEV_IP:-}" ]]; then
+    if ! is_devcloud_page_ip "$PERSONAL_DEV_IP"; then
+      log "PERSONAL_DEV_IP must be an IPv4 address in 9.0.0.0/8 or 21.0.0.0/8"
+      return 1
+    fi
     printf '%s\n' "$PERSONAL_DEV_IP"
-    return
+    return 0
   fi
   python3 - <<'PY'
 import ipaddress, socket
@@ -493,10 +673,39 @@ for raw in candidates:
         ip = ipaddress.ip_address(raw)
     except ValueError:
         continue
-    if ip.version == 4 and ip in ipaddress.ip_network('9.0.0.0/8'):
+    if ip.version == 4 and any(ip in network for network in (
+        ipaddress.ip_network('9.0.0.0/8'),
+        ipaddress.ip_network('21.0.0.0/8'),
+    )):
         print(ip)
         raise SystemExit(0)
 raise SystemExit(1)
+PY
+}
+
+is_ipv4() {
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+import ipaddress, sys
+try:
+    address = ipaddress.ip_address(sys.argv[1].strip())
+except ValueError:
+    raise SystemExit(1)
+raise SystemExit(0 if address.version == 4 else 1)
+PY
+}
+
+is_devcloud_page_ip() {
+  python3 - "$1" <<'PY' >/dev/null 2>&1
+import ipaddress, sys
+try:
+    address = ipaddress.ip_address(sys.argv[1].strip())
+except ValueError:
+    raise SystemExit(1)
+allowed = (
+    ipaddress.ip_network('9.0.0.0/8'),
+    ipaddress.ip_network('21.0.0.0/8'),
+)
+raise SystemExit(0 if address.version == 4 and any(address in network for network in allowed) else 1)
 PY
 }
 
@@ -537,7 +746,7 @@ doctor() {
   docker info >/dev/null
   local ip=""
   ip="$(discover_devcloud_ip 2>/dev/null || true)"
-  [[ -n "$ip" ]] || die "cannot discover a 9.0.0.0/8 DevCloud IP; set PERSONAL_DEV_IP"
+  [[ -n "$ip" ]] || die "cannot discover a DevCloud IP in 9.0.0.0/8 or 21.0.0.0/8; set PERSONAL_DEV_IP"
   log "site=$SITE devcloud_ip=$ip auth=$AUTH_BASE clgateway=$CLGATEWAY_BASE"
   log "docker=$(docker version --format '{{.Server.Arch}}')"
   for tool in kubectl kustomize kind; do
@@ -771,9 +980,12 @@ release_binding() {
 }
 
 ensure_local_identity() {
-  local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token
+  local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token central_session_response central_user_id
   require_personal_context
   central_token="$(central_session)"
+  central_session_response="$(curl_with_token "$central_token" "$AUTH_BASE/auth/session")"
+  central_user_id="$(printf '%s' "$central_session_response" | json_value 'd.get("session", {}).get("user", {}).get("id", "")')"
+  [[ "$central_user_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid central user id"
   prepare_local_credentials
   email="$LOCAL_IDENTITY_EMAIL"
   password="$LOCAL_IDENTITY_PASSWORD" # pragma: allowlist secret -- generated private state reference only
@@ -809,8 +1021,7 @@ ensure_local_identity() {
   [[ "$app_id" =~ ^[1-9][0-9]*$ ]] \
     || die "central shadow binding is active but appId is unavailable; use a pre-provisioned testing account"
 
-  kubectl exec -i -n localstack-system statefulset/mysql -- \
-    sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' <<SQL
+  mysql_exec "$(cat <<SQL
 USE lightclaw_auth;
 INSERT INTO shadow_bindings
   (user_id, shadow_user_name, uin, owner_uin, app_id, status, created_at, updated_at)
@@ -821,14 +1032,16 @@ ON DUPLICATE KEY UPDATE
   app_id=VALUES(app_id), status='active', last_error_code=NULL, last_error_message=NULL,
   updated_at=UTC_TIMESTAMP(6);
 SQL
+  )"
 
   state_set local_session_token "$token"
   state_set local_user_id "$local_user_id"
+  state_set central_user_id "$central_user_id"
   state_set shadow_user_name "$shadow_name"
   state_set uin "$uin"
   state_set owner_uin "$owner_uin"
   state_set app_id "$app_id"
-  log "local browser account is aligned with central shadow uin=$uin"
+  log "identity aligned local_user_id=$local_user_id central_user_id=$central_user_id shadow_user_name=$shadow_name uin=$uin app_id=$app_id"
 }
 
 browser_bootstrap_process_matches() {
@@ -1102,19 +1315,67 @@ ensure_devtunnel_agent() {
   log "devtunnel-agent is polling tunnelHost=$tunnel_host and replays only to callback-only 127.0.0.1:$CALLBACK_PORT"
 }
 
+registration_target_matches() {
+  local devcloud_ip="$1" target_ip="$2" registered_port="$3"
+  local expected_source="${PERSONAL_DEV_REGISTRATION_SOURCE_IP:-}"
+  [[ "$registered_port" == "$CALLBACK_PORT" ]] || return 1
+  is_ipv4 "$target_ip" || return 1
+  if [[ -n "$expected_source" ]]; then
+    is_ipv4 "$expected_source" || return 1
+    [[ "$target_ip" == "$expected_source" ]] || return 1
+  fi
+  if [[ "$SITE" == "cn" ]]; then
+    [[ "$target_ip" == "$devcloud_ip" ]] || return 1
+  fi
+}
+
+registration_target_expectation() {
+  local devcloud_ip="$1" expected_source="${PERSONAL_DEV_REGISTRATION_SOURCE_IP:-}"
+  if [[ -n "$expected_source" ]]; then
+    printf '%s:%s\n' "$expected_source" "$CALLBACK_PORT"
+  elif [[ "$SITE" == "cn" ]]; then
+    printf '%s:%s\n' "$devcloud_ip" "$CALLBACK_PORT"
+  else
+    printf 'server-confirmed IPv4:%s\n' "$CALLBACK_PORT"
+  fi
+}
+
+safe_registration_error_field() {
+  python3 - "$1" <<'PY'
+import re, sys
+value = re.sub(r'[\x00-\x1f\x7f]+', ' ', sys.argv[1]).strip()
+value = re.sub(r'\s+', ' ', value)
+print(value[:240])
+PY
+}
+
 register_route() {
   prepare_state
   ensure_site_activation_safe
   require_personal_context
   persist_endpoint_config
   local token response safe_response ip registered_uin target_ip registered_port status tunnel_host tunnel_token expires_at registration_body
+  local request_error error_code error_message expected_target
   token="$(central_session)"
   ip="$(discover_devcloud_ip)"
+  if [[ -n "${PERSONAL_DEV_REGISTRATION_SOURCE_IP:-}" ]] && ! is_ipv4 "$PERSONAL_DEV_REGISTRATION_SOURCE_IP"; then
+    die "PERSONAL_DEV_REGISTRATION_SOURCE_IP must be a valid IPv4 address"
+  fi
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
-  registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
-  response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
-    --data-binary "$registration_body" "$REGISTRATION_URL")"
+  registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
+  new_private_temp registration-request-error
+  request_error="$TEMP_FILE_RESULT"
+  if ! response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
+    --data-binary "$registration_body" "$REGISTRATION_URL" 2>"$request_error")"; then
+    error_code="$(printf '%s' "$response" | json_value 'd.get("code", "") or (d.get("data") or {}).get("code", "")' 2>/dev/null || true)"
+    error_message="$(printf '%s' "$response" | json_value 'd.get("message", "") or (d.get("data") or {}).get("message", "")' 2>/dev/null || true)"
+    error_code="$(safe_registration_error_field "${error_code:-request_failed}")"
+    error_message="$(safe_registration_error_field "${error_message:-registration endpoint request failed}")"
+    remove_private_temp "$request_error"
+    die "registration failed: code=$error_code message=$error_message"
+  fi
+  remove_private_temp "$request_error"
   registered_uin="$(printf '%s' "$response" | json_value 'd.get("uin", "")' 2>/dev/null || true)"
   target_ip="$(printf '%s' "$response" | json_value 'd.get("targetIp", "")' 2>/dev/null || true)"
   registered_port="$(printf '%s' "$response" | json_value 'd.get("port", "")' 2>/dev/null || true)"
@@ -1124,8 +1385,11 @@ register_route() {
   expires_at="$(printf '%s' "$response" | json_value 'd.get("expiresAt", "")' 2>/dev/null || true)"
   [[ "$registered_uin" == "$(state_get uin)" ]] || die "registration returned an unexpected uin"
   [[ "$status" == "active" ]] || die "registration is not active: ${status:-missing}"
-  [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
-    || die "registration source address mismatch: expected $ip:$CALLBACK_PORT, got ${target_ip:-missing}:${registered_port:-missing}"
+  if ! registration_target_matches "$ip" "$target_ip" "$registered_port"; then
+    expected_target="$(registration_target_expectation "$ip")"
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    die "registration source address mismatch: expected $expected_target, got ${target_ip:-missing}:${registered_port:-missing}; unsafe active registration was disabled"
+  fi
   if [[ ! "$tunnel_token" =~ ^[A-Za-z0-9._~+/=-]+$ || ${#tunnel_token} -lt 16 || ${#tunnel_token} -gt 512 ]]; then
     curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
     die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
@@ -1266,21 +1530,46 @@ mysql_scalar() {
     sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -N -B -uroot -e "$1"' sh "$sql"
 }
 
+mysql_exec() {
+  local sql="$1"
+  kubectl exec -n localstack-system statefulset/mysql -- \
+    sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -e "$1"' sh "$sql"
+}
+
+real_kustomize_binary() {
+  local candidate candidate_real wrapper_real
+  candidate="$(command -v kustomize)"
+  [[ -n "$candidate" ]] || die "kustomize is unavailable"
+  candidate_real="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$candidate")"
+  wrapper_real="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RUNTIME_KUSTOMIZE")"
+  [[ "$candidate_real" != "$wrapper_real" ]] || die "PERSONAL_DEV_REAL_KUSTOMIZE resolved to the runtime wrapper"
+  printf '%s\n' "$candidate"
+}
+
 up() {
   prepare_state
   ensure_site_activation_safe
   bootstrap
-  local ip
+  local ip real_kustomize secret_override_dirs
   ip="$(discover_devcloud_ip)"
+  real_kustomize="$(real_kustomize_binary)"
+  secret_override_dirs="$REPO_ROOT/deploy/envs/localstack/overrides"
+  if prepare_paid_e2e_overrides; then
+    secret_override_dirs="$secret_override_dirs:$PAID_E2E_OVERRIDE_DIR"
+  fi
+  bash "$REPO_ROOT/deploy/localstack/tests/${SITE}_cross_sp_seed_test.sh"
   clear_legacy_runtime_overrides
   LOCALSTACK_SITE_KIND="$SITE" LOCALSTACK_PUBLIC_HOST="$ip" \
     LOCALSTACK_STATE_DIR="$STATE_ROOT/localstack" \
+    LOCALSTACK_SECRET_OVERRIDE_DIRS="$secret_override_dirs" \
     LOCALSTACK_JIFEI_GATEWAY_URL="$CLGATEWAY_BASE/v1/proxy/jifei-test/interfaces/interface.php" \
-    PERSONAL_DEV_REAL_KUSTOMIZE="$(command -v kustomize)" \
+    PERSONAL_DEV_REAL_KUSTOMIZE="$real_kustomize" \
     PERSONAL_DEV_RUNTIME_SITE="$SITE" PERSONAL_DEV_RUNTIME_PUBLIC_HOST="$ip" \
     PERSONAL_DEV_RUNTIME_JIFEI_GATEWAY="$CLGATEWAY_BASE/v1/proxy/jifei-test/interfaces/interface.php" \
+    PERSONAL_DEV_RUNTIME_BILLING_APIGW_URL="$BILLING_APIGW_URL" \
     KUBECTL="$(command -v kubectl)" KUSTOMIZE="$RUNTIME_KUSTOMIZE" \
     "$LOCALSTACK" up
+  verify_paid_e2e_runtime_secrets
   state_set stack_status up
   mark_current_site
   register_command
@@ -1309,7 +1598,7 @@ status() {
       registered_port="$(printf '%s' "$response" | json_value 'd.get("port", "")' 2>/dev/null || true)"
       tunnel_host="$(printf '%s' "$response" | json_value 'd.get("tunnelHost", "")' 2>/dev/null || true)"
       [[ "$status" == "active" ]] || rc=1
-      [[ -n "$ip" && "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] || rc=1
+      [[ -n "$ip" ]] && registration_target_matches "$ip" "$target_ip" "$registered_port" || rc=1
       [[ "$tunnel_host" =~ ^[A-Za-z0-9.-]+$ ]] || rc=1
       devtunnel_agent_running "$tunnel_host" || rc=1
     else
@@ -1319,6 +1608,7 @@ status() {
     rc=1
   fi
   kubectl get pods -A -l app.kubernetes.io/part-of=lightclaw-localstack -o wide || rc=1
+  verify_paid_e2e_runtime_secrets || rc=1
   local pod_namespace pod_name
   while IFS=$'\t' read -r pod_namespace pod_name; do
     [[ -n "$pod_namespace" && -n "$pod_name" ]] || continue
@@ -1338,7 +1628,7 @@ heartbeat_running() {
 }
 
 require_active_registration() {
-  local token response status target_ip registered_port tunnel_host ip
+  local token response status target_ip registered_port tunnel_host ip expected_target
   token="$(central_session)"
   response="$(curl_with_token "$token" "$REGISTRATION_URL")"
   status="$(printf '%s' "$response" | json_value 'd.get("status", "")' 2>/dev/null || true)"
@@ -1347,8 +1637,10 @@ require_active_registration() {
   tunnel_host="$(printf '%s' "$response" | json_value 'd.get("tunnelHost", "")' 2>/dev/null || true)"
   [[ "$status" == "active" ]] || die "developer route is not active"
   ip="$(discover_devcloud_ip)"
-  [[ "$target_ip" == "$ip" && "$registered_port" == "$CALLBACK_PORT" ]] \
-    || die "developer route is registered for ${target_ip:-missing}:${registered_port:-missing}, not this DevCloud $ip:$CALLBACK_PORT"
+  if ! registration_target_matches "$ip" "$target_ip" "$registered_port"; then
+    expected_target="$(registration_target_expectation "$ip")"
+    die "developer route is registered for ${target_ip:-missing}:${registered_port:-missing}, expected $expected_target"
+  fi
   devtunnel_agent_running "$tunnel_host" || die "devtunnel-agent is not running for tunnelHost=${tunnel_host:-missing}"
 }
 

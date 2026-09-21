@@ -9,12 +9,31 @@ description: 在个人 DevCloud 从零启动可浏览器点测的完整 LightVel
 [`scripts/personal-devcloud.sh`](scripts/personal-devcloud.sh)，不要手工改共享测试环境的 UIN
 路由、SOPS 或 Argo 状态来替代注册 API。
 
+## 已验收范围
+
+截至 2026-09-21，这套 Skill 已分别在个人 DevCloud 串行完成两站真实 testing 闭环：
+
+- `cn`：北京国内 testing，覆盖登录、影子账号对齐、动态回调注册、询价、新购支付、跨 SP 变配、
+  `checkModify`、`modifyResource`、退款、隔离和销毁。
+- `intl`：韩国国际 testing，覆盖同一组环境与计费链路，并验证国际 devtunnel、来源 IP allowlist、
+  Billing APIGW 内层签名和 CloudLadder 外层 HMAC。
+
+验收请求与终态证据分别记录在
+[`2026-09-20-pass-cross-sp-modify.md`](../../../docs/context/tasks/2026-09-20-pass-cross-sp-modify.md) 和
+[`2026-09-21-personal-devcloud-intl-e2e.md`](../../../docs/context/tasks/2026-09-21-personal-devcloud-intl-e2e.md)。
+
+这里的“一键”是指 `up` 自动搭建完整个人环境、对齐 testing 身份、注册/续租计费回调并启动浏览器
+入口；它不表示免前置条件。默认模式不支付，真实 paid-E2E 仍要求有效 testing session、可扣费余额和
+仓库外 0600 计费签名配置。任一条件缺失时必须 fail closed，不能降级为共享路由、Mock 支付或生产配置。
+同一状态目录一次只激活一个站点；北京与韩国应按“当前站点 `down`，目标站点 `up`”串行切换。
+
 ## 安全边界
 
 - 只允许 `cn` 和 `intl` testing；脚本拒绝 production Auth origin。
 - UIN 只来自当前 testing 登录会话的 active shadow binding，客户端不能提交或覆盖。国内、国际站
-  都提交自动探测到的 `9.0.0.0/8` DevCloud IP、回调端口和 TTL；这是因为跨地域 testing 入口会
-  NAT 来源地址。Auth 仅在 sandbox 显式开关开启时接受，并把目标严格限制为 `9/8:18084`。
+  都只提交回调端口和 TTL，来源 IP 由 Auth 从可信代理链确认。国际站经 NAT 时，注册响应中的
+  `targetIp` 是服务端观测到的出网来源 IP，不要求等于页面访问使用的 DevCloud IP；需要严格预检时
+  可设置 `PERSONAL_DEV_REGISTRATION_SOURCE_IP`。
 - 不读取或下发共享 CloudLadder HMAC、SOPS、`DEVTUNNEL_TOKEN`。国内、国际站都只接收绑定
   UIN、TunnelHost 和 Auth testing registry 状态的短期 capability；脚本不把 capability 明文写入状态文件。
 - 不操作共享 Kubernetes context。脚本只接受自己创建的 `kind-lightvela-personal-<site>`，
@@ -24,6 +43,8 @@ description: 在个人 DevCloud 从零启动可浏览器点测的完整 LightVel
 - 国内账号复用智研准备的 testing 账号；国际账号复用可闭环的 testing 账号。Skill 只对齐登录会话、
   active shadow binding 和本地身份，不允许客户端自报 UIN。
 - 默认验收只下单不支付，不得描述为支付/发货闭环。不要调用生产、真实支付或生产数据库。
+- 真实 testing 支付是显式 opt-in：Skill 不自动读取、解密或复制共享 SOPS/Kubernetes Secret。
+  只有使用者从受控渠道准备 0600 私有输入文件后，才安装个人环境所需的计费签名配置。
 - `commit`、`push`、MR、GitOps、Argo Sync 和发布仍需用户明确确认。
 
 ## 一键启动
@@ -54,8 +75,17 @@ provider 临时取得 `PERSONAL_DEV_ADMIN_TOKEN`，并同时传入 `PERSONAL_DEV
 调用 Auth testing 管理接口完成绑定。admin token 不写入 DevCloud 状态文件、请求正文或输出。
 不要把共享 admin token 发给开发者，也不要把上述变量写进仓库或 shell profile。
 
+页面地址自动识别 DevCloud 的 `9.0.0.0/8` 和 `21.0.0.0/8` 地址；显式传入
+`PERSONAL_DEV_IP` 时也执行同样校验。Shadow Tencent Cloud SDK 默认跟随父仓库 remote
+选择 HTTPS 或 SSH，首次 clone 中断后仅剩 `.git` 的 checkout 会在重跑时自动修复。
+
 Skill 的 runtime kustomize wrapper 会在内存流中注入 DevCloud IP、Auth 回跳、站点和
 testing Account/Billing 地址。生成状态只写入私有状态目录，不修改业务源码或生产 manifests。
+
+中央 testing 用户和个人环境用户是两个不同的 `user_id`：中央用户持有真实 testing shadow
+binding；个人环境用户只承载本地浏览器 session。`up/register` 会把中央 binding 的
+`shadow_user_name / uin / owner_uin / app_id` 写入个人 Auth，并在私有 `state.json` 中分别记录
+`central_user_id` 与 `local_user_id`，不能把二者混成同一个账号。
 
 脚本从本地 Auth 申请短期 E2E session 后，只输出一个两分钟内有效、单次消费的随机 nonce URL。
 该 URL 在 DevCloud 本机内存中换取登录态，再跳转到前端；session token 不写状态文件、不进入
@@ -96,6 +126,42 @@ PERSONAL_DEV_SITE=cn PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:<受控�
 收到计费 `checkCreate` 或发货回调。只有当当前 checkout 已实现真实变配 API 时，才能增加并执行
 `checkModify` 用例。现有 `verify-checkmodify-no-pay` 会明确失败，防止把普通下单误报成升配覆盖。
 
+## 真实 testing 支付与退款
+
+需要真实新购、支付、变配、退款和销毁时，先由 testing 环境 owner 提供以下三项，写入仓库外的
+0600 文件。不要在命令行、聊天、测试报告或 Git diff 中展开值：
+
+```text
+JIFEI_BILLING_APP_ID=<testing value>
+JIFEI_BILLING_APP_SECRET=<testing value>
+TRADE_BILLING_CLOUDLADDER_HMAC_SECRET=<testing value>
+```
+
+然后按目标站点执行；国内使用 `cn`，国际使用 `intl`：
+
+```bash
+chmod 600 /private/path/paid-e2e.env
+# 北京使用 cn；韩国使用 intl。
+PERSONAL_DEV_SITE=intl \
+PERSONAL_DEV_PAID_E2E_SECRET_FILE=/private/path/paid-e2e.env \
+PERSONAL_DEV_EXPECTED_BILLING_HMAC_SHA256=<shared-testing fingerprint prefix> \
+bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh up
+```
+
+`up` 会完成以下事情：
+
+- 预检当前站点的普通套餐、AI 套餐、AI Gateway plan、SP/PID/CategoryID/SV seed；缺项时在构建前失败。
+- 只接受 `jifei-billing-apigw-test` 路由，拒绝 `prod` Billing APIGW 路径。
+- 把完整 Secret override 生成到
+  `.localstack/personal-devcloud/<site>/private-overrides/`，目录权限 0700、文件权限 0600；原始输入可在
+  成功生成后删除。后续 `up` 会复用私有 override，不会被 checked-in 默认值覆盖。
+- 同一 HMAC 同时注入个人 Trade 的 billing-only 配置和个人 CloudLadder 的 trade caller；只输出
+  SHA-256 fingerprint，并可与共享 testing fingerprint 前缀做 fail-closed 比对。
+- 重启完成后重建本机 endpoint exposure，避免 Trade Pod rollout 后旧 `port-forward` 指向已退出 Pod。
+
+个人环境只保存这三项的派生 override，不负责从共享环境获取值。若没有明确的 testing owner
+交付，不得从 SOPS、生产 Secret 或他人 namespace 自动解密复制。
+
 注册临近过期或 DevCloud IP 变化时可手工续租：
 
 ```bash
@@ -119,8 +185,17 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 
 - 先运行 `doctor`，再看 `.localstack/personal-devcloud/<site>/logs/`。
 - `status` 任一依赖失败都按失败处理；不要只凭页面可打开宣称计费链路已通。
+- paid-E2E 模式下，`status` 还会校验个人 Trade 与个人 CloudLadder HMAC 完全一致，并只打印
+  fingerprint；不一致时立即失败。
+- `BillingAPIGWBaseURL is required` 表示缺少 testing Billing APIGW 配置；`401 missing authentication
+  credentials` 表示缺 CloudLadder 外层签名；`401 invalid authentication signature` 表示 HMAC 与目标
+  testing CloudLadder 不匹配。这三类问题都发生在退款后的 `ModifyResourceStatus`/销毁补发链路，
+  不能用询价、新购或 `checkModify` 成功替代验证。
 - 任一站点若缺 `tunnelToken`，脚本会注销刚创建的注册并 fail closed；此时检查 testing Auth、
   CloudLadderGateway 和 devtunnel 是否为同一版本，不要补共享 token 到 DevCloud。
+- 注册失败会输出经过清洗的业务 `code/message`。`target_ip_not_allowed` 表示 Auth 实际观测到的
+  来源 IP 未进入对应 testing CloudLadder/devtunnel 的精确 allowlist；先核对服务端观测值，
+  不要把页面 IP或整段公网 CIDR 盲目加入配置。
 - 验收以本 Skill 的 `status`、`verify-order-no-pay` 和
   [`tests/contract_test.sh`](tests/contract_test.sh) 为准；真实 testing 回调还必须保留
   CloudLadder 审计与本机 agent 日志作为同一请求的证据。

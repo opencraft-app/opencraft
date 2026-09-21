@@ -85,10 +85,11 @@ func main() {
 		cfg.JifeiCGWGatewayURL,
 		cfg.JifeiCGWXQCloudUserID,
 		jifeiclient.Options{
-			BillingAPIGWBaseURL:   cfg.JifeiBillingAPIGWURL,
-			BillingAppID:          cfg.JifeiBillingAppID,
-			BillingAppSecret:      cfg.JifeiBillingAppSecret,
-			CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
+			BillingAPIGWBaseURL:          cfg.JifeiBillingAPIGWURL,
+			BillingAppID:                 cfg.JifeiBillingAppID,
+			BillingAppSecret:             cfg.JifeiBillingAppSecret,
+			CloudLadderHMACSecret:        cfg.CloudLadderHMACSecret,
+			BillingCloudLadderHMACSecret: cfg.BillingCloudAPICloudLadderHMACSecret,
 			// v1.7.x 国际站接入 A3：出向 envelope.interface.extraPara 按 site 注入
 			// site / language（intl → site="2" language="en"；cn / 空 / 非法 → 不注入）。
 			SiteKind: cfg.SiteKind,
@@ -101,11 +102,7 @@ func main() {
 			Region:        cfg.BillingCloudAPIRegion,
 			Endpoint:      cfg.BillingCloudAPIEndpoint,
 			XQCloudUserID: cfg.BillingCloudAPIXQCloudUserID,
-			CloudLadder: cloudbillingclient.CloudLadderConfig{
-				GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
-				RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
-				Secret:         cfg.CloudLadderHMACSecret,
-			},
+			CloudLadder:   billingCloudLadderConfig(cfg),
 		})
 		if billingErr != nil {
 			log.Printf("[billing-cloudapi] unavailable: %v", billingErr)
@@ -326,4 +323,12 @@ func main() {
 		log.Fatalf("listen and serve: %v", err)
 	}
 	cancelRoot()
+}
+
+func billingCloudLadderConfig(cfg config.Config) cloudbillingclient.CloudLadderConfig {
+	return cloudbillingclient.CloudLadderConfig{
+		GatewayBaseURL: cfg.BillingCloudAPICloudLadderGatewayURL,
+		RouteID:        cfg.BillingCloudAPICloudLadderRouteID,
+		Secret:         cfg.BillingCloudAPICloudLadderHMACSecret,
+	}
 }

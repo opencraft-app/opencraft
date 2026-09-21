@@ -1,4 +1,4 @@
-// 同 SP 变配父 task ModifyPass。需求：TAPD 1010132091137784162 §6 执行顺序 / §8 幂等与失败恢复
+// Pass 变配父 task ModifyPass。需求：TAPD 1010132091137784162 §6 执行顺序 / §8 幂等与失败恢复
 //
 // 入口 logic.AcceptPassModify 已 CAS active → modifying 并写入 modify_flow_id /
 // modify_target_bundle_id，本父 task 负责把权益真正升上去：
