@@ -724,7 +724,7 @@ test("physical scroll distance and input classification have one platform transa
 
 test("Composer menus live in the root overlay plane with Codex viewport constraints", () => {
   assert.equal(
-    Array.from(composerSource.matchAll(/<DropdownMenu\.Portal>/gu)).length,
+    Array.from(composerSource.matchAll(/<DropdownMenu\.Portal container=\{portalContainer\}>/gu)).length,
     2,
   );
   assert.equal(
@@ -1081,7 +1081,7 @@ test("right-panel maximize is one semantic-to-motion geometry transaction", () =
   );
   assert.match(
     appShellSource,
-    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[totalLeftWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
+    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome,\s*sidebarOpen\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[totalLeftWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
   );
   assert.match(
     appShellSource,
@@ -1572,8 +1572,8 @@ test("response spacer mutation stays private behind a read/subscribe API", () =>
   assert.doesNotMatch(webConversationSource, /responseApi\?\.spacerHeight/u);
 });
 
-test("the Web host explicitly selects Codex response placement without a hidden policy default", () => {
-  assert.match(workbenchApp, /scrollPolicy="response-placement"/u);
+test("the Web host explicitly selects Codex natural bottom-follow without a hidden policy default", () => {
+  assert.match(workbenchApp, /scrollPolicy="natural"/u);
   assert.match(workbenchApp, /consumePendingLatestTurnSubmitPlacement=\{consumeLatestTurnPlacement\}/u);
   assert.match(webConversationSource, /readonly scrollPolicy: ConversationScrollPolicy/u);
   assert.doesNotMatch(webConversationSource, /scrollPolicy = "natural"/u);

@@ -52,6 +52,8 @@ export interface LightVelaAccountPort {
 export interface LightVelaHermesTransportOptions {
   readonly account: LightVelaAccountPort;
   readonly dashboardUrl?: string;
+  /** Fixed native Hermes Profile scope for an embedded Bot Host. */
+  readonly profile?: string;
   readonly WebSocketImpl?: typeof WebSocket;
   readonly sha1?: Rfc6455Sha1;
   /** React Native Response cannot consume a custom streaming response body. */
@@ -320,22 +322,25 @@ export class LightVelaHermesTransport implements DuplexTransport {
     );
     const WebSocketImpl = this.options.WebSocketImpl ?? globalThis.WebSocket;
     const scope = this.options.account.getSnapshot().credentialScope;
-    const cacheKey = scope ? `${scope}:${botId}` : botId;
-    if (this.composerQueueScope !== cacheKey) {
+    const physicalCacheKey = scope ? `${scope}:${botId}` : botId;
+    const logicalHostKey = this.options.profile === undefined
+      ? physicalCacheKey
+      : `${physicalCacheKey}:profile:${encodeURIComponent(this.options.profile)}`;
+    if (this.composerQueueScope !== logicalHostKey) {
       this.composerQueue?.dispose();
       this.composerQueue = browserHermesComposerQueueService(
-        cacheKey,
+        logicalHostKey,
         this.options.composerQueueStorage,
       );
-      this.composerQueueScope = cacheKey;
+      this.composerQueueScope = logicalHostKey;
     }
-    if (this.profileSkillsScope !== cacheKey) {
+    if (this.profileSkillsScope !== logicalHostKey) {
       this.profileSkills?.dispose();
       this.profileSkills = new HermesDashboardProfileSkillsHandler(
-        `vela.hermes.profile-skills.v1:${cacheKey}`,
+        `vela.hermes.profile-skills.v1:${logicalHostKey}`,
         this.options.profileSkillsJournalStorage ?? browserProfileSkillsJournalStorage(),
       );
-      this.profileSkillsScope = cacheKey;
+      this.profileSkillsScope = logicalHostKey;
     }
     this.whatsappOnboarding ??= new HermesDashboardWhatsAppOnboardingHandler();
     stageStartedAt = Date.now();
@@ -369,7 +374,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     stageStartedAt = Date.now();
     let sessionToken: string | null = null;
     try {
-      sessionToken = (await this.options.sessionTokenCache?.get(cacheKey))?.trim() || null;
+      sessionToken = (await this.options.sessionTokenCache?.get(physicalCacheKey))?.trim() || null;
     } catch {
       // IndexedDB is a performance hint and never blocks Host connection.
     }
@@ -392,7 +397,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
         try {
           // Compare-and-delete prevents a stale tab from erasing a token that
           // another tab has already refreshed for this physical instance.
-          await this.options.sessionTokenCache?.remove(cacheKey, sessionToken);
+          await this.options.sessionTokenCache?.remove(physicalCacheKey, sessionToken);
         } catch {
           // Cache invalidation is best-effort.
         }
@@ -405,7 +410,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       if (signal?.aborted || generation !== this.generation) throw abortError();
       this.logConnection("hermes:backend-ready", generation, { stageMs: Date.now() - stageStartedAt });
       try {
-        await this.options.sessionTokenCache?.put(cacheKey, sessionToken);
+        await this.options.sessionTokenCache?.put(physicalCacheKey, sessionToken);
       } catch {
         // Token persistence is an optimization, never part of Host readiness.
       }
@@ -476,6 +481,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       profileSkills,
       whatsappOnboarding,
       instanceId: botId,
+      profileScope: this.options.profile,
       botManagement: this.botManagement,
       resolveProfileBots: async () => {
         if (generation !== this.generation || signal?.aborted) throw abortError();

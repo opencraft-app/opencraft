@@ -8,13 +8,14 @@ import {
   ExtensionManager,
   ExtensionSupervisor,
   MemoryExtensionInstallationPersistence,
+  createPersistentExtensionInstallations,
   provideExtensionInstallationRepository,
   type ExtensionInstallationPersistence,
   type ExtensionInstallationRecord,
   type ExtensionModuleLoader,
   type TrustedExtensionDefinition,
 } from "@opencraft/extension-runtime";
-import { IndexedDbExtensionInstallationPersistence } from "../apps/workbench-web/src/runtime/indexeddb-extension-installation-persistence.ts";
+import { openIndexedDbExtensionPersistence } from "../apps/workbench-web/src/runtime/indexeddb-extension-persistence.ts";
 
 function manifest(id: string, version = "1.0.0"): ExtensionManifestV1 {
   return {
@@ -133,14 +134,18 @@ test("enable persists only after activation; disable persists before unload", as
 test("IndexedDB installation persistence survives a browser restart", async () => {
   const factory = new IDBFactory();
   const databaseName = "vela-extension-installations-test";
-  const firstPersistence = await IndexedDbExtensionInstallationPersistence.open({ factory, databaseName });
+  const firstBackend = await openIndexedDbExtensionPersistence(databaseName, factory);
+  const firstPersistence = await createPersistentExtensionInstallations(firstBackend);
   const first = await repository(firstPersistence);
   await first.repository.put(installation("vela.persisted", true));
   await first.fiber.dispose();
+  await firstBackend.close();
 
-  const secondPersistence = await IndexedDbExtensionInstallationPersistence.open({ factory, databaseName });
+  const secondBackend = await openIndexedDbExtensionPersistence(databaseName, factory);
+  const secondPersistence = await createPersistentExtensionInstallations(secondBackend);
   const second = await repository(secondPersistence);
   assert.equal(second.repository.getSnapshot().records[0]?.extensionId, "vela.persisted");
   assert.equal(second.repository.getSnapshot().records[0]?.enabled, true);
   await second.fiber.dispose();
+  await secondBackend.close();
 });

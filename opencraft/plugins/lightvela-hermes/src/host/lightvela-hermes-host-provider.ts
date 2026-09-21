@@ -12,8 +12,15 @@ import type { LightVelaRegion } from "../account/lightvela-account-contract";
 export interface LightVelaHermesHostConfig {
   readonly dashboardUrl?: string;
   readonly instanceId?: string;
+  readonly profileId?: string;
   readonly region?: LightVelaRegion;
   readonly accountId?: string;
+}
+
+/** CTL names the root Bot `main`; the native Hermes Profile is `default`. */
+export function nativeHermesProfileId(profileId: string): string {
+  const normalized = profileId.trim();
+  return normalized === "main" ? "default" : normalized;
 }
 
 function validateConfig(config: HostConnectionJson): LightVelaHermesHostConfig & HostConnectionJson {
@@ -27,8 +34,16 @@ function validateConfig(config: HostConnectionJson): LightVelaHermesHostConfig &
   }
   if (record.instanceId !== undefined && (typeof record.instanceId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(record.instanceId))) throw new TypeError("Invalid LightVela instance ID");
   if (record.instanceId !== undefined && record.region !== "cn" && record.region !== "intl") throw new TypeError("An explicit instance requires its account region");
+  if (record.profileId !== undefined && (
+    typeof record.profileId !== "string"
+    || !record.profileId.trim()
+    || record.profileId.trim().length > 128
+    || /[\u0000-\u001f\u007f]/u.test(record.profileId)
+    || !record.instanceId
+  )) throw new TypeError("Invalid LightVela profile ID");
   return Object.freeze({
     ...(record.instanceId === undefined ? {} : { instanceId: record.instanceId, region: record.region }),
+    ...(record.profileId === undefined ? {} : { profileId: record.profileId.trim() }),
     ...(record.accountId === undefined ? {} : {accountId: record.accountId}),
     ...(typeof record.dashboardUrl === "string" && record.dashboardUrl.trim()
       ? { dashboardUrl: record.dashboardUrl.trim() }
@@ -86,6 +101,9 @@ export function createLightVelaHermesHostProvider(
       return new LightVelaHermesTransport({
         account: environmentAccountPort(account, normalized),
         dashboardUrl: normalized.dashboardUrl,
+        profile: normalized.profileId === undefined
+          ? undefined
+          : nativeHermesProfileId(normalized.profileId),
         sessionTokenCache,
       });
     },

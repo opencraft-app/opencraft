@@ -40,6 +40,7 @@
 - Optional/nullable 字段必须表示真实缺失。默认值只在 authority 边界填充；声明但忽略的 capability、route、command 或 wire 字段必须删除或端到端实现。
 - 协议变化必须同时检查声明、生成类型、Host/provider adapter、持久化/恢复、失败语义和兼容测试。共享 TypeScript 能编译不等于已部署 Host 兼容。
 - UI Preferences 统一消费 `UiPreferencesRuntime`；React 不直接选择 localStorage、IndexedDB、SQLite 或远端存储。scope、adapter、CAS 和正式 key 以 [UI preference authority](docs/platform-architecture.md#ui-preference-authority) 为准。
+- Desktop 路径必须消费 [Directory identity charter](docs/architecture/product-identity.md#directory-identity-charter) 的唯一 resolver：生产数据根不得含 `vela`，旧 `@vela/*` 只允许作为幂等迁移输入；Main/Daemon/DSH 显式使用 runtime cwd，Thread workspace cwd 必须来自 Project/Thread，禁止回退 `process.cwd()`。
 - `plugins/lightvela-hermes/src/upstream/mono2/` 是机械生成层，不得直接编辑。修改 `frontend/` 真源后运行 `npm run sync:mono2-agent-console`，并提交生成副本与 `UPSTREAM.json`；只读漂移检查使用 `npm run check:mono2-agent-console`。
 
 ## UI 与设计系统

@@ -162,6 +162,8 @@ interface PassListResponse {
 export interface LightVelaAccountServiceOptions {
   readonly desktopAccount?: LightVelaDesktopAccountPort;
   readonly apiBase?: string;
+  /** Application-owned site binding; does not rewrite the shared region preference. */
+  readonly initialRegion?: LightVelaRegion;
   readonly storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   /** Browser-navigation-scoped PKCE transaction state; never stores credentials. */
   readonly transactionStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -401,7 +403,8 @@ export class LightVelaAccountService {
     this.location = options.location ?? globalThis.location;
     this.history = options.history ?? globalThis.history;
     this.runtimeCommands = options.runtimeCommands;
-    this.region = this.storage?.getItem(LIGHTVELA_REGION_KEY) === "cn" ? "cn" : "intl";
+    this.region = options.initialRegion
+      ?? (this.storage?.getItem(LIGHTVELA_REGION_KEY) === "cn" ? "cn" : "intl");
     this.credentialScope = this.storage?.getItem(CACHE_SCOPE_KEY) || this.credentialScope;
     this.storage?.setItem(CACHE_SCOPE_KEY, this.credentialScope);
     this.snapshot = Object.freeze({ ...this.snapshot, region: this.region, credentialScope: this.credentialScope,

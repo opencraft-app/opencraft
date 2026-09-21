@@ -13,6 +13,24 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
 
 contextBridge.exposeInMainWorld("opencraftDesktop", Object.freeze({
   kind: "electron",
+  extensionData: Object.freeze({
+    read: (scope: string) => ipcRenderer.invoke("opencraft:extension-data-read", scope),
+    compareAndSet: (scope: string, revision: number, version: number, value: unknown) => ipcRenderer.invoke("opencraft:extension-data-commit", scope, revision, version, value),
+    subscribe: (listener: (scope: string) => void) => {
+      const receive = (_event: Electron.IpcRendererEvent, scope: string) => listener(scope);
+      ipcRenderer.on("opencraft:extension-data-changed", receive);
+      return () => ipcRenderer.off("opencraft:extension-data-changed", receive);
+    },
+  }),
+  connectorConfiguration: Object.freeze({
+    load: () => ipcRenderer.invoke("opencraft:connector-configuration-load"),
+    compareAndSet: (revision: number, value: unknown) => ipcRenderer.invoke("opencraft:connector-configuration-save", revision, value),
+    subscribe: (listener: () => void) => {
+      const receive = () => listener();
+      ipcRenderer.on("opencraft:connector-configuration-changed", receive);
+      return () => ipcRenderer.off("opencraft:connector-configuration-changed", receive);
+    },
+  }),
   ...(process.platform === "darwin" ? { speech: Object.freeze({
     probe: (language?: string) => ipcRenderer.invoke("opencraft:speech-probe", language),
     readPreferences: () => ipcRenderer.invoke("opencraft:speech-preferences-read"),

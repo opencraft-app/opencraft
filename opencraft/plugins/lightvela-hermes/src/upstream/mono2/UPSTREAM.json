@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "1d0f09103c8f056253f261e6b9d7c66766133368c053a103a4cf23893d9fe6a6"
+      "sourceSha256": "cae75562325c69c46aad4c5d94fde8153f0239bb1aef5fbaf31c525797aa82d8"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "8a73ac628028a9f97e75b9b63b7d20aadd871b1d1287ab1288aca37baf00fd5d"
+      "sourceSha256": "505d77cc81d227a65d050229da32eb60d62f3f8036cb9896b738ca7db5290aec"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "47aabfbf2ea09817b27c2f94c96263c0fddf27de36d1ec7304baf933df2abe08"
+      "sourceSha256": "62aa6056a00c5b99c30f4550b1b3f2430ec2a2241ab20702b67da7b4f018f2f5"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "0194a5f699d69acec17499727de185be4e34aff93d2135777db48d349f459576"
+      "sourceSha256": "4bea129e8b23f01ad6340c47032f17571e392a3bda1f644bdd094276cd8be3ce"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "8cf44aa23be7aa96f36e9cae64ceb6a524f7b3fa711952288d21e7a1827fcacd"
+      "sourceSha256": "08af7dacf74921ba4170c94c4b7586f5eafbc930edb4422303ac8b066cdc937a"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "646746bb9fad2f9e0df3d296f32a7aaf87d596c8c29ec08b7c29412a11645784"
+      "sourceSha256": "1ee6ef44e298f8c6ee86dfa3729ff0c4bbe376b8102367fcc9559f031166580f"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "70d7d188288993a9d2c4e7d6a89e159d93783f441ef88bf85a6d6c4a221927fd"
+      "sourceSha256": "6bd4f0548f8e492bcea1b7a7a4e2043e7ff6f1e61eacd61c2a300f8382f4b235"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "02cf68dbdb200cb7d5e923e76efd29f9bae4e25d6c5ab2c1af8300996edced4c"
+      "sourceSha256": "c2cb610d31078ffd518d5435ad01cfcfccd41726eb9bd33c7c73dc2b358b526b"
     },
     {
       "file": "i18n/index.ts",
@@ -369,7 +369,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "611fe016ba4d65b326725bd99de6abaaa5514321cbce71efabc3fd1e2cb325e0"
+      "sourceSha256": "d1124b4e02ae90a004f9232669ad336cb44b80fd27de30b7c80c5685f7f1a72d"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",

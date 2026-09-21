@@ -5,12 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./demo": "./src/demo-seed.ts"
+    "./demo": "./src/demo-seed.ts",
+    "./connectors/configuration": "./src/connectors/configuration.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opencraft/document-storage": "0.1.0",
+    "@opencraft/connector-core": "0.1.0",
     "@deepseek-ai/cordis": "4.0.1",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",

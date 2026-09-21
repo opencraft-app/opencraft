@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -50,6 +50,7 @@ async function fakeDsh() {
   const activeSessions = new Set<string>();
   const queues = new Map<string, Array<Record<string, any>>>();
   let nextQueueId = 1;
+  let queuePublicationPaused = false;
   const publishMux = (payload: Record<string, unknown>) => {
     const frame = JSON.stringify({ payload });
     for (const [stream, path] of streams) if (path === "/api/events.mux") stream.send(frame);
@@ -59,6 +60,9 @@ async function fakeDsh() {
     sessionId,
     items: queues.get(sessionId) ?? [],
   });
+  const scheduleQueuePublication = (sessionId: string) => {
+    if (!queuePublicationPaused) setTimeout(() => publishQueue(sessionId), 0);
+  };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const chunks: Buffer[] = [];
@@ -161,7 +165,7 @@ async function fakeDsh() {
           },
         };
         queues.set(sessionId, [...(queues.get(sessionId) ?? []), item]);
-        setTimeout(() => publishQueue(sessionId), 0);
+        scheduleQueuePublication(sessionId);
       } else if (envelope.payload.mode === "queue") {
         activeSessions.add(sessionId);
         setTimeout(() => { publishMux({
@@ -186,10 +190,14 @@ async function fakeDsh() {
         queues.set(sessionId, current.map((item) => item.id === itemId
           ? { ...item, message: { ...item.message, content: action.content } }
           : item));
+      } else if (action.kind === "steer") {
+        queues.set(sessionId, current.map((item) => item.id === itemId
+          ? { ...item, placement: "steering" }
+          : item));
       } else {
         queues.set(sessionId, current.filter((item) => item.id !== itemId));
       }
-      setTimeout(() => publishQueue(sessionId), 0);
+      scheduleQueuePublication(sessionId);
     }
     if (envelope.method === "llm.models") value = {
       groups: [
@@ -228,6 +236,11 @@ async function fakeDsh() {
     url: `http://127.0.0.1:${address.port}`,
     calls,
     responses,
+    pauseQueuePublication() { queuePublicationPaused = true; },
+    resumeQueuePublication(sessionId: string) {
+      queuePublicationPaused = false;
+      publishQueue(sessionId);
+    },
     publish(envelope: Record<string, unknown>) {
       for (const [stream, path] of streams) if (path === "/api/events.mux") stream.send(JSON.stringify(envelope));
     },
@@ -259,6 +272,45 @@ function request(socket: WebSocket, id: number, method: string, params: unknown 
     socket.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
   });
 }
+
+test("Local Agent Host advertises and owns attachment staging", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-host-attachments-"));
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory: directory });
+  const socket = await connect(host.websocketUrl);
+  try {
+    const initialized = await request(socket, 901, "initialize", {
+      clientInfo: { name: "attachment-test", version: "1" },
+    });
+    assert.deepEqual(
+      initialized.capabilities.extensions["opencraft/attachment-staging"],
+      {
+        version: 1,
+        sources: ["client-bytes"],
+        locations: ["host-file"],
+        maxBytes: 32 * 1024 * 1024,
+      },
+    );
+    const staged = await request(socket, 902, "attachment/stage", {
+      clientAttachmentId: "host-attachment-1",
+      name: "template.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size: 4,
+      source: { kind: "client-bytes", dataBase64: "AQIDBA==" },
+    });
+    assert.equal(staged.ref.location.kind, "host-file");
+    assert.deepEqual(await readFile(staged.ref.location.path), Buffer.from([1, 2, 3, 4]));
+    assert.deepEqual(
+      await request(socket, 903, "attachment/remove", { id: staged.ref.id }),
+      { removed: true },
+    );
+  } finally {
+    socket.close();
+    await host.close();
+    await dsh.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("DSH questions cross the real mux and AppServer WebSocket, survive reconnect, and return native responses", async () => {
   const dsh = await fakeDsh();
@@ -410,6 +462,10 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
         atomicSteer: true,
         perItemPause: false,
       });
+      assert.deepEqual(initialized.capabilities.extensions["opencraft/resume-history"], {
+        version: 1,
+        mode: "paginated",
+      });
       assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].version, 1);
       assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.install, true);
       assert.equal(initialized.capabilities.extensions["opencraft/profile-skills"].features.officialCatalog, false);
@@ -438,17 +494,51 @@ test("local Agent Host projects DSH's authoritative queue and translates queue c
       });
       assert.equal(updated.queuedSubmission.input[0].text, "edited");
 
-      const steered = await request(socket, 56, "thread/queue/steer", {
+      dsh.pauseQueuePublication();
+      const steerRequest = request(socket, 56, "thread/queue/steer", {
         threadId: started.thread.id,
         expectedTurnId: `dsh-turn-${started.thread.id}-1`,
         queuedSubmissionId: added.queuedSubmission.id,
       });
+      const steered = await Promise.race([
+        steerRequest,
+        new Promise<never>((_resolve, reject) => setTimeout(
+          () => reject(new Error("thread/queue/steer waited for a session/queue snapshot")),
+          500,
+        )),
+      ]);
       assert.equal(steered.turnId, `dsh-turn-${started.thread.id}-1`);
       assert.equal(dsh.calls.findLast((call) => call.method === "session.updateQueue")?.payload.action.kind, "steer");
       assert.equal(dsh.calls.filter((call) => call.method === "session.prompt" && call.payload.mode === "steer").length, 0);
 
+      dsh.resumeQueuePublication(started.thread.id);
+      await new Promise((resolve) => setTimeout(resolve, 20));
       const empty = await request(socket, 57, "thread/queue/list", { threadId: started.thread.id });
       assert.deepEqual(empty.data, []);
+      assert.equal(empty.steering.length, 1);
+      assert.equal(empty.steering[0].clientUserMessageId, "queued-client-message");
+      assert.equal(empty.steering[0].input[0].text, "edited");
+      assert.equal(empty.steering[0].targetTurnId, `dsh-turn-${started.thread.id}-1`);
+
+      const second = await request(socket, 58, "thread/queue/add", {
+        threadId: started.thread.id,
+        clientUserMessageId: "second-queued-client-message",
+        input: [{ type: "text", text: "second follow up", text_elements: [] }],
+      });
+      dsh.pauseQueuePublication();
+      const startRequest = request(socket, 59, "thread/queue/start", {
+        threadId: started.thread.id,
+        queuedSubmissionId: second.queuedSubmission.id,
+      });
+      const resumed = await Promise.race([
+        startRequest,
+        new Promise<never>((_resolve, reject) => setTimeout(
+          () => reject(new Error("thread/queue/start waited for a session/queue snapshot")),
+          500,
+        )),
+      ]);
+      assert.equal(resumed.turn.id, `dsh-turn-${started.thread.id}-1`);
+      dsh.resumeQueuePublication(started.thread.id);
     } finally {
       socket.close();
     }
@@ -482,6 +572,16 @@ test("local Agent Host routes Profile Skills mutations to its isolated DSH user 
       scope: { type: "local-dsh", root: "user" },
     });
     assert.deepEqual(listed.data.map((skill: { name: string }) => skill.name), ["routed-skill"]);
+    // File management is supported even when an externally managed engine has
+    // no refresh bridge. That permanent limitation must not poison chat.
+    const models = await request(socket, 73, "model/list", {});
+    const started = await request(socket, 74, "thread/start", { cwd: "/workspace/demo", model: models.data[0].id });
+    const turn = await request(socket, 75, "turn/start", {
+      threadId: started.thread.id, input: [{ type: "text", text: "Continue after local installation" }],
+    });
+    assert.ok(turn.turn.id);
+    assert.match(receipt.action.logLines.at(-1), /does not support automatic Skill catalog refresh/);
+    assert.ok(!receipt.action.logLines.some((line: string) => line.includes("pending")));
   } finally {
     socket.close();
     await host.close();

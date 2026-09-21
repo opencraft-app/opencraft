@@ -666,6 +666,12 @@ projection，不直接持有 Provider。
 
 ## 13. 实施顺序
 
+当前已实现的 Connector 纵切位于
+`packages/workbench-runtime/src/connectors/{runtime,capability-runtime,dynamic-tools}.ts`：它验证了
+scoped catalog、确定性搜索、cursor、按需 schema、短期 handle、调用复核与 AppServer deferred
+投影，但没有宣称下列完整 Fabric 阶段已经完成。Connector 的连接、授权和物理 MCP owner 仍与
+capability projection 分离；详见 [平台 Connector](platform-connectors.md)。
+
 ### Phase 0：只建索引，不改执行
 
 1. 实现 `capability-core`；

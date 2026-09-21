@@ -4,6 +4,7 @@ import { HermesAppServerAdapter, isHermesSessionNotFound } from "./adapter";
 import { HermesProjectionRecovery } from "./projection-recovery";
 import { HermesBotAppServerHandler, type HermesBotHandlerOptions } from "./bot-protocol-handler";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
+import { HermesAttachmentStagingService } from "./attachment-staging";
 import type { HermesHistoryClient } from "./history-client";
 import type { HermesHostTerminal } from "./tat-terminal";
 import type { HermesProcessService } from "./process-service";
@@ -46,6 +47,8 @@ export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptio
   whatsappOnboarding?: HermesDashboardWhatsAppOnboardingHandler;
   /** Physical instance currently bound beneath the stable logical Host id. */
   instanceId?: string;
+  /** Fixed native Hermes Profile owned by this logical embedded Host. */
+  profileScope?: string;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
@@ -67,6 +70,7 @@ const failure = (
 export class BrowserHermesAppServerBridge {
   private readonly transport: HermesRpcWebSocketTransport;
   private readonly adapter: HermesAppServerAdapter;
+  private readonly attachments: HermesAttachmentStagingService | null;
   private readonly bots: HermesBotAppServerHandler | null;
   private readonly notificationListeners = new Set<(event: AppServerOutboundMessage) => void>();
   private readonly stopNotifications: () => void;
@@ -83,9 +87,14 @@ export class BrowserHermesAppServerBridge {
       // A bridge has a fresh adapter unless its matching owners survived.
       replayCheckpoint: options.projectionRecovery ?? new HermesProjectionRecovery(),
     });
+    this.attachments = options.fileSystem === undefined
+      ? null
+      : new HermesAttachmentStagingService(options.fileSystem);
     this.adapter = new HermesAppServerAdapter(this.transport, options.defaultCwd ?? "/", options.history,
-      undefined, options.projectionRecovery, options.composerQueue);
-    this.bots = options.enableBotConversations === true || options.resolveProfileBots !== undefined
+      undefined, options.projectionRecovery, options.composerQueue, this.attachments ?? undefined,
+      options.profileScope);
+    this.bots = options.profileScope === undefined
+      && (options.enableBotConversations === true || options.resolveProfileBots !== undefined)
       ? new HermesBotAppServerHandler(this.adapter, (event) => {
           const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
           for (const listener of this.notificationListeners) listener(notification);
@@ -126,6 +135,7 @@ export class BrowserHermesAppServerBridge {
     if (this.disposed) throw new Error("Hermes AppServer bridge is detached");
     return dispatchAppServerRequest(this.adapter, { jsonrpc: "2.0", id: 0, method, params }, {
       fileSystem: this.options.fileSystem,
+      attachments: this.attachments ?? undefined,
       terminal: this.options.terminal,
       processes: this.options.processes,
       profileSkills: this.options.profileSkills,
@@ -154,6 +164,7 @@ export class BrowserHermesAppServerBridge {
         result: await dispatchAppServerRequest(this.adapter, request, {
           signal,
           fileSystem: this.options.fileSystem,
+          attachments: this.attachments ?? undefined,
           terminal: this.options.terminal,
           processes: this.options.processes,
           profileSkills: this.options.profileSkills,

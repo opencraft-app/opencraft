@@ -75,6 +75,21 @@ font role, and platform rendering can change without rewriting every component.
 Shell and extension chrome consume the semantic primitive; feature-local raw
 metrics are reserved for content systems with a separate owner.
 
+Shared Button and Settings form controls also consume registry roles:
+`control/controlSmall/controlLarge/controlCompact`, `input`, and settings
+heading/label roles. Native button text metrics are projected from the same
+registry; geometry remains in the button contract and is not changed by this
+normalization. Web role projection can omit TextTone (`null`) when a control
+variant owns its semantic colors. `controls.web.scss` owns state-only focus,
+disabled and invalid feedback, including forced-colors focus visibility.
+Generic Button loading preserves its label footprint and exposes `aria-busy`;
+it cannot widen the button or animate the spinner under reduced motion.
+
+The focused standards test rejects typography literals in these shared
+consumers. `scripts/smoke-control-standards.ts` renders actual controls across
+light/dark/custom palettes and tests size, focus, invalid, disabled and loading
+states; optional isolated Electron execution requires an explicit executable.
+
 ### Client voice input ownership
 
 Voice input is a client input service, not an Agent Host tool or chat model.
@@ -207,9 +222,11 @@ The SDK fences late unsubscribe responses, retains newly acquired views and
 actually reattaches them. Naming uses per-Host/Thread acknowledgement queues and
 optimistic-write generations; archive/unarchive modifies durable catalog state,
 never deletes a workspace. Catalog notifications invalidate shared queries.
-The sidebar offers only Host-declared operations, with an archived management
-dialog and restore/undo action. All menus/dialogs use the existing Radix and
-theme controls. Source and acceptance are tracked in
+The main sidebar offers only Host-declared operations for active Threads and
+does not retain archive-management or transient undo state. Archived browsing
+and restore belong to a capability-gated Settings page, scoped to the active
+Host and backed by the same catalog query/invalidation owner. All menus and
+settings controls reuse the existing Radix and theme primitives. Source and acceptance are tracked in
 [the lifecycle plan](../design/thread-lifecycle/task_plan.md).
 
 ### Project selection and persistence
@@ -233,6 +250,20 @@ workspace, submission phase or visible route changes. Persisted additions remain
 in their original Host catalog, but never retarget a replacement draft.
 
 ### Read-only SQLite diagnostics
+
+The decided, not-yet-implemented lifecycle for OpenCraft-owned SQLite and
+IndexedDB stores is documented in [storage lifecycle](./sqlite-lifecycle.md)
+and [plugin persistence](./plugin-persistence.md). It retains node:sqlite and
+does not adopt Drizzle in this phase. Client-local and Host-owned data have
+separate authorities; engine-private databases retain their owners.
+
+The first [Host document API](./host-document-storage.md) implementation exposes
+versioned capability discovery, read/CAS and content-free invalidation on the
+authenticated Local Agent Host. The client borrows a fixed initialized Host
+connection and rejects old generations, with no local fallback or implicit
+reconnect. This adds API capability, not a Host plugin runtime or multi-tenant
+authorization model. SQLite code is shared through document-storage's explicit
+Node entry; Web/Expo consume only the pure contract.
 
 Electron internal developer mode exposes a Settings inspector for the four
 OpenCraft-owned local Agent SQLite databases under the current desktop profile:
@@ -370,6 +401,60 @@ or native Surface has exactly one owner and every child scope is disposed by the
 Application Supervisor. Renderer extension registries do not need to share a
 Context with AppServer Host runtimes.
 
+### Embedded Workbench Shell
+
+`workbench-web` also publishes a native Web Component entry for embedding the
+Workbench canvas without an iframe. The embedding product owns its outer
+Sidebar, Explore/Chat routing and page history. OpenCraft owns only the right
+canvas: the standard Thread/Draft conversation route, Composer and Header.
+The embedded projection omits OpenCraft's Right Panel and its toggle; the full
+Workbench keeps that panel unchanged. Embedded Chat does not use the Bot
+conversation protocol. The outer Bot identity selects a logical Hermes Host
+scoped by both physical instance and native Profile; the canvas uses ordinary
+AppServer Thread ownership inside that fixed Profile. Thread list, creation,
+resume, history, model catalog, rename and delete must never escape it. Physical
+Dashboard/session-token reuse remains instance-scoped, while Composer queue and
+other logical Host state include the Profile identity.
+The embedded entry constructs the same Application runtime as the full
+Workbench, but contributes an explicit, ephemeral LightVela Host profile and
+never persists that physical instance identity into the normal Host catalog.
+
+These differences are expressed by a typed Workbench Presentation Policy, not
+route- or product-name conditionals. The full policy enables Shell navigation,
+context Sidebar, Right Panel and Connector launcher. The Embedded Core Chat
+policy disables those four optional surfaces and projects an empty allow-list
+for extension-contributed Composer actions. The full policy projects all
+Composer actions. This keeps unavailable Web Speech or future optional actions
+out of embedded products without component-level product checks.
+
+The host keeps legacy AgentChat authoritative until its explicit rollout
+`show()` command enables the embedded candidate. Route visibility alone never
+loads or adopts OpenCraft. After enablement, legacy remains visible while the
+embedded Host connects, activates its ordinary Thread/Draft, hydrates initial
+history and paints; the Web Component's own `show()` then grants its write
+lease. `hide()` revokes that lease synchronously without disposing the
+Application, so returning to the host-owned Explore view cannot lose
+conversation state. Only the visible owner may send,
+cancel, approve or answer an interaction. The stable
+`/__opencraft/embedded-workbench.js` loader points to a content-addressed Vite
+entry; deployments using another static origin must provide the required module
+CORS policy explicitly.
+
+`show()` is a browser-origin-scoped persisted toggle, not a one-way component
+callback. One shared feature-state controller owns versioned storage, in-page
+events, cross-tab storage reconciliation and a ref-counted global command.
+Calling `show()` again disables the revealed surfaces and persists that choice;
+page components subscribe to the state and never wrap `window.show` themselves.
+The underlying persisted-feature primitive is reusable by other internal
+feature gates without copying localStorage/error/event lifecycle code.
+
+An embedded canvas owns one explicit Presentation Root inside its Shadow DOM.
+The appearance engine projects the complete semantic token set onto that root,
+and every menu, dialog, context menu, drag overlay and panel tab portal targets
+the same root. Embedded code must not compensate with global CSS, copied menu
+styles or arbitrary z-index overrides; those bypass focus, collision geometry
+and theme ownership.
+
 `ExtensionSupervisor` is the one product-level owner for client extension
 activation. A Contribution Broker lets one activation register commands,
 views, Chat presenters and Composer providers across otherwise independent
@@ -406,6 +491,34 @@ context, issues Task/request-series-scoped leases, routes invocations to local/S
 providers and records exact receipts. Extension activation never implicitly
 adds every contributed Tool or Skill to a model request. The full design is in
 [`agent-capability-fabric.md`](./agent-capability-fabric.md).
+
+The first concrete external-integration slice is the application-owned
+`ConnectorRuntime` plus its `ConnectorCapabilityRuntime` projection, documented in [platform connectors](./platform-connectors.md).
+Trusted extensions register Providers through the existing internal contribution
+transaction. It borrows Authentication session epochs and Host-owned clients;
+the ConnectorRuntime owns logical readiness, explicit Thread selections and execution,
+not credentials or native MCP transports. The capability projection derives a scoped,
+revisioned search view, returns compact paginated summaries, loads exact schema only on
+detail and then issues revocable invocation handles. Web/Electron wire stable
+search/detail/compatibility/call meta tools; AppServer receives them through standard
+`thread/start.dynamicTools` with `deferLoading`. Composer exposes a dedicated Connector panel, backed
+by a domain Manager, Host-native MCP OAuth and a one-shot write approval queue.
+Configuration/intended selections use a separate CAS store (Web IndexedDB,
+Electron Main SQLite); credentials remain with the Host, and restart restores
+intent without automatic connection or execution grants. Native OAuth completion
+is uncorrelated by operation ID and never grants conversation access by itself.
+This implemented vertical slice does not imply the complete Capability Fabric, reuse of the Hermes Settings
+prototype, new native methods in DSH/Hermes, or verified third-party accounts.
+
+The Skills capability surface now hosts a platform Connector Library alongside
+Skills/packages. `connector-core` owns the directory and DTOs; `connector-host`
+owns Host-private SQLite configuration, credentials and bounded OAuth transactions,
+plus the MCP SDK/API adapters. The renderer receives only public projection and
+authorization progress, never stored tokens. This managed path is independent of
+the existing borrowed native-MCP adapter, which retains its original authority.
+The Composer remains a per-conversation selector, not the configuration catalog.
+The Octop-derived catalog contains 23 recipes; 19 have execution adapters and four
+remain guide-only. Isolated validation is not third-party account qualification.
 
 The settled AppServer ownership model is application `HostRuntimeRegistry` →
 one `HostRuntime(hostId)` → one logical `AppServerClient(hostId)`. A shared

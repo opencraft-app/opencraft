@@ -32,6 +32,7 @@ export function projectAppServerThread(
     project: parts.at(-1) ?? "Workspace",
     lineage: thread.parentThreadId !== null ? "subagent" : thread.forkedFromId !== null ? "fork" : "root",
     time: relativeTime(thread.updatedAt, nowMs),
+    updatedAt: thread.recencyAt ?? thread.updatedAt,
     status: projectStatus(thread),
   };
 }

@@ -45,6 +45,7 @@ import {
   searchDraftWorkspaceOptions,
   type DraftWorkspaceOption,
 } from "../runtime/draft-workspace-model";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 
 export interface DraftHostOption {
   readonly id: string;
@@ -78,6 +79,9 @@ export interface NewThreadDraftPageProps {
     pending: ComposerAttachment,
     signal?: AbortSignal,
   ) => ComposerAttachment | Promise<ComposerAttachment>;
+  readonly onRemoveAttachment?: (
+    attachment: ComposerAttachment,
+  ) => void | Promise<void>;
   readonly composerEndActions?: ReactNode;
   readonly onSubmit: (
     intent: SubmitIntent,
@@ -176,6 +180,7 @@ function ComposerUtilityScrollArea({ children }: { readonly children: ReactNode 
 }
 
 interface ExecutionUtilityBarProps {
+  readonly portalContainer: HTMLElement | null;
   readonly draft: NewThreadDraftSnapshot;
   readonly workspaceOptions: readonly DraftWorkspaceOption[];
   readonly workspaceOptionsLoading: boolean;
@@ -190,6 +195,7 @@ interface ExecutionUtilityBarProps {
 }
 
 function ExecutionUtilityBar({
+  portalContainer,
   draft,
   workspaceOptions,
   workspaceOptionsLoading,
@@ -255,7 +261,7 @@ function ExecutionUtilityBar({
             <Folder size={15} /><span>{project ?? "Choose project"}</span><ChevronDown size={12} />
           </button>
         </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
+        <DropdownMenu.Portal container={portalContainer}>
           <DropdownMenu.Content
             className="new-thread-project-menu"
             align="start"
@@ -346,7 +352,7 @@ function ExecutionUtilityBar({
             <ChevronDown size={12} />
           </button>
         </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
+        <DropdownMenu.Portal container={portalContainer}>
           {/* The Host trigger sits after the Project trigger. End alignment
               keeps the menu in the Draft's leading overlay corridor. */}
           <DropdownMenu.Content
@@ -434,10 +440,12 @@ export function NewThreadDraftPage({
   onSelectWorkspace,
   onBrowseWorkspace,
   onResolveAttachment,
+  onRemoveAttachment,
   composerEndActions,
   onSubmit,
 }: NewThreadDraftPageProps) {
   const composerRef = useRef<CodexComposerHandle>(null);
+  const portalContainer = useWorkbenchPresentationRoot();
 
   if (draft.submission !== null) {
     throw new Error(
@@ -467,9 +475,11 @@ export function NewThreadDraftPage({
               <div className="thread-composer-region" data-thread-find-composer="true">
                 <CodexComposer
                   ref={composerRef}
+                  portalContainer={portalContainer}
                   controller={controller}
                   chromeHeader={(
                     <ExecutionUtilityBar
+                      portalContainer={portalContainer}
                       draft={draft}
                       workspaceOptions={workspaceOptions}
                       workspaceOptionsLoading={workspaceOptionsLoading}
@@ -488,6 +498,7 @@ export function NewThreadDraftPage({
                   isStreaming={false}
                   placeholder="Ask OpenCraft to work on anything"
                   onResolveAttachment={onResolveAttachment}
+                  onRemoveAttachment={onRemoveAttachment}
                   endActions={composerEndActions}
                   selectionCatalog={selectionCatalog}
                   catalog={catalog}

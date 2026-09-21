@@ -118,7 +118,7 @@ export class DshProfileSkillsHandler {
   private readonly actions = new Map<string, ProfileSkillAction>();
   private readonly operations = new Map<string, ProfileSkillAction>();
 
-  constructor(private readonly root: string) {}
+  constructor(private readonly root: string, private readonly onChanged?: () => Promise<void | "unsupported">) {}
 
   async handle<TMethod extends ProfileSkillsMethod>(
     method: TMethod,
@@ -233,7 +233,7 @@ export class DshProfileSkillsHandler {
       await rm(temporary, { recursive: true, force: true });
       throw error;
     }
-    return { action: this.succeeded(scope, operationId, "install", name, `Installed to ${target}`) };
+    return { action: await this.succeeded(scope, operationId, "install", name, `Installed to ${target}`) };
   }
 
   private async uninstall(scope: SkillInstallScope, params: RecordValue) {
@@ -251,7 +251,7 @@ export class DshProfileSkillsHandler {
     const trash = join(this.root, ".trash");
     await mkdir(trash, { recursive: true });
     await rename(row.path, join(trash, `${basename(row.path)}-${randomUUID()}`));
-    return { action: this.succeeded(scope, operationId, "uninstall", name, "Moved to the recoverable Skill trash") };
+    return { action: await this.succeeded(scope, operationId, "uninstall", name, "Moved to the recoverable Skill trash") };
   }
 
   private readAction(scope: SkillInstallScope, params: RecordValue) {
@@ -263,13 +263,13 @@ export class DshProfileSkillsHandler {
     return { action };
   }
 
-  private succeeded(
+  private async succeeded(
     scope: SkillInstallScope,
     operationId: string,
     kind: "install" | "uninstall",
     target: string,
     message: string,
-  ): ProfileSkillAction {
+  ): Promise<ProfileSkillAction> {
     const now = Date.now();
     const action: ProfileSkillAction = {
       actionId: `dsh-skill-${randomUUID()}`,
@@ -285,6 +285,21 @@ export class DshProfileSkillsHandler {
     };
     this.actions.set(action.actionId, action);
     this.operations.set(operationId, action);
+    try {
+      if (await this.onChanged?.() === "unsupported") {
+        const unsupported = { ...action, logLines: [...action.logLines, "Files committed; the connected engine does not support automatic Skill catalog refresh."] };
+        this.actions.set(action.actionId, unsupported);
+        this.operations.set(operationId, unsupported);
+        return unsupported;
+      }
+    } catch {
+      // The filesystem commit succeeded. Never misreport it as a failed install
+      // or repeat it to repair a runtime refresh; the Host retries before use.
+      const pending = { ...action, logLines: [...action.logLines, "Files committed; runtime Skill refresh is pending and will be retried before execution."] };
+      this.actions.set(action.actionId, pending);
+      this.operations.set(operationId, pending);
+      return pending;
+    }
     return action;
   }
 

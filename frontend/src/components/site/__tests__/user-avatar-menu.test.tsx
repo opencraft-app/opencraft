@@ -2,9 +2,13 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
+import {
+  CONSOLE_SHOW_EVENT,
+  CONSOLE_SHOW_STORAGE_KEY,
+  setConsoleShowEnabled,
+} from "@/lib/console-show-event";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 
 vi.mock("framer-motion", () => ({
@@ -72,12 +76,19 @@ const createNavigationValue = (navigate = vi.fn()): AppNavigationValue => ({
   setSearchParams: vi.fn(),
 });
 
+beforeEach(() => {
+  setConsoleShowEnabled(false);
+  window.localStorage.removeItem(CONSOLE_SHOW_STORAGE_KEY);
+});
+
 afterEach(() => {
   cleanup();
   useSession.mockReset();
   useOpenClaw.mockReset();
   mockIsGlobal = true;
   delete (window as Window & { show?: unknown }).show;
+  delete (window as Window & { __LIGHTVELA_CONSOLE_SHOW_CONTROLLER__?: unknown })
+    .__LIGHTVELA_CONSOLE_SHOW_CONTROLLER__;
   stubLocation("localhost");
 });
 
@@ -372,7 +383,7 @@ describe("UserAvatarMenu", () => {
       activePass: null,
     });
 
-    render(<UserAvatarMenu />);
+    const view = render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
     expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
@@ -385,9 +396,20 @@ describe("UserAvatarMenu", () => {
     });
     expect(shown).toBe(true);
     expect(onConsoleShow).toHaveBeenCalledTimes(1);
-    window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
-
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
+
+    view.unmount();
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.getByRole("link", { name: "工作台" })).toBeInTheDocument();
+
+    act(() => {
+      shown = (window as Window & { show?: () => boolean }).show?.();
+    });
+    expect(shown).toBe(false);
+    expect(onConsoleShow).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("link", { name: "工作台" })).not.toBeInTheDocument();
+    window.removeEventListener(CONSOLE_SHOW_EVENT, onConsoleShow);
   });
 
   it("keeps the product feedback menu item hidden until show() reveals it", () => {

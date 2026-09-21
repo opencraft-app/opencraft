@@ -1,5 +1,9 @@
 import type { ComposerAttachment } from "@opencraft/composer-core";
 import type { ImageProcessingService } from "@opencraft/image-processing";
+import type {
+  AttachmentStageParams,
+  AttachmentStageResponse,
+} from "@opencraft/appserver-protocol";
 
 /**
  * Inline images stay host-independent: the same payload works for a local,
@@ -18,8 +22,12 @@ export type BrowserAttachmentErrorCode =
   | "HOST_FILE_STAGING_UNAVAILABLE";
 
 export interface BrowserAttachmentStagingOptions {
-  readonly directory: string | null;
-  readonly writeFile: ((path: string, dataBase64: string) => Promise<unknown>) | null;
+  readonly stage:
+    | ((
+        request: AttachmentStageParams,
+        signal?: AbortSignal,
+      ) => Promise<AttachmentStageResponse>)
+    | null;
 }
 
 export class BrowserAttachmentError extends Error {
@@ -41,17 +49,8 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-const safePathSegment = (value: string, fallback: string): string => {
-  const sanitized = value
-    .normalize("NFKC")
-    .replace(/[^\p{Letter}\p{Number}._-]+/gu, "-")
-    .replace(/^[-.]+|[-.]+$/gu, "")
-    .slice(0, 180);
-  return sanitized || fallback;
-};
-
-const joinAbsolutePath = (directory: string, fileName: string): string =>
-  `${directory.replace(/\/+$/u, "")}/${fileName}`;
+const hostFileUri = (path: string): string =>
+  `file://${path.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
 
 /**
  * Resolves a browser-owned File into Codex AppServer's native `image` input.
@@ -61,7 +60,7 @@ const joinAbsolutePath = (directory: string, fileName: string): string =>
 export async function resolveBrowserAttachment(
   file: File,
   pending: ComposerAttachment,
-  staging: BrowserAttachmentStagingOptions = { directory: null, writeFile: null },
+  staging: BrowserAttachmentStagingOptions = { stage: null },
   images?: Pick<ImageProcessingService, "compress">,
   signal?: AbortSignal,
 ): Promise<ComposerAttachment> {
@@ -113,28 +112,36 @@ export async function resolveBrowserAttachment(
     };
   }
 
-  if (!staging.directory?.startsWith("/") || staging.writeFile === null) {
+  if (staging.stage === null) {
     throw new BrowserAttachmentError(
       "HOST_FILE_STAGING_UNAVAILABLE",
       "The selected Host is not ready to receive file attachments",
     );
   }
 
-  const attachmentId = safePathSegment(pending.id, "attachment");
-  const fileName = safePathSegment(file.name, "file");
-  const path = joinAbsolutePath(staging.directory, `${attachmentId}-${fileName}`);
-  await staging.writeFile(path, dataBase64);
+  const staged = await staging.stage({
+    clientAttachmentId: pending.id,
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+    size: upload.size,
+    source: { kind: "client-bytes", dataBase64 },
+  }, signal);
+  const uri = staged.ref.location.kind === "host-file"
+    ? hostFileUri(staged.ref.location.path)
+    : staged.ref.location.url;
   return {
     ...pending,
-    mimeType: file.type || "application/octet-stream",
-    uri: `file://${path}`,
+    name: staged.ref.name,
+    size: staged.ref.size,
+    mimeType: staged.ref.mimeType,
+    uri,
     lifecycle: "ready",
     error: null,
     metadata: {
       ...pending.metadata,
       source: "browser-host-staged",
-      transport: "appserver-fs-write-file",
-      path,
+      transport: "opencraft-attachment-staging",
+      attachmentRef: staged.ref,
     },
   };
 }

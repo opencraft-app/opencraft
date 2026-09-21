@@ -42,6 +42,7 @@ import {
 import type { BrowserPresentationHandle } from "./browser-presentation-coordinator";
 import type { BrowserWorkbenchCoordinator } from "./browser-workbench-coordinator";
 import type { WebBrowserPageRuntime } from "./web-browser-runtime";
+import { useWorkbenchPresentationRoot } from "../components/workbench-presentation-root";
 
 const FIT_VIEWPORT = { type: "fit", width: 1440, height: 900 } as const;
 
@@ -51,6 +52,7 @@ function browserTabIdFromPanel(tab: PanelRendererProps["tab"]): BrowserTabId {
 }
 
 function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
+  const portalContainer = useWorkbenchPresentationRoot();
   const tabId = browserTabIdFromPanel(panelTab);
   const pages = useWebBrowserPageRuntime();
   const workbench = useBrowserWorkbench();
@@ -174,7 +176,7 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
         <FloatingComposerToggle activeTabId={panelTab.id} />
         {pages.supportsSiteSettings && currentUrl ? <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild><button type="button" className="browser-toolbar-button" aria-label="网站设置" title="网站设置"><Globe2 size={13} /></button></DropdownMenu.Trigger>
-          <DropdownMenu.Portal><DropdownMenu.Content className="new-thread-project-menu" align="end" sideOffset={6} collisionPadding={8}>
+          <DropdownMenu.Portal container={portalContainer}><DropdownMenu.Content className="new-thread-project-menu" align="end" sideOffset={6} collisionPadding={8}>
             <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "permissions").catch(error => setInputError(error.message)); }}>网站权限</DropdownMenu.Item>
             <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.siteSettings(page.id, "clear-data").catch(error => setInputError(error.message)); }}>清除网站数据</DropdownMenu.Item>
             <DropdownMenu.Separator className="new-thread-project-menu__separator" />

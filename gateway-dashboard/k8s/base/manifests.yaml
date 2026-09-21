@@ -73,6 +73,7 @@ spec:
                 secretKeyRef:
                   name: gateway-dashboard-runtime-secrets
                   key: CTL_INTERNAL_TOKEN
+                  optional: false
           envFrom:
             - configMapRef:
                 name: gateway-dashboard-config

@@ -12,9 +12,11 @@
   "type": "module",
   "main": "dist-host/main.cjs",
   "dependencies": {
+    "@opencraft/document-storage": "0.1.0",
     "@opencraft/app-host-protocol": "0.1.0",
     "@opencraft/daemon-ipc": "0.1.0",
-    "@opencraft/ui-preferences": "0.1.0"
+    "@opencraft/ui-preferences": "0.1.0",
+    "@opencraft/workbench-runtime": "0.1.0"
   },
   "scripts": {
     "build:host": "node build-tray.mjs && node build-native-speech.mjs && npm run build --workspace @opencraft/opencraft-daemon && esbuild src/main.ts --bundle --platform=node --format=cjs --external:electron --define:import.meta.url=import_meta_url --banner:js=\"const import_meta_url = require('node:url').pathToFileURL(__filename).href;\" --outfile=dist-host/main.cjs && esbuild src/preload.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist-host/preload.cjs",
@@ -57,6 +59,7 @@
     "extraResources": [
       { "from": "build/native", "to": "native", "filter": ["opencraft-speech-helper"] },
       { "from": "../local-agent-host/src/dsh-capability-plugin.mjs", "to": "runtime/dsh/opencraft-capability-plugin.mjs" },
+      { "from": "../local-agent-host/src/dsh-skill-catalog.mjs", "to": "runtime/dsh/dsh-skill-catalog.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-engine.mjs", "to": "runtime/dsh/dsh-thread-engine.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-storage.mjs", "to": "runtime/dsh/dsh-thread-storage.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-persistence-plugin.mjs", "to": "runtime/dsh/dsh-thread-persistence-plugin.mjs" },

@@ -39,6 +39,7 @@ export interface ExtensionInstallationPersistence {
   put(record: ExtensionInstallationRecord): Promise<void>;
   remove(extensionId: string): Promise<void>;
   close?(): void | Promise<void>;
+  subscribe?(listener: () => void): () => void;
 }
 
 function record(value: unknown): Readonly<Record<string, unknown>> {
@@ -55,7 +56,7 @@ function normalizeUrl(value: unknown): string {
   return value.trim();
 }
 
-function normalizeInstallation(value: unknown): ExtensionInstallationRecord {
+export function normalizeInstallation(value: unknown): ExtensionInstallationRecord {
   const input = record(value);
   if (typeof input.extensionId !== "string" || !isExtensionId(input.extensionId)) {
     throw new TypeError("Extension installation has an invalid extensionId");
@@ -90,6 +91,7 @@ export class ExtensionInstallationRepository extends Service {
   private mutations: Promise<unknown> = Promise.resolve();
   private revision = 0;
   private closed = false;
+  private unsubscribeStorage: (() => void) | undefined;
   private snapshot: ExtensionInstallationSnapshot = { revision: 0, records: [], loadErrors: [] };
 
   constructor(context: Context, private readonly persistence: ExtensionInstallationPersistence) {
@@ -111,6 +113,17 @@ export class ExtensionInstallationRepository extends Service {
       }
     });
     this.publish();
+    this.unsubscribeStorage = this.persistence.subscribe?.(() => {
+      if (this.closed) return;
+      void this.enqueue(async () => {
+        const values = await this.persistence.load();
+        if (this.closed) return;
+        const records = values.map(normalizeInstallation);
+        this.records.clear();
+        for (const record of records) this.records.set(record.extensionId, record);
+        this.publish();
+      }).catch(() => { /* Keep last good state; subsequent mutations report failures. */ });
+    });
   }
 
   getSnapshot = (): ExtensionInstallationSnapshot => this.snapshot;
@@ -145,6 +158,7 @@ export class ExtensionInstallationRepository extends Service {
 
   private async close(): Promise<void> {
     if (this.closed) return;
+    this.unsubscribeStorage?.();
     await this.mutations.catch(() => undefined);
     this.closed = true;
     this.listeners.clear();

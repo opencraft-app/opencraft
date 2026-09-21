@@ -13,7 +13,7 @@ function SideChatContent({ session, service }: { session: SideChatSession; servi
   return <div className="side-chat-panel">
     <p className="side-chat-panel__notice">Side chat · temporary</p>
     {snapshot.error ? <p role="alert">{snapshot.error.message}</p> : null}
-    <Conversation scrollPolicy="response-placement" timeline={snapshot.timeline}
+    <Conversation scrollPolicy="natural" timeline={snapshot.timeline}
       documentContext={{ conversationId: session.key.threadId, hostId: session.key.hostId, cwd: snapshot.execution.cwd, theme }}
       onRespondInteraction={async (requestId, action) => {
         const pending = session.lease.getSnapshot().pendingInteractions.find(item => item.requestId === requestId);
