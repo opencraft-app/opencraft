@@ -849,7 +849,16 @@ async function main() {
   }
 }
 
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+// isMain 必须比较 realpath：import.meta.url 是 Node realpath 解析后的真实路径，
+// process.argv[1] 保留调用方传入路径。项目路径含 symlink（/tmp → /private/tmp、
+// npm link 安装等）时两者不同，会静默不执行 main——无输出、退出码 0。
+const isMain = Boolean(process.argv[1]) && (() => {
+  try {
+    return fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+})();
 if (isMain) main();
 
 export { parseYaml, dumpYaml, loadFlow, atomicWriteFile, acquireLock, LockConflictError, initState, readState, writeState, StateError, resolveNext, edgeGuard, checkStepGuards, UsageError, recordFailure, failureVerdict, isTerminalStep, deriveContinuation, RepairError };

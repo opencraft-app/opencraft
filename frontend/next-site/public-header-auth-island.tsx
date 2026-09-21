@@ -1,106 +1,94 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useTranslation } from 'react-i18next';
 
-import { LoginModal } from '@/components/site/login-modal';
 import type { HeaderAppearance } from '@/components/site/public-site-header';
-import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
 import { useOpenClaw } from '@/contexts/agent-context';
+import { useRepositories } from '@/contexts/repository-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
-import { publicSiteHref, type PublicSiteLocale } from '@/lib/public-site-navigation';
+import { type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
-import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
+import { AGENTS_HOME_PATH } from '@/lib/agent-routes';
+import { CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-journey';
+import {
+  armPostLoginRedirect,
+  disarmPostLoginRedirect,
+  usePostLoginRedirect,
+} from './use-post-login-redirect';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
 import { trackDatongClick } from '@/observability/datong-tracker';
-import { parseLocaleCode } from '@/i18n/locales.config';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import {
-  EN_US_LOCALE,
-  ZH_CN_LOCALE,
-  ZH_SG_LOCALE,
-} from './public-locale';
+
+const LoginModal = dynamic(() =>
+  import('@/components/site/login-modal').then((module) => module.LoginModal),
+);
+const UserAvatarMenu = dynamic(() =>
+  import('@/components/site/user-avatar-menu').then((module) => module.UserAvatarMenu),
+);
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
   solid: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
 };
 
+/**
+ * Header 文案表。未登录转化引导的「免费试用 / Free trial」统一取自
+ * `CTA_COPY_BY_LOCALE`，与 Hero / Footer CTA 共用同一份文案，避免两处漂移。
+ */
 const copyByLocale: Record<
   PublicSiteLocale,
-  { createNow: string; enterProduct: string; freeTrial: string; login: string }
+  { createNow: string; enterProduct: string; login: string }
 > = {
   'en-US': {
     createNow: 'Create Now',
     enterProduct: 'Enter LightVela',
-    freeTrial: 'Free trial',
     login: 'Sign In',
   },
   'zh-CN': {
     createNow: '立即创建',
     enterProduct: '开始使用',
-    freeTrial: '免费试用',
     login: '登录',
   },
   'zh-SG': {
     createNow: '立即创建',
     enterProduct: '开始使用',
-    freeTrial: '免费试用',
     login: '登录',
   },
   'zh-Hant': {
     createNow: '立即創建',
     enterProduct: '開始使用',
-    freeTrial: '免費試用',
     login: '登入',
   },
   'id-ID': {
     createNow: 'Buat Sekarang',
     enterProduct: 'Masuk ke LightVela',
-    freeTrial: 'Coba Gratis',
     login: 'Masuk',
   },
   es: {
     createNow: 'Crear ahora',
     enterProduct: 'Entrar a LightVela',
-    freeTrial: 'Prueba gratis',
     login: 'Iniciar sesión',
   },
   'ja-JP': {
     createNow: '今すぐ作成',
     enterProduct: 'LightVelaを開く',
-    freeTrial: '無料で試す',
     login: 'ログイン',
   },
   'ko-KR': {
     createNow: '지금 만들기',
     enterProduct: 'LightVela 열기',
-    freeTrial: '무료 체험',
     login: '로그인',
   },
 };
 
-/**
- * 未显式传入 `locale` prop 时的兜底：从运行时 `i18n.language` 推断当前 locale。
- *
- * 注意繁体必须优先于「以 zh 开头」的简体判断 —— 否则 `zh-Hant` 会误落到
- * 简体 `ZH_SG_LOCALE`，导致繁体站头部按钮显示简体文案（「立即创建/登录」
- * 而非「立即創建/登入」）。
- */
-function inferLocaleFromI18n(language: string | undefined): PublicSiteLocale {
-  const locale = parseLocaleCode(language);
-  if (!locale) return EN_US_LOCALE;
-  if (locale === ZH_CN_LOCALE || locale === ZH_SG_LOCALE) return ZH_SG_LOCALE;
-  return locale;
-}
-
 type PublicHeaderAuthIslandProps = {
   appearance?: HeaderAppearance;
-  locale?: PublicSiteLocale;
+  locale: PublicSiteLocale;
   oauthError?: string | null;
   showLanguageSwitcher?: boolean;
   showProductEntry?: boolean;
@@ -123,16 +111,24 @@ function PublicHeaderAuthControls({
   loginOnly = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
-  const { i18n } = useTranslation(undefined, { useSuspense: false });
   const { authReady, isAuthenticated } = useSession();
+  const { auth } = useRepositories();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const activeLocale: PublicSiteLocale = locale ?? inferLocaleFromI18n(i18n.language);
+  const activeLocale = locale;
   const copy = copyByLocale[activeLocale];
-  // 未登录转化引导：主按钮文案改为当前 locale 的「免费试用」。
-  const createLabel = promoteFreeTrial ? copy.freeTrial : copy.createNow;
-  const subscribePath = publicSiteHref('/subscribe', activeLocale, { localized: isGlobal });
+  const hasBots = bots.length > 0;
+  // 未登录转化引导：主按钮文案与 Hero / Footer CTA 共用同一份「免费试用」文案。
+  // 可选链 + en-US 兜底，避免 CTA_COPY_BY_LOCALE 缺失对应语种时拿到 undefined（工蜂 AI CR 边界条件建议）。
+  const createLabel = promoteFreeTrial
+    ? (CTA_COPY_BY_LOCALE[activeLocale]?.startFree ?? CTA_COPY_BY_LOCALE['en-US'].startFree)
+    : copy.createNow;
+  // CTA / 登录落点：订阅前统一 /subscribe，订阅后统一 /agents（国内国际同一套逻辑）。
+  const ctaRoute = resolveCtaRoute({ isAuthenticated, isSubscribed, hasBots });
+  const ctaHref = journeyHref(ctaRoute, activeLocale, { localized: isGlobal });
+  // 登录成功后按订阅状态分流：未订阅 → /subscribe，已订阅 → /agents
+  const redirectAfterLogin = usePostLoginRedirect({ locale: activeLocale });
 
   const renderProductEntry = (surface: 'desktop' | 'mobile') => {
     if (!showProductEntry) return null;
@@ -162,38 +158,31 @@ function PublicHeaderAuthControls({
     }
   }, [oauthError]);
 
+  useEffect(() => {
+    if (authReady && !isAuthenticated && new URLSearchParams(window.location.search).has('ref')) {
+      setShowLogin(true);
+    }
+  }, [authReady, isAuthenticated]);
+
+  useEffect(() => {
+    if (!authReady || !isAuthenticated) return;
+    const referralCode = new URLSearchParams(window.location.search).get('ref')?.trim().toUpperCase();
+    if (!referralCode) return;
+    void auth.prepareReferralCode(referralCode).catch(() => undefined);
+  }, [auth, authReady, isAuthenticated]);
+
   const goToCreate = () => {
-    const target = !isAuthenticated
-      ? promoteFreeTrial
-        ? subscribePath
-        : 'login_modal'
-      : isSubscribed
-        ? bots.length > 0
-          ? AGENTS_HOME_PATH
-          : getAgentCreatingPath(true)
-        : subscribePath;
+    // 方案 A（issue #73）：未登录直接进 /subscribe 看套餐，在订阅页点「订阅」时才引导登录，
+    // 降低进套餐页的摩擦；已登录已订阅 → /agents，已登录未订阅 → /subscribe。
+    // 落点统一由 ctaHref 表达（未登录时 resolveCtaRoute 返回 subscribe），因此不再强制先登录。
     trackDatongClick('header_create_now_btn', {
       pgid: DATONG_PAGE_IDS.HOME,
       params: {
-        has_bots: bots.length > 0,
-        target,
+        has_bots: hasBots,
+        target: ctaRoute,
       },
     });
-    if (!isAuthenticated) {
-      // 首页转化引导：未登录点击「免费试用」直接进入订阅套餐页；
-      // 其它页面维持原有「弹出登录框」行为。
-      if (promoteFreeTrial) {
-        router.push(subscribePath);
-        return;
-      }
-      setShowLogin(true);
-      return;
-    }
-    if (isSubscribed) {
-      router.push(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
-      return;
-    }
-    router.push(subscribePath);
+    router.push(ctaHref);
   };
 
   if (!authReady) {
@@ -244,6 +233,8 @@ function PublicHeaderAuthControls({
           type="button"
           onClick={() => {
             trackDatongClick('header_login_btn', { pgid: DATONG_PAGE_IDS.HOME });
+            // OAuth 整页跳转回跳后靠该意图分流；手机登录走 onSuccess。
+            armPostLoginRedirect();
             setShowLogin(true);
           }}
           className={cn(
@@ -264,6 +255,8 @@ function PublicHeaderAuthControls({
               pgid: DATONG_PAGE_IDS.HOME,
               params: { surface: 'mobile' },
             });
+            // OAuth 整页跳转回跳后靠该意图分流；手机登录走 onSuccess。
+            armPostLoginRedirect();
             setShowLogin(true);
           }}
           className={cn(
@@ -276,14 +269,20 @@ function PublicHeaderAuthControls({
           {copy.login}
         </button>
       </div>
-      <LoginModal
-        open={showLogin}
-        onClose={() => setShowLogin(false)}
-        initialError={loginErrorMessage}
-        onSuccess={() => {
-          router.push(AGENTS_HOME_PATH);
-        }}
-      />
+      {showLogin && (
+        <LoginModal
+          open
+          onClose={() => {
+            // 用户主动关闭且未登录成功：清除分流意图，避免下次回跳误触发。
+            disarmPostLoginRedirect();
+            setShowLogin(false);
+          }}
+          initialError={loginErrorMessage}
+          onSuccess={() => {
+            redirectAfterLogin();
+          }}
+        />
+      )}
     </>
   );
 }

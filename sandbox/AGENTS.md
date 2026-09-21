@@ -93,5 +93,5 @@ go test ./...
 - 中文为主，保留关键字段/常量的英文原样，避免翻译导致歧义。
 - 避免大段粘贴日志或生成冗长解释，优先给出最小可复现命令。
 
-<!-- ci-retrigger: 2026-06-04 republish sandbox/k8s/base to gitops to restore POD_NAMESPACE-aware ingressproxy shard routing for sandbox-bj-7 (overwritten by 1c0bbf021 promote) -->
-<!-- ci-retrigger: 2026-07-08 build sandbox shprod images from latest master for billing rollout -->
+<!-- 重新触发 CI：2026-06-04 将 sandbox/k8s/base 重新发布到 gitops，恢复 sandbox-bj-7 感知 POD_NAMESPACE 的 ingressproxy 分片路由（后被 1c0bbf021 promote 覆盖）。 -->
+<!-- 重新触发 CI：2026-07-08 从最新 master 构建 sandbox shprod 镜像，用于 billing rollout。 -->

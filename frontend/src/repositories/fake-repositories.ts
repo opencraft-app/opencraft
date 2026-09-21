@@ -19,11 +19,14 @@ import type {
   User,
   WorkspaceMessage,
 } from "@/domain/types";
+import { CREDIT_PACK_DENOMINATIONS } from "@/domain/credit-pack";
 import { planCatalog } from "@/domain/plan-catalog";
+import { isGlobal } from "@/lib/region";
 import { getAccountPreviewOverrides } from "@/repositories/account-preview-states";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
+  CreditRepository,
   DashboardSnapshot,
   PaymentMethod,
   RealnameFaceIdAttempt,
@@ -64,7 +67,12 @@ const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode, switchAccount = false) => {
+const fakeOAuthStartURL = (
+  provider: OAuthProvider,
+  wechatMode?: WeChatOAuthMode,
+  switchAccount = false,
+  returnTo?: string,
+) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
   if (provider === "wechat" && wechatMode) {
     startURL.searchParams.set("mode", wechatMode);
@@ -72,8 +80,9 @@ const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode
   if (switchAccount) {
     startURL.searchParams.set("switch_account", "true");
   }
-  if (typeof window !== "undefined" && window.location?.href) {
-    startURL.searchParams.set("return_to", window.location.href);
+  const target = returnTo ?? (typeof window !== "undefined" ? window.location?.href : undefined);
+  if (target) {
+    startURL.searchParams.set("return_to", target);
   }
   return startURL.toString();
 };
@@ -278,6 +287,10 @@ const ensureLocalPreviewBot = (): Bot | null => {
 
   const bot: Bot = {
     id: LOCAL_PREVIEW_BOT_ID,
+    instanceId: LOCAL_PREVIEW_BOT_ID,
+    profileId: "main",
+    isDefault: true,
+    createdFrom: "blank",
     name: "我的Hermes",
     type: "support",
     template: "通用对话模板",
@@ -457,6 +470,29 @@ export const createFakeRepositories = (): Repositories => {
       },
       async prepareInviteCode() {
         await wait(NETWORK_DELAY_MS);
+      },
+      async prepareReferralCode() {
+        await wait(NETWORK_DELAY_MS);
+      },
+      async issueReferralCode() {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          code: "DEMO234ABC",
+          url: "https://lightvela.com/auth/sign-in?ref=DEMO234ABC",
+          campaignId: "campaign-demo",
+          campaignName: "邀请返利内测",
+          startsAt: new Date().toISOString(),
+          endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        };
+      },
+      async getReferralStats() {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          successfulReferrals: 0,
+          grantedCredits: 0,
+          pendingRewards: 0,
+          grantedRewards: 0,
+        };
       },
       async activateInviteCode() {
         await wait(NETWORK_DELAY_MS);
@@ -935,7 +971,7 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
       },
       getOAuthStartUrl(provider: OAuthProvider, options) {
-        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount);
+        return fakeOAuthStartURL(provider, options?.wechatMode, options?.switchAccount, options?.returnTo);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);
@@ -950,6 +986,15 @@ export const createFakeRepositories = (): Repositories => {
       },
     },
     plans: {
+      async listModifyBundles(passId) {
+        const pass = readStoredPasses().find(item => item.pass_id === passId);
+        return { source_bundle_id: pass?.bundle_id ?? '', modify_bundle_set: [] };
+      },
+      async createModifyOrder() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async getModifyCheckout() { return { checkout: null }; },
+      async getModifyOrderUrl() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async refreshModifyPaymentAuthorization() { throw new Error('Upgrade checkout requires a connected billing service'); },
+      async getOrderStatus() { throw new Error('Order status requires a connected billing service'); },
       async getCurrentSubscription() {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();
@@ -1201,8 +1246,71 @@ export const createFakeRepositories = (): Repositories => {
       },
     },
     bots: createBotRepository(),
+    credit: createCreditRepository(),
   };
 };
+
+/*
+ * 积分包假数据仓储。
+ *
+ * 真实实现见 http-repositories.ts 的 createHttpCreditRepository；
+ * 本文件用于本地预览与测试，价格为演示值，不代表真实定价。
+ */
+const createCreditRepository = (): CreditRepository => ({
+  async listCreditProducts() {
+    await wait(NETWORK_DELAY_MS);
+    return CREDIT_PACK_DENOMINATIONS.map((denomination) => ({
+      product_id: denomination.product_id,
+      product_name: `${denomination.credit_total} 积分包`,
+      llm_gateway_plan_id: `plan-${denomination.credit_total}`,
+      state: "ONLINE" as const,
+    }));
+  },
+  async inquireCreditPrice(productId) {
+    await wait(NETWORK_DELAY_MS);
+    const denomination = CREDIT_PACK_DENOMINATIONS.find((item) => item.product_id === productId);
+    if (!denomination) {
+      throw new Error(`未知积分包商品：${productId}`);
+    }
+    /* 演示价（单位：分，与真实接口一致——联调文档 §5「最小货币单位」）：
+       国内 100 积分 = 1 元 = 100 分；国际 500 积分 = 1 美元 = 100 分 */
+    const cents = isGlobal ? denomination.credit_total / 5 : denomination.credit_total;
+    const centsStr = cents.toFixed(0);
+    return {
+      product_id: productId,
+      real_total_cost: centsStr,
+      total_cost: centsStr,
+      currency: isGlobal ? ("USD" as const) : ("CNY" as const),
+    };
+  },
+  async listCreditPackages() {
+    await wait(NETWORK_DELAY_MS);
+    const now = Date.now();
+    const inDays = (days: number) => new Date(now + days * 24 * 60 * 60 * 1000).toISOString();
+    return [
+      { credit_type: "paid" as const, credit_total: 1000, credit_available: 620, expired_time: inDays(12) },
+      { credit_type: "paid" as const, credit_total: 4000, credit_available: 4000, expired_time: inDays(27) },
+    ];
+  },
+  async createCreditOrder(productId) {
+    await wait(NETWORK_DELAY_MS);
+    const denomination = CREDIT_PACK_DENOMINATIONS.find((item) => item.product_id === productId);
+    if (!denomination) {
+      throw new Error(`未知积分包商品：${productId}`);
+    }
+    const serial = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+    return { dealName: `2026091000000${serial}`, bigOrderId: `20260910000000${serial}` };
+  },
+  async createCreditOrderUrl(input) {
+    await wait(NETWORK_DELAY_MS);
+    /* 本地预览不做真实支付：返回可识别的假地址，need_charge=1 以便走完整跳转分支 */
+    return {
+      deal_name: input.deal_name,
+      pay_url: `https://example.invalid/fake-credit-checkout?deal=${encodeURIComponent(input.deal_name)}`,
+      need_charge: 1,
+    };
+  },
+});
 
 const createBotRepository = (): BotRepository => {
   const fakeConnectedChannels = new Set<string>();
@@ -1425,8 +1533,15 @@ const createBotRepository = (): BotRepository => {
 
     async createBot(input) {
       await wait(NETWORK_DELAY_MS);
+      const suffix = Math.random().toString(36).slice(2, 8);
       const bot: Bot = {
-        id: `bot_${Math.random().toString(36).slice(2, 8)}`,
+        id: `bot_${suffix}`,
+        instanceId: LOCAL_PREVIEW_BOT_ID,
+        profileId: `profile_${suffix}`,
+        isDefault: false,
+        description: input?.description,
+        createdFrom: input?.createMode ?? "blank",
+        sourceBotId: input?.sourceBotId,
         name: input?.name ?? "Hermes 新助手",
         type: "support",
         template: "通用对话模板",
@@ -1445,6 +1560,15 @@ const createBotRepository = (): BotRepository => {
       await wait(NETWORK_DELAY_MS);
       botStore.delete(botId);
       messageStore.delete(botId);
+    },
+
+    async retryBot(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) return null;
+      const updated = { ...bot, status: "active" as const };
+      botStore.set(botId, updated);
+      return updated;
     },
 
     async renameBot(botId, name) {
@@ -1642,6 +1766,12 @@ const createBotRepository = (): BotRepository => {
       }
       return { sessionId: `wxlogin_fake_${Date.now()}`, status: "starting" };
     },
+
+    async claimUniqueChannel() {},
+
+    async confirmUniqueChannel() {},
+
+    async releaseUniqueChannel() {},
 
     async getWeixinLoginSession(_botId, sessionId) {
       await wait(NETWORK_DELAY_MS);

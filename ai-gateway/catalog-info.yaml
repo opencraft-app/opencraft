@@ -1,0 +1,18 @@
+{
+  "id": "ai-gateway",
+  "name": "AI Gateway",
+  "kind": "service",
+  "path": "ai-gateway",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "提供模型调用网关、供应商接入与运行时路由能力。",
+  "runtime": "Go 服务与 Node.js 辅助包",
+  "interfaces": ["HTTP 模型网关", "供应商适配器"],
+  "dependencies": ["velagw", "gateway-dashboard"],
+  "source_docs": ["ai-gateway/README.md", "ai-gateway/AGENTS.md", "docs/agent-guides/ai-gateway-agent-guide.md"],
+  "agent_entry": "ai-gateway/AGENTS.md",
+  "service_docs": "ai-gateway/docs/README.md",
+  "deploy": ["ai-gateway/k8s", "argocd/services/ai-gateway"],
+  "generated_paths": ["ai-gateway/k8s/overlays/*/generated"]
+}

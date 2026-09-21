@@ -47,6 +47,7 @@ type RenderLanguageSwitcher = (options: {
 }) => ReactNode;
 
 type PublicSiteHeaderProps = {
+  beforeUserMenu?: ReactNode;
   appearance?: HeaderAppearance;
   authControls?: ReactNode;
   authSnapshot?: HeaderAuthSnapshot;
@@ -62,6 +63,8 @@ type PublicSiteHeaderProps = {
   renderLanguageSwitcher?: RenderLanguageSwitcher;
   reloadLanguageAfterSwitch?: boolean;
   showNav?: boolean;
+  showAccountLanguageSwitcher?: boolean;
+  showDesktopUserMenu?: boolean;
   showLanguageSwitcher?: boolean;
   showUnauthenticatedActions?: boolean;
 };
@@ -197,7 +200,7 @@ function useCurrentPath(explicitPath?: string): string {
   return explicitPath ?? path;
 }
 
-function useIsDesktop(): boolean {
+export function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     if (!window.matchMedia) return true;
@@ -217,6 +220,7 @@ function useIsDesktop(): boolean {
 }
 
 export function PublicSiteHeader({
+  beforeUserMenu,
   appearance = "solid",
   authControls,
   authSnapshot = { authReady: true, isAuthenticated: false },
@@ -232,6 +236,8 @@ export function PublicSiteHeader({
   renderLanguageSwitcher,
   reloadLanguageAfterSwitch = false,
   showNav = true,
+  showAccountLanguageSwitcher = false,
+  showDesktopUserMenu = true,
   showLanguageSwitcher = Boolean(onLoginClick),
   showUnauthenticatedActions = true,
 }: PublicSiteHeaderProps) {
@@ -411,10 +417,17 @@ export function PublicSiteHeader({
             </div>
           )}
 
-          {!usesAuthControlsSlot && !authLoading && isAuthenticated && (
+          {!usesAuthControlsSlot
+            && !authLoading
+            && isAuthenticated
+            && (!isDesktop || showLanguageSwitcher || showDesktopUserMenu || beforeUserMenu)
+            && (
             <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
               {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
-              <UserAvatarMenu />
+              {beforeUserMenu}
+              {(!isDesktop || showDesktopUserMenu) && (
+                <UserAvatarMenu showLanguageSwitcher={showAccountLanguageSwitcher} />
+              )}
             </div>
           )}
 

@@ -82,7 +82,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/skill", title: "配置技能" },
       { slug: "configuration/personality", title: "人设" },
       { slug: "configuration/memory", title: "记忆管理" },
-      { slug: "configuration/automation", title: "自动任务" },
+      { slug: "configuration/automation", title: "定时任务" },
       { slug: "configuration/files", title: "云存储" },
       { slug: "configuration/agent-chat", title: "对话" },
       { slug: "configuration/diagnostics", title: "诊断中心" },
@@ -98,6 +98,14 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "compare/lightvela-vs-manus", title: "LightVela vs Manus" },
       { slug: "compare/lightvela-vs-localhost-ai-agent", title: "LightVela vs 本地部署 Agent" },
       { slug: "compare/lightvela-vs-ai-chatbot", title: "LightVela vs AI Chatbot" },
+    ],
+  },
+  {
+    title: "场景方案",
+    items: [
+      { slug: "use-cases/scheduled-task-agent", title: "使用 LightVela 自动化 Agent 任务" },
+      { slug: "use-cases/scheduled-task-notifications", title: "在 LightVela 中设置通知任务" },
+      { slug: "use-cases/scheduled-task-script", title: "在 LightVela 中运行脚本任务" },
     ],
   },
   {
@@ -182,7 +190,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
       { slug: "configuration/personality", title: "人设", titleEn: "Souls" },
       { slug: "configuration/memory", title: "记忆管理", titleEn: "Memory Management" },
-      { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
+      { slug: "configuration/automation", title: "定时任务", titleEn: "Scheduled Tasks" },
       { slug: "configuration/files", title: "云存储", titleEn: "Cloud Storage" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
       { slug: "configuration/diagnostics", title: "诊断中心", titleEn: "Diagnostics" },
@@ -251,7 +259,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       {
         slug: "use-cases/whatsapp-24-7-customer-service",
         title: "如何在 WhatsApp 中配置 24/7 AI 客服：人格、知识、技能与自动化？",
-        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Automations",
+        titleEn: "How to Configure 24/7 AI Customer Service in WhatsApp: Personality, Knowledge, Skills, and Scheduled Tasks",
       },
       {
         slug: "use-cases/lifelike-im-agent-rhythm-social-memory",
@@ -288,6 +296,21 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "如何用 AI Agent 能力增强 Discord 活动机器人？",
         titleEn: "Empower your Discord Event Bot with AI-Agentic Capabilities",
         indent: true,
+      },
+      {
+        slug: "use-cases/scheduled-task-agent",
+        title: "使用 LightVela 自动化 Agent 任务",
+        titleEn: "Automating Agent Task with LightVela",
+      },
+      {
+        slug: "use-cases/scheduled-task-notifications",
+        title: "在 LightVela 中设置通知任务",
+        titleEn: "Setting Notification Task in LightVela",
+      },
+      {
+        slug: "use-cases/scheduled-task-script",
+        title: "在 LightVela 中运行脚本任务",
+        titleEn: "Running Script Task in LightVela",
       },
     ],
   },
@@ -369,6 +392,9 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/multiple-models": "configuration/multiple-models.md",
   "configuration/deepseek-harness": "configuration/deepseek-harness.md",
   "configuration/workbench": "configuration/workbench.md",
+  "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
+  "use-cases/scheduled-task-notifications": "use-cases/scheduled-task-notifications.md",
+  "use-cases/scheduled-task-script": "use-cases/scheduled-task-script.md",
   // 问题排查
   faq: "07-faq.md",
   // 联系与支持
@@ -438,6 +464,9 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "use-cases/memory-and-knowledge": "use-cases/memory-and-knowledge.md",
   "use-cases/discord-community-agent": "use-cases/discord-community-agent.md",
   "use-cases/discord-event-agent": "use-cases/discord-event-agent.md",
+  "use-cases/scheduled-task-agent": "use-cases/scheduled-task-agent.md",
+  "use-cases/scheduled-task-notifications": "use-cases/scheduled-task-notifications.md",
+  "use-cases/scheduled-task-script": "use-cases/scheduled-task-script.md",
   "hermes-agent/hermes-vs-openclaw": "hermes-agent/01-hermes-vs-openclaw.md",
   "hermes-agent/why-hermes-remembers-you": "hermes-agent/02-why-hermes-remembers-you.md",
   "hermes-agent/user-md-vs-memory-md": "hermes-agent/03-user-md-vs-memory-md.md",

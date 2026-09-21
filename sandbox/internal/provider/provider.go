@@ -18,20 +18,20 @@ import (
 // CloudProvider abstracts calls to the cloud vendor.
 type CloudProvider interface {
 	CreateInstance(ctx context.Context, pool core.Pool) (cloudID string, address string, err error)
-	ReinstallInstance(ctx context.Context, cloudID string, imageID string) error
-	DescribeInstance(ctx context.Context, cloudID string) (status string, err error)
-	TerminateInstance(ctx context.Context, cloudID string) error
+	ReinstallInstance(ctx context.Context, instance CloudInstanceRef, imageID string) error
+	DescribeInstance(ctx context.Context, instance CloudInstanceRef) (status string, err error)
+	TerminateInstance(ctx context.Context, instance CloudInstanceRef) error
 	// VerifyInstance confirms that the cloud instance is ready for control-plane
-	// delivery. The identifier is the cloud instance ID, never an IP address.
-	VerifyInstance(ctx context.Context, cloudID string) error
+	// delivery. The reference is regional and never uses an IP address as identity.
+	VerifyInstance(ctx context.Context, instance CloudInstanceRef) error
 	// StopInstance shuts down the instance while preserving system disk data.
 	// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
 	// On Tencent Cloud this maps to StopInstances with StoppedMode=STOP_CHARGING
 	// to release CPU/memory billing while keeping disks intact.
-	StopInstance(ctx context.Context, cloudID string) error
+	StopInstance(ctx context.Context, instance CloudInstanceRef) error
 	// StartInstance boots a previously stopped instance back to RUNNING.
 	// Reserved for renewal/restore flows that follow trade pass isolation.
-	StartInstance(ctx context.Context, cloudID string) error
+	StartInstance(ctx context.Context, instance CloudInstanceRef) error
 
 	// CreateInstanceSnapshot creates a CBS snapshot of the instance system disk.
 	// Used by trade pass destroy flow (Q4 / Q9 / Q25 ✅ 拍板, see .tmp/trade-pass-destroy-design.md sec5.2).
@@ -55,13 +55,47 @@ type CloudProvider interface {
 	//   - cbs SnapshotState=NORMAL                            → SnapshotStatusReady
 	//   - cbs SnapshotState ∈ {ERROR, ROLLBACKING_FAILED, ...} → SnapshotStatusFailed
 	//   - cbs SnapshotState=CREATING                          → SnapshotStatusInProgress
-	DescribeInstanceSnapshot(ctx context.Context, snapshotID string) (SnapshotStatus, string, error)
+	DescribeInstanceSnapshot(ctx context.Context, region, snapshotID string) (SnapshotStatus, string, error)
+}
+
+// CloudInstanceRef identifies a regional cloud instance. Tencent Cloud instance
+// IDs are only meaningful inside their owning region, so lifecycle operations
+// must carry both values together.
+type CloudInstanceRef struct {
+	CloudID string
+	Region  string
+}
+
+func normalizeCloudInstanceRef(instance CloudInstanceRef) (CloudInstanceRef, error) {
+	instance.CloudID = strings.TrimSpace(instance.CloudID)
+	instance.Region = strings.TrimSpace(instance.Region)
+	if instance.CloudID == "" {
+		return CloudInstanceRef{}, errors.New("missing cloud instance id")
+	}
+	if instance.Region == "" {
+		return CloudInstanceRef{}, errors.New("missing cloud instance region")
+	}
+	return instance, nil
+}
+
+// CloudInstanceForPool derives a regional cloud reference from immutable pool
+// ownership. Pool updates are required to preserve the region encoded in Zone.
+func CloudInstanceForPool(pool core.Pool, cloudID string) (CloudInstanceRef, error) {
+	cloudID = strings.TrimSpace(cloudID)
+	if cloudID == "" {
+		return CloudInstanceRef{}, errors.New("missing cloud instance id")
+	}
+	region, err := core.RegionFromZone(pool.Zone)
+	if err != nil {
+		return CloudInstanceRef{}, fmt.Errorf("derive region for pool %s: %w", strings.TrimSpace(pool.ID), err)
+	}
+	return CloudInstanceRef{CloudID: cloudID, Region: region}, nil
 }
 
 // CreateInstanceSnapshotRequest is the input for CloudProvider.CreateInstanceSnapshot.
 //
 // Field semantics (sec5.2 of .tmp/trade-pass-destroy-design.md):
-//   - CloudID: cvm InstanceId (e.g. ins-xxx) used as filter for cbs.DescribeDisks.
+//   - Instance: regional CVM reference used as filter for cbs.DescribeDisks and client routing.
 //   - PassID / InstanceID / UserID: only used for snapshot naming + audit tags.
 //   - Deadline: passed verbatim to cbs.CreateSnapshot.Deadline (RFC3339).
 //     Caller (sandbox handler) is responsible for now+retentionSeconds calculation;
@@ -70,7 +104,7 @@ type CloudProvider interface {
 // Resource owner uin/appID 不再透传：sandbox 调 cbs SDK 用的是 sandbox 服务自身
 // 配置的腾讯云 AK/SK，资源 owner 由该 AK/SK 自动决定，无需 ctl 传入。
 type CreateInstanceSnapshotRequest struct {
-	CloudID    string    // cvm InstanceId (ins-xxx); MUST be non-empty.
+	Instance   CloudInstanceRef
 	PassID     string    // trade pass id (used in snapshot name).
 	InstanceID string    // ctl-side instance id (used in snapshot name).
 	UserID     string    // ctl-side user id (audit / tagging).
@@ -98,6 +132,51 @@ var ErrInstanceNoSystemDisk = errors.New("provider: instance has no system disk;
 // ErrSnapshotNotFound is returned by CloudProvider.DescribeInstanceSnapshot when
 // cbs.DescribeSnapshots returns an empty result for the queried snapshot id.
 var ErrSnapshotNotFound = errors.New("provider: snapshot not found")
+
+// InstanceSpec is the billable shape of an existing cloud instance, as read
+// back from the vendor rather than from our own pool metadata.
+type InstanceSpec struct {
+	InstanceType     string
+	SystemDiskSize   int // GiB
+	State            string
+	StopChargingMode string
+}
+
+// InstanceSpecResizer is the optional capability behind the same-SP upgrade
+// (变配) flow: growing an already-delivered instance in place instead of
+// reprovisioning it.
+//
+// The caller drives the ordering (stop → resize compute → resize disk → start)
+// and owns the operation ledger; the provider only exposes single steps and
+// makes each one safe to re-issue.
+type InstanceSpecResizer interface {
+	// StopInstanceForResize retains compute allocation/billing during the
+	// temporary shutdown. Ordinary pause/isolation still uses StopInstance.
+	StopInstanceForResize(ctx context.Context, instance CloudInstanceRef) error
+	// DescribeInstanceSpec reports the currently effective spec so the caller
+	// can skip steps a previous attempt already applied.
+	DescribeInstanceSpec(ctx context.Context, instance CloudInstanceRef) (InstanceSpec, error)
+	// ResizeInstanceType changes CPU/memory, ensuring resize-safe shutdown.
+	// Re-issuing with the already-effective type is a no-op.
+	ResizeInstanceType(ctx context.Context, instance CloudInstanceRef, instanceType string) error
+	// ResizeSystemDisk grows the system disk to sizeGB. Cloud disks cannot
+	// shrink, so callers must only ever pass a larger size; passing the
+	// current size is a no-op.
+	ResizeSystemDisk(ctx context.Context, instance CloudInstanceRef, sizeGB int) error
+}
+
+// InstanceTypeCandidateResolver is an optional companion capability for
+// InstanceSpecResizer. It resolves the cloud instance types that can satisfy
+// the same logical CPU/memory shape as preferredInstanceType for this exact
+// existing instance. Providers without this capability retain the legacy
+// fixed-target behavior.
+type InstanceTypeCandidateResolver interface {
+	ResolveInstanceTypeCandidates(ctx context.Context, instance CloudInstanceRef, preferredInstanceType string) ([]string, error)
+}
+
+func (m *MockCloudProvider) StopInstanceForResize(ctx context.Context, instance CloudInstanceRef) error {
+	return m.StopInstance(ctx, instance)
+}
 
 type CapacityBundleProvisionRequest struct {
 	TemplateClassID        string
@@ -257,19 +336,19 @@ type CommandInvoker interface {
 // InstanceDeliveryVerifier can reject a stale TAT agent heartbeat from a
 // previous OS generation after a create or reinstall operation.
 type InstanceDeliveryVerifier interface {
-	VerifyInstanceDelivery(ctx context.Context, cloudID string, notBefore time.Time) error
+	VerifyInstanceDelivery(ctx context.Context, instance CloudInstanceRef, notBefore time.Time) error
 }
 
 // VerifyInstanceDelivery uses generation-aware verification when the provider
 // supports it and falls back to the CloudProvider contract for other providers.
-func VerifyInstanceDelivery(ctx context.Context, cp CloudProvider, cloudID string, notBefore time.Time) error {
+func VerifyInstanceDelivery(ctx context.Context, cp CloudProvider, instance CloudInstanceRef, notBefore time.Time) error {
 	if cp == nil {
 		return errors.New("provider: missing cloud provider")
 	}
 	if verifier, ok := cp.(InstanceDeliveryVerifier); ok {
-		return verifier.VerifyInstanceDelivery(ctx, cloudID, notBefore)
+		return verifier.VerifyInstanceDelivery(ctx, instance, notBefore)
 	}
-	return cp.VerifyInstance(ctx, cloudID)
+	return cp.VerifyInstance(ctx, instance)
 }
 
 type TerminalSession struct {
@@ -348,13 +427,66 @@ type TerminalCommandStreamer interface {
 // returns a generated id and is observable via DescribeInstanceSnapshot. To keep
 // the mock behavior deterministic and free from sleeps, the snapshot enters
 // SnapshotStatusReady immediately on creation.
+// It also keeps a per-instance spec so the same-SP upgrade flow can be driven
+// end to end without a cloud account; unseen instances start from the default
+// spec below.
 type MockCloudProvider struct {
 	snapMu    sync.Mutex
 	snapshots map[string]SnapshotStatus
+
+	specMu sync.Mutex
+	specs  map[string]InstanceSpec
 }
 
 func NewMockCloudProvider() *MockCloudProvider {
-	return &MockCloudProvider{snapshots: make(map[string]SnapshotStatus)}
+	return &MockCloudProvider{
+		snapshots: make(map[string]SnapshotStatus),
+		specs:     make(map[string]InstanceSpec),
+	}
+}
+
+// mockDefaultSpec is what the mock reports for an instance it has never seen a
+// resize for; it mirrors the smallest bundle spec (2C4G 50G).
+var mockDefaultSpec = InstanceSpec{InstanceType: "S5.MEDIUM4", SystemDiskSize: 50, State: "STOPPED"}
+
+func (m *MockCloudProvider) DescribeInstanceSpec(_ context.Context, instance CloudInstanceRef) (InstanceSpec, error) {
+	if strings.TrimSpace(instance.CloudID) == "" {
+		return InstanceSpec{}, errors.New("DescribeInstanceSpec: cloudID is required")
+	}
+	m.specMu.Lock()
+	defer m.specMu.Unlock()
+	if spec, ok := m.specs[instance.CloudID]; ok {
+		return spec, nil
+	}
+	return mockDefaultSpec, nil
+}
+
+func (m *MockCloudProvider) ResizeInstanceType(ctx context.Context, instance CloudInstanceRef, instanceType string) error {
+	spec, err := m.DescribeInstanceSpec(ctx, instance)
+	if err != nil {
+		return err
+	}
+	spec.InstanceType = instanceType
+	m.specMu.Lock()
+	m.specs[instance.CloudID] = spec
+	m.specMu.Unlock()
+	return nil
+}
+
+func (m *MockCloudProvider) ResizeSystemDisk(ctx context.Context, instance CloudInstanceRef, sizeGB int) error {
+	spec, err := m.DescribeInstanceSpec(ctx, instance)
+	if err != nil {
+		return err
+	}
+	if spec.SystemDiskSize > sizeGB {
+		return fmt.Errorf("ResizeSystemDisk %s: cloud disks cannot shrink (%dG -> %dG)",
+			instance.CloudID, spec.SystemDiskSize, sizeGB)
+	}
+	spec.SystemDiskSize = sizeGB
+	m.specMu.Lock()
+	m.specs[instance.CloudID] = spec
+	m.specMu.Unlock()
+	return nil
 }
 
 func (m *MockCloudProvider) CreateInstance(_ context.Context, pool core.Pool) (string, string, error) {
@@ -363,7 +495,7 @@ func (m *MockCloudProvider) CreateInstance(_ context.Context, pool core.Pool) (s
 	return fmt.Sprintf("cvm-%d", now), fmt.Sprintf("10.99.%d.%d", now%250, (now/10)%250), nil
 }
 
-func (m *MockCloudProvider) ReinstallInstance(ctx context.Context, cloudID string, _ string) error {
+func (m *MockCloudProvider) ReinstallInstance(ctx context.Context, _ CloudInstanceRef, _ string) error {
 	// Simulate reinstall delay.
 	select {
 	case <-time.After(300 * time.Millisecond):
@@ -373,12 +505,12 @@ func (m *MockCloudProvider) ReinstallInstance(ctx context.Context, cloudID strin
 	}
 }
 
-func (m *MockCloudProvider) DescribeInstance(_ context.Context, cloudID string) (string, error) {
+func (m *MockCloudProvider) DescribeInstance(_ context.Context, _ CloudInstanceRef) (string, error) {
 	// Simplified: always running.
 	return "RUNNING", nil
 }
 
-func (m *MockCloudProvider) TerminateInstance(ctx context.Context, cloudID string) error {
+func (m *MockCloudProvider) TerminateInstance(ctx context.Context, _ CloudInstanceRef) error {
 	select {
 	case <-time.After(100 * time.Millisecond):
 		return nil
@@ -387,7 +519,7 @@ func (m *MockCloudProvider) TerminateInstance(ctx context.Context, cloudID strin
 	}
 }
 
-func (m *MockCloudProvider) StopInstance(ctx context.Context, cloudID string) error {
+func (m *MockCloudProvider) StopInstance(ctx context.Context, _ CloudInstanceRef) error {
 	// Simulate cvm StopInstances latency.
 	select {
 	case <-time.After(150 * time.Millisecond):
@@ -397,7 +529,7 @@ func (m *MockCloudProvider) StopInstance(ctx context.Context, cloudID string) er
 	}
 }
 
-func (m *MockCloudProvider) StartInstance(ctx context.Context, cloudID string) error {
+func (m *MockCloudProvider) StartInstance(ctx context.Context, _ CloudInstanceRef) error {
 	// Simulate cvm StartInstances latency.
 	select {
 	case <-time.After(150 * time.Millisecond):
@@ -408,10 +540,10 @@ func (m *MockCloudProvider) StartInstance(ctx context.Context, cloudID string) e
 }
 
 // CreateInstanceSnapshot mock: deterministically generate a snapshot id and mark
-// it as ready immediately. Special-case empty CloudID → ErrInstanceNoSystemDisk
+// it as ready immediately. Special-case an empty cloud ID → ErrInstanceNoSystemDisk
 // so unit tests of the Q10/Q25 联动分支 can exercise the no-disk path.
 func (m *MockCloudProvider) CreateInstanceSnapshot(_ context.Context, req CreateInstanceSnapshotRequest) (string, error) {
-	if strings.TrimSpace(req.CloudID) == "" {
+	if strings.TrimSpace(req.Instance.CloudID) == "" {
 		return "", ErrInstanceNoSystemDisk
 	}
 	id := "snap-mock-" + uuid.New().String()
@@ -426,7 +558,7 @@ func (m *MockCloudProvider) CreateInstanceSnapshot(_ context.Context, req Create
 
 // DescribeInstanceSnapshot mock: lookup the in-memory map; unknown id maps to
 // ErrSnapshotNotFound. The returned reason string is empty for ready snapshots.
-func (m *MockCloudProvider) DescribeInstanceSnapshot(_ context.Context, snapshotID string) (SnapshotStatus, string, error) {
+func (m *MockCloudProvider) DescribeInstanceSnapshot(_ context.Context, _ string, snapshotID string) (SnapshotStatus, string, error) {
 	m.snapMu.Lock()
 	defer m.snapMu.Unlock()
 	status, ok := m.snapshots[snapshotID]
@@ -436,7 +568,7 @@ func (m *MockCloudProvider) DescribeInstanceSnapshot(_ context.Context, snapshot
 	return status, "", nil
 }
 
-func (m *MockCloudProvider) VerifyInstance(_ context.Context, _ string) error {
+func (m *MockCloudProvider) VerifyInstance(_ context.Context, _ CloudInstanceRef) error {
 	return nil
 }
 

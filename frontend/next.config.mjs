@@ -40,7 +40,9 @@ const localProxyRewrites = isLocalProxy
 const config = {
   reactStrictMode: true,
   devIndicators: false,
-  transpilePackages: ['velachat'],
+  // 只在本地开发时允许双 dev 实例使用独立 dist 目录，避免影响 CI / export build。
+  distDir: isDevelopment && process.env.NEXT_DIST_DIR ? process.env.NEXT_DIST_DIR : '.next',
+  transpilePackages: ['velachat', '@lightvela/agent-core'],
   output: isDevelopment ? undefined : 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,
@@ -49,7 +51,7 @@ const config = {
   env: {
     VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
   },
-  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech'],
+  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech','frontend.sandbox-bj-7.lightclaw.tech'],
   // `.intl.tsx` = 仅国际站存在的页面（当前是 src/app/(site)/[lang]/**）。
   // 为什么不能用「generateStaticParams 返回空数组」表达国内站不需要 [lang]，
   // 见 next-site/page-extensions.mjs 的注释（Next 在 output: 'export' 下会报

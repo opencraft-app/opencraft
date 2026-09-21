@@ -225,14 +225,14 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 	if relayState, ok := parseOAuthRelayState(state); ok {
 		if err := validateOAuthRelayStateForProvider("wechat", relayState); err != nil {
 			logger.Warn("wechat oauth callback failed", "stage", "relay_state_validation", "err", err)
-			ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch")))
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
 			target, err := relayCallbackURLWithOriginalQuery("wechat", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("wechat oauth relay callback failed", "stage", "target_query", "err", err)
-				ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch")))
 				return
 			}
 			ctx.Redirect(http.StatusTemporaryRedirect, target)
@@ -240,7 +240,7 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 		}
 		if !isOAuthRelayTargetCallback(ctx.Request, relayState) {
 			logger.Warn("wechat oauth callback failed", "stage", "relay_target_mismatch")
-			ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch")))
 			return
 		}
 		exchangeRedirectURI = relayState.IssuerRedirectURI
@@ -288,7 +288,7 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 			"has_state", state != "",
 			"has_cookie_state", expectedState != "",
 		)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch")))
 		return
 	}
 
@@ -296,14 +296,14 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 	token, err := app.client.ExchangeCode(requestCtx, code, exchangeRedirectURI)
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("wechat oauth callback failed", "stage", "exchange", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_exchange_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_exchange_failed")))
 		return
 	}
 	if isWeChatOAuthBaseScope(scope) {
 		openID := strings.TrimSpace(token.OpenID)
 		if openID == "" {
 			logger.Error("wechat oauth callback failed", "stage", "openid", "err", "missing_openid")
-			ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/auth/wechat-pay?oauth_error=wechat_openid_failed"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/auth/wechat-pay?oauth_error=wechat_openid_failed")))
 			return
 		}
 		redirectURL := h.wechatOAuth.frontendURL(ctx.Request, "/auth/wechat-pay")
@@ -317,10 +317,11 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 	identity, err := app.client.ResolveIdentity(requestCtx, token)
 	if err != nil {
 		logger.Error("wechat oauth callback failed", "stage", "identity", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_identity_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_identity_failed")))
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
 		logger.Error(
@@ -330,12 +331,13 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 			"subject", identity.ProviderSubject,
 			"err", err,
 		)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_sign_in_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, wechatOAuthReturnToCookieName, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_sign_in_failed")))
 		return
 	}
 
 	logger.Info("wechat oauth callback succeeded", "user_id", session.User.ID)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	if h.avatarStore != nil && strings.TrimSpace(identity.AvatarURL) != "" && strings.TrimSpace(session.User.AvatarSource) != "upload" {
 		objectKey, syncErr := h.avatarStore.SyncRemoteAvatar(requestCtx, session.User.ID, identity.AvatarURL)
 		if syncErr != nil {

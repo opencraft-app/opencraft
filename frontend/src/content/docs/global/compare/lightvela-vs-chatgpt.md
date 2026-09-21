@@ -48,7 +48,7 @@ Projects 让 ChatGPT 特别适合持续性工作。你可以整理对话、上�
 
 LightVela 也更直接地呈现 Agent 的配置。你可以在配置管理台中选择[模型](https://lightvela.ai/zh-sg/docs/configuration/model)、连接[通道](https://lightvela.ai/zh-sg/docs/configuration)，并通过[技能](https://lightvela.ai/zh-sg/docs/configuration/skill)扩展 Hermes。
 
-如果 Agent 需要反复完成同类工作，LightVela 的[自动任务](https://lightvela.ai/zh-sg/docs/configuration/automation)可以把这种模式变成 Agent 的日常运行规则，而不是每次都手动重新开始。
+如果 Agent 需要反复完成同类工作，LightVela 的[定时任务](https://lightvela.ai/zh-sg/docs/configuration/automation)可以把这种模式变成 Agent 的日常运行规则，而不是每次都手动重新开始。
 
 ## 哪些情况下 ChatGPT 更适合
 

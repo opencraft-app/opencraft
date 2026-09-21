@@ -7,6 +7,20 @@ import { getMDXComponents } from "./mdx-components";
 afterEach(cleanup);
 
 describe("LightVela docs callouts", () => {
+  it("keeps a blockquote containing notes as a normal blockquote", () => {
+    const Blockquote = getMDXComponents().blockquote!;
+    const { container } = render(
+      <Blockquote>
+        <p>
+          Use an upstream task’s collected notes, then identify completed work, blockers, and the next 3 priorities.
+        </p>
+      </Blockquote>,
+    );
+
+    expect(container.querySelector("blockquote")).toBeInTheDocument();
+    expect(container.querySelector(".lv-docs-callout")).not.toBeInTheDocument();
+  });
+
   it("keeps a bold warning label separate from wrapping callout body text", () => {
     const Blockquote = getMDXComponents().blockquote!;
     const { container } = render(

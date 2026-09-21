@@ -10,3 +10,7 @@ test('turbopack root resolves to the real frontend directory', () => {
   assert.equal(config.turbopack.root, frontendRoot);
   assert.equal(config.turbopack.root.includes('%'), false);
 });
+
+test('transpiles repository-local source packages used by the frontend', () => {
+  assert.equal(config.transpilePackages.includes('@lightvela/agent-core'), true);
+});

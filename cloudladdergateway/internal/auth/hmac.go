@@ -23,7 +23,7 @@ var (
 )
 
 type Authenticator struct {
-	enabled              bool
+	mode                 string
 	timestampSkew        time.Duration
 	allowUnauthenticated map[string]struct{}
 	callers              map[string]Caller
@@ -48,12 +48,16 @@ type Request struct {
 }
 
 func New(cfg config.Config) (*Authenticator, error) {
+	mode := cfg.Auth.EffectiveMode()
+	if mode != config.AuthModeDisabled && mode != config.AuthModeOptional && mode != config.AuthModeRequired {
+		return nil, fmt.Errorf("unsupported auth mode %q", cfg.Auth.Mode)
+	}
 	skew, err := config.ParseDuration(cfg.Auth.TimestampSkew, 5*time.Minute)
 	if err != nil {
 		return nil, err
 	}
 	authenticator := &Authenticator{
-		enabled:              cfg.Auth.Enabled,
+		mode:                 mode,
 		timestampSkew:        skew,
 		allowUnauthenticated: map[string]struct{}{},
 		callers:              map[string]Caller{},
@@ -67,8 +71,11 @@ func New(cfg config.Config) (*Authenticator, error) {
 	}
 	for _, callerCfg := range cfg.Auth.Callers {
 		secret := strings.TrimSpace(os.Getenv(callerCfg.SecretEnv))
-		if cfg.Auth.Enabled && secret == "" {
+		if mode == config.AuthModeRequired && secret == "" {
 			return nil, fmt.Errorf("auth caller %q secret env %s is empty", callerCfg.ID, callerCfg.SecretEnv)
+		}
+		if mode == config.AuthModeOptional && secret == "" {
+			continue
 		}
 		authenticator.callers[callerCfg.ID] = Caller{
 			ID:     callerCfg.ID,
@@ -80,11 +87,42 @@ func New(cfg config.Config) (*Authenticator, error) {
 }
 
 func (a *Authenticator) Verify(req Request) error {
-	if a == nil || !a.enabled {
+	if a == nil || a.mode == config.AuthModeDisabled {
 		return nil
 	}
-	if _, ok := a.allowUnauthenticated[req.RouteID]; ok {
+	credentialsEmpty := strings.TrimSpace(req.Caller) == "" &&
+		strings.TrimSpace(req.Timestamp) == "" &&
+		strings.TrimSpace(req.Signature) == ""
+	if a.mode == config.AuthModeOptional && credentialsEmpty {
 		return nil
+	}
+	if a.mode == config.AuthModeRequired {
+		if _, ok := a.allowUnauthenticated[req.RouteID]; ok {
+			return nil
+		}
+	}
+	return a.verify(req, "", true)
+}
+
+// VerifyRequiredCaller verifies a control-plane request even when data-plane
+// authentication is disabled. The explicit caller allowlist prevents a route
+// from becoming public merely because the gateway data plane is in testing
+// compatibility mode.
+func (a *Authenticator) VerifyRequiredCaller(req Request, allowedCaller string) error {
+	if a == nil {
+		return ErrMissingCredentials
+	}
+	return a.verify(req, strings.TrimSpace(allowedCaller), false)
+}
+
+func (a *Authenticator) verify(req Request, allowedCaller string, enforceRoutePolicy bool) error {
+	if allowedCaller != "" && strings.TrimSpace(req.Caller) != allowedCaller {
+		return ErrUnknownCaller
+	}
+	if _, ok := a.allowUnauthenticated[req.RouteID]; ok {
+		if enforceRoutePolicy {
+			return nil
+		}
 	}
 	if strings.TrimSpace(req.Caller) == "" || strings.TrimSpace(req.Timestamp) == "" || strings.TrimSpace(req.Signature) == "" {
 		return ErrMissingCredentials
@@ -93,11 +131,16 @@ func (a *Authenticator) Verify(req Request) error {
 	if !ok {
 		return ErrUnknownCaller
 	}
-	routeCallers := a.routeCallers[req.RouteID]
-	callerAllowsRoute := len(caller.Routes) > 0 && slices.Contains(caller.Routes, req.RouteID)
-	routeAllowsCaller := len(routeCallers) > 0 && slices.Contains(routeCallers, req.Caller)
-	if !callerAllowsRoute && !routeAllowsCaller {
-		return ErrRouteDenied
+	if strings.TrimSpace(caller.Secret) == "" {
+		return ErrMissingCredentials
+	}
+	if enforceRoutePolicy {
+		routeCallers := a.routeCallers[req.RouteID]
+		callerAllowsRoute := len(caller.Routes) > 0 && slices.Contains(caller.Routes, req.RouteID)
+		routeAllowsCaller := len(routeCallers) > 0 && slices.Contains(routeCallers, req.Caller)
+		if !callerAllowsRoute && !routeAllowsCaller {
+			return ErrRouteDenied
+		}
 	}
 	timestamp, err := time.Parse(time.RFC3339, req.Timestamp)
 	if err != nil {

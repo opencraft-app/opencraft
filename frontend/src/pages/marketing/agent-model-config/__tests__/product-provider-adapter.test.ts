@@ -1,5 +1,6 @@
-import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
 import { describe, expect, it } from "vitest";
+
+import type { IModelProvider } from "@/pages/marketing/agent-config/utils/model-providers";
 
 import { adaptProductModelProviders, resolveProductModelProviderOptions } from "../product-provider-adapter";
 
@@ -53,7 +54,7 @@ describe("adaptProductModelProviders", () => {
         apiMode: "chat_completions",
         discoveryStrategy: "catalog",
         fixedModelSelection: true,
-        supportsLiveModelRefresh: true,
+        supportsLiveModelRefresh: false,
         catalogModels: [{ id: "alpha-code", name: "Alpha Code" }],
       },
       expect.objectContaining({
@@ -83,7 +84,7 @@ describe("adaptProductModelProviders", () => {
     }));
   });
 
-  it("disables live model refresh for Tencent-managed providers only", () => {
+  it("uses the Rainbow catalog and disables live refresh for every API provider", () => {
     const adapted = adaptProductModelProviders([
       { ...provider("tokenhub"), provider: "tokenhub" },
       provider("tencent_token_plan"),
@@ -92,12 +93,24 @@ describe("adaptProductModelProviders", () => {
       provider("openrouter"),
     ]);
 
-    expect(adapted.map((item) => [item.providerKey, item.supportsLiveModelRefresh])).toEqual([
-      ["tokenhub", false],
-      ["tencent_token_plan", false],
-      ["tencent_token_plan_enterprise_pro_intl", false],
-      ["minimax_coding", true],
-      ["openrouter", true],
+    expect(adapted.map((item) => [item.providerKey, item.discoveryStrategy, item.supportsLiveModelRefresh])).toEqual([
+      ["tokenhub", "catalog", false],
+      ["tencent_token_plan", "catalog", false],
+      ["tencent_token_plan_enterprise_pro_intl", "catalog", false],
+      ["minimax_coding", "catalog", false],
+      ["openrouter", "catalog", false],
+    ]);
+  });
+
+  it("keeps API providers whose Rainbow catalog is empty", () => {
+    expect(adaptProductModelProviders([provider("empty-api")])).toEqual([
+      expect.objectContaining({
+        providerKey: "empty-api",
+        category: "api",
+        discoveryStrategy: "catalog",
+        supportsLiveModelRefresh: false,
+        catalogModels: [],
+      }),
     ]);
   });
 

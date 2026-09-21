@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,88 @@ import (
 	"cvm-mock-e2b/internal/blueprint"
 	"cvm-mock-e2b/internal/core"
 )
+
+func TestBaseManifestIncludesJohorBahruModifyFamilyPolicy(t *testing.T) {
+	body, err := os.ReadFile("../../k8s/base/manifests.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"ap-johorbahru":["SA5","S5","SA2","SA3","S6"]`) {
+		t.Fatal("base manifest is missing ap-johorbahru modify family policy")
+	}
+}
+
+func TestTencentCloudProviderCachesClientsByRegion(t *testing.T) {
+	p, err := NewTencentCloudProvider(TencentConfig{
+		SecretID:     "test-id",
+		SecretKey:    "test-key",
+		Region:       "ap-singapore",
+		InstanceType: "SA5.MEDIUM4",
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+
+	sg1, err := p.cvmClientForRegion("ap-singapore")
+	if err != nil {
+		t.Fatalf("singapore client: %v", err)
+	}
+	sg2, err := p.cvmClientForRegion("ap-singapore")
+	if err != nil {
+		t.Fatalf("cached singapore client: %v", err)
+	}
+	jhb, err := p.cvmClientForRegion("ap-johorbahru")
+	if err != nil {
+		t.Fatalf("johor client: %v", err)
+	}
+	if sg1 != sg2 {
+		t.Fatal("expected the same CVM client for repeated Singapore lookups")
+	}
+	if sg1 == jhb {
+		t.Fatal("expected distinct CVM clients for Singapore and Johor")
+	}
+
+	cbsSG, err := p.cbsClientForRegion("ap-singapore")
+	if err != nil {
+		t.Fatalf("singapore CBS client: %v", err)
+	}
+	cbsJHB, err := p.cbsClientForRegion("ap-johorbahru")
+	if err != nil {
+		t.Fatalf("johor CBS client: %v", err)
+	}
+	if cbsSG == cbsJHB {
+		t.Fatal("expected distinct CBS clients for Singapore and Johor")
+	}
+}
+
+func TestNewTencentCloudProviderFromEnvLoadsRegionalModifyFamilyPolicy(t *testing.T) {
+	t.Setenv("TENCENT_SECRET_ID", "test-id")
+	t.Setenv("TENCENT_SECRET_KEY", "test-key")
+	t.Setenv("TENCENT_REGION", "ap-singapore")
+	t.Setenv("TENCENT_INSTANCE_TYPE", "SA5.LARGE8")
+	t.Setenv("TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION", `{"ap-singapore":["S5","SA2"]}`)
+
+	p, err := NewTencentCloudProviderFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.cfg.ModifyInstanceFamiliesByRegion["ap-singapore"]; !reflect.DeepEqual(got, []string{"S5", "SA2"}) {
+		t.Fatalf("policy=%v", got)
+	}
+}
+
+func TestNewTencentCloudProviderFromEnvRejectsInvalidRegionalModifyFamilyPolicy(t *testing.T) {
+	t.Setenv("TENCENT_SECRET_ID", "test-id")
+	t.Setenv("TENCENT_SECRET_KEY", "test-key")
+	t.Setenv("TENCENT_REGION", "ap-singapore")
+	t.Setenv("TENCENT_INSTANCE_TYPE", "SA5.LARGE8")
+	t.Setenv("TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION", `{invalid`)
+
+	_, err := NewTencentCloudProviderFromEnv()
+	if err == nil || !strings.Contains(err.Error(), "invalid TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION") {
+		t.Fatalf("err=%v", err)
+	}
+}
 
 func TestInvokeCommandParametersTargetsOneInstanceAndEncodesRuntimeParameters(t *testing.T) {
 	params, err := invokeCommandParameters("ins-1", "cmd-website1", map[string]string{

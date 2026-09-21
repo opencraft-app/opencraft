@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildHermesSkillDeleteCommand } from "@/lib/hermes-skills-client";
+import { withHermesSkillsProfile } from "@/lib/hermes-agent-command";
 
 import {
   buildHermesSkillsListCommand,
@@ -12,6 +13,8 @@ import {
   buildSkillhubInstallCommand,
   buildSkillhubListCommand,
   buildSkillhubUninstallCommand,
+  buildHermesNativeUninstallCommand,
+  createSkillsDataLayer,
   createDomesticDataLayer,
   createLiveDataLayer,
   buildSkillsshBatchInstallCommand,
@@ -35,6 +38,8 @@ import {
   type InstalledSkill,
 } from "./skill-registries";
 import { parseSkillhubList, parseSkillhubSearch } from "./skill-registries";
+
+const scopedMain = (command: string) => withHermesSkillsProfile(command, "main");
 
 describe("skills.sh command builders", () => {
   it("derives canonical marketplace detail links only from reliable result identity", () => {
@@ -275,13 +280,62 @@ describe("skills.sh command builders", () => {
 });
 
 describe("domestic SkillHub command and response handling", () => {
+  it("does not execute instance skills commands without a valid Bot profile", async () => {
+    const execDebugCommand = vi.fn();
+    const execDebugCommandStream = vi.fn();
+    const skill: Skill = { registry: "skillhub", rawId: "shared", slug: "shared", name: "Shared" };
+    const dataLayer = createDomesticDataLayer("bot-1", execDebugCommand, "zh", execDebugCommandStream);
+
+    await expect(dataLayer.listInstalled()).rejects.toThrow("缺少有效的 Profile");
+    await expect(dataLayer.install(skill)).resolves.toMatchObject({ ok: false, message: expect.stringContaining("缺少有效的 Profile") });
+    await expect(dataLayer.uninstall(skill)).resolves.toMatchObject({ ok: false, message: expect.stringContaining("缺少有效的 Profile") });
+    await expect(installSkillsInBatch(dataLayer, [skill])).resolves.toMatchObject({
+      succeeded: [],
+      failed: [{ skill, message: expect.stringContaining("缺少有效的 Profile") }],
+    });
+    expect(execDebugCommand).not.toHaveBeenCalled();
+    expect(execDebugCommandStream).not.toHaveBeenCalled();
+  });
+
+  it("scopes native-skill uninstall and verification to the selected named profile", async () => {
+    const commands: string[] = [];
+    const profileId = "profile-2";
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: command === withHermesSkillsProfile(buildHermesNativeUninstallCommand("shared"), profileId)
+          ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+          : command === withHermesSkillsProfile(buildSkillhubListCommand(), profileId)
+            ? JSON.stringify({ success: true, data: { skills: [] } })
+            : "",
+      };
+    };
+    const skill: InstalledSkill = {
+      registry: "hermes", rawId: "shared", slug: "shared", name: "Shared",
+      registries: ["hermes"], sourceLabel: "Hermes", uninstallable: true,
+    };
+
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, profileId).uninstall(skill))
+      .resolves.toEqual({ ok: true });
+    expect(commands).toEqual([
+      withHermesSkillsProfile(buildHermesNativeUninstallCommand("shared"), profileId),
+      withHermesSkillsProfile(buildSkillhubListCommand(), profileId),
+      buildHermesSkillsListCommand(profileId),
+    ]);
+    expect(commands[0]).toContain('ACLI_RUNTIME_HOME="$HERMES_BASE/profiles/profile-2"');
+    expect(commands[0]).not.toContain("rm -rf");
+  });
+
   it("uses the domestic acli skills command family", () => {
     expect(buildSkillhubInstallCommand("builder-radar")).toBe("acli skills install 'builder-radar'");
+    expect(buildSkillhubInstallCommand("@indiv-skill/anti-fraud")).toBe("acli skills install '@indiv-skill/anti-fraud'");
     expect(buildSkillhubUninstallCommand("builder-radar")).toBe("acli skills uninstall 'builder-radar'");
     expect(buildSkillhubListCommand()).toBe("acli skills list");
   });
 
-  it("treats every domestic SkillHub API result as SkillHub", () => {
+  it("keeps domestic search results in SkillHub while preserving installed builtin sources", () => {
     const search = parseSkillhubSearch(JSON.stringify({
       code: 0,
       data: {
@@ -306,6 +360,35 @@ describe("domestic SkillHub command and response handling", () => {
       iconUrl: "https://cdn.example.com/builder-radar.png",
     })]);
     expect(search[0]).not.toHaveProperty("sourceRegistry");
+
+    const sameSlugSearch = parseSkillhubSearch(JSON.stringify({
+      data: {
+        skills: [
+          {
+            slug: "anti-fraud",
+            name: "防诈专家",
+            homepage: "https://skillhub.cn/skills/indiv-skill/anti-fraud",
+            namespace: { canonicalName: "@indiv-skill/anti-fraud", displayName: "indiv-skill" },
+          },
+          {
+            slug: "anti-fraud",
+            name: "防骗大师.Skill",
+            homepage: "https://skillhub.cn/skills/indiv-ebandao/anti-fraud",
+            namespace: { canonicalName: "@indiv-ebandao/anti-fraud", displayName: "indiv-ebandao" },
+          },
+        ],
+      },
+    }));
+    expect(sameSlugSearch.map((skill) => skill.rawId)).toEqual([
+      "@indiv-skill/anti-fraud",
+      "@indiv-ebandao/anti-fraud",
+    ]);
+    expect(sameSlugSearch.map(skillIdentity)).toEqual([
+      "skillhub:@indiv-skill/anti-fraud",
+      "skillhub:@indiv-ebandao/anti-fraud",
+    ]);
+    expect(getSkillSourceUrl(sameSlugSearch[0]!)).toBe("https://skillhub.cn/skills/indiv-skill/anti-fraud");
+    expect(getSkillSourceUrl(sameSlugSearch[1]!)).toBe("https://skillhub.cn/skills/indiv-ebandao/anti-fraud");
 
     const installed = parseSkillhubList(JSON.stringify({
       success: true,
@@ -361,6 +444,9 @@ describe("domestic SkillHub command and response handling", () => {
         name: "humanizer",
         category: "creative",
         version: "2.5.1",
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
       }),
       expect.objectContaining({
         rawId: "skill_e95600124c0d7729fa4d",
@@ -368,6 +454,9 @@ describe("domestic SkillHub command and response handling", () => {
         name: "humanizer",
         category: "creative",
         version: "4.1.0",
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
       }),
     ]));
     expect(
@@ -417,7 +506,7 @@ describe("domestic SkillHub command and response handling", () => {
 
 describe("Hermes native installed skills", () => {
   it("uses the Hermes CLI list command and maps native-only skills", () => {
-    expect(buildHermesSkillsListCommand()).toContain("hermes_cli.main skills list");
+    expect(buildHermesSkillsListCommand()).toContain("hermes_cli.main -p 'default' skills list");
 
     expect(parseHermesInstalledSkills([
       "│ Name │ Category │ Source │ Trust │ Status │",
@@ -506,6 +595,32 @@ describe("Hermes native installed skills", () => {
         rawId: "team/repo/finance-news",
         registries: ["skills-sh", "hermes"],
         uninstallable: true,
+      }),
+    ]);
+  });
+
+  it("keeps Hermes builtin authority when a matching SkillHub record exists", () => {
+    const registrySkill: InstalledSkill = {
+      registry: "skillhub",
+      rawId: "architecture-diagram",
+      slug: "architecture-diagram",
+      name: "architecture-diagram",
+      registries: ["skillhub"],
+      sourceLabel: "SkillHub",
+    };
+    const [hermesSkill] = parseHermesInstalledSkills([
+      "│ Name │ Category │ Source │ Trust │ Status │",
+      "│ architecture-diagram │ creative │ builtin │ builtin │ enabled │",
+    ].join("\n"));
+
+    expect(mergeInstalledWithHermes([registrySkill], hermesSkill ? [hermesSkill] : [])).toEqual([
+      expect.objectContaining({
+        registry: "skillhub",
+        rawId: "architecture-diagram",
+        registries: ["skillhub", "hermes"],
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
       }),
     ]);
   });
@@ -620,7 +735,7 @@ describe("Hermes native installed skills", () => {
           ? JSON.stringify({ success: true, data: { skills: [{ slug: "react", displayName: "React" }] } })
           : command === buildSkillsshListCommand()
             ? JSON.stringify({ success: true, data: { skills: [] } })
-            : JSON.stringify({ success: true, data: { skills: [{ name: "builder-radar" }] } });
+          : JSON.stringify({ success: true, data: { skills: [{ name: "builder-radar" }] } });
       return { status: "SUCCESS", exitCode: 0, output };
     };
 
@@ -633,7 +748,7 @@ describe("Hermes native installed skills", () => {
         ]),
       }),
     );
-    await expect(createDomesticDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual(
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main").listInstalled()).resolves.toEqual(
       expect.objectContaining({
         failedSources: [],
         skills: expect.arrayContaining([
@@ -645,15 +760,67 @@ describe("Hermes native installed skills", () => {
     expect(commands.filter((command) => command === buildHermesSkillsListCommand())).toHaveLength(2);
   });
 
+  it("passes the selected profile through the international live data layer", async () => {
+    const profileId = "profile-global";
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      const output = command === buildHermesSkillsListCommand(profileId)
+        ? "│ Name │ Category │ Source │ Trust │ Status │\n│ hermes-agent │ autonomous-ai-agents │ builtin │ yes │ enabled │\n__HERMES_NO_BUNDLED_SKILLS__"
+        : JSON.stringify({ success: true, data: { skills: [] } });
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+
+    await expect(
+      createSkillsDataLayer("bot-1", execDebugCommand, "global", "zh", undefined, profileId).listInstalled(),
+    ).resolves.toEqual({ failedSources: [], skills: [] });
+    expect(commands).toContain(buildHermesSkillsListCommand(profileId));
+    expect(commands).not.toContain(buildHermesSkillsListCommand());
+  });
+
+  it("omits the Hermes runtime manual from user-installed skill lists", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      const output = command === buildHermesSkillsListCommand()
+        ? "│ Name │ Category │ Source │ Trust │ Status │\n│ hermes-agent │ autonomous-ai-agents │ builtin │ yes │ enabled │\n__HERMES_NO_BUNDLED_SKILLS__"
+        : command === buildClawhubListCommand()
+          ? JSON.stringify({ success: true, data: { skills: [{ slug: "hermes-agent", displayName: "Hermes Agent" }] } })
+          : command === buildSkillhubListCommand()
+            ? JSON.stringify({ success: true, data: { skills: [{ slug: "hermes-agent", name: "Hermes Agent" }] } })
+            : JSON.stringify({ success: true, data: { skills: [] } });
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+
+    await expect(createLiveDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual({
+      failedSources: [],
+      skills: [],
+    });
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main").listInstalled()).resolves.toEqual({
+      failedSources: [],
+      skills: [],
+    });
+  });
+
+  it("keeps the Hermes runtime manual visible for profiles without the no-skills marker", async () => {
+    const execDebugCommand = async (_botId: string, command: string) => {
+      const output = command === buildHermesSkillsListCommand()
+        ? "│ Name │ Category │ Source │ Trust │ Status │\n│ hermes-agent │ autonomous-ai-agents │ builtin │ yes │ enabled │"
+        : JSON.stringify({ success: true, data: { skills: [] } });
+      return { status: "SUCCESS", exitCode: 0, output };
+    };
+
+    const result = await createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main").listInstalled();
+    expect(result.skills.map((skill) => skill.slug)).toEqual(["hermes-agent"]);
+  });
+
   it("marks an ambiguous Hermes row as unavailable when its registry list fails", async () => {
     const execDebugCommand = async (_botId: string, command: string) => {
-      if (command === buildSkillhubListCommand()) {
+      if (command === scopedMain(buildSkillhubListCommand())) {
         return { status: "FAILED", exitCode: 1, output: "", stderr: "registry unavailable" };
       }
       return { status: "SUCCESS", exitCode: 0, output: "builder-radar" };
     };
 
-    await expect(createDomesticDataLayer("bot-1", execDebugCommand).listInstalled()).resolves.toEqual({
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main").listInstalled()).resolves.toEqual({
       failedSources: ["skillhub"],
       skills: [expect.objectContaining({
         rawId: "builder-radar",
@@ -666,9 +833,9 @@ describe("Hermes native installed skills", () => {
 
   it("reports failure when an uninstalled marketplace skill remains in Hermes", async () => {
     const execDebugCommand = async (_botId: string, command: string) => {
-      const output = command === buildSkillhubUninstallCommand("builder-radar")
+      const output = command === scopedMain(buildSkillhubUninstallCommand("builder-radar"))
         ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
-        : command === buildSkillhubListCommand()
+        : command === scopedMain(buildSkillhubListCommand())
           ? JSON.stringify({ success: true, data: { skills: [] } })
           : "builder-radar";
       return { status: "SUCCESS", exitCode: 0, output };
@@ -682,17 +849,23 @@ describe("Hermes native installed skills", () => {
       sourceLabel: "SkillHub",
     };
 
-    await expect(createDomesticDataLayer("bot-1", execDebugCommand).uninstall(skill)).resolves.toEqual({
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main").uninstall(skill)).resolves.toEqual({
       ok: false,
       message: "卸载后技能仍然存在，请重试",
     });
   });
 
-  it("really deletes Hermes-native skill directories in both data layers", async () => {
+  it("keeps international direct deletion while domestic Hermes skills use ACLI uninstall", async () => {
     const commands: string[] = [];
     const execDebugCommand = async (_botId: string, command: string) => {
       commands.push(command);
-      return { status: "SUCCESS", exitCode: 0, output: "" };
+      return {
+        status: "SUCCESS",
+        exitCode: 0,
+        output: command === scopedMain(buildHermesNativeUninstallCommand("finance-news"))
+          ? JSON.stringify({ success: true, data: { status: "uninstalled" } })
+          : "",
+      };
     };
     const nativeSkill: InstalledSkill = {
       registry: "hermes",
@@ -705,20 +878,40 @@ describe("Hermes native installed skills", () => {
     };
 
     await expect(createLiveDataLayer("bot-1", execDebugCommand).uninstall(nativeSkill)).resolves.toEqual({ ok: true });
-    await expect(createDomesticDataLayer("bot-1", execDebugCommand).uninstall(nativeSkill)).resolves.toEqual({ ok: true });
+    await expect(createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main").uninstall(nativeSkill)).resolves.toEqual({ ok: true });
     expect(commands).toEqual([
       buildHermesSkillDeleteCommand("finance-news"),
       buildClawhubListCommand(),
       buildSkillsshListCommand(),
       buildHermesSkillsListCommand(),
-      buildHermesSkillDeleteCommand("finance-news"),
-      buildSkillhubListCommand(),
+      scopedMain(buildHermesNativeUninstallCommand("finance-news")),
+      scopedMain(buildSkillhubListCommand()),
       buildHermesSkillsListCommand(),
     ]);
   });
 });
 
 describe("batch skill installation", () => {
+  it("falls back safely when stable ACLI rejects --agent for domestic batch install", async () => {
+    const skill: Skill = { registry: "skillhub", rawId: "shared", slug: "shared", name: "Shared" };
+    const commands: string[] = [];
+    const execDebugCommand = async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "SUCCESS", exitCode: 0, output: JSON.stringify({ success: true, data: { status: "installed" } }) };
+    };
+    const execDebugCommandStream = async (_botId: string, command: string) => {
+      commands.push(command);
+      return { status: "FAILED", exitCode: 1, output: "unknown flag: --agent" };
+    };
+    const dataLayer = createDomesticDataLayer("bot-1", execDebugCommand, "zh", execDebugCommandStream, "profile-2");
+
+    await expect(installSkillsInBatch(dataLayer, [skill])).resolves.toMatchObject({ succeeded: [skill], failed: [] });
+    expect(commands).toEqual([
+      withHermesSkillsProfile(buildSkillhubBatchInstallCommand(["shared"]), "profile-2"),
+      withHermesSkillsProfile(buildSkillhubInstallCommand("shared"), "profile-2"),
+    ]);
+  });
+
   it("allows a consumer-specific batch command and exposes sequential fallback", async () => {
     const skills: Skill[] = [
       { registry: "skillhub", rawId: "market-data", slug: "market-data", name: "Market Data" },
@@ -902,11 +1095,11 @@ describe("batch skill installation", () => {
         ].join("\n"),
       };
     };
-    const dataLayer = createDomesticDataLayer("bot-1", execDebugCommand, "zh", execDebugCommandStream);
+    const dataLayer = createDomesticDataLayer("bot-1", execDebugCommand, "zh", execDebugCommandStream, "main");
 
     const result = await installSkillsInBatch(dataLayer, skills);
 
-    expect(commands).toEqual([buildSkillhubBatchInstallCommand(skills.map((skill) => skill.rawId))]);
+    expect(commands).toEqual([scopedMain(buildSkillhubBatchInstallCommand(skills.map((skill) => skill.rawId)))]);
     expect(result.succeeded).toEqual(skills);
     expect(result.failed).toEqual([]);
   });
@@ -1175,7 +1368,7 @@ describe("install and uninstall result handling", () => {
     expect(await live.install(globalSkill)).toEqual({ ok: false, message: failedOutput });
     expect(await live.uninstall(globalSkill)).toEqual({ ok: false, message: failedOutput });
 
-    const domestic = createDomesticDataLayer("bot-1", execDebugCommand);
+    const domestic = createDomesticDataLayer("bot-1", execDebugCommand, "zh", undefined, "main");
     expect(await domestic.install(domesticSkill)).toEqual({ ok: false, message: failedOutput });
     expect(await domestic.uninstall(domesticSkill)).toEqual({ ok: false, message: failedOutput });
   });

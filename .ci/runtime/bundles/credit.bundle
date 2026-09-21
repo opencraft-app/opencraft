@@ -1,0 +1,88 @@
+bundles:
+  credit:
+    owner: credit
+    source: credit
+    db_contract:
+      mode: migration
+      bootstrap_namespace: true
+      db_job_service: credit
+      migration_operation: migration
+      migration_paths:
+      - credit/migrations/**
+      expected_migration_source: credit/migrations
+      db_job_secret_resolver: credit_db_password
+      secret_resolvers:
+        credit_db_password:
+          type: sops_yaml
+          file: argocd/secrets/{env}/credit-runtime-secrets.sops.yaml
+          yaml_path: stringData.CREDIT_DB_PASSWORD
+      verifier:
+        namespace: credit
+        image: mysql:8.0
+        service_platform_env_file: argocd/services/credit/{env}/credit-platform.env
+        static_env:
+          CREDIT_DB: credit
+          CREDIT_DB_USER: credit
+        env_from_service_platform:
+          MYSQL_HOST: CREDIT_MYSQL_HOST
+          MYSQL_PORT: CREDIT_MYSQL_PORT
+        env_from_secret_resolver:
+          CREDIT_DB_PASSWORD: credit_db_password
+        node_selector_from_service_platform:
+          pool: CREDIT_NODE_POOL
+        database_env: CREDIT_DB
+        user_env: CREDIT_DB_USER
+        password_env: CREDIT_DB_PASSWORD
+    reason: Credit service release bundle for the independent paid credit package runtime.
+    allowed_paths:
+    - credit/k8s/base
+    - credit/Dockerfile
+    - credit/migrations
+    exit_condition: Can be removed only after credit is folded into another billing runtime.
+    publish_paths:
+    - argocd/services/credit/{env}/**
+    - argocd/services/credit/common/**
+    - argocd/catalogs/playground/beijing-playground/{env}/credit.yaml
+    - argocd/catalogs/playground/seoul-playground/{env}/credit.yaml
+    - argocd/catalogs/playground/tokyo-playground/{env}/credit.yaml
+    - argocd/apps/{env}/credit.yaml
+    - argocd/projects/{env}-credit.yaml
+    - argocd/secrets/{env}/credit-runtime-secrets.sops.yaml
+    - credit/k8s/base/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/credit/beijing-sandbox/**
+      - argocd/services/credit/common/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/credit.yaml
+      - argocd/secrets/beijing-sandbox/credit-runtime-secrets.sops.yaml
+      - credit/k8s/base/**
+      sandbox-jp-1:
+      - argocd/services/credit/sandbox-jp-1/**
+      - argocd/services/credit/common/**
+      - argocd/catalogs/playground/tokyo-playground/sandbox-jp-1/credit.yaml
+      - argocd/secrets/sandbox-jp-1/credit-runtime-secrets.sops.yaml
+      - credit/k8s/base/**
+      shprod:
+      - argocd/services/credit/shprod/**
+      - argocd/services/credit/common/**
+      - argocd/apps/shprod/credit.yaml
+      - argocd/projects/shprod-credit.yaml
+      - argocd/secrets/shprod/credit-runtime-secrets.sops.yaml
+      - credit/k8s/base/**
+      sgprod:
+      - argocd/services/credit/sgprod/**
+      - argocd/services/credit/common/**
+      - argocd/apps/sgprod/credit.yaml
+      - argocd/projects/sgprod-credit.yaml
+      - argocd/secrets/sgprod/credit-runtime-secrets.sops.yaml
+      - credit/k8s/base/**
+    dockerfile: credit/Dockerfile
+    build_context: credit
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/credit
+      sandbox-bj-*: lightclaw-bj8.tencentcloudcr.com/lightclaw/credit
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/credit
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/credit
+      sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/credit
+      sandbox-jp-*: lightclaw-jp1.tencentcloudcr.com/lightclaw/credit

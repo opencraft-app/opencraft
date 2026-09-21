@@ -1,0 +1,18 @@
+{
+  "id": "codesign",
+  "name": "Codesign 交付知识",
+  "kind": "documentation-platform",
+  "path": "codesign",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["release-gitops"],
+  "summary": "沉淀代码签名、EdgeOne 等平台接入的权限模型与可审计操作手册。",
+  "runtime": "文档与平台配置记录",
+  "interfaces": ["操作手册", "权限策略", "平台接入记录"],
+  "dependencies": ["frontend", "external-delivery-platforms"],
+  "source_docs": ["codesign/README.md", "codesign/AGENTS.md"],
+  "agent_entry": "codesign/AGENTS.md",
+  "service_docs": "codesign/docs/README.md",
+  "deploy": [],
+  "generated_paths": []
+}

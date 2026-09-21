@@ -1,0 +1,78 @@
+CREATE TABLE IF NOT EXISTS credit_package_usage (
+    id                    BIGINT        PRIMARY KEY AUTO_INCREMENT,
+    package_id            VARCHAR(64)   NOT NULL UNIQUE,
+    user_id               VARCHAR(128)  NOT NULL,
+    product_id            VARCHAR(64)   NOT NULL,
+    deal_name             VARCHAR(128)  NOT NULL,
+    uin                   VARCHAR(64)   NOT NULL,
+    app_id                BIGINT        NOT NULL,
+    usage_date            DATE          NOT NULL,
+    calc_date             DATE          NOT NULL,
+    package_expired_time  DATETIME(6)   NOT NULL,
+    credit_total          DECIMAL(24,4) NOT NULL,
+    credit_used_total     DECIMAL(24,4) NOT NULL,
+    credit_used_day       DECIMAL(24,4) NOT NULL,
+    credit_left           DECIMAL(24,4) NOT NULL,
+    snapshot_time         DATETIME(6)   NOT NULL,
+    push_status           VARCHAR(32)   NOT NULL,
+    push_attempts         INT           NOT NULL DEFAULT 0,
+    next_retry_time       DATETIME(6)   NOT NULL,
+    lease_owner           VARCHAR(128)  NOT NULL DEFAULT '',
+    last_error            TEXT          NOT NULL,
+    request_payload       JSON          DEFAULT NULL,
+    response_payload      JSON          DEFAULT NULL,
+    sent_time             DATETIME(6)   DEFAULT NULL,
+    created_time          DATETIME(6)   NOT NULL,
+    updated_time          DATETIME(6)   NOT NULL,
+    KEY idx_push_due (next_retry_time, package_expired_time),
+    KEY idx_deal_name (deal_name),
+    KEY idx_calc_date (calc_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='credit 积分包滚动用量及推量任务表';
+
+CREATE TABLE IF NOT EXISTS history_credit_package_usage (
+    id                    BIGINT        PRIMARY KEY AUTO_INCREMENT,
+    package_id            VARCHAR(64)   NOT NULL UNIQUE,
+    user_id               VARCHAR(128)  NOT NULL,
+    product_id            VARCHAR(64)   NOT NULL,
+    deal_name             VARCHAR(128)  NOT NULL,
+    uin                   VARCHAR(64)   NOT NULL,
+    app_id                BIGINT        NOT NULL,
+    usage_date            DATE          NOT NULL,
+    calc_date             DATE          NOT NULL,
+    package_expired_time  DATETIME(6)   NOT NULL,
+    credit_total          DECIMAL(24,4) NOT NULL,
+    credit_used_total     DECIMAL(24,4) NOT NULL,
+    credit_used_day       DECIMAL(24,4) NOT NULL,
+    credit_left           DECIMAL(24,4) NOT NULL,
+    snapshot_time         DATETIME(6)   NOT NULL,
+    push_status           VARCHAR(32)   NOT NULL,
+    push_attempts         INT           NOT NULL DEFAULT 0,
+    next_retry_time       DATETIME(6)   NOT NULL,
+    lease_owner           VARCHAR(128)  NOT NULL DEFAULT '',
+    last_error            TEXT          NOT NULL,
+    request_payload       JSON          DEFAULT NULL,
+    response_payload      JSON          DEFAULT NULL,
+    sent_time             DATETIME(6)   DEFAULT NULL,
+    created_time          DATETIME(6)   NOT NULL,
+    updated_time          DATETIME(6)   NOT NULL,
+    archived_time         DATETIME(6)   NOT NULL,
+    archive_reason        VARCHAR(64)   NOT NULL,
+    KEY idx_deal_name (deal_name),
+    KEY idx_archived_time (archived_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='credit 已隔离积分包最终用量历史表';
+
+INSERT IGNORE INTO credit_package_usage (
+    package_id, user_id, product_id, deal_name, uin, app_id,
+    usage_date, calc_date, package_expired_time,
+    credit_total, credit_used_total, credit_used_day, credit_left,
+    snapshot_time, push_status, push_attempts, next_retry_time, lease_owner,
+    last_error, request_payload, response_payload, sent_time, created_time, updated_time
+)
+SELECT package_id, user_id, product_id, deal_name, uin, app_id,
+       DATE(CONVERT_TZ(UTC_TIMESTAMP(6), '+00:00', '+08:00')),
+       DATE(CONVERT_TZ(UTC_TIMESTAMP(6), '+00:00', '+08:00')), expired_time,
+       0, 0, 0, 0,
+       UTC_TIMESTAMP(6), 'init', 0, UTC_TIMESTAMP(6), '',
+       '', NULL, NULL, NULL, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+  FROM credit_package
+ WHERE status = 'active' AND expired_time > UTC_TIMESTAMP(6);

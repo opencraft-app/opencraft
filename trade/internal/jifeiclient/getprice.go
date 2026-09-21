@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // flexString 是 jifei CGW 价格字段的容忍解码类型 (v1.7.17 B12)。
@@ -50,6 +52,55 @@ func (f *flexString) UnmarshalJSON(b []byte) error {
 // 形态构造响应包，反序列化端拿到 "100.00" 字符串，业务层 InquiryItem.Price 透传无损。
 func (f flexString) MarshalJSON() ([]byte, error) {
 	return json.Marshal(string(f))
+}
+
+// flexFloat 是 jifei CGW 时长字段的容忍解码类型。
+//
+// 存在原因是变配场景：新购 / 续费的 timeSpan 是整数周期（`1` 个月），但变配的
+// timeSpan 是"当前时刻到 curDeadline 的剩余时长占比"，实测回包为小数
+// （`"timeSpan": 0.133333`，即约 4 天 / 1 个月）。字段声明成 int 时
+// encoding/json 会直接报 `cannot unmarshal number 0.133333 into ... int`，
+// 整个变配询价回包解析失败 —— 价格其实已经算对了，只是我们读不进来。
+//
+// 与 flexString / flexInt 同一范式：兜底 number（整数或小数）、string-encoded
+// 数字、null（→ 0）。业务层按 float64 使用；整数值序列化回 JSON 仍是 `1` 而非
+// `1.0`，故对新购 / 续费的既有出参零影响。
+type flexFloat float64
+
+// UnmarshalJSON 同时接受 JSON number（整数 / 小数）、JSON string-encoded 数字、JSON null。
+func (f *flexFloat) UnmarshalJSON(b []byte) error {
+	bs := bytes.TrimSpace(b)
+	if len(bs) == 0 || bytes.Equal(bs, []byte("null")) {
+		*f = 0
+		return nil
+	}
+	if bs[0] == '"' {
+		var s string
+		if err := json.Unmarshal(bs, &s); err != nil {
+			return fmt.Errorf("flexFloat: unmarshal string: %w", err)
+		}
+		if strings.TrimSpace(s) == "" {
+			*f = 0
+			return nil
+		}
+		n, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return fmt.Errorf("flexFloat: parse string-encoded number %q: %w", s, err)
+		}
+		*f = flexFloat(n)
+		return nil
+	}
+	var n float64
+	if err := json.Unmarshal(bs, &n); err != nil {
+		return fmt.Errorf("flexFloat: unmarshal number: %w", err)
+	}
+	*f = flexFloat(n)
+	return nil
+}
+
+// MarshalJSON 始终序列化为 JSON number（整数值不带小数点）。
+func (f flexFloat) MarshalJSON() ([]byte, error) {
+	return json.Marshal(float64(f))
 }
 
 // GetPriceRequest 是 jifei CGW `qcloud.price.getPrice` 询价接口入参（para 内层）。
@@ -105,12 +156,14 @@ type GetPriceResponse struct {
 // 国际站询价会消费 highPrecisionPrice.*High 并换算成对前端兼容的金额单位。其余字段
 // 由 client 透传后由调用方 / ELK 日志兜底（与 Q50 不持久化原则一致）。
 type GetPriceData struct {
-	Price              flexString          `json:"price"`
-	TotalCost          flexString          `json:"totalCost"`
-	RealTotalCost      flexString          `json:"realTotalCost"`
-	Currency           string              `json:"currency"`
-	TimeUnit           string              `json:"timeUnit,omitempty"`
-	TimeSpan           int                 `json:"timeSpan,omitempty"`
+	Price         flexString `json:"price"`
+	TotalCost     flexString `json:"totalCost"`
+	RealTotalCost flexString `json:"realTotalCost"`
+	Currency      string     `json:"currency"`
+	TimeUnit      string     `json:"timeUnit,omitempty"`
+	// TimeSpan 变配场景是小数（剩余时长占比，实测 0.133333），新购 / 续费是整数周期，
+	// 故用 flexFloat 容忍解码。详见 flexFloat 注释。
+	TimeSpan           flexFloat           `json:"timeSpan,omitempty"`
 	GoodsNum           int                 `json:"goodsNum,omitempty"`
 	ProductCode        string              `json:"productCode,omitempty"`
 	SubProductCode     string              `json:"subProductCode,omitempty"`

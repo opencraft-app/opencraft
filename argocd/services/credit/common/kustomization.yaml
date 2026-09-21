@@ -1,0 +1,93 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+namespace: credit
+generatorOptions:
+  disableNameSuffixHash: true
+replacements:
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.CREDIT_MYSQL_HOST
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.MYSQL_HOST
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.CREDIT_MYSQL_PORT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.MYSQL_PORT
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.CREDIT_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: credit
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.CREDIT_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: credit
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Job
+          name: credit-migrate
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.TRADE_INTERNAL_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.TRADE_INTERNAL_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.LLMGATEWAY_INTERNAL_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.LLMGATEWAY_INTERNAL_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.CREDIT_REGION
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.CREDIT_REGION
+  - source:
+      kind: ConfigMap
+      name: credit-platform-values
+      fieldPath: data.CREDIT_OBJECT_ID_PASSWORD_SUFFIX
+    targets:
+      - select:
+          kind: ConfigMap
+          name: credit-config
+        fieldPaths:
+          - data.CREDIT_OBJECT_ID_PASSWORD_SUFFIX
+resources:
+  - ../../../../credit/k8s/base

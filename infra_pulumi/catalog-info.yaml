@@ -1,0 +1,18 @@
+{
+  "id": "infra-pulumi",
+  "name": "基础设施控制面",
+  "kind": "platform",
+  "path": "infra_pulumi",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["release-gitops", "site-environment-routing"],
+  "summary": "以 Pulumi Automation API 管理云资源、环境 inventory 和 deploy 输出。",
+  "runtime": "Go + Pulumi Automation API",
+  "interfaces": ["cmd/infractl", "envs/tencentcloud/*/inventory.yaml", "deploy/envs/*/platform.env"],
+  "dependencies": ["Tencent Cloud", "argocd", "service kustomize overlays"],
+  "source_docs": ["infra_pulumi/README.md", "infra_pulumi/AGENTS.md", "infra_pulumi/Pulumi.yaml"],
+  "agent_entry": "infra_pulumi/AGENTS.md",
+  "service_docs": "infra_pulumi/docs/README.md",
+  "deploy": ["infra_pulumi/cmd/infractl", "infra_pulumi/envs/tencentcloud"],
+  "generated_paths": ["deploy/envs/*/platform.env"]
+}

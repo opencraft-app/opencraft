@@ -10,3 +10,8 @@ package errcode
 //
 // 上述两种场景统一返 404 ORDER_NOT_FOUND，不区分（避免暴露 dealName 是否存在）。
 var ErrOrderNotFound = Register(New("ORDER_NOT_FOUND", 404, "order not found"))
+
+// ErrOrderNotPayable directs checkout clients to refresh existing order status.
+var ErrOrderNotPayable = Register(New("ORDER_NOT_PAYABLE", 409, "order is not pending payment; refresh order status"))
+
+var ErrModifyCheckoutConflict = Register(New("MODIFY_CHECKOUT_CONFLICT", 409, "unfinished modify checkout conflict; recover existing order or contact support"))

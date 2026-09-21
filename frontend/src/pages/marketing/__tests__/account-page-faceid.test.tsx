@@ -12,6 +12,7 @@ const signOut = vi.fn();
 const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
+const refreshPasses = vi.fn().mockResolvedValue(undefined);
 const retryRealnameSync = vi.fn();
 const startRealnameFaceIdAttempt = vi.fn();
 const getRealnameFaceIdAttempt = vi.fn();
@@ -53,6 +54,7 @@ vi.mock("@/i18n/t", () => ({
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/lib/region", () => ({
@@ -90,6 +92,7 @@ vi.mock("@/contexts/agent-context", () => ({
       },
     },
     activePass,
+    refreshPasses,
   }),
 }));
 

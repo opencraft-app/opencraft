@@ -12,8 +12,13 @@ const cronClientMocks = vi.hoisted(() => ({
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
   removeCronJob: vi.fn(),
+  removeManagedCronScriptIfUnreferenced: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
+  sendHermesChatNotice: vi.fn(),
+  writeZeroTokenScript: vi.fn(),
 }));
+
+const runtimeConfigMocks = vi.hoisted(() => ({ zeroTokenAutomationsEnabled: true }));
 
 const skillsClientMocks = vi.hoisted(() => ({
   listInstalledSkillSlugs: vi.fn(),
@@ -37,6 +42,11 @@ vi.mock("@/lib/hermes-skills-client", async () => ({
   ...skillsClientMocks,
 }));
 
+vi.mock("@/contexts/runtime-config-context", async () => ({
+  ...await vi.importActual<typeof import("@/contexts/runtime-config-context")>("@/contexts/runtime-config-context"),
+  useZeroTokenAutomationsEnabled: () => runtimeConfigMocks.zeroTokenAutomationsEnabled,
+}));
+
 import type { CronJob } from "@/lib/hermes-cron-client";
 import { HermesAgentAutomationsPanel } from "../agent-automations-panel";
 
@@ -54,7 +64,10 @@ beforeEach(() => {
   cronClientMocks.editCronJob.mockResolvedValue(undefined);
   cronClientMocks.editCronJobWithContext.mockResolvedValue(undefined);
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
+  cronClientMocks.removeManagedCronScriptIfUnreferenced.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
+  cronClientMocks.sendHermesChatNotice.mockResolvedValue({ sent: 0, failed: 0 });
+  cronClientMocks.writeZeroTokenScript.mockResolvedValue(undefined);
   skillsClientMocks.listInstalledSkillSlugs.mockResolvedValue([]);
 });
 
@@ -63,6 +76,60 @@ afterEach(() => {
 });
 
 describe("HermesAgentAutomationsPanel global upstream context", () => {
+  it("creates a zero-token fixed notification with English copy and global channels", async () => {
+    cronClientMocks.listCronJobs.mockResolvedValue([]);
+    cronClientMocks.execCommand.mockResolvedValue({
+      status: "SUCCESS",
+      exit_code: 0,
+      output: JSON.stringify({ success: true, data: { platforms: ["telegram"] } }),
+    });
+    render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Task type")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Agent task/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Agent task/ })).not.toHaveClass("min-h-24");
+    expect(within(dialog).getByRole("button", { name: /Agent task/ }).parentElement).toHaveClass("items-stretch");
+    expect(screen.getByText("AI understands your needs and completes tasks automatically")).not.toHaveClass("min-h-8");
+    expect(screen.getByText("Sends notifications as written, without calling a model")).not.toHaveClass("min-h-8");
+    expect(screen.getByText("Run preset scripts, ideal for developers")).not.toHaveClass("min-h-8");
+    expect(screen.queryByText("No model-token usage")).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText("AI-powered", { selector: "span" })).toHaveLength(1);
+    expect(within(dialog).getByText("AI-powered", { selector: "span" })).toHaveClass("bg-indigo-600", "text-white");
+    expect(within(dialog).getAllByText("0 Token")).toHaveLength(2);
+    within(dialog).getAllByText("0 Token").forEach((label) => {
+      expect(label).toHaveClass("bg-blue-50", "text-blue-700");
+    });
+    expect(within(dialog).queryByRole("button", { name: /0 Token/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Notification task/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Script task/ })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Notification task/ }));
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
+      target: { value: "Hydration reminder" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Time for some water/), {
+      target: { value: "Time to drink water" },
+    });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(cronClientMocks.writeZeroTokenScript).toHaveBeenCalledWith(
+        "bot-1",
+        expect.stringMatching(/^lightvela-zero-token-/),
+        expect.objectContaining({
+          kind: "fixed_notification",
+          content: "Time to drink water",
+        }),
+      );
+    });
+    expect(cronClientMocks.createCronJobWithScriptRollback).toHaveBeenCalledWith(
+      "bot-1",
+      expect.objectContaining({ noAgent: true, name: "Hydration reminder" }),
+      expect.stringMatching(/^lightvela-zero-token-/),
+    );
+  });
+
   it("hydrates and exposes upstream job context on the global site", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "downstream", name: "Downstream", context_from: ["upstream"] }),
@@ -78,9 +145,9 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(await screen.findByText("From: Upstream")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Create|新建/ }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Create Job");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Create Scheduled Task");
     expect(screen.getByRole("dialog")).toHaveTextContent("Instructions");
-    expect(screen.getByRole("combobox", { name: "Upstream Job" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Upstream Task" })).toBeInTheDocument();
   });
 
   it("shows relationship details and safely detaches dependents before deletion", async () => {
@@ -92,8 +159,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const upstreamCard = await getCronJobCard("Upstream");
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /View|查看/ }));
-    expect(within(screen.getByRole("dialog")).getByText("Job Details")).toBeInTheDocument();
-    expect(within(screen.getByRole("dialog")).getByText("Upstream Job")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Scheduled Task Details")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Upstream Task")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Close|关闭/ }));
 
     fireEvent.click(within(upstreamCard).getByRole("button", { name: /Delete|删除/ }));
@@ -119,13 +186,13 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Global downstream" },
     });
-    fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
+    fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize upstream output" },
     });
-    fireEvent.click(screen.getByRole("combobox", { name: "Upstream Job" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Upstream Task" }));
     fireEvent.click(screen.getByRole("option", { name: /Upstream/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
@@ -156,8 +223,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const card = await getCronJobCard("Downstream");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Job");
-    expect(screen.getByRole("combobox", { name: "Upstream Job" })).toHaveTextContent("Upstream");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
+    expect(screen.getByRole("combobox", { name: "Upstream Task" })).toHaveTextContent("Upstream");
     fireEvent.click(screen.getByRole("button", { name: "Deselect" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -173,10 +240,10 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Global task" },
     });
-    fireEvent.change(screen.getByPlaceholderText(/Describe the task as a prompt/), {
+    fireEvent.change(screen.getByPlaceholderText(/Describe what you want the agent to understand and do/), {
       target: { value: "Summarize updates" },
     });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
@@ -196,8 +263,8 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     const card = await getCronJobCard("Ordinary task");
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Job");
-    fireEvent.change(screen.getByPlaceholderText("Enter the job name"), {
+    expect(screen.getByRole("dialog")).toHaveTextContent("Edit Scheduled Task");
+    fireEvent.change(screen.getByPlaceholderText("Enter the scheduled task name"), {
       target: { value: "Updated global task" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -212,7 +279,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     expect(cronClientMocks.editCronJobWithContext).not.toHaveBeenCalled();
   });
 
-  it("separates active and ended jobs with English tabs", async () => {
+  it("separates active and ended tasks with English tabs", async () => {
     cronClientMocks.listCronJobs.mockResolvedValue([
       makeCronJob({ id: "active", name: "Active task", state: "scheduled" }),
       makeCronJob({ id: "completed", name: "Completed task", state: "completed", enabled: false }),
@@ -220,18 +287,29 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
 
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
-    expect(await screen.findByRole("button", { name: "Current Jobs" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ended Jobs" })).toBeInTheDocument();
+    const currentTab = await screen.findByRole("button", { name: "Current Tasks" });
+    const taskTypeFilter = screen.getByRole("combobox", { name: "Task type" });
+    expect(taskTypeFilter).toHaveTextContent("All");
+    fireEvent.click(taskTypeFilter);
+    expect(screen.getByRole("option", { name: "Agent task" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "All" }));
+    expect(taskTypeFilter.parentElement).not.toBe(currentTab.parentElement);
+    expect(screen.getByRole("button", { name: "Ended Tasks" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Recent Runs" })).toBeInTheDocument();
     expect(screen.getByText("Active task")).toBeInTheDocument();
     expect(screen.queryByText("Completed task")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Ended Jobs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ended Tasks" }));
 
     const card = await getCronJobCard("Completed task");
     expect(within(card).getByText("Completed")).toBeInTheDocument();
     expect(within(card).queryByText("Paused")).toBeNull();
     expect(within(card).queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Test run" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(within(card).getByRole("button", { name: "View" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 });
 

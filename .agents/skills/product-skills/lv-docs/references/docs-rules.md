@@ -10,10 +10,12 @@ frontend/src/content/docs/
   global/configuration/*.md
   en/*.md                      # 国际站英文文档（en-us）
   en/configuration/*.md
+  id/*.md                      # 国际站印尼语文档（id-id，页面级显式开放）
+  id/configuration/*.md
   images/*                     # 中英文共用文档图片资源
 ```
 
-根目录是国内站真源，`global/` 与 `en/` 是国际站真源。
+根目录是国内站真源，`global/`、`en/` 与 `id/` 是国际站真源。印尼语不是全量强制镜像；`frontend/src/content/docs/id/<file>` 存在时，该页面才进入 `globalDocsForIndonesian` 并生成 `id-id` 路由。
 
 ## 加载规则
 
@@ -22,6 +24,7 @@ frontend/src/content/docs/
 - 国内站：只读 `frontend/src/content/docs/<file>`。
 - 国际站英文：优先读 `en/<file>`，缺失时降级 `global/<file>`。
 - 国际站中文：只读 `global/<file>`。
+- 国际站印尼语：Fumadocs 同步只选择已有 `id/<file>` 的页面；正文优先读 `id/<file>`，同步器保留 `en/`、`global/` 的解析兜底，但不得用兜底冒充已完成的印尼语正文。
 
 因此：改国际站不要依赖根目录文件；改国内站不要去改 `global/` / `en/`。
 
@@ -31,6 +34,8 @@ frontend/src/content/docs/
 - 国际站默认英文裸路径：`/docs/...`
 - 国际站英文显式路径：`/en-us/docs/...`
 - 国际站中文路径：`/zh-sg/docs/...`
+- 国际站繁体中文路径：`/zh-hant/docs/...`
+- 国际站印尼语路径：`/id-id/docs/...`
 
 `frontend/src/app/(site)/[lang]/docs/[[...slug]]/page.next.tsx` 中：global 构建支持 `en-us` 与 `zh-sg`，cn 构建支持 `zh-cn`。
 
@@ -54,6 +59,7 @@ locale 目录映射：
 | 国际站中文 | `.fumadocs-content/docs/zh-sg/` |
 | 国际站英文 | `.fumadocs-content/docs/en-us/` |
 | 国际站繁体 | `.fumadocs-content/docs/zh-hant/` |
+| 国际站印尼语 | `.fumadocs-content/docs/id-id/` |
 
 因此：
 
@@ -84,6 +90,10 @@ locale 目录映射：
 
 路由清单。配合 `frontend/scripts/international-docs-parity.test.ts` 校验双站文件与路由一致性。改动 sidebar 或新增页面后建议运行该测试。
 
+### 4. 印尼语页面级注册
+
+`frontend/scripts/sync-fumadocs-content.mjs` 的 `ID_DOC_METADATA` 保存印尼语标题与 description，`globalDocsForIndonesian` 只纳入存在 `id/<file>` 的页面。新增或修改印尼语页面时必须同时核对正文源、元数据、生成的 `id-id` 路由与 route manifest；不能只创建源文件或只补 metadata。
+
 ### 常见陷阱：三个注册源互不一致
 
 `docs-sidebar.ts` 的 slug 映射与 `sync-fumadocs-content.mjs` 的注册数组**范围不同**，不能只查一处就下结论。已知不一致（快照）：
@@ -103,7 +113,8 @@ locale 目录映射：
 3. 在 `sync-fumadocs-content.mjs` 的 `globalDocs` 注册标题、描述、分组。
 4. 创建 `global/<file>` 中文稿。
 5. 创建 `en/<file>` 英文稿。
-6. 不要顺手加入 `CN_SIDEBAR` / `CN_SLUG_TO_FILE` / `cnDocs`，除非用户明确要求国内站也上线。
+6. 若用户明确要求印尼语，创建 `id/<file>` 并补齐 `ID_DOC_METADATA`；否则该页面不进入 `globalDocsForIndonesian`，不生成 `id-id` 路由。
+7. 不要顺手加入 `CN_SIDEBAR` / `CN_SLUG_TO_FILE` / `cnDocs`，除非用户明确要求国内站也上线。
 
 ### 新增国内站页面步骤
 
@@ -155,23 +166,24 @@ locale 目录映射：
 - 用户要求写**国际站**文档时，若该 slug 只出现在国内站列表里（例如实名认证），同样先提醒。
 - `region: both` 且功能只有单侧存在时，明确告知只能单侧上线，并让用户选择处理方式。
 
-## 按提示语言起草并自动补齐本地化
+## 按提示语言起草并维护本地化
 
 国际站模板不固定先写中文或英文：
 
 1. 用户明确要求哪种语言，就先用该语言完成内容底稿。
 2. 用户未明确语言时，按要求的输出语言或提示词主语言起草。
-3. 在同一任务中自动补齐两份国际站源稿：简体中文写入 `global/<file>`，英文写入 `en/<file>`。
-4. 运行 `pnpm docs:sync`，由现有 OpenCC 链路从简体中文源稿生成 `zh-hant` 产物。
-5. 本地化不是逐字翻译，要符合对应用户语境：
+3. 在同一任务中自动补齐两份国际站基础源稿：简体中文写入 `global/<file>`，英文写入 `en/<file>`。
+4. 若页面已有 `id/<file>`，事实或结构变化必须同步更新；新页面仅在用户明确要求印尼语时创建该源，并补齐 `ID_DOC_METADATA`。
+5. 运行 `pnpm docs:sync`，由现有 OpenCC 链路从简体中文源稿生成 `zh-hant` 产物，并为已有印尼语源生成 `.fumadocs-content/docs/id-id/` 产物。
+6. 本地化不是逐字翻译，要符合对应用户语境：
    - WeChat 可保留，但需解释使用场景。
    - 飞书在英文文档中写 Lark。
    - 企业微信在英文文档中写 WeCom。
    - 国内实名认证、国内支付、国内专属入口不进国际站，除非页面明确说明。
 
-两份源稿必须保持同一信息架构、步骤顺序、表格、图片位置、事实、警告、限制语义与链接目标。
+同一页面的各语言源稿必须保持同一信息架构、步骤顺序、表格、图片位置、事实、警告、限制语义与链接目标。
 
-同步后还要检查 `en-us`、`zh-sg` 与 `zh-hant` 三个生成目录，不能只确认源文件存在。
+同步后还要检查 `en-us`、`zh-sg` 与 `zh-hant` 三个基础生成目录；页面已有或明确要求印尼语时还要检查 `id-id`，不能只确认源文件存在。
 
 ## 写作规范落地要点
 
@@ -198,7 +210,7 @@ locale 目录映射：
 
 图片统一放在 `frontend/src/content/docs/images/`。
 
-`rewriteImagePaths()` 在英文 locale 下优先寻找同名 `-en` 图片：
+Fumadocs 同步在英文与印尼语 locale 下优先寻找同名 `-en` 图片：
 
 ```text
 xxx.webp      # 默认图片
@@ -214,7 +226,7 @@ Markdown 里仍引用默认名即可：
 编辑图片时：
 
 - 中文文档新增 `xxx.webp` 时，英文文档通常需要 `xxx-en.webp`。
-- 英文文档直接引用中文 UI 截图时，要提醒补英文截图。
+- 英文或印尼语文档直接引用中文 UI 截图时，要提醒补 `-en` 截图。
 - 图片无 UI 文案或语言无关时可复用，不必强行创建 `-en`。
 - 使用 `<img src="../images/xxx.webp" width="360" />` 时同样要检查 `-en` 版本。
 - 图片更新必须覆盖 markdown 当前引用的既有文件，不要新增文件再改引用，除非用户明确要求新增。
@@ -226,7 +238,7 @@ Markdown 里仍引用默认名即可：
 
 1. 先扫描目标 markdown 当前引用的图片路径，确认 live docs 实际使用哪个文件：
    - 国内站与国际站中文使用 markdown 引用的默认图。
-   - 国际站英文若存在同 basename 的 `-en` 图，live docs 优先使用 `-en` 图。
+   - 国际站英文或印尼语若存在同 basename 的 `-en` 图，live docs 优先使用 `-en` 图。
    - 替换时直接覆盖实际生效的既有文件，不要新建旁路图片。
 2. 用 Browser 打开**对应区域**的真实页面，不要只看本地文件或旧图：国内站用 `lightvela.com`，国际站用 `lightvela.ai`。
 3. 根据文档内容定位同一功能页面；涉及 Agents 时优先检查 `/agents` 及对应详情页。
@@ -274,4 +286,5 @@ Markdown 里仍引用默认名即可：
 - 检查 sidebar 与 slug 映射是否同步。
 - 检查 `sync-fumadocs-content.mjs` 对应区域数组是否已注册。
 - 检查国际站新增文件是否同时有 `global/` 与 `en/`。
+- 页面已有或明确要求印尼语时，检查 `id/<file>`、`ID_DOC_METADATA`、`globalDocsForIndonesian` 与 `.fumadocs-content/docs/id-id/` 是否一致。
 - 建议运行 `cd frontend && pnpm check`，以及 `frontend/scripts/international-docs-parity.test.ts`。

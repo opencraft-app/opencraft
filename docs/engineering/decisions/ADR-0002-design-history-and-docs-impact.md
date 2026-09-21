@@ -1,0 +1,67 @@
+# ADR 0002：设计历史恢复与 docs-impact 持续治理
+
+- 状态：已采纳
+- 日期：2026-09-01
+- Owner：`wisp/mono2-maintainers`
+- 范围：mono2 的跨服务正式设计、任务级 Context 与变更评审
+
+## 背景
+
+代码、提交、MR、TAPD/Issue 和设计文档往往分散保存。只让 Agent 在每次需求中全量扫描历史，既消耗 Token，也容易把已退出的方案误认为当前约束；反过来把全部历史复制进默认 Context，也会造成同样的问题。
+
+现有 V1 文档体系已区分正式工程知识、派生 Context 和评测层，但缺少两个闭环：如何有界恢复一个功能的演进历史，以及代码变更如何提醒贡献者同步当前设计真源。
+
+## 决策
+
+### 1. 按功能演进族保存“当前入口 + 有界回退”
+
+`.agents/context/design-history-index.json` 是机器可读索引，不保存完整历史正文。它登记：
+
+- 需求来源母集的可访问状态；Git、MR、TAPD/Issue 无法读取时必须写 `unknown` 或 `unavailable`；
+- 功能族的当前设计记录、当前代码证据、派生 Context 和 Owner；
+- `current`、`superseded`、`retired`、`historical`、`unknown` 五态，以及替代关系；
+- 每个任务真实读取的历史来源和无法确认的边界。
+
+恢复一个需求时，Agent 先用受影响路径、需求标识和功能族确定范围，再读取首次引入、关键变更和当前实现的 Git 证据；若平台权限允许，再以同一标识查询 MR、TAPD 或 Issue。它要把事实、推断、未知分开写入 Task Pack，不以提交次数推断 Owner，也不编造外部系统中的设计意图。
+
+默认路由只加载当前设计与短 Context。`superseded`、`retired` 和 `historical` 记录只在命中具体需求时有界读取；`unknown` 不能作为实现依据。
+
+### 2. 用 docs-impact 约束“代码变更—当前设计真源”
+
+`.agents/context/change-impact.json` 将高风险路径映射到相关正式 Domain、Journey、架构或 ADR。`validate_change_impact.py` 对变更清单做确定性检查：命中规则的代码或控制面改动，必须同时修改至少一份该规则的正式设计文档。
+
+门禁强度按 `risk` 分级，不是一律阻断：
+
+- `risk: high` 的责任面缺少映射设计文档时，本地 pre-commit 与已注册的 MR guard 失败。
+- `risk: normal` 只打印提示并继续。责任根目录必然同时覆盖架构面与表层改动，把后者也硬性阻断，只会诱导作者为通过门禁而修改无关的架构文档，或干脆绕过整个 guard；两种结果都比提示更差。
+
+每条规则可用 `exclude_paths` 移除位于责任根目录之下、但不承载架构语义的表层文件，例如生成的 i18n 资源包、营销文案页、测试与固件、二进制资产。规则命中要求至少有一个变更路径在排除之后仍然存在。规则的 `paths` 应指向真正的架构面，而不是整个顶层服务目录：`site-environment-routing` 因此收窄到前端的配置、应用装配、服务与仓储层，不再覆盖 `frontend/**` 全域。
+
+服务 `OWNERS` 只声明代码评审责任，不改变服务接口、运行时或跨服务边界。已确认由独立 Owner 流程治理的 `shadow/OWNERS` 与 `gateway-dashboard/OWNERS` 分别从对应业务责任面排除，不以修改业务架构文档作为 Owner 变更的前提；其他服务仍保持原门禁范围。
+
+一级服务迁入必须原子更新本地四入口、中央 Catalog、派生 Service Context、路由 smoke case、变更影响映射和正式责任文档。OpenCraft 的一次性 subtree 迁移按此流程登记为独立服务，并把其 Chat/AppServer/Hermes 投影纳入 `agent-gateway-runtime`；旧仓库谱系只作为有界历史，不形成第二写入真源。服务总数由校验器的一级服务集合派生，文档和测试不维护孤立的手写计数。
+
+服务运行策略也要与发布控制面区分。`argocd/services/service-gateway/*/config.yaml` 承载路由、CORS 和访问策略，但不改变镜像构建、生产晋级、Argo Application 或同步模型，因此不触发 `release-gitops` 的正式设计更新；它仍由 service-gateway 配置测试、代码评审和生产发布门禁约束。其他 `argocd/**` 文件继续属于 `release-gitops` 高风险范围。
+
+这两项修正来自一次真实的假阳性：一个只改 changelog 文案、生成 i18n 与两张图片的前端 MR，被 `frontend/**` 判定必须更新站点环境路由的架构文档。
+
+这不是用脚本替代语义评审。脚本只能证明“映射的设计文档与代码同一变更集出现”，不能证明文档内容已经正确解释所有行为变化。任务实施仍须由 Agent 依据 Task Pack、源码和历史证据决定影响；高风险变更应由仓库平台把对应 Owner 加入 MR 审阅。当前仓库没有受保护 MR 审批回执 adapter，因此该平台级 Owner 确认仍标为待接入，不能伪称已自动完成。
+
+## 初始范围与已知边界
+
+初始索引覆盖五个现有 Domain 和 Context Engineering 本身的当前入口。它不是对 mono2 全部历史需求的一次性穷举：未建立可靠外部来源母集的功能保持 `unknown`，在其首次受影响任务中按上述流程恢复。这样避免批量制造“看似完整、实际无来源”的历史文档。
+
+## 后果
+
+- 后续 Agent 不需要为每个任务扫描全仓提交史：先读取当前设计入口，再对命中的功能族做有界历史检索。
+- 代码与正式设计会在本地与 MR 变更集上被显式关联；但映射规则需要 Owner 定期复查，不能成为新的平行真相。
+- 新增目录或文档不是完成条件。每条索引记录必须有当前来源、Owner、生命周期和验证入口；没有证据的内容保持未知。
+
+## 验证与复查
+
+```bash
+python3 .agents/context/scripts/validate_change_impact.py --repo . --staged
+python3 .agents/context/scripts/validate_context.py --repo . --build-catalog
+```
+
+当服务边界、正式设计入口、仓库平台的 MR 审阅能力或外部来源访问权限变化时，更新 `change-impact.json`、`design-history-index.json` 和本 ADR。

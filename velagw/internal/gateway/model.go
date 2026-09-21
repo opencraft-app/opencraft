@@ -1661,7 +1661,8 @@ type SetPlanListOptions struct {
 type ApplySubscriptionRequest struct {
 	IdempotencyKey   string     `json:"idempotency_key"`
 	UserID           string     `json:"user_id"`
-	PlanID           string     `json:"plan_id"`
+	PlanID           string     `json:"plan_id,omitempty"`
+	TokenAmount      int64      `json:"token_amount,omitempty"`
 	SubscriptionName string     `json:"subscription_name,omitempty"`
 	Nickname         string     `json:"nickname,omitempty"`
 	Phone            string     `json:"phone,omitempty"`
@@ -1712,6 +1713,13 @@ type AdminCommandListOptions struct {
 
 type CancelSubscriptionRequest struct {
 	UserID string `json:"user_id"`
+}
+
+type CancelSelectedSubscriptionsRequest struct {
+	UserID                           string   `json:"user_id"`
+	SubscriptionNames                []string `json:"subscription_names,omitempty"`
+	SubscriptionNamePrefixes         []string `json:"subscription_name_prefixes,omitempty"`
+	IncludeLegacyPackageSubscription bool     `json:"include_legacy_package_subscription,omitempty"`
 }
 
 type Subscription struct {
@@ -2157,6 +2165,7 @@ type Options struct {
 	SetRuntimeRouteRequired     bool
 	TrafficTransportManager     *TransportManager
 	NewAPIClientTimeout         time.Duration
+	EnforceManagedSetURLs       bool
 	WorkerSetCapacityEnabled    bool
 	WorkerSetCapacityPolicy     SetCapacityPolicy
 	WorkerBYOKSyncBatchSize     int

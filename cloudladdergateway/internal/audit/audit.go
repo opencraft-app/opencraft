@@ -39,6 +39,8 @@ type Event struct {
 	RequestBodySHA256 string        `json:"request_body_sha256,omitempty"`
 	ResponseBodyBytes int           `json:"response_body_bytes"`
 	WebhookCount      int           `json:"webhook_count"`
+	DeveloperSourceIP string        `json:"developer_source_ip,omitempty"`
+	TunnelHost        string        `json:"tunnel_host,omitempty"`
 }
 
 type ShutdownFunc func(context.Context) error
@@ -171,6 +173,8 @@ func (a otlpAuditor) Record(ctx context.Context, event Event) {
 		otellog.String("request.body.sha256", event.RequestBodySHA256),
 		otellog.Int("response.body.bytes", event.ResponseBodyBytes),
 		otellog.Int("webhook.count", event.WebhookCount),
+		otellog.String("developer.source.ip", event.DeveloperSourceIP),
+		otellog.String("developer.tunnel.host", event.TunnelHost),
 	)
 	a.logger.Emit(ctx, record)
 }

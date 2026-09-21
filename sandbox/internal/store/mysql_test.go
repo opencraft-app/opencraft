@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +47,8 @@ func TestVerifySchemaRequiresExpectedTables(t *testing.T) {
 		AddRow("vpc_shard_blueprint_snapshots").
 		AddRow("vpc_shard_provision_progress").
 		AddRow("vpc_shard_create_locks").
-		AddRow("vpc_shard_cleanup_resources")
+		AddRow("vpc_shard_cleanup_resources").
+		AddRow("modify_operations")
 	mock.ExpectQuery("SELECT table_name FROM information_schema.tables").
 		WithArgs("sandbox_test").
 		WillReturnRows(rows)
@@ -76,11 +79,63 @@ func TestSandboxMigrationsPresent(t *testing.T) {
 		"000007_add_pool_system_disk_size.down.sql",
 		"000008_add_sku_system_disk_size.up.sql",
 		"000008_add_sku_system_disk_size.down.sql",
+		"000009_create_modify_operations.up.sql",
+		"000009_create_modify_operations.down.sql",
+		"000010_enforce_single_running_modify_operation.up.sql",
+		"000010_enforce_single_running_modify_operation.down.sql",
+		"000011_add_modify_instance_type_candidates.up.sql",
+		"000011_add_modify_instance_type_candidates.down.sql",
 	} {
 		path := filepath.Join("..", "..", "migrations", name)
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected migration %s to exist: %v", path, err)
 		}
+	}
+}
+
+func TestMySQLStoreModifyResizePlanRoundTrip(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+	candidates := []string{"SA9.LARGE8", "SA2.LARGE8"}
+	mock.ExpectExec("UPDATE modify_operations").
+		WithArgs("S5.MEDIUM4", `["SA9.LARGE8","SA2.LARGE8"]`, 1, "SA2.LARGE8", sqlmock.AnyArg(), "mod-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	columns := []string{
+		"id", "idempotency_key", "sandbox_id", "instance_id", "source_pool_id", "target_pool_id", "target_sku_id",
+		"target_template_class_id", "target_instance_type", "target_system_disk_size", "status", "current_step",
+		"last_error", "started_at", "updated_at", "completed_at", "source_instance_type",
+		"instance_type_candidates", "instance_type_candidate_index", "applied_instance_type",
+	}
+	rows := sqlmock.NewRows(columns).AddRow(
+		"mod-1", "task-1", "sb-1", "inst-1", "pool-old", "pool-new", "sku-new",
+		"spec-4c8g80g", "SA9.LARGE8", 80, core.ModifyOperationStatusRunning, core.ModifyStepStopInstance,
+		nil, now, now, nil, "S5.MEDIUM4", `["SA9.LARGE8","SA2.LARGE8"]`, 1, "SA2.LARGE8",
+	)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT " + modifyOperationColumns + " FROM modify_operations WHERE id = ?")).
+		WithArgs("mod-1").
+		WillReturnRows(rows)
+
+	st := &MySQLStore{db: db}
+	got, err := st.UpdateModifyOperationResizePlan(context.Background(), ModifyOperationResizePlan{
+		ID:                         "mod-1",
+		SourceInstanceType:         "S5.MEDIUM4",
+		InstanceTypeCandidates:     candidates,
+		InstanceTypeCandidateIndex: 1,
+		AppliedInstanceType:        "SA2.LARGE8",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.InstanceTypeCandidates, candidates) || got.InstanceTypeCandidateIndex != 1 || got.AppliedInstanceType != "SA2.LARGE8" {
+		t.Fatalf("unexpected persisted resize plan: %+v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

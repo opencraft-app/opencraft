@@ -1,0 +1,18 @@
+{
+  "id": "opencraft",
+  "name": "OpenCraft 多端 Agent Workbench",
+  "kind": "application",
+  "path": "opencraft",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "identity-access", "site-environment-routing"],
+  "summary": "维护 Codex-faithful Chat Runtime、Web/Expo/Electron Workbench、AppServer 适配和 LightVela Hermes 扩展。",
+  "runtime": "TypeScript、React 19、Vite、Expo、Electron、Node.js",
+  "interfaces": ["Workbench Web", "Expo native app", "Electron desktop", "AppServer protocol", "extension runtime"],
+  "dependencies": ["frontend", "service-gateway", "user-auth", "Hermes runtime"],
+  "source_docs": ["opencraft/README.md", "opencraft/AGENTS.md", "opencraft/MONO2_MIGRATION.md"],
+  "agent_entry": "opencraft/AGENTS.md",
+  "service_docs": "opencraft/docs/README.md",
+  "deploy": ["opencraft/config/build-matrix.json", "opencraft/scripts/publish-workbench-web.mjs"],
+  "generated_paths": ["opencraft/apps/*/dist*", "opencraft/plugins/lightvela-hermes/src/upstream/mono2"]
+}

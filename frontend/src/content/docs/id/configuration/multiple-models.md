@@ -15,7 +15,7 @@ Penggantian model memungkinkan Anda memilih model terkonfigurasi mana yang dipak
 - Memverifikasi perubahan di Chat
 - Menangani model yang tidak muncul atau tidak dapat merespons
 
-> **Perlu diketahui:** Satu Agent memakai satu model aktif pada satu waktu. Mengganti model aktif tidak menghapus memori Agent, file Cloud Storage, Skill, maupun otomasinya.
+> **Perlu diketahui:** Satu Agent memakai satu model aktif pada satu waktu. Mengganti model aktif tidak menghapus memori Agent, file Cloud Storage, Skill, maupun tugas terjadwalnya.
 
 ## Sebelum memulai
 
@@ -53,7 +53,7 @@ Pastikan Agent merespons normal dan model yang ditampilkan di konsol Agent adala
 | Sebuah penyedia tidak tersedia atau terkena rate limit | Ganti ke model terkonfigurasi lain, lalu uji di Chat. |
 | Anda sedang membandingkan kualitas keluaran | Jalankan prompt kecil yang sama setelah tiap penggantian lalu bandingkan hasilnya. |
 
-Penggantian model mengubah mesin yang dipakai untuk respons selanjutnya. Tindakan ini tidak memindahkan riwayat percakapan Anda, tidak menulis ulang file di [File](./files.md), dan tidak mengubah [Skill](./skill.md) serta [Otomasi](./automation.md) Anda.
+Penggantian model mengubah mesin yang dipakai untuk respons selanjutnya. Tindakan ini tidak memindahkan riwayat percakapan Anda, tidak menulis ulang file di [File](./files.md), dan tidak mengubah [Skill](./skill.md) serta [Tugas Terjadwal](./automation.md) Anda.
 
 Jika Anda ingin menjelajahi lingkungan Agent terpisah dengan arsitektur plugin-first di samping Hermes Agent, lihat [DeepSeek Harness](./deepseek-harness.md).
 

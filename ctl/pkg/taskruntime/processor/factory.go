@@ -31,4 +31,8 @@ var pfMap = map[string]prepareTaskFunc{
 	// trade-pass-destroy 父子 task（设计稿 §3.5 / §4.5.2 / §4.5.3 / §4.6 / §4.7 / §11-A Q5）
 	taskcommon.TaskNameDestroyPass:                 passtask.PrepareDestroyPassTask,
 	taskcommon.TaskNameDestroyInstanceWithSnapshot: instancetask.PrepareDestroyInstanceForPassTask,
+
+	// 同 SP 变配父子 task（TAPD 1010132091137784162 §6）
+	taskcommon.TaskNameModifyPass:     passtask.PrepareModifyPassTask,
+	taskcommon.TaskNameModifyInstance: instancetask.PrepareModifyInstanceTask,
 }

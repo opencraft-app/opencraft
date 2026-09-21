@@ -245,6 +245,28 @@ func TestSharedStoreSupportsPasswordSessionsAcrossServiceInstances(t *testing.T)
 	}
 }
 
+func TestExistingPasswordUserClaimsReferralOnSignIn(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+	if _, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name: "Existing", Email: "existing-referral@example.com", Password: "password123",
+	}); err != nil {
+		t.Fatalf("sign up: %v", err)
+	}
+	if _, err := svc.SignInWithPasswordAndReferral(
+		context.Background(), "existing-referral@example.com", "password123", " hbygspxsad ",
+	); err != nil {
+		t.Fatalf("sign in with referral: %v", err)
+	}
+	if len(store.referralClaims) != 1 {
+		t.Fatalf("claims=%d, want 1", len(store.referralClaims))
+	}
+	claim := store.referralClaims[0]
+	if claim.ReferralCode != "HBYGSPXSAD" || claim.ClaimChannel != "password" {
+		t.Fatalf("unexpected claim %+v", claim)
+	}
+}
+
 func TestSendVerificationCodeRejectsInvalidPhone(t *testing.T) {
 	svc := New(Options{Now: fixedNow})
 

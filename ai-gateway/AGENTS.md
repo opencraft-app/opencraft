@@ -25,7 +25,7 @@
 - `gateway-dashboard` 已独立到自己的发布链路
 - `generated/` 一律不提交 Git
 
-## CI Trigger Notes
+## CI 触发记录
 
-- 2026-07-08: ci-retrigger for shprod ai-gateway release image build.
-- 2026-07-08: ci-retrigger after release image visibility gate retry fix.
+- 2026-07-08：为 shprod ai-gateway 发布镜像构建重新触发 CI。
+- 2026-07-08：发布镜像可见性门禁重试修复后重新触发 CI。

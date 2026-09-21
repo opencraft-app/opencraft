@@ -48,8 +48,8 @@ type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / automationUpstream=自动任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=自动任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -62,14 +62,33 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
+const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
+  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.png",
+  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.png",
+  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.png",
+  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.png",
+  es: "/assets/changelog/scheduled-tasks-notification-es.png",
+  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.png",
+  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.png",
+};
+
+export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
   const useGlobalChineseAsset = i18n.language.startsWith("zh");
+  const zeroTokenScheduledTasksAsset = isGlobal
+    ? zeroTokenScheduledTasksGlobalAssets[i18n.language] ?? "/assets/changelog/scheduled-tasks-notification-en-US.png"
+    : "/assets/changelog/scheduled-tasks-notification-zh-CN.png";
   /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
-    variant === "cloudStorage"
+    variant === "zeroTokenScheduledTasks"
+      ? zeroTokenScheduledTasksAsset
+      : variant === "instanceStorage"
+      ? useGlobalChineseAsset
+        ? "/assets/changelog/lightvela-instance-storage-zh.png"
+        : "/assets/changelog/lightvela-instance-storage-en.png"
+      : variant === "cloudStorage"
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-cloud-storage-en.png"
         : "/assets/changelog/lightvela-cloud-storage.webp"
@@ -169,7 +188,11 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
           : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
-    variant === "cloudStorage"
+    variant === "zeroTokenScheduledTasks"
+      ? t("定时任务新增通知任务和脚本任务")
+      : variant === "instanceStorage"
+      ? t("LightVela 支持查看 Agent 实例存储空间")
+      : variant === "cloudStorage"
       ? t("LightVela 支持云存储管理")
       : variant === "workbench"
       ? t("LightVela 支持创建和发布工作台")
@@ -182,9 +205,9 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "skillsBulkInstall"
       ? t("技能页面支持批量安装与来源查看")
       : variant === "automationUpstream"
-      ? t("自动任务支持关联上游任务")
+      ? t("定时任务支持关联上游任务")
       : variant === "automationTemplates"
-      ? t("自动任务模板")
+      ? t("定时任务模板")
       : variant === "qqGroupMentions"
       ? t("支持在 QQ 群聊中 @ 机器人")
       : variant === "traditionalChinese"
@@ -208,16 +231,20 @@ export function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | 
       : variant === "memory"
       ? t("LightVela 支持查看 Hermes Agent 记忆")
       : variant === "schedule"
-      ? t("LightVela 支持设置自动任务")
+      ? t("LightVela 支持设置定时任务")
       : variant === "automationSkill"
-      ? t("自动任务调用技能设置")
+      ? t("定时任务调用技能设置")
       : variant === "skill-package"
       ? t("LightVela 支持技能包")
       : variant === "soul"
         ? t("Soul 人设能力上线")
         : t("LightVela 产品公测上线");
   const aspectRatio =
-    variant === "cloudStorage"
+    variant === "zeroTokenScheduledTasks"
+      ? "760 / 656"
+      : variant === "instanceStorage"
+      ? useGlobalChineseAsset ? "2372 / 1262" : "2367 / 1259"
+      : variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
       : variant === "workbench"
       ? isGlobal && !useGlobalChineseAsset ? "2372 / 1226" : "2372 / 1221"
@@ -311,6 +338,18 @@ function ChangelogContent() {
   const skillsPageDesc = isGlobal
     ? t("支持从 ClawHub 和 skills.sh 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。")
     : t("支持从 SkillHub 搜索并一键安装技能；在精选技能页面浏览热门推荐和场景分类、查看技能详情。");
+  const instanceStorageEntry: ChangelogEntry = {
+    id: "instance-storage",
+    title: t("LightVela 支持查看 Agent 实例存储空间"),
+    desc: t("云存储页面现在会显示 Agent 实例的总容量、已用容量和可用容量，并将 Agent 运行环境、系统预留空间和云存储文件计入使用量计算。"),
+    visual: "instanceStorage",
+  };
+  const zeroTokenScheduledTasksEntry: ChangelogEntry = {
+    id: "zero-token-scheduled-tasks",
+    title: t("定时任务新增通知任务和脚本任务"),
+    desc: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
+    visual: "zeroTokenScheduledTasks",
+  };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     ...(isGlobal
@@ -319,10 +358,12 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              zeroTokenScheduledTasksEntry,
+              instanceStorageEntry,
               {
                 id: "workbench",
                 title: t("LightVela 支持创建和发布工作台"),
-                desc: t("现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。"),
+                desc: t("支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。"),
                 badge: "Beta",
                 visual: "workbench" as const,
               },
@@ -341,8 +382,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-form-test-run",
-                title: t("自动任务支持测试运行"),
-                desc: t("创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                title: t("定时任务支持测试运行"),
+                desc: t("创建或编辑定时任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
                 visual: "none" as const,
               },
               {
@@ -359,8 +400,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-upstream-task",
-                title: t("自动任务支持关联上游任务"),
-                desc: t("创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
+                title: t("定时任务支持关联上游任务"),
+                desc: t("创建或编辑定时任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
                 visual: "automationUpstream" as const,
               },
               {
@@ -401,10 +442,12 @@ function ChangelogContent() {
             id: "2026-09",
             month: t("2026 年 9 月"),
             entries: [
+              zeroTokenScheduledTasksEntry,
+              instanceStorageEntry,
               {
                 id: "workbench",
                 title: t("LightVela 支持创建和发布工作台"),
-                desc: t("现在可以通过 Agent 选择模板或从零开始创建静态网站，并在 LightVela 中直接发布、预览、更新和管理自己的工作台。"),
+                desc: t("支持在 LightVela 中选择模板或从零开始创建个人工作台，并以静态网站的形式直接发布、预览、更新和管理自己的工作台。"),
                 badge: "Beta",
                 visual: "workbench" as const,
               },
@@ -423,8 +466,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-form-test-run",
-                title: t("自动任务支持测试运行"),
-                desc: t("创建或编辑自动任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
+                title: t("定时任务支持测试运行"),
+                desc: t("创建或编辑定时任务时，可以先运行一次当前任务内容，无需保存即可确认执行效果，再决定是否创建或更新任务。"),
                 visual: "none" as const,
               },
               {
@@ -441,8 +484,8 @@ function ChangelogContent() {
               },
               {
                 id: "automation-upstream-task",
-                title: t("自动任务支持关联上游任务"),
-                desc: t("创建或编辑自动任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
+                title: t("定时任务支持关联上游任务"),
+                desc: t("创建或编辑定时任务时，可以关联一个上游任务。后续该任务执行时，会使用上游任务最近一次的输出作为上下文。"),
                 visual: "automationUpstream" as const,
               },
               {
@@ -480,16 +523,16 @@ function ChangelogContent() {
               },
               {
                 id: "automation-templates",
-                title: t("自动任务模板"),
-                desc: t("选择一个现成的自动任务模板，先运行一次，确认效果后再将其转为持续执行的自动任务。"),
+                title: t("定时任务模板"),
+                desc: t("选择一个现成的定时任务模板，先运行一次，确认效果后再将其转为持续执行的定时任务。"),
                 visual: "automationTemplates" as const,
               },
             ]
           : []),
         {
           id: "automation-skill-invocation",
-          title: t("自动任务支持调用技能"),
-          desc: t("创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。"),
+          title: t("定时任务支持调用技能"),
+          desc: t("创建或编辑定时任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助定时任务更稳定地调用技能。"),
           visual: "automationSkill",
         },
         ...(!isGlobal
@@ -568,8 +611,8 @@ function ChangelogContent() {
         },
         {
           id: "scheduled-tasks",
-          title: t("LightVela 支持设置自动任务"),
-          desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
+          title: t("LightVela 支持设置定时任务"),
+          desc: t("为 Agent 设置周期、间隔或单次定时任务，让它按计划执行提醒、总结、通知等日常工作。"),
           visual: "schedule",
         },
       ],

@@ -2,8 +2,10 @@ package rescue
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -22,6 +24,32 @@ func TestSCPArchiveReturnsSignedDownloadURLForCOSArchive(t *testing.T) {
 	}
 	if result.OutputURL != archive.DownloadURL {
 		t.Fatalf("OutputURL should be signed download URL, got %s", result.OutputURL)
+	}
+}
+
+func TestPrepareMultipartArchiveDryRunReturnsSanitizedState(t *testing.T) {
+	prepared, err := (Activities{}).PrepareMultipartArchive(context.Background(), ExportRequest{
+		InstanceID:            "ins-test",
+		ArchiveMode:           ArchiveModeHermes,
+		COSUploadBucket:       "https://bucket-123.cos.ap-beijing.myqcloud.com",
+		COSUploadRegion:       "ap-beijing",
+		CommandTimeoutSeconds: 1800,
+	}, TencentConfig{}, "ap-beijing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(payload)
+	for _, forbidden := range []string{"TmpSecret", "SessionToken", "tmp_secret", "session_token"} {
+		if strings.Contains(serialized, forbidden) {
+			t.Fatalf("activity result contains %q: %s", forbidden, serialized)
+		}
+	}
+	if prepared.UploadID == "" {
+		t.Fatalf("missing sanitized multipart identifier: %+v", prepared)
 	}
 }
 

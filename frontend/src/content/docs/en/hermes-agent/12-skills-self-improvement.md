@@ -129,7 +129,7 @@ Hermes has made the Memory / Skill split engineering-ready, but it still targets
 - **Skills come from public marketplaces** — every skill comes from Skills.sh and ClawHub, the skill marketplaces shared by OpenClaw and Hermes, so you do not write them from scratch.
 - **Install and remove through conversation** — tell Hermes which skill to install and it handles it; removal works the same way. Verify availability in chat afterwards. Console-panel installation is coming soon.
 - **Memory is viewable in the console** — the memory page shows what the Agent has retained and lets you adjust the capacity limit; additions and removals happen through conversation.
-- **Stable across models and channels** — switching models does not clear skills or automations, and every connected channel shares the same skills and memory.
+- **Stable across models and channels** — switching models does not clear skills or scheduled tasks, and every connected channel shares the same skills and memory.
 - **Failures are traceable** — when a skill misbehaves, view and export recent logs in Diagnostics (selectable 1, 3, 6, 12, or 24-hour ranges) to locate the problem.
 
 In other words, using an Agent on LightVela means accumulating two things: a Memory about you, and a set of installed, verified Skills. **Both serve you longer than any particular model does.**

@@ -22,6 +22,7 @@ from contracts.bundles import (
     load_manifest,
     playground_catalog_root,
 )
+from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest, namespace_bootstrap_enabled
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 
@@ -413,6 +414,18 @@ def build_job_manifest(
         env_from.append({"configMapRef": {"name": verifier["configmap"]}})
     if verifier.get("secret"):
         env_from.append({"secretRef": {"name": verifier["secret"]}})
+    service_command = verifier.get("mode") == "service-command"
+    if service_command:
+        image = str(verifier.get("image") or "")
+        if not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", image):
+            raise ValueError("service-command verifier requires a digest-pinned image")
+        command = verifier.get("command")
+        if not isinstance(command, list) or not command or not all(
+            isinstance(part, str) and part and "\x00" not in part for part in command
+        ):
+            raise ValueError("service-command verifier requires a non-empty command argv")
+    else:
+        command = ["/bin/sh", "-c", build_check_script(verifier, expected_version)]
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "containers": [
@@ -421,10 +434,27 @@ def build_job_manifest(
                 "image": verifier.get("image", "mysql:8.0"),
                 "imagePullPolicy": "IfNotPresent",
                 "envFrom": env_from,
-                "command": ["/bin/sh", "-c", build_check_script(verifier, expected_version)],
+                "command": command,
             }
         ],
     }
+    if service_command:
+        container = pod_spec["containers"][0]
+        container.pop("envFrom")
+        secret_file = required_mapping(verifier.get("secret_file"), "verifier.secret_file")
+        name, key, mount_path = (secret_file.get(field, "") for field in ("name", "key", "mount_path"))
+        if (not name or not re.fullmatch(r"[A-Za-z0-9_.-]+", key)
+                or not mount_path.startswith("/") or mount_path == "/"
+                or ".." in Path(mount_path).parts or "\x00" in mount_path):
+            raise ValueError("service-command verifier requires a safe secret_file name/key/mount_path")
+        container["volumeMounts"] = [{"name": "database-secret", "mountPath": mount_path, "readOnly": True}]
+        container["securityContext"] = {
+            "allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True, "capabilities": {"drop": ["ALL"]},
+        }
+        pod_spec["volumes"] = [{"name": "database-secret", "secret": {
+            "secretName": name, "defaultMode": 0o440, "items": [{"key": key, "path": key}],
+        }}]
+        pod_spec["securityContext"] = {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532}
     if env_values:
         pod_spec["containers"][0]["env"] = [
             {"name": key, "value": value} for key, value in sorted(env_values.items())
@@ -572,6 +602,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--output-json", default="")
     parser.add_argument("--kubeconfig-b64-env", default="DB_JOB_KUBECONFIG_B64")
+    parser.add_argument("--image-override", default="")
     return parser
 
 
@@ -603,6 +634,13 @@ def main() -> int:
     verifier["namespace"] = resolve_verifier_namespace(deploy_root, args.env, catalog_service, verifier)
     expected_version = expected_migration_version(repo_root, contract, args.env)
     env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
+    if verifier.get("image_from_service_platform"):
+        image_key = str(verifier["image_from_service_platform"])
+        verifier["image"] = resolve_service_platform_env(deploy_root, args.env, verifier).get(image_key, "")
+    if args.image_override:
+        if verifier.get("mode") != "service-command":
+            raise ValueError("image override is only supported for service-command verifier")
+        verifier["image"] = args.image_override
     kubeconfig = ""
     if args.apply:
         kubeconfig, temp_path = resolve_kubeconfig(
@@ -661,8 +699,20 @@ def main() -> int:
         "auxiliary_resources": [secret_name] if secret_name else [],
         "status": "rendered",
     }
+    if verifier.get("mode") == "service-command":
+        summary.update({"verification_mode": "service-command", "image": verifier["image"],
+                        "expected_schema_version": None})
     try:
         if args.apply:
+            if namespace_bootstrap_enabled(contract):
+                apply_manifest(
+                    kubeconfig,
+                    build_bootstrap_namespace_manifest(
+                        str(verifier["namespace"]),
+                        service=args.service,
+                        env=args.env,
+                    ),
+                )
             apply_manifest(kubeconfig, apply_manifest_doc)
             summary["status"] = "applied"
             if args.wait:

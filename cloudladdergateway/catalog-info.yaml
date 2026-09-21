@@ -1,0 +1,18 @@
+{
+  "id": "cloudladdergateway",
+  "name": "Cloud Ladder Gateway",
+  "kind": "service",
+  "path": "cloudladdergateway",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["subscription-entitlements", "release-gitops"],
+  "summary": "通过强认证代理 IDC 计费上游，并输出可审计请求记录。",
+  "runtime": "Go 服务与 Starlark 规则",
+  "interfaces": ["proto/cloudladdergateway/v1/gateway.proto", "HMAC/mTLS proxy", "webhook"],
+  "dependencies": ["trade", "external-billing"],
+  "source_docs": ["cloudladdergateway/README.md", "cloudladdergateway/AGENTS.md", "cloudladdergateway/proto/cloudladdergateway/v1/gateway.proto"],
+  "agent_entry": "cloudladdergateway/AGENTS.md",
+  "service_docs": "cloudladdergateway/docs/README.md",
+  "deploy": ["cloudladdergateway/k8s", "argocd/services/cloudladdergateway"],
+  "generated_paths": ["cloudladdergateway/gen"]
+}

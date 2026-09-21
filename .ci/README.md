@@ -435,6 +435,24 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 - `sandbox` 的 default pools 属运营态数据，自动发布不 seed；缺 pools 时阻断并提示人工 `sync-default-pools`
 - `service-gateway` 只做轻量依赖发现；如果同批包含 `lightclaw-auth/payment/subscription` 变更，会阻断无序自动 sync
 
+### Collaboration 北京首次发布
+
+`.ci/collaboration-bootstrap.yml` 是北京 Collaboration 唯一首次发布编排入口，只有手动触发：
+
+1. `foundation`（默认）先 dry-run 核对 inventory、现有 CynosDB、目标账号/逻辑库和 SSM；
+   人工批准后运行 `infractl bootstrap-collaboration --apply`，从 SSM 生成加密 SOPS，并创建
+   只含 Namespace、ServiceAccount、Secret 的 GitOps MR。
+2. foundation 合入并在 `tke-bj8` 收敛后，手动以 `BOOTSTRAP_PHASE=runtime` 重跑。同一流程先
+   证明 bootstrap 幂等，再从 gitops desired state 执行 Collaboration MySQL migration Job 和
+   read-only verify Job；两者必须显式绑定同一个候选 image digest，不能让 verify 从仍指向
+   foundation 的 platform 配置回退到旧镜像；两者成功后才创建 runtime GitOps MR。
+
+流水线把公开 SDKAppID 作为可审阅启动变量（北京 `AgentNetwork` 默认 `1600137234`），需要的 protected settings 为
+`COLLABORATION_IM_CREDENTIAL`（username 为 IM 管理员，password 为 IM SecretKey）、
+`DB_JOB_KUBECONFIG_B64`、`SOPS_AGE_KEY`/`SOPS_AGE_KEY_FILE` 和 Git WOA token。设置值不得输出。
+该流水线不会新建 DB 实例，不触及 shprod/sgprod/Playground，不自动合并 GitOps MR，也不会
+隐式使用密码或 IM Secret 轮换开关。
+
 ## Runtime Semantic Map
 
 当前 runtime 已按语义拆分到 `.ci/runtime/` 下的多个包。修改时按下面的边界定位，避免把发布契约、GitOps 自动化、DB gate 和工具自举继续混在一起。
@@ -554,6 +572,8 @@ Guard 自举策略：
   - 手动发布 `eo:cn-lightvela-prod-next`；强制从已归档 artifact 发布
 - `.ci/frontend-edgeone-lightvela-intl.yml`
   - 手动发布 `eo:global-lightvela-intl-prod-next`；强制从已归档 artifact 发布
+- `.ci/templates/frontend-edgeone-release.yml`
+  - OpenAPI 手动启动可能不会在 shell 中展开 `ci.branch` / `ci.sha`；此时分别从 `BK_CI_GIT_REPO_BRANCH` / `DEVOPS_GIT_REPO_BRANCH` 和 `BK_CI_GIT_HEAD_COMMITS` 解析真实来源，并继续由 runtime 严格限制只能从 `master` 发布
 - `frontend/release-matrix.json`
   - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`，默认也走 Next static artifact
 - `frontend/scripts/release-matrix.mjs`
@@ -690,7 +710,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 
 ### 4. Git push 走 SSH，MR 创建走 API
 
-当前这套 Stream 运行在自有构建池 `env` 的 Linux 机器上。  
+当前这套 Stream 统一运行在国内自有构建池 `cn-pool` 的 Linux 机器上。
 已验证更适合的方式是：
 
 - 使用构建机已有的 SSH 免密推送能力
@@ -711,7 +731,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 当前 service 级 YAML 全部统一为：
 
 - `jobs.release.runs-on.self-hosted: true`
-- `jobs.release.runs-on.pool-name: env`
+- `jobs.release.runs-on.pool-name: cn-pool`
 - `concurrency.group: mono2-service-release-<service>`
   - `cancel-in-progress: false`
   - `queue-length: 20`
@@ -862,7 +882,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 
 优先检查：
 
-- 蓝盾项目下 `env` pool 是否真的存在
+- 蓝盾项目下 `cn-pool` 是否真的存在
 - pool 里是否有在线 Linux 节点
 - 节点是否属于当前项目，而不是只在机器上装了 agent
 

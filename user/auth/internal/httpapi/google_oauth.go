@@ -141,14 +141,14 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 	if relayState, ok := parseOAuthRelayState(state); ok {
 		if err := validateOAuthRelayStateForProvider("google", relayState); err != nil {
 			logger.Warn("google oauth callback failed", "stage", "relay_state_validation", "err", err)
-			ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch")))
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
 			target, err := relayCallbackURLWithOriginalQuery("google", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("google oauth relay callback failed", "stage", "target_query", "err", err)
-				ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch")))
 				return
 			}
 			ctx.Redirect(http.StatusTemporaryRedirect, target)
@@ -156,7 +156,7 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 		}
 		if !isOAuthRelayTargetCallback(ctx.Request, relayState) {
 			logger.Warn("google oauth callback failed", "stage", "relay_target_mismatch")
-			ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch")))
 			return
 		}
 		exchangeRedirectURI = relayState.IssuerRedirectURI
@@ -194,7 +194,7 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 			"has_state", state != "",
 			"has_cookie_state", expectedState != "",
 		)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_state_mismatch")))
 		return
 	}
 
@@ -202,17 +202,18 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 	token, err := h.googleOAuth.client.ExchangeCode(requestCtx, code, exchangeRedirectURI)
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("google oauth callback failed", "stage", "exchange", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_exchange_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_exchange_failed")))
 		return
 	}
 
 	identity, err := h.googleOAuth.client.ResolveIdentity(requestCtx, token.AccessToken)
 	if err != nil {
 		logger.Error("google oauth callback failed", "stage", "identity", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_identity_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_identity_failed")))
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	identity.ClientIP = ctx.ClientIP()
 	identity.ClientUA = ctx.Request.UserAgent()
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
@@ -224,12 +225,13 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 			"subject", identity.ProviderSubject,
 			"err", err,
 		)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_sign_in_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, googleOAuthReturnToCookieName, h.googleOAuth.frontendURL(ctx.Request, "/?oauth_error=google_sign_in_failed")))
 		return
 	}
 
 	logger.Info("google oauth callback succeeded", "user_id", session.User.ID)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "google", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
 	h.completeFederationSwitch(ctx, session.Token)

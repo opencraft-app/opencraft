@@ -1,6 +1,6 @@
 ## Resumen
 
-**El "cerebro" de un Hermes Agent puede reemplazarse, pero lo que se reemplaza es solo la capa de modelo, no todo el Agent. La capa de modelo decide cómo pensar en este momento: analizar la solicitud, planificar pasos, elegir qué herramienta llamar y redactar la respuesta. La capa de Agent mantiene ese pensamiento activo a lo largo del tiempo: la identidad (`SOUL.md`), el perfil de usuario (`USER.md`), los hechos entre sesiones (`MEMORY.md` y `memories/`), los métodos capturados (`skills/`), los canales de mensajería, las automatizaciones y el directorio de trabajo todos viven fuera del modelo. Por eso, cambiar de modelo no elimina nada. En LightVela, un Agent utiliza exactamente un modelo activo a la vez, y cambiar de modelo no borra la memoria, los archivos de almacenamiento en la nube, las Skills ni la configuración de automatización; solo cambia el motor detrás de las futuras respuestas. Si un Agent se siente como un extraño después de un cambio, la causa es casi siempre un seguimiento de instrucciones diferente, una compresión de contexto distinta y un comportamiento de redacción diferente en el nuevo modelo, no una pérdida de memoria.**
+**El "cerebro" de un Hermes Agent puede reemplazarse, pero lo que se reemplaza es solo la capa de modelo, no todo el Agent. La capa de modelo decide cómo pensar en este momento: analizar la solicitud, planificar pasos, elegir qué herramienta llamar y redactar la respuesta. La capa de Agent mantiene ese pensamiento activo a lo largo del tiempo: la identidad (`SOUL.md`), el perfil de usuario (`USER.md`), los hechos entre sesiones (`MEMORY.md` y `memories/`), los métodos capturados (`skills/`), los canales de mensajería, las tareas programadas y el directorio de trabajo todos viven fuera del modelo. Por eso, cambiar de modelo no elimina nada. En LightVela, un Agent utiliza exactamente un modelo activo a la vez, y cambiar de modelo no borra la memoria, los archivos de almacenamiento en la nube, las Skills ni la configuración de tarea programada; solo cambia el motor detrás de las futuras respuestas. Si un Agent se siente como un extraño después de un cambio, la causa es casi siempre un seguimiento de instrucciones diferente, una compresión de contexto distinta y un comportamiento de redacción diferente en el nuevo modelo, no una pérdida de memoria.**
 
 ---
 
@@ -77,10 +77,10 @@ La memoria no es solo "append" para siempre. Se mantiene mediante operaciones at
 
 `skills/` almacena procedimientos estándar para "cuando la situación X ocurre, haz esto". Cada `SKILL.md` típicamente lleva frontmatter YAML que declara sus condiciones de disparo. Esto es memoria procedimental, una vía separada de la memoria declarativa — ve "La Memoria No es una Skill: Cómo Hermes Agent Separa la Memoria Factual y Procedimental".
 
-### 3.5 Conectividad y programación: canales, automatizaciones, directorio de trabajo
+### 3.5 Conectividad y programación: canales, tareas programadas, directorio de trabajo
 
 - **Canales** determinan qué puntos de entrada recibe el Agent y dónde se entregan los resultados.
-- **Automatizaciones** determinan qué trabajo completa cuando no estás preguntando nada.
+- **Tareas programadas** determinan qué trabajo completa cuando no estás preguntando nada.
 - **El directorio de trabajo** determina dónde viven las entradas y salidas de las tareas y dónde se sitúa el límite.
 
 Los tres son configuración de capa de Agent, independientes de qué modelo está activo actualmente.
@@ -107,7 +107,7 @@ Las secciones anteriores describen el mecanismo. Esta una describe el comportami
 
 **Un Agent utiliza exactamente un modelo activo a la vez.** Cambiar de modelo significa seleccionar qué modelo configurado está actualmente activo — no crea un nuevo Agent. No necesitas múltiples Agents solo para usar múltiples modelos.
 
-**Cambiar de modelo no borra la memoria, archivos de almacenamiento en la nube, Skills ni configuración de automatización.** Un cambio de modelo cambia solo el motor utilizado para las respuestas subsiguientes. No mueve el historial de chat, no reescribe archivos en almacenamiento en la nube ni altera la configuración de Skills y automatización.
+**Cambiar de modelo no borra la memoria, archivos de almacenamiento en la nube, Skills ni configuración de tarea programada.** Un cambio de modelo cambia solo el motor utilizado para las respuestas subsiguientes. No mueve el historial de chat, no reescribe archivos en almacenamiento en la nube ni altera la configuración de Skills y tarea programada.
 
 **Preparación y confirmación de un cambio**, siguiendo el flujo documentado:
 
@@ -116,7 +116,7 @@ Las secciones anteriores describen el mecanismo. Esta una describe el comportami
 3. Después de cambiar, envía ese mensaje de prueba en el chat y confirma tanto que el Agent responda como que la consola muestre el modelo que seleccionaste.
 4. Si la primera respuesta después del cambio es ligeramente lenta, espera brevemente e inténtalo una vez antes de cambiar algo más.
 
-**Una corrección a un malentendido común**: la configuración de una automatización consiste en nombre, programación (días fijos de la semana, intervalo fijo o una sola vez — elige uno), instrucciones de tarea, ventana de tiempo activa y canales de notificación. **No existe un campo "anclar esta automatización a un modelo específico".** Por lo tanto, el consejo de que debes pasar por tus automatizaciones y resincronizar su modelo después de cambiar no aplica. Lo que vale la pena revisar después de un cambio es la calidad de la salida de la tarea, no un campo de modelo que no existe.
+**Una corrección a un malentendido común**: la configuración de una tarea programada consiste en nombre, programación (días fijos de la semana, intervalo fijo o una sola vez — elige uno), instrucciones de tarea, ventana de tiempo activa y canales de notificación. **No existe un campo "anclar esta tarea programada a un modelo específico".** Por lo tanto, el consejo de que debes pasar por tus tareas programadas y resincronizar su modelo después de cambiar no aplica. Lo que vale la pena revisar después de un cambio es la calidad de la salida de la tarea, no un campo de modelo que no existe.
 
 ---
 
@@ -160,7 +160,7 @@ Si el Agent no puede funcionar después de cambiar, depura en este orden: confir
 Hermes desacopla el modelo del Agent en el nivel de mecanismo, pero aún apunta a personas cómodas gestionando archivos Markdown y un entorno local directamente. La dirección de LightVela es hacer que ese desacoplamiento sea la experiencia de producto por defecto:
 
 - **El modelo es una configuración conmutable**, no una decisión única bloqueada en la configuración.
-- **La memoria, Skills, almacenamiento en la nube y automatizaciones son activos de usuario** que se mantienen estables a través de cambios de modelo, por lo que actualizar nunca significa empezar de nuevo.
+- **La memoria, Skills, almacenamiento en la nube y tareas programadas son activos de usuario** que se mantienen estables a través de cambios de modelo, por lo que actualizar nunca significa empezar de nuevo.
 - **Los cambios son verificables**: la consola muestra el modelo activo y un solo mensaje de prueba en el chat confirma que el cambio funcionó.
 - **Los fallos son rastreables**: Diagnostics mantiene registros recientes, que es cómo determinas si el problema radica en el modelo, la configuración o la tarea misma.
 
@@ -173,6 +173,6 @@ El resultado es que el progreso del modelo llega directamente a ti, mientras que
 - Un Agent tiene al menos tres capas: una capa de modelo reemplazable, un tiempo de ejecución de larga duración y activos a largo plazo acumulados continuamente.
 - La capa de modelo maneja interpretación, planificación, llamadas de herramientas y expresión para el turno actual. No almacena preferencias, ejecuta programaciones ni gestiona canales.
 - `SOUL.md`, `USER.md`, `MEMORY.md`, `memories/`, `skills/` y el directorio de trabajo todos viven fuera del modelo, por lo que cambiar de modelo no los lleva consigo.
-- En LightVela, un Agent tiene un modelo activo a la vez; cambiar de modelo no borra la memoria, almacenamiento en la nube, Skills ni automatizaciones.
-- Las automatizaciones no tienen configuración de "modelo anclado", por lo que la afirmación de que debes resincronizar los modelos de automatización después de cambiar es inexacta.
+- En LightVela, un Agent tiene un modelo activo a la vez; cambiar de modelo no borra la memoria, almacenamiento en la nube, Skills ni tareas programadas.
+- Las tareas programadas no tienen configuración de "modelo anclado", por lo que la afirmación de que debes resincronizar los modelos de tarea programada después de cambiar es inexacta.
 - Sentirse diferente después de un cambio suele venir de diferencias en el seguimiento de instrucciones, compresión de contexto y redacción — no de memoria perdida. Verifica con un hecho conocido.

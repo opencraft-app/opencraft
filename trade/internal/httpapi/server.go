@@ -6,16 +6,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"git.woa.com/wisp/mono/trade/internal/creditclient"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/httpapi/internalapi"
 	"git.woa.com/wisp/mono/trade/internal/httpapi/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/checkcreate"
+	"git.woa.com/wisp/mono/trade/internal/logic/checkmodify"
 	"git.woa.com/wisp/mono/trade/internal/logic/checkrenew"
 	"git.woa.com/wisp/mono/trade/internal/logic/createresource"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditorder"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditresource"
+	"git.woa.com/wisp/mono/trade/internal/logic/creditusage"
 	"git.woa.com/wisp/mono/trade/internal/logic/destroyresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/isolateresource"
+	"git.woa.com/wisp/mono/trade/internal/logic/modifyresource"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/logic/queryflow"
@@ -53,13 +59,16 @@ type ServerConfig struct {
 	// OrderStore / BundleStore / CTLClient / FlowStore / InquiryService / PlaceOrderService
 	// 必填，nil 视为编程错（没接好线），NewRouter 会 panic 让启动期立即暴露。
 	// OrderUpdater 允许 nil（向后兼容旧调用方；迭代 8A 起 main.go 应注入 mysqlStore）。
-	OrderStore        store.OrderStore
-	BundleStore       store.BundleDefinitionStore
-	CTLClient         ctlclient.Client
-	FlowStore         store.FlowStore
-	OrderUpdater      createresource.OrderProvisionUpdater
-	InquiryService    *inquiry.Service
-	PlaceOrderService *placeorder.Service
+	OrderStore            store.OrderStore
+	BundleStore           store.BundleDefinitionStore
+	CTLClient             ctlclient.Client
+	FlowStore             store.FlowStore
+	OrderUpdater          createresource.OrderProvisionUpdater
+	InquiryService        *inquiry.Service
+	PlaceOrderService     *placeorder.Service
+	CreditOrderService    *creditorder.Service
+	CreditUsageService    *creditusage.Service
+	CreditDefinitionStore store.CreditDefinitionStore
 
 	// ActivityStore 是点石活动写端（设计稿 .tmp/dianshi-activity-bundle-design.md §5.6.1 / §3.2）。
 	// 允许 nil；nil 时 createResource handler 跳过 INSERT participation 分支，
@@ -95,6 +104,7 @@ type ServerConfig struct {
 	// 允许 nil（向后兼容仅承载旧调用方）；nil 时
 	// /internal/trade/orders/:dealName/query-status 路由不挂载。
 	OrderStatusService *orderstatus.Service
+	CreditClient       creditclient.Client
 
 	// SiteKind（v1.7.x 国际站接入 A6.3 新增）：trade 内部部署站点语义字面量。
 	//
@@ -111,6 +121,10 @@ type ServerConfig struct {
 	// 由 LIGHTVELA_TRADE_REGION env 注入，未注册字面量在 config.Load 期 fail-fast。
 	// 与 SiteKind 同路径透穿到上述 5 个下游注入点。
 	RegionOverride string
+
+	// CreditRegionOverride 仅透传到 Credit 资源回调和退款路径。
+	// 由 LIGHTVELA_CREDIT_REGION 注入；未配置时 config.Load 会继承 RegionOverride。
+	CreditRegionOverride string
 }
 
 // NewRouter 装配 trade 服务的 HTTP Router。
@@ -251,6 +265,45 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		Builder:   builder,
 	})
 
+	// 10. 注册同 SP 变配的两个 handler（TAPD 1010132091137784162 §4.1 / §7.1）。
+	//     checkModify 无状态：trade 对账 SP/PID/newConfig ↔ trade_bundle_definition，
+	//     再反向调 ctl check-modify 校验 pass 层。
+	//     modifyResource 抢占式 trade_flow 幂等（flow_type='modify_resource'）+
+	//     反向调 ctl /internal/ctl/passes/{pass_id}/modify 受理发货，透传 trade_flow.id
+	//     供 ctl 做幂等键与终态回调。
+	//     BundleStore 为 nil 时不注册 checkModify：它的核心职责就是对着
+	//     trade_bundle_definition 对账，没有这张表这个 handler 没有存在意义。
+	//     未注册时 dispatcher 会明确回"未知 interfaceName"，比注册一个必然 panic 的 handler 好。
+	if cfg.BundleStore != nil {
+		checkmodify.Install(dispatcher, checkmodify.Deps{
+			CTLClient:   cfg.CTLClient,
+			BundleStore: cfg.BundleStore,
+			Builder:     builder,
+		})
+	}
+	modifyresource.Install(dispatcher, modifyresource.Deps{
+		FlowStore: cfg.FlowStore,
+		CTLClient: cfg.CTLClient,
+		Builder:   builder,
+		// BundleStore 用于按 oldConfig / newConfig 的 SV 集合反查源 / 目标套餐
+		// （计费不回传 trade 自塞的 bundleId，2026-09-02 实测）。
+		// 与 checkModify 不同，这里不加 nil 守卫而是无条件注册：modifyResource 是
+		// 已付款后的发货入口，不注册会让计费收到"未知 interfaceName"并按重试处理，
+		// 比 handler 内以 B 类业务码明确回一个可读原因更难排障。
+		BundleStore: cfg.BundleStore,
+	})
+
+	if cfg.CreditClient != nil {
+		creditresource.Install(dispatcher, creditresource.Deps{
+			FlowStore:             cfg.FlowStore,
+			CreditDefinitionStore: cfg.CreditDefinitionStore,
+			CreditClient:          cfg.CreditClient,
+			Builder:               builder,
+			SiteKind:              cfg.SiteKind,
+			RegionOverride:        cfg.CreditRegionOverride,
+		})
+	}
+
 	router.POST("/trade/jifei/callback", jifei.CallbackHandler(dispatcher))
 
 	// 6. 注册内部 RPC（迭代 8A + Sub-4 callback）。
@@ -260,10 +313,14 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	if cfg.InquiryService != nil && cfg.PlaceOrderService != nil {
 		provisionedOrderStore, _ := cfg.OrderStore.(store.ProvisionedCreateOrderStore)
 		internalapi.Install(router, internalapi.Deps{
-			InternalServiceToken: cfg.InternalServiceToken,
-			Inquiry:              cfg.InquiryService,
-			PlaceOrder:           cfg.PlaceOrderService,
-			FlowStore:            cfg.FlowStore,
+			InternalServiceToken:  cfg.InternalServiceToken,
+			Inquiry:               cfg.InquiryService,
+			PlaceOrder:            cfg.PlaceOrderService,
+			CreditOrder:           cfg.CreditOrderService,
+			CreditUsage:           cfg.CreditUsageService,
+			CreditDefinitionStore: cfg.CreditDefinitionStore,
+			FlowStore:             cfg.FlowStore,
+			OrderUpdater:          cfg.OrderUpdater,
 			// D-2 销毁链路用户主动入口（设计稿 §3.5 + §11-A Q26）：BundleStore + JifeiClient
 			// 任一 nil 时 internalapi 不挂载 /internal/trade/resources/:resourceID/delete 路由。
 			BundleStore: cfg.BundleStore,
@@ -275,7 +332,8 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 			// v1.7.x A6.3：SiteKind 透传给 deleteResourceHandler（装配期解析为 region 三元组）。
 			SiteKind: cfg.SiteKind,
 			// 北京 2 预发布接入 2026-06-12：region 字段 override，与 SiteKind 同路径。
-			RegionOverride: cfg.RegionOverride,
+			RegionOverride:       cfg.RegionOverride,
+			CreditRegionOverride: cfg.CreditRegionOverride,
 			// 点石后台管理查询/删除入口。
 			DianshiAdminStore: cfg.DianshiAdminStore,
 		})

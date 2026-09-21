@@ -20,6 +20,7 @@ import (
 	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/logic/objectid"
 	bundlemodel "ctl/pkg/model/bundle"
+	"ctl/pkg/model/eventoutbox"
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
 	passmigrationmodel "ctl/pkg/model/passbillingmigration"
@@ -39,7 +40,9 @@ func tradeSubscriptionIdempotencyKey(dealName string) string {
 }
 
 const (
+	packageSubscriptionNamePrefix    = "package:"
 	freeCreditSubscriptionNamePrefix = "free-credit:"
+	maxFreeCreditAmount              = int64(1_000_000)
 	// International payment URL generation can include auth credential
 	// exchange, card lookup, order lookup, and CreatePayUrl. Keep the budget
 	// below the common 60-second edge timeout while leaving room for fallback.
@@ -47,7 +50,7 @@ const (
 )
 
 func packageSubscriptionName(userID, passID string) string {
-	return "package:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
+	return packageSubscriptionNamePrefix + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
 }
 
 func freeCreditSubscriptionName(source, idempotencyKey string) string {
@@ -56,6 +59,14 @@ func freeCreditSubscriptionName(source, idempotencyKey string) string {
 		source = "manual"
 	}
 	return freeCreditSubscriptionNamePrefix + source + ":" + strings.TrimSpace(idempotencyKey)
+}
+
+func freeCreditTokens(creditAmount int64) (int64, error) {
+	if creditAmount <= 0 || creditAmount > maxFreeCreditAmount {
+		return 0, errcode.Wrap(errcode.ErrPassInvalidParam,
+			"credit_amount must be between 1 and %d", maxFreeCreditAmount)
+	}
+	return bundlelogic.CreditToTokens(creditAmount), nil
 }
 
 type newPassSubscriptionRequest struct {
@@ -87,7 +98,16 @@ func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (boo
 }
 
 func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
-	if gatewayroute.NewAllocationGateway(req.UserID) == gatewayroute.GatewayLLMGateway {
+	return applyGatewaySubscription(ctx, gatewayroute.NewAllocationGateway(req.UserID), req)
+}
+
+func applyGatewaySubscription(
+	ctx context.Context,
+	target gatewayroute.Gateway,
+	req newPassSubscriptionRequest,
+) (*newPassSubscription, error) {
+	switch target {
+	case gatewayroute.GatewayLLMGateway:
 		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 			IdempotencyKey:   req.IdempotencyKey,
 			UserID:           req.UserID,
@@ -102,22 +122,24 @@ func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptio
 			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription returned empty subscription")
 		}
 		return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayLLMGateway}, nil
+	case gatewayroute.GatewayAIGateway:
+		sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
+			IdempotencyKey: req.IdempotencyKey,
+			UserID:         req.UserID,
+			PlanID:         req.PlanID,
+			PeriodValue:    req.PeriodValue,
+			PeriodUnit:     req.PeriodUnit,
+		})
+		if err != nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription: %v", err)
+		}
+		if sub == nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription returned empty subscription")
+		}
+		return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayAIGateway}, nil
+	default:
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "unsupported gateway route %q", target)
 	}
-
-	sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
-		IdempotencyKey: req.IdempotencyKey,
-		UserID:         req.UserID,
-		PlanID:         req.PlanID,
-		PeriodValue:    req.PeriodValue,
-		PeriodUnit:     req.PeriodUnit,
-	})
-	if err != nil {
-		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription: %v", err)
-	}
-	if sub == nil {
-		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription returned empty subscription")
-	}
-	return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayAIGateway}, nil
 }
 
 // PassDetail 权益详情
@@ -268,11 +290,13 @@ type Logic interface {
 	//   - passIDs：1..100（caller 已校验非空 + 上限）
 	ListPassesByResourceIDs(appID int64, passIDs []string) ([]*PassDetail, error)
 
-	// DescribePassByCloudAccount 供云 API DescribePass 按影子账号 + pass_id 精确反查 pass。
+	// DescribePassByCloudAccount 供云 API DescribePass 按影子账号反查 pass。
+	// appID=0 表示不按 AppID 过滤；passID 为空表示返回匹配条件下最新创建的 pass。
 	//
 	// 入参：
-	//   - uin / appID：影子账号归属，必须与 pass 表记录一致
-	//   - passID：pass 业务主键
+	//   - uin：影子账号 Uin，必填
+	//   - appID：影子账号 AppID；0 表示不按 AppID 过滤
+	//   - passID：pass 业务主键；为空时按 Uin 和可选 AppID 查询
 	//
 	// 归属不匹配按 ErrPassNotFound 处理，避免对外暴露 pass 是否存在。
 	DescribePassByCloudAccount(uin, appID int64, passID string) (*PassDetail, error)
@@ -386,6 +410,33 @@ type Logic interface {
 	// 鉴权：transport 层校验用户是 pass 当前持有人（与 RenewPassOrderUrl 一致）。
 	RenewPassPrice(userID, passID string, req *transport.RenewPassPriceRequest) (*transport.RenewPassPriceResult, error)
 
+	// === 同 SP 升配用户侧入口（TAPD 1010132091137784162 §5.1）===
+
+	// ListPassModifyBundles 返回该 pass 当前可升配的目标套餐及各自实时差价。
+	//
+	// 不接收 target_bundle_id：合法目标由服务端按 pass.bundle_id 从升配策略推导，
+	// 前端只能从响应回传 target_bundle_id。pass 非 active 或无可升配路径时返回空集合。
+	//
+	// **无副作用**：只读 pass / bundle 并向 trade 询价，不改任何本地状态。
+	ListPassModifyBundles(userID, passID string) (*transport.ModifyBundleSetResult, error)
+
+	// ModifyPassOrder 创建升配订单，返回订单号；调用方随后走 ModifyPassOrderUrl 拉支付页。
+	//
+	// 服务端会重新校验 pass 状态与升配关系，不信任前端查询时的旧结果。
+	// **不修改本地 pass** — pass.status 推进由 jifei → trade.modifyResource →
+	// ctl.AcceptPassModify 链路触发。
+	ModifyPassOrder(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderResult, error)
+
+	// ModifyPassOrderUrl 为已有升配订单生成支付页，不重新下单。
+	ModifyPassOrderUrl(userID, passID string, req *transport.ModifyPassOrderUrlRequest) (*transport.ModifyPassOrderUrlResult, error)
+	GetModifyCheckout(userID, passID string) (*tradeadapter.ModifyCheckoutResult, error)
+	ModifyPassPaymentAuthorization(userID, passID string, req *transport.ModifyPassOrderUrlRequest) (*transport.ModifyPaymentAuthorizationResult, error)
+
+	// ModifyPassOrderAndPay 一体化创建升配订单 + 代扣，跳过支付页。
+	//
+	// **仅用于联调 / 自动化 e2e**，现网控制台禁止暴露（与 PlaceOrderAndPay 同语义）。
+	ModifyPassOrderAndPay(userID, passID string, req *transport.ModifyPassOrderRequest) (*transport.ModifyPassOrderResult, error)
+
 	// DeletePass 由前端控制台用户主动触发销毁（trade-pass-destroy 入口 A）
 	//
 	// 设计稿：.tmp/trade-pass-destroy-design.md §3.5 / §4.5.1 / §11-A Q1 / Q2 / Q26 / Q27
@@ -469,6 +520,40 @@ type Logic interface {
 	//
 	// 鉴权：transport 层 requireInternalBearer（trade 出向带 CTL_INTERNAL_TOKEN）。
 	DestroyPass(passID string, tradeFlowID int64, destroyReason string) (taskID string, err error)
+
+	// === 同 SP 变配（升配）===
+	// 需求：TAPD 1010132091137784162 §5.2 / §6
+
+	// CheckPassModify 是计费下单前的同步检查（trade.checkModify handler 反向调）。
+	//
+	// 只读 CTL DB 与本地策略表：pass 存在且归属正确且为 active、source→target 命中允许关系、
+	// 到期时间与 curDeadline 一致、目标套餐在线且有 instance_spec_id、pass 下非终态实例
+	// 全部 Running（零实例直接通过）。不调 sandbox、不询价、不改任何状态——jifei 的
+	// checkModify 协议总时限只有 3 秒。
+	//
+	// 返回 nil 表示允许变配；trade 侧把它翻译成计费协议的 data.status = 0，
+	// 把 4xx 业务错翻译成非 0。
+	//
+	// 错误码：ErrPassNotFound / ErrPassInvalidParam / ErrPassModifying /
+	// ErrPassNotModifiable / ErrPassModifyTargetNotAllowed / ErrPassModifyConfigMismatch /
+	// ErrPassModifyInstanceNotReady
+	CheckPassModify(passID string, req *transport.CheckPassModifyRequest) error
+
+	// AcceptPassModify 是支付成功后的发货受理（trade.modifyResource handler 反向调）。
+	//
+	// 行为：
+	//   1. 重跑一遍 CheckPassModify 的全部校验（询价到发货之间 pass 可能已漂移）
+	//   2. CAS active → modifying，同事务写入 modify_flow_id + modify_target_bundle_id
+	//   3. 入队变配父 task ModifyPass（30s × 1<<30，"永不放弃"）
+	//   4. 返 taskID 供 trade 记录和排障
+	//
+	// 幂等：pass 已在 modifying 且 modify_flow_id == tradeFlowID 时视为同一笔单重投，
+	// 返回成功并补派父 task（原派发可能因 MQ 抖动丢失）；flow id 不同则返 ErrPassModifying
+	// 拒绝插队。计费重投 modifyResource 是常态，这个分支必须返成功，否则会被判定发货失败去退款。
+	//
+	// 失败策略：系统盘扩容不可逆，父 task 失败时 pass 保持 modifying 前滚重试，
+	// 不自动回滚也不自动退款；只有参数永久非法这类不可恢复错误才由人工确认后走 DeliveryFailRefund。
+	AcceptPassModify(passID string, req *transport.PassModifyRequest) (taskID string, err error)
 }
 
 type logic struct {
@@ -836,6 +921,11 @@ func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*Pa
 			if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
 				return err
 			}
+			if referralEventsEnabled() {
+				if err := insertFirstPaidEvent(tx, passEntity.UserID, passID, targetBundleID, dealName, time.Now().UTC()); err != nil {
+					return fmt.Errorf("insert paid transfer event: %w", err)
+				}
+			}
 			saved = passEntity
 			return nil
 		}
@@ -863,6 +953,11 @@ func (l *logic) TransferPassFromBilling(req *transport.TransferPassRequest) (*Pa
 		if err := markBillingMigrationCompleted(tx, passID, targetBundleID, dealName, bigOrderID); err != nil {
 			return err
 		}
+		if referralEventsEnabled() {
+			if err := insertFirstPaidEvent(tx, passEntity.UserID, passID, targetBundleID, dealName, time.Now().UTC()); err != nil {
+				return fmt.Errorf("insert paid transfer event: %w", err)
+			}
+		}
 
 		passEntity.BundleID = targetBundleID
 		passEntity.Uin = req.NewUin
@@ -886,11 +981,17 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 	if userID == "" {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required")
 	}
-	if planID == "" {
-		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "plan_id is required")
+	if planID != "" && req.CreditAmount > 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "plan_id and credit_amount cannot both be set")
+	}
+	if planID == "" && req.CreditAmount <= 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "credit_amount is required when plan_id is empty")
 	}
 	if idempotencyKey == "" {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "idempotency_key is required")
+	}
+	if err := validateQualifyingPassForFreeCredit(req.QualifyingPassID, req.InviteeUserID); err != nil {
+		return nil, err
 	}
 	if !config.LLMGatewayEnabled() {
 		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "llmgateway is disabled")
@@ -905,10 +1006,20 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
+	llm := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter()
+	tokenAmount := int64(0)
+	if planID == "" {
+		var tokenErr error
+		tokenAmount, tokenErr = freeCreditTokens(req.CreditAmount)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
+	}
+	sub, err := llm.ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 		IdempotencyKey:   idempotencyKey,
 		UserID:           userID,
 		PlanID:           planID,
+		TokenAmount:      tokenAmount,
 		SubscriptionName: subscriptionName,
 		IsUnique:         false,
 	})
@@ -926,6 +1037,26 @@ func (l *logic) GrantFreeCredit(req *transport.GrantFreeCreditRequest) (*transpo
 		SubscriptionName: subscriptionName,
 		PeriodEnd:        periodEnd,
 	}, nil
+}
+
+func validateQualifyingPassForFreeCredit(passID, inviteeUserID string) error {
+	passID = strings.TrimSpace(passID)
+	inviteeUserID = strings.TrimSpace(inviteeUserID)
+	if passID == "" && inviteeUserID == "" {
+		return nil
+	}
+	if passID == "" || inviteeUserID == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "qualifying_pass_id and invitee_user_id must be provided together")
+	}
+	qualifyingPass, err := modelfactory.DefaultDaoFactory.PassDao(nil).GetByPassID(passID)
+	if err != nil {
+		return errcode.Wrap(errcode.ErrPassNotFound, "qualifying pass not found: %v", err)
+	}
+	if qualifyingPass.UserID != inviteeUserID || qualifyingPass.Status != passmodel.StatusActive ||
+		qualifyingPass.DeletedTime != nil || !qualifyingPass.ExpiredTime.After(time.Now().UTC()) {
+		return errcode.Wrap(errcode.ErrPassNotActive, "qualifying pass is no longer active")
+	}
+	return nil
 }
 
 func findActivePassForFreeCredit(userID string, now time.Time) (*passmodel.Entity, error) {
@@ -1536,7 +1667,14 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		RenewFlag:   normalizeCompletePassRenewFlag(req.RenewFlag),
 		Status:      passmodel.StatusActive, // v1.7.28 BUG-17 修复：显式写 active，避免 gorm 用 Go zero value 覆盖 DB DEFAULT
 	}
-	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
+	var firstPaidEvent *eventoutbox.Event
+	if referralEventsEnabled() && bundle.BundleType != bundlemodel.BundleTypeFree {
+		firstPaidEvent, err = buildFirstPaidEvent(req.UserID, passID, req.BundleID, req.DealName, now)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := passDao.CreatePassWithQuotaAndEvent(entity, req.UserID, agentQuota, firstPaidEvent); err != nil {
 		return nil, compensateEnsuredEntitlement(
 			logger,
 			req.UserID,
@@ -2111,14 +2249,21 @@ func (l *logic) DescribePassByCloudAccount(uin, appID int64, passID string) (*Pa
 	if uin <= 0 {
 		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "uin must be > 0")
 	}
-	if appID <= 0 {
-		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be > 0")
+	if appID < 0 {
+		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be >= 0")
 	}
 	passID = strings.TrimSpace(passID)
-	if passID == "" {
-		return nil, errcode.Wrap(errcode.ErrPassInvalidParam, "pass_id is required")
-	}
 	dao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	if passID == "" {
+		entity, err := dao.GetByUinAndOptionalAppID(uin, appID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errcode.ErrPassNotFound) {
+				return nil, errcode.ErrPassNotFound
+			}
+			return nil, errcode.Wrap(errcode.ErrPassNotFound, "get pass by cloud account: %v", err)
+		}
+		return entityToDetail(entity), nil
+	}
 	entity, err := dao.GetByPassID(passID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errcode.ErrPassNotFound) {
@@ -2126,7 +2271,7 @@ func (l *logic) DescribePassByCloudAccount(uin, appID int64, passID string) (*Pa
 		}
 		return nil, errcode.Wrap(errcode.ErrPassNotFound, "get pass: %v", err)
 	}
-	if entity.Uin != uin || entity.AppID != appID {
+	if entity.Uin != uin || (appID > 0 && entity.AppID != appID) {
 		return nil, errcode.ErrPassNotFound
 	}
 	return entityToDetail(entity), nil

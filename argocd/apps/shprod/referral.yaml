@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: referral-shprod
+  namespace: argocd
+spec:
+  project: shprod-referral
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/referral/shprod
+  destination:
+    namespace: referral
+    name: shprod

@@ -21,8 +21,9 @@ describe("agents workbench embedded shell boundary", () => {
   it("uses a quiet auth-loading fallback for the workbench route", () => {
     const adapter = readSource("next-site/agents-page-client.tsx");
 
-    expect(adapter).toMatch(/const loadingFallback = isWorkbench \? null : <AgentsRouteLoading \/>;/);
+    expect(adapter).toMatch(/const loadingFallback = isWorkbench \? productHeader : <AgentsRouteLoading \/>;/);
     expect(adapter).toMatch(/<AppRouteShell loadingFallback=\{loadingFallback\}>/);
+    expect(adapter).toMatch(/<Suspense fallback=\{loadingFallback\}>/);
   });
 
   it("uses embeddable Vela surfaces instead of any Vela desktop shell", () => {

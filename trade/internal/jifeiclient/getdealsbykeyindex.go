@@ -48,7 +48,8 @@ type GetDealsByKeyIndexCond struct {
 //     GetDealsByKeyIndexResponse.totalNum of type int`，B7 fallback 兜底兜底但前端拿不到 jifei
 //     真实状态。
 type GetDealsByKeyIndexResponse struct {
-	// TotalNum 是命中的 deal 总数（本期单查时 = 0 表示订单不存在；= 1 表示命中）。
+	// TotalNum 是命中的 deal 总数（本期单查时 = 0 表示本次查询未命中；= 1 表示命中）。
+	// 0 不能单独作为订单已取消的证明，新订单可能存在短暂的查询可见性延迟。
 	//
 	// 类型为 flexInt（v1.7.33 BUG-25 修复）：jifei CGW 实测回 string-encoded int (`"1"`)。
 	TotalNum flexInt `json:"totalNum"`

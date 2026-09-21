@@ -257,9 +257,7 @@ for (const [dictKey, dict] of dictionaries) {
  * id-ID 的缺口来自 master 上通道与模型配置相关功能（钉钉 / 企业微信 /
  * QQ / Kimi / 智谱等），应由对应需求负责人补齐。
  */
-const KNOWN_TRANSLATION_DEBT = {
-  "id-ID": 174,
-};
+const KNOWN_TRANSLATION_DEBT = {};
 
 if (CHECK_ONLY) {
   /* CI 场景：仅 translationRequired 的语种参与门禁；

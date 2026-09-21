@@ -1,3 +1,270 @@
+# 积分包微信中转支付空票据前置判定（2026-09-16）
+
+**Status:** 已实现并通过定向验证（hook 测试 22/22、tsc 零错误、`git diff --check` 待提交时确认）；未 commit、未推送、未创建 MR。全量 `pnpm check` 因本机 Node 20 与 pnpm 11（要求 Node 22.13+）不兼容未执行，需在 Node 22 环境补跑。
+**Size / Mode:** S / 单 Agent inline quick。
+**Goal:** !3910 起 credit order-url 强制校验 auth_code；后端票据发放失败时静默返回空串（HTTP 200 + `auth_code: ""`），前端按旧灰度设计仍打开中转页 → 微信内必然显示「二维码已失效」，误导用户反复重新生成。本变更在 PC 端下单后即判定票据缺失并给出准确失败态。
+**Design:** `useCreditCheckout` 国内站分支在 `buildPayPlan` 前校验 `authCode`（空串/undefined 均拦截）：进入 `failed` 态并保留 `dealName`（订单已创建成功，供客服排查），不生成中转页 URL；`console.error("[credit] order issued without auth_code", { dealName })` 留痕（对齐 renew-pass-modal 惯例）。UI 层 `failed` 文案由「下单失败」改为中性「支付未完成」——failed 不等于下单失败，避免诱导重复下单产生双订单；与 `delivery_exception` 的中性口径一致。i18n 生成物随文案同步重提取。
+**Non-goals:** 不修后端票据发放根因（需按 order 响应 → credit 日志 `issue auth_code failed` → authcode Redis 接线的路径另行排查）；不改 order-url 校验逻辑与 wx-pay.ts；不动国际站链路。
+
+**Files:**
+- Modify: `src/lib/use-credit-checkout.ts`
+- Modify: `src/domain/credit-pack.ts`
+- Modify: `next-site/credit-pack-section.tsx`
+- Test: `src/lib/__tests__/use-credit-checkout.test.ts`
+- Generated: `src/i18n/generated/*.json`
+
+---
+
+# Agents/账号页 Footer 移除与 AgentChat 高度优化（2026-09-15）
+
+**Status:** Mono2 宿主侧实现完成；本地功能提交为 `4b86ab6de`，滚动锁加固提交为 `b94619205`。当前已将 `origin/master@554355180` 合入暂存区并完成合并后验证，等待确认创建合并提交；未推送、创建 MR 或发布。
+**Size / Mode:** S / 单 Agent inline quick。
+**Goal:** 在不修改 `@tencent/agentchat-lightvela-panel` SDK 的前提下，移除 `/agents/*`、`/account`、`/account/orders` 的 Footer，并让 `/agents/chat` 桌面端对话面板使用剩余视口高度，消除页面外层滚动。
+**Design:** 小于 1024px 时保留现有 `clamp(516px, calc(100vh - 220px), 960px)` 高度；桌面对话页根节点限制为 `100dvh`，main、shell、grid、内容区和面板建立可收缩的高度链，对话面板使用 `lg:h-full`。目标页面分别关闭自身 Footer；共享 `AppRouteShell` 增加默认开启的认证提示页 Footer 配置，仅 Agents 与账号相关客户端显式关闭。SDK props、内部样式、消息滚动和会话逻辑均不调整。
+**Non-goals:** 不修改 SDK 或依赖版本，不改左侧栏自身的长列表滚动、输入框、消息样式、移动端布局或其他公开页面，不合并 MR 或发布。
+
+**Files:**
+- Modify: `next-site/app-route-shell.tsx`
+- Modify: `next-site/agents-page-client.tsx`
+- Modify: `next-site/account-page-client.tsx`
+- Modify: `next-site/account-orders-page-client.tsx`
+- Modify: `src/pages/marketing/agent-chat-panel.tsx`
+- Modify: `src/pages/marketing/agent-settings-page.tsx`
+- Modify: `src/pages/marketing/account-page.tsx`
+- Modify: `src/pages/marketing/account-orders-page.tsx`
+- Modify: `src/styles.css`
+- Test: `next-site/app-route-shell.test.tsx`
+- Test: `next-site/__tests__/agents-page-loading-boundary.test.ts`
+- Test: `next-site/__tests__/account-route-footer-boundary.test.ts`
+- Test: `src/pages/marketing/__tests__/private-page-footer-boundary.test.ts`
+- Test: `src/pages/marketing/__tests__/account-page-name-audit.test.tsx`
+- Test: `src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.ts`
+- Test: `src/pages/marketing/__tests__/agent-settings-nav-spacing.test.ts`
+
+**Acceptance:**
+- `/agents/*`、`/account`、`/account/orders` 的已登录页面和未登录认证提示页均不渲染 Footer；其他共享页面壳默认行为不变。
+- 1024px 及以上视口中，document 高度等于视口高度，页面本身没有纵向滚动条；消息滚动继续由 SDK 的消息区承担。
+- 1024px 以下继续使用现有 clamp 高度策略。
+- SDK 依赖与 `<LightVelaPanel>` 参数保持不变，消息区继续内部滚动，输入框保持在面板底部。
+- 定向 Vitest、`pnpm check` 与 `git diff --check` 通过，并完成三个目标页面的浏览器验收。
+
+- [x] **CHAT-HEIGHT-1 / Developer：** 先增加宿主高度类的失败守卫测试并确认 RED，再追加桌面端 `100dvh` 高度覆盖。
+- [x] **CHAT-SCROLL-1 / Developer：** 先增加桌面对话页滚动所有权的失败守卫并确认 RED，再增加对话页专属 class 与桌面 CSS，验证 document 无纵向溢出且 SDK 消息区滚动约束保持不变。
+- [x] **CHAT-FOOTER-1 / Developer：** 根据中途需求先恢复 Footer 并完成一次浏览器验证，随后按最终范围移除。
+- [x] **PRIVATE-FOOTER-1 / Developer：** 先增加认证提示页和三个页面本体的 Footer 失败守卫，再用显式页面配置移除目标 Footer；Task 1 的 11 项与 Task 2 的 69 项测试分别 GREEN。
+- [x] **VERIFY-1 / Developer：** 运行最终聚焦测试、`pnpm check`、`git diff --check` 和三个目标页面的浏览器验收，记录实际结果。
+
+**Verification:** Footer 范围增量按 TDD 执行。认证提示页测试先以 4 failed / 7 passed 进入 RED，实施共享默认开启、目标路由显式关闭后 11 项通过；页面本体测试先以 6 failed / 63 passed 进入 RED，删除目标 Footer 和失效 CSS 后 69 项通过。首次合并 `origin/master@975b48ef5` 后，`pnpm install --frozen-lockfile` exit 0；7 个聚焦测试文件共 85 项通过。再次合并 `origin/master@554355180` 时无代码冲突；主干新增语言切换属性和创建意图重置使两条全文件字符串守卫误报，先稳定复现为 2 failed / 84 passed，再将断言收窄到目标组件属性和 `handleCreateNew` 函数。独立只读审查未发现生产实现阻断，并指出核心高度链缺少直接自动化守卫；补充对 `100dvh`、`overflow: hidden`、`min-height: 0`、shell flex 与内容区 `height: 100%` 的结构化断言后，最终 7 个聚焦测试文件共 87 项通过。最新 `pnpm check` exit 0（TypeScript diagnostics：174 current / 276 baseline / 0 new / 102 resolved），既有 49 条翻译告警及印尼语 172 条待翻译保持不变；`pnpm build:cn` exit 0，Next.js 编译、TypeScript、100 个静态页面生成及 8 条公开路由 SEO 检查通过，保留既有 MDX deprecated option 提示；工作区与暂存区差异均通过 `git diff --check`。合并前本地 1280×720 浏览器中，`/agents/chat` Footer 数量为 0，document、html、body 与页面根节点均为 clientHeight 720 / scrollHeight 720，`scrollY=0`；main top 0 / bottom 720，对话面板 top 44 / bottom 696。首次合并并干净重启 dev server 后再次量测，页面根节点、main、body 与 document 均为 720 / 720，`scrollY=0`，Footer 数量为 0。`/account` 与 `/account/orders` Footer 数量均为 0，主要内容与操作入口正常渲染，控制台无错误；订单页 document 为 720 / 720，账号页因本地预览状态面板为 720 / 889。最新 master 合入后，真实后端未登录空态下 document/body 均为 clientHeight 720 / scrollHeight 720。
+**Boundary:** 本轮未修改 SDK 包、依赖版本或 `<LightVelaPanel>` 参数。合并前本地预览使用模拟认证，AgentChat token 获取失败，无法加载真实会话；首次合并后干净重启时模拟数据没有返回 Bot，未再次渲染 SDK 面板。之后按用户要求改用 `local-proxy` 连接 `https://lightclaw.tech`，本地代理与上游 `/auth/profile/` 均返回未登录 `401`，页面显示真实未登录/空 Bot 状态，未执行线上写操作。SDK 内部消息滚动继续以现网登录态只读量测（消息区 6076 / 425、`overflow-y:auto`）、未变更的 SDK CSS、聚焦守卫及宿主无外层滚动量测确认。未执行远端 CI、推送、创建 MR 或发布，现网仍是修改前版本。
+
+---
+
+# 国际站升级入口临时收起（2026-09-15）
+
+**Goal / user decision:** 国际站默认隐藏升级入口，控制台 `show()` 后可见；国内站保持默认可见。延续此前 console opt-in 交互，增加区域区分。
+**Scope:** `use-pass-upgrade.ts` 共用资格入口及同职责 rollout helper、资格/国际订阅页/账户页测试、升级规格和本任务记录。复用 `isGlobal`，无域名白名单或本地持久化开关；同一文档内跨组件/SPA 路由共享开关，刷新恢复隐藏，`hide()` 可收起。
+**Non-goals:** 不修本轮下单 500 或未知订单恢复，不变更新购/续费/支付回跳/Agents 升级中状态，不修改后端、架构文档、CI、类型基线或生成器，不合并 MR 或发布。交付时仅按 master 锁文件刷新依赖。
+
+**Delivery approval（2026-09-15）:** 用户已确认当前8文件提交范围、提交/MR标题“国际站升级入口改为手动显示 / fix(frontend): gate intl plan upgrade behind show”，以及提交后合并最新 master、复测、必要的 sourceRevision-only 标准生成同步、正常推送并新建 MR。旧 MR !3941 已合并；不重写历史、不修改无关架构文档或检查器，不扩大生成差异范围。
+
+- [ ] **D1 / 已确认交付：** 提交当前8文件，合并最新 master 并按锁文件刷新依赖；重新验证相关测试、pnpm check、国际构建、文档与实际差异。共享副本若仅需 sourceRevision 更新，由标准脚本单独提交；出现其他生成漂移或门禁范围扩大则停止报告。正常推送并新建 master MR，读回远端状态，不合并或发布。
+
+- [x] **H1 / 入口隐藏与回归：** 先用真实资格 hook 和页面测试复现国际站默认可见；接入共享 show/hide 开关，资格启用条件纳入区域可见性，使隐藏时无升级资格请求、旧目标即时失效，show 后仍须通过既有资格。验证国内默认行为、国际 show/hide、迟到资格响应、显式 upgrade_pass_id、账户链接和既有隐藏工具兼容；同步升级规格，运行聚焦 Vitest、pnpm check、国际构建和差异检查。
+
+**Validation status（合并前）:** 本地实现与验收完成，用户已确认交付；9文件179条相关测试通过，pnpm check 174 current / 276 baseline / 0 new / 102 resolved（49条既有翻译告警）。国际构建 exit 0，607静态页与42公开路由检查通过；文档与实际8文件影响检查通过。项目没有lint脚本，不新增检查器。按TDD先复现默认可见、hide无效、迟到响应和命令挂载兼容再修正；组件测试中错误CTA断言及缺失console类型均已修正。构建生成的next-env路径恢复，未改变依赖、类型基线或共享副本。合并后结果须重新记录，不以本段替代。
+**Review / boundary:** 独立只读复核无Critical/Important；多消费者同序卸载可能保留先前wrapper，属于Minor，未发现当前单入口消费者的功能影响；如新增同时挂载入口，可在本helper内共享注册/引用计数，不扩展全站框架。本次未验证真实支付/浏览器登录态/远端CI，没有提交推送或发布；不表示生产已隐藏，也未修复原下单500。
+
+---
+
+# MR3941 全量复核后的收敛修复（2026-09-12）
+
+**Status（提交前记录）:** 本地实现与验证完成，用户于2026-09-12确认将当前37个文件提交到本地，提交信息为“完善升级异常恢复与提示 / fix(frontend): refine upgrade checkout recovery”。本次包含上一轮尚未提交的本地化、测试、共享副本及本轮优化，不推送、更新MR、合并或发布；最终提交状态以Git记录为准。
+**Goal:** 修复支付迟到响应和查询恢复边界，删除无生产调用的兼容残留。
+**Architecture:** 延续现有组件、请求身份与恢复交互；只为当前支付订单校验有效性，套餐首次查询提供有界恢复，失败终态停止自动读取。无需重写 Provider 或引入依赖。
+**Constraints:** 保留既有未提交增量；正常 modifying 没有60秒交付期限；支付前价格复核、未知 creating 防重、国际返回记录、七语错误处理不变；CI/类型基线/后端均不修改。
+
+- [x] **S1 / 支付与首屏询价：** 修改 `src/pages/marketing/upgrade-pass-modal.tsx` 及两个同名测试。先写“订单取消后旧 URL/授权返回不写回、不导航”的 deferred Promise 测试，确认 RED；使支付请求在取消/终态/交接时失效，await 后检查订单身份。将 `initialOption` 必填并删除首次缺报价的内部兼容，测试传入真实入口报价；保留付款前复核、价变再次确认和取消/拒绝后重新询价。
+- [x] **S2 / 套餐查询恢复与终态：** 修改 `src/contexts/agent-context.tsx`、`agent-settings-page.tsx` 及相邻测试。先以 pending Promise 和假时钟推进60000ms证明首次套餐读取无恢复，再覆盖刷新成功、旧响应无效；普通查询异常展示通用提示及刷新按钮，不谎称升级。对 `status=failed/cancelled` 且 `local_status=payment_failed/provision_failed/cancelled` 停止自动轮询，保留显式刷新和支持入口；未知本地状态继续确认。保留90秒正常 modifying 回归。
+- [x] **S3 / 清理与验收：** 删除 `use-pass-upgrade.ts` 中始终为空的 `UpgradeResume/resume` 和 `subscribe-page.tsx` 不可达分支；现有资格/支付行为回归保持通过。同步本规格、Task Pack、正式runtime设计和必要i18n机械副本；运行双站聚焦 Vitest、`pnpm check`、双站build、共享副本检查、文档/实际变更影响与diff检查；交付后等待验收。
+
+**Validation:** `cd frontend && pnpm exec vitest run src/contexts/__tests__/agent-context-modification.test.tsx src/pages/marketing/__tests__/agent-settings-renewal-reminder.test.tsx src/pages/marketing/__tests__/agent-upgrading-view.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx src/lib/__tests__/use-pass-upgrade.test.tsx`；随后加入双站subscribe/新购续费相邻测试。测试红绿和未验证边界记录于本节；前端无lint脚本仍需如实报告。
+
+---
+
+**Verification:** 新增异常回归先RED后GREEN。独立复核补出的首次重试拒绝、迟到手动状态和错误微任务顺序均已直接复现并修复；分项与最终全分支只读审查Approved。最终国内12文件294通过/1区域跳过，国际11文件270通过/6区域跳过；支付两文件59条、Provider/页面/视图三文件42条包含于聚焦回归。删除重复catch后重新执行双站回归。双站build exit0，静态页97/607、公开路由8/42检查通过。生成路径恢复后重跑pnpm check exit0，174 current / 276 baseline / 0 new / 102 resolved；49条既有翻译告警及172条印尼语缺项保留。共享副本127文件检查、文档和实际37文件影响检查、diff检查通过，正式设计仍需maintainer review。
+**Boundary:** 无lint脚本，未安装新依赖或修改检查器/类型基线；不代表全量前端测试、真实扣款、多标签浏览器、远端CI或生产发布通过。原5176预览保持。全分支复核确认一个基线既存限制：支付请求一直pending时，轮询确认取消后busy/inFlight仍等旧请求结束；本轮未扩展支付在途锁处理，已记录并告知用户。
+
+# MR3941 评审建议增量优化（2026-09-12）
+
+**Status:** 本地实现与验证完成，等待用户验收；未提交、推送、更新 MR 或发布。
+**Goal:** 升级异常提示遵循页面语言，轮询测试使用确定性时钟，复用升级路径和时间常量。
+**Architecture:** 为 billing-error 增加可选翻译能力，升级调用方显式接入；未知后端消息使用本地化 fallback，前端受信校验消息单独标记。保留旧调用语义；不改变窗口句柄、Web Locks、支付状态判定、60 秒异常恢复与 24 小时存储期限。
+**Non-goals:** 不增加支付域名白名单、不重构 Provider、不修历史全量测试或 CI 检查器、不接真实支付。
+
+- [x] **R1 / TDD:** 新增真实 `useT` / 英文字典组件测试，验证询价、下单、支付链接、订单查询的已知码本地化，以及未知消息兜底和前端校验提示保留；先运行确认 RED。为通用 resolver 补可选 translator、受信 UI Error 标记和兼容性测试，接入升级弹窗及订阅页升级询价，补齐字典，再验证 GREEN。
+- [x] **R2 / 回归:** 将弹窗 3 处 4500ms 真实等待改为假时钟，显式推进 3000ms；增加支付窗口关闭、查询断网恢复用例，保留同单与跨标签页记录保护断言。复用 AGENTS_HOME_PATH，给升级轮询与异常等待值命名，数值保持不变。
+- [x] **R3 / 同步与验证:** 标准脚本同步 OpenCraft 生成副本，更新升级规格和对应正式设计；运行聚焦双站测试、pnpm check、双站构建、OpenCraft 检查、文档与实际变更集检查。记录真实结果与未验证项，等待用户验收。
+
+**Validation:** `pnpm exec vitest run src/pages/marketing/__tests__/upgrade-pass-modal.i18n.test.tsx src/pages/marketing/__tests__/upgrade-pass-modal.test.tsx src/lib/__tests__/billing-error.test.ts --maxWorkers=1`；回归再加 Provider、upgrade-checkout、use-pass-upgrade、双站 subscribe 与新购/续费相邻用例。历史全量测试失败及挂起不在本轮范围。
+
+**Verification:** RED 两文件11项失败（39通过），修复后两文件50项通过；最终国内12文件275通过/1区域跳过，国际11文件251通过/6区域跳过。真实字典组件覆盖7种语言，27条新增文案在7份字典均非空。`pnpm check` exit 0，174 current / 276 baseline / 0 new；原有49条翻译告警及172条印尼语缺项不变。双站构建分别生成97/607页，公开路由检查8/42条通过。OpenCraft 标准生成仅更新8份字典/映射及UPSTREAM哈希；漂移检查先失败后通过127文件，完整gate exit 0，852项测试及Web/Expo Web/iOS JS bundle通过。文档、实际32文件影响检查及diff检查通过；正式设计仍需maintainer review。
+**Boundary:** 项目没有lint脚本，`pnpm run lint`返回Missing script，未修改检查器或类型基线。组件/模拟接口验证不代表真实扣款、真实双浏览器标签页竞争或原生iOS编译；未执行远端CI、全量前端挂起测试、预览切换或发布。构建生成的next-env类型路径已恢复为原值。流程技能用于先复现后修复、按实际变化补齐字典副本与验证记录，不新增审批或支付步骤。
+
+---
+
+# MR3941 OpenCraft 共享副本同步计划
+
+**Status（提交前记录）:** 本地同步与验证完成；用户于 2026-09-12 确认将本轮 15 个文件提交到当前隔离分支，仅本地提交，不推送、更新 MR、合并或发布。最终提交状态以本地 Git 记录为准。
+**Size / Mode:** M / single-agent；沿用既有同步与检查脚本，生成文件不手工编辑。
+**Goal:** OpenCraft 的共享副本与当前 frontend 真源一致，补齐 Dialog、i18n 和同步清单。
+**Architecture / Tech Stack:** 使用 `opencraft/scripts/sync-mono2-agent-console.mjs` 的 Node.js 标准生成流程，保留相对 import、portal 和其他平台适配。`frontend` 业务源码、CI / gate / 同步器、依赖及锁文件保持不变。
+**Scope:** 预计更新 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/` 下 `components/ui/dialog.tsx`、`i18n/generated/{en-US,es,id-ID,ja-JP,ko-KR,zh-CN,zh-Hant,zh-to-key}.json`、`repositories/http-repositories.ts` 和 `UPSTREAM.json`；同步本计划、`specs/pass-upgrade.md`、`docs/context/tasks/2026-09-11-pass-modifying-ui.md` 的验证边界。
+**Baseline:** HEAD 为 `151930306`；原 MR 基线和最新已获取 master 均已有 8 份字典及 HTTP Repository 漂移。本 MR 新增 Dialog 漂移并进一步更新字典。允许通过标准同步一并修复这些已确认的副本差异，不改来源代码。
+**Documentation impact:** 生成副本命中 Agent runtime 正式文档映射；在 `docs/engineering/domains/agent-gateway-runtime.md` 补充实际消费边界（共享 Dialog 可选 prop / 平台适配、字典和 Repository 同步、PASS_MODIFYING 数据降级不放宽权限），不修改映射或检查器。
+
+- [x] **V1｜重跑 `cd opencraft && npm run check:mono2-agent-console`，确认以 Dialog drift 退出 1；运行 `npm run sync:mono2-agent-console`，审核生成差异；再次运行检查应校验全部 127 个共享文件。同步规格和 Task Pack。**
+- [x] **V2｜在 OpenCraft 独立 workspace 中按 package-lock 安装缺失依赖，运行 `npm run gate`；补 frontend 聚焦回归、文档与实际变更集检查。原样记录失败及验证边界，不修改检查器或扩大业务范围；完成后等待用户验收。**
+
+**Acceptance:** 漂移检查先失败后通过；清单不含机器绝对路径且 sourceRevision 指向当前 frontend 提交；生成 Dialog 保留 portal 适配，并含 closeLabel、overlayClassName、键盘焦点样式；所有生成语言文件与来源一致。实际验证结果记入本段，不能用本地检查代替远端 CI 或上线结论。
+
+**Verification:** 标准同步更新 11 个生成文件，`check:mono2-agent-console` 从 Dialog drift / exit 1 转为全部 127 文件通过；sourceRevision 为 `1519303060c00d19c7edef45bb9b2a44e78bfa18`。OpenCraft `npm run gate` 最终 exit 0：平台边界、workspace 类型检查、6 组共 852 项测试、Web 构建、Expo Web 导出与 iOS JS bundle 均通过。frontend Repository / 升级弹窗 2 文件 95 passed / 1 skipped，`pnpm check` exit 0（174 current / 276 baseline / 0 new）；文档校验、实际 15 文件变更影响与 `git diff --check` 通过，正式文档仍需 `wisp/mono2-maintainers` review。
+**Environment:** 初次 `npm ci` 遇到共享 npm cache 权限错误，使用临时独立 cache 按既有锁文件安装成功；首次 gate 的终端测试因新装 `node-pty` 的 macOS `spawn-helper` 缺少执行权限失败。仅修复该本地依赖文件的执行权限后，失败用例及完整 gate 均通过；不修改依赖版本、锁文件、业务代码或检查规则。
+**Boundary:** 本轮只补齐生成副本与 4 份规格 / 交接文档；未做真实支付、登录态浏览器验收、iOS 原生编译或远端 CI 查询。前端历史全量测试失败保留独立处理，不能将上述结果表述为全仓测试通过；5176 原预览保持不变。
+
+---
+
+# MR3941 升级异常恢复增量计划
+
+**Status（提交前记录）:** 实现与本地验证完成，用户已于 2026-09-12 确认仅将本轮 18 个文件提交到本地；不推送或更新 MR，不合并、归档或发布。最终提交状态以本地 Git 记录为准。
+**Size / Mode:** M / single-agent，按任务串行 TDD，保留既有 master 测试失败的独立处理范围。
+**Goal:** 补齐订单/账号防护回归，避免异常查询无限等待，保证手动刷新不被轮询丢弃。
+**Architecture:** Provider 管理升级异常计时与请求合并；等待组件只展示恢复操作，套餐元信息查询在暂停时停止。现有订单交付判定、两步支付、默认升级入口保持不变。
+**Tech Stack:** React Context、TypeScript、Vitest、Testing Library，复用现有 Button；支持入口沿用服务条款中的 lightvela@tencent.com 邮箱。
+**Acceptance:** 连续 60 秒套餐缺失或查询失败后暂停自动查询，保留订单和等待状态；手动刷新可恢复同一订单，不重复下单、不把超时判定为支付失败；正常 modifying 不受 60 秒限制。
+**Non-goals:** 不加域名白名单，不修改服务端支付权限或渠道，不统一全站 Dialog 国际化，不重构全局 activePass 语义。
+
+- [x] **CR1｜Developer / Reviewer：在 `src/lib/__tests__/upgrade-checkout.test.ts` 与 `src/contexts/__tests__/agent-context-modification.test.tsx` 增加同 key 不同订单、切账号迟到回调、过期 modifying 测试；删除两处校验时，对应测试各自 RED，恢复后 GREEN。**
+- [x] **CR2｜Developer / Reviewer：先写 Provider 60 秒异常暂停、恢复、正常升级不超时、手动刷新合并及隔离测试，再实现 `agent-context.tsx` 请求协调；在 `agent-upgrading-view.tsx` 与 `agent-settings-page.tsx` 接入暂停/刷新状态，用组件测试覆盖无 Pass 恢复与按钮 loading。补齐卡住请求、注销、卸载取消和 StrictMode 回归。**
+- [x] **CR3｜Developer / Reviewer：同步 `specs/pass-upgrade.md`、Task Pack 与 i18n；运行双区域升级/新购相邻回归、`pnpm check`、双区域构建、文档/变更影响与 diff 检查，记录未验证边界，等待用户验收。**
+
+**Test contract:** `readUpgradeReturn(correctKeyWithWrongDeal) === null`；当前用户 B 的 `beginPassUpgrade(passOfA)` 无状态变化；假时钟 60 秒异常后查询次数停止增长；手动刷新在途时点击多次只排队一次且 Promise 等待补刷完成；正常 modifying 超过 60 秒继续轮询。
+**Verification commands:** `pnpm exec vitest run src/contexts/__tests__/agent-context-modification.test.tsx src/lib/__tests__/upgrade-checkout.test.ts src/pages/marketing/__tests__/agent-upgrading-view.test.tsx --maxWorkers=1`，随后按区域加入订阅、升级弹窗、账户和 Agent 相邻测试；`pnpm check` 与构建串行执行，避免 Fumadocs 共享目录竞争。
+
+**Verification:** 最终聚焦4文件40条通过；国内13文件183条、国际12文件164条通过（国际不运行国内专用 subscribe-page.test.tsx）。`pnpm check` 174 current / 276 baseline / 0 new；新增5条文案各语言补齐，保留原有172条印尼语缺项。串行 `pnpm build:cn` / `pnpm build:global` 分别生成97 / 607页，公开路由检查8 / 42条通过。文档 errors / warnings / broken links 均为空，真实未提交文件列表的变更影响检查和 `git diff --check` 通过。单 Agent 复核；验证阶段不创建审查任务或 MR 评论。
+**Boundary:** UI 由真实 Provider / 组件测试验证，未执行真实扣款或登录态浏览器验收。保留之前用户已确认独立处理的 master 全量测试失败，本轮不重跑全量挂起测试、不改质量基线；定向测试不能表述为全仓测试通过。5176 仍指向原预览工作树，未切到本轮 clean 分支。构建自动生成的 next-env 类型路径已恢复为原值。
+
+---
+
+# 2026-09-11 升配期间实例列表可见性修复
+
+**Status:** 实现与本地验证完成，等待用户验收；尚未 commit、push 或创建 MR。
+
+**Size:** S。仅调整 HTTP Repository 的预期瞬态错误降级逻辑并补回归测试。
+
+**Goal:** 国内站实例升配期间，嵌套 Bot 查询返回 `PASS_MODIFYING` 时仍展示实例列表中的根 Bot；其他 403 鉴权错误继续抛出。
+
+- [x] **Task 1｜Developer / Reviewer：先补失败回归测试，再将 `PASS_MODIFYING` 纳入嵌套 Bot 查询的兼容降级范围，运行定向 Vitest、类型检查与 diff 检查。**
+
+**Acceptance:** `GET /v1/instances` 返回运行中实例、`GET /v1/instances/{id}/bots` 返回 403 `PASS_MODIFYING` 时，Dashboard snapshot 保留该实例；普通 403 仍失败。
+
+**Verification:** 回归用例先按预期失败于 `RepositoryError: pass is modifying（PASS_MODIFYING）`；修复后 Repository 测试 64 passed / 1 skipped，`tsc --noEmit` 与 `git diff --check` 通过。完整 `pnpm check` 因本机只有 Node.js 20、当前 pnpm 11 要求 Node.js 22.13+ 未执行完成；本次无 i18n 文案变更。
+
+---
+
+# 升级套餐交互优化增量计划
+
+**Status（提交前记录）:** 已迁入 frontsandbox/upgrade-interaction-clean，基于本次拉取的 master b3184f39a；pnpm check 和本需求10个文件152条测试通过。用户已明确确认将 master 可复现的测试失败及挂起另行处理，并授权按37个文件范围提交、推送和创建到 master 的 MR。验证结论为有条件通过（风险豁免，非全量测试通过）；最终提交和 MR 状态以工蜂记录为准，不代表合并或发布。
+
+**Goal:** 国内 / 国际订阅页点击“升级至此套餐”后，先在按钮内显示询价 loading，拿到当前目标套餐的有效报价后才打开完整确认弹窗。
+
+**Design:** SubscribePage 发起点击询价，校验来源套餐、目标 ID 与金额；成功后把 PassModifyOption 传给 UpgradePassModal 作为首屏数据，避免弹窗重复初次询价。支付前的重新询价、价格变化再次确认及支付后 Agent 升级等待保持不变。失败在操作按钮旁提示并恢复重试；重复点击不重复请求，切换套餐 / 计费时长 / 身份、离开页面使在途响应失效。
+
+**当前规格：** [升级套餐交互](specs/pass-upgrade.md)。覆盖默认展示、按钮询价 / 创建订单 loading、双站支付、目标套餐等待页及交付判定；以下 Task 1–7 验证记录保留各轮历史含义。
+
+- [x] **Task 1：先补国内 / 国际组件测试，验证按钮 loading、报价前无弹窗、失败可重试、报价失效与重复点击；补真实弹窗初始报价及支付前复核测试。**
+- [x] **Task 2：在 next-site/subscribe-page.tsx 前移询价并传入初始报价，在 src/pages/marketing/upgrade-pass-modal.tsx 复用首屏报价，保持 16 / 12 / 8px 圆角与支付流程。**
+- [x] **Task 3：运行上述测试、新购相邻回归、pnpm check 与构建；记录本轮验证边界，等待用户验收。**
+- [x] **Task 4：支付按钮点击后保留确认弹窗及完整订单信息，按钮内 loading 覆盖价格复核、订单创建与支付凭证准备；只有二维码 / 卡支付链接就绪后才进入支付视图。补双站异步分段测试、防重复提交及失败 / 刷新回归，运行检查与构建。**
+
+**Verification:** 聚焦6个测试文件99条通过；pnpm check 为174 current / 276 baseline / 0 new；pnpm build:cn 与 pnpm build:global 分别完成97 / 607页静态生成、8 / 42条公开路由检查。独立只读审查无 Critical / Important 问题。本轮交互由组件测试验证，未执行真实支付；5176 保持国内开发预览。
+
+**Task 4 Verification:** 双站分段异步测试及相关回归6个文件100条通过；pnpm check 通过（174 current / 276 baseline / 0 new）；本次 pnpm build:cn 完成97页静态生成与8条公开路由检查。独立只读增量审查无阻断项；未执行真实支付、提交或发布。
+
+- [x] **Task 5：升级加载页删除模型积分；通过当前 Pass 的升级订单目标 ID 与套餐目录展示“目标套餐”，保留到期时间。未获取到目标时显示占位，不使用旧套餐冒充；补恢复、失败和迟到响应测试，不改支付及交付判定。**
+
+**Task 5 Verification:** 8个相关测试文件113条通过，pnpm check 为174 current / 276 baseline / 0 new，国内构建生成97页并完成8条公开路由检查；独立只读审查无实际阻断项。通过组件测试验证信息卡与刷新恢复，未执行真实支付；保留5176开发预览，未提交或发布。
+
+- [x] **Task 6：保存本次26个文件，合入最新 master 并恢复本次修改，核验双方功能与翻译，完成合并后回归、项目检查和双站构建，仅提交本地。**
+
+**Task 6 Verification:** 基于 ac29594cac4feb07070c244e2ea6882f8fa8b705（最新拉取的 master）恢复26个文件；计划文档保留双方章节，翻译逐 key 核验双方新增 / 修改值均无遗漏。15个文件517条测试通过、1条原有跳过；pnpm check 为174 current / 276 baseline / 0 new；国内 / 国际构建分别生成97 / 607页、完成8 / 42条公开路由检查；独立只读合并复核无阻断项。用户已确认仅本地提交，不推送或创建 MR。
+
+- [x] **Task 7：删除升级入口及确认弹窗的 show / hide 控制台开关和域名门禁；保留登录、业务启用条件与后端可升级资格。先补双站生产域名默认展示及匿名保护测试，再修改实现，运行相关回归与项目检查；本轮不提交或发布。**
+
+**Task 7 Verification:** 新回归先按预期出现6条失败（四个生产域名无合法目标、双站弹窗隐藏），删除开关后7个测试文件123条通过，覆盖升级资格、双站订阅、支付弹窗、账户和其他 show 功能；pnpm check 通过（174 current / 276 baseline / 0 new），独立只读审查无问题。5176 /subscribe 返回200仅验证预览可用性，交互由组件测试验证；本轮未重新构建、执行真实支付、提交或发布。
+
+- [x] **Task 8：按用户要求将最新实现同步至 OpenSpec：新增升级套餐当前规格和变更记录，补全套餐 / 营销入口引用；区分支付成功与交付完成、当前规则与历史记录，校验文档链接及相关测试，不修改业务代码或提交。**
+
+**Task 8 Verification:** 9个相关测试文件132条通过；仓库文档检查 errors / warnings / broken links 均为空，额外校验本次新增 / 修改的12个本地链接及 OpenSpec YAML 通过，git diff --check 通过。业务源码 diff 哈希与文档更新前一致；历史 pnpm check / 构建结果单独标注，本轮不重跑构建或真实支付，未提交或发布。
+
+- [x] **Task 9：基于最新 master b3184f39a 创建 frontsandbox/upgrade-interaction-clean，迁入 289b835ff 与其后14个文件的未提交增量，保留旧分支和5176预览；完成 pnpm check、全量测试和差异复核后，展示最终内容并等待提交 / 推送 / MR 确认。**
+
+- [x] **Task 10：修正全量测试发现的关联测试夹具缺口：账户页挂载新增 refreshPasses 调用，实名测试需提供与真实 Context 一致的异步方法；保留实名流程原有断言，复跑失败用例及相邻回归。其余失败在 master 基线对照确认，不修改无关业务或质量基线。**
+
+**Task 9–10 Verification:** clean 工作树包含37个变更文件，原工作树和5176预览保留。独立依赖副本下 pnpm check 通过（174 current / 276 baseline / 0 new）；本需求及实名相邻测试10个文件152条通过。全量首次执行有49条失败，其中20条实名失败已补齐 mock 并转绿；剩余29条失败与 master 独立副本中的失败名称集合完全一致，另有相同的 node:test 加载错误。旧 PlanSelectPage 测试持续重渲染，主运行中终止该 worker 后产生一个 worker error；master 单测20秒仍未结束后受控终止。复测组合共23个文件、217 passed / 29 failed，包含上述152条相关测试；不能据此声明全量测试通过。文档校验及 git diff / cached --check 通过。完整失败清单与待确认交付范围见 [变更记录](changes/2026-09-11-pass-upgrade-interaction.md#clean-分支交付准备)。
+
+---
+
+# 国际站首页顶部入口与多语言展示修复 Implementation Plan
+
+**Status:** 国际站 Footer、顶部入口、日语/韩语动态标题句尾及中文 Footer 全量本地化均已验证，等待用户验收；未 commit、push 或创建 MR。
+
+**Size:** M。国际站首页移除顶部重复“开始使用”入口；简中、繁中 Footer 改用国际六列布局并保留版权两行文案；日语、韩语动态标题句尾与轮播词同步入场；同步生成片段、资源版本与聚焦测试。国内站保持原行为。
+
+**Goal:** 国际站首页顶部只保留语言切换与登录/头像；简中、繁中 Footer 的六个区块在桌面同一行，版权保持指定的两行格式；日语 `になります` 与韩语 `입니다` 不早于动态词显示。
+
+**Decision:** 首页运行层仅在国际区域关闭 `showProductEntry`，国内区域保持原值；国际首页导入器生成 Footer 时移除源中文模板遗留的 `foot--domestic` 类，使 `zh-SG`、`zh-Hant` 使用与其他国际语言一致的六列布局；保留版权节点原有 `<br>`，并更新静态资源版本。
+
+- [x] **Task 1｜Developer：用失败测试锁定 zh-SG、zh-Hant Footer 不带 `foot--domestic`、六个区块同列且版权含 `<br>`，再修正导入器并同步静态片段。**
+- [x] **Task 2｜Developer：用失败测试锁定国际站首页不显示顶部重复“开始使用”入口，同时确认国内页头与 Hero 行为保持原样，再完成国际站浏览器验收。**
+- [x] **Task 3｜Developer：用失败测试锁定日语、韩语句尾与动态词共享入场延迟，修正生成源、静态产物与资源版本并完成浏览器验收。**
+- [x] **Task 4｜Developer：恢复国际站简中、繁中 Footer CTA、栏目标题与链接的完整本地化文案并补充回归测试；按产品要求保留英文版权两行。**
+
+**Acceptance:** `index-fragment.zh-SG.html` 与 `index-fragment.zh-Hant.html` 的 Footer 使用国际六列布局，“相关产品 / 相關產品”与其余栏目同一行；版权严格显示为 `© 2026 LightVela. All rights reserved.` 换行 `Built by Tencent Lighthouse.`；中文 Footer CTA、栏目标题与链接使用对应简体/繁体文案；国际站顶部不显示重复“开始使用”入口；日语 `になります`、韩语 `입니다` 与动态词同步入场；国内站行为保持不变。
+
+**Verification:** 5 个相关测试文件共 77 项通过；`pnpm check` 通过（TypeScript 191 个当前诊断、276 个基线、0 个新增）；1280px 浏览器实测国际站六个 Footer 区块 top 坐标一致、版权含 1 个 `<br>`、页面无横向溢出；497px 移动端实测 Footer 单列且无页面级溢出；日语动态词与句尾同为 `2490ms` 入场、韩语同为 `2520ms`，移动端和减少动态效果场景均取消入场动画并保持可见；国际站 7 个 locale 的 Footer 与 CTA 文案完成静态和浏览器复核，简中、繁中栏目与链接已恢复对应中文且保留指定英文版权；国际站顶部不再请求重复“开始使用”入口，国内页头、Hero 与 Footer 行为保持修改前基线；独立代码评审发现的移动端/减少动态效果初始隐藏优先级问题已补充回归测试并修复。
+
+---
+
+# 9 月 7 日 Hermes Agent 升级公告 Implementation Plan
+
+**Status:** 首版已本地合并；方案 A 增量调整已实现并验证，等待用户确认第二次提交；尚未 push。
+
+**Size:** M。业务逻辑集中在一个组件；两份现有测试和七种语言生成字典需要同步更新，预计影响文件超过 5 个。
+
+**Goal:** 国内站和国际站首页在 2026-09-07 晚展示 Hermes Agent 升级公告，并于北京时间/新加坡时间 2026-09-08 02:00 自动撤下。
+
+**Design:** `openspec/spec.md` 顶部“9 月 7 日 Hermes Agent 升级公告 Spec”。
+
+**Files:**
+- Modify: `src/components/site/maintenance-announcement-banner.tsx`
+- Modify: `src/components/site/__tests__/maintenance-announcement-banner.cn.test.tsx`
+- Modify: `src/components/site/__tests__/maintenance-announcement-banner.locale.test.tsx`
+- Modify: `next-site/international-home-runtime.tsx`
+- Modify: `next-site/__tests__/international-home-rendering.test.tsx`
+- Modify: `public/lightvela-intl-home/style.css`
+- Modify: `next-site/__tests__/international-home-page.test.tsx`
+- Modify: `src/i18n/generated/{en-US,es,id-ID,ja-JP,ko-KR,zh-CN,zh-Hant,zh-to-key}.json`
+
+- [x] **Task 1｜Developer：测试先行更新 `0907-hermes-agent-upgrade` 公告，国内站使用北京时间、国际站使用新加坡时间，窗口为 2026-09-07 22:00 至次日 02:00；保留国际站计费公告及既有轮播/关闭行为，同步全部公开语言；在实际 V2 首页入口挂载公告并补偿固定导航，完成定向 Vitest、i18n、类型、双区域构建、浏览器 smoke 与 `git diff --check`。**
+- [x] **Task 2｜Developer：测试先行移除国际站已下线的公测计费公告、轮播状态与前后切换控件；公告正文使用自动外边距实现可用宽度充足时居中、空间不足时从开头横向滚动，并完成组件回归、类型检查和国际站浏览器验证。**
+
+**Acceptance:** 国内站首页显示北京时间公告；国际站各 locale 首页显示新加坡时间公告；国际站已下线公测计费公告与轮播控件不再渲染；公告在可用宽度充足时居中、过长时从开头横向滚动；旧关闭记录不会隐藏新公告；2026-09-08 02:00 到点自动隐藏；其他页面不显示；桌面和移动端无新增遮挡或页面级横向溢出。
+
+**Verification:** 定向 Vitest 5 files / 58 tests 通过；`pnpm i18n:check`、`pnpm i18n:zh-hant:check` 和 `pnpm check` 通过，TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0；`pnpm build:cn` 生成 96 个静态页面，`pnpm build:global` 生成 606 个静态页面；国内/国际站桌面 1280×720 与移动端 390×844 共 4 个浏览器用例通过，公告文案、36px 导航偏移和页面无横向溢出均有截图与 DOM 尺寸证据；独立只读代码审查无 Critical / Important / Minor 问题；`git diff --check` 通过。
+
+**Task 2 Verification:** 回归测试经历 RED（2 tests failed）后转为 GREEN（5 files / 58 tests passed）；`pnpm check` exit 0，TypeScript diagnostics 0 new，i18n 结构错误 0；国际站 1280px 浏览器实测正文中心偏差 0px、页面宽度 1280px、旧公测文案和轮播按钮均为 0，856px 窄窗口从正文开头横向滚动且页面宽度未溢出。
+---
+
 # MR !3566 CR Follow-up Implementation Plan
 
 **Status:** 实现与验证完成，等待用户确认 commit；尚未 push 或更新 MR。
@@ -135,7 +402,7 @@
 
 # 已配置模型 Provider 分组切换 Implementation Plan
 
-**Status:** 共享接入地址与模型、但凭据身份不同的 Provider 已可独立显示并分别写入或取消备用链；模型行字体强调已降低，“添加模型”按钮已移至表单右下角，备用模型标签已统一为灰色，等待提交确认；不自动 commit、push 或更新 MR。
+**Status:** 共享接入地址与模型、但凭据身份不同的 Provider 已可独立显示并分别写入或取消备用链；模型名称与文字操作按钮字号已统一，三种文字操作状态均使用带边框按钮，“添加模型”按钮已移至表单右下角，主备模型标签默认同排且空间不足时自动换行，备用模型使用带边框的灰色标签框；历史 `custom + Auto` 与其他 `custom` 分组分别显示“默认模型”和“自定义模型”，等待提交确认；不自动 commit、push 或更新 MR。
 
 **Size:** M。产品边界仍只在模型配置域，但连同既有分组改动将涉及面板、Hermes 配置命令、两组测试及 OpenSpec，文件数超过 S 级上限；不修改 SDK、Hermes action 协议、凭据存储、Provider 目录或后端接口。
 
@@ -153,12 +420,20 @@
 - [x] **Developer｜测试先行将展开分组内的模型名称改为小号常规字重，并让三个行内操作按钮使用常规字重；不影响 Provider 标题、状态标签或全局 Button。**
 - [x] **Developer｜测试先行将“添加模型”按钮在所有屏宽下移至表单右下角，保持按钮内容宽度、禁用条件和点击逻辑不变。**
 - [x] **Developer｜测试先行将 Provider 标题与模型行中的备用模型标签统一改为现有 neutral 灰色，保留主模型绿色及其他状态语义。**
+- [x] **Developer｜测试先行为 Provider 标题与模型行中的备用模型标签补充灰色边框，保留 neutral 背景并且不影响可选模型、未启用等其他状态。**
+- [x] **Developer｜测试先行将 Provider 标题中的主、备用模型标签从固定上下排列改为默认同排、空间不足时自动换行。**
+- [x] **Developer｜测试先行将模型行删除操作改为只显示图标，同时保留多语言可访问名称、禁用状态与确认流程。**
+- [x] **Developer｜测试先行移除目录候选模型行的“可选模型”状态标签，保留主备切换操作及已保存模型的角色状态。**
+- [x] **Developer｜测试先行将展开分组内的模型名称与主、备用模型文字操作按钮统一为 `text-xs font-normal`，纯图标删除按钮保持不变。**
+- [x] **Developer｜测试先行将“设为主模型”“设为备用模型 / 取消备用”统一为 outline 边框按钮，禁用时保留边框并使用既有置灰状态。**
+- [x] **Developer｜测试先行将历史 `custom + Auto` Provider 标题显示为“默认模型”，其他 `custom` 显示为“自定义模型”，并补齐全部展示语言。**
+- [x] **Developer｜测试先行将已保存但未承担主、备用角色的模型状态由“未启用”改为“已添加”，目录候选仍不显示状态标签。**
 
-**Acceptance:** 当前主模型所在 Provider 默认展开；Provider 行按组内角色显示带模型名称的主、备用模型标签，同时承担两种角色时分两行显示且主模型在上，多个备用模型合并在备用模型标签内，不再显示“当前生效”；每组同时显示已保存模型和严格匹配的产品目录模型；标题区和 Provider 行不显示可能包含目录候选的模型数量；已配置区优先使用目录模型名称并与添加模型选择器保持一致；目录候选显示“可选模型”，已保存闲置模型显示“未启用”；目录模型可用现有 `assign` 直接设为主/备用并持久化，操作不重新添加、不探测、不要求 API Key；共享接入地址和模型的不同已配置 Provider 在凭据身份不同时仍分别显示、可同时作为备用模型并独立取消；未保存目录模型不显示删除，自定义/地址不匹配 Provider 不被错误合并。
+**Acceptance:** 当前主模型所在 Provider 默认展开；Provider 行按组内角色显示带模型名称的主、备用模型标签，同时承担两种角色时优先同排、空间不足时自动换行，多个备用模型合并在带灰色边框的 neutral 标签框内，不再显示“当前生效”；历史 `custom + Auto` 与其他 `custom` Provider 标题分别显示“默认模型”和“自定义模型”；每组同时显示已保存模型和严格匹配的产品目录模型；标题区和 Provider 行不显示可能包含目录候选的模型数量；已配置区优先使用目录模型名称并与添加模型选择器保持一致；目录候选不显示状态标签，已保存闲置模型显示“已添加”；目录模型可用现有 `assign` 直接设为主/备用并持久化，操作不重新添加、不探测、不要求 API Key；模型名称与主、备用模型文字操作按钮统一使用 `text-xs font-normal`，三种文字操作状态均显示 outline 边框，禁用时保留边框并整颗置灰；删除操作仅显示图标并保留多语言可访问名称；共享接入地址和模型的不同已配置 Provider 在凭据身份不同时仍分别显示、可同时作为备用模型并独立取消；未保存目录模型不显示删除，自定义/地址不匹配 Provider 不被错误合并。
 
 **Out of scope:** SDK 面板、Hermes 配置格式、凭据存储、Provider/模型目录、路由策略、后端接口及发布。
 
-**Verification:** 初始 Provider 分组用例先按预期 RED；目录模型增量中，面板与 Hermes 客户端各 1 项按预期 RED；Provider 标签增量 4 项按预期 RED；同端点同模型备用链、主模型冲突清理、模型行排版、添加按钮对齐及备用标签灰色增量也分别先按预期 RED。最终面板 34/34、Hermes 客户端 47/47、模型配置目录 137 项通过（另 1 条按环境跳过）GREEN。模型行排版、添加按钮对齐及两处备用标签颜色专项均完成 RED→GREEN。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 结构错误 0）；`pnpm i18n:check` 通过（2699 条文案，印尼语既有缺口 174 条）；浏览器 Mock 证明同一 Provider 的主、备用模型标签带具体模型名称、分两行且主模型在上，390px 下无横向溢出。`git diff --check` 通过。
+**Verification:** 初始 Provider 分组用例先按预期 RED；目录模型增量中，面板与 Hermes 客户端各 1 项按预期 RED；Provider 标签增量 4 项按预期 RED；同端点同模型备用链、主模型冲突清理、模型行排版、添加按钮对齐、备用标签灰色、标签按需换行、纯图标删除按钮、目录候选状态标签移除、文字字号统一、文字按钮边框统一、`custom` 标题映射及闲置状态“已添加”增量也分别先按预期 RED。最终模型配置目录 159 项通过 GREEN，文字按钮边框、字号统一、纯图标删除、目录候选状态、`custom` 标题及“已添加”状态专项均通过。`pnpm check` 通过（TypeScript diagnostics 191 current / 276 baseline / 0 new / 85 resolved，i18n 源文案 2694 条、结构错误 0）；本地 Mock 预览返回 HTTP 200。`git diff --check` 通过。
 
 ---
 
@@ -6028,3 +6303,9 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 > 首轮实现已完成定向测试、Docs parity、`pnpm check`、国际/国内生产构建和 `git diff --check`。用户已明确排除仓库全量测试中的无关历史失败，并确认法务页沿用“本地化译文 + 英文版本为准”的西语模式；本轮继续修正文案、开放日韩入口并做专项验收。
 
 ---
+
+## 2026-09-03 模型 API 统一七彩石目录
+
+- 所有预置 API Provider 的模型列表统一读取七彩石 `models`，不再展示或调用“获取可用模型”。
+- 七彩石目录为空时保留 Provider，模型选择器置灰并显示“暂无可用模型”；自定义模型仍支持实时探测与手动输入。
+- 验证：模型配置专项 163/163 passed；`pnpm check`、i18n check/validate、`git diff --check` 均通过。

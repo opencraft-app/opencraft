@@ -31,6 +31,388 @@ const model = {
 };
 const configuredModel = { ...model, providerKey: "lightvela-deepseek", keyEnv: "KEY_lightvela_deepseek" };
 const snapshot = { primary: configuredModel, fallbacks: [], configuredModels: [configuredModel] };
+
+describe("reset to the platform default model", () => {
+  const platformModel = {
+    id: "auto",
+    providerKey: "custom",
+    providerName: "custom",
+    baseUrl: "https://gateway.lightvela.test/v1",
+    apiMode: "chat_completions",
+    keyEnv: "",
+  };
+
+  it("rebuilds the selected Profile from platform input instead of trusting local custom config", () => {
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      {
+        model: { provider: configuredModel.providerKey, default: configuredModel.id },
+        fallback_providers: [{ provider: "stale", model: "stale-model" }],
+        providers: {
+          [configuredModel.providerKey]: {
+            name: configuredModel.providerName,
+            base_url: configuredModel.baseUrl,
+            transport: "openai_chat",
+            key_env: configuredModel.keyEnv,
+            model: configuredModel.id,
+          },
+        },
+        lightvela: { model_config: { configured_models: [configuredModel] }, retained: true },
+        unrelated: { retained: true },
+      },
+      {},
+      { [configuredModel.keyEnv]: apiKey, UNRELATED_SECRET: "keep-me" },
+    );
+
+    expect(parseHermesModelConfigResponse(reset.output).primary).toMatchObject({
+      providerKey: "custom",
+      id: "auto",
+      baseUrl: platformModel.baseUrl,
+    });
+    expect(reset.config).toEqual({
+      model: {
+        provider: "custom",
+        default: "auto",
+        api_mode: "chat_completions",
+        base_url: platformModel.baseUrl,
+      },
+      providers: {
+        custom: {
+          name: "custom",
+          base_url: platformModel.baseUrl,
+          model: "auto",
+          transport: "openai_chat",
+          discover_models: true,
+          key_env: "KEY_custom",
+          models: { auto: { lightvela_configured: true } },
+        },
+      },
+      lightvela: { retained: true },
+      unrelated: { retained: true },
+    });
+    expect(reset.credentials).toEqual({ KEY_custom: "platform-default-secret", UNRELATED_SECRET: "keep-me" });
+    expect(reset.events).toEqual(["save_credential", "save_config", "remove_credential"]);
+  });
+
+  it("scopes the client reset command to the selected named Profile without exposing the key", async () => {
+    const exec = vi.fn()
+      .mockResolvedValueOnce({ status: "succeeded", exitCode: 0, output: response({ ok: true, credentialEnvelope: envelopePreparation }) })
+      .mockResolvedValueOnce({ status: "succeeded", exitCode: 0, output: response({ ok: true, snapshot: { primary: platformModel, fallbacks: [], configuredModels: [platformModel] } }) });
+
+    await createHermesModelConfigClient(exec, "bot-sales", "sales").resetToPlatformDefault({
+      apiKey: "platform-default-secret",
+      model: platformModel,
+    });
+
+    expect(exec).toHaveBeenCalledTimes(2);
+    const command = exec.mock.calls[1]?.[1] ?? "";
+    expect(command).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'sales\'');
+    expect(command).not.toContain("platform-default-secret");
+    const encoded = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
+    const action = JSON.parse(Buffer.from(encoded!, "base64").toString("utf8")) as Record<string, unknown>;
+    expect(action).toMatchObject({ type: "resetToPlatformDefault", model: platformModel });
+    expect(action).not.toHaveProperty("apiKey");
+  });
+
+  it("rolls config and credentials back when platform reset validation fails", () => {
+    const originalConfig = {
+      model: { provider: configuredModel.providerKey, default: configuredModel.id },
+      providers: {
+        [configuredModel.providerKey]: {
+          name: configuredModel.providerName,
+          base_url: configuredModel.baseUrl,
+          transport: "openai_chat",
+          key_env: configuredModel.keyEnv,
+          model: configuredModel.id,
+        },
+      },
+    };
+    const originalCredentials = { [configuredModel.keyEnv]: apiKey };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { CORRUPT_SAVED_ROLE: "1" },
+      originalCredentials,
+    );
+
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toMatchObject(originalConfig);
+    expect(reset.config.providers).not.toHaveProperty("custom");
+    expect(reset.credentials).toEqual(originalCredentials);
+  });
+
+  it("rolls config and credentials back when obsolete credential cleanup fails", () => {
+    const originalConfig = {
+      model: { provider: configuredModel.providerKey, default: configuredModel.id },
+      providers: {
+        [configuredModel.providerKey]: {
+          name: configuredModel.providerName,
+          base_url: configuredModel.baseUrl,
+          transport: "openai_chat",
+          key_env: configuredModel.keyEnv,
+          model: configuredModel.id,
+        },
+      },
+    };
+    const originalCredentials = { [configuredModel.keyEnv]: apiKey };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { FAIL_REMOVE_CREDENTIAL: "1" },
+      originalCredentials,
+    );
+
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toMatchObject(originalConfig);
+    expect(reset.config.providers).not.toHaveProperty("custom");
+    expect(reset.credentials).toEqual(originalCredentials);
+  });
+
+  it("fails before writing when the existing credential snapshot cannot be read", () => {
+    const originalConfig = {
+      model: { provider: configuredModel.providerKey, default: configuredModel.id },
+      providers: {
+        [configuredModel.providerKey]: {
+          name: configuredModel.providerName,
+          base_url: configuredModel.baseUrl,
+          transport: "openai_chat",
+          key_env: configuredModel.keyEnv,
+          model: configuredModel.id,
+        },
+      },
+    };
+    const originalCredentials = { [configuredModel.keyEnv]: apiKey };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { FAIL_LOAD_ENV: "1" },
+      originalCredentials,
+    );
+
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toEqual(originalConfig);
+    expect(reset.credentials).toEqual(originalCredentials);
+    expect(reset.events).toEqual([]);
+  });
+});
+
+describe("append models to a saved Provider", () => {
+  const config = {
+    model: { provider: "lightvela-deepseek", default: "deepseek-v3" },
+    providers: {
+      "lightvela-deepseek": {
+        name: "DeepSeek", base_url: model.baseUrl, transport: "openai_chat",
+        key_env: configuredModel.keyEnv, model: model.id, discover_models: true,
+        models: { "deepseek-v3": { context_length: 64000 }, "catalog-only": {} },
+        extra_headers: { "X-Test": "preserved" },
+      },
+    },
+  };
+
+  it("appends without credentials or role changes and retains explicit models on subsequent reads", () => {
+    const result = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: "new-model" }, config, {}, { [configuredModel.keyEnv]: apiKey });
+    const saved = parseHermesModelConfigResponse(result.output);
+    expect(saved.configuredModels.map((item) => item.id)).toEqual(expect.arrayContaining([model.id, "new-model"]));
+    expect(saved.configuredModels.map((item) => item.id)).not.toContain("catalog-only");
+    expect(result.config.model).toEqual(config.model);
+    expect(result.credentials).toEqual({ [configuredModel.keyEnv]: apiKey });
+    expect(result.events).not.toContain("save_credential");
+    expect(result.config.providers).toMatchObject({ "lightvela-deepseek": {
+      model: model.id, discover_models: true, extra_headers: { "X-Test": "preserved" },
+      models: { "deepseek-v3": { context_length: 64000 }, "new-model": { lightvela_configured: true } },
+    } });
+    const reread = runHelper({ type: "read" }, result.config, {}, result.credentials);
+    expect(parseHermesModelConfigResponse(reread.output).configuredModels.map((item) => item.id)).toContain("new-model");
+  });
+
+  it("rejects a stale endpoint without touching configuration", () => {
+    const result = runHelper({ type: "appendProviderModel", anchor: { ...configuredModel, baseUrl: "https://other.invalid/v1" }, modelId: "new-model" }, config, {}, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain("provider_changed");
+    expect(result.config).toEqual(config);
+  });
+
+  it("treats an exact existing model as an idempotent append without writes", () => {
+    const result = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: model.id }, config, {}, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesModelConfigResponse(result.output).primary?.id).toBe(model.id);
+    expect(result.config).toEqual(config);
+    expect(result.events).not.toContain("save_config");
+  });
+
+  it("keeps case-variant model IDs independent through append, fallback assignment and deletion", () => {
+    const variantId = model.id.toUpperCase();
+    const appended = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: variantId }, config, {}, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesModelConfigResponse(appended.output).configuredModels.map((item) => item.id)).toEqual([model.id, variantId]);
+    const removedIdle = runHelper({ type: "remove", providerKey: configuredModel.providerKey, modelId: variantId }, appended.config, {}, appended.credentials);
+    expect(removedIdle.config.providers).toMatchObject({ [configuredModel.providerKey]: { model: model.id } });
+    const assigned = runHelper({ type: "assign", providerKey: configuredModel.providerKey, modelId: variantId, purpose: "fallback" }, appended.config, {}, appended.credentials);
+    const saved = parseHermesModelConfigResponse(assigned.output);
+    expect(saved.primary?.id).toBe(model.id);
+    expect(saved.fallbacks.map((item) => item.id)).toEqual([variantId]);
+    const removed = runHelper({ type: "remove", providerKey: configuredModel.providerKey, modelId: variantId }, assigned.config, {}, assigned.credentials);
+    expect(parseHermesModelConfigResponse(removed.output).configuredModels.map((item) => item.id)).toEqual([model.id]);
+    expect(removed.config.model).toEqual(config.model);
+    expect(removed.credentials).toEqual(appended.credentials);
+  });
+
+  it.each([true, false])("requires an exact model ID for append read-back confirmation (exact: %s)", async (exact) => {
+    const recovered = { ...snapshot, configuredModels: [{ ...configuredModel, id: exact ? "Model-A" : "model-a" }] };
+    const exec = vi.fn().mockRejectedValueOnce(new Error("transport failed"))
+      .mockResolvedValueOnce({ status: "succeeded", exitCode: 0, output: response({ ok: true, snapshot: recovered }) });
+    const result = createHermesModelConfigClient(exec, "bot-1").append(configuredModel, "Model-A");
+    if (exact) await expect(result).resolves.toEqual(recovered);
+    else await expect(result).rejects.toThrow("save_unknown");
+    expect(exec).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["missing", "non_callable"])("fails closed when credential-safe transport is %s", (transport) => {
+    const result = runHelper({ type: "probeConfiguredModel", anchor: configuredModel, modelId: "new-model" }, config,
+      { MODEL_REQUEST_STATUS: "200", SAFE_TRANSPORT: transport }, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesConnectionProbeResponse(result.output).success).toBe(false);
+    expect(result.modelRequest).toBeNull();
+    expect(result.config).toEqual(config);
+    expect(result.output).not.toContain(apiKey);
+  });
+
+  it("rolls back a write whose reloaded main role changed", () => {
+    const result = runHelper({ type: "appendProviderModel", anchor: configuredModel, modelId: "new-model" }, config, { CORRUPT_SAVED_ROLE: "1" }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain("save_failed");
+    expect(result.config).toEqual(config);
+  });
+
+  it("discovers using saved credentials and headers without writing or returning secrets", () => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "200", DISCOVERED_MODELS: '[{"id":"new-model"}]' }, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesModelConfigResponse(result.output).probedModels).toEqual(["new-model"]);
+    expect(result.config).toEqual(config);
+    expect(result.modelRequest).toMatchObject({ method: "GET", url: model.baseUrl + "/models", headerNames: expect.arrayContaining(["authorization", "x-test"]) });
+    expect(result.output).not.toContain(apiKey);
+    expect(result.events).not.toContain("save_config");
+    expect(result.events).toContain("probe");
+  });
+
+  it.each([401, 403, 404])("reports a saved-provider discovery HTTP %s without modifying configuration", (status) => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: String(status) }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain(status === 404 ? "discovery_unsupported" : "credential_rejected");
+    expect(result.config).toEqual(config);
+  });
+
+  it.each(["oversized", "malformed"])("rejects a %s catalog and keeps configuration unchanged", (catalog) => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "200", CATALOG_RESPONSE: catalog }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain("discovery_failed");
+    expect(result.config).toEqual(config);
+    expect(result.output).not.toContain(apiKey);
+  });
+
+  it("retains fallback authentication failures instead of reporting the root 404", () => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "404", ALTERNATE_MODEL_STATUS: "401" }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain("credential_rejected");
+    expect(result.config).toEqual(config);
+  });
+
+  it("fails closed on legacy Hermes without safe standard catalog transport", () => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      {}, { [configuredModel.keyEnv]: apiKey }, true);
+    expect(result.output).toContain("discovery_unsupported");
+    expect(result.modelRequest).toBeNull();
+    expect(result.config).toEqual(config);
+  });
+
+  it.each([
+    ["timeout", "discovery_timeout"],
+    ["url_timeout", "discovery_timeout"],
+    ["url_error", "discovery_failed"],
+    ["unexpected", "discovery_failed"],
+  ])("classifies %s and keeps discovery diagnostics free of credentials", (failure, code) => {
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, config,
+      { MODEL_REQUEST_STATUS: "200", DISCOVERY_FAILURE: failure, FAILURE_SECRET: apiKey }, { [configuredModel.keyEnv]: apiKey });
+    expect(result.output).toContain(code);
+    expect(result.output).not.toContain(apiKey);
+    expect(result.output).not.toContain(model.baseUrl);
+    expect(result.config).toEqual(config);
+    if (code === "discovery_failed") {
+      const diagnostic = result.output.split("\n").find((line) => line.startsWith("LIGHTVELA_MODEL_DIAGNOSTIC "));
+      expect(diagnostic).toBeDefined();
+      const fields = JSON.parse(diagnostic!.slice("LIGHTVELA_MODEL_DIAGNOSTIC ".length));
+      expect(fields).toMatchObject({ operation: "probe_saved_provider", code: "discovery_failed", helperLines: expect.any(Array) });
+      expect(fields.helperLines.length).toBeGreaterThan(0);
+      expect(Object.keys(fields).sort()).toEqual(["code", "helperLines", "operation"]);
+    }
+  });
+
+  it.each(["x".repeat(513), "invalid\u0001model"])("rejects an invalid model ID before append or probe", (modelId) => {
+    for (const type of ["appendProviderModel", "probeConfiguredModel"] as const) {
+      const result = runHelper({ type, anchor: configuredModel, modelId }, config, {}, { [configuredModel.keyEnv]: apiKey });
+      expect(result.output).toContain("invalid_model");
+      expect(result.config).toEqual(config);
+      expect(result.modelRequest).toBeNull();
+    }
+  });
+
+  it.each([200, 401, 429])("checks the selected unsaved model with saved credentials (HTTP %s), without adding it", (status) => {
+    const result = runHelper({ type: "probeConfiguredModel", anchor: configuredModel, modelId: "new-model" }, config,
+      { MODEL_REQUEST_STATUS: String(status) }, { [configuredModel.keyEnv]: apiKey });
+    const connection = parseHermesConnectionProbeResponse(result.output);
+    expect(connection).toMatchObject({ success: status === 200, model: "new-model" });
+    expect(result.events).toContain("open_credentialed_url");
+    expect(result.modelRequest).toMatchObject({ method: "POST", payload: { model: "new-model" }, headerNames: expect.arrayContaining(["authorization", "x-test"]) });
+    expect(result.config).toEqual(config);
+    expect(result.events).not.toContain("save_config");
+    expect(result.output).not.toContain(apiKey);
+  });
+
+  it.each([
+    ["anthropic_messages", "/messages", "x-api-key"],
+    ["codex_responses", "/responses", "authorization"],
+  ])("uses the selected model's %s protocol for a saved connection check", (apiMode, suffix, header) => {
+    const original = structuredClone(config);
+    original.providers["lightvela-deepseek"].transport = apiMode;
+    const result = runHelper({ type: "probeConfiguredModel", anchor: { ...configuredModel, apiMode }, modelId: "new-model" }, original,
+      { MODEL_REQUEST_STATUS: "200" }, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesConnectionProbeResponse(result.output).success).toBe(true);
+    expect(result.modelRequest).toMatchObject({ url: model.baseUrl + suffix, payload: { model: "new-model" }, headerNames: expect.arrayContaining([header]) });
+    expect(result.events).toContain("open_credentialed_url");
+    expect(result.config).toEqual(original);
+  });
+
+  it.each(["pool", "key_cmd"])("uses Hermes runtime credentials for %s instead of an older env key", (kind) => {
+    const original = structuredClone(config);
+    const provider = original.providers["lightvela-deepseek"] as Record<string, unknown>;
+    if (kind === "key_cmd") provider.key_cmd = "existing-token-command";
+    const result = runHelper({ type: "probeConfiguredProvider", anchor: configuredModel }, original, {
+      MODEL_REQUEST_STATUS: "200", DISCOVERED_MODELS: '[{"id":"new-model"}]',
+      RUNTIME_TEST_SECRET: "rotated-test-secret", RUNTIME_TEST_URL: model.baseUrl,
+      HERMES_TEST_CREDENTIAL_POOL: kind === "pool" ? '{"lightvela-deepseek":[{"id":"existing-pool"}]}' : '{}',
+    }, { [configuredModel.keyEnv]: apiKey });
+    expect(parseHermesModelConfigResponse(result.output).probedModels).toEqual(["new-model"]);
+    expect(result.modelRequest).toMatchObject({ runtimeCredentialUsed: true });
+    expect(result.config).toEqual(original);
+    expect(result.output).not.toContain("rotated-test-secret");
+  });
+
+  it("preserves inline credentials and model metadata when normalizing a legacy custom Provider", () => {
+    const legacy = { name: "Legacy", base_url: model.baseUrl, model: "old", api_key: apiKey, models: { old: { context_length: 999 } } };
+    const anchor = { ...model, id: "old", providerKey: "legacy", providerName: "Legacy" };
+    const result = runHelper({ type: "appendProviderModel", anchor, modelId: "new" }, { custom_providers: [legacy] });
+    expect(parseHermesModelConfigResponse(result.output).configuredModels.map((item) => item.id)).toEqual(["old", "new"]);
+    expect(result.config.providers).toMatchObject({ legacy: { api_key: apiKey, models: { old: { context_length: 999 } } } });
+    expect(result.config).not.toHaveProperty("custom_providers");
+    expect(result.output).not.toContain(apiKey);
+  });
+
+  it("discovers legacy custom models using inline credentials without normalizing on read", () => {
+    const legacy = { name: "Legacy", base_url: model.baseUrl, model: "old", api_key: apiKey };
+    const anchor = { ...model, id: "old", providerKey: "legacy", providerName: "Legacy" };
+    const result = runHelper({ type: "probeConfiguredProvider", anchor }, { custom_providers: [legacy] },
+      { MODEL_REQUEST_STATUS: "200", DISCOVERED_MODELS: '[{"id":"new"}]' });
+    expect(parseHermesModelConfigResponse(result.output).probedModels).toEqual(["new"]);
+    expect(result.modelRequest).toMatchObject({ headerNames: expect.arrayContaining(["authorization"]) });
+    expect(result.config).toEqual({ custom_providers: [legacy] });
+    expect(result.output).not.toContain(apiKey);
+  });
+});
 const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
   publicKeyEncoding: { type: "spki", format: "pem" },
@@ -39,10 +421,11 @@ const { publicKey: testPublicKey } = generateKeyPairSync("rsa", {
 const envelopePreparation = { token: "a".repeat(48), publicKey: testPublicKey };
 
 type PlaintextTestAction =
-  | Exclude<HermesModelConfigAction, Extract<HermesModelConfigAction, { type: "probe" | "connectivityProbe" | "add" }>>
+  | Exclude<HermesModelConfigAction, Extract<HermesModelConfigAction, { type: "probe" | "connectivityProbe" | "add" | "resetToPlatformDefault" }>>
   | { type: "probe"; apiKey: string; baseUrl: string; apiMode?: string }
   | { type: "connectivityProbe"; apiKey: string; model: typeof model; strategy?: "model_list" | "model_request" }
-  | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean };
+  | { type: "add"; apiKey: string; model: typeof model; purpose: "primary" | "fallback" | "idle"; discoverModels?: boolean }
+  | { type: "resetToPlatformDefault"; apiKey: string; model: typeof model };
 
 function response(payload: unknown): string {
   return ["transport diagnostic", HERMES_MODEL_CONFIG_JSON_START, JSON.stringify(payload), HERMES_MODEL_CONFIG_JSON_END].join("\n");
@@ -77,6 +460,8 @@ def load_config():
     path = ROOT / "config.json"
     return json.loads(path.read_text()) if path.exists() else {}
 def load_env():
+    if os.environ.get("FAIL_LOAD_ENV"):
+        raise RuntimeError("credential snapshot failure")
     path = ROOT / "credentials.json"
     return json.loads(path.read_text()) if path.exists() else {}
 def save_config(value):
@@ -94,6 +479,9 @@ def save_config(value):
     if os.environ.get("CORRUPT_REMOVED_FALLBACK") and save_count == 1:
         value = copy.deepcopy(value)
         value["fallback_providers"] = [json.loads(os.environ["CORRUPT_REMOVED_FALLBACK"])]
+    if os.environ.get("DROP_SAVED_FALLBACKS") and save_count == 1:
+        value = copy.deepcopy(value)
+        value["fallback_providers"] = []
     (ROOT / "config.json").write_text(json.dumps(value))
 def save_env_value(key, value):
     event("save_env_value")
@@ -121,6 +509,11 @@ def read_credential_pool(provider_id=None):
     if provider_id is None: return pool
     values = pool.get(provider_id)
     return values if isinstance(values, list) else []
+`, { encoding: "utf8" });
+  if (!legacyHermes) writeFileSync(join(packageDir, "runtime_provider.py"), String.raw`
+import os
+def _resolve_named_custom_runtime(*, requested_provider, target_model):
+    return {"base_url": os.environ.get("RUNTIME_TEST_URL"), "api_key": lambda: os.environ.get("RUNTIME_TEST_SECRET")}
 `, { encoding: "utf8" });
   if (!legacyHermes) writeFileSync(join(packageDir, "credential_lifecycle.py"), String.raw`
 import json, os
@@ -153,11 +546,21 @@ def remove_provider_env_credential(key):
     return {"ok": True}
 `, { encoding: "utf8" });
   if (!legacyHermes) writeFileSync(join(packageDir, "fallback_config.py"), String.raw`
+import os
 def get_fallback_chain(config):
     values = config.get("fallback_providers") or []
     if isinstance(values, dict): values = [values]
     legacy = config.get("fallback_model")
     if legacy: values = values + ([legacy] if isinstance(legacy, dict) else legacy)
+    if os.environ.get("HERMES_CASE_INSENSITIVE_FALLBACKS"):
+        seen = set()
+        retained = []
+        for value in values:
+            identity = tuple(str(value.get(key) or "").strip().rstrip("/").lower() for key in ("provider", "model", "base_url"))
+            if identity not in seen:
+                seen.add(identity)
+                retained.append(value)
+        return retained
     return values
 `, { encoding: "utf8" });
   writeFileSync(join(packageDir, "models.py"), legacyHermes ? String.raw`
@@ -171,26 +574,40 @@ def fetch_api_models(api_key, base_url, timeout=5):
     events.write_text(json.dumps(values))
     return ["legacy-alpha", "legacy-alpha", "legacy-beta"]
 ` : String.raw`
-import json, os
+import json, os, urllib.request
 from pathlib import Path
-def probe_api_models(api_key, base_url, timeout=5, api_mode=None):
+def _urlopen_model_catalog_request(request, *, timeout, ssl_context=None):
+    return urllib.request.urlopen(request, timeout=timeout)
+def probe_api_models(api_key, base_url, timeout=5, api_mode=None, request_headers=None):
     root = Path(os.environ["HERMES_HOME"])
     events = root / "events.json"
     values = json.loads(events.read_text()) if events.exists() else []
     values.append("probe")
     events.write_text(json.dumps(values))
+    if os.environ.get("MODEL_REQUEST_STATUS"):
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"} if api_mode == "anthropic_messages" else {"Authorization": "Bearer " + (api_key or "")}
+        headers.update(request_headers or {})
+        base = base_url.rstrip("/")
+        for candidate in (base, base[:-3] if base.endswith("/v1") else base + "/v1"):
+            try:
+                with _urlopen_model_catalog_request(urllib.request.Request(candidate + "/models", headers=headers), timeout=timeout) as response:
+                    return {"models": [item.get("id", "") for item in json.loads(response.read()).get("data", [])]}
+            except Exception: pass
+        return {"models": None}
     return {"models": None if os.environ.get("PROBE_MODELS_NONE") else ["alpha", "alpha", "beta"]}
 `, { encoding: "utf8" });
   writeFileSync(join(packageDir, "urllib_security.py"), String.raw`
 import json, os, urllib.request
 from pathlib import Path
-def open_credentialed_url(request, *, timeout):
+if os.environ.get("SAFE_TRANSPORT") == "missing": raise ImportError("transport unavailable")
+def open_credentialed_url(request, *, timeout, ssl_context=None):
     root = Path(os.environ["HERMES_HOME"])
     events = root / "events.json"
     values = json.loads(events.read_text()) if events.exists() else []
     values.append("open_credentialed_url")
     events.write_text(json.dumps(values))
     return urllib.request.urlopen(request, timeout=timeout)
+if os.environ.get("SAFE_TRANSPORT") == "non_callable": open_credentialed_url = object()
 `, { encoding: "utf8" });
 
   const acliPath = join(directory, "acli");
@@ -236,7 +653,10 @@ if os.environ.get("MODEL_REQUEST_STATUS"):
         def __init__(self, status): self.status = status
         def __enter__(self): return self
         def __exit__(self, *args): return False
-        def read(self): return b'{"id":"probe-response"}'
+        def read(self, limit=None):
+            if os.environ.get("CATALOG_RESPONSE") == "oversized": return b"x" * (limit or 3 * 1024 * 1024)
+            if os.environ.get("CATALOG_RESPONSE") == "malformed": return b"not-json"
+            return json.dumps({"data": json.loads(os.environ["DISCOVERED_MODELS"])}).encode() if os.environ.get("DISCOVERED_MODELS") else b'{"id":"probe-response"}'
 
     def fake_urlopen(request, timeout=None):
         root = Path(os.environ["HERMES_HOME"])
@@ -247,8 +667,16 @@ if os.environ.get("MODEL_REQUEST_STATUS"):
             "headerNames": sorted(name.lower() for name, _ in request.header_items()),
             "payload": payload,
             "timeout": timeout,
+            "runtimeCredentialUsed": request.get_header("Authorization") == "Bearer " + os.environ["RUNTIME_TEST_SECRET"] if os.environ.get("RUNTIME_TEST_SECRET") else None,
         }))
         status = int(os.environ["MODEL_REQUEST_STATUS"])
+        if os.environ.get("ALTERNATE_MODEL_STATUS") and not request.full_url.endswith("/v1/models"):
+            status = int(os.environ["ALTERNATE_MODEL_STATUS"])
+        failure = os.environ.get("DISCOVERY_FAILURE")
+        if failure == "timeout": raise TimeoutError(os.environ["FAILURE_SECRET"])
+        if failure == "url_timeout": raise urllib.error.URLError(TimeoutError(os.environ["FAILURE_SECRET"]))
+        if failure == "url_error": raise urllib.error.URLError(os.environ["FAILURE_SECRET"])
+        if failure == "unexpected": raise ValueError(os.environ["FAILURE_SECRET"])
         if status >= 400:
             raise urllib.error.HTTPError(request.full_url, status, "probe failure", {}, BytesIO(b'{"error":{"message":"request rejected"}}'))
         return FakeResponse(status)
@@ -282,7 +710,7 @@ function runHelper(
     });
     let remoteAction: HermesModelConfigAction = inputAction as HermesModelConfigAction;
     let preparationOutput = "";
-    if (inputAction.type === "probe" || inputAction.type === "connectivityProbe" || inputAction.type === "add") {
+    if (inputAction.type === "probe" || inputAction.type === "connectivityProbe" || inputAction.type === "add" || inputAction.type === "resetToPlatformDefault") {
       const preparationResult = spawnAction({ type: "prepareCredentialEnvelope" });
       preparationOutput = `${preparationResult.stdout}${preparationResult.stderr}`;
       let preparation: ReturnType<typeof parseHermesCredentialEnvelopePreparation>;
@@ -303,12 +731,16 @@ function runHelper(
         ? { type: "probe", credentialEnvelope, baseUrl: inputAction.baseUrl, apiMode: inputAction.apiMode }
         : inputAction.type === "connectivityProbe"
           ? { type: "connectivityProbe", credentialEnvelope, model: inputAction.model, strategy: inputAction.strategy }
-          : {
+          : inputAction.type === "add" ? {
               type: "add",
               credentialEnvelope,
               model: inputAction.model,
               purpose: inputAction.purpose,
               discoverModels: inputAction.discoverModels,
+            } : {
+              type: "resetToPlatformDefault",
+              credentialEnvelope,
+              model: inputAction.model,
             };
     }
     const command = buildHermesModelConfigCommand(remoteAction);
@@ -369,6 +801,17 @@ describe("Hermes model configuration client", () => {
     expect(command).toContain("base64");
     expect(command).not.toContain(apiKey);
     expect(catalogProvider.catalogModels).toEqual([{ id: model.id, name: "DeepSeek V3" }]);
+  });
+
+  it("scopes model configuration data to the selected Hermes profile", () => {
+    const mainCommand = buildHermesModelConfigCommand({ type: "read" }, "main");
+    const profileCommand = buildHermesModelConfigCommand({ type: "read" }, "profile-2");
+
+    expect(mainCommand).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
+    expect(mainCommand).toContain('export HERMES_HOME="$HERMES_PROFILE_ROOT"');
+    expect(profileCommand).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'profile-2\'');
+    expect(profileCommand).toContain('HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"');
+    expect(profileCommand).toContain('export HERMES_HOME="$HERMES_PROFILE_ROOT"');
   });
 
   it("transports long credentials as one-time ciphertext and consumes the private envelope", () => {
@@ -666,10 +1109,10 @@ describe("Hermes model configuration client", () => {
     expect(projected.configuredModels.map((item) => item.id)).toEqual([
       "main-model",
       "fallback-model",
-      "legacy-fallback-model",
       "saved-model",
       "legacy-saved-model",
       "history-model",
+      "legacy-fallback-model",
     ]);
     expect(projected.configuredModels).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "main-catalog-only" }),
@@ -801,8 +1244,6 @@ describe("Hermes model configuration client", () => {
       id: "fallback-model",
     }));
     expect(snapshot.configuredModels.map((item) => item.providerKey)).toEqual([
-      "active-stale",
-      "fallback-missing-key",
       "idle-env-key",
       "idle-live-list",
       "idle-command-key",
@@ -811,9 +1252,57 @@ describe("Hermes model configuration client", () => {
       "Unnamed Provider",
       "idle-dynamic-metadata",
       "idle-keyless",
+      "active-stale",
+      "fallback-missing-key",
     ]);
     expect(result.config).toEqual(config);
     expect(result.events).toEqual([]);
+  });
+
+  it("preserves configured model order across role changes", () => {
+    const config = {
+      model: {
+        provider: "provider-a",
+        default: "model-a",
+        base_url: "https://a.example.com/v1",
+      },
+      fallback_providers: [{
+        provider: "provider-b",
+        model: "model-b",
+        base_url: "https://b.example.com/v1",
+      }],
+      providers: {
+        "provider-b": {
+          name: "Provider B",
+          base_url: "https://b.example.com/v1",
+          model: "model-b",
+          models: ["model-b"],
+          transport: "openai",
+          key_env: "PROVIDER_B_KEY",
+        },
+        "provider-a": {
+          name: "Provider A",
+          base_url: "https://a.example.com/v1",
+          model: "model-a",
+          models: ["model-a"],
+          transport: "openai",
+          key_env: "PROVIDER_A_KEY",
+        },
+      },
+    };
+
+    const result = runHelper(
+      { type: "read" },
+      config,
+      {},
+      { PROVIDER_A_KEY: "provider-a-secret", PROVIDER_B_KEY: "provider-b-secret" },
+    );
+    const projected = parseHermesModelConfigResponse(result.output);
+
+    expect(projected.configuredModels.map((item) => item.providerKey)).toEqual([
+      "provider-b",
+      "provider-a",
+    ]);
   });
 
   it("keeps uncertain idle providers when older Hermes versions lack credential-pool helpers", () => {
@@ -1163,6 +1652,54 @@ describe("Hermes model configuration client", () => {
     ]);
   });
 
+  it("keeps an idle model projected after assigning another model from the same Provider as fallback", () => {
+    const providerKey = "lightvela-minimax-coding";
+    const baseUrl = "https://api.minimaxi.com/anthropic";
+    const config = {
+      providers: {
+        [providerKey]: {
+          name: "MiniMax Token Plan（国内）",
+          base_url: baseUrl,
+          model: "MiniMax-M3",
+          models: { "MiniMax-M3": {} },
+          key_env: "MINIMAX_CODING_KEY",
+          transport: "anthropic_messages",
+          discover_models: false,
+        },
+      },
+    };
+
+    const assigned = runHelper({
+      type: "assign",
+      providerKey,
+      modelId: "MiniMax-M2.7",
+      purpose: "fallback",
+    }, config, {}, { MINIMAX_CODING_KEY: "minimax-secret" });
+    const snapshot = parseHermesModelConfigResponse(assigned.output);
+
+    expect(snapshot.fallbacks).toContainEqual(expect.objectContaining({
+      providerKey,
+      id: "MiniMax-M2.7",
+    }));
+    expect(snapshot.configuredModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerKey, id: "MiniMax-M3" }),
+      expect.objectContaining({ providerKey, id: "MiniMax-M2.7" }),
+    ]));
+
+    const removed = runHelper({
+      type: "remove",
+      providerKey,
+      modelId: "MiniMax-M2.7",
+    }, assigned.config, {}, assigned.credentials);
+    const removedSnapshot = parseHermesModelConfigResponse(removed.output);
+
+    expect((removed.config.providers as Record<string, unknown>)[providerKey]).toBeDefined();
+    expect(removedSnapshot.configuredModels).toContainEqual(expect.objectContaining({
+      providerKey,
+      id: "MiniMax-M3",
+    }));
+  });
+
   it("rejects unsaved model assignment when the Provider endpoint differs or its saved identity is ambiguous", () => {
     const providerKey = "lightvela-tencent-hy-token-plan";
     const baseUrl = "https://api.lkeap.cloud.tencent.com/plan/v3";
@@ -1245,7 +1782,7 @@ describe("Hermes model configuration client", () => {
       key_env: "KEY_lightvela_deepseek",
       transport: "openai_chat",
       discover_models: true,
-      models: { [model.id]: {} },
+      models: { [model.id]: { lightvela_configured: true } },
     }));
     expect(provider).not.toHaveProperty("api");
     expect(added.config).not.toHaveProperty("lightvela");
@@ -1499,7 +2036,39 @@ describe("Hermes model configuration client", () => {
     expect(removed.config).not.toHaveProperty("fallback_providers");
   });
 
-  it("deduplicates legacy fallback routes by normalized route identity", () => {
+  it.each(["removeFallback", "remove", "primary"] as const)("preserves the other case-variant fallback during %s", (operation) => {
+    for (const targetId of [model.id, model.id.toUpperCase()]) {
+      const routes = [model.id, model.id.toUpperCase()].map((id) => ({
+        provider: configuredModel.providerKey, model: id, base_url: model.baseUrl,
+        api_key_env: configuredModel.keyEnv, metadata: { model: id },
+      }));
+      const config = {
+        providers: { [configuredModel.providerKey]: { name: model.providerName, base_url: model.baseUrl, model: model.id, key_env: configuredModel.keyEnv } },
+        fallback_providers: [routes[0]], fallback_model: routes[1],
+      };
+      const action: PlaintextTestAction = operation === "primary"
+        ? { type: "assign", purpose: "primary", providerKey: configuredModel.providerKey, modelId: targetId }
+        : { type: operation, providerKey: configuredModel.providerKey, modelId: targetId };
+      const result = runHelper(action, config, { HERMES_CASE_INSENSITIVE_FALLBACKS: "1" }, { [configuredModel.keyEnv]: apiKey });
+      expect(result.config.fallback_providers).toEqual(routes.filter((route) => route.model !== targetId));
+      expect(result.config).not.toHaveProperty("fallback_model");
+      expect(parseHermesModelConfigResponse(result.output).fallbacks.map((item) => item.id)).toEqual(routes.filter((route) => route.model !== targetId).map((route) => route.model));
+      expect(result.credentials).toEqual({ [configuredModel.keyEnv]: apiKey });
+    }
+  });
+
+  it.each(["removeFallback", "remove", "primary"] as const)("rolls back when read-back loses a non-target fallback (%s)", (operation) => {
+    const routes = [model.id, "another-model"].map((id) => ({ provider: configuredModel.providerKey, model: id, base_url: model.baseUrl }));
+    const original = { fallback_providers: routes };
+    const action: PlaintextTestAction = operation === "primary"
+      ? { type: "assign", purpose: "primary", providerKey: configuredModel.providerKey, modelId: model.id }
+      : { type: operation, providerKey: configuredModel.providerKey, modelId: model.id };
+    const result = runHelper(action, original, { DROP_SAVED_FALLBACKS: "1" });
+    expect(result.config).toEqual(original);
+    expect(result.output).toContain('"ok": false');
+  });
+
+  it("preserves case-variant legacy fallback routes and their credentials", () => {
     const retainedRoute = {
       provider: "legacy-provider",
       model: "legacy-model",
@@ -1520,6 +2089,7 @@ describe("Hermes model configuration client", () => {
 
     expect(added.config.fallback_providers).toEqual([
       retainedRoute,
+      duplicateLegacyRoute,
       expect.objectContaining({ provider: "lightvela-deepseek", model: model.id }),
     ]);
     expect(added.output).not.toContain("PRIMARY_LEGACY_KEY_ENV");
@@ -2076,7 +2646,7 @@ describe("Hermes model configuration client", () => {
       base_url: selected.baseUrl,
       model: selected.id,
       key_env: selected.keyEnv,
-      models: expect.objectContaining({ [selected.id]: {} }),
+      models: expect.objectContaining({ [selected.id]: { lightvela_configured: true } }),
     });
     expect((assigned.config.providers as Record<string, Record<string, unknown>>)[selected.providerKey]).not.toHaveProperty("default_model");
     expect(assigned.config.fallback_providers).toEqual([

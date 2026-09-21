@@ -1,0 +1,18 @@
+{
+  "id": "payment",
+  "name": "支付服务",
+  "kind": "service",
+  "path": "payment",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["subscription-entitlements", "release-gitops"],
+  "summary": "处理支付链接、支付回调及与订阅权益相关的支付契约。",
+  "runtime": "Go HTTP 服务",
+  "interfaces": ["payment/api/openapi.yaml", "支付回调"],
+  "dependencies": ["subscription", "trade", "external-payment-provider"],
+  "source_docs": ["payment/README.md", "payment/AGENTS.md", "payment/api/openapi.yaml"],
+  "agent_entry": "payment/AGENTS.md",
+  "service_docs": "payment/docs/README.md",
+  "deploy": ["payment/k8s", "argocd/services/payment"],
+  "generated_paths": ["payment/generated"]
+}

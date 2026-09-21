@@ -2,17 +2,6 @@ import type { IModelProvider } from "@/pages/marketing/agent-config/utils/model-
 
 import type { HermesCanonicalApiMode, ModelProviderOption } from "./model-config-client";
 
-const CATALOG_DISCOVERY_PROVIDERS = new Set(["minimax", "minimax-cn"]);
-
-/**
- * 腾讯系供应商的模型目录由平台侧统一维护，面板不提供实时探测入口。
- * 按 `value` 前缀判断可覆盖所有现有与后续新增的 `tencent_*` 套餐。
- */
-function providerSupportsLiveModelRefresh(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return normalized !== "tokenhub" && !normalized.startsWith("tencent_");
-}
-
 function readString(value: unknown) {
   return typeof value === "string" ? value : "";
 }
@@ -82,12 +71,9 @@ export function adaptProductModelProviders(source: IModelProvider[] | undefined)
       category: provider.category,
       baseUrl,
       apiMode,
-      discoveryStrategy:
-        isCodingPlan || CATALOG_DISCOVERY_PROVIDERS.has(providerId.toLowerCase())
-          ? "catalog"
-          : "live",
+      discoveryStrategy: "catalog",
       ...(isCodingPlan ? { fixedModelSelection: true } : {}),
-      supportsLiveModelRefresh: providerSupportsLiveModelRefresh(providerKey),
+      supportsLiveModelRefresh: false,
       description: toPlainText(readString(provider.description)) || undefined,
       apiKeyUrl: readString(provider.api_key_url).trim() || undefined,
       catalogModels,

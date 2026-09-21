@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	paigateway "ctl/pkg/adapter/aigateway"
 	pllmgateway "ctl/pkg/adapter/llmgateway"
+	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
@@ -16,7 +18,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing.T) {
+func TestResetInstanceConfigReturnsStableDefaultKeyAndProviderConfig(t *testing.T) {
 	installCreateTaskAiGatewayConfig(t)
 
 	instanceDao := &createTaskInstanceDaoStub{
@@ -26,13 +28,13 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing
 			UserId:         "user-reset",
 			Status:         modelinstance.InstanceStatusRunning,
 			SandboxId:      "sbx-reset-1",
-			AiGatewayKeyID: "key-old",
+			AiGatewayKeyID: "key-default",
 			CreatedAt:      time.Now().UTC(),
 		},
 	}
-	sandboxAdapter := &createTaskSandboxAdapterStub{}
+	sandboxAdapter := singleProfileResetSandbox()
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
-		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
+		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-default", KeyPrefix: "sk-default", APIKey: "sk-default-secret"},
 	}
 	logic := &logic{
 		instanceDao:                  instanceDao,
@@ -46,7 +48,7 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing
 	if err != nil {
 		t.Fatalf("reset instance config: %v", err)
 	}
-	if resp.KeyID != "key-new" || resp.KeyPrefix != "sk-new" {
+	if resp.KeyID != "key-default" || resp.KeyPrefix != "sk-default" {
 		t.Fatalf("unexpected key response: %+v", resp)
 	}
 	if resp.Config == nil {
@@ -56,11 +58,11 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing
 		resp.Config.BaseURL != "https://model.internal/v1" ||
 		resp.Config.ModelID != "kimi-k2.5" ||
 		resp.Config.API != "chat_completions" ||
-		resp.Config.APIKey != "sk-new-secret" {
+		resp.Config.APIKey != "sk-default-secret" {
 		t.Fatalf("unexpected provider config: %+v", resp.Config)
 	}
-	if instanceDao.entity.AiGatewayKeyID != "key-new" {
-		t.Fatalf("expected new key id to be persisted, got %q", instanceDao.entity.AiGatewayKeyID)
+	if instanceDao.entity.AiGatewayKeyID != "key-default" {
+		t.Fatalf("expected default key id to remain persisted, got %q", instanceDao.entity.AiGatewayKeyID)
 	}
 	if len(instanceDao.updates) != 1 {
 		t.Fatalf("expected exactly one instance update, got %d", len(instanceDao.updates))
@@ -75,7 +77,7 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndPreservesUserKeys(t *testing
 		t.Fatalf("expected one api key creation, got %d", aiGatewayAdapter.createCalls)
 	}
 	if len(sandboxAdapter.processCalls) != 0 {
-		t.Fatalf("expected no sandbox command execution, got %+v", sandboxAdapter.processCalls)
+		t.Fatalf("LLMGateway reset should not require Profile inventory, got %+v", sandboxAdapter.processCalls)
 	}
 }
 
@@ -96,6 +98,7 @@ func TestResetInstanceConfigDoesNotIssueLLMGatewayKeyWhenEntitlementPreparationF
 		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "must-not-be-created", APIKey: "must-not-be-created"},
 	}
 	logic := &logic{
+		sandboxAdapter:    singleProfileResetSandbox(),
 		instanceDao:       instanceDao,
 		llmGatewayAdapter: llmGateway,
 		logger:            zap.NewNop(),
@@ -148,6 +151,7 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
+		sandboxAdapter:               singleProfileResetSandbox(),
 		instanceDao:                  instanceDao,
 		llmGatewayAdapter:            aiGatewayAdapter,
 		logger:                       zap.NewNop(),
@@ -188,6 +192,7 @@ func TestResetInstanceConfigDoesNotCallLLMGatewayRevoke(t *testing.T) {
 		revokeErrByKeyID: map[string]error{"key-old": errors.New("revoke failed")},
 	}
 	logic := &logic{
+		sandboxAdapter:               singleProfileResetSandbox(),
 		instanceDao:                  instanceDao,
 		llmGatewayAdapter:            aiGatewayAdapter,
 		logger:                       zap.NewNop(),
@@ -224,6 +229,7 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
+		sandboxAdapter:    singleProfileResetSandbox(),
 		instanceDao:       instanceDao,
 		llmGatewayAdapter: aiGatewayAdapter,
 		logger:            zap.NewNop(),
@@ -235,5 +241,109 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 	}
 	if aiGatewayAdapter.createCalls != 0 {
 		t.Fatalf("expected no key creation, got %d", aiGatewayAdapter.createCalls)
+	}
+}
+
+func singleProfileResetSandbox() *commandSandboxAdapterStub {
+	return &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
+		{Stdout: `{"items":[{"native_id":"default","is_default":true}]}`},
+		{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+	}}
+}
+
+func multiProfileResetSandbox() *commandSandboxAdapterStub {
+	return &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
+		{Stdout: `{"items":[{"native_id":"default","is_default":true},{"native_id":"sales","is_default":false}]}`},
+		{Ended: true, ExitCode: 0, Status: "SUCCESS"},
+	}}
+}
+
+func TestResetInstanceConfigAllowsLLMGatewayWithSiblingProfiles(t *testing.T) {
+	installCreateTaskAiGatewayConfig(t)
+
+	dao := &createTaskInstanceDaoStub{entity: &modelinstance.Entity{
+		Id: 1, InstanceId: "ins-reset", UserId: "user-reset", SandboxId: "sbx-reset",
+		Status: modelinstance.InstanceStatusRunning, AiGatewayKeyID: "key-default", CreatedAt: time.Now().UTC(),
+	}}
+	gateway := &createTaskLLMGatewayAdapterStub{createResp: &pllmgateway.CreateApiKeyResponse{
+		KeyID: "key-default", KeyPrefix: "sk-default", APIKey: "sk-default-secret",
+	}}
+	l := &logic{
+		instanceDao: dao, sandboxAdapter: multiProfileResetSandbox(), llmGatewayAdapter: gateway,
+		logger: zap.NewNop(), legacyPassEntitlementEnsurer: legacyPassEntitlementAlreadyReady,
+	}
+
+	resp, err := l.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset")
+	if err != nil {
+		t.Fatalf("reset LLMGateway config with sibling Profiles: %v", err)
+	}
+	if resp.KeyID != "key-default" || resp.Config == nil || resp.Config.APIKey != "sk-default-secret" {
+		t.Fatalf("unexpected reset response: %+v", resp)
+	}
+	if gateway.createCalls != 1 {
+		t.Fatalf("default key lookups = %d, want 1", gateway.createCalls)
+	}
+}
+
+func TestResetInstanceConfigStillRejectsLegacyGatewayWithSiblingProfiles(t *testing.T) {
+	installCreateTaskAiGatewayConfig(t)
+	config.ServerConf.AdapterConfig.AiGateway = &config.AiGatewayConfig{
+		BaseURL: "https://ai-gateway.test", DefaultBaseURL: "https://legacy-model.internal/v1",
+		DefaultModelID: "legacy-default", DefaultCompatibility: "openai",
+	}
+
+	dao := &createTaskInstanceDaoStub{entity: &modelinstance.Entity{
+		Id: 1, InstanceId: "ins-legacy", UserId: "user-legacy", SandboxId: "sbx-legacy",
+		Status: modelinstance.InstanceStatusRunning, AiGatewayKeyID: "legacy-key", CreatedAt: time.Now().UTC(),
+	}}
+	legacy := &migrationLegacyGatewayStub{active: &paigateway.Subscription{ID: "legacy-sub", PlanID: "legacy-plan"}}
+	l := &logic{
+		instanceDao: dao, sandboxAdapter: multiProfileResetSandbox(), aiGatewayAdapter: legacy,
+		logger: zap.NewNop(),
+	}
+
+	_, err := l.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-legacy"), "ins-legacy")
+	if !errors.Is(err, errcode.ErrInstanceConfigResetMultiBot) {
+		t.Fatalf("error = %v, want %v", err, errcode.ErrInstanceConfigResetMultiBot)
+	}
+}
+
+func TestResetInstanceConfigRejectsUnsafeProfileInventoryBeforeKeyChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name, output string
+		failed       bool
+	}{
+		{"siblings", `{"items":[{"native_id":"default","is_default":true},{"native_id":"sales"}]}`, false},
+		{"missing-root", `{"items":[{"native_id":"sales"}]}`, false},
+		{"empty", `{"items":[]}`, false},
+		{"invalid", "not-json", false},
+		{"unavailable", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			installCreateTaskAiGatewayConfig(t)
+			config.ServerConf.AdapterConfig.AiGateway = &config.AiGatewayConfig{
+				BaseURL: "https://ai-gateway.test", DefaultBaseURL: "https://legacy-model.internal/v1",
+				DefaultModelID: "legacy-default", DefaultCompatibility: "openai",
+			}
+			dao := &createTaskInstanceDaoStub{entity: &modelinstance.Entity{
+				Id: 1, InstanceId: "ins-reset", UserId: "user-reset", SandboxId: "sbx-reset",
+				Status: modelinstance.InstanceStatusRunning, AiGatewayKeyID: "old-key", CreatedAt: time.Now().UTC(),
+			}}
+			sandbox := &commandSandboxAdapterStub{processEvents: []psandbox.ProcessStreamEvent{
+				{Stdout: tc.output}, {Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			}}
+			if tc.failed {
+				sandbox.processErr = errors.New("profile inventory unavailable")
+			}
+			legacy := &migrationLegacyGatewayStub{active: &paigateway.Subscription{ID: "legacy-sub", PlanID: "legacy-plan"}}
+			l := &logic{instanceDao: dao, sandboxAdapter: sandbox, aiGatewayAdapter: legacy, logger: zap.NewNop()}
+			_, err := l.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset")
+			if err == nil {
+				t.Fatal("expected reset rejection")
+			}
+			if len(legacy.revoked) != 0 || len(dao.updates) != 0 {
+				t.Fatal("unsafe inventory must not issue, revoke or persist keys")
+			}
+		})
 	}
 }

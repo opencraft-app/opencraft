@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "priority": [
+    "运行时源代码及其测试",
+    "生成的 API 契约",
+    "环境清单或 GitOps 清单",
+    "Owner 已审阅的 Context Pack",
+    "派生 Catalog 或生成摘要"
+  ],
+  "conflict_rule": "遇到权威来源冲突时停止并报告；不得在相互冲突的权威来源之间自行拼接折中结论。",
+  "derived_views": {
+    "generated": ["docs/context/.context/catalog.jsonl"],
+    "rule": "派生视图不得覆盖源文件，并由 validate_context.py 重新生成。"
+  },
+  "external_knowledge": {
+    "rule": "外部云、计费、CAM 和 API 规则只建立链接，不复制为仓库真源。",
+    "registry": ".agents/context/external-sources.yaml"
+  },
+  "runtime_claims": {
+    "rule": "只有已经实现并具有验证证据的能力，才能标记为运行时能力。",
+    "pilot_only": ["自动 compact（上下文压缩）", "模型路由", "自动记忆晋级", "消费 trace（追踪）"]
+  }
+}

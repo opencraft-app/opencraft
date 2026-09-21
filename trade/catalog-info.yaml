@@ -1,0 +1,18 @@
+{
+  "id": "trade",
+  "name": "交易与商业计费集成",
+  "kind": "service",
+  "path": "trade",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["subscription-entitlements", "release-gitops"],
+  "summary": "负责订单创建、商业计费 provider、支付回调和开通调用。",
+  "runtime": "Go HTTP 服务",
+  "interfaces": ["订单 API", "计费 provider", "支付回调", "CTL 开通调用"],
+  "dependencies": ["payment", "subscription", "ctl", "cloudladdergateway", "external-billing"],
+  "source_docs": ["trade/README.md", "trade/AGENTS.md"],
+  "agent_entry": "trade/AGENTS.md",
+  "service_docs": "trade/docs/README.md",
+  "deploy": ["trade/k8s", "argocd/services/trade"],
+  "generated_paths": ["trade/generated"]
+}

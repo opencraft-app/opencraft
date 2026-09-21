@@ -1007,10 +1007,41 @@ ci_install_tccli() {
   ci_log "installed tccli at ${install_dir}/venv/bin/tccli"
 }
 
+ci_ensure_pyyaml() {
+  ci_require_command python3
+
+  local version="6.0.2"
+  local python_version cache_root install_dir bin
+  python_version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  cache_root="${CI_PYYAML_CACHE_ROOT:-${HOME}/.cache/lightclaw-ci/pyyaml}"
+  install_dir="${cache_root}/v${version}/python${python_version}"
+  bin="${install_dir}/venv/bin/python3"
+
+  if [[ ! -x "$bin" ]] || ! "$bin" -c "import yaml; assert yaml.__version__ == '${version}'" >/dev/null 2>&1; then
+    ci_with_lock "pyyaml-${version}-python${python_version}" ci_install_pyyaml "$version" "$install_dir"
+  fi
+
+  export PATH="${install_dir}/venv/bin:${PATH}"
+  python3 -c "import yaml; assert yaml.__version__ == '${version}'"
+  ci_log "PyYAML ${version} ready at $(command -v python3)"
+}
+
+ci_install_pyyaml() {
+  local version="$1"
+  local install_dir="$2"
+  local bin="${install_dir}/venv/bin/python3"
+
+  mkdir -p "$install_dir"
+  if [[ ! -x "$bin" ]]; then
+    python3 -m venv "${install_dir}/venv" || return $?
+  fi
+  "$bin" -m pip install --disable-pip-version-check --no-input "PyYAML==${version}" || return $?
+}
+
 ci_ensure_go() {
   ci_require_commands curl tar
 
-  local version="${GO_VERSION_OVERRIDE:-1.25.4}"
+  local version="${GO_VERSION_OVERRIDE:-1.26.0}"
   local os arch archive cache_root install_dir bin url
 
   os="$(ci_os_name)"

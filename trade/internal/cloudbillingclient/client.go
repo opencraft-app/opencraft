@@ -92,6 +92,12 @@ func newCloudLadderTransport(cfg CloudLadderConfig, base http.RoundTripper) (htt
 	})
 }
 
+// NewCloudLadderTransport exposes Trade's CloudLadder HMAC transport to other
+// outbound clients while preserving the lightvela-trade caller identity.
+func NewCloudLadderTransport(cfg CloudLadderConfig, base http.RoundTripper) (http.RoundTripper, error) {
+	return newCloudLadderTransport(cfg, base)
+}
+
 type CreatePayURLRequest struct {
 	OrderIDs      []string
 	ChargeAmount  int64

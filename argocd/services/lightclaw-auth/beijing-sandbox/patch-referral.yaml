@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  REFERRAL_ENABLED: "true"
+  REFERRAL_OUTBOX_RELAY_ENABLED: "true"
+  REFERRAL_PULSAR_URL: "http://pulsar-n57ovqb7r7gv.eap-vle3kjgi.tdmq.ap-bj.qcloud.tencenttdmq.com:8080"
+  REFERRAL_PULSAR_TOPIC: "persistent://pulsar-n57ovqb7r7gv/lightvela-ref/lightvela.referral.events.v1"

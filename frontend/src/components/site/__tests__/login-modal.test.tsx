@@ -29,23 +29,25 @@ let currentSession: {
 
 const repositories = {
   auth: {
+    prepareReferralCode: vi.fn(),
     getOAuthStartUrl: vi.fn((
       provider: OAuthProvider,
-      options?: { switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
+      options?: { returnTo?: string; switchAccount?: boolean; wechatMode?: WeChatOAuthMode },
     ) => {
       const query = new URLSearchParams();
       if (provider === "wechat" && options?.wechatMode) query.set("mode", options.wechatMode);
       if (options?.switchAccount) query.set("switch_account", "true");
+      if (options?.returnTo) query.set("return_to", options.returnTo);
       const querySuffix = query.size > 0 ? `?${query.toString()}` : "";
       switch (provider) {
         case "qq":
-          return "https://lightclaw.tech/auth/oauth/qq/start";
+          return `https://lightclaw.tech/auth/oauth/qq/start${querySuffix}`;
         case "wechat":
           return `https://lightclaw.tech/auth/oauth/wechat/start${querySuffix}`;
         case "google":
-          return "https://lightclaw.tech/auth/oauth/google/start";
+          return `https://lightclaw.tech/auth/oauth/google/start${querySuffix}`;
         case "github":
-          return "https://lightclaw.tech/auth/oauth/github/start";
+          return `https://lightclaw.tech/auth/oauth/github/start${querySuffix}`;
         default:
           return null;
       }
@@ -66,6 +68,8 @@ vi.mock("@/contexts/session-context", () => ({
 
 describe("LoginModal (国内站 默认 isGlobal=false)", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/");
+    repositories.auth.prepareReferralCode.mockReset().mockResolvedValue(undefined);
     currentSession = { stage: "anonymous", user: null };
     signInWithCode.mockReset().mockResolvedValue(undefined);
     repositories.auth.getOAuthStartUrl.mockClear();
@@ -89,6 +93,30 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
 
   afterEach(() => {
     cleanup();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("prepares the referral context before exposing any login method", async () => {
+    window.history.replaceState(null, "", "/?ref=abc234");
+    let finish!: () => void;
+    repositories.auth.prepareReferralCode.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<LoginModal open onClose={vi.fn()} />);
+    expect(repositories.auth.prepareReferralCode).toHaveBeenCalledWith("ABC234");
+    expect(screen.queryByRole("button", { name: "微信账号登录" })).not.toBeInTheDocument();
+    expect(screen.queryByText("手机登录")).not.toBeInTheDocument();
+    finish();
+    expect(await screen.findByRole("button", { name: "微信账号登录" })).toBeInTheDocument();
+  });
+
+  it("blocks login after an invalid referral and allows preparation retry", async () => {
+    window.history.replaceState(null, "", "/?ref=ABC234");
+    repositories.auth.prepareReferralCode.mockRejectedValueOnce(new Error("invalid"));
+    render(<LoginModal open onClose={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("邀请返利码不存在或当前不可用。");
+    expect(screen.queryByRole("button", { name: "微信账号登录" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByRole("button", { name: "微信账号登录" })).toBeInTheDocument();
+    expect(repositories.auth.prepareReferralCode).toHaveBeenCalledTimes(2);
   });
 
   it("通过 portal 挂载到 body，避免继承 header 的定位上下文", async () => {

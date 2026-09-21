@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
+import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import { useT } from "@/i18n/t";
@@ -125,11 +125,7 @@ export function BlogArticlePage({
   slug,
 }: BlogArticlePageProps) {
   const t = useT();
-  const post = getBlogPost(slug);
-  const renderFooterLink: RenderFooterLink | undefined = renderLink
-    ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
-        renderLink({ ariaLabel, children, className, href, onClick })
-    : undefined;
+  const post = getBlogPost(slug, publicLocale ?? "en-US");
 
   if (!post) return null;
 
@@ -139,6 +135,7 @@ export function BlogArticlePage({
   const articlePath = currentPath?.startsWith("/") ? currentPath : `/blog/${post.slug}`;
   const coverBlock = post.content[0];
   const coverAlt = coverBlock?.type === "image" ? coverBlock.alt : post.title;
+  const articleLang = publicLocale === "en-US" || !publicLocale ? "en" : publicLocale;
 
   return (
     <div className="landing-page flex min-h-screen flex-col bg-white text-black">
@@ -152,7 +149,7 @@ export function BlogArticlePage({
         renderLanguageSwitcher={renderLanguageSwitcher}
       />
       <main className="flex-1 px-6 pb-24 pt-[116px] sm:px-10">
-        <article lang="en" className="mx-auto w-full max-w-5xl">
+        <article lang={articleLang} className="mx-auto w-full max-w-5xl">
           <a
             href={blogHref}
             aria-label={t("返回")}
@@ -180,7 +177,7 @@ export function BlogArticlePage({
           <BlogShareActions path={articlePath} title={post.title} />
         </article>
       </main>
-      <LightVelaFooter renderLink={renderFooterLink} />
+      <LegalFooter />
     </div>
   );
 }

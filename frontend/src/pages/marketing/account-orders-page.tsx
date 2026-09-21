@@ -1,4 +1,3 @@
-import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
 import { useState } from "react";
@@ -352,8 +351,6 @@ export const AccountOrdersPage = () => {
           </motion.div>
         </section>
       </main>
-
-      <LegalFooter />
 
       <AnimatePresence>
         {showInvoiceModal && (

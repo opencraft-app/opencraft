@@ -1,5 +1,6 @@
 import type { BotRepository } from "@/repositories/types";
 import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/agent-reset-config";
+import { getHermesProfileRootCommand, withHermesProfile } from "@/lib/hermes-agent-command";
 
 export const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
 export const DEFAULT_USER_CHAR_LIMIT = 1375;
@@ -84,11 +85,12 @@ print(json.dumps({
 }, ensure_ascii=False))
 print("${HERMES_MEMORY_JSON_END}")`;
 
-export function buildHermesMemoryReadCommand(): string {
+export function buildHermesMemoryReadCommand(profileId = "main"): string {
   return [
-    'HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"',
+    'HERMES_BASE="${HERMES_HOME:-$HOME/.hermes}"',
+    getHermesProfileRootCommand(profileId, "HERMES_ROOT"),
     "export HERMES_ROOT",
-    'HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"',
+    'HERMES_PYTHON="$HERMES_BASE/hermes-agent/venv/bin/python"',
     'if [ ! -x "$HERMES_PYTHON" ]; then HERMES_PYTHON="python3"; fi',
     '"$HERMES_PYTHON" - <<\'PY\'',
     PYTHON_MEMORY_READER,
@@ -132,14 +134,14 @@ export function validateHermesMemoryLimit(target: HermesMemoryLimitTarget, input
   return { ok: true, value, min, max };
 }
 
-export function buildHermesMemoryLimitCommand(target: HermesMemoryLimitTarget, value: number, existingChars = 0): string {
+export function buildHermesMemoryLimitCommand(target: HermesMemoryLimitTarget, value: number, existingChars = 0, profileId = "main"): string {
   const validation = validateHermesMemoryLimit(target, String(value), existingChars);
   if (!validation.ok) {
     throw new Error("invalid Hermes memory limit");
   }
 
   const key = target === "memory" ? "memory.memory_char_limit" : "memory.user_char_limit";
-  return `hermes config set ${key} ${validation.value}`;
+  return withHermesProfile(`config set ${key} ${validation.value}`, profileId);
 }
 
 export function isHermesMemoryLimitNearUsage(value: number, used: number, currentLimit: number): boolean {
@@ -203,10 +205,11 @@ export function parseHermesMemorySnapshot(output: string): HermesMemorySnapshot 
 export async function fetchHermesMemorySnapshot(
   bots: BotRepository,
   botId: string,
+  profileId = "main",
 ): Promise<HermesMemorySnapshot> {
   const result = await bots.execDebugCommand(
     botId,
-    buildHermesMemoryReadCommand(),
+    buildHermesMemoryReadCommand(profileId),
     { timeoutMs: HERMES_MEMORY_COMMAND_TIMEOUT_MS },
   );
   if (!isExecCommandSucceeded(result)) {
@@ -220,10 +223,6 @@ export function splitHermesMemoryEntries(text: string): string[] {
     .split("§")
     .map((entry) => entry.trim())
     .filter(Boolean);
-}
-
-export function toSingleLineMemoryEntry(entry: string): string {
-  return entry.replace(/\s+/g, " ").trim();
 }
 
 export function getMemoryUsagePercent(used: number, limit: number): number {

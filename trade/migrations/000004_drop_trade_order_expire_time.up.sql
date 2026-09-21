@@ -17,5 +17,34 @@
 -- - trade store / placeorder logic / 测试 fixture 同步删 ExpireTime 字段
 -- - 历史 trade_order 行的 expire_time 数据丢失（无业务价值，可接受）
 
-ALTER TABLE trade_order DROP INDEX idx_status_expire;
-ALTER TABLE trade_order DROP COLUMN expire_time;
+SET @trade_order_idx_status_expire_exists := (
+    SELECT COUNT(1)
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name = 'trade_order'
+      AND index_name = 'idx_status_expire'
+);
+SET @trade_order_drop_status_expire_sql := IF(
+    @trade_order_idx_status_expire_exists > 0,
+    'ALTER TABLE trade_order DROP INDEX idx_status_expire',
+    'SELECT 1'
+);
+PREPARE trade_order_drop_status_expire_stmt FROM @trade_order_drop_status_expire_sql;
+EXECUTE trade_order_drop_status_expire_stmt;
+DEALLOCATE PREPARE trade_order_drop_status_expire_stmt;
+
+SET @trade_order_expire_time_exists := (
+    SELECT COUNT(1)
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'trade_order'
+      AND column_name = 'expire_time'
+);
+SET @trade_order_drop_expire_time_sql := IF(
+    @trade_order_expire_time_exists > 0,
+    'ALTER TABLE trade_order DROP COLUMN expire_time',
+    'SELECT 1'
+);
+PREPARE trade_order_drop_expire_time_stmt FROM @trade_order_drop_expire_time_sql;
+EXECUTE trade_order_drop_expire_time_stmt;
+DEALLOCATE PREPARE trade_order_drop_expire_time_stmt;

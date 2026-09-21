@@ -202,6 +202,36 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     expect(screen.getByText("finance-news")).toBeInTheDocument();
   });
 
+  it("keeps installed filter popovers within their compact trigger geometry", async () => {
+    renderPanel(mode, "installed");
+    await screen.findByText("finance-news");
+
+    const categoryFilter = screen.getByRole("combobox", { name: "筛选技能分类" });
+    const sourceFilter = screen.getByRole("combobox", { name: "筛选技能来源" });
+    [categoryFilter, sourceFilter].forEach((filter) => {
+      expect(filter).toHaveClass("lv-select-trigger", "lv-select-trigger--filter");
+      expect(filter).not.toHaveClass("h-9", "sm:w-40", "px-3", "text-xs");
+    });
+
+    const expectCompactList = (listbox: HTMLElement) => {
+      expect(listbox).toHaveClass("lv-select-content", "lv-select-content--filter");
+      expect(listbox).not.toHaveClass(
+        "w-[var(--radix-select-trigger-width)]",
+        "min-w-[var(--radix-select-trigger-width)]",
+        "max-w-[calc(100vw-2rem)]",
+      );
+      expect(listbox.style.width).toBe("");
+    };
+
+    fireEvent.click(categoryFilter);
+    const categoryList = await screen.findByRole("listbox");
+    expectCompactList(categoryList);
+    fireEvent.click(await screen.findByRole("option", { name: /全部分类/ }));
+
+    fireEvent.click(sourceFilter);
+    expectCompactList(await screen.findByRole("listbox"));
+  });
+
   it("suppresses the native search clear control when the custom clear button is shown", async () => {
     renderPanel(mode, "installed");
     await screen.findByText("finance-news");
@@ -345,6 +375,32 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
       "本地安装 (1)",
       "其他 (1)",
     ]);
+  });
+
+  it("shows a bundled registry match as system built-in without a delete action", async () => {
+    const dataLayer = makeDataLayer(mode);
+    dataLayer.listInstalled = vi.fn(async () => ({
+      failedSources: [],
+      skills: [{
+        registry: "skillhub" as const,
+        rawId: "architecture-diagram",
+        slug: "architecture-diagram",
+        name: "architecture-diagram",
+        category: "creative",
+        version: "1.0.0",
+        registries: ["skillhub" as const, "hermes" as const],
+        nativeSource: "builtin",
+        sourceLabel: "系统预置",
+        uninstallable: false,
+      }],
+    }));
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode={mode} initialTab="installed" />);
+
+    const row = (await screen.findByText("architecture-diagram", { selector: "span" })).closest("li") as HTMLElement;
+    expect(within(row).getByText("系统预置")).toBeInTheDocument();
+    expect(within(row).queryByText("SkillHub")).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /删除技能/ })).not.toBeInTheDocument();
   });
 
   it("does not render skill icons or icon links in Installed rows", async () => {
@@ -836,6 +892,23 @@ it("shows the international source link in a curated skill details dialog", asyn
   expect(sourceLink).toHaveClass("text-[#2563EB]", "hover:underline");
   expect(sourceLink.parentElement).toHaveClass("mt-1", "text-[11px]");
   expect(sourceLink).not.toHaveClass("h-8", "border", "bg-[#F5F9FF]");
+});
+
+it("puts the new skills.sh skills in the last international Featured batch", () => {
+  renderPanel("global");
+
+  const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+  const nextBatchButton = within(featuredSection).getByRole("button", { name: "下一批" });
+  fireEvent.click(nextBatchButton);
+  fireEvent.click(nextBatchButton);
+  const teachCard = within(featuredSection).getByRole("button", { name: "查看Teach详情" }).closest("li") as HTMLElement;
+  expect(within(featuredSection).getByRole("button", { name: "查看Grill Me详情" })).toBeInTheDocument();
+  expect(within(featuredSection).getByRole("button", { name: "查看Reddit Automation详情" })).toBeInTheDocument();
+  expect(Array.from(teachCard.closest("ul")?.querySelectorAll<HTMLImageElement>('img[src^="/assets/skills/featured-"]') ?? []).map((image) => image.getAttribute("src"))).toEqual([
+    "/assets/skills/featured-teach.jpg",
+    "/assets/skills/featured-grill-me.jpg",
+    "/assets/skills/featured-reddit-automation.jpg",
+  ]);
 });
 
 it("uses Spanish category and overview copy when the international locale is es", async () => {

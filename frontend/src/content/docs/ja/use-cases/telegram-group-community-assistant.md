@@ -57,10 +57,10 @@
 |---|---|---|
 | FAQ | `@bot_username answer only from the prepared FAQ` | 回答には準備された資料を使用するか、明確に人間への引き継ぎを要求すること |
 | ディスカッションの要約 | `@bot_username summarize decisions, action items, owners, and open questions` | 返信は確認済みの決定事項と未解決の項目を分けること |
-| リマインダードラフト | `@bot_username draft a reminder with time, audience, purpose, and cancellation method` | 自動化を使用して送信する前に、ドラフトを確認してください |
+| リマインダードラフト | `@bot_username draft a reminder with time, audience, purpose, and cancellation method` | スケジュールタスクを使用して送信する前に、ドラフトを確認してください |
 
 取得、要約、またはスケジュールされたコンテンツのために、信頼できるスキルを選び、その権限を確認してください[スキルを設定する](../configuration/skill.md)。
-スケジュールメッセージに依存する前に、サポートされている対象チャネルで自動化を別途検証してください。
+スケジュールメッセージに依存する前に、サポートされている対象チャネルでスケジュールタスクを別途検証してください。
 
 ## 安全性と運用の範囲
 

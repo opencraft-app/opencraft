@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -131,7 +132,8 @@ func (a *agent) handle(ctx context.Context, tr devtunnel.TunneledRequest) {
 		out = a.replay(ctx, tr)
 	}
 	payload, _ := json.Marshal(out)
-	rr, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.hubBase+"/_tunnel/reply?rid="+tr.RID, bytes.NewReader(payload))
+	replyURL := a.hubBase + "/_tunnel/reply?rid=" + url.QueryEscape(tr.RID) + "&env=" + url.QueryEscape(a.env)
+	rr, _ := http.NewRequestWithContext(ctx, http.MethodPost, replyURL, bytes.NewReader(payload))
 	a.auth(rr)
 	resp, err := a.replayCli.Do(rr)
 	if err != nil {

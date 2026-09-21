@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -219,6 +220,140 @@ func (Activities) StartTATCommand(ctx context.Context, req ExportRequest, cfg Te
 	return result, nil
 }
 
+func (Activities) PrepareMultipartArchive(ctx context.Context, req ExportRequest, cfg TencentConfig, region string) (PreparedTATArchive, error) {
+	if err := ValidateArchiveMode(req.ArchiveMode); err != nil {
+		return PreparedTATArchive{}, temporalActivityError(err)
+	}
+	if !req.Execute {
+		return PreparedTATArchive{
+			InstanceID: req.InstanceID,
+			Region:     region,
+			Mode:       "multipart-upload",
+			ObjectURL:  "dry-run-cos-object",
+			ObjectKey:  "dry-run-key",
+			Bucket:     req.COSUploadBucket,
+			UploadID:   "dry-run-upload-id",
+		}, nil
+	}
+
+	archiveKey := cosObjectKey(req)
+	session, err := InitiateCOSMultipartUpload(ctx, cfg, req, archiveKey)
+	if err != nil {
+		return PreparedTATArchive{}, temporalActivityError(err)
+	}
+	abortFailure := func(cause error) (PreparedTATArchive, error) {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		abortErr := AbortCOSMultipartUpload(cleanupCtx, cfg, session)
+		if abortErr != nil {
+			return PreparedTATArchive{}, errors.Join(cause, fmt.Errorf("abort multipart upload: %w", abortErr))
+		}
+		return PreparedTATArchive{}, cause
+	}
+	archiveGET, err := GenerateCOSUploadTarget(ctx, cfg, req, archiveKey, http.MethodGet)
+	if err != nil {
+		return abortFailure(temporalActivityError(err))
+	}
+	return PreparedTATArchive{
+		InstanceID:  req.InstanceID,
+		Region:      region,
+		Mode:        "multipart-upload",
+		ObjectURL:   session.ObjectURL,
+		DownloadURL: archiveGET.SignedURL,
+		ObjectKey:   session.ObjectKey,
+		Bucket:      session.BucketURL,
+		UploadID:    session.UploadID,
+	}, nil
+}
+
+func (Activities) StartMultipartTATCommand(ctx context.Context, req ExportRequest, cfg TencentConfig, region string, prepared PreparedTATArchive) (TATCommandResult, error) {
+	if prepared.Mode != "multipart-upload" || prepared.ObjectKey == "" || prepared.UploadID == "" || prepared.Bucket == "" {
+		return TATCommandResult{}, temporalActivityError(errors.New("prepared multipart archive is incomplete"))
+	}
+	if !req.Execute {
+		return TATCommandResult{CommandID: "dry-run-command", InvocationID: "dry-run-invocation", TaskStatus: "SUCCESS"}, nil
+	}
+
+	uploaderPath, err := buildRescueUploader()
+	if err != nil {
+		return TATCommandResult{}, err
+	}
+	uploaderKey := cosKey(req, "uploaders", fmt.Sprintf("rescue-uploader-linux-amd64-%d", time.Now().Unix()))
+	uploaderPUT, err := GenerateCOSUploadTarget(ctx, cfg, req, uploaderKey, http.MethodPut)
+	if err != nil {
+		return TATCommandResult{}, temporalActivityError(err)
+	}
+	uploaderGET, err := GenerateCOSUploadTarget(ctx, cfg, req, uploaderKey, http.MethodGet)
+	if err != nil {
+		return TATCommandResult{}, temporalActivityError(err)
+	}
+	if err := putLocalFile(uploaderPUT.SignedURL, uploaderPath); err != nil {
+		return TATCommandResult{}, err
+	}
+	credentials, err := GenerateCOSMultipartCredentials(ctx, cfg, req, prepared.ObjectKey)
+	if err != nil {
+		return TATCommandResult{}, temporalActivityError(err)
+	}
+	configJSON, err := json.Marshal(map[string]any{
+		"bucket_url":       prepared.Bucket,
+		"object_url":       prepared.ObjectURL,
+		"object_key":       prepared.ObjectKey,
+		"upload_id":        prepared.UploadID,
+		"tmp_secret_id":    credentials.TmpSecretID,
+		"tmp_secret_key":   credentials.TmpSecretKey,
+		"session_token":    credentials.Token,
+		"mount_root":       req.MountRoot,
+		"device_globs":     req.DeviceGlobs,
+		"remote_paths":     req.RemotePaths,
+		"archive_mode":     normalizeArchiveMode(req.ArchiveMode),
+		"part_size_bytes":  32 * 1024 * 1024,
+		"max_part_retries": 2,
+	})
+	if err != nil {
+		return TATCommandResult{}, err
+	}
+	script := BuildUploaderRunScript(uploaderGET.SignedURL, string(configJSON))
+	if encodedLen := base64.StdEncoding.EncodedLen(len([]byte(script))); encodedLen > 64*1024 {
+		return TATCommandResult{}, temporalActivityError(fmt.Errorf("TAT uploader script is too large after base64: %d bytes", encodedLen))
+	}
+	client, err := NewTencentClient(cfg, region)
+	if err != nil {
+		return TATCommandResult{}, temporalActivityError(err)
+	}
+	submitted, err := SubmitTATCommand(ctx, client, req, "rescue-export-multipart-upload", script, req.CommandTimeoutSeconds)
+	if err != nil {
+		return TATCommandResult{}, err
+	}
+	logActivity(ctx, "multipart TAT command submitted",
+		"instance_id", req.InstanceID,
+		"region", region,
+		"object_key", prepared.ObjectKey,
+		"sts_expired_time", credentials.ExpiredTime,
+		"command_id", submitted.CommandID,
+		"invocation_id", submitted.InvocationID,
+	)
+	return submitted, nil
+}
+
+func (Activities) AbortMultipartArchive(ctx context.Context, cfg TencentConfig, prepared PreparedTATArchive) error {
+	if prepared.UploadID == "" {
+		return nil
+	}
+	abortErr := AbortCOSMultipartUpload(ctx, cfg, COSMultipartSession{
+		BucketURL: prepared.Bucket,
+		ObjectKey: prepared.ObjectKey,
+		ObjectURL: prepared.ObjectURL,
+		UploadID:  prepared.UploadID,
+	})
+	_, deleteErr := DeleteCOSObject(ctx, cfg, COSDeleteRequest{
+		InstanceID: prepared.InstanceID,
+		BucketURL:  prepared.Bucket,
+		ObjectKey:  prepared.ObjectKey,
+		ObjectURL:  prepared.ObjectURL,
+	}, false)
+	return temporalActivityError(errors.Join(abortErr, deleteErr))
+}
+
 func (Activities) WaitTATCommand(ctx context.Context, req ExportRequest, cfg TencentConfig, region string, submitted TATCommandResult) (TATCommandResult, error) {
 	if !req.Execute {
 		return submitted, nil
@@ -348,7 +483,7 @@ func prepareStreamUploadTATCommand(ctx context.Context, req ExportRequest, cfg T
 
 func finalizeArchiveOverTAT(req ExportRequest, prepared PreparedTATArchive, result TATCommandResult) (PreparedArchive, error) {
 	switch prepared.Mode {
-	case "stream-upload":
+	case "stream-upload", "multipart-upload":
 		if !req.Execute {
 			return PreparedArchive{InstanceID: prepared.InstanceID, Region: prepared.Region, ObjectURL: prepared.ObjectURL, ObjectKey: prepared.ObjectKey, Bucket: prepared.Bucket}, nil
 		}
@@ -365,6 +500,7 @@ func finalizeArchiveOverTAT(req ExportRequest, prepared PreparedTATArchive, resu
 			MountedDevice: marker.Device,
 			SHA256:        marker.SHA256,
 			ByteSize:      marker.Bytes,
+			PartCount:     marker.Parts,
 			RemoteOutput:  trimForLog(result.Output, 2048),
 			ObjectURL:     marker.ObjectURL,
 			DownloadURL:   prepared.DownloadURL,

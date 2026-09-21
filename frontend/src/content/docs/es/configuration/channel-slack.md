@@ -254,6 +254,6 @@ Después de conectar Slack, el canal soporta estos escenarios de mensajería:
 
 - [Configurar canal - Discord](./channel-discord.md) — Operaciones comunitarias y comunidades de desarrolladores
 
-- [Configurar automatizaciones](./automation.md) — Enviar recordatorios programados y resultados de tareas a Slack
+- [Configurar tareas programadas](./automation.md) — Enviar recordatorios programados y resultados de tareas a Slack
 
 - [Configurar Skills](./skill.md) — Extender las capacidades de Hermes Agent

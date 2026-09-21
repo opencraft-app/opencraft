@@ -93,12 +93,11 @@ describe("翻译进度与注册表标记一致", () => {
    *   - 改为「棘轮式」基线：允许不超过既有缺口数，一旦有人新增未翻译
    *     文案导致缺口变大，测试立即失败。缺口补齐后应下调此基线。
    *
-   * id-ID 的 174 条缺口来自 master 上通道与模型配置相关功能
-   * （钉钉 / 企业微信 / QQ / Kimi / 智谱等），应由对应需求负责人补齐。
+   * id-ID 的 172 条缺口（master 上通道与模型配置相关功能：钉钉 / 企业微信 / QQ /
+   * Kimi / 智谱等）已于 2026-09-17 全量补齐，债务清零；基线归空后，
+   * 任何新增未翻译文案都会立即触发本测试失败。
    */
-  const KNOWN_TRANSLATION_DEBT: Readonly<Record<string, number>> = {
-    "id-ID": 174,
-  };
+   const KNOWN_TRANSLATION_DEBT: Readonly<Record<string, number>> = {};
 
   it("标记为 translationRequired 的语种不得超出已知翻译债务基线", () => {
     for (const def of LOCALE_DEFINITIONS) {
@@ -243,7 +242,7 @@ describe("韩语翻译完成门禁", () => {
     expect(koKR.k_44e4d7a3).toBe("메모리");
     expect(koKR.k_699143b1).toBe("스킬");
     expect(koKR.k_8000f187).toBe("모델");
-    expect(koKR.k_8da3d655).toBe("자동 작업");
+    expect(koKR.k_a1bd9760).toBe("예약 작업");
     expect(koKR.k_d61247ca).toBe("페르소나");
     expect(koKR.k_e4f52ebc).toBe("채널");
   });
@@ -292,7 +291,7 @@ describe("韩语翻译完成门禁", () => {
     expect(koKR.k_6de351e5).toBe("기기 자원을 소모하지 않고 언제든지 호출하세요");
     expect(koKR.k_50495c0d).toBe("정식 Hermes Agent, 클릭 한 번으로 바로 사용");
     expect(koKR.k_ff4289bd).toBe("정식 Hermes Agent,\n클릭 한 번으로 바로 사용");
-    expect(koKR.k_be9a8923).toBe("내 자동 작업 관리");
+    expect(koKR.k_45786e15).toBe("내 예약 작업 관리");
     expect(koKR.k_bdcffa6c).toBe("‘지금 만들기’를 클릭하세요");
     expect(koKR.k_7f472118).toBe("완전 자동 클라우드 프로비저닝");
     expect(koKR.k_c0f65be9).toBe("완전 자동 클라우드 프로비저닝");

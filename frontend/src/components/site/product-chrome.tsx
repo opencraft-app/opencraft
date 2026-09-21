@@ -9,8 +9,13 @@ import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 interface ProductReturnHomeHeaderProps {
+  beforeUserMenu?: ReactNode;
+  className?: string;
   reloadLanguageAfterSwitch?: boolean;
   renderLink?: RenderPublicSiteHeaderLink;
+  showAccountLanguageSwitcher?: boolean;
+  showDesktopUserMenu?: boolean;
+  showLanguageSwitcher?: boolean;
 }
 
 const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
@@ -25,21 +30,30 @@ const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
 );
 
 export function ProductReturnHomeHeader({
+  beforeUserMenu,
+  className,
   reloadLanguageAfterSwitch = false,
   renderLink = renderAppHeaderLink,
+  showAccountLanguageSwitcher = false,
+  showDesktopUserMenu = true,
+  showLanguageSwitcher = isGlobal,
 }: ProductReturnHomeHeaderProps) {
   const { authReady, isAuthenticated: isLoggedIn } = useSession();
 
   return (
     <PublicSiteHeader
+      beforeUserMenu={beforeUserMenu}
       authSnapshot={{ authReady, isAuthenticated: isLoggedIn }}
+      className={className}
       position="fixed"
       reloadLanguageAfterSwitch={reloadLanguageAfterSwitch}
       renderLink={renderLink}
       renderLanguageSwitcher={({ activeLocale, reloadAfterSwitch, variant }) => (
         <LanguageSwitcher activeLocale={activeLocale} reloadAfterSwitch={reloadAfterSwitch} variant={variant} />
       )}
-      showLanguageSwitcher={isGlobal}
+      showAccountLanguageSwitcher={showAccountLanguageSwitcher}
+      showLanguageSwitcher={showLanguageSwitcher}
+      showDesktopUserMenu={showDesktopUserMenu}
       showNav={false}
       showUnauthenticatedActions={false}
     />

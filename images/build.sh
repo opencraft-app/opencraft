@@ -1136,6 +1136,8 @@ install_hermes_website_builder_skill() {
 
 curate_hermes_skills() {
   local skills_root="${RUNTIME_HOME}/.hermes/skills"
+  local baseline_dir="${RUNTIME_HOME}/.hermes/.lightvela"
+  local baseline_manifest="${baseline_dir}/base-skills"
   local keep_list=(
     "autonomous-ai-agents/hermes-agent"
     "software-development/hermes-agent-skill-authoring"
@@ -1153,6 +1155,11 @@ curate_hermes_skills() {
     "productivity/powerpoint"
     "research/arxiv"
     "productivity/maps"
+    "productivity/google-workspace"
+    "productivity/weekly-review-planning"
+    "email/email-inbox-triage"
+    "productivity/product-price-monitor"
+    "research/competitor-news-monitor"
     "creative/architecture-diagram"
     "creative/humanizer"
     "website-builder"
@@ -1209,7 +1216,14 @@ curate_hermes_skills() {
     printf 'WARN:   - %s\n' "${missing[@]}" >&2
   fi
 
-  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${skills_root}" 2>/dev/null || true
+  mkdir -p "${baseline_dir}"
+  find "${skills_root}" -maxdepth 4 -name SKILL.md -type f -exec dirname {} \; \
+    | sed "s|^${skills_root}/||" \
+    | sort >"${baseline_manifest}.tmp"
+  mv "${baseline_manifest}.tmp" "${baseline_manifest}"
+
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${skills_root}" "${baseline_dir}" 2>/dev/null || true
+  chmod 0600 "${baseline_manifest}"
   log_info "Hermes skills curated: kept ${kept}, removed ${removed}"
 }
 

@@ -1,0 +1,18 @@
+{
+  "id": "velagw",
+  "name": "VelaGW / LLMGateway",
+  "kind": "upstream-service",
+  "path": "velagw",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "upstream",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "以 subtree 维护的 LLMGateway 控制面与数据面。",
+  "runtime": "Go 服务与 Web 管理端",
+  "interfaces": ["LLM provider route", "控制面 API", "Web 管理端"],
+  "dependencies": ["upstream wisp/velagw", "ai-gateway", "gateway-dashboard"],
+  "source_docs": ["velagw/README.md", "velagw/AGENTS.md", "velagw/MONO2_SUBTREE.md"],
+  "agent_entry": "velagw/AGENTS.md",
+  "service_docs": "velagw/docs/README.md",
+  "deploy": ["velagw/k8s", "argocd/services/velagw"],
+  "generated_paths": ["velagw/web/dist"]
+}

@@ -61,14 +61,31 @@ func (f *fakeCTL) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyP
 	return nil, errors.New("DestroyPass not used in placeorder tests")
 }
 
+func (f *fakeCTL) CheckPassModify(_ context.Context, _ string, _ *ctlclient.CheckPassModifyRequest) (*ctlclient.CheckPassModifyResponse, error) {
+	return nil, errors.New("CheckPassModify not used in these tests")
+}
+
+func (f *fakeCTL) ModifyPass(_ context.Context, _ string, _ *ctlclient.ModifyPassRequest) (*ctlclient.ModifyPassResponse, error) {
+	return nil, errors.New("ModifyPass not used in these tests")
+}
+
 type fakeBundleStore struct {
 	def *store.BundleDefinition
-	err error
+	// defs 承载多套餐场景（变配需要源 + 目标两份定义）；非 nil 时优先于 def。
+	defs map[string]*store.BundleDefinition
+	err  error
 }
 
 func (f *fakeBundleStore) GetBundleDefinitionByID(ctx context.Context, bundleID string) (*store.BundleDefinition, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.defs != nil {
+		def := f.defs[bundleID]
+		if def == nil {
+			return nil, store.ErrBundleDefinitionNotFound
+		}
+		return def, nil
 	}
 	return f.def, nil
 }

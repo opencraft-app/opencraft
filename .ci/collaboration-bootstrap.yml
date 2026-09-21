@@ -1,0 +1,219 @@
+version: v2.0
+name: 初始化 Collaboration 北京
+
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-collaboration-beijing-bootstrap
+  cancel-in-progress: false
+  queue-length: 1
+  queue-timeout-minutes: 120
+
+variables:
+  BOOTSTRAP_PHASE:
+    value: foundation
+    readonly: false
+    allow-modify-at-startup: true
+  SOURCE_SHA:
+    value: aaa1ab52acd9434b374e4913548b6b3524784aee
+    readonly: false
+    allow-modify-at-startup: true
+  COLLABORATION_IMAGE:
+    value: lightclaw-bj8.tencentcloudcr.com/lightclaw/collaboration@sha256:7b461b601f513f584e95b4040609265c16cd536e767ef1417cf724a6c45a475d
+    readonly: false
+    allow-modify-at-startup: true
+  TIMEOUT_SECONDS:
+    value: "1800"
+    readonly: false
+    allow-modify-at-startup: true
+  COLLABORATION_IM_SDK_APP_ID:
+    value: "1600137234"
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: Dry-run Collaboration 北京 bootstrap
+    jobs:
+      dry_run:
+        name: 只读核对 DB、SSM 与 GitOps 输入
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          COLLABORATION_IM_SDK_APP_ID: ${{ variables.COLLABORATION_IM_SDK_APP_ID }}
+          COLLABORATION_IM_ADMIN_USER_ID: ${{ settings.COLLABORATION_IM_CREDENTIAL.username }}
+          COLLABORATION_IM_SECRET_KEY: ${{ settings.COLLABORATION_IM_CREDENTIAL.password }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 生成只读计划
+            shell: bash
+            run: |
+              set -euo pipefail
+              case "${{ variables.BOOTSTRAP_PHASE }}" in
+                foundation|runtime) ;;
+                *) echo "BOOTSTRAP_PHASE must be foundation or runtime" >&2; exit 1 ;;
+              esac
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_go
+              ci_require_command go
+              ci_load_tencentcloud_credentials
+              im_file="$(mktemp)"
+              chmod 600 "$im_file"
+              trap 'rm -f "$im_file"' EXIT
+              IM_FILE="$im_file" python3 - <<'PY'
+              import json
+              import os
+              from pathlib import Path
+
+              values = {
+                  "sdkAppId": int(os.environ["COLLABORATION_IM_SDK_APP_ID"]),
+                  "adminUserId": os.environ["COLLABORATION_IM_ADMIN_USER_ID"],
+                  "secretKey": os.environ["COLLABORATION_IM_SECRET_KEY"],
+              }
+              if not values["adminUserId"] or not values["secretKey"]:
+                  raise SystemExit("Collaboration IM protected settings are incomplete")
+              Path(os.environ["IM_FILE"]).write_text(json.dumps(values))
+              PY
+              (
+                cd infra_pulumi
+                GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
+                  --stack beijing-sandbox \
+                  --im-material-file "$im_file"
+              )
+
+  - name: 人工确认 Collaboration 北京 bootstrap
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认执行 Collaboration bootstrap
+            reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]
+        description: |
+          请检查上一阶段 dry-run：
+          - 环境只能是 beijing-sandbox，数据库实例必须是既有 cynosdb-bj8。
+          - foundation 只创建/核对独立逻辑库、账号、SSM，并生成 Namespace/Secret GitOps MR。
+          - runtime 必须在 foundation 已收敛后执行 MySQL migrate/status/verify，再生成 Runtime MR。
+          - 不会新建数据库实例，不会触及 shprod、sgprod 或 Playground，不会自动合并 GitOps MR。
+      timeout-hours: 24
+    jobs:
+      approved:
+        name: 记录人工确认
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - name: 审核已通过
+            shell: bash
+            run: echo "Collaboration Beijing bootstrap approved."
+
+  - name: 执行 Collaboration 北京 bootstrap
+    if: "${{ ci.branch }} == master"
+    jobs:
+      apply:
+        name: 幂等写入并创建 GitOps MR
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        env:
+          COLLABORATION_IM_SDK_APP_ID: ${{ variables.COLLABORATION_IM_SDK_APP_ID }}
+          COLLABORATION_IM_ADMIN_USER_ID: ${{ settings.COLLABORATION_IM_CREDENTIAL.username }}
+          COLLABORATION_IM_SECRET_KEY: ${{ settings.COLLABORATION_IM_CREDENTIAL.password }}
+          DB_JOB_KUBECONFIG_B64: ${{ settings.DB_JOB_KUBECONFIG_B64.password }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 执行 DB/SSM bootstrap 与 GitOps 投影
+            shell: bash
+            run: |
+              set -euo pipefail
+              phase="${{ variables.BOOTSTRAP_PHASE }}"
+              source_sha="${{ variables.SOURCE_SHA }}"
+              image="${{ variables.COLLABORATION_IMAGE }}"
+              case "$phase" in
+                foundation|runtime) ;;
+                *) echo "BOOTSTRAP_PHASE must be foundation or runtime" >&2; exit 1 ;;
+              esac
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_go
+              ci_load_tencentcloud_credentials
+              ci_ensure_db_job_tools
+              ci_ensure_tccli
+              ci_ensure_pyyaml
+              ci_require_commands go sops tccli
+              im_file="$(mktemp)"
+              deploy_root=""
+              chmod 600 "$im_file"
+              cleanup() {
+                rm -f "$im_file"
+                if [[ -n "$deploy_root" ]]; then
+                  git -C "$REPO_ROOT" worktree remove --force "$deploy_root" >/dev/null 2>&1 || true
+                fi
+              }
+              trap cleanup EXIT
+              IM_FILE="$im_file" python3 - <<'PY'
+              import json
+              import os
+              from pathlib import Path
+
+              values = {
+                  "sdkAppId": int(os.environ["COLLABORATION_IM_SDK_APP_ID"]),
+                  "adminUserId": os.environ["COLLABORATION_IM_ADMIN_USER_ID"],
+                  "secretKey": os.environ["COLLABORATION_IM_SECRET_KEY"],
+              }
+              if not values["adminUserId"] or not values["secretKey"]:
+                  raise SystemExit("Collaboration IM protected settings are incomplete")
+              Path(os.environ["IM_FILE"]).write_text(json.dumps(values))
+              PY
+              (
+                cd infra_pulumi
+                GOWORK=off go run ./cmd/infractl bootstrap-collaboration \
+                  --stack beijing-sandbox \
+                  --im-material-file "$im_file" \
+                  --apply
+              )
+              python3 scripts/export_ssm_to_sops.py \
+                --manifest scripts/ssm_manifest.collaboration.beijing-sandbox.yaml \
+                --only collaboration-runtime-secrets
+              python3 scripts/export_ssm_to_sops.py \
+                --manifest scripts/ssm_manifest.collaboration.beijing-sandbox.yaml \
+                --only collaboration-gateway-bridge
+              if [[ "$phase" == "runtime" ]]; then
+                git fetch origin gitops
+                deploy_root="$(mktemp -d)"
+                rmdir "$deploy_root"
+                git -C "$REPO_ROOT" worktree add --detach "$deploy_root" origin/gitops
+                python3 .ci/runtime/commands/run_gitops_db_job.py \
+                  --repo-root "$REPO_ROOT" \
+                  --deploy-root "$deploy_root" \
+                  --service collaboration \
+                  --operation migration \
+                  --env beijing-sandbox \
+                  --revision "$source_sha" \
+                  --image-override "$image" \
+                  --apply --wait \
+                  --timeout-seconds "${{ variables.TIMEOUT_SECONDS }}"
+                python3 .ci/runtime/commands/verify_db_contract.py \
+                  --repo-root "$REPO_ROOT" \
+                  --deploy-root "$deploy_root" \
+                  --service collaboration \
+                  --env beijing-sandbox \
+                  --image-override "$image" \
+                  --apply --wait \
+                  --timeout-seconds "${{ variables.TIMEOUT_SECONDS }}"
+                git -C "$REPO_ROOT" worktree remove --force "$deploy_root"
+                deploy_root=""
+              fi
+              bash .ci/runtime/promote_collaboration_bootstrap_to_gitops.sh \
+                "$phase" "$source_sha" "$image" \
+                "$COLLABORATION_IM_SDK_APP_ID" "$COLLABORATION_IM_ADMIN_USER_ID"

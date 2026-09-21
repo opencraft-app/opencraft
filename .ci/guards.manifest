@@ -1,4 +1,47 @@
 guards:
+  - name: context-docs-impact
+    paths:
+      - AGENTS.md
+      - user/auth/**
+      - shadow/**
+      - service-gateway/**
+      - subscription/**
+      - payment/**
+      - trade/**
+      - cloudladdergateway/**
+      - cloudagent/**
+      - ai-gateway/**
+      - ctl/**
+      - sandbox/**
+      - velagw/**
+      - velalink/**
+      - workers/**
+      - new-api/**
+      - frontend/src/config/**
+      - frontend/src/app/**
+      - frontend/src/services/**
+      - frontend/src/repositories/**
+      - frontend/src/lib/env*
+      - frontend/*.config.*
+      - frontend/src/app-env.d.ts
+      - admin-gateway/**
+      - gateway-dashboard/**
+      - nextgen-dashboard/**
+      - .ci/runtime/**
+      - argocd/**
+      - infra_pulumi/**
+      - codesign/**
+      - .agents/context/**
+      - docs/context/decisions/**
+      - docs/engineering/decisions/**
+      - docs/engineering/domains/**
+      - docs/engineering/journeys/**
+      - docs/context/project/overview.md
+      - docs/context/23-rules-matrix.md
+      - docs/context/.context/**
+      - .agents/skills/context-audit/**
+    command: .ci/checks/context_docs_impact_guard.sh
+
   - name: ci-runtime
     paths:
       - .ci/**
@@ -12,6 +55,31 @@ guards:
       - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
     command: .ci/checks/service-gateway_guard.sh
 
+  - name: referral
+    paths:
+      - referral/**
+      - ctl/pkg/model/eventoutbox/**
+      - ctl/pkg/logic/pass/referral_event.go
+      - user/auth/internal/eventoutbox/**
+      - user/auth/internal/httpapi/referral.go
+      - user/auth/internal/service/referral_outbox.go
+    command: .ci/checks/referral_guard.sh
+
+  - name: vela-computer
+    paths:
+      - vela-computer/**
+      - .ci/checks/vela_computer_guard.sh
+    command: .ci/checks/vela_computer_guard.sh
+
+  - name: collaboration
+    paths:
+      - collaboration/**
+      - argocd/services/collaboration/**
+      - argocd/catalogs/candidates/*/collaboration*.yaml
+      - argocd/catalogs/sandbox/*/collaboration.yaml
+      - scripts/ssm_manifest.collaboration.beijing-sandbox.yaml
+    command: .ci/checks/collaboration_guard.sh
+
   - name: admin-gateway
     paths:
       - admin-gateway/**
@@ -22,7 +90,8 @@ guards:
 
   - name: frontend
     paths:
+      - .ci/checks/frontend_guard.sh
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
-    command: frontend/checks/guard.sh
+    command: .ci/checks/frontend_guard.sh

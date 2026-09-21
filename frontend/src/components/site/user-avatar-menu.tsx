@@ -1,33 +1,56 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Globe, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
+import { Bot, CreditCard, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown, ChevronRight, Globe } from "lucide-react";
 import type { CSSProperties } from "react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
+import { InternationalLanguageMenu } from "@/components/site/language-switcher";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
+import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, WEBSITES_PATH, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
+import { emitConsoleShowEvent } from "@/lib/console-show-event";
+import { cn } from "@/lib/utils";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
 };
 
-export const UserAvatarMenu = () => {
+type UserAvatarMenuProps = {
+  showLanguageSwitcher?: boolean;
+  variant?: "header" | "sidebar";
+};
+
+export const UserAvatarMenu = ({
+  showLanguageSwitcher = false,
+  variant = "header",
+}: UserAvatarMenuProps) => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
+  const navigate = useAppNavigate();
   const user = session.user;
   const [open, setOpen] = useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
   const [workbenchHostname, setWorkbenchHostname] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const accountHoveredRef = useRef(false);
+  const languageMenuOpenedByHoverRef = useRef(false);
+  const languageMenuId = useId();
 
   /* close on outside click */
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest('[data-lv-agent-language-menu="true"]')) {
+        return;
+      }
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setLanguageMenuOpen(false);
         setOpen(false);
       }
     };
@@ -46,6 +69,7 @@ export const UserAvatarMenu = () => {
     const revealWorkbench = (...args: unknown[]) => {
       if (mounted) {
         setHiddenEntriesRevealed(true);
+        emitConsoleShowEvent();
       }
       if (typeof originalShow === "function") {
         const originalResult = originalShow.apply(host, args);
@@ -87,34 +111,80 @@ export const UserAvatarMenu = () => {
     hostname: workbenchHostname,
     revealed: hiddenEntriesRevealed,
   });
+  const isSidebar = variant === "sidebar";
 
   return (
-    <div ref={containerRef} className="relative">
+    <div
+      ref={containerRef}
+      className={cn("relative", isSidebar && "lv-agent-account-menu")}
+      onMouseEnter={() => {
+        if (!isSidebar) return;
+        accountHoveredRef.current = true;
+        setOpen(true);
+      }}
+      onMouseLeave={() => {
+        if (!isSidebar) return;
+        accountHoveredRef.current = false;
+        if (!languageMenuOpen) setOpen(false);
+      }}
+    >
       {/* Avatar trigger */}
-      <div
-        onMouseEnter={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
-      >
-        <a href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
-          <img
-            src={avatarSrc}
-            alt="avatar"
-            className="h-9 w-9 cursor-pointer object-cover"
-            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
-          />
-        </a>
+      {isSidebar ? (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-7 w-5 items-center justify-center"
+          className="lv-agent-account-trigger"
           aria-label={t("打开用户菜单")}
+          aria-expanded={open}
+          aria-haspopup="true"
+          onClick={() => setOpen(true)}
         >
+          <img
+            src={avatarSrc}
+            alt=""
+            className="h-9 w-9 shrink-0 object-cover"
+            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+          />
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-sm font-semibold text-black/80">
+              {user?.name || t("用户")}
+            </span>
+            <span className="block truncate text-xs text-black/40">
+              {user?.email || subscriptionLabel}
+            </span>
+          </span>
           <ChevronDown
-            className="h-3.5 w-3.5 transition-transform duration-200"
-            style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+            className="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+            style={{ color: "#aaa", transform: open ? "rotate(0deg)" : "rotate(180deg)" }}
           />
         </button>
-      </div>
+      ) : (
+        <div
+          onMouseEnter={() => setOpen(true)}
+          className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
+        >
+          <a href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
+            <img
+              src={avatarSrc}
+              alt="avatar"
+              className="h-9 w-9 cursor-pointer object-cover"
+              style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+            />
+          </a>
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            className="inline-flex h-7 w-5 items-center justify-center"
+            aria-label={t("打开用户菜单")}
+            aria-expanded={open}
+            aria-haspopup="true"
+          >
+            <ChevronDown
+              className="h-3.5 w-3.5 transition-transform duration-200"
+              style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+            />
+          </button>
+        </div>
+      )}
 
       {/* Dropdown */}
       <AnimatePresence>
@@ -124,9 +194,16 @@ export const UserAvatarMenu = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
-            className="lw-user-avatar-menu absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden border border-black/[0.05] bg-white/95"
+            className={cn(
+              "lw-user-avatar-menu absolute z-50 overflow-hidden border border-black/[0.05] bg-white/95",
+              isSidebar
+                ? "bottom-full left-0 mb-2 w-[var(--lv-agents-nav-width)] origin-bottom-left"
+                : "right-0 top-full mt-2 w-52 origin-top-right",
+            )}
             style={menuStyle}
-            onMouseLeave={() => setOpen(false)}
+            onMouseLeave={() => {
+              if (!isSidebar && !languageMenuOpen) setOpen(false);
+            }}
           >
             {/* User info */}
             <div className="border-b px-4 py-3" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
@@ -150,13 +227,31 @@ export const UserAvatarMenu = () => {
 
             {/* Menu items */}
             <div className="py-1.5">
+              {!isSidebar && (
+                <a
+                  href={AGENTS_HOME_PATH}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <Bot className={menuIconClass} />
+                  {t("我的智能体")}
+                </a>
+              )}
               <a
-                href={AGENTS_HOME_PATH}
+                href="/account"
                 onClick={() => setOpen(false)}
                 className={menuItemClass}
               >
-                <Bot className={menuIconClass} />
-                {t("我的智能体伙伴")}
+                <User className={menuIconClass} />
+                {t("账号")}
+              </a>
+              <a
+                href={ACCOUNT_BILLING_PATH}
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <CreditCard className={menuIconClass} />
+                {t("套餐与费用")}
               </a>
               {showWorkbenchEntry ? (
                 <a
@@ -168,22 +263,6 @@ export const UserAvatarMenu = () => {
                   {t("工作台")}
                 </a>
               ) : null}
-              <a
-                href="/account"
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <User className={menuIconClass} />
-                {t("账号管理")}
-              </a>
-              <a
-                href={WEBSITES_PATH}
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <Globe className={menuIconClass} />
-                {t("我的工作台")}
-              </a>
               {hiddenEntriesRevealed && !isGlobal ? (
                 <a
                   href={PRODUCT_FEEDBACK_URL}
@@ -196,15 +275,67 @@ export const UserAvatarMenu = () => {
                   {t("产品反馈")}
                 </a>
               ) : null}
-
+              {isGlobal && showLanguageSwitcher ? (
+                <Popover
+                  open={languageMenuOpen}
+                  onOpenChange={(value) => {
+                    setLanguageMenuOpen(value);
+                    if (!value && !accountHoveredRef.current) setOpen(false);
+                  }}
+                >
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={`w-full justify-between ${menuItemClass}`}
+                      onMouseEnter={() => {
+                        languageMenuOpenedByHoverRef.current = true;
+                        setLanguageMenuOpen(true);
+                      }}
+                      onKeyDown={() => {
+                        languageMenuOpenedByHoverRef.current = false;
+                      }}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Globe className={menuIconClass} />
+                        {t("语言")}
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    data-lv-agent-language-menu="true"
+                    side="right"
+                    align="start"
+                    sideOffset={8}
+                    collisionPadding={8}
+                    className="w-40 overflow-hidden border-black/[0.05] bg-white/95 p-0 sm:w-52"
+                    style={menuStyle}
+                    onOpenAutoFocus={(event) => {
+                      if (languageMenuOpenedByHoverRef.current) event.preventDefault();
+                    }}
+                    onMouseLeave={() => {
+                      languageMenuOpenedByHoverRef.current = false;
+                      setLanguageMenuOpen(false);
+                      if (!accountHoveredRef.current) setOpen(false);
+                    }}
+                  >
+                    <InternationalLanguageMenu
+                      id={languageMenuId}
+                      ariaLabel={t("语言")}
+                      reloadAfterSwitch
+                    />
+                  </PopoverContent>
+                </Popover>
+              ) : null}
             </div>
 
             {/* Logout */}
             <div className="border-t py-1.5" style={{ borderColor: "rgba(0,0,0,0.05)" }}>
               <button
                 onClick={() => {
-                  void signOut();
                   setOpen(false);
+                  navigate("/", { replace: true });
+                  void signOut();
                 }}
                 className={`w-full ${menuItemClass}`}
                 style={{ fontSize: "14px" }}

@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "tools": {
+    "context_route": {
+      "purpose": "在规划前选择最小且有用的 Context Pack。",
+      "input": "自然语言任务或显式路径",
+      "output": ["pack_ids", "must_read", "deferred_paths", "reason"],
+      "side_effects": false,
+      "failure_policy": "不返回 Pack，并要求执行有边界的 rg 检索，不得加载全部上下文。"
+    },
+    "validate_context": {
+      "purpose": "执行静态上下文契约并重新生成派生 Catalog。",
+      "input": "仓库根目录",
+      "output": ["errors", "warnings", "summary"],
+      "side_effects": "仅在传入 --build-catalog 时写入 .context/catalog.jsonl。",
+      "failure_policy": "出现契约错误时以非零状态退出。"
+    },
+    "context_audit": {
+      "purpose": "评估仓库上下文健康度，并给出有证据支撑的整改动作。",
+      "input": "仓库根目录",
+      "output": ["score", "dimensions", "findings", "actions"],
+      "side_effects": false,
+      "failure_policy": "分数低于 85 或存在任一 P0 问题时以非零状态退出。"
+    },
+    "bounded_search": {
+      "purpose": "当路由未能解析事实时，查找精确的代码锚点。",
+      "input": ["pattern（匹配模式）", "显式路径范围"],
+      "output": "候选文件和行号锚点",
+      "side_effects": false,
+      "failure_policy": "扩大检索范围前，先在 Task Context 的 context_receipt 中记录失败查询。"
+    }
+  }
+}

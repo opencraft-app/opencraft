@@ -74,10 +74,8 @@ const compareFooterCopies = [
     labels: [
       "对比",
       "与本地部署对比",
-      "与 Hostinger 对比",
       "与 Manus 对比",
-      "与 ChatGPT 对比",
-      "与 Genspark 对比",
+      "与 AI Chatbot 对比",
     ],
   },
   {
@@ -171,6 +169,22 @@ const soulStripMemoryCopies = [
 ] as const;
 
 describe("LightVela international home copy", () => {
+  it("uses the localized receipt image for Simplified Chinese while keeping English receipts unchanged", () => {
+    const zhFragment = readFileSync(
+      join(process.cwd(), "public/lightvela-intl-home/index-fragment.zh-CN.html"),
+      "utf8",
+    );
+    const enFragment = readFileSync(
+      join(process.cwd(), "public/lightvela-intl-home/index-fragment.en-US.html"),
+      "utf8",
+    );
+
+    expect(zhFragment).toContain("/lightvela-intl-home/assets/mock-grocery-receipt-zh-cn.webp");
+    expect(zhFragment).not.toContain("/lightvela-intl-home/assets/mock-grocery-receipt.webp\" alt=\"购物收据\"");
+    expect(enFragment).toContain("/lightvela-intl-home/assets/mock-grocery-receipt.webp");
+    expect(enFragment).not.toContain("mock-grocery-receipt-zh-cn");
+  });
+
   it.each(compareFooterCopies)("$file uses Compare copy in the footer compare column", ({ file, labels }) => {
     const fragment = readFileSync(
       join(process.cwd(), "public/lightvela-intl-home", file),

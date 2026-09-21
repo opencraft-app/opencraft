@@ -1,10 +1,12 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Pass, User } from "@/domain/types";
 import { AccountPage } from "@/pages/marketing/account-page";
+import { saveUpgradeCheckout } from "@/lib/upgrade-checkout";
+vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId }: { targetBundleId: string }) => <div role="dialog">Upgrade {targetBundleId}</div> }));
 
 const updateProfile = vi.fn();
 const uploadAvatar = vi.fn();
@@ -14,12 +16,19 @@ const signInAsGuest = vi.fn();
 const refreshProfile = vi.fn();
 const refreshPasses = vi.fn();
 const listMyPasses = vi.fn();
+const listModifyBundles = vi.fn();
+const getModifyCheckout = vi.fn();
 const getRenewPrice = vi.fn();
 const createRenewOrder = vi.fn();
 
 let currentUser: User;
 let activePass: Pass | null = null;
 let paidBillingEnabled = true;
+let language = "en-US";
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ i18n: { language } }),
+}));
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -60,6 +69,7 @@ vi.mock("@/i18n/t", () => ({
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/lib/region", () => ({
@@ -77,7 +87,7 @@ vi.mock("@/components/site/brand-mark", () => ({
 }));
 
 vi.mock("@/components/site/language-switcher", () => ({
-  LanguageSwitcher: () => null,
+  LanguageSwitcher: () => <button type="button">Switch language</button>,
 }));
 
 vi.mock("@/components/site/login-modal", () => ({
@@ -109,6 +119,8 @@ vi.mock("@/contexts/repository-context", () => ({
     },
     plans: {
       listMyPasses,
+      listModifyBundles,
+      getModifyCheckout,
       getRenewPrice,
       createRenewOrder,
     },
@@ -133,6 +145,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 const buildActivePass = (): Pass => ({
+  status: "active",
   pass_id: "pass_global_renew",
   user_id: "usr_global_renew",
   bundle_id: "bundle_launch",
@@ -158,7 +171,7 @@ const buildIsolatedPass = (): Pass => ({
 const renderAccountPage = () => {
   render(
     <MemoryRouter>
-      <AccountPage />
+      <AccountPage view="billing" />
     </MemoryRouter>,
   );
 };
@@ -176,13 +189,53 @@ describe("AccountPage global renewal action", () => {
     };
     activePass = buildActivePass();
     paidBillingEnabled = true;
+    language = "en-US";
     listMyPasses.mockResolvedValue([]);
+    listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [] });
+    getModifyCheckout.mockResolvedValue({ checkout: null });
   });
 
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it.each([
+    ["account", "en-US"],
+    ["billing", "en-US"],
+    ["account", "zh-Hant"],
+    ["billing", "zh-Hant"],
+  ] as const)("keeps the %s return link on the application route for %s", async (view, locale) => {
+    language = locale;
+    render(<MemoryRouter><AccountPage view={view} /></MemoryRouter>);
+    const link = within(screen.getByRole("banner")).getByRole("link", { name: "返回智能体" });
+    expect(screen.queryByRole("button", { name: "Switch language" })).not.toBeInTheDocument();
+    await waitFor(() => expect(link).toBeVisible());
+    expect(link).toHaveAttribute("href", "/agents");
+  });
+
+  it.each([
+    ["zh-CN", "/zh-sg/subscribe"],
+    ["zh-SG", "/zh-sg/subscribe"],
+    ["zh-Hant", "/zh-hant/subscribe"],
+    ["en-US", "/subscribe"],
+    ["es", "/es/subscribe"],
+    ["id-ID", "/id-id/subscribe"],
+  ])("preserves %s when creating a subscription", async (locale, href) => {
+    language = locale;
+    activePass = null;
+    renderAccountPage();
+    expect(await screen.findByRole("link", { name: "立即创建" })).toHaveAttribute("href", href);
+  });
+
+  it("preserves simplified Chinese and the pass ID when upgrading", async () => {
+    language = "zh-CN";
+    activePass = { ...buildActivePass(), pass_id: "pass/a&b" };
+    listMyPasses.mockResolvedValue([activePass]);
+    listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target" }, modify_price: { real_total_cost: 100 } }] });
+    renderAccountPage();
+    expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", "/zh-sg/subscribe/?upgrade_pass_id=pass%2Fa%26b");
   });
 
   it("greys out the global renew action and explains that it is coming soon", async () => {
@@ -220,6 +273,37 @@ describe("AccountPage global renewal action", () => {
     expect(createRenewOrder).not.toHaveBeenCalled();
   });
 
+  it("shows the upgrade link by default and leaves renewal available", async () => {
+    listMyPasses.mockResolvedValue([activePass]);
+    listModifyBundles.mockResolvedValue({ source_bundle_id: "bundle_launch", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target" }, modify_price: { real_total_cost: 100 } }] });
+    renderAccountPage();
+    expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", "/subscribe/?upgrade_pass_id=pass_global_renew");
+    expect(listModifyBundles).toHaveBeenCalledWith("pass_global_renew");
+    expect(screen.getByRole("button", { name: "立即续费" })).toBeEnabled();
+  });
+  it("does not expose a progress button or reopen payment automatically", async () => {
+    activePass = { ...buildActivePass(), status: "modifying" };
+    listMyPasses.mockResolvedValue([activePass]);
+    saveUpgradeCheckout(window.localStorage, currentUser.id, activePass.pass_id, { phase: "ordered", targetBundleId: "target", dealName: "deal" });
+    renderAccountPage();
+    await waitFor(() => expect(listMyPasses).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "查看升级进度" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "升级套餐" })).not.toBeInTheDocument();
+  });
+
+  it("preserves the plan details with an upgrading status and pauses renewal", () => {
+    activePass = { ...buildActivePass(), status: "modifying" };
+    renderAccountPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("套餐升级中");
+    expect(screen.getByText(activePass.bundle_name)).toBeInTheDocument();
+    expect(screen.getByText("订阅有效期")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "立即续费" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "立即创建" })).not.toBeInTheDocument();
+  });
+
   it("opens the global renewal flow when paid billing is enabled", async () => {
     paidBillingEnabled = true;
     renderAccountPage();
@@ -239,6 +323,7 @@ describe("AccountPage global renewal action", () => {
     activePass = buildExpiredPass();
     renderAccountPage();
 
+    expect(screen.getAllByText("已过期")).toHaveLength(2);
     expect(screen.getByText("Renewals are coming soon. This plan has expired and cannot be renewed yet.")).toBeInTheDocument();
     expect(screen.queryByText("套餐已过期，请及时续费以免进入隔离期。")).not.toBeInTheDocument();
 
@@ -247,6 +332,7 @@ describe("AccountPage global renewal action", () => {
     activePass = buildIsolatedPass();
     renderAccountPage();
 
+    expect(screen.getByText("隔离期")).toBeInTheDocument();
     expect(screen.getByText("Renewals are coming soon. You can still destroy this plan and subscribe again.")).toBeInTheDocument();
     expect(screen.queryByText("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")).not.toBeInTheDocument();
   });

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cvm-mock-e2b/internal/core"
+	"cvm-mock-e2b/internal/provider"
 	"cvm-mock-e2b/internal/store"
 )
 
@@ -19,6 +20,45 @@ const (
 
 var testSecurityGroups = []string{"sg-test"}
 
+func TestUpdatePoolRejectsCrossRegionZoneChange(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "regional", "", "img-test", 1, testVpcID, testSubnetID, "ap-singapore-2", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	pool.Zone = "ap-johorbahru-1"
+	if _, err := svc.UpdatePool(ctx, pool); !errors.Is(err, core.ErrPoolRegionChange) {
+		t.Fatalf("expected ErrPoolRegionChange, got %v", err)
+	}
+}
+
+func TestUpdatePoolAllowsSameRegionZoneChange(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "regional", "", "img-test", 1, testVpcID, testSubnetID, "ap-singapore-1", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	pool.Zone = "ap-singapore-2"
+	updated, err := svc.UpdatePool(ctx, pool)
+	if err != nil {
+		t.Fatalf("update pool in same region: %v", err)
+	}
+	if updated.Zone != "ap-singapore-2" {
+		t.Fatalf("updated zone = %q, want ap-singapore-2", updated.Zone)
+	}
+}
+
+func TestCreatePoolRejectsInvalidZone(t *testing.T) {
+	svc := NewService(store.NewMemoryStore())
+	if _, err := svc.CreatePool(context.Background(), "invalid-zone", "", "img-test", 1, testVpcID, testSubnetID, "ap-singapore", testSecurityGroups); err == nil {
+		t.Fatal("expected pool creation with a region-only zone to fail")
+	}
+}
+
 func TestRefillVerifiedVerifiesCloudIDInsteadOfAddress(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
@@ -26,9 +66,10 @@ func TestRefillVerifiedVerifiesCloudIDInsteadOfAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	var verified string
-	_, err = svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"ins-delivery-1"}, func(_ context.Context, cloudID string) error {
-		verified = cloudID
+	var verified, verifiedRegion string
+	_, err = svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"ins-delivery-1"}, func(_ context.Context, instance provider.CloudInstanceRef) error {
+		verified = instance.CloudID
+		verifiedRegion = instance.Region
 		return nil
 	})
 	if err != nil {
@@ -36,6 +77,9 @@ func TestRefillVerifiedVerifiesCloudIDInsteadOfAddress(t *testing.T) {
 	}
 	if verified != "ins-delivery-1" {
 		t.Fatalf("expected verifier to receive cloud id, got %q", verified)
+	}
+	if verifiedRegion != "ap-beijing" {
+		t.Fatalf("expected verifier to receive ap-beijing, got %q", verifiedRegion)
 	}
 }
 
@@ -46,7 +90,7 @@ func TestRefreshInstanceStateTimestampKeepsStateAndAdvancesGeneration(t *testing
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	insts, err := svc.RefillVerified(ctx, pool.ID, 1, nil, []string{"ins-generation-1"}, func(context.Context, string) error { return nil })
+	insts, err := svc.RefillVerified(ctx, pool.ID, 1, nil, []string{"ins-generation-1"}, func(context.Context, provider.CloudInstanceRef) error { return nil })
 	if err != nil {
 		t.Fatalf("refill verified: %v", err)
 	}
@@ -70,7 +114,7 @@ func TestRefreshInstanceStateTimestampKeepsStateAndAdvancesGeneration(t *testing
 func TestLifecycleTransitions(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	pool, err := svc.CreatePool(ctx, "blue", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
@@ -131,7 +175,7 @@ func TestAllocateWithoutInventory(t *testing.T) {
 func TestAllocateAnyUsesAnyPoolWithCapacity(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.CreatePool(ctx, "empty", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups); err != nil {
 		t.Fatalf("create empty pool: %v", err)
@@ -176,7 +220,7 @@ func TestAllocateAnyWithoutCapacity(t *testing.T) {
 func TestInvalidReleaseTransition(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "bad", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -197,7 +241,7 @@ func TestInvalidReleaseTransition(t *testing.T) {
 func TestReleasePausedToDry(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "paused-release", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -235,7 +279,7 @@ func TestReleasePausedToDry(t *testing.T) {
 func TestReleaseDryIdempotent(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "dry-release", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -266,7 +310,7 @@ func TestReleaseDryIdempotent(t *testing.T) {
 func TestReleasePausingRejected(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "pausing-release", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -289,7 +333,7 @@ func TestReleasePausingRejected(t *testing.T) {
 func TestAdvanceStateInvalidTransition(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "adv", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -307,7 +351,7 @@ func TestAdvanceStateInvalidTransition(t *testing.T) {
 func TestMultipleAllocationsConsumeInventory(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "multi", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -326,7 +370,7 @@ func TestMultipleAllocationsConsumeInventory(t *testing.T) {
 func TestRefillWithAddresses(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "addr", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -344,7 +388,7 @@ func TestRefillWithAddresses(t *testing.T) {
 func TestRefillWithCloudIDs(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "cloud", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -394,7 +438,7 @@ func TestCreatePoolRequiresSecurityGroups(t *testing.T) {
 func TestAllocateForRequestUsesSandboxPrimaryBindings(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	poolA, err := svc.CreatePool(ctx, "pool-a", "", "img-a", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
@@ -495,7 +539,7 @@ func TestResolveTemplateClassPoolsUsesSKUBindingsWhenPresent(t *testing.T) {
 func TestAllocateForRequestHermesDefaultsToLargeSKU(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
 		ID:             hermesTemplateClassID,
@@ -597,7 +641,7 @@ func TestAllocateForRequestHermesDefaultsToLargeSKU(t *testing.T) {
 func TestAllocateForRequestRespectsRequestedSKU(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
 		ID:             hermesTemplateClassID,
@@ -707,7 +751,7 @@ func TestAllocateForRequestRequestedSKUWithoutBindingsFails(t *testing.T) {
 func TestAllocateForRequestSandboxPrimaryDoesNotFallbackToLegacyWhenSKUBindingsExistButNoEligiblePools(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
 		ID:             "openclaw-default",
@@ -766,7 +810,7 @@ func TestAllocateForRequestSandboxPrimaryDoesNotFallbackToLegacyWhenSKUBindingsE
 func TestAllocateForRequestUsesLegacyPoolInShadowModeAndRecordsDivergence(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	poolLegacy, err := svc.CreatePool(ctx, "pool-legacy", "", "img-legacy", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
@@ -814,7 +858,7 @@ func TestAllocateForRequestUsesLegacyPoolInShadowModeAndRecordsDivergence(t *tes
 func TestAllocateForRequestSandboxPrimaryDoesNotFallbackToPausedLegacyPoolWhenBindingsExist(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	legacyPool, err := svc.CreatePool(ctx, "legacy", "", "img-legacy", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
@@ -1123,7 +1167,7 @@ func TestResolveTemplateClassPoolsFiltersToActiveBindingsAndPools(t *testing.T) 
 func TestAllocateForRequestSupportsDualTrackResolution(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	legacyPool, err := svc.CreatePool(ctx, "legacy", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
@@ -1461,7 +1505,7 @@ func resumePathSetup(t *testing.T) (*Service, string) {
 	t.Helper()
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "renew-test", "", "img-test", 0, "vpc-r", "subnet-r", "ap-beijing-1", []string{"sg-r"})
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -1548,8 +1592,8 @@ func TestResumeIdempotentFromAllocated(t *testing.T) {
 func TestResumeRejectsNonPausedNonAllocated(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
-	pool, err := svc.CreatePool(ctx, "p", "", "img-test", 0, "vpc", "subnet", "zone", []string{"sg"})
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+	pool, err := svc.CreatePool(ctx, "p", "", "img-test", 0, "vpc", "subnet", testZone, []string{"sg"})
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}

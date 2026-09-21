@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/composer-appserver",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/chat-core": "0.1.0",
+    "@opencraft/chat-runtime": "0.1.0",
+    "@opencraft/composer-core": "0.1.0"
+  }
+}

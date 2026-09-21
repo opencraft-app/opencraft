@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,21 +11,32 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/lightclaw/tencent-rescue-exporter/internal/rescuearchive"
+	"github.com/lightclaw/tencent-rescue-exporter/internal/rescuemultipart"
+	cos "github.com/tencentyun/cos-go-sdk-v5"
 )
 
 type Config struct {
-	UploadURL   string   `json:"upload_url"`
-	ObjectURL   string   `json:"object_url"`
-	MountRoot   string   `json:"mount_root"`
-	DeviceGlobs []string `json:"device_globs"`
-	RemotePaths []string `json:"remote_paths"`
-	ArchiveMode string   `json:"archive_mode"`
+	UploadURL      string   `json:"upload_url"`
+	BucketURL      string   `json:"bucket_url"`
+	ObjectURL      string   `json:"object_url"`
+	ObjectKey      string   `json:"object_key"`
+	UploadID       string   `json:"upload_id"`
+	TmpSecretID    string   `json:"tmp_secret_id"`
+	TmpSecretKey   string   `json:"tmp_secret_key"`
+	SessionToken   string   `json:"session_token"`
+	MountRoot      string   `json:"mount_root"`
+	DeviceGlobs    []string `json:"device_globs"`
+	RemotePaths    []string `json:"remote_paths"`
+	ArchiveMode    string   `json:"archive_mode"`
+	PartSizeBytes  int      `json:"part_size_bytes"`
+	MaxPartRetries int      `json:"max_part_retries"`
 }
 
 type countingHashWriter struct {
@@ -60,11 +72,40 @@ func main() {
 		fail(err.Error())
 	}
 	defer syscall.Unmount(cfg.MountRoot, 0)
-	bytes, sha, err := streamArchiveToCOS(cfg)
+	var (
+		bytes           int64
+		sha             string
+		parts           int
+		multipartResult rescuemultipart.Result
+	)
+	if cfg.UploadID != "" {
+		multipartResult, err = streamArchiveMultipart(cfg)
+		bytes, sha, parts = multipartResult.Bytes, multipartResult.SHA256, multipartResult.PartCount
+	} else {
+		bytes, sha, err = streamArchiveToCOS(cfg)
+	}
 	if err != nil {
+		if cfg.UploadID != "" {
+			stage := rescuemultipart.StageArchive
+			partNumber := 0
+			var uploadErr *rescuemultipart.UploadError
+			if errors.As(err, &uploadErr) {
+				stage = uploadErr.Stage
+				partNumber = uploadErr.PartNumber
+			}
+			fail(fmt.Sprintf(
+				"multipart export failed stage=%s part_number=%d generated_bytes=%d uploaded_bytes=%d uploaded_parts=%d error=%v",
+				stage,
+				partNumber,
+				multipartResult.Bytes,
+				multipartResult.UploadedBytes,
+				multipartResult.PartCount,
+				err,
+			))
+		}
 		fail(err.Error())
 	}
-	fmt.Printf("RESCUE_UPLOAD_RESULT={\"object_url\":\"%s\",\"device\":\"%s\",\"bytes\":%d,\"sha256\":\"%s\"}\n", cfg.ObjectURL, device, bytes, sha)
+	fmt.Printf("RESCUE_UPLOAD_RESULT={\"object_url\":\"%s\",\"device\":\"%s\",\"bytes\":%d,\"sha256\":\"%s\",\"parts\":%d}\n", cfg.ObjectURL, device, bytes, sha, parts)
 }
 
 func readConfig(path string) (Config, error) {
@@ -76,8 +117,13 @@ func readConfig(path string) (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
 	}
-	if cfg.UploadURL == "" || cfg.ObjectURL == "" || cfg.MountRoot == "" || len(cfg.DeviceGlobs) == 0 || len(cfg.RemotePaths) == 0 {
+	if cfg.ObjectURL == "" || cfg.MountRoot == "" || len(cfg.DeviceGlobs) == 0 || len(cfg.RemotePaths) == 0 {
 		return Config{}, errors.New("missing required config fields")
+	}
+	multipartConfigured := cfg.BucketURL != "" && cfg.ObjectKey != "" && cfg.UploadID != "" &&
+		cfg.TmpSecretID != "" && cfg.TmpSecretKey != "" && cfg.SessionToken != ""
+	if cfg.UploadURL == "" && !multipartConfigured {
+		return Config{}, errors.New("legacy upload URL or complete multipart configuration is required")
 	}
 	cfg.ArchiveMode = rescuearchive.NormalizeMode(cfg.ArchiveMode)
 	if cfg.ArchiveMode != rescuearchive.ModeHermes && cfg.ArchiveMode != rescuearchive.ModeGeneric {
@@ -87,6 +133,42 @@ func readConfig(path string) (Config, error) {
 		return Config{}, errors.New("hermes archive mode requires exactly one remote path")
 	}
 	return cfg, nil
+}
+
+func streamArchiveMultipart(cfg Config) (rescuemultipart.Result, error) {
+	bucketURL, err := url.Parse(cfg.BucketURL)
+	if err != nil {
+		return rescuemultipart.Result{}, err
+	}
+	transport := &cos.AuthorizationTransport{
+		SecretID:     cfg.TmpSecretID,
+		SecretKey:    cfg.TmpSecretKey,
+		SessionToken: cfg.SessionToken,
+	}
+	sdk := cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{Transport: transport})
+	client, err := rescuemultipart.NewCOSClient(sdk, cfg.ObjectKey, cfg.UploadID)
+	if err != nil {
+		return rescuemultipart.Result{}, err
+	}
+	partSize := cfg.PartSizeBytes
+	if partSize <= 0 {
+		partSize = 32 * 1024 * 1024
+	}
+	maxAttempts := cfg.MaxPartRetries + 1
+	if maxAttempts <= 1 {
+		maxAttempts = 3
+	}
+	return rescuemultipart.Upload(context.Background(), client, func(out io.Writer) error {
+		return rescuearchive.Write(rescuearchive.Config{
+			MountRoot:   cfg.MountRoot,
+			RemotePaths: cfg.RemotePaths,
+			ArchiveMode: cfg.ArchiveMode,
+		}, out)
+	}, rescuemultipart.Options{
+		PartSize:    partSize,
+		MaxParts:    10_000,
+		MaxAttempts: maxAttempts,
+	})
 }
 
 func mountRescuedRoot(cfg Config) (string, error) {

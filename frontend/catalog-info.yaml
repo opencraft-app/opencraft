@@ -1,0 +1,18 @@
+{
+  "id": "frontend",
+  "name": "LightVela Web 前端与产品文档",
+  "kind": "application",
+  "path": "frontend",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["site-environment-routing", "identity-access", "subscription-entitlements"],
+  "summary": "承载国内/国际站 Web 产品、营销页面和多区域产品文档。",
+  "runtime": "React 19、TypeScript、Vite、Tailwind",
+  "interfaces": ["浏览器静态应用", "生成 API/Domain 类型", "产品文档路由"],
+  "dependencies": ["service-gateway", "user-auth", "subscription", "velalink"],
+  "source_docs": ["frontend/README.md", "frontend/AGENTS.md", "frontend/src/content/docs"],
+  "agent_entry": "frontend/AGENTS.md",
+  "service_docs": "frontend/docs/README.md",
+  "deploy": ["frontend/deploy", "argocd/services/frontend"],
+  "generated_paths": ["frontend/src/.fumadocs-content"]
+}

@@ -101,6 +101,9 @@ func TestRequireActivePassRejectsNonActiveLifecycleStates(t *testing.T) {
 		{name: "renewing", status: modelpass.StatusRenewing, want: errcode.ErrPassRenewing},
 		{name: "deleting", status: modelpass.StatusDeleting, want: errcode.ErrPassDeleting},
 		{name: "terminating", status: modelpass.StatusTerminating, want: errcode.ErrPassTerminating},
+		// 变配期间底层机器规格正在改；放行新建会让用户拿到源规格池的实例，
+		// 而变配父 task 只升级它开工时枚举到的那批，新机器会被永久落下。
+		{name: "modifying", status: modelpass.StatusModifying, want: errcode.ErrPassModifying},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var passes []*modelpass.Entity

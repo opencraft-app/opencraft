@@ -22,7 +22,7 @@ stages:
         name: 运行变更目录约束
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 修复复用工作区 Git index
             shell: bash
@@ -63,6 +63,7 @@ stages:
             with:
               fetchDepth: 50
               enableVirtualMergeBranch: false
+              enableSubmodule: false
           - name: 校验并修复 MR checkout
             shell: bash
             env:

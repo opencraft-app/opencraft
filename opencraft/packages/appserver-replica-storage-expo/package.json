@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/appserver-replica-storage-expo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/appserver-replica": "0.1.0",
+    "expo-sqlite": "~57.0.2"
+  }
+}

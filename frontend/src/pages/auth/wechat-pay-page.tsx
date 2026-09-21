@@ -50,7 +50,7 @@ import type { WXSignOption } from "@tencent/tcb-jssdk/lib/saasSdk/wxSign";
 
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { redirectBrowserTo } from "@/lib/browser-redirect";
-import { BRIDGE_QUERY_KEYS } from "@/lib/wx-pay";
+import { BRIDGE_QUERY_KEYS, BRIDGE_KIND_CREDIT_PACK } from "@/lib/wx-pay";
 import type { CreatePassOrderUrlResult } from "@/domain/types";
 
 /* ─── 公开类型 ─── */
@@ -71,6 +71,7 @@ type BridgeStage = "loading" | "expired" | "success" | "error" | "openid-only";
 
 /** 从二维码 query 解析出的支付上下文（CodeBuddy AuthCode 模型，最小必要字段） */
 interface BridgeOrder {
+  operation?: 'modify';
   /** jifei 订单号（来自 PC 端 createPassOrder/createRenewOrder 返回的 deal_names[0]） */
   dealName: string;
   /** CodeBuddy 同款一次性鉴权 ticket（PC 端阶段一返回；后端未实现时为空，由后端兼容处理） */
@@ -83,6 +84,8 @@ interface BridgeOrder {
   sandbox: boolean;
   /** 套餐/产品名，仅 UI 展示，缺省时由组件兜底 */
   bundleName: string;
+  /** 订单类型："cp" = 积分包（改调 credit 的 order-url，直出 JSON）；空 = pass 套餐 */
+  kind: string;
 }
 
 /** 主标题兜底文案（query 未带 bundleName 时使用） */
@@ -216,6 +219,16 @@ export const WeChatPayPage = () => {
     }
 
     /* 完整支付链路 */
+    if (order.operation === 'modify' && (!order.passId || !order.authCode)) {
+      setStage('error');
+      setErrorMessage('升级支付信息不完整，请返回原页面重新获取二维码。');
+      return;
+    }
+    if (order.operation === 'modify' && !inWeChat) {
+      setStage('error');
+      setErrorMessage('请在微信中打开此页面，或返回电脑使用微信扫码。');
+      return;
+    }
     if (Date.now() > order.expiresAt) {
       setStage("expired");
       return;
@@ -484,8 +497,15 @@ const OpenIdBlock = ({ value }: { value: string }) => (
 /**
  * 识别 fetchOrderUrl 抛出的「auth_code 已过期 / 已被消费 / 不存在」错误。
  *
- * 后端 errcode.ErrAuthCodeInvalid 的 HTTP 形态：
- *   status=401, code="AUTH_CODE_INVALID", message="auth_code invalid or expired"
+ * 后端 errcode.ErrAuthCodeInvalid 的 HTTP 形态实测有两种：
+ *   status=400, code="AUTH_CODE_INVALID", message="auth_code 已过期"（线上过期场景，见 e2e 复现）
+ *   status=401, code="AUTH_CODE_INVALID"（早期联调形态）
+ *
+ * 判定保持 master 原口径：仅认 status=401（早期联调形态）→ expired 温和态。
+ * 400 形态（线上过期场景）不进温和态，走通用 error 态「支付遇到问题」——
+ * 与 master 的套餐续费体验完全一致，避免本 MR 扩大「二维码已失效」的触达面
+ * （续费语境下「失效」存在主语歧义，详见 MR !4125 评审讨论）。
+ * 若后续确认要统一两种形态的温和态，需连同文案一起评审（跟进项）。
  *
  * RepositoryError 类没有从 http-repositories 导出，这里用 duck-typing 判断
  * （name + status + code）避免侵入 repositories 层；命中后中转页直接进入 `expired`
@@ -518,9 +538,12 @@ function parseBridgeOrder(search: string): BridgeOrder | null {
     dealName,
     authCode: params.get(BRIDGE_QUERY_KEYS.authCode) ?? "",
     passId: params.get(BRIDGE_QUERY_KEYS.passId) ?? "",
+    operation: params.get(BRIDGE_QUERY_KEYS.operation) === 'modify' ? 'modify' : undefined,
     expiresAt,
     sandbox: params.get(BRIDGE_QUERY_KEYS.sandbox) === "1",
     bundleName: params.get(BRIDGE_QUERY_KEYS.bundleName) ?? "",
+    /* "cp" = 积分包订单：阶段二改调 /v1/credit/packages/order-url */
+    kind: params.get(BRIDGE_QUERY_KEYS.kind) ?? "",
   };
 }
 
@@ -572,15 +595,33 @@ const buildWeChatPayOpenIdStartUrl = (returnTo: string) => {
  *
  * - 新购：POST /v1/passes/order-url
  * - 续费：POST /v1/passes/{passId}/renew/order-url
+ * - 积分包（kind="cp"）：POST /v1/credit/packages/order-url
  *
  * 鉴权策略：
  *   - 中转页通常无主站 token；body 携带 auth_code，让后端绕过 Bearer 鉴权用 auth_code 反查 user_id
  *   - body 同时带 wx_open_id（已经由后端中转 OAuth 换好），让后端拼装 jifei 入参
+ *
+ * ⚠️ 积分包与 pass 的两个契约差异（docs/frontend-credit-package-integration.md）：
+ *   1. 请求字段是 snake_case 的单个 deal_name（pass 是 deal_names 数组）
+ *   2. 响应为直出 JSON（pass 走 success/data envelope）
  */
 async function fetchOrderUrl(
   order: BridgeOrder,
   openId: string,
 ): Promise<CreatePassOrderUrlResult> {
+  if (order.operation === 'modify' && (!order.passId || !order.authCode)) {
+    throw new Error('升级支付信息不完整，请返回原页面重新获取二维码。');
+  }
+  /* 积分包：credit 的 order-url，直出 JSON */
+  if (order.kind === BRIDGE_KIND_CREDIT_PACK) {
+    return requestWechatPayJSON<CreatePassOrderUrlResult>("/v1/credit/packages/order-url", {
+      deal_name: order.dealName,
+      platform: "mobile",
+      wx_open_id: openId,
+      auth_code: order.authCode || undefined,
+    });
+  }
+
   const baseInput = {
     deal_names: [order.dealName],
     platform: "mobile" as const,
@@ -589,8 +630,11 @@ async function fetchOrderUrl(
   };
 
   if (order.passId) {
+    if (order.operation === 'modify' && !order.authCode) {
+      throw new Error('升级支付凭证缺失，请回到原页面重新获取支付二维码。');
+    }
     return requestWechatPayEnvelope<CreatePassOrderUrlResult>(
-      `/v1/passes/${encodeURIComponent(order.passId)}/renew/order-url`,
+      `/v1/passes/${encodeURIComponent(order.passId)}/${order.operation === 'modify' ? 'modify' : 'renew'}/order-url`,
       baseInput,
     );
   }
@@ -609,7 +653,9 @@ async function requestWechatPayJSON<T>(path: string, body: unknown): Promise<T> 
   }
 
   const headers = new Headers({ "Content-Type": "application/json" });
-  const authToken = readStoredAuthToken();
+  // Upgrade bridge authenticates the intended order with its scoped ticket, not another mobile session.
+  const isUpgradePayment = /\/modify\/order-url$/.test(path);
+  const authToken = isUpgradePayment ? null : readStoredAuthToken();
   if (authToken) {
     headers.set("Authorization", `Bearer ${authToken}`);
   }
@@ -618,7 +664,7 @@ async function requestWechatPayJSON<T>(path: string, body: unknown): Promise<T> 
   try {
     response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
-      credentials: "include",
+      credentials: isUpgradePayment ? 'omit' : 'include',
       headers,
       body: JSON.stringify(body),
     });

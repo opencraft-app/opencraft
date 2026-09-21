@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveAgentConsoleCollectionLabel,
   resolveAgentDisplayName,
   resolveAgentSessionTitle,
   shouldUseEnglishProviderData,
 } from "@/pages/marketing/agent-provider-locale";
 
 describe("shouldUseEnglishProviderData", () => {
+  it.each([
+    ["channel", "en-US", "Channels"],
+    ["model", "en", "Models"],
+    ["channel", "zh-CN", "translated:通道"],
+    ["model", "es", "translated:模型"],
+  ] as const)("resolves the %s collection label for %s", (section, locale, expected) => {
+    expect(resolveAgentConsoleCollectionLabel(section, locale, (copy) => `translated:${copy}`)).toBe(expected);
+  });
+
   it.each([
     ["en", true],
     ["en-US", true],

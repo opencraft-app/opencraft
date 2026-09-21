@@ -144,14 +144,14 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 	if relayState, ok := parseOAuthRelayState(state); ok {
 		if err := validateOAuthRelayStateForProvider("github", relayState); err != nil {
 			logger.Warn("github oauth callback failed", "stage", "relay_state_validation", "err", err)
-			ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch")))
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
 			target, err := relayCallbackURLWithOriginalQuery("github", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("github oauth relay callback failed", "stage", "target_query", "err", err)
-				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch")))
 				return
 			}
 			ctx.Redirect(http.StatusTemporaryRedirect, target)
@@ -159,7 +159,7 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 		}
 		if !isOAuthRelayTargetCallback(ctx.Request, relayState) {
 			logger.Warn("github oauth callback failed", "stage", "relay_target_mismatch")
-			ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch")))
 			return
 		}
 		exchangeRedirectURI = relayState.IssuerRedirectURI
@@ -197,7 +197,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 			"has_state", state != "",
 			"has_cookie_state", expectedState != "",
 		)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch")))
 		return
 	}
 
@@ -205,17 +205,18 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 	token, err := h.githubOAuth.client.ExchangeCode(requestCtx, code, exchangeRedirectURI)
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("github oauth callback failed", "stage", "exchange", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_exchange_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_exchange_failed")))
 		return
 	}
 
 	identity, err := h.githubOAuth.client.ResolveIdentity(requestCtx, token.AccessToken)
 	if err != nil {
 		logger.Error("github oauth callback failed", "stage", "identity", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_identity_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_identity_failed")))
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	identity.RegistrationDisabled = h.githubOAuth.registrationDisabled
 	identity.ClientIP = ctx.ClientIP()
 	identity.ClientUA = ctx.Request.UserAgent()
@@ -232,22 +233,23 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 		if errors.As(err, &serviceErr) {
 			switch serviceErr.Code {
 			case "oauth_registration_disabled":
-				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_registration_disabled"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_registration_disabled")))
 				return
 			case "registration_email_suffix_blocked":
-				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_suffix_blocked"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_suffix_blocked")))
 				return
 			case "oauth_registration_email_required":
-				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_required"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_email_required")))
 				return
 			}
 		}
-		ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_sign_in_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, githubOAuthReturnToCookieName, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_sign_in_failed")))
 		return
 	}
 
 	logger.Info("github oauth callback succeeded", "user_id", session.User.ID)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "github", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
 	h.completeFederationSwitch(ctx, session.Token)

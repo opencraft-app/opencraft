@@ -693,7 +693,11 @@ func (s *Service) patchResourceRow(ctx context.Context, resourceID string, rowID
 			set.Name = stringResourceValue(value)
 		}
 		if value, ok := values["base_url"]; ok {
-			set.BaseURL = strings.TrimRight(stringResourceValue(value), "/")
+			baseURL := strings.TrimRight(strings.TrimSpace(stringResourceValue(value)), "/")
+			if err := s.validateSetAdminBaseURL(set.ID, baseURL); err != nil {
+				return err
+			}
+			set.BaseURL = baseURL
 		}
 		if value, ok := values["max_users"]; ok {
 			set.MaxUsers = nonNegativeResourceInt(value)

@@ -113,4 +113,4 @@ Telegram、WhatsApp、Discord、Slack 和 WeChat 都有对应的详细配置指�
 
 - [记忆管理](../configuration/memory.md)：管理已连接通道之间共享的上下文。
 
-- [自动任务](../configuration/automation.md)：在合适的情况下，把定时更新发送到已连接的通道。
+- [定时任务](../configuration/automation.md)：在合适的情况下，把定时更新发送到已连接的通道。

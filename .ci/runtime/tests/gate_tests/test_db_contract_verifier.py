@@ -41,6 +41,32 @@ def completed_process(
 
 
 class DbContractVerifierTests(unittest.TestCase):
+    def test_service_command_verifier_uses_pinned_image_and_file_secret_without_mysql_shell(self) -> None:
+        verifier = {
+            "mode": "service-command",
+            "namespace": "lightvela-collaboration",
+            "image": "registry.example/collaboration@sha256:" + "a" * 64,
+            "command": ["/usr/local/bin/chatserver", "database", "verify", "--database-driver", "tdsql",
+                        "--database-dsn-file", "/var/run/secrets/collaboration/database.dsn"],
+            "secret_file": {"name": "collaboration-runtime-secrets", "key": "database.dsn",
+                            "mount_path": "/var/run/secrets/collaboration"},
+        }
+        manifest = build_job_manifest("collaboration", "beijing-sandbox", verifier, 0)
+        pod = manifest["spec"]["template"]["spec"]
+        container = pod["containers"][0]
+        self.assertEqual(container["command"], verifier["command"])
+        self.assertNotIn("envFrom", container)
+        self.assertEqual(pod["volumes"][0]["secret"]["items"], [{"key": "database.dsn", "path": "database.dsn"}])
+        self.assertTrue(pod["securityContext"]["runAsNonRoot"])
+        self.assertNotIn("hostNetwork", pod)
+
+    def test_service_command_verifier_rejects_unpinned_image(self) -> None:
+        with self.assertRaisesRegex(ValueError, "digest-pinned image"):
+            build_job_manifest("collaboration", "beijing-sandbox", {
+                "mode": "service-command", "namespace": "lightvela-collaboration", "image": "collaboration:latest",
+                "command": ["/usr/local/bin/chatserver", "database", "verify"],
+            }, 0)
+
     def test_max_migration_version_reads_repo_migration_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -417,6 +443,7 @@ class DbContractVerifierTests(unittest.TestCase):
             ):
                 self.assertEqual(main(), 0)
 
+        apply.assert_called_once()
         self.assertEqual(apply.call_args.args[1]["metadata"]["namespace"], "lightvela-playground-sandbox-kr-1")
 
     def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:

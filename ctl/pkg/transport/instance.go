@@ -80,6 +80,49 @@ type InstanceConfigResetResponse struct {
 	Config    *InstanceConfigResetProvider `json:"config"`
 }
 
+// InstanceGatewayMigrationRequest scopes an operator migration to one user.
+type InstanceGatewayMigrationRequest struct {
+	UserID string `json:"user_id"`
+	DryRun bool   `json:"dry_run"`
+}
+
+// InstanceGatewayMigrationResponse reports only non-secret migration state.
+type InstanceGatewayMigrationResponse struct {
+	UserID           string `json:"user_id"`
+	InstanceID       string `json:"instance_id"`
+	PreviousGateway  string `json:"previous_gateway"`
+	TargetGateway    string `json:"target_gateway"`
+	DryRun           bool   `json:"dry_run"`
+	Migrated         bool   `json:"migrated"`
+	AlreadyMigrated  bool   `json:"already_migrated,omitempty"`
+	KeyID            string `json:"key_id,omitempty"`
+	KeyPrefix        string `json:"key_prefix,omitempty"`
+	LegacyKeyRevoked bool   `json:"legacy_key_revoked,omitempty"`
+}
+
+// UserGatewayQuotaResetRequest controls a read-only preview or one-user reset.
+type UserGatewayQuotaResetRequest struct {
+	DryRun bool `json:"dry_run"`
+}
+
+// UserGatewayQuotaResetResponse contains no API key or other secret material.
+type UserGatewayQuotaResetResponse struct {
+	UserID            string `json:"user_id"`
+	Gateway           string `json:"gateway"`
+	SetID             string `json:"set_id"`
+	UpstreamUserID    int    `json:"upstream_user_id"`
+	PlanID            string `json:"plan_id"`
+	UpstreamPlanID    int    `json:"upstream_plan_id"`
+	SubscriptionID    string `json:"subscription_id"`
+	AmountUsedBefore  int64  `json:"amount_used_before"`
+	AmountUsedAfter   int64  `json:"amount_used_after"`
+	NextResetTime     int64  `json:"next_reset_time"`
+	EndTime           int64  `json:"end_time"`
+	DryRun            bool   `json:"dry_run"`
+	Status            string `json:"status"`
+	ScheduleUnchanged bool   `json:"schedule_unchanged"`
+}
+
 // TerminalSessionResponse returns a bot-scoped TAT websocket bootstrap.
 // It intentionally omits the underlying sandbox id; callers only need the TAT session fields.
 type TerminalSessionResponse struct {
@@ -132,6 +175,50 @@ type ListInstancesResponse struct {
 	PageSize int `json:"page_size" example:"20"`
 	// 实例列表
 	Items []*InstanceResponse `json:"items"`
+}
+
+// InstanceBotResponse describes one product Bot hosted by an instance.
+type InstanceBotResponse struct {
+	BotID          string                          `json:"bot_id" example:"bot-550e8400e29b41d4a716446655440000"`
+	InstanceID     string                          `json:"instance_id" example:"ins-123"`
+	ProfileID      string                          `json:"profile_id" example:"main"`
+	Name           string                          `json:"name" example:"我的助手"`
+	Description    string                          `json:"description,omitempty"`
+	IsDefault      bool                            `json:"is_default"`
+	Status         string                          `json:"status" example:"ready"`
+	GatewayRunning *bool                           `json:"gateway_running,omitempty"`
+	CreatedFrom    string                          `json:"created_from" example:"blank"`
+	SourceBotID    string                          `json:"source_bot_id,omitempty"`
+	ErrorCode      string                          `json:"error_code,omitempty"`
+	ErrorMessage   string                          `json:"error_message,omitempty"`
+	CreatedAt      time.Time                       `json:"created_at"`
+	UpdatedAt      time.Time                       `json:"updated_at"`
+	WeixinOwner    *InstanceChannelBindingResponse `json:"weixin_owner,omitempty"`
+}
+
+type InstanceChannelBindingResponse struct {
+	Channel   string `json:"channel"`
+	BotID     string `json:"bot_id"`
+	ProfileID string `json:"profile_id"`
+	BotName   string `json:"bot_name,omitempty"`
+	Status    string `json:"status"`
+}
+
+type ListInstanceBotsResponse struct {
+	Items []*InstanceBotResponse `json:"items"`
+}
+
+type CreateInstanceBotRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	CreateMode  string `json:"create_mode" example:"blank"`
+	SourceBotID string `json:"source_bot_id,omitempty"`
+	InitialSoul string `json:"initial_soul,omitempty"`
+}
+
+type UpdateInstanceBotRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 // BotSummaryResponse 只读 bot 归属摘要
@@ -504,8 +591,15 @@ type CreateWeixinLoginSessionResponse struct {
 	Status    string `json:"status" example:"starting"`
 }
 
+type CreateWeixinLoginSessionRequest struct {
+	BotID     string `json:"bot_id,omitempty"`
+	ProfileID string `json:"profile_id,omitempty"`
+}
+
 type WeixinLoginSessionResponse struct {
 	SessionID     string     `json:"session_id" example:"wxlogin_123"`
+	BotID         string     `json:"bot_id,omitempty"`
+	ProfileID     string     `json:"profile_id,omitempty"`
 	Status        string     `json:"status" example:"waiting_qr"`
 	QRURL         string     `json:"qr_url,omitempty" example:"https://example.com/qr"`
 	QRASCII       string     `json:"qr_ascii,omitempty"`
@@ -526,6 +620,8 @@ type ConfigureChannelRequest struct {
 	Token string `json:"token" example:"123456789:app-secret"`
 	// 同通道多账号标识（可选）
 	Account string `json:"account,omitempty" example:"bot1"`
+	// Hermes Profile 选择器；空值保持存量实例级配置链路。
+	ProfileID string `json:"profile_id,omitempty" example:"main"`
 }
 
 // ConfigureChannelResponse 配置通道响应

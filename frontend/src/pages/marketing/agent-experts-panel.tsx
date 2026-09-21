@@ -28,6 +28,7 @@ import remarkGfm from "remark-gfm";
 
 import { useT } from "@/i18n/t";
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
+import { requireHermesSkillsProfile, withHermesAgent, withHermesSkillsProfile } from "@/lib/hermes-agent-command";
 import { shellQuote } from "@/lib/hermes-cron-client";
 import {
   buildInstalledSkillsListCommand,
@@ -1008,16 +1009,41 @@ async function fetchExperts(params: {
 
 export function ExpertsPanel({
   botId,
-  execDebugCommand,
-  execDebugCommandStream,
+  profileId,
+  mode = "domestic",
+  execDebugCommand: baseExecDebugCommand,
+  execDebugCommandStream: baseExecDebugCommandStream,
   lang,
 }: {
   botId: string;
+  profileId?: string;
+  mode?: "domestic" | "global";
   execDebugCommand: ExpertsExecDebugCommand;
   execDebugCommandStream?: SkillsExecDebugCommandStream;
   lang?: ExpertLanguage;
 }) {
   const t = useT();
+  const scopeSkillsCommand = useCallback((command: string) => {
+    if (!/(?:^|\s)acli skills\s/.test(command)) return command;
+    if (mode === "global") return profileId ? withHermesAgent(command, profileId) : command;
+    return withHermesSkillsProfile(command, profileId);
+  }, [mode, profileId]);
+  const execDebugCommand = useCallback<ExpertsExecDebugCommand>((targetBotId, command, options) => (
+    baseExecDebugCommand(
+      targetBotId,
+      scopeSkillsCommand(command),
+      options,
+    )
+  ), [baseExecDebugCommand, scopeSkillsCommand]);
+  const execDebugCommandStream = useMemo<SkillsExecDebugCommandStream | undefined>(() => {
+    if (!baseExecDebugCommandStream) return undefined;
+    return (targetBotId, command, onChunk, options) => baseExecDebugCommandStream(
+      targetBotId,
+      scopeSkillsCommand(command),
+      onChunk,
+      options,
+    );
+  }, [baseExecDebugCommandStream, scopeSkillsCommand]);
   const [activeFilter, setActiveFilter] = useState<ExpertFilterId>("all");
   const [keyword, setKeyword] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
@@ -1121,7 +1147,8 @@ export function ExpertsPanel({
 
     async function refreshInstalledSkills() {
       try {
-        const result = await execDebugCommand(botId, buildInstalledSkillsListCommand(), {
+        const id = mode === "domestic" ? requireHermesSkillsProfile(profileId) : profileId;
+        const result = await execDebugCommand(botId, buildInstalledSkillsListCommand(id), {
           timeoutMs: SKILL_PACKAGE_COMMAND_TIMEOUT_MS,
         });
         if (!cancelled) {
@@ -1146,7 +1173,7 @@ export function ExpertsPanel({
     return () => {
       cancelled = true;
     };
-  }, [botId, execDebugCommand]);
+  }, [botId, execDebugCommand, mode, profileId]);
 
   useEffect(() => {
     if (!installedSkillsLoaded || installedSlugs.size === 0 || visibleCards.length === 0) return;
@@ -1290,7 +1317,7 @@ export function ExpertsPanel({
       setInstallingSlug(null);
       setInstallProgress(null);
     }
-  }, [botId, execDebugCommand, execDebugCommandStream, installingSlug, lang, t]);
+  }, [botId, execDebugCommand, execDebugCommandStream, installingSlug, lang, profileId, t]);
 
   const handleOpenDetail = useCallback((card: ExpertPackageCard) => {
     setSelectedCard(card);

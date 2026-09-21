@@ -91,6 +91,7 @@ func Run(ctx context.Context, mode Mode) error {
 		SetRuntimeRouteRequired: setRuntimeRouteRequired,
 		TrafficTransportManager: trafficTransportManager,
 		NewAPIClientTimeout:     newAPIClientTimeout,
+		EnforceManagedSetURLs:   mode != ModeAll || envBoolDefault("LLMGATEWAY_ENFORCE_MANAGED_SET_URLS", false),
 		TelemetrySanitizer:      telemetrySanitizer,
 		TelemetryCorrelator:     telemetryCorrelatorFromEnv(),
 	})
@@ -209,6 +210,7 @@ func RunWorker(ctx context.Context) error {
 		RootPassword:               rootPassword,
 		KeyRouteCache:              keyRouteCache,
 		NewAPIClientTimeout:        newAPIClientTimeout,
+		EnforceManagedSetURLs:      true,
 		WorkerSetCapacityEnabled:   envBoolDefault("LLMGATEWAY_SET_AUTOSCALER_ENABLED", false),
 		WorkerSetCapacityPolicy:    setCapacityPolicyFromEnv(),
 		WorkerBYOKSyncBatchSize:    envInt("LLMGATEWAY_WORKER_BYOK_SYNC_BATCH_SIZE", 1000),

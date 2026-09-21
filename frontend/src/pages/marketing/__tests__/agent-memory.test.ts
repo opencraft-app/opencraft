@@ -19,7 +19,6 @@ import {
   isHermesMemoryLimitNearUsage,
   parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
-  toSingleLineMemoryEntry,
   validateHermesMemoryLimit,
 } from "../agent-memory";
 
@@ -29,7 +28,7 @@ describe("buildHermesMemoryReadCommand", () => {
 
     expect(command).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
     expect(command).toContain('os.environ["HERMES_ROOT"]');
-    expect(command).toContain('"$HERMES_ROOT/hermes-agent/venv/bin/python"');
+    expect(command).toContain('HERMES_PYTHON="$HERMES_BASE/hermes-agent/venv/bin/python"');
     expect(command).toContain("config.yaml");
     expect(command).toContain("MEMORY.md");
     expect(command).toContain("USER.md");
@@ -237,8 +236,10 @@ describe("validateHermesMemoryLimit", () => {
 
 describe("buildHermesMemoryLimitCommand", () => {
   it("builds target-specific Hermes config commands", () => {
-    expect(buildHermesMemoryLimitCommand("memory", 4000)).toBe("hermes config set memory.memory_char_limit 4000");
-    expect(buildHermesMemoryLimitCommand("user", 3000)).toBe("hermes config set memory.user_char_limit 3000");
+    expect(buildHermesMemoryLimitCommand("memory", 4000)).toBe("hermes -p 'default' config set memory.memory_char_limit 4000");
+    expect(buildHermesMemoryLimitCommand("user", 3000)).toBe("hermes -p 'default' config set memory.user_char_limit 3000");
+    expect(buildHermesMemoryLimitCommand("memory", 2400, 0, "profile-2"))
+      .toBe("hermes -p 'profile-2' config set memory.memory_char_limit 2400");
   });
 
   it("throws before building invalid commands", () => {
@@ -271,12 +272,6 @@ describe("splitHermesMemoryEntries", () => {
 
   it("drops empty entries created by repeated delimiters", () => {
     expect(splitHermesMemoryEntries("§ alpha §  § beta §")).toEqual(["alpha", "beta"]);
-  });
-});
-
-describe("toSingleLineMemoryEntry", () => {
-  it("normalizes multiline memories for single-row cards", () => {
-    expect(toSingleLineMemoryEntry("alpha\n  beta\tgamma")).toBe("alpha beta gamma");
   });
 });
 

@@ -5,7 +5,7 @@
 //   - A1 一次性消费（间接：通过 mock store 的 Consume 错验证）
 //   - A2 deal_names 强绑定校验（403 AUTH_CODE_MISMATCH）
 //   - A3 pass_id 强绑定校验（403 AUTH_CODE_MISMATCH）
-//   - A5 双模式排他（X-User-Id 优先；缺则 auth_code；都缺 401）
+//   - A5 双模式排他（auth_code 优先；缺则 X-User-Id；都缺 401）
 package main
 
 import (
@@ -63,24 +63,49 @@ func makeRequestWithUserID(userID string) *http.Request {
 	return r
 }
 
-// === T6: Bearer 优先（A5）===
+// === T6: auth_code 优先（A5）===
 
-// TestResolveOrderUrlAuth_BearerPath_Bypass 验证 X-User-Id 存在时不进 ticket
-// 路径，userID 直接来自 header；store.Consume 不被调用（避免误烧 ticket）。
-func TestResolveOrderUrlAuth_BearerPath_Bypass(t *testing.T) {
-	store := &fakeAuthCodeStore{}
+// TestResolveOrderUrlAuth_AuthCodePrecedesHeader 验证扫码中转页同时携带
+// auth_code 与扫码用户登录态时，必须按 ticket 恢复原下单用户。
+func TestResolveOrderUrlAuth_AuthCodePrecedesHeader(t *testing.T) {
+	store := &fakeAuthCodeStore{
+		consumeRet: &authcode.Ticket{
+			UserID:    "u-from-ticket",
+			DealNames: []string{"deal-1"},
+			PassID:    "pass-1",
+		},
+	}
 	withAuthCodeStore(t, store)
 
-	r := makeRequestWithUserID("u-1")
-	got, err := resolveOrderUrlAuth(r, "any-auth-code", []string{"deal-1"}, "")
+	r := makeRequestWithUserID("u-from-scanner-session")
+	got, err := resolveOrderUrlAuth(r, "code-1", []string{"deal-1"}, "pass-1")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if got != "u-1" {
-		t.Errorf("userID: got %q want u-1", got)
+	if got != "u-from-ticket" {
+		t.Errorf("userID: got %q want u-from-ticket", got)
+	}
+	if store.consumeCalls != 1 {
+		t.Errorf("Consume should be called when auth_code is present, got %d", store.consumeCalls)
+	}
+}
+
+// TestResolveOrderUrlAuth_HeaderFallbackWithoutAuthCode 验证 PC 端不携带
+// auth_code 时继续使用原有登录态，且不会消费 ticket。
+func TestResolveOrderUrlAuth_HeaderFallbackWithoutAuthCode(t *testing.T) {
+	store := &fakeAuthCodeStore{}
+	withAuthCodeStore(t, store)
+
+	r := makeRequestWithUserID("u-from-header")
+	got, err := resolveOrderUrlAuth(r, "", []string{"deal-1"}, "")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != "u-from-header" {
+		t.Errorf("userID: got %q want u-from-header", got)
 	}
 	if store.consumeCalls != 0 {
-		t.Errorf("Consume should NOT be called when X-User-Id present, got %d", store.consumeCalls)
+		t.Errorf("Consume should NOT be called when auth_code is absent, got %d", store.consumeCalls)
 	}
 }
 

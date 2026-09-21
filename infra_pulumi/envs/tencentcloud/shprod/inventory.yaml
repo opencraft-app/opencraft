@@ -172,6 +172,40 @@ stacks:
     existing_scanner_trigger_id: lightvela-notify-scanner-sh#default#lightvela-notify-scanner-timer
     existing_worker_trigger_id: lightvela-notify-worker-sh#default#lightvela-notify-worker-timer
 
+  pulsar:
+    enabled: true
+    manage_cluster: true
+    existing_cluster_id: pulsar-vje938a9pgq4
+    broker_url: http://pulsar-vje938a9pgq4.eap-tiu5h8jq.tdmq-pulsar.ap-sh.qcloud.tencenttdmq.com:8080
+    expected_cluster_name: lightvela-pulsar-sh
+    expected_product_name: PULSAR.P2.MINI1
+    expected_zone_ids: [200005]
+    expected_vpc_id: vpc-2y7p1lk6
+    expected_subnet_id: subnet-38xcw327
+    storage_size_gb: 0
+    purchase_months: 1
+    auto_renew_flag: 1
+    auto_voucher: 0
+    tags:
+      env: shprod
+      app: lightclaw
+      component: referral
+    namespace: lightvela-ref
+    message_ttl_seconds: 604800
+    retention_minutes: 1440
+    retention_size_mb: 10240
+    topic: lightvela.referral.events.v1
+    dead_letter_topic: lightvela.referral.events.v1-dlq
+    user_auth_producer_role: lightvela-user-auth-referral-producer
+    ctl_producer_role: lightvela-ctl-referral-producer
+    referral_consumer_role: lightvela-referral-consumer
+    user_auth_ssm_secret: mono-shprod-lightclaw-auth-secrets
+    user_auth_ssm_version_id: referral-sh-20260916-auth
+    ctl_ssm_secret: mono-shprod-ctl-runtime-secrets
+    ctl_ssm_version_id: referral-sh-20260916-ctl
+    referral_ssm_secret: mono-shprod-referral-runtime-secrets
+    referral_ssm_version_id: SSM_Current
+
   tcr:
     instance_type: basic
     namespace_name: lightclaw

@@ -8,6 +8,189 @@ import (
 	"testing"
 )
 
+func TestValidateRejectsUnknownAuthMode(t *testing.T) {
+	cfg := Config{Auth: AuthConfig{Mode: "sometimes", TimestampSkew: "5m"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want invalid auth.mode error")
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidEnabled(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ENABLED", "sometimes")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.enabled env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid enabled error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesRejectsInvalidAllowedPort(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_ALLOWED_PORTS", "18084,not-a-port")
+	if err := applyDeveloperRouteEnvOverrides(&Config{}); err == nil || !strings.Contains(err.Error(), "developer_routes.allowed_ports env") {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v, want invalid allowed port error", err)
+	}
+}
+
+func TestApplyDeveloperRouteEnvOverridesLoadsHTTPRegistry(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_STORE", "http")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_ROUTE_ID", "developer-route-registry")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_CALLER", "cloudladdergateway")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_SECRET_ENV", "CLOUDLADDER_SHADOW_HMAC_SECRET")
+	t.Setenv("CLOUDLADDERGATEWAY_DEVELOPER_ROUTES_REGISTRY_TIMEOUT", "11s")
+	cfg := Config{}
+	if err := applyDeveloperRouteEnvOverrides(&cfg); err != nil {
+		t.Fatalf("applyDeveloperRouteEnvOverrides() error = %v", err)
+	}
+	d := cfg.DeveloperRoutes
+	if d.Store != "http" || d.RegistryBaseURL != "https://api-sandbox-bj-7.lightclaw.tech" || d.RegistryRouteID != "developer-route-registry" || d.RegistryCaller != "cloudladdergateway" || d.RegistrySecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" || d.RegistryTimeout != "11s" {
+		t.Fatalf("unexpected developer route registry config: %+v", d)
+	}
+}
+
+func TestLoadAppliesAuthEnvironmentOverrides(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", " required ")
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "jifei-test, devtunnel, jifei-test")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+auth:
+  mode: optional
+  allow_unauthenticated:
+    - callback
+routes:
+  - id: callback
+    upstream:
+      base_url: http://callback.internal
+  - id: jifei-test
+    upstream:
+      base_url: http://jifei-test.internal
+  - id: devtunnel
+    upstream:
+      base_url: http://devtunnel.internal
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Auth.EffectiveMode(); got != AuthModeRequired {
+		t.Fatalf("auth mode = %q, want required", got)
+	}
+	want := []string{"callback", "jifei-test", "devtunnel"}
+	if !slices.Equal(cfg.Auth.AllowUnauthenticated, want) {
+		t.Fatalf("allow_unauthenticated = %#v, want %#v", cfg.Auth.AllowUnauthenticated, want)
+	}
+}
+
+func TestLoadKeepsYAMLAuthWhenEnvironmentOverridesAreEmpty(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_MODE", "")
+	t.Setenv("CLOUDLADDERGATEWAY_AUTH_ALLOW_UNAUTHENTICATED_APPEND", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+auth:
+  mode: optional
+  allow_unauthenticated: [callback]
+routes:
+  - id: callback
+    upstream:
+      base_url: http://callback.internal
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Auth.EffectiveMode(); got != AuthModeOptional {
+		t.Fatalf("auth mode = %q, want optional", got)
+	}
+	if !slices.Equal(cfg.Auth.AllowUnauthenticated, []string{"callback"}) {
+		t.Fatalf("allow_unauthenticated = %#v", cfg.Auth.AllowUnauthenticated)
+	}
+}
+
+func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	allowUnauthenticated := make(map[string]struct{}, len(cfg.Auth.AllowUnauthenticated))
+	for _, routeID := range cfg.Auth.AllowUnauthenticated {
+		allowUnauthenticated[routeID] = struct{}{}
+	}
+	registeredCallers := make(map[string]struct{}, len(cfg.Auth.Callers))
+	for _, caller := range cfg.Auth.Callers {
+		registeredCallers[caller.ID] = struct{}{}
+	}
+
+	for _, route := range cfg.Routes {
+		isExternalCallback := route.ID == "jifei-callback" ||
+			strings.HasPrefix(route.ID, "jifei-callback-") ||
+			strings.HasPrefix(route.ID, "jifei-credit-callback-") ||
+			strings.HasPrefix(route.ID, "tencentcloud-account-callback-") ||
+			route.ID == "devtunnel"
+		if isExternalCallback {
+			if _, ok := allowUnauthenticated[route.ID]; !ok {
+				t.Errorf("external callback route %q would be blocked by required auth", route.ID)
+			}
+		}
+		if _, anonymous := allowUnauthenticated[route.ID]; !anonymous {
+			for _, caller := range route.Callers {
+				if _, ok := registeredCallers[caller]; !ok {
+					t.Errorf("route %q references unregistered caller %q", route.ID, caller)
+				}
+			}
+		}
+	}
+
+	sensitiveOutbound := []string{
+		"jifei-test", "jifei-prod",
+		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
+		"qbilling-send-resource-test",
+		"qbilling-send-resource-cn-prod", "qbilling-send-resource-intl-prod",
+		"dianshi-price", "dianshi-order",
+		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
+		"billing-query-via-polaris",
+		"billing-trade-cn-test", "billing-trade-cn-pre", "billing-trade-cn-prod",
+		"billing-trade-intl-test", "billing-trade-intl-pre", "billing-trade-intl-prod",
+	}
+	for _, routeID := range sensitiveOutbound {
+		if _, ok := allowUnauthenticated[routeID]; ok {
+			t.Errorf("sensitive outbound route %q remains anonymously accessible", routeID)
+		}
+	}
+}
+
+func TestExampleConfigWiresDeveloperRouteControlCaller(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	developerRoutes := cfg.DeveloperRoutes
+	if developerRoutes.RegistrationRoute != "developer-route-control" || developerRoutes.RegistrationCaller != "lightclaw-auth" {
+		t.Fatalf("developer route registration auth = route:%q caller:%q", developerRoutes.RegistrationRoute, developerRoutes.RegistrationCaller)
+	}
+	if !slices.Equal(developerRoutes.AllowedPorts, []int{18084}) {
+		t.Fatalf("developer route allowed ports = %v, want [18084]", developerRoutes.AllowedPorts)
+	}
+
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != developerRoutes.RegistrationCaller {
+			continue
+		}
+		if caller.SecretEnv != "CLOUDLADDER_SHADOW_HMAC_SECRET" {
+			t.Fatalf("developer route caller secret env = %q", caller.SecretEnv)
+		}
+		if !slices.Contains(caller.Routes, developerRoutes.RegistrationRoute) {
+			t.Fatalf("developer route caller routes = %v, missing %q", caller.Routes, developerRoutes.RegistrationRoute)
+		}
+		return
+	}
+	t.Fatalf("developer route registration caller %q is not declared in auth.callers", developerRoutes.RegistrationCaller)
+}
+
 func TestLoadEnablesOTLPAuditFromStandardEnv(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs")
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -222,6 +405,86 @@ func TestExampleConfigGrantsTradeCallerProdBillingRoute(t *testing.T) {
 			return
 		}
 		t.Fatalf("lightvela-trade caller routes missing tcapi-billing-trade-intl-prod: %#v", caller.Routes)
+	}
+	t.Fatal("lightvela-trade caller is missing")
+}
+
+func TestExampleConfigRoutesCreditSendResourceThroughExpectedBillingEndpoints(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	expected := map[string]struct {
+		baseURL string
+		host    string
+	}{
+		"qbilling-send-resource-test": {
+			baseURL: "http://9.139.137.40",
+			host:    "qbilling.itd.com",
+		},
+		"qbilling-send-resource-cn-prod": {
+			baseURL: "http://qbilling.billing.tencentyun.com",
+			host:    "qbilling.billing.tencentyun.com",
+		},
+		"qbilling-send-resource-intl-prod": {
+			baseURL: "http://intl.resource.qbilling.tencentyun.com",
+			host:    "intl.resource.qbilling.tencentyun.com",
+		},
+	}
+	found := make(map[string]bool, len(expected))
+	for _, route := range cfg.Routes {
+		want, ok := expected[route.ID]
+		if !ok {
+			continue
+		}
+		found[route.ID] = true
+		if route.Mode != RouteModeSignedHTTPTunnel {
+			t.Errorf("route %s mode = %q", route.ID, route.Mode)
+		}
+		if len(route.Callers) != 1 || route.Callers[0] != "lightvela-trade" {
+			t.Errorf("route %s callers = %#v", route.ID, route.Callers)
+		}
+		upstream, err := cfg.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			t.Errorf("resolve Credit sendResource upstream %s: %v", route.ID, err)
+			continue
+		}
+		if got := upstream.BaseURL; got != want.baseURL {
+			t.Errorf("route %s base_url = %q, want %q", route.ID, got, want.baseURL)
+		}
+		if got := upstream.Headers["Host"]; got != want.host {
+			t.Errorf("route %s Host = %q, want %q", route.ID, got, want.host)
+		}
+		if !slices.Equal(upstream.AllowedMethods, []string{"POST"}) {
+			t.Errorf("route %s allowed methods = %#v", route.ID, upstream.AllowedMethods)
+		}
+	}
+	for routeID := range expected {
+		if !found[routeID] {
+			t.Errorf("%s route is missing", routeID)
+		}
+	}
+}
+
+func TestExampleConfigGrantsTradeCallerCreditSendResourceRoute(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+	for _, caller := range cfg.Auth.Callers {
+		if caller.ID != "lightvela-trade" {
+			continue
+		}
+		for _, routeID := range []string{
+			"qbilling-send-resource-test",
+			"qbilling-send-resource-cn-prod",
+			"qbilling-send-resource-intl-prod",
+		} {
+			if !slices.Contains(caller.Routes, routeID) {
+				t.Errorf("lightvela-trade caller routes missing %s: %#v", routeID, caller.Routes)
+			}
+		}
+		return
 	}
 	t.Fatal("lightvela-trade caller is missing")
 }
@@ -478,6 +741,48 @@ func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
 	}
 	for routeID := range wantBaseURL {
 		t.Fatalf("example config missing regional callback route %q", routeID)
+	}
+}
+
+func TestExampleConfigIncludesCreditRegionalJifeiCallbacks(t *testing.T) {
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	wantRoutes := map[string]bool{
+		"jifei-credit-callback-bj":  false,
+		"jifei-credit-callback-sh":  false,
+		"jifei-credit-callback-gz":  false,
+		"jifei-credit-callback-cd":  false,
+		"jifei-credit-callback-nj":  false,
+		"jifei-credit-callback-hk":  false,
+		"jifei-credit-callback-jp":  false,
+		"jifei-credit-callback-kr":  false,
+		"jifei-credit-callback-jkt": false,
+		"jifei-credit-callback-sg":  false,
+		"jifei-credit-callback-th":  false,
+	}
+
+	for _, route := range cfg.Routes {
+		if _, ok := wantRoutes[route.ID]; !ok {
+			continue
+		}
+		if route.Condition != `request.method == "POST"` {
+			t.Fatalf("route %q condition = %q", route.ID, route.Condition)
+		}
+		if got := route.Upstream.BaseURL; got != "https://lightclaw.tech" {
+			t.Fatalf("route %q base_url = %q, want Beijing pre-production", route.ID, got)
+		}
+		if len(route.Upstream.AllowedMethods) != 1 || route.Upstream.AllowedMethods[0] != "POST" {
+			t.Fatalf("route %q allowed_methods = %#v", route.ID, route.Upstream.AllowedMethods)
+		}
+		wantRoutes[route.ID] = true
+	}
+	for routeID, found := range wantRoutes {
+		if !found {
+			t.Fatalf("example config missing Credit callback route %q", routeID)
+		}
 	}
 }
 

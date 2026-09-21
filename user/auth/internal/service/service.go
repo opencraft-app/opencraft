@@ -327,21 +327,23 @@ type PhoneAuthChallenge struct {
 const impersonationSessionTTL = 30 * time.Minute
 
 type VerifySMSInput struct {
-	Name       string
-	Phone      string
-	Code       string
-	InviteCode string
-	ClientIP   string
-	ClientUA   string
+	Name         string
+	Phone        string
+	Code         string
+	InviteCode   string
+	ReferralCode string
+	ClientIP     string
+	ClientUA     string
 }
 
 type PasswordSignUpInput struct {
-	Name       string
-	Email      string
-	Password   string
-	InviteCode string
-	ClientIP   string
-	ClientUA   string
+	Name         string
+	Email        string
+	Password     string
+	InviteCode   string
+	ReferralCode string
+	ClientIP     string
+	ClientUA     string
 }
 
 type OAuthSignInInput struct {
@@ -352,6 +354,7 @@ type OAuthSignInInput struct {
 	Name            string
 	AvatarURL       string
 	InviteCode      string
+	ReferralCode    string
 	ClientIP        string
 	ClientUA        string
 	// RegistrationDisabled allows a provider to authenticate or link existing
@@ -691,10 +694,16 @@ func (s *Service) verifyExistingUserPhoneAuthSMS(ctx context.Context, input Veri
 		if err != nil {
 			return nil, err
 		}
+		if err := s.store.CreateReferralClaim(ctx, user.ID, input.ReferralCode, "phone", s.now()); err != nil {
+			return nil, err
+		}
 		return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
 	}
 	user, err := s.store.FindUserByPhone(ctx, input.Phone)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.store.CreateReferralClaim(ctx, user.ID, input.ReferralCode, "phone", s.now()); err != nil {
 		return nil, err
 	}
 	return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
@@ -718,7 +727,7 @@ func (s *Service) verifyNewUserPhoneAuthSMS(ctx context.Context, input VerifySMS
 		return nil, newError("phone_auth_unavailable", "手机号登录暂未启用。", http.StatusServiceUnavailable)
 	}
 	userID := strings.TrimSpace(challenge.UserID)
-	user, err := s.store.FindOrCreatePhoneAuthUser(ctx, input.Phone, input.Name, s.now())
+	user, err := s.store.FindOrCreatePhoneAuthUser(ctx, input.Phone, input.Name, input.ReferralCode, s.now())
 	if err != nil {
 		return nil, err
 	}
@@ -960,6 +969,10 @@ func (s *Service) SignUpWithPassword(ctx context.Context, input PasswordSignUpIn
 }
 
 func (s *Service) SignInWithPassword(ctx context.Context, email string, password string) (*AuthSession, error) {
+	return s.SignInWithPasswordAndReferral(ctx, email, password, "")
+}
+
+func (s *Service) SignInWithPasswordAndReferral(ctx context.Context, email string, password string, referralCode string) (*AuthSession, error) {
 	normalizedEmail := normalizeEmail(email)
 	if !isValidEmail(normalizedEmail) {
 		return nil, newError("invalid_email", "邮箱格式不正确。", 400)
@@ -976,7 +989,14 @@ func (s *Service) SignInWithPassword(ctx context.Context, email string, password
 		return nil, newError("invalid_credentials", "账号或密码不正确。", 401)
 	}
 
+	if err := s.store.CreateReferralClaim(ctx, user.ID, referralCode, "password", s.now()); err != nil {
+		return nil, err
+	}
 	return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
+}
+
+func (s *Service) ClaimReferral(ctx context.Context, userID, referralCode, channel string) error {
+	return s.store.CreateReferralClaim(ctx, userID, referralCode, channel, s.now())
 }
 
 func (s *Service) SignInWithOAuth(ctx context.Context, input OAuthSignInInput) (*AuthSession, error) {
@@ -1560,6 +1580,57 @@ func (s *Service) CurrentShadowBinding(ctx context.Context, token string) (Shado
 	return toShadowBindingResult(binding), nil
 }
 
+func (s *Service) AdminShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	if s == nil || s.shadowBinding == nil || !s.shadowBinding.AdminEnabled() {
+		return ShadowBindingResult{}, newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	}
+	binding, err := s.shadowBinding.AdminGetBinding(ctx, userID)
+	if err != nil {
+		return ShadowBindingResult{}, shadowBindingAdminError(err)
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) AdminUpsertShadowBinding(ctx context.Context, in shadowbinding.AdminBindingInput) (ShadowBindingResult, error) {
+	if s == nil || s.shadowBinding == nil || !s.shadowBinding.AdminEnabled() {
+		return ShadowBindingResult{}, newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	}
+	if _, err := s.store.FindUserByID(ctx, strings.TrimSpace(in.UserID)); err != nil {
+		return ShadowBindingResult{}, err
+	}
+	binding, err := s.shadowBinding.AdminUpsertBinding(ctx, in)
+	if err != nil {
+		return ShadowBindingResult{}, shadowBindingAdminError(err)
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) AdminDisableShadowBinding(ctx context.Context, in shadowbinding.AdminDisableInput) (ShadowBindingResult, error) {
+	if s == nil || s.shadowBinding == nil || !s.shadowBinding.AdminEnabled() {
+		return ShadowBindingResult{}, newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	}
+	binding, err := s.shadowBinding.AdminDisableBinding(ctx, in)
+	if err != nil {
+		return ShadowBindingResult{}, shadowBindingAdminError(err)
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func shadowBindingAdminError(err error) error {
+	switch {
+	case errors.Is(err, shadowbinding.ErrAdminDisabled):
+		return newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	case errors.Is(err, shadowbinding.ErrInvalidAdminInput):
+		return newError("invalid_shadow_binding", "影子账号绑定参数不完整。", http.StatusBadRequest)
+	case errors.Is(err, shadowbinding.ErrBindingConflict):
+		return newError("shadow_binding_conflict", "用户、影子用户名或 UIN 已被其他有效绑定占用，请先显式解绑。", http.StatusConflict)
+	case errors.Is(err, shadowbinding.ErrNotFound):
+		return newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+	default:
+		return err
+	}
+}
+
 func (s *Service) IssueTencentCloudConsoleAuthCode(ctx context.Context, token string) (shadowbinding.AuthCode, error) {
 	session, err := s.CurrentSession(ctx, token)
 	if err != nil {
@@ -1944,6 +2015,14 @@ func (s *Service) DeleteAdminUser(ctx context.Context, userID string) error {
 
 func (s *Service) ListAdminUsers(ctx context.Context, search string, limit int) ([]AdminUser, error) {
 	return s.store.ListAdminUsers(ctx, strings.TrimSpace(search), normalizeAdminLimit(limit))
+}
+
+func (s *Service) ListAdminUsersPage(ctx context.Context, search string, page int, pageSize int) ([]AdminUser, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	pageSize = normalizeAdminLimit(pageSize)
+	return s.store.ListAdminUsersPage(ctx, strings.TrimSpace(search), pageSize, (page-1)*pageSize)
 }
 
 func (s *Service) ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error) {

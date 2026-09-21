@@ -22,8 +22,8 @@ let paidBillingEnabled = false;
 vi.mock("@/i18n/t", () => {
   const translate = (text: string, options?: Record<string, unknown>) => {
     const translations: Record<string, string> = {
-      "临近到期": "Expiring Soon",
-      "即将到期": "Expiring Soon",
+      "临近到期": "Expires soon",
+      "即将到期": "Expires soon",
       "剩余 {{days}} 天到期": "{{days}} days left",
       "剩余 {{hours}} 小时到期": "{{hours}} hours left",
       "剩余不足 1 小时到期": "Less than 1 hour left",
@@ -56,6 +56,7 @@ vi.mock("@/lib/region", () => ({
 
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => paidBillingEnabled,
+  useMultiBotEnabled: () => true,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -109,7 +110,6 @@ vi.mock("@/contexts/repository-context", () => ({
 }));
 
 vi.mock("@/components/site/product-chrome", () => ({
-  ProductFooter: () => null,
   ProductReturnHomeHeader: () => null,
 }));
 
@@ -214,10 +214,10 @@ describe("AgentSettingsPage global renewal reminder", () => {
   it("renders the global renewal reminder as a static compact badge", () => {
     renderAgentSettingsPage();
 
-    const reminder = screen.getByText("Expiring Soon").closest(".lv-agent-renewal-badge") as HTMLElement | null;
+    const reminder = screen.getByText("Expires soon").closest(".lv-agent-renewal-badge") as HTMLElement | null;
     expect(reminder).not.toBeNull();
     expect(reminder?.tagName).toBe("SPAN");
-    expect(reminder).toHaveTextContent("Expiring Soon");
+    expect(reminder).toHaveTextContent("Expires soon");
     expect(reminder).toHaveTextContent("3 days left");
     expect(reminder).toHaveClass("lv-agent-renewal-badge");
     expect(reminder).not.toHaveAttribute("aria-label");
@@ -226,7 +226,7 @@ describe("AgentSettingsPage global renewal reminder", () => {
     expect(reminder).not.toHaveAttribute("role");
     expect(reminder).not.toHaveAttribute("title");
     expect(reminder?.querySelector("svg")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Expiring Soon|Coming Soon/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Expires soon|Coming Soon/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();

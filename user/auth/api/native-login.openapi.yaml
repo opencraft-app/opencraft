@@ -1,0 +1,75 @@
+openapi: 3.0.3
+info:
+  title: LightVela first-party OIDC session adapter
+  version: 3.0.0
+  description: >-
+    Companion to openapi.yaml, like the provider OAuth routes registered in server.go.
+    Authorization uses the existing /oauth2/authorize and unified authorization page.
+    Explicitly register each OpenCraft public client with fixed callbacks. This
+    adapter redeems their OIDC grants for normal sessions, not OIDC JWTs. Public
+    client code TTL is 120 seconds; sites retain five seconds. No client secret
+    is embedded in either app.
+paths:
+  /auth/session/exchange:
+    post:
+      operationId: exchangeFirstPartySession
+      summary: Redeem a registered first-party client's OIDC authorization code for an API session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, code, code_verifier, redirect_uri]
+              properties:
+                client_id: { type: string, enum: [opencraft-native-v1, opencraft-web-v1] }
+                code: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                code_verifier: { type: string, pattern: '^[A-Za-z0-9._~-]{43,128}$' }
+                redirect_uri:
+                  type: string
+                  enum:
+                    - opencraft://auth/lightvela
+                    - https://chat.lightvela.com/auth/lightvela/callback
+                    - https://chat.lightvela.ai/auth/lightvela/callback
+      responses:
+        '200':
+          description: New normal session. Cache-Control no-store; Pragma no-cache. Never sets a browser session cookie.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_token, token_type]
+                properties:
+                  session_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+        '400': { description: 'Invalid request, client, callback, verifier, expired/used code, or foreign client code' }
+        '503': { description: OIDC is not configured }
+  /auth/native/token:
+    post:
+      operationId: exchangeNativeLogin
+      deprecated: true
+      summary: Compatibility alias for released native clients
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, code_verifier, redirect_uri]
+              properties:
+                code: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                code_verifier: { type: string, pattern: '^[A-Za-z0-9._~-]{43,128}$' }
+                redirect_uri: { type: string, enum: ['opencraft://auth/lightvela'] }
+      responses:
+        '200':
+          description: New normal session. Cache-Control no-store; Pragma no-cache. Never sets a browser session cookie.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_token, token_type]
+                properties:
+                  session_token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+        '400': { description: 'Invalid request, wrong verifier, expired/used code, or foreign client code' }
+        '503': { description: OIDC is not configured }

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import i18n from "@/i18n";
+import { isGlobal } from "@/lib/region";
 import {
   AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
@@ -542,6 +544,581 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it.skipIf(isGlobal)("loads nested product bots and routes unique channels by stable bot id", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: Array<{ url: string; method: string }> = [];
+    const jsonResponse = (data: unknown) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (url.endsWith("/v1/instances")) {
+        return jsonResponse({
+          total: 1,
+          page: 1,
+          page_size: 20,
+          items: [{
+            instance_id: "ins_multi",
+            sandbox_id: "sandbox_multi",
+            status: "Running",
+            created_at: "2026-09-09T00:00:00Z",
+          }],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots")) {
+        return jsonResponse({ items: [
+          {
+            bot_id: "ins_multi",
+            instance_id: "ins_multi",
+            profile_id: "main",
+            name: "主 Bot",
+            is_default: true,
+            status: "ready",
+            created_from: "blank",
+            created_at: "2026-09-09T00:00:00Z",
+            updated_at: "2026-09-09T00:00:00Z",
+            weixin_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
+          },
+          {
+            bot_id: "bot_sales",
+            instance_id: "ins_multi",
+            profile_id: "sales-123",
+            name: "销售 Bot",
+            is_default: false,
+            status: "ready",
+            created_from: "clone",
+            source_bot_id: "ins_multi",
+            created_at: "2026-09-09T01:00:00Z",
+            updated_at: "2026-09-09T01:00:00Z",
+          },
+        ] });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots/bot_sales/retry")) {
+        return jsonResponse({
+          bot_id: "bot_sales",
+          instance_id: "ins_multi",
+          profile_id: "sales-123",
+          name: "销售 Bot",
+          is_default: false,
+          status: "ready",
+          created_from: "clone",
+          source_bot_id: "ins_multi",
+          created_at: "2026-09-09T01:00:00Z",
+          updated_at: "2026-09-09T02:00:00Z",
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots/bot_sales") && method === "DELETE") {
+        return jsonResponse({
+          bot_id: "bot_sales",
+          instance_id: "ins_multi",
+          profile_id: "sales-123",
+          name: "销售 Bot",
+          is_default: false,
+          status: "deleted",
+          created_from: "clone",
+          created_at: "2026-09-09T01:00:00Z",
+          updated_at: "2026-09-09T02:00:00Z",
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi?require_single_bot=true") && method === "DELETE") {
+        return jsonResponse({
+          instance_id: "ins_multi",
+          status: "Deleting",
+          created_at: "2026-09-09T00:00:00Z",
+        });
+      }
+      if (url.includes("/channel-bindings/weixin")) {
+        return jsonResponse({});
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_multi",
+        instanceId: "ins_multi",
+        profileId: "main",
+        isDefault: true,
+        weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+      }),
+      expect.objectContaining({
+        id: "bot_sales",
+        instanceId: "ins_multi",
+        profileId: "sales-123",
+        sourceBotId: "ins_multi",
+      }),
+    ]);
+
+    await expect(repositories.bots.retryBot("bot_sales")).resolves.toEqual(
+      expect.objectContaining({ id: "bot_sales", profileId: "sales-123", status: "active" }),
+    );
+    await repositories.bots.claimUniqueChannel("bot_sales", "weixin");
+    await repositories.bots.confirmUniqueChannel("bot_sales", "weixin");
+    await repositories.bots.releaseUniqueChannel("bot_sales", "weixin");
+    expect(calls.slice(-4)).toEqual([
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/retry", method: "POST" },
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "PUT" },
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
+      { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
+    ]);
+    await repositories.bots.destroyBot("bot_sales");
+    expect(calls[calls.length - 1]).toEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",
+      method: "DELETE",
+    });
+    await repositories.bots.destroyBot("ins_multi");
+    expect(calls[calls.length - 1]).toEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_multi?require_single_bot=true",
+      method: "DELETE",
+    });
+  });
+
+  it.skipIf(isGlobal)("creates an additional Bot on the running instance instead of a stale deleted instance", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: Array<{ url: string; method: string }> = [];
+    let createBody: Record<string, unknown> | undefined;
+    const jsonResponse = (data: unknown, status = 200) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      calls.push({ url, method });
+      if (url.endsWith("/v1/instances") && method === "GET") {
+        return jsonResponse({
+          total: 2,
+          page: 1,
+          page_size: 20,
+          items: [
+            { instance_id: "ins_deleted", status: "Deleted", created_at: "2026-09-11T00:00:00Z" },
+            { instance_id: "ins_running", status: "Running", created_at: "2026-09-11T00:01:00Z" },
+          ],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots") && method === "GET") {
+        return jsonResponse({ items: [{
+          bot_id: "ins_running",
+          instance_id: "ins_running",
+          profile_id: "main",
+          name: "主 Bot",
+          is_default: true,
+          status: "ready",
+          created_from: "blank",
+          created_at: "2026-09-11T00:01:00Z",
+          updated_at: "2026-09-11T00:01:00Z",
+        }] });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots") && method === "POST") {
+        createBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return jsonResponse({
+          bot_id: "profile_new",
+          instance_id: "ins_running",
+          profile_id: "profile_new",
+          name: "新 Bot",
+          is_default: false,
+          status: "ready",
+          created_from: "clone",
+          source_bot_id: "bot_main",
+          created_at: "2026-09-11T00:02:00Z",
+          updated_at: "2026-09-11T00:02:00Z",
+        }, 201);
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await repositories.bots.getDashboardSnapshot("live");
+    const created = await repositories.bots.createBot({
+      name: "新 Bot",
+      description: "  额外 Bot  ",
+      createMode: "clone",
+      sourceBotId: "bot_main",
+      initialSoul: "  克隆后的设定  ",
+    });
+
+    expect(created).toEqual(expect.objectContaining({
+      id: "profile_new",
+      instanceId: "ins_running",
+    }));
+    expect(calls).toContainEqual({
+      url: "https://lightclaw.tech/v1/instances/ins_running/bots",
+      method: "POST",
+    });
+    expect(calls.some(({ url }) => url.includes("ins_deleted/bots"))).toBe(false);
+    expect(createBody).toEqual({
+      name: "新 Bot",
+      description: "额外 Bot",
+      create_mode: "clone",
+      source_bot_id: "bot_main",
+      initial_soul: "克隆后的设定",
+    });
+  });
+
+  it.skipIf(isGlobal)("does not read Hermes profiles while an instance is provisioning", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_provisioning",
+              status: "Creating",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected Hermes profile request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_provisioning", status: "provisioning" }),
+    ]);
+    expect(calls).toEqual(["https://lightclaw.tech/v1/instances"]);
+  });
+
+  it.skipIf(isGlobal)("marks siblings as unknown when the Bot list falls back to the instance projection", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_paused",
+              status: "Paused",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request while the instance is paused: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    // The nested /bots call is skipped, so the list collapses to the root Bot and
+    // cannot prove whether siblings exist. The UI relies on this reason to warn the
+    // user before deleting the whole Agent.
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_paused", siblingsUnknown: "instance_stopped" }),
+    ]);
+  });
+
+  it.skipIf(isGlobal).each([
+    { status: 404, code: "NOT_FOUND", message: "not found" },
+    { status: 500, code: INSTANCE_BOT_ERROR_CODE.profileFailed, message: "Hermes profile operation failed" },
+  ])("marks siblings as unavailable rather than stopped when a running instance cannot list Bots: $code", async ({ status, code, message }) => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        return new Response(JSON.stringify({ code, message }), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_running", siblingsUnknown: "bot_list_unavailable" }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("does not hide an unrelated Bot list server failure", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        return new Response(JSON.stringify({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "database unavailable",
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.bots.getDashboardSnapshot("live")).rejects.toMatchObject({
+      status: 500,
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it.skipIf(isGlobal)("does not mark siblings as unknown when the Bot list came from /bots", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_running",
+              status: "Running",
+              created_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_running/bots")) {
+        return new Response(JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            items: [{
+              bot_id: "ins_running",
+              instance_id: "ins_running",
+              profile_id: "main",
+              name: "主 Bot",
+              is_default: true,
+              status: "ready",
+              created_from: "blank",
+              created_at: "2026-09-10T09:25:38Z",
+              updated_at: "2026-09-10T09:25:38Z",
+            }],
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({ id: "ins_running", siblingsUnknown: undefined }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("keeps the root bot visible while its pass is modifying", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{
+              instance_id: "ins_modifying",
+              name: "升配中的 Bot",
+              status: "Running",
+              created_at: "2026-09-11T00:00:00Z",
+            }],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ code: "PASS_MODIFYING", message: "pass is modifying" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_modifying",
+        name: "升配中的 Bot",
+        status: "active",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.skipIf(isGlobal)("replaces a leaked default profile id with the localized root bot name", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const jsonResponse = (data: unknown) => new Response(
+      JSON.stringify({ code: "OK", message: "success", data }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/instances")) {
+        return jsonResponse({
+          total: 1,
+          page: 1,
+          page_size: 20,
+          items: [{
+            instance_id: "ins_multi",
+            status: "Running",
+            created_at: "2026-09-09T00:00:00Z",
+          }],
+        });
+      }
+      if (url.endsWith("/v1/instances/ins_multi/bots")) {
+        return jsonResponse({ items: [{
+          bot_id: "ins_multi",
+          instance_id: "ins_multi",
+          profile_id: "main",
+          name: "default",
+          is_default: true,
+          status: "ready",
+          created_from: "blank",
+          created_at: "2026-09-09T00:00:00Z",
+          updated_at: "2026-09-09T00:00:00Z",
+        }] });
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots).toEqual([
+      expect.objectContaining({
+        id: "ins_multi",
+        name: "我的Hermes",
+        profileId: "main",
+        isDefault: true,
+      }),
+    ]);
+  });
+
+  it.skipIf(isGlobal)("does not hide nested bot authorization failures behind the legacy fallback", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [{ instance_id: "ins_multi", status: "Running", created_at: "2026-09-09T00:00:00Z" }],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ))
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ code: "FORBIDDEN", message: "无权访问 Bot 列表" }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.bots.getDashboardSnapshot("live")).rejects.toMatchObject({
+      status: 403,
+      code: "FORBIDDEN",
+    });
+  });
+
+  it.skipIf(!isGlobal)("keeps unique channel coordination on the legacy global path", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await repositories.bots.claimUniqueChannel("ins-global", "weixin");
+    await repositories.bots.confirmUniqueChannel("ins-global", "weixin");
+    await repositories.bots.releaseUniqueChannel("ins-global", "weixin");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("uses ctl instance name before stale local bot drafts", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     window.localStorage.setItem(
@@ -879,6 +1456,11 @@ describe("http repositories auth token bootstrap", () => {
         name: "创建中 Bot",
         status: "provisioning",
       }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
@@ -1293,8 +1875,13 @@ describe("http repositories auth token bootstrap", () => {
     const repositories = createHttpRepositories("https://lightclaw.tech");
     await repositories.bots.destroyBot("ins_delete_me");
 
+    // Without a prior listBots() the scope cache is empty, so the caller is treated as an
+    // unhydrated main-Bot delete. Domestic builds must still go through the Bot guard —
+    // sibling Bots may exist server-side even though this client never listed them.
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://lightclaw.tech/v1/instances/ins_delete_me",
+      isGlobal
+        ? "https://lightclaw.tech/v1/instances/ins_delete_me"
+        : "https://lightclaw.tech/v1/instances/ins_delete_me?require_single_bot=true",
       expect.objectContaining({
         method: "DELETE",
       }),
@@ -1689,6 +2276,16 @@ describe("http repositories auth token bootstrap", () => {
     expect(parsed.searchParams.get("return_to")).toBe("https://lightclaw.pages.dev/auth/sign-in");
   });
 
+  it("uses an explicitly delegated OAuth return target", () => {
+    stubHostname("lightvela.com");
+    const returnTo = "https://chat.lightvela.com/local/thread-1?hostId=velahermes0";
+
+    const repositories = createHttpRepositories("https://api.lightvela.com");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("qq", { returnTo })!);
+
+    expect(parsed.searchParams.get("return_to")).toBe(returnTo);
+  });
+
   it("uses the live auth backend on the primary site domain even without an explicit env var", () => {
     vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
     stubHostname("lightclaw.tech");
@@ -2049,5 +2646,68 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightclaw.tech/auth/federation/switch",
       expect.objectContaining({ method: "DELETE", credentials: "include" }),
     );
+  });
+
+  /* ── 积分包（credit）接口的响应包装差异回归 ──
+     联调文档（docs/frontend-credit-package-integration.md）与后端
+     credit/internal/httpapi/server.go 的实际行为：
+       - products 带 envelope（{"success":true,"data":[...]}）
+       - inquiry / order / order-url 直出 JSON（writeJSON(out)）
+     曾因误用 requestEnvelope 导致 inquiry 拿到 undefined，
+     页面报 Cannot read properties of undefined (reading 'real_total_cost')。 */
+  describe("credit repository response envelopes", () => {
+    const jsonResponse = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+
+    it("inquiry parses the bare QuoteResult without envelope unwrapping", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          product_id: "credit_1000",
+          price: "1000",
+          total_cost: "1000",
+          real_total_cost: "1000",
+          currency: "CNY",
+          discount: 0,
+          goods_num: 1,
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const quote = await repositories.credit.inquireCreditPrice("credit_1000");
+
+      expect(quote.real_total_cost).toBe("1000");
+      expect(quote.currency).toBe("CNY");
+    });
+
+    it("listCreditProducts unwraps the success/data envelope", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        jsonResponse({
+          success: true,
+          data: [
+            { product_id: "credit_1000", product_name: "1000积分", llm_gateway_plan_id: "plan-x", state: "ONLINE" },
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const products = await repositories.credit.listCreditProducts();
+
+      expect(products).toHaveLength(1);
+      expect(products[0]?.product_id).toBe("credit_1000");
+    });
+
+    it("createCreditOrder parses the camelCase bare response", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        jsonResponse({ dealName: "202609100000000001", bigOrderId: "2026091000000000001" }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const repositories = createHttpRepositories("https://lightclaw.tech");
+      const order = await repositories.credit.createCreditOrder("credit_1000");
+
+      expect(order.dealName).toBe("202609100000000001");
+    });
   });
 });

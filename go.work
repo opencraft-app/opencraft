@@ -3,12 +3,16 @@ go 1.26
 use (
 	./ai-gateway
 	./cloudladdergateway
+	./collaboration
+	./credit
 	./ctl
 	./images/envd
 	./velagw
+	./vela-computer
 	./nextgen-dashboard
 	./nextgen-dashboard-client
 	./payment
+	./referral
 	./service-gateway
 	./shared/cloudladdertransport
 	./site-gateway

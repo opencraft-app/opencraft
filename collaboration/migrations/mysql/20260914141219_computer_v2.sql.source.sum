@@ -1,0 +1,1 @@
+compiler=mysql-storage/v1 source=migrations/tdsql/20260914141219_computer_v2.sql source_sha256=ba851eb72555468a34bb74190936805bc315a583127dfc8a6b5fcf89764ace8d output_sha256=43af20b765892eedd12353b7cff6de6daa1d6b23ac63c5a0d0fe062c16d228cd

@@ -1,4 +1,5 @@
 import { siteUrl, themeColor } from '@next-site/seo';
+import { LIGHTVELA_ICON_PNG_URL, LIGHTVELA_ICON_SVG_URL } from '@next-site/site-icons';
 
 export const dynamic = 'force-static';
 
@@ -15,12 +16,12 @@ export function GET() {
     theme_color: themeColor(),
     icons: [
       {
-        src: `${origin}/lightvela-icon.png`,
+        src: `${origin}${LIGHTVELA_ICON_PNG_URL}`,
         sizes: '512x512',
         type: 'image/png',
       },
       {
-        src: `${origin}/lightvela-icon.svg`,
+        src: `${origin}${LIGHTVELA_ICON_SVG_URL}`,
         sizes: 'any',
         type: 'image/svg+xml',
         purpose: 'any',

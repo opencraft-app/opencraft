@@ -420,12 +420,20 @@ func TestPathSpecificCORSOriginsAreAdditiveAndScoped(t *testing.T) {
 			PathAllow: []PublicRule{
 				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/tat/session"},
 				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/debug/exec"},
+				{Method: http.MethodPost, Path: "/v1/instances/{instance_id}/config/reset"},
 			},
-			CORSAllow: []CORSRule{{
-				Method:         http.MethodPost,
-				Path:           "/v1/instances/{instance_id}/tat/session",
-				AllowedOrigins: []string{"https://chat.lightvela.com", "https://localhost.lightvela.com"},
-			}},
+			CORSAllow: []CORSRule{
+				{
+					Method:         http.MethodPost,
+					Path:           "/v1/instances/{instance_id}/tat/session",
+					AllowedOrigins: []string{"https://chat.lightvela.com", "https://localhost.lightvela.com"},
+				},
+				{
+					Method:         http.MethodPost,
+					Path:           "/v1/instances/{instance_id}/debug/exec",
+					AllowedOrigins: []string{"https://chat.lightvela.com", "https://chat.lightvela.ai"},
+				},
+			},
 		}},
 	})
 	if err != nil {
@@ -465,9 +473,25 @@ func TestPathSpecificCORSOriginsAreAdditiveAndScoped(t *testing.T) {
 			wantOrigin:      "https://localhost.lightvela.com",
 		},
 		{
-			name:            "additional origin is denied on sibling path",
+			name:            "chat origin is allowed on debug exec",
 			origin:          "https://chat.lightvela.com",
 			path:            "/v1/instances/ins-1/debug/exec",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+			wantOrigin:      "https://chat.lightvela.com",
+		},
+		{
+			name:            "international chat origin is allowed on debug exec",
+			origin:          "https://chat.lightvela.ai",
+			path:            "/v1/instances/ins-1/debug/exec",
+			requestedMethod: http.MethodPost,
+			wantStatus:      http.StatusNoContent,
+			wantOrigin:      "https://chat.lightvela.ai",
+		},
+		{
+			name:            "chat origin is denied on an unscoped sibling path",
+			origin:          "https://chat.lightvela.com",
+			path:            "/v1/instances/ins-1/config/reset",
 			requestedMethod: http.MethodPost,
 			wantStatus:      http.StatusNoContent,
 		},
@@ -520,6 +544,25 @@ func TestPathSpecificCORSOriginsAreAdditiveAndScoped(t *testing.T) {
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", nil)
+	req.Header.Set("Origin", "https://chat.lightvela.ai")
+	req.Header.Set("Authorization", "Bearer session-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected debug/exec 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://chat.lightvela.ai" {
+		t.Fatalf("debug/exec Access-Control-Allow-Origin = %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("debug/exec Access-Control-Allow-Credentials = %q", got)
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("upstream calls = %d, want 2", upstreamCalls)
 	}
 }
 
@@ -1087,6 +1130,9 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	}
 	if exportReq.StopType != "SOFT_FIRST" || exportReq.WaitTimeoutSeconds != 400 {
 		t.Fatalf("unexpected rescue mode defaults: stop_type=%s wait_timeout=%d", exportReq.StopType, exportReq.WaitTimeoutSeconds)
+	}
+	if exportReq.CommandTimeoutSeconds != 6600 {
+		t.Fatalf("unexpected rescue export command timeout: %d", exportReq.CommandTimeoutSeconds)
 	}
 	if !exportReq.Execute || !exportReq.Confirmed {
 		t.Fatalf("expected real export request, got execute=%v confirmed=%v", exportReq.Execute, exportReq.Confirmed)

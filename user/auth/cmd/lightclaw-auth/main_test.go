@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/devroute"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 )
@@ -173,6 +174,126 @@ func TestBuildPaymentMethodClientUsesBillingConfig(t *testing.T) {
 	t.Setenv("SHADOW_CLOUDLADDER_ENABLED", "false")
 	if client := buildPaymentMethodClient(loggingDiscardLogger(), shadowbinding.SiteKindIntl); client == nil {
 		t.Fatal("expected configured payment method client")
+	}
+}
+
+func TestBuildDeveloperRouteClientDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false")
+	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
+	if err != nil || client != nil {
+		t.Fatalf("disabled client=%v err=%v", client, err)
+	}
+}
+
+func TestDeveloperRouteExplicitTargetIPRequiresSandboxControlClient(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "true")
+	if developerRouteExplicitTargetIPEnabled(nil) {
+		t.Fatal("explicit targetIp enabled without sandbox route control")
+	}
+
+	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "false")
+	if developerRouteExplicitTargetIPEnabled(&devroute.Client{}) {
+		t.Fatal("explicit targetIp enabled by default")
+	}
+
+	t.Setenv("PERSONAL_DEV_ROUTE_EXPLICIT_TARGET_IP_ENABLED", "true")
+	if !developerRouteExplicitTargetIPEnabled(&devroute.Client{}) {
+		t.Fatal("explicit targetIp remained disabled for an explicitly enabled sandbox route control client")
+	}
+}
+
+func TestBuildDeveloperRouteClientRequiresMatchingSandboxHTTPSHost(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ROUTE_CLOUDLADDER_GATEWAY_BASE_URL", "http://gateway.testing")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "test-secret")
+
+	for _, publicBaseURL := range []string{
+		"https://api.lightvela.com",
+		"http://api-sandbox-bj-7.lightclaw.tech",
+		"https://api-sandbox-kr-1.lightclaw.tech",
+	} {
+		if client, err := buildDeveloperRouteClient(publicBaseURL); err == nil || client != nil {
+			t.Fatalf("unsafe public base URL %q accepted, client=%v err=%v", publicBaseURL, client, err)
+		}
+	}
+	client, err := buildDeveloperRouteClient("https://api-sandbox-bj-7.lightclaw.tech")
+	if err != nil || client == nil {
+		t.Fatalf("matching sandbox config rejected, client=%v err=%v", client, err)
+	}
+}
+
+func TestBuildDeveloperRouteRegistryDisabledByDefault(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "false")
+	registry, secret, err := buildDeveloperRouteRegistry(
+		"https://api-sandbox-bj-7.lightclaw.tech",
+		service.NewMemoryStore(service.StoreOptions{}),
+	)
+	if err != nil || registry != nil || secret != "" {
+		t.Fatalf("registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+}
+
+func TestBuildDeveloperRouteRegistryRequiresSandboxAndHMAC(t *testing.T) {
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENABLED", "true")
+	t.Setenv("PERSONAL_DEV_ROUTE_CONTROL_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("PERSONAL_DEV_ROUTE_CLOUDLADDER_HMAC_SECRET", "")
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "")
+	authStore := service.NewMemoryStore(service.StoreOptions{})
+	if registry, secret, err := buildDeveloperRouteRegistry("https://api-sandbox-bj-7.lightclaw.tech", authStore); err == nil || registry != nil || secret != "" {
+		t.Fatalf("missing secret accepted registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+	t.Setenv("CLOUDLADDER_SHADOW_HMAC_SECRET", "test-secret")
+	registry, secret, err := buildDeveloperRouteRegistry("https://api-sandbox-bj-7.lightclaw.tech", authStore)
+	if err != nil || registry == nil || secret != "test-secret" {
+		t.Fatalf("registry=%v secret_present=%v err=%v", registry, secret != "", err)
+	}
+	if registry, _, err := buildDeveloperRouteRegistry("https://api.lightvela.com", authStore); err == nil || registry != nil {
+		t.Fatalf("production-like host accepted registry=%v err=%v", registry, err)
+	}
+}
+
+func TestBuildShadowBindingServiceWiresTestingAdminFlag(t *testing.T) {
+	t.Setenv("SHADOW_BINDING_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("LIGHTCLAW_PUBLIC_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech")
+	t.Setenv("SHADOW_SECRET_ID", "")
+	t.Setenv("SHADOW_SECRET_KEY", "")
+
+	svc := buildShadowBindingService(shadowbinding.NewMemoryStore(), loggingDiscardLogger(), shadowbinding.SiteKindCN)
+	if svc == nil {
+		t.Fatal("expected shadow binding service")
+	}
+	if !svc.AdminEnabled() {
+		t.Fatal("expected testing admin flag to be enabled")
+	}
+}
+
+func TestBuildShadowBindingServiceRejectsTestingAdminOnProductionHost(t *testing.T) {
+	t.Setenv("SHADOW_BINDING_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("LIGHTCLAW_PUBLIC_BASE_URL", "https://api.lightvela.com")
+	t.Setenv("SHADOW_SECRET_ID", "")
+	t.Setenv("SHADOW_SECRET_KEY", "")
+
+	svc := buildShadowBindingService(shadowbinding.NewMemoryStore(), loggingDiscardLogger(), shadowbinding.SiteKindCN)
+	if svc == nil {
+		t.Fatal("expected shadow binding service")
+	}
+	if svc.AdminEnabled() {
+		t.Fatal("testing shadow binding admin must remain disabled on a production host")
+	}
+}
+
+func TestShadowBindingAdminEnabledRejectsMalformedPublicBaseURL(t *testing.T) {
+	t.Setenv("SHADOW_BINDING_ADMIN_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("LIGHTCLAW_PUBLIC_BASE_URL", "https://%")
+
+	if shadowBindingAdminEnabled(loggingDiscardLogger()) {
+		t.Fatal("testing shadow binding admin must remain disabled for a malformed public base URL")
 	}
 }
 

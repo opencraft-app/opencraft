@@ -107,7 +107,6 @@ const getCommunityLinks = (t: (zh: string) => string): FooterLink[] =>
           external: true,
         },
         { label: "X / Twitter", href: "https://x.com/agentlightvela", external: true },
-        { label: "Youtube", href: "https://www.youtube.com/@TencentLightVela", external: true },
       ]
     : [{ label: t("加入交流群"), to: "/docs/contact-us" }];
 
@@ -117,7 +116,7 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
     {
       title: t("产品"),
       links: [
-        ...(isGlobal ? [{ label: t("博客"), to: "/blog" }] : []),
+        { label: t("博客"), to: "/blog" },
         // 与首页顶部「免费试用」按钮落点一致：未登录 / 未订阅均先进订阅页
         { label: t("14 天免费试用"), to: SUBSCRIBE_PATH },
         { label: t("定价"), to: SUBSCRIBE_PATH },

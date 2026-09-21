@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,8 @@ var testSecurityGroups = []string{"sg-test"}
 
 // stubProvider lets tests script TerminateInstance results while satisfying the interface.
 type stubProvider struct {
+	mu sync.Mutex
+
 	createCloudIDs []string
 	createAddrs    []string
 	createErrs     []error
@@ -45,11 +48,12 @@ type stubProvider struct {
 	startErr   error
 	startCalls int
 
-	verifyErrs  []error
-	verifyErr   error
-	verifyCalls int
-	verifyIDs   []string
-	verifySince []time.Time
+	verifyErrs    []error
+	verifyErr     error
+	verifyCalls   int
+	verifyIDs     []string
+	verifyRegions []string
+	verifySince   []time.Time
 }
 
 func (p *stubProvider) nextErr() error {
@@ -80,6 +84,8 @@ func (p *stubProvider) nextVerifyErr() error {
 }
 
 func (p *stubProvider) CreateInstance(ctx context.Context, pool core.Pool) (string, string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.createCalls++
 	err := p.nextCreateErr()
 	if err != nil {
@@ -96,50 +102,65 @@ func (p *stubProvider) CreateInstance(ctx context.Context, pool core.Pool) (stri
 	return cloudID, addr, nil
 }
 
-func (p *stubProvider) ReinstallInstance(ctx context.Context, cloudID string, imageID string) error {
+func (p *stubProvider) ReinstallInstance(ctx context.Context, instance provider.CloudInstanceRef, imageID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.reinstallCalls++
 	return p.reinstallErr
 }
 
-func (p *stubProvider) DescribeInstance(ctx context.Context, cloudID string) (string, error) {
+func (p *stubProvider) DescribeInstance(ctx context.Context, instance provider.CloudInstanceRef) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-func (p *stubProvider) TerminateInstance(ctx context.Context, cloudID string) error {
+func (p *stubProvider) TerminateInstance(ctx context.Context, instance provider.CloudInstanceRef) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.terminateCalls++
 	return p.nextErr()
 }
 
-func (p *stubProvider) StopInstance(ctx context.Context, cloudID string) error {
+func (p *stubProvider) StopInstance(ctx context.Context, instance provider.CloudInstanceRef) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.stopCalls++
 	return p.stopErr
 }
 
-func (p *stubProvider) StartInstance(ctx context.Context, cloudID string) error {
+func (p *stubProvider) StartInstance(ctx context.Context, instance provider.CloudInstanceRef) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.startCalls++
 	return p.startErr
 }
 
-func (p *stubProvider) VerifyInstance(ctx context.Context, cloudID string) error {
+func (p *stubProvider) VerifyInstance(ctx context.Context, instance provider.CloudInstanceRef) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.verifyCalls++
-	p.verifyIDs = append(p.verifyIDs, cloudID)
+	p.verifyIDs = append(p.verifyIDs, instance.CloudID)
+	p.verifyRegions = append(p.verifyRegions, instance.Region)
 	return p.nextVerifyErr()
 }
 
-func (p *stubProvider) VerifyInstanceDelivery(ctx context.Context, cloudID string, notBefore time.Time) error {
+func (p *stubProvider) VerifyInstanceDelivery(ctx context.Context, instance provider.CloudInstanceRef, notBefore time.Time) error {
+	p.mu.Lock()
 	p.verifySince = append(p.verifySince, notBefore)
-	return p.VerifyInstance(ctx, cloudID)
+	p.mu.Unlock()
+	return p.VerifyInstance(ctx, instance)
 }
 
 func (p *stubProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
 	return "", nil
 }
 
-func (p *stubProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+func (p *stubProvider) DescribeInstanceSnapshot(context.Context, string, string) (provider.SnapshotStatus, string, error) {
 	return "", "", nil
 }
 
 func (p *stubProvider) ProvisionCapacityBundle(ctx context.Context, req provider.CapacityBundleProvisionRequest) (core.CapacityBundle, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.bundleCalls++
 	now := time.Now().UTC()
 	suffix := req.TemplateClassID
@@ -186,27 +207,27 @@ func (p *liveProvisionOnlyProvider) CreateInstance(context.Context, core.Pool) (
 	return "", "", errors.New("[TencentCloudSDKException] code:LimitExceeded.CvmsVifsPerSecGroupLimitExceeded message:security group eni limit exceeded")
 }
 
-func (p *liveProvisionOnlyProvider) ReinstallInstance(context.Context, string, string) error {
+func (p *liveProvisionOnlyProvider) ReinstallInstance(context.Context, provider.CloudInstanceRef, string) error {
 	return errors.New("not implemented")
 }
 
-func (p *liveProvisionOnlyProvider) DescribeInstance(context.Context, string) (string, error) {
+func (p *liveProvisionOnlyProvider) DescribeInstance(context.Context, provider.CloudInstanceRef) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-func (p *liveProvisionOnlyProvider) TerminateInstance(context.Context, string) error {
+func (p *liveProvisionOnlyProvider) TerminateInstance(context.Context, provider.CloudInstanceRef) error {
 	return errors.New("not implemented")
 }
 
-func (p *liveProvisionOnlyProvider) StopInstance(context.Context, string) error {
+func (p *liveProvisionOnlyProvider) StopInstance(context.Context, provider.CloudInstanceRef) error {
 	return errors.New("not implemented")
 }
 
-func (p *liveProvisionOnlyProvider) StartInstance(context.Context, string) error {
+func (p *liveProvisionOnlyProvider) StartInstance(context.Context, provider.CloudInstanceRef) error {
 	return errors.New("not implemented")
 }
 
-func (p *liveProvisionOnlyProvider) VerifyInstance(context.Context, string) error {
+func (p *liveProvisionOnlyProvider) VerifyInstance(context.Context, provider.CloudInstanceRef) error {
 	return errors.New("not implemented")
 }
 
@@ -214,7 +235,7 @@ func (p *liveProvisionOnlyProvider) CreateInstanceSnapshot(context.Context, prov
 	return "", errors.New("not implemented")
 }
 
-func (p *liveProvisionOnlyProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+func (p *liveProvisionOnlyProvider) DescribeInstanceSnapshot(context.Context, string, string) (provider.SnapshotStatus, string, error) {
 	return "", "", errors.New("not implemented")
 }
 
@@ -273,7 +294,7 @@ func mustGetSKU(t *testing.T, svc *service.Service, skuID string) core.SKU {
 func TestCleanupDeletingRetriesThenSucceeds(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "p1", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -367,7 +388,7 @@ func TestCheckWaterlineDoesNotScanAllocated(t *testing.T) {
 	ctx := context.Background()
 	rec := &recordingStore{Store: store.NewMemoryStore()}
 	svc := service.NewService(rec)
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	pool, err := svc.CreatePool(ctx, "p-waterline", "desc", "img", 1, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
@@ -1981,7 +2002,7 @@ func TestEnsurePoolsFromWarmCapacityBundlesIsIdempotentAcrossRuns(t *testing.T) 
 func TestAdvanceSingleSKURolloutProgressesOnePoolAtATime(t *testing.T) {
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 
 	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
 		ID:             "openclaw-default",
@@ -2089,6 +2110,75 @@ func TestAdvanceSingleSKURolloutProgressesOnePoolAtATime(t *testing.T) {
 	}
 	if sku.RolloutCursorPoolID != "" {
 		t.Fatalf("expected empty rollout cursor after convergence, got %q", sku.RolloutCursorPoolID)
+	}
+}
+
+func TestAdvanceSingleSKURolloutPreservesPoolImagesAcrossRegions(t *testing.T) {
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
+
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-2c4g",
+		Name:            "Hermes 2C4G",
+		TemplateClassID: "hermes",
+		BaseImage:       "img-singapore",
+		DesiredImageID:  "img-singapore",
+		StableImageID:   "img-singapore",
+		InstanceType:    "SA9.MEDIUM4",
+		RolloutState:    core.SKURolloutStateStable,
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+
+	singaporePool, err := svc.CreatePool(ctx, "sg", "", "img-singapore", 1, "vpc-sg", "subnet-sg", "ap-singapore-1", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create Singapore pool: %v", err)
+	}
+	singaporePool.SKUID = "sku-hermes-2c4g"
+	if _, err := svc.UpdatePool(ctx, singaporePool); err != nil {
+		t.Fatalf("bind Singapore pool: %v", err)
+	}
+
+	johorPool, err := svc.CreatePool(ctx, "jhb", "", "img-johor", 1, "vpc-jhb", "subnet-jhb", "ap-johorbahru-1", testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create Johor pool: %v", err)
+	}
+	johorPool.SKUID = "sku-hermes-2c4g"
+	if _, err := svc.UpdatePool(ctx, johorPool); err != nil {
+		t.Fatalf("bind Johor pool: %v", err)
+	}
+	instances, err := svc.RefillVerified(ctx, johorPool.ID, 1, []string{"10.80.0.10"}, []string{"ins-johor"}, verifyOK)
+	if err != nil {
+		t.Fatalf("refill Johor pool: %v", err)
+	}
+
+	changed, err := advanceSingleSKURollout(ctx, svc, mustGetSKU(t, svc, "sku-hermes-2c4g"))
+	if err != nil {
+		t.Fatalf("advance multi-region rollout: %v", err)
+	}
+	if changed {
+		t.Fatal("multi-region SKU rollout must not apply one global image to regional Pools")
+	}
+	gotJohor, err := svc.GetPool(ctx, johorPool.ID)
+	if err != nil {
+		t.Fatalf("get Johor pool: %v", err)
+	}
+	if gotJohor.BaseImage != "img-johor" {
+		t.Fatalf("Johor pool image = %q, want regional image img-johor", gotJohor.BaseImage)
+	}
+	gotInstance, err := svc.GetInstance(ctx, instances[0].ID)
+	if err != nil {
+		t.Fatalf("get Johor instance: %v", err)
+	}
+	if gotInstance.State != core.StateClean {
+		t.Fatalf("Johor instance state = %s, want CLEAN", gotInstance.State)
 	}
 }
 
@@ -2209,7 +2299,7 @@ func TestProcessPool_VerifyBeforeClean_Success(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "p3", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -2248,6 +2338,9 @@ func TestProcessPool_VerifyBeforeClean_Success(t *testing.T) {
 	if len(cp.verifyIDs) != 1 || cp.verifyIDs[0] != "cloud-1" {
 		t.Fatalf("expected reset delivery check by cloud id, got %+v", cp.verifyIDs)
 	}
+	if len(cp.verifyRegions) != 1 || cp.verifyRegions[0] != "ap-beijing" {
+		t.Fatalf("expected reset delivery check in ap-beijing, got %+v", cp.verifyRegions)
+	}
 	if len(cp.verifySince) != 1 || cp.verifySince[0].IsZero() {
 		t.Fatalf("expected reset delivery generation boundary, got %+v", cp.verifySince)
 	}
@@ -2259,7 +2352,7 @@ func TestProcessPool_VerifyBeforeClean_VerifyFailureKeepsResetting(t *testing.T)
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "p4", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -2303,7 +2396,7 @@ func TestProcessPool_DoesNotMarkCleanBeforeReinstallVerifyDelay(t *testing.T) {
 
 	ctx := context.Background()
 	svc := service.NewService(store.NewMemoryStore())
-	verifyOK := func(context.Context, string) error { return nil }
+	verifyOK := func(context.Context, provider.CloudInstanceRef) error { return nil }
 	pool, err := svc.CreatePool(ctx, "p5", "desc", "img", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
 	if err != nil {
 		t.Fatalf("create pool: %v", err)

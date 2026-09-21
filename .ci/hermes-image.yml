@@ -25,7 +25,7 @@ stages:
         name: 构建、验证并同步 Hermes CVM 镜像
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -40,7 +40,7 @@ stages:
               echo "ci.sha=${CI_SHA_FOR_LOG}"
               echo "runtime=hermes"
               echo "base_image_id=img-id352nof"
-              echo "target_regions=ap-beijing,ap-shanghai,ap-singapore,ap-tokyo"
+              echo "target_regions=ap-beijing,ap-shanghai,ap-singapore,ap-tokyo,ap-johorbahru"
           - name: 校验 COS DeepSeek Harness 安装器
             shell: bash
             run: |
@@ -106,7 +106,7 @@ stages:
                 echo "Reusing existing Hermes CVM image by exact name: ${HERMES_IMAGE_NAME}"
                 {
                   echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
-                  for region in ap-beijing ap-shanghai ap-singapore ap-tokyo; do
+                  for region in ap-beijing ap-shanghai ap-singapore ap-tokyo ap-johorbahru; do
                     image_id="$(python3 .ci/runtime/commands/resolve_hermes_image_id.py --region "$region" --image-name "$HERMES_IMAGE_NAME")"
                     suffix="$(printf '%s' "$region" | tr '[:lower:]-' '[:upper:]_')"
                     echo "HERMES_IMAGE_ID_${suffix}=${image_id}"
@@ -121,7 +121,7 @@ stages:
               python3 images/build-image.py \
                 --runtime hermes \
                 --base-image-id img-id352nof \
-                --target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo \
+                --target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo,ap-johorbahru \
                 --image-name "$HERMES_IMAGE_NAME" \
                 --with-verify | tee "$HERMES_BUILD_LOG"
 
@@ -136,7 +136,7 @@ stages:
         name: 只读预检北京主沙箱 Hermes pools 和 VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -252,7 +252,7 @@ stages:
         name: 等待人工确认刷新并修补北京主沙箱 Hermes
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 北京主沙箱 Hermes 刷新修补已确认
             shell: bash
@@ -266,7 +266,7 @@ stages:
         name: 刷新北京主沙箱 Hermes pools
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -345,7 +345,7 @@ stages:
         name: 通过 TAT 升级存量北京主沙箱 Hermes VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -379,7 +379,7 @@ stages:
         name: 只读预检新加坡生产 Hermes pools 和 VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -497,7 +497,7 @@ stages:
         name: 等待人工确认刷新并修补新加坡生产 Hermes
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 新加坡生产 Hermes 刷新修补已确认
             shell: bash
@@ -511,7 +511,7 @@ stages:
         name: 刷新新加坡生产 Hermes pools
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -590,7 +590,7 @@ stages:
         name: 通过 TAT 升级存量新加坡生产 Hermes VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -642,7 +642,7 @@ stages:
         name: 等待人工确认刷新并修补上海生产 Hermes
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 上海生产 Hermes 刷新修补已确认
             shell: bash
@@ -656,7 +656,7 @@ stages:
         name: 刷新上海生产 Hermes pools
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码
@@ -735,7 +735,7 @@ stages:
         name: 通过 TAT 升级存量上海生产 Hermes VM
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - checkout: self
             name: 拉取代码

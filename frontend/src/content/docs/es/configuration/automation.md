@@ -1,105 +1,173 @@
-# Automatizaciones
+# Tareas programadas
 
 ## Resumen
 
-**Las automatizaciones permiten que Hermes Agent ejecute trabajos proactivamente según un horario fijo, un intervalo o un esquema de ejecución única, y luego envíe los resultados a los canales de notificación seleccionados. Puede comenzar con una plantilla, o personalizar el nombre, las reglas de ejecución, las instrucciones de la tarea, la ventana de validez y la configuración de notificaciones, y luego continuar gestionando el estado de la tarea desde la lista de tareas.**
+**Las tareas programadas permiten que Hermes Agent empiece a trabajar sin un prompt manual. Elija una tarea de Agent cuando el trabajo necesite razonamiento de IA, una tarea de notificación cuando el mismo mensaje deba enviarse tal como está escrito, o una tarea de script cuando un script de Bash o Python deba realizar una comprobación determinista. Los tres tipos usan los mismos horarios de una sola vez, recurrentes y por intervalos, además de la ventana de validez y la configuración de notificaciones.**
 
-Al crear o editar una automatización, también puede vincularla a una tarea anterior. Las ejecuciones posteriores utilizarán la salida más reciente completada de la tarea anterior como contexto adicional. Esto es útil para dividir flujos de trabajo como "recopilar información primero, luego resumirla" en múltiples pasos.
+![Página de tareas programadas con plantillas y tareas actuales](../images/st-en-1.png)
 
-Las automatizaciones permiten que Hermes Agent ejecute trabajos específicos según un horario preestablecido o una condición de activación, de modo que no tenga que repetir las mismas operaciones manualmente. Los escenarios típicos incluyen recordatorios programados, generación de informes diarios, seguimiento de noticias y publicación de contenido.
+## Elegir un tipo de tarea
 
-Cada tarea admite programación flexible y reglas de ejecución, de modo que su asistente de IA pueda seguir trabajando proactivamente.
+Elija el tipo según lo que deba ocurrir cuando llegue la hora programada.
 
-## ¿Qué Cubre Esta Página
+| Tipo de tarea | Adecuado para | Lo que debe proporcionar | Lo que se ejecuta |
+| --- | --- | --- | --- |
+| **Tarea de Agent** | Resúmenes, investigación, análisis, redacción u otros trabajos que requieren interpretación | Instrucciones de la tarea y, opcionalmente, un Skill o una tarea upstream | Hermes Agent inicia una tarea basada en un modelo. |
+| **Tarea de notificación** | Recordatorios, avisos y mensajes rutinarios exactos | El texto de la notificación | Una tarea gestionada por LightVela envía el texto tal como está escrito, sin llamar a un modelo. |
+| **Tarea de script** | Flujos de desarrollo, comprobaciones y automatización determinista | Un script de Bash o Python | El script se ejecuta sin una sesión de Agent ni una llamada al modelo. La salida estándar no vacía puede enviarse como notificación. |
 
-- Agregar una automatización
-- Vincular una tarea anterior
-- Usar plantillas de tareas
-- Gestionar automatizaciones
+El tipo de tarea es independiente del patrón de programación.
+Todos los tipos pueden ejecutarse una vez, con una cadencia diaria, semanal o mensual, o en un intervalo fijo.
 
-## Agregar una Automatización
+## Antes de crear una tarea
 
-- **Nombre**: Nombre del plan de automatización.
-- **Programación**: Establezca el ritmo de la tarea. Elija entre días fijos de la semana, intervalo fijo o ejecución única.
-- **Instrucciones de la tarea**: Escriba el prompt que el Agent utiliza para llevar a cabo la automatización.
-- **Tarea anterior**: Opcional. Una vez vinculada, esta tarea utiliza la salida más reciente completada de la tarea anterior como contexto durante la ejecución.
-- **Ventana de validez**: Limite el rango de tiempo en el que la tarea puede ejecutarse. Déjelo vacío para mantenerlo activo las 24 horas.
-- **Notificación**: Interruptores opcionales para seleccionar los canales que reciben las notificaciones de ejecución de la tarea.
+Asegúrese de que Hermes Agent esté activo, elija un canal de notificación si lo necesita y revise el código de cualquier tarea de script antes de guardarla.
 
-Para crear un Job personalizado, haga clic en "Crear" en lugar de partir de una plantilla, y complete el formulario en blanco con su propio horario e instrucciones.
+![Opciones de canales de notificación con Telegram y WeChat](../images/notification-channels-en.png)
 
-![Cuadro Crear Job para configurar una automatización](../images/automation-create-job.webp)
+## Crear una tarea de Agent
 
-## Vincular una Tarea Anterior
+Elija **Tarea de Agent** cuando Hermes Agent deba entender su solicitud y generar un resultado.
+Por ejemplo, una tarea puede recopilar noticias diarias sobre IA, seleccionar los elementos más relevantes y redactar un informe breve.
 
-Una tarea anterior es útil cuando una pieza de trabajo debe dividirse en un flujo multi-paso estable:
+Configure los siguientes campos:
 
-1. La primera tarea recopila o genera material base.
-2. La segunda tarea se vincula a la primera y continúa organizando, filtrando o reescribiendo basándose en su salida más reciente completada.
-3. Las tareas posteriores pueden seguir vinculándose al paso anterior para formar una cadena de procesamiento clara.
+- **Nombre**: Asigne un nombre reconocible a la tarea.
+- **Programación**: Elija una ejecución única, una cadencia recurrente o un intervalo fijo.
+- **Instrucciones de la tarea**: Describa el objetivo, el alcance, las restricciones de las fuentes y el formato esperado.
+- **Skill**: Adjunte opcionalmente un Skill disponible cuando la tarea necesite esa capacidad.
+- **Tarea upstream**: Use opcionalmente la salida completada más reciente de otra tarea de Agent como contexto adicional.
+- **Ventana de validez**: Restrinja opcionalmente cuándo se permite ejecutar la tarea.
+- **Notificación**: Elija opcionalmente dónde enviar el resultado completado.
 
-Ejemplos comunes:
+A la hora programada, Hermes Agent crea una tarea de Agent y llama al modelo seleccionado.
+El resultado puede enviarse a los canales seleccionados y queda registrado en Ejecuciones recientes.
 
-- Recopilar información candidata cada mañana, luego dejar que una tarea aguas abajo genere un informe diario conciso.
-- Resumir el progreso semanal del proyecto primero, luego dejar que una tarea aguas abajo cree una versión para el equipo.
-- Resumir los ítems de tareas primero, luego dejar que una tarea aguas abajo los reordene por prioridad y genere el texto de recordatorio.
+![Diálogo Crear tarea programada con el tipo Tarea de Agent](../images/st-en-2.png)
 
-Vincular una tarea anterior no copia ni fusiona dos configuraciones de tareas. La tarea actual sigue ejecutándose según su propio horario, instrucciones de tarea, ventana de validez y configuración de notificaciones; simplemente recibe la salida más reciente completada de la tarea anterior como contexto adicional. Hermes `context_from` soporta la referencia de uno o más IDs de tarea. Si la página del producto actualmente expone un selector de tarea anterior única, configure solo lo que permite la página. Las tareas en cadena no esperan a tareas anteriores que aún estén ejecutándose en el mismo ciclo del programador, por lo que los horarios de tareas anteriores y aguas abajo deben estar escalonados.
+## Crear una tarea de notificación
 
-Las instrucciones de la tarea aún necesitan explicar cómo utilizar la salida de la tarea anterior. Por ejemplo: "Basado en las noticias candidatas de la tarea anterior, mantenga solo cinco ítems relacionados con productos de Agents de IA y escriba un resumen en chino". Evite escribir solo "continuar procesando", porque eso hace que sea difícil para la tarea aguas abajo saber qué procesar.
+Elija **Tarea de notificación** para un mensaje que deba llegar exactamente como lo escribió.
+Por ejemplo, puede crear un recordatorio diario para beber agua, un recordatorio mensual del alquiler o un aviso breve para un equipo.
 
-## Plantillas de Tareas
+Configure el nombre, la programación, el contenido de la notificación, la ventana de validez y los canales de notificación.
+El contenido puede incluir puntuación normal, saltos de línea, emojis y texto multilingüe.
 
-Si no está seguro de qué automatización configurar, use la Zona de plantillas en la página "Automatizaciones". Elija una tarjeta como Recordatorios de agua y medicación, Recordatorio del alquiler, Alerta de tipo de cambio o Resumen bursátil, y haga clic en "Activar" para revisar el horario y las instrucciones antes de crear el Job.
+A la hora programada, LightVela envía el contenido tal como está escrito.
+No pide a un modelo que redacte, reescriba, resuma, traduzca ni explique el mensaje.
+Por eso, el uso de tokens del modelo para la tarea es de 0 Token.
 
-![Zona de plantillas con tarjetas de automatización listas para usar](../images/automation-template-area.webp)
+Si no selecciona un canal, la tarea se ejecuta en segundo plano y escribe un registro en lugar de enviar un mensaje.
+El formato de cada canal todavía puede afectar a los saltos de línea y a los caracteres que reciben los destinatarios.
 
-Al abrir una plantilla, el formulario Crear Job se completa automáticamente. La plantilla Resumen bursátil, por ejemplo, rellena el nombre del Job, una programación diaria y las instrucciones de información de mercado para que pueda editar los detalles antes de probar o crear el Job.
+![Diálogo Crear tarea programada con el tipo Tarea de notificación](../images/st-en-3.png)
+
+## Crear una tarea de script
+
+Elija **Tarea de script** cuando necesite un flujo determinista de Bash o Python.
+Por ejemplo, un script puede comprobar el uso del disco, inspeccionar la respuesta de un servicio o imprimir una alerta solo cuando se alcance un umbral.
+
+Configure el nombre, la programación, el lenguaje y el contenido del script, la ventana de validez y los canales de notificación.
+Antes de crear la tarea, acepte el aviso de seguridad y confirme que confía en el código.
+
+Las tareas de script no crean una sesión de Agent, no llaman a un modelo, no usan un prompt ni invocan Skills.
+Usan 0 Token de modelo, pero siguen usando recursos de ejecución de Agent en la nube.
+
+| Resultado del script | Resultado de la tarea | Comportamiento de entrega |
+| --- | --- | --- |
+| Código de salida `0` con salida estándar no vacía | Correcto | La salida estándar se envía tal como está escrita a los canales seleccionados. |
+| Código de salida `0` con salida estándar vacía | Éxito silencioso | No se envía ninguna notificación de resultado. |
+| Código de salida distinto de `0` | Fallido | El fallo queda registrado y sigue el tratamiento de errores de la tarea. |
+| Tiempo de espera agotado o fallo de inicio | Fallido | Se registra el tipo de fallo y sigue el tratamiento de errores de la tarea. |
+
+No use una tarea de script para reparar, explicar o resumir un fallo con IA.
+La ejecución sigue siendo determinista: una salida vacía permanece silenciosa y un script fallido no activa un fallback de modelo.
+
+![Diálogo Crear tarea programada con el tipo Tarea de script](../images/st-en-4.png)
+
+## Vincular una tarea de Agent upstream
+
+Use una tarea upstream cuando una tarea de Agent deba preparar el contexto para otra.
+La tarea downstream recibe la salida completada más reciente de la tarea upstream y conserva su propia programación, instrucciones, ventana de validez y configuración de notificaciones.
+
+![Diálogo Crear tarea programada con la opción de tarea upstream](../images/st-en-5.png)
+
+Deje suficiente tiempo entre tareas dependientes y explique en las instrucciones downstream cómo usar la salida upstream.
+El contexto upstream, la ejecución del modelo y los Skills solo se aplican a las tareas de Agent.
+
+## Configurar las reglas compartidas de programación y entrega
+
+Los tres tipos de tarea comparten los mismos controles de programación y notificación.
+
+- **Una sola vez**: Ejecute una vez en la fecha y hora seleccionadas.
+- **Recurrente**: Ejecute cada día, semana o mes a la hora seleccionada.
+- **Intervalo**: Ejecute cada número seleccionado de minutos, horas o días.
+- **Ventana de validez**: Restrinja cuándo pueden ejecutarse las tareas recurrentes o por intervalos, o déjela vacía para mantenerlas activas todo el tiempo.
+- **Notificación**: Seleccione los canales que recibirán los resultados correctos o las notificaciones.
+
+Cambiar el tipo mientras crea una tarea conserva estos ajustes compartidos.
+Después de crearla, el tipo no se puede cambiar, por lo que debe crear otra tarea si necesita cambiar el modelo de ejecución.
+
+![Diálogo Crear tarea para configurar una tarea programada](../images/automation-create-job.webp)
+
+## Usar plantillas de tareas
+
+Si no sabe cómo empezar una tarea de Agent, use el área de plantillas de la página Tareas programadas.
+Elija una tarjeta como Recordatorios de agua y medicación, Recordatorio del alquiler, Alerta de tipo de cambio o Resumen bursátil, y revise la programación y las instrucciones generadas antes de crear la tarea.
+
+![Área de plantillas con tarjetas de tareas programadas listas para usar](../images/automation-template-area.webp)
+
+Al abrir una plantilla, el formulario Crear tarea se rellena previamente.
+Por ejemplo, la plantilla Resumen bursátil incluye el nombre, una programación diaria y las instrucciones de información de mercado, que puede ajustar antes de probarla o crearla.
 
 <div style={{ maxWidth: "760px" }}>
 
-![Plantilla Resumen bursátil abierta en el formulario Crear Job](../images/automation-template-stock-job.webp)
+![Plantilla Resumen bursátil abierta en el formulario Crear tarea](../images/automation-template-stock-job.webp)
 
 </div>
 
-## Gestionar Automatizaciones
+Cree una tarea de notificación o de script personalizada desde el diálogo Crear, en lugar de cambiar el tipo de una plantilla.
 
-Después de crear una automatización, puede ver las tareas habilitadas en la página "Automatizaciones".
+## Gestionar tareas programadas
 
-Use las pestañas sobre la lista para alternar entre "Jobs actuales", "Jobs finalizados" y "Ejecuciones recientes". "Jobs finalizados" reúne las tareas completadas, fallidas y vencidas, mientras que las tareas en curso permanecen en "Jobs actuales".
+Después de crear una tarea, use la página Tareas programadas para revisar Tareas actuales, Tareas finalizadas y Ejecuciones recientes.
+La vista Tareas actuales puede filtrar las tareas de Agent, de notificación y de script.
+
+Tareas finalizadas reúne las tareas completadas, fallidas y vencidas.
+Las tareas en curso permanecen en Tareas actuales.
 
 <div style={{ maxWidth: "420px" }}>
 
-![Página de automatizaciones con las pestañas Jobs actuales, Jobs finalizados y Ejecuciones recientes](../images/automation-current-jobs.webp)
+![Página Tareas programadas con las pestañas Tareas actuales, Tareas finalizadas y Ejecuciones recientes](../images/automation-current-jobs.webp)
 
 </div>
 
-Cuando un Job empieza a ejecutarse, aparece como una tarjeta en "Jobs actuales" con sus instrucciones, horario y acciones rápidas.
+Desde la lista puede revisar detalles, editar ajustes permitidos, pausar una tarea o eliminarla.
+Antes de eliminar una tarea de Agent con una dependencia upstream, compruebe si otra tarea todavía necesita su última salida completada.
 
 <div style={{ maxWidth: "520px" }}>
 
-![Tarjeta de automatización en ejecución dentro de Jobs actuales](../images/automation-running-job.webp)
+![Tarjeta de tarea programada en ejecución en Tareas actuales](../images/automation-running-job.webp)
 
 </div>
 
-Desde esta página, puede inspeccionar los detalles de la automatización, editar la tarea, pausarla o eliminarla según sea necesario.
+## Validar una tarea nueva
 
-Para tareas vinculadas, verifique si alguna tarea aguas abajo aún depende de la salida más reciente completada de la tarea anterior antes de eliminar la tarea anterior.
+Después de crear o editar una tarea, no se detenga en el mensaje “guardado correctamente”.
 
-## Validación
+1. Confirme que la tarea aparece en el filtro de tipo correcto y que su estado coincide con lo esperado.
+2. Compruebe la programación, la ventana de validez y la configuración de notificaciones.
+3. Ejecute una prueba o espere una ejecución real y revise las Ejecuciones recientes.
+4. Para una tarea de Agent, compruebe que el resultado sigue las instrucciones y usa la salida upstream seleccionada cuando corresponde.
+5. Para una tarea de notificación, compruebe que el texto recibido coincide con su contenido.
+6. Para una tarea de script, compruebe el resultado de salida y si la salida estándar se entregó o permaneció silenciosa correctamente.
 
-Después de crear o editar una automatización, no se detenga en "guardado con éxito". Confirme lo siguiente:
+## Tratamiento de fallos comunes
 
-1. La tarea aparece en la lista de automatizaciones y su estado coincide con las expectativas.
-2. El horario, la ventana de validez y la configuración de notificación son correctos.
-3. Si se vincula una tarea anterior, la tarea anterior ya tiene una salida más reciente completada.
-4. Después de una ejecución real, inspeccione el registro de ejecución reciente.
-5. Verifique si la salida realmente utilizó el resultado de la tarea anterior en lugar de adivinar el contexto faltante.
-
-## Manejo de Fallos Comunes
-
-| Síntoma | Causa Posible | Manejo Sugerido |
-|---|---|---|
-| La tarea aguas abajo no utilizó el resultado de la tarea anterior | No se vinculó una tarea anterior, la tarea anterior no tiene una salida completada aún, o ambas tareas se ejecutaron en el mismo ciclo del programador | Seleccione nuevamente la tarea anterior, ejecute la tarea anterior con éxito una vez y programe la tarea aguas abajo después de ella |
-| La salida se desvía del punto | Las instrucciones de la tarea se basan demasiado en referencias vagas como "acabo de" o "el contenido anterior" | Escriba claramente el objetivo, el alcance, el formato de salida y cómo utilizar la salida de la tarea anterior |
-| El flujo de trabajo en cadena se vuelve desordenado con el tiempo | Una tarea maneja demasiados pasos, o las responsabilidades de tareas anteriores y aguas abajo no son claras | Divida el flujo de trabajo para que cada tarea posea un paso claro |
+| Síntoma | Causa probable | Tratamiento sugerido |
+| --- | --- | --- |
+| La tarea no se ejecutó cuando se esperaba | La programación, la ventana de validez o el estado de la tarea no está activo | Revise la programación y la ventana, confirme que la tarea esté habilitada y consulte las Ejecuciones recientes. |
+| El resultado de una tarea de Agent no responde al objetivo | Las instrucciones son vagas, un Skill necesario no está disponible o falta el contexto upstream | Indique claramente el objetivo, el alcance, el formato y las restricciones de las fuentes. Compruebe el Skill y la tarea upstream antes de la siguiente ejecución. |
+| Una tarea de notificación se ejecutó pero no llegó ningún mensaje | No se seleccionó un canal o el canal de destino no está disponible | Seleccione y verifique un canal, y vuelva a probar la tarea. |
+| Una tarea de script se ejecutó sin mensaje | El script terminó correctamente sin salida estándar | Es un éxito silencioso. Haga que el script imprima el texto exacto que debe enviarse cuando se cumpla la condición. |
+| Una tarea de script falló | El script terminó con error, agotó el tiempo o no pudo iniciarse | Revise el registro, corrija el script de confianza y vuelva a probarlo. No espere que la IA repare o explique el script automáticamente. |

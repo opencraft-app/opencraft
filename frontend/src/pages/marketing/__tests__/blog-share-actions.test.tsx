@@ -1,9 +1,16 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BlogShareActions } from "@/pages/marketing/blog-share-actions";
 
 const writeText = vi.fn<(_: string) => Promise<void>>();
+const regionState = vi.hoisted(() => ({ isGlobal: true }));
+
+vi.mock("@/lib/region", () => ({
+  get isGlobal() {
+    return regionState.isGlobal;
+  },
+}));
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => {
@@ -18,6 +25,7 @@ vi.mock("@/i18n/t", () => ({
 
 describe("BlogShareActions", () => {
   beforeEach(() => {
+    regionState.isGlobal = true;
     writeText.mockReset();
     writeText.mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, "clipboard", {
@@ -57,5 +65,16 @@ describe("BlogShareActions", () => {
       "href",
       expect.stringContaining("https%3A%2F%2Flightvela.ai%2Fblog%2Fhermes"),
     );
+  });
+
+  it("keeps only the copy-link control on the domestic Blog", () => {
+    regionState.isGlobal = false;
+
+    const { container } = render(<BlogShareActions path="/blog/hermes" title="Hermes article" />);
+
+    expect(within(container).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    expect(within(container).queryByRole("link", { name: "Share X" })).not.toBeInTheDocument();
+    expect(within(container).queryByRole("link", { name: "Share LinkedIn" })).not.toBeInTheDocument();
+    expect(within(container).queryByRole("link", { name: "Share Facebook" })).not.toBeInTheDocument();
   });
 });

@@ -96,4 +96,4 @@ Evite hacerlo a menos que la plataforma y su flujo de trabajo previsto lo respal
 
 - [Gestión de Memoria](../configuration/memory.md) - gestione el contexto compartido por sus canales conectados.
 
-- [Automatizaciones](../configuration/automation.md) - entregue actualizaciones programadas a un canal conectado cuando corresponda.
+- [Tareas programadas](../configuration/automation.md) - entregue actualizaciones programadas a un canal conectado cuando corresponda.

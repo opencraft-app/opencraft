@@ -12,26 +12,37 @@ import {
   usePaidBillingEnabled,
   useRealnamePhoneVerificationEnabled,
 } from "@/contexts/runtime-config-context";
+import { CreditPackSection } from "./credit-pack-section";
 import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
-import type { Bundle, BundlePrice, BundleDescriptionEntry } from "@/domain/types";
+import type { Bundle, BundlePrice, BundleDescriptionEntry, PassModifyOption } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { AppLink, useAppNavigate } from "@/lib/app-navigation";
-import { isCN, isGlobal } from "@/lib/region";
+import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
+import { isCN, isGlobal, DEFAULT_LOCALE } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
+  BillingDisplayError,
   resolveBillingErrorMessage,
   getBillingErrorCode,
   isPassConflictError,
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { ACCOUNT_PATH, getAgentCreatingPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENTS_HOME_PATH, getAgentCreatingPath, getAgentCreateBotPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { QRCodeSVG } from "qrcode.react";
+import { usePassUpgrade } from "@/lib/use-pass-upgrade";
+import { UpgradePassModal } from "@/pages/marketing/upgrade-pass-modal";
+import { UPGRADE_RETURN_QUERY, validUpgradeQuote } from "@/lib/upgrade-checkout";
+import {
+  armPostLoginRedirect,
+  disarmPostLoginRedirect,
+  usePostLoginRedirect,
+} from "./use-post-login-redirect";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -349,7 +360,7 @@ const iconMap: Record<IconKey, React.ReactNode> = {
   wifi: <Wifi {...iconStyle} />,
   headphones: <Sparkles {...iconStyle} />,
   check: <Check {...iconStyle} />,
-  /* Agent 核心能力点：自动任务 / 技能（包）/ 多平台通道 / 长期记忆 */
+  /* Agent 核心能力点：定时任务 / 技能（包）/ 多平台通道 / 长期记忆 */
   automation: <CalendarClock {...iconStyle} />,
   skill: <Puzzle {...iconStyle} />,
   channel: <MessageSquare {...iconStyle} />,
@@ -393,7 +404,7 @@ const iconForKey = (key: string): React.ReactNode => {
  */
 const CAPABILITY_DESC_KEYS = new Set<string>([
   "7*24小时在线", "7×24小时在线", "7×24 在线", "7*24 在线",
-  "极简配置面板", "自动任务", "技能安装", "技能包", "精选技能/技能包",
+  "极简配置面板", "定时任务", "技能安装", "技能包", "精选技能/技能包",
   "连接主流聊天通道", "接入主流模型 API", "长期记忆", "人设注入", "Agent 自主进化", "诊断中心",
 ]);
 const isCapabilityDescKey = (rawKey: string): boolean => {
@@ -409,8 +420,13 @@ const isCapabilityDescKey = (rawKey: string): boolean => {
  *   - 后续后端返回字串变化时，只需同步更新本表
  */
 const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
-  /* bundle_name */
+  /* bundle_name（后端套餐名全集，缺一个运行时就报「未在字典中找到」） */
   void t("启航 Launch");
+  void t("启航 Launch AI");
+  void t("巡游 Cruise");
+  void t("巡游 Cruise AI");
+  void t("远航 Voyage");
+  void t("远航 Voyage AI");
   /* description.Key */
   void t("独立环境");
   void t("7×24小时在线");
@@ -507,7 +523,7 @@ const mapBundleToPlan = (
       storageFeature = { icon: iconMap.hardDrive, label, value: storageSpec };
       continue;
     }
-    /* 能力点（7*24小时在线 / 自动任务 / 技能 / 多通道 / 长期记忆 / 极简配置面板 / 人设注入 / 自主进化）
+    /* 能力点（7*24小时在线 / 定时任务 / 技能 / 多通道 / 长期记忆 / 极简配置面板 / 人设注入 / 自主进化）
        统一在下方按固定顺序渲染，这里跳过后端 description 里的同类项，避免重复与乱序。 */
     if (isCapabilityDescKey(rawKey)) continue;
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
@@ -538,7 +554,7 @@ const mapBundleToPlan = (
   }
   /* ─── Agent 核心能力点（固定顺序，所有套餐一致，统一展示在规格项下方）───
      顺序：Agent 自主进化 → 7*24小时在线 → 极简配置面板 → 连接主流聊天通道 → 接入主流模型 API
-          → 精选技能/技能包 → 人设注入 → 自动任务 → 长期记忆 → 诊断中心。
+          → 精选技能/技能包 → 人设注入 → 定时任务 → 长期记忆 → 诊断中心。
      技能项不再按 tier 区分「技能安装 / 技能包」，所有套餐统一「精选技能/技能包」。 */
   const capabilityPoints: PlanFeature[] = [
     { icon: iconMap.evolution, label: t("Agent 自主进化"), hasCheck: true },
@@ -548,7 +564,7 @@ const mapBundleToPlan = (
     { icon: iconMap.modelApi, label: t("接入主流模型 API"), hasCheck: true },
     { icon: iconMap.skill, label: t("精选技能/技能包"), hasCheck: true },
     { icon: iconMap.persona, label: t("人设注入"), hasCheck: true },
-    { icon: iconMap.automation, label: t("自动任务"), hasCheck: true },
+    { icon: iconMap.automation, label: t("定时任务"), hasCheck: true },
     { icon: iconMap.memory, label: t("长期记忆"), hasCheck: true },
     { icon: iconMap.diagnostics, label: t("诊断中心"), hasCheck: true },
   ];
@@ -1226,7 +1242,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
       { iconKey: "skill", label: "精选技能/技能包", hasCheck: true },
       { iconKey: "persona", label: "人设注入", hasCheck: true },
-      { iconKey: "automation", label: "自动任务", hasCheck: true },
+      { iconKey: "automation", label: "定时任务", hasCheck: true },
       { iconKey: "memory", label: "长期记忆", hasCheck: true },
       { iconKey: "diagnostics", label: "诊断中心", hasCheck: true },
     ],
@@ -1253,7 +1269,7 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("云端独立环境");
   void t("4核 8G 内存");
   void t("极简配置面板");
-  void t("自动任务");
+  void t("定时任务");
   void t("精选技能/技能包");
   void t("人设注入");
   void t("连接主流聊天通道");
@@ -1399,6 +1415,11 @@ const PlanCard = ({
   currentBots,
   reserveCreditTabSpace,
   subscriptionLocked,
+  upgradeTargetIds,
+  upgradeQuotingPlanId,
+  upgradeQuoteError,
+  selectedBundleId,
+  onVariantChange,
 }: {
   /* 同一 tier 的档位列表（AI 增强版 / 标准版）；未命中 tier 时长度为 1 */
   variants: PlanInfo[];
@@ -1408,8 +1429,13 @@ const PlanCard = ({
   currentBots: number;
   /* 是否为「无积分切换」的卡预留等高占位，使其 CTA/功能点与有积分切换的卡对齐 */
   reserveCreditTabSpace?: boolean;
-  /* 用户已有生效订阅：暂不支持升级 / 更换套餐，所有卡按钮统一禁用（当前套餐卡文案为「当前订阅」）。 */
+  /* 用户已有生效订阅时锁定新购；仅后端确认的升级目标可启用。 */
   subscriptionLocked?: boolean;
+  upgradeTargetIds?: ReadonlySet<string>;
+  upgradeQuotingPlanId?: string | null;
+  upgradeQuoteError?: { targetBundleId: string; message: string } | null;
+  selectedBundleId?: string;
+  onVariantChange?: (bundleId: string) => void;
 }) => {
   const t = useT();
   /* 卡内积分档位切换：同 tier 的 AI 增强版 / 标准版收敛为 variants，切换即换整份 PlanInfo，
@@ -1417,9 +1443,15 @@ const PlanCard = ({
      （启航 4500 / 巡游 10000）。 */
   const defaultVariantIdx = getDefaultVariantIndex(variants);
   const [activeVariantIdx, setActiveVariantIdx] = useState(() => defaultVariantIdx);
-  const safeIdx = activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
-  const plan = variants[safeIdx]!;
+  const controlledIdx = variants.findIndex((v) => v.id === selectedBundleId);
+  const safeIdx = controlledIdx >= 0 ? controlledIdx : activeVariantIdx < variants.length ? activeVariantIdx : defaultVariantIdx;
+  const selectedVariant = variants[safeIdx]!;
+  const isUpgradeTarget = upgradeTargetIds?.has(selectedVariant.id) === true;
+  const plan = isUpgradeTarget ? { ...selectedVariant, ctaLabel: t("升级至此套餐") } : selectedVariant;
   const subscribing = subscribingPlanId === plan.id;
+  const upgradeQuoting = upgradeQuotingPlanId === plan.id;
+  const quoteError = upgradeQuoteError?.targetBundleId === plan.id ? upgradeQuoteError.message : null;
+  const quoteErrorId = React.useId();
   /* 新用户启航版「免费订阅」按钮 hover 时，上方展示免费试用到期不自动扣款的提示（plan.freeTrialHint） */
   const [showFreeTrialHint, setShowFreeTrialHint] = useState(false);
   const quotaWouldExceed = currentBots >= plan.maxBots;
@@ -1434,8 +1466,8 @@ const PlanCard = ({
   const showCreditTabs = variants.length > 1;
   /* 售罄 / 未上线 / 暂无报价 / 询价加载中：按钮禁用。
      询价加载中虽然价格数字仍在展示（旧价），但为避免用户以旧价口径提交订单，CTA 必须 disabled。 */
-  /* subscriptionLocked：用户已有生效订阅，暂不支持升级/更换套餐，所有卡按钮一律禁用。 */
-  const disabled = isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
+  /* 升级使用独立差价与已有实例，不受新购报价/席位限制；下单时后端重新校验。 */
+  const disabled = isUpgradeTarget ? subscribing || upgradeQuotingPlanId != null : isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed || subscriptionLocked === true;
 
   return (
     <motion.div
@@ -1590,7 +1622,7 @@ const PlanCard = ({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setActiveVariantIdx(vi)}
+                  onClick={() => { setActiveVariantIdx(vi); onVariantChange?.(v.id); }}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -1891,7 +1923,7 @@ const PlanCard = ({
               />
             </div>
           )}
-          {isComingSoon ? (
+          {isComingSoon && !isUpgradeTarget ? (
             <button
               disabled
               style={{
@@ -1913,10 +1945,12 @@ const PlanCard = ({
             >
               {plan.ctaLabel}
             </button>
-          ) : plan.ctaStyle === "primary" ? (
+          ) : isUpgradeTarget || plan.ctaStyle === "primary" ? (
             <button
               onClick={() => onSubscribe(plan.id)}
               disabled={disabled}
+              aria-busy={upgradeQuoting || undefined}
+              aria-describedby={quoteError ? quoteErrorId : undefined}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1926,8 +1960,8 @@ const PlanCard = ({
                 padding: "12px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.15)" : colors.primary,
-                color: isSoldOut || quotaWouldExceed ? "rgba(0,0,0,0.40)" : colors.white,
+                background: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.15)" : colors.primary,
+                color: !isUpgradeTarget && (isSoldOut || quotaWouldExceed) ? "rgba(0,0,0,0.40)" : colors.white,
                 fontSize: 15,
                 fontWeight: 600,
                 lineHeight: 1.33,
@@ -1941,12 +1975,12 @@ const PlanCard = ({
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isSoldOut && !quotaWouldExceed) {
+                if (isUpgradeTarget || (!isSoldOut && !quotaWouldExceed)) {
                   e.currentTarget.style.background = colors.primary;
                 }
               }}
             >
-              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
+              {upgradeQuoting ? <><Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin motion-reduce:animate-none" />{t("正在查询升级差价...")}</> : subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           ) : (
             <button
@@ -1986,6 +2020,7 @@ const PlanCard = ({
               {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           )}
+          {quoteError && <p id={quoteErrorId} role="alert" className="mt-2 text-pretty text-sm text-[var(--danger)]">{quoteError}</p>}
         </div>
       </div>
     </motion.div>
@@ -2381,7 +2416,7 @@ export const CreditCardConfirmOrderModal = ({
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: colors.black }}>{t("自动续费")}</div>
                   <div style={{ fontSize: 12, color: colors.warmGray500, marginTop: 2, lineHeight: 1.6 }}>
-                    {t("订阅将在每个计费周期结束时自动续费，可随时在账号管理页取消。")}
+                    {t("订阅将在每个计费周期结束时自动续费，可随时在套餐与费用页取消。")}
                   </div>
                 </div>
               </div>
@@ -2667,6 +2702,16 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
 const PAY_RETURN_QUERY_KEY = "pay_return";
 const PAY_RETURN_PLAN_QUERY_KEY = "pay_plan";
 
+/** 套餐卡片区锚点：积分包区域的「先开通套餐」需要定位回这里。 */
+const PLANS_SECTION_ID = "subscribe-plans";
+
+/** 积分包区域锚点。 */
+const CREDIT_SECTION_ID = "subscribe-credits";
+
+/** 账号页「购买积分包」跳转本页时携带的定位参数，见产品方案 5。 */
+const SECTION_QUERY_KEY = "section";
+const CREDIT_SECTION_QUERY_VALUE = "credits";
+
 export const SubscribePage = ({
   authControls,
   publicLocale,
@@ -2679,15 +2724,21 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, refreshPasses, activePass, latestPass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, bots, refreshPasses, beginPassUpgrade, activePass, latestPass } = useOpenClaw();
   void BUNDLE_TYPE_FALLBACK_KEY;
   void BUNDLE_TYPE_TABS;
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
+  /* 积分包区域可见性默认关闭；挂载 show_credit_pack() 控制台助手供内部验收开启。 */
+  const creditPackVisible = useCreditPackVisibility();
+  useEffect(() => installCreditPackVisibilityHelper(), []);
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
+  /* 登录成功后按订阅状态分流：已订阅 → /agents（不让其停在订阅页再次购买，issue #73 红线），
+     未订阅 → 留在 /subscribe 继续开通。等权益快照就绪再跳，2.5s 超时兜底按未订阅处理。 */
+  const redirectAfterLogin = usePostLoginRedirect({ locale: publicLocale ?? DEFAULT_LOCALE });
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
   const [selectedPlan, setSelectedPlan] = useState<PlanInfo | null>(null);
@@ -2698,6 +2749,20 @@ export const SubscribePage = ({
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
+  const bundlesInitialLoading = bundles === null && !bundlesError;
+
+  /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
+     页面级套餐 Loading 结束后积分区才挂载，因此加载状态必须参与重试时机。 */
+  useEffect(() => {
+    if (!creditPackVisible || bundlesInitialLoading) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [bundlesInitialLoading, creditPackVisible]);
 
   /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
      作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
@@ -2709,11 +2774,67 @@ export const SubscribePage = ({
 
   const paidBillingEnabled = usePaidBillingEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
+  const upgradePassId = typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("upgrade_pass_id") ?? undefined;
+  const upgrade = usePassUpgrade({ userId: session.user?.id, passId: upgradePassId, enabled: paidBillingActive && isAuthenticated, currentPass: activePass });
+  const upgradeTargetIds = useMemo(() => new Set(upgrade.options.map((option) => option.target_bundle_id)), [upgrade.options]);
+  const [upgradeSelection, setUpgradeSelection] = useState<{ passId: string; targetBundleId: string; initialOption: PassModifyOption } | null>(null);
+  const [upgradeQuotingPlanId, setUpgradeQuotingPlanId] = useState<string | null>(null);
+  const [upgradeQuoteError, setUpgradeQuoteError] = useState<{ targetBundleId: string; message: string } | null>(null);
+  const upgradeQuoteRequest = useRef<symbol | null>(null);
+  const upgradeQuoteContext = JSON.stringify([upgrade.revisionKey, aiDurationKey]);
+  const upgradeQuoteContextRef = useRef(upgradeQuoteContext);
+  upgradeQuoteContextRef.current = upgradeQuoteContext;
+  const cancelUpgradeQuote = useCallback(() => {
+    upgradeQuoteRequest.current = null;
+    setUpgradeQuotingPlanId(null);
+    setUpgradeQuoteError(null);
+    setUpgradeSelection(null);
+  }, []);
+  useEffect(() => {
+    cancelUpgradeQuote();
+    return () => { upgradeQuoteRequest.current = null; };
+  }, [upgradeQuoteContext, cancelUpgradeQuote]);
+
+  const requestUpgradeQuote = useCallback(async (targetBundleId: string) => {
+    const pass = upgrade.pass;
+    if (upgradeQuoteRequest.current || !pass || !upgradeTargetIds.has(targetBundleId)) return;
+    const request = Symbol();
+    upgradeQuoteRequest.current = request;
+    const isCurrent = () => upgradeQuoteRequest.current === request && upgradeQuoteContextRef.current === upgradeQuoteContext;
+    setUpgradeQuotingPlanId(targetBundleId);
+    setUpgradeQuoteError(null);
+    try {
+      const result = await repositories.plans.listModifyBundles(pass.pass_id);
+      if (!isCurrent()) return;
+      const option = result.modify_bundle_set.find(item => item.target_bundle_id === targetBundleId);
+      if (result.source_bundle_id !== pass.bundle_id || !option || option.bundle.bundle_id !== targetBundleId || !validUpgradeQuote(option)) {
+        throw new BillingDisplayError(t("当前套餐已变化或该升级目标暂不可用，请刷新后重试。"));
+      }
+      setUpgradeSelection({ passId: pass.pass_id, targetBundleId, initialOption: option });
+    } catch (err) {
+      if (isCurrent()) setUpgradeQuoteError({ targetBundleId, message: resolveBillingErrorMessage(err, t("升级询价失败，请稍后重试。"), t) });
+    } finally {
+      if (upgradeQuoteRequest.current === request) {
+        upgradeQuoteRequest.current = null;
+        setUpgradeQuotingPlanId(null);
+      }
+    }
+  }, [repositories.plans, upgrade.pass, upgradeTargetIds, upgradeQuoteContext, t]);
+  const selectedUpgradePass = upgradeSelection && upgrade.pass?.pass_id === upgradeSelection.passId
+    && upgradeTargetIds.has(upgradeSelection.targetBundleId) ? upgrade.pass : null;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
      国际站已全量放开，付费开关只由后端 features 熔断；
      任一最终生效的门禁开启时不做免费引导，CTA 维持「立即开通」。 */
   const freeGuideAllowed = !paidBillingActive && !realnamePhoneVerificationEnabled;
+
+  /* OpenClawProvider 的首轮请求可能早于登录态稳定或遭遇瞬时失败。
+     订阅页是创建订单的入口，进入登录态后主动刷新一次 pass，避免用陈旧状态开放购买按钮。 */
+  useEffect(() => {
+    if (!authReady || !isAuthenticated) return;
+    void refreshPasses();
+  }, [authReady, isAuthenticated, refreshPasses]);
+
   const header = (
     <SubscribePageHeader
       authControls={authControls}
@@ -2902,6 +3023,40 @@ export const SubscribePage = ({
     return groups;
   }, [planList, t]);
 
+  // Link only the source and targets returned by the backend. Card grouping is presentation,
+  // not an assumption about tier, credit count, or service-plan compatibility.
+  const upgradeLinkKey = JSON.stringify([upgrade.revisionKey, upgrade.pass?.bundle_id, [...upgradeTargetIds]]);
+  const [linkedVariants, setLinkedVariants] = useState<{ key: string; selected: Record<string, string> }>({ key: "", selected: {} });
+  const upgradeLinkEnabled = upgrade.pass != null && upgradeTargetIds.size > 0;
+  const initialLinkedVariant = (tier: PlanTierGroup) =>
+    tier.variants.find((v) => v.id === upgrade.pass?.bundle_id)?.id ??
+    tier.variants.find((v) => upgradeTargetIds.has(v.id))?.id;
+  const selectedLinkedVariant = (tier: PlanTierGroup) => upgradeLinkEnabled
+    ? (linkedVariants.key === upgradeLinkKey ? linkedVariants.selected[tier.key] : undefined) ?? initialLinkedVariant(tier)
+    : undefined;
+  const handleUpgradeVariantChange = (changedGroup: PlanTierGroup, bundleId: string) => {
+    if (!upgradeLinkEnabled || !upgrade.pass) return;
+    cancelUpgradeQuote();
+    const sourceBundleId = upgrade.pass.bundle_id;
+    setLinkedVariants((previous) => {
+      const selected = previous.key === upgradeLinkKey ? { ...previous.selected } : {};
+      selected[changedGroup.key] = bundleId;
+      for (const group of planTiers) {
+        // Same-card upgrades keep the user's exact choice instead of toggling it back.
+        if (group.key === changedGroup.key) continue;
+        if (bundleId === sourceBundleId) {
+          const targets = group.variants.filter((variant) => upgradeTargetIds.has(variant.id));
+          if (targets.length > 0 && !targets.some((target) => target.id === selected[group.key])) {
+            selected[group.key] = targets[0]!.id;
+          }
+        } else if (upgradeTargetIds.has(bundleId) && group.variants.some((variant) => variant.id === sourceBundleId)) {
+          selected[group.key] = sourceBundleId;
+        }
+      }
+      return { key: upgradeLinkKey, selected };
+    });
+  };
+
   /* 付费过程上下文：国内站走 bridge 中转页二维码方案；国际站走信用卡 hosted page 跳转。
      保存当前订单 deal_names + 已选套餐 + 支付页 URL，供 PaymentPendingModal 渲染。 */
   const [paymentContext, setPaymentContext] = useState<{
@@ -2947,8 +3102,9 @@ export const SubscribePage = ({
      用 ref 而非 state：轮询回调里必须同步读到最新值，state 异步更新拦不住并发。 */
   const finalizingRef = useRef(false);
 
-  /* 重复使用的收尾逻辑：addBot + subscribe + navigate 。
-     供多个链路（免费试用 / 付费下单后 / 支付回跳）复用 */
+  /* 重复使用的收尾逻辑：subscribe + navigate（订阅成功后收敛订阅态并跳转）。
+     供多个链路（免费试用 / 付费下单后 / 支付回跳）复用。
+     注意：已不在此处 addBot——首个 Bot 的创建改由控制台命名向导承接（见下方 navigate 注释）。 */
   const finalizeBot = useCallback(async (plan: PlanInfo) => {
     /* 幂等闸门①：拦并发。原窗口轮询与支付回跳页轮询可能同时命中同一个已发货 pass。
        注意闸门只覆盖单次执行窗口，finally 里必须复位：
@@ -2969,19 +3125,10 @@ export const SubscribePage = ({
         navigate(getAgentCreatingPath(existingBot.id));
         return;
       }
-      const createdBot = await addBot({
-        name: "我的Hermes",
-        personality: "默认设定",
-        personalityEmoji: "✨",
-        intro: "",
-        soulTemplateId: undefined,
-        status: "running",
-      });
-      captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
-        plan_id: plan.id,
-        plan_name: plan.name,
-        bot_status: createdBot.status,
-      });
+      /* 订阅成功但账号还没有 Bot：不再在这里写死默认名自动建 Bot，而是跳到控制台的
+         命名向导（/agents?create=1），让用户为首个 Bot 命名后再创建——与「删除后重建」
+         的命名流程完全一致，避免两条路径体验分叉（首次订阅无命名、重建有命名）。
+         真正的 addBot 由控制台 createBotAndNavigate 在用户确认命名后执行。 */
       trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
         pgid: DATONG_PAGE_IDS.SUBSCRIBE,
         params: {
@@ -2989,24 +3136,17 @@ export const SubscribePage = ({
           plan_name: plan.name,
         },
       });
-      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
-        pgid: DATONG_PAGE_IDS.SUBSCRIBE,
-        params: {
-          bot_id: createdBot.id,
-          plan: plan.id,
-        },
-      });
       subscribe();
       setModalStep("closed");
       setSelectedPlan(null);
       setPaymentContext(null);
-      navigate(getAgentCreatingPath(createdBot.id));
+      navigate(getAgentCreateBotPath());
     } finally {
       /* 无论成功失败都复位：失败时后续轮询要能重试，
          成功时用户可能返回本页再次购买（SPA 不重新挂载，ref 会保留）。 */
       finalizingRef.current = false;
     }
-  }, [addBot, subscribe, navigate]);
+  }, [subscribe, navigate]);
 
   /**
    * 免费试用链路 — 仅国际站 / 存在老 pass 的内测场景。
@@ -3044,8 +3184,8 @@ export const SubscribePage = ({
    * 安全：二维码里**只有 deal_name + auth_code + expires_at**，无 Bearer token、无 pay_url；
    * auth_code 是一次性 ticket（TTL ≤10 分钟），截图泄漏的最坏后果是替受害者发起一次支付。
    *
-   * 注意：如果用户已拥有 active pass（互斥占用规则），trade 会返回 PASS_ALREADY_EXISTS，
-   * 此时跳过下单、直接走 finalizeBot（与免费链路一致）。
+   * 注意：如果页面 pass 状态过期，trade 仍会用 PASS_ALREADY_EXISTS 阻止重复下单；
+   * executeCreateBot 会刷新 pass 并退出支付流程。
    */
   const startPaidPassOrder = useCallback(async (plan: PlanInfo) => {
     trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
@@ -3330,6 +3470,16 @@ export const SubscribePage = ({
     } catch (err) {
       const code = getBillingErrorCode(err);
       const fallbackMsg = err instanceof Error ? err.message : t("创建失败，请稍后重试。");
+      /* 后端的单 pass 约束是最终防线。命中冲突说明页面权益状态已过期，
+         立即刷新并关闭支付上下文，让卡片切回「当前订阅」，不把幂等结果展示成下单失败。 */
+      if (isPassConflictError(code)) {
+        await refreshPasses();
+        setError(null);
+        setModalStep("closed");
+        setSelectedPlan(null);
+        setPaymentContext(null);
+        return;
+      }
       console.error("[subscribe] create bot failed", err instanceof RepositoryError
         ? { status: err.status, code: err.code, message: err.message }
         : err);
@@ -3356,21 +3506,21 @@ export const SubscribePage = ({
         setPaymentContext(null);
         return;
       }
-      /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
+      /* 特例 3：需要走续费路径（expired/isolated） → 引导到套餐与费用页 */
       if (isPassRequiresRenewError(code)) {
         const message = isGlobal
           ? code === "PASS_ISOLATED"
-            ? t("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")
-            : t("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")
+            ? t("当前套餐已进入隔离期，请在套餐与费用页管理套餐，销毁后可重新购买。")
+            : t("当前套餐已到期，续费功能敬请期待；请在套餐与费用页查看套餐，销毁后可重新购买。")
           : code === "PASS_ISOLATED"
-            ? t("当前套餐已进入隔离期，请前往我的账号续费恢复使用，或在账号页销毁后重新购买。")
-            : t("当前套餐已到期，请前往我的账号续费后继续使用。");
+            ? t("当前套餐已进入隔离期，请前往套餐与费用页续费恢复使用，或在该页销毁后重新购买。")
+            : t("当前套餐已到期，请前往套餐与费用页续费后继续使用。");
         setError({
           code,
           message,
           action: {
             label: isGlobal ? t("管理套餐") : t("前往续费"),
-            href: ACCOUNT_PATH,
+            href: ACCOUNT_BILLING_PATH,
           },
         });
         setModalStep("closed");
@@ -3386,18 +3536,36 @@ export const SubscribePage = ({
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, t]);
+  }, [paidBillingActive, startDianshiOrderAndPay, startPaidPassOrder, startIntlCardPay, startTrialPass, refreshPasses, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
     if (!plan) return;
+    if (upgrade.pass && upgradeTargetIds.has(planId)) {
+      void requestUpgradeQuote(planId);
+      return;
+    }
 
     /* 功能点2b：进页不再强制登录，未登录用户可浏览静态价；
        点「订阅」按钮时再引导登录，登录后回到本页继续操作。 */
     if (!isLoggedIn) {
-      /* 未登录：弹出登录弹窗引导登录（OAuth 整页跳转）。
-         登录回跳后进入已登录态定价页，用户再次点「订阅」即走下方实名判断链路。 */
+      /* 未登录：弹出登录弹窗引导登录。登录成功后按订阅状态分流（issue #73 红线：
+         已订阅不停在订阅页再次购买）。OAuth 是整页跳转，回跳后 LoginModal 已关闭、
+         onSuccess 不会触发，故先 arm 分流意图，由 usePostLoginRedirect 在回跳后消费；
+         手机验证码登录则在弹窗内成功、走 onSuccess。 */
+      armPostLoginRedirect();
       setShowLoginModal(true);
+      return;
+    }
+
+    /* UI disabled 之外的业务兜底：已有 pass / 订阅 / 实例时不允许进入确认订单（不重复下单）。
+       refreshPasses 用来收敛可能陈旧的权益快照，后端仍保留 PASS_ALREADY_EXISTS 最终保护。
+       但不能只 refreshPasses 后静默 return——那样已订阅用户点「订阅」会卡在订阅页原地不动。
+       按 issue #73 红线「订阅后统一走 /agents、不让已订阅用户停在订阅页」，这里把用户导向控制台：
+       已有 Bot → /agents；已订阅但还没 Bot → 进 /agents 的创建流程（与首页 CTA、登录后分流落点一致）。 */
+    if (isSubscribed || activePass || bots.length > 0) {
+      void refreshPasses();
+      navigate(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
       return;
     }
 
@@ -3447,7 +3615,7 @@ export const SubscribePage = ({
     /* 付费套餐：进入确认订单弹窗 */
     setSelectedPlan(plan);
     setModalStep("confirm");
-  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, realnamePhoneVerificationEnabled, navigate]);
+  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, isSubscribed, activePass, refreshPasses, realnamePhoneVerificationEnabled, navigate, upgrade.pass, upgradeTargetIds, requestUpgradeQuote]);
 
   /* 邀请码激活成功后：自动继续用户之前点击的套餐流程 */
   const handleInviteSuccess = useCallback(() => {
@@ -3524,7 +3692,24 @@ export const SubscribePage = ({
       {header}
 
       <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
-        <section style={{ maxWidth: 1080, margin: "0 auto" }}>
+        {bundlesInitialLoading ? (
+          <section
+            aria-labelledby="subscribe-bundles-loading-title"
+            data-testid="subscribe-bundles-loading"
+            role="status"
+            style={{ maxWidth: 1080, minHeight: 360, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <Loader2 style={{ width: 24, height: 24, color: colors.warmGray300 }} className="animate-spin" />
+              <h1 id="subscribe-bundles-loading-title" style={{ fontSize: 18, fontWeight: 600, color: colors.black, margin: 0 }}>
+                {t("订阅套餐")}
+              </h1>
+              <p style={{ fontSize: 14, color: colors.warmGray500, margin: 0 }}>{t("加载套餐中...")}</p>
+            </div>
+          </section>
+        ) : (
+          <>
+        <section id={PLANS_SECTION_ID} style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* Page Header — Notion style */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -3691,12 +3876,7 @@ export const SubscribePage = ({
           )}
 
           {/* Plan Cards */}
-          {bundlesLoading && !bundles ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-              <Loader2 style={{ width: 20, height: 20, color: colors.warmGray300 }} className="animate-spin" />
-              <span style={{ fontSize: 14, color: colors.warmGray300 }}>{t("加载套餐中...")}</span>
-            </div>
-          ) : bundlesError ? (
+          {bundlesError ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "32px 0" }}>
               <p style={{ fontSize: 14, color: "#cf3d4c", marginBottom: 12 }}>{bundlesError}</p>
               <button
@@ -3716,6 +3896,7 @@ export const SubscribePage = ({
             </div>
           ) : (
             <>
+              {upgrade.error && <p role="alert" className="mb-4 text-center text-sm">{t("升级资格加载失败，请重试")} <button type="button" className="underline" onClick={upgrade.retry}>{t("重试")}</button></p>}
               <motion.div
                 variants={staggerContainer}
                 initial="hidden"
@@ -3737,8 +3918,13 @@ export const SubscribePage = ({
                     subscribingPlanId={subscribingPlanId}
                     currentBots={bots.length}
                     reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
-                    /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
-                    subscriptionLocked={isSubscribed || bots.length > 0}
+                    /* 已有权益时锁定新购，仅按后端返回的目标 ID 开放升级。 */
+                    subscriptionLocked={isSubscribed || activePass !== null || bots.length > 0}
+                    upgradeTargetIds={upgradeTargetIds}
+                    upgradeQuotingPlanId={upgradeQuotingPlanId}
+                    upgradeQuoteError={upgradeQuoteError}
+                    selectedBundleId={selectedLinkedVariant(tier)}
+                    onVariantChange={upgradeLinkEnabled ? (bundleId) => handleUpgradeVariantChange(tier, bundleId) : undefined}
                   />
                 ))}
               </motion.div>
@@ -3762,12 +3948,42 @@ export const SubscribePage = ({
             </>
           )}
         </section>
+
+        {/* 补充模型积分区域：独立分区，位于套餐卡片区下方。
+            默认关闭；控制台执行 show_credit_pack() 可开启内部验收。 */}
+        {creditPackVisible && (
+          <CreditPackSection
+            sectionId={CREDIT_SECTION_ID}
+            isLoggedIn={isLoggedIn}
+            hasActivePlan={Boolean(activePass)}
+            onRequireLogin={() => setShowLoginModal(true)}
+            onRequirePlan={() => {
+              /* 定位到套餐卡片区：产品要求「先开通套餐」引导回上方卡片区 */
+              document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+        )}
+          </>
+        )}
       </main>
 
       <LegalFooter />
 
       {/* Payment Modals */}
       <AnimatePresence>
+        {upgradeSelection && selectedUpgradePass && (
+          <UpgradePassModal
+            pass={selectedUpgradePass}
+            targetBundleId={upgradeSelection.targetBundleId}
+            initialOption={upgradeSelection.initialOption}
+            onClose={() => setUpgradeSelection(null)}
+            onPaid={checkout => {
+              beginPassUpgrade(selectedUpgradePass, checkout);
+              setUpgradeSelection(null);
+              navigate(isGlobal ? `${AGENTS_HOME_PATH}?${UPGRADE_RETURN_QUERY}=${encodeURIComponent(checkout.dealName)}` : AGENTS_HOME_PATH);
+            }}
+          />
+        )}
         {modalStep === "confirm" && selectedPlan && (
           isDianshiZeroAmountPlan(selectedPlan, paidBillingActive) ? (
             <ConfirmOrderModal
@@ -3821,11 +4037,17 @@ export const SubscribePage = ({
         onSuccess={handleInviteSuccess}
       />
 
-      {/* Login Modal — 未登录点「订阅」时引导登录；登录成功仅关闭弹窗，
-          OAuth 整页跳转回跳后即为已登录态定价页。 */}
+      {/* Login Modal — 未登录点「订阅」时引导登录。
+          登录成功后按订阅状态分流：已订阅 → /agents（不停在订阅页再次购买，issue #73 红线），
+          未订阅 → 留在本页继续开通。OAuth 整页跳转回跳后由 onSuccess 触发权益快照刷新与分流。 */}
       <LoginModal
         open={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
+        onClose={() => {
+          // 用户主动关闭且未登录成功：清除分流意图，避免下次回跳误触发。
+          disarmPostLoginRedirect();
+          setShowLoginModal(false);
+        }}
+        onSuccess={() => redirectAfterLogin()}
       />
 
       {/* Responsive: collapse to single column on mobile */}

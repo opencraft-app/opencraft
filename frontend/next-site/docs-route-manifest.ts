@@ -178,6 +178,18 @@ export const DOCS_ROUTE_SLUGS = {
       "discord-event-agent"
     ],
     [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -361,6 +373,18 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "configuration",
       "workbench"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
     ],
     [
       "hermes-agent",
@@ -602,6 +626,18 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "discord-event-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
     ],
     [
       "compare",
@@ -866,6 +902,18 @@ export const DOCS_ROUTE_SLUGS = {
       "discord-event-agent"
     ],
     [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -1118,6 +1166,18 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "memory-and-knowledge"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
     ],
     [
       "compare",
@@ -1382,6 +1442,18 @@ export const DOCS_ROUTE_SLUGS = {
       "discord-event-agent"
     ],
     [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -1642,6 +1714,18 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "use-cases",
       "discord-event-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
     ],
     [
       "compare",
@@ -1906,6 +1990,18 @@ export const DOCS_ROUTE_SLUGS = {
       "discord-event-agent"
     ],
     [
+      "use-cases",
+      "scheduled-task-agent"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-notifications"
+    ],
+    [
+      "use-cases",
+      "scheduled-task-script"
+    ],
+    [
       "compare",
       "lightvela-vs-localhost-ai-agent"
     ],
@@ -2021,7 +2117,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-20",
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-08-20",
-    "plans": "2026-08-24",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
@@ -2062,6 +2158,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/memory-and-knowledge": "2026-08-17",
     "use-cases/discord-community-agent": "2026-08-21",
     "use-cases/discord-event-agent": "2026-08-21",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
     "compare/lightvela-vs-hostinger": "2026-08-17",
     "compare/lightvela-vs-manus": "2026-08-18",
@@ -2088,14 +2187,14 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
   },
   "zh-cn": {
     "overview": "2026-08-20",
-    "quickstart": "2026-08-20",
+    "quickstart": "2026-09-20",
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-08-20",
-    "account": "2026-08-20",
+    "account": "2026-09-20",
     "announcements/public-beta": "2026-08-20",
-    "plans": "2026-08-20",
+    "plans": "2026-09-20",
     "credits": "2026-08-20",
-    "create-first-hermes": "2026-08-20",
+    "create-first-hermes": "2026-09-20",
     "configuration": "2026-08-20",
     "configuration/model": "2026-08-20",
     "configuration/channel-wechat": "2026-08-20",
@@ -2113,6 +2212,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "configuration/multiple-models": "2026-08-28",
     "configuration/deepseek-harness": "2026-08-28",
     "configuration/workbench": "2026-09-02",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "hermes-agent/hermes-vs-openclaw": "2026-08-12",
     "hermes-agent/why-hermes-remembers-you": "2026-08-12",
     "hermes-agent/user-md-vs-memory-md": "2026-08-12",
@@ -2137,7 +2239,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-20",
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-08-20",
-    "plans": "2026-08-24",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
@@ -2178,6 +2280,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/memory-and-knowledge": "2026-08-17",
     "use-cases/discord-community-agent": "2026-08-21",
     "use-cases/discord-event-agent": "2026-08-21",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
     "compare/lightvela-vs-hostinger": "2026-08-17",
     "compare/lightvela-vs-manus": "2026-08-18",
@@ -2207,7 +2312,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-20",
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-08-20",
-    "plans": "2026-08-24",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
@@ -2248,6 +2353,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/memory-and-knowledge": "2026-08-17",
     "use-cases/discord-community-agent": "2026-08-21",
     "use-cases/discord-event-agent": "2026-08-21",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
     "compare/lightvela-vs-hostinger": "2026-08-17",
     "compare/lightvela-vs-manus": "2026-08-18",
@@ -2277,7 +2385,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-20",
     "core-concepts": "2026-08-20",
     "who-is-lightvela-for": "2026-08-20",
-    "plans": "2026-08-20",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-20",
     "credits": "2026-08-20",
     "create-first-hermes": "2026-08-20",
@@ -2316,6 +2424,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/daily-summary": "2026-08-18",
     "use-cases/hermes-agent-24-7": "2026-08-18",
     "use-cases/memory-and-knowledge": "2026-08-18",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-18",
     "compare/lightvela-vs-hostinger": "2026-08-18",
     "compare/lightvela-vs-manus": "2026-08-18",
@@ -2345,7 +2456,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-26",
     "core-concepts": "2026-08-26",
     "who-is-lightvela-for": "2026-08-26",
-    "plans": "2026-08-26",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-26",
     "credits": "2026-08-26",
     "create-first-hermes": "2026-08-26",
@@ -2386,6 +2497,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/memory-and-knowledge": "2026-08-26",
     "use-cases/discord-community-agent": "2026-08-26",
     "use-cases/discord-event-agent": "2026-08-26",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-26",
     "compare/lightvela-vs-hostinger": "2026-08-26",
     "compare/lightvela-vs-manus": "2026-08-26",
@@ -2415,7 +2529,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-28",
     "core-concepts": "2026-08-28",
     "who-is-lightvela-for": "2026-08-28",
-    "plans": "2026-08-28",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-28",
     "credits": "2026-08-28",
     "create-first-hermes": "2026-08-28",
@@ -2456,6 +2570,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/memory-and-knowledge": "2026-08-28",
     "use-cases/discord-community-agent": "2026-08-28",
     "use-cases/discord-event-agent": "2026-08-28",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-28",
     "compare/lightvela-vs-hostinger": "2026-08-28",
     "compare/lightvela-vs-manus": "2026-08-28",
@@ -2485,7 +2602,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "quickstart": "2026-08-31",
     "core-concepts": "2026-08-31",
     "who-is-lightvela-for": "2026-08-31",
-    "plans": "2026-08-31",
+    "plans": "2026-09-20",
     "announcements/public-beta": "2026-08-31",
     "credits": "2026-08-31",
     "create-first-hermes": "2026-08-31",
@@ -2526,6 +2643,9 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "use-cases/memory-and-knowledge": "2026-08-31",
     "use-cases/discord-community-agent": "2026-08-31",
     "use-cases/discord-event-agent": "2026-08-31",
+    "use-cases/scheduled-task-agent": "2026-09-14",
+    "use-cases/scheduled-task-notifications": "2026-09-14",
+    "use-cases/scheduled-task-script": "2026-09-14",
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-31",
     "compare/lightvela-vs-hostinger": "2026-08-31",
     "compare/lightvela-vs-manus": "2026-08-31",

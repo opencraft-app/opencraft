@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/devroute"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/federation"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/oidc"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
@@ -20,30 +21,37 @@ import (
 )
 
 type ServerConfig struct {
-	CookieSecure               bool
-	CookieSameSite             http.SameSite
-	SessionTTL                 time.Duration
-	OAuthReturnToAllowedHosts  []string
-	QQOAuth                    *QQOAuthConfig
-	GoogleOAuth                *GoogleOAuthConfig
-	GitHubOAuth                *GitHubOAuthConfig
-	WeChatOAuth                *WeChatOAuthConfig
-	AvatarStore                AvatarStore
-	TATRegisterIssuer          tat.RegisterCodeIssuer
-	DeviceBindTokenSecret      string
-	DeviceBindTokenTTL         time.Duration
-	Logger                     *slog.Logger
-	PublicBaseURL              string
-	FrontendBaseURL            string
-	AdminToken                 string
-	E2EAuthEnabled             bool
-	E2EAuthToken               string
-	E2ESessionTTL              time.Duration
-	ShadowBindingInternalToken string
-	ShadowTencentCallbackToken string
-	TrustedProxyCIDRs          []string
-	Federation                 *FederationConfig
-	OIDC                       *OIDCConfig
+	CookieSecure                  bool
+	CookieSameSite                http.SameSite
+	SessionTTL                    time.Duration
+	OAuthReturnToAllowedHosts     []string
+	QQOAuth                       *QQOAuthConfig
+	GoogleOAuth                   *GoogleOAuthConfig
+	GitHubOAuth                   *GitHubOAuthConfig
+	WeChatOAuth                   *WeChatOAuthConfig
+	AvatarStore                   AvatarStore
+	TATRegisterIssuer             tat.RegisterCodeIssuer
+	DeviceBindTokenSecret         string
+	DeviceBindTokenTTL            time.Duration
+	Logger                        *slog.Logger
+	PublicBaseURL                 string
+	FrontendBaseURL               string
+	AdminToken                    string
+	E2EAuthEnabled                bool
+	E2EAuthToken                  string
+	E2ESessionTTL                 time.Duration
+	ShadowBindingInternalToken    string
+	ShadowTencentCallbackToken    string
+	DeveloperRouteClient          DeveloperRouteClient
+	DeveloperRouteExplicitIP      bool
+	DeveloperRouteRegistry        devroute.Registry
+	DeveloperRouteRegistrySecret  string
+	DeveloperRouteRegistryCaller  string
+	DeveloperRouteRegistryRouteID string
+	TrustedProxyCIDRs             []string
+	Federation                    *FederationConfig
+	OIDC                          *OIDCConfig
+	ReferralEnabled               bool
 }
 
 type FederationConfig struct {
@@ -84,11 +92,21 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	handler.federation = config.Federation
 	handler.oidc = config.OIDC
+	handler.referralEnabled = config.ReferralEnabled
+	handler.developerRoutes = config.DeveloperRouteClient
+	handler.allowExplicitIP = config.DeveloperRouteExplicitIP
+	router.POST("/auth/session/exchange", handler.ExchangeFirstPartySession)
+	// Compatibility alias for already released native clients. New first-party
+	// clients use the neutral session adapter above.
+	router.POST("/auth/native/token", handler.ExchangeNativeLogin)
 	registerOAuthRoutes(router, handler)
 	registerFederationSwitchRoutes(router, handler)
+	registerDeveloperRouteRoutes(router, handler)
+	registerDeveloperRouteRegistryRoutes(router, config)
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
+	router.POST("/auth/referral/prepare", handler.PrepareReferral)
 	router.POST("/v1/shadow/binding/send-sms", handler.SendShadowBindingSMS)
 	router.POST("/v1/shadow/binding/verify-phone", handler.VerifyShadowBindingPhone)
 	router.POST("/auth/profile/phone/send", handler.SendPhoneChangeSMS)

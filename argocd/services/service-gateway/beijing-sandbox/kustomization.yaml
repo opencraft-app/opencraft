@@ -6,6 +6,7 @@ components:
 - ../profiles/sandbox
 generators:
 - ksops-secret-generator.yaml
+- ksops-collaboration-gateway-token-generator.yaml
 configMapGenerator:
 - name: service-gateway-config
   files:

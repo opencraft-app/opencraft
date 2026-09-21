@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_LAB_SECTION_ID_BY_SLUG,
   AGENT_SECTION_PATH_BY_ID,
+  getAgentBotSectionHref,
+  getAgentCreateBotPath,
   getAgentCreatingPath,
   getAgentLabSectionFromSlug,
   getAgentSectionFromSlug,
@@ -56,6 +58,11 @@ describe("agent route constants", () => {
     expect(getAgentCreatingPath(true)).toBe("/agents?creating=true");
   });
 
+  it("builds the post-subscribe naming intent url distinct from the creating wait state", () => {
+    // 订阅成功后引导命名的落点，控制台据此打开命名向导；与 creating 的等待态区分
+    expect(getAgentCreateBotPath()).toBe("/agents?create=1");
+  });
+
   it("does not carry creation flow params into agent section routes", () => {
     expect(
       getAgentSectionHref(
@@ -63,5 +70,10 @@ describe("agent route constants", () => {
         new URLSearchParams("creating=ins-123&plan=bundle_cruise_01&from=subscribe"),
       ),
     ).toBe("/agents/models");
+  });
+
+  it("persists the backend bot id after creation completes", () => {
+    expect(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, "bot/sales east"))
+      .toBe("/agents/channels?bot=bot%2Fsales+east");
   });
 });

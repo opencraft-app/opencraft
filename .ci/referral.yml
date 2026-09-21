@@ -1,0 +1,34 @@
+version: v2.0
+name: 构建 referral
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - referral/**
+      - argocd/services/referral/**
+      - argocd/catalogs/sandbox/*/referral.yaml
+      - argocd/secrets/*/referral-runtime-secrets.sops.yaml
+      - scripts/ssm_manifest.referral.*.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-referral
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: referral
+    BUNDLE: referral
+    DISPLAY_NAME: referral
+    DEFAULT_TARGET_ENV: beijing-sandbox
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
+    MASTER_AUTO_PIN_ENVS: none
+    ENABLE_MASTER_PROD_PROMOTE: false

@@ -8,6 +8,20 @@ export const shouldUseEnglishProviderData = (locale?: string): boolean => {
 
 type TranslateAgentCopy = (copy: string) => string;
 
+type AgentConsoleCollectionSection = "channel" | "model";
+
+/** 英文控制台的资源集合入口使用复数；其他 locale 继续走现有词典。 */
+export const resolveAgentConsoleCollectionLabel = (
+  section: AgentConsoleCollectionSection,
+  locale: string | undefined,
+  translate: TranslateAgentCopy,
+): string => {
+  if (/^en(?:-|$)/i.test(locale ?? "")) {
+    return section === "channel" ? "Channels" : "Models";
+  }
+  return translate(section === "channel" ? "通道" : "模型");
+};
+
 /** 后端历史默认名是中文固定值；只本地化该系统默认值，不改用户自定义名称。 */
 export const resolveAgentDisplayName = (
   name: string,

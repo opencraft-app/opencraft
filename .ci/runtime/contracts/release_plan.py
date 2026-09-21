@@ -41,6 +41,7 @@ class GatePlan:
     db_job_service: str
     db_job_operation: str
     db_job_image_override: str
+    readiness_image_override: str
     release_dependency_changed: bool
     release_dependencies: list[str]
     auto_merge_allowed: bool
@@ -64,6 +65,7 @@ class GatePlan:
             "db_job_service": self.db_job_service,
             "db_job_operation": self.db_job_operation,
             "db_job_image_override": self.db_job_image_override,
+            "readiness_image_override": self.readiness_image_override,
             "release_dependency_changed": self.release_dependency_changed,
             "release_dependencies": self.release_dependencies,
             "auto_merge_allowed": self.auto_merge_allowed,
@@ -78,8 +80,29 @@ class GatePlan:
 def changed_files_for_revision(repo_root: Path, source_sha: str) -> list[str]:
     if not source_sha:
         return []
+
+    commit_result = subprocess.run(
+        ["git", "cat-file", "-p", f"{source_sha}^{{commit}}"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if commit_result.returncode != 0:
+        raise RuntimeError(f"failed to inspect changed files for {source_sha}: {commit_result.stderr.strip()}")
+
+    parents: list[str] = []
+    for line in commit_result.stdout.splitlines():
+        if not line:
+            break
+        if line.startswith("parent "):
+            parents.append(line.removeprefix("parent ").strip())
+    if parents:
+        command = ["git", "diff", "--name-only", parents[0], source_sha, "--"]
+    else:
+        command = ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", source_sha]
+
     result = subprocess.run(
-        ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", source_sha],
+        command,
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -162,12 +185,15 @@ def plan_release_gates(
     has_verifier = bool(contract.get("verifier"))
     readiness_declared_unsupported = contract.get("readiness_supported") is False
     readiness_supported = bool(contract.get("readiness_supported", True)) and has_verifier
-    needs_db_gate = migration_changed or env in PROD_MANUAL_SYNC_ENVS
-    requires_db_job = migration_changed and bool(contract.get("migration_operation"))
+    run_migration = db_mode == "migration" and (migration_changed or contract.get("always_run_migration") is True)
+    needs_db_gate = run_migration or env in PROD_MANUAL_SYNC_ENVS
+    requires_db_job = run_migration and bool(contract.get("migration_operation"))
     requires_db_readiness = needs_db_gate and db_mode == "migration" and (has_verifier or readiness_declared_unsupported)
     db_job_service = str(contract.get("db_job_service") or service)
     db_job_operation = str(contract.get("migration_operation") or "")
     db_job_image_override = resolve_image_override(image, str(contract.get("migration_image_key") or ""))
+    verifier_mode = str((contract.get("verifier") or {}).get("mode") or "")
+    readiness_image_override = db_job_image_override if verifier_mode == "service-command" else ""
     dependencies = release_dependencies_for_env(manifest, service, env)
     release_dependency_changed = dependency_changed(manifest, dependencies, changed_files)
 
@@ -198,9 +224,13 @@ def plan_release_gates(
         manual_actions.append(command)
     if requires_db_readiness and db_status != "passed":
         if readiness_supported:
-            manual_actions.append(
-                f"python3 .ci/runtime/commands/verify_db_contract.py --service {service} --env {env} --apply --wait"
+            command = (
+                f"python3 .ci/runtime/commands/verify_db_contract.py --service {service} "
+                f"--env {env} --apply --wait"
             )
+            if readiness_image_override:
+                command += f" --image-override {readiness_image_override}"
+            manual_actions.append(command)
         else:
             manual_actions.append(f"manual DB readiness confirmation required for {service}/{env}")
     if is_manual_sync_env(env):
@@ -223,6 +253,7 @@ def plan_release_gates(
         db_job_service=db_job_service,
         db_job_operation=db_job_operation,
         db_job_image_override=db_job_image_override,
+        readiness_image_override=readiness_image_override,
         release_dependency_changed=release_dependency_changed,
         release_dependencies=dependencies,
         auto_merge_allowed=auto_merge_allowed,

@@ -2,6 +2,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -34,6 +35,7 @@ PLAYGROUND_BUILDABLE_BUNDLES = {
     "admin-gateway",
     "ai-gateway",
     "ctl",
+    "credit",
     "frontend",
     "gateway-dashboard",
     "nextgen-dashboard",
@@ -51,6 +53,7 @@ AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod,sgprod", "admin-gateway"),
     "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod,sgprod", "ai-gateway"),
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod,sgprod", "ctl"),
+    "credit": (".ci/credit.yml", "beijing-sandbox,shprod,sgprod", "credit"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
     "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
@@ -64,6 +67,7 @@ TOKYO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/tokyo-admin-gateway.yml", ".ci/admin-gateway.yml", "admin-gateway", "env"),
     "ai-gateway": (".ci/tokyo-ai-gateway.yml", ".ci/ai-gateway.yml", "ai-gateway", "env"),
     "ctl": (".ci/tokyo-ctl.yml", ".ci/ctl.yml", "ctl", "env"),
+    "credit": (".ci/tokyo-credit.yml", ".ci/credit.yml", "credit", "env"),
     "frontend": (".ci/tokyo-frontend.yml", ".ci/frontend.yml", "frontend", "cn-pool"),
     "gateway-dashboard": (
         ".ci/tokyo-gateway-dashboard.yml",
@@ -97,6 +101,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/cloudagent-gateway.yml",
     ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
+    ".ci/credit.yml",
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",
     ".ci/lightclaw-auth.yml",
@@ -113,6 +118,7 @@ BUSINESS_WORKFLOWS = {
 PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/ai-gateway.yml",
     ".ci/ctl.yml",
+    ".ci/credit.yml",
     ".ci/lightclaw-auth.yml",
     ".ci/payment.yml",
     ".ci/sandbox.yml",
@@ -156,6 +162,51 @@ def load_velagw_shprod_resources() -> tuple[dict, list[dict]]:
 
 
 class ReleaseBundleContractTests(unittest.TestCase):
+    def test_production_release_checkouts_do_not_fetch_unneeded_submodules(self) -> None:
+        for path, expected_count in (
+            (".ci/templates/service-release.yml", 4),
+            (".ci/templates/gitops-promotion-prod.yml", 3),
+        ):
+            with self.subTest(template=path):
+                workflow = yaml.safe_load((REPO_ROOT / path).read_text())
+                checkouts = [
+                    step
+                    for stage in workflow["stages"]
+                    for job in (stage.get("jobs") or {}).values()
+                    for step in job.get("steps", [])
+                    if step.get("checkout") == "self"
+                ]
+                self.assertEqual(len(checkouts), expected_count)
+                self.assertTrue(all(step["with"]["enableSubmodule"] is False for step in checkouts))
+
+    def test_sandbox_workers_use_isolated_pod_networking(self) -> None:
+        documents = [
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "sandbox/k8s/base/manifests.yaml").read_text())
+            if document
+        ]
+
+        for kind, name in (
+            ("Deployment", "sandbox-worker"),
+            ("StatefulSet", "sandbox-worker-sharded"),
+        ):
+            with self.subTest(kind=kind, name=name):
+                workload = next(
+                    document
+                    for document in documents
+                    if document.get("kind") == kind
+                    and (document.get("metadata") or {}).get("name") == name
+                )
+                pod_spec = workload["spec"]["template"]["spec"]
+                self.assertFalse(pod_spec.get("hostNetwork", False))
+                self.assertNotEqual(pod_spec.get("dnsPolicy"), "ClusterFirstWithHostNet")
+                self.assertNotIn("hostAliases", pod_spec)
+
+        update_script = (REPO_ROOT / "sandbox/scripts/update-image.sh").read_text()
+        for inherited_field in ('"hostNetwork"', '"dnsPolicy"', '"hostAliases"'):
+            with self.subTest(update_image_inherited_field=inherited_field):
+                self.assertNotIn(inherited_field, update_script)
+
     def test_ctl_production_schema_versions_match_environment_policy(self) -> None:
         manifest = load_manifest()
 
@@ -164,7 +215,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 28, "sgprod": 28},
+                    {"shprod": 31, "sgprod": 31},
                 )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
@@ -716,10 +767,36 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("AUTH_FEDERATION_CLIENTS_JSON", values)
 
         oidc_clients = json.loads(values["AUTH_OIDC_CLIENTS_JSON"])
-        self.assertEqual(len(oidc_clients), 1)
-        self.assertEqual(oidc_clients[0]["id"], "site-gateway")
+        self.assertEqual(len(oidc_clients), 3)
+        clients_by_id = {client["id"]: client for client in oidc_clients}
         self.assertEqual(
-            set(oidc_clients[0]["redirect_uris"]),
+            clients_by_id["site-gateway"]["redirect_uris"],
+            [
+                "https://sites-auth.lightvela.tech/auth/lightvela/callback",
+                "https://sites-auth.lightvela.site/auth/lightvela/callback",
+            ],
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-native-v1"],
+            {
+                "id": "opencraft-native-v1",
+                "display_name": "Vela",
+                "redirect_uris": ["opencraft://auth/lightvela"],
+            },
+        )
+        self.assertEqual(
+            clients_by_id["opencraft-web-v1"],
+            {
+                "id": "opencraft-web-v1",
+                "display_name": "OpenCraft Web",
+                "redirect_uris": [
+                    "https://chat.lightvela.com/auth/lightvela/callback",
+                    "https://chat.lightvela.ai/auth/lightvela/callback",
+                ],
+            },
+        )
+        self.assertEqual(
+            set(clients_by_id["site-gateway"]["redirect_uris"]),
             {
                 "https://sites-auth.lightvela.site/auth/lightvela/callback",
                 "https://sites-auth.lightvela.tech/auth/lightvela/callback",
@@ -1062,6 +1139,486 @@ class ReleaseBundleContractTests(unittest.TestCase):
         for malformed in ("sandbox-jp", "sandbox-jp-", "sandbox-jp-one", "sandbox-jp-1-extra"):
             with self.subTest(env=malformed):
                 self.assertFalse(is_playground_env(malformed))
+
+    def test_credit_build_metadata_covers_all_release_regions(self) -> None:
+        manifest = load_manifest()
+
+        for env in (
+            "beijing-sandbox",
+            PLAYGROUND_ENV,
+            KOREA_PLAYGROUND_ENV,
+            JAPAN_PLAYGROUND_ENV,
+            "shprod",
+            "sgprod",
+        ):
+            with self.subTest(env=env):
+                require_build_metadata(load_bundle(manifest, "credit", env))
+
+    def test_credit_db_contract_is_self_contained_for_first_production_release(self) -> None:
+        manifest = load_manifest(REPO_ROOT / ".ci/runtime/release-bundles.manifest")
+        contract = load_bundle(manifest, "credit", "shprod").db_contract
+        verifier = contract["verifier"]
+
+        self.assertIs(contract["bootstrap_namespace"], True)
+        self.assertEqual(contract["db_job_secret_resolver"], "credit_db_password")
+        self.assertEqual(
+            contract["secret_resolvers"]["credit_db_password"]["yaml_path"],
+            "stringData.CREDIT_DB_PASSWORD",
+        )
+        self.assertEqual(
+            verifier["service_platform_env_file"],
+            "argocd/services/credit/{env}/credit-platform.env",
+        )
+        self.assertEqual(verifier["static_env"]["CREDIT_DB"], "credit")
+        self.assertEqual(verifier["static_env"]["CREDIT_DB_USER"], "credit")
+        self.assertEqual(verifier["env_from_service_platform"]["MYSQL_HOST"], "CREDIT_MYSQL_HOST")
+        self.assertEqual(verifier["env_from_secret_resolver"]["CREDIT_DB_PASSWORD"], "credit_db_password")
+        self.assertNotIn("configmap", verifier)
+        self.assertNotIn("secret", verifier)
+
+        for service in ("ctl", "trade"):
+            with self.subTest(service=service):
+                self.assertNotIn("bootstrap_namespace", load_bundle(manifest, service, "shprod").db_contract)
+
+    def test_credit_pipeline_builds_beijing_and_production_matrix(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/credit.yml").read_text()) or {}
+
+        self.assertEqual(
+            self.push_config(workflow).get("branches"),
+            ["master", "playground/sandbox-bj-*", "playground/sandbox-kr-*"],
+        )
+        parameters = ((workflow.get("extends") or {}).get("parameters") or {})
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-sandbox")
+        self.assertIs(parameters.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+        watched_paths = self.push_config(workflow).get("paths") or []
+        self.assertIn(
+            "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
+            watched_paths,
+        )
+        self.assertIn("argocd/apps/*/credit.yaml", watched_paths)
+
+    def test_credit_beijing_release_materials_are_complete(self) -> None:
+        expected_paths = [
+            "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml",
+            "argocd/secrets/beijing-sandbox/credit-runtime-secrets.sops.yaml",
+            "argocd/services/credit/beijing-sandbox/kustomization.yaml",
+            "argocd/services/credit/beijing-sandbox/credit-platform.env",
+            "argocd/services/credit/beijing-sandbox/credit-lifecycle-worker.yaml",
+            "argocd/services/credit/beijing-sandbox/credit-usage-worker.yaml",
+            "scripts/ssm_manifest.credit.beijing-sandbox.yaml",
+        ]
+        for relative_path in expected_paths:
+            with self.subTest(path=relative_path):
+                self.assertTrue((REPO_ROOT / relative_path).is_file(), relative_path)
+
+        catalog = yaml.safe_load(
+            (REPO_ROOT / "argocd/catalogs/sandbox/beijing-sandbox/credit.yaml").read_text()
+        )
+        self.assertEqual(catalog["env"], "beijing-sandbox")
+        self.assertEqual(catalog["destinationName"], "beijing-sandbox")
+        self.assertEqual(catalog["namespace"], "credit")
+        self.assertEqual(catalog["sourcePath"], "argocd/services/credit/beijing-sandbox")
+
+        ssm_manifest = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.credit.beijing-sandbox.yaml").read_text()
+        )
+        self.assertEqual(ssm_manifest["defaults"]["region"], "ap-beijing")
+        self.assertEqual(
+            ssm_manifest["items"][0]["required_keys"],
+            [
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+                "CREDIT_DB_PASSWORD",
+                "CREDIT_REDIS_PASSWORD",
+                "LLMGATEWAY_INTERNAL_SERVICE_TOKEN",
+            ],
+        )
+
+        trade_patch = (
+            REPO_ROOT / "argocd/services/trade/beijing-sandbox/patch-credit.yaml"
+        )
+        trade_data = yaml.safe_load(trade_patch.read_text())["data"]
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_URL"],
+            "http://qbilling.billing.tencentyun.com/feev2/sendResource.php",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_HOST"],
+            "qbilling.billing.tencentyun.com",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL"],
+            "http://81.71.196.13",
+        )
+        self.assertEqual(
+            trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"],
+            "qbilling-send-resource-cn-prod",
+        )
+
+        beijing_7_data = yaml.safe_load(
+            (
+                REPO_ROOT
+                / "argocd/services/trade/sandbox-bj-7/patch-playground-db.yaml"
+            ).read_text()
+        )["data"]
+        self.assertEqual(
+            beijing_7_data["CREDIT_SEND_RESOURCE_URL"],
+            "http://9.139.137.40/feev2/sendResource.php",
+        )
+        self.assertEqual(
+            beijing_7_data["CREDIT_SEND_RESOURCE_HOST"], "qbilling.itd.com"
+        )
+
+    def test_credit_regional_release_materials_are_complete(self) -> None:
+        expected = {
+            "sandbox-jp-1": {
+                "region": "ap-seoul",
+                "suffix": "sandbox_jp_1",
+                "image": "lightclaw-jp1.tencentcloudcr.com/lightclaw/credit",
+                "catalog": "argocd/catalogs/playground/tokyo-playground/sandbox-jp-1/credit.yaml",
+                "trade_patch": "argocd/services/trade/sandbox-jp-1/patch-playground-db.yaml",
+                "gateway": "argocd/services/service-gateway/sandbox-jp-1/config.yaml",
+                "ssm": "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml",
+                "send_resource_url": "http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "intl.resource.qbilling.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-intl-prod",
+                "send_resource_gateway": "http://43.153.236.65",
+            },
+            "shprod": {
+                "region": "ap-shanghai",
+                "suffix": "test_env",
+                "image": "lightclaw-shprod.tencentcloudcr.com/lightclaw/credit",
+                "app": "argocd/apps/shprod/credit.yaml",
+                "project": "argocd/projects/shprod-credit.yaml",
+                "trade_patch": "argocd/services/trade/shprod/patch-credit.yaml",
+                "gateway": "argocd/services/service-gateway/shprod/config.yaml",
+                "ssm": "scripts/ssm_manifest.credit.shprod.yaml",
+                "send_resource_url": "http://qbilling.billing.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "qbilling.billing.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-cn-prod",
+                "send_resource_gateway": "http://81.71.196.13",
+            },
+            "sgprod": {
+                "region": "ap-singapore",
+                "suffix": "test_env",
+                "image": "lightclaw-sgprod.tencentcloudcr.com/lightclaw/credit",
+                "app": "argocd/apps/sgprod/credit.yaml",
+                "project": "argocd/projects/sgprod-credit.yaml",
+                "trade_patch": "argocd/services/trade/sgprod/patch-credit.yaml",
+                "gateway": "argocd/services/service-gateway/sgprod/config.yaml",
+                "ssm": "scripts/ssm_manifest.credit.sgprod.yaml",
+                "send_resource_url": "http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php",
+                "send_resource_host": "intl.resource.qbilling.tencentyun.com",
+                "send_resource_route": "qbilling-send-resource-intl-prod",
+                "send_resource_gateway": "http://43.153.236.65",
+            },
+        }
+        required_secret_keys = {
+            "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            "CREDIT_DB_PASSWORD",
+            "CREDIT_REDIS_PASSWORD",
+            "LLMGATEWAY_INTERNAL_SERVICE_TOKEN",
+        }
+
+        for env, contract in expected.items():
+            with self.subTest(env=env):
+                service_root = REPO_ROOT / "argocd/services/credit" / env
+                for name in (
+                    "kustomization.yaml",
+                    "credit-platform.env",
+                    "credit-usage-worker.yaml",
+                    "credit-lifecycle-worker.yaml",
+                    "ksops-secret-generator.yaml",
+                    "patch-credit-redis.yaml",
+                ):
+                    self.assertTrue((service_root / name).is_file(), f"{env}/{name}")
+
+                platform = (service_root / "credit-platform.env").read_text()
+                self.assertIn(f"CREDIT_REGION={contract['region']}", platform)
+                self.assertIn(f"CREDIT_OBJECT_ID_PASSWORD_SUFFIX={contract['suffix']}", platform)
+                self.assertIn(f"CREDIT_IMAGE={contract['image']}:", platform)
+
+                for key in ("catalog", "app", "project", "trade_patch", "gateway", "ssm"):
+                    if path := contract.get(key):
+                        self.assertTrue((REPO_ROOT / path).is_file(), path)
+
+                trade_data = yaml.safe_load(
+                    (REPO_ROOT / contract["trade_patch"]).read_text()
+                )["data"]
+                self.assertEqual(trade_data["LIGHTVELA_CREDIT_REGION"], contract["region"])
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_URL"], contract["send_resource_url"]
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_HOST"], contract["send_resource_host"]
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID"],
+                    contract["send_resource_route"],
+                )
+                self.assertEqual(
+                    trade_data["CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL"],
+                    contract["send_resource_gateway"],
+                )
+
+                gateway = yaml.safe_load((REPO_ROOT / contract["gateway"]).read_text())
+                credit_route = next(route for route in gateway["routes"] if route["name"] == "credit")
+                self.assertEqual(credit_route["prefix"], "/v1/credit")
+                self.assertIn(
+                    {"method": "POST", "path": "/v1/credit/packages/order-url"},
+                    credit_route["optional_auth_allow"],
+                )
+
+                secret = yaml.safe_load(
+                    (REPO_ROOT / "argocd/secrets" / env / "credit-runtime-secrets.sops.yaml").read_text()
+                )
+                self.assertEqual(set(secret["stringData"]), required_secret_keys)
+
+                ssm = yaml.safe_load((REPO_ROOT / contract["ssm"]).read_text())
+                item = next(item for item in ssm["items"] if item["id"] == "credit-runtime-secrets")
+                self.assertEqual(set(item["required_keys"]), required_secret_keys)
+
+    def test_referral_pipeline_keeps_manual_release_and_environment_boundaries(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/referral.yml").read_text()) or {}
+        parameters = ((workflow.get("extends") or {}).get("parameters") or {})
+
+        self.assertEqual(parameters.get("DEFAULT_TARGET_ENV"), "beijing-sandbox")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-sandbox,shprod,sgprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
+        self.assertFalse(parameters.get("ENABLE_MASTER_PROD_PROMOTE"))
+
+        manifest = load_manifest()
+        referral = load_bundle(manifest, "referral", "beijing-sandbox")
+        self.assertEqual(len(referral.publish_paths), 8)
+        self.assertIn("argocd/services/referral/beijing-sandbox/**", referral.publish_paths)
+        self.assertIn("argocd/services/referral/common/**", referral.publish_paths)
+        self.assertIn("argocd/apps/beijing-sandbox/sandbox-family-appset.yaml", referral.publish_paths)
+        self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/referral.yaml", referral.publish_paths)
+        self.assertIn("argocd/secrets/beijing-sandbox/referral-runtime-secrets.sops.yaml", referral.publish_paths)
+
+        overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/beijing-sandbox/kustomization.yaml").read_text()
+        )
+        patches = overlay.get("patches") or []
+        deployment_patch = next(
+            item["patch"]
+            for item in patches
+            if (item.get("target") or {}).get("name") == "referral-worker"
+        )
+        self.assertIn("path: /spec/replicas", deployment_patch)
+        self.assertIn("value: 2", deployment_patch)
+
+        config_patch = next(
+            item["patch"]
+            for item in patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", config_patch)
+        self.assertIn('value: "true"', config_patch)
+
+        auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/beijing-sandbox/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', auth_patch)
+
+        ctl_overlay = (
+            REPO_ROOT / "argocd/services/ctl/beijing-sandbox/kustomization.yaml"
+        ).read_text()
+        self.assertIn("name: REFERRAL_ENABLED", ctl_overlay)
+        self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", ctl_overlay)
+
+        shprod = load_bundle(manifest, "referral", "shprod")
+        self.assertEqual(len(shprod.publish_paths), 8)
+        self.assertIn("argocd/services/referral/shprod/**", shprod.publish_paths)
+        self.assertIn("argocd/services/referral/common/**", shprod.publish_paths)
+        self.assertIn("argocd/apps/shprod/referral.yaml", shprod.publish_paths)
+        self.assertIn("argocd/projects/shprod-referral.yaml", shprod.publish_paths)
+        self.assertIn("argocd/secrets/shprod/referral-runtime-secrets.sops.yaml", shprod.publish_paths)
+        self.assertEqual(
+            shprod.image_repo,
+            "lightclaw-shprod.tencentcloudcr.com/lightclaw/referral",
+        )
+
+        sgprod = load_bundle(manifest, "referral", "sgprod")
+        self.assertEqual(
+            sgprod.image_repo,
+            "lightclaw-sgprod.tencentcloudcr.com/lightclaw/referral",
+        )
+        self.assertIn("scripts/ssm_manifest.referral.sgprod.yaml", sgprod.publish_paths)
+        sgprod_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.referral.sgprod.yaml").read_text()
+        )
+        sgprod_ssm_item = next(
+            item for item in sgprod_ssm["items"] if item["id"] == "referral-runtime-secrets"
+        )
+        self.assertEqual(
+            set(sgprod_ssm_item["required_keys"]),
+            {
+                "REFERRAL_DB_PASSWORD",
+                "REFERRAL_PULSAR_TOKEN",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
+        )
+
+        shprod_overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/shprod/kustomization.yaml").read_text()
+        )
+        shprod_patches = shprod_overlay.get("patches") or []
+        shprod_config_patch = next(
+            item["patch"]
+            for item in shprod_patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn("path: /data/REFERRAL_ENABLED", shprod_config_patch)
+        self.assertIn("path: /data/REFERRAL_PROCESSING_ENABLED", shprod_config_patch)
+        self.assertGreaterEqual(shprod_config_patch.count('value: "true"'), 2)
+        self.assertIn('value: "active"', shprod_config_patch)
+        self.assertIn('value: "shanghai-launch-2026-09"', shprod_config_patch)
+
+        shprod_worker_patch = next(
+            item["patch"]
+            for item in shprod_patches
+            if (item.get("target") or {}).get("name") == "referral-worker"
+        )
+        self.assertIn("path: /spec/replicas", shprod_worker_patch)
+        self.assertIn("value: 2", shprod_worker_patch)
+
+        shprod_service = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/referral/shprod/kustomization.yaml").read_text()
+        )
+        self.assertIn("referral-campaign.yaml", shprod_service["resources"])
+        self.assertTrue((REPO_ROOT / "argocd/services/referral/shprod/referral-campaign.yaml").exists())
+
+        shprod_auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/shprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', shprod_auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', shprod_auth_patch)
+
+        shprod_ctl_patch = (
+            REPO_ROOT / "argocd/services/ctl/shprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn("name: REFERRAL_ENABLED", shprod_ctl_patch)
+        self.assertIn("name: REFERRAL_OUTBOX_RELAY_ENABLED", shprod_ctl_patch)
+        ctl_base = next(
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if isinstance(document, dict)
+            and document.get("kind") == "Deployment"
+            and document.get("metadata", {}).get("name") == "ctl-api"
+        )
+        container_name = ctl_base["spec"]["template"]["spec"]["containers"][0]["name"]
+        for patch_path in (
+            "ctl/k8s/overlays/shprod/patch-referral.yaml",
+            "argocd/services/ctl/shprod/patch-referral.yaml",
+        ):
+            with self.subTest(patch=patch_path):
+                patch = yaml.safe_load((REPO_ROOT / patch_path).read_text())
+                self.assertEqual(
+                    [container["name"] for container in patch["spec"]["template"]["spec"]["containers"]],
+                    [container_name],
+                )
+
+        shprod_app = yaml.safe_load(
+            (REPO_ROOT / "argocd/apps/shprod/referral.yaml").read_text()
+        )
+        self.assertNotIn("syncPolicy", shprod_app["spec"])
+        self.assertEqual(shprod_app["spec"]["source"]["targetRevision"], "gitops")
+
+        shprod_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.referral.shprod.yaml").read_text()
+        )
+        shprod_ssm_item = next(
+            item for item in shprod_ssm["items"] if item["id"] == "referral-runtime-secrets"
+        )
+        self.assertEqual(
+            set(shprod_ssm_item["required_keys"]),
+            {
+                "REFERRAL_DB_PASSWORD",
+                "REFERRAL_PULSAR_TOKEN",
+                "LIGHTCLAW_INTERNAL_SERVICE_TOKEN",
+            },
+        )
+
+        contract = shprod.db_contract
+        verifier = contract["verifier"]
+        self.assertIs(contract["bootstrap_namespace"], True)
+        self.assertEqual(contract["db_job_secret_resolver"], "referral_db_password")
+        self.assertEqual(
+            contract["secret_resolvers"]["referral_db_password"]["yaml_path"],
+            "stringData.REFERRAL_DB_PASSWORD",
+        )
+        self.assertEqual(
+            verifier["service_platform_env_file"],
+            "argocd/services/referral/{env}/referral-platform.env",
+        )
+        self.assertEqual(verifier["env_from_service_platform"]["MYSQL_HOST"], "REFERRAL_MYSQL_HOST")
+        self.assertEqual(
+            verifier["env_from_secret_resolver"]["REFERRAL_DB_PASSWORD"],
+            "referral_db_password",
+        )
+        self.assertNotIn("configmap", verifier)
+        self.assertNotIn("secret", verifier)
+
+        auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.shprod.yaml").read_text()
+        )["items"][0]
+        self.assertEqual(auth_ssm["version_id"], "referral-sh-20260916-auth")
+        self.assertIn("REFERRAL_PULSAR_TOKEN", auth_ssm["required_keys"])
+
+        ctl_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.shprod.yaml").read_text()
+        )
+        ctl_runtime = next(item for item in ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets")
+        self.assertEqual(ctl_runtime["version_id"], "referral-sh-20260916-ctl")
+        self.assertIn("REFERRAL_PULSAR_TOKEN", ctl_runtime["required_keys"])
+
+        sgprod_overlay = yaml.safe_load(
+            (REPO_ROOT / "referral/k8s/overlays/sgprod/kustomization.yaml").read_text()
+        )
+        sgprod_patches = sgprod_overlay.get("patches") or []
+        sgprod_config_patch = next(
+            item["patch"]
+            for item in sgprod_patches
+            if (item.get("target") or {}).get("kind") == "ConfigMap"
+        )
+        self.assertIn('value: "singapore-launch-2026-09"', sgprod_config_patch)
+        self.assertIn('value: "true"', sgprod_config_patch)
+        self.assertIn("pulsar-7j4z44nzn3za", sgprod_config_patch)
+
+        sgprod_app = yaml.safe_load(
+            (REPO_ROOT / "argocd/apps/sgprod/referral.yaml").read_text()
+        )
+        self.assertNotIn("syncPolicy", sgprod_app["spec"])
+        self.assertEqual(sgprod_app["spec"]["source"]["targetRevision"], "gitops")
+        self.assertEqual(sgprod_app["spec"]["destination"]["name"], "sgprod")
+
+        sgprod_auth_patch = (
+            REPO_ROOT / "argocd/services/lightclaw-auth/sgprod/patch-referral.yaml"
+        ).read_text()
+        self.assertIn('REFERRAL_ENABLED: "true"', sgprod_auth_patch)
+        self.assertIn('REFERRAL_OUTBOX_RELAY_ENABLED: "true"', sgprod_auth_patch)
+
+        sgprod_ctl_patch = yaml.safe_load(
+            (REPO_ROOT / "argocd/services/ctl/sgprod/patch-referral.yaml").read_text()
+        )
+        self.assertEqual(
+            [container["name"] for container in sgprod_ctl_patch["spec"]["template"]["spec"]["containers"]],
+            [container_name],
+        )
+        sgprod_auth_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.lightclaw-auth.sgprod.yaml").read_text()
+        )["items"][0]
+        self.assertIn("REFERRAL_PULSAR_TOKEN", sgprod_auth_ssm["required_keys"])
+        sgprod_ctl_ssm = yaml.safe_load(
+            (REPO_ROOT / "scripts/ssm_manifest.ctl.sgprod.yaml").read_text()
+        )
+        sgprod_ctl_runtime = next(
+            item for item in sgprod_ctl_ssm["items"] if item["id"] == "ctl-runtime-secrets"
+        )
+        self.assertIn("REFERRAL_PULSAR_TOKEN", sgprod_ctl_runtime["required_keys"])
 
     def test_japan_playground_buildable_bundles_use_jp_registry(self) -> None:
         manifest = load_manifest()
@@ -1932,6 +2489,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "VELAGW_SET_AUTOSCALER_MIN_WARM_SETS",
             "VELAGW_VELAGWSET_SERVERLESS_TRAFFIC",
             "VELAGW_SUBSCRIPTION_QUOTA_PACING_EFFECTIVE_AT",
+            "VELAGW_NEWAPI_IMAGE",
+            "VELAGW_NEWAPI_RELEASE_ID",
+            "VELAGW_NEWAPI_RELEASE_VERSION",
         }
         expected_region_values = {
             "shprod": {
@@ -1957,6 +2517,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     {key: platform[key] for key in expected},
                     expected,
                 )
+                kustomization = yaml.safe_load(
+                    (REPO_ROOT / "argocd/services/velagw" / env / "kustomization.yaml").read_text()
+                )
+                replacement_sources = {
+                    (replacement.get("source") or {}).get("fieldPath"): replacement
+                    for replacement in kustomization.get("replacements", [])
+                }
+                for field_path in (
+                    "data.VELAGW_NEWAPI_IMAGE",
+                    "data.VELAGW_NEWAPI_RELEASE_ID",
+                    "data.VELAGW_NEWAPI_RELEASE_VERSION",
+                ):
+                    self.assertIn(field_path, replacement_sources)
 
     def test_velagw_beijing_otel_version_matches_subtree_source(self) -> None:
         marker = {}
@@ -2192,7 +2765,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
         self.assertEqual(
             approval_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
         )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
@@ -2229,10 +2802,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
         self.assertIn("check-in", stages[0])
+        release_reviews = (((stages[0].get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        self.assertEqual(
+            release_reviews.get("reviewers"),
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+        )
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
         self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
+        self.assertIn("resolve_source_branch()", template_text)
+        self.assertIn("BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}", template_text)
+        self.assertIn(
+            "FRONTEND_EDGEONE_CI_BRANCH=\"$(resolve_source_branch '${{ ci.branch }}')\"",
+            template_text,
+        )
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"', template_text)
+        self.assertIn("FRONTEND_EDGEONE_CI_SHA='${{ ci.sha }}'", template_text)
+        self.assertIn('FRONTEND_EDGEONE_CI_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', template_text)
+        self.assertNotIn('export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
         self.assertIn("eo:cn-lightvela-prod-next)", command_text)
@@ -2426,6 +3014,97 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
 
+    def test_hermes_pool_refresh_selects_only_target_region(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        resolved = json.dumps({"pools": []})
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+resolved_json="$3"
+source "$script_path"
+api_get() { printf '%s' "$resolved_json"; }
+target_pool_ids http://unused "$pools_json" ap-johorbahru
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools, resolved],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertEqual(result.stdout.splitlines(), ["pool-jhb"])
+
+    def test_hermes_pool_refresh_does_not_publish_one_global_image_for_multi_region_sku(self) -> None:
+        script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        pools = json.dumps(
+            [
+                {
+                    "id": "pool-sg",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-singapore-1",
+                },
+                {
+                    "id": "pool-jhb",
+                    "template_class_id": "hermes",
+                    "sku_id": "sku-hermes-2c4g",
+                    "zone": "ap-johorbahru-1",
+                },
+            ]
+        )
+        source_text = script.read_text().rsplit('main "$@"', maxsplit=1)[0]
+        command = r'''
+set -euo pipefail
+script_path="$1"
+pools_json="$2"
+source "$script_path"
+api_get() {
+  printf '%s' '[{"id":"sku-hermes-2c4g","template_class_id":"hermes","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}]'
+}
+api_post_json() {
+  printf '%s' '{"id":"sku-hermes-2c4g","base_image":"img-sg","desired_image_id":"img-sg","stable_image_id":"img-sg","rollout_state":"stable"}'
+}
+jq() {
+  printf '%s\n' 'jq must not be required before the multi-region early return' >&2
+  return 127
+}
+refresh_skus http://unused img-jhb "$pools_json"
+'''
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh") as source_file:
+            source_file.write(source_text)
+            source_file.flush()
+            result = subprocess.run(
+                ["bash", "-c", command, "_", source_file.name, pools],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        self.assertNotIn("updating SKU", result.stdout)
+
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
@@ -2494,7 +3173,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         artifact_builder_text = (REPO_ROOT / "frontend/scripts/build-release-artifacts.mjs").read_text()
 
         frontend_scripts = package_json["scripts"]
@@ -2518,7 +3197,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn('"$PNPM_BIN" check', guard_text)
         self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
-        self.assertIn('-cf - frontend velalink | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
+        self.assertIn('-cf - frontend velalink shared/lightvela-agent-core | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
         self.assertIn('--exclude="velalink/node_modules"', guard_text)
         self.assertIn('--exclude="velalink/target"', guard_text)
         self.assertIn('"$PNPM_BIN" build:cn', guard_text)
@@ -2528,8 +3207,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+
     def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
-        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        guard_text = (REPO_ROOT / ".ci/checks/frontend_guard.sh").read_text()
         next_config_text = (REPO_ROOT / "frontend/next.config.mjs").read_text()
 
         self.assertNotIn("turbopackFileSystemCacheForBuild", next_config_text)
@@ -2586,6 +3266,30 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("Dry-run 并打印生产 DB migration 计划", template_text)
         self.assertIn("创建并等待 migration/readiness Job", template_text)
         self.assertIn("--apply", template_text)
+
+        explicit_path = REPO_ROOT / ".ci/db-migration-apply.yml"
+        explicit_text = explicit_path.read_text()
+        explicit = yaml.safe_load(explicit_text)
+        explicit_on = explicit.get(True) or explicit.get("on") or {}
+        explicit_stages = explicit.get("stages") or []
+        self.assertEqual(explicit_on.get("manual"), "enabled")
+        self.assertEqual(
+            [stage.get("name") for stage in explicit_stages],
+            ["Dry-run 生产 DB migration", "人工确认生产 DB migration", "执行生产 DB migration"],
+        )
+        self.assertTrue(all("if" not in stage for stage in explicit_stages))
+        self.assertIn("check-in", explicit_stages[1])
+        explicit_reviews = explicit_stages[1]["check-in"]["reviews"]
+        self.assertIn("description", explicit_reviews)
+        self.assertNotIn("description", explicit_stages[1]["check-in"])
+        for stage_index, job_name in ((0, "dry_run"), (2, "apply")):
+            steps = explicit_stages[stage_index]["jobs"][job_name]["steps"]
+            checkout = next(step for step in steps if step.get("checkout") == "self")
+            self.assertIs(checkout["with"]["enableSubmodule"], False)
+        self.assertEqual(explicit_text.count("--expect-decision run_migration"), 2)
+        self.assertIn("--apply", explicit_text)
+        self.assertIn('if [[ "$MIGRATION_DECISION" == "run_migration" ]]', template_text)
+        self.assertIn("Use .ci/db-migration-apply.yml", template_text)
 
     def test_lightclaw_auth_prod_replaces_oauth_return_hosts(self) -> None:
         for env in ["shprod", "sgprod"]:
@@ -2654,6 +3358,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         sgprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "sgprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
+        tokyo_workflow = yaml.safe_load((REPO_ROOT / ".ci/tokyo-trade.yml").read_text())
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn("argocd/services/trade/beijing-sandbox/**", bundle.publish_paths)
@@ -2701,6 +3406,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
         )
+        self.assertIn("ci-triggers/trade", self.push_paths(workflow))
+        self.assertIn("ci-triggers/trade", self.push_paths(tokyo_workflow))
+        self.assertTrue((REPO_ROOT / "ci-triggers/trade").is_file())
 
     def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
         env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
@@ -2878,6 +3586,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
+        self.assertEqual(parameters.get("IMAGE_PIN_VARIANT"), "testing")
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
@@ -3038,6 +3747,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
         self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
+        self.assertEqual(template_parameters.get("IMAGE_PIN_VARIANT", {}).get("default"), "all")
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
@@ -3047,6 +3757,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("resolve_prod_promote_envs()", template_text)
         self.assertNotIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
+        self.assertEqual(
+            template_text.count('GITOPS_IMAGE_PIN_VARIANT="${{ parameters.IMAGE_PIN_VARIANT }}"'),
+            4,
+        )
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
 
@@ -3068,7 +3782,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"', template_text)
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)
-        self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
+        release_image_dir = (
+            'RELEASE_IMAGE_DIR="${TMPDIR:-/tmp}/lightclaw-ci/release-images/'
+            '${BK_CI_BUILD_ID:?BK_CI_BUILD_ID is required}/'
+            '${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}"'
+        )
+        self.assertEqual(template_text.count(release_image_dir), 2)
+        self.assertNotIn('RELEASE_IMAGE_DIR=".ci/.release-images/', template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
         self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
         self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"', template_text)

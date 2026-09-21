@@ -41,6 +41,8 @@ func (l *logic) requireActivePass(ctx pctx.Context) error {
 		{modelpass.StatusRenewing, errcode.ErrPassRenewing},
 		{modelpass.StatusDeleting, errcode.ErrPassDeleting},
 		{modelpass.StatusTerminating, errcode.ErrPassTerminating},
+		// 变配期间底层机器规格正在改，放行新建会让用户拿到源规格池的实例。
+		{modelpass.StatusModifying, errcode.ErrPassModifying},
 		{modelpass.StatusIsolated, errcode.ErrPassIsolated},
 	} {
 		if seen[state.status] {

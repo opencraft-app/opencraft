@@ -154,14 +154,14 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	if relayState, ok := parseOAuthRelayState(state); ok {
 		if err := validateOAuthRelayStateForProvider("qq", relayState); err != nil {
 			logger.Warn("qq oauth callback failed", "stage", "relay_state_validation", "err", err)
-			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch")))
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
 			target, err := relayCallbackURLWithOriginalQuery("qq", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("qq oauth relay callback failed", "stage", "target_query", "err", err)
-				ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+				ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch")))
 				return
 			}
 			ctx.Redirect(http.StatusTemporaryRedirect, target)
@@ -169,7 +169,7 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 		}
 		if !isOAuthRelayTargetCallback(ctx.Request, relayState) {
 			logger.Warn("qq oauth callback failed", "stage", "relay_target_mismatch")
-			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch")))
 			return
 		}
 		exchangeRedirectURI = relayState.IssuerRedirectURI
@@ -207,7 +207,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 			"has_state", state != "",
 			"has_cookie_state", expectedState != "",
 		)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch")))
 		return
 	}
 
@@ -215,17 +215,18 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 	token, err := h.qqOAuth.client.ExchangeCode(requestCtx, code, exchangeRedirectURI)
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("qq oauth callback failed", "stage", "exchange", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_exchange_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_exchange_failed")))
 		return
 	}
 
 	identity, err := h.qqOAuth.client.ResolveIdentity(requestCtx, token.AccessToken)
 	if err != nil {
 		logger.Error("qq oauth callback failed", "stage", "identity", "err", err)
-		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_identity_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_identity_failed")))
 		return
 	}
 	identity.InviteCode = h.inviteTicketFromRequest(ctx)
+	identity.ReferralCode = h.referralCodeFromRequest(ctx)
 	identity.RegistrationDisabled = h.qqOAuth.registrationDisabled
 	session, err := h.service.SignInWithOAuth(requestCtx, identity)
 	if err != nil {
@@ -238,10 +239,10 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		)
 		var serviceErr *service.Error
 		if errors.As(err, &serviceErr) && serviceErr.Code == "oauth_registration_disabled" {
-			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_registration_disabled"))
+			ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_registration_disabled")))
 			return
 		}
-		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_sign_in_failed"))
+		ctx.Redirect(http.StatusTemporaryRedirect, h.oauthFailureURL(ctx.Request, qqOAuthReturnToCookieName, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_sign_in_failed")))
 		return
 	}
 
@@ -250,6 +251,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		"user_id", session.User.ID,
 	)
 	h.clearInviteTicketCookie(ctx)
+	h.clearReferralCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "qq", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
 	h.completeFederationSwitch(ctx, session.Token)

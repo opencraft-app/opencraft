@@ -6,8 +6,8 @@ INSTALLER="${ROOT_DIR}/images/helpers/install-deepseek-harness.sh"
 
 bash -n "${INSTALLER}"
 
-if grep -Eq 'readonly DSH_VERSION=|0\.1\.0-rc\.7|0\.2\.13' "${INSTALLER}"; then
-  echo "installer must not pin DSH or plugin versions" >&2
+if grep -Fq 'readonly DSH_SPEC="@deepseek-ai/dsh@latest"' "${INSTALLER}"; then
+  echo "installer must not follow an unverified DSH latest release" >&2
   exit 1
 fi
 
@@ -17,7 +17,8 @@ if grep -Eq 'LIGHTVELA_DSH_ASSETS_DIR|DEFAULT_ASSETS_DIR|runtime/pnpm-lock\.yaml
 fi
 
 for marker in \
-  '@deepseek-ai/dsh@latest' \
+  'readonly DSH_COMPAT_VERSION="0.1.1-rc.2"' \
+  'readonly DSH_SPEC="@deepseek-ai/dsh@${DSH_COMPAT_VERSION}"' \
   '@cocofhu/skillhub@latest' \
   'deepseek-harness-qqbot@latest' \
   'deepseek-harness-weixin@latest' \

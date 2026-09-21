@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/browser-preview-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/browser-core": "0.1.0"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2"
+  }
+}

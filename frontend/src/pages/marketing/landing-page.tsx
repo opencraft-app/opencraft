@@ -12,6 +12,7 @@ import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { useOpenClaw } from "@/contexts/agent-context";
+import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
@@ -70,8 +71,13 @@ export const LandingPageView = ({
 }: LandingPageViewProps) => {
   const t = useT();
   const { isAuthenticated } = useSession();
+  const { auth } = useRepositories();
   const { bots, isSubscribed } = useOpenClaw();
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
+  const referralCode = useMemo(
+    () => new URLSearchParams(locationSearch).get("ref")?.trim().toUpperCase() ?? "",
+    [locationSearch],
+  );
   const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const rawOverviewScenarioTaskPacks = useMemo(
     () => getOverviewScenarioTaskPacks(publicLocale ?? (isGlobal ? "en-US" : "zh-CN")),
@@ -79,6 +85,11 @@ export const LandingPageView = ({
   );
   const overviewScenarioTaskPacks = useZhHantDeep(rawOverviewScenarioTaskPacks);
   const [showLogin, setShowLogin] = useState(false);
+
+  useEffect(() => {
+    if (authControls || !isAuthenticated || !referralCode) return;
+    void auth.prepareReferralCode(referralCode).catch(() => undefined);
+  }, [auth, authControls, isAuthenticated, referralCode]);
 
   useEffect(() => {
     if (!oauthError) return;

@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**Telegram y WhatsApp pueden servir como dos puntos de entrada al mismo Hermes Agent. Mientras que ambos canales se conecten al mismo Agent, comparten la personalidad del Agent, las Skills, las automatizaciones y la memoria a largo plazo, sin necesidad de duplicar la configuración por plataforma.** Sin embargo, "unificado" tiene un alcance definido: lo que se comparte son los activos del nivel del Agent, mientras que cada canal mantiene su propio flujo de autorización y límites de mensajes, por lo que conectarlos son dos pasos de autorización independientes. La forma más directa de verificar el compartir es decir algo en un canal y preguntar sobre ello en el otro — una respuesta correcta prueba que ambos puntos de entrada se resuelven al mismo Agent. Después de conectar, también confirme que las respuestas lleguen en la conversación desde la que se envió el mensaje, y no en otra.
+**Telegram y WhatsApp pueden servir como dos puntos de entrada al mismo Hermes Agent. Mientras que ambos canales se conecten al mismo Agent, comparten la personalidad del Agent, las Skills, las tareas programadas y la memoria a largo plazo, sin necesidad de duplicar la configuración por plataforma.** Sin embargo, "unificado" tiene un alcance definido: lo que se comparte son los activos del nivel del Agent, mientras que cada canal mantiene su propio flujo de autorización y límites de mensajes, por lo que conectarlos son dos pasos de autorización independientes. La forma más directa de verificar el compartir es decir algo en un canal y preguntar sobre ello en el otro — una respuesta correcta prueba que ambos puntos de entrada se resuelven al mismo Agent. Después de conectar, también confirme que las respuestas lleguen en la conversación desde la que se envió el mensaje, y no en otra.
 
 ![Un Agent conectado a Telegram y WhatsApp con una sola personalidad y memoria a largo plazo](../images/use-case-07-multi-channel-personality-memory.png)
 
@@ -113,11 +113,11 @@ La personalidad y la memoria a largo plazo deben permanecer consistentes, pero e
     ├── un SOUL.md
     ├── una memoria del Agent y perfil de usuario
     ├── un conjunto de Skills instaladas
-    ├── un conjunto de automatizaciones
+    ├── un conjunto de tareas programadas
     ├── punto de entrada de Telegram
     └── punto de entrada de WhatsApp
 
-Los métodos de notificación de automatización aún necesitan un canal objetivo explícito.
+Los métodos de notificación de tarea programada aún necesitan un canal objetivo explícito.
 
 No asuma que un Agent compartido causa que cada recordatorio se envíe tanto a Telegram como a WhatsApp.
 
@@ -148,11 +148,11 @@ Telegram admite mensajes de grupo después de desactivar Group Privacy, añadir 
 
 El uso multicanal mantiene la capa del Agent consistente, pero no modifica las condiciones de configuración ni los límites propios de cada canal.
 
-### ¿Una automatización enviará a ambos canales automáticamente?
+### ¿Una tarea programada enviará a ambos canales automáticamente?
 
 No.
 
-Cuando cree o edite una automatización, confirme su método de notificación y canal objetivo, luego pruebe el resultado de la entrega por separado.
+Cuando cree o edite una tarea programada, confirme su método de notificación y canal objetivo, luego pruebe el resultado de la entrega por separado.
 
 ## Próximos pasos
 

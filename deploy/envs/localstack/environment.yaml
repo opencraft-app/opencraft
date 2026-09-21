@@ -7,7 +7,10 @@ spec:
   contextAllowlist:
     - orbstack
     - docker-desktop
-  architecture: arm64
+    - kind-*
+    - k3d-*
+    - minikube
+  architecture: host
   secrets:
     provider: kustomize-secret-generator
     encrypted: false

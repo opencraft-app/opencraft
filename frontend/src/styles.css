@@ -45,6 +45,21 @@
   --realname-control-border: #E9ECF1;
   --realname-control-muted: #F2F4F8;
 
+  --automation-tone-daily-bg: #F8F1ED;
+  --automation-tone-daily-text: #9A604A;
+  --automation-tone-productivity-bg: #F7F4EE;
+  --automation-tone-productivity-text: #8A6A2B;
+  --automation-tone-monitoring-bg: #EFF4F7;
+  --automation-tone-monitoring-text: #55708A;
+  --automation-tone-wellbeing-bg: #EFF7F2;
+  --automation-tone-wellbeing-text: #4A7A5F;
+  --automation-tone-learning-bg: #F2F0F7;
+  --automation-tone-learning-text: #6A5B8C;
+  --automation-skill-chip-bg: rgba(0, 0, 0, 0.055);
+  --automation-skill-chip-text: rgba(0, 0, 0, 0.75);
+  --automation-skill-unavailable-bg: rgba(245, 158, 11, 0.10);
+  --automation-skill-unavailable-text: #92400E;
+
   --accent-purple: #dcc6ff;
   --accent-purple-bg: rgba(219, 197, 255, 0.16);
   --accent-green-bg: #90fffd;
@@ -134,7 +149,7 @@ html.lw-settings-scrollbar-stable body[data-scroll-locked] {
 @media (min-width: 1024px) {
   html.lw-settings-scrollbar-stable body[data-scroll-locked] .lv-agents-sidebar-scroll-isolated {
     position: fixed;
-    top: var(--lv-agents-sidebar-locked-top, 84px);
+    top: var(--lv-agents-sidebar-locked-top, 68px);
   }
 }
 
@@ -153,6 +168,74 @@ html.lw-settings-scrollbar-stable {
   .lw-settings-shell {
     width: min(1440px, calc(100vw - 160px));
   }
+}
+
+@media (min-width: 1024px) {
+  header.lv-agent-sidebar-header {
+    right: auto;
+    width: 264px;
+    height: 68px;
+    border-right: 1px solid #e9ecf1;
+    border-bottom-color: #e9ecf1 !important;
+  }
+
+  .lw-settings-shell.lv-agent-settings-shell {
+    /* Fill the viewport remainder; only the inner content has a width cap.
+       16px + 248px sidebar + 24px grid gap gives matching 24px gutters. */
+    width: calc(100% - 40px);
+    margin-left: 16px;
+    margin-right: 24px;
+  }
+
+  .lw-app-top-pad.lv-agent-settings-main {
+    padding-top: 68px;
+  }
+
+  .lv-agent-chat-page {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .lv-agent-chat-page .lv-agent-settings-main {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .lv-agent-chat-page .lv-agent-settings-shell {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .lv-agent-chat-page .lv-agent-settings-grid,
+  .lv-agent-chat-page .lv-agent-settings-content,
+  .lv-agent-chat-page ._lh-claw-bot-panel,
+  .lv-agent-chat-page ._lh-claw-bot-panel__cards {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .lv-agent-settings-content {
+    width: 100%;
+    max-width: 1280px;
+    margin-top: -24px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  header.lv-agent-sidebar-header > div {
+    height: 68px !important;
+    max-width: none;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+/* Agent pages without a sidebar do not keep a floating frame around the brand. */
+header.lv-agent-sidebar-header:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) {
+  border-right: 0;
+  border-bottom: 0 !important;
 }
 
 /* 诊断中心输出区原生滚动条彻底隐藏（视觉滚动条由 React 手绘，
@@ -308,14 +391,49 @@ a {
 
   min-height: calc(100dvh - 178px);
   padding-bottom: 24px;
-  padding-right: 28px;
+  padding-right: 12px;
   border-right: 1px solid #e9ecf1;
 }
 
-.lv-agent-profile-wrap {
+.lv-agent-account-footer {
+  display: flex;
+  width: calc(100% + 12px + 16px);
+  margin-top: auto;
+  margin-left: -16px;
+  padding-left: 16px;
+  padding-top: 8px;
+  border-top: 1px solid #e9ecf1;
+}
+
+.lv-agent-account-menu {
   width: var(--lv-agents-nav-width);
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e9ecf1;
+}
+
+.lv-agent-account-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 150ms ease;
+}
+
+.lv-agent-account-trigger:hover,
+.lv-agent-account-trigger:focus-visible,
+.lv-agent-account-trigger[aria-expanded="true"] {
+  background: rgb(0 0 0 / 4%);
+  outline: none;
+}
+
+.lv-agent-account-trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 18%);
+}
+
+.lv-agent-profile-wrap {
+  width: calc(100% + 12px);
+  padding-bottom: 8px;
 }
 
 .lv-agent-profile {
@@ -324,7 +442,7 @@ a {
   width: var(--lv-agents-nav-width);
   min-height: 44px;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   border-radius: 6px;
   color: #1f1f1f;
   transition: background 0.15s ease;
@@ -356,9 +474,9 @@ a {
   display: block;
   overflow: hidden;
   color: #1f1f1f;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 22px;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -399,7 +517,7 @@ a {
   font-weight: 600;
   line-height: 14px;
   text-align: left;
-  white-space: normal;
+  white-space: nowrap;
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
@@ -432,102 +550,105 @@ a {
 
 .lv-agent-actions {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
   flex: 0 0 auto;
 }
 
-.lv-agent-more {
+.lv-agent-action-item {
+  position: relative;
   display: inline-flex;
-  width: 20px;
-  height: 20px;
+}
+
+.lv-agent-action-button {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 4px;
-  color: #111111;
-  background: #f2f4f8;
-}
-
-.lv-agent-more:hover,
-.lv-agent-more:focus-visible {
-  background: #e9ecf1;
-  outline: none;
-}
-
-.lv-agent-action-menu {
-  position: absolute;
-  top: 28px;
-  right: 0;
-  z-index: 30;
-  display: flex;
-  width: 136px;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 0;
-  border: 1px solid rgb(0 0 0 / 4%);
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 14px 32px rgb(15 23 42 / 12%);
-}
-
-.lv-agent-action-menu button {
-  width: 100%;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  color: rgb(0 0 0 / 72%);
-  background: transparent;
-  font-size: 13px;
-  line-height: 20px;
-  text-align: left;
-}
-
-.lv-agent-action-menu button:hover,
-.lv-agent-action-menu button:focus-visible {
-  background: #f7f8fb;
-  outline: none;
-}
-
-.lv-agent-action-menu button:disabled {
-  cursor: not-allowed;
-  color: rgb(0 0 0 / 28%);
-}
-
-.lv-agent-action-menu button.is-danger {
-  color: #e5484d;
-}
-
-.lv-agent-action-menu button.is-danger:disabled {
-  color: rgb(0 0 0 / 28%);
-}
-
-.lv-agent-create-button {
-  display: flex;
-  width: var(--lv-agents-nav-width);
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-  border: 1px solid #e9ecf1;
   border-radius: 6px;
-  color: rgb(0 0 0 / 72%);
-  background: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
+  cursor: pointer;
+  color: rgb(0 0 0 / 50%);
+  background: transparent;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
+    color 75ms ease,
+    background-color 75ms ease,
+    opacity 75ms ease;
 }
 
-.lv-agent-create-button:hover,
-.lv-agent-create-button:focus-visible {
-  border-color: #dfe3ea;
-  color: rgb(0 0 0 / 90%);
-  background: #f7f8fb;
+.lv-agent-action-button:hover,
+.lv-agent-action-button:focus-visible {
+  color: rgb(0 0 0 / 80%);
+  background: rgb(0 0 0 / 4%);
   outline: none;
+}
+
+.lv-agent-action-button:focus-visible {
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 15%);
+}
+
+.lv-agent-action-button:disabled {
+  cursor: not-allowed;
+  color: rgb(0 0 0 / 50%);
+  background: transparent;
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.lv-agent-action-button.is-danger {
+  color: rgb(0 0 0 / 50%);
+}
+
+.lv-agent-action-button.is-danger:hover,
+.lv-agent-action-button.is-danger:focus-visible {
+  color: rgb(0 0 0 / 80%);
+}
+
+.lv-agent-action-button.is-danger:disabled {
+  color: rgb(0 0 0 / 50%);
+}
+
+.lv-agent-action-tooltip {
+  pointer-events: auto;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: 30;
+  margin-top: 6px;
+  transform: translateX(-50%);
+  user-select: text;
+  white-space: nowrap;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: white;
+  padding: 4px 10px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  opacity: 0;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  transition: opacity 75ms ease;
+}
+
+.lv-agent-action-item:hover .lv-agent-action-tooltip,
+.lv-agent-action-item:focus-within .lv-agent-action-tooltip {
+  opacity: 1;
+}
+
+.lv-agent-action-tooltip-arrow {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, 50%) rotate(45deg);
+  border-left: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-subtle);
+  background: white;
 }
 
 .lv-agents-nav {
@@ -545,14 +666,14 @@ a {
   width: 220px;
   margin-top: 12px;
   padding: 3px;
-  border-radius: 8px;
+  border-radius: 999px;
   background: rgb(0 0 0 / 4%);
 }
 
 .lv-agents-sidebar-tab {
   flex: 1;
   padding: 6px 0;
-  border-radius: 6px;
+  border-radius: 999px;
   color: rgb(0 0 0 / 55%);
   font-size: 13px;
   font-weight: 500;
@@ -562,8 +683,13 @@ a {
     color 0.15s ease;
 }
 
-.lv-agents-sidebar-tab:hover {
+.lv-agents-sidebar-tab:hover:not(:disabled) {
   color: rgb(0 0 0 / 80%);
+}
+
+.lv-agents-sidebar-tab:disabled {
+  cursor: not-allowed;
+  color: rgb(0 0 0 / 28%);
 }
 
 .lv-agents-sidebar-tab.is-active {
@@ -774,12 +900,11 @@ a {
 
 .lv-agent-feedback-link {
   display: flex;
-  width: var(--lv-agents-nav-width);
+  width: calc(100% + 12px);
   align-items: center;
   gap: 8px;
   margin-top: 16px;
-  padding: 14px 12px 8px;
-  border-top: 1px solid #e9ecf1;
+  padding: 8px 12px;
   border-radius: 6px;
   color: rgb(0 0 0 / 40%);
   font-size: 12px;
@@ -805,11 +930,30 @@ a {
 @media (min-width: 1024px) {
   .lv-agents-sidebar-scroll-isolated {
     position: sticky;
-    top: 84px;
-    width: 280px;
-    max-height: calc(100dvh - 84px);
+    top: 68px;
+    width: 264px;
+    max-height: calc(100dvh - 68px);
+    margin-left: -16px;
+    padding-left: 16px;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  .lv-agents-sidebar {
+    display: flex;
+    height: calc(100dvh - 68px);
+    min-height: 0;
+    flex-direction: column;
+    padding-top: 20px;
+  }
+
+  .lv-agent-feedback-link {
+    margin-top: auto;
+  }
+
+  .lv-agent-feedback-link + .lv-agent-account-footer {
+    margin-top: 8px;
   }
 }
 
@@ -822,7 +966,6 @@ a {
 
   .lv-agent-profile-wrap,
   .lv-agent-profile,
-  .lv-agent-create-button,
   .lv-agents-nav,
   .lv-agent-feedback-link {
     width: 100%;
@@ -2040,6 +2183,10 @@ html[lang="ko-KR"] .landing-page span {
   white-space: nowrap;
 }
 
+.lv-buddy-panel__toolbar-inner {
+  max-width: 816px;
+}
+
 .lv-buddy-panel__grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -2068,8 +2215,12 @@ html[lang="ko-KR"] .landing-page span {
 }
 
 @container (max-width: 820px) {
+  .lv-buddy-panel__toolbar-inner,
   .lv-buddy-panel__grid {
     max-width: 616px;
+  }
+
+  .lv-buddy-panel__grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -2084,6 +2235,18 @@ html[lang="ko-KR"] .landing-page span {
   .lv-buddy-panel__actions {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+
+  .lv-buddy-panel__toolbar-inner {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-width: 396px;
+  }
+
+  .lv-buddy-panel__source {
+    position: static;
+    width: 100%;
+    justify-content: center;
   }
 
   .lv-buddy-panel__grid {
@@ -2106,12 +2269,6 @@ html[lang="ko-KR"] .landing-page span {
   .lv-buddy-panel__action-buttons > .group > button {
     width: 100%;
     justify-content: center;
-  }
-
-  .lv-buddy-panel__progress {
-    position: static;
-    transform: none;
-    align-self: flex-end;
   }
 
 }

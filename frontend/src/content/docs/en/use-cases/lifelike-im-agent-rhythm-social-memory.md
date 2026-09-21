@@ -115,13 +115,13 @@ Before using a group, define at least:
 
 Group norms belong to channel and operating rules and should not rely only on a personality prompt.
 
-### 6. Use automations to control proactive rhythm
+### 6. Use scheduled tasks to control proactive rhythm
 
 Proactive messages need an explicit frequency, time window, target channel, and pause method.
 
-Use [Automations](../configuration/automation.md) for personal reminders, internal summaries, or periodic checks.
+Use [Scheduled Tasks](../configuration/automation.md) for personal reminders, internal summaries, or periodic checks.
 
-Set quiet hours for every automation and confirm that the target channel supports the relevant proactive delivery method.
+Set quiet hours for every scheduled task and confirm that the target channel supports the relevant proactive delivery method.
 
 Do not create a sense of companionship through high-frequency messages, and do not make reminders difficult to stop.
 

@@ -8,9 +8,11 @@
  *  - QQ：弹出表单 Modal（App ID + App Secret）
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import './agent-config/styles-index.css';
 import { t } from "@/i18n/t";
+import { resolveAgentConsoleCollectionLabel } from '@/pages/marketing/agent-provider-locale';
 import { Info, Eye, EyeOff } from 'lucide-react';
 import {
   useChannelOperations,
@@ -43,11 +45,11 @@ const CHANNEL_GUIDE_LINKS: Record<string, string> = {
 };
 
 function getChannelDesc(channelType: string): string {
-  if (channelType === 'qqbot') return t('扫码或通过 App ID / Secret 绑定');
-  if (channelType === 'telegram') return t('通过 Bot Token 绑定');
-  if (channelType === 'discord') return t('通过 Bot Token 绑定');
-  if (channelType === 'slack') return t('通过 Bot Token 和 App Token 绑定');
-  if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 绑定');
+  if (channelType === 'qqbot') return t('扫码或通过 App ID / Secret 连接');
+  if (channelType === 'telegram') return t('通过 Bot Token 连接');
+  if (channelType === 'discord') return t('通过 Bot Token 连接');
+  if (channelType === 'slack') return t('通过 Bot Token 和 App Token 连接');
+  if (channelType === 'dingtalk') return t('扫码或通过 Client ID / Secret 连接');
   if (channelType === 'whatsapp') return t('使用手机 WhatsApp 扫码登录');
   return t('扫码授权连接');
 }
@@ -118,8 +120,13 @@ function getTokenChannelMeta(kind: 'telegram' | 'discord' | 'slack' | 'dingtalk'
   }
 }
 
-export function ChannelPanel(props: ChannelPanelProps) {
-  const { className, ...baseProps } = props;
+type LightVelaChannelPanelProps = ChannelPanelProps & {
+  afterDescription?: ReactNode;
+};
+
+export function ChannelPanel(props: LightVelaChannelPanelProps) {
+  const { className, afterDescription, ...baseProps } = props;
+  const { i18n } = useTranslation();
 
   const ops = useChannelOperations(baseProps);
 
@@ -296,7 +303,9 @@ export function ChannelPanel(props: ChannelPanelProps) {
     <div
       className={`${CLS} ${ops.productConfig.isI18n ? `${CLS}--i18n` : ''} ${className || ''}`}
     >
-      <h2 className={`${CLS}__title`}>{t('通道')}</h2>
+      <h2 className={`${CLS}__title`}>
+        {resolveAgentConsoleCollectionLabel('channel', i18n.language, t)}
+      </h2>
 
       {/* 提示条 */}
       <div className={`${CLS}__hint-bar`}>
@@ -305,6 +314,8 @@ export function ChannelPanel(props: ChannelPanelProps) {
         </span>
         <span>{t('配置通道后，即可在聊天软件中与你的云端智能体伙伴对话')}</span>
       </div>
+
+      {afterDescription}
 
       {/* 通道卡片网格 */}
       <div className={`${CLS}__grid`}>
@@ -327,17 +338,17 @@ export function ChannelPanel(props: ChannelPanelProps) {
                   </div>
                 </div>
                 <div className={`${CLS}__card-action`}>
-                  {ops.productConfig.isI18n && CHANNEL_GUIDE_LINKS[channel.value] && (
-                    <a
-                      className={`${CLS}__guide-btn`}
-                      href={CHANNEL_GUIDE_LINKS[channel.value]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t('配置教程')}
-                    </a>
-                  )}
                   <div className={`${CLS}__card-action-right`}>
+                    {ops.productConfig.isI18n && CHANNEL_GUIDE_LINKS[channel.value] && (
+                      <a
+                        className={`${CLS}__guide-btn`}
+                        href={CHANNEL_GUIDE_LINKS[channel.value]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t('配置教程')}
+                      </a>
+                    )}
                     {isBound && (
                       <button
                         type="button"
@@ -714,7 +725,7 @@ function ChannelIcon({ channel }: { channel: string }) {
       );
     case 'dingtalk':
       return (
-        <div className="lh-std-channel-panel__icon-wrap" style={{ background: '#ffffff' }}>
+        <div className="lh-std-channel-panel__icon-wrap" style={{ background: 'rgba(0, 137, 255, 0.08)' }}>
           <svg width="52" height="52" viewBox="0 0 600 380" fill="none" aria-hidden="true">
             <g transform="translate(0,380) scale(0.1,-0.1)" fill="#0089FF" stroke="none">
               <path d="M2273 3195 c-14 -10 -28 -42 -44 -97 -32 -116 -32 -264 0 -368 55 -180 161 -298 416 -462 99 -64 367 -208 387 -208 18 0 34 -18 24 -27 -12 -12 -416 186 -554 271 -48 30 -132 86 -186 125 -55 39 -108 71 -118 71 -25 0 -32 -37 -25 -140 14 -220 165 -424 370 -500 78 -29 233 -67 322 -79 79 -11 93 -16 82 -27 -5 -6 -165 9 -232 21 -76 14 -203 47 -271 71 -41 14 -78 22 -84 19 -35 -22 24 -147 111 -234 67 -67 184 -133 267 -150 29 -6 84 -11 122 -11 39 0 70 -2 70 -4 0 -2 -40 -72 -90 -155 -49 -84 -90 -156 -90 -161 0 -6 49 -10 120 -10 66 0 120 -4 120 -9 0 -5 -37 -69 -81 -143 -235 -384 -243 -398 -224 -398 4 0 219 155 620 448 305 223 375 276 375 283 0 5 -53 9 -117 9 l-116 0 175 178 c196 198 214 228 206 326 -6 76 -29 105 -171 216 -129 102 -245 198 -420 350 -60 52 -144 124 -186 160 -42 36 -216 189 -386 340 -290 258 -351 310 -365 310 -3 0 -15 -7 -27 -15z" />

@@ -1,6 +1,6 @@
 ## Resumen
 
-**Un Hermes Agent puede llegar a usted a tiempo no porque espere en una ventana de chat, sino porque una automatización guarda tres cosas — cuándo ejecutar, qué hacer y dónde enviar el resultado — como una configuración que puede programarse repetidamente. Cuando llegue la hora, el programador inicia una ejecución independiente: no reinterpreta una conversación antigua, vuelve a realizar el trabajo desde las instrucciones de la tarea y luego entrega la salida según sus configuraciones de notificación. En LightVela, una automatización consiste en: nombre, programación (días fijos de la semana, intervalo fijo o una sola vez — elija uno), instrucciones de tarea, ventana de tiempo activa y canales de notificación. Una corrección a una afirmación extendida: no existe un campo "fijar esta tarea a un modelo específico", por lo que el consejo de resincronizar los modelos de automatización después de cambiar de modelo no se aplica. La parte que determina la fiabilidad son las instrucciones de la tarea — porque nadie está presente para aclarar en tiempo de ejecución, la promesa debe llevar su propio objetivo, límites y formato de salida.**
+**Un Hermes Agent puede llegar a usted a tiempo no porque espere en una ventana de chat, sino porque una tarea programada guarda tres cosas — cuándo ejecutar, qué hacer y dónde enviar el resultado — como una configuración que puede programarse repetidamente. Cuando llegue la hora, el programador inicia una ejecución independiente: no reinterpreta una conversación antigua, vuelve a realizar el trabajo desde las instrucciones de la tarea y luego entrega la salida según sus configuraciones de notificación. En LightVela, una tarea programada consiste en: nombre, programación (días fijos de la semana, intervalo fijo o una sola vez — elija uno), instrucciones de tarea, ventana de tiempo activa y canales de notificación. Una corrección a una afirmación extendida: no existe un campo "fijar esta tarea a un modelo específico", por lo que el consejo de resincronizar los modelos de tarea programada después de cambiar de modelo no se aplica. La parte que determina la fiabilidad son las instrucciones de la tarea — porque nadie está presente para aclarar en tiempo de ejecución, la promesa debe llevar su propio objetivo, límites y formato de salida.**
 
 ---
 
@@ -14,9 +14,9 @@ Por lo tanto, la parte difícil de "proactivo" no es el disparo programado — e
 
 ---
 
-## 1. Lo que realmente contiene una automatización
+## 1. Lo que realmente contiene una tarea programada
 
-Crear una automatización en LightVela implica estos campos.
+Crear una tarea programada en LightVela implica estos campos.
 
 | Campo | La pregunta que responde | Notas |
 |---|---|---|
@@ -26,7 +26,7 @@ Crear una automatización en LightVela implica estos campos.
 | **Ventana de tiempo activa** | ¿Durante qué horas es válida? | Restringe cuándo puede ejecutarse la tarea; dejarla vacía significa alrededor de las 24 horas |
 | **Canales de notificación** | ¿Dónde va el resultado? | Opciones de conmutador opcionales que seleccionan qué canales reciben avisos de ejecución |
 
-**Un punto que vale la pena decir claramente: no existe un campo "modelo".** Una automatización no está fijada a un modelo específico, por lo que el consejo comúnmente repetido de que debe revisar y resincronizar el modelo de cada automatización después de cambiar de modelos no se aplica a esta forma de producto. Lo que vale la pena revisar después de un cambio de modelo es la **calidad de la salida**, no un campo que no existe. Para la capa de superposición detrás de esto, vea "¿Puede el cerebro de un Hermes Agent ser reemplazado? Capa de modelo vs Capa de Agent".
+**Un punto que vale la pena decir claramente: no existe un campo "modelo".** Una tarea programada no está fijada a un modelo específico, por lo que el consejo comúnmente repetido de que debe revisar y resincronizar el modelo de cada tarea programada después de cambiar de modelos no se aplica a esta forma de producto. Lo que vale la pena revisar después de un cambio de modelo es la **calidad de la salida**, no un campo que no existe. Para la capa de superposición detrás de esto, vea "¿Puede el cerebro de un Hermes Agent ser reemplazado? Capa de modelo vs Capa de Agent".
 
 También note que la programación es una elección entre días fijos de la semana, intervalo fijo y una sola vez — no una expresión cron arbitraria. Saber esto de antemano le ahorrará diseñar una programación con forma de cron y luego descubrir que no hay ningún lugar para ingresarla.
 
@@ -127,16 +127,16 @@ Hermes soporta trabajo programado a nivel de mecanismo, pero mantener el tiempo 
 - **Plantillas reducen el costo inicial** — cuando está en duda qué automatizar, comience desde una plantilla lista y ajústela.
 - **Ciclo de vida de tarea manejable** — vea detalles, edite, pause o elimine después de la creación, sin necesidad de reconstruir una tarea para cambiar una condición.
 - **Entrega seleccionable** — los canales de notificación son opciones de conmutador opcionales, por lo que los resultados aterrizan donde realmente los lee.
-- **Desacoplado de otras capacidades** — las automatizaciones, modelos, Skills y almacenamiento en la nube se configuran independientemente, y cambiar de modelos no altera la configuración de automatización.
+- **Desacoplado de otras capacidades** — las tareas programadas, modelos, Skills y almacenamiento en la nube se configuran independientemente, y cambiar de modelos no altera la configuración de tarea programada.
 - **Fallas rastreables** — combine anomalías de ejecución con registros recientes en Diagnostics para localizar la causa.
 
 ---
 
 ## Puntos clave
 
-- Una automatización es fundamentalmente una configuración guardada, repetible de cuándo ejecutar, qué hacer y dónde entregar.
+- Una tarea programada es fundamentalmente una configuración guardada, repetible de cuándo ejecutar, qué hacer y dónde entregar.
 - Los campos son: nombre, programación (días fijos de la semana / intervalo fijo / una sola vez), instrucciones de tarea, ventana de tiempo activa, canales de notificación.
-- **No existe un campo "modelo"**, por lo que "resincronizar modelos de automatización después de cambiar" es inexacto; las programaciones tampoco son expresiones cron arbitrarias.
+- **No existe un campo "modelo"**, por lo que "resincronizar modelos de tarea programada después de cambiar" es inexacto; las programaciones tampoco son expresiones cron arbitrarias.
 - El disparo inicia una **ejecución independiente**, no una reinterpreta de una conversación antigua, por lo que las instrucciones deben ser autónomas.
 - Las instrucciones confiables contienen cuatro partes: acción objetivo, límites de alcance, formato de salida, manejo de excepciones.
 - El paso de despliegue decisivo es el último: **espera una ejecución real y revise el registro**, en lugar de detenerse en "tarea creada".

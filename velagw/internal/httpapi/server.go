@@ -88,7 +88,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) commonRoutes() {
 	s.mux.HandleFunc("/healthz", s.health)
 	s.mux.HandleFunc("/readyz", s.ready)
-	s.mux.HandleFunc("/metrics", s.metrics)
+	// Metrics must never share the public control or traffic listener. A future
+	// scraper endpoint needs a separate internal-only listener and Service.
+	s.mux.HandleFunc("/metrics", http.NotFound)
 	if s.config.E2EHooks {
 		s.mux.HandleFunc("/_llmgateway_e2e/inflight", s.e2eInflight)
 		s.mux.HandleFunc("/_llmgateway_e2e/sleep", s.e2eSleep)
@@ -190,15 +192,6 @@ func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ready"}})
-}
-
-func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	_, _ = w.Write([]byte(s.svc.PrometheusMetrics()))
 }
 
 func (s *Server) isDraining() bool {
@@ -2255,6 +2248,8 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 		s.internalApplySubscription(w, r)
 	case r.Method == http.MethodPost && path == "subscriptions/cancel":
 		s.internalCancelSubscription(w, r)
+	case r.Method == http.MethodPost && path == "subscriptions/cancel-selected":
+		s.internalCancelSelectedSubscriptions(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "admin-commands/"):
 		s.internalGetAdminCommand(w, r, strings.TrimPrefix(path, "admin-commands/"))
 	case r.Method == http.MethodGet && strings.HasPrefix(path, "users/") && strings.HasSuffix(path, "/subscriptions/active"):
@@ -2766,7 +2761,7 @@ func (s *Server) internalApplySubscription(w http.ResponseWriter, r *http.Reques
 	}
 	var req gateway.ApplySubscriptionRequest
 	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil {
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required fields: user_id, plan_id")
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required fields: user_id and plan_id or token_amount")
 		return
 	}
 	sub, command, err := s.svc.ApplySubscriptionManaged(r.Context(), req)
@@ -2819,6 +2814,24 @@ func (s *Server) internalCancelSubscription(w http.ResponseWriter, r *http.Reque
 	if command != nil {
 		w.Header().Set("Location", "/api/internal/admin-commands/"+url.PathEscape(command.ID))
 		writeJSON(w, http.StatusAccepted, response{Success: true, Data: command})
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ok"}})
+}
+
+func (s *Server) internalCancelSelectedSubscriptions(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "invalid request body")
+		return
+	}
+	var req gateway.CancelSelectedSubscriptionsRequest
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&req); err != nil || strings.TrimSpace(req.UserID) == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad_request", "Missing required field: user_id")
+		return
+	}
+	if err := s.svc.CancelSelectedSubscriptions(r.Context(), req); err != nil {
+		writeInternalServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, response{Success: true, Data: map[string]string{"status": "ok"}})

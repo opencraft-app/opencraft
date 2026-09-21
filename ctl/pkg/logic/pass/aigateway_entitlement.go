@@ -9,6 +9,7 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/logic/gatewayroute"
 
 	"go.uber.org/zap"
@@ -21,6 +22,66 @@ const aiGatewayEntitlementCallTimeout = 10 * time.Second
 func EnsureAiGatewayEntitlement(
 	logger *zap.Logger,
 	userID, planID, idempotencyKey string,
+) (*aigateway.Subscription, error) {
+	return ensureGatewayEntitlement(
+		logger,
+		userID,
+		planID,
+		idempotencyKey,
+		gatewayroute.NewAllocationGateway(strings.TrimSpace(userID)),
+	)
+}
+
+// EnsureActiveRenewalGatewayEntitlement ensures that an active pass still has
+// its AI entitlement before renewal completes. LLMGateway apply is idempotent;
+// legacy AI Gateway must be probed first because apply replaces its active subscription.
+func EnsureActiveRenewalGatewayEntitlement(
+	logger *zap.Logger,
+	userID, planID, idempotencyKey string,
+) (*aigateway.Subscription, error) {
+	userID = strings.TrimSpace(userID)
+	target := gatewayroute.NewAllocationGateway(userID)
+	if recorded, ok, err := gatewayroute.Get(userID); err != nil {
+		return nil, fmt.Errorf("read gateway route before active renewal entitlement: %w", err)
+	} else if ok {
+		target = recorded
+	}
+
+	if target != gatewayroute.GatewayAIGateway {
+		return ensureGatewayEntitlement(logger, userID, planID, idempotencyKey, target)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), aiGatewayEntitlementCallTimeout)
+	defer cancel()
+	subscription, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().GetActiveSubscription(ctx, userID)
+	if err != nil && !errors.Is(err, aigateway.ErrAiGatewaySubscriptionNotFound) {
+		return nil, fmt.Errorf("probe legacy ai-gateway entitlement before active renewal: %w", err)
+	}
+	if subscription != nil {
+		gatewayroute.RecordBestEffort(
+			logger,
+			userID,
+			gatewayroute.GatewayAIGateway,
+			subscription.ID,
+			subscription.PlanID,
+			gatewayroute.SourceDetectActiveSubscription,
+		)
+		return subscription, nil
+	}
+
+	return ensureGatewayEntitlement(
+		logger,
+		userID,
+		planID,
+		idempotencyKey,
+		gatewayroute.GatewayAIGateway,
+	)
+}
+
+func ensureGatewayEntitlement(
+	logger *zap.Logger,
+	userID, planID, idempotencyKey string,
+	target gatewayroute.Gateway,
 ) (*aigateway.Subscription, error) {
 	userID = strings.TrimSpace(userID)
 	planID = strings.TrimSpace(planID)
@@ -40,7 +101,7 @@ func EnsureAiGatewayEntitlement(
 
 	ctx, cancel := context.WithTimeout(context.Background(), aiGatewayEntitlementCallTimeout)
 	defer cancel()
-	subscription, err := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
+	subscription, err := applyGatewaySubscription(ctx, target, newPassSubscriptionRequest{
 		IdempotencyKey: idempotencyKey,
 		UserID:         userID,
 		PlanID:         planID,
@@ -73,7 +134,8 @@ func EnsureAiGatewayEntitlement(
 	}, nil
 }
 
-// CancelAiGatewayEntitlement 可靠取消用户的所有有效订阅。
+// CancelAiGatewayEntitlement 可靠清理用户的 Pass 关联权益。
+// LLMGateway 只删除套餐与免费积分订阅，保留独立购买的积分包；旧 AI-Gateway 仍取消全部订阅。
 // 调用失败必须由上层重试，不能推进 isolated/deleted 等本地终态。
 func CancelAiGatewayEntitlement(logger *zap.Logger, userID string) error {
 	userID = strings.TrimSpace(userID)
@@ -112,7 +174,14 @@ func CancelAiGatewayEntitlement(logger *zap.Logger, userID string) error {
 	var err error
 	switch target {
 	case gatewayroute.GatewayLLMGateway:
-		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(ctx, userID)
+		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSelectedSubscriptions(ctx, &llmgateway.CancelSelectedSubscriptionsRequest{
+			UserID: userID,
+			SubscriptionNamePrefixes: []string{
+				packageSubscriptionNamePrefix,
+				freeCreditSubscriptionNamePrefix,
+			},
+			IncludeLegacyPackageSubscription: true,
+		})
 	case gatewayroute.GatewayAIGateway:
 		err = adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().CancelSubscription(ctx, userID)
 	default:

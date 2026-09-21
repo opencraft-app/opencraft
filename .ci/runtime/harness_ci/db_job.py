@@ -29,6 +29,7 @@ from contracts.bundles import (
     load_manifest,
     playground_catalog_root,
 )
+from harness_ci.kubernetes_namespace import build_bootstrap_namespace_manifest, namespace_bootstrap_enabled
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -43,6 +44,58 @@ class CommandResult:
 
 
 SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
+    ("collaboration", "migration"): {
+        "namespace": "lightvela-collaboration",
+        "deployment": "collaboration",
+        "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
+        "image_env_key": "COLLABORATION_IMAGE",
+        "command": ["/usr/local/bin/chatserver", "database", "migrate", "--database-driver", "mysql",
+                    "--database-dsn-file", "/var/run/secrets/collaboration/database.dsn"],
+        "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
+        "volumes": [{"name": "database-secret", "secret": {
+            "secretName": "collaboration-runtime-secrets", "defaultMode": 0o440,
+            "items": [{"key": "database.dsn", "path": "database.dsn"}],
+        }}],
+        "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
+        "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                     "capabilities": {"drop": ["ALL"]}},
+    },
+    ("collaboration", "recovery-plan"): {
+        "namespace": "lightvela-collaboration",
+        "deployment": "collaboration",
+        "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
+        "image_env_key": "COLLABORATION_IMAGE",
+        "command": ["/usr/local/bin/chatserver", "database", "recover-empty-baseline",
+                    "--database-driver", "mysql", "--database-dsn-file",
+                    "/var/run/secrets/collaboration/database.dsn"],
+        "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
+        "volumes": [{"name": "database-secret", "secret": {
+            "secretName": "collaboration-runtime-secrets", "defaultMode": 0o440,
+            "items": [{"key": "database.dsn", "path": "database.dsn"}],
+        }}],
+        "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
+        "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                     "capabilities": {"drop": ["ALL"]}},
+        "successLogMarkers": ["恢复计划：可执行", "恢复状态：无需操作"],
+    },
+    ("collaboration", "recovery-apply"): {
+        "namespace": "lightvela-collaboration",
+        "deployment": "collaboration",
+        "platform_env_file": "argocd/services/collaboration/{env}/collaboration-platform.env",
+        "image_env_key": "COLLABORATION_IMAGE",
+        "command": ["/usr/local/bin/chatserver", "database", "recover-empty-baseline",
+                    "--database-driver", "mysql", "--database-dsn-file",
+                    "/var/run/secrets/collaboration/database.dsn", "--apply"],
+        "volumeMounts": [{"name": "database-secret", "mountPath": "/var/run/secrets/collaboration", "readOnly": True}],
+        "volumes": [{"name": "database-secret", "secret": {
+            "secretName": "collaboration-runtime-secrets", "defaultMode": 0o440,
+            "items": [{"key": "database.dsn", "path": "database.dsn"}],
+        }}],
+        "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532},
+        "containerSecurityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                     "capabilities": {"drop": ["ALL"]}},
+        "successLogMarkers": ["恢复完成", "恢复状态：无需操作"],
+    },
     ("payment", "migration"): {
         "namespace": "user-auth",
         "deployment": "payment",
@@ -76,6 +129,30 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
             "/bin/sh",
             "-ec",
             'export TRADE_MYSQL_DSN="${TRADE_DB_USER}:${TRADE_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${TRADE_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/trade-migrate',
+        ],
+    },
+    ("credit", "migration"): {
+        "namespace": "credit",
+        "deployment": "credit",
+        "platform_env_file": "argocd/services/credit/{env}/credit-platform.env",
+        "image_env_key": "CREDIT_IMAGE",
+        "dynamic_builder": "credit",
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export CREDIT_MYSQL_DSN="${CREDIT_DB_USER}:${CREDIT_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${CREDIT_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/credit-migrate',
+        ],
+    },
+    ("referral", "migration"): {
+        "namespace": "referral",
+        "deployment": "referral",
+        "platform_env_file": "argocd/services/referral/{env}/referral-platform.env",
+        "image_env_key": "REFERRAL_IMAGE",
+        "dynamic_builder": "referral",
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export REFERRAL_MYSQL_DSN="${REFERRAL_DB_USER}:${REFERRAL_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${REFERRAL_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/referral-migrate',
         ],
     },
     ("lightclaw-auth", "migration"): {
@@ -316,6 +393,12 @@ def run_command(
     return CommandResult(safe_command, completed.returncode, completed.stdout, completed.stderr)
 
 
+def decode_timeout_output(output: str | bytes | None) -> str:
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output or ""
+
+
 def git_output(args: list[str]) -> str:
     result = run_command(["git", *args], cwd=REPO_ROOT)
     if result.returncode != 0:
@@ -415,8 +498,8 @@ def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int =
             result = CommandResult(
                 kubectl_cmd,
                 124,
-                stdout=exc.stdout or "",
-                stderr=(exc.stderr or "") + "\nkubectl command timed out after 75s",
+                stdout=decode_timeout_output(exc.stdout),
+                stderr=decode_timeout_output(exc.stderr) + "\nkubectl command timed out after 75s",
             )
         if result.returncode == 0:
             return result
@@ -588,6 +671,112 @@ def build_ctl_dynamic_resources(
     return dynamic, [secret, migrations]
 
 
+def build_credit_dynamic_resources(
+    *,
+    job_name: str,
+    namespace: str,
+    env_name: str,
+    deploy_root: Path,
+    service_platform_env: dict[str, str],
+    db_contract: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    required_platform_keys = ("CREDIT_MYSQL_HOST", "CREDIT_MYSQL_PORT", "CREDIT_NODE_POOL")
+    missing = [key for key in required_platform_keys if not service_platform_env.get(key, "").strip()]
+    if missing:
+        raise ValueError(f"missing Credit DB job platform values: {', '.join(missing)}")
+
+    resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
+    if not resolver_name:
+        raise ValueError("credit db_contract.db_job_secret_resolver is required")
+    resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
+    password = resolved_secrets.get(resolver_name, "").strip()
+    if not password:
+        raise ValueError(f"missing Credit DB password from secret resolver {resolver_name}")
+
+    secret_name = f"{job_name}-secrets"
+    secret = build_secret_manifest(
+        namespace,
+        secret_name,
+        {"CREDIT_DB_PASSWORD": password},
+        labels={
+            "gitops.clawhub.dev/service": "credit",
+            "gitops.clawhub.dev/operation": "migration",
+            "gitops.clawhub.dev/managed-by": "run_gitops_db_job.py",
+        },
+    )
+    dynamic = {
+        "env": [
+            {"name": "MYSQL_HOST", "value": service_platform_env["CREDIT_MYSQL_HOST"].strip()},
+            {"name": "MYSQL_PORT", "value": service_platform_env["CREDIT_MYSQL_PORT"].strip()},
+            {"name": "CREDIT_DB", "value": "credit"},
+            {"name": "CREDIT_DB_USER", "value": "credit"},
+            {
+                "name": "CREDIT_DB_PASSWORD",
+                "valueFrom": secret_env_ref(secret_name, "CREDIT_DB_PASSWORD"),
+            },
+        ],
+        "nodeSelector": {"pool": service_platform_env["CREDIT_NODE_POOL"].strip()},
+        "secretValues": {"CREDIT_DB_PASSWORD": password},
+    }
+    return dynamic, [secret]
+
+
+def build_referral_dynamic_resources(
+    *,
+    job_name: str,
+    namespace: str,
+    env_name: str,
+    deploy_root: Path,
+    service_platform_env: dict[str, str],
+    db_contract: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    required_platform_keys = (
+        "REFERRAL_MYSQL_HOST",
+        "REFERRAL_MYSQL_PORT",
+        "REFERRAL_DB",
+        "REFERRAL_DB_USER",
+        "REFERRAL_NODE_POOL",
+    )
+    missing = [key for key in required_platform_keys if not service_platform_env.get(key, "").strip()]
+    if missing:
+        raise ValueError(f"missing Referral DB job platform values: {', '.join(missing)}")
+
+    resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
+    if not resolver_name:
+        raise ValueError("referral db_contract.db_job_secret_resolver is required")
+    resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
+    password = resolved_secrets.get(resolver_name, "").strip()
+    if not password:
+        raise ValueError(f"missing Referral DB password from secret resolver {resolver_name}")
+
+    secret_name = f"{job_name}-secrets"
+    secret = build_secret_manifest(
+        namespace,
+        secret_name,
+        {"REFERRAL_DB_PASSWORD": password},
+        labels={
+            "gitops.clawhub.dev/service": "referral",
+            "gitops.clawhub.dev/operation": "migration",
+            "gitops.clawhub.dev/managed-by": "run_gitops_db_job.py",
+        },
+    )
+    dynamic = {
+        "env": [
+            {"name": "MYSQL_HOST", "value": service_platform_env["REFERRAL_MYSQL_HOST"].strip()},
+            {"name": "MYSQL_PORT", "value": service_platform_env["REFERRAL_MYSQL_PORT"].strip()},
+            {"name": "REFERRAL_DB", "value": service_platform_env["REFERRAL_DB"].strip()},
+            {"name": "REFERRAL_DB_USER", "value": service_platform_env["REFERRAL_DB_USER"].strip()},
+            {
+                "name": "REFERRAL_DB_PASSWORD",
+                "valueFrom": secret_env_ref(secret_name, "REFERRAL_DB_PASSWORD"),
+            },
+        ],
+        "nodeSelector": {"pool": service_platform_env["REFERRAL_NODE_POOL"].strip()},
+        "secretValues": {"REFERRAL_DB_PASSWORD": password},
+    }
+    return dynamic, [secret]
+
+
 def default_ctl_database(env_name: str) -> str:
     if re.fullmatch(r"sandbox-(bj|kr)-\d+", env_name):
         return f"ctl_{env_name.replace('-', '_')}"
@@ -629,16 +818,18 @@ def build_job_manifest(
         container["command"] = copy.deepcopy(spec["command"])
     if spec.get("args"):
         container["args"] = copy.deepcopy(spec["args"])
+    if spec.get("containerSecurityContext"):
+        container["securityContext"] = copy.deepcopy(spec["containerSecurityContext"])
     if dynamic.get("env"):
         container["env"] = copy.deepcopy(dynamic["env"])
-    if dynamic.get("volumeMounts"):
-        container["volumeMounts"] = copy.deepcopy(dynamic["volumeMounts"])
+    if dynamic.get("volumeMounts") or spec.get("volumeMounts"):
+        container["volumeMounts"] = copy.deepcopy(dynamic.get("volumeMounts") or spec["volumeMounts"])
 
     pod_spec: dict[str, Any] = {
         "restartPolicy": spec.get("restartPolicy", "Never"),
         "containers": [container],
     }
-    for field in ("initContainers", "volumes", "nodeSelector", "dnsPolicy", "hostNetwork"):
+    for field in ("initContainers", "volumes", "nodeSelector", "dnsPolicy", "hostNetwork", "securityContext"):
         if field in spec:
             pod_spec[field] = copy.deepcopy(spec[field])
     for field in ("initContainers", "volumes", "nodeSelector", "dnsPolicy", "hostNetwork"):
@@ -810,6 +1001,24 @@ def main() -> int:
                 db_contract,
                 kubeconfig,
             )
+        elif spec.get("dynamic_builder") == "credit":
+            dynamic, extra_resources = build_credit_dynamic_resources(
+                job_name=job_name,
+                namespace=spec["namespace"],
+                env_name=args.env,
+                deploy_root=deploy_root,
+                service_platform_env=service_platform_env,
+                db_contract=db_contract,
+            )
+        elif spec.get("dynamic_builder") == "referral":
+            dynamic, extra_resources = build_referral_dynamic_resources(
+                job_name=job_name,
+                namespace=spec["namespace"],
+                env_name=args.env,
+                deploy_root=deploy_root,
+                service_platform_env=service_platform_env,
+                db_contract=db_contract,
+            )
         manifest = build_job_manifest(
             args.service, args.operation, args.revision, requested_by, spec, image, job_name=job_name, dynamic=dynamic
         )
@@ -833,6 +1042,16 @@ def main() -> int:
         }
 
         if args.apply:
+            if namespace_bootstrap_enabled(db_contract):
+                apply_manifest(
+                    kubeconfig,
+                    build_bootstrap_namespace_manifest(
+                        str(spec["namespace"]),
+                        service=args.service,
+                        env=args.env,
+                    ),
+                    retries=args.kubectl_retries,
+                )
             apply_manifest(kubeconfig, apply_manifest_doc, retries=args.kubectl_retries)
             summary["status"] = "applied"
 
@@ -860,6 +1079,21 @@ def main() -> int:
                 write_summary(args.output_json, summary)
                 print(json.dumps(summary, ensure_ascii=False, indent=2))
                 return 1
+            success_markers = list(spec.get("successLogMarkers") or [])
+            if success_markers:
+                logs = collect_job_logs(
+                    kubeconfig,
+                    spec["namespace"],
+                    manifest["metadata"]["name"],
+                    dynamic.get("secretValues") or {},
+                    retries=args.kubectl_retries,
+                )
+                summary["logs"] = logs
+                if not any(marker in logs for marker in success_markers):
+                    summary["status"] = "audit_failed"
+                    write_summary(args.output_json, summary)
+                    print(json.dumps(summary, ensure_ascii=False, indent=2))
+                    return 1
 
         write_summary(args.output_json, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))

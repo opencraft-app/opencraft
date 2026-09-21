@@ -38,3 +38,4 @@ replacements:
           create: true
 patches:
   - path: patch-account-binding.yaml
+  - path: patch-credit.yaml

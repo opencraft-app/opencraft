@@ -1,6 +1,27 @@
 addr: ":8095"
 max_body_bytes: 10485760
 
+# Testing-only personal DevCloud callback registry. Shared sandbox workloads
+# enable this with environment overrides; production keeps it disabled.
+developer_routes:
+  enabled: false
+  route_id: jifei-callback
+  store: memory
+  registration_route: developer-route-control
+  registration_caller: lightclaw-auth
+  delivery_mode: direct
+  tunnel_base_url: ""
+  tunnel_host_suffix: tunnel.internal
+  tunnel_token_env: DEVTUNNEL_TOKEN
+  lease_namespace: ""
+  lease_prefix: cloudladdergateway-devroute-
+  allowed_cidrs: []
+  allowed_ports: [18084]
+  default_ttl: 8h
+  max_ttl: 24h
+  probe_path: /healthz
+  probe_timeout: 5s
+
 transport:
   max_idle_conns: 100
   max_idle_conns_per_host: 20
@@ -52,6 +73,35 @@ backends:
       allowed_methods: ["POST"]
       headers:
         Host: "trade.itd.com"
+
+  # Credit usage reporting test endpoint. Beijing 7 and Seoul keep this route.
+  # Keep the routable IP and trusted Host here so callers cannot select an
+  # arbitrary signed-tunnel destination.
+  - alias: qbilling-send-resource-test
+    upstream:
+      base_url: "http://9.139.137.40"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "qbilling.itd.com"
+
+  # Credit usage reporting production endpoints. Billing requires domain-based
+  # access in production, so these backends must not be replaced with fixed IPs.
+  - alias: qbilling-send-resource-cn-prod
+    upstream:
+      base_url: "http://qbilling.billing.tencentyun.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "qbilling.billing.tencentyun.com"
+
+  - alias: qbilling-send-resource-intl-prod
+    upstream:
+      base_url: "http://intl.resource.qbilling.tencentyun.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "intl.resource.qbilling.tencentyun.com"
 
   # ===========================================================================
   # jifei-prod backend：lightvela trade → jifei CGW 现网出向
@@ -355,35 +405,75 @@ backends:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
 
 auth:
-  # **联调期全局禁用 HMAC**（按 .tmp/integration-plan-2026-05-18.md §10 Q-INT-14=a +
-  # P4-followup=a 拍板）。lightvela trade → clgateway → jifei 联调链路本期不签名，
-  # 用 IP 白名单 + VPC 隔离做边界。**prod 切换前必须改回 true** 并完成 trade 端
-  # HMAC 客户端改造（pkg/clientauth 加 SignHTTPRequest helper + jifeiclient.do
-  # 注入 X-CloudLadder-Caller / Timestamp / Signature 3 个 header）。
-  #
-  # 注：master 代码引入了 allow_unauthenticated 白名单机制（精细化签名管控），
-  # 但联调期保持 enabled=false 简化路径，不依赖白名单。后续 prod 切换时再改为
-  # enabled=true + 配置 allow_unauthenticated 列表。
+  # HMAC 迁移状态机：
+  #   disabled：兼容旧 enabled=false，完全不校验。
+  #   optional：无签名请求暂时放行；出现任一认证头时必须完整验签。
+  #   required：除 allow_unauthenticated 外均强制验签，并要求所有 caller 密钥存在。
+  # 当前先进入 optional；全部调用方完成迁移后切为 required 并清理匿名白名单。
+  mode: optional
+  # 兼容旧配置。mode 非空时优先于 enabled；后续完成迁移后可删除本字段。
   enabled: false
   timestamp_skew: 5m
-  # 历史 trade/jifei 联调链路还没有接入 HMAC，继续允许无签名访问；
-  # shadow → TencentCloud API 隧道不在此列表内，必须使用 shadow caller 签名。
+  # 本列表仅在 required 模式生效，用于最终切换期间兼容尚未迁移的路由。
   allow_unauthenticated:
     - sandbox-cn
-    - billing-trade-cn-test
-    - billing-trade-cn-pre
-    - billing-trade-cn-prod
-    - billing-trade-intl-test
-    - billing-trade-intl-pre
-    - billing-trade-intl-prod
-    - jifei-test
+    # Tencent billing callbacks cannot produce CloudLadder HMAC headers.
+    # They remain reachable in required mode and must be authenticated by
+    # their native body signature at the receiving service.
+    - jifei-callback
+    - jifei-callback-dev-1
+    - jifei-callback-dev-2
+    - jifei-callback-dev-3
+    - jifei-callback-bj
+    - jifei-callback-sh
+    - jifei-callback-gz
+    - jifei-callback-cd
+    - jifei-callback-nj
+    - jifei-callback-hk
+    - jifei-callback-jp
+    - jifei-callback-kr
+    - jifei-callback-jkt
+    - jifei-callback-sg
+    - jifei-callback-th
+    - jifei-credit-callback-bj
+    - jifei-credit-callback-sh
+    - jifei-credit-callback-gz
+    - jifei-credit-callback-cd
+    - jifei-credit-callback-nj
+    - jifei-credit-callback-hk
+    - jifei-credit-callback-jp
+    - jifei-credit-callback-kr
+    - jifei-credit-callback-jkt
+    - jifei-credit-callback-sg
+    - jifei-credit-callback-th
+    # TencentCloud SaaS callbacks use their own callback token/body contract.
     - tencentcloud-account-callback-bjsbx
     - tencentcloud-account-callback-krsbx
     - tencentcloud-account-callback-jpsbx
+    - tencentcloud-account-callback-sgprod
     - tencentcloud-account-callback-shprod
+    # Testing-only reverse tunnel has its own DEVTUNNEL_TOKEN authentication.
+    - devtunnel
     - lightvela-cloudapi-bj
     - lightvela-cloudapi-sh
   callers:
+    # Sandbox Auth terminates the developer session and calls only the
+    # testing-only developer route control plane with this server-side key.
+    - id: lightclaw-auth
+      secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
+      routes:
+        - developer-route-control
+    - id: payment
+      secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
+      routes:
+        - sandbox-cn
+        - billing-query-via-polaris
+        - billing-trade-cn-test
+        - billing-trade-cn-pre
+        - billing-trade-cn-prod
+        - billing-trade-intl-test
+        - billing-trade-intl-pre
+        - billing-trade-intl-prod
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
       routes:
@@ -411,6 +501,9 @@ auth:
         - jifei-prod
         - jifei-billing-apigw-test
         - jifei-billing-apigw-prod
+        - qbilling-send-resource-test
+        - qbilling-send-resource-cn-prod
+        - qbilling-send-resource-intl-prod
         - dianshi-price
         - dianshi-order
         - tcapi-billing-trade-intl-test
@@ -532,6 +625,30 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: jifei-test
+
+  - id: qbilling-send-resource-test
+    description: "LightVela trade Credit usage sendResource test egress."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: qbilling-send-resource-test
+
+  - id: qbilling-send-resource-cn-prod
+    description: "LightVela trade Credit usage sendResource China production egress."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: qbilling-send-resource-cn-prod
+
+  - id: qbilling-send-resource-intl-prod
+    description: "LightVela trade Credit usage sendResource international production egress."
+    mode: signed_http_tunnel
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: qbilling-send-resource-intl-prod
 
   # ===========================================================================
   # lightvela trade → jifei 计费网关（apigateway.billing.*）销毁链路出向路由
@@ -969,6 +1086,108 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       base_url: "https://kr.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  # Credit 资源包使用独立的地域回调路由，避免与 Pass 回调配置互相影响。
+  # 联调阶段所有地域统一路由到北京预发布；验证完成后再单独把
+  # jifei-credit-callback-sh 切换到上海正式环境。
+  - id: jifei-credit-callback-bj
+    description: "Credit 北京地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-sh
+    description: "Credit 上海地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-gz
+    description: "Credit 广州地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-cd
+    description: "Credit 成都地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-nj
+    description: "Credit 南京地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-hk
+    description: "Credit 香港地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-jp
+    description: "Credit 东京地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-kr
+    description: "Credit 首尔地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-jkt
+    description: "Credit 雅加达地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-sg
+    description: "Credit 新加坡地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-credit-callback-th
+    description: "Credit 曼谷地域 jifei 回调入口，联调阶段路由到北京预发布环境"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
       timeout: 10s
       allowed_methods: ["POST"]
 

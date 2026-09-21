@@ -66,6 +66,36 @@ func TestEnsureUserRequiresInternalToken(t *testing.T) {
 	}
 }
 
+func TestApplySubscriptionAcceptsTokenAmountWithoutPlanID(t *testing.T) {
+	var request ApplySubscriptionRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/internal/subscriptions/apply" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(apiResponse{Data: mustRawJSON(t, Subscription{
+			ID: "sub-free", UserID: request.UserID, PlanID: "promotional-credit-generated", Status: "active",
+		})})
+	}))
+	defer server.Close()
+
+	adapter := NewLLMGatewayAdapter(&config.LLMGatewayConfig{
+		BaseURL: server.URL, InternalServiceToken: "internal-token", Timeout: 5,
+	}, nil)
+	result, err := adapter.ApplySubscription(t.Context(), &ApplySubscriptionRequest{
+		UserID: "usr-test", TokenAmount: 5_000_000, IdempotencyKey: "referral:test", SubscriptionName: "free-credit:referral:test",
+	})
+	if err != nil {
+		t.Fatalf("apply subscription: %v", err)
+	}
+	if request.PlanID != "" || request.TokenAmount != 5_000_000 || result.PlanID != "promotional-credit-generated" {
+		t.Fatalf("request=%+v result=%+v", request, result)
+	}
+}
+
 func TestListActiveSubscriptionsUsesInternalContract(t *testing.T) {
 	var authHeader string
 	var gotPath string
@@ -116,6 +146,57 @@ func TestListActiveSubscriptionsUsesInternalContract(t *testing.T) {
 	}
 	if got := list.Subscriptions[0]; got.Name != "free-credit:campaign:grant-1" || got.TokenTotal != 30000 || got.TokenBalance != 20000 {
 		t.Fatalf("unexpected subscription: %+v", got)
+	}
+}
+
+func TestCancelSelectedSubscriptionsUsesInternalContract(t *testing.T) {
+	var authHeader string
+	var gotPath string
+	var request CancelSelectedSubscriptionsRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(apiResponse{
+			Code:    0,
+			Message: "ok",
+			Data:    mustRawJSON(t, map[string]string{"status": "ok"}),
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewLLMGatewayAdapter(&config.LLMGatewayConfig{
+		BaseURL:              server.URL,
+		InternalServiceToken: "internal-token",
+		Timeout:              5,
+	}, nil)
+
+	err := adapter.CancelSelectedSubscriptions(context.Background(), &CancelSelectedSubscriptionsRequest{
+		UserID:                           " usr_test ",
+		SubscriptionNamePrefixes:         []string{"package:", "free-credit:"},
+		IncludeLegacyPackageSubscription: true,
+	})
+	if err != nil {
+		t.Fatalf("cancel selected subscriptions: %v", err)
+	}
+	if authHeader != "Bearer internal-token" {
+		t.Fatalf("expected internal auth header, got %q", authHeader)
+	}
+	if gotPath != "/api/internal/subscriptions/cancel-selected" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if request.UserID != "usr_test" {
+		t.Fatalf("user_id = %q", request.UserID)
+	}
+	if len(request.SubscriptionNamePrefixes) != 2 || request.SubscriptionNamePrefixes[0] != "package:" || request.SubscriptionNamePrefixes[1] != "free-credit:" {
+		t.Fatalf("unexpected prefixes: %+v", request.SubscriptionNamePrefixes)
+	}
+	if !request.IncludeLegacyPackageSubscription {
+		t.Fatalf("include legacy package subscription must be true")
 	}
 }
 

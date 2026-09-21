@@ -1,6 +1,10 @@
 package sandbox
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
 
 // CreateSandboxRequest defines the payload for creating a sandbox.
 type CreateSandboxRequest struct {
@@ -212,9 +216,50 @@ func (e *PtyExecStreamError) Error() string {
 }
 
 // APIError is the upstream API error response format.
+//
+// Sandbox is not uniform here: most handlers answer `{"error": "..."}`, a few
+// also carry a machine-readable string `code`, and some legacy routes use
+// `{"code": <int>, "message": "..."}`. All three shapes are decoded so the
+// detail survives into the wrapped ctl error instead of collapsing to a bare
+// sentinel — without it, ctl callers cannot tell "already converged" apart from
+// "genuinely conflicting".
 type APIError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    json.RawMessage `json:"code"`
+	Message string          `json:"message"`
+	Error   string          `json:"error"`
+}
+
+// Detail renders the human-readable part, prefixed by the string code when the
+// upstream sent one.
+func (e APIError) Detail() string {
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		message = strings.TrimSpace(e.Error)
+	}
+	code := e.StringCode()
+	switch {
+	case code == "":
+		return message
+	case message == "":
+		return code
+	case strings.Contains(message, code):
+		return message
+	default:
+		return code + ": " + message
+	}
+}
+
+// StringCode returns the code field only when it is a string; the legacy int
+// form carries no information the HTTP status does not already have.
+func (e APIError) StringCode() string {
+	if len(e.Code) == 0 {
+		return ""
+	}
+	var code string
+	if err := json.Unmarshal(e.Code, &code); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(code)
 }
 
 type Pool struct {
@@ -294,4 +339,42 @@ type CreateSnapshotResponse struct {
 type GetSnapshotStatusResponse struct {
 	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
+}
+
+// === 同 SP 变配（升配）ctl → sandbox 端点 DTO ===
+// 需求：TAPD 1010132091137784162 §5.4
+//
+//   - POST /internal/sandboxes/{sandboxID}/modify        → ModifyRequest / ModifyOperation（202）
+//   - GET  /internal/sandbox-modify-operations/{id}      → ModifyOperation（200）
+
+// ModifyRequest 只携带目标归属。源 Pool、源 SKU、实例 ID 均由 sandbox 从 sandboxID 自行派生，
+// ctl 不重复传 source spec；trade 的 flow_id 也不下沉到 sandbox。
+type ModifyRequest struct {
+	// IdempotencyKey 用 ctl 单实例 child task ID。同一 child task 重投时命中原 operation，
+	// 已完成的步骤（尤其不可逆的磁盘扩容）不会重复执行。
+	IdempotencyKey string `json:"idempotency_key"`
+	TargetPoolID   string `json:"target_pool_id"`
+	TargetSKUID    string `json:"target_sku_id"`
+}
+
+// ModifyOperationStatus 是 sandbox 云操作账本的状态值。
+const (
+	ModifyOperationStatusRunning   = "running"
+	ModifyOperationStatusCompleted = "completed"
+	ModifyOperationStatusFailed    = "failed"
+)
+
+// ModifyOperation 是 sandbox 侧 modify_operations 账本的对外视图。
+// ctl 只消费 OperationID / Status / CurrentStep / LastError 用于轮询和排障。
+type ModifyOperation struct {
+	OperationID          string `json:"operation_id"`
+	SandboxID            string `json:"sandbox_id"`
+	InstanceID           string `json:"instance_id"`
+	SourcePoolID         string `json:"source_pool_id"`
+	TargetPoolID         string `json:"target_pool_id"`
+	TargetInstanceType   string `json:"target_instance_type"`
+	TargetSystemDiskSize int    `json:"target_system_disk_size"`
+	Status               string `json:"status"`
+	CurrentStep          string `json:"current_step,omitempty"`
+	LastError            string `json:"last_error,omitempty"`
 }

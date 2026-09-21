@@ -4,11 +4,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LOCALSTACK_ROOT="$REPO_ROOT/deploy/localstack"
 ENV_ROOT="$REPO_ROOT/deploy/envs/localstack"
-STATE_DIR="$REPO_ROOT/.localstack"
+STATE_DIR="${LOCALSTACK_STATE_DIR:-$REPO_ROOT/.localstack}"
+SITE_SEED_ROOT="$LOCALSTACK_ROOT/seed-data"
 KUBECTL="${KUBECTL:-kubectl}"
 KUSTOMIZE="${KUSTOMIZE:-kustomize}"
 DOCKER="${DOCKER:-docker}"
 LABEL="app.kubernetes.io/part-of=lightclaw-localstack"
+LOCALSTACK_SITE_KIND="${LOCALSTACK_SITE_KIND:-cn}"
+LOCALSTACK_PUBLIC_HOST="${LOCALSTACK_PUBLIC_HOST:-localhost}"
+LOCALSTACK_PUBLIC_PROTOCOL="${LOCALSTACK_PUBLIC_PROTOCOL:-http}"
 
 app_components=(
   auth
@@ -22,6 +26,23 @@ app_components=(
   ctl
   service-gateway
   frontend
+)
+
+localstack_images=(
+  lightclaw-local/lightclaw-auth:dev
+  lightclaw-local/payment:dev
+  lightclaw-local/subscription:dev
+  lightclaw-local/ai-gateway:dev
+  lightclaw-local/sandbox-api:dev
+  lightclaw-local/sandbox-migrate:dev
+  lightclaw-local/cloudladdergateway:dev
+  lightclaw-local/shadow:dev
+  lightclaw-local/trade:dev
+  lightclaw-local/ctl:dev
+  lightclaw-local/fake-envd:dev
+  lightclaw-local/service-gateway:dev
+  lightclaw-local/mock-control:dev
+  lightclaw-local/frontend:dev
 )
 
 namespaces=(
@@ -46,12 +67,64 @@ die() {
   exit 1
 }
 
+case "$LOCALSTACK_SITE_KIND" in
+  cn | intl) ;;
+  *) die "LOCALSTACK_SITE_KIND must be cn or intl" ;;
+esac
+
+if [[ "$LOCALSTACK_PUBLIC_HOST" == "localhost" || "$LOCALSTACK_PUBLIC_HOST" == "127.0.0.1" ]]; then
+  PUBLIC_BIND_ADDRESS="127.0.0.1"
+else
+  PUBLIC_BIND_ADDRESS="0.0.0.0"
+fi
+
+FRONTEND_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:5173"
+GATEWAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:8085"
+FAKE_QQ_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:19010"
+FAKE_WECHAT_PAY_URL="$LOCALSTACK_PUBLIC_PROTOCOL://$LOCALSTACK_PUBLIC_HOST:19040"
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+# 镜像构建平台按宿主机架构推导，而不是写死 arm64。
+#
+# 这里原来是 16 处硬编码 linux/arm64，只照顾了 Apple Silicon 本机。个人测试环境实际都搭在
+# DevCloud（Linux x86_64）上，写死 arm64 会让每个镜像都走 QEMU 模拟构建甚至直接失败。
+# 需要交叉构建时用 LOCALSTACK_PLATFORM 显式覆盖。
+detect_platform() {
+  case "$(uname -m)" in
+    arm64 | aarch64) printf 'linux/arm64\n' ;;
+    x86_64 | amd64) printf 'linux/amd64\n' ;;
+    *) die "unsupported host architecture '$(uname -m)'; set LOCALSTACK_PLATFORM explicitly" ;;
+  esac
+}
+
+PLATFORM="${LOCALSTACK_PLATFORM:-$(detect_platform)}"
+
 current_context() {
   "$KUBECTL" config current-context 2>/dev/null
+}
+
+# 判断当前 context 的 API server 是不是回环地址。
+#
+# k3s 和 kind 生成的 context 名分别是 `default` 和 `kind-<name>`，光看名字没法跟共享集群区分
+# （尤其 `default` 太泛）。看 server 是否指向 127.0.0.1 才是真正可靠的「这是我自己机器上的集群」证据。
+local_apiserver() {
+  local context server
+  context="$1"
+  server="$("$KUBECTL" config view -o "jsonpath={.clusters[?(@.name=='$context')].cluster.server}" 2>/dev/null)"
+  if [[ -z "$server" ]]; then
+    # context 名与 cluster 名不一定相同，退回按 context 解析 cluster 名再查一次。
+    local cluster
+    cluster="$("$KUBECTL" config view -o "jsonpath={.contexts[?(@.name=='$context')].context.cluster}" 2>/dev/null)"
+    [[ -n "$cluster" ]] || return 1
+    server="$("$KUBECTL" config view -o "jsonpath={.clusters[?(@.name=='$cluster')].cluster.server}" 2>/dev/null)"
+  fi
+  case "$server" in
+    https://127.0.0.1:* | http://127.0.0.1:* | https://localhost:* | http://localhost:* | "https://[::1]:"* | "http://[::1]:"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 require_local_context() {
@@ -62,9 +135,13 @@ require_local_context() {
     return
   fi
   case "$context" in
-    orbstack|docker-desktop) ;;
+    # DevCloud 上常用 k3s / minikube / kind 起本地单机集群，它们和 orbstack 一样是「自己机器上的
+    # 一次性集群」，不该被守卫拦住。真正要拦的是误指到共享测试或生产集群。
+    orbstack | docker-desktop | minikube | kind-* | k3d-*) ;;
     *)
-      die "refusing non-local Kubernetes context '$context'; set LOCALSTACK_ALLOW_CONTEXT=1 only when intentional"
+      local_apiserver "$context" ||
+        die "refusing non-local Kubernetes context '$context'; set LOCALSTACK_ALLOW_CONTEXT=1 only when intentional"
+      log "allowing context '$context' because its API server is loopback"
       ;;
   esac
 }
@@ -73,11 +150,13 @@ doctor() {
   require_command "$KUBECTL"
   require_command "$KUSTOMIZE"
   require_command "$DOCKER"
+  require_command python3
   require_local_context
   "$KUBECTL" get node >/dev/null
   "$DOCKER" info >/dev/null
   log "context=$(current_context)"
   log "docker=$("$DOCKER" version --format '{{.Server.Arch}}' 2>/dev/null)"
+  log "build platform=$PLATFORM"
 }
 
 render_component() {
@@ -199,74 +278,79 @@ build_image() {
   local component="$1"
   case "$component" in
     auth)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/lightclaw-auth:dev \
         -f "$LOCALSTACK_ROOT/images/auth.Dockerfile" "$REPO_ROOT"
       ;;
     payment)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/payment:dev \
         -f "$LOCALSTACK_ROOT/images/payment.Dockerfile" "$REPO_ROOT/payment"
       ;;
     subscription)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/subscription:dev \
         -f "$LOCALSTACK_ROOT/images/subscription.Dockerfile" "$REPO_ROOT/subscription"
       ;;
     ai-gateway)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/ai-gateway:dev \
         -f "$LOCALSTACK_ROOT/images/ai-gateway.Dockerfile" "$REPO_ROOT"
       ;;
     sandbox)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/sandbox-api:dev \
         -f "$LOCALSTACK_ROOT/images/sandbox-api.Dockerfile" "$REPO_ROOT/sandbox"
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/sandbox-migrate:dev \
         -f "$LOCALSTACK_ROOT/images/sandbox-migrate.Dockerfile" "$REPO_ROOT/sandbox"
       ;;
     cloudladdergateway)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/cloudladdergateway:dev \
         -f "$LOCALSTACK_ROOT/images/cloudladdergateway.Dockerfile" "$REPO_ROOT"
       ;;
     shadow)
       prepare_shadow_sdk
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/shadow:dev \
         -f "$LOCALSTACK_ROOT/images/shadow.Dockerfile" "$REPO_ROOT"
       ;;
     trade)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/trade:dev \
         -f "$LOCALSTACK_ROOT/images/trade.Dockerfile" "$REPO_ROOT/trade"
       ;;
     ctl)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/ctl:dev \
         -f "$LOCALSTACK_ROOT/images/ctl.Dockerfile" "$REPO_ROOT/ctl"
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/fake-envd:dev \
         -f "$LOCALSTACK_ROOT/images/fake-envd.Dockerfile" "$REPO_ROOT"
       ;;
     service-gateway)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/service-gateway:dev \
         -f "$LOCALSTACK_ROOT/images/service-gateway.Dockerfile" "$REPO_ROOT/service-gateway"
       ;;
     mock-control)
-      "$DOCKER" build --platform linux/arm64 \
+      "$DOCKER" build --platform "$PLATFORM" \
         -t lightclaw-local/mock-control:dev \
         -f "$REPO_ROOT/deploy/local/mockservers/control/Dockerfile" \
         "$REPO_ROOT/deploy/local/mockservers/control"
       ;;
     frontend)
-      "$DOCKER" build --platform linux/arm64 \
-        --build-arg VITE_AUTH_API_BASE_URL=http://localhost:8085 \
-        --build-arg NEXT_PUBLIC_AUTH_API_BASE_URL=http://localhost:8085 \
-        --build-arg VITE_REGION=cn \
-        --build-arg NEXT_PUBLIC_REGION=cn \
+      local frontend_region
+      frontend_region=cn
+      if [[ "$LOCALSTACK_SITE_KIND" == "intl" ]]; then
+        frontend_region=global
+      fi
+      "$DOCKER" build --platform "$PLATFORM" \
+        --build-arg VITE_AUTH_API_BASE_URL="$GATEWAY_URL" \
+        --build-arg NEXT_PUBLIC_AUTH_API_BASE_URL="$GATEWAY_URL" \
+        --build-arg VITE_REGION="$frontend_region" \
+        --build-arg NEXT_PUBLIC_REGION="$frontend_region" \
         --build-arg VITE_AEGIS_ENABLED=false \
         -t lightclaw-local/frontend:dev \
         -f "$LOCALSTACK_ROOT/images/frontend.Dockerfile" "$REPO_ROOT"
@@ -284,6 +368,33 @@ build_image() {
   esac
 }
 
+load_images_into_local_cluster() {
+  local context cluster
+  context="$(current_context)"
+  case "$context" in
+    kind-*)
+      require_command kind
+      cluster="${context#kind-}"
+      log "loading local images into kind cluster $cluster"
+      kind load docker-image --name "$cluster" "${localstack_images[@]}"
+      ;;
+    k3d-*)
+      require_command k3d
+      cluster="${context#k3d-}"
+      log "loading local images into k3d cluster $cluster"
+      k3d image import --cluster "$cluster" "${localstack_images[@]}"
+      ;;
+    minikube)
+      require_command minikube
+      log "loading local images into minikube"
+      minikube image load "${localstack_images[@]}"
+      ;;
+    *)
+      log "context $context is expected to share locally built images"
+      ;;
+  esac
+}
+
 stop_legacy_compose() {
   if "$DOCKER" ps --format '{{.Names}}' | grep -q '^lightclaw-local-'; then
     log "stopping the legacy Compose stack before binding local ports"
@@ -292,44 +403,79 @@ stop_legacy_compose() {
 }
 
 exposure_specs=(
-  "frontend|localstack-frontend|service/frontend|5173:8080"
-  "gateway|lightclaw-gateway|service/service-gateway|8085:80"
-  "auth|user-auth|service/lightclaw-auth|28081:80"
-  "payment|user-auth|service/payment|18082:80"
-  "subscription|user-auth|service/subscription|8086:80"
-  "ai-gateway|ai-gateway|service/gateway|18080:80"
-  "sandbox|sandbox|service/sandbox-api|18081:80"
-  "cloudladdergateway|cloudladdergateway|service/cloudladdergateway|18095:8095"
-  "shadow|shadow|service/shadow|18083:80"
-  "trade|trade|service/trade|18084:80"
-  "ctl|ctl|service/ctl-api|19590:80"
-  "fake-qq|localstack-system|service/fake-qq-oauth|19010:19010"
-  "fake-jifei|localstack-system|service/fake-jifei|19020:19020"
-  "fake-tencentcloud|localstack-system|service/fake-tencentcloud|19030:19030"
-  "fake-wechat-pay|localstack-system|service/fake-wechat-pay-bridge|19040:19040"
-  "mysql|localstack-system|service/mysql|43306:3306"
-  "redis|localstack-system|service/redis|36379:6379"
+  "frontend|localstack-frontend|service/frontend|5173:8080|$PUBLIC_BIND_ADDRESS|required"
+  "gateway|lightclaw-gateway|service/service-gateway|8085:80|$PUBLIC_BIND_ADDRESS|required"
+  "auth|user-auth|service/lightclaw-auth|28081:80|127.0.0.1|debug"
+  "payment|user-auth|service/payment|18082:80|127.0.0.1|debug"
+  "subscription|user-auth|service/subscription|8086:80|127.0.0.1|debug"
+  "ai-gateway|ai-gateway|service/gateway|18080:80|127.0.0.1|debug"
+  "sandbox|sandbox|service/sandbox-api|18081:80|127.0.0.1|debug"
+  "cloudladdergateway|cloudladdergateway|service/cloudladdergateway|18095:8095|127.0.0.1|debug"
+  "shadow|shadow|service/shadow|18083:80|127.0.0.1|debug"
+  # Only this callback proxy is reachable from the DevCloud network. The full
+  # Trade listener contains privileged order/payment RPCs and stays loopback-only.
+  "trade-callback|trade|service/trade-callback-proxy|18084:80|$PUBLIC_BIND_ADDRESS|required"
+  "trade-internal|trade|service/trade|28084:80|127.0.0.1|required"
+  "ctl|ctl|service/ctl-api|19590:80|127.0.0.1|debug"
+  "fake-qq|localstack-system|service/fake-qq-oauth|19010:19010|$PUBLIC_BIND_ADDRESS|required"
+  "fake-jifei|localstack-system|service/fake-jifei|19020:19020|127.0.0.1|debug"
+  "fake-tencentcloud|localstack-system|service/fake-tencentcloud|19030:19030|127.0.0.1|debug"
+  "fake-wechat-pay|localstack-system|service/fake-wechat-pay-bridge|19040:19040|$PUBLIC_BIND_ADDRESS|required"
+  "mysql|localstack-system|service/mysql|43306:3306|127.0.0.1|debug"
+  "redis|localstack-system|service/redis|36379:6379|127.0.0.1|debug"
 )
+
+exposure_enabled() {
+  local profile="$1"
+  [[ "$profile" == "required" ]] ||
+    [[ "${LOCALSTACK_EXPOSE_INTERNAL_ENDPOINTS:-}" == "1" ]] ||
+    [[ "$PUBLIC_BIND_ADDRESS" == "127.0.0.1" ]]
+}
+
+print_exposure_plan() {
+  local spec name profile
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name _ _ _ _ profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    printf '%s\n' "$name"
+  done
+}
 
 launchd_domain() {
   printf 'gui/%s\n' "$(id -u)"
 }
 
 stop_exposure() {
-  [[ "$(uname -s)" == "Darwin" ]] || return 0
-  local spec name label
+  local spec name label pid_file pid cmdline
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    for spec in "${exposure_specs[@]}"; do
+      IFS='|' read -r name _ _ _ _ _ <<<"$spec"
+      label="com.lightclaw.localstack.$name"
+      launchctl bootout "$(launchd_domain)/$label" >/dev/null 2>&1 || true
+    done
+    rm -rf "$STATE_DIR/launchd"
+    return
+  fi
+
   for spec in "${exposure_specs[@]}"; do
-    IFS='|' read -r name _ _ _ <<<"$spec"
-    label="com.lightclaw.localstack.$name"
-    launchctl bootout "$(launchd_domain)/$label" >/dev/null 2>&1 || true
+    IFS='|' read -r name _ _ _ _ _ <<<"$spec"
+    pid_file="$STATE_DIR/exposure/$name.pid"
+    [[ -f "$pid_file" ]] || continue
+    pid="$(tr -dc '0-9' <"$pid_file")"
+    if [[ -n "$pid" && -r "/proc/$pid/cmdline" ]]; then
+      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+      if [[ "$cmdline" == *"kubectl"*"port-forward"* ]]; then
+        kill "$pid" >/dev/null 2>&1 || true
+      fi
+    fi
+    rm -f "$pid_file"
   done
-  rm -rf "$STATE_DIR/launchd"
+  rm -rf "$STATE_DIR/exposure"
 }
 
-start_exposure() {
-  [[ "$(uname -s)" == "Darwin" ]] || die "automatic localhost exposure currently requires macOS launchd"
+start_exposure_macos() {
   require_command launchctl
-  local kubectl_path context domain spec name namespace resource mapping label plist log_file
+  local kubectl_path context domain spec name namespace resource mapping address profile label plist log_file
   kubectl_path="$(command -v "$KUBECTL")"
   context="$(current_context)"
   domain="$(launchd_domain)"
@@ -338,7 +484,8 @@ start_exposure() {
   mkdir -p "$STATE_DIR/launchd" "$STATE_DIR/logs"
 
   for spec in "${exposure_specs[@]}"; do
-    IFS='|' read -r name namespace resource mapping <<<"$spec"
+    IFS='|' read -r name namespace resource mapping address profile <<<"$spec"
+    exposure_enabled "$profile" || continue
     label="com.lightclaw.localstack.$name"
     plist="$STATE_DIR/launchd/$label.plist"
     log_file="$STATE_DIR/logs/$name.log"
@@ -358,7 +505,7 @@ start_exposure() {
     <string>-n</string>
     <string>$namespace</string>
     <string>--address</string>
-    <string>127.0.0.1</string>
+    <string>$address</string>
     <string>$resource</string>
     <string>$mapping</string>
   </array>
@@ -379,7 +526,49 @@ EOF
   done
 
   sleep 1
-  log "localhost exposure is managed by macOS launchd"
+  log "endpoint exposure is managed by macOS launchd"
+}
+
+start_exposure_linux() {
+  local kubectl_path context spec name namespace resource mapping address profile log_file pid_file pid
+  kubectl_path="$(command -v "$KUBECTL")"
+  context="$(current_context)"
+  stop_exposure
+  mkdir -p "$STATE_DIR/exposure" "$STATE_DIR/logs"
+
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name namespace resource mapping address profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    log_file="$STATE_DIR/logs/$name.log"
+    pid_file="$STATE_DIR/exposure/$name.pid"
+    nohup "$kubectl_path" --context "$context" port-forward -n "$namespace" \
+      --address "$address" "$resource" "$mapping" >"$log_file" 2>&1 </dev/null &
+    pid=$!
+    printf '%s\n' "$pid" >"$pid_file"
+    chmod 600 "$pid_file"
+  done
+
+  sleep 2
+  for spec in "${exposure_specs[@]}"; do
+    IFS='|' read -r name _ _ _ _ profile <<<"$spec"
+    exposure_enabled "$profile" || continue
+    pid_file="$STATE_DIR/exposure/$name.pid"
+    pid="$(tr -dc '0-9' <"$pid_file")"
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      tail -n 20 "$STATE_DIR/logs/$name.log" >&2 || true
+      stop_exposure
+      die "failed to expose $name"
+    fi
+  done
+  log "endpoint exposure is managed by Linux background processes under $STATE_DIR/exposure"
+}
+
+start_exposure() {
+  case "$(uname -s)" in
+    Darwin) start_exposure_macos ;;
+    Linux) start_exposure_linux ;;
+    *) die "automatic endpoint exposure supports macOS and Linux" ;;
+  esac
 }
 
 wait_rollouts() {
@@ -398,11 +587,62 @@ wait_rollouts() {
   "$KUBECTL" rollout status -n shadow deployment/shadow --timeout=300s
   "$KUBECTL" rollout status -n shadow deployment/shadow-trade-adapter --timeout=300s
   "$KUBECTL" rollout status -n trade deployment/trade --timeout=300s
+  "$KUBECTL" rollout status -n trade deployment/trade-callback-proxy --timeout=180s
   "$KUBECTL" rollout status -n ctl deployment/ctl-api --timeout=300s
   "$KUBECTL" rollout status -n ctl deployment/ctl-service --timeout=300s
   "$KUBECTL" rollout status -n ctl deployment/ctl-bypass --timeout=300s
   "$KUBECTL" rollout status -n lightclaw-gateway deployment/service-gateway --timeout=300s
   "$KUBECTL" rollout status -n localstack-frontend deployment/frontend --timeout=300s
+}
+
+internal_service_token_patch_plan() {
+  cat <<'EOF'
+user-auth|lightclaw-auth-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,SHADOW_BINDING_INTERNAL_TOKEN
+trade|trade-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+ctl|ctl-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN,CTL_INTERNAL_TOKEN,CTL_SHADOW_TOKEN,CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN
+shadow|shadow-runtime-secrets|SHADOW_INTERNAL_SERVICE_TOKEN
+ai-gateway|ai-gateway-runtime-secrets|LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+EOF
+}
+
+randomize_shared_internal_tokens() {
+  local token encoded namespace secret keys patch_file
+  mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
+  token="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+  encoded="$(printf '%s' "$token" | base64 | tr -d '\n')"
+  while IFS='|' read -r namespace secret keys; do
+    patch_file="$(mktemp "$STATE_DIR/internal-token-patch.XXXXXX")"
+    chmod 600 "$patch_file"
+    python3 - "$patch_file" "$encoded" "$keys" <<'PY'
+import json
+import sys
+
+path, encoded, keys = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as output:
+    json.dump({"data": {key: encoded for key in keys.split(",")}}, output, separators=(",", ":"))
+    output.write("\n")
+PY
+    if "$KUBECTL" patch secret "$secret" -n "$namespace" --type merge --patch-file "$patch_file" >/dev/null; then
+      rm -f "$patch_file"
+      continue
+    fi
+    rm -f "$patch_file"
+    unset token encoded
+    die "failed to install the per-run shared internal service token for $namespace/$secret"
+  done < <(internal_service_token_patch_plan)
+  unset token encoded
+  log "generated a per-run shared internal service token"
+}
+
+seed_site_data() {
+  local seed_file
+  for seed_file in "$SITE_SEED_ROOT/$LOCALSTACK_SITE_KIND/030-ctl-bundles.sql" "$SITE_SEED_ROOT/$LOCALSTACK_SITE_KIND/040-trade-bundles.sql"; do
+    [[ -f "$seed_file" ]] || die "missing site seed: $seed_file"
+    log "applying $(basename "$seed_file")"
+    "$KUBECTL" exec -i -n localstack-system statefulset/mysql -- \
+      sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot' <"$seed_file"
+  done
 }
 
 restart_app_deployments() {
@@ -413,7 +653,7 @@ restart_app_deployments() {
   "$KUBECTL" rollout restart -n sandbox deployment/sandbox-api
   "$KUBECTL" rollout restart -n cloudladdergateway deployment/cloudladdergateway
   "$KUBECTL" rollout restart -n shadow deployment/shadow deployment/shadow-trade-adapter
-  "$KUBECTL" rollout restart -n trade deployment/trade
+  "$KUBECTL" rollout restart -n trade deployment/trade deployment/trade-callback-proxy
   "$KUBECTL" rollout restart -n ctl deployment/ctl-api deployment/ctl-service deployment/ctl-bypass
   "$KUBECTL" rollout restart -n lightclaw-gateway deployment/service-gateway
   "$KUBECTL" rollout restart -n localstack-frontend deployment/frontend
@@ -423,6 +663,7 @@ up() {
   doctor
   if [[ "${LOCALSTACK_SKIP_BUILD:-}" != "1" ]]; then
     build_image all
+    load_images_into_local_cluster
   else
     log "skipping image build because LOCALSTACK_SKIP_BUILD=1"
   fi
@@ -453,6 +694,8 @@ up() {
     esac
   done
 
+  randomize_shared_internal_tokens
+
   wait_job ctl ctl-migrate
 
   delete_job_if_present user-auth lightclaw-auth-migrate
@@ -472,11 +715,12 @@ up() {
   delete_job_if_present localstack-system localstack-seed
   apply_component seed
   wait_job localstack-system localstack-seed
+  seed_site_data
 
   restart_app_deployments
   wait_rollouts
   start_exposure
-  log "frontend=http://localhost:5173 gateway=http://localhost:8085 ctl=http://localhost:19590 clgateway=http://localhost:18095 shadow=http://localhost:18083 trade=http://localhost:18084"
+  log "frontend=$FRONTEND_URL gateway=$GATEWAY_URL trade=http://$LOCALSTACK_PUBLIC_HOST:18084 fake-qq=$FAKE_QQ_URL fake-wechat-pay=$FAKE_WECHAT_PAY_URL"
   status
 }
 
@@ -552,6 +796,7 @@ Commands:
   render             Render all localstack Kustomize components
   up                 Build, apply, migrate, seed, and wait
   expose             Recreate launchd-managed localhost endpoints
+  exposure-plan      Print endpoint names that would be exposed
   stop-expose        Stop launchd-managed localhost endpoints
   status             Show localstack Pods
   logs               Follow logs from localstack Pods
@@ -567,6 +812,8 @@ case "$command" in
   render) render_all ;;
   up) up ;;
   expose) require_local_context; start_exposure ;;
+  exposure-plan) print_exposure_plan ;;
+  internal-token-patch-plan) internal_service_token_patch_plan ;;
   stop-expose) stop_exposure ;;
   status) status ;;
   logs) logs ;;

@@ -49,13 +49,12 @@ When reporting a problem, include:
 
 If the Agent cannot use its configured model and the issue remains after checking the provider, model selection, and credentials, select **Reset model configuration** in Diagnostics.
 
-This restores the Hermes Agent model configuration so you can set it up again. After it finishes:
+This resets only the Hermes Profile for the current Bot. It restores the system built-in model and its credential, and removes user-added models, providers, and fallbacks. Other Bots in the same Agent are unaffected. After it finishes:
 
-1. Return to [Configure Models](./model.md).
-2. Add or select the model you want to use.
-3. Send a short test message in [Chat](./agent-chat.md).
+1. Send a short test message in [Chat](./agent-chat.md) to confirm that the built-in model works.
+2. If you still need a custom model, return to [Configure Models](./model.md) and add or select it again.
 
-> **Caution:** Reset the model configuration only when you are ready to configure a working model again. It is not the first response to a temporary provider or network issue.
+> **Caution:** User-added model configuration is not retained. This should not be the first response to a temporary provider or network issue.
 
 ## Reinstall an Agent while keeping data
 

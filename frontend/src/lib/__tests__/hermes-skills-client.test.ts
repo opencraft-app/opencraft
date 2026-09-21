@@ -12,6 +12,7 @@ import {
   buildInstalledSkillsListCommand,
   formatInstalledSkillDisplayName,
   getUniqueSkillSlugs,
+  hasHermesBundledSkillsOptOut,
   listInstalledSkillSlugs,
   matchesInstalledSkillSearch,
   parseInstalledSkills,
@@ -31,15 +32,22 @@ describe("hermes skills client", () => {
 
   it("builds the Hermes installed-skills command", () => {
     const command = buildInstalledSkillsListCommand();
-    expect(command).toContain("hermes_cli.main skills list");
+    expect(command).toContain("hermes_cli.main -p 'default' skills list");
     expect(command).toContain("__HERMES_BUNDLED_MANIFEST__");
     expect(command).toContain("__HERMES_SKILLS_ROOT__");
-    expect(command).toContain('find "$HOME/.hermes/skills" -mindepth 2 -type f -name SKILL.md -print');
+    expect(command).toContain("__HERMES_NO_BUNDLED_SKILLS__");
+    expect(command).toContain('test -f "$HERMES_PROFILE_ROOT/.no-bundled-skills"');
+    expect(command).toContain('find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -type f -name SKILL.md -print');
+  });
+
+  it("detects the bundled-skills opt-out marker", () => {
+    expect(hasHermesBundledSkillsOptOut("skills output\n__HERMES_NO_BUNDLED_SKILLS__\n")).toBe(true);
+    expect(hasHermesBundledSkillsOptOut("skills output")).toBe(false);
   });
 
   it("builds a constrained delete command for nested Hermes-native skill directories", () => {
     const command = buildHermesSkillDeleteCommand("finance-news");
-    expect(command).toContain('find "$HOME/.hermes/skills"');
+    expect(command).toContain('find "$HERMES_PROFILE_ROOT/skills"');
     expect(command).toContain('echo "Hermes skill not found: finance-news" >&2; exit 1');
     expect(command).toContain('rm -rf -- {} +');
     expect(() => buildHermesSkillDeleteCommand("../finance-news")).toThrow("Invalid Hermes skill slug");

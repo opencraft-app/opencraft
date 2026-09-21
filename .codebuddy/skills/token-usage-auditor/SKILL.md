@@ -57,7 +57,9 @@ slim 版支持：
 如果 provider 仍未确认，归档流程应先阻断并让用户确认；用户明确选择暂不统计时，
 `metadata.localUsageAudit` 才保持 `null`，避免把未知工具误算成 `codebuddycode`。
 
-session id 可由运行平台注入，也可由开发者显式设置 `FEAI_USAGE_SESSION_ID`；存在
+session id 可由运行平台注入，也可由开发者显式设置 `FEAI_USAGE_SESSION_ID`；CodeBuddy IDE
+未注入环境变量时，`usage-context write` 会尝试从与当前项目路径匹配的 workspace 索引读取
+`current` conversation。存在
 session id 时优先按 session 过滤，缺失时仅按 provider + FE-AI window（以及少数
 provider 的 projectRoot）聚合。`codebuddycode` 支持项目级日志收窄；如果已记录的
 session id 在当前窗口内没有命中，但同一 `projectRoot + window` 下存在其他记录，审计会降级为
@@ -118,5 +120,7 @@ confidence 口径：
 
 ## 隐私边界
 
-轻量版只输出聚合 token、缓存、积分、时间窗、provider、`projectScoped` 布尔值和
-session id，不输出本机 `projectRoot` 绝对路径、prompt、response、文件内容或工具调用参数。
+轻量版只输出聚合 token、缓存、积分、模型、归属状态、结构化 flags、时间窗、
+provider、`projectScoped` 布尔值和 session id，不输出本机 `projectRoot` 绝对路径、
+prompt、response、文件内容或工具调用参数。详细 notes 仅保存在本地审计文件，
+远端 payload 不携带自由文本 notes。

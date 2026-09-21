@@ -1,0 +1,18 @@
+{
+  "id": "velalink",
+  "name": "VelaLink 桌面与 Chat UI",
+  "kind": "upstream-application",
+  "path": "velalink",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "upstream",
+  "domains": ["agent-gateway-runtime", "site-environment-routing"],
+  "summary": "维护桌面壳、Chat UI、daemon、observability client 及 vendored Codex 集成。",
+  "runtime": "Rust、TypeScript、React 桌面/浏览器组件",
+  "interfaces": ["desktop shell", "vela-chat-web", "daemon/app-server", "telemetry"],
+  "dependencies": ["upstream VelaLink", "frontend", "vendored openai-codex"],
+  "source_docs": ["velalink/README.md", "velalink/AGENTS.md", "velalink/MONO2_SUBTREE.md"],
+  "agent_entry": "velalink/AGENTS.md",
+  "service_docs": "velalink/docs/README.md",
+  "deploy": ["velalink/Makefile"],
+  "generated_paths": ["velalink/dist", "velalink/target"]
+}

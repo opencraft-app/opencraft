@@ -906,6 +906,14 @@ func TestInternalSubscriptionEndpointsUseAIGatewayCompatibleShapes(t *testing.T)
 	if applyRec.Code != http.StatusOK || !bytes.Contains(applyRec.Body.Bytes(), []byte(`"token_balance":1000`)) {
 		t.Fatalf("apply response status=%d body=%s", applyRec.Code, applyRec.Body.String())
 	}
+
+	cancelSelectedReq := httptest.NewRequest(http.MethodPost, "/api/internal/subscriptions/cancel-selected", bytes.NewBufferString(`{"user_id":"user-1","subscription_name_prefixes":["package:","free-credit:"],"include_legacy_package_subscription":true}`))
+	cancelSelectedReq.Header.Set("Authorization", "Bearer cluster-token")
+	cancelSelectedRec := httptest.NewRecorder()
+	handler.ServeHTTP(cancelSelectedRec, cancelSelectedReq)
+	if cancelSelectedRec.Code != http.StatusOK {
+		t.Fatalf("cancel-selected response status=%d body=%s", cancelSelectedRec.Code, cancelSelectedRec.Body.String())
+	}
 }
 
 func TestInternalUserAssignmentDefaultsOldAndCanBeSetNew(t *testing.T) {
@@ -1290,8 +1298,20 @@ func TestAdminChannelBundlesImportFromManagedSet(t *testing.T) {
 				},
 			})
 		case "POST /api/verify":
-			writeJSONForHTTPTest(t, w, map[string]any{"success": true})
+			var req struct {
+				Scope string `json:"scope"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.Scope != "channel.key.read" {
+				t.Fatalf("verify scope = %q", req.Scope)
+			}
+			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"proof_token": "http-proof"}})
 		case "POST /api/channel/17/key":
+			if r.Header.Get("X-Security-Proof") != "http-proof" {
+				t.Fatalf("security proof = %q", r.Header.Get("X-Security-Proof"))
+			}
 			writeJSONForHTTPTest(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-provider"}})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)

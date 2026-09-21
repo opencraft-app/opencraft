@@ -1,0 +1,31 @@
+# Progress
+
+- 2026-09-14: Created task planning files before implementation.
+- 2026-09-14: Context route returned no pack. Recorded graphify no-graph fallback and dirty-worktree boundary.
+- 2026-09-14: Read OpenCraft maintenance/verification guidance and mapped the current Environment-to-Settings redirect path.
+- 2026-09-14: Read navigation/model design authorities and created the required Task Pack.
+- 2026-09-14: Confirmed the model view is already hard-bound to `local`; scoped the Environment UI and compatibility redirect.
+- 2026-09-14: Finalized removal plan across connected/hostless shells, navigation APIs, extension metadata, UI modules, tests and docs.
+- 2026-09-14: Implemented the primary route/Settings migration. Focused typecheck attempt 1 could not start because this worktree lacks dependencies; recorded the environment failure.
+- 2026-09-14: Deleted the dedicated Environment component/style/smoke modules. Logged and adjusted a mechanical test-file replacement failure.
+- 2026-09-14: Added regression coverage for the removed route and the Settings-owned local Model Services entry.
+- 2026-09-14: Updated model/catalog and shared-sidebar smokes to stop reconstructing the deleted Environment UI; residual scan found only retained domain fixtures and stale docs.
+- 2026-09-14: Updated platform, model-provider and Agent runtime authorities to make Settings the sole local Model Services surface.
+- 2026-09-14: Extension Contract and Built-in Agents typechecks passed; Web typecheck environment remains under repair due to missing borrowed React DOM typings.
+- 2026-09-14: Mirrored the main checkout's workspace-level Workbench Web dependency link; all three focused package typechecks now pass.
+- 2026-09-14: Focused navigation, Settings, Model Services and Shell suites passed 27/27. Production residual scan found no removed Environment route/component/API reference; `git diff --check` passed.
+- 2026-09-14: Model Services smoke attempt 1 was blocked before UI startup by the worktree's missing pinned DSH runtime; no inference or credential access occurred.
+- 2026-09-14: Model Services smoke passed after reusing the pinned DSH runtime: save/cancel/toggle/check/import/narrow/remount paths passed with isolated storage and a local synthetic endpoint.
+- 2026-09-14: Shared fixed/floating Sidebar smoke passed after removing the Environment action and fixture; state, footer geometry, resizing, narrow and dark projections remain intact.
+- 2026-09-14: Full gate attempt 1 reached cross-workspace typechecking and was blocked only by missing Expo workspace-local dependencies in the new worktree.
+- 2026-09-14: Full OpenCraft gate passed after restoring the Expo workspace dependency mapping, including all workspace checks/tests and Web/Expo/iOS builds.
+- 2026-09-14: First desktop preview proved the intended route/entry but revealed cross-checkout workspace-link contamination; prior borrowed-dependency build evidence is not final.
+- 2026-09-14: Interrupted an unsuitable unlocked dependency resolution and switched verification setup to lockfile-exact `npm ci`.
+- 2026-09-14: Lockfile-exact dependencies installed with current-worktree workspace links. First local full gate stopped on one unrelated macOS `posix_spawnp failed` test after 150/151 AppServer tests passed.
+- 2026-09-14: Isolated the lone failing process-RPC test; it reproduces independently of this UI change and matches the known local macOS PTY-launch limitation. Remaining gate stages will run explicitly.
+- 2026-09-14: Root-caused local PTY failures to the non-executable spawn helper created by `npm ci --ignore-scripts`; binary hashes match the known-good checkout.
+- 2026-09-14: `npm rebuild node-pty` did not repair the helper mode; recorded the failed approach before switching to the exact known-good file permission.
+- 2026-09-14: Restored the byte-identical worktree `spawn-helper` executable bit; the formerly failing process-RPC reconnect test now passes in isolation.
+- 2026-09-14: Current-worktree full `npm run gate` passed without exceptions. Repeated Model Services and shared Sidebar browser smokes also passed with local workspace dependencies.
+- 2026-09-14: Built, packaged and code-sign-verified an isolated current-worktree Mac preview. CDP inspection confirmed Environment count 0, Settings group `本机`, one selected `模型服务` entry, and the existing provider directory visible.
+- 2026-09-14: Documentation validation passed with no errors/warnings; change-impact check and final whitespace check passed. Closed the contaminated diagnostic preview and left only the final preview open.

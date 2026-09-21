@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: referral
+components:
+  - ../common
+  - ../../../../referral/k8s/overlays/shprod
+resources:
+  - referral-campaign.yaml
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: referral-platform-values
+    envs:
+      - referral-platform.env
+replacements:
+  - source:
+      kind: ConfigMap
+      name: referral-platform-values
+      fieldPath: data.REFERRAL_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: referral
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: referral-worker
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Job
+          name: referral-campaign
+        fieldPaths:
+          - spec.template.spec.containers.0.image

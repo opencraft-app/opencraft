@@ -22,6 +22,7 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
+  oauthErrorMessage,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
   wechatOAuthStartTargetForUserAgent,
@@ -265,10 +266,35 @@ export const LoginModal = ({
   const privacyPolicyPath = localizedPath("/privacy-policy", currentLocale);
   const termsOfServicePath = localizedPath("/terms-of-service", currentLocale);
   const openSourceLicensesPath = localizedPath("/open-source-licenses", currentLocale);
+  const forceProviderSwitch = mode === "switch-account";
+
+  const [preparedReferral, setPreparedReferral] = useState<string | null>(null);
+  const [referralError, setReferralError] = useState(false);
+  const [referralRetry, setReferralRetry] = useState(0);
+  const referralCode = typeof window === "undefined" || forceProviderSwitch
+    ? ""
+    : new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase() ?? "";
+  const referralReady = !referralCode || preparedReferral === referralCode;
+
+  useEffect(() => {
+    if (!open || !referralCode) return;
+    let cancelled = false;
+    setPreparedReferral(null);
+    setReferralError(false);
+    void repositories.auth.prepareReferralCode(referralCode).then(() => {
+      if (!cancelled) setPreparedReferral(referralCode);
+    }).catch(() => {
+      if (!cancelled) setReferralError(true);
+    });
+    return () => { cancelled = true; };
+  }, [open, referralCode, referralRetry, repositories.auth]);
 
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) setError(oauthErrorMessage(new URLSearchParams(window.location.search).get("oauth_error")));
+  }, [open]);
   const [domesticLoginMethod, setDomesticLoginMethod] = useState<DomesticLoginMethod>("wechat");
   const [wechatMobileGuideUrl, setWechatMobileGuideUrl] = useState<string | null>(null);
   const [shouldFocusWechatMobileGuide, setShouldFocusWechatMobileGuide] = useState(false);
@@ -283,10 +309,10 @@ export const LoginModal = ({
       return null;
     }
     return repositories.auth.getOAuthStartUrl("wechat", {
-      ...(mode === "switch-account" ? { switchAccount: true } : {}),
+      ...(forceProviderSwitch ? { switchAccount: true } : {}),
       wechatMode: "official_account",
     });
-  }, [mode, repositories.auth]);
+  }, [forceProviderSwitch, repositories.auth]);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
 
@@ -335,6 +361,7 @@ export const LoginModal = ({
   }, [open]);
 
   const checkAgreed = () => {
+    if (!referralReady) return false;
     if (!agreed) {
       setShowAgreeHint(true);
       return false;
@@ -359,7 +386,7 @@ export const LoginModal = ({
         return;
       }
       const loginUrl = repositories.auth.getOAuthStartUrl("wechat", {
-        ...(mode === "switch-account" ? { switchAccount: true } : {}),
+        ...(forceProviderSwitch ? { switchAccount: true } : {}),
         wechatMode: target,
       });
       if (!loginUrl) return;
@@ -371,7 +398,7 @@ export const LoginModal = ({
     }
     const loginUrl = repositories.auth.getOAuthStartUrl(
       provider,
-      mode === "switch-account" ? { switchAccount: true } : undefined,
+      forceProviderSwitch ? { switchAccount: true } : undefined,
     );
     if (!loginUrl) return;
     setError(null);
@@ -523,7 +550,16 @@ export const LoginModal = ({
               ) : null}
             </div>
 
-            {isGlobal ? (
+            {!referralReady ? (
+              <div className="px-9 pb-6 text-center" role={referralError ? "alert" : "status"}>
+                {referralError ? (
+                  <>
+                    <p className="text-sm text-[var(--danger)]">{t("邀请返利码不存在或当前不可用。")}</p>
+                    <Button type="button" variant="outline" onClick={() => setReferralRetry((value) => value + 1)}>{t("重试")}</Button>
+                  </>
+                ) : <Loader2 className="mx-auto h-5 w-5 animate-spin" aria-label={t("正在加载…")} />}
+              </div>
+            ) : isGlobal ? (
               <div className="flex w-full flex-col gap-4 px-9 pt-2">
                 {(() => {
                   const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];
@@ -535,7 +571,10 @@ export const LoginModal = ({
                     providers.push("github");
                   }
                   return providers.map((provider) => {
-                    const loginUrl = repositories.auth.getOAuthStartUrl(provider);
+                    const loginUrl = repositories.auth.getOAuthStartUrl(
+                      provider,
+                      forceProviderSwitch ? { switchAccount: true } : undefined,
+                    );
                     if (!loginUrl) return null;
                     const visual = PROVIDER_BUTTON_VISUALS[provider];
                     return (

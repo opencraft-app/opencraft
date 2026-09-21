@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -388,6 +390,231 @@ func EnqueueRenewInstanceTask(ctx pctx.Context, instanceID, passID, userID, oper
 		maxExecuteCount,
 	)
 	return err
+}
+
+// === 同 SP 变配（升配）父子 task 公开入口 ===
+// 需求：TAPD 1010132091137784162 §6 / §8
+
+type ModifyPassTaskPayload = common.ModifyPassTaskPayload
+type ModifyInstanceTaskPayload = common.ModifyInstanceTaskPayload
+
+// EnqueueModifyPassTask 由 logic/pass.AcceptPassModify 调用，派发变配父 task。
+//
+// 用确定性 task ID（由 passID + tradeFlowID 派生）：计费重投同一笔单时会走
+// resumeModifyForSameFlow 再调一次本函数，确定性 ID 让重复入队成为幂等成功，
+// 而不是并发跑两个父 task 抢同一个 pass。
+func EnqueueModifyPassTask(ctx pctx.Context, passID, userID, sourceBundleID, targetBundleID string, tradeFlowID int64, dealName string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	if passID == "" {
+		return "", errors.New("passID is required")
+	}
+	if userID == "" {
+		return "", errors.New("userID is required")
+	}
+	if targetBundleID == "" {
+		return "", errors.New("targetBundleID is required")
+	}
+	if tradeFlowID <= 0 {
+		return "", fmt.Errorf("tradeFlowID must be > 0, got %d", tradeFlowID)
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &common.ModifyPassTaskPayload{
+		PassID:         passID,
+		UserID:         userID,
+		SourceBundleID: sourceBundleID,
+		TargetBundleID: targetBundleID,
+		TradeFlowID:    tradeFlowID,
+		DealName:       dealName,
+	}
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(userID)
+	return NewLogic().(*logic).enqueueTaskWithScheduleAndID(
+		ctx,
+		modifyPassTaskID(passID, tradeFlowID),
+		common.TaskNameModifyPass,
+		payload,
+		"",
+		executeInterval,
+		maxExecuteCount,
+	)
+}
+
+func modifyPassTaskID(passID string, tradeFlowID int64) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", common.TaskNameModifyPass, passID, tradeFlowID)))
+	return fmt.Sprintf("task-modify-pass-%x", sum[:16])
+}
+
+// ModifyPassTaskID identifies the durable acceptance receipt, including after
+// FinalizeModify clears the Pass's transient modify_flow_id.
+func ModifyPassTaskID(passID string, tradeFlowID int64) string {
+	return modifyPassTaskID(passID, tradeFlowID)
+}
+
+// EnqueueModifyInstanceTask 由变配父 task 调用，为一台实例派发升配子 task。
+//
+// 子 task 自身的 task ID 就是传给 sandbox 的 idempotency_key，所以这里用框架生成的
+// 随机 ID（父 task 通过反查 parent_task_id 防重派发，不需要确定性 ID）。
+func EnqueueModifyInstanceTask(ctx pctx.Context, payload common.ModifyInstanceTaskPayload, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
+	if payload.InstanceID == "" {
+		return errors.New("payload.InstanceID is required")
+	}
+	if payload.UserID == "" {
+		return errors.New("payload.UserID is required")
+	}
+	if payload.TargetPoolID == "" {
+		return errors.New("payload.TargetPoolID is required")
+	}
+	if parentTaskID == "" {
+		return errors.New("parentTaskID is required")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(payload.UserID)
+	_, err := NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameModifyInstance,
+		&payload,
+		parentTaskID,
+		executeInterval,
+		maxExecuteCount,
+	)
+	return err
+}
+
+// ExecuteModifyInstanceTask 由 worker 层 modify_task.go 反向调用。
+// taskID 既用于持久化 payload 进度位，也直接作为 sandbox 的幂等键。
+func ExecuteModifyInstanceTask(ctx pctx.Context, taskID string, payload *ModifyInstanceTaskPayload) error {
+	return NewLogic().(*logic).RunModifyInstanceTask(ctx, taskID, payload)
+}
+
+// UpdateModifyPassPayload 供变配父 task 持久化 SubscriptionDone 进度位。
+func UpdateModifyPassPayload(ctx pctx.Context, taskID string, payload *ModifyPassTaskPayload) error {
+	if payload == nil {
+		return errors.New("missing modify payload")
+	}
+	// Only merge subscription progress. An older worker's full payload must
+	// never erase the finalized receipt written by the Pass transaction.
+	return taskmodel.NewDao().Transaction(func(tx *gorm.DB) error {
+		var task taskmodel.Entity
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id = ?", taskID).First(&task).Error; err != nil {
+			return err
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(task.TaskParams), &fields); err != nil {
+			return err
+		}
+		if fields == nil {
+			return errors.New("missing stored modify payload")
+		}
+		if payload.SubscriptionDone {
+			fields["subscription_done"] = json.RawMessage("true")
+		}
+		body, err := json.Marshal(fields)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&taskmodel.Entity{}).Where("task_id = ?", taskID).Update("task_params", string(body)).Error
+	})
+}
+
+// ResolveModifyTargetPool 把目标 bundle 的 instance_spec_id 解析成与当前 sandbox
+// 同地域的目标 Pool。
+//
+// CTL 没有 spec → pool 的静态映射：spec 只给出 template_class_id + sku_id（配置里的
+// spec_pools），真正的 pool 要对着 sandbox 的活跃 Pool 列表筛。Sandbox 不允许原地
+// 变配跨地域，因此候选池还必须与实例当前 Pool 同地域；同地域不同可用区允许。
+func ResolveModifyTargetPool(ctx pctx.Context, instanceSpecID, sandboxID string) (poolID, skuID string, err error) {
+	l := NewLogic().(*logic)
+	if l.sandboxAdapter == nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
+	}
+	sandboxID = strings.TrimSpace(sandboxID)
+	if sandboxID == "" {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "source sandbox id is required")
+	}
+	if _, err := l.templateCandidatesForSpec(instanceSpecID); err != nil {
+		return "", "", err
+	}
+	sandboxDetail, err := l.sandboxAdapter.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "get source sandbox %q: %v", sandboxID, err)
+	}
+	if sandboxDetail == nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "source sandbox %q returned empty detail", sandboxID)
+	}
+	livePools, err := l.sandboxAdapter.ListPools(ctx)
+	if err != nil {
+		return "", "", errcode.Wrap(errcode.ErrSandboxServiceError, "list pools: %v", err)
+	}
+	targetSKUID := l.skuIDForSpec(instanceSpecID)
+	targetPoolID, err := resolveModifyTargetPoolForSource(
+		livePools,
+		sandboxDetail.TemplateID,
+		l.templateClassForSpec(instanceSpecID),
+		targetSKUID,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	return targetPoolID, targetSKUID, nil
+}
+
+func resolveModifyTargetPoolForSource(pools []psandbox.Pool, sourcePoolID, templateClassID, skuID string) (string, error) {
+	sourcePoolID = strings.TrimSpace(sourcePoolID)
+	var sourcePool *psandbox.Pool
+	for i := range pools {
+		if strings.TrimSpace(pools[i].ID) == sourcePoolID {
+			sourcePool = &pools[i]
+			break
+		}
+	}
+	if sourcePool == nil {
+		return "", errcode.Wrap(errcode.ErrSandboxServiceError, "source sandbox pool %q not found", sourcePoolID)
+	}
+	sourceRegion, err := tencentRegionFromZone(sourcePool.Zone)
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrSandboxServiceError, "resolve source pool region: %v", err)
+	}
+	for _, pool := range pools {
+		if !poolEligibleForCreate(pool, templateClassID, skuID) {
+			continue
+		}
+		region, regionErr := tencentRegionFromZone(pool.Zone)
+		if regionErr != nil || region != sourceRegion {
+			continue
+		}
+		if poolID := strings.TrimSpace(pool.ID); poolID != "" {
+			return poolID, nil
+		}
+	}
+	return "", errcode.Wrap(errcode.ErrSandboxServiceError,
+		"no active sandbox pool for target class %q sku %q in source region %q",
+		templateClassID, skuID, sourceRegion)
+}
+
+func tencentRegionFromZone(zone string) (string, error) {
+	trimmed := strings.TrimSpace(zone)
+	idx := strings.LastIndex(trimmed, "-")
+	if idx <= 0 || idx == len(trimmed)-1 {
+		return "", fmt.Errorf("invalid Tencent Cloud zone %q", zone)
+	}
+	if _, err := strconv.Atoi(trimmed[idx+1:]); err != nil {
+		return "", fmt.Errorf("invalid Tencent Cloud zone %q: %w", zone, err)
+	}
+	return trimmed[:idx], nil
 }
 
 // === trade-pass-destroy 父子 task 公开入口（设计稿 §3.5 / §4.5.2 / §4.5.3 / §4.6 / §4.7）===

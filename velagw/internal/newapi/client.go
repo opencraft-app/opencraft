@@ -25,7 +25,10 @@ const inviteCodeCollisionRetries = 5
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	urlPolicy  URLPolicy
 }
+
+type URLPolicy func(*url.URL) error
 
 type SetupInfo struct {
 	Status       bool   `json:"status"`
@@ -68,6 +71,11 @@ type EnableTwoFARequest struct {
 type VerifyRequest struct {
 	Method string `json:"method"`
 	Code   string `json:"code,omitempty"`
+	Scope  string `json:"scope"`
+}
+
+type securityProofData struct {
+	ProofToken string `json:"proof_token"`
 }
 
 type UpdateOptionRequest struct {
@@ -228,6 +236,20 @@ type UpdateChannelRequest struct {
 	KeyMode      *string `json:"key_mode,omitempty"`
 }
 
+func (request UpdateChannelRequest) MarshalJSON() ([]byte, error) {
+	type updateChannelRequestAlias UpdateChannelRequest
+	raw, err := json.Marshal(updateChannelRequestAlias(request))
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	delete(payload, "status")
+	return json.Marshal(payload)
+}
+
 type FetchModelsRequest struct {
 	BaseURL string `json:"base_url"`
 	Type    int    `json:"type"`
@@ -255,10 +277,18 @@ type UserSubscription struct {
 }
 
 func NewClient(baseURL string, httpClient *http.Client) *Client {
+	return newClient(baseURL, httpClient, nil)
+}
+
+func NewClientWithURLPolicy(baseURL string, httpClient *http.Client, policy URLPolicy) *Client {
+	return newClient(baseURL, httpClient, policy)
+}
+
+func newClient(baseURL string, httpClient *http.Client, policy URLPolicy) *Client {
 	if httpClient == nil {
 		jar, _ := cookiejar.New(nil)
 		httpClient = &http.Client{Timeout: 15 * time.Second, Jar: jar}
-	} else if httpClient.Jar == nil || httpClient.Timeout == 0 {
+	} else {
 		copied := *httpClient
 		if copied.Jar == nil {
 			jar, _ := cookiejar.New(nil)
@@ -269,9 +299,27 @@ func NewClient(baseURL string, httpClient *http.Client) *Client {
 		}
 		httpClient = &copied
 	}
+	if policy != nil {
+		copied := *httpClient
+		previousCheckRedirect := copied.CheckRedirect
+		copied.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+			if err := policy(request.URL); err != nil {
+				return err
+			}
+			if previousCheckRedirect != nil {
+				return previousCheckRedirect(request, via)
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		}
+		httpClient = &copied
+	}
 	return &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		httpClient: httpClient,
+		urlPolicy:  policy,
 	}
 }
 
@@ -349,7 +397,7 @@ func (c *Client) isolatedSessionClient() *Client {
 	copied := *c.httpClient
 	jar, _ := cookiejar.New(nil)
 	copied.Jar = jar
-	return &Client{baseURL: c.baseURL, httpClient: &copied}
+	return &Client{baseURL: c.baseURL, httpClient: &copied, urlPolicy: c.urlPolicy}
 }
 
 func (c *Client) Complete2FALogin(ctx context.Context, flowToken string, code string) (Session, error) {
@@ -374,6 +422,21 @@ func (c *Client) Complete2FALogin(ctx context.Context, flowToken string, code st
 		Group:       resp.Data.group(),
 		AccessToken: resp.Data.AccessToken,
 	}, nil
+}
+
+func (c *Client) Logout(ctx context.Context, auth AdminAuth) error {
+	headers := adminHeaders(auth)
+	if parsed, err := url.Parse(c.baseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		headers["Origin"] = parsed.Scheme + "://" + parsed.Host
+	}
+	var resp apiResponse[any]
+	if err := c.do(ctx, http.MethodPost, "/api/user/auth/logout", headers, nil, &resp); err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("new-api logout failed: %s", resp.Message)
+	}
+	return nil
 }
 
 func (c *Client) GenerateAccessToken(ctx context.Context, userID int, bearerToken ...string) (string, error) {
@@ -503,42 +566,51 @@ func (c *Client) Enable2FA(ctx context.Context, userID int, accessToken string, 
 	return nil
 }
 
-func (c *Client) Verify2FA(ctx context.Context, auth AdminAuth, code string) error {
+func (c *Client) VerifyChannelKeyRead2FA(ctx context.Context, auth AdminAuth, code string) (string, error) {
 	if auth.UserID <= 0 {
-		return fmt.Errorf("new-api user id is required")
+		return "", fmt.Errorf("new-api user id is required")
 	}
 	if strings.TrimSpace(code) == "" {
-		return fmt.Errorf("new-api 2fa code is required")
+		return "", fmt.Errorf("new-api 2fa code is required")
 	}
-	var resp apiResponse[json.RawMessage]
-	if err := c.do(ctx, http.MethodPost, "/api/verify", adminHeaders(auth), VerifyRequest{Method: "2fa", Code: code}, &resp); err != nil {
-		return err
+	var resp apiResponse[securityProofData]
+	if err := c.do(ctx, http.MethodPost, "/api/verify", adminHeaders(auth), VerifyRequest{Method: "2fa", Code: code, Scope: "channel.key.read"}, &resp); err != nil {
+		return "", err
 	}
 	if !resp.Success {
-		return fmt.Errorf("new-api secure verification failed: %s", resp.Message)
+		return "", fmt.Errorf("new-api secure verification failed: %s", resp.Message)
 	}
-	return nil
+	if strings.TrimSpace(resp.Data.ProofToken) == "" {
+		return "", fmt.Errorf("new-api secure verification returned empty proof token")
+	}
+	return resp.Data.ProofToken, nil
 }
 
 func (c *Client) GetChannelKey(ctx context.Context, auth AdminAuth, channelID int, code string) (string, error) {
 	if channelID <= 0 {
 		return "", fmt.Errorf("new-api channel id is required")
 	}
-	if err := c.Verify2FA(ctx, auth, code); err != nil {
+	proofToken, err := c.VerifyChannelKeyRead2FA(ctx, auth, code)
+	if err != nil {
 		return "", err
 	}
-	return c.GetVerifiedChannelKey(ctx, auth, channelID)
+	return c.GetVerifiedChannelKey(ctx, auth, channelID, proofToken)
 }
 
-// GetVerifiedChannelKey reuses an already verified admin session. Callers that
-// export many channels should verify once and fetch every key through this API.
-func (c *Client) GetVerifiedChannelKey(ctx context.Context, auth AdminAuth, channelID int) (string, error) {
+// GetVerifiedChannelKey reuses a scoped security proof. Callers that export many
+// channels should verify once and fetch every key through this API.
+func (c *Client) GetVerifiedChannelKey(ctx context.Context, auth AdminAuth, channelID int, proofToken string) (string, error) {
 	if channelID <= 0 {
 		return "", fmt.Errorf("new-api channel id is required")
 	}
+	if strings.TrimSpace(proofToken) == "" {
+		return "", fmt.Errorf("new-api channel key security proof is required")
+	}
 	var resp apiResponse[tokenKeyData]
 	path := fmt.Sprintf("/api/channel/%d/key", channelID)
-	if err := c.do(ctx, http.MethodPost, path, adminHeaders(auth), nil, &resp); err != nil {
+	headers := adminHeaders(auth)
+	headers["X-Security-Proof"] = proofToken
+	if err := c.do(ctx, http.MethodPost, path, headers, nil, &resp); err != nil {
 		return "", err
 	}
 	if !resp.Success {
@@ -1135,6 +1207,11 @@ func (c *Client) do(ctx context.Context, method string, path string, headers map
 	if err != nil {
 		return err
 	}
+	if c.urlPolicy != nil {
+		if err := c.urlPolicy(req.URL); err != nil {
+			return err
+		}
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -1172,6 +1249,11 @@ func (c *Client) DoRaw(ctx context.Context, method string, path string, rawQuery
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
+	}
+	if c.urlPolicy != nil {
+		if err := c.urlPolicy(req.URL); err != nil {
+			return nil, nil, err
+		}
 	}
 	req.Header = headers.Clone()
 	req.ContentLength = int64(len(body))

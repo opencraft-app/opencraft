@@ -31,6 +31,9 @@ func applyInventoryDefaults(inv *Inventory) {
 	if inv.Network.VpcCIDR == "" {
 		inv.Network.VpcCIDR = "10.0.0.0/12"
 	}
+	if inv.Profile == "" {
+		inv.Profile = ProfileFull
+	}
 	if !inv.Stacks.TKE.ClusterInternet {
 		inv.Stacks.TKE.ClusterInternet = true
 	}

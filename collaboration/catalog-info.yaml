@@ -1,0 +1,18 @@
+{
+  "id": "collaboration",
+  "name": "LightVela Collaboration 控制面",
+  "kind": "service",
+  "path": "collaboration",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "experimental",
+  "domains": ["identity-access", "agent-gateway-runtime"],
+  "summary": "维护 Server、Member、Channel、腾讯云 IM 资源映射与 Agent Runtime 协作边界。",
+  "runtime": "Go HTTP API + Worker",
+  "interfaces": ["OpenAPI HTTP", "Tencent IM REST", "Runtime API"],
+  "dependencies": ["service-gateway", "user-auth", "ordinary-db", "Tencent Cloud IM"],
+  "source_docs": ["collaboration/README.md", "collaboration/AGENTS.md", "collaboration/platform/v1/README.md", "collaboration/k8s/README.md"],
+  "agent_entry": "collaboration/AGENTS.md",
+  "service_docs": "collaboration/docs/README.md",
+  "deploy": [".ci/collaboration.yml", "collaboration/k8s/base", "argocd/services/collaboration", "argocd/catalogs/candidates/beijing-sandbox/collaboration.yaml"],
+  "generated_paths": ["collaboration/internal/ent", "collaboration/internal/api/openapi"]
+}

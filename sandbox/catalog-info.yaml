@@ -1,0 +1,18 @@
+{
+  "id": "sandbox",
+  "name": "Sandbox 实例池",
+  "kind": "service",
+  "path": "sandbox",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "release-gitops"],
+  "summary": "管理 Agent 运行所需 CVM Sandbox 池、状态机、分配、回收和重置。",
+  "runtime": "Go API、worker 与云 Provider",
+  "interfaces": ["sandbox/openapi.yaml", "internal pool API", "worker state machine"],
+  "dependencies": ["ctl", "Tencent Cloud CVM", "MySQL", "Redis"],
+  "source_docs": ["sandbox/README.md", "sandbox/AGENTS.md", "sandbox/openapi.yaml"],
+  "agent_entry": "sandbox/AGENTS.md",
+  "service_docs": "sandbox/docs/README.md",
+  "deploy": ["sandbox/k8s", "argocd/services/sandbox"],
+  "generated_paths": ["sandbox/k8s/overlays/*/generated"]
+}

@@ -93,6 +93,15 @@ func (s *stubTradeAdapter) PlaceRenewOrder(context.Context, *tradeadapter.PlaceR
 func (s *stubTradeAdapter) PlaceRenewOrderAndPay(context.Context, *tradeadapter.PlaceRenewOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
 	panic("stubTradeAdapter.PlaceRenewOrderAndPay: not implemented")
 }
+func (s *stubTradeAdapter) InquiryModify(context.Context, *tradeadapter.ModifyOrderRequest) (*tradeadapter.InquiryModifyResult, error) {
+	panic("stubTradeAdapter.InquiryModify: not implemented")
+}
+func (s *stubTradeAdapter) PlaceModifyOrder(context.Context, *tradeadapter.ModifyOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
+	panic("stubTradeAdapter.PlaceModifyOrder: not implemented")
+}
+func (s *stubTradeAdapter) PlaceModifyOrderAndPay(context.Context, *tradeadapter.ModifyOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
+	panic("stubTradeAdapter.PlaceModifyOrderAndPay: not implemented")
+}
 func (s *stubTradeAdapter) GeneratePayURL(context.Context, string, *tradeadapter.GeneratePayURLOptions) (*tradeadapter.PayURLResult, error) {
 	panic("stubTradeAdapter.GeneratePayURL: not implemented")
 }

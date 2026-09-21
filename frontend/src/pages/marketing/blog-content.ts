@@ -1,3 +1,9 @@
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+
+import BLOG_TEXT_TRANSLATIONS from "./blog-content-translations.json";
+
+export type BlogLocale = PublicSiteLocale;
+
 export type BlogInline =
   | string
   | {
@@ -50,9 +56,847 @@ export type BlogPost = {
   content: readonly BlogBlock[];
 };
 
+type BlogTranslationTable = Readonly<Record<string, string>>;
+
+function translationTable(locale: BlogLocale): BlogTranslationTable {
+  const sourceLocale = locale === "zh-SG" ? "zh-CN" : locale;
+  if (sourceLocale === "en-US") return {};
+  return BLOG_TEXT_TRANSLATIONS[sourceLocale as keyof typeof BLOG_TEXT_TRANSLATIONS] ?? {};
+}
+
+function translateInline(inline: BlogInline, table: BlogTranslationTable): BlogInline {
+  if (typeof inline === "string") return table[inline] ?? inline;
+  return { ...inline, label: table[inline.label] ?? inline.label };
+}
+
+function localizeBlock(block: BlogBlock, table: BlogTranslationTable): BlogBlock {
+  switch (block.type) {
+    case "paragraph":
+      return { ...block, content: block.content.map((inline) => translateInline(inline, table)) };
+    case "heading":
+      return { ...block, text: table[block.text] ?? block.text };
+    case "image":
+      return { ...block, alt: table[block.alt] ?? block.alt };
+    case "ordered-list":
+      return {
+        ...block,
+        ariaLabel: table[block.ariaLabel] ?? block.ariaLabel,
+        items: block.items.map((item) => item.map((inline) => translateInline(inline, table))),
+      };
+    case "unordered-list":
+      return {
+        ...block,
+        items: block.items.map((item) => item.map((inline) => translateInline(inline, table))),
+      };
+    case "code":
+      return block;
+  }
+}
+
+export function localizeBlogPost(post: BlogPost, locale: BlogLocale = "en-US"): BlogPost {
+  if (locale === "en-US") return post;
+  const table = translationTable(locale);
+  return {
+    ...post,
+    title: table[post.title] ?? post.title,
+    excerpt: table[post.excerpt] ?? post.excerpt,
+    content: post.content.map((block) => localizeBlock(block, table)),
+  };
+}
+
 const link = (label: string, href: string): BlogInline => ({ type: "link", label, href });
 
 export const BLOG_POSTS: readonly BlogPost[] = [
+  {
+    slug: "dsh-revived-broken-hermes-agent",
+    category: "use-case",
+    author: "Cassidy Shi",
+    title: "For Just $0.03, DSH Brought a Broken Hermes Agent Back to Life",
+    excerpt:
+      "When a broken state database left Hermes Agent unable to reply, DeepSeek Harness repaired it from inside the same LightVela environment.",
+    publishedAt: "2026-09-15T16:34:36+08:00",
+    coverImage: "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+    content: [
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/cover.png",
+        alt: "Hermes Agent and DeepSeek Harness repairing a broken agent",
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: [
+          "In the previous post, we tried getting two agents to work together inside the same cloud environment: Hermes Agent as the navigator - understanding requirements, designing the plan, and reviewing results - and DeepSeek Harness (DSH) as the driver - entering the actual workspace to write and verify code.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["A new problem gave this combo a new purpose."],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Recently, several members of our community ran into errors like these from their Hermes Agent:",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Type one: No reply: the turn was stopped because session storage could not be written (the transcript would have been lost on restart). Check the state database health (hermes doctor), then send your message again.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Type two: Session storage was temporarily unavailable, so this turn was stopped to protect your conversation history. Your message should already be saved. Please send it again in a moment.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/01-hermes-repair-hero.png",
+        alt: "Illustration of an agent repairing a Hermes Agent in a hospital-like monitoring environment",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Both trace back to the same root cause: a Hermes Agent file, state.db, becoming unwritable or unreadable for various reasons. To protect existing data, the agent then refuses further conversations. The really painful part: rebuilding the agent from LightVela's Diagnostic Center didn't fix it either.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/02-community-error.png",
+        alt: "LightVela community messages showing repeated Hermes Agent session storage errors",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "This used to be a genuinely tricky situation, until there was a DeepSeek Harness running in the same environment.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Why Can DSH Fix It?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The repair itself uses Hermes Agent's native recovery mechanism. The tricky part is that this repair has to be initiated from inside the Hermes Agent's runtime environment.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "DSH runs in that same environment. It can reach Hermes' processes, logs, configuration, and files, and it can execute commands. So we can simply hand the repair job to it.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "How, Exactly?",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "First, install and configure DSH in LightVela. See the ",
+          link("DeepSeek Harness documentation", "https://lightvela.ai/docs/configuration/deepseek-harness/"),
+          ".",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/03-dsh-running-config.png",
+        alt: "LightVela DeepSeek Harness page showing the running service and configured model",
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: [
+          "Important: when DSH works on this problem, make sure it's operating in the /home/agentuser/ directory.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/04-workspace-directory.png",
+        alt: "DeepSeek Harness workspace directory selector showing /home/agentuser/",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "There's also an optional but recommended enhancement: give DSH a Hermes Agent operations manual first, so it doesn't have to spend time discovering how Hermes is configured on its own. To install it, send this in DSH's chat box:",
+        ],
+      },
+      {
+        type: "code",
+        content: "given https://skillhub.cn/install/skillhub.md, install @user_70854421/hermes-agent-skill-for-dsh.",
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/05-skill-install-complete.png",
+        alt: "DeepSeek Harness confirming that the Hermes Agent DSH Skill was installed",
+      },
+      {
+        type: "paragraph",
+        content: ["Once installed, give it the first instruction:"],
+      },
+      {
+        type: "code",
+        content:
+          "There is a Hermes Agent running in your current environment; please locate its installation directory. I need your help troubleshooting and resolving an issue by referencing the skill that was just installed.",
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/06-hermes-location.png",
+        alt: "DeepSeek Harness locating the Hermes Agent installation and loading the installed skill",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "If you'd rather play it safe, phrase it this way:",
+        ],
+      },
+      {
+        type: "code",
+        content: [
+          "There is a Hermes Agent running in your current environment. Please locate its installation directory. I need you to help me troubleshoot and resolve my issue, referencing the skill that was just installed, regarding:",
+          "{Describe your issue here}.",
+          "",
+          "Please first identify the cause of the problem and design a fix, but do not execute it yet.",
+        ].join("\n"),
+      },
+      {
+        type: "paragraph",
+        content: [
+          "When it comes back with a repair plan and you're not sure about it, ask in the community group first. The QR code is at the end.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "In our case it went smoothly: right after locating the Hermes Agent, our DSH had already identified the state.db corruption, planned out the repair steps, and got to work:",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/07-repair-plan.png",
+        alt: "DeepSeek Harness showing a repair plan for Hermes Agent state database corruption",
+      },
+      {
+        type: "paragraph",
+        content: ["Within a few minutes, the repair was complete:"],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/08-repair-verification.png",
+        alt: "DeepSeek Harness verification results showing Hermes Agent state database repair passed",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Token consumption for the whole run: about 2.6M input tokens and 31.3K output tokens, with a 97% cache hit rate, a very high level. We were running DeepSeek-V4 Flash, so the total cost came to roughly ¥0.25, about four US cents. Compared to hiring an expert or grinding through it yourself, that's about as cheap as fixing things gets.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "One last step, of course: go back to the Hermes Agent chat window and confirm it's actually alive again:",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/09-hermes-restored.png",
+        alt: "Hermes Agent responding normally after its state database was repaired",
+      },
+      {
+        type: "heading",
+        text: "Final Words",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Adventurers welcome: join the LightVela community group and let's explore what cloud agents can do together.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/dsh-revived-broken-hermes-agent/10-community-qr.png",
+        alt: "QR code for the LightVela community group",
+      },
+    ],
+  },
+  {
+    slug: "hermes-deepseek-harness-10x-efficiency",
+    category: "use-case",
+    author: "Cassidy Shi",
+    title: "Stop Letting Your Agent Work Alone: After Teaming Up Hermes and DSH, My Efficiency Went Up 10x",
+    excerpt:
+      "A hands-on guide to pairing Hermes Agent with DeepSeek Harness in LightVela, giving one agent the navigator role and the other the driver role.",
+    publishedAt: "2026-09-15T16:22:02+08:00",
+    coverImage: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.png",
+    content: [
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/cover.png",
+        alt: "DeepSeek Harness whale logo representing a driver agent",
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: [
+          "Early software engineering textbooks teach us that pair programming tends to produce better designs and better code than a programmer working alone. In pair programming, the person typing is the driver; the one reviewing is the navigator.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/01-pair-programming.png",
+        alt: "Two people pair programming in front of a code editor",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The same pattern shows up in rally racing: every car carries a driver and a co-driver, working together off the pace notes to navigate complex stages.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/02-rally-co-driver.png",
+        alt: "A rally driver and co-driver reviewing notes inside a race car",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Pair programming and rally racing share one idea: one role focuses on immediate execution while the other keeps watching the bigger picture, anticipating what's next and correcting course early. Both share the same situation and stay in constant sync, which lowers cognitive load and the cost of mistakes on complex tasks.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Following that logic: when a Hermes Agent and DeepSeek Harness share context inside the same LightVela task environment, dividing the work and handing off control, two agents can form exactly this kind of duo.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "LightVela now supports running Hermes Agent and DeepSeek Harness (DSH for short) side by side in the same cloud environment, and we've been exploring this collaboration pattern ourselves:",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Hermes Agent's clear strength is continuously understanding a person and a project. It retains your preferences and project knowledge, distills working methods into Skills, and keeps receiving tasks from your chat channels. That makes it the natural navigator.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "DSH's clear strength is owning a concrete workspace, reading and modifying files, running tests, and handling errors. That makes it the natural driver.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "How to Set It Up: Preparation",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Full disclosure first: making this collaboration work requires installing a Skill and a tool. It's an exploratory setup for AI-era adventurers who enjoy tinkering. A polished, productized version is still being designed.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "If you're still reading, you probably want to try it. One honest warning: AI is probabilistic, so even if you follow every step, there's a chance it won't work on the first try. When that happens, get good at letting your AI help you fix it. You're part of the collaboration too.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "First, create your own agent in LightVela. The barrier is low: the China site supports WeChat, QQ, and phone login, the international site supports Google and GitHub, and there's a free trial so you can start painlessly.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["Our personal recommendation: go straight for the 4,500-credit plan. It's been tested and it lasts."],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/03-subscription-plan.png",
+        alt: "LightVela pricing page showing Launch AI and Cruise AI plans",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "After subscribing, head to the Explore page, where you'll find the DeepSeek Harness entry. Open it and install.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/04-dsh-install.png",
+        alt: "LightVela DeepSeek Harness installation page with the Install now action highlighted",
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-install-progress.png",
+        alt: "LightVela DeepSeek Harness installation progress at 49 percent",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Installation takes about 1-3 minutes. In our testing it was closer to one. Once installed, you can configure DSH's model and access its WebUI from the same page.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Editor's note: this part of the experience isn't good enough yet. DSH needs its own model configuration, and we haven't found an elegant way to sync model settings between the two agents. It's on the fix list.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/05-dsh-running-config.png",
+        alt: "LightVela DeepSeek Harness page showing the running service and model configuration",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "We went with DeepSeek's official model, the new DeepSeek V4.1 Flash, natively multimodal and reasonably priced. Steps are straightforward, so we'll just leave the link: ",
+          link("DeepSeek API Platform", "https://platform.deepseek.com/api_keys"),
+          ".",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "If you want more models, you can also configure them in the WebUI, equally simply.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "On WebUI access: no need to worry about someone else getting your URL. Every user gets a dedicated domain with an authentication layer on top, so only you can use yours.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/06-personal-site-confirmation.png",
+        alt: "LightVela personal site confirmation dialog showing a dedicated lightvela.site URL",
+      },
+      {
+        type: "heading",
+        text: "How to Set It Up: The Key Step",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "In short, this step installs a Skill. The installation does two things: registers DSH as a tool of your Hermes Agent, and teaches the Hermes Agent how to call it.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "This approach is just one of several designs we're exploring on top of Hermes Agent's existing mechanisms. The Skill and tool were vibe-coded on our side. If you hit usability issues or have better ideas, join the LightVela community group and let's discuss.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["Copy the following line and send it to your Hermes Agent in LightVela to initialize everything:"],
+      },
+      {
+        type: "code",
+        content: "given https://skillhub.cn/install/skillhub.md, install @user_70854421/dsh-pilot",
+      },
+      {
+        type: "paragraph",
+        content: ["If you haven't set up a chat channel yet, you can send it directly on the Chat page:"],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/07-dsh-pilot-install-request.png",
+        alt: "Hermes Agent asking to install the DSH pilot Skill from SkillHub",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Once installed, it looks roughly like this. The agent will usually check DSH's status; just confirm when it asks:",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/08-dsh-pilot-install-complete.png",
+        alt: "Hermes Agent confirming installation of the DSH pilot Skill",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "After registration, one more step: have the Hermes Agent enable the newly registered tool.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/09-dsh-enable-tool.png",
+        alt: "Hermes Agent asking for confirmation before enabling DeepSeek Harness",
+      },
+      {
+        type: "paragraph",
+        content: ["The agent will confirm when it's on:"],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/10-dsh-tool-enabled.png",
+        alt: "Hermes Agent confirming that the DeepSeek Harness tool is enabled",
+      },
+      {
+        type: "heading",
+        text: "How to Use It: Each Playing to Its Strengths",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Our suggestion: pair this with the Workbench in LightVela. Workbench provides static site hosting, so agent-generated projects can be deployed straight to the cloud. Backend service deployment is on the way.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["Here's a minimal demo. Copy and send this to your Hermes Agent:"],
+      },
+      {
+        type: "code",
+        content: [
+          "Using the newly installed skill, help me create a simple static blog page. You will design the plan, DeepSeek Harness will write the code, and then you will review it.",
+          "",
+          "Once implementation is complete, use the `website-builder` skill to deploy it.",
+        ].join("\n"),
+      },
+      {
+        type: "paragraph",
+        content: ["When things go normally, the two of them collaborating looks like this:"],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/11-dsh-collaboration.png",
+        alt: "Hermes Agent delegating a static blog page task to DeepSeek Harness",
+      },
+      {
+        type: "paragraph",
+        content: ["A successfully completed task looks like this:"],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/12-dsh-task-complete.png",
+        alt: "Hermes Agent showing the completed task and saved DeepSeek Harness output files",
+      },
+      {
+        type: "paragraph",
+        content: ["And yes, the site is live, a bit plain, but live:"],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/13-dsh-live-site.png",
+        alt: "A live static blog page created and deployed through the DeepSeek Harness workflow",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "We'll leave the rest of the scenarios for you to explore. This post is just a starting brick thrown out to attract jade.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Final Words",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Adventurers welcome: join the LightVela community group and let's explore what cloud agents can do together.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/hermes-deepseek-harness-10x-efficiency/14-community-qr.png",
+        alt: "QR code for the LightVela community group",
+      },
+    ],
+  },
+  {
+    slug: "tencent-cloud-agent-early-taste-of-meta-muse",
+    category: "use-case",
+    author: "Cassidy Shi",
+    title: "Tencent's Cloud Agent Gave an Early Taste of Meta's Muse",
+    excerpt:
+      "A hands-on look at LightVela, Tencent's cloud-hosted Hermes Agent, after Meta Muse put always-on personal agents back in the spotlight.",
+    publishedAt: "2026-09-15T16:06:45+08:00",
+    coverImage: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.png",
+    content: [
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/cover.png",
+        alt: "Meta Muse logo on a glowing pastel cover",
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: [
+          "On September 8 (local time), Mark Zuckerberg announced Meta Muse on X, a personal agent that can complete tasks for you 24/7. It was a notable pivot: with Meta still chasing a top position in foundation models, Muse is its flanking move into the agent market.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/01-mark-zuckerberg-muse.png",
+        alt: "Mark Zuckerberg's X post introducing Meta Muse as a personal agent that works 24/7",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Meta's stock got a nice bump over the following two days, with analysts framing Muse as the start of a new product cycle and a key step toward returns on Meta's AI spending.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/02-meta-stock.png",
+        alt: "Meta stock chart showing a 6.55 percent rise to 653.69 dollars",
+      },
+      {
+        type: "paragraph",
+        content: ["But as of this writing, Muse is still behind a waitlist."],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/03-muse-waitlist.png",
+        alt: "Meta Muse signup screen showing that the user is on the waitlist",
+        size: "narrow",
+      },
+      {
+        type: "heading",
+        text: "A Discovery: Tencent LightVela",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Judging from what's public, Muse works by spinning up an agent in the cloud for each user to get that 24/7 execution. One curious user, let's call him our kind of person, took that exact keyword, \"cloud agent,\" and asked his AI about it. Among the results, the one that caught his eye was Tencent's LightVela, which runs a Hermes Agent in the cloud.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/04-lightvela-home.png",
+        alt: "LightVela home page describing an always-on AI companion in the cloud",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Hermes is an old acquaintance at this point, known for agent self-learning, self-evolution, and memory augmentation, with a community profile that has overtaken OpenClaw. Compared to OpenClaw, Hermes emphasizes autonomous learning and complex task execution: it distills task experience into continuously improving Skills, parallelizes work through sub-agents, and is optimized for always-on cloud operation and token efficiency.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["(His words - well, his AI's words.)"],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Either way, a Hermes Agent under the hood means the fundamentals of the agent experience are in good hands.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "How did he know it was Tencent? The \"About Us\" page. We're the same team that ran the free OpenClaw installation campaign back in March.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/05-about-lightvela.png",
+        alt: "LightVela About page describing the Tencent Lighthouse team and OpenClaw installation campaign",
+      },
+      {
+        type: "heading",
+        text: "First Hands-On with LightVela",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "With a free trial on offer, he signed up - why not. Registration is simple (WeChat, QQ, or phone number on the China site), and when he spotted the international site at a different domain - lightvela.ai - he went straight there. If you know, you know.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "First contact",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Cloud agents usually make you configure models, channels, and Skills yourself, which is a bit of a chore. LightVela turned out to be lighter on setup than expected.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "His trial plan came with 4,500 AI credits, so he didn't need to configure a model at all to start.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/06-subscription-credits.png",
+        alt: "LightVela subscription panel showing 4,500 trial credits and current usage",
+      },
+      {
+        type: "paragraph",
+        content: ["The built-in Chat page handled simple Q&A just fine."],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/07-chat-empty.png",
+        alt: "LightVela Chat page greeting the user with Hermes Agent",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "On a whim, he asked the agent to analyze why Meta's stock had been climbing those two days, a simple task. The reply started streaming in under two seconds, and the analysis itself held up.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/08-meta-stock-analysis.png",
+        alt: "LightVela Hermes Agent researching and analyzing Meta's stock performance",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "What caught his attention was the token counter at the bottom: this round consumed 31,615 input tokens and 743 output tokens, yet only 1 credit.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/09-chat-token-counter.png",
+        alt: "LightVela chat showing a token count of 31,615 input and 743 output tokens",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Doing the math on simple Q&A alone, his trial credits worked out to roughly 140 million input tokens and 3.3 million output tokens, all usable within the trial period.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "His one complaint: the chat page has to reconnect every time you refresh it. Noted, that's on our list.",
+        ],
+      },
+      {
+        type: "heading",
+        text: "Scheduled tasks",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "He'd run plenty of automations locally on Codex before, but they die the moment the laptop closes or the network changes, which is painful for someone who doesn't want to open a computer on weekends. A cloud agent should solve exactly this; we suspect that's the same reasoning behind Meta's pitch.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The LightVela dashboard does have a Scheduled Tasks page with templates, fairly basic ones, admittedly.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/10-scheduled-tasks-dashboard.png",
+        alt: "LightVela Scheduled Tasks dashboard with templates and current tasks",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "So he set up a monitor for Meta's stock price, partly to see whether Muse really would usher in another glorious run.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/11-scheduled-task-monitor.png",
+        alt: "LightVela Scheduled Tasks interface showing a stock monitoring task",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "Creating that task cost over 40,000 tokens, but only 2 credits. From a free-trial standpoint, that's remarkably durable.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/12-scheduled-task-setup.png",
+        alt: "LightVela chat showing the setup of Meta pre-market and intraday scheduled tasks",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "It was around 8:30 PM and he didn't want to wait for the 10:30 PM schedule, so he triggered a manual run to see the output:",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/13-scheduled-task-results-overview.png",
+        alt: "LightVela scheduled task definitions for Meta pre-market and intraday updates",
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/14-scheduled-task-results-details.png",
+        alt: "LightVela scheduled task result with positive and negative Meta market factors",
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/15-scheduled-task-results-more.png",
+        alt: "LightVela scheduled task result with technical indicators and intraday market updates",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The results met expectations, though he had one gripe: reading them on the web page was a bit of a chore. Better to connect the agent to his WeChat and have results pushed there, with no daily website visits needed.",
+        ],
+      },
+      {
+        type: "paragraph",
+        content: ["He'd worried the international site might not support WeChat integration. It does."],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/16-channels-wechat.png",
+        alt: "LightVela Channels page showing WeChat and Telegram connected",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "As for how to get task results pushed to WeChat, he just told the agent in WeChat. His first attempt was a 7-second voice message that took nearly a minute to send, and the speech recognition heard \"WeChat\" (微信) as \"satellite\" (卫星). We'll take the note on that one too.",
+        ],
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/17-wechat-voice-clarification.png",
+        alt: "WeixinClawBot asking the user to clarify what satellite means",
+        size: "narrow",
+      },
+      {
+        type: "image",
+        src: "/assets/blog/tencent-cloud-agent-early-taste-of-meta-muse/18-wechat-delivery.png",
+        alt: "WeixinClawBot confirming that Meta scheduled task results are pushed to the WeChat chat",
+        size: "narrow",
+      },
+      {
+        type: "paragraph",
+        content: [
+          "The final setup worked well, and the whole exercise cost him under 10 credits, enough runway to push it hard for days. He also spotted the Workbench and DeepSeek Harness in the dashboard and plans to play with those next.",
+        ],
+      },
+      {
+        type: "paragraph",
+        emphasis: true,
+        content: ["His closing recommendation after the full run-through: worth a try."],
+      },
+      {
+        type: "paragraph",
+        content: ["China site: ", link("https://lightvela.com", "https://lightvela.com")],
+      },
+      {
+        type: "paragraph",
+        content: ["International site: ", link("https://lightvela.ai", "https://lightvela.ai")],
+      },
+    ],
+  },
   {
     slug: "lightvela-workbench-ai-vibe-your-own-website",
     category: "product",
@@ -61,7 +905,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "My Workbench lets you use an AI Agent to build, deploy, and manage static websites in LightVela, from a starter template or a blank workbench to a published site.",
     publishedAt: "2026-09-03T12:11:11+08:00",
-    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover.png",
+    coverImage: "/assets/blog/lightvela-workbench-ai-vibe-your-own-website/cover-light.png",
     content: [
       {
         type: "image",
@@ -385,7 +1229,7 @@ export const BLOG_POSTS: readonly BlogPost[] = [
     excerpt:
       "I used LightVela Workbench’s Campaign Hub template to turn a basketball shoe launch idea into a premium storefront with a clear product story, guided comparisons, and a focused path to purchase.",
     publishedAt: "2026-09-03T11:31:46+08:00",
-    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover.png",
+    coverImage: "/assets/blog/basketball-shoe-storefront-with-lightvela-workbench/cover-light.png",
     content: [
       {
         type: "image",
@@ -648,7 +1492,7 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "Anthropic’s Claude Tag points to a new way of working in Slack, so I recreated the idea with LightVela and built a digital employee for my team...",
     publishedAt: "2026-09-01T20:35:43+08:00",
-    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover.png",
+    coverImage: "/assets/blog/lightvela-slack-digital-employee/cover-light.png",
     content: [
       {
         type: "image",
@@ -806,7 +1650,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "paragraph",
         content: [
-          "Once the one-off report works, turn it into a scheduled task. You can configure it from LightVela’s Automations page, or tell the Agent the execution time, data range, destination channel, and failure behavior directly in chat. After that, return to Automations to review each execution record.",
+          "Once the one-off report works, turn it into a scheduled task. You can configure it from LightVela’s Scheduled Tasks page, or tell the Agent the execution time, data range, destination channel, and failure behavior directly in chat. After that, return to Scheduled Tasks to review each execution record.",
         ],
       },
       {
@@ -826,7 +1670,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "image",
         src: "/assets/blog/lightvela-slack-digital-employee/automations-english.png",
-        alt: "LightVela Automations page showing recent daily report runs",
+        alt: "LightVela Scheduled Tasks page showing recent daily report runs",
       },
       {
         type: "heading",
@@ -879,7 +1723,7 @@ Keep all product content editable and do not use fake business data.`,
     excerpt:
       "I host my mega Discord server with over 600 users, revolving around DWS, Minecraft, and Palworld...",
     publishedAt: "2026-09-01T18:28:41+08:00",
-    coverImage: "/assets/blog/discord-hermes/cover.png",
+    coverImage: "/assets/blog/discord-hermes/cover-light.png",
     content: [
       {
         type: "image",
@@ -943,7 +1787,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "paragraph",
         content: [
-          "Although OpenClaw is well known for its mature ecosystem and high customization, I ultimately chose Hermes Agent because I was drawn to its persistent and evolving memory feature, scheduled automations, and Bot Mode designed around agents operating inside group chats. From my point of view, I wanted to create a bot that could emulate a real human, and I was comfortable with it growing and evolving over time.",
+          "Although OpenClaw is well known for its mature ecosystem and high customization, I ultimately chose Hermes Agent because I was drawn to its persistent and evolving memory feature, Scheduled Tasks, and Bot Mode designed around agents operating inside group chats. From my point of view, I wanted to create a bot that could emulate a real human, and I was comfortable with it growing and evolving over time.",
         ],
       },
       {
@@ -966,7 +1810,7 @@ Keep all product content editable and do not use fake business data.`,
         content: [
           "I then checked out a product everyone was talking about recently in the Discord community: ",
           link("LightVela", "/"),
-          ". Having delved into its product documents, I found it was essentially a Hermes VPS that bypassed the complicated cloud-tooling and terminal-chatting steps. The site has a workspace where I can connect the bot to Discord, connect it with an LLM, and set automation rules.",
+          ". Having delved into its product documents, I found it was essentially a Hermes VPS that bypassed the complicated cloud-tooling and terminal-chatting steps. The site has a workspace where I can connect the bot to Discord, connect it with an LLM, and set up Scheduled Tasks.",
         ],
       },
       {
@@ -1026,7 +1870,7 @@ Keep all product content editable and do not use fake business data.`,
       {
         type: "paragraph",
         content: [
-          "A feature I found useful was the ability to set automation tasks for my agent without delving into code. Since my server revolves around Palworld and we host a server-side tournament every Friday for all users, I used the automation feature to quickly enter the prompt and the time of operation.",
+          "A feature I found useful was the ability to set Scheduled Tasks for my agent without delving into code. Since my server revolves around Palworld and we host a server-side tournament every Friday for all users, I used Scheduled Tasks to quickly enter the prompt and the time of operation.",
         ],
       },
       {
@@ -1051,12 +1895,12 @@ Keep the message short and energetic. Use only the information above. If any eve
       {
         type: "image",
         src: "/assets/blog/discord-hermes/automation-settings.png",
-        alt: "LightVela automations screen showing a weekly Palworld event reminder",
+        alt: "LightVela Scheduled Tasks screen showing a weekly Palworld event reminder",
       },
       {
         type: "paragraph",
         content: [
-          "The automation then appears in my chat without consulting the bot to do so. Apart from that, I can @ the bot to engage with it directly. To manage token usage, I can limit the agent to specific chats. The bot is like an LLM that does the homework I set and lives in my chat as a personal assistant that can talk with me.",
+          "The scheduled task then appears in my chat without consulting the bot to do so. Apart from that, I can @ the bot to engage with it directly. To manage token usage, I can limit the agent to specific chats. The bot is like an LLM that does the homework I set and lives in my chat as a personal assistant that can talk with me.",
         ],
       },
       {
@@ -1120,8 +1964,13 @@ Keep the message short and energetic. Use only the information above. If any eve
   },
 ] as const;
 
-export function getBlogPost(slug: string): BlogPost | undefined {
-  return BLOG_POSTS.find((post) => post.slug === slug);
+export function getBlogPosts(locale: BlogLocale = "en-US"): readonly BlogPost[] {
+  return BLOG_POSTS.map((post) => localizeBlogPost(post, locale));
+}
+
+export function getBlogPost(slug: string, locale: BlogLocale = "en-US"): BlogPost | undefined {
+  const post = BLOG_POSTS.find((candidate) => candidate.slug === slug);
+  return post ? localizeBlogPost(post, locale) : undefined;
 }
 
 export function formatBlogPublishedAt(publishedAt: string, locale = "en-US"): string {

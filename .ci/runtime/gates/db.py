@@ -167,26 +167,25 @@ def run_db_readiness_flow(
         print(f"GitOps 待同步门禁：执行 {env} 生产 DB readiness 只读校验", file=sys.stderr)
     else:
         print(f"环境 {env} 执行 DB readiness：服务 {plan.service}", file=sys.stderr)
-    run_with_db_tools(
-        runtime_repo_root,
-        [
-            "python3",
-            str(runtime_command_dir / "verify_db_contract.py"),
-            "--repo-root",
-            str(repo_root),
-            "--deploy-root",
-            str(gitops_worktree),
-            "--service",
-            plan.service,
-            "--env",
-            env,
-            "--bundle-manifest",
-            str(bundle_manifest),
-            "--apply",
-            "--wait",
-        ],
-        cwd=gitops_worktree,
-    )
+    readiness_args = [
+        "python3",
+        str(runtime_command_dir / "verify_db_contract.py"),
+        "--repo-root",
+        str(repo_root),
+        "--deploy-root",
+        str(gitops_worktree),
+        "--service",
+        plan.service,
+        "--env",
+        env,
+        "--bundle-manifest",
+        str(bundle_manifest),
+        "--apply",
+        "--wait",
+    ]
+    if plan.readiness_image_override:
+        readiness_args.extend(["--image-override", plan.readiness_image_override])
+    run_with_db_tools(runtime_repo_root, readiness_args, cwd=gitops_worktree)
 
 
 def run_with_db_tools(runtime_repo_root: Path, command: list[str], *, cwd: Path) -> None:
@@ -253,11 +252,12 @@ def emit_preprod_db_gate_view(plan: GatePlan) -> None:
         print(f"受控 DB job 命令：{command}", file=sys.stderr)
     print(f"DB readiness：will_run={str(plan.requires_db_readiness).lower()}", file=sys.stderr)
     if plan.requires_db_readiness:
-        print(
-            "DB readiness 命令："
+        command = (
             f"python3 .ci/runtime/commands/verify_db_contract.py --service {plan.service} "
-            f"--env {plan.env} --apply --wait",
-            file=sys.stderr,
+            f"--env {plan.env} --apply --wait"
         )
+        if plan.readiness_image_override:
+            command += f" --image-override {plan.readiness_image_override}"
+        print(f"DB readiness 命令：{command}", file=sys.stderr)
     print("执行顺序：image gate -> config projection -> DB job/migration -> DB readiness -> GitOps MR auto-merge/sync", file=sys.stderr)
     print("============================================================", file=sys.stderr)

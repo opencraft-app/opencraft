@@ -1,0 +1,6 @@
+apiVersion: viaduct.ai/v1
+kind: ksops
+metadata:
+  name: collaboration-gateway-token
+files:
+  - ../../../secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml

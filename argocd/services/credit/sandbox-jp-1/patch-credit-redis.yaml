@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit
+  namespace: credit
+spec:
+  template:
+    spec:
+      containers:
+        - name: credit
+          env:
+            - name: CREDIT_REDIS_ADDR
+              value: 10.79.192.2:6379
+            - name: CREDIT_REDIS_DB
+              value: "0"
+            - name: CREDIT_AUTH_CODE_TTL
+              value: 10m

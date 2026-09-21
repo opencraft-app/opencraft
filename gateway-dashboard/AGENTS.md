@@ -22,5 +22,5 @@
 - 历史 direct-access 直连清单已删除，不再属于正式主线
 - `generated/` 一律不提交 Git
 
-<!-- retrigger 2026-07-08: shprod gateway-dashboard release after billing dependency rollout. -->
-<!-- retrigger 2026-07-21: shprod gateway-dashboard CI after auth billing migration MR. -->
+<!-- 2026-07-08 重新触发：billing 依赖 rollout 后发布 shprod gateway-dashboard。 -->
+<!-- 2026-07-21 重新触发：auth billing migration MR 后运行 shprod gateway-dashboard CI。 -->

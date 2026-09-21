@@ -416,6 +416,11 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 	}
 	if created {
 		user.InviteRequired = false
+		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "sms", now); err != nil {
+			return nil, err
+		}
+	} else if err := insertReferralClaimOutboxTx(ctx, tx, user.ID, input.ReferralCode, "sms", now); err != nil {
+		return nil, err
 	}
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodSMS)
 	if err != nil {
@@ -428,15 +433,22 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 	return session, nil
 }
 
-func (s *MySQLStore) FindOrCreatePhoneAuthUser(ctx context.Context, phone string, name string, now time.Time) (User, error) {
+func (s *MySQLStore) FindOrCreatePhoneAuthUser(ctx context.Context, phone string, name string, referralCode string, now time.Time) (User, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return User{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer rollback(tx)
 
-	user, _, err := s.findOrCreatePhoneUserTx(ctx, tx, phone, strings.TrimSpace(name), now, false)
+	user, created, err := s.findOrCreatePhoneUserTx(ctx, tx, phone, strings.TrimSpace(name), now, false)
 	if err != nil {
+		return User{}, err
+	}
+	if created {
+		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, referralCode, "phone_shadow", now); err != nil {
+			return User{}, err
+		}
+	} else if err := insertReferralClaimOutboxTx(ctx, tx, user.ID, referralCode, "phone_shadow", now); err != nil {
 		return User{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -873,6 +885,9 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 	`, user.ID, passwordHash, now, now); err != nil {
 		return nil, fmt.Errorf("insert password credential: %w", err)
 	}
+	if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "password", now); err != nil {
+		return nil, err
+	}
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodPassword)
 	if err != nil {
 		return nil, err
@@ -936,6 +951,11 @@ func (s *MySQLStore) CreateOAuthSession(ctx context.Context, input OAuthSignInIn
 	}
 	if created {
 		user.InviteRequired = false
+		if err := insertReferralRegistrationOutboxTx(ctx, tx, user.ID, input.ReferralCode, "oauth:"+input.Provider, now); err != nil {
+			return nil, err
+		}
+	} else if err := insertReferralClaimOutboxTx(ctx, tx, user.ID, input.ReferralCode, "oauth:"+input.Provider, now); err != nil {
+		return nil, err
 	}
 
 	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodOAuth)
@@ -946,6 +966,21 @@ func (s *MySQLStore) CreateOAuthSession(ctx context.Context, input OAuthSignInIn
 		return nil, fmt.Errorf("commit oauth session: %w", err)
 	}
 	return session, nil
+}
+
+func (s *MySQLStore) CreateReferralClaim(ctx context.Context, userID string, referralCode string, channel string, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin referral claim tx: %w", err)
+	}
+	defer rollback(tx)
+	if err := insertReferralClaimOutboxTx(ctx, tx, userID, referralCode, channel, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit referral claim: %w", err)
+	}
+	return nil
 }
 
 func (s *MySQLStore) ActivateInviteForCurrentUser(ctx context.Context, token string, code string, now time.Time) (User, error) {
@@ -1803,9 +1838,26 @@ func revokeActiveRealnameFaceIDAttemptsTx(ctx context.Context, tx *sql.Tx, userI
 }
 
 func (s *MySQLStore) ListAdminUsers(ctx context.Context, search string, limit int) ([]AdminUser, error) {
+	items, _, err := s.ListAdminUsersPage(ctx, search, limit, 0)
+	return items, err
+}
+
+func (s *MySQLStore) ListAdminUsersPage(ctx context.Context, search string, limit int, offset int) ([]AdminUser, int, error) {
 	pattern := "%"
 	if trimmed := strings.TrimSpace(search); trimmed != "" {
 		pattern = "%" + trimmed + "%"
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM users
+		WHERE (? = '%%' OR id LIKE ? OR name LIKE ? OR COALESCE(email, '') LIKE ? OR COALESCE(phone, '') LIKE ?)
+	`, pattern, pattern, pattern, pattern, pattern).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin users: %w", err)
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -1833,11 +1885,11 @@ func (s *MySQLStore) ListAdminUsers(ctx context.Context, search string, limit in
 			updated_at
 		FROM users
 		WHERE (? = '%%' OR id LIKE ? OR name LIKE ? OR COALESCE(email, '') LIKE ? OR COALESCE(phone, '') LIKE ?)
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, pattern, pattern, pattern, pattern, pattern, limit)
+		ORDER BY created_at DESC, id ASC
+		LIMIT ? OFFSET ?
+	`, pattern, pattern, pattern, pattern, pattern, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list admin users: %w", err)
+		return nil, 0, fmt.Errorf("list admin users: %w", err)
 	}
 	defer rows.Close()
 
@@ -1845,15 +1897,15 @@ func (s *MySQLStore) ListAdminUsers(ctx context.Context, search string, limit in
 	for rows.Next() {
 		var item AdminUser
 		if err := rows.Scan(&item.ID, &item.Name, &item.Email, &item.Phone, &item.QQOpenID, &item.WeChatSubject, &item.InviteRequired, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan admin user: %w", err)
+			return nil, 0, fmt.Errorf("scan admin user: %w", err)
 		}
 		item.AuthMethods = adminUserAuthMethods(item.Email, item.Phone, item.QQOpenID, item.WeChatSubject)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate admin users: %w", err)
+		return nil, 0, fmt.Errorf("iterate admin users: %w", err)
 	}
-	return items, nil
+	return items, total, nil
 }
 
 func (s *MySQLStore) ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error) {

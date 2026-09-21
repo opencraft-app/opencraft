@@ -28,6 +28,7 @@ import (
 	snapshotlogic "ctl/pkg/logic/snapshot"
 	websitelogic "ctl/pkg/logic/website"
 	"ctl/pkg/metric"
+	modelinstance "ctl/pkg/model/instance"
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
@@ -54,6 +55,30 @@ type apiServer struct {
 
 type instanceHandler struct {
 	logic instancelogic.Logic
+}
+
+// instanceConfirmedNotRunning reports whether the instance is known to be in a
+// non-running state. Used to decide if a failed Profile list read may be
+// ignored: a stopped instance can never serve that list, so it must stay
+// deletable, while a running one has to fail closed.
+func instanceConfirmedNotRunning(ctx pctx.Context, logic instancelogic.Logic, instanceID string) bool {
+	resp, err := logic.GetInstance(ctx, instanceID)
+	if err != nil || resp == nil {
+		return false
+	}
+	return resp.Status != modelinstance.InstanceStatusRunning
+}
+
+func readRuntimeFeatureFlag(name string, fallback bool) bool {
+	raw, ok := os.LookupEnv(name)
+	if !ok {
+		return fallback
+	}
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 // errorResponse 错误响应
@@ -191,12 +216,15 @@ func newRouterWithWebsiteAuth(
 			"features": map[string]bool{
 				"paidBillingEnabled":               true,
 				"realnamePhoneVerificationEnabled": true,
+				"multiBotEnabled":                  readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true),
+				"referralEnabled":                  readRuntimeFeatureFlag("REFERRAL_ENABLED", false),
 			},
 		})
 	})
 	mux.HandleFunc("/internal/bots", handler.handleInternalBots)
 	mux.HandleFunc("/internal/bots/", handler.handleInternalBotSubresource)
 	mux.HandleFunc("/internal/instances/", handler.handleInternalInstanceSubresource)
+	mux.HandleFunc("/internal/users/", handler.handleInternalUserSubresource)
 	mux.Handle("/internal/ctl/instances/", &websiteCredentialHandler{
 		store:     credentialStore,
 		instances: instanceReader,
@@ -389,11 +417,18 @@ func normalizePath(path string) string {
 		"/admin/api/ctl/dianshi/orders",
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete",
+		"/internal/ctl/passes/free-credit",
 		"/cloudapi":
 		return path
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
 		return "/internal/instances/{id}/chatclaw/runtime-bootstrap"
+	}
+	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/gateway/migrate") {
+		return "/internal/instances/{id}/gateway/migrate"
+	}
+	if strings.HasPrefix(path, "/internal/users/") && strings.HasSuffix(path, "/gateway/quota/reset") {
+		return "/internal/users/{id}/gateway/quota/reset"
 	}
 	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
 		return "/internal/ctl/bundles/{bundleId}"
@@ -429,6 +464,17 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/price") {
 		return "/admin/api/ctl/passes/{passId}/renew/price"
+	}
+	// 同 SP 升配入口路径归一（TAPD 1010132091137784162 §5.1）：
+	//   /v1/passes/{pass_id}/modify/{bundles|order|order-url|order-and-pay}
+	// 四个后缀分开归一而不是折成 /modify/{action}：升配链路上"查询失败"和"下单失败"
+	// 是完全不同的告警，合并会让指标看不出用户卡在哪一步。
+	if strings.HasPrefix(path, "/v1/passes/") {
+		for _, action := range []string{"bundles", "order-url", "order-and-pay", "order"} {
+			if strings.HasSuffix(path, "/modify/"+action) {
+				return "/v1/passes/{passId}/modify/" + action
+			}
+		}
 	}
 	// D-2.3 主动销毁触发入口路径归一（trade-pass-destroy §4.5.1）：
 	//   /v1/passes/{pass_id}/delete             → /v1/passes/{passId}/delete
@@ -624,6 +670,26 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
 			return
 		}
+		bots, botsErr := h.logic.ListInstanceBots(ctx, instanceID)
+		switch {
+		case botsErr == nil:
+			if bots != nil && len(bots.Items) > 1 {
+				writeHTTPError(w, r, errcode.ErrInstanceBotsRemain)
+				return
+			}
+		case instanceConfirmedNotRunning(ctx, h.logic, instanceID):
+			// A stopped instance can never serve the Profile list, and must stay
+			// deletable. Only skip the guard once that is confirmed.
+			ctx.Logger().Warn("destroy instance: bot guard skipped, instance not running",
+				zap.String("instance_id", instanceID),
+				zap.Error(botsErr),
+			)
+		default:
+			// Instance is running (or its state is unknown): a transient read failure
+			// must not let the destroy proceed and take the remaining Bots with it.
+			writeHTTPError(w, r, botsErr)
+			return
+		}
 		resp, err := h.logic.DestroyInstance(ctx, instanceID)
 		if err != nil {
 			writeHTTPError(w, r, err)
@@ -642,6 +708,80 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.UpdateInstance(ctx, instanceID, &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 2 && parts[1] == "bots" && r.Method == http.MethodGet:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.ListInstanceBots(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 2 && parts[1] == "bots" && r.Method == http.MethodPost:
+		if !readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true) {
+			writeHTTPError(w, r, errcode.ErrInstanceBotDisabled)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var req transport.CreateInstanceBotRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err.Error()))
+			return
+		}
+		resp, err := h.logic.CreateInstanceBot(ctx, instanceID, &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusCreated, resp)
+	case len(parts) == 3 && parts[1] == "bots" && r.Method == http.MethodPut:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var req transport.UpdateInstanceBotRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "%s", err.Error()))
+			return
+		}
+		resp, err := h.logic.UpdateInstanceBot(ctx, instanceID, parts[2], &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "bots" && r.Method == http.MethodDelete:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.DeleteInstanceBot(ctx, instanceID, parts[2])
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 4 && parts[1] == "bots" && parts[3] == "retry" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.RetryInstanceBot(ctx, instanceID, parts[2])
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return
@@ -828,6 +968,40 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, map[string]bool{"deleted": true})
+	case len(parts) == 5 && parts[1] == "bots" && parts[3] == "channel-bindings" && r.Method == http.MethodPut:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.ClaimInstanceBotChannel(ctx, instanceID, parts[2], parts[4])
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 5 && parts[1] == "bots" && parts[3] == "channel-bindings" && r.Method == http.MethodDelete:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		if err := h.logic.ReleaseInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, map[string]bool{"released": true})
+	case len(parts) == 5 && parts[1] == "bots" && parts[3] == "channel-bindings" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		if err := h.logic.ConfirmInstanceBotChannel(ctx, instanceID, parts[2], parts[4]); err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, map[string]bool{"connected": true})
 	case len(parts) == 3 && parts[1] == "chatclaw" && parts[2] == "teams" && r.Method == http.MethodPost:
 		ctx, ok := newRequestContext(r)
 		if !ok {

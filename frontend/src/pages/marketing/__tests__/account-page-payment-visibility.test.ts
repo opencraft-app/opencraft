@@ -8,17 +8,11 @@ describe("Account payment methods visibility", () => {
     "utf8",
   );
 
-  it("keeps saved payment methods behind show()", () => {
+  it("shows saved payment methods by default on the international billing page", () => {
     const page = readAccountPageSource();
 
-    expect(page).toContain("setShowHiddenAccountTools(true)");
-    expect(page).toContain("isGlobal && showHiddenAccountTools && <SavedCardsSection />");
-  });
-
-  it("chains the account reveal with an existing show() helper", () => {
-    const page = readAccountPageSource();
-
-    expect(page).toContain("const originalShow = host.show");
-    expect(page).toContain("originalShow.apply(host, args)");
+    expect(page).toContain("isBillingView && isGlobal && <SavedCardsSection />");
+    expect(page).not.toContain("showHiddenAccountTools");
+    expect(page).not.toContain("RevealAccountToolsHost");
   });
 });

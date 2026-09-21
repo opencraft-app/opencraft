@@ -1,16 +1,13 @@
-# CloudAgent Wisp Runtime
+# CloudAgent Wisp 运行时
 
-This directory owns the Wisp runtime source and release packaging used by
-CloudAgent outer workspaces.
+本目录负责 CloudAgent 外层 workspace 使用的 Wisp runtime 源码与发布打包。
 
-Rules:
+规则：
 
-- Keep generated artifacts out of git: `dist/`, `.tmp/`, `dist-release/`,
+- 生成 artifact 不得进入 git：`dist/`、`.tmp/`、`dist-release/`、
   `assets/bin/`, downloaded rootfs tarballs, and rootfs image files.
-- Treat `config.jsonnet` as local runtime material. Commit
-  `config.jsonnet.example` instead.
-- Build and publish release packages through
+- 将 `config.jsonnet` 视为本地 runtime material；改提交 `config.jsonnet.example`。
+- 通过以下方式构建并发布 release package：
   `cloudagent/gateway/scripts/publish_cloudagent_wisp_package.sh` or the
   combined CloudAgent artifact CI path.
-- Do not change checkpoint or writeback ordering without a live Wisp restore
-  e2e that closes and restores a session.
+- 没有关闭并恢复 session 的 live Wisp restore e2e 时，不得变更 checkpoint 或 writeback 顺序。

@@ -6,6 +6,7 @@ describe("agent settings loading gate", () => {
     expect(
       shouldShowAgentSettingsDataLoading({
         botsLoading: true,
+        passesLoading: true,
         isCreating: false,
         visibleBotCount: 1,
       }),
@@ -16,6 +17,7 @@ describe("agent settings loading gate", () => {
     expect(
       shouldShowAgentSettingsDataLoading({
         botsLoading: true,
+        passesLoading: false,
         isCreating: false,
         visibleBotCount: 0,
       }),
@@ -26,9 +28,32 @@ describe("agent settings loading gate", () => {
     expect(
       shouldShowAgentSettingsDataLoading({
         botsLoading: true,
+        passesLoading: true,
         isCreating: true,
         visibleBotCount: 0,
       }),
     ).toBe(false);
+  });
+
+  it("keeps an existing Agent visible while Pass state resolves", () => {
+    expect(
+      shouldShowAgentSettingsDataLoading({
+        botsLoading: false,
+        passesLoading: true,
+        isCreating: false,
+        visibleBotCount: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("waits for Pass state before showing the empty Agent creation state", () => {
+    expect(
+      shouldShowAgentSettingsDataLoading({
+        botsLoading: false,
+        passesLoading: true,
+        isCreating: false,
+        visibleBotCount: 0,
+      }),
+    ).toBe(true);
   });
 });

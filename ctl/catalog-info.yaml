@@ -1,0 +1,18 @@
+{
+  "id": "ctl",
+  "name": "CTL 控制面",
+  "kind": "service",
+  "path": "ctl",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["agent-gateway-runtime", "identity-access", "release-gitops"],
+  "summary": "管理实例、渠道、任务编排和 Sandbox/Agent 适配的 Go 控制服务。",
+  "runtime": "Go HTTP 服务、Redis Stream consumer 与周期任务",
+  "interfaces": ["实例 HTTP API", "Redis Streams", "Sandbox adapter"],
+  "dependencies": ["sandbox", "user-auth", "service-gateway", "cloudagent"],
+  "source_docs": ["ctl/README.md", "ctl/AGENTS.md", "docs/agent-guides/ctl-agent-guide.md"],
+  "agent_entry": "ctl/AGENTS.md",
+  "service_docs": "ctl/docs/README.md",
+  "deploy": ["ctl/k8s", "argocd/services/ctl"],
+  "generated_paths": ["ctl/k8s/overlays/*/generated"]
+}

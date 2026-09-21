@@ -36,8 +36,6 @@ metadata:
     clusterId: cls-hq6qk3i6
     env: production
     k8s-app: devtunnel-testing
-    moduleFourId: '867795'
-    projectName: prjqt8dd
     qcloud-app: devtunnel-testing
     region: ap-singapore
     workload-kind: statefulsetplus
@@ -56,8 +54,6 @@ spec:
       clusterId: cls-hq6qk3i6
       env: production
       k8s-app: devtunnel-testing
-      moduleFourId: '867795'
-      projectName: prjqt8dd
       qcloud-app: devtunnel-testing
       region: ap-singapore
       workload-kind: statefulsetplus
@@ -70,8 +66,6 @@ spec:
         clusterId: cls-hq6qk3i6
         env: production
         k8s-app: devtunnel-testing
-        moduleFourId: '867795'
-        projectName: prjqt8dd
         qcloud-app: devtunnel-testing
         region: ap-singapore
         workload-kind: statefulsetplus
@@ -88,6 +82,33 @@ spec:
             secretKeyRef:
               key: DEVTUNNEL_TOKEN
               name: cloudladdergateway-devtunnel-secrets
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_ENABLED
+          value: "true"
+        - name: DEVTUNNEL_CAPABILITY_STORE
+          value: http
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_ROUTE_ID
+          value: developer-route-registry
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_CALLER
+          value: cloudladdergateway
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_SECRET_ENV
+          value: CLOUDLADDER_SHADOW_HMAC_SECRET
+        - name: DEVTUNNEL_CAPABILITY_REGISTRY_TIMEOUT
+          value: 10s
+        - name: CLOUDLADDER_SHADOW_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: CLOUDLADDER_SHADOW_HMAC_SECRET
+              name: cloudladdergateway-runtime-secrets
+        - name: DEVTUNNEL_CAPABILITY_ALLOWED_CIDRS
+          value: 9.0.0.0/8
+        - name: DEVTUNNEL_CAPABILITY_ALLOWED_PORTS
+          value: "18084"
+        - name: DEVTUNNEL_CAPABILITY_TUNNEL_BASE_URL
+          value: http://devtunnel-testing.ns-prjqt8dd-867795-production.svc.cluster.local:8080
+        - name: DEVTUNNEL_CAPABILITY_TUNNEL_HOST_SUFFIX
+          value: sg.tunnel.internal
         # 占位值：kustomization.yaml 的 replacements 会用
         # cloudladdergateway-platform-testing.env 的 CLOUDLADDERGATEWAY_IMAGE 盖掉这里，
         # 与 lightvela-proxy-testing 始终同一个镜像（devtunnel 二进制在同一镜像里）。

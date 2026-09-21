@@ -45,6 +45,8 @@ const (
 	defaultImportWaitTimeoutSecs   = 360
 )
 
+const defaultRescueCommandTimeoutSecs = 6600
+
 var workerActionIDSafePattern = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 
 type workerActionService struct {
@@ -789,7 +791,7 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		Execute:                true,
 		Confirmed:              true,
 		WaitTimeoutSeconds:     defaultRescueWaitTimeoutSecs,
-		CommandTimeoutSeconds:  1800,
+		CommandTimeoutSeconds:  defaultRescueCommandTimeoutSecs,
 	}, nil
 }
 

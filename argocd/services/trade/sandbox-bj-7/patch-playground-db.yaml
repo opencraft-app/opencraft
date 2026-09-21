@@ -6,4 +6,8 @@ metadata:
 data:
   TRADE_DB: trade_sandbox_bj_7
   CTL_INTERNAL_BASE_URL: http://ctl-api.lightvela-playground-sandbox-bj-7.svc.cluster.local
+  CREDIT_INTERNAL_BASE_URL: http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local
   ACCOUNT_BINDING_INTERNAL_BASE_URL: http://lightclaw-auth.lightvela-playground-sandbox-bj-7.svc.cluster.local
+  CREDIT_SEND_RESOURCE_URL: http://9.139.137.40/feev2/sendResource.php
+  CREDIT_SEND_RESOURCE_HOST: qbilling.itd.com
+  CREDIT_SEND_RESOURCE_CID: "101433"

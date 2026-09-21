@@ -22,7 +22,7 @@ Los créditos de modelo son las unidades que LightVela utiliza para medir el uso
 
 ## ¿Qué son los créditos de modelo?
 
-Los créditos de modelo son la **unidad de medida** para las llamadas a modelos de lenguaje realizadas por un Hermes Agent. Cada vez que tu Agent responde en una conversación, ejecuta una [automatización](./configuration/automation.md) o utiliza una Skill, envía solicitudes al modelo subyacente. Los tokens utilizados por esas solicitudes se convierten en créditos.
+Los créditos de modelo son la **unidad de medida** para las llamadas a modelos de lenguaje realizadas por un Hermes Agent. Cada vez que tu Agent responde en una conversación, ejecuta una [tarea programada](./configuration/automation.md) o utiliza una Skill, envía solicitudes al modelo subyacente. Los tokens utilizados por esas solicitudes se convierten en créditos.
 
 La conversión aproximada es **1 crédito ≈ 10,000 tokens**. Un token es la unidad básica de texto procesada por un modelo. Tanto la entrada —el contenido que envías a tu Agent— como la salida —la respuesta que genera— cuentan hacia el uso.
 
@@ -49,7 +49,7 @@ Los créditos se consumen en las siguientes situaciones porque cada una requiere
 
 - **Hablar con tu Agent** — Mensajeo a través de Telegram, WhatsApp, Discord, Slack, WeChat o otro canal soportado
 
-- **Ejecutar automatizaciones** — Permitir que tu Agent ejecute [tareas programadas](./configuration/automation.md)
+- **Ejecutar tareas programadas** — Permitir que tu Agent ejecute [tareas programadas](./configuration/automation.md)
 
 - **Utilizar Skills** — Permitir que una Skill llame a un modelo para razonar durante la ejecución
 

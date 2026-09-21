@@ -1,7 +1,8 @@
 import React, { type ReactNode } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocaleOverrideProvider } from "@/i18n/t";
 
 /* 国际站（isGlobal）专属用例。
    与 subscribe-page.test.tsx（国内站，不 mock region）分文件维护 ——
@@ -29,17 +30,29 @@ const openClawState = {
   bots: [] as { id: string; status: string }[],
   user: null as unknown,
   refreshPasses: vi.fn(),
+  beginPassUpgrade: vi.fn(),
   activePass: null as unknown,
   latestPass: null as unknown,
+  /* usePostLoginRedirect（订阅页 LoginModal onSuccess 分流）所需的权益快照字段。 */
+  hasResolvedPasses: true,
+  passesLoading: false,
+  passesError: false,
 };
 
 vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => openClawState,
 }));
 
+/* usePostLoginRedirect 使用 next/navigation 的 useRouter；测试环境需 mock 掉。 */
+const routerPushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock }),
+}));
+
 const sessionState = {
   authReady: true,
   isAuthenticated: false,
+  user: null as { id: string } | null,
 };
 
 vi.mock("@/contexts/session-context", () => ({
@@ -48,7 +61,7 @@ vi.mock("@/contexts/session-context", () => ({
     isAuthenticated: sessionState.isAuthenticated,
     session: {
       stage: sessionState.isAuthenticated ? "authenticated" : "anonymous",
-      user: null,
+      user: sessionState.user,
     },
   }),
 }));
@@ -58,6 +71,9 @@ const listBundlesMock = vi.fn();
 const createPassOrderMock = vi.fn();
 const getPassOrderUrlMock = vi.fn();
 const createDianshiPassOrderAndPayMock = vi.fn();
+const listMyPassesMock = vi.fn();
+const listModifyBundlesMock = vi.fn();
+vi.mock("@/pages/marketing/upgrade-pass-modal", () => ({ UpgradePassModal: ({ targetBundleId, onPaid }: { targetBundleId: string; onPaid: (checkout: { dealName: string; targetBundleId: string }) => void }) => <div role="dialog"><button onClick={() => onPaid({ dealName: "paid-upgrade", targetBundleId })}>模拟支付完成</button></div> }));
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
@@ -69,6 +85,8 @@ vi.mock("@/contexts/repository-context", () => ({
     },
     plans: {
       listBundles: listBundlesMock,
+      listMyPasses: listMyPassesMock,
+      listModifyBundles: listModifyBundlesMock,
       createPassOrder: createPassOrderMock,
       getPassOrderUrl: getPassOrderUrlMock,
       createDianshiPassOrderAndPay: createDianshiPassOrderAndPayMock,
@@ -81,13 +99,17 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
-vi.mock("@/i18n/t", () => ({
-  useLocaleOverride: () => null,
-  useT: () => (zh: string, opts?: Record<string, unknown>) =>
-    zh.replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) =>
-      opts?.[key] == null ? placeholder : String(opts[key]),
-    ),
-}));
+const translationState = { real: false };
+vi.mock("@/i18n/t", async importOriginal => {
+  const actual = await importOriginal<typeof import("@/i18n/t")>();
+  const translate = (zh: string, opts?: Record<string, unknown>) => zh.replace(
+    /\{\{(\w+)\}\}/g, (placeholder, key: string) => opts?.[key] == null ? placeholder : String(opts[key]),
+  );
+  return { ...actual, useT: () => {
+    const t = actual.useT();
+    return translationState.real ? t : translate;
+  } };
+});
 
 const navigateMock = vi.fn();
 
@@ -132,6 +154,91 @@ const buildBundle = (bundleId: string, bundleName: string) => ({
 });
 
 const buildBillingError = (code: string, message: string) => Object.assign(new Error(message), { code });
+const cleanupPage = () => cleanup();
+
+describe("international upgrade return", () => {
+  beforeEach(() => resetState());
+  afterEach(cleanupPage);
+  it.each([
+    [buildBillingError("FORBIDDEN", "服务端拒绝详情"), "This action was denied. Please refresh the page or contact support."],
+    [new Error("网络中断"), "Could not retrieve the upgrade quote. Please try again later."],
+  ])("localizes the upgrade button quote error and allows retry: %s", async (error, expected) => {
+    translationState.real = true;
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "Launch", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] });
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<LocaleOverrideProvider locale="en-US"><SubscribePage /></LocaleOverrideProvider>);
+    const button = await screen.findByRole("button", { name: "Upgrade to this plan" });
+    listModifyBundlesMock.mockRejectedValueOnce(error);
+    await userEvent.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent(String(expected));
+    expect(button).toBeEnabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.click(button);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+  it("keeps a recoverable order marker when the original window enters Agents after payment", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    const quote = { source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] };
+    listModifyBundlesMock.mockResolvedValue(quote);
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    let resolveQuote!: (value: typeof quote) => void;
+    listModifyBundlesMock.mockReturnValueOnce(new Promise(resolve => { resolveQuote = resolve; }));
+    await userEvent.click(button);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => resolveQuote(quote));
+    await userEvent.click(await screen.findByRole("button", { name: "模拟支付完成" }));
+    expect(openClawState.beginPassUpgrade).toHaveBeenCalledWith(pass, { dealName: "paid-upgrade", targetBundleId: "target" });
+    expect(navigateMock).toHaveBeenCalledWith("/agents?upgrade_return=paid-upgrade");
+  });
+
+  it("shows upgrade cards for a direct pass URL without a console gate", async () => {
+    openClawState.isLoggedIn = true;
+    openClawState.isSubscribed = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { id: "u1" };
+    const pass = { status: "active", pass_id: "p1", user_id: "u1", bundle_id: "source", bundle_name: "启航", expired_time: "2099-01-01" };
+    openClawState.activePass = pass;
+    listMyPassesMock.mockResolvedValue([pass]);
+    listBundlesMock.mockResolvedValue([
+      { ...buildBundle("source", "启航 Launch"), bundle_type: "general", credit: 100 },
+      { ...buildBundle("target", "巡游 Cruise"), bundle_type: "general", credit: 200 },
+    ]);
+    listModifyBundlesMock.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [{ target_bundle_id: "target", bundle: { bundle_id: "target", bundle_name: "Cruise", cpu: 4, memory: 8, system_disk_size: 80, credit: 200 }, modify_price: { currency: "USD", real_total_cost: 100 } }] });
+    window.history.replaceState({}, "", "/subscribe/?upgrade_pass_id=p1");
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+    expect(listBundlesMock).toHaveBeenCalled();
+    const button = await screen.findByRole("button", { name: "升级至此套餐" });
+    expect(listModifyBundlesMock).toHaveBeenCalledWith("p1");
+    await userEvent.click(button);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(createPassOrderMock).not.toHaveBeenCalled();
+  });
+});
 
 /**
  * 组件按嵌套结构读 bundle.price（见 BundlePrice 类型），金额用例必须用嵌套 mock
@@ -153,16 +260,21 @@ const buildNestedBundle = () => ({
 });
 
 const resetState = () => {
+  translationState.real = false;
   openClawState.isLoggedIn = false;
   openClawState.isSubscribed = false;
   openClawState.subscribe = vi.fn();
   openClawState.addBot = vi.fn();
   openClawState.bots = [];
   openClawState.refreshPasses = vi.fn().mockResolvedValue(undefined);
+  openClawState.beginPassUpgrade = vi.fn();
   openClawState.activePass = null;
   openClawState.latestPass = null;
   sessionState.authReady = true;
   sessionState.isAuthenticated = false;
+  sessionState.user = null;
+  listMyPassesMock.mockReset();
+  listModifyBundlesMock.mockReset();
   listBundlesMock.mockReset();
   createPassOrderMock.mockReset();
   getPassOrderUrlMock.mockReset();
@@ -181,7 +293,7 @@ const resetState = () => {
 
 describe("SubscribePage paid billing visibility", () => {
   beforeEach(resetState);
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   it("shows the paid plans immediately without a reveal gate", async () => {
     (globalThis as { React?: typeof React }).React = React;
@@ -224,7 +336,7 @@ describe("SubscribePage paid billing visibility", () => {
  */
 describe("SubscribePage intl AI promo tags", () => {
   beforeEach(resetState);
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   const getCreditTab = (credit: string) => {
     const tab = screen
@@ -578,8 +690,8 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
 
-    expect(await screen.findByText("当前套餐已进入隔离期，请在账号页管理套餐，销毁后可重新购买。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(await screen.findByText("当前套餐已进入隔离期，请在套餐与费用页管理套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account/billing");
     expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
   });
 
@@ -595,8 +707,8 @@ describe("SubscribePage intl AI promo tags", () => {
     expect(await screen.findByText("信用卡")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "支付 $10.00" }));
 
-    expect(await screen.findByText("当前套餐已到期，续费功能敬请期待；请在账号页查看套餐，销毁后可重新购买。")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account");
+    expect(await screen.findByText("当前套餐已到期，续费功能敬请期待；请在套餐与费用页查看套餐，销毁后可重新购买。")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "管理套餐" })).toHaveAttribute("href", "/account/billing");
     expect(screen.queryByRole("link", { name: "前往续费" })).not.toBeInTheDocument();
   });
 
@@ -614,7 +726,7 @@ describe("SubscribePage intl AI promo tags", () => {
 
 describe("SubscribePage confirm order amounts", () => {
   beforeEach(resetState);
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   /**
    * 卡片价口径（价签模式：卡片标税前实付，付款实付含税）：
@@ -715,7 +827,7 @@ describe("SubscribePage payment return", () => {
   beforeEach(resetState);
   /* 必须显式卸载：上一个用例的 paying 弹窗若残留在 document 里，
      后续用例的「不应出现开通提示」断言会误判。 */
-  afterEach(cleanup);
+  afterEach(cleanupPage);
 
   /**
    * 弹窗被拦截时支付走 window.location.assign，付款后 return_url 回到全新页面，
@@ -750,6 +862,8 @@ describe("SubscribePage payment return", () => {
 
     await waitFor(() => {
       expect(openClawState.refreshPasses).toHaveBeenCalled();
+      // The mount refresh can finish before bundle loading; wait for return-marker handling itself.
+      expect(window.location.search).toBe("");
     });
     /* 找不到套餐时不进 paying，避免卡在一个永远等不到结果的弹窗里 */
     expect(screen.queryByText("正在开通套餐")).not.toBeInTheDocument();

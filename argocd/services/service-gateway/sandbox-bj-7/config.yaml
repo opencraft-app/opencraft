@@ -64,6 +64,7 @@ routes:
   methods:
   - GET
   - POST
+  - PUT
   - DELETE
   - OPTIONS
   upstream: http://ctl-api.lightvela-playground-sandbox-bj-7.svc.cluster.local
@@ -78,6 +79,22 @@ routes:
     path: /v1/instances/{instance_id}
   - method: DELETE
     path: /v1/instances/{instance_id}
+  - method: GET
+    path: /v1/instances/{instance_id}/bots
+  - method: POST
+    path: /v1/instances/{instance_id}/bots
+  - method: PUT
+    path: /v1/instances/{instance_id}/bots/{bot_id}
+  - method: DELETE
+    path: /v1/instances/{instance_id}/bots/{bot_id}
+  - method: POST
+    path: /v1/instances/{instance_id}/bots/{bot_id}/retry
+  - method: PUT
+    path: /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}
+  - method: POST
+    path: /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}
+  - method: DELETE
+    path: /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}
   - method: POST
     path: /v1/instances/{instance_id}/debug/exec
   - method: POST
@@ -138,6 +155,35 @@ routes:
     path: /v1/passes/order-url
   - method: POST
     path: /v1/passes/{pass_id}/renew/order-url
+- name: credit
+  prefix: /v1/credit
+  methods:
+  - GET
+  - POST
+  - OPTIONS
+  upstream: http://credit.lightvela-playground-sandbox-bj-7.svc.cluster.local
+  access: authenticated
+  require_realname: true
+  auth_strategy: session
+  optional_auth_allow:
+  - method: POST
+    path: /v1/credit/packages/order-url
+  path_policy: allowlist
+  path_allow:
+  - method: GET
+    path: /v1/credit/products
+  - method: POST
+    path: /v1/credit/inquiry
+  - method: POST
+    path: /v1/credit/packages/order
+  - method: POST
+    path: /v1/credit/packages/order-url
+  - method: POST
+    path: /v1/credit/packages/order-and-pay
+  - method: GET
+    path: /v1/credit/packages
+  - method: POST
+    path: /v1/credit/packages/{package_id}/refund
 - name: subscriptions
   prefix: /subscriptions
   methods:
@@ -202,6 +248,14 @@ routes:
     path: /auth/invite/prepare
   - method: POST
     path: /auth/internal/tencentcloud/account
+  - method: GET
+    path: /auth/internal/dev-environments/registration/ready
+  - method: GET
+    path: /auth/internal/dev-environments/registration
+  - method: PUT
+    path: /auth/internal/dev-environments/registration
+  - method: DELETE
+    path: /auth/internal/dev-environments/registration
   - method: GET
     path: /auth/oauth/qq/start
   - method: GET

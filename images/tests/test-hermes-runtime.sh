@@ -300,6 +300,32 @@ else
   echo "hermes --version output: ${HERMES_VERSION_OUTPUT}"
 fi
 
+info "checking Hermes no-skills Profile contract"
+HERMES_NO_SKILLS_OUTPUT="$(remote_exec_runtime '
+  set -euo pipefail
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
+  profile_id="lvnoskillssmoke$$"
+  profile_root="$HOME/.hermes/profiles/$profile_id"
+  cleanup() {
+    hermes profile delete "$profile_id" -y >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT
+  hermes profile create "$profile_id" --no-skills --no-alias >/dev/null
+  test -f "$profile_root/.no-bundled-skills"
+  test -f "$profile_root/skills/autonomous-ai-agents/hermes-agent/SKILL.md"
+  skill_count="$(find "$profile_root/skills" -type f -name SKILL.md | wc -l | tr -d " ")"
+  test "$skill_count" = 1
+  echo "hermes-no-skills-profile-ok"
+' 2>&1 || true)"
+if echo "${HERMES_NO_SKILLS_OUTPUT}" | grep -q 'hermes-no-skills-profile-ok'; then
+  pass "Hermes no-skills Profile contract is available"
+else
+  fail "Hermes no-skills Profile contract is unavailable"
+  echo "${HERMES_NO_SKILLS_OUTPUT}"
+fi
+
 info "checking hermes command topology"
 HERMES_TOPOLOGY_OUTPUT="$(remote_exec_runtime '
   set -e
@@ -399,6 +425,7 @@ import os
 import sys
 
 root = sys.argv[1]
+baseline_manifest = os.path.join(os.path.dirname(root), ".lightvela", "base-skills")
 keep = {
     "autonomous-ai-agents/hermes-agent",
     "software-development/hermes-agent-skill-authoring",
@@ -416,6 +443,11 @@ keep = {
     "productivity/powerpoint",
     "research/arxiv",
     "productivity/maps",
+    "productivity/google-workspace",
+    "productivity/weekly-review-planning",
+    "email/email-inbox-triage",
+    "productivity/product-price-monitor",
+    "research/competitor-news-monitor",
     "creative/architecture-diagram",
     "creative/humanizer",
     "website-builder",
@@ -424,6 +456,14 @@ found = []
 for dirpath, _, filenames in os.walk(root):
     if "SKILL.md" in filenames:
         found.append(os.path.relpath(dirpath, root))
+if not os.path.isfile(baseline_manifest):
+    print("base-skills-manifest-missing")
+    raise SystemExit(1)
+with open(baseline_manifest, encoding="utf-8") as fh:
+    recorded = sorted(line.strip() for line in fh if line.strip())
+if sorted(found) != recorded:
+    print("base-skills-manifest-mismatch")
+    raise SystemExit(1)
 extra = sorted(set(found) - keep)
 if extra:
     print("extra-skills:")

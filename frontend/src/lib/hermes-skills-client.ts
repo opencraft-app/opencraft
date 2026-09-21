@@ -1,9 +1,20 @@
+import {
+  DEFAULT_HERMES_AGENT_ID,
+  toHermesNativeProfileId,
+} from "@/lib/hermes-agent-command";
 import { execCommand } from "@/lib/hermes-cron-client";
 
 const HERMES_BUNDLED_MANIFEST_MARKER = "__HERMES_BUNDLED_MANIFEST__";
 const HERMES_SKILLS_ROOT_MARKER = "__HERMES_SKILLS_ROOT__";
-const HERMES_SKILLS_LIST_COMMAND =
-  `cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list && { printf '\\n${HERMES_BUNDLED_MANIFEST_MARKER}\\n'; if test -f "$HOME/.hermes/skills/.bundled_manifest"; then cat "$HOME/.hermes/skills/.bundled_manifest"; fi; } && { printf '\\n${HERMES_SKILLS_ROOT_MARKER}\\n'; if test -d "$HOME/.hermes/skills"; then find "$HOME/.hermes/skills" -mindepth 2 -type f -name SKILL.md -print; fi; }`;
+const HERMES_NO_BUNDLED_SKILLS_MARKER = "__HERMES_NO_BUNDLED_SKILLS__";
+const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+function buildHermesProfileRootCommand(profileId: string): string {
+  if (profileId === DEFAULT_HERMES_AGENT_ID) {
+    return 'HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}"';
+  }
+  return `HERMES_PROFILE_ROOT="\${HERMES_HOME:-$HOME/.hermes}/profiles/${profileId}"`;
+}
 
 export interface InstalledSkillLoadState {
   status: "idle" | "loading" | "ready" | "error";
@@ -101,19 +112,22 @@ function parseInstalledSkillsTable(output: string): InstalledHermesSkill[] {
   return getUniqueInstalledSkills(skills);
 }
 
-export function buildInstalledSkillsListCommand(): string {
-  return HERMES_SKILLS_LIST_COMMAND;
+export function buildInstalledSkillsListCommand(profileId: string = DEFAULT_HERMES_AGENT_ID): string {
+  return `HERMES_BASE="\${HERMES_HOME:-$HOME/.hermes}"; ${buildHermesProfileRootCommand(profileId)}; cd "$HERMES_BASE/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main -p ${shellQuote(toHermesNativeProfileId(profileId))} skills list && { printf '\\n${HERMES_BUNDLED_MANIFEST_MARKER}\\n'; if test -f "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; then cat "$HERMES_PROFILE_ROOT/skills/.bundled_manifest"; fi; } && { printf '\\n${HERMES_SKILLS_ROOT_MARKER}\\n'; if test -d "$HERMES_PROFILE_ROOT/skills"; then find "$HERMES_PROFILE_ROOT/skills" -mindepth 2 -type f -name SKILL.md -print; fi; } && { if test -f "$HERMES_PROFILE_ROOT/.no-bundled-skills"; then printf '\\n${HERMES_NO_BUNDLED_SKILLS_MARKER}\\n'; fi; }`;
 }
 
-export function buildHermesSkillDeleteCommand(slug: string): string {
+export function hasHermesBundledSkillsOptOut(output: string): boolean {
+  return output.includes(HERMES_NO_BUNDLED_SKILLS_MARKER);
+}
+
+export function buildHermesSkillDeleteCommand(slug: string, profileId: string = DEFAULT_HERMES_AGENT_ID): string {
   const normalized = slug.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(normalized) || normalized === "." || normalized === "..") {
     throw new Error("Invalid Hermes skill slug");
   }
-  const skillsRoot = "$HOME/.hermes/skills";
-  const findSkill = `find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -print -quit`;
-  const deleteSkill = `find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +`;
-  return `cd "$HOME" && test -d "${skillsRoot}" && ${findSkill} | grep -q . || { echo "Hermes skill not found: ${normalized}" >&2; exit 1; }; ${deleteSkill} && ! ${findSkill} | grep -q .`;
+  const findSkill = `find "$HERMES_PROFILE_ROOT/skills" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -print -quit`;
+  const deleteSkill = `find "$HERMES_PROFILE_ROOT/skills" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +`;
+  return `${buildHermesProfileRootCommand(profileId)}; test -d "$HERMES_PROFILE_ROOT/skills" && ${findSkill} | grep -q . || { echo "Hermes skill not found: ${normalized}" >&2; exit 1; }; ${deleteSkill} && ! ${findSkill} | grep -q .`;
 }
 
 export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {
@@ -230,7 +244,7 @@ export function matchesInstalledSkillSearch(slug: string, displayName: string, q
     || displayName.toLocaleLowerCase().includes(normalizedQuery);
 }
 
-export async function listInstalledSkillSlugs(botId: string): Promise<string[]> {
-  const result = await execCommand(botId, buildInstalledSkillsListCommand());
+export async function listInstalledSkillSlugs(botId: string, profileId: string = DEFAULT_HERMES_AGENT_ID): Promise<string[]> {
+  const result = await execCommand(botId, buildInstalledSkillsListCommand(profileId));
   return parseInstalledSkillSlugs(result.output);
 }

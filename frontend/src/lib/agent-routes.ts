@@ -22,15 +22,18 @@ export type AgentSectionId = AgentSettingsSectionId | AgentWorkbenchSectionId;
 
 export const AGENTS_HOME_PATH = "/agents";
 export const AGENT_CREATING_QUERY_KEY = "creating";
+export const AGENT_BOT_QUERY_KEY = "bot";
 
-// Agent 功能页当前没有允许跨 section 透传的查询参数。新增参数时必须显式加入白名单。
-const AGENT_SECTION_PERSISTENT_QUERY_KEYS: readonly string[] = [];
+const AGENT_SECTION_PERSISTENT_QUERY_KEYS: readonly string[] = [AGENT_BOT_QUERY_KEY];
 
 /** 订阅套餐页路由（避免魔法字符串，统一引用） */
 export const SUBSCRIBE_PATH = "/subscribe";
 
 /** 账号管理页路由（避免魔法字符串，统一引用） */
 export const ACCOUNT_PATH = "/account";
+
+/** 套餐与费用页路由 */
+export const ACCOUNT_BILLING_PATH = `${ACCOUNT_PATH}/billing`;
 
 /** 账号页实名提醒 query key：首页「立即创建」跳转账号页时携带，触发实名提醒 tips（避免魔法字符串，统一引用） */
 export const REALNAME_REQUIRED_QUERY_KEY = "realname_required";
@@ -109,6 +112,16 @@ export const getAgentCreatingPath = (creating: true | string) => {
   return `${AGENTS_HOME_PATH}?${AGENT_CREATING_QUERY_KEY}=${encodeURIComponent(creating)}`;
 };
 
+/**
+ * 「订阅成功后引导用户为首个 Bot 命名」的落点：`/agents?create=1`。
+ * 与 `creating`（等待 provisioning 的 Loading 态）语义不同：`create` 表示「还没建 Bot，
+ * 请打开命名向导让用户输入名字后再创建」。控制台据此自动弹出与「新建 Bot」一致的命名弹窗，
+ * 因此订阅链路不再写死默认名，与删除后重建的体验统一。
+ */
+export const AGENT_CREATE_QUERY_KEY = "create";
+export const getAgentCreateBotPath = () =>
+  `${AGENTS_HOME_PATH}?${AGENT_CREATE_QUERY_KEY}=1`;
+
 export const getAgentSectionHref = (pathname: string, params: URLSearchParams): string => {
   const next = new URLSearchParams();
   for (const key of AGENT_SECTION_PERSISTENT_QUERY_KEYS) {
@@ -118,6 +131,12 @@ export const getAgentSectionHref = (pathname: string, params: URLSearchParams): 
   }
   const search = next.toString();
   return `${pathname}${search ? `?${search}` : ""}`;
+};
+
+export const getAgentBotSectionHref = (pathname: string, botId: string): string => {
+  const params = new URLSearchParams();
+  params.set(AGENT_BOT_QUERY_KEY, botId);
+  return getAgentSectionHref(pathname, params);
 };
 
 /** 我的工作台页路由（避免魔法字符串，统一引用） */

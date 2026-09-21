@@ -90,6 +90,13 @@ repos:
         language: system
         files: '.'
 
+      - id: context-docs-impact
+        name: "require mapped design documentation for impacted changes"
+        entry: python3 .agents/context/scripts/validate_change_impact.py --repo . --staged
+        language: system
+        files: '^(AGENTS\.md$|user/auth/|shadow/|service-gateway/|subscription/|payment/|trade/|cloudladdergateway/|cloudagent/|ai-gateway/|ctl/|sandbox/|velagw/|velalink/|workers/|new-api/|frontend/|admin-gateway/|gateway-dashboard/|nextgen-dashboard/|\.ci/runtime/|argocd/|infra_pulumi/|codesign/|\.agents/context/|docs/context/decisions/|docs/context/project/overview\.md|docs/context/23-rules-matrix\.md|docs/context/\.context/|\.agents/skills/context-audit/)'
+        pass_filenames: false
+
   # 基础文件检查
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0

@@ -17,6 +17,7 @@ import (
 	"ctl/pkg/config"
 	bundlemodel "ctl/pkg/model/bundle"
 	passmodel "ctl/pkg/model/pass"
+	modelgateway "ctl/pkg/model/subscriptiongateway"
 	taskcommon "ctl/pkg/taskruntime/common"
 	"ctl/test/testutil"
 
@@ -64,8 +65,8 @@ func installWorkerEntitlementAdapter(stub *workerEntitlementAdapter) func() {
 	}
 }
 
-func TestRenewEntitlementOnlyRunsForIsolatedOrigin(t *testing.T) {
-	testutil.NewSQLiteDB(t, &bundlemodel.Entity{})
+func TestRenewEntitlementRunsForActiveAndIsolatedOrigin(t *testing.T) {
+	testutil.NewSQLiteDB(t, &bundlemodel.Entity{}, &modelgateway.Entity{})
 	bundleDao := bundlemodel.NewDao()
 	if err := bundleDao.Upsert(&bundlemodel.Entity{
 		BundleID: "bundle-1", Credit: 100, AiGatewayPlanID: "plan-1",
@@ -86,8 +87,11 @@ func TestRenewEntitlementOnlyRunsForIsolatedOrigin(t *testing.T) {
 	if err := activeTask.ensureEntitlementBeforeResume(zap.NewNop(), entity); err != nil {
 		t.Fatal(err)
 	}
-	if stub.applyCalls != 0 {
-		t.Fatalf("active renewal called gateway %d times", stub.applyCalls)
+	if stub.applyCalls != 1 || stub.applyReq == nil {
+		t.Fatalf("active renewal apply calls=%d request=%+v", stub.applyCalls, stub.applyReq)
+	}
+	if !stub.applyReq.IsUnique {
+		t.Fatalf("active renewal is_unique = false, want true")
 	}
 
 	isolatedAt := originalExpired.Add(time.Hour)
@@ -99,7 +103,7 @@ func TestRenewEntitlementOnlyRunsForIsolatedOrigin(t *testing.T) {
 	if err := isolatedTask.ensureEntitlementBeforeResume(zap.NewNop(), entity); err != nil {
 		t.Fatal(err)
 	}
-	if stub.applyCalls != 1 || stub.applyReq == nil {
+	if stub.applyCalls != 2 || stub.applyReq == nil {
 		t.Fatalf("isolated renewal apply calls=%d request=%+v", stub.applyCalls, stub.applyReq)
 	}
 	if stub.applyReq.PeriodValue != 0 || stub.applyReq.PeriodUnit != "" {

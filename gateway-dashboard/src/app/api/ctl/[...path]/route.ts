@@ -1,10 +1,12 @@
 import { NextRequest } from "next/server";
 import { proxyModuleAdminRequest } from "../../admin-proxy-route-helpers";
+import { requiresCtlOperatorToken } from "../route-policy";
 
 export const dynamic = "force-dynamic";
 
 const CTL_API_URL = process.env.CTL_API_URL;
 const GATEWAY_API_URL = process.env.GATEWAY_API_URL;
+const CTL_INTERNAL_TOKEN = process.env.CTL_INTERNAL_TOKEN;
 
 function proxyRequest(req: NextRequest, params: { path: string[] }) {
   const [scope, ...restPath] = params.path;
@@ -19,6 +21,11 @@ function proxyRequest(req: NextRequest, params: { path: string[] }) {
     });
   }
 
+  const requiresOperatorToken = requiresCtlOperatorToken(params.path, req.method);
+  if (requiresOperatorToken && !CTL_INTERNAL_TOKEN) {
+    return Response.json({ error: "CTL operator token is not configured" }, { status: 500 });
+  }
+
   return proxyModuleAdminRequest(req, params, {
     module: "ctl",
     upstreamBaseURL: CTL_API_URL,
@@ -26,6 +33,7 @@ function proxyRequest(req: NextRequest, params: { path: string[] }) {
     requireAdminTokenValidation: true,
     validationBaseURL: GATEWAY_API_URL,
     forwardBrowserToken: false,
+    upstreamToken: requiresOperatorToken ? CTL_INTERNAL_TOKEN : undefined,
   });
 }
 

@@ -6,7 +6,7 @@ import { AccountOrdersRouteLoading, AppRouteShell } from './app-route-shell';
 
 export function AccountOrdersPageClient() {
   return (
-    <AppRouteShell loadingFallback={<AccountOrdersRouteLoading />}>
+    <AppRouteShell loadingFallback={<AccountOrdersRouteLoading />} showAuthGateFooter={false}>
       <AccountOrdersPage />
     </AppRouteShell>
   );

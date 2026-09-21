@@ -7,7 +7,7 @@ import "time"
 // DisplayFeature 套餐功能特性项（user-facing 下发，前端直接渲染，不再按 tier 名硬编码）。
 //
 // 替代订阅页 subscribe-page.tsx 中硬编码的能力位（7×24 在线 / Hermes 自主进化 /
-// 自动任务 / 技能安装(包) / 多通道 / 长期记忆 等）。
+// 定时任务 / 技能安装(包) / 多通道 / 长期记忆 等）。
 type DisplayFeature struct {
 	// Key 稳定语义键，前端据此映射图标（icon），与文案解耦。
 	// 约定枚举（可扩展）：env / storage / credit / online_247 / self_evolution /

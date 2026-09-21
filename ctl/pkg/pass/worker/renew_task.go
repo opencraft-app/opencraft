@@ -123,10 +123,10 @@ func (t *renewPassTask) StepConfigMap() map[string]*taskflow.StepConfig[pctx.Con
 	return stepMap
 }
 
-// ensureEntitlementBeforeResume 只为从 isolated 恢复的续费重建长期权益。
-// active 续费只推进 ctl 业务有效期，不调用 VelaGW。
+// ensureEntitlementBeforeResume 在续费推进前确保长期 AI 权益存在。
+// isolated 分支直接重建；active 分支对 LLMGateway 幂等重建，对旧 AI Gateway 先探测再补建。
 func (t *renewPassTask) ensureEntitlementBeforeResume(logger *zap.Logger, passEntity *modelpass.Entity) error {
-	if t.in == nil || t.in.OriginalIsolatedTime == nil {
+	if t.in == nil {
 		return nil
 	}
 	if passEntity == nil {
@@ -148,12 +148,11 @@ func (t *renewPassTask) ensureEntitlementBeforeResume(logger *zap.Logger, passEn
 		t.in.TimeSpan,
 		t.in.TimeUnit,
 	)
-	if _, err := logicpass.EnsureAiGatewayEntitlement(
-		logger,
-		passEntity.UserID,
-		bundle.AiGatewayPlanID,
-		idempotencyKey,
-	); err != nil {
+	ensure := logicpass.EnsureAiGatewayEntitlement
+	if t.in.OriginalIsolatedTime == nil {
+		ensure = logicpass.EnsureActiveRenewalGatewayEntitlement
+	}
+	if _, err := ensure(logger, passEntity.UserID, bundle.AiGatewayPlanID, idempotencyKey); err != nil {
 		return fmt.Errorf("ensure ai-gateway entitlement before resume: %w", err)
 	}
 	return nil

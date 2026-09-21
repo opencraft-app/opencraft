@@ -135,6 +135,8 @@ func optionalNonNegativeInt(value *int) int {
 }
 
 func (s *Service) RegisterSet(ctx context.Context, input RegisterSetInput) error {
+	input.ID = strings.TrimSpace(input.ID)
+	input.BaseURL = strings.TrimRight(strings.TrimSpace(input.BaseURL), "/")
 	if input.ID == "" {
 		return fmt.Errorf("set id is required")
 	}
@@ -144,12 +146,12 @@ func (s *Service) RegisterSet(ctx context.Context, input RegisterSetInput) error
 	if input.Status == "" {
 		input.Status = SetStatusActive
 	}
-	if _, err := url.ParseRequestURI(input.BaseURL); err != nil {
+	if err := s.validateSetAdminBaseURL(input.ID, input.BaseURL); err != nil {
 		return fmt.Errorf("invalid base url: %w", err)
 	}
 	input.TrafficBaseURL = strings.TrimRight(strings.TrimSpace(input.TrafficBaseURL), "/")
 	if input.TrafficBaseURL != "" {
-		if _, err := url.ParseRequestURI(input.TrafficBaseURL); err != nil {
+		if err := s.validateSetTrafficBaseURL(input.ID, input.TrafficBaseURL); err != nil {
 			return fmt.Errorf("invalid traffic base url: %w", err)
 		}
 	}
@@ -588,7 +590,7 @@ func (s *Service) BootstrapSet(ctx context.Context, setID string) (Set, error) {
 	if !ok {
 		return Set{}, fmt.Errorf("set %q not found", setID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	setup, err := client.GetSetup(ctx)
 	if err != nil {
 		return Set{}, err
@@ -692,7 +694,7 @@ func (s *Service) GetManagedChannelKey(ctx context.Context, setID string, remote
 	if err != nil {
 		return "", err
 	}
-	return s.newAPIClient(set.BaseURL).GetChannelKey(ctx, adminAuthForSet(set), remoteChannelID, code)
+	return s.newAPIClient(set.ID, set.BaseURL).GetChannelKey(ctx, adminAuthForSet(set), remoteChannelID, code)
 }
 
 func (s *Service) EnsureUserBinding(ctx context.Context, externalUserID string) (UserBinding, error) {
@@ -884,7 +886,7 @@ func (s *Service) MigrateUser(ctx context.Context, req MigrationRequest) (Migrat
 	if err != nil {
 		return MigrationResult{}, err
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	adminAuth := adminAuthForSet(set)
 	if binding.UpstreamUserID == 0 {
 		binding, err = s.ensureUpstreamUser(ctx, client, adminAuth, binding)
@@ -1271,6 +1273,10 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	req.UserID = strings.TrimSpace(req.UserID)
 	req.PlanID = strings.TrimSpace(req.PlanID)
+	req, err = s.resolveAmountBasedSubscriptionPlan(ctx, req)
+	if err != nil {
+		return Subscription{}, err
+	}
 	req.SubscriptionName = strings.TrimSpace(req.SubscriptionName)
 	req.PeriodUnit = strings.TrimSpace(req.PeriodUnit)
 	if req.PeriodEnd != nil {
@@ -1291,7 +1297,7 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		}
 	}
 	if req.UserID == "" || req.PlanID == "" {
-		return Subscription{}, fmt.Errorf("user_id and plan_id are required")
+		return Subscription{}, fmt.Errorf("user_id and exactly one of plan_id or token_amount are required")
 	}
 	if err := s.validateApplySubscriptionRequest(req); err != nil {
 		return Subscription{}, err
@@ -1388,7 +1394,7 @@ func (s *Service) ApplySubscription(ctx context.Context, req ApplySubscriptionRe
 		attribute.String("llmgateway.set.id", set.ID),
 		attribute.Int("llmgateway.upstream_plan.id", upstreamPlanID),
 	)
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	adminAuth := adminAuthForSet(set)
 	if binding.UpstreamUserID == 0 {
 		binding, err = traceGatewayValue(ctx, "llmgateway.ensure_upstream_user", func(spanCtx context.Context) (UserBinding, error) {
@@ -1554,7 +1560,8 @@ func reusableUniqueSubscription(subs []newapi.UserSubscription, name string, ups
 }
 
 func isAdditiveSubscription(sub newapi.UserSubscription) bool {
-	return strings.HasPrefix(strings.TrimSpace(sub.Name), "free-credit:")
+	name := strings.TrimSpace(sub.Name)
+	return strings.HasPrefix(name, "free-credit:") || strings.HasPrefix(name, "credit-package:")
 }
 
 func mergeSubscriptionByID(subs []newapi.UserSubscription, created newapi.UserSubscription) []newapi.UserSubscription {
@@ -1666,7 +1673,7 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 		)
 		return nil
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	auth := adminAuthForSet(set)
 	if err := s.withUserSubscriptionWriteLease(ctx, set, externalUserID, func(userLeaseCtx context.Context) error {
 		return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
@@ -1688,6 +1695,145 @@ func (s *Service) CancelSubscription(ctx context.Context, externalUserID string)
 	)
 	s.enqueueTenantObservationEvent(ctx, externalUserID, binding.SetID)
 	return nil
+}
+
+func (s *Service) CancelSelectedSubscriptions(ctx context.Context, req CancelSelectedSubscriptionsRequest) (err error) {
+	req = normalizeCancelSelectedSubscriptionsRequest(req)
+	ctx, span := s.startTelemetrySpan(ctx, observability.ScopeTenantEntitlement, "llmgateway.subscription.cancel_selected",
+		attribute.String("llmgateway.user.id", req.UserID),
+	)
+	defer func() {
+		observability.FinishSpan(span, err, "subscription_cancel_selected_failed", s.telemetrySanitizer)
+	}()
+	if req.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if !hasCancelSelectedSelector(req) {
+		return fmt.Errorf("at least one subscription selector is required")
+	}
+	binding, ok, err := s.store.GetUserBinding(ctx, req.UserID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	set, ok, err := s.store.GetSet(ctx, binding.SetID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("set %q not found", binding.SetID)
+	}
+	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
+		return fmt.Errorf("set %q is not bootstrapped", set.ID)
+	}
+
+	matchedIDs := make([]int, 0)
+	if binding.UpstreamUserID > 0 {
+		client := s.newAPIClient(set.ID, set.BaseURL)
+		auth := adminAuthForSet(set)
+		if err := s.withUserSubscriptionWriteLease(ctx, set, req.UserID, func(userLeaseCtx context.Context) error {
+			return s.withSetSubscriptionWriteLease(userLeaseCtx, set, func(setLeaseCtx context.Context) error {
+				subs, listErr := s.listActiveSubscriptions(setLeaseCtx, client, auth, binding.UpstreamUserID)
+				if listErr != nil {
+					return listErr
+				}
+				for _, sub := range subs {
+					if !cancelSelectedMatchesName(strings.TrimSpace(sub.Name), req) {
+						continue
+					}
+					if invalidateErr := client.AdminInvalidateUserSubscription(setLeaseCtx, auth, sub.ID); invalidateErr != nil {
+						return invalidateErr
+					}
+					matchedIDs = append(matchedIDs, sub.ID)
+				}
+				return nil
+			})
+		}); err != nil {
+			return err
+		}
+	}
+
+	projections, err := s.store.ListSubscriptionProjections(ctx, req.UserID)
+	if err != nil {
+		return err
+	}
+	for _, projection := range projections {
+		if cancelSelectedMatchesName(strings.TrimSpace(projection.SubscriptionName), req) {
+			matchedIDs = append(matchedIDs, projection.UpstreamSubscriptionID)
+		}
+	}
+	matchedIDs = uniquePositiveInts(matchedIDs)
+	if len(matchedIDs) == 0 {
+		return nil
+	}
+	if err := s.store.DeleteSubscriptionProjectionsByUpstreamIDs(ctx, req.UserID, matchedIDs); err != nil {
+		return err
+	}
+	s.emitCommittedTransition(ctx, observability.ScopeTenantEntitlement, "llmgateway.entitlement.changed",
+		"subscription", req.UserID, "active", "cancelled_selected",
+		attribute.String("llmgateway.user.id", req.UserID),
+		attribute.String("llmgateway.set.id", binding.SetID),
+	)
+	s.enqueueTenantObservationEvent(ctx, req.UserID, binding.SetID)
+	return nil
+}
+
+func normalizeCancelSelectedSubscriptionsRequest(req CancelSelectedSubscriptionsRequest) CancelSelectedSubscriptionsRequest {
+	req.UserID = strings.TrimSpace(req.UserID)
+	req.SubscriptionNames = trimNonEmptyStrings(req.SubscriptionNames)
+	req.SubscriptionNamePrefixes = trimNonEmptyStrings(req.SubscriptionNamePrefixes)
+	return req
+}
+
+func trimNonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func hasCancelSelectedSelector(req CancelSelectedSubscriptionsRequest) bool {
+	return len(req.SubscriptionNames) > 0 || len(req.SubscriptionNamePrefixes) > 0 || req.IncludeLegacyPackageSubscription
+}
+
+func cancelSelectedMatchesName(name string, req CancelSelectedSubscriptionsRequest) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return req.IncludeLegacyPackageSubscription
+	}
+	for _, candidate := range req.SubscriptionNames {
+		if name == candidate {
+			return true
+		}
+	}
+	for _, prefix := range req.SubscriptionNamePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func uniquePositiveInts(values []int) []int {
+	seen := make(map[int]struct{}, len(values))
+	out := make([]int, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func (s *Service) GetActiveSubscription(ctx context.Context, externalUserID string) (Subscription, error) {
@@ -1712,7 +1858,7 @@ func (s *Service) GetActiveSubscription(ctx context.Context, externalUserID stri
 	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
 		return Subscription{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
-	subs, err := s.newAPIClient(set.BaseURL).AdminListUserSubscriptions(ctx, adminAuthForSet(set), binding.UpstreamUserID)
+	subs, err := s.newAPIClient(set.ID, set.BaseURL).AdminListUserSubscriptions(ctx, adminAuthForSet(set), binding.UpstreamUserID)
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -1745,7 +1891,7 @@ func (s *Service) ListActiveSubscriptions(ctx context.Context, externalUserID st
 	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
 		return ActiveSubscriptionList{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
-	activeSubs, err := s.listActiveSubscriptions(ctx, s.newAPIClient(set.BaseURL), adminAuthForSet(set), binding.UpstreamUserID)
+	activeSubs, err := s.listActiveSubscriptions(ctx, s.newAPIClient(set.ID, set.BaseURL), adminAuthForSet(set), binding.UpstreamUserID)
 	if err != nil {
 		return ActiveSubscriptionList{}, err
 	}
@@ -2223,7 +2369,7 @@ func (s *Service) createExternalKey(ctx context.Context, externalUserID string, 
 	if set.AdminAccessToken == "" || set.AdminUserID == 0 {
 		return APIKeyBinding{}, fmt.Errorf("set %q is not bootstrapped", set.ID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	adminAuth := newapi.AdminAuth{UserID: set.AdminUserID, AccessToken: set.AdminAccessToken}
 	if binding.UpstreamUserID == 0 {
 		binding, err = traceGatewayValue(ctx, "llmgateway.ensure_upstream_user", func(spanCtx context.Context) (UserBinding, error) {
@@ -2273,7 +2419,7 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 	if binding.Username == "" || binding.Password == "" {
 		return APIKeyBinding{}, fmt.Errorf("upstream username and password are required")
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := traceGatewayValue(ctx, "newapi.user_login", func(spanCtx context.Context) (newapi.Session, error) {
 		return client.Login(spanCtx, binding.Username, binding.Password)
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID))
@@ -2529,7 +2675,7 @@ func (s *Service) deleteUpstreamAPIKey(ctx context.Context, binding APIKeyBindin
 	if !ok {
 		return fmt.Errorf("set %q not found", binding.SetID)
 	}
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := client.Login(ctx, userBinding.Username, userBinding.Password)
 	if err != nil {
 		return fmt.Errorf("login upstream user before key revoke: %w", err)
@@ -2775,6 +2921,12 @@ func (s *Service) proxyWithTrafficRouteSnapshot(w http.ResponseWriter, r *http.R
 			http.Error(w, "set runtime route missing", http.StatusServiceUnavailable)
 			return
 		}
+	}
+	if err := s.validateSetTrafficBaseURL(snapshot.SetID, targetBaseURL); err != nil {
+		accessLog.Status = http.StatusBadGateway
+		accessLog.ErrorType = "unsafe_set_url"
+		http.Error(w, "unsafe set url", http.StatusBadGateway)
+		return
 	}
 	target, err := url.Parse(targetBaseURL)
 	if err != nil {
@@ -3198,6 +3350,10 @@ func (s *Service) ProxyConsoleHTTP(w http.ResponseWriter, r *http.Request, setID
 		http.Error(w, "set unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if err := s.validateSetAdminBaseURL(set.ID, set.BaseURL); err != nil {
+		http.Error(w, "unsafe set url", http.StatusBadGateway)
+		return
+	}
 	if upstreamPath == "" {
 		upstreamPath = "/"
 	}
@@ -3294,7 +3450,7 @@ func (s *Service) roundTripConsoleRequest(outReq *http.Request) (*http.Response,
 }
 
 func (s *Service) roundTripConsoleDashboardSession(ctx context.Context, set Set, original *http.Request, upstreamPath string, body []byte) (*http.Response, []byte, error) {
-	client := s.newAPIClient(set.BaseURL)
+	client := s.newAPIClient(set.ID, set.BaseURL)
 	session, err := s.loginRootSession(ctx, client, set)
 	if err != nil {
 		return nil, nil, err
@@ -3308,12 +3464,32 @@ func (s *Service) roundTripConsoleDashboardSession(ctx context.Context, set Set,
 	return client.DoRaw(ctx, original.Method, upstreamPath, upstreamConsoleRawQuery(original), headers, body)
 }
 
-func (s *Service) newAPIClient(baseURL string) *newapi.Client {
+func (s *Service) newAPIClient(setID string, baseURL string) *newapi.Client {
 	timeout := s.options.NewAPIClientTimeout
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	return newapi.NewClient(baseURL, &http.Client{Transport: s.transport, Timeout: timeout})
+	client := &http.Client{Transport: s.transport, Timeout: timeout}
+	if s.options.EnforceManagedSetURLs {
+		return newapi.NewClientWithURLPolicy(baseURL, client, managedSetAdminURLPolicy(setID, baseURL))
+	}
+	return newapi.NewClient(baseURL, client)
+}
+
+func (s *Service) validateSetAdminBaseURL(setID string, rawURL string) error {
+	if s.options.EnforceManagedSetURLs {
+		return validateManagedSetAdminBaseURL(setID, rawURL)
+	}
+	_, err := url.ParseRequestURI(rawURL)
+	return err
+}
+
+func (s *Service) validateSetTrafficBaseURL(setID string, rawURL string) error {
+	if s.options.EnforceManagedSetURLs {
+		return validateManagedSetTrafficBaseURL(setID, rawURL)
+	}
+	_, err := url.ParseRequestURI(rawURL)
+	return err
 }
 
 func (s *Service) capacityPicker() SetCapacityPicker {

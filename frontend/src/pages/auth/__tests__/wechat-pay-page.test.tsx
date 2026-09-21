@@ -73,6 +73,30 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 
+it('routes upgrade payment to the existing-order endpoint with mobile authorization', async () => {
+  setUserAgent(WECHAT_UA);
+  fetchMock.mockResolvedValue(jsonResponse({ data: mockOrderUrlResult({ need_charge: 0 }) }));
+  renderPage(`/auth/wechat-pay?d=upgrade-1&ac=test-ticket&pid=pass-1&op=modify&e=${Date.now() + 60000}&openid=wx-test`);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  const call = fetchMock.mock.calls.find(([url]) => String(url).includes('order-url'));
+  expect(String(call?.[0])).toContain('/v1/passes/pass-1/modify/order-url');
+  expect(JSON.parse(call?.[1].body)).toMatchObject({ deal_names: ['upgrade-1'], platform: 'mobile', auth_code: 'test-ticket', wx_open_id: 'wx-test' });
+});
+
+it('does not spin forever for an upgrade opened outside WeChat', async () => {
+  setUserAgent(SAFARI_UA);
+  renderPage(`/auth/wechat-pay?d=upgrade-1&ac=test-ticket&pid=pass-1&op=modify&e=${Date.now() + 60000}`);
+  await screen.findByText('请在微信中打开此页面，或返回电脑使用微信扫码。');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('rejects an upgrade link missing its pass binding before requesting payment', async () => {
+  setUserAgent(WECHAT_UA);
+  renderPage(`/auth/wechat-pay?d=upgrade-1&ac=test-ticket&op=modify&e=${Date.now() + 60000}&openid=wx-test`);
+  await screen.findByText('升级支付信息不完整，请返回原页面重新获取二维码。');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
@@ -272,17 +296,45 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     });
   });
 
-  it("order-url 接口失败 → error 态展示后端报错", async () => {
+  it("order-url 返回 400 + AUTH_CODE_INVALID（线上过期场景）→ 保持 master 行为走 error 态，不进温和态", async () => {
+    /* 与 master 体验完全一致：仅 401-form 进 expired 温和态；
+       400-form 走通用 error 弹框（放宽为跟进项，见 MR !4125 评审讨论）。 */
     setUserAgent(WECHAT_UA);
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: "auth_code 已过期", code: "AUTH_CODE_INVALID" }, 400));
-    /* 屏蔽 console.error 噪音 */
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail" })}`);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
     });
-    expect(screen.getByText(/auth_code 已过期/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "二维码已失效" })).not.toBeInTheDocument();
+    expect(wxSignSpy).not.toHaveBeenCalled();
+  });
+
+  it("order-url 返回 401 + AUTH_CODE_INVALID（早期联调形态）→ 同样进 expired 态", async () => {
+    setUserAgent(WECHAT_UA);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: "auth_code invalid or expired", code: "AUTH_CODE_INVALID" }, 401),
+    );
+    renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail-401" })}`);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "二维码已失效" })).toBeInTheDocument();
+    });
+    expect(wxSignSpy).not.toHaveBeenCalled();
+  });
+
+  it("order-url 接口其他业务失败（非 AUTH_CODE_INVALID）→ error 态展示后端报错", async () => {
+    setUserAgent(WECHAT_UA);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "订单状态异常", code: "ORDER_STATE_ERROR" }, 400));
+    /* 屏蔽 console.error 噪音 */
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail-other" })}`);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
+    });
+    expect(screen.getByText(/订单状态异常/)).toBeInTheDocument();
     expect(wxSignSpy).not.toHaveBeenCalled();
   });
 

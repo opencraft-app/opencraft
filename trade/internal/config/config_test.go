@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -69,6 +70,31 @@ func TestLoadFallsBackToLegacyShadowInternalBaseURL(t *testing.T) {
 	}
 	if cfg.AccountBindingInternalBaseURL != "http://legacy-shadow.local" {
 		t.Fatalf("AccountBindingInternalBaseURL = %q", cfg.AccountBindingInternalBaseURL)
+	}
+}
+
+func TestLoadCreditSendResourceSettings(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.local")
+	t.Setenv("CREDIT_SEND_RESOURCE_URL", "http://9.139.137.40/feev2/sendResource.php")
+	t.Setenv("CREDIT_SEND_RESOURCE_HOST", "qbilling.itd.com")
+	t.Setenv("CREDIT_SEND_RESOURCE_CID", "101433")
+	t.Setenv("CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL", "http://43.153.236.65")
+	t.Setenv("CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID", "qbilling-send-resource-test")
+	t.Setenv("TRADE_CLOUDLADDER_HMAC_SECRET", "trade-hmac")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CreditSendResourceURL != "http://9.139.137.40/feev2/sendResource.php" ||
+		cfg.CreditSendResourceHost != "qbilling.itd.com" || cfg.CreditSendResourceCID != "101433" {
+		t.Fatalf("unexpected sendResource config: %+v", cfg)
+	}
+	if cfg.CreditSendResourceCloudLadderGatewayURL != "http://43.153.236.65" ||
+		cfg.CreditSendResourceCloudLadderRouteID != "qbilling-send-resource-test" ||
+		cfg.CloudLadderHMACSecret != "trade-hmac" {
+		t.Fatalf("unexpected sendResource CloudLadder config: %+v", cfg)
 	}
 }
 
@@ -209,6 +235,48 @@ func TestLoad_RegionOverrideFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_CreditRegionOverrideFromEnv(t *testing.T) {
+	tests := []struct {
+		name        string
+		tradeValue  string
+		creditValue string
+		want        string
+		wantErr     bool
+	}{
+		{name: "credit override is independent", tradeValue: "ap-guangzhou", creditValue: "ap-beijing", want: "ap-beijing"},
+		{name: "unset credit override inherits trade", tradeValue: "ap-singapore", want: "ap-singapore"},
+		{name: "both unset keep override empty", want: ""},
+		{name: "surrounding whitespace trimmed", tradeValue: "ap-guangzhou", creditValue: "  ap-beijing  ", want: "ap-beijing"},
+		{name: "unknown credit region fails fast", tradeValue: "ap-guangzhou", creditValue: "ap-tokyo", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredLoadEnv(t)
+			t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+			t.Setenv("LIGHTVELA_TRADE_REGION", tt.tradeValue)
+			t.Setenv("LIGHTVELA_CREDIT_REGION", tt.creditValue)
+
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Load() expected error, got CreditRegionOverride=%q", cfg.CreditRegionOverride)
+				}
+				if !strings.Contains(err.Error(), "LIGHTVELA_CREDIT_REGION") {
+					t.Fatalf("Load() error = %q, want LIGHTVELA_CREDIT_REGION", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.CreditRegionOverride != tt.want {
+				t.Fatalf("CreditRegionOverride = %q, want %q", cfg.CreditRegionOverride, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoad_InquiryFallbackIdentityFromEnv(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -317,7 +385,28 @@ func TestLoad_BillingCloudAPIUsesTradeRoutingConfig(t *testing.T) {
 	if cfg.BillingCloudAPICloudLadderHMACSecret != "trade-hmac" {
 		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
+	if cfg.CloudLadderHMACSecret != "trade-hmac" {
+		t.Fatalf("CloudLadderHMACSecret fallback = %q", cfg.CloudLadderHMACSecret)
+	}
 	if cfg.BillingCloudAPIXQCloudUserID != "800000294207" {
 		t.Fatalf("BillingCloudAPIXQCloudUserID = %q", cfg.BillingCloudAPIXQCloudUserID)
+	}
+}
+
+func TestLoad_CloudLadderHMACSecretPrefersGeneralName(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("TRADE_CLOUDLADDER_HMAC_SECRET", "general-secret")
+	t.Setenv("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", "legacy-secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.CloudLadderHMACSecret != "general-secret" {
+		t.Fatalf("CloudLadderHMACSecret = %q", cfg.CloudLadderHMACSecret)
+	}
+	if cfg.BillingCloudAPICloudLadderHMACSecret != "general-secret" {
+		t.Fatalf("BillingCloudAPICloudLadderHMACSecret = %q", cfg.BillingCloudAPICloudLadderHMACSecret)
 	}
 }

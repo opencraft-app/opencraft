@@ -51,8 +51,31 @@ export const REALNAME_LEVEL = {
   PHONE_3FA: "phone_3fa",
 } as const;
 
+/**
+ * 为什么这个 Bot 的兄弟 Bot 列不出来：
+ * - instance_stopped: 实例非运行态，/bots 无法进沙箱读取
+ * - bot_list_unavailable: 实例运行中，但 /bots 暂时不可用（旧后端 404/405、套餐变更 403、响应无效）
+ */
+export type BotSiblingsUnknownReason = "instance_stopped" | "bot_list_unavailable";
+
 export interface Bot {
   id: string;
+  instanceId?: string;
+  profileId?: string;
+  isDefault?: boolean;
+  gatewayRunning?: boolean;
+  // Set when this Bot came from the single-instance projection instead of
+  // /bots, so sibling Bots may exist on the server but cannot be listed.
+  siblingsUnknown?: BotSiblingsUnknownReason;
+  description?: string;
+  createdFrom?: "blank" | "clone";
+  sourceBotId?: string;
+  weixinOwner?: {
+    botId: string;
+    profileId: string;
+    botName?: string;
+    status: string;
+  };
   sandboxId?: string;
   name: string;
   type: "sales" | "support" | "ops" | "research";
@@ -270,6 +293,33 @@ export interface BundlePrice {
   tax_price?: number;
 }
 
+/** ctl/pkg/transport/pass_modify.go: authoritative upgrade targets and live prices. */
+export interface PassModifyOption {
+  target_bundle_id: string;
+  bundle: { bundle_id: string; bundle_name: string; cpu: number; memory: number; system_disk_size: number; credit: number };
+  modify_price: BundlePrice;
+}
+export interface PassModifyBundles {
+  source_bundle_id: string;
+  modify_bundle_set: PassModifyOption[];
+}
+export interface PassModifyOrder {
+  deal_name: string;
+  big_order_id: string;
+  auth_code?: string;
+}
+export interface PassModifyCheckout {
+  checkout: { deal_name: string; big_order_id: string; target_bundle_id: string; local_status: string } | null;
+}
+/** ctl/pkg/transport/order.go; success alone does not guarantee local delivery. */
+export interface PassOrderStatus {
+  deal_name: string;
+  order_type: string;
+  status: 'pending' | 'paid' | 'success' | 'cancelled' | 'failed';
+  local_status?: string;
+  source: string;
+}
+
 export interface Bundle {
   bundle_id: string;
   bundle_name: string;
@@ -303,6 +353,8 @@ export interface Bundle {
 }
 
 export interface Pass {
+  /** Explicit lifecycle from ctl; upgrade completion must not infer it from expiry. */
+  status?: string;
   pass_id: string;
   user_id: string;
   bundle_id: string;
@@ -323,6 +375,9 @@ export interface Pass {
   agent_quota_available?: number;
   credit_total: number;
   credit_available: number;
+  /** 免费或活动发放的独立积分权益，例如邀请奖励。 */
+  free_credit_total?: number;
+  free_credit_available?: number;
 }
 
 /**

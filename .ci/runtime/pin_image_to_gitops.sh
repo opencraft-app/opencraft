@@ -153,12 +153,17 @@ project_and_pin_gitops_state() {
   IFS=',' read -r -a services <<<"$SERVICE_ARG"
   for service in "${services[@]}"; do
     echo "GitOps 发布进度：更新 ${service}/${ENV_NAME} 的镜像 pin"
-    python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py" \
-      --repo-root "$target_repo_root" \
-      --service "$service" \
-      --env "$ENV_NAME" \
-      --image "$PIN_IMAGE" \
+    image_pin_args=(
+      --repo-root "$target_repo_root"
+      --service "$service"
+      --env "$ENV_NAME"
+      --image "$PIN_IMAGE"
       --deployed-at "$DEPLOYED_AT"
+    )
+    if [[ -n "${GITOPS_IMAGE_PIN_VARIANT:-}" && "${GITOPS_IMAGE_PIN_VARIANT}" != "all" ]]; then
+      image_pin_args+=(--variant "$GITOPS_IMAGE_PIN_VARIANT")
+    fi
+    python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py" "${image_pin_args[@]}"
     if [[ "$add_to_git" == "true" ]]; then
       git -C "$target_repo_root" add "argocd/services/$service/$ENV_NAME"
     fi
@@ -298,6 +303,35 @@ git -C "$REPO_ROOT" config user.name "$COMMITTER_NAME"
 git -C "$REPO_ROOT" config user.email "$COMMITTER_EMAIL"
 
 project_and_pin_gitops_state "$REPO_ROOT" true
+
+if [[ "$BUNDLE_SERVICE" == "velagw" && "$SERVICE_ARG" == "velagw" ]]; then
+  pin_diff_output="$(
+    python3 "$RUNTIME_COMMAND_DIR/check_pin_only_promote_diff.py" \
+      --repo-root "$REPO_ROOT" \
+      --env "$ENV_NAME"
+  )"
+  pin_diff_state="${pin_diff_output%%$'\n'*}"
+  pin_diff_reason="${pin_diff_output#*$'\n'}"
+  if [[ "$pin_diff_state" != "true" ]]; then
+    pin_diff_reason="${pin_diff_reason:-unexpected staged diff}"
+    echo "VelaGW promote 包含非镜像变化：${pin_diff_reason}"
+    GATE_AUTO_MERGE_ALLOWED=false
+    GATE_AUTO_SYNC_ALLOWED=false
+    GATE_ARGO_SYNC=manual
+    GATE_MANUAL_ACTIONS="$(python3 - "$GATE_MANUAL_ACTIONS" "$pin_diff_reason" <<'PY'
+import json
+import sys
+
+actions = json.loads(sys.argv[1] or "[]")
+actions.append(
+    "VelaGW promote 包含非镜像 GitOps 变化，必须审查差异、回填 master 真源后重新生成候选："
+    + sys.argv[2]
+)
+print(json.dumps(actions, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  fi
+fi
 
 deployed_at_only_diff="$(python3 "$RUNTIME_COMMAND_DIR/detect_deployed_at_only_diff.py" --repo-root "$REPO_ROOT")"
 if [[ "$deployed_at_only_diff" == "true" ]]; then

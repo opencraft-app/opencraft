@@ -1,0 +1,94 @@
+## goal
+
+收紧国内站与国际站首页底部 Hermes Agent CTA 与前后内容之间的纵向留白。
+
+## non_goals
+
+- 不修改文案、字体、按钮或 Footer 链接。
+- 不改动其他首页区块的布局。
+
+## requirement_ids / requirement_refs / requirement_excerpt
+
+- 用户截图（2026-09-05）：`把想法交给 Hermes Agent，让它们在云端持续推进。` 板块上下空白间距调小。
+- 用户国内站截图（2026-09-06）：上一段 CTA 与 Hermes Agent 标题之间仍有大面积留白，需继续收紧。
+- 用户本地预览反馈（2026-09-06）：在已收紧基础上，将 Hermes Agent 标题上方间距连续调大。
+
+## interface_refs / data_structure_refs
+
+- 无 API 或数据结构变更；保持八个国际站 locale 共用同一生成样式。
+
+## history_context
+
+- `current_design_refs`：`frontend/openspec/changes/2026-08-31-intl-homepage-integration-implementation-plan.md`。
+- `relevant_evolution`：国际站首页样式由 `frontend/scripts/import-international-homepage.mjs` 生成到 `frontend/public/lightvela-intl-home/style.css`。
+- `superseded_refs`：无。
+
+## acceptance
+
+- 桌面端上一段 CTA 与 Hermes Agent 标题之间的最终留白为 128px，手机端为 104px。
+- Hermes Agent 标题、按钮与 Footer 链接区之间的内部间距保持不变。
+- 平板和手机断点继续按比例收紧，无横向布局变化。
+- 国际站首页聚焦测试、前端检查与 diff 检查通过。
+
+## affected_paths
+
+- `frontend/scripts/import-international-homepage.mjs`
+- `frontend/public/lightvela-intl-home/style.css`
+- `frontend/next-site/international-home-runtime.tsx`
+- `frontend/next-site/__tests__/international-home-rendering.test.tsx`
+- `frontend/next-site/__tests__/international-home-page.test.tsx`
+
+## required_context
+
+- Pack：`frontend-product-surface`。
+- 权威文件：`frontend/AGENTS.md`、`docs/context/project/services/frontend.md`。
+
+## context_receipt
+
+| 文件 | 阅读原因 | 用途 |
+|---|---|---|
+| `docs/context/project/services/frontend.md@2.1.0` | 前端服务边界与视觉验证要求 | 确定聚焦测试与视觉检查范围 |
+| `frontend/AGENTS.md` | 前端硬规则与门禁 | 约束最小变更和验证命令 |
+| `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@1.0.0` | 国际首页生成物邻接 | 确认同步修改生成源、产物和测试 |
+| `frontend/openspec/changes/2026-08-31-intl-homepage-integration-implementation-plan.md` | 当前国际首页集成约束 | 保持所有已发布 locale 共用布局 |
+
+## evidence
+
+- `pnpm exec vitest run next-site/__tests__/international-home-page.test.tsx next-site/__tests__/international-home-rendering.test.tsx`：最终微调后 43/43 通过。
+- `pnpm check`：最终微调后通过；TypeScript 0 个新增诊断，现有 i18n 告警 48 个。
+- `python3 .agents/context/scripts/validate_documentation.py --repo . --format json`：错误 0、告警 0、失效链接 0。
+- `git diff --check`：通过。
+- 931×909 国内站桌面预览：上一段 CTA 内容底部至 Hermes Agent 标题的最终布局留白为 128px，标题/按钮仍居中，无横向溢出。
+- 390×844 国内站移动样式：对应布局留白由 88px 调整为 104px，Footer 两列布局规则未变。
+- 931×909 国内站页尾复核：`.cta__stage` 为 `opacity: 1`、`transform: none`，免费体验 CTA 可见，不再以透明内容占据整段高度。
+- CSS 与首页脚本资源版本更新为 `20260906-home-footer-spacing-v2`，本地实际加载新样式已核对。
+- 本地预览同时出现与本次样式改动无关的认证服务不可用及 fragment script 开发态告警；页面主体与本次目标区块仍正常渲染。
+
+## risks
+
+- 留白缩减过多会让 CTA 与 Footer 链接区拥挤；采用桌面、平板、手机逐级缩减的既有响应式结构，并做截图检查。
+
+## validation
+
+- `pnpm exec vitest run next-site/__tests__/international-home-page.test.tsx`
+- `pnpm check`
+- `git diff --check`
+- 桌面与移动视口聚焦截图检查。
+
+## decisions
+
+- 调整上一段 `.cta` 的底部留白，以及 `.foot`、`.foot__top`、`.foot__links` 的纵向尺寸，不改内容或交互。
+
+## scan_scope
+
+- `frontend/scripts/import-international-homepage.mjs`
+- `frontend/public/lightvela-intl-home/style.css`
+- `frontend/next-site/__tests__/international-home-page.test.tsx`
+
+## scan_output
+
+- 精确搜索和浏览器状态确认，大空洞还包含 `.cta__stage.sr` 保持 `opacity: 0` 后形成的隐形占位；同时静态资源 URL 沿用旧版本号，存在浏览器/CDN 继续命中旧 CSS 的风险。所有 locale 共用 `style.css`。
+
+## handoff
+
+- 首轮改动已通过 MR !3622 合并；本次追加修正已提交到 MR !3625，当前可合并、CI 待完成，未合并、未发布。

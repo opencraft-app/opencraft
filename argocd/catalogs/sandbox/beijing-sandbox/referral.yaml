@@ -1,0 +1,6 @@
+service: referral
+env: beijing-sandbox
+project: beijing-sandbox
+destinationName: beijing-sandbox
+namespace: referral
+sourcePath: argocd/services/referral/beijing-sandbox

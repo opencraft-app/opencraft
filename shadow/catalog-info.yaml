@@ -1,0 +1,18 @@
+{
+  "id": "shadow",
+  "name": "腾讯云 Shadow Account 集成",
+  "kind": "service",
+  "path": "shadow",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "active",
+  "domains": ["identity-access", "subscription-entitlements"],
+  "summary": "编排影子账号注册、一次性授权码、临时凭据、试用订单和回滚。",
+  "runtime": "Go HTTP 服务与 SQLite 可插拔存储",
+  "interfaces": ["Shadow Account HTTP API", "Tencent Cloud callback", "billing provider"],
+  "dependencies": ["Tencent Cloud account/CAM/STS", "trade", "external-billing"],
+  "source_docs": ["shadow/README.md", "shadow/AGENTS.md", "shadow/ARCHITECTURE.md"],
+  "agent_entry": "shadow/AGENTS.md",
+  "service_docs": "shadow/docs/README.md",
+  "deploy": ["shadow/deploy"],
+  "generated_paths": ["shadow/bin"]
+}

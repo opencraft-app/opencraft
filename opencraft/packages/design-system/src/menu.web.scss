@@ -1,0 +1,58 @@
+// Shared menu geometry and interaction surface. Feature menus own only content
+// and width; typography must not inherit from the surrounding page or portal.
+@mixin surface {
+  max-width: min(var(--radix-dropdown-menu-content-available-width), calc(100vw - 16px));
+  max-height: min(376px, var(--radix-dropdown-menu-content-available-height), calc(100vh - 16px));
+  padding: var(--menu-surface-padding);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  border: 0.5px solid var(--color-border-default);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-background-elevated-secondary) 90%, transparent);
+  box-shadow: 0 0 0 0.5px var(--color-border-default), 0 8px 16px -4px rgb(0 0 0 / 12%);
+  color: var(--color-text);
+  font-family: var(--font-family-ui);
+  font-size: 13px;
+  line-height: 18px;
+  outline: none;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  user-select: none;
+  backdrop-filter: blur(8px);
+  -webkit-app-region: no-drag;
+
+  @media (prefers-reduced-motion: no-preference) {
+    &[data-state="open"] { animation: menu-surface-enter 110ms cubic-bezier(0.16, 1, 0.3, 1); }
+    &[data-state="closed"] { animation: menu-surface-exit 80ms ease-in; }
+  }
+}
+
+@mixin item {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--menu-item-radius);
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  outline: none;
+
+  &:hover, &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
+  &[data-disabled] { opacity: 0.42; pointer-events: none; }
+  > svg { flex: 0 0 14px; width: 14px; height: 14px; color: var(--color-text-secondary); }
+}
+
+@keyframes menu-surface-enter {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes menu-surface-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.98); }
+}

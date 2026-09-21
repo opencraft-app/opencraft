@@ -43,7 +43,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -157,7 +157,11 @@ function rememberedIdMatchesSkill(id: string, skill: Pick<Skill, "registry" | "r
   const prefix = `${skill.registry}:`;
   if (!id.startsWith(prefix)) return false;
   const rawId = id.slice(prefix.length);
-  return rawId === skill.rawId.trim().toLowerCase() || rawId.split("/").pop() === skill.slug.trim().toLowerCase();
+  const targetRawId = skill.rawId.trim().toLowerCase();
+  if (rawId === targetRawId) return true;
+  return !rawId.includes("/")
+    && !targetRawId.includes("/")
+    && rawId === skill.slug.trim().toLowerCase();
 }
 
 function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[]): boolean {
@@ -172,7 +176,11 @@ function rememberedIdExistsInInstalledList(id: string, skills: InstalledSkill[])
   const matchesIdentity = (skill: InstalledSkill) => {
     const candidates = [skill.rawId, skill.slug, ...(skill.nativeAliases ?? [])]
       .map((value) => value.trim().toLowerCase());
-    return candidates.includes(rawId) || (shortSlug ? candidates.includes(shortSlug) : false);
+    return candidates.includes(rawId) || (
+      !rawId.includes("/")
+      && shortSlug !== undefined
+      && candidates.some((candidate) => !candidate.includes("/") && candidate === shortSlug)
+    );
   };
 
   if (skills.some((skill) => skill.registries.includes(registry) && matchesIdentity(skill))) return true;
@@ -192,6 +200,9 @@ function getSearchInstallRowStatus(message?: string): SearchInstallRowStatus {
 }
 
 type FeaturedSkillId =
+  | "teach"
+  | "grill-me"
+  | "reddit-automation"
   | "self-improving-agent"
   | "find-skills"
   | "weather"
@@ -276,6 +287,42 @@ const FEATURED_SKILLS: ReadonlyArray<{
     },
     heroImageSrc: "/assets/skills/featured-simple.jpg",
     heroClassName: "bg-[#65B9A8]",
+  },
+  {
+    id: "teach",
+    skill: {
+      registry: "skills-sh",
+      rawId: "mattpocock/skills/teach",
+      slug: "teach",
+      name: "Teach",
+      sourceOrg: "mattpocock/skills",
+    },
+    heroImageSrc: "/assets/skills/featured-teach.jpg",
+    heroClassName: "bg-[#2F78B8]",
+  },
+  {
+    id: "grill-me",
+    skill: {
+      registry: "skills-sh",
+      rawId: "mattpocock/skills/grill-me",
+      slug: "grill-me",
+      name: "Grill Me",
+      sourceOrg: "mattpocock/skills",
+    },
+    heroImageSrc: "/assets/skills/featured-grill-me.jpg",
+    heroClassName: "bg-[#35358F]",
+  },
+  {
+    id: "reddit-automation",
+    skill: {
+      registry: "skills-sh",
+      rawId: "flowkit-labs/skills/reddit-automation",
+      slug: "reddit-automation",
+      name: "Reddit Automation",
+      sourceOrg: "flowkit-labs/skills",
+    },
+    heroImageSrc: "/assets/skills/featured-reddit-automation.jpg",
+    heroClassName: "bg-[#A92B4C]",
   },
 ] as const;
 
@@ -802,6 +849,13 @@ function RegistryBadge({ registry, href }: { registry: Registry; href?: string }
 }
 
 function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[] {
+  const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
+  if (nativeSource === "builtin") {
+    return [{
+      key: `native:${nativeSource}`,
+      label: skill.sourceLabel || "系统预置",
+    }];
+  }
   const registries = Array.from(new Set(skill.registries));
   const marketplaceRegistries = registries.filter((registry) => registry !== "hermes");
   if (marketplaceRegistries.length > 0) {
@@ -812,7 +866,6 @@ function getInstalledSources(skill: InstalledSkill): InstalledSourceDescriptor[]
       sourceUrl: skill.sourceUrls?.[registry],
     }));
   }
-  const nativeSource = skill.nativeSource?.trim().toLowerCase() || "other";
   return [{
     key: `native:${nativeSource}`,
     label: skill.sourceLabel || "其他",
@@ -1481,6 +1534,9 @@ function SectionTitle({
   );
 }
 
+// The Create Skill tab is intentionally hidden. Keep this panel ready for its
+// reintroduction, then remove this expectation when it is rendered again.
+// @ts-expect-error TS6133: retained for the intentionally hidden Create Skill tab.
 function CreateSkillPanel({
   learnSkillTrigger,
   learnSkillPanel,
@@ -1813,19 +1869,33 @@ function CreateSkillPanel({
   );
 }
 
+export interface SkillsHeaderNavigationOption {
+  readonly value: Exclude<SkillsDemoTab, "create">;
+  readonly label: ReactNode;
+}
+export interface SkillsHeaderNavigationProps {
+  readonly value: Exclude<SkillsDemoTab, "create">;
+  readonly options: readonly SkillsHeaderNavigationOption[];
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly onValueChange: (value: string) => void;
+}
+
 export function SkillsDemoPanel({
   botId,
+  profileId,
   execDebugCommand,
   execDebugCommandStream,
   mode = "global",
-  learnSkillTrigger,
-  learnSkillPanel,
-  learnSkillTriggerFactory,
   expertsPanel,
+  headerEnd,
+  headerRegion: HeaderRegion,
+  renderHeaderNavigation,
   initialTab = "discover",
   onTabChange,
 }: {
   botId: string;
+  profileId?: string;
   execDebugCommand: ExpertsExecDebugCommand;
   execDebugCommandStream?: SkillsExecDebugCommandStream;
   mode?: SkillsDemoMode;
@@ -1833,6 +1903,9 @@ export function SkillsDemoPanel({
   learnSkillPanel?: ReactNode;
   learnSkillTriggerFactory?: (options: LearnSkillTriggerOptions) => ReactNode;
   expertsPanel?: ReactNode;
+  headerEnd?: ReactNode;
+  headerRegion?: ComponentType<{ readonly children: ReactNode }>;
+  renderHeaderNavigation?: (props: SkillsHeaderNavigationProps) => ReactNode;
   initialTab?: SkillsDemoTab;
   onTabChange?: (value: SkillsDemoTab) => void;
 }) {
@@ -1860,10 +1933,40 @@ export function SkillsDemoPanel({
       subtitle: t("送祝福，赢实例"),
       description: t("为轻量云六周年生成祝福文案与海报，支持多场景风格定制"),
     },
+    "suno-lyrics-to-song": {
+      title: t("精选技能：Suno歌词成曲"),
+      subtitle: t("把歌词唱成一首歌"),
+      description: t("整理歌词结构、曲风和人声方向，用 Suno 生成可试听歌曲"),
+    },
+    "anti-fraud-expert": {
+      title: t("精选技能：防诈专家"),
+      subtitle: t("识别风险，稳妥止损"),
+      description: t("拆解可疑话术，提供核验、止损和取证建议"),
+    },
+    "chinese-official-writing": {
+      title: t("精选技能：中文公文写作"),
+      subtitle: t("规范起草，准确表达"),
+      description: t("起草、改写、审校中文公文和事务性材料"),
+    },
     "self-improving-agent": {
       title: t("精选技能：Self-Improving Agent"),
       subtitle: t("从每次执行中学习"),
       description: t("让 Agent 复盘结果，并持续改进自己的工作方式"),
+    },
+    teach: {
+      title: t("精选技能：Teach"),
+      subtitle: t("把学习变成持续的课程"),
+      description: t("围绕一个主题建立有来源、可持续推进的学习工作区"),
+    },
+    "grill-me": {
+      title: t("精选技能：Grill Me"),
+      subtitle: t("用问题找出计划盲点"),
+      description: t("在开始实现前，通过系统追问验证计划和设计"),
+    },
+    "reddit-automation": {
+      title: t("精选技能：Reddit Automation"),
+      subtitle: t("在真实讨论中提供帮助"),
+      description: t("发现适合参与的 Reddit 讨论，并起草透明、有帮助的回复"),
     },
     "find-skills": {
       title: t("精选技能：Find Skills"),
@@ -1892,8 +1995,8 @@ export function SkillsDemoPanel({
     },
   };
   const dataLayer = useMemo(
-    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream),
-    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode],
+    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en", execDebugCommandStream, profileId),
+    [botId, execDebugCommand, execDebugCommandStream, isChinese, mode, profileId],
   );
 
   const [keyword, setKeyword] = useState("");
@@ -2169,6 +2272,14 @@ export function SkillsDemoPanel({
 
   const hasSearch = debounced.trim().length > 0;
   const operationBusy = Boolean(installingId) || batchInstalling;
+  const selectTab = useCallback((value: string) => {
+    if (operationBusy) return;
+    if (value !== "discover" && value !== "experts" && value !== "installed") return;
+    const nextTab = value as Exclude<SkillsDemoTab, "create">;
+    if (nextTab === "installed" && activeTab !== "installed") void refreshInstalled();
+    setActiveTab(nextTab);
+    onTabChange?.(nextTab);
+  }, [activeTab, onTabChange, operationBusy, refreshInstalled]);
   const searchQueryPending = keyword.trim() !== debounced.trim();
   const shouldShowAllSearchResults = searchResultsExpanded && visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT;
   const displayedSearchResults = shouldShowAllSearchResults
@@ -2450,51 +2561,82 @@ export function SkillsDemoPanel({
 
       <Tabs
         value={activeTab}
-        onValueChange={(value) => {
-          if (operationBusy) return;
-          if (value !== "discover" && value !== "experts" && value !== "installed") return;
-          const nextTab = value as SkillsDemoTab;
-          if (nextTab === "installed" && activeTab !== "installed") void refreshInstalled();
-          setActiveTab(nextTab);
-          onTabChange?.(nextTab);
-        }}
+        onValueChange={selectTab}
         className="min-w-0"
       >
-        <div className="mb-4 flex min-w-0 items-end gap-4 border-b border-black/[0.08]">
-          <TabsList
-            aria-label={t("技能市场页面切换")}
-            className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
-          >
-            <TabsTrigger
-              value="discover"
-              disabled={operationBusy}
-              className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+        {(() => {
+          const navigationOptions: readonly SkillsHeaderNavigationOption[] = [
+            { value: "discover", label: t("技能") },
+            ...(expertsPanel ? [{ value: "experts" as const, label: t("技能包") }] : []),
+            {
+              value: "installed",
+              label: (
+                <>
+                  {t("已安装")}
+                  {!installedLoading ? (
+                    <span className="ml-1.5 tabular-nums text-[var(--color-text-tertiary)]">
+                      {installed.length}
+                    </span>
+                  ) : null}
+                </>
+              ),
+            },
+          ];
+          const navigationControl = renderHeaderNavigation?.({
+            value: activeTab === "create" ? "discover" : activeTab,
+            options: navigationOptions,
+            disabled: operationBusy,
+            label: t("技能市场页面切换"),
+            onValueChange: selectTab,
+          }) ?? (
+            <TabsList
+              aria-label={t("技能市场页面切换")}
+              className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
             >
-              {t("技能")}
-            </TabsTrigger>
-            {expertsPanel ? (
               <TabsTrigger
-                value="experts"
+                value="discover"
                 disabled={operationBusy}
                 className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
               >
-                {t("技能包")}
+                {t("技能")}
               </TabsTrigger>
-            ) : null}
-            <TabsTrigger
-              value="installed"
-              disabled={operationBusy}
-              className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
-            >
-              {t("已安装")}
-              {!installedLoading ? (
-                <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
-                  {installed.length}
-                </span>
+              {expertsPanel ? (
+                <TabsTrigger
+                  value="experts"
+                  disabled={operationBusy}
+                  className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+                >
+                  {t("技能包")}
+                </TabsTrigger>
               ) : null}
-            </TabsTrigger>
-          </TabsList>
-        </div>
+              <TabsTrigger
+                value="installed"
+                disabled={operationBusy}
+                className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+              >
+                {t("已安装")}
+                {!installedLoading ? (
+                  <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
+                    {installed.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+          );
+          const navigation = (
+            <div className="lv-skills-route-toolbar flex min-w-0 flex-1 items-end gap-2 border-b border-black/[0.08]">
+              {navigationControl}
+              {headerEnd === undefined ? null : (
+                <div className="lv-skills-route-toolbar__end ml-auto shrink-0">{headerEnd}</div>
+              )}
+            </div>
+          );
+          return HeaderRegion === undefined ? (
+            <div className="mb-4">{navigation}</div>
+          ) : (
+            <HeaderRegion>{navigation}</HeaderRegion>
+          );
+        })()}
 
         <TabsContent value="discover" className="mt-0">
           <div className="space-y-6">
@@ -2923,17 +3065,21 @@ export function SkillsDemoPanel({
                   onValueChange={(value) => setInstalledCategoryFilter(value as InstalledCategoryFilter)}
                 >
                   <SelectTrigger
+                    variant="filter"
                     aria-label={t("筛选技能分类")}
-                    className="h-9 w-full rounded-[12px] border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent align="end" className="rounded-md border-black/10 bg-white p-1 shadow-xl">
-                    <SelectItem value="all" className="rounded-sm py-2 text-xs">
+                  <SelectContent
+                    variant="filter"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <SelectItem variant="filter" value="all">
                       {t("全部分类")} ({installed.length})
                     </SelectItem>
                     {installedCategoryOptions.map(({ value, label, count }) => (
-                      <SelectItem key={value} value={value} className="rounded-sm py-2 text-xs">
+                      <SelectItem variant="filter" key={value} value={value}>
                         {label} ({count})
                       </SelectItem>
                     ))}
@@ -2944,17 +3090,21 @@ export function SkillsDemoPanel({
                   onValueChange={(value) => setInstalledSourceFilter(value as InstalledSourceFilter)}
                 >
                   <SelectTrigger
+                    variant="filter"
                     aria-label={t("筛选技能来源")}
-                    className="h-9 w-full rounded-[12px] border-black/10 bg-white px-3 text-xs font-medium text-black/70 shadow-none sm:w-40"
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent align="end" className="rounded-md border-black/10 bg-white p-1 shadow-xl">
-                    <SelectItem value="all" className="rounded-sm py-2 text-xs">
+                  <SelectContent
+                    variant="filter"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <SelectItem variant="filter" value="all">
                       {t("全部来源")} ({installed.length})
                     </SelectItem>
                     {installedSourceOptions.map(({ source, count }) => (
-                      <SelectItem key={source.key} value={source.key} className="rounded-sm py-2 text-xs">
+                      <SelectItem variant="filter" key={source.key} value={source.key}>
                         {translateInstalledSourceLabel(t, source.label)} ({count})
                       </SelectItem>
                     ))}

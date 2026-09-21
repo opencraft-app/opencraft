@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-config
+  namespace: trade
+data:
+  TRADE_DB: trade_sandbox_jp_1
+  CTL_INTERNAL_BASE_URL: http://ctl-api.lightvela-playground-sandbox-jp-1.svc.cluster.local
+  CREDIT_INTERNAL_BASE_URL: http://credit.lightvela-playground-sandbox-jp-1.svc.cluster.local
+  LIGHTVELA_CREDIT_REGION: ap-seoul
+  CREDIT_SEND_RESOURCE_URL: http://intl.resource.qbilling.tencentyun.com/feev2/sendResource.php
+  CREDIT_SEND_RESOURCE_HOST: intl.resource.qbilling.tencentyun.com
+  CREDIT_SEND_RESOURCE_CID: "101433"
+  CREDIT_SEND_RESOURCE_CLOUDLADDER_GATEWAY_BASE_URL: http://43.153.236.65
+  CREDIT_SEND_RESOURCE_CLOUDLADDER_ROUTE_ID: qbilling-send-resource-intl-prod
+  ACCOUNT_BINDING_INTERNAL_BASE_URL: http://lightclaw-auth.lightvela-playground-sandbox-jp-1.svc.cluster.local

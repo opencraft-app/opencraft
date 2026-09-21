@@ -4,10 +4,10 @@
 executed by the developer's local Kubernetes cluster. It does not use Argo CD,
 GitOps promotion, CI/CD, TCR, Tencent Cloud resources, SOPS, or KSOPS.
 
-The currently verified host is macOS on Apple Silicon with OrbStack. Docker
-Desktop Kubernetes is accepted by the context guard and uses the same local
-Docker image store. Other local cluster runtimes need an explicit image-loading
-and host networking contract before they are supported.
+The environment supports macOS local Kubernetes and Linux DevCloud hosts. A
+`kind-*`, `k3d-*`, or `minikube` context receives locally built images through
+its native image loader; Docker Desktop and OrbStack continue to use their
+shared local image store.
 
 ## Runtime Model
 
@@ -40,18 +40,21 @@ and host networking contract before they are supported.
   creating a blank user and also lists users already present in the current
   localstack state.
 - Checked-in Secret values are local-only fake values.
-- macOS `launchd` keeps `kubectl port-forward` entrypoints alive after the
-  launching terminal exits.
+- macOS `launchd` or Linux PID-managed background processes keep
+  `kubectl port-forward` entrypoints alive after the launching terminal exits.
 
 The environment contract is
 [`deploy/envs/localstack/environment.yaml`](../envs/localstack/environment.yaml).
 
 ## Prerequisites
 
-- macOS on Apple Silicon
-- OrbStack Kubernetes, or Docker Desktop with Kubernetes enabled
-- `docker`, `kubectl`, `kustomize`, and `make`
-- current Kubernetes context set to `orbstack` or `docker-desktop`
+- Docker
+- `kubectl`, `kustomize`, and `make`
+- a local Kubernetes context: OrbStack, Docker Desktop, kind, k3d, minikube,
+  or another context whose API server is bound to loopback
+
+For a new DevCloud host, the `personal-devcloud-environment` Skill installs the
+user-local tools and creates the kind cluster automatically.
 
 Check the host before building images:
 
@@ -63,6 +66,13 @@ make local-stack-doctor
 
 ```bash
 make local-stack-up
+```
+
+To expose the complete browser environment on a DevCloud IP and select the
+international site at build/runtime:
+
+```bash
+LOCALSTACK_PUBLIC_HOST=9.x.x.x LOCALSTACK_SITE_KIND=intl make local-stack-up
 ```
 
 The command:
@@ -144,10 +154,12 @@ The fake Jifei service treats `needCharge=0` as a completed local payment. It
 then replays Jifei's `checkCreate` and `createResource` callbacks to the real
 Trade service, which provisions the pass through the real CTL service. No real
 payment provider or cloud resource is contacted. Fake Jifei stores deal
-context and fulfillment status in `/data/fake-jifei.sqlite` on its own PVC, so
-Deployment rollouts do not lose pending or completed mock orders. Its
-Deployment uses the `Recreate` strategy to preserve the single-writer SQLite
-model.
+context and fulfillment status at `/data/fake-jifei.sqlite` on its own PVC, so
+Deployment rollouts do not lose pending or completed mock orders. Node.js
+versions with `node:sqlite` use SQLite; older supported DevCloud Node.js
+versions fall back to an atomically replaced JSON document at the same private
+path. Its Deployment uses the `Recreate` strategy to preserve the
+single-writer model.
 
 The local QQ OAuth flow starts at:
 

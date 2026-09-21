@@ -254,6 +254,6 @@ Setelah Slack terhubung, kanal ini mendukung skenario pesan berikut:
 
 - [Kanal Discord](./channel-discord.md) — Operasional komunitas dan komunitas developer
 
-- [Otomasi](./automation.md) — Kirim pengingat terjadwal dan hasil tugas ke Slack
+- [Tugas Terjadwal](./automation.md) — Kirim pengingat terjadwal dan hasil tugas ke Slack
 
 - [Konfigurasi Skill](./skill.md) — Perluas kemampuan Hermes Agent

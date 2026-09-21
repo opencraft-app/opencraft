@@ -20,11 +20,11 @@ describe("toast", () => {
       return 1;
     });
 
-    toast.success("自动任务同步成功");
+    toast.success("定时任务同步成功");
 
     const container = document.getElementById("_lh-message-container");
     expect(container).not.toBeNull();
-    expect(container?.textContent).toContain("自动任务同步成功");
+    expect(container?.textContent).toContain("定时任务同步成功");
 
     const sdkMessage = document.createElement("div");
     sdkMessage.textContent = "模型切换成功";
@@ -33,7 +33,7 @@ describe("toast", () => {
     expect(container?.children).toHaveLength(2);
     expect(container?.style.flexDirection).toBe("column");
     expect(container?.style.gap).toBe("8px");
-    expect(container?.children[0]?.textContent).toContain("自动任务同步成功");
+    expect(container?.children[0]?.textContent).toContain("定时任务同步成功");
     expect(container?.children[1]?.textContent).toBe("模型切换成功");
   });
 
@@ -51,6 +51,17 @@ describe("toast", () => {
     vi.advanceTimersByTime(1);
     expect(document.getElementById("_lh-message-container")?.firstElementChild).toHaveStyle({ opacity: "0" });
     vi.advanceTimersByTime(200);
+    expect(document.getElementById("_lh-message-container")).toBeNull();
+  });
+
+  it("allows an owner to dismiss only its own message", () => {
+    const dismissOld = toast.error("旧表单失败");
+    const dismissNew = toast.success("其他操作成功");
+    dismissOld();
+    expect(document.getElementById("_lh-message-container")?.textContent).toContain("其他操作成功");
+    dismissNew();
+    expect(document.getElementById("_lh-message-container")).toBeNull();
+    vi.runAllTimers();
     expect(document.getElementById("_lh-message-container")).toBeNull();
   });
 });

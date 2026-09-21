@@ -126,7 +126,7 @@ function parseHermesModelConfigPayload(output: string): Record<string, unknown> 
     throw new HermesModelConfigResponseError("invalid_response", "Hermes model config response is invalid");
   }
   if (!payload.ok) {
-    throw new HermesModelConfigResponseError("helper_error", readText(payload.error, "error"));
+    throw new HermesModelConfigResponseError("helper_error", typeof payload.errorCode === "string" ? payload.errorCode : readText(payload.error, "error"));
   }
   return payload;
 }
@@ -221,12 +221,20 @@ function commandSucceeded(result: DebugCommandResult): boolean {
 }
 
 const timeoutFor = (action: HermesModelConfigAction): number => (
-  action.type === "probe" || action.type === "connectivityProbe" || action.type === "add" ? 120_000 : 60_000
+  action.type === "probe" || action.type === "connectivityProbe" || action.type === "probeConfiguredModel" || action.type === "add" ? 120_000 : 60_000
 );
 
-export function createHermesModelConfigClient(execDebugCommand: HermesModelConfigExecDebugCommand, botId: string) {
+export function createHermesModelConfigClient(
+  execDebugCommand: HermesModelConfigExecDebugCommand,
+  botId: string,
+  profileId?: string,
+) {
   const executeCommand = async (action: HermesModelConfigAction): Promise<DebugCommandResult> => {
-    const result = await execDebugCommand(botId, buildHermesModelConfigCommand(action), { timeoutMs: timeoutFor(action) });
+    const result = await execDebugCommand(
+      botId,
+      buildHermesModelConfigCommand(action, profileId),
+      { timeoutMs: timeoutFor(action) },
+    );
     if (!commandSucceeded(result)) {
       throw new HermesModelConfigResponseError("command_failed", "Model configuration command failed");
     }
@@ -257,7 +265,7 @@ export function createHermesModelConfigClient(execDebugCommand: HermesModelConfi
 
   const executeWithCredential = async (
     apiKey: string,
-    createAction: (credentialEnvelope: HermesCredentialEnvelope) => Extract<HermesModelConfigAction, { type: "probe" | "add" }>,
+    createAction: (credentialEnvelope: HermesCredentialEnvelope) => Extract<HermesModelConfigAction, { type: "probe" | "add" | "resetToPlatformDefault" }>,
   ): Promise<HermesModelConfigSnapshot> => {
     try {
       const credentialEnvelope = await prepareCredentialEnvelope(apiKey);
@@ -270,6 +278,37 @@ export function createHermesModelConfigClient(execDebugCommand: HermesModelConfi
 
   return {
     read: () => execute({ type: "read" }),
+    resetToPlatformDefault: (input: { apiKey: string; model: HermesConfiguredModel }) => (
+      executeWithCredential(input.apiKey, (credentialEnvelope) => ({
+        type: "resetToPlatformDefault",
+        credentialEnvelope,
+        model: input.model,
+      }))
+    ),
+    probeConfigured: async (anchor: HermesConfiguredModel) => {
+      const snapshot = await execute({ type: "probeConfiguredProvider", anchor });
+      return { models: snapshot.probedModels ?? [], succeeded: snapshot.probeSucceeded ?? false };
+    },
+    testConfiguredConnection: async (anchor: HermesConfiguredModel, modelId: string) => {
+      const result = await executeCommand({ type: "probeConfiguredModel", anchor, modelId });
+      return parseHermesConnectionProbeResponse(result.output);
+    },
+    append: async (anchor: HermesConfiguredModel, modelId: string) => {
+      try {
+        return await execute({ type: "appendProviderModel", anchor, modelId });
+      } catch (error) {
+        if (error instanceof HermesModelConfigResponseError && error.code === "helper_error") throw error;
+        // 传输失败时写入可能已完成；必须回读确认相同模型 ID，保留大小写。
+        try {
+          const saved = await execute({ type: "read" });
+          const route = (model: HermesConfiguredModel) => (model.routeBaseUrl ?? model.baseUrl).trim().replace(/\/+$/, "").toLowerCase();
+          if (saved.configuredModels.some((model) => model.providerKey === anchor.providerKey
+            && model.id.trim() === modelId.trim() && route(model) === route(anchor)
+            && model.apiMode === anchor.apiMode && model.keyEnv === anchor.keyEnv)) return saved;
+        } catch { /* The outcome remains unknown when read-back also fails. */ }
+        throw new HermesModelConfigResponseError("command_failed", "save_unknown");
+      }
+    },
     probe: async (input: { apiKey: string; baseUrl: string; apiMode?: string }) => {
       const snapshot = await executeWithCredential(input.apiKey, (credentialEnvelope) => ({
         type: "probe", credentialEnvelope, baseUrl: input.baseUrl, apiMode: input.apiMode,

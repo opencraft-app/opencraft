@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 FROM golang:1.26-bookworm AS builder
+ARG TARGETARCH
 WORKDIR /src/cloudladdergateway
 
 COPY cloudladdergateway/go.mod cloudladdergateway/go.sum ./
@@ -9,7 +10,7 @@ RUN go mod download
 
 COPY shared/cloudladdertransport/ /src/shared/cloudladdertransport/
 COPY cloudladdergateway/ ./
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o /out/cloudladdergateway ./cmd/cloudladdergateway
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" go build -trimpath -ldflags="-s -w" -o /out/cloudladdergateway ./cmd/cloudladdergateway
 
 FROM alpine:3.20
 WORKDIR /app
