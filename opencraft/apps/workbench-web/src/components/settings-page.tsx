@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   ArrowLeft,
   Blocks,
   Bot,
@@ -42,6 +43,10 @@ import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import type { AppearanceThemeDescriptor } from "../appearance-theme";
 import { useInternalDeveloperMode } from "../internal-developer-mode";
 import { SqliteDebugSettings } from "./sqlite-debug-settings";
+import {
+  ArchivedThreadsSettings,
+  type ArchivedThreadsSettingsProps,
+} from "./thread-management";
 
 export type SettingsSection = "appearance" | "laboratory" | "plugins" | string;
 
@@ -65,6 +70,7 @@ export interface SettingsContentProps {
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly regions?: PlatformViewRegions;
+  readonly archivedConversations?: Omit<ArchivedThreadsSettingsProps, "hostId">;
 }
 
 export interface SettingsNavigationProps {
@@ -75,6 +81,7 @@ export interface SettingsNavigationProps {
   readonly activeHostId: string;
   readonly onBack: () => void;
   readonly presentation?: "route" | "dialog" | "sidebar";
+  readonly showArchivedConversations?: boolean;
 }
 
 export function useSettingsExtensionPages(
@@ -114,6 +121,7 @@ export function SettingsNavigation({
   activeHostId,
   onBack,
   presentation = "route",
+  showArchivedConversations = false,
 }: SettingsNavigationProps) {
   const internalDeveloperMode = useInternalDeveloperMode();
   const [managementQuery, setManagementQuery] = useState("");
@@ -216,6 +224,14 @@ export function SettingsNavigation({
             <Palette size={16} />
             <span>Appearance</span>
           </button>
+          {showArchivedConversations ? <button
+            type="button"
+            aria-current={section === "archived-conversations" ? "page" : undefined}
+            onClick={() => onSectionChange("archived-conversations")}
+          >
+            <Archive size={16} />
+            <span>Archived conversations</span>
+          </button> : null}
           {internalDeveloperMode ? (
             <>
               <button
@@ -335,6 +351,7 @@ export function SettingsContent({
   extensionManager,
   platformViewRenderers,
   regions,
+  archivedConversations,
   onOpenView,
   onPushViewResource,
   onReplaceViewResource,
@@ -411,6 +428,12 @@ export function SettingsContent({
                 )
               ) : section === "sqlite-debug" && internalDeveloperMode && platform === "electron" ? (
                 <SqliteDebugSettings />
+              ) : section === "archived-conversations" && archivedConversations !== undefined ? (
+                <ArchivedThreadsSettings
+                  hostId={activeHostId}
+                  load={archivedConversations.load}
+                  restore={archivedConversations.restore}
+                />
               ) : section === "appearance" ? (
                 <>
                   <SettingsPageHeader title="Appearance" description="Choose how OpenCraft looks across the workbench." />

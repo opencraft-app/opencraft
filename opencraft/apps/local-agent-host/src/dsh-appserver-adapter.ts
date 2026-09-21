@@ -20,6 +20,7 @@ import { projectDshGoal } from "./dsh-goal-projection.js";
 import {
   OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
+  OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
 } from "@opencraft/appserver-protocol";
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
@@ -81,6 +82,10 @@ interface QueuedSubmission {
   clientUserMessageId: string;
   createdAt: number;
   pausedReason: string | null;
+}
+
+interface SteeringSubmission extends QueuedSubmission {
+  targetTurnId: string;
 }
 
 const object = (value: unknown): RecordValue => (
@@ -326,6 +331,11 @@ export class DshAppServerAdapter {
     this.activations.set(sessionId, operation);
     return operation;
   }
+  /** Execution admission hook; display-only resume deliberately stays cold. */
+  activateThread(sessionId: string): Promise<unknown> {
+    if (!this.engineReady) return Promise.reject(new Error("DSH runtime is unavailable"));
+    return this.ensureRuntime(sessionId);
+  }
   setThreadEngine(port: DshThreadEnginePort): void { this.threadEngine = port; }
   private readonly summaries = new Map<string, DshSessionSummary>();
   private readonly abort = new AbortController();
@@ -341,9 +351,9 @@ export class DshAppServerAdapter {
   private readonly nextTurnWaiters = new Map<string, Set<(turn: number) => void>>();
   /** Read-through projection of DSH's authoritative session/queue snapshots. */
   private readonly queues = new Map<string, QueuedSubmission[]>();
+  private readonly steering = new Map<string, SteeringSubmission[]>();
   private readonly nativeQueueIds = new Map<string, string>();
   private readonly queueItemWaiters = new Map<string, Map<string, Set<(item: QueuedSubmission) => void>>>();
-  private readonly queueRemovalWaiters = new Map<string, Map<string, Set<() => void>>>();
   private readonly queueConsumptionTailBySession = new Map<string, Promise<void>>();
   private streamsReady: Promise<void> | null = null;
   private streamGeneration: AbortController | null = null;
@@ -433,8 +443,12 @@ export class DshAppServerAdapter {
         this.abort.signal.removeEventListener("abort", stopGeneration);
         // DSH omits empty queues from a reconnect baseline. Invalidate the
         // old generation immediately so absence cannot leave stale rows.
-        const projectedSessions = [...this.queues.keys()];
+        const projectedSessions = new Set([
+          ...this.queues.keys(),
+          ...this.steering.keys(),
+        ]);
         this.queues.clear();
+        this.steering.clear();
         for (const threadId of projectedSessions) {
           this.emit("thread/queue/changed", { threadId });
         }
@@ -547,27 +561,52 @@ export class DshAppServerAdapter {
       const sessionId = string(frame.sessionId);
       if (sessionId === "") return;
       const previousById = new Map(this.queue(sessionId).map((submission) => [submission.id, submission]));
-      const submissions = (Array.isArray(frame.items) ? frame.items : []).flatMap<QueuedSubmission>((raw) => {
+      const previousSteering = this.steering.get(sessionId) ?? [];
+      const previousByNativeId = new Map<string, QueuedSubmission>();
+      for (const submission of [...previousById.values(), ...previousSteering]) {
+        previousByNativeId.set(submission.id, submission);
+        const nativeId = this.nativeQueueIds.get(submission.id);
+        if (nativeId !== undefined) previousByNativeId.set(nativeId, submission);
+      }
+      const submissions: QueuedSubmission[] = [];
+      const steering: SteeringSubmission[] = [];
+      for (const raw of Array.isArray(frame.items) ? frame.items : []) {
         const item = object(raw);
-        if (item.placement !== "queued") return [];
+        if (item.placement !== "queued" && item.placement !== "steering") continue;
         const message = object(item.message);
         const id = string(item.id) || string(message.id);
-        if (id === "") return [];
+        if (id === "") continue;
         const source = object(message.source);
-        const clientMessageId = this.admission?.queuedClientId(sessionId, string(source.rpcId, id)) ?? string(source.rpcId, id);
+        const previous = previousByNativeId.get(id);
+        const clientMessageId = previous?.clientUserMessageId
+          ?? this.admission?.queuedClientId(sessionId, string(source.rpcId, id))
+          ?? string(source.rpcId, id);
         const durable = this.authority?.queueStore.findByClientId(sessionId, clientMessageId);
-        const logicalId = durable?.id ?? id;
+        const logicalId = previous?.id ?? durable?.id ?? id;
         this.nativeQueueIds.set(logicalId, id);
-        return [{
+        const submission = {
           id: logicalId,
           input: userContent(message.content),
           clientUserMessageId: clientMessageId,
-          createdAt: previousById.get(logicalId)?.createdAt
+          createdAt: previous?.createdAt
             ?? number(item.createdAt, number(message.createdAt, Date.now())),
           pausedReason: null,
-        }];
-      });
+        } satisfies QueuedSubmission;
+        if (item.placement === "queued") {
+          submissions.push(submission);
+          continue;
+        }
+        const liveTurn = this.livePosition.get(sessionId)?.turn;
+        const targetTurnId = liveTurn === undefined
+          ? this.latestTurns.get(sessionId)?.turnId
+            ?? previousSteering.find((submission) => submission.id === logicalId)?.targetTurnId
+          : turnId(sessionId, liveTurn);
+        if (targetTurnId !== undefined) {
+          steering.push({ ...submission, targetTurnId });
+        }
+      }
       this.queues.set(sessionId, submissions);
+      this.steering.set(sessionId, steering);
       const waiters = this.queueItemWaiters.get(sessionId);
       if (waiters !== undefined) {
         for (const submission of submissions) {
@@ -577,16 +616,6 @@ export class DshAppServerAdapter {
           waiters.delete(submission.clientUserMessageId);
         }
         if (waiters.size === 0) this.queueItemWaiters.delete(sessionId);
-      }
-      const removalWaiters = this.queueRemovalWaiters.get(sessionId);
-      if (removalWaiters !== undefined) {
-        const presentIds = new Set(submissions.map((submission) => submission.id));
-        for (const [itemId, matching] of removalWaiters) {
-          if (presentIds.has(itemId)) continue;
-          for (const resolve of matching) resolve();
-          removalWaiters.delete(itemId);
-        }
-        if (removalWaiters.size === 0) this.queueRemovalWaiters.delete(sessionId);
       }
       this.emit("thread/queue/changed", { threadId: sessionId });
       return;
@@ -719,52 +748,13 @@ export class DshAppServerAdapter {
 
   private queue(sessionId: string): QueuedSubmission[] {
     const native = this.queues.get(sessionId) ?? [];
-    const restored = (this.authority?.queueStore.pending(sessionId) ?? []).filter(row => !native.some(item => item.clientUserMessageId === row.clientUserMessageId));
+    const steeringClientIds = new Set(
+      (this.steering.get(sessionId) ?? []).map((item) => item.clientUserMessageId),
+    );
+    const restored = (this.authority?.queueStore.pending(sessionId) ?? []).filter(row =>
+      !native.some(item => item.clientUserMessageId === row.clientUserMessageId)
+      && !steeringClientIds.has(row.clientUserMessageId));
     return [...native, ...restored.map(row => ({ id: row.id, input: row.input, clientUserMessageId: row.clientUserMessageId, createdAt: row.createdAtMs, pausedReason: "restored-after-host-restart" }))];
-  }
-
-  private waitForQueueRemoval(
-    sessionId: string,
-    itemId: string,
-    timeoutMs = 5_000,
-  ): { promise: Promise<void>; cancel(): void } {
-    if (!this.queue(sessionId).some((submission) => submission.id === itemId)) {
-      return { promise: Promise.resolve(), cancel() {} };
-    }
-    let cancel = () => {};
-    const promise = new Promise<void>((resolve, reject) => {
-      const byItem = this.queueRemovalWaiters.get(sessionId) ?? new Map();
-      const waiters = byItem.get(itemId) ?? new Set();
-      let settled = false;
-      const cleanup = () => {
-        waiters.delete(finish);
-        if (waiters.size === 0) byItem.delete(itemId);
-        if (byItem.size === 0) this.queueRemovalWaiters.delete(sessionId);
-      };
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        cleanup();
-        resolve();
-      };
-      waiters.add(finish);
-      byItem.set(itemId, waiters);
-      this.queueRemovalWaiters.set(sessionId, byItem);
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(new Error(`DSH accepted queue consumption but did not remove ${itemId} from session/queue`));
-      }, timeoutMs);
-      cancel = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        cleanup();
-      };
-    });
-    return { promise, cancel };
   }
 
   private async consumeQueue<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
@@ -1194,6 +1184,7 @@ export class DshAppServerAdapter {
                 atomicSteer: true,
                 perItemPause: false,
               },
+              [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: "paginated" },
             },
           },
         };
@@ -1267,8 +1258,13 @@ export class DshAppServerAdapter {
           ? projectedItemsPage({ id: threadId, turns }, params)
           : { ...projectedTurnsPage({ id: threadId, turns }, params), itemsPaginationByTurnId: {} };
       }
-      case "thread/queue/list":
-        return page(this.queue(string(value.threadId)), value.cursor, value.limit);
+      case "thread/queue/list": {
+        const sessionId = string(value.threadId);
+        return {
+          ...page(this.queue(sessionId), value.cursor, value.limit),
+          ...(value.cursor == null ? { steering: this.steering.get(sessionId) ?? [] } : {}),
+        };
+      }
       case "thread/queue/add": {
         const sessionId = string(value.threadId);
         const clientUserMessageId = string(value.clientUserMessageId);
@@ -1338,18 +1334,11 @@ export class DshAppServerAdapter {
           if (target === undefined) throw new Error("Queued submission is no longer pending");
           const liveTurn = this.livePosition.get(sessionId)?.turn ?? -1;
           if (liveTurn >= 0) {
-            const removed = this.waitForQueueRemoval(sessionId, target.id);
-            try {
-              await this.client.call("session.updateQueue", {
-                sessionId,
-                itemId: this.nativeQueueIds.get(target.id) ?? target.id,
-                action: { kind: "steer" },
-              });
-              await removed.promise;
-            } catch (error) {
-              removed.cancel();
-              throw error;
-            }
+            await this.client.call("session.updateQueue", {
+              sessionId,
+              itemId: this.nativeQueueIds.get(target.id) ?? target.id,
+              action: { kind: "steer" },
+            });
             return { turn: this.inProgressTurn(sessionId, liveTurn) };
           }
           if (target !== queue[0]) throw new Error("DeepSeek Harness resumes queued work in FIFO order");
@@ -1383,18 +1372,11 @@ export class DshAppServerAdapter {
           if (!this.queue(sessionId).some((item) => item.id === queuedSubmissionId)) {
             throw new Error(`Queued submission ${queuedSubmissionId} is no longer pending`);
           }
-          const removed = this.waitForQueueRemoval(sessionId, queuedSubmissionId);
-          try {
-            await this.client.call("session.updateQueue", {
-              sessionId,
-              itemId: this.nativeQueueIds.get(queuedSubmissionId) ?? queuedSubmissionId,
-              action: { kind: "steer" },
-            });
-            await removed.promise;
-          } catch (error) {
-            removed.cancel();
-            throw error;
-          }
+          await this.client.call("session.updateQueue", {
+            sessionId,
+            itemId: this.nativeQueueIds.get(queuedSubmissionId) ?? queuedSubmissionId,
+            action: { kind: "steer" },
+          });
           return { turnId: actualTurnId };
         });
       }

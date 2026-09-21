@@ -21,6 +21,7 @@ export interface HermesHostFileSystem {
   readDirectory(path: string): Promise<{ readonly entries: readonly HermesHostDirectoryEntry[] }>;
   readFile(path: string, signal?: AbortSignal): Promise<{ readonly dataBase64: string }>;
   writeFile(path: string, dataBase64: string): Promise<void>;
+  remove(path: string, recursive?: boolean): Promise<boolean>;
   dispose(): void;
 }
 
@@ -135,6 +136,20 @@ export class HermesDashboardFileSystem implements HermesHostFileSystem {
         overwrite: true,
       },
     });
+  }
+
+  async remove(path: string, recursive = false): Promise<boolean> {
+    try {
+      await this.client.fetchJson("/api/files", {
+        method: "DELETE",
+        headers: { "X-Hermes-Session-Token": this.sessionToken },
+        json: { path, recursive },
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof Error && /^HTTP 404:/u.test(error.message)) return false;
+      throw error;
+    }
   }
 
   dispose(): void {

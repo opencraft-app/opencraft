@@ -39,7 +39,7 @@ export function ModalSurface({
 }: ModalSurfaceProps) {
   const { theme } = useUnistyles();
   const fullscreen = presentation === "fullscreen";
-  const sheet = presentation === "sheet";
+  const sheet = presentation === "sheet" || presentation === "inspector";
 
   return (
     <Modal

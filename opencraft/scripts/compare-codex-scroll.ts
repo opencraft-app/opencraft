@@ -56,7 +56,7 @@ const vite = await createServer({
       transform(source, id) {
         if (essays && id.endsWith("/conversation/response-positioned-turns.tsx")) {
           assert.ok(source.includes("// r3562 U/ee:"), "Candidate observation point changed");
-          return source.replace("// r3562 U/ee:", "globalThis.__readScrollFollow=()=>({mode:followStateRef.current.followMode,phase:latestTurnPhase});\n// r3562 U/ee:");
+          return source.replace("// r3562 U/ee:", "globalThis.__readScrollFollow=()=>({mode:responsePositioning.getFollowState().followMode,phase:latestTurnPhase});\n// r3562 U/ee:");
         }
       },
       configureServer(server) {

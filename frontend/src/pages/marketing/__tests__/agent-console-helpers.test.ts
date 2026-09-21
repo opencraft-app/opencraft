@@ -6,13 +6,13 @@ describe("installOpenClawConsoleHelpers", () => {
     const info = vi.fn();
     const warn = vi.fn();
     const log = vi.fn();
-    const host: {
+    const host = Object.assign(new EventTarget(), {
+      console: { info, warn, log } as unknown as Console & Record<string, unknown>,
+    }) as EventTarget & {
       console: Console & Record<string, unknown>;
       help?: unknown;
       terminal?: unknown;
       show?: unknown;
-    } = {
-      console: { info, warn, log } as unknown as Console & Record<string, unknown>,
     };
 
     return {
@@ -86,47 +86,67 @@ describe("installOpenClawConsoleHelpers", () => {
     expect("terminal" in host).toBe(false);
   });
 
-  it("registers show() when a hidden tools reveal callback is provided", () => {
+  it("registers the shared show() toggle when requested", () => {
     const { host, info } = makeHost();
-    const onShowHiddenTools = vi.fn();
 
     const cleanup = installOpenClawConsoleHelpers({
       host,
       getTerminalPath: () => "/bots/bot_export/terminal",
-      onShowHiddenTools,
+      enableShowCommand: true,
     });
 
     const commands = (host.help as (() => unknown))();
     const shown = (host.show as (() => boolean))();
 
-    expect(commands).toContainEqual({ name: "show()", description: "显示当前 bot 的隐藏工具入口" });
+    expect(commands).toContainEqual({ name: "show()", description: "切换当前页面的隐藏功能入口" });
     expect(shown).toBe(true);
-    expect(onShowHiddenTools).toHaveBeenCalledTimes(1);
-    expect(info).toHaveBeenCalledWith("隐藏工具入口已显示。");
+    expect(info).toHaveBeenCalledWith("隐藏功能入口已显示。");
+    expect((host.show as (() => boolean))()).toBe(false);
+    expect(info).toHaveBeenCalledWith("隐藏功能入口已收起。");
 
     cleanup();
 
     expect("show" in host).toBe(false);
   });
 
-  it("chains an existing show() helper instead of replacing its behavior", () => {
+  it("temporarily owns show() and restores a pre-existing command", () => {
     const { host } = makeHost();
     const originalShow = vi.fn();
-    const onShowHiddenTools = vi.fn();
     host.show = originalShow;
 
     const cleanup = installOpenClawConsoleHelpers({
       host,
       getTerminalPath: () => "/bots/bot_export/terminal",
-      onShowHiddenTools,
+      enableShowCommand: true,
     });
 
     expect((host.show as (() => boolean))()).toBe(true);
-    expect(originalShow).toHaveBeenCalledTimes(1);
-    expect(onShowHiddenTools).toHaveBeenCalledTimes(1);
+    expect(originalShow).not.toHaveBeenCalled();
 
     cleanup();
 
     expect(host.show).toBe(originalShow);
+  });
+
+  it("shares one command across page generations and releases it after the final lease", () => {
+    const { host } = makeHost();
+    const disposeFirst = installOpenClawConsoleHelpers({
+      host,
+      getTerminalPath: () => "/agents/terminal/",
+      enableShowCommand: true,
+    });
+    const firstShow = host.show;
+    const disposeSecond = installOpenClawConsoleHelpers({
+      host,
+      getTerminalPath: () => "/agents/terminal/",
+      enableShowCommand: true,
+    });
+    const secondShow = host.show;
+
+    expect(secondShow).toBe(firstShow);
+    disposeFirst();
+    expect(host.show).toBe(secondShow);
+    disposeSecond();
+    expect("show" in host).toBe(false);
   });
 });

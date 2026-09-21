@@ -43,6 +43,39 @@ Aborted/interrupted runs retain partial output with final-answer phase, blocked/
 terminal reasons fail closed, and failures emit a typed error before completion.
 The same terminal policy is consumed by live and history projection.
 
+DSH steering has three distinct ownership states. `queued` remains an editable
+next-turn occurrence, `steering` is Host-accepted user input waiting for the
+active Turn's next step boundary, and the matching durable `user/message` owns
+the transcript after AgentLoop claims it. The Local Host returns a steer command
+when the unary DSH RPC accepts it; it must not wait for a later `session/queue`
+snapshot or claim event. Conversation Runtime moves a strict queued steer into
+the active Turn immediately, then reconciles the optional authoritative
+`steering` projection by client-message identity so reconnect and durable handoff
+produce neither a blank interval nor a duplicate row. This does not redefine
+steer as a hard interrupt: the current provider request and tool step remain
+owned by DSH and may finish before the next-step inbox is consumed.
+
+Attachment staging is a Host resource, not a Renderer filesystem convention.
+The `opencraft/attachment-staging` capability declares accepted source kinds,
+returned location kinds and the byte limit; Composer consumes only the shared
+`pending/processing/ready/failed` lifecycle and an opaque `AttachmentRef`.
+Local v1 stages `client-bytes` beneath the Local Host data root and returns a
+`host-file`; the Renderer never derives a directory from `codexHome` or calls
+generic `fs/writeFile` for this workflow. Remote RPC/SFTP and Cloud object-store
+adapters may later return `host-file` or `object-url` through the same contract,
+but are unsupported until their Host advertises them. Failed or unresolved
+attachments block submission and retain their precise error; removing an
+unsubmitted ready attachment asks its owning Host to release the staged ref.
+Durable history treats `AttachmentLocation` as opaque resource identity. The
+owning staging service persists a location-keyed metadata index and implements
+an `AttachmentMetadataResolver` that restores the authoritative `AttachmentRef`
+display name during hydration. Transcript projection never parses a Host path
+or storage directory; history without indexed metadata degrades to a generic
+basename without exposing the full location. The Hermes storage adapter can
+also lazily backfill a missing index from its own pre-existing owned manifest;
+that compatibility remains behind the resolver rather than leaking its layout
+into the transcript model.
+
 The source implementations live in `apps/local-agent-host/src/hypernode/`:
 TurnManager, DSH tool projection and the engine event/terminal core.
 `dsh-execution-record.ts` supplies local clock, replay-stable unique Item
@@ -109,6 +142,42 @@ lost connection expires that temporary baseline. See the [workspace design](../d
 | `workbench-web` | DOM Timeline, ProseMirror adapter and precise Codex frame | JSON-RPC storage |
 | `workbench-expo` | RN Timeline, Native editor adapter and iOS/Expo Web frame | DOM |
 
+The Embedded Workbench keeps Sidebar presentation outside this table: the host
+product renders its own session list, New conversation action and Explore/Chat
+navigation, while the embedded surface exposes session snapshots plus
+create/select/rename/delete actions backed by the ordinary AppServer Thread catalog. Thread IDs and
+mutation capabilities remain AppServer authority. The host must not copy or
+infer a second conversation model, and the embedded surface must not inject
+Sidebar DOM or rewrite the host page route. The right canvas is an
+OpenCraft-owned presentation and may reuse the standard Header, Composer,
+and Timeline implementations. The embedded product does not project
+OpenCraft's Right Panel or its toggle.
+
+For LightVela multi-Bot instances, one embedded Host is identified by
+`instanceId + profileId`, not by the physical instance alone. CTL's root
+`main` identity maps to native Hermes `default`; named Bot Profiles keep their
+native identity. Every ordinary Thread operation is scoped at the Hermes
+adapter boundary, and switching Bot disposes the old embedded Application
+before publishing the replacement session list. The shared physical Dashboard
+token is not conversation authority.
+
+New conversation starts as a client Draft. The host Sidebar may mark that Draft
+as selected, but it must not invent a Thread row or ID; the first accepted
+submission promotes the Draft and AppServer then publishes the canonical Thread
+into the recent-conversation list.
+
+Hermes-backed session mutations stay on that same authority path. Rename uses
+`thread/name/set` and the bridge's native `session.title`; irreversible
+delete uses `thread/delete`, closes a live Hermes session, then invokes
+`session.delete`. UI adapters must retain the operation Promise long enough
+to expose pending and failure state.
+
+All floating primitives in that canvas resolve through one Workbench
+Presentation Root. This includes Composer model/effort menus, Draft project and
+Host selectors and application modals. The root also owns the
+semantic theme variables required by those primitives; a Portal must never fall
+back to the embedding product's document body.
+
 ## Current migration ledger
 
 ### Established
@@ -143,15 +212,22 @@ lost connection expires that temporary baseline. See the [workspace design](../d
   boundary, not proof that Codex V3 has a V4 Authority or retained Journal.
 - `DisplayTurn` remains exported only for older fixtures. Neither application
   host uses it as its conversation read model.
-- Browser attachment blobs require an injected upload/asset bridge before they
-  can become server-readable AppServer attachments. The compiler fails closed
-  when that bridge is absent.
+- Browser attachment blobs require a compatible Host attachment-staging
+  capability before they can become server-readable AppServer attachments. The
+  compiler remains a final fail-closed boundary, not the primary upload-state UI.
+- LightVela Hermes advertises that capability only when its authenticated
+  Dashboard filesystem exists. Client bytes are staged under the controlled
+  `<codexHome>/opencraft-attachments/<client-id>` directory with a durable
+  manifest, a location-keyed display-metadata index, replay/content checks and
+  bounded recursive removal. Images may continue to use the independent inline
+  data-URL path.
 
 ### Production hardening, not architecture blockers
 
 - Implement a fully rich Native text editor adapter rather than flattening rich
   display into the current native text-input surface.
-- Add a production upload/asset host for browser and Native attachments.
+- Add Remote RPC/SFTP and Cloud object-store attachment-staging adapters, plus a
+  Native client-bytes producer, without changing Composer lifecycle semantics.
 - Tune platform-specific response-spacer animation curves while retaining the
   shared Codex placement and follow state machine.
 - Split the large desktop renderer chunk at explicit capability boundaries.

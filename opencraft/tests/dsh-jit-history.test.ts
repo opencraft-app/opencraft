@@ -63,12 +63,12 @@ test("concurrent runtime activation shares one flight and can retry after failur
   adapter.setThreadEngine({ resume: async () => { calls++; await new Promise((_, fail) => { reject = fail; }); },
     create: async () => {}, fork: async () => {}, inject: async () => {}, release: async () => {} });
   try {
-    const first = (adapter as any).ensureRuntime("s");
-    const second = (adapter as any).ensureRuntime("s");
+    const first = adapter.activateThread("s");
+    const second = adapter.activateThread("s");
     assert.equal(first, second);
     reject(new Error("fixture activation failed"));
     await assert.rejects(first, /fixture/);
-    const retry = (adapter as any).ensureRuntime("s");
+    const retry = adapter.activateThread("s");
     assert.equal(calls, 2);
     reject(new Error("fixture retry failed"));
     await assert.rejects(retry, /fixture/);

@@ -1726,6 +1726,82 @@ test("a steer restored by the Host transfers display ownership to the queue", as
   runtime.dispose();
 });
 
+test("strict queue steer transfers presentation immediately while Host admission is pending", async () => {
+  let resolveSteer!: (turnId: ReturnType<typeof asTurnId>) => void;
+  const pendingSteer = new Promise<ReturnType<typeof asTurnId>>((resolve) => {
+    resolveSteer = resolve;
+  });
+  const replica = new FakeReplica(threadView({ pendingInteractions: [] }));
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"),
+    replica,
+    commands: commands({ steerQueuedSubmission: async () => pendingSteer }),
+    history: { async loadOlder() {} },
+  });
+  runtime.replaceQueuedSubmissions([{
+    id: "queued-steer",
+    clientUserMessageId: "queued-steer-client",
+    input: [{ type: "text", text: "Change direction", text_elements: [] }],
+    createdAt: 100,
+    pausedReason: null,
+  }]);
+
+  const operation = runtime.steerQueuedSubmission("queued-steer");
+  const countSteers = () => runtime.getSnapshot().timeline.frames
+    .flatMap((frame) => frame.blocks)
+    .filter((block) => block.type === "user-message" && block.message === "Change direction").length;
+  assert.deepEqual(runtime.getSnapshot().queuedSubmissions, []);
+  assert.equal(countSteers(), 1);
+
+  resolveSteer(asTurnId("turn-one"));
+  await operation;
+  assert.equal(countSteers(), 1);
+  runtime.dispose();
+});
+
+test("authoritative steering baseline survives refresh and hands off once to durable history", () => {
+  const replica = new FakeReplica(threadView({ pendingInteractions: [] }));
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"),
+    replica,
+    commands: commands(),
+    history: { async loadOlder() {} },
+  });
+  const countSteers = () => runtime.getSnapshot().timeline.frames
+    .flatMap((frame) => frame.blocks)
+    .filter((block) => block.type === "user-message" && block.message === "Persist this steer").length;
+
+  runtime.replaceQueuedSubmissions([], [{
+    id: "steering-one",
+    clientUserMessageId: "steering-client-one",
+    input: [{ type: "text", text: "Persist this steer", text_elements: [] }],
+    createdAt: 101,
+    pausedReason: null,
+    targetTurnId: "turn-one",
+  }]);
+  assert.equal(countSteers(), 1);
+
+  replica.setEntity(threadView({
+    pendingInteractions: [],
+    turns: [{
+      id: "turn-one",
+      status: "inProgress",
+      startedAt: 1_728_000_000,
+      params: { clientUserMessageId: "client-user-one", input: [{ type: "text", text: "Run tests" }] },
+      items: [
+        { id: "user-one", type: "userMessage", clientId: "client-user-one", content: [{ type: "text", text: "Run tests" }] },
+        { id: "assistant-one", type: "agentMessage", text: "Running them." },
+        { id: "durable-steer", type: "userMessage", clientId: "steering-client-one", content: [{ type: "text", text: "Persist this steer" }] },
+      ],
+    }],
+  }));
+  assert.equal(countSteers(), 1);
+
+  runtime.replaceQueuedSubmissions([], []);
+  assert.equal(countSteers(), 1);
+  runtime.dispose();
+});
+
 test("explicit follow-up submission alone owns optimistic queue state", async () => {
   let resolveSubmission!: (receipt: SubmissionReceipt) => void;
   const pending = new Promise<SubmissionReceipt>((resolve) => {

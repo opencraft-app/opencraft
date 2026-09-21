@@ -42,6 +42,7 @@ interface HarnessOptions {
   hostKind?: "local" | "durable";
   useTailHydration?: boolean;
   drainTailHistory?: boolean;
+  historyModeHint?: "legacy" | "paginated" | "message-window";
 }
 
 const initializeResult = {
@@ -186,6 +187,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
     hostKind: options.hostKind,
     useTailHydration: options.useTailHydration,
     drainTailHistory: options.drainTailHistory,
+    historyModeHint: options.historyModeHint,
     requestTimeoutMs: 1_000,
   });
   return {
@@ -321,6 +323,59 @@ test("paginated hydration follows Resume cursor heads and loads older pages on d
     assert.deepEqual(complete.turns.map((turn) => turn.id), ["turn-1", "turn-2", "turn-3"]);
     assert.deepEqual(complete.turns[0]?.items?.map((item) => item.id), ["item-1"]);
     assert.equal(complete.turnsPagination.hasLoadedOldest, true);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("catalog metadata selects paginated Resume without a redundant Thread read", async () => {
+  const harness = await createHarness({
+    historyMode: "paginated",
+    turnsPages: {
+      "turns:head": {
+        data: [{ id: "turn-1" }],
+        nextCursor: null,
+      },
+    },
+    itemsByTurnId: {
+      "turn-1": [{ id: "item-1", type: "agentMessage" }],
+    },
+  });
+  try {
+    const seeded = harness.runtime.views.seedMetadata(thread("thread-one", [{ id: "catalog-turn" }], "paginated"));
+    assert.equal(seeded.resumeState, "needs_resume");
+    assert.deepEqual(seeded.turns, []);
+    assert.deepEqual(seeded.thread?.turns, []);
+    const refreshed = harness.runtime.views.seedMetadata({
+      ...thread("thread-one", [{ id: "newer-catalog-turn" }], "paginated"),
+      name: "Refreshed catalog title",
+    });
+    assert.equal(refreshed.thread?.name, "Refreshed catalog title");
+    assert.deepEqual(refreshed.thread?.turns, []);
+
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.historySource, "paginated");
+    assert.deepEqual(resumed.turns.map((turn) => turn.id), ["turn-1"]);
+    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("Host history capability removes metadata preflight for a deep link", async () => {
+  const harness = await createHarness({
+    historyMode: "paginated",
+    historyModeHint: "paginated",
+    turnsPages: {
+      "turns:head": { data: [], nextCursor: null },
+    },
+  });
+  try {
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.historySource, "paginated");
+    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
   } finally {
     await harness.close();
   }

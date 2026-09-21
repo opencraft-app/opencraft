@@ -5,8 +5,10 @@ import {
 import {
   OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
+  OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_PROFILE_SKILLS_CAPABILITY,
   OPENCRAFT_PROFILE_SKILLS_EXTENSION,
+  OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
   type ProfileSkillsMethod,
 } from "@opencraft/appserver-protocol";
@@ -22,6 +24,10 @@ import {
 } from "./whatsapp-onboarding-handler";
 import { LIGHTVELA_HOST_BINDING_EXTENSION } from "../host/lightvela-hermes-host-identity";
 import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
+import {
+  HERMES_ATTACHMENT_STAGING_CAPABILITY,
+  HermesAttachmentStagingService,
+} from "./attachment-staging";
 
 const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
   "skills/installed/list",
@@ -80,6 +86,7 @@ export const dispatchAppServerRequest = async (
   services: {
     readonly signal?: AbortSignal;
     readonly fileSystem?: HermesHostFileSystem;
+    readonly attachments?: HermesAttachmentStagingService;
     readonly terminal?: HermesHostTerminal;
     readonly processes?: HermesProcessService;
     readonly bots?: HermesBotAppServerHandler;
@@ -93,6 +100,12 @@ export const dispatchAppServerRequest = async (
   if (request.method.startsWith("process/")) {
     if (!services.processes) throw new Error("Hermes process service is unavailable");
     return services.processes.dispatch(request.method, value);
+  }
+  if (request.method.startsWith("attachment/")) {
+    const attachments = services.attachments
+      ?? (services.fileSystem ? new HermesAttachmentStagingService(services.fileSystem) : null);
+    if (attachments === null) throw new Error("Hermes attachment staging is unavailable");
+    return attachments.handle(request.method, value);
   }
   if (request.method.startsWith("bot/") && services.bots !== undefined) {
     return services.bots.handle(request.method, value);
@@ -124,12 +137,23 @@ export const dispatchAppServerRequest = async (
                 instanceId: services.instanceId,
               },
             }),
+            ...(services.attachments === undefined && services.fileSystem === undefined ? {} : {
+              [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: HERMES_ATTACHMENT_STAGING_CAPABILITY,
+            }),
             "opencraft/message-window-history": { version: 1, pageRows: 120, previewNotification: "thread/history/preview" },
+            [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: "message-window" },
             [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
               version: 2,
               reorder: true,
               atomicSteer: true,
               perItemPause: true,
+            },
+            "opencraft/thread-lifecycle": {
+              version: 1,
+              fork: false,
+              rename: true,
+              archive: false,
+              delete: true,
             },
             [OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION]:
               OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
@@ -190,6 +214,12 @@ export const dispatchAppServerRequest = async (
     }
     case "thread/list":
       return adapter.listThreads(value);
+    case "thread/name/set":
+      await adapter.renameThread(String(value.threadId ?? ""), String(value.name ?? ""));
+      return {};
+    case "thread/delete":
+      await adapter.deleteThread(String(value.threadId ?? ""));
+      return {};
     case "thread/read": {
       const threadId = String(value.threadId ?? "");
       return { thread: value.includeTurns === true

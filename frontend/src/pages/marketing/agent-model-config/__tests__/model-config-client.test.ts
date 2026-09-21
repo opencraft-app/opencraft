@@ -32,6 +32,10 @@ const model = {
 const configuredModel = { ...model, providerKey: "lightvela-deepseek", keyEnv: "KEY_lightvela_deepseek" };
 const snapshot = { primary: configuredModel, fallbacks: [], configuredModels: [configuredModel] };
 
+function extractEncodedAction(command: string): string | undefined {
+  return command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
+}
+
 describe("reset to the platform default model", () => {
   const platformModel = {
     id: "auto",
@@ -108,7 +112,7 @@ describe("reset to the platform default model", () => {
     const command = exec.mock.calls[1]?.[1] ?? "";
     expect(command).toContain('HERMES_PROFILE_ROOT="${HERMES_HOME:-$HOME/.hermes}/profiles/"\'sales\'');
     expect(command).not.toContain("platform-default-secret");
-    const encoded = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
+    const encoded = extractEncodedAction(command);
     const action = JSON.parse(Buffer.from(encoded!, "base64").toString("utf8")) as Record<string, unknown>;
     expect(action).toMatchObject({ type: "resetToPlatformDefault", model: platformModel });
     expect(action).not.toHaveProperty("apiKey");
@@ -799,6 +803,10 @@ describe("Hermes model configuration client", () => {
     expect(command).toContain('HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"');
     expect(command).toContain('HERMES_PYTHON="$HERMES_ROOT/hermes-agent/venv/bin/python"');
     expect(command).toContain("base64");
+    expect(command).toContain("gzip.decompress");
+    expect(command).not.toContain("<<'PY'");
+    expect(command).not.toContain("def execute_unlocked");
+    expect(new TextEncoder().encode(command).byteLength).toBeLessThan(24 * 1024);
     expect(command).not.toContain(apiKey);
     expect(catalogProvider.catalogModels).toEqual([{ id: model.id, name: "DeepSeek V3" }]);
   });
@@ -817,7 +825,7 @@ describe("Hermes model configuration client", () => {
   it("transports long credentials as one-time ciphertext and consumes the private envelope", () => {
     const longCredential = `lv-${"sensitive-value-".repeat(40)}结尾`;
     const added = runHelper({ type: "add", apiKey: longCredential, model, purpose: "idle" }, {});
-    const encodedAction = added.command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
+    const encodedAction = extractEncodedAction(added.command);
     expect(encodedAction).toBeDefined();
     const transported = JSON.parse(Buffer.from(encodedAction!, "base64").toString("utf8")) as Record<string, unknown>;
 
@@ -978,7 +986,7 @@ describe("Hermes model configuration client", () => {
 
   it("passes every action with bounded timeouts and redacts command failures", async () => {
     const execDebugCommand = vi.fn(async (_botId: string, command: string, _options: { timeoutMs: number }) => {
-      const encoded = command.match(/\$HERMES_PYTHON" - "([A-Za-z0-9+/=]+)"/)?.[1];
+      const encoded = extractEncodedAction(command);
       const remoteAction = encoded ? JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as HermesModelConfigAction : null;
       if (remoteAction?.type === "prepareCredentialEnvelope") {
         return { status: "Succeeded", exitCode: 0, output: response({ ok: true, credentialEnvelope: envelopePreparation }) };

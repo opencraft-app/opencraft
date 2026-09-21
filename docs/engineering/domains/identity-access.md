@@ -125,7 +125,8 @@ Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须�
 而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
 Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
 deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
-北京主 sandbox 直接按 common、北京 source-facing Component 的顺序组合，禁止再经 profile 嵌套隔离 patch 累计器。
+北京主 sandbox 使用普通 Kustomization 同时拥有 base、平台值 replacements、Secret generator 和身份桥接
+patch；禁止通过 Component 注入内部 token，因为 Component patch 无法修改其引入的 Deployment。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 

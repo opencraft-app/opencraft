@@ -137,6 +137,39 @@ test("promotion aliases survive application restart without becoming authoritati
   restarted.dispose();
 });
 
+test("embedded Conversation bindings stay in memory and never enter durable aliases", () => {
+  let persisted: readonly { scopeId: string; hostId: string; threadId: string | null }[] = [];
+  const store = createConversationBindingStore({
+    persistence: {
+      load: () => persisted,
+      save: (bindings) => { persisted = structuredClone(bindings); },
+    },
+  });
+  const durableScope = asConversationScopeId("scope-durable");
+  const embeddedScope = asConversationScopeId("scope-embedded");
+  const durableKey = createConversationKey("local", "thread-durable");
+  const embeddedKey = createConversationKey("lightvela", "thread-embedded");
+
+  store.register(durableScope, durableKey.hostId);
+  store.bind(durableScope, durableKey);
+  store.register(embeddedScope, embeddedKey.hostId, { persistent: false });
+  store.bind(embeddedScope, embeddedKey);
+
+  assert.equal(store.findScope(embeddedKey), embeddedScope);
+  assert.deepEqual(persisted, [{
+    scopeId: durableScope,
+    hostId: durableKey.hostId,
+    threadId: durableKey.threadId,
+  }]);
+  store.remove(embeddedScope);
+  assert.deepEqual(persisted, [{
+    scopeId: durableScope,
+    hostId: durableKey.hostId,
+    threadId: durableKey.threadId,
+  }]);
+  store.dispose();
+});
+
 test("independent retainers with the same reason do not release each other", () => {
   const leases = createConversationScopeLeaseRegistry({});
   const scopeId = asConversationScopeId("conversation:retainers");

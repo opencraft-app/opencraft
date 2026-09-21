@@ -4,6 +4,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { ExtensionContributionStore } from "@opencraft/extension-runtime";
 
 import { useInternalDeveloperMode } from "../internal-developer-mode";
+import { SidebarNavigationItem } from "./sidebar-navigation-item";
 
 const LIGHTVELA_WORK_PAGE_IDS = new Set([
   "lightvela.hermes.skills",
@@ -12,8 +13,8 @@ const LIGHTVELA_WORK_PAGE_IDS = new Set([
 
 function pageIcon(pageId: string) {
   return pageId.endsWith(".skills")
-    ? <Sparkles size={17} aria-hidden="true" />
-    : <Cloud size={17} aria-hidden="true" />;
+    ? <Sparkles size={15} />
+    : <Cloud size={15} />;
 }
 
 export function LightVelaWorkNavigation({
@@ -48,18 +49,15 @@ export function LightVelaWorkNavigation({
 
   return (
     <nav className="lightvela-work-navigation" aria-label="LightVela work tools">
-      <span className="lightvela-work-navigation__label">Work</span>
       <div className="lightvela-work-navigation__items">
         {pages.map((page) => (
-          <button
+          <SidebarNavigationItem
             key={page.id}
-            type="button"
-            aria-current={section === page.id ? "page" : undefined}
-            onClick={() => onSectionChange(page.id)}
-          >
-            {pageIcon(page.id)}
-            <span>{page.title}</span>
-          </button>
+            active={section === page.id}
+            icon={pageIcon(page.id)}
+            title={page.title}
+            onInvoke={() => onSectionChange(page.id)}
+          />
         ))}
       </div>
     </nav>

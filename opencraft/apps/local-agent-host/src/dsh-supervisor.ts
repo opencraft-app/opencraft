@@ -1,11 +1,12 @@
 import { access } from "node:fs/promises";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface DshSupervisorOptions {
   readonly repository?: string;
   readonly executable?: string;
+  readonly runtimeDirectory?: string;
   readonly dataDirectory?: string;
   readonly startupTimeoutMs?: number;
   readonly shutdownTimeoutMs?: number;
@@ -32,15 +33,19 @@ export class DshSupervisor {
     const repository = this.options.repository
       ?? process.env.OPENCRAFT_DSH_REPOSITORY?.trim();
     const sourceEntry = repository ? join(repository, "apps/cli/src/bin.ts") : null;
+    const runtimeDirectory = this.options.runtimeDirectory
+      ?? (this.options.executable ? dirname(this.options.executable) : process.cwd());
     const packagedEntry = this.options.executable
       ?? process.env.OPENCRAFT_DSH_EXECUTABLE?.trim()
-      ?? join(process.cwd(), "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js");
+      ?? (this.options.runtimeDirectory
+        ? join(runtimeDirectory, "dsh/node_modules/@deepseek-ai/dsh/lib/bin.js")
+        : join(process.cwd(), "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"));
     const usePackaged = await exists(packagedEntry);
     const useSource = !usePackaged && sourceEntry !== null && await exists(sourceEntry);
     if (!usePackaged && !useSource) {
       throw new Error("OpenCraft DSH runtime is missing; run npm run prepare:dsh-runtime before packaging");
     }
-    const tsxEntry = join(process.cwd(), "node_modules/tsx/dist/cli.mjs");
+    const tsxEntry = join(repository ?? process.cwd(), "node_modules/tsx/dist/cli.mjs");
     const command = process.execPath;
     // DSH's loader/HMR service intentionally consumes Node's internal ESM loader.
     // Keep this as a Node runtime argument (before the entry point), exactly as a
@@ -50,7 +55,7 @@ export class DshSupervisor {
       : ["--expose-internals", packagedEntry, "web", "--host", "127.0.0.1", "--port", "0", "--no-open"];
     for (const path of this.options.patches ?? []) args.splice(args.indexOf("web") + 1, 0, "--patch", path);
     const child = spawn(command, args, {
-      cwd: useSource ? repository : process.cwd(),
+      cwd: useSource ? repository : runtimeDirectory,
       env: {
         ...process.env,
         ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),

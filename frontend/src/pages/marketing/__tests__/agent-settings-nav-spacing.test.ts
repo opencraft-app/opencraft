@@ -104,10 +104,31 @@ describe("Agent settings navigation spacing", () => {
     const agentHeaderShell = getBlockBody(styles, "\n  header.lv-agent-sidebar-header {");
     const agentHeader = getBlockBody(styles, "\n  header.lv-agent-sidebar-header > div {");
 
-    expect(page).toContain('"lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",');
+    /*
+     * 这三个 class 在常规态必须生效，但创建期引导没有侧边栏，
+     * 沿用会留下一块 264px 的空白竖条，所以按 hasSidebarLayout 条件化。
+     * 断言「基类 + 条件类 + 条件本身」三者都在，避免例外被悄悄扩大。
+     *
+     * shouldShowDataLoading 是刻意放进条件里的第二个分支：页面级骨架屏画的
+     * 就是侧边栏两列，而它渲染时 bot 还没加载完（hasSidebarLayout 仍为
+     * false）。少了它，骨架屏会按居中窄容器 + 96px 顶距排版，而它前后的
+     * 路由级加载壳（app-route-shell）与最终页面都是左对齐宽容器 + 68px，
+     * 中间就会横竖双向跳一下。
+     */
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
+    expect(page).toContain('"lw-settings-shell"');
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell"');
+    /*
+     * header 的 className 从三元式换成了 cn()：除了「是否套侧边栏表头」，
+     * 还要叠加引导态的 --borderless 标记，两个条件互不相干。
+     */
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-sidebar-header"');
+    // 聊天页铺满到底（来自 master），与上面的条件化并存
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
-    expect(page).toContain('<section className="lw-settings-shell lv-agent-settings-shell">');
-    expect(page).toContain('className="lv-agent-sidebar-header"');
+    // 页面级骨架屏必须跟路由级加载壳用同一套几何，否则两段加载之间会跳
+    expect(appRouteShell).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
+    expect(appRouteShell).toContain('className="lw-settings-shell lv-agent-settings-shell"');
     expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
     expect(agentsPageClient).toContain(
       "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
@@ -118,8 +139,32 @@ describe("Agent settings navigation spacing", () => {
     expect(agentHeaderShell).toContain("right: auto;");
     expect(agentHeaderShell).toContain("width: 264px;");
     expect(agentHeaderShell).toContain("height: 68px;");
+    /*
+     * 常规 agent 页的 header 要画边框 —— 它和侧边栏的分隔线是连着的，
+     * 去掉会让 logo 那一格和下方侧边栏断开。
+     *
+     * 只有创建 / 引导态是例外：那时右侧没有侧边栏，这两条边会把 logo
+     * 框成一个孤立的小方块。用根节点 class 把例外圈出来，而不是把常规态
+     * 的边框一起砍了（之前就是这么改过头的）。
+     *
+     * 关键：这条路由的 header 由 next-site/agents-page-client.tsx 渲染，
+     * 传给 AgentSettingsPage 的是 showHeader={false} —— 页面内那个 header
+     * 在这条路由上根本不渲染。所以只改页面内的 className 是无效的，必须
+     * 走 <html class="lv-agent-onboarding"> 才能作用到真正生效的那个
+     * header 上。上一轮就是漏了这一层，改完线框依旧在。
+     */
     expect(agentHeaderShell).toContain("border-right: 1px solid #e9ecf1;");
     expect(agentHeaderShell).toContain("border-bottom-color: #e9ecf1 !important;");
+    expect(agentsPageClient).toContain("showHeader={false}");
+    expect(styles).toContain(".lv-agent-onboarding header.lv-agent-sidebar-header,");
+    // 三个引导标记都要算进去，漏一个那条路径下 logo 还是会被框住
+    expect(page).toContain("const isOnboardingVisible = showEarlyOnboarding");
+    expect(page).toContain("|| showBuddyOnboarding");
+    expect(page).toContain("|| showMultiBotOnboarding;");
+    expect(page).toContain('root.classList.toggle("lv-agent-onboarding", isOnboardingVisible);');
+    expect(page).toContain(
+      '(showBuddyOnboarding || showMultiBotOnboarding) && "lv-agent-sidebar-header--borderless"',
+    );
     expect(agentHeader).toContain("height: 68px !important;");
     expect(agentHeader).toContain("max-width: none;");
     expect(agentHeader).toContain("padding-left: 16px !important;");
@@ -130,7 +175,14 @@ describe("Agent settings navigation spacing", () => {
     expect(agentContent).toContain("margin-top: -24px;");
     expect(agentContent).toContain("margin-left: auto;");
     expect(agentContent).toContain("margin-right: auto;");
-    expect(page).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
+    /*
+     * 内容区原本恒定 `lg:col-start-2`（给 248px 侧边栏让位）。引导态没有
+     * 侧边栏，需要自己居中，所以改成条件类。这里断言「两个分支都在」，
+     * 而不是放宽成只检查基类 —— 漏掉任一分支都会布局错位。
+     */
+    expect(page).toContain('"lv-agent-settings-content min-w-0"');
+    expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
+    // 创建 Loading 视图没有侧边栏问题，仍是固定写法
     expect(loadingView).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
     expect(styles).toContain("width: min(1440px, calc(100vw - 160px));");
   });

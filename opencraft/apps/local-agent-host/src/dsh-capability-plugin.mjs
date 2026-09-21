@@ -11,6 +11,7 @@ import { DshCheckpointStore } from "./dsh-checkpoint-store.mjs";
 import { admitCapabilityOutput } from "./dsh-capability-output.mjs";
 import { createThreadEngine } from "./dsh-thread-engine.mjs";
 import { volatileSessions } from "./dsh-thread-storage.mjs";
+import { createDshSkillCatalog } from "./dsh-skill-catalog.mjs";
 
 export const inject = ["llm", "tools", "agents", "skills", "sessions", "sessionPersistence", "agentLoop", "agentPresets", "sandboxPolicy", "approval", "permissionPresets", "attachments"];
 export async function apply(ctx, config) {
@@ -18,76 +19,7 @@ export async function apply(ctx, config) {
   // Resolve against the bundled engine, not the application's dependency tree.
   const { assertObjectJsonSchema } = await import(config.toolsModuleUrl);
   const { createScope } = await import(new URL("../../dsh-scope/lib/index.js", config.toolsModuleUrl).href);
-  const { FileSystemSkillProvider } = await import(new URL("../../dsh-skill-filesystem/lib/index.js", config.toolsModuleUrl).href);
-  const discoveryKey = {};
-  const discoveryScope = createScope(ctx, discoveryKey);
-  let discoveryProvider;
-  let discoveryControl;
-  const workspaceProviders = new Map();
-  const workspaceCandidateProviders = new WeakMap();
-  const workspaceProvider = cwd => {
-    let provider = workspaceProviders.get(cwd);
-    if (provider !== undefined) return provider;
-    provider = new FileSystemSkillProvider(discoveryScope.ctx, {
-      signal: new AbortController().signal,
-      invalidate: () => discoveryControl?.invalidate(),
-    }, {
-      providerName: "opencraft-workspace-filesystem",
-      includeDefaultRoots: false,
-      customSkillDirs: [join(cwd, ".opencraft", "skills")],
-      watch: false,
-    });
-    workspaceProviders.set(cwd, provider);
-    return provider;
-  };
-  const stopDiscovery = discoveryScope.ctx.skills.registerProvider(control => {
-    discoveryControl = control;
-    discoveryProvider = new FileSystemSkillProvider(discoveryScope.ctx, control, {
-      watch: false,
-      customSkillDirs: typeof config?.persistentSkillsRoot === "string"
-        ? [config.persistentSkillsRoot]
-        : [],
-    });
-    return discoveryProvider;
-  });
-  const stopWorkspaceDiscovery = discoveryScope.ctx.skills.registerProvider(() => ({
-    name: "opencraft-workspace-skills",
-    async list(options) {
-      if (typeof options.cwd !== "string" || !isAbsolute(options.cwd)) return [];
-      const provider = workspaceProvider(options.cwd);
-      const discovered = await provider.list({ ...options, cwd: undefined });
-      const candidates = Array.isArray(discovered) ? discovered : discovered.candidates;
-      const mapped = candidates.map(candidate => {
-        const result = {
-          ...candidate,
-          source: "project-opencraft",
-          provider: "opencraft-workspace-skills",
-          // Explicit OpenCraft workspace installs precede legacy .agents skills.
-          rank: 150,
-        };
-        workspaceCandidateProviders.set(result, provider);
-        return result;
-      });
-      return Array.isArray(discovered) ? mapped : { ...discovered, candidates: mapped };
-    },
-    async get(candidate, options) {
-      const provider = workspaceCandidateProviders.get(candidate);
-      if (provider === undefined) return undefined;
-      const definition = await provider.get(candidate, options);
-      return definition === undefined ? undefined : {
-        ...definition,
-        source: "project-opencraft",
-        provider: "opencraft-workspace-skills",
-      };
-    },
-  }));
-  ctx.effect(() => async () => {
-    stopWorkspaceDiscovery();
-    stopDiscovery();
-    await Promise.all([...workspaceProviders.values()].map(provider => provider.dispose()));
-    await discoveryProvider.dispose();
-    await discoveryScope.dispose();
-  });
+  const skillCatalog = await createDshSkillCatalog(ctx, config);
   const { default: Ajv } = await import(new URL("../../../ajv/dist/ajv.js", config.toolsModuleUrl).href);
   const validator = new Ajv({ allErrors: true, strict: false });
   const { isSurfaceEvent, SessionId } = await import(new URL("../../dsh-session/lib/index.js", config.toolsModuleUrl).href);
@@ -134,12 +66,17 @@ export async function apply(ctx, config) {
   const pending = new Map();
   const calls = [];
   let sequence = 0;
+  const capabilityTimeout = capability => {
+    const value = capability.timeoutMs ?? 10000;
+    if (!Number.isInteger(value) || value < 1000 || value > 150000) throw new Error("Invalid capability timeout");
+    return value;
+  };
   const invoke = (sessionId, capability, args, execution) => new Promise((resolve, reject) => {
     const id = "engine-capability-" + ++sequence;
     const clean = () => { clearTimeout(timer); execution.signal.removeEventListener("abort", abort); pending.delete(id); };
     const fail = error => { clean(); calls.push({ type: "capability-cancel", id, sessionId }); reject(error); };
     const abort = () => fail(new Error("Capability call cancelled"));
-    const timer = setTimeout(() => fail(new Error("Capability call timed out")), 10000);
+    const timer = setTimeout(() => fail(new Error("Capability call timed out")), capabilityTimeout(capability));
     if (execution.signal.aborted) { abort(); return; }
     execution.signal.addEventListener("abort", abort, { once: true });
     pending.set(id, {
@@ -264,16 +201,25 @@ export async function apply(ctx, config) {
         const checkpoint = await checkpoints.read(body.logicalSessionId);
         res.end(JSON.stringify({ sessionId: checkpoint?.sourceSessionId ?? body.logicalSessionId, generation: checkpoint?.generation ?? 0, ...checkpoint?.seedCoordinates })); return;
       }
-      if (req.method === "GET" && route === "/events") { res.end(JSON.stringify({ events: calls.splice(0) })); return; }
+      if (req.method === "GET" && route === "/events") {
+        const events = calls.splice(0);
+        if (skillCatalog.takeChanged()) events.push({ type: "skills-changed" });
+        res.end(JSON.stringify({ events })); return;
+      }
+      if (req.method === "POST" && route === "/skills/invalidate") {
+        skillCatalog.invalidate();
+        res.end("{}"); return;
+      }
       if (req.method === "POST" && route === "/skills") {
         const agent = body.sessionId ? ctx.agents.get(body.sessionId) : undefined;
-        if (body.sessionId && !agent) throw new Error("Skill lookup requires an existing agent");
+        if (agent) skillCatalog.prepare(agent);
         if (typeof body.cwd !== "string" || !isAbsolute(body.cwd)) throw new Error("Skill lookup requires an absolute workspace");
-        const scope = agent ?? discoveryKey;
+        // A cold history view can discover filesystem Skills without activation.
+        const scope = agent ?? skillCatalog.discoveryKey;
         if (body.forceReload === true) {
           // Provider-owned invalidation refreshes regular model catalog reads
           // as well as this explicit discovery request.
-          discoveryControl.invalidate();
+          skillCatalog.invalidate();
         }
         const options = { ...(scope ? { scope } : {}), cwd: body.cwd };
         const catalog = await ctx.skills.list(options);
@@ -294,6 +240,7 @@ export async function apply(ctx, config) {
       if (req.method === "POST" && route === "/validate-capabilities") {
         if (!Array.isArray(body.capabilities)) throw new Error("Capabilities must be an array");
         for (const capability of body.capabilities) {
+          capabilityTimeout(capability);
           validator.compile(capability.inputSchema);
           assertObjectJsonSchema(modelSchema(capability.inputSchema));
         }
@@ -322,7 +269,7 @@ export async function apply(ctx, config) {
             assertObjectJsonSchema(parameters);
             disposers.push(scoped.register({
               name: capability.name, description: capability.description,
-              parameters, timeoutMs: 12000,
+              parameters, timeoutMs: capabilityTimeout(capability) + 2000,
               output: {
                 schema: { type: "object", additionalProperties: false, properties: { content: { type: "array", items: {} } }, required: ["content"] },
                 render: (_args, value) => value.content,

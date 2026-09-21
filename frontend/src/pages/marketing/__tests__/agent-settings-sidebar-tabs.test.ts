@@ -19,6 +19,13 @@ const readStylesSource = () =>
 const readChatPanelSource = () =>
   readFileSync(join(process.cwd(), "src/pages/marketing/agent-chat-panel.tsx"), "utf8");
 
+/**
+ * 「正在创建」咖啡杯动效原先内联在 agent-settings-page.tsx，
+ * 因新手引导面板需复用已抽到独立文件，守卫随之指向新位置。
+ */
+const readCreatingLoadingSource = () =>
+  readFileSync(join(process.cwd(), "src/pages/marketing/agent-creating-loading.tsx"), "utf8");
+
 const readGeneratedDictionary = (locale: string): Record<string, string> =>
   JSON.parse(
     readFileSync(join(process.cwd(), `src/i18n/generated/${locale}.json`), "utf8"),
@@ -32,37 +39,58 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("{showCreateBotEntry && (");
     expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
-    expect(page).toContain("!isCreating && !botsLoading && visibleBots.length === 0");
+    expect(page).toContain("!isCreating && !botsLoading");
+    expect(page).toContain("!showMultiBotOnboarding && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
     expect(page).not.toContain("const canCreateBot = multiBotEnabled");
+    // showHiddenAgentTools 仍用于其它隐藏工具，不应被顺手删掉
+    expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
   });
 
-  it("opens a name-only dialog before creating the first Bot as blank", () => {
+  it("routes the first Bot through the onboarding panel, not the legacy dialog", () => {
     const page = readPageSource();
     const initialCreation = page.slice(
       page.indexOf("const handleCreateNew"),
-      page.indexOf("const handleConfirmCreate"),
+      page.indexOf("const handleOnboardingCreateBot"),
     );
     const noActiveBotBranch = initialCreation.slice(
       initialCreation.indexOf("if (!activeBot)"),
-      initialCreation.indexOf('setCreateBotMode("clone-current")'),
     );
 
-    expect(noActiveBotBranch).toContain('setCreateBotMode("blank")');
-    expect(noActiveBotBranch).toContain("setShowCreateConfirm(true)");
-    expect(noActiveBotBranch).not.toContain("createInitialBot");
+    /*
+     * 首个 bot 曾经走「只问名字」的旧弹窗 —— 新用户第一次建 bot 恰好落在
+     * 这条分支，于是看到的还是老交互。现在统一进创建引导（可选头像、填
+     * 描述、挑模板）。
+     *
+     * 引导分区域上线后，旧弹窗作为**国际站**的回落保留了下来，所以不能再
+     * 断言「源码里不存在 setShowCreateConfirm」。改为守住真正的约束：
+     * 引导必须由 IS_BUDDY_ONBOARDING_ENABLED 把关，旧弹窗只能在 else 分支里。
+     * 这样国内站一旦被改回旧弹窗，这条仍然会红。
+     */
+    expect(noActiveBotBranch).toContain("setShowMultiBotOnboarding(true)");
+    expect(noActiveBotBranch).toContain("if (IS_BUDDY_ONBOARDING_ENABLED) {");
+    const legacyIndex = noActiveBotBranch.indexOf("setShowCreateConfirm(true)");
+    const onboardingIndex = noActiveBotBranch.indexOf("setShowMultiBotOnboarding(true)");
+    // 旧弹窗必须出现在引导之后（即 else 分支），不能抢在国内站路径前面
+    expect(legacyIndex).toBeGreaterThan(onboardingIndex);
+    // 未订阅仍先去订阅页，这个前置不能被绕过
+    expect(noActiveBotBranch).toContain('navigate("/subscribe")');
 
-    expect(page).toContain("const isFirstBotCreation = !activeBot");
-    expect(page).toContain("const cloneIntent = resolveBotCloneIntent({");
-    expect(page).toContain("isInitialCreation: isFirstBotCreation");
-    expect(page).toContain("currentBotId: activeBot?.id");
-    expect(page).toContain("mainBotId: defaultBot?.id");
-    expect(page).toContain("if (!cloneIntent.ok)");
-    expect(page).not.toContain("createBotSoul");
-    expect(page).not.toContain("initialSoul:");
-    expect(page).toContain("{!isFirstBotCreation && (");
-    expect(page).toContain("createMode: cloneIntent.intent.mode");
-    expect(page).toContain('sourceBotId: cloneIntent.intent.mode === "clone" ? cloneIntent.intent.sourceBotId : undefined');
+    /*
+     * 订阅回跳（?create=1）同样进引导，那是新用户订阅后的第一屏。
+     * 同样只在国内站成立，国际站回落旧弹窗。
+     */
+    expect(page).toContain("if (IS_BUDDY_ONBOARDING_ENABLED) {\n      setShowMultiBotOnboarding(true);");
+
+    /*
+     * 首个 bot 的引导必须渲染在 `!isCreating && activeBot && sdkInstance`
+     * 之外 —— 那时 activeBot 为 null，放里面永远渲染不到。
+     *
+     * 且挂载条件不含 activeBot：创建过程中新 bot 进入 visibleBots 会让它从空
+     * 变真，若作为条件就会切换渲染分支、重挂载面板，用户得填第二遍表单。
+     */
+    expect(page).toContain("{showMultiBotOnboarding && !isModifying && (");
+    expect(page).not.toContain("{showMultiBotOnboarding && activeBot ? (");
   });
 
   it("refreshes the shared Bot list before leaving the creation page", () => {
@@ -81,11 +109,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
   });
 
   it("uses the LightVela Bot loading copy while keeping the ellipsis dynamic", () => {
-    const page = readPageSource();
+    const loadingView = readCreatingLoadingSource();
     const enUS = readGeneratedDictionary("en-US");
 
     expect(enUS.k_831919bc).toBe("Getting your LightVela Bot ready");
-    expect(page).toContain("{dots}");
+    expect(loadingView).toContain("{dots}");
     expect(enUS.k_831919bc).not.toContain("...");
   });
 
@@ -113,7 +141,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(tabsStart).toBeGreaterThanOrEqual(0);
     expect(navStart).toBeGreaterThan(tabsStart);
     expect(page).toContain('role="tablist"');
-    expect(page).toContain('aria-selected={sidebarTab === "chat" && isActiveBotDefault}');
+    expect(page).toContain('aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}');
     expect(page).toContain('aria-selected={sidebarTab === "settings"}');
   });
 
@@ -192,18 +220,24 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("setSelectedChatId(chatSessions[0]?.chatId)");
   });
 
-  it("restricts AgentChat to the main Bot", () => {
+  it("keeps secondary Chat gated until show enables profile-scoped OpenCraft", () => {
     const page = readPageSource();
     const styles = readStylesSource();
 
-    expect(page).toContain("if (!isActiveBotDefault) return;");
-    expect(page).toContain('disabled={!isActiveBotDefault}');
+    expect(page).toContain("const isActiveBotChatAvailable = isActiveBotDefault || showHiddenAgentTools;");
+    expect(page).toContain("if (!isActiveBotChatAvailable) return;");
+    expect(page).toContain("const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;");
+    expect(page).toContain('disabled={isChatTabDisabled}');
     expect(page).toContain('t("对话功能目前仅支持主 Bot")');
-    expect(page).not.toContain('title={isActiveBotDefault ? undefined');
+    expect(page).not.toContain('title={isActiveBotChatAvailable ? undefined');
     expect(page).toContain('id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip"');
-    expect(page).toContain('activeSection !== "chat" || !isActiveBotDefault');
-    expect(page).toContain('activeSection === "chat" && isActiveBotDefault &&');
-    expect(page).toContain('activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection');
+    expect(page).toContain('!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable');
+    expect(page).toContain('{isActiveBotChatAvailable && (');
+    expect(page).toContain('&& !showHiddenAgentTools');
+    expect(page).toContain('enabled={showHiddenAgentTools}');
+    expect(page).toContain('profileId={sdkInstance.ProfileId ?? "main"}');
+    expect(page).toContain("setConsoleShowStateReady(true);");
+    expect(page).toContain("enableShowCommand: true");
     expect(styles).toContain(".lv-agents-sidebar-tab:disabled");
   });
 
@@ -283,13 +317,19 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
     const page = readPageSource();
-    const handleCreateNew = page.slice(
-      page.indexOf("const handleCreateNew"),
-      page.indexOf("const handleConfirmCreate"),
-    );
 
     expect(page).toContain("if (!activeBot)");
-    expect(page).toContain("setShowCreateConfirm(true)");
+    // 已有 bot 时走引导，不再经旧弹窗
+    expect(page).toContain("setShowMultiBotOnboarding(true)");
+    /*
+     * 旧弹窗不再是「无任何触发点」—— 引导分区域上线后它是国际站的回落。
+     * 但它的每一个触发点都必须被 IS_BUDDY_ONBOARDING_ENABLED 的 else 分支
+     * 包住，数量上与引导触发点一一对应；否则说明有入口绕过了开关。
+     */
+    const onboardingCalls = page.match(/setShowMultiBotOnboarding\(true\)/g)?.length ?? 0;
+    const legacyCalls = page.match(/setShowCreateConfirm\(true\)/g)?.length ?? 0;
+    expect(onboardingCalls).toBeGreaterThanOrEqual(3);
+    expect(legacyCalls).toBe(onboardingCalls);
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');
@@ -304,7 +344,13 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('>{t("创建 Bot")}</h3>');
     expect(page).toContain(': t("确认创建")}');
     expect(page).toContain("const MAX_BOT_NAME_LENGTH = 60");
-    expect(handleCreateNew.match(/setCreateBotName\(""\)/g)).toHaveLength(2);
+    /*
+     * 这条原本硬编码 `toHaveLength(2)`，但 setCreateBotName("") 的调用点数量
+     * 会随创建入口增减而变（master 合入订阅回跳后就变成 3 处），数量本身
+     * 不是它要守的东西。真正要守的是「打开弹窗时不预填默认名，让用户自己取」，
+     * 所以改成断言至少存在清空调用 + 不存在预填写法。
+     */
+    expect(page.match(/setCreateBotName\(""\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(page).not.toContain('setCreateBotName(t("新 Bot"))');
     expect(page).toContain('placeholder={t("请输入 Bot 名称")}');
     expect(page).toContain("maxLength={MAX_BOT_NAME_LENGTH}");
@@ -355,8 +401,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const chatPanel = readChatPanelSource();
 
     // 宿主构造受控桥并下传。
-    expect(page).toContain("chatMultiSessionBridge");
-    expect(page).toContain("multiSession={chatMultiSessionBridge}");
+    expect(page).toContain("legacyChatMultiSessionBridge");
+    expect(page).toContain("multiSession={legacyChatMultiSessionBridge}");
     // AgentChatPanel 透传给 LightVelaPanel。
     expect(chatPanel).toContain("multiSession?: LightVelaMultiSessionOptions");
     expect(chatPanel).toContain("multiSession={multiSession}");
@@ -375,11 +421,18 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
 
     expect(page).toContain('activeSection === "chat" && "lv-agent-chat-page"');
-    expect(page).toContain('"lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6",');
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
-    expect(page).toContain(
-      'className="lv-agent-settings-grid grid items-start gap-6 lg:grid-cols-[248px_minmax(0,1fr)]"',
-    );
+    /*
+     * lv-agent-settings-main / -shell / 栅格列这三处本分支按
+     * hasSidebarLayout || shouldShowDataLoading 条件化了（引导态没有侧边栏，
+     * 骨架屏则要跟最终页面保持同一套几何），所以不再是 master 那种
+     * 写死在字符串里的形式。这里断言「类名仍在 + 条件仍在」，
+     * 具体几何由 agent-settings-nav-spacing 那条守。
+     */
+    expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
+    expect(page).toContain("lv-agent-settings-grid grid items-start gap-6");
+    expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
   });
 
   it("exposes rename and delete in the session menu (delete needs confirmation)", () => {
@@ -456,7 +509,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
     expect(page).toContain("[sdkInstance?.InstanceId]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setChatSessionCommands\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
@@ -482,7 +535,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";');
     // 菜单项禁用 + 说明原因，而不是让用户点了没反应。
     expect(page).toContain("const isDeletable = canDeleteSession(session);");
-    expect(page).toContain("disabled={!chatSessionActions || !isDeletable}");
+    expect(page).toContain("disabled={!chatSessionActions || chatSessionMutationState?.pending === true || !isDeletable}");
     expect(page).toContain('title={isDeletable ? undefined : t("默认会话不支持删除")}');
   });
 
@@ -492,17 +545,17 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("keeps multi-session callback identities stable across selectedChatId changes", () => {
     const page = readPageSource();
 
-    expect(page).toContain("const handleChatSessionStateChange = useCallback<");
-    expect(page).toContain("const handleChatSelectedChatIdChange = useCallback<");
-    expect(page).toContain("const handleChatSessionActionsChange = useCallback<");
+    expect(page).toContain("const handleLegacyChatSessionStateChange = useCallback<");
+    expect(page).toContain("const handleLegacyChatSelectedChatIdChange = useCallback<");
+    expect(page).toContain("const handleLegacyChatSessionActionsChange = useCallback<");
 
     // bridge 只能引用稳定回调，不能内联箭头函数。
-    expect(page).toContain("onSessionStateChange: handleChatSessionStateChange,");
-    expect(page).toContain("onSelectedChatIdChange: handleChatSelectedChatIdChange,");
-    expect(page).toContain("onSessionActionsChange: handleChatSessionActionsChange,");
+    expect(page).toContain("onSessionStateChange: handleLegacyChatSessionStateChange,");
+    expect(page).toContain("onSelectedChatIdChange: handleLegacyChatSelectedChatIdChange,");
+    expect(page).toContain("onSessionActionsChange: handleLegacyChatSessionActionsChange,");
 
     const bridge = page.slice(
-      page.indexOf("const chatMultiSessionBridge = useMemo<"),
+      page.indexOf("const legacyChatMultiSessionBridge = useMemo<"),
       page.indexOf("const startSessionRename"),
     );
     expect(bridge).not.toMatch(/onSessionActionsChange: \(actions\) =>/);

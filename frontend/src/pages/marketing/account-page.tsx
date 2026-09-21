@@ -42,7 +42,7 @@ import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
-import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
+import { subscribeConsoleShow } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { isRenewalAvailableForRegion, RenewComingSoonButton } from "@/pages/marketing/renew-coming-soon";
@@ -1346,9 +1346,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const revealReferral = () => setReferralRevealed(true);
-    window.addEventListener(CONSOLE_SHOW_EVENT, revealReferral);
-    return () => window.removeEventListener(CONSOLE_SHOW_EVENT, revealReferral);
+    return subscribeConsoleShow(setReferralRevealed);
   }, []);
 
   // Unauthenticated view state

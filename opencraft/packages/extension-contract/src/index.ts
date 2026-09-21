@@ -1,4 +1,5 @@
 export type ExtensionPlatform = "web" | "electron" | "expo";
+export type { ExtensionDocument, ExtensionDocumentStore, ExtensionDocumentOptions, ExtensionDocumentSnapshot, ExtensionDocumentMigration, ExtensionStorageApiV1 } from "./storage.js";
 export type ExtensionTrust = "trusted";
 export type ExtensionActivationEvent =
   | "onStartupFinished"
@@ -362,6 +363,8 @@ export interface ExtensionWindowApiV1 {
 
 /** Stable, UI-framework-free API exposed to trusted V1 extensions. */
 export interface OpenCraftExtensionApiV1 {
+  /** Null when this runtime has neither local nor Host document persistence. */
+  readonly storage: import("./storage.js").ExtensionStorageApiV1 | null;
   readonly identity: ExtensionActivationIdentity;
   readonly subscriptions: ExtensionSubscriptionsApiV1;
   readonly commands: ExtensionCommandsApiV1;

@@ -49,11 +49,13 @@ export function createComposerActionRendererContributionAdapter(
 }
 
 export function ComposerExtensionActions({
+  actionIds,
   registry,
   controller,
   disabled,
   platform,
 }: {
+  readonly actionIds: "all" | readonly string[];
   readonly registry: ComposerActionRendererRegistry;
   readonly controller: ComposerController;
   readonly disabled: boolean;
@@ -74,7 +76,10 @@ export function ComposerExtensionActions({
       }),
     [controller],
   );
-  return snapshot.actions.map(({ id, Component }) => (
+  const actions = actionIds === "all"
+    ? snapshot.actions
+    : snapshot.actions.filter(({ id }) => actionIds.includes(id));
+  return actions.map(({ id, Component }) => (
     <Component
       key={id}
       disabled={disabled}

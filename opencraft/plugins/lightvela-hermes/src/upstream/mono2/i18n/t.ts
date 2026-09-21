@@ -92,6 +92,25 @@ export function LocaleOverrideProvider({
 export const useLocaleOverride = (): I18nLocale | null => useContext(LocaleOverrideContext);
 
 /**
+ * 当前生效的 locale（永不为 null）。
+ *
+ * 优先用路由注入的 override，其次全局单例，最后回落 zh-CN。
+ * 给需要「按语言格式化」而非「查词典」的场景用 —— 例如
+ * `Intl.DateTimeFormat` 格式化日期、`Intl.NumberFormat` 格式化数字。
+ *
+ * 这类内容不该进词典：日期格式各语言不同（en「September 10, 2026」/
+ * ja「2026年9月10日」），把整串日期当 key 意味着每加一条内容都要翻一遍
+ * 全部语种，而 Intl 本来就能按 locale 正确输出。
+ */
+export const useCurrentLocale = (): I18nLocale => {
+  const override = useLocaleOverride();
+  const { i18n: instance } = useTranslation();
+  return override
+    ?? (instance?.language as I18nLocale | undefined)
+    ?? "zh-CN";
+};
+
+/**
  * 本地插值：对 "{{name}}" 形式的占位符做简单字符串替换。
  * 专供「字典未命中」的兜底分支使用，避免把 `{{n}}` 这类占位符
  * 原样输出到用户界面（i18next.t 不会处理未命中 key 的插值）。
@@ -138,7 +157,17 @@ const warnMissing = (zh: string): void => {
  *   t("立即创建");
  *   t("© {{year}} LightVela 版权所有", { year: 2026 });
  */
-export const useT = (): ((zh: string, options?: Record<string, unknown>) => string) => {
+/**
+ * `useT()` 返回的翻译函数类型。
+ *
+ * 导出出来是为了让**纯函数**也能接受翻译能力 —— 例如
+ * `buildBuddySetupPlan()` 需要生成带文案的步骤清单，但它不是组件、调不了
+ * hook。这些函数收一个可选的 `t`，由调用方（组件）把 `useT()` 的结果传进去；
+ * 不传时回显中文原文，保持旧行为不破。
+ */
+export type TranslateFn = (zh: string, options?: Record<string, unknown>) => string;
+
+export const useT = (): TranslateFn => {
   const lngOverride = useLocaleOverride();
   const { t: rawT } = useTranslation(undefined, lngOverride ? { lng: lngOverride } : undefined);
   return useCallback((zh: string, options?: Record<string, unknown>) => {

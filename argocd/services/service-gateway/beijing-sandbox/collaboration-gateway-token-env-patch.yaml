@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-gateway
+  namespace: lightclaw-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          env:
+            - name: COLLABORATION_GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: collaboration-gateway-token
+                  key: COLLABORATION_GATEWAY_TOKEN
+                  optional: false

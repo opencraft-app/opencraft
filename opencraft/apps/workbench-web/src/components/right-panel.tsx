@@ -61,6 +61,7 @@ interface RightPanelProps {
   onCloseTab(tab: PanelTabDescriptor): void;
   readonly toolbarActions: readonly PanelToolbarActionDefinition[];
   readonly toolbarActionContext: PanelToolbarActionContext;
+  readonly portalContainer?: HTMLElement | null;
 }
 
 function ToolbarActionIcon({ icon }: { readonly icon: string }) {
@@ -120,6 +121,7 @@ function PanelCreationMenu({
   tabs,
   activeTabId,
   onActivateTab,
+  portalContainer,
 }: {
   actions: readonly PanelToolbarActionDefinition[];
   context: PanelToolbarActionContext;
@@ -127,6 +129,7 @@ function PanelCreationMenu({
   tabs?: readonly PanelTabDescriptor[];
   activeTabId?: string | null;
   onActivateTab?: (tabId: string) => void;
+  portalContainer?: HTMLElement | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<(() => void | Promise<void>) | null>(null);
@@ -141,7 +144,7 @@ function PanelCreationMenu({
             {tabs ? <ChevronDown size={14} aria-hidden="true" /> : <Plus size={14} aria-hidden="true" />}
           </button>
         </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
+        <DropdownMenu.Portal container={portalContainer}>
           <DropdownMenu.Content className="right-panel-creation-menu" align="start" sideOffset={6}
             aria-label={tabs ? "Tabs" : "New tab"}
             onCloseAutoFocus={(event) => {
@@ -327,6 +330,7 @@ export function RightPanel({
   onCloseTab,
   toolbarActions,
   toolbarActionContext,
+  portalContainer,
 }: RightPanelProps) {
   const region = "right" as const;
   const regionState = state[region];
@@ -532,6 +536,7 @@ export function RightPanel({
                 key={state.ownerId}
                 actions={creationActions}
                 context={toolbarActionContext}
+                portalContainer={portalContainer}
               />
             ) : null}
             <PanelCreationMenu
@@ -541,6 +546,7 @@ export function RightPanel({
               tabs={regionState.tabs}
               activeTabId={regionState.activeTabId}
               onActivateTab={tabId => onAction({ type: "activate-tab", region, tabId })}
+              portalContainer={portalContainer}
             />
             <PanelTabDropTail region={region} />
           </div>
@@ -649,7 +655,7 @@ export function RightPanel({
                 )}
               </DragOverlay>
             </>,
-            document.body,
+            portalContainer ?? document.body,
           )}
     </DndContext>
     </PanelPresentationContext.Provider>

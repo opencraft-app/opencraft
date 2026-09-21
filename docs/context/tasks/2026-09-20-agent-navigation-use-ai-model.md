@@ -70,7 +70,7 @@
 | `opencraft/AGENTS.md`、`opencraft/MONO2_MIGRATION.md` | CR 指出 vendored closure 漂移 | 将套餐策略移出 vendored `agent-routes.ts`，不手改生成副本 |
 
 ## evidence
-- 基线：`origin/master@ddcaadbad5a60a55d6f3a7a85d744e48d8d27b56`。
+- 当前冲突修复基线：`origin/master@ce4cebb7bf99788c7f81208200e97eac93ff31bd`。
 - `corepack pnpm@10.23.0 exec vitest run --config vitest.config.ts --api.host 127.0.0.1 ...`：CR 修订后 6 个文件、74 条测试通过，覆盖套餐 helper、AI/标准套餐菜单、Header 隔离、英文 `Models`、导航分组和 provider locale。
 - `corepack pnpm@10.23.0 check`：通过；i18n 错误 0，TypeScript diagnostics 171 current / 276 baseline / 0 new / 105 resolved。
 - `git diff --check`：通过。
@@ -90,6 +90,9 @@
 - OpenCraft 生成闭包未新增业务文件漂移：本轮不修改闭包内的 `domain/types.ts`；rebase 后运行官方同步命令，仅更新 `UPSTREAM.json` 的源 revision，`check:mono2-agent-console` 通过。
 - 本轮 `git diff --check`：通过。
 - 提交前刷新并 rebase 到 `origin/master@f09b62866ad7c20a507fe4beeb455c9d7fe8eba6`，无冲突；rebase 后前端 7 个文件、111 条测试与 CTL 聚焦测试重新通过，`pnpm check` 为 171 current / 171 baseline / 0 new。
+- MR !4328 冲突修复：合并 `origin/master@ce4cebb7bf99` 时仅 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json` 发生文本冲突；未手工拼接生成物，改为运行 `npm run sync:mono2-agent-console`，同步并校验 130 个文件。相对最新 master 的 OpenCraft 变更仍仅为 `UPSTREAM.json` 源 revision。
+- 合并最新 master 后，前端 7 个聚焦测试文件、85 条测试通过；`corepack pnpm@10.23.0 check` 通过，i18n 错误 0，TypeScript diagnostics 171 current / 171 baseline / 0 new。
+- 合并最新 master 后，CTL 两项聚焦 Go 测试与 `CGO_ENABLED=0 go vet ./pkg/logic/pass ./main/api` 通过；完整 MR diff 的 `validate_change_impact.py --staged` 通过并命中 `agent-gateway-runtime` owner review，`validate_documentation.py` 为错误 0、断链 0、警告 0，`git diff origin/master --check` 通过。
 
 ## risks
 - 风险：CTL 与前端分批发布时旧响应没有 `bundle_type`。缓解：仅严格匹配 `ai` 时迁移，字段缺失、大小写异常或未知值都保留主导航入口。

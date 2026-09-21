@@ -268,8 +268,9 @@ master 源码
   应在创建 promote MR 前 fail closed。Deployment 的 bridge Secret 注入 patch 必须由
   `service-gateway/k8s/overlays/beijing-sandbox` source-facing Component 持有，与基准 Deployment 同层组合；
   deploy-facing 目录只保留环境配置和 Secret generator，不能对仅由 Component 引入的资源做顶层 patch。
-  北京主 sandbox 必须将该 source-facing Component 直接排在 common Component 后，不能经 sandbox profile
-  再嵌套一层；嵌套 Component 使用隔离累计器，仍会让结构性 patch 看不到 common 引入的 Deployment。
+  北京主 sandbox 必须使用一个普通 Kustomization，直接拥有 base resource、平台值 replacements、
+  Secret generators 和北京专用 patches；禁止使用 Component 注入内部 token，因为 Component 的 patch
+  不能修改 Component 自己或其他 Component 引入的资源。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
@@ -427,6 +428,9 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 - live hotfix 后，即使业务已经恢复，也必须补齐 SSM、`master` 和 `gitops`。执行 Argo Sync 前先确认 deploy-facing 明文语义与 live 一致，否则 Sync 可能把正确的 live Secret 覆盖成旧值。
 - Secret 只更新对象数据时，Pod 不会自动重启。需要运行进程读取新值时应单独执行受控 rollout，并分别验证 Secret、Pod 环境和业务请求；不要把 Secret `Synced` 等同于进程已生效。
 - 跨服务运营 BFF Token 必须在同一环境内从服务端真源复制到消费方 SSM，并由 manifest 固定明确版本、声明 required key 后生成 SOPS；禁止跨地域复用或只在 live Secret 中临时补键。
+- Gateway Dashboard 调用 Credit 时，`CREDIT_INTERNAL_TOKEN` 必须由 Dashboard 自有 Secret 的
+  `CTL_INTERNAL_TOKEN` 显式映射，不能只依赖 `envFrom`；北京 sandbox、上海、新加坡和东京分别使用
+  本地域 Credit 内部 token。东京的 Credit 地址和消费方 SSM/SOPS 必须随 `sandbox-jp-1` overlay 一起交付。
 
 VelaGW subtree 更新时，北京 workload 的 `OTEL_SERVICE_VERSION` 以及 `shprod`、`sgprod` 的
 `VELAGW_OTEL_SERVICE_VERSION` 必须同步指向 subtree 源码短版本；这些字段只描述构建源码，
