@@ -3809,7 +3809,6 @@ refresh_skus http://unused img-jhb "$pools_json"
         workflows = [
             ".ci/nextgen-dashboard.yml",
             ".ci/tokyo-nextgen-dashboard.yml",
-            ".ci/gateway-dashboard.yml",
             ".ci/tokyo-gateway-dashboard.yml",
             ".ci/tokyo-frontend.yml",
         ]
@@ -3819,6 +3818,15 @@ refresh_skus http://unused img-jhb "$pools_json"
                 workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 parameters = (workflow.get("extends") or {}).get("parameters") or {}
                 self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
+
+    def test_gateway_dashboard_adds_service_prod_reviewer(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/gateway-dashboard.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+
+        self.assertEqual(
+            parameters.get("PROD_REVIEWERS"),
+            '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang"]',
+        )
 
     def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):

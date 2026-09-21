@@ -83,6 +83,9 @@ master 源码
   `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
   回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
+- 服务级生产审核人由对应 `.ci/<service>.yml` 的 `PROD_REVIEWERS` 跟踪，并通过契约测试锁定服务边界；
+  不为单一服务改动共享模板默认名单。Stream 构建使用启动时的流水线版本快照，审核人变更只对新构建
+  生效，不追溯修改已暂停或运行中的构建。
 - Gateway Dashboard 新增内部上游时，source-facing ConfigMap 占位符、各环境 Kustomize replacement
   与 deploy-facing `gateway-dashboard-platform.env` 必须在同一变更中成套更新。所有复用共享
   component 的 sandbox/playground 环境都要提供对应环境键；生产环境则在各自 Kustomization 中
