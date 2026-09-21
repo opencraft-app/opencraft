@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { fetchAgentChatLaunchToken } from "@/lib/agentchat-launch-token";
 import { t } from "@/i18n/t";
 import {
   cancelConnectorOAuth,
@@ -70,6 +71,11 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
   const [pendingFlow, setPendingFlow] = useState<PendingFlow | null>(null);
   /** 进行中的 enable 请求对应的连接器 key（重复点击防护） */
   const [connectingKey, setConnectingKey] = useState<string | null>(null);
+  /**
+   * AgentChat 启动 token（launch_token，≠ 主站登录 token）：ai-server 用它
+   * introspect 换 user_id。token 就绪前面板显示加载，失败显示重试。
+   */
+  const [launchToken, setLaunchToken] = useState<string | null>(null);
   // 卸载/回调里读最新 pendingFlow，避免闭包过期；渲染期不写 ref
   const pendingFlowRef = useRef<PendingFlow | null>(null);
   useEffect(() => {
@@ -77,16 +83,41 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
   }, [pendingFlow]);
   /** 授权弹窗引用：关闭检测（用户取消授权）用 */
   const popupRef = useRef<Window | null>(null);
+  /** 回调里读最新 launchToken（避免闭包过期） */
+  const launchTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    launchTokenRef.current = launchToken;
+  }, [launchToken]);
+
+  /** 拉取 launch token（面板挂载 / 401 过期重试） */
+  const fetchToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const { token } = await fetchAgentChatLaunchToken(instanceId);
+      setLaunchToken(token);
+      return token;
+    } catch (err) {
+      setLaunchToken(null);
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }, [instanceId]);
+
+  useEffect(() => {
+    setLaunchToken(null);
+    void fetchToken();
+  }, [fetchToken]);
 
   const refresh = useCallback(async () => {
+    const token = launchTokenRef.current ?? (await fetchToken());
+    if (!token) return;
     setError(null);
     try {
-      setItems(await listInstanceConnectors(instanceId));
+      setItems(await listInstanceConnectors(token, instanceId));
     } catch (err) {
       setItems([]);
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [instanceId]);
+  }, [fetchToken, instanceId]);
 
   useEffect(() => {
     void refresh();
@@ -99,12 +130,14 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
       setError(null);
       setConnectingKey(item.key);
       try {
-        const result = await enableBuiltinConnector(instanceId, item.key);
+        const token = launchTokenRef.current ?? (await fetchToken());
+        if (!token) return;
+        const result = await enableBuiltinConnector(token, instanceId, item.key);
         if (result.status === "auth_required" && result.authorizationUrl && result.flowId) {
           // 取消上一个未完成 flow（双击/换连接器连点会开新流，旧流悬挂）
           const previous = pendingFlowRef.current;
           if (previous) {
-            void cancelConnectorOAuth(instanceId, previous.connectorKey, previous.flowId).catch(
+            void cancelConnectorOAuth(launchTokenRef.current ?? "", instanceId, previous.connectorKey, previous.flowId).catch(
               () => {
                 /* 旧 flow cancel 尽力而为 */
               },
@@ -142,7 +175,7 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
       if (!current || data.flowId !== current.flowId) return;
       setPendingFlow(null);
       popupRef.current = null;
-      void completeConnectorOAuth(instanceId, current.connectorKey, current.flowId)
+      void completeConnectorOAuth(launchTokenRef.current ?? "", instanceId, current.connectorKey, current.flowId)
         .catch(() => {
           /* complete 失败时列表刷新仍会反映真实状态 */
         })
@@ -163,7 +196,7 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
         popupRef.current = null;
         if (current && current.flowId === pendingFlow.flowId) {
           setPendingFlow(null);
-          void cancelConnectorOAuth(instanceId, current.connectorKey, current.flowId)
+          void cancelConnectorOAuth(launchTokenRef.current ?? "", instanceId, current.connectorKey, current.flowId)
             .catch(() => {
               /* cancel 尽力而为 */
             })
@@ -194,7 +227,7 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
     return () => {
       const current = pendingFlowRef.current;
       if (current) {
-        void cancelConnectorOAuth(instanceId, current.connectorKey, current.flowId).catch(
+        void cancelConnectorOAuth(launchTokenRef.current ?? "", instanceId, current.connectorKey, current.flowId).catch(
           () => {
             /* 离开页面时的 cancel 尽力而为 */
           },
@@ -215,7 +248,7 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
     async (item: ConnectorItem) => {
       setError(null);
       try {
-        await disableBuiltinConnector(instanceId, item.key);
+        await disableBuiltinConnector(launchTokenRef.current ?? "", instanceId, item.key);
         await refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -228,7 +261,7 @@ export function ConnectorsPanel({ instanceId }: { instanceId: string }) {
     async (item: ConnectorItem) => {
       setError(null);
       try {
-        await retryConnectorDelivery(instanceId, item.key);
+        await retryConnectorDelivery(launchTokenRef.current ?? "", instanceId, item.key);
         await refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

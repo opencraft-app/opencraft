@@ -5,6 +5,9 @@ import * as client from "@/lib/connectors-client";
 import { ConnectorsPanel } from "@/pages/marketing/agent-connectors-panel";
 
 vi.mock("@/i18n/t", () => ({ t: (s: string) => s }));
+vi.mock("@/lib/agentchat-launch-token", () => ({
+  fetchAgentChatLaunchToken: vi.fn(async () => ({ token: "launch-token-1" })),
+}));
 vi.mock("@/lib/connectors-client", () => ({
   listInstanceConnectors: vi.fn(),
   enableBuiltinConnector: vi.fn(),
@@ -128,6 +131,7 @@ describe("ConnectorsPanel OAuth 流程", () => {
     );
     await waitFor(() =>
       expect(client.completeConnectorOAuth).toHaveBeenCalledWith(
+        "launch-token-1",
         "ins-1",
         "tencent-meeting",
         "flow-1",
@@ -201,6 +205,7 @@ describe("ConnectorsPanel 断开与重试", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认断开" }));
     await waitFor(() =>
       expect(client.disableBuiltinConnector).toHaveBeenCalledWith(
+        "launch-token-1",
         "ins-1",
         "tencent-meeting",
       ),
@@ -225,9 +230,25 @@ describe("ConnectorsPanel 断开与重试", () => {
     fireEvent.click(await screen.findByRole("button", { name: "重试同步" }));
     await waitFor(() =>
       expect(client.retryConnectorDelivery).toHaveBeenCalledWith(
+        "launch-token-1",
         "ins-1",
         "tencent-meeting",
       ),
     );
+  });
+});
+
+describe("ConnectorsPanel launch token", () => {
+  it("launch token 获取失败时显示错误且不调连接器接口", async () => {
+    const { fetchAgentChatLaunchToken } = await import("@/lib/agentchat-launch-token");
+    vi.mocked(fetchAgentChatLaunchToken).mockRejectedValue(
+      new Error("未登录，无法获取 AgentChat 启动 token"),
+    );
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    expect(
+      await screen.findByText(/未登录，无法获取 AgentChat 启动 token/),
+    ).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(client.listInstanceConnectors).not.toHaveBeenCalled();
   });
 });

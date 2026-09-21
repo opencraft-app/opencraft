@@ -8,12 +8,6 @@ import {
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
-vi.stubGlobal("localStorage", {
-  // 与 http-repositories.ts AUTH_TOKEN_STORAGE_KEY 一致
-  getItem: (k: string) => (k === "lightclaw-auth-token-v1" ? "tok-123" : null),
-  setItem: vi.fn(),
-  removeItem: vi.fn(),
-});
 
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_AI_SERVER_BASE_URL", "https://ai-server.example.com");
@@ -22,7 +16,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("connectors-client", () => {
-  it("listInstanceConnectors 携带 x-product 与 Bearer 头并解析 items", async () => {
+  it("listInstanceConnectors 携带 x-product 与 launch_token 的 Bearer 头并解析 items", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -38,7 +32,7 @@ describe("connectors-client", () => {
         { status: 200 },
       ),
     );
-    const items = await listInstanceConnectors("ins-1");
+    const items = await listInstanceConnectors("launch-token-1", "ins-1");
     expect(items[0]?.key).toBe("tencent-meeting");
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain(
@@ -46,7 +40,7 @@ describe("connectors-client", () => {
     );
     const headers = init.headers as Record<string, string>;
     expect(headers["X-Product"]).toBe("lightvela");
-    expect(headers.Authorization).toBe("Bearer tok-123");
+    expect(headers.Authorization).toBe("Bearer launch-token-1");
   });
 
   it("enableBuiltinConnector 返回 auth_required 时透传 authorizationUrl/flowId", async () => {
@@ -60,7 +54,7 @@ describe("connectors-client", () => {
         { status: 200 },
       ),
     );
-    const r = await enableBuiltinConnector("ins-1", "tencent-meeting");
+    const r = await enableBuiltinConnector("launch-token-1", "ins-1", "tencent-meeting");
     expect(r).toEqual({
       status: "auth_required",
       authorizationUrl: "https://oauth.example.com",
@@ -69,13 +63,13 @@ describe("connectors-client", () => {
   });
 
   it("401 抛出未登录错误（不含 token 明文）", async () => {
-    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 401 }));
-    await expect(listInstanceConnectors("ins-1")).rejects.toThrow("登录已过期");
-    // 错误信息不泄漏 Authorization 值
+    fetchMock.mockResolvedValue(new Response("{}", { status: 401 }));
     try {
-      await listInstanceConnectors("ins-1");
+      await listInstanceConnectors("launch-token-1", "ins-1");
+      expect.unreachable("应抛出错误");
     } catch (err) {
-      expect(String(err)).not.toContain("tok-123");
+      expect(String(err)).toContain("登录已过期");
+      expect(String(err)).not.toContain("launch-token-1");
     }
   });
 

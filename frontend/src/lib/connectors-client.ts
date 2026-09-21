@@ -4,14 +4,13 @@
  * 接口契约来源：ai-server 仓库 controller/connectors.controller.ts
  * （@Controller('api/connectors')）。鉴权两枚头：
  *   X-Product: lightvela（产品标识）
- *   Authorization: Bearer <token>（复用主站登录 token，读取键见 http-repositories）
+ *   Authorization: Bearer <launch_token>（AgentChat 启动 token，由
+ *   `fetchAgentChatLaunchToken` 获取；ai-server 用它调 LightVela introspect
+ *   换 user_id——见 ai-server lightVelaOauthRequest.helper.ts）
  *
  * 红线：token 只用于请求头，不落任何缓存/日志；错误信息不含凭据明文。
  */
 
-import { readStoredAuthToken } from "@/repositories/http-repositories";
-
-/** OAuth 回调页通过 window.opener.postMessage 广播的事件类型（connectors.controller.ts oauthCallback） */
 export const CONNECTOR_OAUTH_COMPLETE_MESSAGE = "connector.oauth.complete";
 
 export type ConnectorStatus =
@@ -45,13 +44,16 @@ function aiServerBase(): string {
   return base.replace(/\/+$/, "");
 }
 
-async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+async function post<T>(
+  path: string,
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Product": "lightvela",
+    Authorization: `Bearer ${accessToken}`,
   };
-  const token = readStoredAuthToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${aiServerBase()}${path}`, {
     method: "POST",
     headers,
@@ -64,10 +66,12 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
 
 /** 拉取某实例可用的连接器列表与授权状态 */
 export async function listInstanceConnectors(
+  accessToken: string,
   instanceId: string,
 ): Promise<ConnectorItem[]> {
   const data = await post<{ items?: ConnectorItem[] }>(
     "/api/connectors/mcp/instance/list",
+    accessToken,
     { instanceId },
   );
   return Array.isArray(data.items) ? data.items : [];
@@ -75,10 +79,11 @@ export async function listInstanceConnectors(
 
 /** 启用内置连接器；需 OAuth 时返回 auth_required + authorizationUrl/flowId */
 export async function enableBuiltinConnector(
+  accessToken: string,
   instanceId: string,
   connectorKey: string,
 ): Promise<EnableResult> {
-  return post<EnableResult>("/api/connectors/mcp/builtin/enable", {
+  return post<EnableResult>("/api/connectors/mcp/builtin/enable", accessToken, {
     instanceId,
     connectorKey,
   });
@@ -86,11 +91,12 @@ export async function enableBuiltinConnector(
 
 /** 授权回调完成后落库（postMessage 握手成功后调用） */
 export async function completeConnectorOAuth(
+  accessToken: string,
   instanceId: string,
   connectorKey: string,
   flowId: string,
 ): Promise<{ ok: boolean }> {
-  return post("/api/connectors/oauth/complete", {
+  return post("/api/connectors/oauth/complete", accessToken, {
     instanceId,
     connectorKey,
     flowId,
@@ -99,11 +105,12 @@ export async function completeConnectorOAuth(
 
 /** 取消进行中的授权流（面板卸载/用户离开时） */
 export async function cancelConnectorOAuth(
+  accessToken: string,
   instanceId: string,
   connectorKey: string,
   flowId: string,
 ): Promise<void> {
-  await post("/api/connectors/oauth/cancel", {
+  await post("/api/connectors/oauth/cancel", accessToken, {
     instanceId,
     connectorKey,
     flowId,
@@ -112,10 +119,11 @@ export async function cancelConnectorOAuth(
 
 /** 断开已连接的连接器 */
 export async function disableBuiltinConnector(
+  accessToken: string,
   instanceId: string,
   connectorKey: string,
 ): Promise<void> {
-  await post("/api/connectors/mcp/builtin/disable", {
+  await post("/api/connectors/mcp/builtin/disable", accessToken, {
     instanceId,
     connectorKey,
   });
@@ -123,10 +131,11 @@ export async function disableBuiltinConnector(
 
 /** 重试下发（授权成功但实例离线/版本不满足后的补发） */
 export async function retryConnectorDelivery(
+  accessToken: string,
   instanceId: string,
   connectorKey: string,
 ): Promise<void> {
-  await post("/api/connectors/mcp/builtin/retry-delivery", {
+  await post("/api/connectors/mcp/builtin/retry-delivery", accessToken, {
     instanceId,
     connectorKey,
   });
