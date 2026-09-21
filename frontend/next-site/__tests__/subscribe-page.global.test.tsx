@@ -122,6 +122,12 @@ vi.mock("@/lib/app-navigation", () => ({
   useAppNavigate: () => navigateMock,
 }));
 
+vi.mock("../credit-pack-section", () => ({
+  CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
+    <section id={sectionId} data-testid="credit-pack-section" />
+  ),
+}));
+
 /* 必须完整列出被依赖链引用的导出：vi.mock 会整体替换模块，
    只给 isGlobal 会让 constants/legal.ts 等的 `import { isCN }` 抛
    「No "isCN" export is defined」并导致组件渲染失败。
@@ -318,6 +324,7 @@ describe("SubscribePage paid billing visibility", () => {
     /* 全量放开：登录后无需 show() 即展示付费时长与可订阅 CTA。 */
     expect(await screen.findByRole("tablist", { name: "付费时长" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即订阅" })).toBeEnabled();
+    expect(screen.getByTestId("credit-pack-section")).toBeInTheDocument();
   });
 });
 

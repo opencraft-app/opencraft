@@ -34,7 +34,6 @@ import {
 } from "@/lib/billing-flow";
 import { resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { installCreditPackVisibilityHelper, useCreditPackVisibility } from "@/lib/credit-pack-visibility";
 import { useCreditSources, formatCreditDate } from "@/lib/use-credit-sources";
 import { isCN, isGlobal } from "@/lib/region";
 import { publicSiteHref } from "@/lib/public-site-navigation";
@@ -881,9 +880,7 @@ const SubscriptionSection = ({
     };
   }, [operablePass, subscription, plan.trialDays]);
 
-  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。
-     积分包区域未开启时（feature flag 默认关闭）退化为仅套餐积分，
-     与改造前行为一致。挂载 show_credit_pack() 控制台助手（两页任一挂载即可生效）。 */
+  /* 积分额度：套餐积分（operablePass）+ 付费积分包（credit 服务）多来源汇总。 */
   const planCreditInput = useMemo(
     () =>
       operablePass
@@ -897,14 +894,8 @@ const SubscriptionSection = ({
   );
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
     useCreditSources(planCreditInput);
-  const creditPackVisible = useCreditPackVisibility();
-  useEffect(() => installCreditPackVisibilityHelper(), []);
-
-  /* flag 关闭时只认套餐积分，避免未上线的积分包数据影响既有展示 */
-  const creditsTotal = creditPackVisible ? creditSummary.total : (operablePass ? operablePass.credit_total : 0);
-  const creditsAvailable = creditPackVisible
-    ? creditSummary.available
-    : (operablePass ? operablePass.credit_available : 0);
+  const creditsTotal = creditSummary.total;
+  const creditsAvailable = creditSummary.available;
   const creditsUsed = Math.max(0, creditsTotal - creditsAvailable);
   const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
   const creditsExhausted = Boolean(creditsTotal > 0 && creditsAvailable <= 0);
@@ -1090,16 +1081,14 @@ const SubscriptionSection = ({
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
                     {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
-                    {creditPackVisible && (
-                      <AppLink
-                        to="/subscribe?section=credits"
-                        className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
-                        style={{ color: "var(--lw-accent)" }}
-                      >
-                        {t("购买积分包")}
-                        <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
-                      </AppLink>
-                    )}
+                    <AppLink
+                      to="/subscribe?section=credits"
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold underline underline-offset-2 transition-opacity hover:opacity-80"
+                      style={{ color: "var(--lw-accent)" }}
+                    >
+                      {t("购买积分包")}
+                      <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                    </AppLink>
                   </div>                  <div className="flex items-center justify-between mb-2">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
                       {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
@@ -1119,9 +1108,8 @@ const SubscriptionSection = ({
                     />
                   </div>
 
-                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
-                      仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
-                  {creditPackVisible && creditSources.length > 0 && (
+                  {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。 */}
+                  {creditSources.length > 0 && (
                     <div className="mt-4">
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-sm font-semibold" style={{ color: "#333" }}>

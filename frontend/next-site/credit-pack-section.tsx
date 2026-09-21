@@ -17,7 +17,7 @@ import { RepositoryError } from '@/repositories/http-repositories';
 import { useT } from '@/i18n/t';
 import { useCreditCheckout } from '@/lib/use-credit-checkout';
 import { centsToYuan, formatYuan } from '@/lib/billing-flow';
-import { ACCOUNT_PATH } from '@/lib/agent-routes';
+import { ACCOUNT_BILLING_PATH } from '@/lib/agent-routes';
 import { useAppNavigate } from '@/lib/app-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
@@ -27,10 +27,7 @@ import { cn } from '@/lib/utils';
  *
  * 位于订阅页套餐卡片区下方的独立分区，供已有有效套餐的用户补充模型积分。
  *
- * ⚠️ 本期为「UI + 询价」范围，不接入下单与支付：
- * trade 侧 payURL 恒为空（trade/internal/logic/creditorder/service.go:178,229），
- * 拿不到微信二维码或信用卡托管页地址。整个区域由 feature flag 控制，默认关闭。
- * 详见 .workflow/native/changes/credit-pack-purchase/brief.md。
+ * 支持询价、下单、支付和到账状态确认，国内站和国际站均直接展示。
  */
 
 /** 单个商品的询价状态：并发询价，互不影响。 */
@@ -63,6 +60,23 @@ const PAY_RETURN_QUERY_VALUE = 'return';
  */
 const formatAmount = (quote: CreditQuote): string =>
   formatYuan(centsToYuan(quote.real_total_cost), quote.currency);
+
+const parseCents = (value: string): number | null => {
+  const cents = Number(value);
+  return Number.isInteger(cents) && cents >= 0 ? cents : null;
+};
+
+const formatQuoteAmounts = (quote: CreditQuote) => {
+  const priceCents = parseCents(quote.price);
+  const totalCents = parseCents(quote.real_total_cost);
+  if (priceCents === null || totalCents === null || totalCents < priceCents) return null;
+
+  return {
+    price: formatYuan(centsToYuan(priceCents), quote.currency),
+    tax: formatYuan(centsToYuan(totalCents - priceCents), quote.currency),
+    total: formatYuan(centsToYuan(totalCents), quote.currency),
+  };
+};
 
 export type CreditPackSectionProps = {
   /** 区域锚点 id，供 ?section=credits 定位 */
@@ -122,9 +136,14 @@ export const CreditPackSection = ({
       setQuotes((prev) => ({ ...prev, [productId]: { status: 'loading' } }));
       try {
         const quote = await repositoriesRef.current.credit.inquireCreditPrice(productId);
-        /* 契约防御：响应缺少 real_total_cost（如后端改了包装结构）时按询价失败处理，
+        /* 契约防御：响应缺少金额字段或总价小于积分包价格时按询价失败处理，
            显示「价格暂不可用」而非渲染崩溃 */
-        if (!quote || typeof quote.real_total_cost !== "string") {
+        if (
+          !quote ||
+          typeof quote.price !== "string" ||
+          typeof quote.real_total_cost !== "string" ||
+          formatQuoteAmounts(quote) === null
+        ) {
           throw new Error("invalid quote response");
         }
         setQuotes((prev) => ({ ...prev, [productId]: { status: 'ready', quote } }));
@@ -359,7 +378,8 @@ export const CreditPackSection = ({
     () => CREDIT_PACK_DENOMINATIONS.find((d) => d.product_id === dialogProductId),
     [dialogProductId],
   );
-  const dialogAmount = dialogQuote?.status === 'ready' ? formatAmount(dialogQuote.quote) : null;
+  const dialogAmounts = dialogQuote?.status === 'ready' ? formatQuoteAmounts(dialogQuote.quote) : null;
+  const dialogAmount = dialogAmounts?.total ?? null;
   const isConfirmationStep = checkout.state.status === 'idle' || checkout.state.status === 'creating';
   const paymentDialogTitle =
     checkout.state.status === 'delivered'
@@ -470,8 +490,6 @@ export const CreditPackSection = ({
         ) : null}
       </div>
 
-      {/* 国际站税费口径未定：credit inquiry 不返回 tax_price（套餐链路有），
-          上线前需与产品/法务确认展示口径。 */}
       {isGlobal ? (
         <p className="mt-2 text-xs" style={{ color: '#999' }}>
           {t('单次付费，不会自动续费。')}
@@ -505,6 +523,25 @@ export const CreditPackSection = ({
                     <dt>{t('有效期')}</dt>
                     <dd className="font-semibold text-[var(--text-primary)]">{t('到账后 1 个月')}</dd>
                   </div>
+                  {dialogAmounts ? (
+                    <div
+                      data-testid="credit-pack-price-breakdown"
+                      className="mt-4 space-y-2 border-t border-[var(--border-strong)] pt-4 text-[var(--text-secondary)]"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <dt>{t('积分包价格')}</dt>
+                        <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmounts.price}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <dt>{t('税费')}</dt>
+                        <dd className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{dialogAmounts.tax}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 font-medium text-[var(--text-primary)]">
+                        <dt>{t('总价')}</dt>
+                        <dd className="shrink-0 font-semibold tabular-nums">{dialogAmounts.total}</dd>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="my-4 h-px bg-[var(--border-strong)]" />
                   <div className="flex items-baseline justify-between gap-4">
                     <dt className="text-[var(--text-secondary)]">{t('总计：')}</dt>
@@ -541,12 +578,6 @@ export const CreditPackSection = ({
                   />
                   <span>
                     {t('我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。')}
-                    {isGlobal ? null : (
-                      <>
-                        <br />
-                        {t('法律规定、重复扣款或平台交付异常等情况，由客服核验处理。')}
-                      </>
-                    )}
                   </span>
                 </label>
 
@@ -684,7 +715,7 @@ export const CreditPackSection = ({
                       type="button"
                       onClick={() => {
                         if (checkout.state.status === 'delivered') {
-                          navigate(ACCOUNT_PATH);
+                          navigate(ACCOUNT_BILLING_PATH);
                           return;
                         }
                         setModalOpen(false);

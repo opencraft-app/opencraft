@@ -94,12 +94,6 @@ vi.mock("@/i18n/t", () => ({
 
 const navigateMock = vi.fn();
 
-const creditPackVisibilityState = vi.hoisted(() => ({ visible: false }));
-vi.mock("@/lib/credit-pack-visibility", () => ({
-  installCreditPackVisibilityHelper: () => () => undefined,
-  useCreditPackVisibility: () => creditPackVisibilityState.visible,
-}));
-
 vi.mock("../credit-pack-section", () => ({
   CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
     <section id={sectionId} data-testid="credit-pack-section" />
@@ -191,7 +185,6 @@ const resetState = () => {
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
   navigateMock.mockReset();
-  creditPackVisibilityState.visible = false;
   window.history.replaceState({}, "", "/subscribe");
 };
 
@@ -224,7 +217,6 @@ describe("SubscribePage", () => {
   it("scrolls a credits deep link after bundle loading mounts the credit section", async () => {
     sessionState.isAuthenticated = true;
     openClawState.isLoggedIn = true;
-    creditPackVisibilityState.visible = true;
     window.history.replaceState({}, "", "/subscribe?section=credits");
     const scrollIntoView = vi.fn();
     const originalScrollIntoView = Element.prototype.scrollIntoView;

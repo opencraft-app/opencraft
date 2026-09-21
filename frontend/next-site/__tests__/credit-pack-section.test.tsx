@@ -65,6 +65,7 @@ const ALL_PRODUCTS_ONLINE = [
    credit_8000 → 8000 分 = ¥80.00，用于验证分转元。 */
 const quoteFor = (productId: string) => ({
   product_id: productId,
+  price: "7100",
   real_total_cost: "8000",
   total_cost: "8000",
   currency: "CNY" as const,
@@ -218,11 +219,19 @@ describe("CreditPackSection", () => {
     expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
     expect(screen.getByText("订单详情")).toBeInTheDocument();
     expect(screen.getByText("到账后 1 个月")).toBeInTheDocument();
-    expect(screen.getByText("总计：")).toBeInTheDocument();
+    expect(screen.getByText("积分包价格")).toBeInTheDocument();
+    expect(screen.getByText("税费")).toBeInTheDocument();
+    expect(screen.getByText("总价")).toBeInTheDocument();
     expect(screen.getByText("微信支付")).toBeInTheDocument();
     /* 弹窗展示商品与金额（卡片上也有同样文本，用 getAllByText 断言至少两处） */
     expect(screen.getAllByText("8,000 模型积分").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("¥80.00").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("积分包价格¥71.00");
+    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("税费¥9.00");
+    expect(screen.getByTestId("credit-pack-price-breakdown")).toHaveTextContent("总价¥80.00");
+    expect(screen.getByTestId("credit-pack-terms-checkbox").parentElement?.textContent).toBe(
+      "我已知晓：本商品为虚拟积分商品，支付成功后即时到账，有效期 1 个月；积分到账后不支持自主退款，到期未使用部分失效。",
+    );
 
     const payButton = screen.getByTestId("credit-pack-confirm-pay");
     expect(payButton).toHaveTextContent("支付 ¥80.00");
