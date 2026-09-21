@@ -104,9 +104,9 @@ if [[ ! -x "$FRONTEND_GUARD_DIR/node_modules/.bin/next" ]]; then
   exit 1
 fi
 rm -rf .next out
-NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" build:cn
+NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" build:cn
 
 rm -rf .next out
-NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" build:global
+NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" build:global
 
 echo "frontend 约束：全部通过"

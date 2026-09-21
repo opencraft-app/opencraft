@@ -93,7 +93,7 @@ resolve_preview_auth_api_base_url() {
     *)
       case "$variant" in
         intl)
-          printf 'https://lightclaw.tech'
+          printf 'https://api.lightvela.ai'
           ;;
         cn)
           printf 'https://lightclaw.tech'

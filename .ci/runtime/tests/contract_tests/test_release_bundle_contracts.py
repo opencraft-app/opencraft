@@ -3155,7 +3155,8 @@ refresh_skus http://unused img-jhb "$pools_json"
 
         self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" cn)"', workflow_text)
         self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"', workflow_text)
-        self.assertEqual(workflow_text.count('printf \'https://lightclaw.tech\''), 2)
+        self.assertIn("printf 'https://api.lightvela.ai'", workflow_text)
+        self.assertEqual(workflow_text.count("printf 'https://lightclaw.tech'"), 1)
         self.assertIn(
             'build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR"',
             workflow_text,
@@ -3202,8 +3203,14 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn('--exclude="velalink/target"', guard_text)
         self.assertIn('"$PNPM_BIN" build:cn', guard_text)
         self.assertIn('"$PNPM_BIN" build:global', guard_text)
-        self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai", guard_text)
-        self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech", guard_text)
+        self.assertIn(
+            'NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" build:cn',
+            guard_text,
+        )
+        self.assertIn(
+            'NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" build:global',
+            guard_text,
+        )
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
