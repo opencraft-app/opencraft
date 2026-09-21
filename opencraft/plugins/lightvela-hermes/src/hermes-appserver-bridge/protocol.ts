@@ -86,6 +86,7 @@ export const dispatchAppServerRequest = async (
   services: {
     readonly signal?: AbortSignal;
     readonly fileSystem?: HermesHostFileSystem;
+    readonly attachments?: HermesAttachmentStagingService;
     readonly terminal?: HermesHostTerminal;
     readonly processes?: HermesProcessService;
     readonly bots?: HermesBotAppServerHandler;
@@ -101,8 +102,10 @@ export const dispatchAppServerRequest = async (
     return services.processes.dispatch(request.method, value);
   }
   if (request.method.startsWith("attachment/")) {
-    if (!services.fileSystem) throw new Error("Hermes attachment staging is unavailable");
-    return new HermesAttachmentStagingService(services.fileSystem).handle(request.method, value);
+    const attachments = services.attachments
+      ?? (services.fileSystem ? new HermesAttachmentStagingService(services.fileSystem) : null);
+    if (attachments === null) throw new Error("Hermes attachment staging is unavailable");
+    return attachments.handle(request.method, value);
   }
   if (request.method.startsWith("bot/") && services.bots !== undefined) {
     return services.bots.handle(request.method, value);
@@ -134,7 +137,7 @@ export const dispatchAppServerRequest = async (
                 instanceId: services.instanceId,
               },
             }),
-            ...(services.fileSystem === undefined ? {} : {
+            ...(services.attachments === undefined && services.fileSystem === undefined ? {} : {
               [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: HERMES_ATTACHMENT_STAGING_CAPABILITY,
             }),
             "opencraft/message-window-history": { version: 1, pageRows: 120, previewNotification: "thread/history/preview" },

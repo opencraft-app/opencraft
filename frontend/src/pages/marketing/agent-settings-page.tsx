@@ -74,6 +74,7 @@ import { getHermesScriptCommands } from "@/pages/marketing/agent-config/scripts-
 import { useSession } from "@/contexts/session-context";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { createDebugExecRequestBody } from "@/lib/debug-exec-request";
 // 多会话桥接类型经 agent-chat-panel 的 type re-export 引入（单一事实源，见该文件说明）。
 import type {
   LightVelaMultiSessionOptions,
@@ -580,7 +581,7 @@ async function execDebugCommandStream(
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+    body: JSON.stringify(createDebugExecRequestBody(command)),
   });
 
   if (!response.ok) {
@@ -2690,7 +2691,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const showCreateBotEntry = showHiddenAgentTools;
+  const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -2708,8 +2709,8 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const isEmptyPersonaPage = activeSection === "buddy"
-    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
+  const isEmptyAgentPage = !isModifying
+    && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -3573,9 +3574,35 @@ export const AgentSettingsPage = ({
   const [importStatusByInstanceId, setImportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [importStatusLoadingInstanceIds, setImportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
   const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
+  const [sessionRepairPendingKeysByInstanceId, setSessionRepairPendingKeysByInstanceId] = useState<Record<string, string[]>>({});
   const [workspaceConfirm, setWorkspaceConfirm] = useState<WorkspaceConfirmState | null>(null);
   const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleSessionRepairPendingChange = useCallback((change: {
+    maintenanceScopeId: string;
+    requestKey: string;
+    pending: boolean;
+  }) => {
+    setSessionRepairPendingKeysByInstanceId((current) => {
+      const scopeKeys = current[change.maintenanceScopeId] ?? [];
+      if (change.pending) {
+        if (scopeKeys.includes(change.requestKey)) return current;
+        return {
+          ...current,
+          [change.maintenanceScopeId]: [...scopeKeys, change.requestKey],
+        };
+      }
+      if (!scopeKeys.includes(change.requestKey)) return current;
+      const nextScopeKeys = scopeKeys.filter((requestKey) => requestKey !== change.requestKey);
+      const next = { ...current };
+      if (nextScopeKeys.length > 0) {
+        next[change.maintenanceScopeId] = nextScopeKeys;
+      } else {
+        delete next[change.maintenanceScopeId];
+      }
+      return next;
+    });
+  }, []);
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3777,6 +3804,9 @@ export const AgentSettingsPage = ({
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
   const isActiveBotExporting = activeRuntimeInstanceId ? exportingInstanceIds.has(activeRuntimeInstanceId) : false;
   const isActiveBotImporting = activeRuntimeInstanceId ? importingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const isActiveSessionRepairing = activeRuntimeInstanceId
+    ? (sessionRepairPendingKeysByInstanceId[activeRuntimeInstanceId]?.length ?? 0) > 0
+    : false;
   const activeExportStatus = activeRuntimeInstanceId ? exportStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const activeImportStatus = activeRuntimeInstanceId ? importStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const isActiveExportStatusLoading = activeRuntimeInstanceId ? exportStatusLoadingInstanceIds.has(activeRuntimeInstanceId) : false;
@@ -3792,6 +3822,7 @@ export const AgentSettingsPage = ({
     currentTask: activeWorkspaceTask,
   });
   const maintenanceBusy = resetting || resettingAcli || isActiveBotExporting || isActiveBotImporting
+    || isActiveSessionRepairing
     || isActiveExportStatusLoading || isActiveImportStatusLoading
     || isWorkspaceActionRunning(activeWorkspaceTask?.status);
   // 当前 tab 是否展示错误
@@ -4114,7 +4145,6 @@ export const AgentSettingsPage = ({
   };
 
   const handleCreateNew = () => {
-    if (activeBot && !showCreateBotEntry) return;
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -4492,7 +4522,8 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
-        isEmptyPersonaPage && "lv-agent-empty-persona-page",
+        isEmptyAgentPage && "lv-agent-empty-page",
+        isModifying && "lv-agent-upgrading-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -5001,8 +5032,12 @@ export const AgentSettingsPage = ({
                         <dd>{t("主 Bot 当前主模型及其 Provider 凭据")}</dd>
                       </div>
                       <div className="flex items-start gap-2">
+                        <dt className="w-12 shrink-0 font-medium text-black/70">Skills</dt>
+                        <dd>{t("系统预置")}</dd>
+                      </div>
+                      <div className="flex items-start gap-2">
                         <dt className="w-12 shrink-0 font-medium text-black/70">{t("不继承")}</dt>
-                        <dd>{t("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")}</dd>
+                        <dd>{t("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")}</dd>
                       </div>
                     </dl>
                   ) : (
@@ -5256,7 +5291,7 @@ export const AgentSettingsPage = ({
                                         <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                                         {passExpiryReminderCopy.label}
                                       </button>
-                                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 -translate-x-1/2 pb-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                                      <span className="pointer-events-none absolute top-full left-1/2 z-20 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                                         <span
                                           id={passExpiryTooltipId}
                                           role="tooltip"
@@ -5275,7 +5310,7 @@ export const AgentSettingsPage = ({
                                           </button>
                                           <span
                                             aria-hidden="true"
-                                            className="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-[var(--border-subtle)] bg-white"
+                                            className="absolute bottom-full left-1/2 size-2 -translate-x-1/2 translate-y-1/2 rotate-45 border-l border-t border-[var(--border-subtle)] bg-white"
                                           />
                                         </span>
                                       </span>
@@ -5302,6 +5337,27 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
+                              {showCreateBotEntry && (
+                                <WorkspaceActionTooltip
+                                  content={createLimitMessage || t("新建 Bot")}
+                                  side="bottom"
+                                  compact
+                                  focusable={!canCreateAdditionalBot}
+                                >
+                                  <button
+                                    type="button"
+                                    aria-label={t("新建 Bot")}
+                                    disabled={!canCreateAdditionalBot}
+                                    className="lv-agent-action-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleCreateNew();
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </WorkspaceActionTooltip>
+                              )}
                               <WorkspaceActionTooltip content={restartTooltip} side="bottom" compact focusable={false}>
                                 <button
                                   type="button"
@@ -5346,6 +5402,7 @@ export const AgentSettingsPage = ({
                             </div>
                             {visibleBots.length > 1 && (
                               <ChevronDown
+                                aria-hidden="true"
                                 className={cn("-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                               />
                             )}
@@ -5387,20 +5444,6 @@ export const AgentSettingsPage = ({
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
-                      )}
-
-                      {showCreateBotEntry && multiBotEnabled && (
-                        <WorkspaceActionTooltip content={createLimitMessage} side="bottom">
-                          <button
-                            type="button"
-                            onClick={handleCreateNew}
-                            disabled={!canCreateAdditionalBot}
-                            className="lv-agent-create-button"
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                            {t("新建 Bot")}
-                          </button>
-                        </WorkspaceActionTooltip>
                       )}
                     </div>
 
@@ -5774,7 +5817,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
                               botId={activeBot.id}
-                              profileId={activeBot.profileId ?? "main"}
+                              profileId={activeBot.profileId}
                               botName={activeBot.name}
                               isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}
@@ -5799,6 +5842,9 @@ export const AgentSettingsPage = ({
                               }}
                               resetAgentConsole={acliResetConsole}
                               resetAgentConsoleRef={acliResetConsoleRef}
+                              maintenanceBusy={maintenanceBusy}
+                              maintenanceScopeId={activeRuntimeInstanceId ?? activeBot.id}
+                              onSessionRepairPendingChange={handleSessionRepairPendingChange}
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}
@@ -5912,7 +5958,8 @@ export const AgentSettingsPage = ({
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
+                  {canCreateInitialAgent && !directCreating && <Plus className="h-4 w-4" aria-hidden="true" />}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建") : t("暂不可创建")}
                 </button>
               </div>
             )

@@ -1,16 +1,70 @@
-import { describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { createElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { LocaleOverrideProvider } from "@/i18n/t";
 
 import {
   AGENT_DIAGNOSTIC_COMMANDS,
+  AgentDiagnosticsPanel,
   buildDiagnosticLogsFileName,
   buildLogsCommand,
   buildLogsExportCommand,
+  buildSessionRepairCommand,
   collectStreamedDiagnosticOutput,
   getAgentDiagnosticCommands,
   getDiagnosticRunStatus,
   normalizeDiagnosticOutput,
   type ExecDebugCommandStream,
 } from "../agent-diagnostics-panel";
+
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock("@/lib/toast", () => ({ toast: toastMocks }));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+function diagnosticsPanelProps(execDebugCommand = vi.fn().mockResolvedValue({
+  status: "SUCCESS",
+  exitCode: 0,
+  output: "Repair completed",
+})) {
+  return {
+    botId: "bot-1",
+    profileId: "support",
+    botName: "Support",
+    isMainBot: false,
+    execDebugCommand,
+    execDebugCommandStream: vi.fn(),
+    resetConfigAction: { disabled: false, loading: false, tooltip: "", onExecute: vi.fn() },
+    resetAgentAction: { disabled: false, loading: false, tooltip: "", onExecute: vi.fn() },
+    resetAgentConsole: [],
+    resetAgentConsoleRef: { current: null },
+    maintenanceBusy: false,
+  };
+}
+
+function renderDiagnosticsPanel(execDebugCommand = vi.fn().mockResolvedValue({
+  status: "SUCCESS",
+  exitCode: 0,
+  output: "Repair completed",
+})) {
+  render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+  return execDebugCommand;
+}
+
+function getSessionRepairButton() {
+  const card = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+  if (!card) throw new Error("session repair card not found");
+  return within(card).getByRole("button", { name: "执行" });
+}
 
 describe("agent diagnostics commands", () => {
   it("runs the expected Hermes diagnostic commands", () => {
@@ -28,6 +82,12 @@ describe("agent diagnostics commands", () => {
 
   it("builds large Profile-scoped logs export commands", () => {
     expect(buildLogsExportCommand("24h")).toBe("hermes -p 'default' logs --since 24h -n 100000");
+  });
+
+  it("builds Profile-scoped session repair commands", () => {
+    expect(buildSessionRepairCommand()).toBe("hermes -p 'default' sessions repair");
+    expect(buildSessionRepairCommand("support")).toBe("hermes -p 'support' sessions repair");
+    expect(buildSessionRepairCommand("a'b")).toContain("'a'\\''b'");
   });
 
   it("builds stable logs download filenames", () => {
@@ -82,5 +142,336 @@ describe("agent diagnostics commands", () => {
       exitCode: 0,
       output: "final-output",
     });
+  });
+});
+
+describe("session repair", () => {
+  it("shows the requested card copy and opens common errors by hover, focus, and click", async () => {
+    const user = userEvent.setup();
+    renderDiagnosticsPanel();
+
+    expect(screen.getByRole("heading", { name: "会话修复" })).toBeInTheDocument();
+    expect(screen.getByText("用于修复会话中出现的异常问题。")).toBeInTheDocument();
+    const commonErrors = screen.getByRole("button", { name: "查看常见报错" });
+    expect(commonErrors).not.toHaveAttribute("aria-controls");
+
+    await user.hover(commonErrors);
+    const hoverPopover = await screen.findByRole("region", { name: "常见报错" });
+    expect(commonErrors).toHaveAttribute("aria-controls", hoverPopover.id);
+    expect(hoverPopover).toHaveTextContent("抱歉，我遇到了意外错误。");
+    fireEvent.mouseLeave(commonErrors);
+    fireEvent.mouseEnter(hoverPopover);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.getByRole("region", { name: "常见报错" })).toBeInTheDocument();
+    fireEvent.mouseLeave(hoverPopover);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "常见报错" })).not.toBeInTheDocument());
+
+    commonErrors.focus();
+    expect(await screen.findByRole("region", { name: "常见报错" })).toBeInTheDocument();
+    commonErrors.blur();
+    await waitFor(() => expect(screen.queryByRole("region", { name: "常见报错" })).not.toBeInTheDocument());
+
+    await user.click(commonErrors);
+    expect(await screen.findByRole("region", { name: "常见报错" })).toHaveTextContent("请重试或使用 /reset 开始新会话。");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("region", { name: "常见报错" })).not.toBeInTheDocument());
+
+    await user.unhover(commonErrors);
+    await user.hover(commonErrors);
+    expect(await screen.findByRole("region", { name: "常见报错" })).toBeInTheDocument();
+    await user.unhover(commonErrors);
+    await user.click(document.body);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "常见报错" })).not.toBeInTheDocument());
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.queryByRole("region", { name: "常见报错" })).not.toBeInTheDocument();
+  });
+
+  it("localizes the repair description and common errors", async () => {
+    const user = userEvent.setup();
+    render(createElement(
+      LocaleOverrideProvider,
+      {
+        locale: "en-US",
+        children: createElement(AgentDiagnosticsPanel, diagnosticsPanelProps()),
+      },
+    ));
+
+    expect(screen.getByText("Repairs unexpected session issues.")).toBeInTheDocument();
+    const commonErrors = screen.getByRole("button", { name: "View common errors" });
+    await user.click(commonErrors);
+
+    const popover = await screen.findByRole("region", { name: "Common errors" });
+    expect(popover).toHaveTextContent("Sorry, I encountered an unexpected error.");
+    expect(popover).toHaveTextContent("Try again or use /reset to start a fresh session.");
+  });
+
+  it("keeps the common errors open after clicking during hover until outside click", async () => {
+    const user = userEvent.setup();
+    renderDiagnosticsPanel();
+    const commonErrors = screen.getByRole("button", { name: "查看常见报错" });
+
+    await user.hover(commonErrors);
+    expect(await screen.findByRole("region", { name: "常见报错" })).toBeInTheDocument();
+    await user.click(commonErrors);
+    await user.unhover(commonErrors);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.getByRole("region", { name: "常见报错" })).toBeInTheDocument();
+
+    await user.click(document.body);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "常见报错" })).not.toBeInTheDocument());
+  });
+
+  it("asks for confirmation and runs repair for the current Profile", async () => {
+    const user = userEvent.setup();
+    const execDebugCommand = renderDiagnosticsPanel();
+
+    await user.click(getSessionRepairButton());
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("Hermes 将检查 state.db，并在发现异常时自动创建备份后执行修复。")).toBeInTheDocument();
+    expect(execDebugCommand).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "确认修复" }));
+
+    await waitFor(() => {
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "hermes -p 'support' sessions repair");
+    });
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功"));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Repair completed")).not.toBeInTheDocument();
+  });
+
+  it("disables repair for a named Bot without a Profile", () => {
+    const execDebugCommand = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      profileId: undefined,
+    }));
+
+    expect(getSessionRepairButton()).toBeDisabled();
+    fireEvent.click(getSessionRepairButton());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(execDebugCommand).not.toHaveBeenCalled();
+  });
+
+  it("explains why session repair is disabled", async () => {
+    const user = userEvent.setup();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(),
+      profileId: undefined,
+    }));
+
+    const repairButton = getSessionRepairButton();
+    const tooltipTrigger = repairButton.parentElement;
+    expect(tooltipTrigger).toHaveAttribute("tabindex", "0");
+    tooltipTrigger?.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("当前 Bot 的 Profile 尚未就绪，请稍后再试。");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("disables log reads and exports for a named Bot without a Profile", () => {
+    const execDebugCommand = vi.fn();
+    const execDebugCommandStream = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      profileId: undefined,
+      execDebugCommandStream,
+    }));
+
+    const logsCard = screen.getByRole("heading", { name: "最近日志" }).closest("article");
+    if (!logsCard) throw new Error("logs card not found");
+    expect(within(logsCard).getByText("当前 Bot 的 Profile 尚未就绪，请稍后再试。")).toBeInTheDocument();
+    expect(within(logsCard).queryByRole("code")).not.toBeInTheDocument();
+    expect(within(logsCard).queryByRole("button", { name: "查询" })).not.toBeInTheDocument();
+    expect(within(logsCard).queryByRole("button", { name: "导出" })).not.toBeInTheDocument();
+    expect(within(logsCard).queryByRole("button", { name: "选择日志时间段" })).not.toBeInTheDocument();
+    expect(execDebugCommand).not.toHaveBeenCalled();
+    expect(execDebugCommandStream).not.toHaveBeenCalled();
+  });
+
+  it("disables session repair while another maintenance action is running", async () => {
+    const execDebugCommand = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      maintenanceBusy: true,
+    }));
+
+    expect(getSessionRepairButton()).toBeDisabled();
+    getSessionRepairButton().parentElement?.focus();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Agent 维护任务执行中，请稍后再试。");
+    fireEvent.click(getSessionRepairButton());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(execDebugCommand).not.toHaveBeenCalled();
+  });
+
+  it("uses the default Profile when the main Bot has no Profile", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "done" });
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      profileId: undefined,
+      isMainBot: true,
+    }));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+
+    await waitFor(() => {
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "hermes -p 'default' sessions repair");
+    });
+  });
+
+  it("disables duplicate repair while the command is running", async () => {
+    let resolveRepair: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
+    const execDebugCommand = vi.fn(() => new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolveRepair = resolve;
+    }));
+    renderDiagnosticsPanel(execDebugCommand);
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+
+    const loadingButton = await screen.findByRole("button", { name: "修复中..." });
+    expect(loadingButton).toBeDisabled();
+    expect(loadingButton).toHaveAttribute("aria-busy", "true");
+    expect(execDebugCommand).toHaveBeenCalledTimes(1);
+
+    resolveRepair?.({ status: "SUCCESS", exitCode: 0, output: "done" });
+    await waitFor(() => expect(getSessionRepairButton()).toBeEnabled());
+    expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功");
+    expect(screen.queryByText("done")).not.toBeInTheDocument();
+  });
+
+  it("reports every repair request to the maintenance owner", async () => {
+    let resolveRepair: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
+    const execDebugCommand = vi.fn(() => new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolveRepair = resolve;
+    }));
+    const onSessionRepairPendingChange = vi.fn();
+    render(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      maintenanceScopeId: "instance-1",
+      onSessionRepairPendingChange,
+    }));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+
+    await waitFor(() => expect(onSessionRepairPendingChange).toHaveBeenCalledWith(expect.objectContaining({
+      maintenanceScopeId: "instance-1",
+      pending: true,
+    })));
+    const startChange = onSessionRepairPendingChange.mock.calls[0]?.[0];
+    resolveRepair?.({ status: "SUCCESS", exitCode: 0, output: "done" });
+    await waitFor(() => expect(onSessionRepairPendingChange).toHaveBeenLastCalledWith({
+      maintenanceScopeId: "instance-1",
+      requestKey: startChange.requestKey,
+      pending: false,
+    }));
+  });
+
+  it("shows command failures with the shared top toast", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "FAILED", exitCode: 1, output: "database is locked" });
+    renderDiagnosticsPanel(execDebugCommand);
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("会话修复失败"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("database is locked")).not.toBeInTheDocument();
+  });
+
+  it("shows thrown command errors with the shared top toast", async () => {
+    const execDebugCommand = vi.fn().mockRejectedValue(new Error("repair unavailable"));
+    renderDiagnosticsPanel(execDebugCommand);
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith("会话修复失败"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("repair unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps the repair card free of command output when switching Profiles", async () => {
+    const execDebugCommand = vi.fn().mockResolvedValue({ status: "SUCCESS", exitCode: 0, output: "support repaired" });
+    const view = render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功"));
+    expect(screen.queryByText("support repaired")).not.toBeInTheDocument();
+
+    view.rerender(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      botId: "bot-2",
+      profileId: "sales",
+      botName: "Sales",
+    }));
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("does not write a stale repair result after switching Profiles", async () => {
+    let resolveRepair: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
+    const execDebugCommand = vi.fn(() => new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolveRepair = resolve;
+    }));
+    const view = render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(await screen.findByRole("button", { name: "修复中..." })).toBeDisabled();
+
+    view.rerender(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      botId: "bot-2",
+      profileId: "sales",
+      botName: "Sales",
+    }));
+    resolveRepair?.({ status: "SUCCESS", exitCode: 0, output: "stale support result" });
+
+    await waitFor(() => expect(screen.queryByText("stale support result")).not.toBeInTheDocument());
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(toastMocks.success).not.toHaveBeenCalled();
+  });
+
+  it("ignores an older repair after switching A to B to A", async () => {
+    const resolvers: Array<(value: { status: string; exitCode: number; output: string }) => void> = [];
+    const execDebugCommand = vi.fn(() => new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+      resolvers.push(resolve);
+    }));
+    const view = render(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(await screen.findByRole("button", { name: "修复中..." })).toBeDisabled();
+
+    view.rerender(createElement(AgentDiagnosticsPanel, {
+      ...diagnosticsPanelProps(execDebugCommand),
+      botId: "bot-2",
+      profileId: "sales",
+      botName: "Sales",
+    }));
+    view.rerender(createElement(AgentDiagnosticsPanel, diagnosticsPanelProps(execDebugCommand)));
+
+    fireEvent.click(getSessionRepairButton());
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(execDebugCommand).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolvers[0]?.({ status: "SUCCESS", exitCode: 0, output: "first A result" });
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "修复中..." })).toBeDisabled();
+    expect(toastMocks.success).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvers[1]?.({ status: "SUCCESS", exitCode: 0, output: "second A result" });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(getSessionRepairButton()).toBeEnabled());
+    expect(toastMocks.success).toHaveBeenCalledTimes(1);
+    expect(toastMocks.success).toHaveBeenCalledWith("会话修复成功");
   });
 });

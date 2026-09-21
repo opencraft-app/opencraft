@@ -47,6 +47,7 @@ type RenderLanguageSwitcher = (options: {
 }) => ReactNode;
 
 type PublicSiteHeaderProps = {
+  beforeUserMenu?: ReactNode;
   appearance?: HeaderAppearance;
   authControls?: ReactNode;
   authSnapshot?: HeaderAuthSnapshot;
@@ -219,6 +220,7 @@ export function useIsDesktop(): boolean {
 }
 
 export function PublicSiteHeader({
+  beforeUserMenu,
   appearance = "solid",
   authControls,
   authSnapshot = { authReady: true, isAuthenticated: false },
@@ -418,10 +420,11 @@ export function PublicSiteHeader({
           {!usesAuthControlsSlot
             && !authLoading
             && isAuthenticated
-            && (!isDesktop || showLanguageSwitcher || showDesktopUserMenu)
+            && (!isDesktop || showLanguageSwitcher || showDesktopUserMenu || beforeUserMenu)
             && (
             <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
               {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
+              {beforeUserMenu}
               {(!isDesktop || showDesktopUserMenu) && (
                 <UserAvatarMenu showLanguageSwitcher={showAccountLanguageSwitcher} />
               )}

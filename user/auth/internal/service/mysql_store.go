@@ -1838,9 +1838,26 @@ func revokeActiveRealnameFaceIDAttemptsTx(ctx context.Context, tx *sql.Tx, userI
 }
 
 func (s *MySQLStore) ListAdminUsers(ctx context.Context, search string, limit int) ([]AdminUser, error) {
+	items, _, err := s.ListAdminUsersPage(ctx, search, limit, 0)
+	return items, err
+}
+
+func (s *MySQLStore) ListAdminUsersPage(ctx context.Context, search string, limit int, offset int) ([]AdminUser, int, error) {
 	pattern := "%"
 	if trimmed := strings.TrimSpace(search); trimmed != "" {
 		pattern = "%" + trimmed + "%"
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM users
+		WHERE (? = '%%' OR id LIKE ? OR name LIKE ? OR COALESCE(email, '') LIKE ? OR COALESCE(phone, '') LIKE ?)
+	`, pattern, pattern, pattern, pattern, pattern).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count admin users: %w", err)
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -1868,11 +1885,11 @@ func (s *MySQLStore) ListAdminUsers(ctx context.Context, search string, limit in
 			updated_at
 		FROM users
 		WHERE (? = '%%' OR id LIKE ? OR name LIKE ? OR COALESCE(email, '') LIKE ? OR COALESCE(phone, '') LIKE ?)
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, pattern, pattern, pattern, pattern, pattern, limit)
+		ORDER BY created_at DESC, id ASC
+		LIMIT ? OFFSET ?
+	`, pattern, pattern, pattern, pattern, pattern, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list admin users: %w", err)
+		return nil, 0, fmt.Errorf("list admin users: %w", err)
 	}
 	defer rows.Close()
 
@@ -1880,15 +1897,15 @@ func (s *MySQLStore) ListAdminUsers(ctx context.Context, search string, limit in
 	for rows.Next() {
 		var item AdminUser
 		if err := rows.Scan(&item.ID, &item.Name, &item.Email, &item.Phone, &item.QQOpenID, &item.WeChatSubject, &item.InviteRequired, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan admin user: %w", err)
+			return nil, 0, fmt.Errorf("scan admin user: %w", err)
 		}
 		item.AuthMethods = adminUserAuthMethods(item.Email, item.Phone, item.QQOpenID, item.WeChatSubject)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate admin users: %w", err)
+		return nil, 0, fmt.Errorf("iterate admin users: %w", err)
 	}
-	return items, nil
+	return items, total, nil
 }
 
 func (s *MySQLStore) ListAdminSMSChallenges(ctx context.Context, search string, limit int) ([]AdminSMSChallenge, error) {

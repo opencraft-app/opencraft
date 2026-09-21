@@ -87,9 +87,9 @@ export const LandingPageView = ({
   const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated || !referralCode) return;
+    if (authControls || !isAuthenticated || !referralCode) return;
     void auth.prepareReferralCode(referralCode).catch(() => undefined);
-  }, [auth, isAuthenticated, referralCode]);
+  }, [auth, authControls, isAuthenticated, referralCode]);
 
   useEffect(() => {
     if (!oauthError) return;

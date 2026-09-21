@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 
 import type { HeaderAppearance } from '@/components/site/public-site-header';
 import { useOpenClaw } from '@/contexts/agent-context';
+import { useRepositories } from '@/contexts/repository-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
 import { type PublicSiteLocale } from '@/lib/public-site-navigation';
@@ -111,6 +112,7 @@ function PublicHeaderAuthControls({
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
   const { authReady, isAuthenticated } = useSession();
+  const { auth } = useRepositories();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
@@ -161,6 +163,13 @@ function PublicHeaderAuthControls({
       setShowLogin(true);
     }
   }, [authReady, isAuthenticated]);
+
+  useEffect(() => {
+    if (!authReady || !isAuthenticated) return;
+    const referralCode = new URLSearchParams(window.location.search).get('ref')?.trim().toUpperCase();
+    if (!referralCode) return;
+    void auth.prepareReferralCode(referralCode).catch(() => undefined);
+  }, [auth, authReady, isAuthenticated]);
 
   const goToCreate = () => {
     // 方案 A（issue #73）：未登录直接进 /subscribe 看套餐，在订阅页点「订阅」时才引导登录，

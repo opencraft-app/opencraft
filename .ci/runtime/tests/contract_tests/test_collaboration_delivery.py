@@ -23,6 +23,57 @@ from gates import db_contract_verifier
 
 
 class CollaborationDeliveryTests(unittest.TestCase):
+    def test_beijing_gateway_consumes_dedicated_collaboration_bridge_secret(self):
+        overlay = REPO_ROOT / "argocd/services/service-gateway/beijing-sandbox"
+        config = yaml.safe_load((overlay / "config.yaml").read_text())
+        self.assertEqual(config["collaboration"], {
+            "upstream": "http://collaboration.lightvela-collaboration.svc.cluster.local",
+            "upstream_bearer_token_env": "COLLABORATION_GATEWAY_TOKEN",
+            "allowed_origins": ["http://localhost:*", "http://127.0.0.1:*"],
+        })
+
+        kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+        self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
+        self.assertEqual(kustomization["components"], [
+            "../common",
+            "../../../../service-gateway/k8s/overlays/beijing-sandbox",
+        ])
+        self.assertNotIn(
+            "collaboration-gateway-token-env-patch.yaml",
+            [patch.get("path") for patch in kustomization.get("patches", [])],
+        )
+
+        generator = yaml.safe_load(
+            (overlay / "ksops-collaboration-gateway-token-generator.yaml").read_text()
+        )
+        self.assertEqual(generator["files"], [
+            "../../../secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+        ])
+        source_overlay = REPO_ROOT / "service-gateway/k8s/overlays/beijing-sandbox"
+        source_kustomization = yaml.safe_load((source_overlay / "kustomization.yaml").read_text())
+        self.assertIn(
+            "collaboration-gateway-token-env-patch.yaml",
+            [patch.get("path") for patch in source_kustomization["patches"]],
+        )
+        patch = yaml.safe_load(
+            (source_overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
+        )
+        env = patch["spec"]["template"]["spec"]["containers"][0]["env"][0]
+        self.assertEqual(env["name"], "COLLABORATION_GATEWAY_TOKEN")
+        self.assertEqual(env["valueFrom"]["secretKeyRef"], {
+            "name": "collaboration-gateway-token",
+            "key": "COLLABORATION_GATEWAY_TOKEN",
+            "optional": False,
+        })
+
+        bundle = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text()
+        )["bundles"]["service-gateway"]
+        self.assertIn(
+            "argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+            bundle["publish_paths_by_env"]["beijing-sandbox"],
+        )
+
     def test_runtime_promotion_rejects_catalog_still_pointing_to_foundation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -92,6 +143,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(text.count("ci_ensure_go"), 2)
         self.assertEqual(text.count("ci_ensure_tccli"), 1)
         apply_script = workflow["stages"][2]["jobs"]["apply"]["steps"][-1]["run"]
+        self.assertEqual(apply_script.count('--image-override "$image"'), 2)
         self.assertIn("ci_ensure_pyyaml", apply_script)
         self.assertLess(apply_script.index("ci_ensure_tccli"), apply_script.index("ci_ensure_pyyaml"))
         self.assertLess(apply_script.index("ci_ensure_pyyaml"), apply_script.index("python3 scripts/export_ssm_to_sops.py"))
@@ -217,6 +269,20 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(set(spec["items"][0]["required_keys"]), {
             "database.dsn", "jwt.key", "gateway.token", "im-secret.key", "im-identity.key", "im-callback.token",
         })
+        bridge = next(item for item in spec["items"] if item["id"] == "collaboration-gateway-bridge")
+        self.assertEqual(bridge["secret_name"], spec["items"][0]["secret_name"])
+        self.assertEqual(bridge["namespace"], "lightclaw-gateway")
+        self.assertEqual(bridge["kubernetes_resource_name"], "collaboration-gateway-token")
+        self.assertEqual(bridge["required_keys"], ["gateway.token"])
+        self.assertEqual(bridge["key_mappings"], {
+            "gateway.token": "COLLABORATION_GATEWAY_TOKEN",
+        })
+        self.assertIn(
+            "--only collaboration-gateway-bridge",
+            (REPO_ROOT / ".ci/collaboration-bootstrap.yml").read_text(),
+        )
+        promotion = (REPO_ROOT / ".ci/runtime/promote_collaboration_bootstrap_to_gitops.sh").read_text()
+        self.assertIn("collaboration-gateway-token.sops.yaml", promotion)
         foundation = yaml.safe_load((root / "collaboration-foundation.yaml").read_text())
         self.assertEqual(foundation["service"], candidate["service"])
         self.assertEqual(foundation["sourcePath"], "argocd/services/collaboration/beijing-sandbox-foundation")
@@ -310,6 +376,26 @@ class CollaborationDeliveryTests(unittest.TestCase):
             self.assertEqual(audit["verification_mode"], "service-command")
             self.assertIsNone(audit["expected_schema_version"])
 
+    def test_native_readiness_explicit_candidate_image_overrides_stale_deploy_platform(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            platform = root / "argocd/services/collaboration/beijing-sandbox/collaboration-platform.env"
+            platform.parent.mkdir(parents=True)
+            stale = "registry.example/collaboration@sha256:" + "a" * 64
+            candidate = "registry.example/collaboration@sha256:" + "b" * 64
+            platform.write_text(f"COLLABORATION_IMAGE={stale}\nCOLLABORATION_NODE_POOL=general-bj8\n")
+            output = io.StringIO()
+            with mock.patch.object(sys, "argv", [
+                    "verify", "--repo-root", str(root), "--service", "collaboration",
+                    "--env", "beijing-sandbox", "--image-override", candidate,
+                 ]), \
+                    mock.patch.object(db_contract_verifier, "build_job_manifest",
+                                      wraps=db_contract_verifier.build_job_manifest) as build, \
+                    contextlib.redirect_stdout(output):
+                self.assertEqual(db_contract_verifier.main(), 0)
+            self.assertEqual(build.call_args.args[2]["image"], candidate)
+            self.assertEqual(json.loads(output.getvalue())["image"], candidate)
+
     def test_promotion_fails_before_validation_when_argo_activation_inputs_are_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -340,6 +426,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
                                           pin_targets="collaboration")
             self.assertTrue(plan.requires_db_job)
             self.assertTrue(plan.requires_db_readiness)
+            self.assertEqual(plan.readiness_image_override, "candidate-image")
             self.assertFalse(plan.auto_merge_allowed)
 
     def test_migration_job_mounts_only_database_dsn_and_uses_native_cli(self):

@@ -1,13 +1,12 @@
 # 身份与访问领域
 
-本领域覆盖登录、会话、OIDC/OAuth、实名、影子账号和网关授权。核心 Owner 是 `user/auth`；`shadow` 负责腾讯云影子身份流程；`service-gateway` 消费身份状态执行公共路由门禁。
+本领域覆盖登录、会话、OIDC/OAuth、实名、影子账号和网关授权。核心 Owner 是 `user/auth`，包括腾讯云影子身份和绑定状态；`service-gateway` 消费身份状态执行公共路由门禁。
 
 ## 服务与责任
 
 | 服务 | 责任 |
 |---|---|
-| `user/auth` | 登录、会话、实名与身份 API 真源 |
-| `shadow` | 影子账号注册、临时凭据与平台回调编排 |
+| `user/auth` | 登录、会话、实名、影子账号注册/绑定与身份 API 真源 |
 | `service-gateway` | 在公共入口消费身份/实名状态 |
 | `collaboration` | 消费 Gateway 已验证的 LightVela Human 断言并映射本地协作 actor；不签发登录会话 |
 | `frontend` / `admin-gateway` | 表达登录状态和引导，不独占授权逻辑 |
@@ -30,6 +29,29 @@
   任意 owner 参数或宽泛路径暴露为公共身份入口。
 
 ## 机器契约与验证
+
+### 认证用户后台分页
+
+Gateway Dashboard 的“认证用户”列表通过 User Auth `GET /admin/users` 做服务端分页。请求使用 `page` 和 `page_size`，响应中的 `total` 必须是搜索条件下的完整匹配数，不能用当前页长度代替；未传 `page_size` 时继续接受旧 `limit` 参数作为兼容页大小。MySQL 查询按 `created_at DESC, id ASC` 稳定排序，搜索条件变化时 Dashboard 回到第一页。
+
+### 影子账号后台查询与 testing 绑定管理
+
+Gateway Dashboard 在“认证用户”页面内展示 User Auth 持有的影子账号绑定。Dashboard BFF 复用
+`AUTH_ADMIN_API_URL` 和服务端 `AUTH_ADMIN_TOKEN` 调用 `GET /admin/shadow-accounts`；浏览器只携
+Dashboard 管理员会话，不接触 Auth admin token，也不得跨服务或直接读取数据库。
+
+查询以 `shadow_bindings` 为分页主体，并从同一 Auth 用户存储补充手机号和实名状态；支持按用户 ID、
+影子用户名、UIN、OwnerUIN 或 AppID 搜索。UIN、OwnerUIN 和 AppID 在 HTTP 契约中使用十进制字符串，
+避免 JavaScript 精度丢失。该管理面只读，不得增加后台修改实名、换绑手机号或删除绑定的捷径。
+
+个人 DevCloud 的 testing mock 账号分配是另一套受控事实：它只修改 Auth MySQL 中既有的
+`shadow_bindings`，不修改 Shadow SQLite。Auth 提供 admin token 保护的查询、绑定和显式解绑接口；
+功能开关默认关闭，只有 `sandbox-*` 环境名与精确匹配的
+`https://api-<environment>.lightclaw.tech` 公共地址同时成立时才可启用。当前只允许
+`sandbox-bj-7` 开启。Gateway Dashboard 的“DevCloud 测试绑定”页签通过 BFF 调用该接口；BFF 必须先
+验证浏览器管理员会话，再使用仅服务端可见的 Auth admin token 转发，匿名请求不能借 BFF 获得写权限。
+相同映射可幂等重试；同一用户改绑、UIN 或影子用户名转移必须先解绑。操作必须携带原因并记录 request ID、
+用户、UIN、OwnerUIN、AppID 的结构化审计日志，不接收 SecretID、SecretKey、密码或客户端自报登录用户。
 
 ### OpenCraft 第一方客户端登录
 
@@ -96,6 +118,14 @@ provider callback 路径，仍由 callback token 校验，不产生 Human princi
 缺少 token、会话内省失败、subject 为空或 subject 与内部 Bearer 不匹配时必须 fail closed，不能降级为
 本地账号认证或信任浏览器身份头。验证至少覆盖身份头覆盖、用户凭据剥离、内部 Bearer 替换、JIT 映射
 幂等，以及独立登录路由为 404。
+同值 token 的权威只保留在 Collaboration SSM；交付工具只选择 `gateway.token` 并重命名投影到
+Gateway 专用 Secret，禁止把同一 SSM 中的数据库、JWT 或 IM 密钥带入 Gateway namespace。
+Gateway 配置该 upstream 后若专用 token 环境变量为空，进程必须在启动阶段失败。
+北京本地预览入口只允许显式的 localhost/127.0.0.1 Origin；不得因 sandbox 全局 CORS 为 `*`
+而扩大 Collaboration 的 credentialed CORS。该环境变量从专用 Secret 非 optional 注入；对应
+Deployment patch 由北京 source-facing Service Gateway Component 持有，与基准 Deployment 同层组合，
+deploy-facing 目录只提供环境配置和加密 Secret generator，避免身份桥接因无目标 patch 而未落入运行时。
+北京主 sandbox 直接按 common、北京 source-facing Component 的顺序组合，禁止再经 profile 嵌套隔离 patch 累计器。
 
 ### 个人 DevCloud testing 注册身份（2026-09-17）
 
@@ -121,6 +151,6 @@ disabled tombstone，TTL 过期由消费者按 `renewed_at + ttl_seconds` 判定
 binding、伪造代理头、错误 HMAC、跨 UIN、注销和过期；任何日志与测试报告都不得包含 session、密码或
 capability 明文。
 
-API 真源是 `user/auth/api/openapi.yaml`，Shadow 的实现/架构在 `shadow/internal/` 和 `shadow/ARCHITECTURE.md`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
+API 真源是 `user/auth/api/openapi.yaml`，影子账号实现位于 `user/auth/internal/shadowbinding/`。身份变更至少覆盖成功、过期、缺失、越权、回调伪造和跨站点路径。
 
 相关 Journey：[账号到 Agent](../journeys/account-to-agent.md)。Agent 摘要：[identity-access Context](../../context/domains/identity-access.md)。

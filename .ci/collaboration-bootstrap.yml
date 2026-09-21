@@ -185,6 +185,9 @@ stages:
               python3 scripts/export_ssm_to_sops.py \
                 --manifest scripts/ssm_manifest.collaboration.beijing-sandbox.yaml \
                 --only collaboration-runtime-secrets
+              python3 scripts/export_ssm_to_sops.py \
+                --manifest scripts/ssm_manifest.collaboration.beijing-sandbox.yaml \
+                --only collaboration-gateway-bridge
               if [[ "$phase" == "runtime" ]]; then
                 git fetch origin gitops
                 deploy_root="$(mktemp -d)"
@@ -205,6 +208,7 @@ stages:
                   --deploy-root "$deploy_root" \
                   --service collaboration \
                   --env beijing-sandbox \
+                  --image-override "$image" \
                   --apply --wait \
                   --timeout-seconds "${{ variables.TIMEOUT_SECONDS }}"
                 git -C "$REPO_ROOT" worktree remove --force "$deploy_root"

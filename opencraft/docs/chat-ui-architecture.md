@@ -66,6 +66,15 @@ adapters may later return `host-file` or `object-url` through the same contract,
 but are unsupported until their Host advertises them. Failed or unresolved
 attachments block submission and retain their precise error; removing an
 unsubmitted ready attachment asks its owning Host to release the staged ref.
+Durable history treats `AttachmentLocation` as opaque resource identity. The
+owning staging service persists a location-keyed metadata index and implements
+an `AttachmentMetadataResolver` that restores the authoritative `AttachmentRef`
+display name during hydration. Transcript projection never parses a Host path
+or storage directory; history without indexed metadata degrades to a generic
+basename without exposing the full location. The Hermes storage adapter can
+also lazily backfill a missing index from its own pre-existing owned manifest;
+that compatibility remains behind the resolver rather than leaking its layout
+into the transcript model.
 
 The source implementations live in `apps/local-agent-host/src/hypernode/`:
 TurnManager, DSH tool projection and the engine event/terminal core.
@@ -201,8 +210,9 @@ back to the embedding product's document body.
 - LightVela Hermes advertises that capability only when its authenticated
   Dashboard filesystem exists. Client bytes are staged under the controlled
   `<codexHome>/opencraft-attachments/<client-id>` directory with a durable
-  manifest, replay/content checks and bounded recursive removal. Images may
-  continue to use the independent inline data-URL path.
+  manifest, a location-keyed display-metadata index, replay/content checks and
+  bounded recursive removal. Images may continue to use the independent inline
+  data-URL path.
 
 ### Production hardening, not architecture blockers
 

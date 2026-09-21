@@ -45,10 +45,19 @@ test("Hermes attachment staging owns a bounded Host directory and survives repla
 
   assert.deepEqual(service.capability, HERMES_ATTACHMENT_STAGING_CAPABILITY);
   const first = await service.stage(request);
-  const replay = await new HermesAttachmentStagingService(fileSystem).stage(request);
-  assert.deepEqual(replay, first);
+  const metadataPath = [...fileSystem.files.keys()].find((path) => path.includes("/opencraft-attachment-metadata/"));
+  assert.ok(metadataPath);
+  fileSystem.files.delete(metadataPath);
+  const restarted = new HermesAttachmentStagingService(fileSystem);
   assert.equal(first.ref.location.kind, "host-file");
   if (first.ref.location.kind !== "host-file") throw new Error("Expected Host file");
+  // A pre-index staged attachment is recovered from the storage-owned manifest
+  // without teaching transcript projection the Host directory convention.
+  assert.deepEqual(await restarted.resolve(first.ref.location), first.ref);
+  assert.equal(fileSystem.files.has(metadataPath), true);
+  assert.equal(await restarted.resolve({ kind: "host-file", path: "/some/unrelated/path" }), null);
+  const replay = await restarted.stage(request);
+  assert.deepEqual(replay, first);
   assert.match(first.ref.location.path, /^\/home\/agentuser\/\.hermes\/opencraft-attachments\/attachment-shell-script\/content-a\.sh$/u);
   assert.equal(fileSystem.files.get(first.ref.location.path), request.source.dataBase64);
   await assert.rejects(

@@ -180,9 +180,11 @@ html.lw-settings-scrollbar-stable {
   }
 
   .lw-settings-shell.lv-agent-settings-shell {
-    width: min(1760px, calc(100vw - 32px));
+    /* Fill the viewport remainder; only the inner content has a width cap.
+       16px + 248px sidebar + 24px grid gap gives matching 24px gutters. */
+    width: calc(100% - 40px);
     margin-left: 16px;
-    margin-right: auto;
+    margin-right: 24px;
   }
 
   .lw-app-top-pad.lv-agent-settings-main {
@@ -230,8 +232,8 @@ html.lw-settings-scrollbar-stable {
   }
 }
 
-/* Only the empty persona page removes the brand area's frame; /agents keeps its sidebar header. */
-header.lv-agent-sidebar-header:has(+ .lv-agent-empty-persona-page) {
+/* Agent pages without a sidebar do not keep a floating frame around the brand. */
+header.lv-agent-sidebar-header:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) {
   border-right: 0;
   border-bottom: 0 !important;
 }
@@ -649,43 +651,6 @@ a {
   background: white;
 }
 
-.lv-agent-create-button {
-  display: flex;
-  width: var(--lv-agents-nav-width);
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-  border: 1px solid #e9ecf1;
-  border-radius: 999px;
-  color: rgb(0 0 0 / 72%);
-  background: #ffffff;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.lv-agent-create-button:hover,
-.lv-agent-create-button:focus-visible {
-  border-color: #dfe3ea;
-  color: rgb(0 0 0 / 90%);
-  background: #f7f8fb;
-  outline: none;
-}
-
-.lv-agent-create-button:disabled,
-.lv-agent-create-button:disabled:hover {
-  cursor: not-allowed;
-  border-color: #e9ecf1;
-  color: rgb(0 0 0 / 30%);
-  background: #f7f8fb;
-}
-
 .lv-agents-nav {
   display: flex;
   width: var(--lv-agents-nav-width);
@@ -1001,7 +966,6 @@ a {
 
   .lv-agent-profile-wrap,
   .lv-agent-profile,
-  .lv-agent-create-button,
   .lv-agents-nav,
   .lv-agent-feedback-link {
     width: 100%;

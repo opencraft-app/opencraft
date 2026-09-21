@@ -58,6 +58,28 @@ func TestParseReferralBootstrapArgsDefaultsToBeijing(t *testing.T) {
 	}
 }
 
+func TestParseReferralDatabaseBootstrapArgs(t *testing.T) {
+	options, err := parseReferralDatabaseBootstrapArgs([]string{
+		"--stack", "sgprod", "--apply", "--allow-database-password-reset", "--allow-internal-token-change",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.stack != "sgprod" || !options.apply || !options.allowDatabasePasswordReset || !options.allowInternalTokenChange {
+		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestParseReferralDatabaseBootstrapArgsDefaultsToBeijing(t *testing.T) {
+	options, err := parseReferralDatabaseBootstrapArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.stack != defaultStack || options.apply || options.allowDatabasePasswordReset || options.allowInternalTokenChange {
+		t.Fatalf("options = %+v", options)
+	}
+}
+
 func TestParseCollaborationBootstrapArgs(t *testing.T) {
 	options, err := parseCollaborationBootstrapArgs([]string{
 		"--stack", "beijing-sandbox", "--im-material-file", "/secure/im.json", "--apply",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LogIn, MoreHorizontal, Trash2 } from "lucide-react";
+import { Link2, LogIn, MoreHorizontal, Trash2 } from "lucide-react";
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -26,21 +26,172 @@ import { toast } from "sonner";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ShadowBindingsPanel } from "@/components/auth/shadow-bindings-panel";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import {
   useCreateAuthImpersonationSession,
   useAuthAdminUsers,
   useDeleteAuthAdminUser,
   type AuthAdminUser,
 } from "@/lib/queries/use-auth-admin";
+import {
+  type AdminShadowAccount,
+  useShadowAdminAccounts,
+} from "@/lib/queries/use-shadow-admin";
 import { formatDateTime } from "@/lib/utils";
 
-export default function AuthUsersPage() {
+function ShadowAccountsPanel() {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const accounts = useShadowAdminAccounts({
+    search: search.trim() || undefined,
+    page,
+    pageSize,
+  });
+
+  const columns = useMemo<ColumnDef<AdminShadowAccount>[]>(
+    () => [
+      {
+        accessorKey: "userId",
+        header: "用户 ID",
+        cell: ({ row }) => (
+          <code className="block max-w-48 truncate font-mono text-xs">
+            {row.original.userId}
+          </code>
+        ),
+      },
+      {
+        accessorKey: "shadowUserName",
+        header: "影子用户名",
+        cell: ({ row }) =>
+          row.original.shadowUserName ? (
+            <code className="block max-w-40 truncate font-mono text-xs">
+              {row.original.shadowUserName}
+            </code>
+          ) : (
+            "—"
+          ),
+      },
+      {
+        accessorKey: "phone",
+        header: "手机号",
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap tabular-nums">
+            {row.original.phone || "—"}
+          </span>
+        ),
+      },
+      {
+        id: "account_ids",
+        header: "UIN / OwnerUIN / AppID",
+        cell: ({ row }) => (
+          <div className="space-y-1 font-mono text-[11px] tabular-nums">
+            <div>{row.original.uin || "—"}</div>
+            <div className="text-muted-foreground">
+              {row.original.ownerUin || "—"}
+            </div>
+            <div className="text-muted-foreground">
+              {row.original.appId || "—"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: "states",
+        header: "认证状态",
+        cell: ({ row }) => (
+          <div className="flex min-w-28 flex-col items-start gap-1">
+            <Badge variant={row.original.bindingStatus === "active" ? "default" : "outline"}>
+              {row.original.bindingStatus || "未知"}
+            </Badge>
+            <Badge variant={row.original.basicAuthStatus === "succeeded" ? "secondary" : "outline"}>
+              {row.original.basicAuthStatus === "succeeded" ? "基础认证" : "未基础认证"}
+            </Badge>
+            <Badge variant={row.original.realnameVerified ? "secondary" : "outline"}>
+              {row.original.realnameVerified ? "已实名" : "未实名"}
+            </Badge>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "bindingCreatedAt",
+        header: "绑定时间",
+        cell: ({ row }) => formatDateTime(row.original.bindingCreatedAt),
+      },
+      {
+        accessorKey: "bindingUpdatedAt",
+        header: "更新时间",
+        cell: ({ row }) => formatDateTime(row.original.bindingUpdatedAt),
+      },
+    ],
+    []
+  );
+
+  const queryError = accounts.error instanceof Error ? accounts.error.message : "";
+
+  return (
+    <div className="space-y-6 pt-4">
+      <div>
+        <Label htmlFor="shadow-account-search" className="sr-only">
+          搜索影子账号
+        </Label>
+        <Input
+          id="shadow-account-search"
+          placeholder="按用户 ID、影子用户名、UIN、OwnerUIN 或 AppID 搜索"
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(1);
+          }}
+          className="max-w-2xl"
+        />
+      </div>
+
+      {queryError && (
+        <p role="alert" className="text-sm text-destructive">
+          {queryError}
+        </p>
+      )}
+
+      <DataTable
+        columns={columns}
+        data={accounts.data?.items ?? []}
+        total={accounts.data?.total ?? 0}
+        page={page}
+        pageSize={pageSize}
+        pageSizeOptions={[20, 50, 100]}
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPageSize(value);
+          setPage(1);
+        }}
+        isLoading={accounts.isLoading}
+      />
+    </div>
+  );
+}
+
+export default function AuthUsersPage() {
+  const [activeView, setActiveView] = useState<"auth" | "binding" | "shadow">("auth");
+  const [shadowBindingUserID, setShadowBindingUserID] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [deleteTarget, setDeleteTarget] = useState<AuthAdminUser | null>(null);
   const [impersonationTarget, setImpersonationTarget] = useState<AuthAdminUser | null>(null);
   const [impersonationReturnTo, setImpersonationReturnTo] = useState("");
   const [impersonationReason, setImpersonationReason] = useState("");
-  const { data, isLoading } = useAuthAdminUsers(search || undefined);
+  const { data, isLoading } = useAuthAdminUsers({
+    search: search.trim() || undefined,
+    page,
+    pageSize,
+  });
   const deleteUser = useDeleteAuthAdminUser();
   const createImpersonationSession = useCreateAuthImpersonationSession();
 
@@ -61,6 +212,11 @@ export default function AuthUsersPage() {
     setImpersonationTarget(user);
     setImpersonationReturnTo("");
     setImpersonationReason("");
+  }
+
+  function openShadowBinding(user: AuthAdminUser) {
+    setShadowBindingUserID(user.id);
+    setActiveView("binding");
   }
 
   async function handleCreateImpersonationSession() {
@@ -176,6 +332,10 @@ export default function AuthUsersPage() {
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openShadowBinding(row.original)}>
+                <Link2 className="mr-2 h-4 w-4" />
+                管理 DevCloud 测试绑定
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => openImpersonationDialog(row.original)}>
                 <LogIn className="mr-2 h-4 w-4" />
                 以此用户身份登录
@@ -199,22 +359,60 @@ export default function AuthUsersPage() {
     <div className="space-y-6">
       <PageHeader
         title="认证用户"
-        description="查看 user-auth 里的账号主数据、登录方式、QQ OpenID 和邀请码策略。"
+        description="查看认证账号主数据，并管理仅限 testing 的个人 DevCloud 影子账号绑定。"
       />
 
-      <Input
-        placeholder="按用户 ID、手机号、邮箱或名称搜索"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        className="max-w-md"
-      />
+      <Tabs
+        value={activeView}
+        onValueChange={(value) => setActiveView(value as "auth" | "binding" | "shadow")}
+      >
+        <TabsList variant="line" aria-label="用户数据类型">
+          <TabsTrigger value="auth">认证用户</TabsTrigger>
+          <TabsTrigger value="binding">DevCloud 测试绑定</TabsTrigger>
+          <TabsTrigger value="shadow">Shadow 服务视图</TabsTrigger>
+        </TabsList>
 
-      <DataTable
-        columns={columns}
-        data={data?.items ?? []}
-        total={data?.total ?? 0}
-        isLoading={isLoading}
-      />
+        <TabsContent value="auth" className="space-y-6 pt-4">
+          <div>
+            <Label htmlFor="auth-user-search" className="sr-only">
+              搜索认证用户
+            </Label>
+            <Input
+              id="auth-user-search"
+              placeholder="按用户 ID、手机号、邮箱或名称搜索"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              className="max-w-md"
+            />
+          </div>
+
+          <DataTable
+            columns={columns}
+            data={data?.items ?? []}
+            total={data?.total ?? 0}
+            page={page}
+            pageSize={pageSize}
+            pageSizeOptions={[20, 50, 100]}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(value);
+              setPage(1);
+            }}
+            isLoading={isLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="binding">
+          {activeView === "binding" && <ShadowBindingsPanel initialUserID={shadowBindingUserID} />}
+        </TabsContent>
+
+        <TabsContent value="shadow">
+          {activeView === "shadow" && <ShadowAccountsPanel />}
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={!!deleteTarget}

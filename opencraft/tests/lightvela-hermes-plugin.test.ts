@@ -6,7 +6,7 @@ import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { AuthenticationService } from "@opencraft/workbench-runtime";
 import { authenticationProviderAdapter } from "../apps/workbench-web/src/runtime/authentication-contributions";
-import type { AppServerThread, AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
+import type { AppServerThread, AppServerTurn, HermesMessage } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 import { deserialize, serialize } from "bson";
 import { IDBFactory } from "fake-indexeddb";
 
@@ -42,7 +42,12 @@ import {
   TencentTatSessionMultiplexer,
 } from "../plugins/lightvela-hermes/src/lib/tencent-tat-session-multiplexer";
 import { createTatWebSocketConstructor } from "../plugins/lightvela-hermes/src/lib/tat-websocket";
-import { HermesAppServerAdapter, isUnmaterializedHermesHistory, mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
+import {
+  HermesAppServerAdapter,
+  isUnmaterializedHermesHistory,
+  mapMessages,
+  type AttachmentMetadataResolver,
+} from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 import { HermesBotAppServerHandler } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/bot-protocol-handler";
 import { BrowserHermesAppServerBridge } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/index";
 import { encodeHermesModelSelection } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/model-catalog";
@@ -892,7 +897,10 @@ test("Hermes transport resolves the current Bot before every physical TAT connec
   await transport.close();
 });
 
-function createHermesHistoryHarness() {
+function createHermesHistoryHarness(options: {
+  readonly messages?: readonly HermesMessage[];
+  readonly attachmentMetadata?: AttachmentMetadataResolver;
+} = {}) {
   const calls: Array<{ method: string; params: unknown }> = [];
   const historyCalls: Array<{ sessionId: string; limit: number; offset: number; order: string }> = [];
   const client: HermesRpcClient = {
@@ -944,7 +952,7 @@ function createHermesHistoryHarness() {
       historyCalls.push({ sessionId, ...request });
       return {
         session_id: sessionId,
-        messages: [
+        messages: options.messages ?? [
           { role: "user", text: "hello", row_id: 1 },
           { role: "assistant", text: "world", row_id: 2 },
         ],
@@ -954,7 +962,15 @@ function createHermesHistoryHarness() {
     dispose() {},
   };
   return {
-    adapter: new HermesAppServerAdapter(client, "/workspace/projects", history),
+    adapter: new HermesAppServerAdapter(
+      client,
+      "/workspace/projects",
+      history,
+      undefined,
+      undefined,
+      undefined,
+      options.attachmentMetadata,
+    ),
     calls,
     historyCalls,
   };
@@ -1039,6 +1055,50 @@ test("Hermes paginated resume exposes a cursor and hydrates stored history", asy
   assert.equal(harness.calls.filter(({ method }) => method === "session.history").length, 0);
   assert.deepEqual(harness.historyCalls.map(({ offset, order }) => ({ offset, order })), [
     { offset: 0, order: "latest" },
+  ]);
+});
+
+test("Hermes history hydration resolves attachment display metadata by opaque location", async () => {
+  const path = "/opaque/host/location/7f";
+  const resolvedLocations: unknown[] = [];
+  const harness = createHermesHistoryHarness({
+    messages: [
+      { role: "user", content: `看看 @file:${path}`, row_id: 1 },
+      { role: "assistant", content: "这是脚本。", row_id: 2 },
+    ],
+    attachmentMetadata: {
+      async resolve(location) {
+        resolvedLocations.push(location);
+        return {
+          id: "attachment-a",
+          name: "a.py",
+          mimeType: "text/x-python",
+          size: 1,
+          location,
+        };
+      },
+    },
+  });
+
+  const page = await dispatchAppServerRequest(harness.adapter, {
+    id: 1,
+    method: "thread/turns/list",
+    params: {
+      threadId: "stored-1",
+      cursor: "hermes-messages:0",
+      limit: 5,
+      itemsView: "full",
+      sortDirection: "desc",
+    },
+  }) as { data: Array<{ items: AppServerTurn["items"] }> };
+
+  assert.deepEqual(resolvedLocations, [{ kind: "host-file", path }]);
+  const userMessage = page.data[0]?.items.find((item) => item.type === "userMessage");
+  assert.equal(userMessage?.type, "userMessage");
+  if (userMessage?.type !== "userMessage") throw new Error("Expected projected user message");
+  assert.deepEqual(userMessage.content, [
+    { type: "text", text: "看看", text_elements: [] },
+    { type: "mention", name: "a.py", path },
   ]);
 });
 
@@ -1146,12 +1206,12 @@ test("Hermes model-switch markers remain runtime metadata instead of user transc
   assert.equal(turns.flatMap((turn) => turn.items).some((item) => item.type === "userMessage" && item.content.some((part) => part.type === "text" && part.text === marker)), false);
 });
 
-test("Hermes durable projection restores staged file attachments as typed mentions instead of @file text", () => {
-  const path = "/home/agentuser/.hermes/opencraft-attachments/e3a8d764-afc4-4a38-afa3-4aacf3bad0f9-1-1-3-构建-Hermes-CVM-镜像-3.log";
+test("Hermes durable projection uses attachment metadata instead of interpreting Host paths", () => {
+  const path = "/opaque/host/location/7f";
   const turns = mapMessages("stored-file-attachment", [
     { role: "user", content: `这是啥 @file:${path}`, id: 1 },
     { role: "assistant", content: "这是构建日志。", id: 2 },
-  ]);
+  ], false, new Map([[path, "1-1-3-构建-Hermes-CVM-镜像-3.log"]]));
 
   assert.deepEqual(turns[0]?.items[0], {
     type: "userMessage",
@@ -1176,7 +1236,7 @@ test("Hermes durable projection restores ordinary quoted @file references as typ
 
   assert.deepEqual(turns[0]?.items[0]?.content, [
     { type: "text", text: "review please", text_elements: [] },
-    { type: "mention", name: "/workspace/My File.log", path: "/workspace/My File.log" },
+    { type: "mention", name: "My File.log", path: "/workspace/My File.log" },
   ]);
 });
 

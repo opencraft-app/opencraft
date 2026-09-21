@@ -1,5 +1,5 @@
 import React from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -75,7 +75,7 @@ beforeEach(() => {
   inquireCreditPrice.mockReset();
   inquireCreditPrice.mockImplementation(async (productId: string) => quoteFor(productId));
   createCreditOrder.mockReset();
-  createCreditOrder.mockResolvedValue({ dealName: "deal-1", bigOrderId: "big-1" });
+  createCreditOrder.mockResolvedValue({ dealName: "deal-1", bigOrderId: "big-1", auth_code: "auth-1" });
   createCreditOrderUrl.mockReset();
   createCreditOrderUrl.mockResolvedValue({
     deal_name: "deal-1",
@@ -91,6 +91,41 @@ afterEach(() => {
 });
 
 describe("CreditPackSection", () => {
+  it("展示模型积分文案并使用黑色主操作样式", async () => {
+    renderSection();
+
+    expect(screen.getByRole("heading", { name: "模型积分" })).toBeInTheDocument();
+    expect(screen.getByText("选购模型积分，畅享更多大模型调用")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "适用于已有有效套餐、需要增加模型调用额度的用户。实际抵扣优先使用到期时间更早的额度；到期时间相同时，优先使用创建时间更早的额度。",
+      ),
+    ).toBeInTheDocument();
+
+    const action = await screen.findByTestId("credit-pack-primary-action");
+    expect(action).toHaveClass("bg-[var(--text-primary)]");
+    expect(action.className).not.toContain("#4f46e5");
+    expect(action.getAttribute("style") ?? "").not.toContain("#4f46e5");
+  });
+
+  it("选中积分卡片后展示黑色边框和独立绿色勾选", async () => {
+    renderSection();
+
+    const card = await screen.findByTestId("credit-pack-card-credit_1000");
+    const indicator = screen.getByTestId("credit-pack-selected-indicator-credit_1000");
+
+    expect(card).toHaveClass("border-2", "bg-white");
+    expect(card).toHaveAttribute("aria-pressed", "false");
+    expect(indicator).toHaveClass("invisible", "text-[#07C160]");
+
+    await userEvent.click(card);
+
+    expect(card).toHaveAttribute("aria-pressed", "true");
+    expect(card).toHaveClass("border-2", "border-[var(--text-primary)]", "bg-white");
+    expect(indicator).not.toHaveClass("invisible", "rounded-full", "bg-[#07C160]");
+    expect(indicator).toHaveClass("text-[#07C160]");
+  });
+
   it("渲染 5 张面额卡片并展示询价金额", async () => {
     renderSection();
 
@@ -180,11 +215,17 @@ describe("CreditPackSection", () => {
 
     const modal = await screen.findByTestId("credit-pack-confirm-modal");
     expect(modal).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
+    expect(screen.getByText("订单详情")).toBeInTheDocument();
+    expect(screen.getByText("到账后 1 个月")).toBeInTheDocument();
+    expect(screen.getByText("总计：")).toBeInTheDocument();
+    expect(screen.getByText("微信支付")).toBeInTheDocument();
     /* 弹窗展示商品与金额（卡片上也有同样文本，用 getAllByText 断言至少两处） */
     expect(screen.getAllByText("8,000 模型积分").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("¥80.00").length).toBeGreaterThanOrEqual(2);
 
     const payButton = screen.getByTestId("credit-pack-confirm-pay");
+    expect(payButton).toHaveTextContent("支付 ¥80.00");
     expect(payButton).toBeDisabled();
 
     /* 勾选条款后可支付 */
@@ -223,8 +264,34 @@ describe("CreditPackSection", () => {
       expect(screen.getByTestId("credit-pack-wx-qr")).toBeInTheDocument();
     });
     expect(createCreditOrderUrl).not.toHaveBeenCalled();
-    /* 二维码下方固定文案（对齐套餐） */
-    expect(screen.getByText("请使用微信扫描二维码完成支付")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "请完成支付" })).toBeInTheDocument();
+    expect(screen.getByText("请使用微信扫描下方二维码完成支付")).toBeInTheDocument();
+    expect(screen.getByText("支付完成后，需等待约 15 秒完成下单")).toBeInTheDocument();
+    expect(screen.getByTestId("credit-pack-qr-panel")).toHaveClass("bg-[var(--surface-muted)]");
+    expect(screen.getByTestId("credit-pack-recheck")).toHaveClass("border", "bg-white");
+  });
+
+  it("切换卡片后恢复未完成订单时仍展示原订单商品", async () => {
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("credit-pack-card-credit_1000"));
+    await userEvent.click(screen.getByTestId("credit-pack-primary-action"));
+    await userEvent.click(await screen.findByTestId("credit-pack-terms-checkbox"));
+    await userEvent.click(screen.getByTestId("credit-pack-confirm-pay"));
+    await screen.findByTestId("credit-pack-wx-qr");
+
+    await userEvent.click(screen.getByRole("button", { name: "暂不处理" }));
+    await userEvent.click(screen.getByTestId("credit-pack-card-credit_2000"));
+
+    const primaryAction = screen.getByTestId("credit-pack-primary-action");
+    expect(primaryAction).toHaveTextContent("订单详情");
+    await userEvent.click(primaryAction);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("1,000 模型积分")).toBeInTheDocument();
+    expect(within(dialog).queryByText("2,000 模型积分")).not.toBeInTheDocument();
+    expect(createCreditOrder).toHaveBeenCalledTimes(1);
+    expect(createCreditOrder).toHaveBeenCalledWith("credit_1000");
   });
 
   it("need_charge=1 时经占位窗口打开支付页（国际站，对齐 pass 的 startIntlCardPay）", async () => {
@@ -270,8 +337,10 @@ describe("CreditPackSection", () => {
       expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
     });
     /* 失败原因在弹窗内展示（failed 与用户「暂不处理」的搁置语义一致：不再往页面挂警告） */
-    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("下单失败");
+    expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("支付未完成");
     expect(screen.getByTestId("credit-pack-modal-checkout-status")).toHaveTextContent("余额渠道不可用");
+    expect(screen.getByRole("button", { name: "重新下单" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "暂不处理" })).toBeInTheDocument();
     expect(screen.queryByTestId("credit-pack-checkout-status")).not.toBeInTheDocument();
   });
 

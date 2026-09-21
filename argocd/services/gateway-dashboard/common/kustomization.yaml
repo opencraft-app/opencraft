@@ -57,6 +57,16 @@ replacements:
 - source:
     kind: ConfigMap
     name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_CREDIT_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.CREDIT_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
     fieldPath: data.GATEWAY_DASHBOARD_NODE_POOL
   targets:
   - select:

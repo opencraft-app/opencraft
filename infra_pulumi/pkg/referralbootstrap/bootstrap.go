@@ -16,18 +16,15 @@ import (
 	"github.com/skipzhang/mono/infra_pulumi/pkg/config"
 )
 
-const (
-	secretVersionID = "SSM_Current"
-	tokenKey        = "REFERRAL_PULSAR_TOKEN"
-)
+const tokenKey = "REFERRAL_PULSAR_TOKEN"
 
 type RoleReader interface {
 	TokenForRole(context.Context, string, string) (string, error)
 }
 
 type SecretStore interface {
-	Read(context.Context, string) (map[string]any, bool, error)
-	Write(context.Context, string, map[string]any, bool) error
+	Read(context.Context, string, string) (map[string]any, bool, error)
+	Write(context.Context, string, string, map[string]any, bool) error
 }
 
 type Options struct {
@@ -46,6 +43,7 @@ type Result struct {
 type binding struct {
 	roleName       string
 	secretName     string
+	versionID      string
 	createIfAbsent bool
 }
 
@@ -58,9 +56,9 @@ func Run(ctx context.Context, inventory *config.Inventory, roles RoleReader, sec
 		return nil, fmt.Errorf("stack %s does not enable referral Pulsar", inventory.EnvName)
 	}
 	bindings := []binding{
-		{roleName: pulsar.UserAuthProducerRole, secretName: pulsar.UserAuthSSMSecret},
-		{roleName: pulsar.CTLProducerRole, secretName: pulsar.CTLSSMSecret},
-		{roleName: pulsar.ReferralConsumerRole, secretName: pulsar.ReferralSSMSecret, createIfAbsent: true},
+		{roleName: pulsar.UserAuthProducerRole, secretName: pulsar.UserAuthSSMSecret, versionID: pulsar.UserAuthSSMVersionID},
+		{roleName: pulsar.CTLProducerRole, secretName: pulsar.CTLSSMSecret, versionID: pulsar.CTLSSMVersionID},
+		{roleName: pulsar.ReferralConsumerRole, secretName: pulsar.ReferralSSMSecret, versionID: pulsar.ReferralSSMVersionID, createIfAbsent: true},
 	}
 
 	tokens := make([]string, len(bindings))
@@ -76,7 +74,7 @@ func Run(ctx context.Context, inventory *config.Inventory, roles RoleReader, sec
 		}
 		tokens[index] = token
 
-		payload, found, err := secrets.Read(ctx, item.secretName)
+		payload, found, err := secrets.Read(ctx, item.secretName, item.versionID)
 		if err != nil {
 			return nil, fmt.Errorf("read SSM secret %s: %w", item.secretName, err)
 		}
@@ -113,7 +111,7 @@ func Run(ctx context.Context, inventory *config.Inventory, roles RoleReader, sec
 		if current != tokens[index] || !exists[index] {
 			payloads[index][tokenKey] = tokens[index]
 			if options.Apply {
-				if err := secrets.Write(ctx, item.secretName, payloads[index], !exists[index]); err != nil {
+				if err := secrets.Write(ctx, item.secretName, item.versionID, payloads[index], !exists[index]); err != nil {
 					return results, fmt.Errorf("write SSM secret %s: %w", item.secretName, err)
 				}
 				result.Applied = true
@@ -179,10 +177,14 @@ func NewTencentSecretStore(secretID, secretKey, region string) (*TencentSecretSt
 	return &TencentSecretStore{client: client}, nil
 }
 
-func (s *TencentSecretStore) Read(ctx context.Context, secretName string) (map[string]any, bool, error) {
+func (s *TencentSecretStore) Read(ctx context.Context, secretName, versionID string) (map[string]any, bool, error) {
+	versionID = strings.TrimSpace(versionID)
+	if versionID == "" {
+		return nil, false, fmt.Errorf("SSM version ID is required for %s", secretName)
+	}
 	request := ssm.NewGetSecretValueRequest()
 	request.SecretName = sdkcommon.StringPtr(secretName)
-	request.VersionId = sdkcommon.StringPtr(secretVersionID)
+	request.VersionId = sdkcommon.StringPtr(versionID)
 	response, err := s.client.GetSecretValueWithContext(ctx, request)
 	if err != nil {
 		if isSecretNotFoundError(err) {
@@ -208,7 +210,11 @@ func isSecretNotFoundError(err error) bool {
 		(sdkErr.Code == ssm.RESOURCENOTFOUND || sdkErr.Code == ssm.RESOURCENOTFOUND_SECRETNOTEXIST)
 }
 
-func (s *TencentSecretStore) Write(ctx context.Context, secretName string, payload map[string]any, create bool) error {
+func (s *TencentSecretStore) Write(ctx context.Context, secretName, versionID string, payload map[string]any, create bool) error {
+	versionID = strings.TrimSpace(versionID)
+	if versionID == "" {
+		return fmt.Errorf("SSM version ID is required for %s", secretName)
+	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -217,7 +223,7 @@ func (s *TencentSecretStore) Write(ctx context.Context, secretName string, paylo
 	if create {
 		request := ssm.NewCreateSecretRequest()
 		request.SecretName = sdkcommon.StringPtr(secretName)
-		request.VersionId = sdkcommon.StringPtr(secretVersionID)
+		request.VersionId = sdkcommon.StringPtr(versionID)
 		request.Description = sdkcommon.StringPtr("LightVela referral runtime secrets")
 		request.SecretString = sdkcommon.StringPtr(value)
 		_, err = s.client.CreateSecretWithContext(ctx, request)
@@ -225,7 +231,7 @@ func (s *TencentSecretStore) Write(ctx context.Context, secretName string, paylo
 	}
 	request := ssm.NewUpdateSecretRequest()
 	request.SecretName = sdkcommon.StringPtr(secretName)
-	request.VersionId = sdkcommon.StringPtr(secretVersionID)
+	request.VersionId = sdkcommon.StringPtr(versionID)
 	request.SecretString = sdkcommon.StringPtr(value)
 	_, err = s.client.UpdateSecretWithContext(ctx, request)
 	return err

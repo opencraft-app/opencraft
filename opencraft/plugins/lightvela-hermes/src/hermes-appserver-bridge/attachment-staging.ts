@@ -1,4 +1,5 @@
 import type {
+  AttachmentLocation,
   AttachmentRef,
   AttachmentRemoveParams,
   AttachmentRemoveResponse,
@@ -83,6 +84,37 @@ function ownedDirectory(fileSystem: HermesHostFileSystem, id: string): string {
   return `${root}/opencraft-attachments/${id}`;
 }
 
+function ownedAttachmentId(
+  fileSystem: HermesHostFileSystem,
+  location: AttachmentLocation,
+): string | null {
+  if (location.kind !== "host-file") return null;
+  const root = `${fileSystem.codexHome.replace(/\/+$/u, "")}/opencraft-attachments/`;
+  if (!location.path.startsWith(root)) return null;
+  const segments = location.path.slice(root.length).split("/");
+  return segments.length === 2 && ATTACHMENT_ID.test(segments[0]!)
+    ? segments[0]!
+    : null;
+}
+
+function locationIdentity(location: AttachmentLocation): string {
+  switch (location.kind) {
+    case "host-file":
+      return JSON.stringify([location.kind, location.path]);
+    case "object-url":
+      return JSON.stringify([location.kind, location.url, location.expiresAtMs ?? null]);
+  }
+}
+
+async function metadataIndexPath(
+  fileSystem: HermesHostFileSystem,
+  location: AttachmentLocation,
+): Promise<string> {
+  const digest = await sha256(new TextEncoder().encode(locationIdentity(location)));
+  const root = fileSystem.codexHome.replace(/\/+$/u, "");
+  return `${root}/opencraft-attachment-metadata/${digest}.json`;
+}
+
 function sameRequest(manifest: AttachmentManifest, request: AttachmentStageParams): boolean {
   return manifest.protocolVersion === 1
     && manifest.ref.id === request.clientAttachmentId
@@ -139,6 +171,7 @@ export class HermesAttachmentStagingService {
       if (stagedBytes.byteLength !== request.size || await sha256(stagedBytes) !== contentSha256) {
         throw new Error("Hermes attachment manifest does not match staged bytes");
       }
+      await this.writeMetadataIndex(existing);
       return { ref: existing.ref };
     }
 
@@ -156,12 +189,40 @@ export class HermesAttachmentStagingService {
       manifestPath,
       bytesToBase64(new TextEncoder().encode(`${JSON.stringify(manifest)}\n`)),
     );
+    await this.writeMetadataIndex(manifest);
     return { ref };
   }
 
   async remove(params: AttachmentRemoveParams): Promise<AttachmentRemoveResponse> {
     validateIdentity(params.id);
-    return { removed: await this.fileSystem.remove(ownedDirectory(this.fileSystem, params.id), true) };
+    const directory = ownedDirectory(this.fileSystem, params.id);
+    const manifest = await this.readManifest(`${directory}/manifest.json`);
+    if (manifest !== null) {
+      await this.fileSystem.remove(await metadataIndexPath(this.fileSystem, manifest.ref.location));
+    }
+    return { removed: await this.fileSystem.remove(directory, true) };
+  }
+
+  async resolve(location: AttachmentLocation): Promise<AttachmentRef | null> {
+    const indexed = await this.readManifest(await metadataIndexPath(this.fileSystem, location));
+    if (indexed !== null) {
+      return locationIdentity(indexed.ref.location) === locationIdentity(location)
+        ? indexed.ref
+        : null;
+    }
+
+    // Attachments staged before the location index already have an owned
+    // manifest. Only this storage adapter knows its private directory layout;
+    // recover and backfill here so transcript projection remains location-only.
+    const id = ownedAttachmentId(this.fileSystem, location);
+    if (id === null) return null;
+    const manifest = await this.readManifest(`${ownedDirectory(this.fileSystem, id)}/manifest.json`);
+    if (
+      manifest === null
+      || locationIdentity(manifest.ref.location) !== locationIdentity(location)
+    ) return null;
+    await this.writeMetadataIndex(manifest);
+    return manifest.ref;
   }
 
   async handle(method: string, params: unknown): Promise<unknown> {
@@ -178,5 +239,12 @@ export class HermesAttachmentStagingService {
       if (missingFile(error)) return null;
       throw error;
     }
+  }
+
+  private async writeMetadataIndex(manifest: AttachmentManifest): Promise<void> {
+    await this.fileSystem.writeFile(
+      await metadataIndexPath(this.fileSystem, manifest.ref.location),
+      bytesToBase64(new TextEncoder().encode(`${JSON.stringify(manifest)}\n`)),
+    );
   }
 }

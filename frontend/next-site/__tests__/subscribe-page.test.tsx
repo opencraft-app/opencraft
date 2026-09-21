@@ -94,6 +94,18 @@ vi.mock("@/i18n/t", () => ({
 
 const navigateMock = vi.fn();
 
+const creditPackVisibilityState = vi.hoisted(() => ({ visible: false }));
+vi.mock("@/lib/credit-pack-visibility", () => ({
+  installCreditPackVisibilityHelper: () => () => undefined,
+  useCreditPackVisibility: () => creditPackVisibilityState.visible,
+}));
+
+vi.mock("../credit-pack-section", () => ({
+  CreditPackSection: ({ sectionId }: { sectionId?: string }) => (
+    <section id={sectionId} data-testid="credit-pack-section" />
+  ),
+}));
+
 vi.mock("@/lib/app-navigation", () => ({
   AppLink: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>
@@ -179,10 +191,75 @@ const resetState = () => {
   /* listBundles 直接返回 Bundle[]，不是 { bundles } 包装。 */
   listBundlesMock.mockResolvedValue([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
   navigateMock.mockReset();
+  creditPackVisibilityState.visible = false;
   window.history.replaceState({}, "", "/subscribe");
 };
 
 describe("SubscribePage", () => {
+  it("shows a page-level loading state until the bundles request returns", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    let resolveBundles!: (bundles: ReturnType<typeof buildBundle>[]) => void;
+    listBundlesMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBundles = resolve;
+      }),
+    );
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    render(<SubscribePage />);
+
+    expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("订阅套餐");
+    expect(screen.getByTestId("subscribe-bundles-loading")).toHaveTextContent("加载套餐中...");
+    expect(screen.queryByRole("tab", { name: "4500" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+    });
+
+    expect(screen.queryByTestId("subscribe-bundles-loading")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "巡游 Cruise" })).toBeInTheDocument();
+  });
+
+  it("scrolls a credits deep link after bundle loading mounts the credit section", async () => {
+    sessionState.isAuthenticated = true;
+    openClawState.isLoggedIn = true;
+    creditPackVisibilityState.visible = true;
+    window.history.replaceState({}, "", "/subscribe?section=credits");
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    let resolveBundles!: (bundles: ReturnType<typeof buildBundle>[]) => void;
+    listBundlesMock.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveBundles = resolve;
+      }),
+    );
+
+    try {
+      const { SubscribePage } = await import("@next-site/subscribe-page");
+      render(<SubscribePage />);
+
+      expect(screen.getByTestId("subscribe-bundles-loading")).toBeInTheDocument();
+      expect(screen.queryByTestId("credit-pack-section")).not.toBeInTheDocument();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveBundles([buildBundle("bundle_cruise_ai_01", "巡游 Cruise")]);
+      });
+
+      expect(await screen.findByTestId("credit-pack-section")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+      });
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
+  });
+
   /**
    * 源码契约：「我已完成支付」手动确认按钮已移除。
    * 轮询是唯一自动接棒途径（超时后也持续轮询），用户无需手动确认。
@@ -575,6 +652,19 @@ describe("SubscribePage", () => {
     expect(getCreditTab("10000")).toHaveAttribute("aria-selected", "true");
     await userEvent.click(getCreditTab("200"));
     expect(getCreditTab("100")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it.each(["PASS_EXPIRED", "PASS_ISOLATED"])("links domestic %s errors to billing", async (code) => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+    createPassOrderMock.mockRejectedValue(Object.assign(new Error(code), { code }));
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const user = userEvent.setup();
+    render(<SubscribePage />);
+    await user.click(await screen.findByRole("button", { name: /订阅|开通/ }));
+    await user.click(screen.getByRole("button", { name: /支付/ }));
+    expect(await screen.findByRole("link", { name: "前往续费" })).toHaveAttribute("href", "/account/billing");
   });
 
   it("refreshes pass state and closes checkout when ordering reports an existing pass", async () => {

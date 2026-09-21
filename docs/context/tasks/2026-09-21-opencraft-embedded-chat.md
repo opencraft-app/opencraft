@@ -140,6 +140,13 @@ switch the canvas onto the separate Bot conversation protocol.
   bounded client bytes through the authenticated Dashboard filesystem into its
   controlled `opencraft-attachments` tree, persists an idempotency manifest,
   and implements owned recursive removal. Image data URLs remain unchanged.
+- Refreshed attachment presentation no longer interprets the Hermes storage
+  path. The Host attachment service persists a location-keyed `AttachmentRef`
+  metadata index and supplies an `AttachmentMetadataResolver`; history
+  hydration resolves the original display name through that port, while
+  pre-index staged attachments are lazily backfilled from their storage-owned
+  manifest and other unindexed legacy references fall back to a generic
+  basename.
 - The Connector button is absent from Embedded Core Chat through the shared
   Presentation Policy; the complete Workbench continues to project Connector
   actions unchanged.
@@ -150,6 +157,10 @@ switch the canvas onto the separate Bot conversation protocol.
 - Authenticated preview verified that New conversation selects the Sidebar
   command, renders the ordinary `What should we work on?` Draft, and leaves
   every existing server conversation unselected without sending a message.
+- Attachment-metadata follow-up verification passed: 90 focused Hermes and
+  attachment tests, 404 Chat tests, 404 Workbench unit tests, both affected
+  package TypeScript checks, platform boundaries, `build:lightvela-web`,
+  documentation validation, staged change-impact validation and diff checks.
 
 ## risks
 

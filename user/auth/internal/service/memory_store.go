@@ -1135,6 +1135,11 @@ func (s *MemoryStore) DeleteAdminUser(_ context.Context, userID string, _ time.T
 }
 
 func (s *MemoryStore) ListAdminUsers(_ context.Context, search string, limit int) ([]AdminUser, error) {
+	items, _, err := s.ListAdminUsersPage(context.Background(), search, limit, 0)
+	return items, err
+}
+
+func (s *MemoryStore) ListAdminUsersPage(_ context.Context, search string, limit int, offset int) ([]AdminUser, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1161,12 +1166,23 @@ func (s *MemoryStore) ListAdminUsers(_ context.Context, search string, limit int
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {
+		if items[i].CreatedAt.Equal(items[j].CreatedAt) {
+			return items[i].ID < items[j].ID
+		}
 		return items[i].CreatedAt.After(items[j].CreatedAt)
 	})
-	if len(items) > limit {
-		items = items[:limit]
+	total := len(items)
+	if offset < 0 {
+		offset = 0
 	}
-	return items, nil
+	if offset >= total {
+		return []AdminUser{}, total, nil
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return items[offset:end], total, nil
 }
 
 func (s *MemoryStore) ListAdminSMSChallenges(_ context.Context, search string, limit int) ([]AdminSMSChallenge, error) {

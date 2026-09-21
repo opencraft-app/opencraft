@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,7 +15,7 @@ vi.mock("@tencent/universal-report", () => ({
   },
 }));
 
-import { AccountPage } from "@/pages/marketing/account-page";
+import { AccountPage, PlansBillingPage } from "@/pages/marketing/account-page";
 
 const updateProfile = vi.fn();
 const uploadAvatar = vi.fn();
@@ -131,19 +131,19 @@ vi.mock("@/contexts/session-context", () => ({
   }),
 }));
 
-const renderAccountPage = () => {
+const renderAccountPage = (view: "account" | "billing" = "account") => {
   return render(
     <MemoryRouter>
-      <AccountPage />
+      <AccountPage view={view} />
     </MemoryRouter>,
   );
 };
 
-const renderAccountPageWithNavigation = (navigation: AppNavigationValue) => {
+const renderAccountPageWithNavigation = (navigation: AppNavigationValue, view: "account" | "billing" = "account") => {
   render(
     <MemoryRouter>
       <AppNavigationProvider value={navigation}>
-        <AccountPage />
+        <AccountPage view={view} />
       </AppNavigationProvider>
     </MemoryRouter>,
   );
@@ -208,6 +208,29 @@ describe("AccountPage nickname audit state", () => {
       auth_code: "weixin://wxpay/bizpayurl?pr=renewal",
       deal_names: ["启航套餐 续费"],
     });
+  });
+
+  it.each(["account", "billing"] as const)("shows a direct Agents link immediately before the avatar on %s", async (view) => {
+    renderAccountPage(view);
+    const main = within(screen.getByRole("main"));
+    const banner = within(screen.getByRole("banner"));
+    const link = banner.getByRole("link", { name: "返回智能体" });
+    const avatar = banner.getByText("avatar menu");
+
+    await waitFor(() => expect(link).toBeVisible());
+    expect(link).toHaveAttribute("href", "/agents");
+    expect(link.nextElementSibling).toBe(avatar);
+    expect(banner.getByTestId("site-header-actions")).toContainElement(link);
+    expect(main.queryByRole("link", { name: "返回智能体" })).not.toBeInTheDocument();
+    link.focus();
+    expect(link).toHaveFocus();
+  });
+
+  it.each([false, true])("hides the Agents return action for unauthenticated sessions (ready: %s)", (ready) => {
+    sessionAuthReady = ready;
+    sessionIsAuthenticated = false;
+    renderAccountPage();
+    expect(screen.queryByRole("link", { name: "返回智能体" })).not.toBeInTheDocument();
   });
 
   it("keeps the account chrome singular across auth states", () => {
@@ -360,15 +383,76 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
+    expect(screen.getByText("当前套餐")).toBeInTheDocument();
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    expect(screen.getByText("生效中")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
+    const planDetailsLink = screen.getByRole("link", { name: "套餐说明" });
+    expect(planDetailsLink).toHaveAttribute("href", "/docs/plans");
+    expect(planDetailsLink).toHaveAttribute("target", "_blank");
+    expect(planDetailsLink).toHaveAttribute("rel", "noopener noreferrer");
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
     const subscriptionHeader = subscriptionHeading.parentElement;
 
     expect(subscriptionHeader).not.toBeNull();
     expect(within(subscriptionHeader!).getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
+
+  it.each(["account", "billing"] as const)("separates profile and subscription content on the %s page", (view) => {
+    activePass = buildActivePass();
+    renderAccountPage(view);
+
+    expect(screen.getByRole("heading", { name: view === "account" ? "账号" : "套餐与费用" })).toBeInTheDocument();
+    if (view === "account") {
+      expect(screen.getByRole("button", { name: "修改昵称" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "订阅套餐" })).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByRole("heading", { name: "订阅套餐" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "修改昵称" })).not.toBeInTheDocument();
+    }
+  });
+
+  it("renders the billing wrapper with subscription content rather than account details", () => {
+    render(<MemoryRouter><PlansBillingPage /></MemoryRouter>);
+    expect(screen.getByRole("heading", { name: "套餐与费用" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "订阅套餐" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "修改昵称" })).not.toBeInTheDocument();
+  });
+
+  it("does not carry an open account identity dialog into the billing view", async () => {
+    currentUser = { ...currentUser, realnameVerified: false };
+    const { rerender } = renderAccountPage();
+    await userEvent.click(screen.getByRole("button", { name: /去认证/ }));
+    expect(await screen.findByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
+    rerender(<MemoryRouter><AccountPage view="billing" /></MemoryRouter>);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "实名认证" })).not.toBeInTheDocument());
+  });
+
+  it.each([
+    "?email_bound=1",
+    "?email_bind_error=expired",
+    "?realname_required=1&return_to=%2Fsubscribe%2F",
+  ])("does not consume account-only callbacks on the billing page: %s", (search) => {
+    const navigation = { ...createNavigationValue(), pathname: "/account/billing", search };
+    renderAccountPageWithNavigation(navigation, "billing");
+    expect(navigation.setSearchParams).not.toHaveBeenCalled();
+    expect(refreshProfile).not.toHaveBeenCalled();
+    expect(screen.queryByText("创建 LightVela 前，请先完成实名认证。")).not.toBeInTheDocument();
+    expect(screen.queryByText("邮箱绑定成功。")).not.toBeInTheDocument();
+    expect(screen.queryByText("绑定链接已过期，请重新发送验证邮件。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it.each(["?email_bound=1", "?email_bind_error=expired", "?realname_required=1"])(
+    "still consumes account callbacks on the account page: %s", (search) => {
+      refreshProfile.mockResolvedValue(undefined);
+      const navigation = { ...createNavigationValue(), search };
+      renderAccountPageWithNavigation(navigation);
+      expect(navigation.setSearchParams).toHaveBeenCalled();
+    },
+  );
 
   it.each([
     { usedPercent: 49, expectedColor: "var(--lw-accent)" },
@@ -384,13 +468,42 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 100 - usedPercent,
     };
 
-    const { container } = renderAccountPage();
+    const { container } = renderAccountPage("billing");
     const percentage = screen.getByText(`${usedPercent}%`);
     const progressFill = container.querySelector<HTMLElement>(`[style*="width: ${usedPercent}%"]`);
 
     expect(percentage).toHaveStyle({ color: expectedColor });
     expect(progressFill).not.toBeNull();
     expect(progressFill).toHaveStyle({ background: expectedColor });
+  });
+
+  it("shows referral credits separately from the package quota", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 4500,
+      credit_available: 4500,
+      free_credit_total: 500,
+      free_credit_available: 500,
+    };
+
+    renderAccountPage("billing");
+
+    expect(screen.getByText("套餐积分")).toBeInTheDocument();
+    expect(screen.getByText("额外积分")).toBeInTheDocument();
+    expect(screen.getByText("当前可用")).toBeInTheDocument();
+    expect(screen.getByText("5,000")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "P" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "SPAN" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "500 / 500"
+      )
+    ).toBeInTheDocument();
   });
 
   it("shows no model prompt at 95% credit usage", () => {
@@ -400,7 +513,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 5,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.queryByText(/模型积分即将用尽/)).not.toBeInTheDocument();
     expect(screen.queryByText(/模型积分已用尽/)).not.toBeInTheDocument();
@@ -413,7 +526,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 4,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     const modelLink = screen.getByRole("link", { name: "配置自有模型" });
     expect(modelLink.closest("p")).toHaveTextContent(
@@ -431,7 +544,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 0,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     const modelLink = screen.getByRole("link", { name: "立即配置模型" });
     expect(modelLink.closest("p")).toHaveTextContent(
@@ -449,7 +562,7 @@ describe("AccountPage nickname audit state", () => {
       credit_available: 0,
     };
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.queryByText(/模型积分即将用尽/)).not.toBeInTheDocument();
     expect(screen.queryByText(/模型积分已用尽/)).not.toBeInTheDocument();
@@ -461,7 +574,7 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
@@ -471,12 +584,14 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
 
     expect(await screen.findByText("续费套餐")).toBeInTheDocument();
-    expect(screen.getByText("生效中")).toBeInTheDocument();
+    const modal = screen.getByRole("button", { name: "关闭" }).parentElement;
+    expect(modal).not.toBeNull();
+    expect(within(modal!).getByText("生效中")).toBeInTheDocument();
     expect(screen.queryByText("有效中")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /月付/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /季付/ })).toBeInTheDocument();
@@ -493,7 +608,7 @@ describe("AccountPage nickname audit state", () => {
     paidBillingEnabled = true;
     activePass = buildActivePass();
 
-    renderAccountPage();
+    renderAccountPage("billing");
 
     await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
 

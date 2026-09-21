@@ -38,7 +38,8 @@
 
 1. foundation 收敛后，以 `BOOTSTRAP_PHASE=runtime` 和同一 source/image digest 重跑流水线。
 2. Dry-run 必须显示 bootstrap 幂等；人工批准后流水线从 gitops branch 读取 deploy root，运行一次性
-   `database migrate` Job 和只读 `database verify` Job。
+   `database migrate` Job 和只读 `database verify` Job。两个 Job 必须使用启动参数中同一个
+   digest-pinned `COLLABORATION_IMAGE`；verify 不得读取 foundation platform 中的旧镜像。
 3. 两个 Job 成功后才允许生成 runtime GitOps MR。MR 将 active catalog 切换到 runtime sourcePath，
    不保留 migration Job。
 4. 合入后分别记录 Argo revision、Deployment imageID、`Synced/Healthy`、Pod Ready、Service endpoint
@@ -76,5 +77,10 @@
 - 账号已存在但 SSM 丢失时，审查后才允许 `--allow-database-password-reset`。
 - IM Secret 明确轮换时，审查后才允许 `--allow-im-secret-rotation`；JWT、IM identity、callback token
   不随之变化。
+- 若首个 runtime Pod 因旧 bootstrap 留下的 64 字符 hex `im-identity.key` 拒绝启动，先把 live
+  Collaboration leaf Application sourcePath 回退到 foundation，保留 DB/SSM 与迁移结果；合入支持
+  无损 hex→Base64 规范化的 bootstrap 后，按正常审批重新执行一次 foundation 以更新 SSM/SOPS 和
+  GitOps desired state，再执行 runtime。不得手工生成新 identity key、直接编辑 Kubernetes Secret，
+  或跳过 foundation/runtime 的可审阅 MR。
 - foundation/runtime MR 未合入时，回滚是关闭 MR/删除 promote branch；已合入后通过新的 GitOps MR
   回退 active catalog 或镜像，禁止直接 patch Argo 管理字段。

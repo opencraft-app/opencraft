@@ -16,6 +16,9 @@ import (
 	"ctl/pkg/adapter/trade"
 	"ctl/pkg/adapter/whitelist"
 	"ctl/pkg/config"
+	"ctl/pkg/logic/gatewayroute"
+	modelgateway "ctl/pkg/model/subscriptiongateway"
+	"ctl/test/testutil"
 
 	"go.uber.org/zap"
 )
@@ -25,6 +28,10 @@ type entitlementStubAiGateway struct {
 	applyErr    error
 	applyReq    *aigateway.ApplySubscriptionRequest
 	applyCalls  int
+	getResp     *aigateway.Subscription
+	getErr      error
+	getUser     string
+	getCalls    int
 	cancelErr   error
 	cancelUser  string
 	cancelCalls int
@@ -66,8 +73,10 @@ func (s *entitlementStubAiGateway) CancelSubscription(_ context.Context, userID 
 	return s.cancelErr
 }
 
-func (s *entitlementStubAiGateway) GetActiveSubscription(context.Context, string) (*aigateway.Subscription, error) {
-	return &aigateway.Subscription{ID: "sub-1", UserID: "user-1", PlanID: "plan-1"}, nil
+func (s *entitlementStubAiGateway) GetActiveSubscription(_ context.Context, userID string) (*aigateway.Subscription, error) {
+	s.getCalls++
+	s.getUser = userID
+	return s.getResp, s.getErr
 }
 
 type entitlementStubAdapterFactory struct {
@@ -93,6 +102,10 @@ func installEntitlementStub(stub *entitlementStubAiGateway) func() {
 }
 
 type entitlementStubLLMGateway struct {
+	applyResp           *llmgateway.Subscription
+	applyErr            error
+	applyReq            *llmgateway.ApplySubscriptionRequest
+	applyCalls          int
 	cancelCalls         int
 	cancelUser          string
 	cancelSelectedCalls int
@@ -116,8 +129,10 @@ func (s *entitlementStubLLMGateway) GetPlan(context.Context, string) (*llmgatewa
 	return nil, fmt.Errorf("GetPlan not configured")
 }
 
-func (s *entitlementStubLLMGateway) ApplySubscription(context.Context, *llmgateway.ApplySubscriptionRequest) (*llmgateway.Subscription, error) {
-	return nil, fmt.Errorf("ApplySubscription not configured")
+func (s *entitlementStubLLMGateway) ApplySubscription(_ context.Context, req *llmgateway.ApplySubscriptionRequest) (*llmgateway.Subscription, error) {
+	s.applyCalls++
+	s.applyReq = req
+	return s.applyResp, s.applyErr
 }
 
 func (s *entitlementStubLLMGateway) CancelSubscription(_ context.Context, userID string) error {
@@ -168,6 +183,127 @@ func TestEnsureAiGatewayEntitlementDoesNotSendBusinessDuration(t *testing.T) {
 	}
 	if stub.applyReq.PeriodValue != 0 || stub.applyReq.PeriodUnit != "" {
 		t.Fatalf("business duration leaked into gateway request: %+v", stub.applyReq)
+	}
+}
+
+func TestEnsureActiveRenewalGatewayEntitlementAppliesUniqueLLMGatewaySubscription(t *testing.T) {
+	testutil.NewSQLiteDB(t, &modelgateway.Entity{})
+	originalConfig := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		LLMGateway: &config.LLMGatewayConfig{
+			Enabled:                    true,
+			NewAllocationUserAllowlist: []string{"*"},
+		},
+	}}
+	t.Cleanup(func() { config.ServerConf = originalConfig })
+
+	aiStub := &entitlementStubAiGateway{}
+	llmStub := &entitlementStubLLMGateway{
+		applyResp: &llmgateway.Subscription{ID: "llm-sub-1", UserID: "user-1", PlanID: "plan-1"},
+	}
+	t.Cleanup(installEntitlementFactory(aiStub, llmStub))
+
+	sub, err := EnsureActiveRenewalGatewayEntitlement(
+		zap.NewNop(), "user-1", "plan-1", "renew:pass-1",
+	)
+	if err != nil {
+		t.Fatalf("ensure active renewal entitlement: %v", err)
+	}
+	if sub == nil || sub.ID != "llm-sub-1" {
+		t.Fatalf("subscription = %+v", sub)
+	}
+	if aiStub.getCalls != 0 || aiStub.applyCalls != 0 {
+		t.Fatalf("legacy gateway calls: get=%d apply=%d", aiStub.getCalls, aiStub.applyCalls)
+	}
+	if llmStub.applyCalls != 1 || llmStub.applyReq == nil {
+		t.Fatalf("llmgateway apply calls=%d request=%+v", llmStub.applyCalls, llmStub.applyReq)
+	}
+	if !llmStub.applyReq.IsUnique {
+		t.Fatalf("llmgateway is_unique = false, want true")
+	}
+}
+
+func TestEnsureActiveRenewalGatewayEntitlementProbesLegacyGateway(t *testing.T) {
+	tests := []struct {
+		name      string
+		getResp   *aigateway.Subscription
+		getErr    error
+		wantErr   bool
+		wantApply int
+		wantSubID string
+	}{
+		{
+			name:      "reuse active subscription",
+			getResp:   &aigateway.Subscription{ID: "legacy-sub-1", UserID: "user-1", PlanID: "plan-1"},
+			wantSubID: "legacy-sub-1",
+		},
+		{
+			name:      "rebuild missing subscription",
+			wantApply: 1,
+			wantSubID: "legacy-sub-new",
+		},
+		{
+			name:    "do not rebuild after probe failure",
+			getErr:  errors.New("legacy gateway timeout"),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.NewSQLiteDB(t, &modelgateway.Entity{})
+			if err := gatewayroute.Record(
+				"user-1",
+				gatewayroute.GatewayAIGateway,
+				"legacy-sub-recorded",
+				"plan-1",
+				gatewayroute.SourceManual,
+			); err != nil {
+				t.Fatalf("record legacy route: %v", err)
+			}
+
+			originalConfig := config.ServerConf
+			config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+				LLMGateway: &config.LLMGatewayConfig{
+					Enabled:                    true,
+					NewAllocationUserAllowlist: []string{"*"},
+				},
+			}}
+			t.Cleanup(func() { config.ServerConf = originalConfig })
+
+			aiStub := &entitlementStubAiGateway{
+				getResp:   tt.getResp,
+				getErr:    tt.getErr,
+				applyResp: &aigateway.Subscription{ID: "legacy-sub-new", UserID: "user-1", PlanID: "plan-1"},
+			}
+			llmStub := &entitlementStubLLMGateway{}
+			t.Cleanup(installEntitlementFactory(aiStub, llmStub))
+
+			sub, err := EnsureActiveRenewalGatewayEntitlement(
+				zap.NewNop(), "user-1", "plan-1", "renew:pass-1",
+			)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("ensure active renewal entitlement succeeded, want error")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("ensure active renewal entitlement: %v", err)
+				}
+				if sub == nil || sub.ID != tt.wantSubID {
+					t.Fatalf("subscription = %+v, want id %q", sub, tt.wantSubID)
+				}
+			}
+			if aiStub.getCalls != 1 || aiStub.getUser != "user-1" {
+				t.Fatalf("legacy get calls=%d user=%q", aiStub.getCalls, aiStub.getUser)
+			}
+			if aiStub.applyCalls != tt.wantApply {
+				t.Fatalf("legacy apply calls=%d, want %d", aiStub.applyCalls, tt.wantApply)
+			}
+			if llmStub.applyCalls != 0 {
+				t.Fatalf("llmgateway apply calls=%d, want 0", llmStub.applyCalls)
+			}
+		})
 	}
 }
 

@@ -61,11 +61,15 @@ type fakeJifei struct {
 	lastPriceReq       *jifeiclient.GetPriceRequest
 	lastDealsReq       *jifeiclient.GenerateDealsRequest
 	lastDealsAndPayReq *jifeiclient.GenerateDealsAndPayRequest
+	priceResp          *jifeiclient.GetPriceResponse
 	dealsAndPayResp    *jifeiclient.GenerateDealsAndPayResponse
 }
 
 func (f *fakeJifei) GetPrice(_ context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
 	f.lastPriceReq = req
+	if f.priceResp != nil {
+		return f.priceResp, nil
+	}
 	return &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{
 		{Price: "10.00", TotalCost: "10.00", RealTotalCost: "8.00", Currency: "CNY", PolicyDetail: &jifeiclient.PolicyDetail{Total: 0.8}},
 	}}, nil
@@ -144,6 +148,42 @@ func TestQuoteBuildsCreditGoodsDetail(t *testing.T) {
 	}
 	if detail["timeSpan"] != 1 || detail["timeUnit"] != "p" || detail["packageTimeSpan"] != 1 || detail["packageTimeUnit"] != "m" {
 		t.Fatalf("resource package goodsDetail has wrong billing periods: %+v", detail)
+	}
+}
+
+func TestQuoteIntlConvertsHighPrecisionAmountsToCents(t *testing.T) {
+	jifei := &fakeJifei{priceResp: &jifeiclient.GetPriceResponse{Data: []jifeiclient.GetPriceData{
+		{
+			Price:         "999999",
+			TotalCost:     "999999",
+			RealTotalCost: "999999",
+			Currency:      "USD",
+			TaxDetail:     &jifeiclient.TaxDetail{TaxRate: "0.07"},
+			HighPrecisionPrice: &jifeiclient.HighPrecisionPrice{
+				PriceHigh:         "650000000",
+				TotalCostHigh:     "1200000000",
+				RealTotalCostHigh: "1200000000",
+			},
+		},
+	}}}
+	svc := New(Deps{
+		CreditDefinitionStore: fakeCreditDefStore{def: stdCreditDefinition()},
+		JifeiClient:           jifei,
+		OrderWriter:           &fakeOrderWriter{},
+		SiteKind:              "intl",
+	})
+
+	got, err := svc.Quote(context.Background(), Request{
+		ExternalUserID: "usr_1",
+		Uin:            "700000164995",
+		AppID:          "1300000001",
+		ProductID:      "credit_prod_100",
+	})
+	if err != nil {
+		t.Fatalf("quote: %v", err)
+	}
+	if got.Price != "650" || got.TotalCost != "1200" || got.RealTotalCost != "1284" {
+		t.Fatalf("amounts = price:%s total:%s real:%s, want 650/1200/1284 cents", got.Price, got.TotalCost, got.RealTotalCost)
 	}
 }
 

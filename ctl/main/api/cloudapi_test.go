@@ -67,13 +67,13 @@ func TestCloudAPIDescribePassAcceptsCloudAPIRequestWithoutSecretKey(t *testing.T
 		Response struct {
 			RequestID string `json:"RequestId"`
 			Pass      struct {
-				PassID      string `json:"PassId"`
-				UserID      string `json:"UserId"`
-				BundleID    string `json:"BundleId"`
-				Uin         int64  `json:"Uin"`
-				AppID       int64  `json:"AppId"`
-				Status      string `json:"Status"`
-				ExpiredTime string `json:"ExpiredTime"`
+				PassID         string `json:"PassId"`
+				ExternalUserID string `json:"ExternalUserId"`
+				BundleID       string `json:"BundleId"`
+				Uin            int64  `json:"Uin"`
+				AppID          int64  `json:"AppId"`
+				Status         string `json:"Status"`
+				ExpiredTime    string `json:"ExpiredTime"`
 			} `json:"Pass"`
 		} `json:"Response"`
 	}
@@ -83,8 +83,13 @@ func TestCloudAPIDescribePassAcceptsCloudAPIRequestWithoutSecretKey(t *testing.T
 	if payload.Response.RequestID == "" {
 		t.Fatalf("expected RequestId in response")
 	}
-	if payload.Response.Pass.PassID != "pass_cloudapi_1" || payload.Response.Pass.ExpiredTime != expired.Format(time.RFC3339) {
+	if payload.Response.Pass.PassID != "pass_cloudapi_1" ||
+		payload.Response.Pass.ExternalUserID != "usr_cloudapi_1" ||
+		payload.Response.Pass.ExpiredTime != expired.Format(time.RFC3339) {
 		t.Fatalf("unexpected pass response: %+v", payload.Response.Pass)
+	}
+	if strings.Contains(rec.Body.String(), `"UserId"`) {
+		t.Fatalf("legacy UserId must not be returned: %s", rec.Body.String())
 	}
 }
 

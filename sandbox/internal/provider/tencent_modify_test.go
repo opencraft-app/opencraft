@@ -217,6 +217,19 @@ func TestResolveInstanceTypeCandidatesUsesRegionPolicyOrder(t *testing.T) {
 	}
 }
 
+func TestDefaultModifyInstanceFamiliesIncludeJohorBahru(t *testing.T) {
+	p := &TencentCloudProvider{}
+
+	got, err := p.modifyInstanceFamilies("ap-johorbahru")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"SA5", "S5", "SA2", "SA3", "S6"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("families=%v want=%v", got, want)
+	}
+}
+
 func TestResolveInstanceTypeCandidatesRejectsUnmanagedRegion(t *testing.T) {
 	p := modificationCandidateTestProvider(t, []map[string]any{
 		{"Status": "SELL", "InstanceTypeConfig": map[string]any{"InstanceType": "SA5.LARGE8", "CPU": 4, "Memory": 8}},

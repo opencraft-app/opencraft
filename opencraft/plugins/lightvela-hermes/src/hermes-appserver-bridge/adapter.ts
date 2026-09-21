@@ -30,6 +30,7 @@ import {
   type HermesComposerQueueService,
 } from "./composer-queue/service";
 import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
+import type { AttachmentLocation, AttachmentRef } from "@opencraft/appserver-protocol";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const PROFILE_MODEL_OPTIONS_SETTLE_MS = 20_000;
@@ -44,6 +45,10 @@ class HermesAppServerDomainError extends Error {
     super(message);
     this.name = "HermesAppServerDomainError";
   }
+}
+
+export interface AttachmentMetadataResolver {
+  resolve(location: AttachmentLocation): Promise<AttachmentRef | null>;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -218,7 +223,6 @@ function imageDirective(value: string): string | null {
 
 const HERMES_FILE_REFERENCE_RE = /@file:(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/gu;
 const HERMES_REFERENCE_TRAILING_PUNCTUATION_RE = /[,.;!?]+$/u;
-const STAGED_ATTACHMENT_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-(.+)$/iu;
 
 function unwrapHermesReferenceValue(raw: string): string {
   if (raw.length >= 2) {
@@ -233,13 +237,17 @@ function unwrapHermesReferenceValue(raw: string): string {
 
 function fileReferenceName(path: string, explicitName?: string): string {
   if (explicitName?.trim()) return explicitName.trim();
-  const normalized = path.replace(/\\/gu, "/");
-  const basename = normalized.split("/").at(-1) ?? path;
-  if (!/(?:^|\/)opencraft-attachments\/[^/]+$/u.test(normalized)) return path;
-  return STAGED_ATTACHMENT_NAME_RE.exec(basename)?.[1] ?? basename;
+  // A path is resource identity, never display authority. When metadata is
+  // unavailable (for example, history predating the metadata index), degrade
+  // to a generic basename without knowing any Host storage layout.
+  const basename = path.replace(/\\/gu, "/").split("/").filter(Boolean).at(-1);
+  return basename?.trim() || "attachment";
 }
 
-function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
+function userMessageContent(
+  message: HermesMessage,
+  attachmentNames: ReadonlyMap<string, string> = new Map(),
+): Record<string, unknown>[] {
   const source = Array.isArray(message.content) ? message.content : [message.text ?? message.content];
   const result: Record<string, unknown>[] = [];
   const referencedPaths = new Set<string>();
@@ -248,7 +256,11 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
   const appendFileReference = (path: string, name?: string) => {
     if (path === "" || referencedPaths.has(path)) return;
     referencedPaths.add(path);
-    result.push({ type: "mention", name: fileReferenceName(path, name), path });
+    result.push({
+      type: "mention",
+      name: fileReferenceName(path, name ?? attachmentNames.get(path)),
+      path,
+    });
   };
   const appendText = (value: string) => {
     const kept: string[] = [];
@@ -297,6 +309,34 @@ function userMessageContent(message: HermesMessage): Record<string, unknown>[] {
     for (const path of deferredPaths) result.push({ type: "localImage", path });
   }
   return result;
+}
+
+function referencedFilePaths(messages: readonly HermesMessage[]): string[] {
+  const paths = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      for (const match of value.matchAll(HERMES_FILE_REFERENCE_RE)) {
+        const raw = match[1];
+        if (raw !== undefined) paths.add(unwrapHermesReferenceValue(raw));
+      }
+      return;
+    }
+    if (!Array.isArray(value)) return;
+    for (const rawPart of value) {
+      if (typeof rawPart === "string") {
+        visit(rawPart);
+        continue;
+      }
+      const part = record(rawPart);
+      if (part.type === "mention" && typeof part.path === "string") paths.add(part.path);
+      else if (part.type === "text") visit(part.text);
+    }
+  };
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    visit(message.display_content ?? message.content ?? message.text);
+  }
+  return [...paths];
 }
 
 function isHiddenTranscriptMessage(message: HermesMessage): boolean {
@@ -396,7 +436,11 @@ function normalizeVisibleText(value: string): string {
  * never the physical database row. This mirrors Hermes Desktop hydration and
  * keeps live and restored conversations on the same Item model.
  */
-function projectTurnItems(sessionId: string, entries: Array<{ message: HermesMessage; index: number }>): AppServerTurn["items"] {
+function projectTurnItems(
+  sessionId: string,
+  entries: Array<{ message: HermesMessage; index: number }>,
+  attachmentNames: ReadonlyMap<string, string>,
+): AppServerTurn["items"] {
   const items: AppServerTurn["items"] = [];
   const toolsByCallId = new Map<string, number>();
 
@@ -409,7 +453,10 @@ function projectTurnItems(sessionId: string, entries: Array<{ message: HermesMes
         type: "userMessage",
         id: `hermes-${sessionId}-${address}`,
         clientId: null,
-        content: userMessageContent({ ...message, content: message.display_content ?? message.content }),
+        content: userMessageContent(
+          { ...message, content: message.display_content ?? message.content },
+          attachmentNames,
+        ),
       });
       continue;
     }
@@ -558,13 +605,18 @@ function applyDurableTurnTime(
     : Math.round((turn.completedAt - startedAt!) * 1_000);
 }
 
-function mapMessageRanges(sessionId: string, messages: HermesMessage[], running = false): MappedTurnRange[] {
+function mapMessageRanges(
+  sessionId: string,
+  messages: HermesMessage[],
+  running = false,
+  attachmentNames: ReadonlyMap<string, string> = new Map(),
+): MappedTurnRange[] {
   const turns: MappedTurnRange[] = [];
   let entries: Array<{ message: HermesMessage; index: number }> = [];
   const flush = () => {
     const current = turns.at(-1);
     if (current !== undefined) {
-      current.turn.items = projectTurnItems(sessionId, entries);
+      current.turn.items = projectTurnItems(sessionId, entries, attachmentNames);
       applyDurableTurnTime(current.turn, entries);
     }
     entries = [];
@@ -597,8 +649,13 @@ function mapMessageRanges(sessionId: string, messages: HermesMessage[], running 
   return turns;
 }
 
-export function mapMessages(sessionId: string, messages: HermesMessage[], running = false): AppServerTurn[] {
-  return mapMessageRanges(sessionId, messages, running).map(({ turn }) => turn);
+export function mapMessages(
+  sessionId: string,
+  messages: HermesMessage[],
+  running = false,
+  attachmentNames: ReadonlyMap<string, string> = new Map(),
+): AppServerTurn[] {
+  return mapMessageRanges(sessionId, messages, running, attachmentNames).map(({ turn }) => turn);
 }
 
 function makeThread(summary: HermesSessionSummary, cwd: string, turns: AppServerTurn[] = [], running = false): AppServerThread {
@@ -799,6 +856,7 @@ export class HermesAppServerAdapter {
     private readonly projectionScheduler: HermesProjectionScheduler = DEFAULT_PROJECTION_SCHEDULER,
     recovery?: HermesProjectionRecovery,
     composerQueue: HermesComposerQueueService = new MemoryHermesComposerQueueService(),
+    private readonly attachmentMetadata?: AttachmentMetadataResolver,
   ) {
     this.composerQueue = composerQueue;
     this.activeByLive = recovery?.owners ?? new Map();
@@ -889,6 +947,22 @@ export class HermesAppServerAdapter {
       error: { message: `Could not present Hermes clarification: ${JSON.stringify(error)}` },
     });
     return true;
+  }
+
+  private async resolveAttachmentNames(
+    messages: readonly HermesMessage[],
+  ): Promise<ReadonlyMap<string, string>> {
+    if (this.attachmentMetadata === undefined) return new Map();
+    const entries = await Promise.all(referencedFilePaths(messages).map(async (path) => {
+      try {
+        const ref = await this.attachmentMetadata!.resolve({ kind: "host-file", path });
+        return ref === null ? null : [path, ref.name] as const;
+      } catch {
+        // Attachment metadata is presentation enrichment, never history authority.
+        return null;
+      }
+    }));
+    return new Map(entries.filter((entry): entry is readonly [string, string] => entry !== null));
   }
 
   async renameThread(threadId: string, requestedTitle: string): Promise<void> {
@@ -1140,7 +1214,8 @@ export class HermesAppServerAdapter {
     // so subsequent pages can be served from this window until its older edge
     // is reached and the transport must backfill again.
     const end = Math.max(0, page.messages.length - offset);
-    const eligible = mapMessageRanges(threadId, [...page.messages])
+    const attachmentNames = await this.resolveAttachmentNames(page.messages);
+    const eligible = mapMessageRanges(threadId, [...page.messages], false, attachmentNames)
       .filter(({ end: rangeEnd }) => rangeEnd <= end);
     const selected = eligible.slice(-limit);
     const chronological = selected.map(({ turn }) => ({

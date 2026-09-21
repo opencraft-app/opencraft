@@ -602,6 +602,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--output-json", default="")
     parser.add_argument("--kubeconfig-b64-env", default="DB_JOB_KUBECONFIG_B64")
+    parser.add_argument("--image-override", default="")
     return parser
 
 
@@ -636,6 +637,10 @@ def main() -> int:
     if verifier.get("image_from_service_platform"):
         image_key = str(verifier["image_from_service_platform"])
         verifier["image"] = resolve_service_platform_env(deploy_root, args.env, verifier).get(image_key, "")
+    if args.image_override:
+        if verifier.get("mode") != "service-command":
+            raise ValueError("image override is only supported for service-command verifier")
+        verifier["image"] = args.image_override
     kubeconfig = ""
     if args.apply:
         kubeconfig, temp_path = resolve_kubeconfig(

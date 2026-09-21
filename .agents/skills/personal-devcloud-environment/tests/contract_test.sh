@@ -176,6 +176,15 @@ test_auth_override_is_sandbox_only() (
   fi
 )
 
+test_auth_admin_override_is_loopback_only() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/auth-admin-allowlist" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://10.0.0.8:38081'
+  source "$SCRIPT"
+  if (configure_site) >/dev/null 2>&1; then
+    fail "non-loopback Auth admin override was accepted"
+  fi
+)
+
 test_download_binary_is_nounset_safe() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/download-binary" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -220,8 +229,9 @@ test_intl_registration_starts_tunnel() (
   assert_eq 'uin-450860000013.sg.tunnel.internal|short-lived-registration-token' \
     "$(<"$TEST_ROOT/intl-tunnel-assignment")" "tunnel assignment passed to agent"
   assert_eq 'active' "$(state_get registration_status)" "intl registration status"
-  ! grep -q 'targetIp' "$TEST_ROOT/intl-registration-request"
-  ! rg -q 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
+  grep -q '"targetIp":"9.134.214.121"' "$TEST_ROOT/intl-registration-request"
+  ! grep -q '"uin"' "$TEST_ROOT/intl-registration-request"
+  ! grep -Eq 'short-lived-registration-token|tunnelToken' "$STATE_FILE"
 )
 
 test_devtunnel_build_uses_current_checkout() (
@@ -250,6 +260,8 @@ test_devtunnel_build_uses_current_checkout() (
   [[ -x "$DEVTUNNEL_BIN" ]] || fail "devtunnel-agent binary was not created"
   grep -Fq -- "-v $checkout:/workspace:ro" "$TEST_ROOT/devtunnel-docker-args" \
     || fail "devtunnel-agent was not built from the current checkout"
+  grep -Fq -- "-e GOWORK=off" "$TEST_ROOT/devtunnel-docker-args" \
+    || fail "devtunnel-agent build did not disable the read-only root Go workspace"
 )
 
 test_intl_registration_without_capability_fails_closed() (
@@ -297,7 +309,33 @@ test_cn_registration_sends_explicit_devcloud_target() (
     "$(<"$TEST_ROOT/cn-tunnel-assignment")" "CN tunnel assignment"
   assert_eq '9.134.214.121' "$(state_get registration_target_ip)" "CN registration target IP"
   assert_eq '18084' "$(state_get registration_port)" "CN registration port"
-  ! rg -q 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+  ! grep -Eq 'short-lived-cn-registration-token|tunnelToken' "$STATE_FILE"
+)
+
+test_registration_agent_failure_fails_closed() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/agent-failure" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_IP='9.134.214.121'
+  source "$SCRIPT"
+  prepare_state
+  state_set uin '450860000013'
+  require_personal_context() { :; }
+  central_session() { printf 'session-token\n'; }
+  curl() { return 0; }
+  curl_with_token() {
+    if [[ " $* " == *' -X DELETE '* ]]; then
+      printf 'disabled\n' >"$TEST_ROOT/agent-failure-delete"
+      printf '%s\n' '{"uin":450860000013,"status":"disabled"}'
+      return
+    fi
+    printf '%s\n' '{"uin":450860000013,"status":"active","targetIp":"9.134.214.121","port":18084,"tunnelHost":"uin-450860000013.cn.tunnel.internal","tunnelToken":"short-lived-cn-registration-token","expiresAt":"2099-01-01T00:00:00Z"}'
+  }
+  ensure_devtunnel_agent() { return 1; }
+  stop_devtunnel_agent() { printf 'stopped\n' >"$TEST_ROOT/agent-failure-stop"; }
+  if (register_route) >/dev/null 2>&1; then
+    fail "registration succeeded after the local tunnel agent failed"
+  fi
+  [[ -s "$TEST_ROOT/agent-failure-delete" ]] || fail "agent failure left an active developer route"
+  [[ -s "$TEST_ROOT/agent-failure-stop" ]] || fail "agent failure did not stop local tunnel state"
 )
 
 test_cn_registration_without_capability_fails_closed() (
@@ -336,6 +374,27 @@ test_heartbeat_survives_transient_failures() (
   }
   heartbeat_loop
   assert_eq '3' "$attempts" "heartbeat retry count"
+)
+
+test_stop_heartbeat_interrupts_long_sleep() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/heartbeat-stop" PERSONAL_DEV_SITE=intl
+  export PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS=300
+  source "$SCRIPT"
+  prepare_state
+  "$SCRIPT" heartbeat-loop >"$TEST_ROOT/heartbeat-stop.log" 2>&1 &
+  local heartbeat_pid="$!" sleeper_pid="" attempt
+  printf '%s\n' "$heartbeat_pid" >"$HEARTBEAT_PID_FILE"
+  for attempt in $(seq 1 50); do
+    sleeper_pid="$(pgrep -P "$heartbeat_pid" 2>/dev/null | head -1 || true)"
+    [[ -n "$sleeper_pid" ]] && break
+    sleep 0.1
+  done
+  [[ -n "$sleeper_pid" ]] || fail "heartbeat did not enter its long sleep"
+  stop_heartbeat
+  wait "$heartbeat_pid" 2>/dev/null || true
+  ! process_is_running "$heartbeat_pid" || fail "heartbeat parent survived stop"
+  ! process_is_running "$sleeper_pid" || fail "heartbeat sleep child survived stop"
+  [[ ! -e "$HEARTBEAT_PID_FILE" ]] || fail "heartbeat pid file survived stop"
 )
 
 test_order_no_pay_is_loopback_only_and_intl_usd() (
@@ -493,14 +552,19 @@ test_browser_login_is_minted_privately() (
   curl_with_token() {
     printf '%s\n' '{"userId":"usr_browser","sessionToken":"private-token","loginUrl":"http://127.0.0.1:5173/#session_token=private-token","expiresAt":"2099-01-01T00:00:00Z","impersonated":false}'
   }
-  local output url headers pid curl_bin
+  local output output_file url headers pid first_pid curl_bin
   curl_bin="$(type -P curl)"
-  output="$TEST_ROOT/browser-login-output"
-  mint_browser_login >"$output" 2>&1
-  output="$(<"$output")"
+  output_file="$TEST_ROOT/browser-login-output"
+  mint_browser_login >"$output_file" 2>&1
+  output="$(<"$output_file")"
   [[ "$output" != *private-token* ]] || fail "browser session token leaked to command output"
   assert_eq '' "$(state_get browser_login_url)" "browser login token must not persist in state"
   assert_eq '2099-01-01T00:00:00Z' "$(state_get browser_login_expires_at)" "browser login expiry"
+  first_pid="$(<"$BROWSER_BOOTSTRAP_PID_FILE")"
+  mint_browser_login >>"$output_file" 2>&1
+  ! process_is_running "$first_pid" || fail "previous browser bootstrap survived immediate replacement"
+  output="$(<"$output_file")"
+  [[ "$output" != *private-token* ]] || fail "replacement browser session token leaked to command output"
   url="$(<"$BROWSER_BOOTSTRAP_READY_FILE")"
   [[ "$url" =~ ^http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_-]{24,128}$ ]] \
     || fail "one-time browser URL is malformed: $url"
@@ -515,9 +579,146 @@ test_browser_login_is_minted_privately() (
     || fail "browser session token file survived bootstrap startup"
 )
 
+test_browser_nonce_retries_empty_generation() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/browser-nonce" PERSONAL_DEV_SITE=intl
+  source "$SCRIPT"
+  prepare_state
+  local attempts_file nonce
+  attempts_file="$TEST_ROOT/browser-nonce-attempts"
+  printf '0\n' >"$attempts_file"
+  browser_nonce_once() {
+    local attempts
+    attempts="$(<"$attempts_file")"
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" >"$attempts_file"
+    if ((attempts == 1)); then
+      return 0
+    fi
+    printf '%s\n' 'valid_browser_nonce_0123456789'
+  }
+  nonce="$(generate_browser_nonce)"
+  assert_eq 'valid_browser_nonce_0123456789' "$nonce" "browser nonce retry result"
+  assert_eq '2' "$(<"$attempts_file")" "browser nonce retry count"
+)
+
+test_testing_binding_bootstrap_uses_session_identity_without_persisting_admin_token() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-bootstrap" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_SHADOW_USER_NAME='mock_personal_dev'
+  export PERSONAL_DEV_SHADOW_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_OWNER_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_APP_ID='1250000000'
+  export PERSONAL_DEV_BINDING_REASON='personal DevCloud testing'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'testing-user-session'; }
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    assert_eq 'managed-admin-token' "$token" "admin token"
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$TEST_ROOT/binding-bootstrap-request.json"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"userId":"usr_testing_1","shadowUserName":"mock_personal_dev","uin":450860000013,"ownerUin":450860000013,"appId":1250000000,"status":"active"}'
+  }
+
+  local output
+  output="$(bootstrap_binding)"
+  grep -q '"status":"active"' <<<"$output"
+  python3 - "$TEST_ROOT/binding-bootstrap-request.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    body = json.load(fh)
+assert body == {
+    "userId": "usr_testing_1",
+    "shadowUserName": "mock_personal_dev",
+    "uin": 450860000013,
+    "ownerUin": 450860000013,
+    "appId": 1250000000,
+    "reason": "personal DevCloud testing",
+}, body
+PY
+  ! grep -Rq 'managed-admin-token' "$STATE_ROOT"
+  ! grep -q 'managed-admin-token' <<<"$output"
+)
+
+test_wait_for_binding_bootstraps_when_managed_inputs_are_present() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-auto" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_SHADOW_USER_NAME='mock_personal_dev'
+  export PERSONAL_DEV_SHADOW_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_OWNER_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_APP_ID='1250000000'
+  export PERSONAL_DEV_BINDING_REASON='personal DevCloud testing'
+  source "$SCRIPT"
+  prepare_state
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' && "$*" == *'/auth/shadow/binding'* ]]; then
+      printf '%s\n' '{"binding":{"status":"missing"}}'
+      return
+    fi
+    if [[ "$token" == 'testing-user-session' && "$*" == *'/auth/session'* ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    printf '%s\n' '{"userId":"usr_testing_1","shadowUserName":"mock_personal_dev","uin":450860000013,"ownerUin":450860000013,"appId":1250000000,"status":"active"}'
+  }
+
+  local binding
+  binding="$(wait_for_binding 'testing-user-session')"
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["binding"]["status"] == "active"' <<<"$binding"
+)
+
+test_testing_binding_release_derives_user_and_keeps_admin_token_private() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-release" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:38081'
+  export PERSONAL_DEV_BINDING_RELEASE_REASON='test completed'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'testing-user-session'; }
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    assert_eq 'managed-admin-token' "$token" "release admin token"
+    [[ "$*" == *'-X DELETE'*'http://127.0.0.1:38081/admin/shadow-bindings/usr_testing_1'* ]] \
+      || fail "release request did not target the configured testing admin endpoint"
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$TEST_ROOT/binding-release-request.json"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"userId":"usr_testing_1","status":"disabled"}'
+  }
+
+  local output
+  output="$(release_binding)"
+  grep -q '"status":"disabled"' <<<"$output"
+  python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == {"reason":"test completed"}' \
+    "$TEST_ROOT/binding-release-request.json"
+  ! grep -Rq 'managed-admin-token' "$STATE_ROOT"
+  ! grep -q 'managed-admin-token' <<<"$output"
+)
+
 test_skill_name_and_paths_are_consistent() {
-  rg -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
-  if rg -n 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
+  grep -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
+  if grep -ERn 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
     "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md" \
     "$REPO_ROOT/.agents/skills/personal-devcloud-environment/scripts" \
     "$REPO_ROOT/deploy/localstack/README.md"; then
@@ -527,12 +728,12 @@ test_skill_name_and_paths_are_consistent() {
 }
 
 test_payment_and_production_guardrails() {
-  ! rg -n 'place-and-pay|pay-url' "$SCRIPT"
-  ! rg -n 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl[^\n]*sync' "$SCRIPT"
-  rg -q 'verify-order-no-pay' "$SCRIPT"
-  rg -q 'verify-checkmodify-no-pay' "$SCRIPT"
-  rg -q 'checkModify verification is not implemented' "$SCRIPT"
-  ! rg -q 'verified.*checkCreate' "$SCRIPT"
+  ! grep -En 'place-and-pay|pay-url' "$SCRIPT"
+  ! grep -En 'api\.lightvela\.(com|ai)|production|staging|argocd|kubectl.*sync' "$SCRIPT"
+  grep -q 'verify-order-no-pay' "$SCRIPT"
+  grep -q 'verify-checkmodify-no-pay' "$SCRIPT"
+  grep -q 'checkModify verification is not implemented' "$SCRIPT"
+  ! grep -q 'verified.*checkCreate' "$SCRIPT"
 }
 
 run_test 'CN and Intl state are isolated' test_site_state_isolation
@@ -543,13 +744,16 @@ run_test 'auth failure removes credential temp files' test_auth_failure_removes_
 run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
+run_test 'Auth admin override is loopback-only' test_auth_admin_override_is_loopback_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout
 run_test 'Intl registration without a capability fails closed' test_intl_registration_without_capability_fails_closed
 run_test 'CN registration sends the DevCloud target and starts its assigned tunnel' test_cn_registration_sends_explicit_devcloud_target
 run_test 'CN registration without a capability fails closed' test_cn_registration_without_capability_fails_closed
+run_test 'registration agent failure fails closed' test_registration_agent_failure_fails_closed
 run_test 'heartbeat survives transient failures' test_heartbeat_survives_transient_failures
+run_test 'heartbeat stop interrupts a long sleep' test_stop_heartbeat_interrupts_long_sleep
 run_test 'no-pay order verification stays on loopback and validates USD' test_order_no_pay_is_loopback_only_and_intl_usd
 run_test 'status fails closed' test_status_fails_when_dependencies_fail
 run_test 'down continues after unregister failure' test_down_stops_stack_after_unregister_failure
@@ -557,6 +761,10 @@ run_test 'gateway override reaches Trade runtime' test_gateway_override_reaches_
 run_test 'testing gateway migrates stale state and rejects production overrides' test_testing_gateway_migrates_stale_state_and_rejects_prod_override
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately
+run_test 'browser login retries an empty nonce generation' test_browser_nonce_retries_empty_generation
+run_test 'testing binding bootstrap derives the target user and keeps admin token private' test_testing_binding_bootstrap_uses_session_identity_without_persisting_admin_token
+run_test 'missing binding is bootstrapped when managed inputs are present' test_wait_for_binding_bootstraps_when_managed_inputs_are_present
+run_test 'testing binding release derives the target user and keeps admin token private' test_testing_binding_release_derives_user_and_keeps_admin_token_private
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
 

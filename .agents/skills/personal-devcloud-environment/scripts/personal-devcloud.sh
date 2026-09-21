@@ -37,6 +37,7 @@ TTL_SECONDS="${PERSONAL_DEV_TTL_SECONDS:-28800}"
 BROWSER_SESSION_TTL_SECONDS="${PERSONAL_DEV_BROWSER_SESSION_TTL_SECONDS:-28800}"
 
 AUTH_BASE=""
+AUTH_ADMIN_BASE=""
 CLGATEWAY_BASE=""
 REGISTRATION_URL=""
 TEMP_FILES=()
@@ -174,10 +175,41 @@ configure_site() {
     esac
   fi
   AUTH_BASE="${AUTH_BASE%/}"
+  AUTH_ADMIN_BASE="${PERSONAL_DEV_AUTH_ADMIN_BASE_URL:-$AUTH_BASE}"
+  AUTH_ADMIN_BASE="${AUTH_ADMIN_BASE%/}"
   CLGATEWAY_BASE="${CLGATEWAY_BASE%/}"
   validate_auth_base
+  validate_auth_admin_base
   validate_clgateway_base
   REGISTRATION_URL="$AUTH_BASE/auth/dev-environments/registration"
+}
+
+validate_auth_admin_base() {
+  if [[ "$AUTH_ADMIN_BASE" == "$AUTH_BASE" ]]; then
+    return
+  fi
+  python3 - "$AUTH_ADMIN_BASE" <<'PY' || die "Auth admin endpoint must match the sandbox Auth origin or use an HTTP loopback port-forward"
+import ipaddress, sys
+from urllib.parse import urlsplit
+
+parsed = urlsplit(sys.argv[1])
+hostname = (parsed.hostname or "").lower()
+try:
+    is_loopback = ipaddress.ip_address(hostname).is_loopback
+except ValueError:
+    is_loopback = hostname == "localhost"
+valid = (
+    parsed.scheme == "http"
+    and is_loopback
+    and parsed.username is None
+    and parsed.password is None
+    and parsed.port is not None
+    and parsed.path in ("", "/")
+    and not parsed.query
+    and not parsed.fragment
+)
+raise SystemExit(0 if valid else 1)
+PY
 }
 
 validate_auth_base() {
@@ -630,12 +662,22 @@ central_session() {
 }
 
 wait_for_binding() {
-  local token="$1" response status i
+  local token="$1" response status i admin_response bootstrapped=0
   for i in $(seq 1 15); do
     response="$(curl_with_token "$token" "$AUTH_BASE/auth/shadow/binding" 2>/dev/null || true)"
     status="$(printf '%s' "$response" | json_value 'd.get("binding", {}).get("status", "")' 2>/dev/null || true)"
     if [[ "$status" == "active" ]]; then
       printf '%s\n' "$response"
+      return
+    fi
+    if ((bootstrapped == 0)) && binding_bootstrap_configured; then
+      bootstrapped=1
+      admin_response="$(bootstrap_binding_with_session "$token")"
+      printf '%s' "$admin_response" | python3 -c '
+import json, sys
+json.dump({"binding": json.load(sys.stdin)}, sys.stdout, ensure_ascii=False, separators=(",", ":"))
+print()
+'
       return
     fi
     curl_with_token "$token" -X POST "$AUTH_BASE/auth/shadow/binding/retry" >/dev/null 2>&1 || true
@@ -645,13 +687,96 @@ wait_for_binding() {
   die "central shadow binding did not become active"
 }
 
+binding_bootstrap_configured() {
+  [[ -n "${PERSONAL_DEV_ADMIN_TOKEN:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_USER_NAME:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_UIN:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_OWNER_UIN:-}" \
+    && -n "${PERSONAL_DEV_SHADOW_APP_ID:-}" \
+    && -n "${PERSONAL_DEV_BINDING_REASON:-}" ]]
+}
+
+central_user_id_for_session() {
+  local token="$1" response user_id
+  response="$(curl_with_token "$token" "$AUTH_BASE/auth/session")" \
+    || die "could not resolve the current testing user"
+  user_id="$(printf '%s' "$response" | json_value 'd.get("session", {}).get("user", {}).get("id", "")')"
+  [[ "$user_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "testing session returned an invalid user id"
+  printf '%s\n' "$user_id"
+}
+
+bootstrap_binding_with_session() {
+  local session_token="$1" admin_token user_id shadow_name uin owner_uin app_id reason body response status
+  binding_bootstrap_configured \
+    || die "binding is missing; use the testing Gateway Dashboard or provide the managed PERSONAL_DEV_ADMIN_TOKEN and PERSONAL_DEV_SHADOW_* inputs"
+  admin_token="$PERSONAL_DEV_ADMIN_TOKEN" # pragma: allowlist secret -- runtime environment reference only
+  shadow_name="$PERSONAL_DEV_SHADOW_USER_NAME"
+  uin="$PERSONAL_DEV_SHADOW_UIN"
+  owner_uin="$PERSONAL_DEV_SHADOW_OWNER_UIN"
+  app_id="$PERSONAL_DEV_SHADOW_APP_ID"
+  reason="$PERSONAL_DEV_BINDING_REASON"
+  [[ "$shadow_name" =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid managed shadow username"
+  [[ "$uin" =~ ^[1-9][0-9]*$ && "$owner_uin" =~ ^[1-9][0-9]*$ && "$app_id" =~ ^[1-9][0-9]*$ ]] \
+    || die "managed UIN, OwnerUIN, and AppID must be positive integers"
+  user_id="$(central_user_id_for_session "$session_token")"
+
+  new_private_temp shadow-binding
+  body="$TEMP_FILE_RESULT"
+  python3 - "$body" "$user_id" "$shadow_name" "$uin" "$owner_uin" "$app_id" "$reason" <<'PY'
+import json, sys
+path, user_id, shadow_name, uin, owner_uin, app_id, reason = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump({
+        "userId": user_id,
+        "shadowUserName": shadow_name,
+        "uin": int(uin),
+        "ownerUin": int(owner_uin),
+        "appId": int(app_id),
+        "reason": reason.strip(),
+    }, fh, ensure_ascii=False)
+PY
+  response="$(curl_with_token "$admin_token" -X POST -H 'Content-Type: application/json' \
+    --data-binary "@$body" "$AUTH_ADMIN_BASE/admin/shadow-bindings")" \
+    || die "testing shadow binding bootstrap failed"
+  remove_private_temp "$body"
+  status="$(printf '%s' "$response" | json_value 'd.get("status", "")')"
+  [[ "$status" == "active" ]] || die "testing shadow binding bootstrap did not return active"
+  printf '%s\n' "$response"
+}
+
+bootstrap_binding() {
+  prepare_state
+  local token
+  token="$(central_session)"
+  bootstrap_binding_with_session "$token"
+}
+
+release_binding() {
+  prepare_state
+  local admin_token reason token user_id body response
+  admin_token="${PERSONAL_DEV_ADMIN_TOKEN:-}"
+  reason="${PERSONAL_DEV_BINDING_RELEASE_REASON:-${PERSONAL_DEV_BINDING_REASON:-}}"
+  [[ -n "$admin_token" && -n "$reason" ]] \
+    || die "release-binding requires PERSONAL_DEV_ADMIN_TOKEN and a binding release reason"
+  token="$(central_session)"
+  user_id="$(central_user_id_for_session "$token")"
+  new_private_temp shadow-unbind
+  body="$TEMP_FILE_RESULT"
+  json_body_file "$body" "reason=$reason"
+  response="$(curl_with_token "$admin_token" -X DELETE -H 'Content-Type: application/json' \
+    --data-binary "@$body" "$AUTH_ADMIN_BASE/admin/shadow-bindings/$user_id")" \
+    || die "testing shadow binding release failed"
+  remove_private_temp "$body"
+  printf '%s\n' "$response"
+}
+
 ensure_local_identity() {
   local email password body response token local_user_id binding shadow_name uin owner_uin app_id central_token
   require_personal_context
   central_token="$(central_session)"
   prepare_local_credentials
   email="$LOCAL_IDENTITY_EMAIL"
-  password="$LOCAL_IDENTITY_PASSWORD"
+  password="$LOCAL_IDENTITY_PASSWORD" # pragma: allowlist secret -- generated private state reference only
 
   new_private_temp local-signup
   body="$TEMP_FILE_RESULT"
@@ -706,22 +831,50 @@ SQL
   log "local browser account is aligned with central shadow uin=$uin"
 }
 
+browser_bootstrap_process_matches() {
+  local pid="$1" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+  else
+    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  fi
+  [[ "$cmdline" == *"browser-login-bootstrap.py"* ]]
+}
+
 stop_browser_bootstrap() {
-  local pid="" cmdline=""
+  local pid="" attempt
   if [[ -f "$BROWSER_BOOTSTRAP_PID_FILE" ]]; then
     pid="$(tr -dc '0-9' <"$BROWSER_BOOTSTRAP_PID_FILE")"
   fi
-  if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    if [[ -r "/proc/$pid/cmdline" ]]; then
-      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-    else
-      cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    fi
-    if [[ "$cmdline" == *"browser-login-bootstrap.py"* ]]; then
-      kill "$pid" >/dev/null 2>&1 || true
+  if browser_bootstrap_process_matches "$pid"; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for attempt in $(seq 1 50); do
+      process_is_running "$pid" || break
+      sleep 0.05
+    done
+    if process_is_running "$pid" && browser_bootstrap_process_matches "$pid"; then
+      kill -KILL "$pid" >/dev/null 2>&1 || true
     fi
   fi
   rm -f "$BROWSER_BOOTSTRAP_PID_FILE" "$BROWSER_BOOTSTRAP_READY_FILE"
+}
+
+browser_nonce_once() {
+  python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
+}
+
+generate_browser_nonce() {
+  local attempt nonce=""
+  for attempt in 1 2 3; do
+    nonce="$(browser_nonce_once 2>/dev/null || true)"
+    if [[ "$nonce" =~ ^[A-Za-z0-9_-]{24,128}$ ]]; then
+      printf '%s\n' "$nonce"
+      return 0
+    fi
+  done
+  return 1
 }
 
 start_browser_bootstrap() {
@@ -731,7 +884,7 @@ start_browser_bootstrap() {
   ip="$(discover_devcloud_ip)"
   listen_host=0.0.0.0
   [[ "$ip" == "127.0.0.1" || "$ip" == "localhost" ]] && listen_host=127.0.0.1
-  nonce="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+  nonce="$(generate_browser_nonce)" || die "could not generate a browser bootstrap nonce"
   stop_browser_bootstrap
   token_file="$(mktemp "$STATE_ROOT/browser-session.XXXXXX")"
   chmod 600 "$token_file"
@@ -873,6 +1026,7 @@ PY
   log "building devtunnel-agent from current checkout@$revision"
   docker run --rm \
     --user "$(id -u):$(id -g)" \
+    -e GOWORK=off \
     -e GOMODCACHE=/cache/gomod \
     -e GOCACHE=/cache/gocache \
     -v "$REPO_ROOT:/workspace:ro" \
@@ -958,10 +1112,7 @@ register_route() {
   ip="$(discover_devcloud_ip)"
   curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$CALLBACK_PORT/healthz" >/dev/null \
     || die "local trade callback is not healthy on port $CALLBACK_PORT"
-  registration_body="{\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
-  if [[ "$SITE" == "cn" ]]; then
-    registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
-  fi
+  registration_body="{\"targetIp\":\"$ip\",\"port\":$CALLBACK_PORT,\"ttlSeconds\":$TTL_SECONDS}"
   response="$(curl_with_token "$token" -X POST -H 'Content-Type: application/json' \
     --data-binary "$registration_body" "$REGISTRATION_URL")"
   registered_uin="$(printf '%s' "$response" | json_value 'd.get("uin", "")' 2>/dev/null || true)"
@@ -979,7 +1130,12 @@ register_route() {
     curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
     die "registration API did not return a short-lived tunnel capability; unsafe active registration was disabled"
   fi
-  ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"
+  if ! (ensure_devtunnel_agent "$tunnel_host" "$tunnel_token"); then
+    stop_devtunnel_agent
+    curl_with_token "$token" -X DELETE "$REGISTRATION_URL" >/dev/null 2>&1 || true
+    unset tunnel_token
+    die "local devtunnel-agent failed; unsafe active registration was disabled"
+  fi
   safe_response="$(printf '%s' "$response" | json_without_secrets)"
   state_set devcloud_ip "$ip"
   state_set registration_response "$safe_response"
@@ -994,19 +1150,37 @@ register_route() {
   log "registered uin=$(state_get uin) through tunnelHost=$tunnel_host"
 }
 
+heartbeat_process_matches() {
+  local pid="$1" cmdline=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+  else
+    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  fi
+  [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]
+}
+
+process_is_running() {
+  local pid="$1" state=""
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  state="$(ps -p "$pid" -o stat= 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "$state" != Z* ]]
+}
+
 stop_heartbeat() {
-  local pid=""
+  local pid="" attempt
   [[ -f "$HEARTBEAT_PID_FILE" ]] || return 0
   pid="$(tr -dc '0-9' <"$HEARTBEAT_PID_FILE")"
-  if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
-    local cmdline=""
-    if [[ -r "/proc/$pid/cmdline" ]]; then
-      cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-    else
-      cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-    fi
-    if [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]; then
-      kill "$pid" >/dev/null 2>&1 || true
+  if heartbeat_process_matches "$pid"; then
+    kill -TERM "$pid" >/dev/null 2>&1 || true
+    for attempt in $(seq 1 50); do
+      process_is_running "$pid" || break
+      sleep 0.1
+    done
+    if process_is_running "$pid" && heartbeat_process_matches "$pid"; then
+      kill -KILL "$pid" >/dev/null 2>&1 || true
     fi
   fi
   rm -f "$HEARTBEAT_PID_FILE"
@@ -1022,9 +1196,24 @@ start_heartbeat() {
 }
 
 heartbeat_loop() {
-  local iterations=0 max_iterations="${PERSONAL_DEV_HEARTBEAT_MAX_ITERATIONS:-0}"
+  local iterations=0 max_iterations="${PERSONAL_DEV_HEARTBEAT_MAX_ITERATIONS:-0}" sleeper_pid=""
+  stop_heartbeat_loop() {
+    trap - TERM INT
+    if [[ -n "$sleeper_pid" ]] && kill -0 "$sleeper_pid" >/dev/null 2>&1; then
+      kill -TERM "$sleeper_pid" >/dev/null 2>&1 || true
+      wait "$sleeper_pid" 2>/dev/null || true
+    fi
+    exit 0
+  }
+  trap stop_heartbeat_loop TERM INT
   while true; do
-    sleep "${PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS:-14400}"
+    sleep "${PERSONAL_DEV_HEARTBEAT_INTERVAL_SECONDS:-14400}" &
+    sleeper_pid="$!"
+    if ! wait "$sleeper_pid"; then
+      sleeper_pid=""
+      continue
+    fi
+    sleeper_pid=""
     if ! heartbeat_once; then
       log "registration heartbeat failed; the loop remains alive and will retry"
     fi
@@ -1142,16 +1331,10 @@ status() {
 }
 
 heartbeat_running() {
-  local pid="" cmdline=""
+  local pid=""
   [[ -f "$HEARTBEAT_PID_FILE" ]] || return 1
   pid="$(tr -dc '0-9' <"$HEARTBEAT_PID_FILE")"
-  [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1 || return 1
-  if [[ -r "/proc/$pid/cmdline" ]]; then
-    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
-  else
-    cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
-  fi
-  [[ "$cmdline" == *"personal-devcloud.sh"*"heartbeat-loop"* ]]
+  heartbeat_process_matches "$pid"
 }
 
 require_active_registration() {
@@ -1332,6 +1515,8 @@ Commands:
   heartbeat-loop  Internal background renewal loop
   status          Show local health, registration, and Kubernetes workload state
   browser-login   Create a single-use browser login URL without printing its session token
+  bootstrap-binding  Bind the current testing user to a managed mock account without persisting the admin token
+  release-binding    Disable the current testing binding so its mock UIN can be reused
   verify-order-no-pay        Run inquiry, create a pending-pay order, and expect no billing callback
   verify-checkcreate-no-pay  Deprecated alias; does not prove checkCreate
   verify-checkmodify-no-pay  Refuse until this checkout exposes a real modify-order API
@@ -1352,6 +1537,8 @@ main() {
     heartbeat-loop) heartbeat_loop ;;
     status) status ;;
     browser-login) browser_login ;;
+    bootstrap-binding) bootstrap_binding ;;
+    release-binding) release_binding ;;
     verify-order-no-pay) verify_order_no_pay ;;
     verify-checkcreate-no-pay) verify_checkcreate_no_pay ;;
     verify-checkmodify-no-pay) verify_checkmodify_no_pay ;;

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -151,12 +151,6 @@ const page = (botId: string) => (
   </AppNavigationProvider>
 );
 
-const revealHiddenTools = () => {
-  const show = (window as Window & { show?: unknown }).show;
-  if (typeof show !== "function") throw new Error("show() helper is not installed");
-  act(() => { show(); });
-};
-
 describe("multi-Bot diagnostics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -257,82 +251,124 @@ describe("multi-Bot diagnostics", () => {
     expect(startRescueExport).not.toHaveBeenCalled();
   });
 
-  it("keeps single-Bot maintenance available and new-Bot creation hidden", async () => {
-    bots = [buildBot()];
+  it("disables session repair while an instance restore is running", async () => {
+    getHermesImportStatus.mockResolvedValue({phase:"wait_tat",logs:[{message:"shared restore progress",level:"info"}]});
     render(page("ins-1"));
+
+    await screen.findByText("当前已有 Agent 恢复任务运行中。");
+    const repairCard = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+    expect(repairCard).not.toBeNull();
+    expect(within(repairCard!).getByRole("button", { name: "执行" })).toBeDisabled();
+  });
+
+  it("disables every other maintenance entry while session repair is running", async () => {
+    let resolveRepair: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
+    execDebugCommand.mockImplementation((_botId, command) => {
+      if (!command.includes("sessions repair")) {
+        return Promise.resolve({ status: "SUCCESS", exitCode: 0, output: "done" });
+      }
+      return new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+        resolveRepair = resolve;
+      });
+    });
+    render(page("ins-1"));
+    await screen.findByText("Agent 备份与恢复");
+
+    const repairCard = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+    if (!repairCard) throw new Error("session repair card not found");
+    fireEvent.click(within(repairCard).getByRole("button", { name: "执行" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(await within(repairCard).findByRole("button", { name: "修复中..." })).toBeDisabled();
+
+    const resetConfigCard = screen.getByRole("heading", { name: "重置模型配置" }).closest("article");
+    const resetAgentCard = screen.getByRole("heading", { name: "重置 Hermes（保留数据）" }).closest("article");
+    if (!resetConfigCard || !resetAgentCard) throw new Error("maintenance card not found");
+    await waitFor(() => {
+      expect(within(resetConfigCard).getByRole("button", { name: "执行" })).toBeDisabled();
+      expect(within(resetAgentCard).getByRole("button", { name: "执行" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "备份到邮箱" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "从备份恢复" })).toBeDisabled();
+    });
+
+    resolveRepair?.({ status: "SUCCESS", exitCode: 0, output: "repaired" });
+    await waitFor(() => expect(within(resetConfigCard).getByRole("button", { name: "执行" })).toBeEnabled());
+  });
+
+  it("keeps single-Bot maintenance available and shows quota-disabled creation", async () => {
+    bots = [buildBot()];
+    const view = render(page("ins-1"));
     await waitFor(() => expect(screen.getAllByRole("button", {name:"执行"})[0]).toBeEnabled());
-    expect(screen.queryByRole("button", {name:"新建 Bot"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"新建 Bot"})).toBeDisabled();
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).not.toBeInTheDocument();
     expect(screen.getByText("重置 Hermes（保留数据）")).toBeInTheDocument();
     expect(screen.getByRole("button", {name:"备份到邮箱"})).toBeEnabled();
   });
 
-  it("reveals Bot creation with show() and resets visibility on page remount", async () => {
+  it("shows domestic Bot creation without show() and preserves visibility on page remount", async () => {
     maxBots = 5;
     const view = render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
-    revealHiddenTools();
+    const createButton = screen.getByRole("button", { name: "新建 Bot" });
+    expect(createButton).toBeEnabled();
+    expect(screen.queryByRole("link", { name: "终端" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+    expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
+    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
+    ]);
+    expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down")).toHaveAttribute("aria-hidden", "true");
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
     expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
-    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
+    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
     view.unmount();
     render(page("ins-1"));
-    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
   });
 
-  it("shows the disabled create quota tooltip below the button without sidebar clipping", async () => {
+  it("keeps global Bot creation hidden until show() reveals it", () => {
+    maxBots = 5;
+    testRegion.isCN = false;
+    testRegion.isGlobal = true;
+    const view = render(page("ins-1"));
+
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => void }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => show?.());
+
+    expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
+      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
+    ]);
+  });
+
+  it("explains a disabled create icon in a portaled tooltip", async () => {
     maxBots = 1;
     render(page("ins-1"));
-    revealHiddenTools();
     const createButton = screen.getByRole("button", { name: "新建 Bot" });
     expect(createButton).toBeDisabled();
-    expect(createButton).toHaveTextContent("新建 Bot");
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
     const tooltipTrigger = createButton.parentElement;
-    expect(tooltipTrigger).not.toBeNull();
-    Object.defineProperty(tooltipTrigger, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        left: 84,
-        right: 304,
-        top: 275,
-        bottom: 311,
-        width: 220,
-        height: 36,
-        x: 84,
-        y: 275,
-        toJSON: () => ({}),
-      }),
-    });
-    fireEvent.mouseEnter(tooltipTrigger!);
-
+    expect(tooltipTrigger).toHaveAttribute("tabindex", "0");
+    fireEvent.focus(tooltipTrigger!);
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip).toHaveTextContent(
       "当前套餐最多可创建 1 个 Bot（含主 Bot），请升级套餐或删除已有 Bot 后再创建。",
     );
     expect(tooltip.parentElement).toBe(document.body);
-    expect(tooltip).toHaveClass("fixed");
-    expect(tooltip).toHaveStyle({ left: "194px", top: "319px" });
-    expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(tooltip.querySelector("[aria-hidden='true']")).toHaveClass("bottom-full");
-
     fireEvent.keyDown(tooltipTrigger!, { key: "Escape" });
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-
-    fireEvent.focus(tooltipTrigger!);
-    expect(await screen.findByRole("tooltip")).toBeInTheDocument();
   });
 
   it("rechecks the current quota when the create dialog is confirmed", async () => {
     bots = [buildBot()];
     maxBots = 2;
     const view = render(page("ins-1"));
-    revealHiddenTools();
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
 
@@ -360,11 +396,10 @@ describe("multi-Bot diagnostics", () => {
     expect(screen.queryByText("已有 Bot 正在删除中，请稍后刷新页面后再创建。")).not.toBeInTheDocument();
   });
 
-  it("does not bypass the feature flag with show()", () => {
+  it("does not bypass the multi-Bot feature flag", () => {
     maxBots = 5;
     multiBotEnabled = false;
     render(page("ins-1"));
-    revealHiddenTools();
     expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
   });
 });

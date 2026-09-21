@@ -11,6 +11,7 @@ export type AdminProxyModule =
   | "sandbox"
   | "ctl"
   | "ctl-admin"
+  | "credit"
   | "support-feedback";
 
 interface BuildModuleAdminProxyRequestOptions {
@@ -40,6 +41,7 @@ const upstreamPathPrefixes: Record<AdminProxyModule, string> = {
   sandbox: "/internal",
   ctl: "/internal",
   "ctl-admin": "/admin/api/ctl",
+  credit: "/internal/credit/admin",
   // ticket 反馈后台：经 supportAgentMiddleware 校验 X-User-Id（白名单），
   // 由 dashboard BFF 注入配置的运营账号 ID，dashboard 本身已 admin 登录。
   "support-feedback": "/support/feedback",

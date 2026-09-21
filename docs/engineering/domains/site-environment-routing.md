@@ -4,6 +4,16 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
+## 管理后台内部服务路由
+
+- Gateway Dashboard 的积分包管理页通过同源 `/admin/api/credit/*` 访问服务端 BFF；浏览器不直连 Credit，也不接触内部凭据。
+- BFF 将该路径映射到当前环境 Credit 的 `/internal/credit/admin/*`，先校验 Dashboard 管理登录态，再注入仅服务端可见的 `CREDIT_INTERNAL_TOKEN`。
+- `CREDIT_API_URL` 必须指向同环境 Credit Service：共享命名空间环境使用 `http://credit.credit.svc.cluster.local`，隔离 playground 使用该环境的完整 Service DNS；未部署 Credit 的环境显式留空并返回配置错误，不能跨环境回退。
+- `CREDIT_INTERNAL_TOKEN` 必须通过 `gateway-dashboard-runtime-secrets` 注入，并与目标 Credit 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 一致；不得放入 ConfigMap、前端构建变量或浏览器请求。
+- 认证用户页的影子账号视图同样只通过 `/admin/api/shadow/*` 访问 Dashboard BFF；BFF 将请求映射到同环境 Shadow 的 `/internal/shadow/admin/*`，并在校验 Dashboard 管理登录态后注入 `SHADOW_INTERNAL_TOKEN`。
+- `SHADOW_API_URL` 必须指向同环境 Shadow Service，标准集群内地址为 `http://shadow.shadow.svc.cluster.local`。未部署 Shadow 的环境保持未配置并明确返回配置错误，不允许跨环境读取影子账号。
+- `SHADOW_INTERNAL_TOKEN` 只通过 Shadow 与 Dashboard 各自的 runtime secret 注入，两端值必须一致；不得复用外部 callback token，也不得进入 ConfigMap、前端构建变量或浏览器请求。
+
 ## 稳定身份
 
 - 国内生产：`lightvela.com`
@@ -78,15 +88,18 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## Agent 多 Bot 区域边界
 
-- 实例内多 Bot 一期只在国内站开放。前端入口同时受国内区域判断和运行时功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，但新增 Bot 由服务端开关再次校验。
-- 国内 service-gateway 环境允许 `/v1/instances/{instance_id}/bots` 及其修复、唯一通道绑定子路由，全球 `sgprod` 不允许这些路径。配置策略测试必须分别断言国内放行和全球不暴露，不能用前端隐藏替代公共 API 边界。
+- 实例内多 Bot 在国内站和国际站共用同一套产品能力。前端入口统一受运行时 `multiBotEnabled` 功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，新增 Bot 由服务端开关再次校验。`ctl-api` 从各环境的 `ctl-platform-values` 可选读取 `MULTI_BOT_ENABLED`，国际 `sgprod` 显式设为 `true`，后续可独立改为 `false` 回滚额外 Bot 能力；该开关不能阻断无实例用户首次创建 Agent。
+- 国内与国际 service-gateway 环境都精确允许 `/v1/instances/{instance_id}/bots` 的列表、创建/克隆、重命名、删除、失败修复和唯一通道绑定子路由。配置策略测试必须分别断言两站放行相同 method/path 集合，并继续验证鉴权、实名、归属与相邻路径拒绝；不能用前端隐藏替代公共 API 边界。
 - Agent 侧栏运行中 Bot 的“重启”使用箭头与圆弧相连的单箭头图标，与双箭头刷新区分；失败 Bot 的“修复”仍使用双箭头图标。执行中显示加载图标，操作入口和确认流程继续按当前 Bot 状态判断。
 - 侧栏顶部重启和删除操作的提示框通过 `document.body` Portal 固定定位并约束在视口内，避免被侧栏滚动容器裁切；按钮的操作与禁用条件不因提示框而改变。
+- 侧栏的额外 Bot 创建入口是重启图标左侧的“+”按钮：国内站默认可见，国际站默认隐藏并仅在浏览器控制台执行 `show()` 后揭示。多个 Bot 时，删除图标后显示用于展开 Bot 切换列表的下拉箭头。原侧栏整行“新建 Bot”按钮不再显示，运行时多 Bot 开关和套餐额度限制仍保持不变；额度不足的原因通过可聚焦的 Portal 提示展示。
+- 到期徽标的可交互续费提示从徽标下方展开，不覆盖同一 Bot 顶部的创建、重启和删除图标；徽标与提示内的续费操作保持原有入口。
 
 ## 公共账号菜单边界
 
-- 登录态头像菜单的主要入口固定为“我的智能体伙伴”与“账号管理”，并在底部保留退出登录；个人工作台仍从 Agent 控制台左侧导航进入，不在头像菜单重复展示。
-- 国际站英文使用 `My AI Companion` 与 `Account Settings`，避免生硬的复数伙伴表达和后台管理员语气。
+- 登录态头像菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；公共页 Header 保留“我的智能体伙伴”入口。
+- 国际站英文分别使用 `Account`、`Plans & billing` 与 `My AI Companion`。两个账号私域页面均要求登录、保持 noindex/nofollow；账号页承载资料与身份管理，套餐与费用页承载订阅和国际站支付方式，购买入口仍为 `/subscribe`。
+- 订阅失败后的套餐管理/续费引导进入 `/account/billing`；创建前的实名认证引导与邮箱绑定回调仍进入 `/account`，仅账号视图消费对应 query。国内续费的实名子流程由 `RenewPassModal` 自己承载，不依赖账号页资料卡的认证入口。
 
 ## 邀请返利环境边界
 

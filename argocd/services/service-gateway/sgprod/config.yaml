@@ -30,6 +30,25 @@ worker_actions:
     upload_key_prefix: rescue-imports
     upload_url_ttl_seconds: 900
 routes:
+  - name: referral-code-public
+    prefix: /v1/referrals/codes
+    methods: [GET, OPTIONS]
+    upstream: http://referral.referral.svc.cluster.local
+    access: public
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/referrals/codes/{code}" }
+  - name: referral-user
+    prefix: /v1/referrals/me
+    methods: [GET, POST, OPTIONS]
+    upstream: http://referral.referral.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    path_policy: allowlist
+    path_allow:
+      - { method: GET, path: "/v1/referrals/me" }
+      - { method: POST, path: "/v1/referrals/me/code" }
+      - { method: GET, path: "/v1/referrals/me/stats" }
   - name: ai-gateway-admin
     prefix: /api/admin
     methods: [GET, POST, PUT, DELETE, OPTIONS]
@@ -65,6 +84,10 @@ routes:
       - { method: POST, path: "/v1/instances/{instance_id}/bots" }
       - { method: PUT, path: "/v1/instances/{instance_id}/bots/{bot_id}" }
       - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots/{bot_id}/retry" }
+      - { method: PUT, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
+      - { method: DELETE, path: "/v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}" }
       - { method: POST, path: "/v1/instances/{instance_id}/debug/exec" }
       - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
       - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }
@@ -229,6 +252,8 @@ routes:
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
+      - method: POST
+        path: /auth/referral/prepare
       - method: POST
         path: /auth/internal/tencentcloud/account
       - method: GET

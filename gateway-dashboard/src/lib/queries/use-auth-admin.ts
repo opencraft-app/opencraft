@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import {
+  authShadowBindingPath,
+  type AuthShadowBinding,
+  type AuthShadowBindingRequest,
+} from "@/lib/queries/auth-shadow-binding";
 
 export interface AuthAdminUser {
   id: string;
@@ -46,12 +51,22 @@ interface AdminListResponse<T> {
   total: number;
 }
 
-export function useAuthAdminUsers(search?: string, limit: number = 100) {
+interface AuthAdminUserFilters {
+  search?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useAuthAdminUsers(filters: AuthAdminUserFilters) {
   return useQuery({
-    queryKey: ["auth", "users", search, limit],
+    queryKey: ["auth", "users", filters.search, filters.page, filters.pageSize],
     queryFn: () =>
       apiClient<AdminListResponse<AuthAdminUser>>("auth/users", {
-        params: { search, limit },
+        params: {
+          search: filters.search,
+          page: filters.page,
+          page_size: filters.pageSize,
+        },
       }),
   });
 }
@@ -149,6 +164,44 @@ export function useDisableAuthAdminInvite() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["auth", "invites"] });
+    },
+  });
+}
+
+export function useAuthAdminShadowBinding(userID: string, enabled: boolean = true) {
+  const normalizedUserID = userID.trim();
+  return useQuery({
+    queryKey: ["auth", "shadow-binding", normalizedUserID],
+    queryFn: () => apiClient<AuthShadowBinding>(authShadowBindingPath(normalizedUserID)),
+    enabled: enabled && normalizedUserID.length > 0,
+    retry: false,
+  });
+}
+
+export function useUpsertAuthAdminShadowBinding() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AuthShadowBindingRequest) =>
+      apiClient<AuthShadowBinding>("auth/shadow-bindings", {
+        method: "POST",
+        body: input,
+      }),
+    onSuccess: (binding) => {
+      queryClient.setQueryData(["auth", "shadow-binding", binding.userId], binding);
+    },
+  });
+}
+
+export function useDisableAuthAdminShadowBinding() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userID, reason }: { userID: string; reason: string }) =>
+      apiClient<AuthShadowBinding>(authShadowBindingPath(userID), {
+        method: "DELETE",
+        body: { reason: reason.trim() },
+      }),
+    onSuccess: (binding) => {
+      queryClient.setQueryData(["auth", "shadow-binding", binding.userId], binding);
     },
   });
 }

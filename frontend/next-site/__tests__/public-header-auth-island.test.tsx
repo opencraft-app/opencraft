@@ -13,6 +13,7 @@ const runtimeMock = vi.hoisted(() => ({
   bots: [] as Array<{ id: string }>,
 }));
 const trackDatongClickMock = vi.hoisted(() => vi.fn());
+const prepareReferralCodeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 vi.mock("react-i18next", () => ({
@@ -36,6 +37,9 @@ vi.mock("@/contexts/session-context", () => ({
     isAuthenticated: runtimeMock.isAuthenticated,
   }),
 }));
+vi.mock("@/contexts/repository-context", () => ({
+  useRepositories: () => ({ auth: { prepareReferralCode: prepareReferralCodeMock } }),
+}));
 vi.mock("@/lib/oauth", () => ({ oauthErrorMessage: () => null }));
 vi.mock("@/lib/region", async () => {
   const actual = await vi.importActual<typeof import("@/lib/region")>("@/lib/region");
@@ -56,6 +60,7 @@ beforeEach(() => {
   runtimeMock.isAuthenticated = false;
   runtimeMock.isSubscribed = false;
   runtimeMock.bots = [];
+  prepareReferralCodeMock.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -77,6 +82,15 @@ describe("PublicHeaderAuthIsland", () => {
     runtimeMock.isAuthenticated = true;
     render(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} />);
     expect(screen.queryByTestId("current-login-modal")).toBeNull();
+  });
+
+  it("claims a referral link for an existing authenticated user", async () => {
+    window.history.replaceState(null, "", "/?ref=hy23lavsfz");
+    runtimeMock.isAuthenticated = true;
+
+    render(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} />);
+
+    await waitFor(() => expect(prepareReferralCodeMock).toHaveBeenCalledWith("HY23LAVSFZ"));
   });
   it("keeps locale dictionaries and closed auth UI out of the initial header chunk", () => {
     const source = readFileSync(

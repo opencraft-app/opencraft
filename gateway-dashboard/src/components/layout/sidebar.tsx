@@ -22,6 +22,7 @@ import {
   Boxes,
   Bot,
   BadgeDollarSign,
+  Coins,
   GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ const navItems = [
   { label: "验证码", href: "/sms-codes", icon: MessageSquareMore },
   { label: "邀请码", href: "/invites", icon: Ticket },
   { label: "业务订阅", href: "/subscriptions", icon: BadgeDollarSign },
+  { label: "积分包", href: "/credit-packages", icon: Coins },
   { type: "separator" as const },
   { label: "套餐", href: "/plans", icon: Package },
   { label: "供应商", href: "/providers", icon: Plug },

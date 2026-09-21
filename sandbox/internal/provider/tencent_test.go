@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -12,6 +13,16 @@ import (
 	"cvm-mock-e2b/internal/blueprint"
 	"cvm-mock-e2b/internal/core"
 )
+
+func TestBaseManifestIncludesJohorBahruModifyFamilyPolicy(t *testing.T) {
+	body, err := os.ReadFile("../../k8s/base/manifests.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"ap-johorbahru":["SA5","S5","SA2","SA3","S6"]`) {
+		t.Fatal("base manifest is missing ap-johorbahru modify family policy")
+	}
+}
 
 func TestTencentCloudProviderCachesClientsByRegion(t *testing.T) {
 	p, err := NewTencentCloudProvider(TencentConfig{
