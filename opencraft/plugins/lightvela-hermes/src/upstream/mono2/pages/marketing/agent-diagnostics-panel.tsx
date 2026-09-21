@@ -1,8 +1,11 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
-import { ChevronDown, ClipboardList, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
-import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ClipboardList, DatabaseBackup, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AgentSectionHeader } from "../../components/domain/agent-section-header";
+import { Button } from "../../components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { Popover, PopoverAnchor, PopoverContent } from "../../components/ui/popover";
 import { useT } from "../../i18n/t";
 import { toast } from "../../lib/toast";
 import { cn } from "../../lib/utils";
@@ -61,6 +64,10 @@ export function buildLogsExportCommand(since: LogsSinceOption, profileId = "main
   return withHermesProfile(`logs --since ${since} -n ${LOGS_EXPORT_LINES}`, profileId);
 }
 
+export function buildSessionRepairCommand(profileId = "main"): string {
+  return withHermesProfile("sessions repair", profileId);
+}
+
 export async function collectStreamedDiagnosticOutput(
   botId: string,
   command: string,
@@ -92,6 +99,12 @@ export interface DiagnosticsMaintenanceAction {
   loading: boolean;
   tooltip: string;
   onExecute: () => void;
+}
+
+export interface SessionRepairPendingChange {
+  maintenanceScopeId: string;
+  requestKey: string;
+  pending: boolean;
 }
 
 export function buildDiagnosticLogsFileName(since: LogsSinceOption, date = new Date(), botName = "main"): string {
@@ -163,10 +176,13 @@ export function AgentDiagnosticsPanel({
   resetAgentAction,
   resetAgentConsole,
   resetAgentConsoleRef,
+  maintenanceBusy = false,
+  maintenanceScopeId = botId,
+  onSessionRepairPendingChange,
   workspaceRecoveryPanel,
 }: {
   botId: string;
-  profileId: string;
+  profileId?: string;
   botName: string;
   isMainBot: boolean;
   execDebugCommand: ExecDebugCommand;
@@ -175,18 +191,43 @@ export function AgentDiagnosticsPanel({
   resetAgentAction: DiagnosticsMaintenanceAction;
   resetAgentConsole: string[];
   resetAgentConsoleRef: RefObject<HTMLPreElement | null>;
+  maintenanceBusy?: boolean;
+  maintenanceScopeId?: string;
+  onSessionRepairPendingChange?: (change: SessionRepairPendingChange) => void;
   workspaceRecoveryPanel?: ReactNode;
 }) {
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
   const [exportingLogs, setExportingLogs] = useState(false);
-  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, profileId), [logsSince, profileId]);
+  const [sessionRepairConfirmOpen, setSessionRepairConfirmOpen] = useState(false);
+  const [sessionRepairLoading, setSessionRepairLoading] = useState(false);
+  const sessionRepairOwnerId = useId();
+  const sessionRepairRequestIdRef = useRef(0);
+  const diagnosticProfileId = profileId ?? (isMainBot ? "main" : undefined);
+  const unavailableProfileReason = diagnosticProfileId
+    ? undefined
+    : t("当前 Bot 的 Profile 尚未就绪，请稍后再试。");
+  const sessionRepairDisabledReason = unavailableProfileReason
+    ?? (maintenanceBusy ? t("Agent 维护任务执行中，请稍后再试。") : undefined);
+  const commands = useMemo(
+    () => diagnosticProfileId
+      ? getAgentDiagnosticCommands(logsSince, diagnosticProfileId)
+      : [{ id: "logs" as const, command: "" }],
+    [diagnosticProfileId, logsSince],
+  );
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
 
+  useEffect(() => {
+    sessionRepairRequestIdRef.current += 1;
+    setSessionRepairConfirmOpen(false);
+    setSessionRepairLoading(false);
+  }, [botId, isMainBot, profileId]);
+
   const runCommand = useCallback(
     async (item: AgentDiagnosticCommand) => {
+      if (!diagnosticProfileId) return;
       setStates((current) => ({
         ...current,
         [item.id]: {
@@ -225,15 +266,16 @@ export function AgentDiagnosticsPanel({
         toast.error(t("获取最近日志失败"));
       }
     },
-    [botId, execDebugCommand, t],
+    [botId, diagnosticProfileId, execDebugCommand, t],
   );
 
   const exportLogs = useCallback(async () => {
+    if (!diagnosticProfileId) return;
     setExportingLogs(true);
     try {
       const result = await collectStreamedDiagnosticOutput(
         botId,
-        buildLogsExportCommand(logsSince, profileId),
+        buildLogsExportCommand(logsSince, diagnosticProfileId),
         execDebugCommandStream,
       );
       if (!isDiagnosticCommandSucceeded(result)) {
@@ -246,11 +288,49 @@ export function AgentDiagnosticsPanel({
     } finally {
       setExportingLogs(false);
     }
-  }, [botId, botName, profileId, execDebugCommandStream, logsSince, t]);
+  }, [botId, botName, diagnosticProfileId, execDebugCommandStream, logsSince, t]);
 
   const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
     setLogsSince(next);
   }, []);
+
+  const runSessionRepair = useCallback(async () => {
+    if (maintenanceBusy || sessionRepairLoading || !diagnosticProfileId) return;
+    const requestId = ++sessionRepairRequestIdRef.current;
+    const requestKey = `${sessionRepairOwnerId}:${requestId}`;
+    setSessionRepairConfirmOpen(false);
+    setSessionRepairLoading(true);
+    onSessionRepairPendingChange?.({ maintenanceScopeId, requestKey, pending: true });
+
+    try {
+      const result = await execDebugCommand(botId, buildSessionRepairCommand(diagnosticProfileId));
+      if (sessionRepairRequestIdRef.current !== requestId) return;
+      const nextStatus = getDiagnosticRunStatus(result);
+      if (nextStatus === "success") {
+        toast.success(t("会话修复成功"));
+      } else {
+        toast.error(t("会话修复失败"));
+      }
+    } catch {
+      if (sessionRepairRequestIdRef.current !== requestId) return;
+      toast.error(t("会话修复失败"));
+    } finally {
+      onSessionRepairPendingChange?.({ maintenanceScopeId, requestKey, pending: false });
+      if (sessionRepairRequestIdRef.current === requestId) {
+        setSessionRepairLoading(false);
+      }
+    }
+  }, [
+    botId,
+    diagnosticProfileId,
+    execDebugCommand,
+    maintenanceBusy,
+    maintenanceScopeId,
+    onSessionRepairPendingChange,
+    sessionRepairLoading,
+    sessionRepairOwnerId,
+    t,
+  ]);
 
   return (
     <div className="space-y-4">
@@ -281,6 +361,11 @@ export function AgentDiagnosticsPanel({
             consoleLines={resetAgentConsole}
             consoleRef={resetAgentConsoleRef}
           />}
+          <SessionRepairCard
+            disabledReason={sessionRepairDisabledReason}
+            loading={sessionRepairLoading}
+            onRequestRepair={() => setSessionRepairConfirmOpen(true)}
+          />
         </div>
         {workspaceRecoveryPanel}
         {commands.map((item) => (
@@ -291,12 +376,246 @@ export function AgentDiagnosticsPanel({
             onRefresh={() => void runCommand(item)}
             onExport={item.id === "logs" ? () => void exportLogs() : undefined}
             isExporting={item.id === "logs" ? exportingLogs : false}
+            unavailableReason={unavailableProfileReason}
             logsSince={item.id === "logs" ? logsSince : undefined}
             onLogsSinceChange={item.id === "logs" ? handleLogsSinceChange : undefined}
           />
         ))}
       </div>
+
+      <Dialog open={sessionRepairConfirmOpen} onOpenChange={setSessionRepairConfirmOpen}>
+        <DialogContent
+          closeLabel={t("关闭")}
+          className="w-[calc(100vw-2rem)] max-w-[28rem] p-6 md:w-[28rem]"
+        >
+          <DialogHeader className="mb-5 pr-8">
+            <DialogTitle className="text-balance text-lg font-semibold text-black/90">
+              {t("确认修复会话？")}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-pretty text-sm leading-6 text-black/55">
+              {t("Hermes 将检查 state.db，并在发现异常时自动创建备份后执行修复。")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSessionRepairConfirmOpen(false)}
+              className="h-9 px-4 text-black/65"
+            >
+              {t("取消")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void runSessionRepair()}
+              disabled={maintenanceBusy || sessionRepairLoading || !diagnosticProfileId}
+              className="h-9 min-w-[104px] px-4"
+            >
+              {t("确认修复")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function SessionRepairCard({
+  disabledReason,
+  loading,
+  onRequestRepair,
+}: {
+  disabledReason?: string;
+  loading: boolean;
+  onRequestRepair: () => void;
+}) {
+  const t = useT();
+  const disabled = Boolean(disabledReason);
+
+  return (
+    <article className="rounded-lg border border-black/[0.08] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex size-6 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+              <DatabaseBackup className="size-3" aria-hidden="true" />
+            </span>
+            <h3 className="truncate text-balance text-base font-semibold text-black/90">{t("会话修复")}</h3>
+          </div>
+          <p className="mt-2 text-pretty text-xs leading-5 text-black/50">
+            {t("用于修复会话中出现的异常问题。")}{" "}
+            <CommonSessionErrorPopover />
+          </p>
+        </div>
+        <DisabledActionTooltip content={loading ? undefined : disabledReason}>
+          <button
+            type="button"
+            onClick={onRequestRepair}
+            disabled={disabled || loading}
+            aria-busy={loading}
+            className={cn(
+              "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3 text-sm font-semibold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2",
+              disabled || loading ? "cursor-not-allowed opacity-60" : "hover:bg-black/85 active:bg-black/95",
+            )}
+          >
+            {loading ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+            {loading ? t("修复中...") : t("执行")}
+          </button>
+        </DisabledActionTooltip>
+      </div>
+    </article>
+  );
+}
+
+function DisabledActionTooltip({ children, content }: { children: ReactNode; content?: string }) {
+  const tooltipId = useId();
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (!closeTimerRef.current) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const showTooltip = useCallback(() => {
+    if (!content) return;
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose, content]);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => setOpen(false), 120);
+  }, [cancelClose]);
+
+  useEffect(() => {
+    if (content) return;
+    cancelClose();
+    setOpen(false);
+  }, [cancelClose, content]);
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
+
+  if (!content) return <>{children}</>;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <span
+          className="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+          tabIndex={0}
+          aria-describedby={open ? tooltipId : undefined}
+          onMouseEnter={showTooltip}
+          onMouseLeave={scheduleClose}
+          onFocus={showTooltip}
+          onBlur={scheduleClose}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            cancelClose();
+            setOpen(false);
+          }}
+        >
+          {children}
+        </span>
+      </PopoverAnchor>
+      <PopoverContent
+        id={tooltipId}
+        role="tooltip"
+        align="end"
+        className="pointer-events-auto w-64 select-text rounded-md px-3 py-1.5 text-left text-[11px] font-medium leading-5 text-black/70"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onMouseEnter={showTooltip}
+        onMouseLeave={scheduleClose}
+      >
+        {content}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function CommonSessionErrorPopover() {
+  const t = useT();
+  const popoverId = useId();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const pinnedRef = useRef(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (!closeTimerRef.current) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const showPopover = useCallback(() => {
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose]);
+
+  const scheduleClose = useCallback(() => {
+    if (pinnedRef.current) return;
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => setOpen(false), 120);
+  }, [cancelClose]);
+
+  useEffect(() => () => cancelClose(), [cancelClose]);
+
+  return (
+    <Popover open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) {
+        cancelClose();
+        pinnedRef.current = false;
+      }
+      setOpen(nextOpen);
+    }}>
+      <PopoverAnchor asChild>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="px-0.5 font-medium text-black/60 underline decoration-black/25 underline-offset-2 transition-colors hover:text-black/85 hover:decoration-black/50 focus-visible:outline-none focus-visible:text-black/85 focus-visible:decoration-2 focus-visible:decoration-black/60"
+          aria-label={t("查看常见报错")}
+          aria-expanded={open}
+          aria-controls={open ? popoverId : undefined}
+          onClick={(event) => {
+            event.preventDefault();
+            cancelClose();
+            const nextPinned = !pinnedRef.current;
+            pinnedRef.current = nextPinned;
+            setOpen(nextPinned);
+          }}
+          onMouseEnter={showPopover}
+          onMouseLeave={scheduleClose}
+          onFocus={showPopover}
+          onBlur={scheduleClose}
+        >
+          {t("常见报错")}
+        </button>
+      </PopoverAnchor>
+      <PopoverContent
+        id={popoverId}
+        role="region"
+        aria-label={t("常见报错")}
+        align="start"
+        className="w-[min(24rem,calc(100vw-2rem))] select-text rounded-md px-3 py-1.5 text-left text-[11px] font-medium leading-5 text-black/70"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => {
+          const target = event.target;
+          if (target instanceof Node && triggerRef.current?.contains(target)) {
+            event.preventDefault();
+          }
+        }}
+        onMouseEnter={showPopover}
+        onMouseLeave={scheduleClose}
+        onFocusCapture={showPopover}
+        onBlurCapture={scheduleClose}
+      >
+        <p>{t("抱歉，我遇到了意外错误。")}</p>
+        <p>{t("请重试或使用 /reset 开始新会话。")}</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -306,6 +625,7 @@ function DiagnosticCard({
   onRefresh,
   onExport,
   isExporting,
+  unavailableReason,
   logsSince,
   onLogsSinceChange,
 }: {
@@ -314,6 +634,7 @@ function DiagnosticCard({
   onRefresh: () => void;
   onExport?: () => void;
   isExporting?: boolean;
+  unavailableReason?: string;
   logsSince?: LogsSinceOption;
   onLogsSinceChange?: (value: LogsSinceOption) => void;
 }) {
@@ -322,6 +643,7 @@ function DiagnosticCard({
   const isLoading = state.status === "loading";
   const title = getCommandTitle(t);
   const description = getCommandDescription(t);
+  const unavailable = Boolean(unavailableReason);
   const displayOutput =
     isLoading && !state.output
       ? t("查询中...")
@@ -337,7 +659,7 @@ function DiagnosticCard({
             </span>
             <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
           </div>
-          {item.id === "logs" && (
+          {item.id === "logs" && !unavailable && (
             <button
               type="button"
               onClick={onExport}
@@ -357,36 +679,43 @@ function DiagnosticCard({
         <p className="mt-2 text-xs leading-5 text-black/50">{description}</p>
       </div>
 
-      <div className="mt-4 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
-        <code className="min-w-0 flex-1 truncate font-mono text-xs text-black/55">{item.command}</code>
-        <div className="flex flex-shrink-0 items-center gap-2">
-          {item.id === "logs" && logsSince && onLogsSinceChange && (
-            <LogsSelectMenu
-              value={logsSince}
-              options={LOGS_SINCE_VALUES.map((value) => ({ value, label: getLogsSinceLabel(value, t) }))}
-              disabled={isLoading}
-              ariaLabel={t("选择日志时间段")}
-              widthClassName="w-[92px]"
-              onChange={onLogsSinceChange}
-            />
-          )}
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className={cn(
-              "lv-button lv-button--secondary inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3.5 text-sm font-semibold text-white shadow-sm transition-colors",
-              isLoading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
+      {!unavailable && (
+        <div className="mt-4 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
+          <code className="min-w-0 flex-1 truncate font-mono text-xs text-black/55">{item.command}</code>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {item.id === "logs" && logsSince && onLogsSinceChange && (
+              <LogsSelectMenu
+                value={logsSince}
+                options={LOGS_SINCE_VALUES.map((value) => ({ value, label: getLogsSinceLabel(value, t) }))}
+                disabled={isLoading}
+                ariaLabel={t("选择日志时间段")}
+                widthClassName="w-[92px]"
+                onChange={onLogsSinceChange}
+              />
             )}
-          >
-            {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {item.id === "logs" ? t("查询") : t("执行")}
-          </button>
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={isLoading}
+              className={cn(
+                "lv-button lv-button--secondary inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3.5 text-sm font-semibold text-white shadow-sm transition-colors",
+                isLoading ? "cursor-not-allowed opacity-60" : "hover:bg-black/85 active:bg-black/95",
+              )}
+            >
+              {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {item.id === "logs" ? t("查询") : t("执行")}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="mt-4 min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-black/[0.06] bg-black/[0.025]">
-        {state.status === "idle" ? (
+        {unavailable ? (
+          <div className="flex h-full min-h-[190px] flex-col items-center justify-center p-5 text-center text-sm text-black/45">
+            <ClipboardList className="mb-2 size-4" aria-hidden="true" />
+            <p className="max-w-sm text-pretty leading-6">{unavailableReason}</p>
+          </div>
+        ) : state.status === "idle" ? (
           <div className="flex h-full min-h-[190px] flex-col items-center justify-center p-5 text-center text-sm text-black/40">
             <div className="flex items-center justify-center">
               <ClipboardList className="mr-2 h-4 w-4" />

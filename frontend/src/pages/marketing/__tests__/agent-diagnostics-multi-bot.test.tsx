@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -251,6 +251,49 @@ describe("multi-Bot diagnostics", () => {
     expect(startRescueExport).not.toHaveBeenCalled();
   });
 
+  it("disables session repair while an instance restore is running", async () => {
+    getHermesImportStatus.mockResolvedValue({phase:"wait_tat",logs:[{message:"shared restore progress",level:"info"}]});
+    render(page("ins-1"));
+
+    await screen.findByText("当前已有 Agent 恢复任务运行中。");
+    const repairCard = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+    expect(repairCard).not.toBeNull();
+    expect(within(repairCard!).getByRole("button", { name: "执行" })).toBeDisabled();
+  });
+
+  it("disables every other maintenance entry while session repair is running", async () => {
+    let resolveRepair: ((value: { status: string; exitCode: number; output: string }) => void) | undefined;
+    execDebugCommand.mockImplementation((_botId, command) => {
+      if (!command.includes("sessions repair")) {
+        return Promise.resolve({ status: "SUCCESS", exitCode: 0, output: "done" });
+      }
+      return new Promise<{ status: string; exitCode: number; output: string }>((resolve) => {
+        resolveRepair = resolve;
+      });
+    });
+    render(page("ins-1"));
+    await screen.findByText("Agent 备份与恢复");
+
+    const repairCard = screen.getByRole("heading", { name: "会话修复" }).closest("article");
+    if (!repairCard) throw new Error("session repair card not found");
+    fireEvent.click(within(repairCard).getByRole("button", { name: "执行" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认修复" }));
+    expect(await within(repairCard).findByRole("button", { name: "修复中..." })).toBeDisabled();
+
+    const resetConfigCard = screen.getByRole("heading", { name: "重置模型配置" }).closest("article");
+    const resetAgentCard = screen.getByRole("heading", { name: "重置 Hermes（保留数据）" }).closest("article");
+    if (!resetConfigCard || !resetAgentCard) throw new Error("maintenance card not found");
+    await waitFor(() => {
+      expect(within(resetConfigCard).getByRole("button", { name: "执行" })).toBeDisabled();
+      expect(within(resetAgentCard).getByRole("button", { name: "执行" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "备份到邮箱" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "从备份恢复" })).toBeDisabled();
+    });
+
+    resolveRepair?.({ status: "SUCCESS", exitCode: 0, output: "repaired" });
+    await waitFor(() => expect(within(resetConfigCard).getByRole("button", { name: "执行" })).toBeEnabled());
+  });
+
   it("keeps single-Bot maintenance available and shows quota-disabled creation", async () => {
     bots = [buildBot()];
     const view = render(page("ins-1"));
@@ -279,7 +322,7 @@ describe("multi-Bot diagnostics", () => {
     expect(await screen.findByText("创建 Bot")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "空白创建" }));
     expect(screen.getByText("主 Bot 当前主模型及其 Provider 凭据")).toBeInTheDocument();
-    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、Skills、通道和定时任务")).toBeInTheDocument();
+    expect(screen.getByText("备用模型、其他已配置模型、人设、记忆、主 Bot 后续安装的 Skills、通道和定时任务")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();

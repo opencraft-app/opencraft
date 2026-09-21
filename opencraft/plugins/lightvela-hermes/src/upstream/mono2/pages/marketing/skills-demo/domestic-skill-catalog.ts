@@ -19,15 +19,19 @@ export type DomesticFeaturedSkill = {
   heroClassName: string;
 };
 
-// Snapshot from SkillHub on 2026-07-15. Fixed cards do not refresh this at runtime.
+// Snapshot from SkillHub, initially recorded on 2026-07-15 and corrected to canonical identities on 2026-09-20.
+// Fixed cards do not refresh this at runtime.
 const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
   "find-skill-skillhub": 18_004,
   "image-prompt-skill": 7_852,
   poster: 15_691,
   "ecommerce-product-selector": 8_405,
   "tencent-news": 8_027,
+  "suno-lyrics-to-song": 103_205,
+  "@indiv-skill/anti-fraud": 145_418,
+  "@indiv-ebandao/anti-fraud": 448_369,
+  "chinese-official-writing": 149_071,
   "valuation-analysis": 20_710,
-  "financial-report-analysis": 3_798,
   "stock-selecter": 9_846,
   "finance-advisor": 2_938,
   "quant-backtest-strategy": 3_911,
@@ -40,13 +44,10 @@ const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
   "govwriter-pro": 7_434,
   "tencent-docs": 149_853,
   "pdf-image-text-extractor": 30_994,
-  "pptx-generator": 20_994,
   "gongwenformat-pro": 12_046,
-  "meeting-notes-assistant": 4_577,
   "bid-tender-master": 3_740,
   "k12-smart-teacher": 7_312,
   "interview-simulator": 22_301,
-  "academic-learning-assistant": 945,
   "subject-hyn": 1_000,
   "academic-paper-writing-assistant": 949,
   "novel-evaluator": 4_674,
@@ -58,9 +59,13 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   poster: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "ecommerce-product-selector": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
   "tencent-news": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/2d8152d9-7618-454e-9d87-2487f1b4457f.png",
+  "suno-lyrics-to-song": "https://skillhub-1388575217.cos.accelerate.myqcloud.com/skill-icons/uploads/433053/6700622101e14db9b20152bfa87bae00.png",
+  "@indiv-skill/anti-fraud": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
+  "@indiv-ebandao/anti-fraud": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
+  "chinese-official-writing": "https://skillhub-1388575217.cos.accelerate.myqcloud.com/skill-icons/uploads/437097/fbafa4ddeb204e4584a699f65e06d137.png",
   weather: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/81015f94-5620-494e-bbd6-ac3268e7ccd3.png",
   "valuation-analysis": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/401a454b-4b16-4aee-a18c-4e3467ca48f1.png",
-  "financial-report-analysis": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/f7fabcfa-0496-4dc7-9258-df9b7c751850.png",
+  cnfinancialscraper: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "stock-selecter": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a78375f1-773e-4817-b4f3-0557b6afd777.png",
   "finance-advisor": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "quant-backtest-strategy": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c0bd7863-2689-46f1-941c-e45be1317e90.png",
@@ -73,13 +78,12 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   "govwriter-pro": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
   "tencent-docs": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
   "pdf-image-text-extractor": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
-  "pptx-generator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
   "gongwenformat-pro": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
-  "meeting-notes-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/2d8152d9-7618-454e-9d87-2487f1b4457f.png",
+  "multi-search-engine": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0860fda4-ff95-4bbc-b3ad-f6b7ad8e0774.png",
   "bid-tender-master": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
   "k12-smart-teacher": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a78375f1-773e-4817-b4f3-0557b6afd777.png",
   "interview-simulator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/401a454b-4b16-4aee-a18c-4e3467ca48f1.png",
-  "academic-learning-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
+  "parenting-expert": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "subject-hyn": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "academic-paper-writing-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "novel-evaluator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/9bcddb03-161b-42cd-bf2e-cf0159d85bd7.png",
@@ -90,18 +94,20 @@ function skill(
   rawId: string,
   name: string,
   description: string,
-  installs: number,
+  installs?: number,
+  options?: Pick<Skill, "slug" | "sourceUrl">,
 ): Skill {
   return {
     registry: "skillhub",
     rawId,
-    slug: rawId,
+    slug: options?.slug ?? rawId,
     name,
     description,
     installs,
     downloads: DOMESTIC_DOWNLOAD_SNAPSHOT[rawId],
     iconUrl: DOMESTIC_ICON_SNAPSHOT[rawId],
     sourceOrg: "SkillHub",
+    sourceUrl: options?.sourceUrl,
   };
 }
 
@@ -172,6 +178,41 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     heroImageSrc: "/assets/skills/featured-domestic-news.jpg",
     heroClassName: "bg-[#303F9F]",
   },
+  {
+    id: "suno-lyrics-to-song",
+    skill: skill(
+      "suno-lyrics-to-song",
+      "Suno歌词成曲",
+      "将完整歌词、歌词草稿或零散灵感整理成歌曲结构，并用 Suno 生成可试听的音乐。",
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-suno-lyrics-to-song.jpg",
+    heroClassName: "bg-[#261659]",
+  },
+  {
+    id: "anti-fraud-expert",
+    skill: skill(
+      "@indiv-skill/anti-fraud",
+      "防诈专家",
+      "识别可疑诈骗话术与风险信号，提供核验、止损和取证建议。",
+      undefined,
+      {
+        slug: "anti-fraud",
+        sourceUrl: "https://skillhub.cn/skills/indiv-skill/anti-fraud",
+      },
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-anti-fraud-expert.jpg",
+    heroClassName: "bg-[#07343A]",
+  },
+  {
+    id: "chinese-official-writing",
+    skill: skill(
+      "chinese-official-writing",
+      "中文公文写作",
+      "起草、改写、审校中文公文和事务性材料，并辅助 Word 格式处理。",
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-chinese-official-writing.jpg",
+    heroClassName: "bg-[#5A151A]",
+  },
 ] as const;
 
 export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
@@ -180,7 +221,7 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
     label: { en: "Finance Analysis", zh: "理财分析" },
     skills: [
       skill("valuation-analysis", "股票价值投资分析系统", "提供 A 股和港股的护城河、财务健康、DCF 估值、管理层和行业分析。", 1125),
-      skill("financial-report-analysis", "财报分析", "自动解析上市公司资产负债表、利润表和现金流量表，生成财务分析报告。", 288),
+      skill("cnfinancialscraper", "全能金融爬虫（新增知识库功能）", "抓取和整理金融信息，支持将资料沉淀为知识库并辅助后续分析。"),
       skill("stock-selecter", "股票筛选器", "整合多种选股策略，支持单策略或多策略组合筛选股票。", 651),
       skill("finance-advisor", "金融助手", "提供个人金融、投资、财富管理和银行理财产品说明，涵盖预算、收益规则、持有期和常见问答。", 294),
       skill("quant-backtest-strategy", "A股量化回测策略引擎", "提供 A 股策略回测、技术信号、量化选股、模拟交易、风控和数据导出。", 43),
@@ -205,9 +246,18 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
     skills: [
       skill("tencent-docs", "腾讯文档 TENCENT DOCS", "创建、编辑、搜索和管理腾讯文档、表格、幻灯片、知识库和云端文件。", 8107),
       skill("pdf-image-text-extractor", "PDF和图片文字提取", "从图片和 PDF 中识别、提取文字，并保留结构化结果。", 378),
-      skill("pptx-generator", "PPT Generator", "使用多种幻灯片类型、配色、图表和图片生成标准可编辑 PPTX。", 1621),
+      skill(
+        "@indiv-ebandao/anti-fraud",
+        "防骗大师.Skill",
+        "识别和拆解常见诈骗场景、话术与风险信号，辅助判断可疑信息并采取防范措施。",
+        undefined,
+        {
+          slug: "anti-fraud",
+          sourceUrl: "https://skillhub.cn/skills/indiv-ebandao/anti-fraud",
+        },
+      ),
       skill("gongwenformat-pro", "公文排版", "将 Markdown、TXT 或 DOCX 转换为符合 GB/T 9704-2012 的 Word 文档。", 239),
-      skill("meeting-notes-assistant", "Meeting Notes Assistant", "从会议录音生成结构化会议纪要，提取结论、待办和关键词，并支持多种输出格式。", 24),
+      skill("multi-search-engine", "搜索引擎", "聚合多个搜索引擎检索信息，帮助按关键词和任务目标查找并整理结果。"),
       skill("bid-tender-master", "标书大师｜全行业AI标书生成助手", "根据项目名称和预算生成覆盖货物、服务和工程行业的投标文件。", 0),
     ],
   },
@@ -217,7 +267,7 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
     skills: [
       skill("k12-smart-teacher", "K12智能老师", "支持作业批改、错题分析和基础/提高/挑战三层练习生成，覆盖多个学段和学科。", 207),
       skill("interview-simulator", "Interview Simulator", "模拟不同职位和经验水平的面试，提供技术、行为和案例问题以及反馈评分。", 981),
-      skill("academic-learning-assistant", "学科专家生成", "提供覆盖多学段、多学科的个性化学习辅导、作业批改和薄弱点练习支持。", 64),
+      skill("parenting-expert", "育儿大师.Skill", "围绕育儿和家庭教育问题提供分阶段建议，帮助家长整理情况、制定陪伴方案并识别需要进一步关注的问题。"),
       skill("subject-hyn", "课题小助手", "辅助教师修改、优化和规范课题申请评审书及课题申报材料。", 36),
       skill("academic-paper-writing-assistant", "学术论文全能写作助手", "根据提纲和研究材料辅助生成实证或定性案例论文，并整理数据、图表和文献内容。", 0),
       skill("novel-evaluator", "小说评分系统", "从情节、人物、文笔、世界观、情感和创新六个维度量化评估小说。", 614),
