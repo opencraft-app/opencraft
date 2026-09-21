@@ -969,7 +969,8 @@ describe("international v2 homepage artifact", () => {
     expect(document.querySelectorAll(".chnloop__viewport")).toHaveLength(1);
     expect(document.querySelectorAll(".chnloop__list:first-child .chnloop__item")).toHaveLength(8);
     expect(document.querySelectorAll(".channel-stack")).toHaveLength(1);
-    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("Human Approval");
+    expect(document.querySelector(".channel-approval__title")?.textContent).toContain("Confirm before acting");
+    expect(html).not.toContain("memory-preference");
     expect(document.querySelectorAll(".channel-approval__bubble")).toHaveLength(2);
     expect(document.querySelector(".channel-approval__bubble--agent")?.textContent).toContain("Confirm delete");
     expect(document.querySelectorAll(".channel-approval__actions")).toHaveLength(0);

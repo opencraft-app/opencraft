@@ -4839,28 +4839,28 @@ const channelApprovalCopyByLocale = {
   "id-ID": {
     eyebrow: "Kanal terhubung",
     explore: "Lihat kanal",
-    title: "Konfirmasi tindakan penting",
+    title: "Konfirmasi sebelum aksi",
     user: "Hapus memori pelanggan Q3 lama dan berkas drafnya.",
     agent: "Tindakan ini menghapus memori tersimpan dan berkas workspace secara permanen. Balas “Konfirmasi hapus” untuk melanjutkan; balasan lain membatalkannya.",
   },
   es: {
     eyebrow: "Canales conectados",
     explore: "Ver canales",
-    title: "Confirma acciones importantes",
+    title: "Confirmar antes",
     user: "Elimina la memoria antigua de clientes de Q3 y el borrador.",
     agent: "Esto elimina permanentemente una memoria guardada y un archivo del workspace. Responde “Confirmar eliminación” para continuar; cualquier otra respuesta cancela la acción.",
   },
   "ja-JP": {
     eyebrow: "接続済みチャンネル",
     explore: "チャンネルを見る",
-    title: "重要な操作は先に確認",
+    title: "実行前に確認",
     user: "古いQ3顧客メモリと下書きファイルを削除して。",
     agent: "保存済みメモリとワークスペースのファイルを完全に削除します。続行するには「削除を確認」と返信してください。その他の返信では実行しません。",
   },
   "ko-KR": {
     eyebrow: "연결된 채널",
     explore: "채널 보기",
-    title: "중요한 작업은 먼저 확인",
+    title: "실행 전 확인",
     user: "이전 Q3 고객 메모리와 초안 파일을 삭제해 줘.",
     agent: "저장된 메모리와 워크스페이스 파일을 영구 삭제합니다. 계속하려면 “삭제 확인”이라고 답해 주세요. 다른 답변에는 실행하지 않습니다.",
   },
@@ -7671,13 +7671,21 @@ const automationPanelCss = `
 `;
 
 const capabilityTitleWrapCss = `
-#lightvela-intl-home .channel-approval__title,
 #lightvela-intl-home .about__cards .wcard .wcard__body h4 {
   display: -webkit-box;
   max-height: 2.65em;
   overflow: hidden;
   white-space: normal;
   text-overflow: clip;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+#lightvela-intl-home .channel-approval__title {
+  display: -webkit-box;
+  max-height: 2.6em;
+  overflow: hidden;
+  white-space: normal;
+  text-wrap: balance;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
