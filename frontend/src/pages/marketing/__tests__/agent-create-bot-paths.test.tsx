@@ -117,6 +117,10 @@ vi.mock("@/pages/marketing/agent-deepseek-harness-panel", () => ({
   AgentDeepSeekHarnessPanel: () => <div>DeepSeek Harness panel</div>,
 }));
 
+// 创建路径不测试聊天/通道 SDK，避免动态加载其浏览器 CSS。
+vi.mock("@/pages/marketing/agent-chat-panel", () => ({ AgentChatPanel: () => null }));
+vi.mock("@/pages/marketing/agent-channel-panel", () => ({ ChannelPanel: () => null }));
+
 function buildBot(id = "ins-main", overrides: Partial<OpenClawBot> = {}): OpenClawBot {
   return {
     id,

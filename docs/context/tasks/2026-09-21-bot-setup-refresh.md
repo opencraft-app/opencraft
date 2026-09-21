@@ -187,3 +187,18 @@ derived: false
 - 单独 `npm run build:web` 通过，证明 OpenCraft Web 可解析同步后的消费闭包；尚未验证真实 Electron/Expo 窗口或云端模型链路。frontend 全量测试的先前未全绿记录仍有效，本轮未重复运行无关全量测试。
 - 文档完整性错误 0；源码提交 docs-impact 通过；同步提交前继续检查 docs-impact、diff-check 和漂移校验。
 - 国际站 5174 已恢复并返回 HTTP 200。当前阶段：提交生成闭包、推送并更新 MR 评审说明；不合并或发布。
+
+## Inline CR profile 隔离 checkpoint（2026-09-21）
+- 目标：处理 !4311 的两条 inline 问题，资料读取和总览编辑禁止未知 profile 回落 main；不扩展部署、云端执行或无关聊天重构。
+- context_receipt：复读 frontend service、site-environment-routing、frontend/AGENTS.md、frontend-runtime-openspec-i18n 邻接卡、agent-hero-stats-refresh 测试；读取 opencraft/AGENTS.md。沿用本 Pack 已记录的设计与历史。
+- 先 fetch 最新 master 9733d9774，合并提交 18ab48700；手工合并设置页引导与新调试对话入口规则，翻译保留双方新增键，机械再生成 UPSTREAM 清单解决冲突。
+- 修复：空 profile 不读写，缓存按 Bot/profile 隔离，编辑卡等待 profile、目标变化关闭草稿并取消后续命令。明确 main 的主 Bot 仍可读写。
+- 当前验证：首轮测试暴露新测试 mock 缺少 t 导出与元数据标记，已修正；侧边栏守卫需要合并后的禁用条件，已更新。另四项侧栏测试仍断言 master 已移除的旧 SDK bridge/状态管理，待记录最终验证结果，不扩展恢复旧实现。
+- 已同步长期恢复 spec 与正式运行时 Profile 隔离设计。待完成聚焦测试/check/双站构建，再提交真源、生成清单、推送 MR。
+
+### Inline CR 最终验证
+- 聚焦回归最终 9 文件 / 109 项全部通过，包含新增 13 项资料隔离测试、创建全入口、恢复、单次执行、侧栏守卫。已适配 master 的 legacy/OpenCraft 双桥命名、状态重置和 mutation pending 禁用规则；创建路径测试隔离聊天/通道 SDK 的浏览器 CSS。
+- `pnpm check` 和最终 `pnpm typecheck` 通过：171 current / 171 baseline / 0 new；翻译错误 0。合并 master 后本地补装锁文件已包含的 fflate，未改依赖清单或锁文件。
+- `pnpm build:cn`、`pnpm build:global` 均通过。构建期间暂停国际预览，完成后恢复同一国际代理配置与 5174 端口。
+- 文档完整性 errors 0；context 校验仍因既有治理问题失败，context 单测 26 项 / 4 失败，context-audit 单测 33 项通过、audit 完成。未重复运行此前已记录未全绿的 frontend 全量 / OpenCraft 全量 gate；不宣称云端端到端验收通过。
+- 下一步：源码提交后同步 UPSTREAM revision、运行漂移与 docs-impact 检查并推送 !4311；不合并或发布。

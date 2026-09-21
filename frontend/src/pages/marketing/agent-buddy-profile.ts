@@ -64,17 +64,18 @@ export type BuddyProfileState = {
 };
 
 /**
- * 已读到的资料缓存（模块级，按 botId）。
+ * 已读到的资料缓存（模块级，按 botId + profileId）。
  *
  * 切换 section 时页面会重新挂载本 hook，若每次都从 null 起步，
  * 侧边栏头像会先闪回默认 bot 头像再跳成几何体。缓存让切 tab 时
  * 首帧就拿到上次结果，消除闪烁；后台仍会重新读取以保证新鲜度。
  */
-const profileCache = new Map<string, {
+type ProfileSnapshot = {
   profile: BuddyProfile;
   soulExists: boolean | null;
   hasBuddyConfig: boolean | null;
-}>();
+};
+const profileCache = new Map<string, ProfileSnapshot>();
 
 /**
  * 读取当前 bot 的资料。
@@ -90,45 +91,32 @@ export const useBuddyProfile = (params: {
 }): BuddyProfileState => {
   const { botId, profileId, fallbackName, exec } = params;
 
-  const cached = botId ? profileCache.get(botId) : undefined;
-
-  const [profile, setProfile] = useState<BuddyProfile>(cached?.profile ?? {
-    name: fallbackName,
-    shapeId: DEFAULT_AVATAR_SHAPE,
-    color: DEFAULT_AVATAR_COLOR,
-    description: "",
-  });
-  const [soulExists, setSoulExists] = useState<boolean | null>(cached?.soulExists ?? null);
-  const [hasBuddyConfig, setHasBuddyConfig] = useState<boolean | null>(cached?.hasBuddyConfig ?? null);
-  const [loading, setLoading] = useState(false);
+  // profile 未就绪时不能猜 main；它代表主 Bot 的真实目录。
+  const resolvedProfileId = profileId?.trim() ?? "";
+  const scopeKey = botId && resolvedProfileId ? JSON.stringify([botId, resolvedProfileId]) : "";
+  const [loaded, setLoaded] = useState<{ key: string; value: ProfileSnapshot } | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
-
-  /** 统一落地：同时更新 state 与缓存，避免两者漂移 */
-  const commit = useCallback(
-    (
-      next: BuddyProfile,
-      exists: boolean | null,
-      configured: boolean | null,
-      targetBotId: string,
-    ) => {
-      profileCache.set(targetBotId, {
-        profile: next,
-        soulExists: exists,
-        hasBuddyConfig: configured,
-      });
-      setProfile(next);
-      setSoulExists(exists);
-      setHasBuddyConfig(configured);
+  const fallback = useMemo<ProfileSnapshot>(() => ({
+    profile: {
+      name: fallbackName,
+      shapeId: DEFAULT_AVATAR_SHAPE,
+      color: DEFAULT_AVATAR_COLOR,
+      description: "",
     },
-    [],
-  );
+    soulExists: null,
+    hasBuddyConfig: null,
+  }), [fallbackName]);
+  // 切 Bot/profile 的首帧也不能展示上一个目标的数据。
+  const snapshot = (scopeKey && (loaded?.key === scopeKey ? loaded.value : profileCache.get(scopeKey))) || fallback;
+  const { profile, soulExists, hasBuddyConfig } = snapshot;
+  const loading = Boolean(scopeKey && loadingKey === scopeKey);
 
   useEffect(() => {
-    if (!botId) return undefined;
+    if (!botId || !resolvedProfileId) return undefined;
     let cancelled = false;
-    setLoading(true);
+    setLoadingKey(scopeKey);
 
     void (async () => {
       try {
@@ -141,10 +129,10 @@ export const useBuddyProfile = (params: {
          * 这样既不丢老数据，也不必为了读头像去解析整份人设。
          */
         const [metaResult, soulResult] = await Promise.all([
-          exec(botId, buildProfileMetaReadCommand(profileId ?? "main"), {
+          exec(botId, buildProfileMetaReadCommand(resolvedProfileId), {
             timeoutMs: SOUL_READ_TIMEOUT_MS,
           }).catch(() => null),
-          exec(botId, buildHermesSoulContentReadCommand(profileId ?? "main"), {
+          exec(botId, buildHermesSoulContentReadCommand(resolvedProfileId), {
             timeoutMs: SOUL_READ_TIMEOUT_MS,
           }),
         ]);
@@ -165,35 +153,27 @@ export const useBuddyProfile = (params: {
           ? avatar.shapeId
           : DEFAULT_AVATAR_SHAPE;
 
-        commit(
-          {
+        const value: ProfileSnapshot = {
+          profile: {
             name: meta.displayName || soulFields.name || fallbackName,
             shapeId,
             color: avatar?.color || DEFAULT_AVATAR_COLOR,
             description: meta.description || soulFields.summary || "",
           },
-          parsed.status === "ready" || parsed.status === "too_large",
-          // 有头像才算配过 —— 后端建 bot 时会写默认 SOUL.md，
-          // 所以「SOUL 存在」不能代表「用户配过」
-          avatar !== null,
-          botId,
-        );
+          soulExists: parsed.status === "ready" || parsed.status === "too_large",
+          hasBuddyConfig: avatar !== null,
+        };
+        profileCache.set(scopeKey, value);
+        setLoaded({ key: scopeKey, value });
       } catch {
-        /* 沙箱未就绪或命令失败：保留上次已知结果（缓存），
-           只有从未读到过时才置 null（未知）——
-           避免把「读不到」误判成「未配置」而把用户困在引导页，
-           也避免已显示的头像因一次网络抖动闪回默认图。 */
-        if (!cancelled && !profileCache.has(botId)) {
-          setSoulExists(null);
-          setHasBuddyConfig(null);
-        }
+        // 暂时读不到时只保留同一 Bot/profile 的缓存；无缓存则仍为未知。
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingKey(null);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [botId, profileId, fallbackName, exec, reloadToken, commit]);
+  }, [botId, resolvedProfileId, scopeKey, fallbackName, exec, reloadToken]);
 
   /*
    * 必须 memo。

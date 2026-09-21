@@ -3242,7 +3242,7 @@ export const AgentSettingsPage = ({
   const passExpiryReminderCopy = passExpiryReminder ? getPassExpiryReminderCopy(passExpiryReminder, t) : null;
   const passExpiryTooltipId = useId();
   const chatAvailabilityTooltipId = useId();
-  /** 「对话」tab 禁用条件：非主 Bot（上游约束）或尚未创建个人助手（新手引导）。 */
+  /** 「对话」tab 禁用条件：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）。 */
   const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;
   const handleRenewPassSuccess = useCallback(async () => {
     setRenewPassModalOpen(false);
@@ -6016,7 +6016,7 @@ export const AgentSettingsPage = ({
                       >
                         {t("探索")}
                       </button>
-                      {/* 「对话」入口：非主 Bot（上游约束）或尚未创建个人助手（新手引导）时禁用，
+                      {/* 「对话」入口：对话不可用（含调试入口规则）或尚未创建个人助手（新手引导）时禁用，
                           统一复用上游的 lv-agent-action-tooltip 做悬浮提示。 */}
                       <span
                         className={cn(
@@ -6412,7 +6412,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "overview" && (
                             <AgentOverviewPanel
                               botId={activeBot.id}
-                              profileId={activeBot.profileId ?? "main"}
+                              profileId={activeBot.profileId ?? ""}
                               profile={buddyProfileState.profile}
                               execDebugCommand={repositories.bots.execDebugCommand}
                               onProfileChanged={buddyProfileState.reload}

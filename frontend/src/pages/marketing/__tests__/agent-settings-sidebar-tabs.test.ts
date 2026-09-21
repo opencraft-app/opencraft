@@ -226,7 +226,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     expect(page).toContain("const isActiveBotChatAvailable = isActiveBotDefault || showHiddenAgentTools;");
     expect(page).toContain("if (!isActiveBotChatAvailable) return;");
-    expect(page).toContain('disabled={!isActiveBotChatAvailable}');
+    expect(page).toContain("const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;");
+    expect(page).toContain('disabled={isChatTabDisabled}');
     expect(page).toContain('t("对话功能目前仅支持主 Bot")');
     expect(page).not.toContain('title={isActiveBotChatAvailable ? undefined');
     expect(page).toContain('id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip"');
@@ -400,8 +401,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const chatPanel = readChatPanelSource();
 
     // 宿主构造受控桥并下传。
-    expect(page).toContain("chatMultiSessionBridge");
-    expect(page).toContain("multiSession={chatMultiSessionBridge}");
+    expect(page).toContain("legacyChatMultiSessionBridge");
+    expect(page).toContain("multiSession={legacyChatMultiSessionBridge}");
     // AgentChatPanel 透传给 LightVelaPanel。
     expect(chatPanel).toContain("multiSession?: LightVelaMultiSessionOptions");
     expect(chatPanel).toContain("multiSession={multiSession}");
@@ -508,7 +509,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
     expect(page).toContain("[sdkInstance?.InstanceId]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setChatSessionCommands\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
@@ -534,7 +535,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";');
     // 菜单项禁用 + 说明原因，而不是让用户点了没反应。
     expect(page).toContain("const isDeletable = canDeleteSession(session);");
-    expect(page).toContain("disabled={!chatSessionActions || !isDeletable}");
+    expect(page).toContain("disabled={!chatSessionActions || chatSessionMutationState?.pending === true || !isDeletable}");
     expect(page).toContain('title={isDeletable ? undefined : t("默认会话不支持删除")}');
   });
 
@@ -544,17 +545,17 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("keeps multi-session callback identities stable across selectedChatId changes", () => {
     const page = readPageSource();
 
-    expect(page).toContain("const handleChatSessionStateChange = useCallback<");
-    expect(page).toContain("const handleChatSelectedChatIdChange = useCallback<");
-    expect(page).toContain("const handleChatSessionActionsChange = useCallback<");
+    expect(page).toContain("const handleLegacyChatSessionStateChange = useCallback<");
+    expect(page).toContain("const handleLegacyChatSelectedChatIdChange = useCallback<");
+    expect(page).toContain("const handleLegacyChatSessionActionsChange = useCallback<");
 
     // bridge 只能引用稳定回调，不能内联箭头函数。
-    expect(page).toContain("onSessionStateChange: handleChatSessionStateChange,");
-    expect(page).toContain("onSelectedChatIdChange: handleChatSelectedChatIdChange,");
-    expect(page).toContain("onSessionActionsChange: handleChatSessionActionsChange,");
+    expect(page).toContain("onSessionStateChange: handleLegacyChatSessionStateChange,");
+    expect(page).toContain("onSelectedChatIdChange: handleLegacyChatSelectedChatIdChange,");
+    expect(page).toContain("onSessionActionsChange: handleLegacyChatSessionActionsChange,");
 
     const bridge = page.slice(
-      page.indexOf("const chatMultiSessionBridge = useMemo<"),
+      page.indexOf("const legacyChatMultiSessionBridge = useMemo<"),
       page.indexOf("const startSessionRename"),
     );
     expect(bridge).not.toMatch(/onSessionActionsChange: \(actions\) =>/);

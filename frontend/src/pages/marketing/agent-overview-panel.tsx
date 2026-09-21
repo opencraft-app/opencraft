@@ -20,7 +20,7 @@ import {
   RefreshCw,
   Wallet,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useCurrentLocale, useT } from "@/i18n/t";
@@ -461,6 +461,7 @@ const BuddyProfileSection = ({
   profile,
   hasCustomAvatar,
   fallbackAvatarUrl,
+  canEdit,
   onSave,
 }: {
   profile: BuddyProfile;
@@ -468,6 +469,7 @@ const BuddyProfileSection = ({
   hasCustomAvatar: boolean;
   /** 未配过时用的 bot 插画（与侧边栏同一张） */
   fallbackAvatarUrl: string;
+  canEdit: boolean;
   onSave: (next: BuddyProfile) => void;
 }) => {
   const t = useT();
@@ -483,17 +485,15 @@ const BuddyProfileSection = ({
       <button
         type="button"
         aria-label={t("编辑资料")}
+        disabled={!canEdit}
+        title={canEdit ? undefined : t("正在加载...")}
         onClick={() => setEditOpen(true)}
         className={cn(
           CARD_CLASS,
           // 无描述时整体垂直居中，避免名字偏上；有描述时顶部对齐
           profile.description ? "items-start" : "items-center",
-          /*
-           * cursor-pointer 必须显式写：Tailwind v4 的 Preflight 把 button 的
-           * 光标改成了 default（v3 是 pointer），不加就只有 hover 变边框、
-           * 光标还是箭头，整张卡看起来不像能点。项目里其他按钮同样是显式加的。
-           */
-          "flex w-full cursor-pointer gap-4 p-4 text-left transition hover:border-black/[0.12]",
+          // Tailwind v4 按钮需显式设置可用/等待状态的光标。
+          "flex w-full cursor-pointer gap-4 p-4 text-left transition hover:border-black/[0.12] disabled:cursor-wait",
         )}
       >
         {hasCustomAvatar || !fallbackAvatarUrl ? (
@@ -654,7 +654,7 @@ const RecommendedAutomationsSection = () => {
 
 export const AgentOverviewPanel = ({
   botId,
-  profileId = "main",
+  profileId = "",
   profile,
   execDebugCommand,
   onProfileChanged,
@@ -693,14 +693,26 @@ export const AgentOverviewPanel = ({
    *
    * 所以要先把当前 SOUL 原文读回来，交给 updateSoulMetadataFields 做字段级替换。
    */
+  const resolvedProfileId = profileId.trim();
+  const canEditProfile = Boolean(botId && resolvedProfileId);
+  const scopeRef = useRef<object | null>(null);
+  useEffect(() => {
+    scopeRef.current = {};
+    setSteps(null);
+    setWriteError(null);
+    return () => { scopeRef.current = null; };
+  }, [botId, resolvedProfileId]);
   const applyProfile = async (next: BuddyProfile) => {
+    if (!canEditProfile) return;
+    const scope = scopeRef.current;
+    const isCurrentScope = () => scope !== null && scopeRef.current === scope;
     setWriteError(null);
 
     let existingSoul = "";
     try {
       const read = await execDebugCommand(
         botId,
-        buildHermesSoulContentReadCommand(profileId),
+        buildHermesSoulContentReadCommand(resolvedProfileId),
         { timeoutMs: SOUL_READ_TIMEOUT_MS },
       );
       const parsed = parseHermesSoulContent(read.output || "");
@@ -709,9 +721,11 @@ export const AgentOverviewPanel = ({
       /* 读不到就退回新建语义 —— 见下方 preserveSoulContent 的判断 */
     }
 
+    // 读取期间切换目标或卸载后，不再启动旧目标的写入。
+    if (!isCurrentScope()) return;
     const plan = buildBuddySetupPlan({
       profile: { name: next.name, description: next.description },
-      profileId,
+      profileId: resolvedProfileId,
       avatar: { shapeId: next.shapeId, color: next.color },
       timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
       // 只有真的读到了现有 SOUL 才走保留模式；读失败时宁可用新建语义
@@ -726,13 +740,17 @@ export const AgentOverviewPanel = ({
       await runBuddySetupPlan({
         botId,
         steps: plan,
-        exec: execDebugCommand,
-        onProgress: setSteps,
+        exec: (targetBotId, command, options) => {
+          if (!isCurrentScope()) throw new Error("Profile edit target changed");
+          return execDebugCommand(targetBotId, command, options);
+        },
+        onProgress: (progress) => { if (isCurrentScope()) setSteps(progress); },
       });
+      if (!isCurrentScope()) return;
       onProfileChanged();
       setSteps(null);
     } catch (error) {
-      setWriteError(error instanceof Error ? error.message : String(error));
+      if (isCurrentScope()) setWriteError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -753,6 +771,8 @@ export const AgentOverviewPanel = ({
       </h2>
       <HeroBanner stats={heroStats} />
       <BuddyProfileSection
+        key={JSON.stringify([botId, resolvedProfileId])}
+        canEdit={canEditProfile}
         profile={profile}
         hasCustomAvatar={hasCustomAvatar}
         fallbackAvatarUrl={fallbackAvatarUrl}
