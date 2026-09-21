@@ -178,3 +178,12 @@ derived: false
 - 已先 fetch 并合并最新 master f09b62866，无冲突；生成前将以合并后的源码为准。
 - 计划：错误详情仅留 cause；GitHub ref 明确只接受分支（现有调用全为分支），不扩展 tag 安装；对推荐 ID 与实际合并模板目录做双语言回归。随后提交真源、机械同步完整闭包并验证。
 - 当前验证：待运行本轮聚焦测试、frontend check/build、OpenCraft 同步/漂移检查与 gate；既有全量测试未全绿记录继续保留。
+
+### CR 验证与三次门禁问题后的 checkpoint
+- 真源修复提交 `7bc546bd7` 后重新执行同步；`UPSTREAM.json.sourceRevision` 指向该提交，130 个 sourceSha256 全部与真源一致，`npm run check:mono2-agent-console` 通过。更新 15 个生成文件（含清单、八份翻译资源、评审列举的三个 TS 文件及同闭包依赖）；未手改生成副本。
+- 前端 4 文件 / 110 项聚焦测试通过，覆盖实际目录合并后的推荐模板 ID、HTTP 友好提示与原始 cause、技能命令与 Profile 隔离。`pnpm check` 通过：171 current / 171 baseline / 0 new；`pnpm build:global` 与 `pnpm build:cn` 均通过。
+- OpenCraft `check:boundaries`、全部 workspace typecheck、Electron launch 4 项、扩展 164 + 56 项通过。首轮 AppServer 因 Node 22.12 的 SQLite 默认关闭失败，使用 `NODE_OPTIONS=--experimental-sqlite` 后继续；第二轮因 node-pty 预编译 spawn-helper 缺少执行权限失败，修复本地依赖权限后 AppServer 166 项全部通过。这些运行环境调整未进入 Git。
+- 门禁分段续跑：projects 15、thread lifecycle 56、native speech 36 项通过；DSH bridge 214 项通过、3 项失败，均因本地缺少 `runtime/dsh/node_modules/@deepseek-ai/dsh-session/lib/index.js`。本轮不扩展到 DSH runtime 安装与其他平台验收；完整 gate 未通过，后续链式命令未执行。
+- 单独 `npm run build:web` 通过，证明 OpenCraft Web 可解析同步后的消费闭包；尚未验证真实 Electron/Expo 窗口或云端模型链路。frontend 全量测试的先前未全绿记录仍有效，本轮未重复运行无关全量测试。
+- 文档完整性错误 0；源码提交 docs-impact 通过；同步提交前继续检查 docs-impact、diff-check 和漂移校验。
+- 国际站 5174 已恢复并返回 HTTP 200。当前阶段：提交生成闭包、推送并更新 MR 评审说明；不合并或发布。
