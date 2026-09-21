@@ -16,6 +16,10 @@ const embeddedWorkbenchEntryPath = fileURLToPath(new URL(
   "./src/embedded-chat-entry.ts",
   import.meta.url,
 ));
+const hostProxyServiceWorkerPath = fileURLToPath(new URL(
+  "./public/opencraft-host-proxy-sw.js",
+  import.meta.url,
+));
 const hyperNodeUser = process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "skipzhang";
 const buildTarget = process.env.OPENCRAFT_BUILD_TARGET?.trim() || "web";
 const product = process.env.OPENCRAFT_PRODUCT?.trim() || "opencraft";
@@ -154,6 +158,13 @@ function releaseMetadata(metadata: WebReleaseMetadata): Plugin {
         type: "asset",
         fileName: "version.json",
         source: `${JSON.stringify(metadata, null, 2)}\n`,
+      });
+      this.emitFile({
+        type: "asset",
+        fileName: isEmbeddedWorkbenchBuild
+          ? "opencraft-host-proxy-sw.js"
+          : "__opencraft/opencraft-host-proxy-sw.js",
+        source: readFileSync(hostProxyServiceWorkerPath, "utf8"),
       });
     },
   };
