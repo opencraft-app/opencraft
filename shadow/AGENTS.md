@@ -14,6 +14,7 @@
 - 当 `SHADOW_BILLING_MODE=http` 时调用真实 dianshi / billing endpoint
 - 以 rollback 语义更新 shadow-account phone number
 - 暴露用于验证 `user_id` 和 `auth_code` 的 Tencent Cloud internal callback endpoint
+- 暴露供管理后台查询本地用户与影子账号绑定状态的只读 internal admin endpoint
 
 ## 当前状态
 
@@ -77,6 +78,14 @@ go test ./...
 - `SHADOW_FREE_TRIAL_ACTIVITY_ID`
 - `SHADOW_FREE_TRIAL_ACT_ID`
 - `SHADOW_CALLBACK_TOKEN`
+- `SHADOW_INTERNAL_TOKEN`
+
+## 管理查询
+
+- `GET /internal/shadow/admin/accounts` 只读分页返回 `users LEFT JOIN bindings` 的结果，因此可同时看到注册中和已绑定用户。
+- `search` 可匹配用户 ID、影子用户名、手机号、UIN、OwnerUIN、AppID 和实例 ID；`page_size` 最大为 100。
+- 该接口只接受 `Authorization: Bearer <SHADOW_INTERNAL_TOKEN>`。Token 未配置时返回 `503`，不允许降级为匿名访问或复用浏览器管理员凭据。
+- 管理台不得通过该接口修改实名、手机号或绑定关系；这些操作继续使用既有业务流程。
 
 Tencent Cloud test endpoint 未写入 config default。使用 `scripts/start-tencent-test.sh`，或显式设置 endpoint env var。启动脚本会运行 `make build` 并启动 `./bin/shadowd`。
 

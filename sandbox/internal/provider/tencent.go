@@ -589,6 +589,60 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, instance C
 	}
 }
 
+type stopInstanceErrorAction int
+
+const (
+	stopInstanceErrorUnhandled stopInstanceErrorAction = iota
+	stopInstanceErrorNotFound
+	stopInstanceErrorAlreadyStopped
+	stopInstanceErrorRetryRequest
+	stopInstanceErrorPollStatus
+)
+
+func classifyStopInstanceError(err error) stopInstanceErrorAction {
+	var sdk *tcerrors.TencentCloudSDKError
+	if !errors.As(err, &sdk) {
+		return stopInstanceErrorUnhandled
+	}
+	switch sdk.Code {
+	case "InvalidInstanceId.NotFound":
+		return stopInstanceErrorNotFound
+	case "UnsupportedOperation.InstanceStateStopped", "InvalidInstanceState.Stopped":
+		return stopInstanceErrorAlreadyStopped
+	case "OperationDenied.InstanceOperationInProgress":
+		return stopInstanceErrorRetryRequest
+	case "UnsupportedOperation.InstanceStateStopping", "UnsupportedOperation.StoppedModeStopCharging":
+		return stopInstanceErrorPollStatus
+	default:
+		return stopInstanceErrorUnhandled
+	}
+}
+
+func describeInstanceState(ctx context.Context, client *cvm.Client, cloudID string) (string, error) {
+	req := cvm.NewDescribeInstancesStatusRequest()
+	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.SetContext(ctx)
+	var resp *cvm.DescribeInstancesStatusResponse
+	if err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
+		r, e := client.DescribeInstancesStatus(req)
+		if e != nil {
+			return e
+		}
+		resp = r
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	if resp == nil || resp.Response == nil || len(resp.Response.InstanceStatusSet) == 0 {
+		return "", fmt.Errorf("instance %s not found", cloudID)
+	}
+	instance := resp.Response.InstanceStatusSet[0]
+	if instance == nil || instance.InstanceState == nil || strings.TrimSpace(*instance.InstanceState) == "" {
+		return "", fmt.Errorf("DescribeInstancesStatus %s returned empty state", cloudID)
+	}
+	return strings.ToUpper(strings.TrimSpace(*instance.InstanceState)), nil
+}
+
 // StopInstance shuts down the instance with StoppedMode=STOP_CHARGING so that
 // CPU/memory billing is released while system disk and data remain intact.
 // Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
@@ -605,29 +659,36 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, instanc
 	if err != nil {
 		return err
 	}
-	req := cvm.NewStopInstancesRequest()
-	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
-	req.StoppedMode = common.StringPtr(stoppedMode)
-	req.SetContext(ctx)
-	deadline := time.Now().Add(120 * time.Second)
-	for {
-		err := retryRateLimit(ctx, "StopInstances", func() error {
-			_, e := client.StopInstances(req)
-			return e
-		})
-		if err == nil {
-			break
-		}
-		if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok {
-			if sdk.Code == "InvalidInstanceId.NotFound" {
+	state, err := describeInstanceState(ctx, client, instance.CloudID)
+	if err != nil {
+		return fmt.Errorf("check state before stopping %s: %w", instance.CloudID, err)
+	}
+	switch state {
+	case "STOPPED":
+		return nil
+	case "STOPPING":
+		// The stop request is already in flight; continue with status polling.
+	case "RUNNING":
+		req := cvm.NewStopInstancesRequest()
+		req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
+		req.StoppedMode = common.StringPtr(stoppedMode)
+		req.SetContext(ctx)
+		deadline := time.Now().Add(120 * time.Second)
+	stopRequestLoop:
+		for {
+			err := retryRateLimit(ctx, "StopInstances", func() error {
+				_, e := client.StopInstances(req)
+				return e
+			})
+			if err == nil {
+				break
+			}
+			switch classifyStopInstanceError(err) {
+			case stopInstanceErrorNotFound:
 				return fmt.Errorf("stop %s: instance not found: %w", instance.CloudID, err)
-			}
-			// Already stopped is success-equivalent.
-			if sdk.Code == "UnsupportedOperation.InstanceStateStopped" ||
-				sdk.Code == "InvalidInstanceState.Stopped" {
+			case stopInstanceErrorAlreadyStopped:
 				return nil
-			}
-			if sdk.Code == "OperationDenied.InstanceOperationInProgress" {
+			case stopInstanceErrorRetryRequest:
 				if time.Now().After(deadline) {
 					return fmt.Errorf("stop %s timeout while waiting for pending operation: %w", instance.CloudID, err)
 				}
@@ -637,9 +698,14 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, instanc
 				case <-time.After(5 * time.Second):
 				}
 				continue
+			case stopInstanceErrorPollStatus:
+				break stopRequestLoop
+			default:
+				return err
 			}
 		}
-		return err
+	default:
+		return fmt.Errorf("stop %s: unsupported instance state %s", instance.CloudID, state)
 	}
 	// Confirm by polling status until STOPPED.
 	statusReq := cvm.NewDescribeInstancesStatusRequest()

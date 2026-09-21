@@ -17,7 +17,11 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
+OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成副本。诊断中心等共享页面修改后，运行 `opencraft` 的 `sync:mono2-agent-console` 更新副本与 `UPSTREAM.json`，并以 `check:mono2-agent-console` 验证整个依赖闭包；新引入的 UI primitive 还须在 OpenCraft 插件声明运行时依赖。生成副本不得手工修改，前端测试与 OpenCraft 插件类型检查、Web 构建分别验证真源与消费端。同步脚本的 Workbench 适配锚点必须匹配当前前端结构，锚点失效时应终止同步；更新锚点后完整重生成，不保留部分写入的副本。同步闭包可能包含其他时间点尚未同步的前端修改，应在合并前核对其行为差异。此约束不改变 Hermes 命令的执行归属或网关路由。
+
 ## 稳定不变量
+
+- OpenCraft 的 mono2 Agent Console 路由常量与翻译字典仍由 `frontend/` 真源机械生成，副本记录在 `UPSTREAM.json`；其中 `/account` 与 `/account/billing` 是 LightVela Web 账号/套餐页面地址，不代表 OpenCraft 宿主新增同名应用路由。宿主导航继续由自己的 Router 拥有；有界同步的文件验证不能替代整个共享闭包的漂移检查。生成边界见 [mono2 migration](../../../opencraft/MONO2_MIGRATION.md#shared-frontend-boundary)。
 
 - OpenCraft 标签栏在 + 后提供统一下拉：上方新建类型、下方当前任务该 region 的全部标签；右侧 Browser/Terminal 图标保持一键新建。切换复用 activate-tab，新建复用 creation action，不按类型拆菜单或新增列表真源。见 [工作区所有权](../../../opencraft/docs/platform-architecture.md)。
 
@@ -99,11 +103,12 @@
 
 - Pass 升配 checkout 每次明确确认支付都由 CTL 校验本人归属、当前状态和合法目标后新建订单，不以历史未付款订单复用或查询作为前置条件。支付票据重签及兼容的订单恢复接口仍须校验本人归属；匿名微信桥仅接受精确绑定的支付票据，不得开放建单或恢复查询。不同订单争用同一 Pass 仍由现有 flow/CAS 保护，已交付订单仅凭匹配的持久化回执幂等重放。具体契约见[订阅购买与续费](../journeys/subscription-purchase-renewal.md#pass-升配-web-checkout)。
 - Pass 新购和续费的微信桥请求携带 `auth_code` 时，CTL 必须以票据绑定的原下单用户为准，即使扫码 OAuth 或既有 Cookie 同时注入了另一用户会话；只有请求未携带票据时才允许回退到会话身份。票据仍须一次性消费，并校验绑定的订单和续费 Pass。
-- CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，线上协议按字符串传输并校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。
+- CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，线上协议按字符串传输并校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
 - Sandbox Pool 是云地域归属的生命周期 owner：Pool 创建后不得跨 region 修改；同 region 内可调整 zone、VPC 与 subnet。实例仍通过 `pool_id` 归属 Pool，CVM、CBS、TAT 交付校验、停启、销毁与同 SP 升配必须携带由 Pool zone 严格推导的 region，禁止以进程级 `TENCENT_REGION` 覆盖存量实例归属或在 region 缺失时静默回退。
-- 同 SP 升配只允许在同一 region 的 Pool 之间重绑；该流程不迁移 CVM、IP、系统盘或网络。跨 region 交付必须新建目标地域实例并走独立迁移/切流方案，不能直接改 Pool 元数据伪装迁移。
+- Sandbox 实例隔离必须先通过 `DescribeInstancesStatus` 读取 CVM 状态：`STOPPED` 按幂等成功处理，`STOPPING` 不重复调用 `StopInstances` 而进入状态轮询，仅 `RUNNING` 调用 `StopInstances(STOP_CHARGING)`；其他状态必须明确失败。停机请求后的状态竞态仍须回到状态轮询，只有确认 `STOPPED` 后才能推进 `PAUSING → PAUSED`。
+- 同 SP 升配只允许在同一 region 的 Pool 之间重绑；CTL 必须按每台实例当前 Sandbox 所属 Pool 的 region 筛选目标规格 Pool，不能从全局候选中直接取首项；同 region 可跨 zone。该流程不迁移 CVM、IP、系统盘或网络。跨 region 交付必须新建目标地域实例并走独立迁移/切流方案，不能直接改 Pool 元数据伪装迁移。
 - 同一 SKU 跨多个 Pool region 时，具体腾讯云镜像由 `pool.zone + pool.base_image` 表达并归 Pool 所有；CI 使用构建结果中的 `HERMES_IMAGE_ID_<REGION>` 只刷新目标 region 的 Pool。SKU 的单值 `desired_image_id` 仅兼容单 region 自动 rollout，worker 发现同一 SKU 跨 region 后必须停止该全局覆盖路径，不得改写其他 region 的 Pool 镜像或把其 CLEAN 实例标成 DRY。
 - Sandbox Worker 运行在 Kubernetes 默认 Pod 网络命名空间，使用集群 DNS 访问腾讯云内网
   CloudAPI；不得共享宿主机网络，也不得把 CloudAPI 域名固定到节点链路本地地址。临时镜像
@@ -117,7 +122,7 @@
   的唯一可用机型。Worker 通过腾讯云 `DescribeInstancesModification` 读取该实例的可变配
   列表，以目标 Pool 配置机型的 CPU/内存定义逻辑目标，只冻结完全同规格且状态为 `SELL`
   的候选，再按实例实际 region 的机型族策略排序。地域策略由
-  `TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION` 管理；当前北京、首尔、上海和新加坡均只允许
+  `TENCENT_MODIFY_INSTANCE_FAMILIES_BY_REGION` 管理；当前北京、新山、首尔、上海和新加坡均只允许
   `SA5 → S5 → SA2 → SA3 → S6`，未列入策略的机型族不得用于升配，未配置地域必须失败关闭。
   `LimitExceeded.InstanceQuota`、明确的机型售罄或不支持错误才推进并持久化候选游标，限频、
   网络、实例忙和云服务暂态错误继续重试当前候选。每次重试先回读真实实例规格，以收敛“云
@@ -173,12 +178,15 @@
   `http`、端口固定为 `3000`。手工注册、Fleet
   facts、资源修改、Redis 路由快照、数据库旧值和 HTTP 重定向必须经过同一 URL policy；IP 字面量、
   外部域名、其他集群 Service、userinfo、任意路径、query、fragment 和跨源重定向全部 fail-closed。
+- VelaGW 公网 control、traffic 与 all-in-one HTTP listener 必须对 `/metrics` 稳定返回 404，不能暴露
+  Set、Shard、租户 Key 标识、升级状态或流量错误标签。指标可以继续在进程内聚合；如需 Prometheus
+  抓取，必须新增独立的内部监听端口和 ClusterIP Service，不得复用公网 CLB listener。
 - VelaGW 镜像 promote 默认只能改动目标环境的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT`。如果投影同时改变 NewAPI release pin、Kustomize 结构或其他 deploy-facing 配置，发布必须关闭自动合并与自动同步，先把目标配置回填到 `master` 真源并重新生成候选。
 - 大体积救援导出由 VM 流式生成归档并使用 COS Multipart Upload，不能先把完整归档写入救援系统盘，也不能退回未知长度的单次 `PUT Object`。
 - 腾讯云永久密钥只存在于 Worker runtime Secret。救援 VM 只接收短期、精确到目标对象且仅允许上传 Part 与 Complete 的 STS 凭据；STS 和含凭据的 TAT 脚本不得进入 Temporal Workflow History。
 - Workflow 必须在提交 TAT 前持有 Multipart Upload ID。TAT 提交、上传或结果确认失败时，通过 disconnected cleanup context 执行 Abort 并删除可能已经 Complete 的残留对象。
 - 修改救援 Workflow 的 Activity 序列时使用 Temporal version marker 保证旧 History 继续 replay，不能让存量执行产生 nondeterminism。
-- `ctl.user_subscription_gateway` 是已分配用户的网关归属真源；Pass 续费只延长当前归属网关的权益，不隐式迁移网关。
+- `ctl.user_subscription_gateway` 是已分配用户的网关归属真源；Pass 续费只延长当前归属网关的权益，不隐式迁移网关。active Pass 续费完成前必须确保套餐权益存在：VelaGW 使用稳定幂等键和唯一订阅语义直接补齐，旧 AI-Gateway 则先探测 active subscription，仅在明确缺失时补建；探测失败必须保持任务可重试，不能用补建覆盖未知状态的旧订阅。
 - VelaGW 中套餐、免费积分与独立购买的积分包是可并存的订阅。Pass 到期清理只能按名称前缀删除 `package:`、`free-credit:` 及历史空名称套餐订阅，必须保留 `credit-package:`；单个积分包退款或隔离则按完整订阅名删除目标订阅，不得清理 Pass 周期元数据或其他积分包。旧 AI-Gateway 不具备定向删除能力，仍沿用用户级全量取消语义。
 - 邀请返利复用 `free-credit:referral:*` named subscription，但发放权在 Referral 状态机，CTL 提供强鉴权
   的幂等送积分包装。调用方只传积分额度和资格标识，不传 Plan ID；CTL 将积分换算成 token，
@@ -256,7 +264,7 @@
   作为长度编码身份键，跨实例同名 Profile 不得合并；环境/账户作用域由上层目录
   添加。旧 Context/Repository 保留兼容门面直至消费者迁完。
 
-- 诊断中心日志查询、导出和模型配置重置显式选择当前 Bot 的原生 Profile；切换 Bot 后不得复用旧日志或配置状态。LLMGateway 重置按用户级 `purpose=default` 幂等读取平台权威 Key 和最新默认模型，只重建目标 Profile，不修改同实例其他 Profile；Key 通过一次性加密 envelope 下发，配置、凭据清理和 read-back 校验失败时回滚。旧 ai-gateway 仍只允许单一根 Profile，CTL 在签发或撤销实例 Key 前重新读取完整 Profile 列表并 fail closed。
+- 诊断中心日志查询、导出和模型配置重置显式选择当前 Bot 的原生 Profile；切换 Bot 后不得复用旧日志或配置状态。命名 Bot 缺少后端返回的 `profile_id` 时，日志查询和导出同样必须禁用，不得回退主 Profile 读取。会话修复属于 Profile 级写操作：主 Bot 缺少公开 Profile 时可映射原生 `default`，命名 Bot 缺少 `profile_id` 时必须禁用且不得回退主 Profile。会话修复与实例级备份、恢复、模型配置重置和运行环境重置采用双向互斥；任一操作运行时，其他入口必须禁用，禁止并发写入 `state.db` 或同时重置运行环境。每次修复使用独立 pending key，父级按实例累计未完成请求；Bot/Profile 切换只重置当前卡片状态，真实请求完成前不得释放实例维护锁。每次执行使用独立请求代次，Bot/Profile 切换须使旧代次失效，迟到结果不得结束或提示后续修复。OpenCraft 消费该诊断页面的生成副本时，必须由同步脚本复制前端真源并记录对应 `sourceRevision`，不得在生成副本中独立修改维护互斥语义。LLMGateway 重置按用户级 `purpose=default` 幂等读取平台权威 Key 和最新默认模型，只重建目标 Profile，不修改同实例其他 Profile；Key 通过一次性加密 envelope 下发，配置、凭据清理和 read-back 校验失败时回滚。旧 ai-gateway 仍只允许单一根 Profile，CTL 在签发或撤销实例 Key 前重新读取完整 Profile 列表并 fail closed。
 - CTL 的 envd 同步与流式 `debug/exec` 共用用户切换包装：先选择直接运行或 `sudo` 启动器，再只附加一次完整脚本，保留运行用户、环境和退出码。不得在两个分支中重复嵌入模型配置等长脚本，避免包装本身放大 `bash -c` 单参数长度；原脚本及其 shell 引号转义后仍须满足运行系统的参数限制。TAT 路径不使用该包装。
 - 重装、备份与恢复属于整个 Agent 的维护操作，仅在主 Bot 展示入口，并明确影响所有 Bot。前端进度、控制台与操作锁按实例隔离，同一实例内切换 Bot 不丢失状态。恢复显式使用 `/home/agentuser/.hermes` 与原生 `default`，不依赖运行时当前选中的 Profile；完整多 Profile 恢复仍需在隔离实例做兼容性验收。
 

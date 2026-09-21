@@ -185,6 +185,9 @@ stages:
               python3 scripts/export_ssm_to_sops.py \
                 --manifest scripts/ssm_manifest.collaboration.beijing-sandbox.yaml \
                 --only collaboration-runtime-secrets
+              python3 scripts/export_ssm_to_sops.py \
+                --manifest scripts/ssm_manifest.collaboration.beijing-sandbox.yaml \
+                --only collaboration-gateway-bridge
               if [[ "$phase" == "runtime" ]]; then
                 git fetch origin gitops
                 deploy_root="$(mktemp -d)"

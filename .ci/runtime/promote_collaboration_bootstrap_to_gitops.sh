@@ -25,6 +25,7 @@ DEPLOYED_AT="${DEPLOYED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 COMMITTER_NAME="${COMMITTER_NAME:-skipzhang}"
 COMMITTER_EMAIL="${COMMITTER_EMAIL:-skipzhang@tencent.com}"
 SECRET_REL="argocd/secrets/${ENV_NAME}/collaboration-runtime-secrets.sops.yaml"
+GATEWAY_SECRET_REL="argocd/secrets/${ENV_NAME}/collaboration-gateway-token.sops.yaml"
 
 case "$PHASE" in
   foundation | runtime) ;;
@@ -41,6 +42,10 @@ if ! git -C "$REPO_ROOT" cat-file -e "${SOURCE_SHA}^{commit}"; then
 fi
 if [[ ! -f "$REPO_ROOT/$SECRET_REL" ]]; then
   echo "encrypted Collaboration SOPS artifact is missing" >&2
+  exit 1
+fi
+if [[ ! -f "$REPO_ROOT/$GATEWAY_SECRET_REL" ]]; then
+  echo "encrypted Collaboration gateway bridge SOPS artifact is missing" >&2
   exit 1
 fi
 if ! GIT_WOA_PRIVATE_TOKEN_VALUE="$(ci_load_git_woa_private_token)"; then
@@ -76,6 +81,7 @@ python3 "$SCRIPT_DIR/commands/project_release_bundle.py" \
 
 mkdir -p "$WORKTREE/$(dirname "$SECRET_REL")"
 cp "$REPO_ROOT/$SECRET_REL" "$WORKTREE/$SECRET_REL"
+cp "$REPO_ROOT/$GATEWAY_SECRET_REL" "$WORKTREE/$GATEWAY_SECRET_REL"
 python3 "$SCRIPT_DIR/commands/project_collaboration_bootstrap.py" \
   --repo-root "$WORKTREE" \
   --phase "$PHASE" \
@@ -90,6 +96,7 @@ git -C "$WORKTREE" add \
   "argocd/catalogs/sandbox/${ENV_NAME}/collaboration.yaml" \
   "argocd/services/collaboration" \
   "$SECRET_REL" \
+  "$GATEWAY_SECRET_REL" \
   "collaboration/k8s/base" \
   "scripts/ssm_manifest.collaboration.${ENV_NAME}.yaml"
 

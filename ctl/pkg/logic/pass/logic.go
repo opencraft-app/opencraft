@@ -98,7 +98,16 @@ func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (boo
 }
 
 func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
-	if gatewayroute.NewAllocationGateway(req.UserID) == gatewayroute.GatewayLLMGateway {
+	return applyGatewaySubscription(ctx, gatewayroute.NewAllocationGateway(req.UserID), req)
+}
+
+func applyGatewaySubscription(
+	ctx context.Context,
+	target gatewayroute.Gateway,
+	req newPassSubscriptionRequest,
+) (*newPassSubscription, error) {
+	switch target {
+	case gatewayroute.GatewayLLMGateway:
 		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 			IdempotencyKey:   req.IdempotencyKey,
 			UserID:           req.UserID,
@@ -113,22 +122,24 @@ func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptio
 			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription returned empty subscription")
 		}
 		return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayLLMGateway}, nil
+	case gatewayroute.GatewayAIGateway:
+		sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
+			IdempotencyKey: req.IdempotencyKey,
+			UserID:         req.UserID,
+			PlanID:         req.PlanID,
+			PeriodValue:    req.PeriodValue,
+			PeriodUnit:     req.PeriodUnit,
+		})
+		if err != nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription: %v", err)
+		}
+		if sub == nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription returned empty subscription")
+		}
+		return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayAIGateway}, nil
+	default:
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "unsupported gateway route %q", target)
 	}
-
-	sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
-		IdempotencyKey: req.IdempotencyKey,
-		UserID:         req.UserID,
-		PlanID:         req.PlanID,
-		PeriodValue:    req.PeriodValue,
-		PeriodUnit:     req.PeriodUnit,
-	})
-	if err != nil {
-		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription: %v", err)
-	}
-	if sub == nil {
-		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription returned empty subscription")
-	}
-	return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayAIGateway}, nil
 }
 
 // PassDetail 权益详情

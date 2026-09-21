@@ -2703,8 +2703,8 @@ export const AgentSettingsPage = ({
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const isEmptyPersonaPage = activeSection === "buddy"
-    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
+  const isEmptyAgentPage = !isModifying
+    && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -3504,9 +3504,35 @@ export const AgentSettingsPage = ({
   const [importStatusByInstanceId, setImportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [importStatusLoadingInstanceIds, setImportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
   const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
+  const [sessionRepairPendingKeysByInstanceId, setSessionRepairPendingKeysByInstanceId] = useState<Record<string, string[]>>({});
   const [workspaceConfirm, setWorkspaceConfirm] = useState<WorkspaceConfirmState | null>(null);
   const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleSessionRepairPendingChange = useCallback((change: {
+    maintenanceScopeId: string;
+    requestKey: string;
+    pending: boolean;
+  }) => {
+    setSessionRepairPendingKeysByInstanceId((current) => {
+      const scopeKeys = current[change.maintenanceScopeId] ?? [];
+      if (change.pending) {
+        if (scopeKeys.includes(change.requestKey)) return current;
+        return {
+          ...current,
+          [change.maintenanceScopeId]: [...scopeKeys, change.requestKey],
+        };
+      }
+      if (!scopeKeys.includes(change.requestKey)) return current;
+      const nextScopeKeys = scopeKeys.filter((requestKey) => requestKey !== change.requestKey);
+      const next = { ...current };
+      if (nextScopeKeys.length > 0) {
+        next[change.maintenanceScopeId] = nextScopeKeys;
+      } else {
+        delete next[change.maintenanceScopeId];
+      }
+      return next;
+    });
+  }, []);
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3708,6 +3734,9 @@ export const AgentSettingsPage = ({
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
   const isActiveBotExporting = activeRuntimeInstanceId ? exportingInstanceIds.has(activeRuntimeInstanceId) : false;
   const isActiveBotImporting = activeRuntimeInstanceId ? importingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const isActiveSessionRepairing = activeRuntimeInstanceId
+    ? (sessionRepairPendingKeysByInstanceId[activeRuntimeInstanceId]?.length ?? 0) > 0
+    : false;
   const activeExportStatus = activeRuntimeInstanceId ? exportStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const activeImportStatus = activeRuntimeInstanceId ? importStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const isActiveExportStatusLoading = activeRuntimeInstanceId ? exportStatusLoadingInstanceIds.has(activeRuntimeInstanceId) : false;
@@ -3723,6 +3752,7 @@ export const AgentSettingsPage = ({
     currentTask: activeWorkspaceTask,
   });
   const maintenanceBusy = resetting || resettingAcli || isActiveBotExporting || isActiveBotImporting
+    || isActiveSessionRepairing
     || isActiveExportStatusLoading || isActiveImportStatusLoading
     || isWorkspaceActionRunning(activeWorkspaceTask?.status);
   // 当前 tab 是否展示错误
@@ -4416,7 +4446,8 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
-        isEmptyPersonaPage && "lv-agent-empty-persona-page",
+        isEmptyAgentPage && "lv-agent-empty-page",
+        isModifying && "lv-agent-upgrading-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -5680,7 +5711,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
                               botId={activeBot.id}
-                              profileId={activeBot.profileId ?? "main"}
+                              profileId={activeBot.profileId}
                               botName={activeBot.name}
                               isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}
@@ -5705,6 +5736,9 @@ export const AgentSettingsPage = ({
                               }}
                               resetAgentConsole={acliResetConsole}
                               resetAgentConsoleRef={acliResetConsoleRef}
+                              maintenanceBusy={maintenanceBusy}
+                              maintenanceScopeId={activeRuntimeInstanceId ?? activeBot.id}
+                              onSessionRepairPendingChange={handleSessionRepairPendingChange}
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}
@@ -5804,7 +5838,8 @@ export const AgentSettingsPage = ({
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
+                  {canCreateInitialAgent && !directCreating && <Plus className="h-4 w-4" aria-hidden="true" />}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建") : t("暂不可创建")}
                 </button>
               </div>
             )

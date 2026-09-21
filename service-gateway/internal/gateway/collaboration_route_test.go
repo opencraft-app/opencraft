@@ -55,9 +55,11 @@ func TestCollaborationRouteUsesVerifiedHumanAndInternalBearer(t *testing.T) {
 }
 
 func TestCollaborationRouteRejectsUnpublishedSurfacesAndAllowsBrowserHeaders(t *testing.T) {
-	config := Config{AuthServiceURL: "http://auth.example.test", AllowedOrigins: []string{"https://chat.lightvela.com"}, Collaboration: &CollaborationRouteConfig{
+	t.Setenv("COLLABORATION_GATEWAY_TOKEN", "test-collaboration-internal-token")
+	config := Config{AuthServiceURL: "http://auth.example.test", AllowedOrigins: []string{"https://unrelated.example.test"}, Collaboration: &CollaborationRouteConfig{
 		Upstream:               "http://collaboration.example.test",
 		UpstreamBearerTokenEnv: "COLLABORATION_GATEWAY_TOKEN",
+		AllowedOrigins:         []string{"https://chat.lightvela.com", "http://localhost:*"},
 	}}
 	handler, err := NewHandler(config)
 	if err != nil {
@@ -82,5 +84,38 @@ func TestCollaborationRouteRejectsUnpublishedSurfacesAndAllowsBrowserHeaders(t *
 	}
 	if got := preflightRec.Header().Get("Access-Control-Allow-Headers"); got != "Authorization, Content-Type, Idempotency-Key, X-Request-Id, X-Resource-Revision, X-Trace-Id, X-Requested-With" {
 		t.Fatalf("allow headers = %q", got)
+	}
+
+	computerPreflight := httptest.NewRequest(http.MethodOptions, "/v1/collaboration/servers/server-1/computers-v2", nil)
+	computerPreflight.Header.Set("Origin", "http://localhost:5173")
+	computerPreflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	computerPreflight.Header.Set("Access-Control-Request-Headers", "content-type,idempotency-key")
+	computerPreflightRec := httptest.NewRecorder()
+	handler.ServeHTTP(computerPreflightRec, computerPreflight)
+	if computerPreflightRec.Code != http.StatusNoContent {
+		t.Fatalf("computer preflight status = %d body=%s", computerPreflightRec.Code, computerPreflightRec.Body)
+	}
+
+	untrustedPreflight := httptest.NewRequest(http.MethodOptions, "/v1/collaboration/me", nil)
+	untrustedPreflight.Header.Set("Origin", "https://evil.example")
+	untrustedPreflight.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	untrustedPreflightRec := httptest.NewRecorder()
+	handler.ServeHTTP(untrustedPreflightRec, untrustedPreflight)
+	if got := untrustedPreflightRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("untrusted Access-Control-Allow-Origin = %q", got)
+	}
+}
+
+func TestCollaborationRouteRequiresConfiguredInternalTokenAtStartup(t *testing.T) {
+	t.Setenv("COLLABORATION_GATEWAY_TOKEN", "")
+	_, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.example.test",
+		Collaboration: &CollaborationRouteConfig{
+			Upstream:               "http://collaboration.example.test",
+			UpstreamBearerTokenEnv: "COLLABORATION_GATEWAY_TOKEN",
+		},
+	})
+	if err == nil {
+		t.Fatal("NewHandler() error = nil")
 	}
 }

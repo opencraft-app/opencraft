@@ -44,6 +44,16 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 本地身份对齐、动态回调注册及续租进程。需要复用预置账号时，通过环境变量传入 testing
 凭据或 session；不得把凭据写入仓库、命令输出或报告。
 
+若当前 testing 用户还没有 active shadow binding，优先在 Gateway Dashboard 的
+“认证用户 → DevCloud 测试绑定”页面分配 mock 账号。受控 Codex 环境也可从本机 secret
+provider 临时取得 `PERSONAL_DEV_ADMIN_TOKEN`，并同时传入 `PERSONAL_DEV_SHADOW_USER_NAME`、
+`PERSONAL_DEV_SHADOW_UIN`、`PERSONAL_DEV_SHADOW_OWNER_UIN`、`PERSONAL_DEV_SHADOW_APP_ID`
+和 `PERSONAL_DEV_BINDING_REASON`。由于公网 Service Gateway 不暴露 Auth admin 路由，受控环境还需
+把 Auth testing 服务转发到 loopback，并通过 `PERSONAL_DEV_AUTH_ADMIN_BASE_URL` 传入该本地地址；
+`up` 会从当前 testing session 派生 LightVela user ID，
+调用 Auth testing 管理接口完成绑定。admin token 不写入 DevCloud 状态文件、请求正文或输出。
+不要把共享 admin token 发给开发者，也不要把上述变量写进仓库或 shell profile。
+
 Skill 的 runtime kustomize wrapper 会在内存流中注入 DevCloud IP、Auth 回跳、站点和
 testing Account/Billing 地址。生成状态只写入私有状态目录，不修改业务源码或生产 manifests。
 
@@ -69,6 +79,19 @@ PERSONAL_DEV_SITE=intl bash .agents/skills/personal-devcloud-environment/scripts
 PERSONAL_DEV_SITE=intl bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh verify-order-no-pay
 ```
 
+只操作 testing 绑定的受控命令：
+
+```bash
+PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh bootstrap-binding
+PERSONAL_DEV_SITE=cn PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:<受控转发端口>' \
+  PERSONAL_DEV_BINDING_RELEASE_REASON='test completed' \
+  bash .agents/skills/personal-devcloud-environment/scripts/personal-devcloud.sh release-binding
+```
+
+`bootstrap-binding` 不接受浏览器自报 user ID，而是从当前 testing session 查询目标用户；
+相同映射可幂等重试，改绑和 UIN 转移必须先执行 `release-binding`。绑定、解绑均要求非空原因，
+由 Auth 记录包含 request ID、用户、UIN 和原因的结构化审计日志。
+
 `verify-order-no-pay` 只验证询价和创建 `pending_pay` 订单；因为没有支付，所以不期待、也不宣称
 收到计费 `checkCreate` 或发货回调。只有当当前 checkout 已实现真实变配 API 时，才能增加并执行
 `checkModify` 用例。现有 `verify-checkmodify-no-pay` 会明确失败，防止把普通下单误报成升配覆盖。
@@ -89,7 +112,8 @@ PERSONAL_DEV_SITE=cn bash .agents/skills/personal-devcloud-environment/scripts/p
 ```
 
 `down` 会先写 disabled tombstone，再停止本地工作负载并保留 PVC。只注销路由可用
-`unregister`。不要删除 tombstone 后让旧订单静默回落共享环境。
+`unregister`。它不会擅自释放共享 mock 账号；完整回收流程是先 `release-binding`，再 `down`。
+不要删除 tombstone 后让旧订单静默回落共享环境。
 
 ## 失败处理
 

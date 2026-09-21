@@ -4,6 +4,7 @@ kind: Component
 patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml
+  - path: collaboration-gateway-token-env-patch.yaml
   - target:
       kind: ConfigMap
       name: service-gateway-platform-values

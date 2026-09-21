@@ -63,6 +63,29 @@ test("buildModuleAdminProxyRequest uses module token before browser token", asyn
   assert.equal(built.usedBrowserToken, false);
 });
 
+test("buildModuleAdminProxyRequest forwards Auth DELETE request bodies", async () => {
+  const body = JSON.stringify({ reason: "personal DevCloud test completed" });
+  const req = new Request("https://admin.example.com/admin/api/auth/shadow-bindings/usr_1", {
+    method: "DELETE",
+    headers: {
+      "content-type": "application/json",
+    },
+    body,
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "auth",
+    path: ["shadow-bindings", "usr_1"],
+    upstreamBaseURL: "https://auth.internal",
+    upstreamToken: "module-token",
+  });
+
+  assert.equal(built.url.toString(), "https://auth.internal/admin/shadow-bindings/usr_1");
+  assert.equal(built.init.method, "DELETE");
+  assert.equal(built.init.headers.get("content-type"), "application/json");
+  assert.equal(await new Response(built.init.body).text(), body);
+});
+
 test("buildModuleAdminProxyRequest maps sandbox module to internal API and forwards body", async () => {
   const req = new Request("https://admin.example.com/admin/api/sandbox/pools", {
     method: "POST",
@@ -102,6 +125,46 @@ test("buildModuleAdminProxyRequest maps ctl-admin module to ctl admin API", asyn
   assert.equal(built.url.toString(), "https://ctl.internal/admin/api/ctl/passes/user-pass-1/refund");
   assert.equal(built.init.headers.get("authorization"), null);
   assert.equal(await new Response(built.init.body).text(), JSON.stringify({ reason: "manual refund" }));
+});
+
+test("buildModuleAdminProxyRequest maps credit module and keeps the internal token server-side", async () => {
+  const req = new Request("https://admin.example.com/admin/api/credit/packages?status=active", {
+    headers: { authorization: "Bearer browser-token" },
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "credit",
+    path: ["packages"],
+    upstreamBaseURL: "http://credit.internal",
+    upstreamToken: "credit-internal-token",
+  });
+
+  assert.equal(
+    built.url.toString(),
+    "http://credit.internal/internal/credit/admin/packages?status=active",
+  );
+  assert.equal(built.init.headers.get("authorization"), "Bearer credit-internal-token");
+  assert.equal(built.usedBrowserToken, false);
+});
+
+test("buildModuleAdminProxyRequest maps shadow module and keeps the internal token server-side", async () => {
+  const req = new Request("https://admin.example.com/admin/api/shadow/accounts?search=330500000005", {
+    headers: { authorization: "Bearer browser-token" },
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "shadow",
+    path: ["accounts"],
+    upstreamBaseURL: "http://shadow.internal",
+    upstreamToken: "shadow-internal-token",
+  });
+
+  assert.equal(
+    built.url.toString(),
+    "http://shadow.internal/internal/shadow/admin/accounts?search=330500000005",
+  );
+  assert.equal(built.init.headers.get("authorization"), "Bearer shadow-internal-token");
+  assert.equal(built.usedBrowserToken, false);
 });
 
 test("buildModuleAdminProxyRequest maps sandbox PUT binding replacements to internal API", async () => {

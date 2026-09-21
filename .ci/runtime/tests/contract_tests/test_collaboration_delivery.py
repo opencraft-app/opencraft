@@ -23,6 +23,53 @@ from gates import db_contract_verifier
 
 
 class CollaborationDeliveryTests(unittest.TestCase):
+    def test_beijing_gateway_consumes_dedicated_collaboration_bridge_secret(self):
+        overlay = REPO_ROOT / "argocd/services/service-gateway/beijing-sandbox"
+        config = yaml.safe_load((overlay / "config.yaml").read_text())
+        self.assertEqual(config["collaboration"], {
+            "upstream": "http://collaboration.lightvela-collaboration.svc.cluster.local",
+            "upstream_bearer_token_env": "COLLABORATION_GATEWAY_TOKEN",
+            "allowed_origins": ["http://localhost:*", "http://127.0.0.1:*"],
+        })
+
+        kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+        self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
+        self.assertNotIn(
+            "collaboration-gateway-token-env-patch.yaml",
+            [patch.get("path") for patch in kustomization.get("patches", [])],
+        )
+
+        generator = yaml.safe_load(
+            (overlay / "ksops-collaboration-gateway-token-generator.yaml").read_text()
+        )
+        self.assertEqual(generator["files"], [
+            "../../../secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+        ])
+        source_overlay = REPO_ROOT / "service-gateway/k8s/overlays/beijing-sandbox"
+        source_kustomization = yaml.safe_load((source_overlay / "kustomization.yaml").read_text())
+        self.assertIn(
+            "collaboration-gateway-token-env-patch.yaml",
+            [patch.get("path") for patch in source_kustomization["patches"]],
+        )
+        patch = yaml.safe_load(
+            (source_overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
+        )
+        env = patch["spec"]["template"]["spec"]["containers"][0]["env"][0]
+        self.assertEqual(env["name"], "COLLABORATION_GATEWAY_TOKEN")
+        self.assertEqual(env["valueFrom"]["secretKeyRef"], {
+            "name": "collaboration-gateway-token",
+            "key": "COLLABORATION_GATEWAY_TOKEN",
+            "optional": False,
+        })
+
+        bundle = yaml.safe_load(
+            (REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text()
+        )["bundles"]["service-gateway"]
+        self.assertIn(
+            "argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
+            bundle["publish_paths_by_env"]["beijing-sandbox"],
+        )
+
     def test_runtime_promotion_rejects_catalog_still_pointing_to_foundation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -218,6 +265,20 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(set(spec["items"][0]["required_keys"]), {
             "database.dsn", "jwt.key", "gateway.token", "im-secret.key", "im-identity.key", "im-callback.token",
         })
+        bridge = next(item for item in spec["items"] if item["id"] == "collaboration-gateway-bridge")
+        self.assertEqual(bridge["secret_name"], spec["items"][0]["secret_name"])
+        self.assertEqual(bridge["namespace"], "lightclaw-gateway")
+        self.assertEqual(bridge["kubernetes_resource_name"], "collaboration-gateway-token")
+        self.assertEqual(bridge["required_keys"], ["gateway.token"])
+        self.assertEqual(bridge["key_mappings"], {
+            "gateway.token": "COLLABORATION_GATEWAY_TOKEN",
+        })
+        self.assertIn(
+            "--only collaboration-gateway-bridge",
+            (REPO_ROOT / ".ci/collaboration-bootstrap.yml").read_text(),
+        )
+        promotion = (REPO_ROOT / ".ci/runtime/promote_collaboration_bootstrap_to_gitops.sh").read_text()
+        self.assertIn("collaboration-gateway-token.sops.yaml", promotion)
         foundation = yaml.safe_load((root / "collaboration-foundation.yaml").read_text())
         self.assertEqual(foundation["service"], candidate["service"])
         self.assertEqual(foundation["sourcePath"], "argocd/services/collaboration/beijing-sandbox-foundation")

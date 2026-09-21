@@ -1,0 +1,902 @@
+/* Capability visual system: shared typography, safe text zones and restrained icons. */
+#lightvela-intl-home .wcard .cloud-status { inset: 16px auto auto 20px; width: auto; height: auto; z-index: 2; }
+#lightvela-intl-home .wcard .memory-preference { inset: auto 12px 53px; width: auto; height: auto; z-index: 2; }
+#lightvela-intl-home .about__cards .wcard .wcard__body { padding: 16px 36px 18px 22px; }
+#lightvela-intl-home .about__cards .wcard .wcard__body h4 { font-size: 17px; line-height: 1.4; font-weight: 600; text-wrap: balance; }
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body h4 { font-size: 19px; }
+#lightvela-intl-home .about__cards .wcard .wcard__more { right: 16px; bottom: 19px; opacity: .65; }
+#lightvela-intl-home .about__cards .wcard .wcard__more:focus-visible { opacity: 1; outline: 2px solid var(--brand); outline-offset: 4px; }
+#lightvela-intl-home .skwall { bottom: 62px; overflow: hidden; }
+#lightvela-intl-home .skwall__tile i { background: #eef3ff; color: #466bbb; width: 32px; height: 32px; }
+#lightvela-intl-home .skwall__tile i .icon { visibility: visible; width: 19px; height: 19px; }
+#lightvela-intl-home .skwall__col:nth-child(2) .skwall__tile i { background: #edf6f2; color: #318466; }
+#lightvela-intl-home .skwall__col:nth-child(3) .skwall__tile i { background: #fff3e8; color: #a46b32; }
+#lightvela-intl-home .cloud-status { position: absolute; top: 18px; left: 22px; display: flex; gap: 7px; align-items: center; padding: 6px 10px; border: 1px solid #e7e9e8; border-radius: 20px; background: #fff; font-size: 11px; color: #55545c; }
+#lightvela-intl-home .cloud-status i { width: 6px; height: 6px; border-radius: 50%; background: #21a773; }
+#lightvela-intl-home .memory-preference { position: absolute; bottom: 61px; left: 14px; right: 14px; font-size: 9px; line-height: 1.4; text-align: center; color: #74707b; }
+#lightvela-intl-home .aut { background: #fafafa; padding-top: 16px; }
+#lightvela-intl-home .aut__rules { color: #68636f; }
+#lightvela-intl-home .aut__bubble--delivery span { display: block; font-size: 11px; line-height: 1.5; }
+#lightvela-intl-home .workspace-carousel { position: absolute; inset: 10px 12px 50px; overflow: hidden; border: 1px solid #ecebef; border-radius: 12px; background: #f7f7f8; }
+#lightvela-intl-home .workspace-carousel__slide { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; animation: workspace-carousel-fade 12s ease-in-out infinite; }
+#lightvela-intl-home .workspace-carousel__slide:nth-child(1) { animation-delay: 0s; }
+#lightvela-intl-home .workspace-carousel__slide:nth-child(2) { animation-delay: -2s; }
+#lightvela-intl-home .workspace-carousel__slide:nth-child(3) { animation-delay: -4s; }
+#lightvela-intl-home .workspace-carousel__slide:nth-child(4) { animation-delay: -6s; }
+#lightvela-intl-home .workspace-carousel__slide:nth-child(5) { animation-delay: -8s; }
+#lightvela-intl-home .workspace-carousel__slide:nth-child(6) { animation-delay: -10s; }
+@keyframes workspace-carousel-fade { 0%, 14% { opacity: 1; } 17%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .workspace-carousel__slide { animation: none; opacity: 0; }
+  #lightvela-intl-home .workspace-carousel__slide:first-child { opacity: 1; }
+}
+
+@media (min-width: 1024px) {
+ #lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body { padding: 16px 44px 20px 20px; }
+ #lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body h4 { font-size: 19px; }
+}
+/* Desktop stays compact at two rows. Visual cards get the widest spans while
+   lighter identity cards take the narrower columns. */
+@media (min-width: 1024px) {
+  #lightvela-intl-home .about__cards {
+    grid-template-rows: 272px 238px;
+  }
+  #lightvela-intl-home .about__cards .wcard:nth-child(2) { grid-area: 1 / 1 / 2 / 8; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(4) { grid-area: 1 / 8 / 2 / 11; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) { grid-area: 1 / 11 / 2 / 13; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(5) { grid-area: 2 / 1 / 3 / 5; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(3) { grid-area: 2 / 5 / 3 / 10; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(6) { grid-area: 2 / 10 / 3 / 13; }
+}
+
+/* Keep the always-on cloud card clean: no ambient glow behind the network. */
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo--cloud,
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .cld__stage {
+  background: #fff !important;
+  box-shadow: none !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .cld__core {
+  box-shadow: none !important;
+}
+
+/* Keep the automation conversation above the fixed card title. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble {
+  font-size: 10px;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__rule { font-size: 9px; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--agent { max-height: 112px; overflow: hidden; }
+
+/* Memory flow: preference signals converge into one applied result. */
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .memory-flow { position: absolute; inset: 12px 14px 48px; }
+#lightvela-intl-home .memory-flow__inputs { position: absolute; left: 4%; top: 17%; bottom: 17%; display: flex; flex-direction: column; justify-content: space-between; }
+#lightvela-intl-home .memory-flow__node,
+#lightvela-intl-home .memory-flow__result { display: block; width: 28px; height: 22px; border: 1px solid #e0dced; border-radius: 7px; background: #fff; box-shadow: 0 4px 12px rgba(42, 29, 77, .06); }
+#lightvela-intl-home .memory-flow__node::after { content: ""; display: block; width: 10px; height: 7px; margin: 7px auto; border: 1px solid #8c7ad7; border-radius: 2px; }
+#lightvela-intl-home .memory-flow__node--calendar::after { border-radius: 50%; }
+#lightvela-intl-home .memory-flow__node--profile::after { width: 8px; border-radius: 50%; }
+#lightvela-intl-home .memory-flow__result { position: absolute; right: 4%; top: 34%; width: 48px; height: 54px; border-color: #d9ece3; }
+#lightvela-intl-home .memory-flow__check { display: block; width: 12px; height: 7px; margin: 12px auto 6px; border-left: 2px solid #21a773; border-bottom: 2px solid #21a773; transform: rotate(-45deg); }
+#lightvela-intl-home .memory-flow__bars { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+#lightvela-intl-home .memory-flow__bars b { display: block; width: 24px; height: 3px; border-radius: 3px; background: #dedbe9; }
+#lightvela-intl-home .memory-flow__bars b:nth-child(2) { width: 18px; }
+#lightvela-intl-home .memory-flow__bars b:nth-child(3) { width: 12px; }
+#lightvela-intl-home .memory-flow__line { position: absolute; left: 18%; right: 18%; height: 1px; background: #dcd9e7; transform-origin: left center; }
+#lightvela-intl-home .memory-flow__line--one { top: 27%; transform: rotate(10deg); }
+#lightvela-intl-home .memory-flow__line--two { top: 50%; }
+#lightvela-intl-home .memory-flow__line--three { top: 73%; transform: rotate(-10deg); }
+#lightvela-intl-home .memory-flow__pulse { position: absolute; top: 49%; left: 47%; width: 7px; height: 7px; border-radius: 50%; background: #6a4fde; box-shadow: 0 0 0 4px rgba(106,79,222,.12); animation: memory-flow-pulse 2.4s ease-in-out infinite; }
+@keyframes memory-flow-pulse { 0%, 100% { transform: translateX(-22px); opacity: .35; } 50% { transform: translateX(22px); opacity: 1; } }
+
+/* Messages enter from below and settle upward in the reserved conversation area. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__conversation { justify-content: flex-end; padding-bottom: 4px; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--agent { max-height: 112px; overflow: hidden; }
+@keyframes aut-msg-in-up { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.98); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble { animation-name: aut-msg-in-up; }
+
+/* Continuous conversation stream: messages rise as a single natural thread. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut { overflow: hidden; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__conversation { justify-content: flex-start; animation: aut-conversation-scroll 8s linear infinite; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble { animation: none !important; opacity: 1 !important; }
+@keyframes aut-conversation-scroll { 0%, 14% { transform: translateY(18px); } 76%, 100% { transform: translateY(-34px); } }
+#lightvela-intl-home .about__cards::before { background: none !important; }
+#lightvela-intl-home .about__cards .wcard__inner { border: 1px solid rgba(26, 20, 38, 0.1) !important; border-radius: 24px; box-shadow: none !important; }
+
+/* Conversation card: follow the reference's quiet editorial chat treatment.
+   The rounded edge belongs to the card, while the conversation remains one
+   continuous surface with no second inset frame. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__inner {
+  border-color: rgba(26, 20, 38, 0.08) !important;
+  background: #f8f8f7 !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut {
+  background: #f8f8f7 !important;
+  padding: 16px 18px 72px;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bar { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__conversation {
+  gap: 10px;
+  padding: 0 2px 8px;
+  justify-content: flex-start;
+  animation: aut-conversation-scroll 8s linear infinite;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble {
+  max-width: 78%;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: #e9e9e8;
+  color: #26252a;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: none;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--user {
+  align-self: flex-end;
+  border-radius: 18px 18px 5px 18px;
+  background: #e5e5e4;
+  color: #26252a;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--agent {
+  align-self: flex-start;
+  border-radius: 18px 18px 18px 5px;
+  padding-left: 14px;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--agent > i,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__sender,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__rules,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble time { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--delivery {
+  align-self: flex-start;
+  width: auto;
+  max-width: 78%;
+  display: block;
+  margin-top: 0;
+  border: 0;
+  border-radius: 18px 18px 18px 5px;
+  background: #e9e9e8;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--delivery b { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--delivery span { white-space: normal; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__body { padding: 14px 42px 18px 22px; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__body::before { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__body h4 { color: #15141a; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__more { color: rgba(20, 18, 28, 0.45); }
+
+/* The image itself supplies the inner edge; avoid a second hairline around it. */
+#lightvela-intl-home .about__cards .workspace-carousel { border: 0; border-radius: 18px; }
+#lightvela-intl-home .about__cards .wcard__demo,
+#lightvela-intl-home .about__cards .wcard__thumb { border-radius: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__conversation,
+  #lightvela-intl-home .about__cards .wcard:nth-child(6) .memory-flow__pulse { animation: none; }
+}
+/* Capability case reel + full-bleed workspace + MEMORY.md terminal. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut {
+  padding: 14px 18px 68px;
+  background: #f8f8f7 !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__conversation {
+  position: relative;
+  display: block;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  animation: none;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  opacity: 0;
+  transform: translate3d(0, 38px, 0);
+  animation: aut-case-cycle 15s linear infinite;
+  animation-play-state: paused;
+}
+#lightvela-intl-home .about.is-visible .wcard:nth-child(3) .aut__case { animation-play-state: running; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case--2 { animation-delay: 5s; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case--3 { animation-delay: 10s; }
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble {
+  display: block;
+  width: fit-content;
+  max-width: 78%;
+  margin: 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 17px;
+  background: #e7e7e6;
+  color: #26252a;
+  font-size: 12px;
+  line-height: 1.42;
+  box-shadow: none;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--user {
+  align-self: flex-end;
+  background: #dededd;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--agent,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery {
+  align-self: flex-start;
+  background: #e7e7e6;
+}
+@keyframes aut-case-cycle {
+  0% { opacity: 0; transform: translate3d(0, 38px, 0); }
+  5%, 28% { opacity: 1; transform: translate3d(0, 0, 0); }
+  33%, 100% { opacity: 0; transform: translate3d(0, -38px, 0); }
+}
+
+/* The workspace image is the card surface; no separate white caption tray. */
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__inner {
+  background: #f2f1ee !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .workspace-carousel {
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  background: #f2f1ee;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .workspace-carousel__slide {
+  object-fit: cover;
+  object-position: center;
+  filter: none;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body {
+  padding: 14px 42px 18px 18px;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body::before { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body h4 {
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .5);
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__more { color: rgba(255, 255, 255, .88); }
+
+/* Memory is written as Markdown in a light editor so the bento keeps one visual weight. */
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__inner,
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo--mem {
+  background: #fbfbfa !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .memory-flow { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .memory-md {
+  position: absolute;
+  inset: 0;
+  padding: 18px 20px 66px;
+  overflow: hidden;
+  color: #6f6c68;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .memory-md code {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font: inherit;
+}
+#lightvela-intl-home .memory-md__bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding-bottom: 11px;
+  border-bottom: 1px solid #e7e5e1;
+}
+#lightvela-intl-home .memory-md__bar > span { display: flex; gap: 5px; }
+#lightvela-intl-home .memory-md__bar > span i { width: 7px; height: 7px; border-radius: 50%; background: #ff625a; }
+#lightvela-intl-home .memory-md__bar > span i:nth-child(2) { background: #ffbd2e; }
+#lightvela-intl-home .memory-md__bar > span i:nth-child(3) { background: #28c840; }
+#lightvela-intl-home .memory-md__bar code {
+  overflow: hidden;
+  color: #77736e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#lightvela-intl-home .memory-md__bar b { color: #4f8b3c; font-size: 9px; }
+#lightvela-intl-home .memory-md__log { padding: 12px 0 8px; }
+#lightvela-intl-home .memory-md__log p,
+#lightvela-intl-home .memory-md__edit p { margin: 0 0 4px; }
+#lightvela-intl-home .memory-md__thinking { color: #7258bb; }
+#lightvela-intl-home .memory-md__log span { color: #247f7a; }
+#lightvela-intl-home .memory-md__log b { float: right; color: #4f8b3c; }
+#lightvela-intl-home .memory-md__edit > p { color: #2c2a2e; }
+#lightvela-intl-home .memory-md__edit > p::first-letter { color: #7258bb; }
+#lightvela-intl-home .memory-md__edit > div {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  margin-inline: -20px;
+  padding: 3px 20px;
+}
+#lightvela-intl-home .memory-md__edit i {
+  color: #aaa6a0;
+  font-style: normal;
+}
+#lightvela-intl-home .memory-md__edit code {
+  overflow: hidden;
+  color: #353237;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#lightvela-intl-home .memory-md__line {
+  background: #edf3e9;
+  opacity: 0;
+  transform: translate3d(0, 7px, 0);
+  animation: memory-md-write 5.2s ease-out infinite;
+  animation-play-state: paused;
+}
+#lightvela-intl-home .memory-md__line--two { animation-delay: .65s; }
+#lightvela-intl-home .about.is-visible .memory-md__line { animation-play-state: running; }
+#lightvela-intl-home .memory-md__saved {
+  position: absolute;
+  right: 20px;
+  bottom: 62px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  color: #4f8b3c;
+  opacity: 0;
+  animation: memory-md-saved 5.2s ease-out infinite;
+  animation-play-state: paused;
+}
+#lightvela-intl-home .about.is-visible .memory-md__saved { animation-play-state: running; }
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__body { padding: 16px 42px 18px 20px; }
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__body::before { display: none; }
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__body h4 { color: #17161b; font-size: 18px; }
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__more { color: rgba(20, 18, 28, .45); }
+
+/* Automation alignment v74: use the full card as one fixed stage. Every case
+   shares the same four rows, so longer copy cannot move the timestamp or the
+   delivered message onto a different baseline. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__demo--auto {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut {
+  position: absolute;
+  inset: 0;
+  display: block;
+  height: auto;
+  padding: 12px 18px 58px;
+  box-sizing: border-box;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__conversation,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) 18px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  justify-content: stretch;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble {
+  align-self: center;
+  max-width: 82%;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--user {
+  justify-self: end;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--agent,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery {
+  justify-self: start;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__stamp {
+  justify-self: center;
+  margin: 0;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery {
+  display: block;
+  width: fit-content;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--delivery span.is-typing::after {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: .9em;
+  margin-left: 2px;
+  background: currentColor;
+  vertical-align: -0.08em;
+  animation: aut-type-caret 700ms steps(1, end) infinite;
+}
+@keyframes aut-type-caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__bubble--delivery span.is-typing::after { animation: none; }
+}
+@media (max-width: 640px) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__inner { min-height: 244px; }
+}
+@keyframes memory-md-write {
+  0%, 20% { opacity: 0; transform: translate3d(0, 7px, 0); }
+  28%, 82% { opacity: 1; transform: translate3d(0, 0, 0); }
+  92%, 100% { opacity: 0; transform: translate3d(0, -3px, 0); }
+}
+@keyframes memory-md-saved {
+  0%, 55% { opacity: 0; transform: translate3d(0, 5px, 0); }
+  65%, 88% { opacity: 1; transform: translate3d(0, 0, 0); }
+  100% { opacity: 0; transform: translate3d(0, -3px, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case { animation: none; opacity: 0; transform: none; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case:first-child { opacity: 1; }
+  #lightvela-intl-home .memory-md__line { animation: none; opacity: 1; transform: none; }
+  #lightvela-intl-home .memory-md__saved { animation: none; opacity: 1; transform: none; }
+}
+/* Unified card captions: smaller type with a local bottom readability veil. */
+#lightvela-intl-home .about__cards .wcard {
+  --caption-scrim: 251, 251, 250;
+  --caption-mid: .45;
+  --caption-near: .8;
+  --caption-end: .92;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) {
+  --caption-scrim: 28, 28, 28;
+  --caption-mid: .12;
+  --caption-near: .42;
+  --caption-end: .68;
+}
+#lightvela-intl-home .about__cards .wcard .wcard__body {
+  isolation: isolate;
+  padding: 14px 38px 14px 18px !important;
+}
+#lightvela-intl-home .about__cards .wcard .wcard__body::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: -5px 0 0;
+  z-index: -1;
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--caption-scrim), 0) 0%,
+    rgba(var(--caption-scrim), var(--caption-mid)) 48%,
+    rgba(var(--caption-scrim), var(--caption-near)) 76%,
+    rgba(var(--caption-scrim), var(--caption-end)) 100%
+  );
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+}
+#lightvela-intl-home .about__cards .wcard .wcard__body h4 {
+  font-size: 15px !important;
+  line-height: 1.3;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body {
+  padding: 14px 42px 10px 20px !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body h4 {
+  font-size: 17px !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body h4 {
+  font-size: 16px !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__body h4 {
+  font-size: 15px !important;
+}
+#lightvela-intl-home .about__cards .wcard .wcard__more {
+  bottom: 15px;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__more {
+  bottom: 11px;
+}
+
+/* Channel + approval card: two quiet layers on one continuous card surface. */
+@media (min-width: 641px) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__demo--chat {
+    display: block;
+    padding: 0;
+  }
+  #lightvela-intl-home .channel-stack {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: 46% 54%;
+    overflow: hidden;
+  }
+  #lightvela-intl-home .channel-stack__platforms {
+    min-height: 0;
+    padding-bottom: 30px;
+    overflow: hidden;
+  }
+  #lightvela-intl-home .channel-stack__platforms .chnloop { height: 100%; }
+  #lightvela-intl-home .channel-approval {
+    position: relative;
+    min-height: 0;
+    padding: 8px 12px 32px;
+    border-top: 1px solid rgba(26, 20, 38, .08);
+    background: #f7f7f6;
+  }
+  #lightvela-intl-home .channel-approval__title {
+    position: absolute;
+    right: 30px;
+    bottom: 11px;
+    left: 12px;
+    display: block;
+    overflow: hidden;
+    color: #242229;
+    font-size: 9px;
+    font-weight: 650;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #lightvela-intl-home .channel-approval__chat {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 0;
+  }
+  #lightvela-intl-home .channel-approval__bubble {
+    width: fit-content;
+    max-width: 88%;
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: 10px;
+    color: #302e34;
+    font-size: 8px;
+    line-height: 1.3;
+  }
+  #lightvela-intl-home .channel-approval__bubble--user {
+    align-self: flex-end;
+    border-radius: 10px 10px 3px 10px;
+    background: #dff6de;
+  }
+  #lightvela-intl-home .channel-approval__bubble--agent {
+    align-self: flex-start;
+    border-radius: 10px 10px 10px 3px;
+    background: #e9e9e8;
+  }
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__body {
+    top: 103px;
+    bottom: auto;
+    padding: 0 34px 0 14px !important;
+  }
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__body::before { display: none !important; }
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__body h4 {
+    max-width: calc(100% - 4px);
+    overflow: visible;
+    font-size: 13px !important;
+    line-height: 1.25;
+    text-overflow: clip;
+    white-space: normal;
+    text-wrap: balance;
+  }
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__more { bottom: 12px; }
+}
+
+/* Final card surfaces: captions no longer blur or bleach the image underneath. */
+#lightvela-intl-home .about__cards .wcard .wcard__body::before {
+  display: none !important;
+  background: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body {
+  bottom: 6px !important;
+  padding-bottom: 4px !important;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(5) .skwall {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+@media (min-width: 641px) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__inner {
+    overflow: visible;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+  }
+  #lightvela-intl-home .channel-stack {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 10px;
+    overflow: visible;
+  }
+  #lightvela-intl-home .channel-stack__platforms,
+  #lightvela-intl-home .channel-approval {
+    overflow: hidden;
+    border: 1px solid rgba(26, 20, 38, .1);
+    border-radius: 20px;
+    background: #fff;
+  }
+  #lightvela-intl-home .channel-approval {
+    border-top: 1px solid rgba(26, 20, 38, .1);
+    background: #f7f7f6;
+  }
+}
+
+/* Latest capability-card tuning: center the channel demo, keep captions one scale,
+   and reserve the approval card for destructive-action confirmation. */
+#lightvela-intl-home .about__cards .wcard:not(:nth-child(2)) .wcard__body h4 {
+  font-size: 15px !important;
+  line-height: 1.3;
+}
+
+#lightvela-intl-home .about__cards .wcard:not(:nth-child(2)) .wcard__body p {
+  font-size: 12px !important;
+  line-height: 1.42;
+}
+
+/* Auto card v76: alternate grey / white / grey message surfaces so the
+   scheduled conversation reads as three separate steps. */
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--user {
+  background: #dededd;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--agent {
+  background: #fff;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery {
+  background: #e7e7e6;
+}
+
+/* Channel card keeps a visible, icon-only affordance on every breakpoint. */
+#lightvela-intl-home .channel-stack__platforms {
+  position: relative;
+}
+#lightvela-intl-home .channel-stack__more {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 3;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: rgba(20, 18, 28, .5);
+  opacity: 1;
+}
+#lightvela-intl-home .channel-stack__more span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+#lightvela-intl-home .channel-stack__more .icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__more {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 4;
+  display: inline-flex;
+  margin: 0;
+  color: rgba(20, 18, 28, .5);
+  font-size: 0;
+  opacity: 1;
+  transform: none;
+}
+#lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__more .icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute;
+  inset: -5px 0 0;
+  z-index: -1;
+  background: linear-gradient(
+    to bottom,
+    rgba(22, 22, 22, 0) 0%,
+    rgba(22, 22, 22, .24) 54%,
+    rgba(22, 22, 22, .5) 100%
+  );
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  pointer-events: none;
+}
+
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__body p {
+  color: rgba(255, 255, 255, .92);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .42);
+}
+
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+  max-width: 86%;
+}
+
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery time {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .7);
+  color: rgba(38, 37, 42, .66);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut__case .aut__bubble--delivery span {
+  display: block;
+  min-width: 0;
+  color: #26252a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+@media (min-width: 641px) {
+  #lightvela-intl-home .about__cards .wcard:nth-child(1) .wcard__demo--chat {
+    min-height: 100%;
+  }
+
+  #lightvela-intl-home .channel-stack {
+    align-items: stretch;
+  }
+
+  #lightvela-intl-home .channel-stack__platforms {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 10px 8px 34px;
+  }
+
+  #lightvela-intl-home .channel-stack__platforms .chnloop {
+    width: 100%;
+    transform: translateY(2px);
+  }
+
+  #lightvela-intl-home .channel-stack__more {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 3;
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    align-items: center;
+    justify-content: center;
+    color: rgba(20, 18, 28, .5);
+    opacity: 1;
+  }
+
+  #lightvela-intl-home .channel-stack__more span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  #lightvela-intl-home .channel-stack__more .icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+
+  #lightvela-intl-home .channel-approval {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 12px 12px 34px;
+  }
+
+  #lightvela-intl-home .channel-approval__chat {
+    justify-content: center;
+  }
+
+  #lightvela-intl-home .channel-approval__bubble {
+    font-size: 8.5px;
+    line-height: 1.32;
+  }
+}
+
+/* Capability surfaces v80: only Automations and Approval stay grey; everything else is white. */
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__inner,
+#lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__demo--cloud,
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .wcard__inner,
+#lightvela-intl-home .about__cards .wcard:nth-child(4) .workspace-carousel,
+#lightvela-intl-home .about__cards .wcard:nth-child(5) .wcard__inner,
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__inner,
+#lightvela-intl-home .about__cards .wcard:nth-child(6) .wcard__demo--mem,
+#lightvela-intl-home .channel-stack__platforms {
+  background-color: #fff !important;
+}
+
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .wcard__inner,
+#lightvela-intl-home .about__cards .wcard:nth-child(3) .aut,
+#lightvela-intl-home .channel-approval {
+  background-color: #f7f7f6 !important;
+}
+
+/* Footer signature v80: ja-JP intentionally inherits the global Xingkai +
+   italic treatment — Chinese calligraphy fonts ship kana glyphs, and that
+   brushed look is the approved design for the Japanese footer.
+
+   Korean cannot borrow it (Chinese/Japanese faces carry no hangul glyphs, so
+   it silently fell back to a flat sans). Hangul gets its own self-hosted brush
+   face — subset webfont, so Windows/Android match macOS. Brush strokes read
+   small at the shared size, so pin an explicit 42px instead of an em multiple —
+   the parent .foot__title size is a clamp(), so an em value drifts with the
+   viewport and never lands on the intended optical size. */
+#lightvela-intl-home[data-locale='ko-KR'] .foot__title,
+#lightvela-intl-home[data-locale='ko-KR'] .foot__title .row {
+  font-family: "Nanum Brush Script", "Nanum Pen Script", Gungsuh, "궁서", GungsuhChe, "Apple SD Gothic Neo", var(--font-sans) !important;
+  font-style: normal !important;
+  font-weight: 400;
+  font-size: clamp(30px, 3.3vw, 42px);
+  line-height: 1.3;
+}
+
+/* Nanum Brush Script (SIL OFL 1.1, see assets/fonts/nanum-brush-OFL.txt).
+   Subset to the hangul used by the Korean footer headline: 3.5MB -> 22KB.
+   Declared here rather than in the imported base stylesheet so a re-import
+   cannot drop it and silently degrade Korean back to a flat sans. */
+@font-face {
+  font-family: 'Nanum Brush Script';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('assets/fonts/nanum-brush-ko-subset.woff2') format('woff2');
+  unicode-range: U+AC8C, U+ACC4, U+ACE0, U+AE30, U+B294, U+B4DC, U+B514, U+B77C, U+B9E1, U+C11C, U+C138, U+C18D, U+C544, U+C5B4, U+C5D0, U+C694, U+C6B0, U+C6C0, U+C774, U+C9C1, U+D074, U+D558;
+}
+
+/* Section gutter parity: .about shipped with a 20px inline padding while every
+   other section (.scenes / .deploy / .cta / .foot) uses 40px, so the capability
+   cards hung 20px further out than the content above them. Matching the 40px
+   gutter puts .about and .scenes on the same 1200px content width. */
+@media (min-width: 1024px) {
+  #lightvela-intl-home .about {
+    padding-right: 40px !important;
+    padding-left: 40px !important;
+  }
+}
+
+/* NOTE: .scenes__title is deliberately NOT given the editorial cover face.
+   international-home-page.test.tsx asserts that en/id/es/ja/ko marketing
+   headings keep the body sans, so adding it here would break the contract.
+   It was added once to fix "the two section headings look different" and was
+   reverted for that reason. */
+
+/* Section heading alignment v80: .about__head is already left-aligned on
+   desktop, but .scenes__title only inherited from its parent, so the two
+   section headings could drift apart per locale. Pin the same left alignment
+   without !important so locale-specific rules can still override it. */
+@media (min-width: 1024px) {
+  #lightvela-intl-home .scenes__title {
+    text-align: left;
+  }
+}
+
+/* Edge parity v80: the hero frame is capped at 1140px while every block below
+   it runs at the 1200px content width, so each section edge landed 30px
+   further out than the hero screenshot above. Align them to the hero frame. */
+@media (min-width: 1024px) {
+  #lightvela-intl-home .about__head,
+  #lightvela-intl-home .about__cards,
+  #lightvela-intl-home .scenes__head,
+  #lightvela-intl-home .soul-strip,
+  #lightvela-intl-home .scenes__layout {
+    max-width: 1140px !important;
+    margin-right: auto !important;
+    margin-left: auto !important;
+  }
+}

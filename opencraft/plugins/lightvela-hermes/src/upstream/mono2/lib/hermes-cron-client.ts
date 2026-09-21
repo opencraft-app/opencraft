@@ -686,7 +686,7 @@ export async function execCommandStream(
     credentials: "include",
     headers,
     signal: options.signal,
-    body: JSON.stringify({ command: routedCommand, run_as_user: "agentuser" }),
+    body: JSON.stringify(createDebugExecRequestBody(routedCommand)),
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {

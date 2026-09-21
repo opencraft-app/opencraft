@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -417,6 +418,100 @@ func (s *Store) GetBindingByUserID(ctx context.Context, userID string) (storage.
 	}
 	binding.CreatedAt = time.Unix(0, createdAtNS).UTC()
 	return binding, nil
+}
+
+func (s *Store) ListAdminAccounts(ctx context.Context, filter storage.AdminAccountFilter) ([]storage.AdminAccount, int64, error) {
+	page := filter.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	where := ""
+	args := make([]any, 0, 2)
+	if search := strings.TrimSpace(filter.Search); search != "" {
+		where = `WHERE lower(u.id) LIKE lower(?)
+			OR lower(COALESCE(b.shadow_user_name, '')) LIKE lower(?)
+			OR lower(u.country_code || u.phone_number) LIKE lower(?)
+			OR CAST(COALESCE(b.uin, 0) AS TEXT) LIKE ?
+			OR CAST(COALESCE(b.owner_uin, 0) AS TEXT) LIKE ?
+			OR CAST(COALESCE(b.app_id, 0) AS TEXT) LIKE ?
+			OR lower(COALESCE(b.instance_id, '')) LIKE lower(?)`
+		pattern := "%" + search + "%"
+		for range 7 {
+			args = append(args, pattern)
+		}
+	}
+
+	var total int64
+	countQuery := `SELECT COUNT(*)
+		FROM users u
+		LEFT JOIN bindings b ON b.user_id = u.id
+		` + where
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	queryArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT u.id, u.country_code, u.phone_number,
+		       u.is_register_shadow_account, u.is_shadow_account_basic_auth, u.is_standard_realname_auth,
+		       COALESCE(b.shadow_user_name, ''), COALESCE(b.uin, 0), COALESCE(b.owner_uin, 0),
+		       COALESCE(b.app_id, 0), COALESCE(b.instance_id, ''), u.created_at_ns, b.created_at_ns
+		FROM users u
+		LEFT JOIN bindings b ON b.user_id = u.id
+		`+where+`
+		ORDER BY COALESCE(b.created_at_ns, u.created_at_ns) DESC, u.id ASC
+		LIMIT ? OFFSET ?`, queryArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	accounts := make([]storage.AdminAccount, 0, pageSize)
+	for rows.Next() {
+		var account storage.AdminAccount
+		var registered, basicAuth, standardRealname int64
+		var uin, ownerUin, appID int64
+		var createdAtNS int64
+		var boundAtNS sql.NullInt64
+		if err := rows.Scan(
+			&account.UserID, &account.CountryCode, &account.PhoneNumber,
+			&registered, &basicAuth, &standardRealname,
+			&account.ShadowUserName, &uin, &ownerUin,
+			&appID, &account.InstanceID, &createdAtNS, &boundAtNS,
+		); err != nil {
+			return nil, 0, err
+		}
+		account.IsRegisterShadowAccount = registered == 1
+		account.IsShadowAccountBasicAuth = basicAuth == 1
+		account.IsStandardRealnameAuth = standardRealname == 1
+		if uin > 0 {
+			account.Uin = strconv.FormatInt(uin, 10)
+		}
+		if ownerUin > 0 {
+			account.OwnerUin = strconv.FormatInt(ownerUin, 10)
+		}
+		if appID > 0 {
+			account.AppID = strconv.FormatInt(appID, 10)
+		}
+		account.CreatedAt = time.Unix(0, createdAtNS).UTC()
+		if boundAtNS.Valid {
+			boundAt := time.Unix(0, boundAtNS.Int64).UTC()
+			account.BoundAt = &boundAt
+		}
+		accounts = append(accounts, account)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return accounts, total, nil
 }
 
 func (s *Store) SaveFreeTrialOrderCheckpoint(ctx context.Context, checkpoint storage.FreeTrialOrderCheckpoint) error {
