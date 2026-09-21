@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as client from "@/lib/connectors-client";
 import { ConnectorsPanel } from "@/pages/marketing/agent-connectors-panel";
@@ -15,7 +15,21 @@ vi.mock("@/lib/connectors-client", () => ({
   CONNECTOR_OAUTH_COMPLETE_MESSAGE: "connector.oauth.complete",
 }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // 每例独立注入 OAuth 流测试所需的 env；unstubAllGlobals 统一放 afterEach，
+  // 避免用例中途 unstub 清掉 localStorage stub 造成跨用例污染。
+  vi.stubEnv("NEXT_PUBLIC_AI_SERVER_BASE_URL", "https://ai-server.example.com");
+  // 兜底：所有异步 API 默认返回 resolved promise（与真实契约一致），
+  // 用例再用 mockResolvedValue 覆盖具体返回值。
+  vi.mocked(client.cancelConnectorOAuth).mockResolvedValue(undefined);
+  vi.mocked(client.completeConnectorOAuth).mockResolvedValue({ ok: true });
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("ConnectorsPanel", () => {
   it("渲染连接器卡片与状态徽标", async () => {
@@ -72,5 +86,103 @@ describe("ConnectorsPanel", () => {
     await waitFor(() =>
       expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
     );
+  });
+});
+
+describe("ConnectorsPanel OAuth 流程", () => {
+  it("点连接：auth_required 时打开授权窗口并监听 postMessage 完成", async () => {
+    const windowOpen = vi.fn(() => ({ closed: true }) as unknown as Window);
+    vi.stubGlobal("open", windowOpen);
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
+      {
+        key: "tencent-meeting",
+        name: "腾讯会议",
+        connectorType: "local_cli",
+        status: "not_connected",
+      },
+    ]);
+    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({
+      status: "auth_required",
+      authorizationUrl: "https://oauth.example.com/auth",
+      flowId: "flow-1",
+    });
+    vi.mocked(client.completeConnectorOAuth).mockResolvedValue({ ok: true });
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接" }));
+    await waitFor(() =>
+      expect(windowOpen).toHaveBeenCalledWith(
+        "https://oauth.example.com/auth",
+        "_blank",
+        "noopener",
+      ),
+    );
+    // 模拟 ai-server 回调页 postMessage（合法 origin）
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: "https://ai-server.example.com",
+        data: {
+          type: "connector.oauth.complete",
+          flowId: "flow-1",
+          connectorKey: "tencent-meeting",
+          status: "ok",
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(client.completeConnectorOAuth).toHaveBeenCalledWith(
+        "ins-1",
+        "tencent-meeting",
+        "flow-1",
+      ),
+    );
+    await waitFor(() =>
+      expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("点连接：enable 直接成功（无需 OAuth）时仅刷新列表", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
+      { key: "x", name: "X", connectorType: "mcp_proxy", status: "not_connected" },
+    ]);
+    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({ status: "ok" });
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接" }));
+    await waitFor(() =>
+      expect(client.listInstanceConnectors).toHaveBeenCalledTimes(2),
+    );
+    expect(client.completeConnectorOAuth).not.toHaveBeenCalled();
+  });
+
+  it("postMessage origin 不匹配时忽略（安全）", async () => {
+    vi.mocked(client.listInstanceConnectors).mockResolvedValue([
+      {
+        key: "tencent-meeting",
+        name: "腾讯会议",
+        connectorType: "local_cli",
+        status: "not_connected",
+      },
+    ]);
+    vi.mocked(client.enableBuiltinConnector).mockResolvedValue({
+      status: "auth_required",
+      authorizationUrl: "https://oauth.example.com/auth",
+      flowId: "flow-9",
+    });
+    vi.stubGlobal("open", vi.fn(() => ({}) as unknown as Window));
+    render(<ConnectorsPanel instanceId="ins-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接" }));
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: "https://evil.example.com",
+        data: {
+          type: "connector.oauth.complete",
+          flowId: "flow-9",
+          connectorKey: "tencent-meeting",
+        },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(client.completeConnectorOAuth).not.toHaveBeenCalled();
   });
 });
