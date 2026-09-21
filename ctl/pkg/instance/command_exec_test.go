@@ -43,6 +43,7 @@ type commandSandboxAdapterStub struct {
 	stdinErr        error
 	ptyCalls        []psandbox.PtyExecStreamRequest
 	ptyEvents       []psandbox.PtyExecStreamEvent
+	ptyBatches      [][]psandbox.PtyExecStreamEvent
 	ptyErr          error
 }
 
@@ -140,7 +141,12 @@ func (s *commandSandboxAdapterStub) StreamPtyCommand(_ context.Context, _ string
 	if req != nil {
 		s.ptyCalls = append(s.ptyCalls, *req)
 	}
-	for _, event := range s.ptyEvents {
+	events := s.ptyEvents
+	if len(s.ptyBatches) > 0 {
+		events = s.ptyBatches[0]
+		s.ptyBatches = s.ptyBatches[1:]
+	}
+	for _, event := range events {
 		if err := onEvent(event); err != nil {
 			return err
 		}
@@ -1575,10 +1581,10 @@ func TestConfigureQQChannelEnsuresPluginBeforeAdd(t *testing.T) {
 
 func TestConfigureQQChannelRoutesNamedHermesProfile(t *testing.T) {
 	adapter := &commandSandboxAdapterStub{
-		processBatches: [][]psandbox.ProcessStreamEvent{
-			{{Stdout: `{"items":[{"native_id":"sales-123","display_name":"Sales","description":"","is_default":false,"gateway_running":false,"modified_at":"2026-09-09T00:00:00Z"}]}`}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
-			{{Stdout: "ok"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
-			{{Stdout: "ok"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
+		ptyBatches: [][]psandbox.PtyExecStreamEvent{
+			{{Type: "output", Chunk: `{"items":[{"native_id":"sales-123","display_name":"Sales","description":"","is_default":false,"gateway_running":false,"modified_at":"2026-09-09T00:00:00Z"}]}`}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+			{{Type: "output", Chunk: "ok"}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
+			{{Type: "output", Chunk: "ok"}, {Type: "finished", ExitCode: 0, Status: "SUCCESS"}},
 		},
 	}
 	logic := &logic{
@@ -1601,15 +1607,15 @@ func TestConfigureQQChannelRoutesNamedHermesProfile(t *testing.T) {
 	if resp == nil || !resp.GatewayRestarted {
 		t.Fatalf("expected successful profile channel response, got %+v", resp)
 	}
-	if len(adapter.processCalls) != 3 {
-		t.Fatalf("expected profile lookup, configure and restart calls, got %d", len(adapter.processCalls))
+	if len(adapter.ptyCalls) != 3 || len(adapter.processCalls) != 0 {
+		t.Fatalf("expected TAT profile lookup, configure and restart calls, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
 	}
-	configureCommand := adapter.processCalls[1].Args[2]
+	configureCommand := adapter.ptyCalls[1].Command
 	if !strings.Contains(configureCommand, "acli configure gateway qqbot") ||
 		!strings.Contains(configureCommand, "--agent") || !strings.Contains(configureCommand, "sales-123") {
 		t.Fatalf("expected profile-scoped configure command, got %s", configureCommand)
 	}
-	restartCommand := adapter.processCalls[2].Args[2]
+	restartCommand := adapter.ptyCalls[2].Command
 	if !strings.Contains(restartCommand, "acli gateway restart") ||
 		!strings.Contains(restartCommand, "--agent") || !strings.Contains(restartCommand, "sales-123") {
 		t.Fatalf("expected profile-scoped restart command, got %s", restartCommand)
@@ -1660,9 +1666,12 @@ func TestFinishWeixinLoginSuccessUsesProcessGatewayRestartCommand(t *testing.T) 
 			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
 		}},
 		sandboxAdapter: &commandSandboxAdapterStub{
-			processBatches: [][]psandbox.ProcessStreamEvent{
-				{{Stdout: "restarted"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
-				{{Stdout: `{"ok":true,"channel":"weixin","bot_id":"ins-1","profile_id":"default","status":"connected"}`}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
+			processEvents: []psandbox.ProcessStreamEvent{
+				{Stdout: "restarted"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"},
+			},
+			ptyEvents: []psandbox.PtyExecStreamEvent{
+				{Type: "output", Chunk: `{"ok":true,"channel":"weixin","bot_id":"ins-1","profile_id":"default","status":"connected"}`},
+				{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
 			},
 		},
 		logger: zap.NewNop(),
@@ -1681,8 +1690,8 @@ func TestFinishWeixinLoginSuccessUsesProcessGatewayRestartCommand(t *testing.T) 
 	if len(adapter.calls) != 0 {
 		t.Fatalf("expected weixin login restart to avoid TAT ExecCommand, got %d calls", len(adapter.calls))
 	}
-	if len(adapter.processCalls) != 2 {
-		t.Fatalf("expected process restart and channel binding confirmation, got %d", len(adapter.processCalls))
+	if len(adapter.processCalls) != 1 || len(adapter.ptyCalls) != 1 {
+		t.Fatalf("expected envd restart and TAT channel binding confirmation, envd=%d pty=%d", len(adapter.processCalls), len(adapter.ptyCalls))
 	}
 	restartReq := adapter.processCalls[0]
 	if restartReq.Cmd != "/bin/bash" || len(restartReq.Args) != 3 {
