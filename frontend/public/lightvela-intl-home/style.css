@@ -13900,6 +13900,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   max-height: 2.6em;
   overflow: hidden;
   white-space: normal;
+  text-overflow: clip;
   text-wrap: balance;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

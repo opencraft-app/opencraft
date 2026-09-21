@@ -46,9 +46,11 @@
 
 - [x] 9 个语言 fragment 中检索 `memory-preference` 结果为 0（DOM、CSS、注入脚本三处）
 - [x] 首页所有语言「记忆与个性化」卡片不再出现偏好类角标，「云端 24/7 在线」角标保留
-- [x] 9 个语言的审批卡标题最多 2 行，且不存在「第二行仅 1–2 个字符」的情况（Chromium 桌面 1440 与移动 390 双视口实测）
-- [x] `next-site/__tests__/international-home-page.test.tsx` 36 个用例通过（补充 `memory-preference` 回归断言）
+- [x] 9 个语言的审批卡标题最多 2 行，无「第二行仅 1–2 个字符」孤行。机器护栏：审批卡标题长度 ≤ 24 字符的回归断言（超长即失败，覆盖全部 9 个语言含 en-US）；换行由 `text-wrap: balance` + `-webkit-line-clamp: 2` 保证。双视口（1440 / 390）为人工预览核对，CI 不做像素级实测，孤行结论不依赖自动化截图
+- [x] `next-site/__tests__/international-home-page.test.tsx` 36 个用例通过（新增 `memory-preference` 回归断言；审批卡标题断言从 `locale !== "en-US"` 分支中移出，默认语言同样受拦）
 
 ## 备注
 
 - frament 产物由 `import-international-homepage.mjs` 基于外部审批稿源目录生成，本地无源目录，本次产物为手改同步，脚本与产物保持一致。
+- 首轮改动漏了 `channelApprovalCopyByLocale["en-US"].title`（仍为 `Human Approval · Confirm before acting`），产物虽已简写，但脚本是 `channel-approval__title` + `aria-label` 的唯一来源，下次跑 importer 会回流；已同步为 `Confirm before acting`，并将断言移出 `locale !== "en-US"` 分支。
+- `.channel-approval__title` 独立规则补 `text-overflow: clip`，与同组 `h4` 规则写法一致（line-clamp 生效时无视觉差异）。

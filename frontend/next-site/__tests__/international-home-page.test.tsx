@@ -543,10 +543,12 @@ describe("international v2 homepage artifact", () => {
       expect(document.querySelector("#play-2 .automation-card-video"), `${locale} stale automation video`).toBeNull();
       expect(document.querySelector("#play-2 .automation-card-poster"), `${locale} stale automation poster`).toBeNull();
       const approvalTitle = document.querySelector(".channel-approval__title")?.textContent ?? "";
+      expect(approvalTitle, `${locale} approval title`).not.toContain("Human Approval");
+      // 孤行护栏：标题超过 24 字符时，134px 容器内必然折行且末行易剩 1–2 字符。
+      expect(approvalTitle.length, `${locale} approval title length`).toBeLessThanOrEqual(24);
       const skillKinds = Array.from(document.querySelectorAll(".skwall__tile em"), (node) => node.textContent ?? "");
       if (locale !== "en-US") {
         const bodyText = document.body.textContent ?? "";
-        expect(approvalTitle, `${locale} approval title`).not.toContain("Human Approval");
         expect(skillKinds, `${locale} skill kind labels`).not.toContain("Skill");
         expect(skillKinds, `${locale} tool kind labels`).not.toContain("Tool");
         expect(bodyText, `${locale} stale Skill testimonial copy`).not.toMatch(

@@ -4811,7 +4811,7 @@ const channelApprovalCopyByLocale = {
   "en-US": {
     eyebrow: "Connected channels",
     explore: "Explore channels",
-    title: "Human Approval · Confirm before acting",
+    title: "Confirm before acting",
     user: "Delete the old Q3 customer memory and remove the draft file.",
     agent: "This permanently deletes saved memory and a workspace file. Reply “Confirm delete” to continue; any other reply cancels it.",
   },
@@ -7681,11 +7681,12 @@ const capabilityTitleWrapCss = `
   -webkit-line-clamp: 2;
 }
 #lightvela-intl-home .channel-approval__title {
-  display: -webkit-box;
-  max-height: 2.6em;
-  overflow: hidden;
-  white-space: normal;
-  text-wrap: balance;
+display: -webkit-box;
+max-height: 2.6em;
+overflow: hidden;
+white-space: normal;
+text-overflow: clip;
+text-wrap: balance;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
