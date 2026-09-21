@@ -188,6 +188,7 @@ const expectSetupRunning = () => waitFor(() => {
 describe("create bot: all entry paths", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     testRegion.isCN = true;
     testRegion.isGlobal = false;
     currentSessionUser = {
@@ -227,11 +228,14 @@ describe("create bot: all entry paths", () => {
 
     // 不该被弹回表单
     expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
-    // 配置清单要出现并开始执行
-    await expectSetupRunning();
-    expect(execDebugCommand.mock.calls.length).toBeGreaterThan(0);
-    // URL 不该被改写（改写会导致面板重挂载）
-    expect(navigateMock).not.toHaveBeenCalled();
+    // 已就绪的实例应完成配置并进入总览；不能把卡在进度页当成成功。
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      "/agents/overview?bot=ins-sub", { replace: true },
+    ));
+    expect(execDebugCommand.mock.calls.some(([id, command]) =>
+      id === "ins-sub" && command.includes("__CTL_SOUL_EOF__"),
+    )).toBe(true);
+    expect(addBot).not.toHaveBeenCalled();
   });
 
   it("B. multi-bot: creating a second bot keeps the panel mounted", async () => {

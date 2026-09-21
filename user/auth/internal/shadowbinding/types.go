@@ -21,7 +21,12 @@ const (
 	AuthCodePurposeSaaSCallback = "saas_callback"
 )
 
-var ErrNotFound = errors.New("shadow binding not found")
+var (
+	ErrNotFound          = errors.New("shadow binding not found")
+	ErrAdminDisabled     = errors.New("shadow binding admin is disabled")
+	ErrInvalidAdminInput = errors.New("invalid shadow binding admin input")
+	ErrBindingConflict   = errors.New("shadow binding conflict")
+)
 
 type Binding struct {
 	UserID                    string
@@ -56,6 +61,9 @@ type Store interface {
 	SavePendingBinding(ctx context.Context, userID string, shadowUserName string, now time.Time) (Binding, error)
 	GetBindingByUserID(ctx context.Context, userID string) (Binding, error)
 	GetBindingByShadowUserName(ctx context.Context, shadowUserName string) (Binding, error)
+	ListAdminBindings(ctx context.Context, search string, limit int, offset int) ([]Binding, int, error)
+	UpsertAdminBinding(ctx context.Context, binding Binding, now time.Time) (Binding, error)
+	DisableAdminBinding(ctx context.Context, userID string, now time.Time) (Binding, error)
 	MarkBindingRegistered(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	MarkBindingActive(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	SetBindingAppIDIfMissing(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
@@ -64,6 +72,20 @@ type Store interface {
 	MarkBasicAuthFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error)
 	IssueAuthCode(ctx context.Context, userID string, purpose string, ttl time.Duration, now time.Time) (AuthCode, error)
 	ConsumeAuthCode(ctx context.Context, code string, now time.Time) (AuthCode, error)
+}
+
+type AdminBindingInput struct {
+	UserID         string
+	ShadowUserName string
+	Uin            int64
+	OwnerUin       int64
+	AppID          int64
+	Reason         string
+}
+
+type AdminDisableInput struct {
+	UserID string
+	Reason string
 }
 
 type BindInput struct {

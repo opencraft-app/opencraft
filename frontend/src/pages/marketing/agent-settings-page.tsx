@@ -2669,15 +2669,7 @@ export const AgentSettingsPage = ({
       })),
     [visibleBots, t],
   );
-  /*
-   * 这里原有一个恒为 true 的「是否显示新建入口」变量（把入口从 console
-   * reveal 后面放出来）。合并 master 时删掉：master 做了同一件事但更彻底
-   * —— 变量和使用处一并移除，条件直接写 {multiBotEnabled && (。
-   * 准入闸门不受影响，仍是 multiBotEnabled + canCreateAdditionalBot。
-   *
-   * 注：agent-settings-sidebar-tabs 有一条源码文本断言要求该标识符不再
-   * 出现在本文件里，所以上面刻意没写出它的原名。
-   */
+  const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
     createLimitMessage,
@@ -2702,8 +2694,8 @@ export const AgentSettingsPage = ({
   const activeSection = !IS_BUDDY_ONBOARDING_ENABLED && requestedSection === "overview"
     ? DEFAULT_AGENT_SECTION
     : requestedSection;
-  const isEmptyAgentSectionPage = Boolean(initialSectionSlug)
-    && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
+  const isEmptyAgentPage = !isModifying
+    && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
@@ -3746,9 +3738,35 @@ export const AgentSettingsPage = ({
   const [importStatusByInstanceId, setImportStatusByInstanceId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [importStatusLoadingInstanceIds, setImportStatusLoadingInstanceIds] = useState<Set<string>>(new Set());
   const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
+  const [sessionRepairPendingKeysByInstanceId, setSessionRepairPendingKeysByInstanceId] = useState<Record<string, string[]>>({});
   const [workspaceConfirm, setWorkspaceConfirm] = useState<WorkspaceConfirmState | null>(null);
   const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleSessionRepairPendingChange = useCallback((change: {
+    maintenanceScopeId: string;
+    requestKey: string;
+    pending: boolean;
+  }) => {
+    setSessionRepairPendingKeysByInstanceId((current) => {
+      const scopeKeys = current[change.maintenanceScopeId] ?? [];
+      if (change.pending) {
+        if (scopeKeys.includes(change.requestKey)) return current;
+        return {
+          ...current,
+          [change.maintenanceScopeId]: [...scopeKeys, change.requestKey],
+        };
+      }
+      if (!scopeKeys.includes(change.requestKey)) return current;
+      const nextScopeKeys = scopeKeys.filter((requestKey) => requestKey !== change.requestKey);
+      const next = { ...current };
+      if (nextScopeKeys.length > 0) {
+        next[change.maintenanceScopeId] = nextScopeKeys;
+      } else {
+        delete next[change.maintenanceScopeId];
+      }
+      return next;
+    });
+  }, []);
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3950,6 +3968,9 @@ export const AgentSettingsPage = ({
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
   const isActiveBotExporting = activeRuntimeInstanceId ? exportingInstanceIds.has(activeRuntimeInstanceId) : false;
   const isActiveBotImporting = activeRuntimeInstanceId ? importingInstanceIds.has(activeRuntimeInstanceId) : false;
+  const isActiveSessionRepairing = activeRuntimeInstanceId
+    ? (sessionRepairPendingKeysByInstanceId[activeRuntimeInstanceId]?.length ?? 0) > 0
+    : false;
   const activeExportStatus = activeRuntimeInstanceId ? exportStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const activeImportStatus = activeRuntimeInstanceId ? importStatusByInstanceId[activeRuntimeInstanceId] ?? null : null;
   const isActiveExportStatusLoading = activeRuntimeInstanceId ? exportStatusLoadingInstanceIds.has(activeRuntimeInstanceId) : false;
@@ -3965,6 +3986,7 @@ export const AgentSettingsPage = ({
     currentTask: activeWorkspaceTask,
   });
   const maintenanceBusy = resetting || resettingAcli || isActiveBotExporting || isActiveBotImporting
+    || isActiveSessionRepairing
     || isActiveExportStatusLoading || isActiveImportStatusLoading
     || isWorkspaceActionRunning(activeWorkspaceTask?.status);
   // 当前 tab 是否展示错误
@@ -4824,7 +4846,8 @@ export const AgentSettingsPage = ({
       className={cn(
         "flex min-h-dvh flex-col bg-white",
         activeSection === "chat" && "lv-agent-chat-page",
-        isEmptyAgentSectionPage && "lv-agent-empty-section-page",
+        isEmptyAgentPage && "lv-agent-empty-page",
+        isModifying && "lv-agent-upgrading-page",
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
@@ -5783,7 +5806,7 @@ export const AgentSettingsPage = ({
                                 }
                               }}
                             >
-                              {multiBotEnabled && (
+                              {showCreateBotEntry && (
                                 <WorkspaceActionTooltip
                                   content={createLimitMessage || t("新建 Bot")}
                                   side="bottom"
@@ -6256,7 +6279,7 @@ export const AgentSettingsPage = ({
                           <AgentOnboardingPanel
                             key={activeBot.id}
                             botId={activeBot.id}
-                            profileId={activeBot.profileId ?? "main"}
+                            profileId={activeBot.profileId ?? ""}
                             onCreated={handleBuddyCreated}
                             execDebugCommand={repositories.bots.execDebugCommand}
                             initialName={activeBot.name}
@@ -6343,7 +6366,7 @@ export const AgentSettingsPage = ({
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel
                               botId={activeBot.id}
-                              profileId={activeBot.profileId ?? "main"}
+                              profileId={activeBot.profileId}
                               botName={activeBot.name}
                               isMainBot={isActiveBotDefault}
                               execDebugCommand={repositories.bots.execDebugCommand}
@@ -6368,6 +6391,9 @@ export const AgentSettingsPage = ({
                               }}
                               resetAgentConsole={acliResetConsole}
                               resetAgentConsoleRef={acliResetConsoleRef}
+                              maintenanceBusy={maintenanceBusy}
+                              maintenanceScopeId={activeRuntimeInstanceId ?? activeBot.id}
+                              onSessionRepairPendingChange={handleSessionRepairPendingChange}
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}
@@ -6475,7 +6501,8 @@ export const AgentSettingsPage = ({
                   style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建 Bot") : t("暂不可创建")}
+                  {canCreateInitialAgent && !directCreating && <Plus className="h-4 w-4" aria-hidden="true" />}
+                  {directCreating ? t("创建中...") : canCreateInitialAgent ? t("新建") : t("暂不可创建")}
                 </button>
               </div>
             )

@@ -253,6 +253,50 @@ func TestBuildDeveloperRouteRegistryRequiresSandboxAndHMAC(t *testing.T) {
 	}
 }
 
+func TestBuildShadowBindingServiceWiresTestingAdminFlag(t *testing.T) {
+	t.Setenv("SHADOW_BINDING_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("LIGHTCLAW_PUBLIC_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech")
+	t.Setenv("SHADOW_SECRET_ID", "")
+	t.Setenv("SHADOW_SECRET_KEY", "")
+
+	svc := buildShadowBindingService(shadowbinding.NewMemoryStore(), loggingDiscardLogger(), shadowbinding.SiteKindCN)
+	if svc == nil {
+		t.Fatal("expected shadow binding service")
+	}
+	if !svc.AdminEnabled() {
+		t.Fatal("expected testing admin flag to be enabled")
+	}
+}
+
+func TestBuildShadowBindingServiceRejectsTestingAdminOnProductionHost(t *testing.T) {
+	t.Setenv("SHADOW_BINDING_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("LIGHTCLAW_PUBLIC_BASE_URL", "https://api.lightvela.com")
+	t.Setenv("SHADOW_SECRET_ID", "")
+	t.Setenv("SHADOW_SECRET_KEY", "")
+
+	svc := buildShadowBindingService(shadowbinding.NewMemoryStore(), loggingDiscardLogger(), shadowbinding.SiteKindCN)
+	if svc == nil {
+		t.Fatal("expected shadow binding service")
+	}
+	if svc.AdminEnabled() {
+		t.Fatal("testing shadow binding admin must remain disabled on a production host")
+	}
+}
+
+func TestShadowBindingAdminEnabledRejectsMalformedPublicBaseURL(t *testing.T) {
+	t.Setenv("SHADOW_BINDING_ADMIN_ENABLED", "true")
+	t.Setenv("SHADOW_BINDING_ADMIN_ENVIRONMENT", "sandbox-bj-7")
+	t.Setenv("LIGHTCLAW_PUBLIC_BASE_URL", "https://%")
+
+	if shadowBindingAdminEnabled(loggingDiscardLogger()) {
+		t.Fatal("testing shadow binding admin must remain disabled for a malformed public base URL")
+	}
+}
+
 func loggingDiscardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

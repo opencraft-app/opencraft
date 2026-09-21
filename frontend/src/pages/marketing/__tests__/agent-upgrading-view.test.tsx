@@ -1,7 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bundle, Pass, PassModifyCheckout } from "@/domain/types";
 import { AgentUpgradingView } from "../agent-upgrading-view";
+
+const enUs = JSON.parse(
+  readFileSync(join(process.cwd(), "src/i18n/generated/en-US.json"), "utf8"),
+) as Record<string, string>;
 
 const { getModifyCheckout, listBundles } = vi.hoisted(() => ({ getModifyCheckout: vi.fn(), listBundles: vi.fn() }));
 vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => ({ plans: { getModifyCheckout, listBundles } }) }));
@@ -40,6 +46,10 @@ describe("Agent upgrade target summary", () => {
 
   it("restores the order's target on a fresh page and omits model credits", async () => {
     await mount();
+    const heading = screen.getByRole("heading", { name: "正在升级您的 LightVela 套餐" });
+    expect(heading.querySelector('[aria-hidden="true"]')).toHaveTextContent("...");
+    expect(Object.values(enUs)).toContain("Upgrading your LightVela plan");
+    expect(Object.values(enUs)).not.toContain("Upgrading your Hermes Agent plan");
     expect(screen.getByText("目标套餐")).toBeInTheDocument();
     expect(screen.getByText("巡游 Cruise AI")).toBeInTheDocument();
     expect(screen.queryByText("启航 Launch AI")).not.toBeInTheDocument();

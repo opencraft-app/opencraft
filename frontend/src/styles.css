@@ -282,17 +282,8 @@ header.lv-agent-sidebar-header--borderless {
   }
 }
 
-/* 无 Bot 的具名 Agent 分区同样去边框。
- *
- * 与上面那条不是重复：这条管 isEmptyAgentSectionPage（有实例但该分区没内容），
- * 上面那条管 isOnboardingVisible（创建引导）。两个状态互不包含，各有测试
- * 守卫（agent-settings-empty-persona / agent-settings-nav-spacing），
- * 删掉任一条都会让对应场景的边框回来。
- *
- * 选择器跟随 master 从 .lv-agent-empty-persona-page 改名为
- * .lv-agent-empty-section-page —— 旧名在代码里已无任何使用处，
- * 且 agent-settings-empty-persona 的正则守卫锁的是新名。 */
-header.lv-agent-sidebar-header:has(+ .lv-agent-empty-section-page) {
+/* Agent pages without a sidebar do not keep a floating frame around the brand. */
+header.lv-agent-sidebar-header:has(+ :is(.lv-agent-empty-page, .lv-agent-upgrading-page)) {
   border-right: 0;
   border-bottom: 0 !important;
 }

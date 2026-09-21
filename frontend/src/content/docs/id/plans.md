@@ -2,6 +2,8 @@
 
 ## Ringkasan
 
+**Menu avatar di bagian bawah sidebar kiri konsol Agent memiliki dua pilihan terpisah: Akun untuk profil dan ID pengguna, serta Paket & tagihan untuk langganan, penggunaan kredit, perpanjangan, dan metode pembayaran.**
+
 **LightVela menyediakan dua paket, Launch dan Cruise, mencakup kebutuhan dari percobaan ringan hingga pemakaian utama harian. Paket adalah bundel sumber daya untuk mengaktifkan Hermes Agent: setelah aktif, platform mengalokasikan lingkungan cloud khusus (CPU, memori, dan penyimpanan tersendiri) tempat Agent Anda daring 24/7, tanpa perlu membeli server atau melakukan deployment lokal. Perbedaan antar paket hanya pada spesifikasi lingkungan, kapasitas penyimpanan, dan kredit model bulanan — Launch memberi 2 core 4G memori, penyimpanan 50G, dan 100 kredit per bulan, sementara Cruise menawarkan 4 core 8G memori dengan penyimpanan serta kuota bulanan lebih besar. Kemampuan inti Agent (evolusi mandiri, akses multi-kanal, skill, tugas otomatis, dan memori jangka panjang) sama di semua paket. LightVela berencana masuk public beta dengan penagihan aktif pada 18 Agustus 2026 (waktu Singapura); masa aktif paket pengguna closed beta diperpanjang 1 bulan tambahan, dan pengguna baru dapat mencoba Launch gratis 14 hari atau Launch AI gratis 7 hari pada pesanan pertama. Harga dan ketersediaan terkini mengacu pada halaman langganan.**
 
 ---
@@ -21,6 +23,25 @@ LightVela menyediakan dua tingkat paket, **Launch** dan **Cruise**, untuk kebutu
 ---
 
 ## Apa itu paket?
+
+### Akses akun dan tagihan
+
+Masuk ke LightVela. Di konsol Agent, arahkan kursor ke avatar dan nama Anda di bagian bawah sidebar kiri untuk membuka menu:
+
+- **Akun (Account)** membuka [halaman akun](/account/) untuk melihat profil, mengubah nama tampilan, menyalin ID pengguna, atau keluar.
+- **Paket & tagihan (Plans & billing)** membuka [halaman paket dan tagihan](/account/billing/) untuk melihat langganan, masa berlaku, penggunaan kredit, metode pembayaran, dan memperpanjang paket.
+
+Pada halaman **Paket & tagihan**, periksa status langganan. Jika paket dapat diperpanjang, pilih tombol perpanjangan dan ikuti petunjuk di layar. Jika belum berlangganan, gunakan tombol pembuatan untuk memilih paket di halaman Subscribe. Anda juga dapat menambahkan kartu di bagian metode pembayaran. Masukkan detail kartu di halaman penyedia pembayaran; LightVela tidak menyimpan nomor kartu lengkap.
+
+Periksa judul halaman untuk memastikan Anda berada di tempat yang tepat. Jika paket yang telah dibeli tidak muncul, pastikan akun yang digunakan sama dengan saat pembelian, lalu muat ulang; jangan membuat pesanan ganda. Jika kartu belum muncul, selesaikan proses di penyedia pembayaran sebelum kembali dan memuat ulang halaman.
+
+![Halaman akun: profil](../images/account-global.webp)
+
+![Paket dan tagihan: langganan dan metode pembayaran](../images/account-billing-global.webp)
+
+*Contoh antarmuka baru dengan data demo lokal, tanpa langganan aktif atau kartu tersimpan. Gambar menggunakan antarmuka bahasa Inggris.*
+
+### Paket dan sumber daya
 
 Paket adalah kumpulan sumber daya yang mengaktifkan Hermes Agent di LightVela. Setelah Anda mengaktifkan salah satu paket yang tersedia, LightVela memberi Anda **runtime cloud khusus** dengan CPU, memori, dan penyimpanan sendiri. Hermes Agent Anda dapat tetap online 24/7 tanpa perlu membeli server atau melakukan deployment lokal.
 

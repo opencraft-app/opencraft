@@ -38,6 +38,15 @@ function makeOverview(definition: SpanishSkillDefinition): CuratedSkillOverview 
 }
 
 const DEFINITIONS: Record<string, SpanishSkillDefinition> = {
+  "mattpocock/skills/teach": {
+    name: "Teach", purpose: "crear un espacio de aprendizaje persistente con lecciones breves y basadas en fuentes", input: "el tema, tu objetivo de aprendizaje, preferencias y restricciones", outcome: "un curso continuo con fuentes, práctica y registros de progreso", prompt: "Enséñame los fundamentos de este código mediante lecciones breves. Primero pregunta por mi objetivo, reúne fuentes fiables y registra las fuentes antes de escribir la primera lección.",
+  },
+  "mattpocock/skills/grill-me": {
+    name: "Grill Me", purpose: "poner a prueba un plan o diseño mediante preguntas sistemáticas", input: "el plan, la idea o el diseño y las decisiones ya tomadas", outcome: "riesgos, supuestos y criterios de aceptación más claros", prompt: "Hazme preguntas sobre este plan, una por una, sigue las respuestas importantes y continúa hasta que el alcance, los riesgos y los criterios de aceptación estén claros.",
+  },
+  "flowkit-labs/skills/reddit-automation": {
+    name: "Reddit Automation", purpose: "encontrar conversaciones de Reddit donde un producto puede ayudar de verdad", input: "el contexto del producto, la audiencia, las comunidades y la ayuda que puedes ofrecer", outcome: "hilos relevantes y borradores de respuesta útiles con afiliación transparente", prompt: "Encuentra hilos recientes de Reddit donde nuestro producto pueda ayudar. Explica por qué son relevantes, redacta respuestas útiles con afiliación transparente y espera mi revisión antes de publicar.",
+  },
   "charon-fan/agent-playbook/self-improving-agent": {
     name: "Self-Improving Agent", purpose: "aprender de resultados, errores y correcciones de ejecuciones anteriores", input: "el contexto de la ejecución, lo que ocurrió y los comentarios recibidos", outcome: "una mejora limitada, validable y reutilizable", prompt: "Revisa esta ejecución fallida, identifica la lección reutilizable y propón cómo validarla antes de aplicarla en el próximo intento.",
   },

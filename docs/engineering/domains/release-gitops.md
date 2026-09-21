@@ -83,10 +83,16 @@ master 源码
   `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
   回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
+- 服务级生产审核人由对应 `.ci/<service>.yml` 的 `PROD_REVIEWERS` 跟踪，并通过契约测试锁定服务边界；
+  不为单一服务改动共享模板默认名单。Stream 构建使用启动时的流水线版本快照，审核人变更只对新构建
+  生效，不追溯修改已暂停或运行中的构建。
 - Gateway Dashboard 新增内部上游时，source-facing ConfigMap 占位符、各环境 Kustomize replacement
   与 deploy-facing `gateway-dashboard-platform.env` 必须在同一变更中成套更新。所有复用共享
   component 的 sandbox/playground 环境都要提供对应环境键；生产环境则在各自 Kustomization 中
   显式接线。严格 Kustomize 校验必须证明渲染结果不再包含 `REPLACE_` 占位符，才能创建 promote MR。
+  上游地址和 Secret 键映射先回填 `master`，再由服务 CI 投影到 `gitops`，不得直接修改运行中
+  Deployment 或 deploy-facing 分支。多个上游明确共用同一内部服务令牌时，消费方 Deployment 可从
+  已有 runtime Secret 键分别映射语义化环境变量，不重复保存同值 Secret，也不把令牌写入 ConfigMap。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
   `*.edgeone.dev` URL 缺少 `eo_token` / `eo_time` 时，应根据同次部署的 project ID 和 deployment ID
@@ -109,6 +115,7 @@ master 源码
 - 未经用户明确授权，不构建付费制品、不更新 GitOps、不 apply、不发布。
 - 修改 `.ci/runtime/`、`argocd/`、`infra_pulumi/` 或 `codesign/` 时，先定位当前交付设计并同步更新映射的正式设计文档；`docs-impact` 只验证同一变更集含设计更新，不能代替平台 Owner 审阅。
 - Service Gateway 的国内与全球 allowlist 是独立发布面。国内站新增用户路由时只更新明确的国内环境配置，并用配置策略测试证明全球环境未暴露该路由；源码配置通过、MR 合入或镜像完成均不代表路由已发布，仍需目标 Argo revision、`Synced`、`Healthy` 和公网请求证据。
+- 新加坡生产多 Bot 由 `argocd/services/ctl/sgprod/ctl-platform.env` 显式设置 `MULTI_BOT_ENABLED`，并由 CTL base 将该可选键注入 `ctl-api`。回滚时只把目标环境值切为 `false`，仍需独立审查 Gateway Bot 路由、promote GitOps、确认 Argo `Synced/Healthy` 并执行真实国际站回归；源码中的 `true` 不代表运行态已启用。
 - 个人 DevCloud 动态注册的显式 `targetIp` 只允许在 `sandbox-bj-7` 与 `sandbox-kr-1` Auth overlay 中开启，用于跨地域 testing 入口 NAT 后仍能登记自动探测的 `9.0.0.0/8:18084`；UIN 必须继续由 Auth session 的 active shadow binding 派生。生产、staging、common/default 配置保持关闭。发布或修复这条能力时只精确同步目标 sandbox/testing 资源，不得借机全量同步同一 Argo App 中已有的生产漂移。
 - 接管已经存在的 Deployment、StatefulSet 或 StatefulSetPlus 时，GitOps manifest 必须沿用 live 对象的 `spec.selector`；该字段不可变，不能为了补充组织标签而扩展。新增标签只能放在允许变更的 metadata/Pod template，并确保 Pod labels 继续匹配 selector。发现 selector 漂移时先修 `master` 真源，再由流水线投影到 `gitops`，不直接热修 `gitops`。
 - 生产镜像 promote 只有在 staged diff 符合该服务的 pin-only 合约时才允许自动合并或自动同步。VelaGW 的 pin-only 合约仅允许目标环境 `velagw-platform.env` 中的 `VELAGW_IMAGE` 与 `VELAGW_DEPLOYED_AT` 变化；Kustomize 结构、NewAPI release pin 或任何其他 deploy-facing 配置变化必须关闭自动合并和自动同步，先审查差异并回填 `master` 真源后重新生成候选。
@@ -258,7 +265,11 @@ master 源码
 - 北京 Gateway 激活阶段在 bridge artifact 合入后，才允许同时增加 KSOPS generator、非 optional
   Secret 引用和 Collaboration upstream 配置；本地预览 Origin 采用路由级 allowlist，不继承全局 `*`。
   `service-gateway.bundle` 的北京 publish paths 必须显式包含该 bridge SOPS artifact，否则 auto-pin
-  应在创建 promote MR 前 fail closed。
+  应在创建 promote MR 前 fail closed。Deployment 的 bridge Secret 注入 patch 必须由
+  `service-gateway/k8s/overlays/beijing-sandbox` source-facing Component 持有，与基准 Deployment 同层组合；
+  deploy-facing 目录只保留环境配置和 Secret generator，不能对仅由 Component 引入的资源做顶层 patch。
+  北京主 sandbox 必须将该 source-facing Component 直接排在 common Component 后，不能经 sandbox profile
+  再嵌套一层；嵌套 Component 使用隔离累计器，仍会让结构性 patch 看不到 common 引入的 Deployment。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
@@ -335,6 +346,14 @@ CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testi
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
 Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
 namespace、name、目标 revision 与镜像。
+
+Shadow Binding 自助管理沿用既有 Auth `shadow_bindings` 表，不新增 migration。管理接口的代码即使进入
+`master` 也必须默认关闭；GitOps 只允许在 `argocd/services/lightclaw-auth/sandbox-bj-7/` 同时设置
+`SHADOW_BINDING_ADMIN_ENABLED=true` 与匹配的 `SHADOW_BINDING_ADMIN_ENVIRONMENT=sandbox-bj-7`。
+其他 Auth 环境不得出现启用值，运行时还要用精确 `LIGHTCLAW_PUBLIC_BASE_URL` 做第二层 fail-closed 校验。
+Gateway Dashboard 发布只更新 `sandbox-bj-7` 镜像 pin；新增 BFF 路径必须先验证 Dashboard admin session，
+再使用服务端 Auth admin token。不得把该开关或 UI 发布扩散到 production、staging、韩国 sandbox，
+也不得通过 App 级全量 Sync 携带无关资源。
 
 完成证据必须分层记录：源码合并 revision、Argo 目标 revision、精确资源 `Synced/Healthy`、运行镜像、
 国内/国际 registration、registry/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared

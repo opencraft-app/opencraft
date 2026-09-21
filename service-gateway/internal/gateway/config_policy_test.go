@@ -351,17 +351,9 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodPost + " /v1/instances/{instance_id}/channels/weixin/login-sessions/{session_id}/cancel": {},
 	}
 	domesticWant := make(map[string]struct{}, len(baseWant)+8)
-	globalWant := make(map[string]struct{}, len(baseWant)+4)
+	globalWant := make(map[string]struct{}, len(baseWant)+8)
 	for key := range baseWant {
 		domesticWant[key] = struct{}{}
-		globalWant[key] = struct{}{}
-	}
-	for _, key := range []string{
-		http.MethodGet + " /v1/instances/{instance_id}/bots",
-		http.MethodPost + " /v1/instances/{instance_id}/bots",
-		http.MethodPut + " /v1/instances/{instance_id}/bots/{bot_id}",
-		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}",
-	} {
 		globalWant[key] = struct{}{}
 	}
 	for _, key := range []string{
@@ -375,6 +367,7 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodDelete + " /v1/instances/{instance_id}/bots/{bot_id}/channel-bindings/{channel}",
 	} {
 		domesticWant[key] = struct{}{}
+		globalWant[key] = struct{}{}
 	}
 
 	assertAllowlist := func(t *testing.T, configPath string, want map[string]struct{}) {

@@ -66,6 +66,10 @@ func TestSGProdBotManagementDeploymentPolicy(t *testing.T) {
 		{http.MethodPost, "/v1/instances/ins_test/bots", `{"name":"Copy","create_mode":"clone","source_bot_id":"source"}`},
 		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test", `{"name":"Renamed"}`},
 		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test", ""},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/retry", ""},
+		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
+		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
+		{http.MethodDelete, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin", ""},
 	} {
 		t.Run(tc.method+tc.path+tc.body, func(t *testing.T) {
 			before := upstreamCalls
@@ -93,8 +97,7 @@ func TestSGProdBotManagementDeploymentPolicy(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodDelete, "/v1/instances/ins_test/bots"},
 		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test"},
-		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/retry"},
-		{http.MethodPut, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin"},
+		{http.MethodGet, "/v1/instances/ins_test/bots/profile_test/channel-bindings/weixin"},
 		{http.MethodPost, "/v1/instances/ins_test/bots/profile_test/exec"},
 	} {
 		before := upstreamCalls

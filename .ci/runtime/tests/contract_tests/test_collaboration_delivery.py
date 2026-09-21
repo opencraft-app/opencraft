@@ -34,9 +34,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
 
         kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
         self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
-        self.assertIn(
+        self.assertEqual(kustomization["components"], [
+            "../common",
+            "../../../../service-gateway/k8s/overlays/beijing-sandbox",
+        ])
+        self.assertNotIn(
             "collaboration-gateway-token-env-patch.yaml",
-            [patch["path"] for patch in kustomization["patches"]],
+            [patch.get("path") for patch in kustomization.get("patches", [])],
         )
 
         generator = yaml.safe_load(
@@ -45,7 +49,15 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(generator["files"], [
             "../../../secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
         ])
-        patch = yaml.safe_load((overlay / "collaboration-gateway-token-env-patch.yaml").read_text())
+        source_overlay = REPO_ROOT / "service-gateway/k8s/overlays/beijing-sandbox"
+        source_kustomization = yaml.safe_load((source_overlay / "kustomization.yaml").read_text())
+        self.assertIn(
+            "collaboration-gateway-token-env-patch.yaml",
+            [patch.get("path") for patch in source_kustomization["patches"]],
+        )
+        patch = yaml.safe_load(
+            (source_overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
+        )
         env = patch["spec"]["template"]["spec"]["containers"][0]["env"][0]
         self.assertEqual(env["name"], "COLLABORATION_GATEWAY_TOKEN")
         self.assertEqual(env["valueFrom"]["secretKeyRef"], {

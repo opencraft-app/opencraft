@@ -1827,6 +1827,32 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
 
+    def test_sgprod_multi_bot_runtime_flag_is_wired(self) -> None:
+        sgprod_values = {
+            key: value
+            for line in (REPO_ROOT / "argocd/services/ctl/sgprod/ctl-platform.env").read_text().splitlines()
+            if line and not line.startswith("#")
+            for key, separator, value in [line.partition("=")]
+            if separator
+        }
+        self.assertEqual(sgprod_values["MULTI_BOT_ENABLED"], "true")
+
+        ctl_api = next(
+            document
+            for document in yaml.safe_load_all((REPO_ROOT / "ctl/k8s/base/manifests.yaml").read_text())
+            if isinstance(document, dict)
+            and document.get("kind") == "Deployment"
+            and document.get("metadata", {}).get("name") == "ctl-api"
+        )
+        ctl_env = {
+            item["name"]: item
+            for item in ctl_api["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        config_map_ref = ctl_env["MULTI_BOT_ENABLED"]["valueFrom"]["configMapKeyRef"]
+        self.assertEqual(config_map_ref["name"], "ctl-platform-values")
+        self.assertEqual(config_map_ref["key"], "MULTI_BOT_ENABLED")
+        self.assertTrue(config_map_ref["optional"])
+
     def test_shprod_website_credential_bootstrap_contract_is_complete(self) -> None:
         def env_values(path: Path) -> dict[str, str]:
             return {
@@ -3809,7 +3835,6 @@ refresh_skus http://unused img-jhb "$pools_json"
         workflows = [
             ".ci/nextgen-dashboard.yml",
             ".ci/tokyo-nextgen-dashboard.yml",
-            ".ci/gateway-dashboard.yml",
             ".ci/tokyo-gateway-dashboard.yml",
             ".ci/tokyo-frontend.yml",
         ]
@@ -3819,6 +3844,15 @@ refresh_skus http://unused img-jhb "$pools_json"
                 workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 parameters = (workflow.get("extends") or {}).get("parameters") or {}
                 self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
+
+    def test_gateway_dashboard_adds_service_prod_reviewer(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/gateway-dashboard.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+
+        self.assertEqual(
+            parameters.get("PROD_REVIEWERS"),
+            '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang"]',
+        )
 
     def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):

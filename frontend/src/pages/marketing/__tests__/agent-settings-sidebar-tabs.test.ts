@@ -32,19 +32,11 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
-  /*
-   * 这里采纳 master 的彻底版：showCreateBotEntry 整个删掉，条件直接写
-   * {multiBotEnabled && (。
-   *
-   * 本分支曾把它硬编码成 `= true` 来放开入口 —— 目的一样，但留下一个恒真
-   * 变量就是死代码。两道真正的闸门（multiBotEnabled 后端开关 /
-   * canCreateAdditionalBot 套餐额度）在 master 版里都还在，下面逐条守住。
-   */
-  it("shows additional Bot creation without console reveal while preserving feature and quota gates", () => {
+  it("reveals global additional Bot creation through show() while preserving feature and quota gates", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).not.toContain("showCreateBotEntry");
-    expect(page).toContain("{multiBotEnabled && (");
+    expect(page).toContain("const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);");
+    expect(page).toContain("{showCreateBotEntry && (");
     expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
     expect(page).toContain("disabled={!canCreateAdditionalBot}");
     expect(page).toContain("!isCreating && !botsLoading");

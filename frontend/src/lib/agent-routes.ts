@@ -33,6 +33,9 @@ export const SUBSCRIBE_PATH = "/subscribe";
 /** 账号管理页路由（避免魔法字符串，统一引用） */
 export const ACCOUNT_PATH = "/account";
 
+/** 套餐与费用页路由 */
+export const ACCOUNT_BILLING_PATH = `${ACCOUNT_PATH}/billing`;
+
 /** 账号页实名提醒 query key：首页「立即创建」跳转账号页时携带，触发实名提醒 tips（避免魔法字符串，统一引用） */
 export const REALNAME_REQUIRED_QUERY_KEY = "realname_required";
 

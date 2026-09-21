@@ -12875,7 +12875,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 /* Parallel work streams; delivery confirmation follows the outgoing pulse. */
 /* Capability visual system: shared typography, safe text zones and restrained icons. */
 #lightvela-intl-home .wcard .cloud-status { inset: 16px auto auto 20px; width: auto; height: auto; z-index: 2; }
-#lightvela-intl-home .wcard .memory-preference { inset: auto 12px 53px; width: auto; height: auto; z-index: 2; }
 #lightvela-intl-home .about__cards .wcard .wcard__body { padding: 16px 36px 18px 22px; }
 #lightvela-intl-home .about__cards .wcard .wcard__body h4 { font-size: 17px; line-height: 1.4; font-weight: 600; text-wrap: balance; }
 #lightvela-intl-home .about__cards .wcard:nth-child(2) .wcard__body h4 { font-size: 19px; }
@@ -12888,7 +12887,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 #lightvela-intl-home .skwall__col:nth-child(3) .skwall__tile i { background: #fff3e8; color: #a46b32; }
 #lightvela-intl-home .cloud-status { position: absolute; top: 18px; left: 22px; display: flex; gap: 7px; align-items: center; padding: 6px 10px; border: 1px solid #e7e9e8; border-radius: 20px; background: #fff; font-size: 11px; color: #55545c; }
 #lightvela-intl-home .cloud-status i { width: 6px; height: 6px; border-radius: 50%; background: #21a773; }
-#lightvela-intl-home .memory-preference { position: absolute; bottom: 61px; left: 14px; right: 14px; font-size: 9px; line-height: 1.4; text-align: center; color: #74707b; }
 #lightvela-intl-home .aut { background: #fafafa; padding-top: 16px; }
 #lightvela-intl-home .aut__rules { color: #68636f; }
 #lightvela-intl-home .aut__bubble--delivery span { display: block; font-size: 11px; line-height: 1.5; }
@@ -13886,13 +13884,24 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 }
 
 /* Long localized card titles wrap to two lines instead of ellipsizing. */
-#lightvela-intl-home .channel-approval__title,
 #lightvela-intl-home .about__cards .wcard .wcard__body h4 {
   display: -webkit-box;
   max-height: 2.65em;
   overflow: hidden;
   white-space: normal;
   text-overflow: clip;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* Approval caption: two rows are fine, a 1–2 character orphan row is not.
+   Balanced wrapping keeps both rows even. */
+#lightvela-intl-home .channel-approval__title {
+  display: -webkit-box;
+  max-height: 2.6em;
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: clip;
+  text-wrap: balance;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }

@@ -376,6 +376,9 @@ export interface Pass {
   agent_quota_available?: number;
   credit_total: number;
   credit_available: number;
+  /** 免费或活动发放的独立积分权益，例如邀请奖励。 */
+  free_credit_total?: number;
+  free_credit_available?: number;
 }
 
 /**

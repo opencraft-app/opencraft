@@ -132,11 +132,9 @@ func New(cfg config.Config) (*App, error) {
 
 	api := httpapi.NewWithOptions(service, httpapi.Options{
 		CallbackToken:       cfg.CallbackToken,
-		InternalToken:       cfg.InternalToken,
 		PaymentConfirmToken: cfg.PaymentConfirmToken,
 		TradeService:        tradeService,
 		WalletService:       walletService,
-		Store:               store,
 	})
 	closers = append(closers, telemetryClose)
 	cleanupTelemetry = false

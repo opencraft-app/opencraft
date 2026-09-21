@@ -54,7 +54,7 @@ derived: false
 ## context_receipt
 | 文件 | 阅读原因 | 用途 |
 |---|---|---|
-| AGENTS.md（用户提供） | 仓库边界 | 不提交和发布；Task Pack 与门禁 |
+| AGENTS.md（用户提供） | 仓库边界 | 提交需授权；Task Pack 与门禁 |
 | frontend/AGENTS.md | 最近服务入口 | check/test/build |
 | docs/context/project/services/frontend.md@2.1.0 | 路由 must_read | 前端规格权威 |
 | docs/context/domains/site-environment-routing.md@2.0.0 | 路由 must_read | 保持站点门禁 |
@@ -95,14 +95,14 @@ derived: false
 - 本地有界检索摘要见 evidence，不持久化敏感数据。
 
 ## handoff
-- 本次功能实现与聚焦验证完成；保留在原分支工作区，未提交、推送或发布。
-- 本地组件和命令验证通过，尚未做真实云端 Bot 的浏览器联调。全仓测试及 context 门禁未全绿，提交前须由 owner 判断剩余失败。
+- 用户已明确授权提交 MR，沿用现有 !4311；不执行合并或发布。
+- 本地组件和命令验证通过，尚未做真实云端 Bot 的浏览器联调。全仓测试及 context 门禁未全绿，MR 描述保留全量失败及未覆盖的真实云端验收边界。
 - 长期行为已记录到 `frontend/openspec/specs/agent-onboarding-recovery.md`。
 
 ## checkpoint
 
 ### stage
-实现及聚焦验证完成，国内站构建通过，交接工作区等待评审。
+实现及聚焦验证完成，国内站构建通过，MR 提交与 master 冲突处理阶段。
 
 ### verified
 - 8 个测试文件共 136 项通过，含并发 Shell/Python 定时任务验证。
@@ -117,11 +117,11 @@ derived: false
 - 单靠 beforeunload、按步骤数量指纹、无 Bot 隔离快照和前端先查后建的旧方案均已替代。
 
 ### restore
-- 初始未提交改动已在原分支接续；没有 commit/push。
+- 初始未提交改动已在原分支接续；修复提交 623effd69 已创建；同步 master 0ce20f94d 后更新 MR !4311。
 - 日志保存在 /tmp/buddy-*.log；本轮更改不会自动发布。
 
 ### next_action
-- 用户评审本轮修改；如需提交、推送或发布，按仓库规则另行获得明确授权。
+- 完成合并后验证，推送当前分支并更新现有 MR !4311；合并与发布仍不在授权范围。
 
 
 ## 最终确认前复查（2026-09-21）
@@ -132,7 +132,7 @@ derived: false
 - 显式 `NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm test` 定向运行创建/订阅/区域/快照/执行器相关 10 个文件：161 项通过，日志 `/tmp/buddy-cn-final-review.log`。
 - 核对入口、计划执行、错误态、最终跳转与总览统计源码；组件测试通过不代表页面层所有状态转换闭环。
 
-### 待修风险（源码分析，未做真实云端端到端复现）
+### 复查发现（已在后续 MR 提交阶段修复）
 1. `agent-settings-page.tsx:2986`：前置引导的 profileId 只来自 provisioningBot。携带 creating 参数但 Bot 已 active，或配置期间从 provisioning 转 active 后，该值变空；引导锁又阻止切换到普通面板，可能一直等 profile 直到超时。应按已确定的目标 Bot ID 从完整列表取 profile，覆盖两种状态。
 2. `agent-onboarding-panel.tsx:697`：复制 Bot 的人设读取失败/无法解析时继续按新建语义覆盖 SOUL。应保留原文件并明确报错或重试，不能把读取失败解释为没有人设。
 3. `agent-onboarding-panel.tsx:802` 与 `agent-creating-loading.tsx`：阻断错误清快照并停在错误页，错误态没有继续配置/返回入口。应提供绑定同一 Bot 的重试或退出，避免重新创建 Bot。
@@ -155,4 +155,17 @@ derived: false
 - 已修复上述四项：完整列表解析目标 profile；克隆读取失败停止写入；同 Bot 重试并保留进度；完成配置后刷新定时任务数量。
 - 新增组件回归覆盖读取异常/缺失/无效/失败状态、重试只建一个 Bot、统计刷新与迟到响应隔离。
 - 初次回归揭示订阅测试原本因 profile 缺失而卡在进度页；已改为验证实际完成并到达目标 Bot 总览。
-- 最新 master 存在翻译、设置页及相邻测试/样式冲突，待同步处理；最终验证进行中。
+- 已同步 master 0ce20f94d；翻译使用逐键三方合并无双边不同修改，设置页保留国际站创建入口规则及国内站引导，两边维护互斥测试和无侧栏样式均保留。最终验证结果见下。
+
+### 最终命令证据
+- 合并后国内聚焦回归：15 文件 / 228 项通过；补充创建完成跳转、空状态/总览回归 4 文件 / 19 项通过，全部创建入口回归 1 文件 / 5 项通过。
+- `pnpm check` 最终通过：171 current / 276 baseline / 0 new / 105 resolved；翻译错误 0、告警 50。中途 fumadocs 生成时序重试后通过。
+- `pnpm build:cn` 最终通过；首次失败原因为构建清理 `.next` 与运行中的国际站预览目录冲突，停止预览后复跑成功，随后已恢复国际站 5174。
+- 国内环境全量 `pnpm test --maxWorkers=4`：282 文件通过、20 失败、1 跳过；3644 项通过、117 失败、13 跳过，1 worker 错误。`plan-select-page.test.tsx` worker 持续无输出、内存增长超过 3 GB，主动终止该 worker；不宣称全量通过。
+- 上述全量中的 `agent-create-bot-paths` 旧进度页断言已修正并复跑 5 项全部通过。国际环境补验：区域/引导开关与 debug exec 共 38 项通过，定时任务面板 6 项因缺少 ResizeObserver 测试环境而失败。其余全量失败分布在模型配置、文档/本地化、套餐等，本轮未扩展修复。
+- 文档检查 errors 0；docs-impact 暂存检查通过；context 全仓校验仍失败，context 单测 26 项 / 4 失败，context-audit 33 项通过，audit 完成但未进行全仓人工评估。
+- 浏览器仅完成本地未登录页面验证；真实云端 Bot 刷新、强关标签页/跨设备恢复不在本轮验证结论内。
+
+### 交接状态
+- 本轮四项复查问题均已修复并提供回归；既有 !4311 指向 master，待用户代码评审。
+- 不执行 MR 合并或生产发布；国际站继续沿用原创建流程。
