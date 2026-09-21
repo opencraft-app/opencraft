@@ -87,6 +87,9 @@ master 源码
   与 deploy-facing `gateway-dashboard-platform.env` 必须在同一变更中成套更新。所有复用共享
   component 的 sandbox/playground 环境都要提供对应环境键；生产环境则在各自 Kustomization 中
   显式接线。严格 Kustomize 校验必须证明渲染结果不再包含 `REPLACE_` 占位符，才能创建 promote MR。
+  上游地址和 Secret 键映射先回填 `master`，再由服务 CI 投影到 `gitops`，不得直接修改运行中
+  Deployment 或 deploy-facing 分支。多个上游明确共用同一内部服务令牌时，消费方 Deployment 可从
+  已有 runtime Secret 键分别映射语义化环境变量，不重复保存同值 Secret，也不把令牌写入 ConfigMap。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
   `*.edgeone.dev` URL 缺少 `eo_token` / `eo_time` 时，应根据同次部署的 project ID 和 deployment ID

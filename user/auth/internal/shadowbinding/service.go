@@ -116,6 +116,22 @@ func (s *Service) AdminGetBinding(ctx context.Context, userID string) (Binding, 
 	return s.store.GetBindingByUserID(ctx, trimmedUserID)
 }
 
+func (s *Service) ListAdminBindingsPage(ctx context.Context, search string, page int, pageSize int) ([]Binding, int, error) {
+	if s == nil || s.store == nil {
+		return nil, 0, errors.New("shadow binding store is not configured")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return s.store.ListAdminBindings(ctx, strings.TrimSpace(search), pageSize, (page-1)*pageSize)
+}
+
 func (s *Service) AdminUpsertBinding(ctx context.Context, in AdminBindingInput) (Binding, error) {
 	if !s.AdminEnabled() {
 		return Binding{}, ErrAdminDisabled

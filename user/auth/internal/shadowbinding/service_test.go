@@ -990,6 +990,39 @@ func TestAdminUpsertBindingRejectsWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestListAdminBindingsPageFiltersAndPaginates(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 9, 21, 2, 0, 0, 0, time.UTC)
+	store := NewMemoryStore()
+	svc := New(store, nil, Options{Enabled: true, AdminEnabled: true, Now: func() time.Time { return base }})
+	for index, input := range []AdminBindingInput{
+		{UserID: "usr_first", ShadowUserName: "shadow_first", Uin: 330500000001, OwnerUin: 260203940, AppID: 1250000001, Reason: "test"},
+		{UserID: "usr_second", ShadowUserName: "shadow_second", Uin: 330500000002, OwnerUin: 260203940, AppID: 1250000002, Reason: "test"},
+	} {
+		svc.now = func() time.Time { return base.Add(time.Duration(index) * time.Minute) }
+		if _, err := svc.AdminUpsertBinding(context.Background(), input); err != nil {
+			t.Fatalf("upsert binding %d: %v", index, err)
+		}
+	}
+
+	items, total, err := svc.ListAdminBindingsPage(context.Background(), "330500000002", 1, 20)
+	if err != nil {
+		t.Fatalf("filter bindings: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].UserID != "usr_second" {
+		t.Fatalf("unexpected filtered bindings: total=%d items=%+v", total, items)
+	}
+
+	items, total, err = svc.ListAdminBindingsPage(context.Background(), "", 2, 1)
+	if err != nil {
+		t.Fatalf("paginate bindings: %v", err)
+	}
+	if total != 2 || len(items) != 1 || items[0].UserID != "usr_first" {
+		t.Fatalf("unexpected paginated bindings: total=%d items=%+v", total, items)
+	}
+}
+
 func TestAdminUpsertBindingValidatesRequiredFields(t *testing.T) {
 	svc := New(NewMemoryStore(), nil, Options{Enabled: true, AdminEnabled: true})
 	valid := AdminBindingInput{

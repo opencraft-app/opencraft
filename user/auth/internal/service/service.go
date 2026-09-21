@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -188,6 +189,23 @@ type ShadowBindingResult struct {
 	BasicAuthLastErrorMessage string
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type AdminShadowAccount struct {
+	UserID           string
+	Phone            string
+	RealnameVerified bool
+	ShadowUserName   string
+	Uin              string
+	OwnerUin         string
+	AppID            string
+	BindingStatus    string
+	BasicAuthStatus  string
+	LastErrorCode    string
+	LastErrorMessage string
+	UserCreatedAt    time.Time
+	BindingCreatedAt time.Time
+	BindingUpdatedAt time.Time
 }
 
 type RealnameProviderResult struct {
@@ -1589,6 +1607,47 @@ func (s *Service) AdminShadowBinding(ctx context.Context, userID string) (Shadow
 		return ShadowBindingResult{}, shadowBindingAdminError(err)
 	}
 	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) ListAdminShadowAccountsPage(ctx context.Context, search string, page int, pageSize int) ([]AdminShadowAccount, int, error) {
+	if s == nil || s.shadowBinding == nil {
+		return []AdminShadowAccount{}, 0, nil
+	}
+	bindings, total, err := s.shadowBinding.ListAdminBindingsPage(ctx, search, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	accounts := make([]AdminShadowAccount, 0, len(bindings))
+	for _, binding := range bindings {
+		user, err := s.store.FindUserByID(ctx, binding.UserID)
+		if err != nil {
+			return nil, 0, err
+		}
+		accounts = append(accounts, AdminShadowAccount{
+			UserID:           binding.UserID,
+			Phone:            user.Phone,
+			RealnameVerified: user.RealnameVerified,
+			ShadowUserName:   binding.ShadowUserName,
+			Uin:              positiveInt64String(binding.Uin),
+			OwnerUin:         positiveInt64String(binding.OwnerUin),
+			AppID:            positiveInt64String(binding.AppID),
+			BindingStatus:    binding.Status,
+			BasicAuthStatus:  binding.BasicAuthStatus,
+			LastErrorCode:    binding.LastErrorCode,
+			LastErrorMessage: binding.LastErrorMessage,
+			UserCreatedAt:    user.CreatedAt,
+			BindingCreatedAt: binding.CreatedAt,
+			BindingUpdatedAt: binding.UpdatedAt,
+		})
+	}
+	return accounts, total, nil
+}
+
+func positiveInt64String(value int64) string {
+	if value <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(value, 10)
 }
 
 func (s *Service) AdminUpsertShadowBinding(ctx context.Context, in shadowbinding.AdminBindingInput) (ShadowBindingResult, error) {

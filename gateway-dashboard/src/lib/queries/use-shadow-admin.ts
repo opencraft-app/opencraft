@@ -2,26 +2,27 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 
 export interface AdminShadowAccount {
-  user_id: string;
-  country_code: string;
-  phone_number: string;
-  is_register_shadow_account: boolean;
-  is_shadow_account_basic_auth: boolean;
-  is_standard_realname_auth: boolean;
-  shadow_user_name: string;
+  userId: string;
+  phone: string;
+  realnameVerified: boolean;
+  shadowUserName: string;
   uin: string;
-  owner_uin: string;
-  appid: string;
-  instance_id: string;
-  created_at: string;
-  bound_at?: string;
+  ownerUin: string;
+  appId: string;
+  bindingStatus: string;
+  basicAuthStatus: string;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  userCreatedAt: string;
+  bindingCreatedAt: string;
+  bindingUpdatedAt: string;
 }
 
 interface ShadowAccountListResponse {
   items: AdminShadowAccount[];
   total: number;
   page: number;
-  page_size: number;
+  pageSize: number;
 }
 
 interface ShadowAccountFilters {
@@ -35,7 +36,7 @@ export function useShadowAdminAccounts(filters: ShadowAccountFilters) {
   return useQuery({
     queryKey: ["shadow-admin", "accounts", filters.search, filters.page, filters.pageSize],
     queryFn: () =>
-      apiClient<ShadowAccountListResponse>("shadow/accounts", {
+      apiClient<ShadowAccountListResponse>("auth/shadow-accounts", {
         params: {
           search: filters.search,
           page: filters.page,
