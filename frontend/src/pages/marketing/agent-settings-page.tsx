@@ -209,6 +209,11 @@ const AgentChannelPanel = lazy(() =>
   import("@/pages/marketing/agent-channel-panel").then((module) => ({ default: module.ChannelPanel })),
 );
 
+// 连接器面板（P1）：列表/授权/断开全走 ai-server 连接器平台。
+// lazy 与其他面板一致；instanceId 取 TeaSdk 实例标识。
+const AgentConnectorsPanel = lazy(() =>
+  import("@/pages/marketing/agent-connectors-panel").then((module) => ({ default: module.ConnectorsPanel })),
+);
 type Translate = (text: string, options?: Record<string, unknown>) => string;
 
 function getPassExpiryReminderCopy(reminder: PassExpiryReminder, t: Translate) {
@@ -345,6 +350,9 @@ function TeaSdkSettingsPanel({
           commandExecutor={commandExecutor}
           afterDescription={channelAfterDescription}
         />
+      </Suspense>
+      <Suspense fallback={null}>
+        <AgentConnectorsPanel instanceId={instance.InstanceId} />
       </Suspense>
     </StableTeaSdkPanelHost>
   );
