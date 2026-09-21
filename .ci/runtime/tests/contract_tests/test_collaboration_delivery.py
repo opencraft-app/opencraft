@@ -34,13 +34,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
 
         kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
         self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
-        self.assertEqual(kustomization["components"], [
-            "../common",
-            "../../../../service-gateway/k8s/overlays/beijing-sandbox",
+        self.assertNotIn("components", kustomization)
+        self.assertEqual(kustomization["resources"], [
+            "../../../../service-gateway/k8s/base",
         ])
-        self.assertNotIn(
+        self.assertIn(
             "collaboration-gateway-token-env-patch.yaml",
-            [patch.get("path") for patch in kustomization.get("patches", [])],
+            [patch.get("path") for patch in kustomization["patches"]],
         )
 
         generator = yaml.safe_load(
@@ -51,12 +51,13 @@ class CollaborationDeliveryTests(unittest.TestCase):
         ])
         source_overlay = REPO_ROOT / "service-gateway/k8s/overlays/beijing-sandbox"
         source_kustomization = yaml.safe_load((source_overlay / "kustomization.yaml").read_text())
-        self.assertIn(
+        self.assertNotIn(
             "collaboration-gateway-token-env-patch.yaml",
             [patch.get("path") for patch in source_kustomization["patches"]],
         )
+
         patch = yaml.safe_load(
-            (source_overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
+            (overlay / "collaboration-gateway-token-env-patch.yaml").read_text()
         )
         env = patch["spec"]["template"]["spec"]["containers"][0]["env"][0]
         self.assertEqual(env["name"], "COLLABORATION_GATEWAY_TOKEN")
@@ -73,6 +74,47 @@ class CollaborationDeliveryTests(unittest.TestCase):
             "argocd/secrets/beijing-sandbox/collaboration-gateway-token.sops.yaml",
             bundle["publish_paths_by_env"]["beijing-sandbox"],
         )
+
+    def test_beijing_gateway_overlay_renders_base_and_collaboration_patch_together(self):
+        kustomize = shutil.which("kustomize")
+        if not kustomize:
+            self.skipTest("kustomize is not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            shutil.copytree(
+                REPO_ROOT / "service-gateway/k8s/base",
+                repo / "service-gateway/k8s/base",
+            )
+            overlay = repo / "argocd/services/service-gateway/beijing-sandbox"
+            shutil.copytree(
+                REPO_ROOT / "argocd/services/service-gateway/beijing-sandbox",
+                overlay,
+            )
+            kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
+            kustomization.pop("generators")
+            (overlay / "kustomization.yaml").write_text(yaml.safe_dump(kustomization, sort_keys=False))
+
+            result = subprocess.run(
+                [kustomize, "build", str(overlay), "--enable-alpha-plugins", "--enable-exec"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            resources = list(yaml.safe_load_all(result.stdout))
+            deployment = next(
+                item
+                for item in resources
+                if item and item.get("kind") == "Deployment" and item["metadata"]["name"] == "service-gateway"
+            )
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            env = next(item for item in container["env"] if item["name"] == "COLLABORATION_GATEWAY_TOKEN")
+            self.assertEqual(env["valueFrom"]["secretKeyRef"], {
+                "name": "collaboration-gateway-token",
+                "key": "COLLABORATION_GATEWAY_TOKEN",
+                "optional": False,
+            })
 
     def test_runtime_promotion_rejects_catalog_still_pointing_to_foundation(self):
         with tempfile.TemporaryDirectory() as tmp:
