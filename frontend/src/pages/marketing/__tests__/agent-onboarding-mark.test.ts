@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   clearPendingOnboarding,
+  IS_BUDDY_ONBOARDING_ENABLED,
   isPendingOnboarding,
   markPendingOnboarding,
   hasAgentSidebarLayout,
@@ -87,11 +88,17 @@ describe("clearPendingOnboarding", () => {
 });
 
 describe("shouldShowEarlyOnboarding", () => {
+  /*
+   * enabled 显式传 true：默认值是 IS_BUDDY_ONBOARDING_ENABLED（= isCN），
+   * 不传的话这一组断言会隐式依赖测试进程的区域，国际站构建下全部反转。
+   * 区域门控本身在下面单独一组里验证。
+   */
   const base = {
     isCreating: true,
     isModifying: false,
     hasCreationError: false,
     onboardingJustFinished: false,
+    enabled: true,
   };
 
   it("shows the form for the whole provisioning window", () => {
@@ -123,6 +130,46 @@ describe("shouldShowEarlyOnboarding", () => {
 
   it("does not bounce back to the form right after finishing", () => {
     expect(shouldShowEarlyOnboarding({ ...base, onboardingJustFinished: true })).toBe(false);
+  });
+});
+
+describe("shouldShowEarlyOnboarding 的区域门控", () => {
+  /*
+   * 引导分区域上线：国内站先上，国际站保持原有流程（创建期显示 CreatingLoadingView
+   * 那只咖啡杯，无引导表单）。开关关掉时必须无条件返回 false ——
+   * 否则国际站用户会看到一个尚未本地化、总览页也不存在的流程。
+   *
+   * 走 enabled 参数而不是 mock isCN：isCN 是编译期常量，
+   * 单个测试进程只看得到一个区域，传参才能一次覆盖两站。
+   */
+  const creating = {
+    isCreating: true,
+    isModifying: false,
+    hasCreationError: false,
+    onboardingJustFinished: false,
+  };
+
+  it("国内站（开关开启）：创建期展示引导表单", () => {
+    expect(shouldShowEarlyOnboarding({ ...creating, enabled: true })).toBe(true);
+  });
+
+  it("国际站（开关关闭）：即使在创建期也不展示，回落咖啡杯", () => {
+    expect(shouldShowEarlyOnboarding({ ...creating, enabled: false })).toBe(false);
+  });
+
+  it("开关关闭时优先级最高，其余条件再理想也不放行", () => {
+    expect(shouldShowEarlyOnboarding({
+      isCreating: true,
+      isModifying: false,
+      hasCreationError: false,
+      onboardingJustFinished: false,
+      enabled: false,
+    })).toBe(false);
+  });
+
+  it("默认值跟随当前构建区域，调用方不必每处都传", () => {
+    // 不传 enabled 时读 IS_BUDDY_ONBOARDING_ENABLED
+    expect(shouldShowEarlyOnboarding(creating)).toBe(IS_BUDDY_ONBOARDING_ENABLED);
   });
 });
 

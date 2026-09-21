@@ -127,6 +127,7 @@ import { useHeroStats } from "@/pages/marketing/agent-hero-stats";
 import {
   clearPendingOnboarding,
   hasAgentSidebarLayout,
+  IS_BUDDY_ONBOARDING_ENABLED,
   isPendingOnboarding,
   markPendingOnboarding,
   shouldShowEarlyOnboarding,
@@ -719,7 +720,13 @@ void _staggerContainer;
 
 /* ─── Navbar ─── */
 
-const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "overview";
+/*
+ * 默认 tab 随引导开关走：国内站落「总览」（引导落地页），
+ * 国际站尚未上线引导与总览，保持原来的「通道」。
+ */
+const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = IS_BUDDY_ONBOARDING_ENABLED
+  ? "overview"
+  : "channel";
 
 /**
  * 「前一个设置菜单」记忆（模块级）。
@@ -2685,7 +2692,14 @@ export const AgentSettingsPage = ({
     [visibleBots, requestedCreatingBotId],
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
-  const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
+  /*
+   * 总览页随引导开关走：国际站尚未上线，直接访问 /agents/overview 时回落到
+   * 默认 tab，避免渲染出一个空白 section（路由层仍然认这个 slug）。
+   */
+  const requestedSection = sectionId ?? DEFAULT_AGENT_SECTION;
+  const activeSection = !IS_BUDDY_ONBOARDING_ENABLED && requestedSection === "overview"
+    ? DEFAULT_AGENT_SECTION
+    : requestedSection;
   const isEmptyAgentSectionPage = Boolean(initialSectionSlug)
     && !isModifying && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
@@ -2993,7 +3007,8 @@ export const AgentSettingsPage = ({
    * （sdkInstance 是 activeBot 的派生值，且定义在本行之后，这里只看 activeBot。）
    */
 
-  const showBuddyOnboarding = Boolean(activeBot)
+  const showBuddyOnboarding = IS_BUDDY_ONBOARDING_ENABLED
+    && Boolean(activeBot)
     && !isModifying
     && !isCreating
     && !onboardingJustFinished
@@ -4035,9 +4050,16 @@ export const AgentSettingsPage = ({
     /*
      * 订阅成功回跳同样进创建引导，不弹旧的「创建 Bot」弹窗 ——
      * 这是新用户订阅后的第一屏，看到的必须是新流程。
+     *
+     * 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为）。
      */
     setCloneSourceBotId("");
-    setShowMultiBotOnboarding(true);
+    if (IS_BUDDY_ONBOARDING_ENABLED) {
+      setShowMultiBotOnboarding(true);
+    } else {
+      setCreateBotMode("blank");
+      setShowCreateConfirm(true);
+    }
   }, [createBotIntentParam, botsLoading, passesLoading, isSubscribed, bots.length, navigate]);
 
   /*
@@ -4329,11 +4351,18 @@ export const AgentSettingsPage = ({
        *
        * 首个 bot 不传 cloneOptions（没有可复制的来源），引导页会隐藏
        * 「创建方式」那一档，addBot 收到空 sourceBotId 走 blank。
+       *
+       * 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为）。
        */
       setDirectCreateError(null);
       setCreateBotName("");
       setCloneSourceBotId("");
-      setShowMultiBotOnboarding(true);
+      if (IS_BUDDY_ONBOARDING_ENABLED) {
+        setShowMultiBotOnboarding(true);
+      } else {
+        setCreateBotMode("blank");
+        setShowCreateConfirm(true);
+      }
       return;
     }
 
@@ -4354,7 +4383,13 @@ export const AgentSettingsPage = ({
      * 不复制，想复制的人自己去高级里选。
      */
     setCloneSourceBotId("");
-    setShowMultiBotOnboarding(true);
+    /* 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为：clone-current） */
+    if (IS_BUDDY_ONBOARDING_ENABLED) {
+      setShowMultiBotOnboarding(true);
+    } else {
+      setCreateBotMode("clone-current");
+      setShowCreateConfirm(true);
+    }
   };
 
   /**
@@ -6014,7 +6049,11 @@ export const AgentSettingsPage = ({
                         className="lv-agents-nav"
                       >
                         {/* ── 「总览」：探索 tab 的置顶入口，新用户引导落地页（不参与下方任务分组）。
-                             未创建个人助手时改名为「创建你的个人助手」，是此刻唯一可点的入口。 ── */}
+                             未创建个人助手时改名为「创建你的个人助手」，是此刻唯一可点的入口。
+
+                             分区域上线：国际站尚未上线总览页与引导，隐藏该入口，
+                             否则会点进一个空白 section（见 IS_BUDDY_ONBOARDING_ENABLED）。 ── */}
+                        {IS_BUDDY_ONBOARDING_ENABLED ? (
                         <div className="lv-agents-nav-group">
                           <ul className="lv-agents-nav-group-items">
                             <li>
@@ -6039,6 +6078,7 @@ export const AgentSettingsPage = ({
                             </li>
                           </ul>
                         </div>
+                        ) : null}
                         {showHiddenAgentTools ? (
                           <div className="lv-agents-nav-group">
                             <ul className="lv-agents-nav-group-items">

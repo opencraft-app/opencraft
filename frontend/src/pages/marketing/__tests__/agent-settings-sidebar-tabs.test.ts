@@ -69,14 +69,26 @@ describe("agent settings sidebar chat/settings tabs", () => {
      * 首个 bot 曾经走「只问名字」的旧弹窗 —— 新用户第一次建 bot 恰好落在
      * 这条分支，于是看到的还是老交互。现在统一进创建引导（可选头像、填
      * 描述、挑模板）。
+     *
+     * 引导分区域上线后，旧弹窗作为**国际站**的回落保留了下来，所以不能再
+     * 断言「源码里不存在 setShowCreateConfirm」。改为守住真正的约束：
+     * 引导必须由 IS_BUDDY_ONBOARDING_ENABLED 把关，旧弹窗只能在 else 分支里。
+     * 这样国内站一旦被改回旧弹窗，这条仍然会红。
      */
     expect(noActiveBotBranch).toContain("setShowMultiBotOnboarding(true)");
-    expect(noActiveBotBranch).not.toContain("setShowCreateConfirm(true)");
+    expect(noActiveBotBranch).toContain("if (IS_BUDDY_ONBOARDING_ENABLED) {");
+    const legacyIndex = noActiveBotBranch.indexOf("setShowCreateConfirm(true)");
+    const onboardingIndex = noActiveBotBranch.indexOf("setShowMultiBotOnboarding(true)");
+    // 旧弹窗必须出现在引导之后（即 else 分支），不能抢在国内站路径前面
+    expect(legacyIndex).toBeGreaterThan(onboardingIndex);
     // 未订阅仍先去订阅页，这个前置不能被绕过
     expect(noActiveBotBranch).toContain('navigate("/subscribe")');
 
-    // 订阅回跳（?create=1）同样进引导，那是新用户订阅后的第一屏
-    expect(page).not.toContain("setShowCreateConfirm(true)");
+    /*
+     * 订阅回跳（?create=1）同样进引导，那是新用户订阅后的第一屏。
+     * 同样只在国内站成立，国际站回落旧弹窗。
+     */
+    expect(page).toContain("if (IS_BUDDY_ONBOARDING_ENABLED) {\n      setShowMultiBotOnboarding(true);");
 
     /*
      * 首个 bot 的引导必须渲染在 `!isCreating && activeBot && sdkInstance`
@@ -311,8 +323,15 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("if (!activeBot)");
     // 已有 bot 时走引导，不再经旧弹窗
     expect(page).toContain("setShowMultiBotOnboarding(true)");
-    // 旧弹窗已无任何触发点，首个 bot 与已有 bot 都走引导
-    expect(page).not.toContain("setShowCreateConfirm(true)");
+    /*
+     * 旧弹窗不再是「无任何触发点」—— 引导分区域上线后它是国际站的回落。
+     * 但它的每一个触发点都必须被 IS_BUDDY_ONBOARDING_ENABLED 的 else 分支
+     * 包住，数量上与引导触发点一一对应；否则说明有入口绕过了开关。
+     */
+    const onboardingCalls = page.match(/setShowMultiBotOnboarding\(true\)/g)?.length ?? 0;
+    const legacyCalls = page.match(/setShowCreateConfirm\(true\)/g)?.length ?? 0;
+    expect(onboardingCalls).toBeGreaterThanOrEqual(3);
+    expect(legacyCalls).toBe(onboardingCalls);
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');

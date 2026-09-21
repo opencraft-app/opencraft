@@ -12,7 +12,26 @@
  * 避免标记残留导致下次登录又弹引导。
  */
 
+import { isCN } from "@/lib/region";
+
 const STORAGE_KEY = "lv-pending-onboarding-bots";
+
+/**
+ * 新建 bot 引导流程的区域开关。
+ *
+ * 分区域上线：国内站（lightvela.com）先上，国际站（lightvela.ai）保持原有
+ * 流程（创建后直落「通道」tab，无引导表单、无总览页）。
+ *
+ * 国际站上线时把这里改成 `true` 即可 —— 三个消费点都读它：
+ *   1. shouldShowEarlyOnboarding()            创建期前置引导
+ *   2. agent-settings-page 的 showBuddyOnboarding  已有 bot 的补配引导
+ *   3. agent-settings-page 的 DEFAULT_AGENT_SECTION / 总览入口
+ *
+ * isCN 是编译期常量，国际站构建时这些分支会被直接折叠掉，不进产物。
+ *
+ * TODO(intl-onboarding): 国际站上线后删除本开关与相关分支，避免长期留着死代码。
+ */
+export const IS_BUDDY_ONBOARDING_ENABLED = isCN;
 
 const readSet = (): Set<string> => {
   if (typeof window === "undefined") return new Set();
@@ -73,13 +92,19 @@ export const clearPendingOnboarding = (botId: string) => {
  *   - creationError：实例没建起来，要让用户看到错误，不能盖住
  *   - isModifying：套餐升级态有自己的页面
  *   - onboardingJustFinished：刚填完，别又弹回表单
+ *
+ * enabled 走参数而非直接读 IS_BUDDY_ONBOARDING_ENABLED：isCN 是编译期常量，
+ * 单个测试进程只看得到一个区域，传参才能在一次测试里覆盖两个站。
+ * 默认值取真实开关，调用方不必每处都传。
  */
 export const shouldShowEarlyOnboarding = (input: {
   isCreating: boolean;
   isModifying: boolean;
   hasCreationError: boolean;
   onboardingJustFinished: boolean;
+  enabled?: boolean;
 }): boolean => {
+  if (!(input.enabled ?? IS_BUDDY_ONBOARDING_ENABLED)) return false;
   if (!input.isCreating) return false;
   if (input.isModifying || input.hasCreationError || input.onboardingJustFinished) return false;
   return true;
