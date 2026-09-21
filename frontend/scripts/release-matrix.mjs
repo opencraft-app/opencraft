@@ -57,6 +57,28 @@ function ensureOptionalString(value, fieldName, comboId) {
   return value.trim();
 }
 
+function ensureEmbeddedWorkbenchConfig(value, comboId) {
+  if (value == null) return { enabled: false };
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`release matrix combo ${comboId} must define embeddedWorkbench as an object`);
+  }
+  if (typeof value.enabled !== "boolean") {
+    throw new Error(`release matrix combo ${comboId} must define embeddedWorkbench.enabled as a boolean`);
+  }
+  if (!value.enabled) return { enabled: false };
+  const scriptPath = ensureNonEmptyString(
+    value.scriptPath,
+    "embeddedWorkbench.scriptPath",
+    comboId,
+  );
+  if (!/^\/__opencraft\/[a-zA-Z0-9._/-]+\.js$/u.test(scriptPath) || scriptPath.includes("..")) {
+    throw new Error(
+      `release matrix combo ${comboId} must use a same-origin absolute embeddedWorkbench.scriptPath`,
+    );
+  }
+  return { enabled: true, scriptPath };
+}
+
 function ensureObservabilityConfig(value, comboId) {
   if (value == null) {
     return {};
@@ -155,6 +177,7 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       outputDir: ensureNonEmptyString(combo.outputDir, "outputDir", id),
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
       observability: ensureObservabilityConfig(combo.observability, id),
+      embeddedWorkbench: ensureEmbeddedWorkbenchConfig(combo.embeddedWorkbench, id),
     };
 
     return normalized;
@@ -246,6 +269,12 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     NEXT_PUBLIC_APP_ENV: combo.appEnv ?? "production",
     VITE_APP_ENV: combo.appEnv ?? "production",
   };
+
+  if (combo.embeddedWorkbench?.enabled) {
+    nextEnv.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL = combo.embeddedWorkbench.scriptPath;
+  } else {
+    delete nextEnv.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL;
+  }
 
   if (combo.siteUrl) {
     nextEnv.NEXT_PUBLIC_SITE_URL = combo.siteUrl;

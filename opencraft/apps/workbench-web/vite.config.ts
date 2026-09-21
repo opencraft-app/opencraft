@@ -20,6 +20,7 @@ const hyperNodeUser = process.env.OPENCRAFT_HYPERNODE_USER?.trim() || "skipzhang
 const buildTarget = process.env.OPENCRAFT_BUILD_TARGET?.trim() || "web";
 const product = process.env.OPENCRAFT_PRODUCT?.trim() || "opencraft";
 const isElectronRenderer = buildTarget === "electron";
+const isEmbeddedWorkbenchBuild = buildTarget === "embedded-workbench";
 const isLightVelaWeb = product === "lightvela-web";
 const includeHyperNodePlugin = !isLightVelaWeb && !isElectronRenderer
   && process.env.VITE_HYPERNODE_PLUGIN?.trim() !== "disabled";
@@ -218,10 +219,14 @@ function embeddedWorkbenchDevEntry(): Plugin {
       }
       this.emitFile({
         type: "asset",
-        fileName: "__opencraft/embedded-workbench.js",
-        source:
-          'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("../", import.meta.url).href;\n'
-          + `await import("../${entry.fileName}");\n`,
+        fileName: isEmbeddedWorkbenchBuild
+          ? "embedded-workbench.js"
+          : "__opencraft/embedded-workbench.js",
+        source: isEmbeddedWorkbenchBuild
+          ? 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("./", import.meta.url).href;\n'
+            + `await import("./${entry.fileName}");\n`
+          : 'globalThis.__OPENCRAFT_EMBED_ASSET_BASE__ = new URL("../", import.meta.url).href;\n'
+            + `await import("../${entry.fileName}");\n`,
       });
     },
   };
@@ -231,10 +236,10 @@ export default defineConfig({
   // Both targets are served at their origin root. Root-relative assets also
   // survive direct loading/reloading /views/:id and /settings/:id routes.
   // The Electron static server maps that root to the relocatable signed bundle.
-  base: "/",
+  base: isEmbeddedWorkbenchBuild ? "/__opencraft/" : "/",
   plugins: [
     releaseMetadata(webRelease),
-    previewBridgeAsset(),
+    ...(!isEmbeddedWorkbenchBuild ? [previewBridgeAsset()] : []),
     embeddedWorkbenchDevEntry(),
     runtimeErrorCapture(),
     react(),
@@ -315,10 +320,12 @@ export default defineConfig({
     // renderer hangs and is intentionally not part of the release contract.
     minify: "oxc",
     rolldownOptions: {
-      input: {
-        workbench: workbenchHtmlPath,
-        "embedded-workbench": embeddedWorkbenchEntryPath,
-      },
+      input: isEmbeddedWorkbenchBuild
+        ? { "embedded-workbench": embeddedWorkbenchEntryPath }
+        : {
+            workbench: workbenchHtmlPath,
+            "embedded-workbench": embeddedWorkbenchEntryPath,
+          },
       output: {
         entryFileNames: releaseMinification ? "assets/a-[hash].js" : "assets/[name]-[hash].js",
         ...(releaseMinification ? {
@@ -337,8 +344,11 @@ export default defineConfig({
     assetsDir: "assets",
     outDir: isElectronRenderer
       ? "dist-electron"
-      : isLightVelaWeb
-        ? "dist-lightvela-web"
-        : "dist",
+      : isEmbeddedWorkbenchBuild
+        ? "dist-embedded-workbench"
+        : isLightVelaWeb
+          ? "dist-lightvela-web"
+          : "dist",
+    copyPublicDir: !isEmbeddedWorkbenchBuild,
   },
 });

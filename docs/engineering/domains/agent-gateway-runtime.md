@@ -22,6 +22,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 ## 稳定不变量
 
+- OpenCraft Embedded Chat 的 loader 和内容寻址资源使用独立 Vite 构建目标，由 frontend artifact 在 EdgeOne Build Output 投影前放入同源 `/__opencraft/`。实际交付包含 `.edgeone/assets/__opencraft/`，入口仍由显式 `show()` 接管；资源缺失时保留 AgentChat 回退，不通过自动开启 rollout 掩盖交付问题。见 [发布契约](release-gitops.md)。
+
 - OpenCraft 通用按钮与 Settings 表单控件的字体由 Typography registry 投影，控件尺寸保持独立；焦点、禁用和错误反馈由共享状态样式消费主题 token。处理中保留按钮原标签占位，不改变控件宽度。见 [Typography ownership](../../../opencraft/docs/platform-architecture.md#typography-ownership)。
 
 - OpenCraft 平台级 Connector 是应用级服务，不是 Hermes 设置页原型。第一方扩展通过事务注册，借用 Authentication epoch 与 Host 客户端；稳定发现/调用入口绑定 Host/Thread/代次，撤销后旧 handle 不可复用。Composer 入口、Host 原生 MCP OAuth 适配、逐次写审批和独立 CAS 配置存储已接通；OAuth 完成不自动连接或授予会话访问，重启只恢复意图并要求明确确认。凭据仍归 Host；验证使用隔离授权服务，不代表真实第三方账号或 DSH/Hermes 新增原生方法。见 [平台 Connector](../../../opencraft/docs/platform-connectors.md)。

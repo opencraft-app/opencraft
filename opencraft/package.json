@@ -34,6 +34,7 @@
     "build:web": "npm run build:preview-bridge && npm run build --workspace @opencraft/workbench-web",
     "build:lightvela-web": "npm run build:preview-bridge && OPENCRAFT_PRODUCT=lightvela-web npm run build --workspace @opencraft/workbench-web && npm run check:lightvela-web-product",
     "build:web:release": "npm run build:preview-bridge && OPENCRAFT_RELEASE_MINIFY=standard npm run build --workspace @opencraft/workbench-web",
+    "build:embedded-workbench:release": "OPENCRAFT_BUILD_TARGET=embedded-workbench OPENCRAFT_PRODUCT=lightvela-web OPENCRAFT_RELEASE_MINIFY=standard npm run build --workspace @opencraft/workbench-web",
     "build:lightvela-web:release": "npm run build:preview-bridge && OPENCRAFT_PRODUCT=lightvela-web OPENCRAFT_RELEASE_MINIFY=standard npm run build --workspace @opencraft/workbench-web && npm run check:lightvela-web-product",
     "build:renderer:electron": "npm run build:preview-bridge && OPENCRAFT_BUILD_TARGET=electron npm run build --workspace @opencraft/workbench-web",
     "build:electron:host": "npm run build:host --workspace @opencraft/workbench-electron",

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -91,6 +91,54 @@ function runCommand(command, args, env) {
   });
 }
 
+const EMBEDDED_WORKBENCH_DIRECTORY = "__opencraft";
+const EMBEDDED_WORKBENCH_LOADER = "embedded-workbench.js";
+const EMBEDDED_WORKBENCH_SCRIPT_PATH = `/${EMBEDDED_WORKBENCH_DIRECTORY}/${EMBEDDED_WORKBENCH_LOADER}`;
+
+export function stageOpenCraftEmbeddedWorkbench(
+  outputRoot,
+  env = process.env,
+) {
+  const scriptPath = env.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL?.trim();
+  if (!scriptPath) return false;
+  if (scriptPath !== EMBEDDED_WORKBENCH_SCRIPT_PATH) {
+    throw new Error(
+      `frontend artifact only stages the reviewed same-origin OpenCraft loader, got ${scriptPath}`,
+    );
+  }
+
+  const configuredSource = env.OPENCRAFT_EMBED_DIST_DIR?.trim();
+  if (!configuredSource) {
+    throw new Error(
+      "OPENCRAFT_EMBED_DIST_DIR is required when the OpenCraft Embedded Workbench is enabled",
+    );
+  }
+  const sourceRoot = resolve(configuredSource);
+  for (const requiredPath of [
+    EMBEDDED_WORKBENCH_LOADER,
+    "version.json",
+    ".vite/manifest.json",
+  ]) {
+    if (!existsSync(join(sourceRoot, requiredPath))) {
+      throw new Error(`OpenCraft Embedded Workbench artifact is missing ${requiredPath}`);
+    }
+  }
+
+  const targetRoot = resolve(outputRoot, EMBEDDED_WORKBENCH_DIRECTORY);
+  const privateManifestRoot = join(sourceRoot, ".vite");
+  rmSync(targetRoot, { recursive: true, force: true });
+  cpSync(sourceRoot, targetRoot, {
+    recursive: true,
+    filter: (source) => source !== privateManifestRoot
+      && !source.startsWith(`${privateManifestRoot}${sep}`)
+      && !source.endsWith(".map"),
+  });
+  if (!existsSync(join(targetRoot, EMBEDDED_WORKBENCH_LOADER))) {
+    throw new Error("OpenCraft Embedded Workbench loader was not staged");
+  }
+  return true;
+}
+
 export async function runFrontendArtifactTypecheck(env = process.env) {
   await runCommand(pnpmBin(env), ["run", "check"], env);
 }
@@ -133,6 +181,9 @@ export async function runFrontendArtifactBuildCommand(
   await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
   await runner(pnpmBin(env), ["exec", "next", "build"], env);
   await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
+  // This must precede the EdgeOne build-output projection: that script copies
+  // out into .edgeone/assets, which is the directory actually uploaded.
+  stageOpenCraftEmbeddedWorkbench(outDir, env);
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);
   await runner(nodeBin(env), ["scripts/check-versioned-next-static-assets.mjs"], env);

@@ -71,6 +71,13 @@ master 源码
 - LightVela Web产品构建/发布沿用OpenCraft本地发布契约：`deploy:lightvela-web`先构建并检查
   产品边界，再从`dist-lightvela-web`发布到显式审查的`OPENCRAFT_WEB_RELEASE_ROOT`；不能用
   通用Web产物冒充该产品，不恢复已取消的OpenCraft专用CI/MR guard。该命令不创建域名或后台。
+- frontend Pages artifact在release matrix显式启用时，先构建OpenCraft独立Embedded Workbench
+  target，再把无sourcemap、内容寻址的静态树放入Next导出的`/__opencraft/`子树；Next主chunk
+  不导入OpenCraft，未执行rollout `show()`的页面也不请求该树。同源共包避免ES module CORS和
+  两个独立发布版本漂移，但artifact构建必须在缺少loader输入时失败，不能静默回退成只含前端代码。
+  Embedded staging 必须先于 EdgeOne Build Output 投影脚本执行，确保实际上传的
+  `.edgeone/assets/__opencraft/` 同样包含 loader、version 与 hashed assets；仅检查 `out/__opencraft/`
+  不能作为正式站产物验收。回归用例执行真实投影脚本并通过 `resolveDeployDir` 检查上传树。
 - `vela-computer`客户端候选CI只构建原生Linux AMD64、校验并归档到流水线制品库，不下发
   实例、不接自动更新、不上传公共COS。候选带`schemaVersion=1`、完整源码SHA、dirty标记、
   平台、版本和SHA256SUMS；`deploymentQualified=false`不能用作正式可用证明。
