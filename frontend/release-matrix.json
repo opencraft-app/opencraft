@@ -12,6 +12,10 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
+      "embeddedWorkbench": {
+        "enabled": true,
+        "scriptPath": "/__opencraft/embedded-workbench.js"
+      },
       "appEnv": "staging",
       "outputDir": "out",
       "observability": {
@@ -34,6 +38,10 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://api-sandbox-kr-1.lightclaw.tech",
+      "embeddedWorkbench": {
+        "enabled": true,
+        "scriptPath": "/__opencraft/embedded-workbench.js"
+      },
       "appEnv": "staging",
       "outputDir": "out",
       "deployEnv": {},
@@ -59,6 +67,10 @@
         "EDGEONE_API_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.com",
+      "embeddedWorkbench": {
+        "enabled": true,
+        "scriptPath": "/__opencraft/embedded-workbench.js"
+      },
       "appEnv": "production",
       "siteUrl": "https://lightvela.com",
       "outputDir": "out",
@@ -90,6 +102,10 @@
         "POSTHOG_PROJECT_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.ai",
+      "embeddedWorkbench": {
+        "enabled": true,
+        "scriptPath": "/__opencraft/embedded-workbench.js"
+      },
       "appEnv": "production",
       "siteUrl": "https://lightvela.ai",
       "outputDir": "out",
