@@ -6309,3 +6309,10 @@ expect(screen.getByText("为你的 Agent 解锁独特灵魂，让它从此与众
 - 所有预置 API Provider 的模型列表统一读取七彩石 `models`，不再展示或调用“获取可用模型”。
 - 七彩石目录为空时保留 Provider，模型选择器置灰并显示“暂无可用模型”；自定义模型仍支持实时探测与手动输入。
 - 验证：模型配置专项 163/163 passed；`pnpm check`、i18n check/validate、`git diff --check` 均通过。
+
+
+## 2026-09-21 Bot 创建刷新兜底
+
+- [x] 接续已有快照草稿，补 Bot/profile 隔离、首步前持久化与恢复锁。
+- [x] 定时任务以沙箱内串行查重保护重试与刷新；补行为回归。
+- [x] 完成前端与 context 门禁，记录结果及恢复边界。

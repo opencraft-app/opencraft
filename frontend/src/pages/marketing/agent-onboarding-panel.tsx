@@ -48,10 +48,18 @@ import {
   parseHermesSoulContent,
 } from "@/pages/marketing/agent-buddy-command";
 import {
+  isSetupCommandSucceeded,
   runBuddySetupPlan,
   type SetupExec,
   type SetupStepState,
 } from "@/pages/marketing/agent-buddy-setup-runner";
+import {
+  buildSetupPlanSignature,
+  clearBuddySetupSnapshot,
+  collectCompletedKeys,
+  loadBuddySetupSnapshot,
+  saveBuddySetupSnapshot,
+} from "@/pages/marketing/agent-buddy-setup-progress";
 import {
   BUDDY_DESCRIPTION_PLACEHOLDER,
   BUDDY_NAME_DEFAULT,
@@ -281,6 +289,8 @@ export const AgentOnboardingPanel = ({
     profile: { name: string; description: string };
     template?: AgentTemplate;
     avatar: { shapeId: string; color: string };
+    preserveSoul?: boolean;
+    resume?: boolean;
   } | null>(null);
   /** 步骤进度 */
   const [steps, setSteps] = useState<SetupStepState[]>([]);
@@ -425,6 +435,44 @@ export const AgentOnboardingPanel = ({
     };
   }, []);
 
+  // Only a mounted, identified Bot may resume. The empty-ID create form must never
+  // consume another Bot's snapshot or issue a second creation request.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || pendingSetup || !botId || !profileId) return;
+    const snapshot = loadBuddySetupSnapshot(botId);
+    if (!snapshot || (snapshot.profileId && snapshot.profileId !== profileId)) return;
+    const template = snapshot.templateId
+      ? DEMO_TEMPLATES.find((item) => item.id === snapshot.templateId)
+      : undefined;
+    if (snapshot.templateId && !template) {
+      clearBuddySetupSnapshot(botId);
+      return;
+    }
+    restoredRef.current = true;
+    runtimeRef.current.onSetupStart?.();
+    setPendingSetup({
+      profile: snapshot.profile,
+      template,
+      avatar: snapshot.avatar,
+      preserveSoul: snapshot.preserveSoul,
+      resume: true,
+    });
+    setPhase("creating");
+  }, [botId, profileId, pendingSetup]);
+
+  const protectUnload = phase === "creating" && !fatalError && !createdBotId
+    && Boolean(pendingSetup);
+  useEffect(() => {
+    if (!protectUnload) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [protectUnload]);
+
   /* ── 头像 ── */
   const [shapeId, setShapeId] = useState<AvatarShapeId>(DEFAULT_AVATAR_SHAPE);
   const [color, setColor] = useState(DEFAULT_AVATAR_COLOR);
@@ -495,6 +543,7 @@ export const AgentOnboardingPanel = ({
         profile: nextProfile,
         template,
         avatar: nextAvatar,
+        preserveSoul: !template && Boolean(runtimeRef.current.cloneValue),
       });
 
       /*
@@ -546,6 +595,7 @@ export const AgentOnboardingPanel = ({
     const cancelled = () => unmountedRef.current;
 
     const run = async () => {
+      let targetBotId = "";
       try {
         /*
          * 0. 先确保实例存在。
@@ -557,46 +607,28 @@ export const AgentOnboardingPanel = ({
          *      引导会早于 URL 更新就渲染（否则中间那帧会漏回咖啡杯），
          *      填表通常远慢于路由，但手速极快时仍可能为空，所以等而不是直接失败。
          */
-        let targetBotId = "";
         let targetProfileId = "";
 
-        if (runtimeRef.current.onCreateBot) {
-          /*
-           * 同一份 pendingSetup 只建一次 bot。effect 正常只跑一次，但这层
-           * 缓存保证万一重跑也不会重复建实例 —— 重复建会留下一堆空 bot 并
-           * 吃掉配额。
-           */
-          const cached = createdRef.current?.token === pendingSetup
-            ? createdRef.current
-            : null;
-
-          if (cached) {
-            targetBotId = cached.botId;
-            targetProfileId = cached.profileId;
-          } else {
-            const created = await runtimeRef.current.onCreateBot({
-              name: pendingSetup.profile.name,
-              sourceBotId: runtimeRef.current.cloneValue ?? "",
-            });
-            if (cancelled()) return;
-            if (!created) {
-              // 页面已经把失败原因显示出来了，这里只负责退回表单
-              setPhase("form");
-              setPendingSetup(null);
-              // 清掉预铺的清单，否则下次进来会闪一眼上次的步骤
-              setSteps([]);
-              // 放开重入守卫，否则用户改完参数再点「创建」会被挡住
-              setupTokenRef.current = null;
-              return;
-            }
-            createdRef.current = {
-              token: pendingSetup,
-              botId: created.botId,
-              profileId: created.profileId,
-            };
-            targetBotId = created.botId;
-            targetProfileId = created.profileId;
+        const cached = createdRef.current?.token === pendingSetup ? createdRef.current : null;
+        if (cached) {
+          targetBotId = cached.botId;
+          targetProfileId = cached.profileId;
+        } else if (runtimeRef.current.onCreateBot && !restoredRef.current) {
+          const created = await runtimeRef.current.onCreateBot({
+            name: pendingSetup.profile.name,
+            sourceBotId: runtimeRef.current.cloneValue ?? "",
+          });
+          if (cancelled()) return;
+          if (!created) {
+            // 页面已显示创建失败原因，退回表单允许用户修改参数。
+            setPhase("form");
+            setPendingSetup(null);
+            setSteps([]);
+            setupTokenRef.current = null;
+            return;
           }
+          targetBotId = created.botId;
+          targetProfileId = created.profileId;
         } else {
           targetBotId = await waitForBotId(cancelled);
           if (cancelled()) return;
@@ -604,6 +636,19 @@ export const AgentOnboardingPanel = ({
             throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
           }
         }
+
+        createdRef.current = { token: pendingSetup, botId: targetBotId, profileId: targetProfileId };
+        const previous = loadBuddySetupSnapshot(targetBotId);
+        saveBuddySetupSnapshot({
+          botId: targetBotId,
+          profileId: targetProfileId || profileIdRef.current,
+          profile: pendingSetup.profile,
+          avatar: pendingSetup.avatar,
+          templateId: pendingSetup.template?.id ?? "",
+          preserveSoul: Boolean(pendingSetup.preserveSoul),
+          planSignature: pendingSetup.resume ? previous?.planSignature ?? "" : "",
+          completedKeys: pendingSetup.resume ? previous?.completedKeys ?? [] : [],
+        });
 
         // 1. 等实例真正可执行命令 —— status 变 active 不等于沙箱就绪
         const ready = await waitForSandbox(targetBotId, cancelled);
@@ -622,6 +667,7 @@ export const AgentOnboardingPanel = ({
         if (!targetProfileId) {
           throw new Error(t("实例尚未就绪，请稍后在设置页重试配置"));
         }
+        createdRef.current = { token: pendingSetup, botId: targetBotId, profileId: targetProfileId };
 
         /*
          * 克隆来的 bot 且没选模板时，保留继承来的人设正文，只改名字与简介。
@@ -634,8 +680,7 @@ export const AgentOnboardingPanel = ({
          *   - 空白创建：本来就没有可继承的人设，读了也是空，白等一次命令；
          *   - 选了模板：模板的全部意义就是给一套新人设，该覆盖。
          */
-        const shouldPreserveSoul = !pendingSetup.template
-          && Boolean(runtimeRef.current.cloneValue);
+        const shouldPreserveSoul = !pendingSetup.template && pendingSetup.preserveSoul;
         let existingSoul = "";
         if (shouldPreserveSoul) {
           try {
@@ -645,9 +690,13 @@ export const AgentOnboardingPanel = ({
               { timeoutMs: SOUL_READ_TIMEOUT_MS },
             );
             const parsed = parseHermesSoulContent(read.output || "");
-            if (parsed.status === "ready") existingSoul = parsed.markdown;
+            if (!isSetupCommandSucceeded(read) || parsed.status !== "ready" || !parsed.markdown.trim()) {
+              throw new Error(t("无法读取人设文件，请重试"));
+            }
+            existingSoul = parsed.markdown;
           } catch {
-            /* 读不到就退回新建语义，也比写出半截文件好 */
+            // 克隆读取失败时停止，不能用新生成的人设覆盖继承内容。
+            throw new Error(t("无法读取人设文件，请重试"));
           }
           if (cancelled()) return;
         }
@@ -658,11 +707,32 @@ export const AgentOnboardingPanel = ({
           profileId: targetProfileId,
           avatar: pendingSetup.avatar,
           timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
-          // 只有真读到了才走保留模式，读失败宁可生成完整文件
+          // 克隆路径只有完整读取成功才会到达这里。
           preserveSoulContent: Boolean(existingSoul),
           existingSoul,
           t,
         });
+
+        const snapshot = loadBuddySetupSnapshot(targetBotId);
+        const resumeKeys = pendingSetup.resume
+          && snapshot?.profileId === targetProfileId
+          && snapshot.planSignature === buildSetupPlanSignature(plan)
+          ? new Set(snapshot.completedKeys)
+          : undefined;
+
+        /* 每完成一步就落盘，刷新后据此续跑 */
+        const persist = (states: SetupStepState[]) => {
+          saveBuddySetupSnapshot({
+            botId: targetBotId,
+            profileId: targetProfileId,
+            profile: pendingSetup.profile,
+            avatar: pendingSetup.avatar,
+            templateId: pendingSetup.template?.id ?? "",
+            preserveSoul: Boolean(pendingSetup.preserveSoul),
+            planSignature: buildSetupPlanSignature(plan),
+            completedKeys: collectCompletedKeys(states),
+          });
+        };
         /*
          * 清单已在进入 creating 时铺好，这里只在步骤数不一致时才重置 ——
          * 同样的入参算出的计划结构是一样的，无条件 setSteps 会让已渲染的
@@ -680,11 +750,27 @@ export const AgentOnboardingPanel = ({
           steps: plan,
           exec: execDebugCommand,
           onProgress: (states) => {
-            if (!cancelled()) setSteps(states);
+            // A response from an old mount must not overwrite a newer recovery.
+            // In-flight cron operations are reconciled by the sandbox lock.
+            if (cancelled()) return;
+            persist(states);
+            setSteps(states);
           },
           shouldCancel: cancelled,
+          completedKeys: resumeKeys ?? undefined,
         });
         if (cancelled()) return;
+
+        /*
+         * 跑完就清快照 —— 不论是否有步骤失败。
+         *
+         * 走到这里说明每一步都已尝试过、结果也呈现给用户了（失败项在清单上
+         * 标红）。留着快照只会让下次进页面又弹一次续跑，而该补的东西用户
+         * 已经被引导去技能页/定时任务页手动处理了。
+         *
+         * 真正需要保留快照的是「中途被打断」—— 那种情况根本执行不到这里。
+         */
+        clearBuddySetupSnapshot(targetBotId);
 
         /*
          * 有非阻断步骤失败时，停在清单页让用户看清哪几步红了。
@@ -703,9 +789,11 @@ export const AgentOnboardingPanel = ({
           setCreatedBotId(targetBotId);
           return;
         }
+        setCreatedBotId(targetBotId);
         runtimeRef.current.onCreated(targetBotId);
       } catch (error) {
         if (cancelled()) return;
+        // 保留目标与进度：重试或刷新继续配置同一个 Bot。
         setFatalError(error instanceof Error ? error.message : String(error));
       }
     };
@@ -729,6 +817,14 @@ export const AgentOnboardingPanel = ({
     return (
       <CreatingLoadingView
         errorMessage={fatalError}
+        onRetry={fatalError && pendingSetup ? () => {
+          const next = { ...pendingSetup, resume: true };
+          if (createdRef.current?.token === pendingSetup) {
+            createdRef.current = { ...createdRef.current, token: next };
+          }
+          setFatalError(null);
+          setPendingSetup(next);
+        } : undefined}
         steps={steps}
         partialFailureCount={partialFailureCount}
         onContinue={createdBotId

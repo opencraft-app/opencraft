@@ -399,7 +399,12 @@ export const toCronExpression = (label: string): string | null => {
   return null;
 };
 
-/** 模板的一条 routine → hermes cron create 命令；无法解析调度时返回 null */
+/** 定时任务显示名与恢复查重共用。 */
+export const buildRoutineJobName = (
+  routine: AgentTemplate["routines"][number],
+  templateName: string,
+): string => `${templateName} · ${routine.label}`;
+
 export const buildRoutineCommand = (
   routine: AgentTemplate["routines"][number],
   templateName: string,
@@ -408,10 +413,38 @@ export const buildRoutineCommand = (
   if (!schedule) return null;
   const input: CreateCronJobInput = {
     schedule,
-    name: `${templateName} · ${routine.label}`,
+    name: buildRoutineJobName(routine, templateName),
     prompt: routine.desc,
   };
   return buildCreateCommand(input);
+};
+
+/**
+ * Serialize list + create in the sandbox, including requests whose HTTP response
+ * was lost. A second invocation waits for the first, then sees the existing job.
+ * Unknown/failed list output fails closed and is shown as a normal failed step.
+ */
+export const buildEnsureRoutineCommand = (command: string, name: string, profileId: string): string => {
+  const script = [
+    "import fcntl, os, re, subprocess, sys",
+    "from pathlib import Path",
+    "root = Path(os.environ['HERMES_PROFILE_ROOT'])",
+    "root.mkdir(parents=True, exist_ok=True)",
+    "with (root / '.lightvela-onboarding-cron.lock').open('a') as lock:",
+    "    fcntl.flock(lock, fcntl.LOCK_EX)",
+    `    listed = subprocess.run(${JSON.stringify(scopeHermesCronCommand("hermes cron list --all", profileId))}, shell=True, capture_output=True, text=True)`,
+    "    if listed.returncode:",
+    "        sys.exit('Cannot verify existing scheduled jobs')",
+    '    output = re.sub(r"\\x1b\\[[0-9;]*m", "", listed.stdout)',
+    '    names = re.findall(r"^    Name:\\s*(.*?)\\s*$", output, re.M)',
+    '    headers = re.findall(r"^  [0-9a-fA-F]{8,}\\s*(?:\\[[^\\]]*\\])?\\s*$", output, re.M)',
+    "    if not ((names and len(names) == len(headers)) or 'no scheduled jobs' in output.lower()):",
+    "        sys.exit('Cannot verify existing scheduled jobs')",
+    `    if ${JSON.stringify(name)} not in names:`,
+    `        sys.exit(subprocess.call(${JSON.stringify(scopeHermesCronCommand(command, profileId))}, shell=True))`,
+  ].join("\n");
+  // The quoted heredoc keeps template content out of shell expansion.
+  return `${getHermesProfileRootCommand(profileId)}; export HERMES_PROFILE_ROOT; python3 - <<'__LV_SETUP_CRON__'\n${script}\n__LV_SETUP_CRON__`;
 };
 
 /**
@@ -580,7 +613,7 @@ export const buildBuddySetupPlan = (params: {
        * 是空的，而主 bot 那边莫名多出几条。定时任务页读写都走这个函数，
        * 写入侧也必须一致，否则「写进去的」和「读出来的」不是同一批。
        */
-      command: scopeHermesCronCommand(command, profileId),
+      command: buildEnsureRoutineCommand(command, buildRoutineJobName(routine, template!.name), profileId),
       timeoutMs: QUICK_STEP_TIMEOUT_MS,
       required: false,
     });

@@ -131,7 +131,9 @@ import {
   isPendingOnboarding,
   markPendingOnboarding,
   shouldShowEarlyOnboarding,
+  resolveOnboardingProfileId,
 } from "@/pages/marketing/agent-onboarding-mark";
+import { hasUnfinishedBuddySetup } from "@/pages/marketing/agent-buddy-setup-progress";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
@@ -2894,7 +2896,7 @@ export const AgentSettingsPage = ({
       return;
     }
     if (visibleBots.length > 0 && !visibleBots.some((b) => b.id === activeTabId)) {
-      setActiveTabId(visibleBots[0]!.id);
+      setActiveTabId((visibleBots.find((bot) => hasUnfinishedBuddySetup(bot.id)) ?? visibleBots[0])!.id);
     }
   }, [visibleBots, activeTabId, isCreating, requestedBotId]);
   const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
@@ -2913,10 +2915,12 @@ export const AgentSettingsPage = ({
   });
 
   /** 总览横幅：套餐额度 + 定时任务数 + 站点数，全部真实读取 */
+  const [buddySetupRevision, setBuddySetupRevision] = useState(0);
   const heroStats = useHeroStats({
     activePass,
     botId: activeBot?.id,
     profileId: activeBot?.profileId,
+    refreshKey: buddySetupRevision,
   });
 
   /*
@@ -2982,7 +2986,7 @@ export const AgentSettingsPage = ({
    * 回落就会把新 bot 的人设、描述、头像写进主 bot，多 bot 场景下是串写。
    * 空串表示「还不知道」，由引导面板等到位再写（见 waitForProfileId）。
    */
-  const earlyOnboardingProfileId = provisioningBot?.profileId ?? "";
+  const earlyOnboardingProfileId = resolveOnboardingProfileId(bots, earlyOnboardingBotId);
   const showEarlyOnboarding = shouldShowEarlyOnboarding({
     isCreating,
     isModifying,
@@ -3007,12 +3011,25 @@ export const AgentSettingsPage = ({
    * （sdkInstance 是 activeBot 的派生值，且定义在本行之后，这里只看 activeBot。）
    */
 
+  /*
+   * 配置写到一半刷新过。
+   *
+   * 必须单列一条放行条件：hasBuddyConfig 看的是「有没有写过头像」，而头像
+   * 在第 2 步（profile-meta）就落盘了。在那之后刷新，hasBuddyConfig 已经是
+   * true，下面那条 isActiveBotPendingOnboarding 的判定不成立 —— 引导直接
+   * 不再出现，可技能和定时任务根本没装，用户以为建好了，界面毫无提示。
+   *
+   * 有未完成快照时强制把引导打开，面板挂载后会自己接着上次的进度跑完。
+   */
+  const hasUnfinishedBuddySetupForBot = hasUnfinishedBuddySetup(activeBot?.id);
+
   const showBuddyOnboarding = IS_BUDDY_ONBOARDING_ENABLED
     && Boolean(activeBot)
     && !isModifying
     && !isCreating
     && !onboardingJustFinished
     && (needsOnboardingByQuery
+      || hasUnfinishedBuddySetupForBot
       || (isActiveBotPendingOnboarding && buddyProfileState.hasBuddyConfig !== true));
 
   /*
@@ -3072,6 +3089,7 @@ export const AgentSettingsPage = ({
   /** 引导完成：立刻收起表单，再刷新资料与列表 */
   const handleBuddyCreated = useCallback((createdBotId?: string) => {
     setOnboardingJustFinished(true);
+    setBuddySetupRevision((revision) => revision + 1);
     /*
      * 配置已结束，放开那三个会退出创建态 / 改 URL 的 effect。
      *
@@ -4445,6 +4463,10 @@ export const AgentSettingsPage = ({
         return null;
       }
 
+      // Preserve this route and mounted panel, but reload into the new Bot.
+      const recoveryUrl = new URL(window.location.href);
+      recoveryUrl.searchParams.set("bot", newBot.id);
+      window.history.replaceState(window.history.state, "", recoveryUrl);
       return { botId: newBot.id, profileId: createdProfileId };
     } catch (err) {
       setDirectCreateError(getAgentCreateErrorMessage(err, (message) => t(message)));
@@ -6232,6 +6254,7 @@ export const AgentSettingsPage = ({
                       {showBuddyOnboarding ? (
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           <AgentOnboardingPanel
+                            key={activeBot.id}
                             botId={activeBot.id}
                             profileId={activeBot.profileId ?? "main"}
                             onCreated={handleBuddyCreated}

@@ -60,13 +60,15 @@ export const useHeroStats = (params: {
   botId: string | undefined;
   profileId: string | undefined;
   locale?: string;
+  refreshKey?: number;
 }): HeroStats => {
-  const { activePass, botId, profileId, locale } = params;
+  const { activePass, botId, profileId, locale, refreshKey } = params;
 
   const [automations, setAutomations] = useState<number | null>(null);
   const [sites, setSites] = useState<number | null>(null);
 
   useEffect(() => {
+    setAutomations(null);
     if (!botId) return undefined;
     let cancelled = false;
 
@@ -86,7 +88,7 @@ export const useHeroStats = (params: {
     })();
 
     return () => { cancelled = true; };
-  }, [botId, profileId]);
+  }, [botId, profileId, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;

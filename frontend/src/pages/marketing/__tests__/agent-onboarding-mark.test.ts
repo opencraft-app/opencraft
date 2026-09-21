@@ -7,6 +7,7 @@ import {
   markPendingOnboarding,
   hasAgentSidebarLayout,
   shouldShowEarlyOnboarding,
+  resolveOnboardingProfileId,
 } from "@/pages/marketing/agent-onboarding-mark";
 
 const KEY = "lv-pending-onboarding-bots";
@@ -194,5 +195,16 @@ describe("hasAgentSidebarLayout", () => {
 
   it("drops them when creating even if an active bot exists", () => {
     expect(hasAgentSidebarLayout({ isCreating: true, hasActiveBot: true })).toBe(false);
+  });
+});
+
+describe("onboarding target profile", () => {
+  it("keeps the target profile across provisioning to active and reload", () => {
+    const other = { id: "other", profileId: "main", status: "active" };
+    const target = { id: "new", profileId: "research", status: "provisioning" };
+    expect(resolveOnboardingProfileId([other, target], "new")).toBe("research");
+    expect(resolveOnboardingProfileId([other, { ...target, status: "active" }], "new")).toBe("research");
+    expect(resolveOnboardingProfileId([other], "new")).toBe("");
+    expect(resolveOnboardingProfileId([other, target], "")).toBe("");
   });
 });

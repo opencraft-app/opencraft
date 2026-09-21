@@ -15,6 +15,7 @@ import { Check, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useT } from "@/i18n/t";
+import { Button } from "@/components/ui/button";
 import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 import type { SetupStepState } from "@/pages/marketing/agent-buddy-setup-runner";
@@ -72,6 +73,7 @@ export const CreatingLoadingView = ({
   steps,
   partialFailureCount = 0,
   onContinue,
+  onRetry,
 }: {
   errorMessage?: string | null;
   /** 传入则展示步骤进度清单 */
@@ -86,6 +88,8 @@ export const CreatingLoadingView = ({
   partialFailureCount?: number;
   /** 「完成」回调，仅在 partialFailureCount > 0 时用到 */
   onContinue?: () => void;
+  /** 阻断失败后继续配置同一个 Bot */
+  onRetry?: () => void;
 }) => {
   const t = useT();
   /* 动态 "..." 计数：0 -> 1 -> 2 -> 3 -> 0 ... 每 450ms 切换 */
@@ -128,6 +132,7 @@ export const CreatingLoadingView = ({
 
       {/* 文案：单行 + 动态省略号 */}
       <p
+        role={errorMessage ? "alert" : undefined}
         className="text-center"
         style={{
           fontFamily: "PingFang SC, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -151,6 +156,11 @@ export const CreatingLoadingView = ({
           </>
         )}
       </p>
+      {errorMessage && onRetry ? (
+        <Button type="button" onClick={onRetry} className="mt-4 duration-150">
+          {t("重试")}
+        </Button>
+      ) : null}
 
       {/* 步骤进度：仅长流程传入 steps 时渲染 */}
       {hasSteps ? (

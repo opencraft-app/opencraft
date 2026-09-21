@@ -146,6 +146,7 @@ const page = (search: string) => (
 describe("subscribe path: picking a template enters the setup flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     testRegion.isCN = true;
     testRegion.isGlobal = false;
     // 复现用户场景：订阅已建好实例，状态是 running
@@ -159,14 +160,15 @@ describe("subscribe path: picking a template enters the setup flow", () => {
   });
   afterEach(cleanup);
 
-  it("keeps the panel mounted and starts writing config", async () => {
-    render(page("?creating=ins-372"));
+  it.each(["running", "provisioning"] as const)("finishes setup for a %s target and opens its overview", async (status) => {
+    bots = [{ ...buildBot(), status }];
+    const view = render(page("?creating=ins-372"));
 
     // 先确认引导表单在
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
     });
-    console.log("\n[1] 引导表单已渲染");
+
 
     // 点「育儿参谋」模板卡片（必须点 button 本身，不是里面的 span）
     const nameSpan = screen.getByText("育儿参谋", { selector: "span" });
@@ -189,12 +191,16 @@ describe("subscribe path: picking a template enters the setup flow", () => {
     fireEvent.click(createBtns[createBtns.length - 1]!);
 
 
-    // 等配置流程推进
-    await new Promise((r) => { setTimeout(r, 600); });
-    // 不该回到表单（「换一批」是表单独有的头像操作）
+    // 模拟实例从 provisioning 变 active，目标 profile 不能随过滤结果丢失。
+    bots = [{ ...buildBot(), status: "running" }];
+    view.rerender(page("?creating=ins-372"));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      "/agents/overview?bot=ins-372", { replace: true },
+    ));
+    expect(addBot).not.toHaveBeenCalled();
+    expect(execDebugCommand.mock.calls.some(([id, command]) =>
+      id === "ins-372" && command.includes("__CTL_SOUL_EOF__") && command.includes("profile-372"),
+    )).toBe(true);
     expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
-    // 应该进入配置清单并开始执行
-    expect(screen.getByText(/正在写入 Bot 人设/)).toBeInTheDocument();
-    expect(execDebugCommand.mock.calls.length).toBeGreaterThan(0);
   });
 });

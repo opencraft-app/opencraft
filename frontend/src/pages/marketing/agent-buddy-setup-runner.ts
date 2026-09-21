@@ -12,6 +12,7 @@
  */
 
 import type { SetupStep } from "@/pages/marketing/agent-buddy-setup";
+import { buildSetupStepKey } from "@/pages/marketing/agent-buddy-setup-progress";
 
 export type SetupStepStatus = "pending" | "running" | "done" | "failed";
 
@@ -102,17 +103,44 @@ export const runBuddySetupPlan = async (params: {
   onProgress?: (states: SetupStepState[]) => void;
   /** 允许外部取消（组件卸载） */
   shouldCancel?: () => boolean;
+  /**
+   * 上一次已经跑成功的步骤 key（见 agent-buddy-setup-progress）。
+   *
+   * 用于「写配置写到一半刷新页面」后的续跑：命中的步骤直接标 done 并跳过
+   * 执行，只补没做完的。
+   *
+   * 为什么必须跳过而不是无脑重跑：SOUL 与 profile 是覆盖写，重跑无害；
+   * 但 `hermes cron create` 没有 upsert 语义，重跑会把同一条定时任务
+   * 再建一遍，用户的任务列表里会出现两条一模一样的。
+   */
+  completedKeys?: ReadonlySet<string>;
 }): Promise<SetupRunResult> => {
-  const { botId, steps, exec, onProgress, shouldCancel } = params;
+  const { botId, steps, exec, onProgress, shouldCancel, completedKeys } = params;
 
   const states: SetupStepState[] = steps.map((step) => ({ step, status: "pending" }));
   const emit = () => onProgress?.(states.map((state) => ({ ...state })));
+
+  /*
+   * 续跑：先把已完成的步骤标上。
+   *
+   * 在首次 emit 之前做完，这样 UI 第一帧就显示「前 4 步已完成」，
+   * 而不是先闪一遍全 pending 再跳成已完成。
+   */
+  if (completedKeys?.size) {
+    for (let index = 0; index < states.length; index += 1) {
+      if (completedKeys.has(buildSetupStepKey(states[index]!.step, index))) {
+        states[index]!.status = "done";
+      }
+    }
+  }
   emit();
 
   for (let index = 0; index < states.length; index += 1) {
     if (shouldCancel?.()) break;
 
     const current = states[index]!;
+    // 续跑跳过：上一次已经成功，不重复执行（cron 尤其不能重跑）
+    if (current.status === "done") continue;
     current.status = "running";
     emit();
 

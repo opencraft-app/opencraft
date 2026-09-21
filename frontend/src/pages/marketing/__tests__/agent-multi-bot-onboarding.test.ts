@@ -62,6 +62,8 @@ describe("multi-bot creation goes through the onboarding panel", () => {
      * 旧的 createBotAndNavigate 会跳转，这个新回调不能跳。
      */
     expect(handler).not.toContain("navigate(");
+    expect(handler).toContain('recoveryUrl.searchParams.set("bot", newBot.id)');
+    expect(handler).toContain('window.history.replaceState(window.history.state, "", recoveryUrl)');
     /*
      * 必须把 profileId 一并返回，否则面板只能去猜，可能写进别的 bot。
      * 现在先落到 createdProfileId 中间变量上（要先过 "main" 守卫再返回），
@@ -211,7 +213,8 @@ describe("multi-bot creation goes through the onboarding panel", () => {
      * 选了模板则该由模板覆盖。两种情况都不进保留分支。
      */
     expect(panel).toContain("const shouldPreserveSoul = !pendingSetup.template");
-    expect(panel).toContain("&& Boolean(runtimeRef.current.cloneValue);");
+    expect(panel).toContain("preserveSoul: !template && Boolean(runtimeRef.current.cloneValue)");
+    expect(panel).toContain("&& pendingSetup.preserveSoul;");
     expect(panel).toContain("if (shouldPreserveSoul) {");
   });
 

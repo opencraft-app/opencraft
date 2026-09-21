@@ -127,3 +127,9 @@ export const hasAgentSidebarLayout = (input: {
   isCreating: boolean;
   hasActiveBot: boolean;
 }): boolean => !input.isCreating && input.hasActiveBot;
+
+/** 创建中的目标变为 active 后仍从完整列表解析，绝不借用其他 Bot 的 profile。 */
+export const resolveOnboardingProfileId = (
+  bots: readonly { id: string; profileId?: string }[],
+  botId: string,
+): string => botId ? bots.find((bot) => bot.id === botId)?.profileId ?? "" : "";

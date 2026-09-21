@@ -95,7 +95,8 @@ describe("onboarding setup runs exactly once", () => {
     const execDebugCommand = vi.fn(async (_botId: string, _command: string) => ({
       status: "ok",
       exitCode: 0,
-      output: "",
+      output: _command.includes("ContentBase64:")
+        ? `Exists: yes\nByteLength: 12\nContentBase64: ${btoa("cloned soul!")}` : "",
     }));
     const onCreated = vi.fn();
 
