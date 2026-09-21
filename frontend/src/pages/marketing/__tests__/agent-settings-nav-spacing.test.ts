@@ -208,6 +208,8 @@ describe("Agent settings navigation spacing", () => {
 
   it("moves the desktop account menu to the bottom of the Agent sidebar", () => {
     const accountFooter = getBlockBody(styles, "\n.lv-agent-account-footer {");
+    const accountMenu = getBlockBody(styles, "\n.lv-agent-account-menu {");
+    const accountTrigger = getBlockBody(styles, "\n.lv-agent-account-trigger {");
     const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
 
     expect(page).toMatch(/<UserAvatarMenu\b[^>]*\bvariant="sidebar"[^>]*\/>/);
@@ -216,6 +218,9 @@ describe("Agent settings navigation spacing", () => {
     expect(accountFooter).toContain("margin-top: auto;");
     expect(accountFooter).toContain("padding-top: 8px;");
     expect(accountFooter).toContain("border-top: 1px solid #e9ecf1;");
+    expect(accountMenu).toContain("width: 100%;");
+    expect(accountMenu).not.toContain("width: var(--lv-agents-nav-width);");
+    expect(accountTrigger).toContain("width: 100%;");
     expect(styles).toContain("height: calc(100dvh - 68px);");
     expect(desktopSidebar).toContain("padding-top: 12px;");
     expect(desktopSidebar).toContain("padding-bottom: max(12px, env(safe-area-inset-bottom));");

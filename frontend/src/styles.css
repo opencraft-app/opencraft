@@ -566,7 +566,7 @@ a {
 }
 
 .lv-agent-account-menu {
-  width: var(--lv-agents-nav-width);
+  width: 100%;
 }
 
 .lv-agent-account-trigger {
