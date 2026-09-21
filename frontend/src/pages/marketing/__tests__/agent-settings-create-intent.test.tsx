@@ -9,8 +9,11 @@ import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 /*
  * 订阅成功后命名向导（issue #73 方案 B）：
  * subscribe-page 支付成功后不再写死默认名自动建 Bot，而是跳到 /agents?create=1，
- * 控制台在订阅态就绪且账号还没有 Bot 时自动打开与「新建 Bot」一致的命名弹窗，
- * 让首次订阅与删除后重建走同一条命名流程。这里覆盖该消费逻辑。
+ * 控制台在订阅态就绪且账号还没有 Bot 时自动打开创建引导（与点「新建 Bot」
+ * 一致），让首次订阅与删除后重建走同一条流程。这里覆盖该消费逻辑。
+ *
+ * 注：早期这里弹的是「只问名字」的旧弹窗，后来统一换成了创建引导 ——
+ * 新用户的第一屏不该是老交互。
  */
 
 const addBot = vi.fn();
@@ -23,6 +26,8 @@ let isSubscribed = true;
 let botsLoading = false;
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string) => text,
   useT: () => (text: string) => text,
 }));
@@ -139,18 +144,46 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
   });
   afterEach(cleanup);
 
-  it("auto-opens the naming dialog for a subscribed user without any bot", async () => {
+  it("auto-opens the onboarding panel for a subscribed user without any bot", async () => {
     render(page("?create=1"));
 
-    // 与「新建 Bot」一致的命名弹窗（标题「创建 Bot」+ 名称输入框）应自动出现
+    /*
+     * 订阅成功回跳后直接进创建引导，不再弹「只问名字」的旧弹窗 ——
+     * 这是新用户订阅后的第一屏，看到的必须是新流程（可换头像、填描述、
+     * 挑模板）。用「换一批」认引导页：它是引导独有的头像操作。
+     */
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "创建 Bot" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
     });
-    expect(screen.getByPlaceholderText("请输入 Bot 名称")).toBeInTheDocument();
-    // 首个创建不自动建 bot（等用户输入名字确认后才建）
+    expect(screen.queryByRole("heading", { name: "创建 Bot" })).not.toBeInTheDocument();
+    // 首个创建不自动建 bot（等用户在引导页点「创建」才建）
     expect(addBot).not.toHaveBeenCalled();
     // 消费一次即清掉 create 参数，避免刷新/取消后重复自动弹出
     expect(navigateMock).toHaveBeenCalledWith("/agents", { replace: true });
+  });
+
+  /*
+   * 这条守的是「同一页面出现两套创建入口」。
+   *
+   * 首个 bot 引导中 visibleBots 本来就是空的，而页面底部的空状态分支
+   * 条件恰好是 visibleBots.length === 0 —— 两者同时成立，于是引导表单
+   * 下面又叠了一个「新建 Bot」按钮。
+   *
+   * 这个问题源码文本断言抓不到（两个分支各自都写得对，错在组合），
+   * 必须真实渲染才能发现。
+   */
+  it("shows exactly one creation entry while onboarding the first bot", async () => {
+    render(page("?create=1"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+    });
+
+    // 引导表单自己的提交按钮只能有一个
+    expect(screen.getAllByRole("button", { name: "创建" })).toHaveLength(1);
+    // 底部空态的「新建 Bot」不该同时出现
+    expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+    expect(screen.queryByText("即刻创建你的云端智能体伙伴")).not.toBeInTheDocument();
   });
 
   it("does not open the naming dialog when the account already has a bot", async () => {

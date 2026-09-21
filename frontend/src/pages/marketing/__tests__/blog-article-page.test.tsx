@@ -9,6 +9,8 @@ vi.mock("@/lib/region", async (importOriginal) => ({
 }));
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   useT: () => (text: string) => {
     const translations: Record<string, string> = {
       "返回": "Back",

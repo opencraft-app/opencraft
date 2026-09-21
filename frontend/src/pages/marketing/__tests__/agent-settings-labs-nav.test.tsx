@@ -13,6 +13,8 @@ let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
 
 vi.mock("@/i18n/t", () => ({
+  // 组件里用它按 locale 格式化日期（Intl），mock 固定成 zh-CN
+  useCurrentLocale: () => "zh-CN",
   t: (text: string) => text,
   useT: () => (text: string) => text,
 }));
