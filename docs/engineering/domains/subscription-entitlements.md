@@ -42,6 +42,7 @@
   `provisioned` 与 `completed`。系统盘扩容不可逆，失败只能幂等前滚，不能自动降配。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
+- CTL 用户面 `GET /v1/passes` 与免费试用创建响应必须随 Pass 返回其 Bundle 的 `bundle_type`（`free` / `general` / `ai`）。该字段来自 Bundle 真源，不从 `bundle_id` 或套餐名称推断；前端遇到缺失或未知值时必须采用保守兼容行为。
 - 邀请返利不复用访问邀请码。Auth 在新用户创建时写 `user.registered.v1`，存量用户在首次开通前认领时写
   `user.referral_claimed.v1`；CTL 在首个非免费 Pass 开通和退款隔离事务中写 versioned outbox。Referral
   通过 Pulsar inbox 去重并允许归因、首付、退款事实乱序到达，但只有归因事件发生时间不晚于首次开通

@@ -115,11 +115,12 @@ const buildBot = (): OpenClawBot => ({
   installedSkills: [],
 });
 
-const buildPass = (bundleId: string): Pass => ({
+const buildPass = (bundleType?: string): Pass & { bundle_type?: string } => ({
   pass_id: "pass_agent_nav",
   user_id: "usr_dsh_lab",
-  bundle_id: bundleId,
-  bundle_name: bundleId,
+  bundle_id: "bundle_agent_nav",
+  bundle_name: "Agent Nav",
+  bundle_type: bundleType,
   created_time: "2026-08-20T00:00:00.000Z",
   expired_time: "2099-08-20T00:00:00.000Z",
   credit_total: 1000,
@@ -194,21 +195,31 @@ describe("AgentSettingsPage 实验室导航", () => {
     ]);
   });
 
-  it.each(["bundle_launch_ai_01", "bundle_cruise_ai_01"])(
-    "在 %s 套餐的使用分组中隐藏模型入口",
-    async (bundleId) => {
-      activePass = buildPass(bundleId);
+  it("在 ai 类型套餐的使用分组中隐藏模型入口", async () => {
+    activePass = buildPass("ai");
+    renderLabPage();
+
+    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
+    const useGroup = within(navigation).getByRole("group", { name: "使用" });
+
+    expect(within(useGroup).queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
+    expect(within(useGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/agents/channels",
+      "/agents/skills",
+      "/agents/automations",
+    ]);
+  });
+
+  it.each([undefined, "free", "general", "unknown"])(
+    "在 %s 类型套餐的使用分组中保留模型入口",
+    async (bundleType) => {
+      activePass = buildPass(bundleType);
       renderLabPage();
 
       const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
       const useGroup = within(navigation).getByRole("group", { name: "使用" });
 
-      expect(within(useGroup).queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
-      expect(within(useGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
-        "/agents/channels",
-        "/agents/skills",
-        "/agents/automations",
-      ]);
+      expect(within(useGroup).getByRole("link", { name: "模型" })).toHaveAttribute("href", "/agents/models");
     },
   );
 });

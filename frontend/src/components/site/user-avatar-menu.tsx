@@ -123,7 +123,7 @@ export const UserAvatarMenu = ({
     revealed: hiddenEntriesRevealed,
   });
   const isSidebar = variant === "sidebar";
-  const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass?.bundle_id);
+  const showModelEntry = isSidebar && shouldMoveModelEntryToAccountMenu(activePass);
 
   return (
     <div

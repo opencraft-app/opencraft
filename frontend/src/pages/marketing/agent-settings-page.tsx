@@ -5065,7 +5065,7 @@ export const AgentSettingsPage = ({
                 path: string;
                 badge?: string;
               };
-              const moveModelEntryToAccountMenu = shouldMoveModelEntryToAccountMenu(activePass?.bundle_id);
+              const moveModelEntryToAccountMenu = shouldMoveModelEntryToAccountMenu(activePass);
               const settingsGroups: { id: string; label: string; sections: SettingsSectionLink[] }[] = [
                 {
                   id: "use",

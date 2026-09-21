@@ -1,16 +1,17 @@
 ## goal
-在最新 `origin/master` 的 Agent 控制台上统一 Setup / Use 导航分组，并按当前有效套餐调整 Model 入口位置。
+在最新 `origin/master` 的 Agent 控制台上统一 Setup / Use 导航分组，并按当前有效 Pass 的 `bundle_type` 调整 Model 入口位置。
 
 ## non_goals
 - 不修改模型配置页、模型读写逻辑或套餐权益。
-- 不改变 Launch / Cruise 及套餐未知状态的 Model 可发现性。
+- 不改变非 `ai` 类型以及套餐类型未知状态的 Model 可发现性。
 - 不合并 MR、不发布或操作生产环境。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
-- 用户本轮请求（2026-09-20）：基于最新 master，将 model、channel、skill、scheduled task 放在同一 Use 分组；Launch AI / Cruise AI 从主导航隐藏 Model，并在左下角用户菜单的 Plan & Billing 后展示 Model；模型页继续保留 Agent 左侧导航。外部需求标识：`unknown`。
+- 用户本轮请求（2026-09-21 修订）：基于最新 master，将 model、channel、skill、scheduled task 放在同一 Use 分组；当前有效 Pass 的 `bundle_type` 为 `ai` 时从主导航隐藏 Model，并在左下角用户菜单的 Plan & Billing 后展示 Model；其他类型保留主导航入口；模型页继续保留 Agent 左侧导航。外部需求标识：`unknown`。
 
 ## interface_refs / data_structure_refs
-- `Pass.bundle_id`：使用当前有效 Pass 的稳定套餐 ID 判断入口位置；套餐判断集中在 `agent-plan-navigation.ts`，避免把产品套餐策略混入通用路由常量。
+- `UserPassResponse.bundle_type`：CTL 从 Bundle 真源填充 `free` / `general` / `ai`，随 `GET /v1/passes` 和免费试用创建响应返回。
+- 前端兼容边界：套餐判断集中在 `agent-plan-navigation.ts`，严格匹配 `bundle_type === "ai"`；字段缺失或未知值保守地保留主导航入口。
 - `AGENT_SECTION_PATH_BY_ID.model`：模型配置页唯一入口路由。
 - `getAgentSectionHref`：用户菜单跳转模型页时保留当前 Bot 查询参数。
 - 不变量：入口迁移不改变 `/agents/models` 页面渲染和访问能力。
@@ -22,9 +23,9 @@
 
 ## acceptance
 - Channel、Model、Skills、Automations 统一位于一个 Use 分组，不再展示 Setup 分组。
-- `bundle_launch_ai_01`、`bundle_cruise_ai_01` 的 Use 分组不显示 Model。
-- 上述两个套餐的用户菜单在 Plan & Billing 后显示 Model，并链接模型页。
-- 标准套餐或套餐未知时继续在 Use 分组显示 Model，用户菜单不显示重复入口。
+- 任意 `bundle_type === "ai"` 的当前有效 Pass，其 Use 分组不显示 Model。
+- `ai` 类型套餐的用户菜单在 Plan & Billing 后显示 Model，并链接模型页。
+- `free`、`general`、未知类型或字段缺失时继续在 Use 分组显示 Model，用户菜单不显示重复入口。
 - 从用户菜单进入模型页时保留当前 Bot 查询参数，模型页继续渲染 Agent 左侧导航。
 - 聚焦测试、前端检查、文档与 diff 检查通过。
 
@@ -35,12 +36,21 @@
 - `frontend/src/pages/marketing/__tests__/agent-settings-labs-nav.test.tsx`
 - `frontend/src/components/site/user-avatar-menu.tsx`
 - `frontend/src/components/site/__tests__/user-avatar-menu.test.tsx`
+- `ctl/pkg/logic/pass/logic.go`
+- `ctl/pkg/logic/pass/credit_fill_test.go`
+- `ctl/pkg/transport/pass.go`
+- `ctl/main/api/pass_handler.go`
+- `ctl/main/api/pass_response_test.go`
 - `docs/engineering/domains/site-environment-routing.md`
+- `docs/engineering/domains/agent-gateway-runtime.md`
+- `docs/engineering/domains/subscription-entitlements.md`
+- `frontend/docs/frontend-domestic-billing-flow.md`
 - `docs/context/tasks/2026-09-20-agent-navigation-use-ai-model.md`
 
 ## required_context
 - Pack：`docs/context/domains/agent-gateway-runtime.md`。
 - Pack：`docs/context/domains/subscription-entitlements.md`、`docs/context/flows/tapd-gongfeng-delivery.md`（CR 修订路由结果）。
+- 服务入口：`docs/context/project/services/frontend.md`、`docs/context/project/services/ctl.md`。
 - 邻接卡：`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`。
 
 ## context_receipt
@@ -49,6 +59,9 @@
 | `AGENTS.md@ddcaadbad5a6` | 仓库硬边界与 Task Pack 要求 | 约束隔离工作区、验证与交付范围 |
 | `frontend/AGENTS.md@ddcaadbad5a6` | 前端服务门禁 | 确定复用策略与检查命令 |
 | `frontend/DESIGN.md@ddcaadbad5a6` | 前端设计规范 | 保持既有导航和菜单样式 |
+| `ctl/AGENTS.md` | CTL 服务门禁 | 约束用户面 Pass contract 与 Go 测试 |
+| `docs/context/project/services/frontend.md` | context router 的 must_read | 确认前端数据与验证边界 |
+| `docs/context/project/services/ctl.md` | context router 的 must_read | 确认 CTL Pass 响应所有权与验证边界 |
 | `docs/context/domains/agent-gateway-runtime.md@2.1.0` | context router 的 must_read | 确认本次只变更前端入口，不改变运行时路由 |
 | `docs/context/domains/subscription-entitlements.md` | CR 修订 context router 的 must_read | 核对套餐标识与权益边界 |
 | `docs/context/flows/tapd-gongfeng-delivery.md` | CR 修订 context router 的 must_read | 约束 MR 修订与交付状态表述 |
@@ -69,9 +82,16 @@
 - CR 修订后 `corepack pnpm@10.23.0 check`：通过；i18n 错误 0，TypeScript diagnostics 171 current / 276 baseline / 0 new / 105 resolved。
 - `npm --prefix opencraft run check:mono2-agent-console`：仍在既有 `components/ui/scroll-area.tsx` 漂移处失败；`git diff --exit-code origin/master -- frontend/src/lib/agent-routes.ts frontend/src/lib/__tests__/agent-routes.test.ts` 通过，确认本 MR 不再新增 `agent-routes` vendor closure 漂移。
 - `validate_documentation.py`：错误 0、断链 0、警告 0；`validate_change_impact.py --staged`（隔离临时 index）：通过。
+- 本轮 `bundle_type` 修订：前端聚焦 Vitest 共 7 个文件、111 条测试通过，覆盖 `ai`、`free`、`general`、未知和字段缺失状态，以及侧栏菜单、公共 Header、导航顺序与间距。
+- 本轮 `corepack pnpm@10.23.0 check`：通过；i18n 错误 0，TypeScript diagnostics 171 current / 276 baseline / 0 new / 105 resolved。
+- CTL：`CGO_ENABLED=0 go test -run TestFillBundleMetadataIncludesBundleType -count=1 ./pkg/logic/pass` 与 `CGO_ENABLED=0 go test -run TestDetailToUserPassResponseIncludesBundleType -count=1 ./main/api` 通过，另以 `-run '^$'` 完成 Pass logic 编译。常规 CGO 测试被本机 Go 1.26/macOS SDK 缺失 `_SecTrustCopyCertificateChain` 阻断；关闭 CGO 后 SQLite 运行测试不可用，因此未把环境失败记为测试通过。
+- 本轮 `validate_documentation.py`：错误 0、断链 0、警告 0；`validate_change_impact.py --staged`（隔离临时 index）：通过，命中 `agent-gateway-runtime` 并同步正式设计文档。
+- OpenCraft 生成闭包未新增本轮漂移：本轮不修改闭包内的 `domain/types.ts`；`check:mono2-agent-console` 仍只在基线已有的 `components/ui/scroll-area.tsx` 漂移处失败。
+- 本轮 `git diff --check`：通过。
+- 提交前刷新：`origin/master@f09b62866ad7c20a507fe4beeb455c9d7fe8eba6`；当前功能分支将在推送前 rebase 到该目标基线并复核变更范围。
 
 ## risks
-- 风险：套餐信息尚未加载时 Model 入口消失。缓解：仅精确匹配两个 AI 套餐 ID 时迁移，其他状态保留主导航入口。
+- 风险：CTL 与前端分批发布时旧响应没有 `bundle_type`。缓解：仅严格匹配 `ai` 时迁移，字段缺失、大小写异常或未知值都保留主导航入口。
 - 风险：用户菜单跳转后切换了当前 Bot。缓解：复用 `getAgentSectionHref` 保留 `bot` 查询参数。
 - 回滚：移除套餐判断并恢复 Model 为 Use 分组固定入口。
 
@@ -84,8 +104,9 @@
 - 国际站同登录态本地预览。
 
 ## decisions
-- 以 `bundle_id` 精确匹配 AI 套餐，不使用可本地化套餐名。
-- 套餐 ID 白名单与 `AgentContext.resolveBotQuotaPerAgent` 的套餐映射保持同步，并由纯函数测试锁定。
+- 以 CTL 返回的 `bundle_type` 精确匹配 `ai`，不使用套餐 ID 或可本地化套餐名推断。
+- `bundle_type` 由既有 Bundle 查询在 Pass 运行时填充，不新增前端请求；前端对旧响应保持 fail-open 可发现性。
+- 前端在非 vendored 的导航策略 helper 中收窄新增字段，避免为单一导航策略扩大 OpenCraft 生成闭包；正式 wire contract 由 CTL transport 与文档记录。
 - 使用 `Use` 作为统一分组名，沿用产品现有英文信息架构。
 - 复用 `/agents/models`，不新增账号子页面。
 - 仅在 `UserAvatarMenu` 的 `sidebar` variant 展示迁移入口，公共 Header 保持既有账号菜单边界。
@@ -99,8 +120,8 @@
 - 对应聚焦测试。
 
 ## scan_output
-- 通过 `settingsGroups|activePass|ACCOUNT_BILLING_PATH|AGENT_SECTION_PATH_BY_ID|bundle_launch_ai_01` 完成最新 master 的有界精确搜索。
+- 通过 `settingsGroups|activePass|ACCOUNT_BILLING_PATH|AGENT_SECTION_PATH_BY_ID|bundle_type|UserPassResponse|fillCredit` 完成最新 master 的有界精确搜索。
 
 ## handoff
-- 已在最新 master 的隔离 worktree 完成实现、检查与国内/国际站登录态预览；当前预览运行国内站，当前账号为标准 Launch，Model 保留在 Use 分组符合预期。AI 套餐入口迁移由聚焦测试覆盖。
-- 交付目标为当前功能分支到 `master` 的 MR；不合并、不发布。
+- 已在最新 master 的隔离 worktree 完成实现、检查与国内/国际站登录态预览；本轮已将套餐判断从固定 Bundle ID 改为 CTL `bundle_type` contract，并补齐用户面 Pass 响应字段与兼容测试。
+- 本轮改动尚未提交或推送；交付目标为更新当前功能分支到 `master` 的 MR，不合并、不发布。
