@@ -13,13 +13,13 @@ import (
 	"ctl/test/testutil"
 )
 
-// 同 SP 变配的策略与入口校验单测。需求：TAPD 1010132091137784162 §7.2 / §8.1
+// Pass 变配的策略与入口校验单测。需求：TAPD 1010132091137784162 §7.2 / §8.1
 //
 // 覆盖允许关系表、状态码映射、入口参数校验、重试预算，以及只依赖 instance 表的
 // 实例准入闸口（走内存 SQLite）。同时依赖 pass/bundle/instance 三张表的
 // resolveModifyTarget 由 main/api 的集成测试覆盖。
 
-func TestModifyAllowedOnlyUpgradesWithinSameSP(t *testing.T) {
+func TestModifyAllowedUpgradeGraph(t *testing.T) {
 	cases := []struct {
 		name   string
 		source string
@@ -28,13 +28,16 @@ func TestModifyAllowedOnlyUpgradesWithinSameSP(t *testing.T) {
 	}{
 		{"launch to cruise", "bundle_launch_01", "bundle_cruise_01", true},
 		{"launch ai to cruise ai", "bundle_launch_ai_01", "bundle_cruise_ai_01", true},
+		{"launch to launch ai", "bundle_launch_01", "bundle_launch_ai_01", true},
+		{"cruise to cruise ai", "bundle_cruise_01", "bundle_cruise_ai_01", true},
+		{"launch to cruise ai", "bundle_launch_01", "bundle_cruise_ai_01", true},
 
 		// 降配：本期不做，计费侧也没有对应的退差价链路。
 		{"cruise to launch", "bundle_cruise_01", "bundle_launch_01", false},
 		{"cruise ai to launch ai", "bundle_cruise_ai_01", "bundle_launch_ai_01", false},
 
-		// 跨 SP：通用与 AI 分属两个 SP，jifei 侧变配要求同 SP，两边都不能互切。
-		{"launch to cruise ai", "bundle_launch_01", "bundle_cruise_ai_01", false},
+		// 不允许先升规格再降到 Launch AI，也不允许 AI 回到通用套餐。
+		{"cruise to launch ai", "bundle_cruise_01", "bundle_launch_ai_01", false},
 		{"launch ai to cruise", "bundle_launch_ai_01", "bundle_cruise_01", false},
 
 		// 空变配：source == target 会让计费算出 0 元差价，没有业务含义。
@@ -56,8 +59,14 @@ func TestModifyAllowedOnlyUpgradesWithinSameSP(t *testing.T) {
 
 func TestAllowedModifyTargetsReturnsDefensiveCopy(t *testing.T) {
 	targets := AllowedModifyTargets("bundle_launch_01")
-	if len(targets) != 1 || targets[0] != "bundle_cruise_01" {
-		t.Fatalf("AllowedModifyTargets = %v, want [bundle_cruise_01]", targets)
+	want := []string{"bundle_cruise_01", "bundle_launch_ai_01", "bundle_cruise_ai_01"}
+	if len(targets) != len(want) {
+		t.Fatalf("AllowedModifyTargets = %v, want %v", targets, want)
+	}
+	for i := range want {
+		if targets[i] != want[i] {
+			t.Fatalf("AllowedModifyTargets = %v, want %v", targets, want)
+		}
 	}
 	// 改返回值不能污染策略表，否则一次错误调用会永久改变线上允许关系。
 	targets[0] = "bundle_tampered"
@@ -65,8 +74,8 @@ func TestAllowedModifyTargetsReturnsDefensiveCopy(t *testing.T) {
 		t.Fatalf("policy table mutated through returned slice: %v", again)
 	}
 
-	if got := AllowedModifyTargets("bundle_cruise_01"); got != nil {
-		t.Fatalf("AllowedModifyTargets for terminal bundle = %v, want nil", got)
+	if got := AllowedModifyTargets("bundle_cruise_01"); len(got) != 1 || got[0] != "bundle_cruise_ai_01" {
+		t.Fatalf("AllowedModifyTargets for cruise = %v, want [bundle_cruise_ai_01]", got)
 	}
 }
 

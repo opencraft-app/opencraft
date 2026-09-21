@@ -445,6 +445,47 @@ func NewMockCloudProvider() *MockCloudProvider {
 	}
 }
 
+// StreamTerminalCommand makes the local mock provider satisfy the same
+// server-side PTY contract as TencentCloudProvider. The mock has no backing
+// guest OS, so it acknowledges a validated command without producing output.
+// This keeps personal/local end-to-end flows on the real HTTP streaming path
+// while avoiding any effect on Tencent Cloud providers.
+func (*MockCloudProvider) StreamTerminalCommand(ctx context.Context, req TerminalCommandStreamRequest, emit func(TerminalCommandStreamEvent) error) (TerminalCommandResult, error) {
+	if emit == nil {
+		return TerminalCommandResult{}, protocolStreamError("event callback is required")
+	}
+	if strings.TrimSpace(req.Region) == "" {
+		return TerminalCommandResult{}, protocolStreamError("region is required")
+	}
+	if strings.TrimSpace(req.InstanceID) == "" {
+		return TerminalCommandResult{}, protocolStreamError("instance id is required")
+	}
+	if strings.TrimSpace(req.Command) == "" {
+		return TerminalCommandResult{}, protocolStreamError("command is required")
+	}
+	if req.Username != terminalCommandUsername {
+		return TerminalCommandResult{}, protocolStreamError("unsupported terminal username")
+	}
+	if req.WorkingDirectory != terminalCommandWorkingDirectory {
+		return TerminalCommandResult{}, protocolStreamError("unsupported terminal working directory")
+	}
+	if ctx.Err() != nil {
+		return TerminalCommandResult{}, &TerminalCommandStreamError{
+			Code:    TerminalCommandErrorCanceled,
+			Message: "command canceled",
+		}
+	}
+
+	executionID := "mock:" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	if err := emit(TerminalCommandStreamEvent{
+		Type:        TerminalCommandEventStarted,
+		ExecutionID: executionID,
+	}); err != nil {
+		return TerminalCommandResult{}, protocolStreamError("started event callback failed")
+	}
+	return TerminalCommandResult{ExecutionID: executionID, ExitCode: 0}, nil
+}
+
 // mockDefaultSpec is what the mock reports for an instance it has never seen a
 // resize for; it mirrors the smallest bundle spec (2C4G 50G).
 var mockDefaultSpec = InstanceSpec{InstanceType: "S5.MEDIUM4", SystemDiskSize: 50, State: "STOPPED"}

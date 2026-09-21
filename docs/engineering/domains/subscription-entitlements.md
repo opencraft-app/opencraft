@@ -36,10 +36,16 @@
   继承前者。已接入环境分别使用北京 `ap-beijing`、东京 `ap-seoul`、上海 `ap-shanghai`、新加坡
   `ap-singapore`；单独切换 Credit 地域不得改变存量 Pass 的查询、退款、续费或回调校验地域。
 - 只有 provider 成功创建 contract 后才能调用 CTL 开通。
-- 同 SP 升配是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
+- Pass 升配（同 SP 或产品允许的跨 SP）是支付后的异步发货：计费 `modifyResource` 成功只代表 CTL 已受理，
   `trade_order` 保持 `paid_pending_provision`、`trade_flow` 保持 `in_progress`；只有
   CTL 完成实例、Pass、配额与网关权益收敛并回调 Trade 后，才能分别进入
   `provisioned` 与 `completed`。系统盘扩容不可逆，失败只能幂等前滚，不能自动降配。
+- 跨 SP 升配仍沿用同一 Pass/resource ID，且只允许源、目标属于同一 `productCode`。Trade
+  使用目标套餐的 modify category 和顶层商品身份，`oldConfig`/`newConfig` 分别携带源、目标
+  `productCode/subProductCode/pid/SV`；`checkModify` 与 `modifyResource` 必须在两侧各自 SP 内
+  唯一反解套餐。跨二层下单使用目标 `goodsCategoryId`，但计费回调外层
+  `para.productCode/subProductCode` 描述当前源资源，因此必须拒绝外层不是源身份、
+  双侧 PID 不一致或缺失内层身份的请求；目标身份只信任 `newConfig`。
 - 外部计费价格、活动和 API 规则属于外部 authority，不从历史文档直接采用。
 - 前端只呈现服务返回的订阅/配额状态，不能成为唯一门禁。
 - 邀请返利不复用访问邀请码。Auth 在新用户创建时写 `user.registered.v1`，存量用户在首次开通前认领时写
@@ -57,7 +63,7 @@
 
 ## 机器契约与验证
 
-API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明，积分包 contract 由 `credit/AGENTS.md`、Credit/Trade 实现与测试共同证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复；积分包还需覆盖重复购买、退款隔离、精确订阅删除、自然到期归档、零用量推量和多 Pod 抢占。同 SP 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态。
+API 真源包括 `subscription/api/openapi.yaml` 与 `payment/api/openapi.yaml`，交易行为由 `trade` 源码/测试证明，积分包 contract 由 `credit/AGENTS.md`、Credit/Trade 实现与测试共同证明。验证覆盖重复回调、延迟回调、续费、过期、配额边界、provider/CTL 分段失败和恢复；积分包还需覆盖重复购买、退款隔离、精确订阅删除、自然到期归档、零用量推量和多 Pod 抢占。Pass 升配还须覆盖 `modifyResource` 早于/晚于订单落库两种竞态、CTL 完成回调重试，以及订单、flow、Pass、配额和网关权益的联合终态；跨 SP 额外覆盖双侧商品身份、目标 category、目标 Plan 创建/替换和计费退款查询关系。
 
 ## 计费代理认证边界
 
@@ -119,7 +125,7 @@ workload 可以通过环境变量开启动态注册。发布门禁必须直接�
 
 相关 Journey：[订阅购买与续费](../journeys/subscription-purchase-renewal.md)。Agent 摘要：[subscription-entitlements Context](../../context/domains/subscription-entitlements.md)。
 
-## 同 SP 升配回调参数边界（2026-09-07）
+## Pass 升配回调参数边界（2026-09-07，2026-09-20 扩展跨 SP）
 
 Trade 的预付费 `checkModify` 与 `modifyResource` 入站均要求可解析且大于零的 int64 UIN，并要求有效的 `goodsDetail.curDeadline`（计费北京时间格式）。缺失或非法参数必须在调用 CTL 前拒绝；`modifyResource` 的参数级拒绝发生在占用 Flow 前，使用可重试的业务错误，不触发自动退款。不得用 UIN=0 或 deadline=nil 绕过 CTL 归属/期限校验。该收口的8个负向用例已先复现再修复；测试环境部署验收状态以当日 release-gates 为准。
 

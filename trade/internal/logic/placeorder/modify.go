@@ -14,7 +14,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
-// 同 SP 变配（升配）下单。需求：TAPD 1010132091137784162 §4.1 / §5.1 / §7.1
+// Pass 变配（升配）下单。需求：TAPD 1010132091137784162 §4.1 / §5.1 / §7.1
 //
 // 与续费下单的差异：
 //   - 涉及源 + 目标两个 bundle；goodsDetail 走 jifei.BuildModifyGoodsDetail（含 oldConfig/newConfig）
@@ -27,8 +27,8 @@ import (
 //   - PlaceModifyOrderAndPay → generateDealsAndPay，代金券自动扣完；同步发货成功落
 //     provisioned，异步发货中落 paid_pending_provision（联调 / e2e 链路）
 
-// ErrModifyCrossSubProduct 源与目标 bundle 不属于同一个 SP；本期只支持同 SP 变配（§2.2）。
-var ErrModifyCrossSubProduct = errors.New("placeorder: modify across sub product codes is not supported")
+// ErrModifyCrossProduct 源与目标 bundle 不属于同一个产品一层。
+var ErrModifyCrossProduct = errors.New("placeorder: modify across product codes is not supported")
 
 // sceneModify 是 BundleDefinition.CategoryIDs 里变配场景的 scene 字面量。
 const sceneModify = "modify"
@@ -68,7 +68,7 @@ type modifyOrderContext struct {
 
 // PlaceModifyOrder 创建变配订单（两步式，生产链路）。
 //
-// 流程：校验 → shadow 反查 → ctl 目标 bundle 在售校验 → 两份 BundleDefinition + 同 SP 校验 →
+// 流程：校验 → shadow 反查 → ctl 目标 bundle 在售校验 → 两份 BundleDefinition + 同 product 校验 →
 // jifei generateDeals → 落 trade_order(order_type='modify', status='pending_pay') →
 // 返 (DealName, BigOrderID)。
 //
@@ -170,8 +170,9 @@ func (s *Service) promoteModifyOrderIfFlowCompleted(
 
 // modifyOrderStatusAfterPay 把一体化变配下单的发货状态映射为本地订单状态。
 //
-// 变配的 resource_id 在下单前就是既有 pass_id，因此 state="1" 即使没有
-// resourceIds 也能安全落已支付中态；后续 modifyResource 用 dealName 幂等收口。
+// 变配的 resource_id 在下单前就是既有 pass_id，因此 state="1"（发货中）或
+// state="2"（计费将重试 queryFlow）即使没有 resourceIds 也能安全落已支付中态；
+// 后续 modifyResource / queryFlow 用 dealName 幂等收口。
 func modifyOrderStatusAfterPay(resp *jifeiclient.GenerateDealsAndPayResponse, dealName string) string {
 	if shouldPersistOrderAfterPay(resp, dealName) {
 		return store.OrderStatusProvisioned
@@ -184,7 +185,7 @@ func modifyOrderStatusAfterPay(resp *jifeiclient.GenerateDealsAndPayResponse, de
 		return ""
 	}
 	state, _ := deliver["state"].(string)
-	if state == "1" {
+	if state == "1" || state == "2" {
 		return store.OrderStatusPaidPendingProvision
 	}
 	return ""
@@ -264,11 +265,11 @@ func (s *Service) prepareModifyOrder(
 		}
 		return nil, fmt.Errorf("placeorder: get target bundle definition (%s): %w", label, err)
 	}
-	if sourceDef.SubProductCode != targetDef.SubProductCode {
-		return nil, fmt.Errorf("%w: source=%s(sp=%s) target=%s(sp=%s)",
-			ErrModifyCrossSubProduct,
-			req.SourceBundleID, sourceDef.SubProductCode,
-			req.TargetBundleID, targetDef.SubProductCode)
+	if sourceDef.ProductCode != targetDef.ProductCode {
+		return nil, fmt.Errorf("%w: source=%s(product=%s) target=%s(product=%s)",
+			ErrModifyCrossProduct,
+			req.SourceBundleID, sourceDef.ProductCode,
+			req.TargetBundleID, targetDef.ProductCode)
 	}
 
 	// fail-closed：Modify CategoryID 要按各站点/SP 的计费接入单配置后写入 BundleDefinition（§3）。
@@ -290,17 +291,20 @@ func (s *Service) prepareModifyOrder(
 		targetDef:  targetDef,
 		categoryID: categoryID,
 		goodsDetail: jifei.BuildModifyGoodsDetail(jifei.ModifyGoodsDetailInput{
-			ProductCode:     sourceDef.ProductCode,
-			SubProductCode:  sourceDef.SubProductCode,
-			Pid:             sourceDef.Pid,
-			ResourceID:      req.ResourceID,
-			CurDeadline:     req.CurDeadline,
-			SourceBundleID:  req.SourceBundleID,
-			TargetBundleID:  req.TargetBundleID,
-			SourceSVList:    sourceDef.SVList,
-			TargetSVList:    targetDef.SVList,
-			ProductInfo:     sourceDef.ProductInfo,
-			IntlPointOfSale: isIntlSite(s.deps.SiteKind),
+			SourceProductCode:    sourceDef.ProductCode,
+			SourceSubProductCode: sourceDef.SubProductCode,
+			SourcePid:            sourceDef.Pid,
+			TargetProductCode:    targetDef.ProductCode,
+			TargetSubProductCode: targetDef.SubProductCode,
+			TargetPid:            targetDef.Pid,
+			ResourceID:           req.ResourceID,
+			CurDeadline:          req.CurDeadline,
+			SourceBundleID:       req.SourceBundleID,
+			TargetBundleID:       req.TargetBundleID,
+			SourceSVList:         sourceDef.SVList,
+			TargetSVList:         targetDef.SVList,
+			ProductInfo:          targetDef.ProductInfo,
+			IntlPointOfSale:      isIntlSite(s.deps.SiteKind),
 		}),
 		appID: appIDInt,
 	}, nil

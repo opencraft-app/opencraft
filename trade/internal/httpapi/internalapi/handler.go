@@ -9,7 +9,7 @@
 //   - POST /internal/trade/orders/place-and-pay       下单+支付一体化（迭代 8B-1.5 测试链路用）
 //   - POST /internal/trade/orders/renew               续费下单（ctl/pass.RenewPassOrderUrl 用，R-C-7）
 //   - POST /internal/trade/orders/renew/place-and-pay 续费下单+支付一体化（ctl/pass.RenewPassOrderAndPay 测试用，R-D-7）
-//   - POST /internal/trade/inquiry/modify              升配询价（同 SP 变配差价）
+//   - POST /internal/trade/inquiry/modify              升配询价（含允许的跨 SP 变配差价）
 //   - POST /internal/trade/orders/modify               升配下单（两步式，生产链路）
 //   - POST /internal/trade/orders/modify/place-and-pay 升配下单+代扣一体化（联调 / e2e）
 //   - POST /internal/trade/orders/:dealName/pay-url   生成支付 url（ctl/pass CreatePass 拉支付页用）
@@ -167,7 +167,8 @@ func Install(router *gin.Engine, deps Deps) {
 	group.POST("/orders/move-in", moveInOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew", placeRenewOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/renew/place-and-pay", placeRenewOrderAndPayHandler(deps.PlaceOrder))
-	// 同 SP 变配（TAPD 1010132091137784162 §5.1）：询价 + 两步式下单 + 一体化下单。
+	// Pass 变配（含产品允许的跨 SP 路径，TAPD 1010132091137784162 §5.1）：
+	// 询价 + 两步式下单 + 一体化下单。
 	group.POST("/inquiry/modify", inquiryModifyHandler(deps.Inquiry))
 	group.POST("/orders/modify", placeModifyOrderHandler(deps.PlaceOrder))
 	group.POST("/orders/modify/place-and-pay", placeModifyOrderAndPayHandler(deps.PlaceOrder))

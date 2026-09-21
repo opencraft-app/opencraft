@@ -106,7 +106,7 @@ var (
 	// 后被业务码 100151 等模糊错误拒绝。
 	ErrPassTrialNotRefundable = Register(New("PASS_TRIAL_NOT_REFUNDABLE", 400, "free trial pass is not refundable via jifei OnlineRefund"))
 
-	// === 同 SP 变配（升配）===
+	// === Pass 变配（升配，含产品允许的跨 SP 路径）===
 	// 需求：TAPD 1010132091137784162 §6 前置校验 / §8.1 幂等
 	//
 	// trade 侧把这些 4xx 码当作业务永久错：checkModify 阶段直接映射为 data.status != 0，
@@ -123,7 +123,7 @@ var (
 	ErrPassNotModifiable = Register(New("PASS_NOT_MODIFIABLE", 403, "pass status not modifiable"))
 
 	// ErrPassModifyTargetNotAllowed source → target 不在本期允许的升配关系中。
-	// 覆盖降配、跨 SP、通用↔AI 互切，以及目标套餐不存在/已下线。
+	// 覆盖降配、未列入策略的跨 SP / AI→通用路径，以及目标套餐不存在/已下线。
 	ErrPassModifyTargetNotAllowed = Register(New("PASS_MODIFY_TARGET_NOT_ALLOWED", 400, "modify from source bundle to target bundle is not allowed"))
 
 	// ErrPassModifyConfigMismatch 计费传入的 oldConfig / curDeadline / SP / PID 与 ctl 侧

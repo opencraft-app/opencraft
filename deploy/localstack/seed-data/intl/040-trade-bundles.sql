@@ -50,6 +50,48 @@ INSERT INTO trade_bundle_definition (
     JSON_ARRAY(),
     UTC_TIMESTAMP(),
     UTC_TIMESTAMP()
+  ),
+  (
+    'bundle_launch_ai_01',
+    'p_lighthouse',
+    'sp_lighthouse_lightvela_ai_intl',
+    1060119,
+    JSON_ARRAY(
+      JSON_OBJECT('scene', 'purchase', 'category', 2025270),
+      JSON_OBJECT('scene', 'renew', 'category', 2025271),
+      JSON_OBJECT('scene', 'modify', 'category', 2025272)
+    ),
+    JSON_OBJECT(
+      'sv_lighthouse_lv_ai_bw_intl_launch_01', 1,
+      'sv_lighthouse_lv_ai_slot_intl_launch_01', 1,
+      'sv_lighthouse_lv_ai_credit_intl_launch_01', 1,
+      'sv_lighthouse_lv_ai_disk_intl_launch_50gb_01', 1,
+      'sv_lighthouse_lv_ai_compute_intl_launch_med4_01', 1
+    ),
+    JSON_ARRAY(),
+    UTC_TIMESTAMP(),
+    UTC_TIMESTAMP()
+  ),
+  (
+    'bundle_cruise_ai_01',
+    'p_lighthouse',
+    'sp_lighthouse_lightvela_ai_intl',
+    1060119,
+    JSON_ARRAY(
+      JSON_OBJECT('scene', 'purchase', 'category', 2025270),
+      JSON_OBJECT('scene', 'renew', 'category', 2025271),
+      JSON_OBJECT('scene', 'modify', 'category', 2025272)
+    ),
+    JSON_OBJECT(
+      'sv_lighthouse_lv_ai_bw_intl_cruise_01', 1,
+      'sv_lighthouse_lv_ai_slot_intl_cruise_01', 1,
+      'sv_lighthouse_lv_ai_credit_intl_cruise_01', 1,
+      'sv_lighthouse_lv_ai_disk_intl_cruise_80gb_01', 1,
+      'sv_lighthouse_lv_ai_compute_intl_cruise_lg8_01', 1
+    ),
+    JSON_ARRAY(),
+    UTC_TIMESTAMP(),
+    UTC_TIMESTAMP()
   )
 ON DUPLICATE KEY UPDATE
   product_code = VALUES(product_code),

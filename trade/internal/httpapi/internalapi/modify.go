@@ -11,7 +11,8 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 )
 
-// 同 SP 变配（升配）的内部 RPC。需求：TAPD 1010132091137784162 §5.1 / §7.1
+// Pass 变配（含产品允许的跨 SP 升配）的内部 RPC。
+// 需求：TAPD 1010132091137784162 §5.1 / §7.1
 //
 // 三个端点，调用方都是 CTL 的用户面 pass 变配入口：
 //   - POST /internal/trade/inquiry/modify              升配询价（差价）
@@ -127,18 +128,18 @@ func modifyOrderHandler(
 	}
 }
 
-// classifyModifyInquiryError 在 classifyInquiryError 基础上加变配独有的跨 SP 错。
+// classifyModifyInquiryError 在 classifyInquiryError 基础上加变配独有的跨产品错。
 func classifyModifyInquiryError(err error) (string, int) {
-	if errors.Is(err, inquiry.ErrModifyCrossSubProduct) {
-		return "ModifyCrossSubProduct", http.StatusUnprocessableEntity
+	if errors.Is(err, inquiry.ErrModifyCrossProduct) {
+		return "ModifyCrossProduct", http.StatusUnprocessableEntity
 	}
 	return classifyInquiryError(err)
 }
 
 // classifyModifyPlaceOrderError 同上，作用于下单侧的 sentinel。
 func classifyModifyPlaceOrderError(err error) (string, int) {
-	if errors.Is(err, placeorder.ErrModifyCrossSubProduct) {
-		return "ModifyCrossSubProduct", http.StatusUnprocessableEntity
+	if errors.Is(err, placeorder.ErrModifyCrossProduct) {
+		return "ModifyCrossProduct", http.StatusUnprocessableEntity
 	}
 	return classifyPlaceOrderError(err)
 }
