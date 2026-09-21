@@ -45,6 +45,7 @@
 - `docs/engineering/domains/agent-gateway-runtime.md`
 - `docs/engineering/domains/subscription-entitlements.md`
 - `frontend/docs/frontend-domestic-billing-flow.md`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
 - `docs/context/tasks/2026-09-20-agent-navigation-use-ai-model.md`
 
 ## required_context
@@ -86,9 +87,9 @@
 - 本轮 `corepack pnpm@10.23.0 check`：通过；i18n 错误 0，TypeScript diagnostics 171 current / 276 baseline / 0 new / 105 resolved。
 - CTL：`CGO_ENABLED=0 go test -run TestFillBundleMetadataIncludesBundleType -count=1 ./pkg/logic/pass` 与 `CGO_ENABLED=0 go test -run TestDetailToUserPassResponseIncludesBundleType -count=1 ./main/api` 通过，另以 `-run '^$'` 完成 Pass logic 编译。常规 CGO 测试被本机 Go 1.26/macOS SDK 缺失 `_SecTrustCopyCertificateChain` 阻断；关闭 CGO 后 SQLite 运行测试不可用，因此未把环境失败记为测试通过。
 - 本轮 `validate_documentation.py`：错误 0、断链 0、警告 0；`validate_change_impact.py --staged`（隔离临时 index）：通过，命中 `agent-gateway-runtime` 并同步正式设计文档。
-- OpenCraft 生成闭包未新增本轮漂移：本轮不修改闭包内的 `domain/types.ts`；`check:mono2-agent-console` 仍只在基线已有的 `components/ui/scroll-area.tsx` 漂移处失败。
+- OpenCraft 生成闭包未新增业务文件漂移：本轮不修改闭包内的 `domain/types.ts`；rebase 后运行官方同步命令，仅更新 `UPSTREAM.json` 的源 revision，`check:mono2-agent-console` 通过。
 - 本轮 `git diff --check`：通过。
-- 提交前刷新：`origin/master@f09b62866ad7c20a507fe4beeb455c9d7fe8eba6`；当前功能分支将在推送前 rebase 到该目标基线并复核变更范围。
+- 提交前刷新并 rebase 到 `origin/master@f09b62866ad7c20a507fe4beeb455c9d7fe8eba6`，无冲突；rebase 后前端 7 个文件、111 条测试与 CTL 聚焦测试重新通过，`pnpm check` 为 171 current / 171 baseline / 0 new。
 
 ## risks
 - 风险：CTL 与前端分批发布时旧响应没有 `bundle_type`。缓解：仅严格匹配 `ai` 时迁移，字段缺失、大小写异常或未知值都保留主导航入口。
@@ -124,4 +125,4 @@
 
 ## handoff
 - 已在最新 master 的隔离 worktree 完成实现、检查与国内/国际站登录态预览；本轮已将套餐判断从固定 Bundle ID 改为 CTL `bundle_type` contract，并补齐用户面 Pass 响应字段与兼容测试。
-- 本轮改动尚未提交或推送；交付目标为更新当前功能分支到 `master` 的 MR，不合并、不发布。
+- 本轮改动已在最新 master 基线上提交并验证；交付目标为更新当前功能分支到 `master` 的 MR，不合并、不发布。
