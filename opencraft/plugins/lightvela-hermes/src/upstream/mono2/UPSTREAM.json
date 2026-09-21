@@ -69,7 +69,7 @@
     },
     {
       "file": "domain/credit-pack.ts",
-      "sourceSha256": "815219716ea7e752b2fb325e355a63a0e133f995fc32c2625869f9fc3dacf15f"
+      "sourceSha256": "077fef7df539f06a89a30d63e48654f1858c5dbc2433fbe5bf2ced8721078a75"
     },
     {
       "file": "domain/instance-bot-errors.ts",
@@ -81,7 +81,7 @@
     },
     {
       "file": "domain/types.ts",
-      "sourceSha256": "398bcafcf3ce0fbdc043895ab4deab5f710a2a1ebe8efc599606bfd0aa43c32d"
+      "sourceSha256": "d836480d5abd1eb58520a148c08d8748335afd88427484c2b6792f2ef0830987"
     },
     {
       "file": "i18n/default-agent-name.ts",
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "b5f1212e1eb709096d76cdb2cecae789541b2d2551856185ac3e07d23876e6cc"
+      "sourceSha256": "c1ced905d56a0e2196a469712b5ac5f66d5e046e5fcbdc357ba277dfba162d5c"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "4731f2ccfc6e92b56e74897ad2b4090922de0fd259a3fa98064c59c0d271351a"
+      "sourceSha256": "dcb2faef20c78d532c929b82c70362341c59a3466d03d4d03e6b44977e3d7bcf"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "11f81bb4890bc3e3ba0b21fa6bad4da66ad9d63a2a86a17689e7e8d0d68526a3"
+      "sourceSha256": "b95050b2f4b7754a534a1b4dab16efd56aa5d95dd8708988e1adcb332318c68e"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "3f064e1f2d54f2ded2176d2bfa207ae6e080f15cce314b077f3bdae7f057883f"
+      "sourceSha256": "14b41afcf8d3a78aa33557ba0f5934543d1f23f813071669ecda4637bf59ba4e"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "d6e83eba22741aad1067ee6921ccbd96dc248ebfaea6d9ffe27cef2381bf82f6"
+      "sourceSha256": "994345f99e81c3234845da3194866174122f08e4fa8ef0410130c83bac43a632"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "06f99a3a7fff329dc785a6cb2e4906c8cb732462231592210e0564c8f8815480"
+      "sourceSha256": "96a3514bd02447fbca04ece758bf66f14ee0eb324e56071c09cbc300a487cf20"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "b1de70721a74d23b113494c6bebb53b23b2527246302b8ecc45e75520e0aa170"
+      "sourceSha256": "6df39eb0aa3784550316e895d915c3175ccea74e1f328c6d1dd7f7cc80d92427"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "c06a8770a04cb3520f69f75c82a91f81ab2a8bf4dfe8dc6db707b695af0fc717"
+      "sourceSha256": "d7b5430fbe25b31404171e6e9ee284eb393d17efb0c0974754085012a2b0534f"
     },
     {
       "file": "i18n/index.ts",
@@ -345,7 +345,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "63c0ab82a336ad01887a3d9c4eeb5c2a986e33bc85fa86c90409d5c6e806dfab"
+      "sourceSha256": "1360730b0ba479c3a5c5e621771e2372ef5f562a9f80279ecc137a30972dbcd8"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",

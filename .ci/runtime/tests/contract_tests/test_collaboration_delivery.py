@@ -34,6 +34,10 @@ class CollaborationDeliveryTests(unittest.TestCase):
 
         kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())
         self.assertIn("ksops-collaboration-gateway-token-generator.yaml", kustomization["generators"])
+        self.assertEqual(kustomization["components"], [
+            "../common",
+            "../../../../service-gateway/k8s/overlays/beijing-sandbox",
+        ])
         self.assertNotIn(
             "collaboration-gateway-token-env-patch.yaml",
             [patch.get("path") for patch in kustomization.get("patches", [])],

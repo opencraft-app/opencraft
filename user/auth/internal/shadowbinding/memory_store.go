@@ -3,6 +3,9 @@ package shadowbinding
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -54,12 +57,137 @@ func (s *MemoryStore) GetBindingByUserID(_ context.Context, userID string) (Bind
 func (s *MemoryStore) GetBindingByShadowUserName(_ context.Context, shadowUserName string) (Binding, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var disabled Binding
 	for _, binding := range s.bindings {
 		if binding.ShadowUserName == shadowUserName {
-			return binding, nil
+			if binding.Status != StatusDisabled {
+				return binding, nil
+			}
+			disabled = binding
 		}
 	}
+	if disabled.UserID != "" {
+		return disabled, nil
+	}
 	return Binding{}, ErrNotFound
+}
+
+func (s *MemoryStore) ListAdminBindings(_ context.Context, search string, limit int, offset int) ([]Binding, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	needle := strings.ToLower(strings.TrimSpace(search))
+	bindings := make([]Binding, 0, len(s.bindings))
+	for _, binding := range s.bindings {
+		if needle != "" && !adminBindingMatches(binding, needle) {
+			continue
+		}
+		bindings = append(bindings, binding)
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		if bindings[i].CreatedAt.Equal(bindings[j].CreatedAt) {
+			return bindings[i].UserID < bindings[j].UserID
+		}
+		return bindings[i].CreatedAt.After(bindings[j].CreatedAt)
+	})
+
+	total := len(bindings)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return []Binding{}, total, nil
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return append([]Binding(nil), bindings[offset:end]...), total, nil
+}
+
+func adminBindingMatches(binding Binding, needle string) bool {
+	values := []string{
+		binding.UserID,
+		binding.ShadowUserName,
+		strconv.FormatInt(binding.Uin, 10),
+		strconv.FormatInt(binding.OwnerUin, 10),
+		strconv.FormatInt(binding.AppID, 10),
+	}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *MemoryStore) UpsertAdminBinding(_ context.Context, requested Binding, now time.Time) (Binding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if existing, ok := s.bindings[requested.UserID]; ok && existing.Status != StatusDisabled {
+		if sameBindingIdentity(existing, requested) && existing.Status == StatusActive {
+			return existing, nil
+		}
+		return Binding{}, ErrBindingConflict
+	}
+	for userID, existing := range s.bindings {
+		if userID == requested.UserID || existing.Status == StatusDisabled {
+			continue
+		}
+		if existing.Uin == requested.Uin || existing.ShadowUserName == requested.ShadowUserName {
+			return Binding{}, ErrBindingConflict
+		}
+	}
+
+	existing, exists := s.bindings[requested.UserID]
+	createdAt := now
+	if exists {
+		createdAt = existing.CreatedAt
+	}
+	requested.Status = StatusActive
+	requested.LastErrorCode = ""
+	requested.LastErrorMessage = ""
+	requested.BasicAuthStatus = ""
+	requested.BasicAuthSyncedAt = nil
+	requested.BasicAuthSourceAttemptID = ""
+	requested.BasicAuthIdentityHash = ""
+	requested.BasicAuthPhoneHash = ""
+	requested.BasicAuthLastErrorCode = ""
+	requested.BasicAuthLastErrorMessage = ""
+	requested.CreatedAt = createdAt
+	requested.UpdatedAt = now
+	s.bindings[requested.UserID] = requested
+	return requested, nil
+}
+
+func (s *MemoryStore) DisableAdminBinding(_ context.Context, userID string, now time.Time) (Binding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	binding, ok := s.bindings[userID]
+	if !ok {
+		return Binding{}, ErrNotFound
+	}
+	if binding.Status == StatusDisabled {
+		return binding, nil
+	}
+	binding.Status = StatusDisabled
+	binding.LastErrorCode = ""
+	binding.LastErrorMessage = ""
+	binding.UpdatedAt = now
+	s.bindings[userID] = binding
+	return binding, nil
+}
+
+func sameBindingIdentity(left Binding, right Binding) bool {
+	return left.UserID == right.UserID &&
+		left.ShadowUserName == right.ShadowUserName &&
+		left.Uin == right.Uin &&
+		left.OwnerUin == right.OwnerUin &&
+		left.AppID == right.AppID
 }
 
 func (s *MemoryStore) MarkBindingActive(_ context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error) {

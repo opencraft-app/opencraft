@@ -94,6 +94,14 @@ describe("PublicSiteHeader", () => {
     );
   });
 
+  it("places an optional return action immediately before the authenticated avatar menu", () => {
+    render(<PublicSiteHeader authSnapshot={{ authReady: true, isAuthenticated: true }} showNav={false} beforeUserMenu={<a href="/agents">Back to Agents</a>} />);
+    const action = screen.getByRole("link", { name: "Back to Agents" });
+    expect(action.nextElementSibling).toBe(screen.getByRole("button", { name: "avatar menu" }));
+    expect(screen.getByTestId("site-header-brand")).not.toContainElement(action);
+    expect(screen.getByTestId("site-header-actions")).toContainElement(action);
+  });
+
   it("uses Home wording for international homepage navigation", () => {
     const { rerender } = render(<PublicSiteHeader locale="zh-SG" />);
 

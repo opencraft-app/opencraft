@@ -87,6 +87,9 @@ master 源码
   与 deploy-facing `gateway-dashboard-platform.env` 必须在同一变更中成套更新。所有复用共享
   component 的 sandbox/playground 环境都要提供对应环境键；生产环境则在各自 Kustomization 中
   显式接线。严格 Kustomize 校验必须证明渲染结果不再包含 `REPLACE_` 占位符，才能创建 promote MR。
+  上游地址和 Secret 键映射先回填 `master`，再由服务 CI 投影到 `gitops`，不得直接修改运行中
+  Deployment 或 deploy-facing 分支。多个上游明确共用同一内部服务令牌时，消费方 Deployment 可从
+  已有 runtime Secret 键分别映射语义化环境变量，不重复保存同值 Secret，也不把令牌写入 ConfigMap。
 - Secret 值不进 Git、日志、渲染输出或文档。
 - EdgeOne Production artifact 发布必须先使用可访问的短期签名 Preview URL 完成烟测。CLI 返回的裸
   `*.edgeone.dev` URL 缺少 `eo_token` / `eo_time` 时，应根据同次部署的 project ID 和 deployment ID
@@ -262,6 +265,8 @@ master 源码
   应在创建 promote MR 前 fail closed。Deployment 的 bridge Secret 注入 patch 必须由
   `service-gateway/k8s/overlays/beijing-sandbox` source-facing Component 持有，与基准 Deployment 同层组合；
   deploy-facing 目录只保留环境配置和 Secret generator，不能对仅由 Component 引入的资源做顶层 patch。
+  北京主 sandbox 必须将该 source-facing Component 直接排在 common Component 后，不能经 sandbox profile
+  再嵌套一层；嵌套 Component 使用隔离累计器，仍会让结构性 patch 看不到 common 引入的 Deployment。
 - `runtime` 阶段必须使用同一 digest 镜像先执行普通 MySQL `migrate → status/verify` 门禁，再把
   active catalog 从 foundation sourcePath 切换到 runtime sourcePath。Migration Job 始终是一次性门禁，
   不进入常驻 Kustomize。
@@ -338,6 +343,14 @@ CloudLadder 的 `tkexgz`、`tkexsg` 目录同时包含 primary、staging、testi
 发布前必须先按精确资源查看 diff/dry-run；计划中只要出现非 testing workload、共享生产 ConfigMap、
 Secret 或生产 Service 就立即停止。发布时只同步本变更新增或修改的 testing 资源，并逐个核对 kind、
 namespace、name、目标 revision 与镜像。
+
+Shadow Binding 自助管理沿用既有 Auth `shadow_bindings` 表，不新增 migration。管理接口的代码即使进入
+`master` 也必须默认关闭；GitOps 只允许在 `argocd/services/lightclaw-auth/sandbox-bj-7/` 同时设置
+`SHADOW_BINDING_ADMIN_ENABLED=true` 与匹配的 `SHADOW_BINDING_ADMIN_ENVIRONMENT=sandbox-bj-7`。
+其他 Auth 环境不得出现启用值，运行时还要用精确 `LIGHTCLAW_PUBLIC_BASE_URL` 做第二层 fail-closed 校验。
+Gateway Dashboard 发布只更新 `sandbox-bj-7` 镜像 pin；新增 BFF 路径必须先验证 Dashboard admin session，
+再使用服务端 Auth admin token。不得把该开关或 UI 发布扩散到 production、staging、韩国 sandbox，
+也不得通过 App 级全量 Sync 携带无关资源。
 
 完成证据必须分层记录：源码合并 revision、Argo 目标 revision、精确资源 `Synced/Healthy`、运行镜像、
 国内/国际 registration、registry/tombstone、devtunnel poll/reply、真实回调，以及 dynamic/static/shared

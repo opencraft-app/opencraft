@@ -176,6 +176,15 @@ test_auth_override_is_sandbox_only() (
   fi
 )
 
+test_auth_admin_override_is_loopback_only() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/auth-admin-allowlist" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://10.0.0.8:38081'
+  source "$SCRIPT"
+  if (configure_site) >/dev/null 2>&1; then
+    fail "non-loopback Auth admin override was accepted"
+  fi
+)
+
 test_download_binary_is_nounset_safe() (
   export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/download-binary" PERSONAL_DEV_SITE=intl
   source "$SCRIPT"
@@ -592,6 +601,121 @@ test_browser_nonce_retries_empty_generation() (
   assert_eq '2' "$(<"$attempts_file")" "browser nonce retry count"
 )
 
+test_testing_binding_bootstrap_uses_session_identity_without_persisting_admin_token() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-bootstrap" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_SHADOW_USER_NAME='mock_personal_dev'
+  export PERSONAL_DEV_SHADOW_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_OWNER_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_APP_ID='1250000000'
+  export PERSONAL_DEV_BINDING_REASON='personal DevCloud testing'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'testing-user-session'; }
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    assert_eq 'managed-admin-token' "$token" "admin token"
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$TEST_ROOT/binding-bootstrap-request.json"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"userId":"usr_testing_1","shadowUserName":"mock_personal_dev","uin":450860000013,"ownerUin":450860000013,"appId":1250000000,"status":"active"}'
+  }
+
+  local output
+  output="$(bootstrap_binding)"
+  grep -q '"status":"active"' <<<"$output"
+  python3 - "$TEST_ROOT/binding-bootstrap-request.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    body = json.load(fh)
+assert body == {
+    "userId": "usr_testing_1",
+    "shadowUserName": "mock_personal_dev",
+    "uin": 450860000013,
+    "ownerUin": 450860000013,
+    "appId": 1250000000,
+    "reason": "personal DevCloud testing",
+}, body
+PY
+  ! grep -Rq 'managed-admin-token' "$STATE_ROOT"
+  ! grep -q 'managed-admin-token' <<<"$output"
+)
+
+test_wait_for_binding_bootstraps_when_managed_inputs_are_present() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-auto" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_SHADOW_USER_NAME='mock_personal_dev'
+  export PERSONAL_DEV_SHADOW_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_OWNER_UIN='450860000013'
+  export PERSONAL_DEV_SHADOW_APP_ID='1250000000'
+  export PERSONAL_DEV_BINDING_REASON='personal DevCloud testing'
+  source "$SCRIPT"
+  prepare_state
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' && "$*" == *'/auth/shadow/binding'* ]]; then
+      printf '%s\n' '{"binding":{"status":"missing"}}'
+      return
+    fi
+    if [[ "$token" == 'testing-user-session' && "$*" == *'/auth/session'* ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    printf '%s\n' '{"userId":"usr_testing_1","shadowUserName":"mock_personal_dev","uin":450860000013,"ownerUin":450860000013,"appId":1250000000,"status":"active"}'
+  }
+
+  local binding
+  binding="$(wait_for_binding 'testing-user-session')"
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["binding"]["status"] == "active"' <<<"$binding"
+)
+
+test_testing_binding_release_derives_user_and_keeps_admin_token_private() (
+  export PERSONAL_DEV_STATE_DIR="$TEST_ROOT/binding-release" PERSONAL_DEV_SITE=cn
+  export PERSONAL_DEV_ADMIN_TOKEN='managed-admin-token' # pragma: allowlist secret
+  export PERSONAL_DEV_AUTH_ADMIN_BASE_URL='http://127.0.0.1:38081'
+  export PERSONAL_DEV_BINDING_RELEASE_REASON='test completed'
+  source "$SCRIPT"
+  prepare_state
+  central_session() { printf '%s\n' 'testing-user-session'; }
+  curl_with_token() {
+    local token="$1"
+    shift
+    if [[ "$token" == 'testing-user-session' ]]; then
+      printf '%s\n' '{"session":{"user":{"id":"usr_testing_1"}}}'
+      return
+    fi
+    assert_eq 'managed-admin-token' "$token" "release admin token"
+    [[ "$*" == *'-X DELETE'*'http://127.0.0.1:38081/admin/shadow-bindings/usr_testing_1'* ]] \
+      || fail "release request did not target the configured testing admin endpoint"
+    local previous='' arg
+    for arg in "$@"; do
+      if [[ "$previous" == '--data-binary' && "$arg" == @* ]]; then
+        cp "${arg#@}" "$TEST_ROOT/binding-release-request.json"
+      fi
+      previous="$arg"
+    done
+    printf '%s\n' '{"userId":"usr_testing_1","status":"disabled"}'
+  }
+
+  local output
+  output="$(release_binding)"
+  grep -q '"status":"disabled"' <<<"$output"
+  python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) == {"reason":"test completed"}' \
+    "$TEST_ROOT/binding-release-request.json"
+  ! grep -Rq 'managed-admin-token' "$STATE_ROOT"
+  ! grep -q 'managed-admin-token' <<<"$output"
+)
+
 test_skill_name_and_paths_are_consistent() {
   grep -q '^name: personal-devcloud-environment$' "$REPO_ROOT/.agents/skills/personal-devcloud-environment/SKILL.md"
   if grep -ERn 'personal[-]billing-devenv|\.localstack/personal[-]billing' \
@@ -620,6 +744,7 @@ run_test 'auth failure removes credential temp files' test_auth_failure_removes_
 run_test 'session-only auth generates private local credentials' test_session_only_generates_local_credentials
 run_test 'personal kubeconfig guard rejects shared clusters' test_personal_kubeconfig_guard
 run_test 'Auth override is sandbox-only' test_auth_override_is_sandbox_only
+run_test 'Auth admin override is loopback-only' test_auth_admin_override_is_loopback_only
 run_test 'binary bootstrap is safe under nounset' test_download_binary_is_nounset_safe
 run_test 'Intl registration starts the assigned tunnel' test_intl_registration_starts_tunnel
 run_test 'devtunnel-agent builds from the current checkout' test_devtunnel_build_uses_current_checkout
@@ -637,6 +762,9 @@ run_test 'testing gateway migrates stale state and rejects production overrides'
 run_test 'runtime instrumentation streams from the Skill without source writes' test_runtime_instrumentation_is_streamed_from_skill
 run_test 'browser login is minted into private state without token output' test_browser_login_is_minted_privately
 run_test 'browser login retries an empty nonce generation' test_browser_nonce_retries_empty_generation
+run_test 'testing binding bootstrap derives the target user and keeps admin token private' test_testing_binding_bootstrap_uses_session_identity_without_persisting_admin_token
+run_test 'missing binding is bootstrapped when managed inputs are present' test_wait_for_binding_bootstraps_when_managed_inputs_are_present
+run_test 'testing binding release derives the target user and keeps admin token private' test_testing_binding_release_derives_user_and_keeps_admin_token_private
 run_test 'skill name and paths are consistent' test_skill_name_and_paths_are_consistent
 run_test 'payment and production guardrails remain absent' test_payment_and_production_guardrails
 

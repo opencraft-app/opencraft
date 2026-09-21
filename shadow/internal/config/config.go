@@ -32,7 +32,6 @@ type Config struct {
 	BillingSecretID     string
 	BillingSecretKey    string
 	CallbackToken       string
-	InternalToken       string
 	PaymentConfirmToken string
 	FreeTrialActivityID string
 	FreeTrialActID      string
@@ -110,7 +109,6 @@ func Load() Config {
 		BillingSecretID:     billingSecretID,
 		BillingSecretKey:    billingSecretKey,
 		CallbackToken:       os.Getenv("SHADOW_CALLBACK_TOKEN"),
-		InternalToken:       os.Getenv("SHADOW_INTERNAL_TOKEN"),
 		PaymentConfirmToken: paymentConfirmToken,
 		FreeTrialActivityID: os.Getenv("SHADOW_FREE_TRIAL_ACTIVITY_ID"),
 		FreeTrialActID:      os.Getenv("SHADOW_FREE_TRIAL_ACT_ID"),

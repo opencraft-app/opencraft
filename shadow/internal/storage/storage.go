@@ -34,28 +34,6 @@ type Binding struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-type AdminAccount struct {
-	UserID                   string     `json:"user_id"`
-	CountryCode              string     `json:"country_code"`
-	PhoneNumber              string     `json:"phone_number"`
-	IsRegisterShadowAccount  bool       `json:"is_register_shadow_account"`
-	IsShadowAccountBasicAuth bool       `json:"is_shadow_account_basic_auth"`
-	IsStandardRealnameAuth   bool       `json:"is_standard_realname_auth"`
-	ShadowUserName           string     `json:"shadow_user_name"`
-	Uin                      string     `json:"uin"`
-	OwnerUin                 string     `json:"owner_uin"`
-	AppID                    string     `json:"appid"`
-	InstanceID               string     `json:"instance_id"`
-	CreatedAt                time.Time  `json:"created_at"`
-	BoundAt                  *time.Time `json:"bound_at,omitempty"`
-}
-
-type AdminAccountFilter struct {
-	Search   string
-	Page     int
-	PageSize int
-}
-
 type AuthCode struct {
 	Code       string
 	UserID     string
@@ -189,7 +167,6 @@ type Store interface {
 	UpdateUserPhone(ctx context.Context, userID, countryCode, phoneNumber string) error
 	SaveBinding(ctx context.Context, binding Binding) error
 	GetBindingByUserID(ctx context.Context, userID string) (Binding, error)
-	ListAdminAccounts(ctx context.Context, filter AdminAccountFilter) ([]AdminAccount, int64, error)
 	SaveAppPhoneBinding(ctx context.Context, appID int64, countryCode, phoneNumber string) error
 	SaveFreeTrialOrderCheckpoint(ctx context.Context, checkpoint FreeTrialOrderCheckpoint) error
 	GetFreeTrialOrderCheckpointByUserID(ctx context.Context, userID string) (FreeTrialOrderCheckpoint, error)

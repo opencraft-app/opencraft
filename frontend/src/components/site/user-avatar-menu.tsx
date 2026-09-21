@@ -234,7 +234,7 @@ export const UserAvatarMenu = ({
                   className={menuItemClass}
                 >
                   <Bot className={menuIconClass} />
-                  {t("我的智能体伙伴")}
+                  {t("我的智能体")}
                 </a>
               )}
               <a

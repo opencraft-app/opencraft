@@ -2730,24 +2730,9 @@ export const SubscribePage = ({
   __markAiDurationTabsForI18n(t);
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
-  /* 积分包区域可见性：默认显示（见 credit-pack-visibility.ts）。
-     挂载 show_credit_pack() 控制台助手，供内部验收开启。 */
+  /* 积分包区域可见性默认关闭；挂载 show_credit_pack() 控制台助手供内部验收开启。 */
   const creditPackVisible = useCreditPackVisibility();
   useEffect(() => installCreditPackVisibilityHelper(), []);
-
-  /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
-     依赖 creditPackVisible：区域未渲染时 getElementById 拿不到节点。 */
-  useEffect(() => {
-    if (!creditPackVisible) return;
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
-    /* 等积分包区域完成首次渲染再滚动 */
-    const timer = window.setTimeout(() => {
-      document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [creditPackVisible]);
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -2764,6 +2749,20 @@ export const SubscribePage = ({
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
+  const bundlesInitialLoading = bundles === null && !bundlesError;
+
+  /* 账号页「购买积分包」带 ?section=credits 跳来时定位到积分包区域。
+     页面级套餐 Loading 结束后积分区才挂载，因此加载状态必须参与重试时机。 */
+  useEffect(() => {
+    if (!creditPackVisible || bundlesInitialLoading) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(SECTION_QUERY_KEY) !== CREDIT_SECTION_QUERY_VALUE) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(CREDIT_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [bundlesInitialLoading, creditPackVisible]);
 
   /* 付费时长（月付 / 季付）；切换时会触发 listBundles 用新时长重拉价格。默认月付。
      作用于所有可购买套餐（general / ai），与卡内积分档位切换正交。 */
@@ -3693,6 +3692,23 @@ export const SubscribePage = ({
       {header}
 
       <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
+        {bundlesInitialLoading ? (
+          <section
+            aria-labelledby="subscribe-bundles-loading-title"
+            data-testid="subscribe-bundles-loading"
+            role="status"
+            style={{ maxWidth: 1080, minHeight: 360, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <Loader2 style={{ width: 24, height: 24, color: colors.warmGray300 }} className="animate-spin" />
+              <h1 id="subscribe-bundles-loading-title" style={{ fontSize: 18, fontWeight: 600, color: colors.black, margin: 0 }}>
+                {t("订阅套餐")}
+              </h1>
+              <p style={{ fontSize: 14, color: colors.warmGray500, margin: 0 }}>{t("加载套餐中...")}</p>
+            </div>
+          </section>
+        ) : (
+          <>
         <section id={PLANS_SECTION_ID} style={{ maxWidth: 1080, margin: "0 auto" }}>
           {/* Page Header — Notion style */}
           <motion.div
@@ -3860,12 +3876,7 @@ export const SubscribePage = ({
           )}
 
           {/* Plan Cards */}
-          {bundlesLoading && !bundles ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-              <Loader2 style={{ width: 20, height: 20, color: colors.warmGray300 }} className="animate-spin" />
-              <span style={{ fontSize: 14, color: colors.warmGray300 }}>{t("加载套餐中...")}</span>
-            </div>
-          ) : bundlesError ? (
+          {bundlesError ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "32px 0" }}>
               <p style={{ fontSize: 14, color: "#cf3d4c", marginBottom: 12 }}>{bundlesError}</p>
               <button
@@ -3951,6 +3962,8 @@ export const SubscribePage = ({
               document.getElementById(PLANS_SECTION_ID)?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           />
+        )}
+          </>
         )}
       </main>
 

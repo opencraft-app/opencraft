@@ -210,6 +210,29 @@ describe("AccountPage nickname audit state", () => {
     });
   });
 
+  it.each(["account", "billing"] as const)("shows a direct Agents link immediately before the avatar on %s", async (view) => {
+    renderAccountPage(view);
+    const main = within(screen.getByRole("main"));
+    const banner = within(screen.getByRole("banner"));
+    const link = banner.getByRole("link", { name: "返回智能体" });
+    const avatar = banner.getByText("avatar menu");
+
+    await waitFor(() => expect(link).toBeVisible());
+    expect(link).toHaveAttribute("href", "/agents");
+    expect(link.nextElementSibling).toBe(avatar);
+    expect(banner.getByTestId("site-header-actions")).toContainElement(link);
+    expect(main.queryByRole("link", { name: "返回智能体" })).not.toBeInTheDocument();
+    link.focus();
+    expect(link).toHaveFocus();
+  });
+
+  it.each([false, true])("hides the Agents return action for unauthenticated sessions (ready: %s)", (ready) => {
+    sessionAuthReady = ready;
+    sessionIsAuthenticated = false;
+    renderAccountPage();
+    expect(screen.queryByRole("link", { name: "返回智能体" })).not.toBeInTheDocument();
+  });
+
   it("keeps the account chrome singular across auth states", () => {
     sessionAuthReady = false;
     sessionIsAuthenticated = false;
@@ -362,7 +385,14 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage("billing");
 
+    expect(screen.getByText("当前套餐")).toBeInTheDocument();
     expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    expect(screen.getByText("生效中")).toBeInTheDocument();
+    expect(screen.queryByText("当前生效")).not.toBeInTheDocument();
+    const planDetailsLink = screen.getByRole("link", { name: "套餐说明" });
+    expect(planDetailsLink).toHaveAttribute("href", "/docs/plans");
+    expect(planDetailsLink).toHaveAttribute("target", "_blank");
+    expect(planDetailsLink).toHaveAttribute("rel", "noopener noreferrer");
     const subscriptionHeading = screen.getByRole("heading", { name: "订阅套餐" });
     const subscriptionHeader = subscriptionHeading.parentElement;
 
@@ -445,6 +475,35 @@ describe("AccountPage nickname audit state", () => {
     expect(percentage).toHaveStyle({ color: expectedColor });
     expect(progressFill).not.toBeNull();
     expect(progressFill).toHaveStyle({ background: expectedColor });
+  });
+
+  it("shows referral credits separately from the package quota", () => {
+    activePass = {
+      ...buildActivePass(),
+      credit_total: 4500,
+      credit_available: 4500,
+      free_credit_total: 500,
+      free_credit_available: 500,
+    };
+
+    renderAccountPage("billing");
+
+    expect(screen.getByText("套餐积分")).toBeInTheDocument();
+    expect(screen.getByText("额外积分")).toBeInTheDocument();
+    expect(screen.getByText("当前可用")).toBeInTheDocument();
+    expect(screen.getByText("5,000")).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "P" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "0 / 4,500"
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === "SPAN" &&
+        element.textContent?.replace(/\s+/g, " ").trim() === "500 / 500"
+      )
+    ).toBeInTheDocument();
   });
 
   it("shows no model prompt at 95% credit usage", () => {
@@ -530,7 +589,9 @@ describe("AccountPage nickname audit state", () => {
     await userEvent.click(screen.getByRole("button", { name: /立即续费/ }));
 
     expect(await screen.findByText("续费套餐")).toBeInTheDocument();
-    expect(screen.getByText("生效中")).toBeInTheDocument();
+    const modal = screen.getByRole("button", { name: "关闭" }).parentElement;
+    expect(modal).not.toBeNull();
+    expect(within(modal!).getByText("生效中")).toBeInTheDocument();
     expect(screen.queryByText("有效中")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /月付/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /季付/ })).toBeInTheDocument();

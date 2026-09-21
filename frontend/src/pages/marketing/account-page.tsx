@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowLeft,
   Camera,
   Check,
   ChevronRight,
@@ -22,7 +23,7 @@ import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferral
 import { RepositoryError } from "@/repositories/http-repositories";
 import { REALNAME_LEVEL, type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
-import { ProductPageShell } from "@/components/site/product-chrome";
+import { ProductPageShell, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import {
@@ -40,7 +41,7 @@ import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
-import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { CONSOLE_SHOW_EVENT } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
@@ -766,6 +767,7 @@ const SubscriptionSection = ({
   const t = useT();
   const { i18n } = useTranslation();
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
+  const plansDocHref = publicSiteHref("/docs/plans", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
   const { refreshPasses, user, modifyingPass, passUpgradeFailed } = useOpenClaw();
   useEffect(() => { void refreshPasses(); }, [refreshPasses]);
   const { session } = useSession();
@@ -893,30 +895,60 @@ const SubscriptionSection = ({
         : null,
     [operablePass, t],
   );
+  const freeCreditInput = useMemo(() => {
+    const creditTotal = Math.max(0, operablePass?.free_credit_total ?? 0);
+    if (creditTotal <= 0) return null;
+    return {
+      displayName: t("额外积分"),
+      creditTotal,
+      creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)),
+    };
+  }, [operablePass, t]);
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
-    useCreditSources(planCreditInput);
+    useCreditSources(planCreditInput, freeCreditInput);
   const creditPackVisible = useCreditPackVisibility();
   useEffect(() => installCreditPackVisibilityHelper(), []);
 
-  /* flag 关闭时只认套餐积分，避免未上线的积分包数据影响既有展示 */
-  const creditsTotal = creditPackVisible ? creditSummary.total : (operablePass ? operablePass.credit_total : 0);
-  const creditsAvailable = creditPackVisible
+  /* 套餐进度保持独立；汇总和告警才计算所有已开放的积分来源。 */
+  const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
+  const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
+  const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
+  const freeCreditsAvailable = freeCreditInput?.creditAvailable ?? 0;
+  const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
+  const planUsedPercent = planCreditsTotal > 0
+    ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
+    : 0;
+  const allCreditsTotal = creditPackVisible ? creditSummary.total : planCreditsTotal + freeCreditsTotal;
+  const allCreditsAvailable = creditPackVisible
     ? creditSummary.available
-    : (operablePass ? operablePass.credit_available : 0);
-  const creditsUsed = Math.max(0, creditsTotal - creditsAvailable);
-  const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
-  const creditsExhausted = Boolean(creditsTotal > 0 && creditsAvailable <= 0);
-  const showCreditPrompt = creditsExhausted || usedPercent > 95;
-  const creditUsageColor = usedPercent > 95
+    : planCreditsAvailable + freeCreditsAvailable;
+  const allCreditsUsedPercent = allCreditsTotal > 0
+    ? Math.min(100, Math.round(((allCreditsTotal - allCreditsAvailable) / allCreditsTotal) * 100))
+    : 0;
+  const creditsExhausted = Boolean(allCreditsTotal > 0 && allCreditsAvailable <= 0);
+  const showCreditPrompt = creditsExhausted || allCreditsUsedPercent > 95;
+  const creditUsageColor = planUsedPercent > 95
     ? "#991B1B"
-    : usedPercent >= 80
+    : planUsedPercent >= 80
       ? "#CF3D4C"
-      : usedPercent >= 50
+      : planUsedPercent >= 50
         ? "#C67B1E"
         : "var(--lw-accent)";
 
   // 展示用的套餐名称
   const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
+  const legacySubscriptionStatus = operablePass ? null : subscription?.status;
+  const displayStatus = isModifying
+    ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中"))
+    : passStatus === "expired" || legacySubscriptionStatus === "expired"
+      ? t("已过期")
+      : passStatus === "isolated"
+        ? t("隔离期")
+        : legacySubscriptionStatus === "pending_payment"
+          ? t("待支付")
+          : legacySubscriptionStatus === "cancelled"
+            ? t("已取消")
+            : t("生效中");
 
   /* ── 未订阅：缺省引导状态 ── */
   if (!hasActive) {
@@ -1004,12 +1036,24 @@ const SubscriptionSection = ({
               <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/8f6347f3-5b3f-4dfb-844d-bb2501cb9e3d.png" alt="" className="h-7 w-7 rounded-lg object-cover" />
             </div> */}
             <div>
-              <p className="text-sm font-bold" style={{ color: "#333" }}>{displayName}</p>
-              <p className="text-xs" style={{ color: "#999" }}>{isModifying ? t("套餐信息将在升级完成后更新，到期时间不变。") : t("当前生效")}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold" style={{ color: "#333" }}>{t("当前套餐")}</p>
+                <AppLink
+                  to={plansDocHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 text-xs font-medium transition-colors hover:text-black/70"
+                  style={{ color: "var(--lw-accent)" }}
+                >
+                  {t("套餐说明")}
+                  <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
+                </AppLink>
+              </div>
+              <p className="text-sm" style={{ color: "#666" }}>{displayName}</p>
             </div>
           </div>
           <span role={isModifying ? "status" : undefined} className="inline-flex shrink-0 items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            {isModifying ? (passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中")) : t("当前套餐")}
+            {displayStatus}
           </span>
         </div>
 
@@ -1053,16 +1097,20 @@ const SubscriptionSection = ({
         </div>
 
         {/* Credits progress and usage prompt */}
-        {(creditsTotal > 0 || showCreditPrompt) && (
+        {(allCreditsTotal > 0 || showCreditPrompt) && (
           <>
             {/* Divider */}
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
             <div>
-              {creditsTotal > 0 && (
+              {planCreditsTotal > 0 && (
                 <>
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
+                    <span className="text-sm font-semibold" style={{ color: "#333" }}>
+                      {freeCreditsTotal > 0 || (creditPackVisible && creditSummary.sourceCount > 1)
+                        ? t("套餐积分")
+                        : t("已使用积分")}
+                    </span>
                     {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
                     {creditPackVisible && (
                       <AppLink
@@ -1074,12 +1122,13 @@ const SubscriptionSection = ({
                         <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
                       </AppLink>
                     )}
-                  </div>                  <div className="flex items-center justify-between mb-2">
+                  </div>
+                  <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                      {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+                      {planCreditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {planCreditsTotal.toLocaleString()}</span>
                     </p>
                     <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
-                      {usedPercent}%
+                      {planUsedPercent}%
                     </span>
                   </div>
                   {/* Progress bar */}
@@ -1087,11 +1136,32 @@ const SubscriptionSection = ({
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
-                        width: `${usedPercent}%`,
+                        width: `${planUsedPercent}%`,
                         background: creditUsageColor,
                       }}
                     />
                   </div>
+
+                  {freeCreditsTotal > 0 && !creditPackVisible && (
+                    <div className="mt-3 space-y-2 border-t border-black/[0.06] pt-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span style={{ color: "#666" }}>{t("额外积分")}</span>
+                        <span className="font-semibold tabular-nums" style={{ color: "#333" }}>
+                          {freeCreditsAvailable.toLocaleString()}
+                          <span className="font-normal" style={{ color: "#999" }}>
+                            {" / "}
+                            {freeCreditsTotal.toLocaleString()}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span style={{ color: "#666" }}>{t("当前可用")}</span>
+                        <span className="font-semibold tabular-nums" style={{ color: "var(--lw-accent)" }}>
+                          {allCreditsAvailable.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
                       仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
@@ -2090,7 +2160,25 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   }
 
   return (
-    <ProductPageShell afterFooter={pageOverlays} footer={null}>
+    <ProductPageShell
+      afterFooter={pageOverlays}
+      footer={null}
+      header={(
+        <ProductReturnHomeHeader
+          showLanguageSwitcher={false}
+          beforeUserMenu={(
+            <AppLink
+              to={AGENTS_HOME_PATH}
+              aria-label={t("返回智能体")}
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-sm font-medium text-black/70 hover:bg-black/5 hover:text-black/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 sm:h-9 sm:min-h-9 sm:px-4 sm:py-0"
+            >
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
+              <span className="hidden sm:inline">{t("返回智能体")}</span>
+            </AppLink>
+          )}
+        />
+      )}
+    >
       {pageContent}
       {/* 本地 mock 预览专用：交互状态切换器（生产/真实后端环境自动隐藏，不影响线上） */}
       <AccountPreviewStateSwitcher />

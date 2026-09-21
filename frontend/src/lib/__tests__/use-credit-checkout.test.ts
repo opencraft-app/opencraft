@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useCreditCheckout } from "../use-credit-checkout";
@@ -37,6 +37,14 @@ const pack = (total: number, expired: string) => ({
   credit_available: total,
   expired_time: expired,
 });
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
 
 let assignMock: ReturnType<typeof vi.fn>;
 
@@ -186,7 +194,7 @@ describe("useCreditCheckout 国内站（中转页 + wxSign 模式）", () => {
     result.current.reset();
 
     await waitFor(() => {
-      expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
+      expect(result.current.state).toEqual({ status: "idle", productId: null, dealName: null, error: null });
       expect(result.current.bridgePlan).toBeNull();
     });
   });
@@ -292,7 +300,7 @@ describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
   it("初始状态为 idle", () => {
     const { result } = renderHook(() => useCreditCheckout());
 
-    expect(result.current.state).toEqual({ status: "idle", dealName: null, error: null });
+    expect(result.current.state).toEqual({ status: "idle", productId: null, dealName: null, error: null });
   });
 
   it("下单请求带上固定周期的商品 ID", async () => {
@@ -301,6 +309,9 @@ describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
     await result.current.start("credit_4000");
 
     expect(createCreditOrder).toHaveBeenCalledWith("credit_4000");
+    await waitFor(() => {
+      expect(result.current.state.productId).toBe("credit_4000");
+    });
   });
 
   it("创建订单失败时进入 failed 且不请求支付链接", async () => {
@@ -422,5 +433,57 @@ describe("useCreditCheckout 站点无关（下单与到账确认）", () => {
     expect(result.current.state.status).toBe("payment_pending");
 
     await first;
+  });
+
+  it("reset 后新订单可独立轮询，旧订单响应不会覆盖新订单状态", async () => {
+    const onDelivered = vi.fn();
+    const firstPollResponse = deferred<ReturnType<typeof pack>[]>();
+    const secondPollResponse = deferred<ReturnType<typeof pack>[]>();
+    const { result } = renderHook(() =>
+      useCreditCheckout({ onDelivered, pollIntervalMs: 1, pollTimeoutMs: 200 }),
+    );
+
+    listCreditPackages.mockResolvedValueOnce([]);
+    await result.current.start("credit_1000");
+    await waitFor(() => {
+      expect(result.current.state.dealName).toBe("deal-1");
+    });
+
+    listCreditPackages.mockImplementationOnce(() => firstPollResponse.promise);
+    const firstPoll = result.current.confirmDelivery();
+    await waitFor(() => {
+      expect(listCreditPackages).toHaveBeenCalledTimes(2);
+    });
+
+    act(() => {
+      result.current.reset();
+    });
+    createCreditOrder.mockResolvedValueOnce({
+      dealName: "deal-2",
+      bigOrderId: "big-2",
+      auth_code: "ticket-2",
+    });
+    listCreditPackages.mockResolvedValueOnce([]);
+    await result.current.start("credit_2000");
+    await waitFor(() => {
+      expect(result.current.state.dealName).toBe("deal-2");
+    });
+
+    listCreditPackages.mockImplementationOnce(() => secondPollResponse.promise);
+    const secondPoll = result.current.confirmDelivery();
+    await waitFor(() => {
+      expect(listCreditPackages).toHaveBeenCalledTimes(4);
+    });
+
+    secondPollResponse.resolve([pack(2000, "2026-11-01T00:00:00Z")]);
+    await secondPoll;
+    await waitFor(() => {
+      expect(result.current.state).toMatchObject({ status: "delivered", dealName: "deal-2" });
+    });
+
+    firstPollResponse.resolve([pack(1000, "2026-10-10T00:00:00Z")]);
+    await firstPoll;
+    expect(result.current.state).toMatchObject({ status: "delivered", dealName: "deal-2" });
+    expect(onDelivered).toHaveBeenCalledTimes(1);
   });
 });

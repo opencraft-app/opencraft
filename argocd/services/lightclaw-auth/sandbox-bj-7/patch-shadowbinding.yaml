@@ -5,6 +5,8 @@ metadata:
   namespace: user-auth
 data:
   SHADOW_BINDING_ENABLED: "true"
+  SHADOW_BINDING_ADMIN_ENABLED: "true"
+  SHADOW_BINDING_ADMIN_ENVIRONMENT: "sandbox-bj-7"
   SHADOW_CLOUDLADDER_ENABLED: "true"
   SHADOW_CLOUDLADDER_GATEWAY_BASE_URL: "http://81.71.196.13"
   SHADOW_CLOUDLADDER_ROUTE_ID: "tcapi-account-cn-test"

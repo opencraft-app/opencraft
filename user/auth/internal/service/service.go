@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -188,6 +189,23 @@ type ShadowBindingResult struct {
 	BasicAuthLastErrorMessage string
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type AdminShadowAccount struct {
+	UserID           string
+	Phone            string
+	RealnameVerified bool
+	ShadowUserName   string
+	Uin              string
+	OwnerUin         string
+	AppID            string
+	BindingStatus    string
+	BasicAuthStatus  string
+	LastErrorCode    string
+	LastErrorMessage string
+	UserCreatedAt    time.Time
+	BindingCreatedAt time.Time
+	BindingUpdatedAt time.Time
 }
 
 type RealnameProviderResult struct {
@@ -1578,6 +1596,98 @@ func (s *Service) CurrentShadowBinding(ctx context.Context, token string) (Shado
 		return ShadowBindingResult{}, err
 	}
 	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) AdminShadowBinding(ctx context.Context, userID string) (ShadowBindingResult, error) {
+	if s == nil || s.shadowBinding == nil || !s.shadowBinding.AdminEnabled() {
+		return ShadowBindingResult{}, newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	}
+	binding, err := s.shadowBinding.AdminGetBinding(ctx, userID)
+	if err != nil {
+		return ShadowBindingResult{}, shadowBindingAdminError(err)
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) ListAdminShadowAccountsPage(ctx context.Context, search string, page int, pageSize int) ([]AdminShadowAccount, int, error) {
+	if s == nil || s.shadowBinding == nil {
+		return []AdminShadowAccount{}, 0, nil
+	}
+	bindings, total, err := s.shadowBinding.ListAdminBindingsPage(ctx, search, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	accounts := make([]AdminShadowAccount, 0, len(bindings))
+	for _, binding := range bindings {
+		user, err := s.store.FindUserByID(ctx, binding.UserID)
+		if err != nil {
+			return nil, 0, err
+		}
+		accounts = append(accounts, AdminShadowAccount{
+			UserID:           binding.UserID,
+			Phone:            user.Phone,
+			RealnameVerified: user.RealnameVerified,
+			ShadowUserName:   binding.ShadowUserName,
+			Uin:              positiveInt64String(binding.Uin),
+			OwnerUin:         positiveInt64String(binding.OwnerUin),
+			AppID:            positiveInt64String(binding.AppID),
+			BindingStatus:    binding.Status,
+			BasicAuthStatus:  binding.BasicAuthStatus,
+			LastErrorCode:    binding.LastErrorCode,
+			LastErrorMessage: binding.LastErrorMessage,
+			UserCreatedAt:    user.CreatedAt,
+			BindingCreatedAt: binding.CreatedAt,
+			BindingUpdatedAt: binding.UpdatedAt,
+		})
+	}
+	return accounts, total, nil
+}
+
+func positiveInt64String(value int64) string {
+	if value <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(value, 10)
+}
+
+func (s *Service) AdminUpsertShadowBinding(ctx context.Context, in shadowbinding.AdminBindingInput) (ShadowBindingResult, error) {
+	if s == nil || s.shadowBinding == nil || !s.shadowBinding.AdminEnabled() {
+		return ShadowBindingResult{}, newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	}
+	if _, err := s.store.FindUserByID(ctx, strings.TrimSpace(in.UserID)); err != nil {
+		return ShadowBindingResult{}, err
+	}
+	binding, err := s.shadowBinding.AdminUpsertBinding(ctx, in)
+	if err != nil {
+		return ShadowBindingResult{}, shadowBindingAdminError(err)
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func (s *Service) AdminDisableShadowBinding(ctx context.Context, in shadowbinding.AdminDisableInput) (ShadowBindingResult, error) {
+	if s == nil || s.shadowBinding == nil || !s.shadowBinding.AdminEnabled() {
+		return ShadowBindingResult{}, newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	}
+	binding, err := s.shadowBinding.AdminDisableBinding(ctx, in)
+	if err != nil {
+		return ShadowBindingResult{}, shadowBindingAdminError(err)
+	}
+	return toShadowBindingResult(binding), nil
+}
+
+func shadowBindingAdminError(err error) error {
+	switch {
+	case errors.Is(err, shadowbinding.ErrAdminDisabled):
+		return newError("shadow_binding_admin_disabled", "测试影子账号管理未启用。", http.StatusForbidden)
+	case errors.Is(err, shadowbinding.ErrInvalidAdminInput):
+		return newError("invalid_shadow_binding", "影子账号绑定参数不完整。", http.StatusBadRequest)
+	case errors.Is(err, shadowbinding.ErrBindingConflict):
+		return newError("shadow_binding_conflict", "用户、影子用户名或 UIN 已被其他有效绑定占用，请先显式解绑。", http.StatusConflict)
+	case errors.Is(err, shadowbinding.ErrNotFound):
+		return newError("shadow_binding_not_found", "影子账号绑定不存在。", http.StatusNotFound)
+	default:
+		return err
+	}
 }
 
 func (s *Service) IssueTencentCloudConsoleAuthCode(ctx context.Context, token string) (shadowbinding.AuthCode, error) {

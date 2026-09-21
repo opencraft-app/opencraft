@@ -3,7 +3,7 @@ kind: Kustomization
 namespace: lightclaw-gateway
 components:
 - ../common
-- ../profiles/sandbox
+- ../../../../service-gateway/k8s/overlays/beijing-sandbox
 generators:
 - ksops-secret-generator.yaml
 - ksops-collaboration-gateway-token-generator.yaml

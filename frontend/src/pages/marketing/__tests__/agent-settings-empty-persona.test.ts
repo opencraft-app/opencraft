@@ -20,8 +20,14 @@ describe("empty Agent page", () => {
       expect(emptyGuard).toContain(state);
     }
     expect(page).toContain('isEmptyAgentPage && "lv-agent-empty-page"');
-    expect(styles).toMatch(/header\.lv-agent-sidebar-header:has\(\+ \.lv-agent-empty-page\)\s*\{\s*border-right: 0;\s*border-bottom: 0 !important;/);
+    expect(styles).toMatch(/header\.lv-agent-sidebar-header:has\(\+ :is\(\.lv-agent-empty-page, \.lv-agent-upgrading-page\)\)\s*\{\s*border-right: 0;\s*border-bottom: 0 !important;/);
     expect(header).toContain("className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}");
+  });
+
+  it("removes the brand frame while a plan upgrade replaces the Agent sidebar", () => {
+    const page = readSource("src/pages/marketing/agent-settings-page.tsx");
+
+    expect(page).toContain('isModifying && "lv-agent-upgrading-page"');
   });
 
   it("calls the first Bot an AI companion in English", () => {
