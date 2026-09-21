@@ -16,6 +16,8 @@ const stubLocation = (hostname: string) => {
 
 describe("resolveConfiguredAuthApiBaseUrl", () => {
   beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_REGION", "");
+    vi.stubEnv("VITE_REGION", "");
     vi.stubEnv("NEXT_PUBLIC_AUTH_API_BASE_URL", "");
     vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
   });
@@ -41,6 +43,14 @@ describe("resolveConfiguredAuthApiBaseUrl", () => {
 
   it("routes the international LightVela hostname to its dedicated API", () => {
     stubLocation("lightvela.ai");
+
+    expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://api.lightvela.ai");
+  });
+
+  it("repairs the legacy domestic API injected into a global preview build", () => {
+    vi.stubEnv("NEXT_PUBLIC_REGION", "global");
+    vi.stubEnv("NEXT_PUBLIC_AUTH_API_BASE_URL", "https://lightclaw.tech");
+    stubLocation("intl-remove-credit-pack-support-note.preview.lightclaw.tech");
 
     expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://api.lightvela.ai");
   });

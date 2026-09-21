@@ -37,6 +37,10 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_AUTH_API_BASE_URL : undefined)
     ?? import.meta.env?.VITE_AUTH_API_BASE_URL
   )?.trim();
+  const configuredRegion = (
+    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_REGION : undefined)
+    ?? import.meta.env?.VITE_REGION
+  )?.trim();
 
   if (configured && configured.length > 0) {
     if (configured.toLowerCase() === "mock") {
@@ -45,6 +49,14 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     // 本地开发通过 vite proxy 代理，请求发到当前域名
     if (configured.toLowerCase() === "local-proxy") {
       return "";
+    }
+    // 兼容旧版预览发布器：国际站构建可能错误注入国内 API，必须在源码层修正，
+    // 避免国际预览的登录态、询价和支付请求跨到国内站。
+    if (
+      configuredRegion === "global"
+      && configured.replace(/\/$/, "").toLowerCase() === "https://lightclaw.tech"
+    ) {
+      return "https://api.lightvela.ai";
     }
     return configured.replace(/\/$/, "");
   }

@@ -3108,7 +3108,7 @@ refresh_skus http://unused img-jhb "$pools_json"
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
-        self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
+        self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-$FRONTEND_PREVIEW_SHA}"', workflow_text)
         self.assertIn("GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}", workflow_text)
         self.assertIn("source .ci/init.sh", workflow_text)
         self.assertIn("ci_git_fetch_origin --no-tags --depth=1 +refs/heads/master:refs/remotes/origin/master", workflow_text)

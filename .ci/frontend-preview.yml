@@ -68,7 +68,9 @@ stages:
               echo "============================================================"
               set -euo pipefail
 
-              FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"
+              export FRONTEND_PREVIEW_BRANCH="${{ ci.branch }}"
+              export FRONTEND_PREVIEW_SHA="${{ ci.sha }}"
+              FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-$FRONTEND_PREVIEW_SHA}"
               FRONTEND_PREVIEW_RUNTIME_DIR="$(mktemp -d)"
               FRONTEND_PREVIEW_SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-source.XXXXXX")"
               cleanup_frontend_preview() {
@@ -82,8 +84,6 @@ stages:
               git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci | tar -xf - -C "$FRONTEND_PREVIEW_RUNTIME_DIR"
               FRONTEND_PREVIEW_RUNTIME_CI_DIR="$FRONTEND_PREVIEW_RUNTIME_DIR/.ci"
 
-              export FRONTEND_PREVIEW_BRANCH="${{ ci.branch }}"
-              export FRONTEND_PREVIEW_SHA="${{ ci.sha }}"
               echo "frontend 预览独立源码目录：${FRONTEND_PREVIEW_SOURCE_DIR}"
               git archive --format=tar "$FRONTEND_PREVIEW_SHA" | tar -xf - -C "$FRONTEND_PREVIEW_SOURCE_DIR"
               export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"
