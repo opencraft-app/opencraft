@@ -6,6 +6,7 @@ import {
   encodeJsonRpcMessage,
   isJsonRpcRequest,
   parseJsonRpcMessage,
+  OPENCRAFT_RESUME_HISTORY_EXTENSION,
   type JsonRpcRequest,
 } from "@opencraft/appserver-protocol";
 import {
@@ -49,6 +50,7 @@ function createHarness(
   historyTurns: readonly unknown[] = [],
   delayUnsubscribe = false,
   models: readonly Record<string, unknown>[] = [{ id: "codex", model: "codex", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [{reasoningEffort:"medium",description:"Medium"}], defaultReasoningEffort:"medium" }],
+  declareResumeHistory = false,
 ): DraftHarness {
   const requests: JsonRpcRequest[] = [];
   let releaseTurn = () => undefined;
@@ -68,9 +70,14 @@ function createHarness(
         result,
       }));
       if (message.method === "initialize") {
-        send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "draft-test" });
+        send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "draft-test",
+          capabilities: { extensions: declareResumeHistory
+            ? { [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: "paginated" } }
+            : {} } });
       } else if (message.method === "model/list") {
         send({ data: models, nextCursor:null });
+      } else if (message.method === "thread/list") {
+        send({ data: [protocolThread("thread-created")], nextCursor: null });
       } else if (message.method === "thread/read" && historyTurns.length > 0) {
         const threadId = (message.params as { threadId?: string }).threadId ?? "thread-created";
         send({ thread: protocolThread(threadId) });
@@ -489,11 +496,16 @@ test("skills are a typed host resource and skills/changed is an invalidation sig
     autoReconnect: false,
   });
   try {
-    await runtime.connect();
     let changes = 0;
+    let cancelledChanges = 0;
     const unsubscribe = runtime.resources.composerCatalog.subscribeSkillsChanged(() => {
       changes += 1;
     });
+    const cancelEarly = runtime.resources.composerCatalog.subscribeSkillsChanged(() => {
+      cancelledChanges += 1;
+    });
+    cancelEarly();
+    await runtime.connect();
     const response = await runtime.resources.composerCatalog.listSkills({
       cwds: ["/workspace", "/shared"],
       forceReload: true,
@@ -507,6 +519,7 @@ test("skills are a typed host resource and skills/changed is an invalidation sig
     harness.notifySkillsChanged();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     assert.equal(changes, 1);
+    assert.equal(cancelledChanges, 0, "cancelled pre-start subscriptions remain cancelled");
     unsubscribe();
   } finally {
     await runtime.dispose();
@@ -653,6 +666,56 @@ test("Thread acquisition stays empty until its single authoritative Resume promo
     assert.equal(lease.getSnapshot().timeline.frames.length, 1);
     assert.equal(visibleTimelinePromotions, 1);
     unsubscribe();
+    lease.release();
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("Thread catalog metadata removes the first-restore metadata waterfall", async () => {
+  const harness = createHarness(false, false, [{
+    id: "turn-history-one",
+    status: "completed",
+    itemsView: "full",
+    items: [{ id: "message-history-one", type: "agentMessage", text: "ready" }],
+  }]);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local",
+    transport: harness.transport,
+    autoReconnect: false,
+  });
+  try {
+    await runtime.connect();
+    const listed = await runtime.resources.threads.list();
+    assert.equal(listed.data[0]?.id, "thread-created");
+    const lease = await runtime.acquireThread("thread-created");
+    await waitForAuthoritative(lease);
+    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
+    assert.equal(lease.getSnapshot().timeline.frames.length, 1);
+    lease.release();
+  } finally {
+    await runtime.dispose();
+  }
+});
+
+test("Host history capability removes the deep-link metadata waterfall", async () => {
+  const harness = createHarness(false, false, [{
+    id: "turn-history-one",
+    status: "completed",
+    itemsView: "full",
+    items: [{ id: "message-history-one", type: "agentMessage", text: "ready" }],
+  }], false, undefined, true);
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "local",
+    transport: harness.transport,
+    autoReconnect: false,
+  });
+  try {
+    const lease = await runtime.acquireThread("thread-created");
+    await waitForAuthoritative(lease);
+    assert.equal(harness.requests.some((request) => request.method === "thread/read"), false);
+    assert.equal(harness.requests.filter((request) => request.method === "thread/resume").length, 1);
     lease.release();
   } finally {
     await runtime.dispose();

@@ -4,7 +4,7 @@ import {
   type TimelineBlock,
 } from "@opencraft/chat-core";
 import { WebChatDocument } from "@opencraft/chat-render-web";
-import { Check, ChevronDown, Circle, Download, ListChecks } from "lucide-react";
+import { ChevronDown, Download, ListChecks } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
   useContext,
@@ -123,6 +123,13 @@ export function TodoBlock({
     cancelDismiss();
     popup.current?.showPopover();
   };
+  const toggle = () => {
+    cancelDismiss();
+    const element = popup.current;
+    if (!element) return;
+    if (element.matches(":popover-open")) element.hidePopover();
+    else element.showPopover();
+  };
   const scheduleDismiss = () => {
     cancelDismiss();
     dismiss.current = setTimeout(() => popup.current?.hidePopover(), 120);
@@ -168,7 +175,7 @@ export function TodoBlock({
         type="button"
         aria-expanded={open}
         aria-controls={id}
-        onClick={show}
+        onClick={toggle}
         onMouseEnter={show}
         onMouseLeave={scheduleDismiss}
         onFocus={show}
@@ -218,11 +225,7 @@ export function TodoBlock({
         <ul>
           {block.entries.map((entry) => (
             <li key={entry.id} data-status={entry.status}>
-              {entry.status === "complete" ? (
-                <Check size={14} />
-              ) : (
-                <Circle size={14} />
-              )}
+              <TodoEntryGlyph status={entry.status} />
               <span>
                 <CadencedShimmer active={entry.status === "in-progress"}>
                   {entry.text}
@@ -233,6 +236,27 @@ export function TodoBlock({
         </ul>
       </div>
     </div>
+  );
+}
+
+function TodoEntryGlyph({ status }: { status: Extract<TimelineBlock, { type: "todo" }>["entries"][number]["status"] }) {
+  const gradientId = useId();
+  if (status === "complete") return (
+    <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+      <circle cx="7" cy="7" fill="none" r="6.4" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3.4 7.2 5.8 9.4 10.7 4.7" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.25" />
+    </svg>
+  );
+  if (status === "in-progress") return (
+    <svg aria-hidden="true" className="thread-todo__progress-glyph" height="14" viewBox="0 0 14 14" width="14">
+      <defs><linearGradient id={gradientId} x1="2.5" x2="10.5" y1="12" y2="3.5"><stop stopColor="currentColor" /><stop offset="1" stopColor="currentColor" stopOpacity="0" /></linearGradient></defs>
+      <circle cx="7" cy="7" fill="none" r="6.4" stroke={`url(#${gradientId})`} strokeWidth="1.2" />
+    </svg>
+  );
+  return (
+    <svg aria-hidden="true" height="14" viewBox="0 0 14 14" width="14">
+      <circle cx="7" cy="7" fill="none" r="6.4" stroke="currentColor" strokeDasharray="2.4 2.4" strokeWidth="1.2" />
+    </svg>
   );
 }
 

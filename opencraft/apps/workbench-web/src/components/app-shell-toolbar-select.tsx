@@ -4,6 +4,7 @@ import { Check, ChevronDown, Laptop, Server } from "lucide-react";
 import type { PlatformToolbarSelectProps } from "@opencraft/extension-react";
 
 import { Button } from "./ui/button";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 
 function optionVisual(visual: "local" | "remote" | undefined) {
   if (visual === "local") return <Laptop aria-hidden="true" />;
@@ -21,6 +22,7 @@ export function AppShellToolbarSelect({
   placeholder = "Select",
   disabled = false,
 }: PlatformToolbarSelectProps) {
+  const portalContainer = useWorkbenchPresentationRoot();
   const selected = options.find((option) => option.value === value) ?? null;
   const unavailable = disabled || options.length === 0;
 
@@ -39,7 +41,7 @@ export function AppShellToolbarSelect({
           <ChevronDown aria-hidden="true" className="app-shell-toolbar-select__chevron" data-toolbar-chevron />
         </Button>
       </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
+      <DropdownMenu.Portal container={portalContainer}>
         <DropdownMenu.Content
           align="end"
           aria-label={label}

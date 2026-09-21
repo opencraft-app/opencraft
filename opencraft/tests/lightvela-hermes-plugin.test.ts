@@ -928,6 +928,13 @@ function createHermesHistoryHarness() {
           }],
         } as T;
       }
+      if (method === "session.title") {
+        return { title: String((params as { title?: unknown })?.title ?? "") } as T;
+      }
+      if (method === "session.close") return { closed: true } as T;
+      if (method === "session.delete") {
+        return { deleted: String((params as { session_id?: unknown })?.session_id ?? "") } as T;
+      }
       throw new Error(`Unexpected Hermes call: ${method}`);
     },
     onEvent: () => () => undefined,
@@ -952,6 +959,51 @@ function createHermesHistoryHarness() {
     historyCalls,
   };
 }
+
+test("Hermes Thread lifecycle maps rename and delete to native session RPC", async () => {
+  const harness = createHermesHistoryHarness();
+  const notifications: Array<{ method: string; params: unknown }> = [];
+  harness.adapter.subscribeNotification((method, params) => notifications.push({ method, params }));
+
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 1,
+    method: "thread/list",
+    params: {},
+  });
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 2,
+    method: "thread/name/set",
+    params: { threadId: "stored-1", name: "Renamed thread" },
+  });
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 3,
+    method: "thread/delete",
+    params: { threadId: "stored-1" },
+  });
+
+  assert.deepEqual(harness.calls.filter(({ method }) => [
+    "session.title",
+    "session.close",
+    "session.delete",
+  ].includes(method)), [
+    {
+      method: "session.title",
+      params: { session_id: "live-1", profile: "default", title: "Renamed thread" },
+    },
+    {
+      method: "session.close",
+      params: { session_id: "live-1", profile: "default" },
+    },
+    {
+      method: "session.delete",
+      params: { session_id: "stored-1", profile: "default" },
+    },
+  ]);
+  assert.deepEqual(notifications.slice(-2), [
+    { method: "thread/name/updated", params: { threadId: "stored-1", threadName: "Renamed thread" } },
+    { method: "thread/deleted", params: { threadId: "stored-1" } },
+  ]);
+});
 
 test("Hermes paginated resume exposes a cursor and hydrates stored history", async () => {
   const harness = createHermesHistoryHarness();
@@ -2067,11 +2119,19 @@ test("Hermes browser Handler keeps the dormant Bot protocol out of its public ca
       pageRows: 120,
       previewNotification: "thread/history/preview",
     },
+    "opencraft/resume-history": { version: 1, mode: "message-window" },
     "opencraft/thread-queue": {
       version: 2,
       reorder: true,
       atomicSteer: true,
       perItemPause: true,
+    },
+    "opencraft/thread-lifecycle": {
+      version: 1,
+      fork: false,
+      rename: true,
+      archive: false,
+      delete: true,
     },
     "opencraft/scoped-model-catalog": { version: 1 },
   });
@@ -3377,6 +3437,9 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
       if (pathText === "/api/files/upload") {
         return { path: "/home/agentuser/.hermes/opencraft-attachments/a.txt" } as T;
       }
+      if (pathText === "/api/files" && init.method === "DELETE") {
+        return { ok: true } as T;
+      }
       throw new Error(`Unexpected HTTP request: ${pathText}`);
     },
     close() { closed = true; },
@@ -3406,6 +3469,7 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
       dataBase64: "aGVsbG8=",
     },
   }, { fileSystem });
+  const removed = await fileSystem.remove("/home/agentuser/.hermes/opencraft-attachments/a.txt");
 
   assert.deepEqual(metadata, {
     isDirectory: false,
@@ -3416,8 +3480,17 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
   });
   assert.deepEqual(file, { dataBase64: "aGVsbG8=" });
   assert.equal((initialized as { codexHome: string }).codexHome, "/home/agentuser/.hermes");
+  assert.deepEqual((initialized as {
+    capabilities: { extensions: Record<string, unknown> };
+  }).capabilities.extensions["opencraft/attachment-staging"], {
+    version: 1,
+    sources: ["client-bytes"],
+    locations: ["host-file"],
+    maxBytes: 32 * 1024 * 1024,
+  });
   assert.deepEqual(written, {});
-  assert.deepEqual(requests.at(-1), {
+  assert.equal(removed, true);
+  assert.deepEqual(requests.find(({ path }) => path === "/api/files/upload"), {
     path: "/api/files/upload",
     token: "dashboard-secret",
     method: "POST",
@@ -3425,6 +3498,15 @@ test("Hermes Dashboard filesystem adapts authenticated file APIs to AppServer sh
       path: "/home/agentuser/.hermes/opencraft-attachments/a.txt",
       data_url: "data:application/octet-stream;base64,aGVsbG8=",
       overwrite: true,
+    },
+  });
+  assert.deepEqual(requests.at(-1), {
+    path: "/api/files",
+    token: "dashboard-secret",
+    method: "DELETE",
+    json: {
+      path: "/home/agentuser/.hermes/opencraft-attachments/a.txt",
+      recursive: false,
     },
   });
   assert.equal(requests.every(({ token }) => token === "dashboard-secret"), true);

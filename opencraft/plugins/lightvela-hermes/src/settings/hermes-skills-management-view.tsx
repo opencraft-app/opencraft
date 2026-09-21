@@ -57,6 +57,7 @@ export function HermesSkillsManagementView({
   host,
   headerRegion,
   toolbarSelect: ToolbarSelect,
+  connectorLibrary: ConnectorLibrary,
 }: {
   readonly account: LightVelaAccountService;
   readonly botId: string;
@@ -65,7 +66,10 @@ export function HermesSkillsManagementView({
   readonly host: PlatformViewHost;
   readonly headerRegion?: PlatformViewRegions["Header"];
   readonly toolbarSelect?: PlatformViewRegions["ToolbarSelect"];
+  readonly connectorLibrary?: PlatformViewRegions["ConnectorLibrary"];
 }) {
+  const [connectorsVisible, setConnectorsVisible] = useState(false);
+  const [connectorHostId, setConnectorHostId] = useState(host.activeHostId);
   const repositories = useMemo(() => createWorkbenchRepositories(account), [account]);
   const directory = useSyncExternalStore(
     profileDirectory?.subscribe ?? subscribeEmpty,
@@ -121,11 +125,11 @@ export function HermesSkillsManagementView({
   })), [targets]);
   const installTargetSelector = ToolbarSelect === undefined ? undefined : (
     <ToolbarSelect
-      value={selectedTarget?.id ?? null}
-      options={targetOptions}
-      onValueChange={setSelectedTargetId}
-      label="选择技能安装位置"
-      title="Host"
+      value={connectorsVisible ? connectorHostId : selectedTarget?.id ?? null}
+      options={connectorsVisible ? host.profiles.filter(profile => profile.enabled).map(profile => ({ value: profile.hostId, label: profile.displayName, textValue: profile.displayName, visual: profile.hostKind === "local" ? "local" as const : "remote" as const })) : targetOptions}
+      onValueChange={connectorsVisible ? setConnectorHostId : setSelectedTargetId}
+      label={connectorsVisible ? "选择连接器所在设备" : "选择技能安装位置"}
+      title={connectorsVisible ? "设备" : "Host"}
       placeholder="暂无可用安装位置"
       disabled={targets.length === 0}
     />
@@ -134,6 +138,7 @@ export function HermesSkillsManagementView({
   return (
     <RepositoryProvider value={repositories}>
       <HermesAgentConsoleHost>
+        <div hidden={connectorsVisible}>
         <Suspense fallback={<div className="flex min-h-48 items-center justify-center text-sm text-black/45">正在加载...</div>}>
           <HermesAgentSkillsPanel
             key={selectedTarget?.id ?? "catalog-only"}
@@ -144,9 +149,9 @@ export function HermesSkillsManagementView({
             headerRegion={headerRegion}
             renderHeaderNavigation={(navigation) => (
               <SegmentedControl
-                value={navigation.value}
-                options={navigation.options}
-                onValueChange={navigation.onValueChange}
+                value={connectorsVisible ? "connectors" : navigation.value}
+                options={ConnectorLibrary && headerRegion ? [...navigation.options.slice(0, 2), { value: "connectors", label: "连接器" }, ...navigation.options.slice(2)] : navigation.options}
+                onValueChange={(value) => { setConnectorsVisible(value === "connectors"); if (value !== "connectors") navigation.onValueChange(value); }}
                 label={navigation.label}
                 disabled={navigation.disabled}
               />
@@ -155,6 +160,8 @@ export function HermesSkillsManagementView({
             showHeader={false}
           />
         </Suspense>
+        </div>
+        {connectorsVisible && ConnectorLibrary ? <ConnectorLibrary hostId={connectorHostId} /> : null}
       </HermesAgentConsoleHost>
     </RepositoryProvider>
   );

@@ -132,6 +132,7 @@ export function createLightVelaHermesManagementView(
               host={props.host}
               headerRegion={props.regions?.Header}
               toolbarSelect={props.regions?.ToolbarSelect}
+              connectorLibrary={props.regions?.ConnectorLibrary}
             />
           </div>
         </div>

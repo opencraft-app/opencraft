@@ -17,6 +17,7 @@ export interface ExtensionSettingsStorage {
   load(): Promise<readonly StoredExtensionSetting[]>;
   put(record: StoredExtensionSetting): Promise<void>;
   remove(key: string): Promise<void>;
+  subscribe?(listener: () => void): () => void;
   close(): void | Promise<void>;
 }
 
@@ -83,7 +84,9 @@ function assertValidValue(
   }
 }
 
-function normalizeStoredRecord(value: StoredExtensionSetting): StoredExtensionSetting | null {
+export function normalizeStoredExtensionSetting(input: unknown): StoredExtensionSetting | null {
+  if (!input || typeof input !== "object") return null;
+  const value = input as StoredExtensionSetting;
   if (
     typeof value.contributionId !== "string"
     || value.contributionId.length === 0
@@ -107,6 +110,7 @@ export class ExtensionSettingsStore {
   private readonly values = new Map<string, StoredExtensionSetting>();
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribeContributions: () => void;
+  private unsubscribeStorage: (() => void) | undefined;
   private revision = 0;
   private closed = false;
   private mutation: Promise<void> = Promise.resolve();
@@ -129,10 +133,20 @@ export class ExtensionSettingsStore {
     const store = new ExtensionSettingsStore(contributions, storage);
     try {
       for (const raw of await storage.load()) {
-        const record = normalizeStoredRecord(raw);
+        const record = normalizeStoredExtensionSetting(raw);
         if (record !== null) store.values.set(record.key, record);
       }
       store.publish();
+      store.unsubscribeStorage = storage.subscribe?.(() => {
+        if (store.closed) return;
+        void store.enqueue(async () => {
+          const records = await storage.load();
+          if (store.closed) return;
+          store.values.clear();
+          for (const raw of records) { const record = normalizeStoredExtensionSetting(raw); if (record) store.values.set(record.key, record); }
+          store.publish();
+        }).catch(() => { /* Preserve last good values; writes still surface storage errors. */ });
+      });
       return store;
     } catch (error) {
       store.unsubscribeContributions();
@@ -195,6 +209,7 @@ export class ExtensionSettingsStore {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.unsubscribeStorage?.();
     this.unsubscribeContributions();
     await this.mutation;
     this.listeners.clear();

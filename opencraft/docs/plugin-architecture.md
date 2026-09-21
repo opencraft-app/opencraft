@@ -435,6 +435,15 @@ export interface OpenCraftExtensionApiV1 {
 
 公共 API 独立版本化。内部包重构、Cordis 升级和协议生成文件变化，不得强迫插件升级。
 
+`storage` 的目标语义以 [插件持久化契约](./plugin-persistence.md) 为准：默认异步 JSON/KV，
+宿主绑定插件命名空间与区域，Client-local 由 Electron SQLite / Web IndexedDB 投影，
+Host 数据始终经该 Host authority 访问；SQL 不是跨端基础 API。物理 schema 与插件 payload
+独立迁移，重载撤销旧 handle，停用/卸载不默认删除数据。当前 V1 已提供可空的
+client-local 文档 storage 接口及 [Host 文档 API](./host-document-storage.md) 适配，
+后者只绑定已初始化并实际支持协议的 Host。Host 仅提供 API，本期不建设
+Host 插件装载器。插件可自建 Worker 并登记清理，Cordis 管激活/销毁和旧代次撤销。
+本期不引入 Drizzle。
+
 #### 7.2.1 稳定性契约
 
 - manifest 用 `apiVersion` 声明兼容范围，Host 在安装前解析，不在运行到一半才失败；

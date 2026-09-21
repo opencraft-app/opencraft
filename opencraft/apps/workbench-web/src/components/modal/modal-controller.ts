@@ -2,6 +2,7 @@ import type { ModalDescriptor, ModalDismissReason } from "@opencraft/design-syst
 import type { ReactNode } from "react";
 
 export interface ModalRequest extends ModalDescriptor {
+  readonly confirmation?: { readonly confirmLabel: string; readonly cancelLabel?: string; readonly onConfirm: () => void };
   readonly id: string;
   readonly content: ReactNode;
   readonly className?: string;

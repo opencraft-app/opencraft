@@ -17,6 +17,7 @@ import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadRowMenu, type ThreadActionCallbacks, type ThreadActionCapabilities } from "./thread-management";
 import { groupThreadsByTarget } from "../sidebar-target-groups";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
+import { SidebarNavigationItem } from "./sidebar-navigation-item";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 
 interface SidebarThread extends WorkbenchThread {
@@ -56,14 +57,8 @@ interface SidebarProps {
   threadActions?: ThreadActionCallbacks;
   threadCapabilities?(hostId: string): ThreadActionCapabilities;
   pendingTitle?(hostId: string, threadId: string): string | null;
-  onManageArchived?(): void;
-  archiveUndo?: { title: string; restore(): void } | null;
 }
 
-
-function SidebarActionIcon({ children }: { readonly children: ReactNode }) {
-  return <span className="sidebar-action__icon" aria-hidden="true">{children}</span>;
-}
 
 function ExtensionCatalog({ catalog }: { readonly catalog: SidebarCatalogItem }) {
   const [collapsed, setCollapsed] = useState(catalog.initiallyCollapsed ?? false);
@@ -137,8 +132,6 @@ export function Sidebar({
   threadActions,
   threadCapabilities,
   pendingTitle,
-  onManageArchived,
-  archiveUndo,
 }: SidebarProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [collapsedTargets, setCollapsedTargets] = useState<ReadonlySet<string>>(new Set());
@@ -172,21 +165,15 @@ export function Sidebar({
     <SidebarEntityDndCoordinator items={bots} layout={sidebarLayout}>
       <div className="sidebar-panel" data-app-shell-focus-area="left-panel">
       <nav className="sidebar-navigation" aria-label="Primary">
-        <button className="sidebar-action" type="button" onClick={onNewTask}>
-          <SidebarActionIcon><SquarePen size={15} /></SidebarActionIcon>
-          <span>Start</span>
-        </button>
+        <SidebarNavigationItem icon={<SquarePen size={15} />} title="Start" onInvoke={onNewTask} />
         {primaryActions.map((action) => (
-          <button
-            className="sidebar-action"
-            type="button"
+          <SidebarNavigationItem
             key={action.id}
-            aria-current={action.active ? "page" : undefined}
-            onClick={action.onInvoke}
-          >
-            <SidebarActionIcon><SidebarContributionIcon name={action.icon} /></SidebarActionIcon>
-            <span>{action.title}</span>
-          </button>
+            active={action.active}
+            icon={<SidebarContributionIcon name={action.icon} />}
+            title={action.title}
+            onInvoke={action.onInvoke}
+          />
         ))}
       </nav>
 
@@ -300,27 +287,19 @@ export function Sidebar({
           </section>;
           })}
         </section>
-        {onManageArchived ? <button type="button" className="sidebar-action" onClick={onManageArchived}>已归档会话</button> : null}
-        {archiveUndo ? <div className="sidebar-target-empty" role="status">已归档 {archiveUndo.title} <button type="button" onClick={archiveUndo.restore}>撤销</button></div> : null}
       </div>
 
       {showFooter ? <div className="sidebar-panel__footer">
         {footerActions.map((action) => (
-          <button
-            className="sidebar-action"
-            type="button"
+          <SidebarNavigationItem
             key={action.id}
-            aria-current={action.active ? "page" : undefined}
-            onClick={action.onInvoke}
-          >
-            <SidebarActionIcon><SidebarContributionIcon name={action.icon} /></SidebarActionIcon>
-            <span>{action.title}</span>
-          </button>
+            active={action.active}
+            icon={<SidebarContributionIcon name={action.icon} />}
+            title={action.title}
+            onInvoke={action.onInvoke}
+          />
         ))}
-          <button className="sidebar-action" type="button" onClick={onOpenSettings}>
-            <SidebarActionIcon><Settings size={15} /></SidebarActionIcon>
-            <span>Settings</span>
-          </button>
+          <SidebarNavigationItem icon={<Settings size={15} />} title="Settings" onInvoke={onOpenSettings} />
       </div> : null}
       </div>
     </SidebarEntityDndCoordinator>

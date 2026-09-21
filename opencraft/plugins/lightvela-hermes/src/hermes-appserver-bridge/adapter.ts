@@ -891,6 +891,56 @@ export class HermesAppServerAdapter {
     return true;
   }
 
+  async renameThread(threadId: string, requestedTitle: string): Promise<void> {
+    const title = requestedTitle.trim();
+    if (title.length === 0) throw new TypeError("Thread title must not be empty");
+    const profile = await this.resolveThreadProfile(threadId);
+    const live = await this.ensureLive(threadId, profile);
+    const result = await this.gateway.call<{ title?: string }>("session.title", {
+      session_id: live,
+      profile,
+      title,
+    });
+    const committedTitle = result.title?.trim() || title;
+    const provisional = this.provisionalSummaryByStored.get(threadId);
+    if (provisional !== undefined) {
+      this.provisionalSummaryByStored.set(threadId, {
+        ...provisional,
+        title: committedTitle,
+      });
+    }
+    this.emit("thread/name/updated", { threadId, threadName: committedTitle });
+  }
+
+  async deleteThread(threadId: string): Promise<void> {
+    const profile = await this.resolveThreadProfile(threadId);
+    const live = this.liveByStored.get(threadId);
+    if (live !== undefined) {
+      await this.gateway.call("session.close", { session_id: live, profile });
+    }
+    await this.gateway.call("session.delete", { session_id: threadId, profile });
+    if (live !== undefined) {
+      this.liveByStored.delete(threadId);
+      this.storedByLive.delete(live);
+      this.activeByLive.delete(live);
+      this.pendingByLive.delete(live);
+      this.queuedBoundaryPendingByLive.delete(live);
+      this.submissionTailByLive.delete(live);
+      this.admissionByLive.delete(live);
+      this.clearSettlementTimer(live);
+    }
+    this.payloadByStored.delete(threadId);
+    this.profileByStored.delete(threadId);
+    this.provisionalSummaryByStored.delete(threadId);
+    this.preparedHistoryByStored.delete(threadId);
+    this.profileDiscoveryByStored.delete(threadId);
+    const transcriptKey = JSON.stringify([profile, threadId]);
+    this.transcriptWindows.get(transcriptKey)?.invalidate();
+    this.transcriptWindows.delete(transcriptKey);
+    this.transcriptSnapshots.delete(transcriptKey);
+    this.emit("thread/deleted", { threadId });
+  }
+
   async listThreads(params: ThreadListParams = {}) {
     if (params.archived === true) return { data: [], nextCursor: null, backwardsCursor: null };
     const profile = params.profile?.trim() || null;

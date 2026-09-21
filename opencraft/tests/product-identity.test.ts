@@ -40,15 +40,20 @@ test("three hosts agree on branding but retain installed application identity", 
   assert.equal(expo.scheme, "opencraft");
   assert.equal(expo.ios.bundleIdentifier, "dev.vela.workbench");
   assert.match(read("apps/workbench-web/index.html"), /<title>OpenCraft<\/title>/u);
-  assert.equal(desktopProduct.profileDirectoryName, "@vela/workbench-electron");
+  assert.equal(desktopProduct.profileDirectoryName, "OpenCraft");
+  assert.deepEqual(desktopProduct.legacyProfileDirectoryNames, ["@vela/workbench-electron"]);
   const main = read("apps/workbench-electron/src/main.ts");
+  assert.ok(main.indexOf("prepareDesktopDirectories") < main.indexOf("app.requestSingleInstanceLock()"));
+  assert.ok(main.indexOf('appendSwitch("user-data-dir"') < main.indexOf("app.requestSingleInstanceLock()"));
   assert.ok(main.indexOf('app.setPath("userData"') < main.indexOf("app.requestSingleInstanceLock()"));
-  assert.ok(main.indexOf("mkdirSync(userDataDirectory") < main.indexOf('app.setPath("userData"'));
+  assert.ok(main.indexOf("process.chdir(desktopPaths.runtimeDirectory)") < main.indexOf("app.requestSingleInstanceLock()"));
   assert.match(main, /getSwitchValue\("user-data-dir"\)/u);
+  assert.match(main, /preparedDirectories\.status === "legacy-active"/u);
   assert.deepEqual(resolveDesktopProduct("OpenCraft"), desktopProduct);
   assert.deepEqual(resolveDesktopProduct("OpenCraft Preview"), desktopPreviewProduct);
   assert.equal(desktopPreviewProduct.applicationId, "ai.lightvela.vela.preview");
-  assert.equal(desktopPreviewProduct.profileDirectoryName, "@vela/workbench-electron-preview");
+  assert.equal(desktopPreviewProduct.profileDirectoryName, "OpenCraft Preview");
+  assert.deepEqual(desktopPreviewProduct.legacyProfileDirectoryNames, ["@vela/workbench-electron-preview"]);
   assert.match(main, /resolveDesktopProduct\(executableName\)/u);
 });
 
@@ -66,7 +71,7 @@ test("rebranding does not change conversation identity or external capability ne
   assert.equal(botConversationResourceUri(key), uri);
   assert.deepEqual(parseBotConversationViewResource(uri), { kind: "conversation", key });
   assert.equal(OPENCRAFT_BOT_CONVERSATIONS_EXTENSION, "vela/bot-conversations");
-  assert.match(read("apps/workbench-electron/src/daemon-client.ts"), /"vela-daemon\.sock"/u);
+  assert.doesNotMatch(read("apps/workbench-electron/src/daemon-client.ts"), /vela-daemon\.(?:sock|token)/u);
 });
 
 test("service-provider authentication remains in its existing namespace", () => {

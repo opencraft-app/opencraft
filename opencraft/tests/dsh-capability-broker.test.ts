@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DshCapabilityBroker } from "../apps/local-agent-host/src/dsh-capability-broker.js";
+import { DshCapabilityBroker, normalizeCapabilities } from "../apps/local-agent-host/src/dsh-capability-broker.js";
 import { verifyDshCapabilityRegistration } from "../apps/local-agent-host/src/dsh-capability-link.js";
 const a = { connectionId: "a", identity: { id: "local", username: "local" } };
 const b = { connectionId: "b", identity: { id: "local", username: "local" } };
 const specs = [{ type: "function", name: "browser_open", description: "Open owned browser", inputSchema: { type: "object", properties: { url: { type: "string" } } } }];
+
+test("Host computes and propagates approval-aware deadlines, never trusting model configuration", () => {
+  assert.equal(normalizeCapabilities(specs)[0].timeoutMs, 10000);
+  assert.equal(normalizeCapabilities([{ ...specs[0], name: "connectors_call_tool", timeoutMs: 1 }])[0].timeoutMs, 150000);
+  assert.equal(normalizeCapabilities([{ type: "namespace", name: "other", description: "Other", tools: [{ ...specs[0], name: "connectors_call_tool" }] }])[0].timeoutMs, 10000);
+});
 
 test("capability registration and return are bound to the owning thread and connection", async () => {
   const broker = new DshCapabilityBroker();
@@ -73,14 +79,23 @@ test("fork inherits original function/namespace specs, with a separate child rep
   } finally { broker.close(); }
 });
 
-test("engine capability readiness rejects deferred and partial registrations", () => {
+test("engine capability readiness accepts cold deferral only at display hydration", () => {
   assert.doesNotThrow(() => verifyDshCapabilityRegistration(3, { registered: 3 }));
+  assert.doesNotThrow(() => verifyDshCapabilityRegistration(
+    3,
+    { registered: 0, deferred: true },
+    { allowDeferred: true },
+  ));
   assert.throws(
     () => verifyDshCapabilityRegistration(3, { registered: 0, deferred: true }),
     /registered 0 of 3 dynamic tools/u,
   );
   assert.throws(
     () => verifyDshCapabilityRegistration(3, { registered: 2 }),
+    /registered 2 of 3 dynamic tools/u,
+  );
+  assert.throws(
+    () => verifyDshCapabilityRegistration(3, { registered: 2, deferred: true }, { allowDeferred: true }),
     /registered 2 of 3 dynamic tools/u,
   );
 });
