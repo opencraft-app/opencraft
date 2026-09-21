@@ -202,3 +202,5 @@ derived: false
 - `pnpm build:cn`、`pnpm build:global` 均通过。构建期间暂停国际预览，完成后恢复同一国际代理配置与 5174 端口。
 - 文档完整性 errors 0；context 校验仍因既有治理问题失败，context 单测 26 项 / 4 失败，context-audit 单测 33 项通过、audit 完成。未重复运行此前已记录未全绿的 frontend 全量 / OpenCraft 全量 gate；不宣称云端端到端验收通过。
 - 下一步：源码提交后同步 UPSTREAM revision、运行漂移与 docs-impact 检查并推送 !4311；不合并或发布。
+
+- 真源提交 `76f5d0031` 后完成机械同步，`check:mono2-agent-console` 验证 130 文件通过；本轮修复页面不在生成闭包内，所以生成变更仅为 UPSTREAM.json.sourceRevision。正式 Profile 隔离设计随清单提交，避免改动生成副本。
