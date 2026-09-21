@@ -64,6 +64,28 @@ describe("useCreditSources", () => {
     });
   });
 
+  it("将额外积分作为独立来源计入汇总", async () => {
+    const { result } = renderHook(() =>
+      useCreditSources(planCredit, {
+        displayName: "额外积分",
+        creditTotal: 500,
+        creditAvailable: 500,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.sources.map((source) => source.source_type)).toEqual(["plan", "free_credit"]);
+    expect(result.current.summary).toEqual({
+      available: 2500,
+      total: 5500,
+      used: 3000,
+      sourceCount: 2,
+    });
+  });
+
   it("按到期/刷新时间从早到晚排序，与扣减顺序一致", async () => {
     listCreditPackages.mockResolvedValue([
       { credit_type: "paid", credit_total: 4000, credit_available: 4000, expired_time: "2026-11-01T00:00:00Z" },

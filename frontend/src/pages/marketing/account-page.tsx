@@ -895,25 +895,43 @@ const SubscriptionSection = ({
         : null,
     [operablePass, t],
   );
+  const freeCreditInput = useMemo(() => {
+    const creditTotal = Math.max(0, operablePass?.free_credit_total ?? 0);
+    if (creditTotal <= 0) return null;
+    return {
+      displayName: t("额外积分"),
+      creditTotal,
+      creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)),
+    };
+  }, [operablePass, t]);
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
-    useCreditSources(planCreditInput);
+    useCreditSources(planCreditInput, freeCreditInput);
   const creditPackVisible = useCreditPackVisibility();
   useEffect(() => installCreditPackVisibilityHelper(), []);
 
-  /* flag 关闭时只认套餐积分，避免未上线的积分包数据影响既有展示 */
-  const creditsTotal = creditPackVisible ? creditSummary.total : (operablePass ? operablePass.credit_total : 0);
-  const creditsAvailable = creditPackVisible
+  /* 套餐进度保持独立；汇总和告警才计算所有已开放的积分来源。 */
+  const planCreditsTotal = operablePass ? operablePass.credit_total : 0;
+  const planCreditsAvailable = operablePass ? operablePass.credit_available : 0;
+  const freeCreditsTotal = freeCreditInput?.creditTotal ?? 0;
+  const freeCreditsAvailable = freeCreditInput?.creditAvailable ?? 0;
+  const planCreditsUsed = Math.max(0, planCreditsTotal - planCreditsAvailable);
+  const planUsedPercent = planCreditsTotal > 0
+    ? Math.min(100, Math.round((planCreditsUsed / planCreditsTotal) * 100))
+    : 0;
+  const allCreditsTotal = creditPackVisible ? creditSummary.total : planCreditsTotal + freeCreditsTotal;
+  const allCreditsAvailable = creditPackVisible
     ? creditSummary.available
-    : (operablePass ? operablePass.credit_available : 0);
-  const creditsUsed = Math.max(0, creditsTotal - creditsAvailable);
-  const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
-  const creditsExhausted = Boolean(creditsTotal > 0 && creditsAvailable <= 0);
-  const showCreditPrompt = creditsExhausted || usedPercent > 95;
-  const creditUsageColor = usedPercent > 95
+    : planCreditsAvailable + freeCreditsAvailable;
+  const allCreditsUsedPercent = allCreditsTotal > 0
+    ? Math.min(100, Math.round(((allCreditsTotal - allCreditsAvailable) / allCreditsTotal) * 100))
+    : 0;
+  const creditsExhausted = Boolean(allCreditsTotal > 0 && allCreditsAvailable <= 0);
+  const showCreditPrompt = creditsExhausted || allCreditsUsedPercent > 95;
+  const creditUsageColor = planUsedPercent > 95
     ? "#991B1B"
-    : usedPercent >= 80
+    : planUsedPercent >= 80
       ? "#CF3D4C"
-      : usedPercent >= 50
+      : planUsedPercent >= 50
         ? "#C67B1E"
         : "var(--lw-accent)";
 
@@ -1079,16 +1097,20 @@ const SubscriptionSection = ({
         </div>
 
         {/* Credits progress and usage prompt */}
-        {(creditsTotal > 0 || showCreditPrompt) && (
+        {(allCreditsTotal > 0 || showCreditPrompt) && (
           <>
             {/* Divider */}
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
 
             <div>
-              {creditsTotal > 0 && (
+              {planCreditsTotal > 0 && (
                 <>
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
+                    <span className="text-sm font-semibold" style={{ color: "#333" }}>
+                      {freeCreditsTotal > 0 || (creditPackVisible && creditSummary.sourceCount > 1)
+                        ? t("套餐积分")
+                        : t("已使用积分")}
+                    </span>
                     {/* 购买积分包入口：跳订阅页并定位到积分包区域（产品方案 5） */}
                     {creditPackVisible && (
                       <AppLink
@@ -1100,12 +1122,13 @@ const SubscriptionSection = ({
                         <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0" />
                       </AppLink>
                     )}
-                  </div>                  <div className="flex items-center justify-between mb-2">
+                  </div>
+                  <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
-                      {creditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {creditsTotal.toLocaleString()}</span>
+                      {planCreditsUsed.toLocaleString()} <span className="font-normal" style={{ color: "#999" }}>/ {planCreditsTotal.toLocaleString()}</span>
                     </p>
                     <span className="text-xs font-semibold" style={{ color: creditUsageColor }}>
-                      {usedPercent}%
+                      {planUsedPercent}%
                     </span>
                   </div>
                   {/* Progress bar */}
@@ -1113,11 +1136,32 @@ const SubscriptionSection = ({
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
-                        width: `${usedPercent}%`,
+                        width: `${planUsedPercent}%`,
                         background: creditUsageColor,
                       }}
                     />
                   </div>
+
+                  {freeCreditsTotal > 0 && !creditPackVisible && (
+                    <div className="mt-3 space-y-2 border-t border-black/[0.06] pt-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span style={{ color: "#666" }}>{t("额外积分")}</span>
+                        <span className="font-semibold tabular-nums" style={{ color: "#333" }}>
+                          {freeCreditsAvailable.toLocaleString()}
+                          <span className="font-normal" style={{ color: "#999" }}>
+                            {" / "}
+                            {freeCreditsTotal.toLocaleString()}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span style={{ color: "#666" }}>{t("当前可用")}</span>
+                        <span className="font-semibold tabular-nums" style={{ color: "var(--lw-accent)" }}>
+                          {allCreditsAvailable.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 额度明细：按实际扣减优先级（到期/刷新时间早的在前）逐来源展示。
                       仅在积分包功能开启后展示，未开启时保持原有单套餐视图。 */}
