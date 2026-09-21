@@ -29,6 +29,7 @@ import {
   LightVelaHermesTransport,
   LIGHTVELA_TOKEN_KEY,
   lightVelaBotCreationUrl,
+  nativeHermesProfileId,
   projectLightVelaBotOnboarding,
 } from "@opencraft/plugin-lightvela-hermes";
 import { EnvironmentDirectory, preflightHostConnection, type HostConnectionProvider } from "@opencraft/workbench-runtime";
@@ -848,6 +849,13 @@ test("Hermes Host creates one TAT bootstrap and shares its proxy owner", () => {
   assert.match(lightOpenCraftTransportSource, /sessionToken = await ensureHermesDashboard\(proxy\)/u);
   assert.match(lightOpenCraftTransportSource, /\{ proxyClient: proxy, sessionToken \}/u);
   assert.match(lightOpenCraftTransportSource, /createTatWebSocketConstructor\(proxy/u);
+  assert.match(lightOpenCraftTransportSource, /logicalHostKey.*options\.profile/su);
+  assert.match(lightOpenCraftTransportSource, /sessionTokenCache\?\.get\(physicalCacheKey\)/u);
+});
+
+test("LightVela control-plane Bot profiles map to native Hermes identities", () => {
+  assert.equal(nativeHermesProfileId("main"), "default");
+  assert.equal(nativeHermesProfileId("sales-123"), "sales-123");
 });
 
 test("Hermes transport resolves the current Bot before every physical TAT connection", async () => {
@@ -900,6 +908,7 @@ test("Hermes transport resolves the current Bot before every physical TAT connec
 function createHermesHistoryHarness(options: {
   readonly messages?: readonly HermesMessage[];
   readonly attachmentMetadata?: AttachmentMetadataResolver;
+  readonly profileScope?: string;
 } = {}) {
   const calls: Array<{ method: string; params: unknown }> = [];
   const historyCalls: Array<{ sessionId: string; limit: number; offset: number; order: string }> = [];
@@ -913,6 +922,15 @@ function createHermesHistoryHarness(options: {
           message_count: 2,
           messages: [],
           info: { cwd: "/workspace/projects/demo", reasoning_effort: "high" },
+        } as T;
+      }
+      if (method === "session.create") {
+        return {
+          session_id: "live-new",
+          stored_session_id: "stored-new",
+          message_count: 0,
+          messages: [],
+          info: { cwd: String((params as { cwd?: unknown })?.cwd ?? "/workspace/projects") },
         } as T;
       }
       if (method === "session.list") {
@@ -970,6 +988,7 @@ function createHermesHistoryHarness(options: {
       undefined,
       undefined,
       options.attachmentMetadata,
+      options.profileScope,
     ),
     calls,
     historyCalls,
@@ -1019,6 +1038,30 @@ test("Hermes Thread lifecycle maps rename and delete to native session RPC", asy
     { method: "thread/name/updated", params: { threadId: "stored-1", threadName: "Renamed thread" } },
     { method: "thread/deleted", params: { threadId: "stored-1" } },
   ]);
+});
+
+test("Hermes scoped Host applies one Profile to Thread listing and creation", async () => {
+  const harness = createHermesHistoryHarness({ profileScope: "sales-123" });
+
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 1,
+    method: "thread/list",
+    params: {},
+  });
+  await dispatchAppServerRequest(harness.adapter, {
+    id: 2,
+    method: "thread/start",
+    params: { cwd: "/workspace/sales" },
+  });
+
+  assert.deepEqual(harness.calls.filter(({ method }) => method === "session.list"), [{
+    method: "session.list",
+    params: { limit: 1000, profile: "sales-123" },
+  }]);
+  assert.deepEqual(harness.calls.filter(({ method }) => method === "session.create"), [{
+    method: "session.create",
+    params: { cwd: "/workspace/sales", source: "desktop", profile: "sales-123" },
+  }]);
 });
 
 test("Hermes paginated resume exposes a cursor and hydrates stored history", async () => {
@@ -2204,6 +2247,47 @@ test("Hermes browser Handler keeps the dormant Bot protocol out of its public ca
   });
   assert.equal("error" in response && response.error.code, -32601);
   assert.equal(socket.requests.length, 0);
+  bridge.dispose();
+});
+
+test("Hermes scoped browser Host fences Thread RPCs to one Profile", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const bridge = new BrowserHermesAppServerBridge(socket, {
+    profileScope: "sales-123",
+    enableBotConversations: true,
+    resolveProfileBots: async () => [],
+  });
+
+  const initialized = await bridge.request("initialize", {}) as {
+    capabilities: { extensions: Record<string, unknown> };
+  };
+  assert.equal("vela/bot-conversations" in initialized.capabilities.extensions, false);
+
+  const listing = bridge.request("thread/list", {});
+  await flush();
+  const listRequest = socket.requests.at(-1)!;
+  assert.equal(listRequest.method, "session.list");
+  assert.deepEqual(listRequest.params, { limit: 1000, profile: "sales-123" });
+  socket.receive({ jsonrpc: "2.0", id: listRequest.id, result: { sessions: [] } });
+  await listing;
+
+  const starting = bridge.request("thread/start", { cwd: "/workspace/sales" });
+  await flush();
+  const createRequest = socket.requests.at(-1)!;
+  assert.equal(createRequest.method, "session.create");
+  assert.deepEqual(createRequest.params, {
+    cwd: "/workspace/sales",
+    source: "desktop",
+    profile: "sales-123",
+  });
+  socket.receive({ jsonrpc: "2.0", id: createRequest.id, result: {
+    session_id: "live-sales",
+    stored_session_id: "stored-sales",
+    message_count: 0,
+    messages: [],
+    info: { cwd: "/workspace/sales" },
+  } });
+  await starting;
   bridge.dispose();
 });
 

@@ -1809,7 +1809,6 @@ export function useThreadCatalog(): {
 export interface MultiHostWorkbenchThread extends WorkbenchThread {
   readonly hostId: string;
   readonly hostLabel: string;
-  readonly updatedAt: number;
 }
 
 /**
@@ -1864,7 +1863,6 @@ export function useMultiHostThreadCatalog(): {
       ...projectAppServerThread(thread),
       hostId: host.hostId,
       hostLabel: host.label,
-      updatedAt: thread.updatedAt,
     }))).sort((left, right) => right.updatedAt - left.updatedAt), [hosts, querySignature]);
   return {
     threads,

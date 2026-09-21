@@ -75,6 +75,23 @@ test("macOS Electron reserves the native traffic-light interaction space", () =>
     "back",
     "forward",
   ]);
+  assert.equal(
+    getHeaderStartMinimumWidth(snapshot, false),
+    218,
+    "the collapsed-sidebar Write action participates in first-paint rail geometry",
+  );
+});
+
+test("the persistent Electron header exposes Write only while the sidebar is hidden", () => {
+  const header = readFileSync(
+    new URL("../apps/workbench-web/src/components/app-shell-header.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(header, /hostRole !== "persistent" \|\| sidebarOpen \|\| actions\.includes\("home"\)/u);
+  assert.match(header, /action === "sidebar-toggle"[\s\S]*?"new-task" as const/u);
+  assert.match(header, /aria-label="Start new task"/u);
+  assert.match(header, /data-app-shell-new-task-trigger="true"/u);
+  assert.match(header, /onClick=\{onHome\}/u);
 });
 
 test("native fullscreen atomically removes the macOS traffic-light safe area", () => {

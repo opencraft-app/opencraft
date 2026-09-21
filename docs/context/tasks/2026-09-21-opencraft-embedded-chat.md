@@ -23,8 +23,8 @@ derived: false
 Add a first-class OpenCraft `embed-chat` surface that can run inside the existing LightVela Agent page without an iframe, while preserving the current full Workbench entry and keeping legacy AgentChat as the visible/write owner until the embedded surface reports ready and is explicitly shown.
 
 The embedded canvas follows OpenCraft's ordinary Thread/Draft conversation
-path. The selected LightVela Bot identifies the Hermes Host only; it must not
-switch the canvas onto the separate Bot conversation protocol.
+path. The selected LightVela Bot identifies a fixed instance/Profile Hermes
+Host; it must not switch the canvas onto the separate Bot conversation protocol.
 
 ## non_goals
 
@@ -63,7 +63,9 @@ switch the canvas onto the separate Bot conversation protocol.
 - The embedded canvas reuses the ordinary Workbench Thread/Draft, Composer,
   and steer owners instead of `BotChatView` or
   `bot/conversation/*`.
-- The embedded API binds the requested LightVela instance explicitly and exposes readiness, show/hide, writable ownership, and disposal semantics.
+- The embedded API binds the requested LightVela instance and Bot Profile
+  explicitly and exposes readiness, show/hide, writable ownership, and disposal
+  semantics.
 - The current full OpenCraft entry continues to typecheck and its focused tests pass unchanged.
 - The LightVela Agent page can mount legacy and embedded surfaces in one fixed geometry; legacy stays visible/write-enabled until embedded `show()` succeeds, and failures keep/fall back to legacy.
 - The LightVela Sidebar exposes New conversation above Recent conversations.
@@ -161,12 +163,46 @@ switch the canvas onto the separate Bot conversation protocol.
   attachment tests, 404 Chat tests, 404 Workbench unit tests, both affected
   package TypeScript checks, platform boundaries, `build:lightvela-web`,
   documentation validation, staged change-impact validation and diff checks.
+- Multi-Bot rollout follow-up restores the missing gate: route `active` is only
+  presentation state, while the console `show()` reveal state is the explicit
+  authorization to prepare/adopt Embedded Chat. The logical Host now includes
+  `instanceId + profileId`; CTL `main` maps to Hermes `default`, all ordinary
+  Thread operations are adapter-scoped, and Composer queue persistence is
+  Profile-separated while the Dashboard token remains physical-instance scoped.
+- Follow-up verification: affected frontend and OpenCraft TypeScript checks
+  passed; rollout/console-helper component tests passed 7/7; focused embedded
+  and Hermes adapter tests passed 87/87; OpenCraft extension tests passed
+  182/182 plus Collaboration 56/56; Chat passed 404/404; Workbench unit passed
+  262/262; platform boundaries and `build:lightvela-web` passed. Authenticated
+  localhost refresh confirmed zero Embedded elements before `show()` and the
+  secondary Bot remains Chat-gated before reveal. The optional
+  `smoke:hermes-profile-bots` browser fixture could not start because this
+  checkout has no `playwright` package; no live secondary-Bot send was made.
+- Authenticated secondary-Bot QA caught and removed one stale action guard:
+  reveal had enabled the Chat tab but its click handler still returned for any
+  non-default Bot. Both presentation and navigation now consume the single
+  `isActiveBotChatAvailable` authority.
+- Console reveal is now a generic persisted feature state rather than one-way
+  page state. One ref-counted `show()` controller toggles the versioned
+  origin-local value, synchronizes subscribers and other tabs, survives page
+  reload/navigation, and restores any pre-existing global only after its final
+  lease. Calling `show()` a second time disables Embedded adoption and hides
+  the other reveal-gated product entries.
+- Persisted feature-state, console-command, user-menu, Account Referral and
+  migration-surface focused tests passed 36/36; frontend TypeScript and diff
+  checks passed. Tests cover controller recreation, explicit persisted false,
+  storage denial fallback, cross-tab storage events, command lease sharing,
+  reload restoration and second-call cancellation.
+- Secondary-Bot route correction waits for persisted reveal hydration, so a
+  cold reload of an enabled `/agents/chat/?bot=<profile>` cannot redirect to
+  Channels from the server-compatible false first frame.
 
 ## risks
 
 - Duplicate write/focus ownership if both surfaces are interactive. Mitigation: application-level visible/writable lease and tests for failed/late readiness.
 - Global CSS leakage. Mitigation: embedded style entry scoped to the embed root; do not import the full Workbench `app.scss` into frontend.
-- Instance drift through account-wide `activeBotId`. Mitigation: explicit instance/region/account binding for embedded Host configuration.
+- Instance/Profile drift through account-wide selection. Mitigation: explicit
+  instance/region/account/Profile binding and a Profile-scoped logical Host ID.
 - Duplicate runtime subscriptions or incorrect disposal. Mitigation: one embedded application owner with reverse-order disposal and held/late result tests.
 - Legacy `chatId` and Hermes conversation identity may differ. Mitigation: no implicit migration in this slice; establish or add a separate mapping contract before history cutover.
 
@@ -194,7 +230,7 @@ switch the canvas onto the separate Bot conversation protocol.
   the full Workbench policy enables them. Do not branch on product names or
   scatter embedded-only visibility checks through components.
 - Treat the outer Bot selection as Host configuration only. Embedded sessions
-  are ordinary AppServer Threads. Rename maps
+  are ordinary AppServer Threads inside one fixed native Hermes Profile. Rename maps
   `thread/name/set -> session.title`; confirmed deletion maps
   `thread/delete -> session.close + session.delete`.
 - Keep the stable embed loader mutable but point it only at a content-addressed Vite entry; use the loader origin as the Shadow DOM asset base.

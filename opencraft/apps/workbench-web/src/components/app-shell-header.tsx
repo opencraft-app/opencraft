@@ -7,12 +7,14 @@ import { motion, useTransform } from "motion/react";
 import {
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   type RefCallback,
   type ReactNode,
 } from "react";
 
 import { SidebarToggleIcon } from "../chrome-actions/sidebar-toggle-icon";
+import { NewTaskIcon } from "../chrome-actions/new-task-icon";
 import { RightPanelToggleIcon } from "../chrome-actions/right-panel-toggle-icon";
 import {
   transferChromeActionFocus,
@@ -55,6 +57,12 @@ export function AppShellNavigationControls({
   const presentation = useShellPresentation();
   const sidebarOpen = hostRole === "persistent" && presentation ? presentation.sidebarOpen : requestedSidebarOpen;
   const onToggleSidebar = hostRole === "persistent" && presentation ? presentation.toggleSidebar : requestedToggleSidebar;
+  const presentedActions = useMemo<readonly HeaderNavigationAction[]>(() => {
+    if (hostRole !== "persistent" || sidebarOpen || actions.includes("home")) return actions;
+    return actions.flatMap(action => action === "sidebar-toggle"
+      ? [action, "new-task" as const]
+      : [action]);
+  }, [actions, hostRole, sidebarOpen]);
   const { headerLeftFitWidth } = useAppShellLayoutMotion();
   const measureRef = useRef<HTMLDivElement | null>(null);
   const sidebarToggleRef = useChromeActionFocusRef("sidebar-toggle", hostRole);
@@ -94,6 +102,19 @@ export function AppShellNavigationControls({
         title="Toggle sidebar (⌘B)"
       >
         <SidebarToggleIcon sidebarOpen={sidebarOpen} />
+      </button>
+    ),
+    "new-task": (
+      <button
+        key="new-task"
+        className="chrome-button no-drag"
+        type="button"
+        aria-label="Start new task"
+        data-app-shell-new-task-trigger="true"
+        onClick={onHome}
+        title="Start new task"
+      >
+        <NewTaskIcon />
       </button>
     ),
     back: (
@@ -136,7 +157,7 @@ export function AppShellNavigationControls({
     const observer = new ResizeObserver(update);
     observer.observe(measure);
     return () => observer.disconnect();
-  }, [actions, headerLeftFitWidth, hostRole]);
+  }, [headerLeftFitWidth, hostRole, presentedActions]);
 
   return (
     <>
@@ -146,7 +167,7 @@ export function AppShellNavigationControls({
         className="app-shell-header__window-controls-measure"
       >
         <div className="app-shell-header__window-controls-rail">
-          {actions.map((action) => (
+          {presentedActions.map((action) => (
             <span
               className="app-shell-header__window-action no-drag"
               data-app-shell-window-action={action}
@@ -164,7 +185,7 @@ export function AppShellNavigationControls({
         data-app-shell-header-start-slot="true"
       >
         <div className="app-shell-header__window-controls-rail">
-          {actions.map((action) => (
+          {presentedActions.map((action) => (
             <span
               className="app-shell-header__window-action no-drag"
               data-app-shell-window-action={action}

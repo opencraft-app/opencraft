@@ -21,6 +21,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 ## 稳定不变量
 
+- OpenCraft 通用按钮与 Settings 表单控件的字体由 Typography registry 投影，控件尺寸保持独立；焦点、禁用和错误反馈由共享状态样式消费主题 token。处理中保留按钮原标签占位，不改变控件宽度。见 [Typography ownership](../../../opencraft/docs/platform-architecture.md#typography-ownership)。
+
 - OpenCraft 平台级 Connector 是应用级服务，不是 Hermes 设置页原型。第一方扩展通过事务注册，借用 Authentication epoch 与 Host 客户端；稳定发现/调用入口绑定 Host/Thread/代次，撤销后旧 handle 不可复用。Composer 入口、Host 原生 MCP OAuth 适配、逐次写审批和独立 CAS 配置存储已接通；OAuth 完成不自动连接或授予会话访问，重启只恢复意图并要求明确确认。凭据仍归 Host；验证使用隔离授权服务，不代表真实第三方账号或 DSH/Hermes 新增原生方法。见 [平台 Connector](../../../opencraft/docs/platform-connectors.md)。
 - 后续托管 Connector 接入在 Skills 的独立 Tab，采用 OpenCraft 控件/token，目录和引导参考 Octop。`connector-core` 负责目录/contract，`connector-host` 在执行 Host 的 SQLite 分表保存配置、凭据与临时 OAuth 事务，Renderer 只拿脱敏投影；与借用的原生 MCP 适配并存，不改 Hermes 引擎。目录 23 项中 19 项有 MCP/API adapter，其余仅接入说明，不能视为已完成真实服务验收。
 
@@ -32,7 +34,7 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 - OpenCraft 标签栏在 + 后提供统一下拉：上方新建类型、下方当前任务该 region 的全部标签；右侧 Browser/Terminal 图标保持一键新建。切换复用 activate-tab，新建复用 creation action，不按类型拆菜单或新增列表真源。见 [工作区所有权](../../../opencraft/docs/platform-architecture.md)。
 
-- OpenCraft Embedded Workbench 以无内层 Sidebar 的 Web Component 接入 LightVela Agent 页：LightVela 持有外层 Sidebar、Explore/Chat 路由和会话列表呈现，OpenCraft 只提供会话 snapshot/action，并完整拥有右侧 Chat、Composer、Right Panel、Browser/Terminal 画布。旧 AgentChat 在 embedded `show()` 成功前保持可见且是唯一写 owner；失败回退不得丢失旧会话。嵌入 Host profile 与 Conversation binding 仅当前 Application 有效，不写入普通 Workbench 持久目录。见 [Embedded Workbench Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
+- OpenCraft Embedded Workbench 以无内层 Sidebar 的 Web Component 接入 LightVela Agent 页：LightVela 持有外层 Sidebar、Explore/Chat 路由和会话列表呈现，OpenCraft 只提供会话 snapshot/action，并拥有右侧 Chat 与 Composer 画布。每个逻辑 Host 由 LightVela `instance_id + profile_id` 唯一确定，普通 Thread 的列表、创建、恢复、历史、模型和生命周期写入均固定在该 Hermes Profile；物理 Dashboard token 可按实例复用，但 Composer queue 等逻辑状态必须按 Profile 隔离。旧 AgentChat 在持久化 `show()` toggle 开启且 embedded `show()` 成功前保持可见并拥有唯一写权限；再次执行 `show()` 必须撤销 Embedded owner、恢复 AgentChat 并持久化关闭态。嵌入 Host profile 与 Conversation binding 仅当前 Application 有效，不写入普通 Workbench Host 目录。见 [Embedded Workbench Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
 
 - OpenCraft Terminal 是独立字符网格：测量和绘制不得受到应用正文 tracking/word-spacing/text-transform 的不同影响；xterm 拥有行补偿，不能只验证 screen≤host 而漏掉满行文字与光标。见 [字符度量边界](../../../opencraft/docs/platform-architecture.md#terminal-character-metrics-boundary)。
 
@@ -69,6 +71,10 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 - OpenCraft 的 AppShell 持有跨路由常驻的物理窗口 chrome：原生拖拽区、导航控制和侧栏 resize owner 不属于 Skills、Cloud Storage 或 Conversation 页面。独立管理路由只替换内容区，不得通过卸载 Header 改变窗口结构；需要无边框内容时只能调整内容布局与 inset。
 
 - OpenCraft Sidebar 的 Start、Skills/Storage、扩展入口与 Footer action 是同一种 `SidebarNavigationItem`，差异仅为 action、icon 和 active 状态。Design System 统一拥有 leading slot、inline padding、content gap、row gap 与 section gap；分组容器只保留 landmark/分隔语义，不显示额外的 “Work” 标题或复制 Item 几何。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md)。
+
+- OpenCraft Sidebar 的活跃会话目录采用 Activity 投影：Thread 规范 `recencyAt/updatedAt` 决定倒序与本地日期分组，Host 只作为任务 provenance，不再拥有视觉分组。共享两行任务项固定呈现标题、Project/可选远端 Host metadata 与尾部状态轨；pending、unread、运行状态和菜单不得推动正文。原 Host 标题上的目标新建/设置能力迁入既有 Radix 任务上下文菜单，Thread/Host 运行时 owner 不变。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-24](../../../opencraft/design/invariants.md)。
+
+- OpenCraft Desktop 的 titlebar Write 是 Sidebar Start 的收起态投影，不是第二个 Thread 创建器。仅 persistent Header 在 Sidebar hidden 时将 Write 注册到 Sidebar toggle 后，并复用 Router 的 `navigateToHome`；浮动 Sidebar 的 transient Header 不复制。动态 rail 宽度与 macOS safe area 由 Window Chrome / Header 测量共同拥有。见 [Workbench design language](../../../opencraft/docs/workbench-design-language.md) 与 [WSP-25](../../../opencraft/design/invariants.md)。
 
 - OpenCraft Web/Electron 提供 Codex 同语义的 route-scoped Header region：扩展 View 只注册 toolbar React 子树，AppShell 继续拥有固定高度、拖拽面、左右安全区和物理 host。注册以 route scope 与 owner 双重隔离，旧 cleanup 不得清掉新 route；Web 适配使用 React portal 保留 Radix/主题等原组件 Context。Skills 将市场 tabs 与安装目标投影到 Header，搜索和 catalog 保持在 Content，切到 Storage/Home 后必须同步撤销 Header region。Header 中的互斥导航统一消费共享、token 化的 segmented primitive；安装目标由 AppShell 提供的 `ToolbarSelect` 使用统一 toolbar Button、DropdownMenu、menu width 和 item token 呈现，扩展只提交选项、当前值与 action。业务面板不得把正文 Tabs/Select 的硬编码颜色、边框或尺寸直接搬入 Shell chrome。
 - Skills Content 中的已安装分类/来源筛选继续由业务层拥有选项和选中值，但触发器与浮层必须组合共享 Radix Select 的焦点、键盘、主题 surface 和 elevation。业务只能覆写 compact 尺寸；浮层宽度以 `--radix-select-trigger-width` 跟随触发器并受视口限制，不得通过局部白色 surface、额外 padding/shadow 或更大默认最小宽度覆盖相邻筛选控件。

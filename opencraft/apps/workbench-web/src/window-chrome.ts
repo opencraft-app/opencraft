@@ -5,6 +5,7 @@ export type WindowPlatform = "darwin" | "win32" | "linux";
 export type HeaderNavigationAction =
   | "home"
   | "sidebar-toggle"
+  | "new-task"
   | "back"
   | "forward";
 
@@ -190,8 +191,13 @@ function readWindowChrome(): WindowChromeSnapshot {
   return snapshot;
 }
 
-export function getHeaderStartMinimumWidth(snapshot: WindowChromeSnapshot): number {
-  const actionCount = getWindowChromePolicy(snapshot).leadingNavigationActions.length;
+export function getHeaderStartMinimumWidth(
+  snapshot: WindowChromeSnapshot,
+  sidebarOpen = true,
+): number {
+  const policy = getWindowChromePolicy(snapshot);
+  const actionCount = policy.leadingNavigationActions.length
+    + Number(snapshot.kind === "electron" && !sidebarOpen);
   const actionRailWidth = HEADER_ACTION_HORIZONTAL_PADDING
     + actionCount * HEADER_ACTION_SIZE
     + Math.max(0, actionCount - 1) * HEADER_ACTION_GAP;

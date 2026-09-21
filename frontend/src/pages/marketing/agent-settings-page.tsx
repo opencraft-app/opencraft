@@ -98,6 +98,7 @@ import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-swi
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/agent-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
+import { subscribeConsoleShow } from "@/lib/console-show-event";
 import {
   resolveAgentConsoleCollectionLabel,
   resolveAgentDisplayName,
@@ -2691,6 +2692,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const [consoleShowStateReady, setConsoleShowStateReady] = useState(false);
   const showCreateBotEntry = multiBotEnabled && (!isGlobal || showHiddenAgentTools);
   const { canCreateInitialAgent, canCreateAdditionalBot } = resolveOpenClawCreatePermissions(
     multiBotEnabled,
@@ -2768,7 +2770,7 @@ export const AgentSettingsPage = ({
   };
 
   const handleSidebarChatTabClick = () => {
-    if (!isActiveBotDefault) return;
+    if (!isActiveBotChatAvailable) return;
     setSidebarTab("chat");
     if (activeSection !== "chat") {
       navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
@@ -2967,6 +2969,7 @@ export const AgentSettingsPage = ({
   const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
+  const isActiveBotChatAvailable = isActiveBotDefault || showHiddenAgentTools;
   const isFirstBotCreation = !activeBot;
   const remainingInstanceBotCount = activeBot
     ? bots.filter((bot) => (
@@ -2976,10 +2979,10 @@ export const AgentSettingsPage = ({
     : 0;
 
   useEffect(() => {
-    if (activeSection !== "chat" || !activeBot || isActiveBotDefault) return;
+    if (!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable) return;
     setSidebarTab("settings");
     navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, activeBot.id), { replace: true });
-  }, [activeBot?.id, activeSection, isActiveBotDefault, navigate]);
+  }, [activeBot?.id, activeSection, consoleShowStateReady, isActiveBotChatAvailable, navigate]);
 
   const weixinOccupiedByOther = Boolean(
     activeBot?.weixinOwner && activeBot.weixinOwner.botId !== activeBot.id,
@@ -2990,7 +2993,11 @@ export const AgentSettingsPage = ({
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set(AGENT_BOT_QUERY_KEY, botId);
     const selectedBot = visibleBots.find((bot) => bot.id === botId);
-    const nextSection = activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection;
+    const nextSection = activeSection === "chat"
+      && !selectedBot?.isDefault
+      && !showHiddenAgentTools
+      ? "channel"
+      : activeSection;
     if (nextSection !== activeSection) setSidebarTab("settings");
     navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[nextSection], nextParams), { replace: true });
   };
@@ -3905,10 +3912,17 @@ export const AgentSettingsPage = ({
   }, [activeSection, activeRuntimeInstanceId, activeImportStatus?.phase, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
+    return subscribeConsoleShow((enabled) => {
+      setShowHiddenAgentTools(enabled);
+      setConsoleShowStateReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
     return installOpenClawConsoleHelpers({
       host: window as Window & { help?: unknown; terminal?: unknown; show?: unknown; console: Console },
       getTerminalPath: () => (activeBot ? AGENT_SECTION_PATH_BY_ID.terminal : null),
-      onShowHiddenTools: () => setShowHiddenAgentTools(true),
+      enableShowCommand: true,
     });
   }, [activeBot]);
 
@@ -5460,22 +5474,22 @@ export const AgentSettingsPage = ({
                       </button>
                       <span
                         className="lv-agent-action-item flex-1 min-w-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-black/30"
-                        tabIndex={isActiveBotDefault ? undefined : 0}
-                        aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
+                        tabIndex={isActiveBotChatAvailable ? undefined : 0}
+                        aria-describedby={isActiveBotChatAvailable ? undefined : chatAvailabilityTooltipId}
                       >
                         <button
                           type="button"
                           role="tab"
-                          aria-selected={sidebarTab === "chat" && isActiveBotDefault}
-                          aria-disabled={!isActiveBotDefault}
-                          aria-describedby={isActiveBotDefault ? undefined : chatAvailabilityTooltipId}
-                          disabled={!isActiveBotDefault}
-                          className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotDefault && "is-active")}
+                          aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}
+                          aria-disabled={!isActiveBotChatAvailable}
+                          aria-describedby={isActiveBotChatAvailable ? undefined : chatAvailabilityTooltipId}
+                          disabled={!isActiveBotChatAvailable}
+                          className={cn("lv-agents-sidebar-tab", sidebarTab === "chat" && isActiveBotChatAvailable && "is-active")}
                           onClick={handleSidebarChatTabClick}
                         >
                           {t("对话")}
                         </button>
-                        {!isActiveBotDefault && (
+                        {!isActiveBotChatAvailable && (
                           <span id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip">
                             {t("对话功能目前仅支持主 Bot")}
                             <span className="lv-agent-action-tooltip-arrow" aria-hidden="true" />
@@ -5484,7 +5498,7 @@ export const AgentSettingsPage = ({
                       </span>
                     </div>
 
-                    {sidebarTab === "chat" && isActiveBotDefault ? (
+                    {sidebarTab === "chat" && isActiveBotChatAvailable ? (
                       <nav className="lv-agents-nav" aria-label={t("会话列表导航")}>
                         <div className="lv-agents-nav-group" role="group">
                           <button
@@ -5848,7 +5862,7 @@ export const AgentSettingsPage = ({
                               workspaceRecoveryPanel={workspaceRecoveryPanel}
                             />
                           )}
-                          {isActiveBotDefault && (
+                          {isActiveBotChatAvailable && (
                             /* 国际站语言切换时重挂 AgentChatPanel：组件内部用 ref 锁定首帧 launch token
                                与 lightvelaApiParams（见 agent-chat-panel.tsx 注释），切换语言需整体卸载
                                重挂以重置这些 ref，让 LightVelaPanel 用新语言重新初始化。国内站固定 key，
@@ -5857,13 +5871,15 @@ export const AgentSettingsPage = ({
                               active={activeSection === "chat"}
                               accountId={accountId}
                               apiBase={resolveConfiguredAuthApiBaseUrl() || undefined}
+                              enabled={showHiddenAgentTools}
                               instanceId={sdkInstance.InstanceId}
+                              profileId={sdkInstance.ProfileId ?? "main"}
                               region={isGlobal ? "intl" : "cn"}
                               multiSession={openCraftChatMultiSessionBridge}
                               onOwnerChange={handleChatSurfaceOwnerChange}
                               onSessionCommandsChange={setChatSessionCommands}
                               onSessionMutationStateChange={setChatSessionMutationState}
-                              legacy={(
+                              legacy={isActiveBotDefault ? (
                                 <AgentChatPanel
                                   key={isGlobal ? i18n.language : "cn"}
                                   accountId={accountId}
@@ -5878,6 +5894,10 @@ export const AgentSettingsPage = ({
                                   multiSession={legacyChatMultiSessionBridge}
                                   framed={false}
                                 />
+                              ) : (
+                                <div className="flex size-full items-center justify-center text-sm text-black/50" role="status">
+                                  {t("正在加载聊天…")}
+                                </div>
                               )}
                             />
                           )}
