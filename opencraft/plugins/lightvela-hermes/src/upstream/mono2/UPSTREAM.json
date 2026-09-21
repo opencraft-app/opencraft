@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "ed193bc3c0d2866aed3cbb734c66f8d47e564622",
+  "sourceRevision": "f09b62866ad7c20a507fe4beeb455c9d7fe8eba6",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -369,7 +369,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/hermes-model-config-command.ts",
-      "sourceSha256": "611fe016ba4d65b326725bd99de6abaaa5514321cbce71efabc3fd1e2cb325e0"
+      "sourceSha256": "d1124b4e02ae90a004f9232669ad336cb44b80fd27de30b7c80c5685f7f1a72d"
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
