@@ -102,7 +102,7 @@ test("Start and LightVela routes share one leading slot and one section rhythm",
   assert.match(styles, /\.lightvela-work-navigation__items\s*\{[\s\S]*?gap:\s*var\(--gap-navigation-rows\)/u);
   assert.match(styles, /\.sidebar-content-scroll\s*\{[\s\S]*?margin-top:\s*var\(--gap-navigation-sections\)/u);
   assert.match(styles, /\.sidebar-tasks\s*\{[\s\S]*?margin-top:\s*0/u);
-  assert.match(styles, /\.sidebar-target-group\s*\{[\s\S]*?&:first-of-type\s*\{\s*margin-top:\s*0/u);
+  assert.match(styles, /\.sidebar-activity-list\s*\{[\s\S]*?gap:\s*var\(--gap-sidebar-activity-groups\)/u);
 });
 
 test("both workbench boot paths render standalone pages outside the management dialog", () => {

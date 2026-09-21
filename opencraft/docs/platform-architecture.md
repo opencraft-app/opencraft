@@ -75,6 +75,21 @@ font role, and platform rendering can change without rewriting every component.
 Shell and extension chrome consume the semantic primitive; feature-local raw
 metrics are reserved for content systems with a separate owner.
 
+Shared Button and Settings form controls also consume registry roles:
+`control/controlSmall/controlLarge/controlCompact`, `input`, and settings
+heading/label roles. Native button text metrics are projected from the same
+registry; geometry remains in the button contract and is not changed by this
+normalization. Web role projection can omit TextTone (`null`) when a control
+variant owns its semantic colors. `controls.web.scss` owns state-only focus,
+disabled and invalid feedback, including forced-colors focus visibility.
+Generic Button loading preserves its label footprint and exposes `aria-busy`;
+it cannot widen the button or animate the spinner under reduced motion.
+
+The focused standards test rejects typography literals in these shared
+consumers. `scripts/smoke-control-standards.ts` renders actual controls across
+light/dark/custom palettes and tests size, focus, invalid, disabled and loading
+states; optional isolated Electron execution requires an explicit executable.
+
 ### Client voice input ownership
 
 Voice input is a client input service, not an Agent Host tool or chat model.
@@ -394,8 +409,12 @@ Sidebar, Explore/Chat routing and page history. OpenCraft owns only the right
 canvas: the standard Thread/Draft conversation route, Composer and Header.
 The embedded projection omits OpenCraft's Right Panel and its toggle; the full
 Workbench keeps that panel unchanged. Embedded Chat does not use the Bot
-conversation protocol; Bot identity selects the physical Hermes Host in the
-outer product, while the canvas uses ordinary AppServer Thread ownership.
+conversation protocol. The outer Bot identity selects a logical Hermes Host
+scoped by both physical instance and native Profile; the canvas uses ordinary
+AppServer Thread ownership inside that fixed Profile. Thread list, creation,
+resume, history, model catalog, rename and delete must never escape it. Physical
+Dashboard/session-token reuse remains instance-scoped, while Composer queue and
+other logical Host state include the Profile identity.
 The embedded entry constructs the same Application runtime as the full
 Workbench, but contributes an explicit, ephemeral LightVela Host profile and
 never persists that physical instance identity into the normal Host catalog.
@@ -408,16 +427,26 @@ for extension-contributed Composer actions. The full policy projects all
 Composer actions. This keeps unavailable Web Speech or future optional actions
 out of embedded products without component-level product checks.
 
-The host prepares both legacy and embedded surfaces concurrently. The embedded
-Composer starts read-only; `show()` may grant its write lease only after Host
-connection, ordinary Thread/Draft activation, initial history hydration and
-first paint have completed. `hide()` revokes that lease synchronously without
-disposing the Application, so returning to the host-owned Explore view cannot
-lose conversation state. Only the visible owner may send,
+The host keeps legacy AgentChat authoritative until its explicit rollout
+`show()` command enables the embedded candidate. Route visibility alone never
+loads or adopts OpenCraft. After enablement, legacy remains visible while the
+embedded Host connects, activates its ordinary Thread/Draft, hydrates initial
+history and paints; the Web Component's own `show()` then grants its write
+lease. `hide()` revokes that lease synchronously without disposing the
+Application, so returning to the host-owned Explore view cannot lose
+conversation state. Only the visible owner may send,
 cancel, approve or answer an interaction. The stable
 `/__opencraft/embedded-workbench.js` loader points to a content-addressed Vite
 entry; deployments using another static origin must provide the required module
 CORS policy explicitly.
+
+`show()` is a browser-origin-scoped persisted toggle, not a one-way component
+callback. One shared feature-state controller owns versioned storage, in-page
+events, cross-tab storage reconciliation and a ref-counted global command.
+Calling `show()` again disables the revealed surfaces and persists that choice;
+page components subscribe to the state and never wrap `window.show` themselves.
+The underlying persisted-feature primitive is reusable by other internal
+feature gates without copying localStorage/error/event lifecycle code.
 
 An embedded canvas owns one explicit Presentation Root inside its Shadow DOM.
 The appearance engine projects the complete semantic token set onto that root,

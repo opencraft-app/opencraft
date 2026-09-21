@@ -1,5 +1,22 @@
 @use "./typography.web" as typography;
 
+// State-only primitives: never own geometry or domain pending state.
+@mixin focus-indicator {
+  outline: var(--width-control-focus-ring) solid var(--color-border-focus);
+  outline-offset: var(--offset-control-focus-ring);
+  @media (forced-colors: active) { outline-color: Highlight; }
+}
+
+@mixin disabled-feedback {
+  opacity: var(--opacity-control-disabled);
+  cursor: default;
+}
+
+@mixin invalid-feedback {
+  border-color: var(--color-text-danger);
+  @media (forced-colors: active) { border-color: Mark; }
+}
+
 // Shared quiet controls. Layout belongs to the consumer, interaction to here.
 @mixin quiet-control {
   appearance: none;
@@ -13,10 +30,9 @@
     background: var(--color-background-button-tertiary-hover);
   }
   &:focus-visible {
-    outline: 2px solid var(--color-border-focus);
-    outline-offset: 2px;
+    @include focus-indicator;
   }
-  &:disabled { opacity: 0.45; cursor: default; }
+  &:disabled { @include disabled-feedback; }
 }
 
 // Navigation rows share the sidebar's quiet typography and state treatment.

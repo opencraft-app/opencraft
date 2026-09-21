@@ -43,6 +43,7 @@ export interface EmbeddedWorkbenchReadyDetail {
   readonly threadId: string | null;
   readonly hostId: string;
   readonly instanceId: string;
+  readonly profileId: string;
 }
 
 export interface EmbeddedWorkbenchSession extends EmbeddedWorkbenchAppSession {}
@@ -264,6 +265,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       threadId,
       hostId: this.application!.hostId,
       instanceId: config.instanceId,
+      profileId: config.profileId,
     });
     requestAnimationFrame(() => {
       if (this.disposed || this.readyDetail !== null) return;

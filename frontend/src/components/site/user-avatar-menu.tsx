@@ -12,12 +12,11 @@ import { useAppNavigate } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { ACCOUNT_BILLING_PATH, AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { isGlobal } from "@/lib/region";
-import { emitConsoleShowEvent } from "@/lib/console-show-event";
+import {
+  installConsoleShowCommand,
+  subscribeConsoleShow,
+} from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
-
-type RevealWorkbenchHost = Window & {
-  show?: (...args: unknown[]) => unknown;
-};
 
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
@@ -63,31 +62,11 @@ export const UserAvatarMenu = ({
   }, []);
 
   useEffect(() => {
-    const host = window as RevealWorkbenchHost;
-    const originalShow = host.show;
-    let mounted = true;
-    const revealWorkbench = (...args: unknown[]) => {
-      if (mounted) {
-        setHiddenEntriesRevealed(true);
-        emitConsoleShowEvent();
-      }
-      if (typeof originalShow === "function") {
-        const originalResult = originalShow.apply(host, args);
-        return originalResult === undefined ? true : originalResult;
-      }
-      return true;
-    };
-
-    host.show = revealWorkbench;
-
+    const stopState = subscribeConsoleShow(setHiddenEntriesRevealed);
+    const stopCommand = installConsoleShowCommand();
     return () => {
-      mounted = false;
-      if (host.show !== revealWorkbench) return;
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
+      stopState();
+      stopCommand();
     };
   }, []);
 

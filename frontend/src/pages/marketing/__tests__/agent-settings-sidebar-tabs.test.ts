@@ -113,7 +113,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(tabsStart).toBeGreaterThanOrEqual(0);
     expect(navStart).toBeGreaterThan(tabsStart);
     expect(page).toContain('role="tablist"');
-    expect(page).toContain('aria-selected={sidebarTab === "chat" && isActiveBotDefault}');
+    expect(page).toContain('aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}');
     expect(page).toContain('aria-selected={sidebarTab === "settings"}');
   });
 
@@ -192,18 +192,23 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("setSelectedChatId(chatSessions[0]?.chatId)");
   });
 
-  it("restricts AgentChat to the main Bot", () => {
+  it("keeps secondary Chat gated until show enables profile-scoped OpenCraft", () => {
     const page = readPageSource();
     const styles = readStylesSource();
 
-    expect(page).toContain("if (!isActiveBotDefault) return;");
-    expect(page).toContain('disabled={!isActiveBotDefault}');
+    expect(page).toContain("const isActiveBotChatAvailable = isActiveBotDefault || showHiddenAgentTools;");
+    expect(page).toContain("if (!isActiveBotChatAvailable) return;");
+    expect(page).toContain('disabled={!isActiveBotChatAvailable}');
     expect(page).toContain('t("对话功能目前仅支持主 Bot")');
-    expect(page).not.toContain('title={isActiveBotDefault ? undefined');
+    expect(page).not.toContain('title={isActiveBotChatAvailable ? undefined');
     expect(page).toContain('id={chatAvailabilityTooltipId} role="tooltip" className="lv-agent-action-tooltip"');
-    expect(page).toContain('activeSection !== "chat" || !isActiveBotDefault');
-    expect(page).toContain('activeSection === "chat" && isActiveBotDefault &&');
-    expect(page).toContain('activeSection === "chat" && !selectedBot?.isDefault ? "channel" : activeSection');
+    expect(page).toContain('!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable');
+    expect(page).toContain('{isActiveBotChatAvailable && (');
+    expect(page).toContain('&& !showHiddenAgentTools');
+    expect(page).toContain('enabled={showHiddenAgentTools}');
+    expect(page).toContain('profileId={sdkInstance.ProfileId ?? "main"}');
+    expect(page).toContain("setConsoleShowStateReady(true);");
+    expect(page).toContain("enableShowCommand: true");
     expect(styles).toContain(".lv-agents-sidebar-tab:disabled");
   });
 

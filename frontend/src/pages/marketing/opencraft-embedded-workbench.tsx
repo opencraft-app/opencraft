@@ -16,6 +16,7 @@ interface EmbeddedWorkbenchConfig {
   readonly accountId?: string;
   readonly apiBase?: string;
   readonly instanceId: string;
+  readonly profileId: string;
   readonly region: "cn" | "intl";
 }
 
@@ -43,6 +44,8 @@ function isEmbeddedWorkbenchElement(element: HTMLElement): element is EmbeddedWo
 
 interface AgentChatMigrationSurfaceProps extends EmbeddedWorkbenchConfig {
   readonly active: boolean;
+  /** Explicit rollout authority. Route visibility alone must never adopt OpenCraft. */
+  readonly enabled: boolean;
   readonly legacy: ReactNode;
   readonly multiSession: LightVelaMultiSessionOptions;
   readonly onOwnerChange?: (owner: "legacy" | "opencraft") => void;
@@ -118,12 +121,14 @@ export function AgentChatMigrationSurface({
   active,
   accountId,
   apiBase,
+  enabled,
   instanceId,
   legacy,
   multiSession,
   onOwnerChange,
   onSessionCommandsChange,
   onSessionMutationStateChange,
+  profileId,
   region,
 }: AgentChatMigrationSurfaceProps) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -140,11 +145,16 @@ export function AgentChatMigrationSurface({
   const activeRef = useRef(active);
   activeRef.current = active;
   const [owner, setOwner] = useState<"legacy" | "opencraft">("legacy");
-  const [started, setStarted] = useState(active);
+  const [started, setStarted] = useState(active && enabled);
+  const presentedOwner = enabled ? owner : "legacy";
 
   useEffect(() => {
+    if (!enabled) {
+      setStarted(false);
+      return;
+    }
     if (active) setStarted(true);
-  }, [active]);
+  }, [active, enabled]);
 
   useEffect(() => {
     if (!started) return;
@@ -243,7 +253,7 @@ export function AgentChatMigrationSurface({
       element.className = "block size-full";
       element.addEventListener("opencraft-sessions", handleSessions);
       element.addEventListener("opencraft-error", handleEmbeddedError);
-      element.configure({ accountId, apiBase, instanceId, region });
+      element.configure({ accountId, apiBase, instanceId, profileId, region });
       mount.append(element);
       await element.prepare();
       if (retired) return;
@@ -281,10 +291,10 @@ export function AgentChatMigrationSurface({
         current.remove();
       }
     };
-  }, [accountId, apiBase, instanceId, region, started]);
+  }, [accountId, apiBase, instanceId, profileId, region, started]);
 
   useEffect(() => {
-    if (owner !== "opencraft" || !multiSession.selectedChatId) return;
+    if (!enabled || owner !== "opencraft" || !multiSession.selectedChatId) return;
     const element = elementRef.current;
     if (element === null) return;
     try {
@@ -292,14 +302,14 @@ export function AgentChatMigrationSurface({
     } catch {
       // Session list delivery is authoritative; ignore a stale host selection.
     }
-  }, [multiSession.selectedChatId, owner]);
+  }, [enabled, multiSession.selectedChatId, owner]);
 
   useEffect(() => {
     const element = elementRef.current;
     if (element === null || owner !== "opencraft") return;
-    if (active) void element.show().catch(() => undefined);
+    if (active && enabled) void element.show().catch(() => undefined);
     else element.hide();
-  }, [active, owner]);
+  }, [active, enabled, owner]);
 
   return (
     <div
@@ -312,19 +322,23 @@ export function AgentChatMigrationSurface({
     >
       <div
         ref={legacyRef}
-        aria-hidden={!active || owner === "opencraft" || undefined}
+        aria-hidden={!active || presentedOwner === "opencraft" || undefined}
         className={cn(
           "absolute inset-0 min-h-0 overflow-hidden",
-          (!active || owner === "opencraft") && "invisible pointer-events-none",
+          (!active || presentedOwner === "opencraft") && "invisible pointer-events-none",
         )}
-        inert={!active || owner === "opencraft" ? true : undefined}
+        inert={!active || presentedOwner === "opencraft" ? true : undefined}
       >
-        {owner === "legacy" ? legacy : null}
+        {presentedOwner === "legacy" ? legacy : null}
       </div>
       <div
         ref={mountRef}
-        aria-hidden={!active || owner !== "opencraft" || undefined}
-        className="absolute inset-0 min-h-0 overflow-hidden"
+        aria-hidden={!active || presentedOwner !== "opencraft" || undefined}
+        className={cn(
+          "absolute inset-0 min-h-0 overflow-hidden",
+          (!active || presentedOwner !== "opencraft") && "invisible pointer-events-none",
+        )}
+        inert={!active || presentedOwner !== "opencraft" ? true : undefined}
       />
     </div>
   );

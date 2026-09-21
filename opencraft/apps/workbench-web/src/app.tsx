@@ -1,5 +1,4 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { TargetConnectionStatus } from "./components/target-connection-status";
 import {
   retargetSubmitIntentForFollowUp,
   type ComposerAttachment,
@@ -1307,7 +1306,6 @@ export function App({
           leftPanel={!presentation.contextSidebar ? null : (
             routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
-              renderTargetStatus={(hostId) => <TargetConnectionStatus hostId={hostId} />}
               onNewTaskForTarget={async (hostId) => hostCatalog.navigateToHome({
                   execution: {
                     hostId: asHostId(hostId),

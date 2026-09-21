@@ -47,6 +47,8 @@ export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptio
   whatsappOnboarding?: HermesDashboardWhatsAppOnboardingHandler;
   /** Physical instance currently bound beneath the stable logical Host id. */
   instanceId?: string;
+  /** Fixed native Hermes Profile owned by this logical embedded Host. */
+  profileScope?: string;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
@@ -89,8 +91,10 @@ export class BrowserHermesAppServerBridge {
       ? null
       : new HermesAttachmentStagingService(options.fileSystem);
     this.adapter = new HermesAppServerAdapter(this.transport, options.defaultCwd ?? "/", options.history,
-      undefined, options.projectionRecovery, options.composerQueue, this.attachments ?? undefined);
-    this.bots = options.enableBotConversations === true || options.resolveProfileBots !== undefined
+      undefined, options.projectionRecovery, options.composerQueue, this.attachments ?? undefined,
+      options.profileScope);
+    this.bots = options.profileScope === undefined
+      && (options.enableBotConversations === true || options.resolveProfileBots !== undefined)
       ? new HermesBotAppServerHandler(this.adapter, (event) => {
           const notification: AppServerNotification = { jsonrpc: "2.0", ...event };
           for (const listener of this.notificationListeners) listener(notification);

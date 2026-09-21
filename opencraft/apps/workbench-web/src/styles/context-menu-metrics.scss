@@ -4,6 +4,7 @@
   background: var(--color-background-surface); color: var(--color-text);
   border: 1px solid var(--color-border-subtle); border-radius: var(--radius-control); box-shadow: var(--shadow-300);
   [role="menuitem"] { padding: 7px 10px; font-size: 13px; border-radius: var(--radius-control); cursor: pointer; }
+  [role="separator"] { height: 1px; margin: 4px 6px; background: var(--color-border-subtle); }
   [data-highlighted] { background: var(--color-background-primary-ghost-hover); }
   [data-disabled] { color: var(--color-text-secondary); cursor: default; }
 }

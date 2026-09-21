@@ -13,7 +13,7 @@ import {
 afterEach(cleanup);
 
 describe("AgentChatMigrationSurface", () => {
-  it("keeps legacy visible until embedded show succeeds, then adopts its session bridge", async () => {
+  it("keeps legacy authoritative until rollout enablement and embedded show both succeed", async () => {
     let actions: LightVelaSessionActions | null = null;
     let commands: EmbeddedSessionCommands | null = null;
     const requireActions = (): LightVelaSessionActions => {
@@ -61,20 +61,40 @@ describe("AgentChatMigrationSurface", () => {
       onSessionActionsChange: (next) => { actions = next; },
     };
 
-    const { container, unmount } = render(
+    const renderSurface = (enabled: boolean) => (
       <AgentChatMigrationSurface
         active
         accountId="account-1"
+        enabled={enabled}
         instanceId="ins-1"
+        profileId="sales-123"
         region="intl"
         legacy={<div>Legacy AgentChat</div>}
         multiSession={multiSession}
         onOwnerChange={onOwnerChange}
         onSessionCommandsChange={(next) => { commands = next; }}
         onSessionMutationStateChange={onSessionMutationStateChange}
-      />,
+      />
     );
+    const { container, rerender, unmount } = render(renderSurface(false));
 
+    expect(screen.getByText("Legacy AgentChat").parentElement).not.toHaveClass("invisible");
+    expect(container.querySelector("opencraft-embedded-workbench")).toBeNull();
+    expect(onOwnerChange).not.toHaveBeenCalledWith("opencraft");
+
+    rerender(renderSurface(true));
+    const prepared = await waitFor(() => {
+      const candidate = container.querySelector("opencraft-embedded-workbench");
+      expect(candidate).not.toBeNull();
+      return candidate as FakeEmbeddedWorkbench;
+    });
+    expect(prepared.configure).toHaveBeenCalledWith({
+      accountId: "account-1",
+      apiBase: undefined,
+      instanceId: "ins-1",
+      profileId: "sales-123",
+      region: "intl",
+    });
     expect(screen.getByText("Legacy AgentChat").parentElement).not.toHaveClass("invisible");
     resolveShow();
     await waitFor(() => expect(onOwnerChange).toHaveBeenCalledWith("opencraft"));
@@ -106,7 +126,22 @@ describe("AgentChatMigrationSurface", () => {
     await waitFor(() => expect(onSessionMutationStateChange).toHaveBeenLastCalledWith(null));
     expect((embedded as FakeEmbeddedWorkbench).deleteConversation).toHaveBeenCalledWith("thread-1");
 
-    embedded!.dispatchEvent(new CustomEvent("opencraft-error", {
+    rerender(renderSurface(false));
+    await waitFor(() => expect(container.querySelector("opencraft-embedded-workbench")).toBeNull());
+    expect(screen.getByText("Legacy AgentChat").parentElement).not.toHaveClass("invisible");
+    expect(onOwnerChange).toHaveBeenLastCalledWith("legacy");
+    expect(actions).toBeNull();
+    expect(commands).toBeNull();
+
+    rerender(renderSurface(true));
+    const replacement = await waitFor(() => {
+      const candidate = container.querySelector("opencraft-embedded-workbench");
+      expect(candidate).not.toBeNull();
+      return candidate as FakeEmbeddedWorkbench;
+    });
+    await waitFor(() => expect(onOwnerChange).toHaveBeenLastCalledWith("opencraft"));
+
+    replacement.dispatchEvent(new CustomEvent("opencraft-error", {
       detail: { message: "connection lost" },
     }));
     await waitFor(() => expect(onOwnerChange).toHaveBeenLastCalledWith("legacy"));

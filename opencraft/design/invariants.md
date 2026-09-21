@@ -28,6 +28,8 @@
 | WSP-22 | Host 是 PTY/process 唯一 owner；Application 按 Conversation Scope 维护有序 terminal session 集合和最近激活项。Panel tab 只投影/更新 active session，切换到非 Terminal tab 不清空最近项。Agent 的 `read_thread_terminal` 仅通过调用 Host + Thread 的 binding 读取该 Scope 当前终端的有界输出，不接受 session ID、不枚举或跨会话读取 | ConversationTerminalSessionRegistry、ConversationBindingStore、Terminal Panel plugin、dynamic tool handler；多终端激活/关闭回退、Panel owner 与 resource owner 分离、非法参数/Host+Thread 隔离、UTF-8/截断测试 |
 | WSP-22 | 导航 hover 与当前路由是不同状态：Theme Engine 定义统一 `navigation-hover/current/pressed` token，Design System `navigation-control` 解释 `aria-current="page"`/selected；Sidebar、Work、Settings 与平台 Shell 不得自定义停留背景 | Theme Engine/controls.web；明暗主题 token 测试、Skills↔Storage Electron computed-style 验收 |
 | WSP-23 | Embedded Workbench 只拥有宿主右侧画布；外层 Sidebar、Explore/Chat 路由与 History 归宿主。嵌入 Composer 在 ready/show 前只读，hide 先撤销写 lease 但保留 Application、会话与 Panel；Host 侧仅消费 session snapshot/action，不复制会话真源 | EmbeddedWorkbenchElement、EmbeddedChatWriteAuthority、transient ConversationBinding；双跑/fallback 单测、真实 LightVela 页面与 Browser/Terminal Panel 验收 |
+| WSP-24 | Sidebar Activity 由 Thread 规范 recency 排序并按本地日期分组；Host 是每行 provenance 而非视觉分组 owner。标题、项目/远端 Host 元数据与尾部状态使用共享两行任务项，pending/status/menu 不得推动正文几何 | sidebar-activity.ts、SidebarActivityItem、日期/相同 threadId 跨 Host 聚焦测试与真实 Electron 窄侧栏验收 |
+| WSP-25 | Desktop Sidebar 展开时由其 Start 独占新任务入口；收起时 persistent titlebar 在 Sidebar toggle 后注册 Write，并复用 `navigateToHome`。transient/floating Header 不复制该入口，动态 action 必须进入 Header rail 测量和 macOS safe area | AppShellNavigationControls、window-chrome；展开/收起、persistent/transient、首帧宽度与真实 Electron 点击验收 |
 
 ## 证据纪律
 

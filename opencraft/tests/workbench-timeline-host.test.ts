@@ -1081,7 +1081,7 @@ test("right-panel maximize is one semantic-to-motion geometry transaction", () =
   );
   assert.match(
     appShellSource,
-    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[totalLeftWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
+    /const headerLeftFitWidth = useMotionValue\([\s\S]*?getHeaderStartMinimumWidth\(windowChrome,\s*sidebarOpen\)[\s\S]*?const fullWidthTabBarLeftInset = useTransform\(\s*\[totalLeftWidth, headerLeftFitWidth\][\s\S]*?Number\(startMinimumWidth\) - Number\(leftWidth\)[\s\S]*?const rightPanelTabBarLeftInset = rightPanelFullWidth/u,
   );
   assert.match(
     appShellSource,

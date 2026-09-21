@@ -24,8 +24,15 @@ export interface ThreadActionCallbacks {
   readonly onArchive: (target: ThreadActionTarget) => Promise<void>;
 }
 
-export function ThreadRowMenu({ target, capabilities, children, onRename, onFork, onArchive }: ThreadActionCallbacks & {
+export interface ThreadHostActionCallbacks {
+  readonly label: string;
+  readonly onNewTask?: (hostId: string) => Promise<unknown>;
+  readonly onOpenSettings?: (hostId: string) => void;
+}
+
+export function ThreadRowMenu({ target, capabilities, children, hostActions, onRename, onFork, onArchive }: ThreadActionCallbacks & {
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
+  hostActions?: ThreadHostActionCallbacks;
 }) {
   const portalContainer = useWorkbenchPresentationRoot();
   const [renaming, setRenaming] = useState(false), [draft, setDraft] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
@@ -37,13 +44,22 @@ export function ThreadRowMenu({ target, capabilities, children, onRename, onFork
     catch (error) { if (mounted.current) setError(error instanceof Error ? error.message : String(error)); }
     finally { if (mounted.current) setBusy(false); }
   };
-  if (!capabilities.rename && !capabilities.archive && !capabilities.fork) return children;
+  const hasThreadActions = capabilities.rename || capabilities.archive || capabilities.fork;
+  const hasHostActions = hostActions?.onNewTask !== undefined || hostActions?.onOpenSettings !== undefined;
+  if (!hasThreadActions && !hasHostActions) return children;
   return <>
     <ContextMenu.Root><ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
       <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={event => { if (renaming) event.preventDefault(); }}>
         {capabilities.rename ? <ContextMenu.Item disabled={busy} onSelect={() => { setDraft(target.title); setError(null); setRenaming(true); }}>重命名</ContextMenu.Item> : null}
         {capabilities.fork ? <ContextMenu.Item disabled={busy} onSelect={() => { void run(() => onFork(target)); }}>新建分支</ContextMenu.Item> : null}
         {capabilities.archive ? <ContextMenu.Item disabled={busy} onSelect={() => { void run(() => onArchive(target)); }}>归档</ContextMenu.Item> : null}
+        {hasThreadActions && hasHostActions ? <ContextMenu.Separator className="workbench-context-menu__separator" /> : null}
+        {hostActions?.onNewTask ? <ContextMenu.Item disabled={busy} onSelect={() => {
+          void run(async () => { await hostActions.onNewTask?.(target.hostId); });
+        }}>在 {hostActions.label} 上新建任务</ContextMenu.Item> : null}
+        {hostActions?.onOpenSettings ? <ContextMenu.Item disabled={busy} onSelect={() => {
+          hostActions.onOpenSettings?.(target.hostId);
+        }}>{hostActions.label} 设置</ContextMenu.Item> : null}
       </ContextMenu.Content></ContextMenu.Portal>
     </ContextMenu.Root>
     {renaming ? <ModalSurface portalContainer={portalContainer} label="重命名会话" size="compact" appearance="utility" onDismiss={() => setRenaming(false)}>

@@ -153,6 +153,14 @@ OpenCraft-owned presentation and may reuse the standard Header, Composer,
 and Timeline implementations. The embedded product does not project
 OpenCraft's Right Panel or its toggle.
 
+For LightVela multi-Bot instances, one embedded Host is identified by
+`instanceId + profileId`, not by the physical instance alone. CTL's root
+`main` identity maps to native Hermes `default`; named Bot Profiles keep their
+native identity. Every ordinary Thread operation is scoped at the Hermes
+adapter boundary, and switching Bot disposes the old embedded Application
+before publishing the replacement session list. The shared physical Dashboard
+token is not conversation authority.
+
 New conversation starts as a client Draft. The host Sidebar may mark that Draft
 as selected, but it must not invent a Thread row or ID; the first accepted
 submission promotes the Draft and AppServer then publishes the canonical Thread
