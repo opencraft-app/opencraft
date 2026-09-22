@@ -28,6 +28,8 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
   直连 CORS allowlist 成为第二套冲突的公网策略。OpenCraft standalone Web 只通过显式 API Base/region
   选择同一个应用级 `LightVelaAccountService`，不得建立 Collaboration 专用 token store。
 
+- Sandbox 的 `PAUSING` 表示保留用户磁盘的关机过程，只能收敛到 `PAUSED` 或回滚到 `ALLOCATED`，不得进入通用 `FAILED` 清理。worker 终止 `FAILED` 云实例前必须确认其未绑定任何 Sandbox；绑定存在或查询失败时一律 fail closed 并告警。套餐保留期满后的资源释放继续走显式、可审计的销毁链路，不能复用库存创建/重装失败的破坏性 cleanup。
+
 - OpenCraft Embedded Chat 的 loader 和内容寻址资源使用独立 Vite 构建目标，由 frontend artifact 在 EdgeOne Build Output 投影前放入同源 `/__opencraft/`。实际交付包含 `.edgeone/assets/__opencraft/`，入口仍由显式 `show()` 接管；资源缺失时保留 AgentChat 回退，不通过自动开启 rollout 掩盖交付问题。见 [发布契约](release-gitops.md)。
 - Embedded Browser 的 Host Proxy Service Worker 固定在 `/__opencraft/opencraft-host-proxy-sw.js`，scope 仅为 `/__opencraft/host-proxy/`；构建产物缺失时必须失败，禁止将 scope 扩到站点根。稳定 SW 路径在 EdgeOne 使用 `no-cache`，内容寻址的应用资源继续走独立缓存策略。
 
