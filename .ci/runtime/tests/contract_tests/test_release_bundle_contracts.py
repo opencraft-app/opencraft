@@ -3444,6 +3444,24 @@ refresh_skus http://unused img-jhb "$pools_json"
         self.assertIn("ci-triggers/trade", self.push_paths(tokyo_workflow))
         self.assertTrue((REPO_ROOT / "ci-triggers/trade").is_file())
 
+    def test_sgprod_trade_exports_general_cloudladder_hmac(self) -> None:
+        manifest_path = REPO_ROOT / "scripts/ssm_manifest.trade.sgprod.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        items = {item["id"]: item for item in manifest["items"]}
+        item = items["trade-runtime-secrets"]
+
+        self.assertEqual(item["secret_name"], "mono-sgprod-trade-runtime-secrets")
+        self.assertEqual(item["output_path"], "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml")
+        self.assertIn("TRADE_CLOUDLADDER_HMAC_SECRET", item["required_keys"])
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", item["required_keys"])
+
+        encrypted_secret = yaml.safe_load(
+            (REPO_ROOT / item["output_path"]).read_text()
+        )
+        runtime_keys = set(encrypted_secret["stringData"])
+        self.assertIn("TRADE_CLOUDLADDER_HMAC_SECRET", runtime_keys)
+        self.assertNotIn("TRADE_BILLING_CLOUDLADDER_HMAC_SECRET", runtime_keys)
+
     def test_sgprod_trade_billing_signed_host_matches_cloudladder_route(self) -> None:
         env_path = REPO_ROOT / "argocd/services/trade/sgprod/trade-platform.env"
         values = {

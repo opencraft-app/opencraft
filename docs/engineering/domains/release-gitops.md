@@ -195,6 +195,10 @@ master 源码
   环境级 fallback UIN/AppID，Credit 再接受可选用户身份，最后才将精确的
   `POST /v1/credit/inquiry` 加入 `optional_auth_allow`。下单、支付、退款和资源查询不得随该入口放宽；
   国内与国际各环境必须分别验证 fallback 配置、最终 Kustomize 渲染和真实未登录询价。
+- Trade 通过 CloudLadder 推送 Credit 资源用量时必须使用通用的
+  `TRADE_CLOUDLADDER_HMAC_SECRET`；不得回退到 Billing 专用键。每个启用 sendResource 的生产地域必须
+  在发布新镜像前先完成 SSM 真源、SOPS Secret 和 release contract 的同批迁移，避免新 Pod 因缺密钥
+  CrashLoop。Secret 变更只经受保护发布链路生效，不以 live patch 或手工删除 Pod 代替。
 
 ### Referral 北京与上海交付
 
